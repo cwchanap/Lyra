@@ -91,7 +91,7 @@ pub struct DeductionSlotState {
     pub candidate_answer_ids: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeductionFeedback {
     pub complete: bool,
@@ -100,7 +100,7 @@ pub struct DeductionFeedback {
     pub slot_results: Vec<DeductionSlotResult>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeductionSlotResult {
     pub slot_id: String,
@@ -419,6 +419,128 @@ impl InvestigationEngine {
         Ok(self.state())
     }
 
+    pub fn submit_deduction(
+        &mut self,
+        answers: Vec<DeductionAnswer>,
+    ) -> InvestigationResult<DeductionFeedback> {
+        if self.state.status == CaseStatus::Solved {
+            if let Some(feedback) = &self.state.last_feedback {
+                return Ok(feedback.clone());
+            }
+        }
+
+        let slot_ids: HashSet<String> = self
+            .state
+            .deduction_slots
+            .iter()
+            .map(|slot| slot.id.clone())
+            .collect();
+        let mut seen_slot_ids = HashSet::new();
+        let mut answer_by_slot = HashMap::new();
+
+        for answer in answers {
+            if !slot_ids.contains(&answer.slot_id) {
+                return Err(InvestigationError::new(
+                    "unknownSlot",
+                    "That deduction slot does not exist.",
+                ));
+            }
+
+            if !seen_slot_ids.insert(answer.slot_id.clone()) {
+                return Err(InvestigationError::new(
+                    "duplicateSlotAnswer",
+                    "Each deduction slot can only be answered once.",
+                ));
+            }
+
+            if answer.answer_id.trim().is_empty() {
+                continue;
+            }
+
+            answer_by_slot.insert(answer.slot_id, answer.answer_id);
+        }
+
+        if answer_by_slot.len() != slot_ids.len() {
+            return Err(InvestigationError::new(
+                "incompleteDeduction",
+                "Fill every deduction slot before submitting the theory.",
+            ));
+        }
+
+        let available_answer_ids: HashSet<String> = self
+            .state
+            .evidence
+            .iter()
+            .filter(|evidence| evidence.collected)
+            .map(|evidence| evidence.id.clone())
+            .chain(
+                self.state
+                    .statements
+                    .iter()
+                    .filter(|statement| statement.discovered)
+                    .map(|statement| statement.id.clone()),
+            )
+            .collect();
+
+        if answer_by_slot
+            .values()
+            .any(|answer_id| !available_answer_ids.contains(answer_id))
+        {
+            return Err(InvestigationError::new(
+                "unknownAnswer",
+                "That clue is not available for deduction.",
+            ));
+        }
+
+        let slot_results: Vec<DeductionSlotResult> = self
+            .state
+            .deduction_slots
+            .iter()
+            .map(|slot| {
+                let answer_id = answer_by_slot
+                    .get(&slot.id)
+                    .expect("complete deduction should include every slot");
+                let correct = self
+                    .accepted_answers
+                    .get(&slot.id)
+                    .map(|accepted_answers| accepted_answers.contains(answer_id))
+                    .unwrap_or(false);
+                let guidance = if correct {
+                    "This part of the theory fits the record."
+                } else {
+                    "Recheck the collected evidence and statements for this prompt."
+                };
+
+                DeductionSlotResult {
+                    slot_id: slot.id.clone(),
+                    correct,
+                    guidance: guidance.to_string(),
+                }
+            })
+            .collect();
+        let solved = slot_results.iter().all(|result| result.correct);
+
+        if solved {
+            self.state.status = CaseStatus::Solved;
+        }
+
+        let feedback = DeductionFeedback {
+            complete: true,
+            solved,
+            message: if solved {
+                "Theory accepted. The study mystery is reconstructed."
+            } else {
+                "The theory has gaps. Revise the marked slots and submit again."
+            }
+            .to_string(),
+            slot_results,
+        };
+
+        self.state.last_feedback = Some(feedback.clone());
+
+        Ok(feedback)
+    }
+
     fn apply_reveals(&mut self, reveals: Vec<Reveal>) {
         for reveal in reveals {
             match reveal {
@@ -493,7 +615,17 @@ impl Default for InvestigationEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::{CaseStatus, InvestigationEngine};
+    use super::{CaseStatus, DeductionAnswer, InvestigationEngine};
+
+    fn prepare_complete_case() -> InvestigationEngine {
+        let mut engine = InvestigationEngine::new_demo_case();
+        engine.inspect_hotspot("desk").unwrap();
+        engine.inspect_hotspot("clock").unwrap();
+        engine.inspect_hotspot("balcony").unwrap();
+        engine.interview_character("iris", "timeline").unwrap();
+        engine.interview_character("marlow", "door").unwrap();
+        engine
+    }
 
     #[test]
     fn starts_demo_case_in_investigation_status() {
@@ -615,5 +747,169 @@ mod tests {
                 .unwrap()
                 .discovered
         );
+    }
+
+    #[test]
+    fn incomplete_deduction_submission_returns_typed_error() {
+        let mut engine = prepare_complete_case();
+
+        let error = engine
+            .submit_deduction(vec![DeductionAnswer {
+                slot_id: "time-marker".to_string(),
+                answer_id: "stopped-clock".to_string(),
+            }])
+            .unwrap_err();
+
+        assert_eq!(error.code, "incompleteDeduction");
+    }
+
+    #[test]
+    fn blank_deduction_answers_count_as_incomplete() {
+        let mut engine = prepare_complete_case();
+
+        let error = engine
+            .submit_deduction(vec![
+                DeductionAnswer {
+                    slot_id: "time-marker".to_string(),
+                    answer_id: "stopped-clock".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "locked-room".to_string(),
+                    answer_id: "".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "key-statement".to_string(),
+                    answer_id: "iris-tea".to_string(),
+                },
+            ])
+            .unwrap_err();
+
+        assert_eq!(error.code, "incompleteDeduction");
+    }
+
+    #[test]
+    fn duplicate_blank_deduction_answer_returns_typed_error() {
+        let mut engine = prepare_complete_case();
+
+        let error = engine
+            .submit_deduction(vec![
+                DeductionAnswer {
+                    slot_id: "time-marker".to_string(),
+                    answer_id: "stopped-clock".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "time-marker".to_string(),
+                    answer_id: "".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "locked-room".to_string(),
+                    answer_id: "inside-latch".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "key-statement".to_string(),
+                    answer_id: "iris-tea".to_string(),
+                },
+            ])
+            .unwrap_err();
+
+        assert_eq!(error.code, "duplicateSlotAnswer");
+    }
+
+    #[test]
+    fn wrong_complete_deduction_returns_feedback_without_solving_case() {
+        let mut engine = prepare_complete_case();
+
+        let feedback = engine
+            .submit_deduction(vec![
+                DeductionAnswer {
+                    slot_id: "time-marker".to_string(),
+                    answer_id: "inside-latch".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "locked-room".to_string(),
+                    answer_id: "stopped-clock".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "key-statement".to_string(),
+                    answer_id: "marlow-latch".to_string(),
+                },
+            ])
+            .unwrap();
+
+        assert!(feedback.complete);
+        assert!(!feedback.solved);
+        assert!(feedback.slot_results.iter().any(|result| !result.correct));
+        assert_eq!(engine.state().status, CaseStatus::Investigating);
+    }
+
+    #[test]
+    fn correct_complete_deduction_solves_case() {
+        let mut engine = prepare_complete_case();
+
+        let feedback = engine
+            .submit_deduction(vec![
+                DeductionAnswer {
+                    slot_id: "time-marker".to_string(),
+                    answer_id: "stopped-clock".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "locked-room".to_string(),
+                    answer_id: "inside-latch".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "key-statement".to_string(),
+                    answer_id: "iris-tea".to_string(),
+                },
+            ])
+            .unwrap();
+
+        assert!(feedback.complete);
+        assert!(feedback.solved);
+        assert!(feedback.slot_results.iter().all(|result| result.correct));
+        assert_eq!(engine.state().status, CaseStatus::Solved);
+    }
+
+    #[test]
+    fn solved_case_returns_existing_feedback_for_later_wrong_submission() {
+        let mut engine = prepare_complete_case();
+
+        let solved_feedback = engine
+            .submit_deduction(vec![
+                DeductionAnswer {
+                    slot_id: "time-marker".to_string(),
+                    answer_id: "stopped-clock".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "locked-room".to_string(),
+                    answer_id: "inside-latch".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "key-statement".to_string(),
+                    answer_id: "iris-tea".to_string(),
+                },
+            ])
+            .unwrap();
+
+        let later_feedback = engine
+            .submit_deduction(vec![
+                DeductionAnswer {
+                    slot_id: "time-marker".to_string(),
+                    answer_id: "inside-latch".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "locked-room".to_string(),
+                    answer_id: "stopped-clock".to_string(),
+                },
+                DeductionAnswer {
+                    slot_id: "key-statement".to_string(),
+                    answer_id: "marlow-latch".to_string(),
+                },
+            ])
+            .unwrap();
+
+        assert!(later_feedback.solved);
+        assert_eq!(later_feedback, solved_feedback);
+        assert_eq!(engine.state().status, CaseStatus::Solved);
+        assert_eq!(engine.state().last_feedback.unwrap(), solved_feedback);
     }
 }
