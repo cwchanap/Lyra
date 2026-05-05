@@ -259,7 +259,10 @@
         <h1>{caseState.title}</h1>
         <p>{caseState.summary}</p>
       </div>
-      <button class="secondary-action" type="button" onclick={startCase}>Reset</button>
+      <div class="header-actions">
+        <span class:solved={caseState.status === "Solved"}>{caseState.status}</span>
+        <button type="button" class="secondary-action" onclick={startCase}>Reset Case</button>
+      </div>
     </header>
 
     {#if errorMessage}
@@ -295,7 +298,11 @@
                 >
                   <span>{hotspot.label}</span>
                   <small>
-                    {hotspot.inspected ? "Inspected" : (hotspot.lockedReason ?? "Inspect")}
+                    {hotspot.locked
+                      ? (hotspot.lockedReason ?? "Locked until more evidence is found")
+                      : hotspot.inspected
+                        ? "Inspected"
+                        : "Inspect"}
                   </small>
                 </button>
               {/each}
@@ -341,7 +348,7 @@
                     <span>{topic.label}</span>
                     <small>
                       {topic.locked
-                        ? topic.lockedReason
+                        ? (topic.lockedReason ?? "Locked until more evidence is found")
                         : topic.discussed
                           ? "Discussed"
                           : "Ask"}
@@ -428,6 +435,9 @@
                       <option value={option.id}>{option.label}</option>
                     {/each}
                   </select>
+                  {#if slotOptions.length === 0}
+                    <small>No eligible clues available yet.</small>
+                  {/if}
                   {#if result}
                     <small>{result.guidance}</small>
                   {/if}
@@ -528,6 +538,27 @@
     margin: 0;
     max-width: 680px;
     color: #55514a;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .header-actions span {
+    border: 1px solid #c7d0da;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #536170;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+
+  .header-actions span.solved {
+    border-color: #15803d;
+    color: #15803d;
   }
 
   .eyebrow {
@@ -790,8 +821,13 @@
       display: block;
     }
 
+    .header-actions {
+      align-items: flex-start;
+      flex-direction: column;
+      margin-top: 14px;
+    }
+
     .secondary-action {
-      margin-top: 16px;
       width: 100%;
     }
 
