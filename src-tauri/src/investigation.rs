@@ -122,6 +122,15 @@ pub struct InvestigationError {
     pub message: String,
 }
 
+impl InvestigationError {
+    fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+        }
+    }
+}
+
 pub type InvestigationResult<T> = Result<T, InvestigationError>;
 
 #[derive(Clone, Debug)]
@@ -330,6 +339,84 @@ impl InvestigationEngine {
         self.state.clone()
     }
 
+    pub fn inspect_hotspot(&mut self, hotspot_id: &str) -> InvestigationResult<CaseState> {
+        let hotspot = self
+            .state
+            .scene
+            .hotspots
+            .iter_mut()
+            .find(|hotspot| hotspot.id == hotspot_id)
+            .ok_or_else(|| {
+                InvestigationError::new("unknownHotspot", "That scene detail does not exist.")
+            })?;
+
+        if hotspot.locked {
+            return Err(InvestigationError::new(
+                "lockedHotspot",
+                hotspot
+                    .locked_reason
+                    .clone()
+                    .unwrap_or_else(|| "That scene detail is locked.".to_string()),
+            ));
+        }
+
+        hotspot.inspected = true;
+
+        let reveals = self
+            .hotspot_reveals
+            .get(hotspot_id)
+            .cloned()
+            .unwrap_or_default();
+        self.apply_reveals(reveals);
+        self.refresh_candidates();
+
+        Ok(self.state.clone())
+    }
+
+    fn apply_reveals(&mut self, reveals: Vec<Reveal>) {
+        for reveal in reveals {
+            match reveal {
+                Reveal::Evidence(id) => {
+                    if let Some(evidence) =
+                        self.state.evidence.iter_mut().find(|item| item.id == id)
+                    {
+                        evidence.collected = true;
+                    }
+                }
+                Reveal::Statement(id) => {
+                    if let Some(statement) = self
+                        .state
+                        .statements
+                        .iter_mut()
+                        .find(|statement| statement.id == id)
+                    {
+                        statement.discovered = true;
+                    }
+                }
+                Reveal::Topic {
+                    character_id,
+                    topic_id,
+                } => {
+                    if let Some(topic) = self
+                        .state
+                        .characters
+                        .iter_mut()
+                        .find(|character| character.id == character_id)
+                        .and_then(|character| {
+                            character
+                                .topics
+                                .iter_mut()
+                                .find(|topic| topic.id == topic_id)
+                        })
+                    {
+                        topic.locked = false;
+                        topic.locked_reason = None;
+                    }
+                }
+            }
+        }
+    }
+
     fn refresh_candidates(&mut self) {
         let candidate_answer_ids: Vec<String> = self
             .state
@@ -376,5 +463,55 @@ mod tests {
             .statements
             .iter()
             .all(|statement| !statement.discovered));
+    }
+
+    #[test]
+    fn inspecting_hotspot_collects_evidence_and_unlocks_topic() {
+        let mut engine = InvestigationEngine::new_demo_case();
+
+        let state = engine.inspect_hotspot("desk").expect("desk should inspect");
+
+        assert!(
+            state
+                .scene
+                .hotspots
+                .iter()
+                .find(|hotspot| hotspot.id == "desk")
+                .unwrap()
+                .inspected
+        );
+        assert!(
+            state
+                .evidence
+                .iter()
+                .find(|item| item.id == "ink-smear")
+                .unwrap()
+                .collected
+        );
+        assert!(
+            !state
+                .characters
+                .iter()
+                .find(|character| character.id == "iris")
+                .unwrap()
+                .topics
+                .iter()
+                .find(|topic| topic.id == "ink")
+                .unwrap()
+                .locked
+        );
+        assert!(state
+            .deduction_slots
+            .iter()
+            .all(|slot| slot.candidate_answer_ids.contains(&"ink-smear".to_string())));
+    }
+
+    #[test]
+    fn inspecting_unknown_hotspot_returns_typed_error() {
+        let mut engine = InvestigationEngine::new_demo_case();
+
+        let error = engine.inspect_hotspot("missing").unwrap_err();
+
+        assert_eq!(error.code, "unknownHotspot");
     }
 }
