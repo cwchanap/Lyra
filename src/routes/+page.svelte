@@ -117,6 +117,16 @@
     caseState?.statements.filter((statement) => statement.discovered) ?? [],
   );
   let answerOptions = $derived([...collectedEvidence, ...discoveredStatements]);
+  const selectedCharacter = $derived(
+    caseState?.characters.find((character) => character.id === selectedCharacterId) ??
+      caseState?.characters[0] ??
+      null,
+  );
+  const selectedEvidence = $derived(
+    collectedEvidence.find((item) => item.id === selectedEvidenceId) ??
+      collectedEvidence[0] ??
+      null,
+  );
 
   onMount(() => {
     void startCase();
@@ -162,6 +172,23 @@
 
     loading = false;
   }
+
+  async function inspectHotspot(hotspotId: string) {
+    const state = await runCommand<CaseState>("inspect_hotspot", { hotspotId });
+    if (state) {
+      caseState = state;
+    }
+  }
+
+  async function interviewCharacter(characterId: string, topicId: string) {
+    const state = await runCommand<CaseState>("interview_character", {
+      characterId,
+      topicId,
+    });
+    if (state) {
+      caseState = state;
+    }
+  }
 </script>
 
 {#if loading}
@@ -198,18 +225,128 @@
     </nav>
 
     <section class="workbench">
-      <p>Workbench wiring complete. Tab content comes next.</p>
-      <p class="status-line">
-        {caseState.status} · {caseState.scene.title} · {collectedEvidence.length}
-        evidence · {discoveredStatements.length} statements · {answerOptions.length}
-        answer options · {Object.keys(draftAnswers).length} draft answers
-        {#if selectedCharacterId}
-          · interviewing {selectedCharacterId}
-        {/if}
-        {#if selectedEvidenceId}
-          · reviewing {selectedEvidenceId}
-        {/if}
-      </p>
+      {#if activeTab === "scene"}
+        <div class="panel-grid">
+          <section class="main-panel" aria-labelledby="scene-title">
+            <h2 id="scene-title">{caseState.scene.title}</h2>
+            <p>{caseState.scene.description}</p>
+            <div class="hotspot-grid">
+              {#each caseState.scene.hotspots as hotspot}
+                <button
+                  type="button"
+                  class="hotspot"
+                  class:complete={hotspot.inspected}
+                  disabled={hotspot.locked}
+                  onclick={() => inspectHotspot(hotspot.id)}
+                >
+                  <span>{hotspot.label}</span>
+                  <small>
+                    {hotspot.inspected ? "Inspected" : (hotspot.lockedReason ?? "Inspect")}
+                  </small>
+                </button>
+              {/each}
+            </div>
+          </section>
+
+          <aside class="side-panel">
+            <h3>Collected</h3>
+            <p>{collectedEvidence.length} evidence items</p>
+            <p>{discoveredStatements.length} statements</p>
+          </aside>
+        </div>
+      {:else if activeTab === "people"}
+        <div class="panel-grid detail-grid">
+          <section class="list-panel" aria-label="People">
+            {#each caseState.characters as character}
+              <button
+                type="button"
+                class="list-row"
+                class:active={selectedCharacter?.id === character.id}
+                onclick={() => (selectedCharacterId = character.id)}
+              >
+                <strong>{character.name}</strong>
+                <span>{character.role}</span>
+              </button>
+            {/each}
+          </section>
+
+          {#if selectedCharacter}
+            <section class="main-panel">
+              <h2>{selectedCharacter.name}</h2>
+              <p class="muted">{selectedCharacter.role}</p>
+              <p>{selectedCharacter.profile}</p>
+              <div class="topic-list">
+                {#each selectedCharacter.topics as topic}
+                  <button
+                    type="button"
+                    class="topic"
+                    class:complete={topic.discussed}
+                    disabled={topic.locked}
+                    onclick={() => interviewCharacter(selectedCharacter.id, topic.id)}
+                  >
+                    <span>{topic.label}</span>
+                    <small>
+                      {topic.locked
+                        ? topic.lockedReason
+                        : topic.discussed
+                          ? "Discussed"
+                          : "Ask"}
+                    </small>
+                  </button>
+                  {#if topic.discussed}
+                    <p class="response">{topic.response}</p>
+                  {/if}
+                {/each}
+              </div>
+            </section>
+          {/if}
+        </div>
+      {:else if activeTab === "evidence"}
+        <div class="panel-grid detail-grid">
+          <section class="list-panel" aria-label="Evidence">
+            {#each collectedEvidence as item}
+              <button
+                type="button"
+                class="list-row"
+                class:active={selectedEvidence?.id === item.id}
+                onclick={() => (selectedEvidenceId = item.id)}
+              >
+                <strong>{item.label}</strong>
+                <span>{item.description}</span>
+              </button>
+            {:else}
+              <p class="muted">No evidence collected yet.</p>
+            {/each}
+          </section>
+
+          <section class="main-panel">
+            {#if selectedEvidence}
+              <h2>{selectedEvidence.label}</h2>
+              <p>{selectedEvidence.description}</p>
+              <p class="response">{selectedEvidence.detail}</p>
+            {:else}
+              <h2>Evidence</h2>
+              <p class="muted">Inspect the scene to collect evidence.</p>
+            {/if}
+
+            <h3>Known Statements</h3>
+            <div class="statement-list">
+              {#each discoveredStatements as statement}
+                <p><strong>{statement.speaker}:</strong> {statement.text}</p>
+              {:else}
+                <p class="muted">No statements discovered yet.</p>
+              {/each}
+            </div>
+          </section>
+        </div>
+      {:else if activeTab === "deduction"}
+        <div class="panel-grid">
+          <section class="main-panel">
+            <h2>Deduction Board</h2>
+            <p class="muted">Collect clues before building the theory.</p>
+          </section>
+        </div>
+      {/if}
     </section>
   </main>
 {:else}
@@ -335,6 +472,111 @@
     margin: 0;
   }
 
+  .panel-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 16px;
+  }
+
+  .detail-grid {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .main-panel,
+  .side-panel,
+  .list-panel {
+    min-width: 0;
+  }
+
+  .main-panel h2,
+  .main-panel h3,
+  .side-panel h3 {
+    margin: 0 0 8px;
+  }
+
+  .main-panel h3 {
+    margin-top: 20px;
+  }
+
+  .main-panel p,
+  .side-panel p {
+    color: #536170;
+  }
+
+  .hotspot-grid,
+  .topic-list,
+  .statement-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .hotspot,
+  .topic,
+  .list-row {
+    width: 100%;
+    border: 1px solid #c7d0da;
+    border-radius: 7px;
+    padding: 0.85rem;
+    color: #1d2430;
+    background: #f8fafc;
+    text-align: left;
+  }
+
+  .hotspot,
+  .topic {
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+  }
+
+  .hotspot.complete,
+  .topic.complete {
+    border-color: #15803d;
+    background: #f0fdf4;
+  }
+
+  .hotspot:disabled,
+  .topic:disabled {
+    cursor: not-allowed;
+    opacity: 0.72;
+  }
+
+  .list-panel {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+  }
+
+  .list-row {
+    display: grid;
+    gap: 4px;
+  }
+
+  .list-row.active {
+    border-color: #7c2d12;
+    background: #fff7ed;
+  }
+
+  .hotspot:not(:disabled),
+  .topic:not(:disabled),
+  .list-row {
+    cursor: pointer;
+  }
+
+  .list-row span,
+  .hotspot small,
+  .topic small,
+  .muted {
+    color: #64748b;
+  }
+
+  .response {
+    border-left: 3px solid #7c2d12;
+    padding: 0.75rem 0.9rem;
+    background: #fff7ed;
+  }
+
   .status-line {
     margin-top: 12px;
     color: #68625a;
@@ -376,6 +618,10 @@
 
     .workbench {
       padding: 18px;
+    }
+
+    .panel-grid {
+      grid-template-columns: 1fr;
     }
   }
 </style>
