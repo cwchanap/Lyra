@@ -88,6 +88,12 @@
     guidance: string;
   };
 
+  type AnswerOption = {
+    id: string;
+    label: string;
+    description: string;
+  };
+
   type InvestigationError = {
     code: string;
     message: string;
@@ -107,6 +113,7 @@
   let selectedEvidenceId = $state<string | null>(null);
   let selectedCharacterId = $state<string | null>(null);
   let draftAnswers = $state<Record<string, string>>({});
+  let lastSubmittedAnswers = $state<Record<string, string>>({});
   let errorMessage = $state<string | null>(null);
   let loading = $state(true);
 
@@ -116,7 +123,18 @@
   let discoveredStatements = $derived(
     caseState?.statements.filter((statement) => statement.discovered) ?? [],
   );
-  let answerOptions = $derived([...collectedEvidence, ...discoveredStatements]);
+  let answerOptions = $derived<AnswerOption[]>([
+    ...collectedEvidence.map((evidence) => ({
+      id: evidence.id,
+      label: evidence.label,
+      description: evidence.description,
+    })),
+    ...discoveredStatements.map((statement) => ({
+      id: statement.id,
+      label: `${statement.speaker}: ${statement.text}`,
+      description: "Known statement",
+    })),
+  ]);
   const selectedCharacter = $derived(
     caseState?.characters.find((character) => character.id === selectedCharacterId) ??
       caseState?.characters[0] ??
@@ -166,6 +184,7 @@
     if (nextCaseState) {
       caseState = nextCaseState;
       draftAnswers = {};
+      lastSubmittedAnswers = {};
       selectedEvidenceId = null;
       selectedCharacterId = nextCaseState.characters[0]?.id ?? null;
     }
@@ -188,6 +207,41 @@
     if (state) {
       caseState = state;
     }
+  }
+
+  async function submitDeduction() {
+    if (!caseState) return;
+
+    const answers: DeductionAnswer[] = caseState.deductionSlots.map((slot) => ({
+      slotId: slot.id,
+      answerId: draftAnswers[slot.id] ?? "",
+    }));
+    const submittedAnswers = Object.fromEntries(
+      answers.map((answer) => [answer.slotId, answer.answerId]),
+    );
+
+    const feedback = await runCommand<DeductionFeedback>("submit_deduction", { answers });
+    if (feedback) {
+      lastSubmittedAnswers = submittedAnswers;
+
+      const refreshedCaseState = await runCommand<CaseState>("get_case_state");
+      caseState =
+        refreshedCaseState ?? {
+          ...caseState,
+          status: feedback.solved ? "Solved" : caseState.status,
+          lastFeedback: feedback,
+        };
+    }
+  }
+
+  function feedbackForSlot(slotId: string): DeductionSlotResult | null {
+    return (
+      caseState?.lastFeedback?.slotResults.find((result) => result.slotId === slotId) ?? null
+    );
+  }
+
+  function optionLabel(answerId: string): string {
+    return answerOptions.find((option) => option.id === answerId)?.label ?? "Unknown clue";
   }
 </script>
 
@@ -341,10 +395,76 @@
         </div>
       {:else if activeTab === "deduction"}
         <div class="panel-grid">
-          <section class="main-panel">
-            <h2>Deduction Board</h2>
-            <p class="muted">Collect clues before building the theory.</p>
+          <section class="main-panel" aria-labelledby="deduction-title">
+            <h2 id="deduction-title">Deduction Board</h2>
+            <p class="muted">
+              Match each question to collected evidence or a known statement, then submit
+              the theory for review.
+            </p>
+
+            <div class="deduction-list">
+              {#each caseState.deductionSlots as slot}
+                {@const result = feedbackForSlot(slot.id)}
+                {@const slotOptions = answerOptions.filter((option) =>
+                  slot.candidateAnswerIds.includes(option.id),
+                )}
+                <label
+                  class="deduction-slot"
+                  class:correct={Boolean(result?.correct)}
+                  class:incorrect={Boolean(result && !result.correct)}
+                >
+                  <span>{slot.prompt}</span>
+                  <select
+                    value={draftAnswers[slot.id] ?? ""}
+                    onchange={(event) => {
+                      draftAnswers = {
+                        ...draftAnswers,
+                        [slot.id]: event.currentTarget.value,
+                      };
+                    }}
+                  >
+                    <option value="">Select a clue</option>
+                    {#each slotOptions as option}
+                      <option value={option.id}>{option.label}</option>
+                    {/each}
+                  </select>
+                  {#if result}
+                    <small>{result.guidance}</small>
+                  {/if}
+                </label>
+              {/each}
+            </div>
+
+            <button class="primary-action" type="button" onclick={submitDeduction}>
+              Submit Theory
+            </button>
+
+            {#if caseState.lastFeedback}
+              <section class="last-theory" aria-label="Last Theory">
+                <h3>Last Theory</h3>
+                <p>{caseState.lastFeedback.message}</p>
+                <div class="statement-list">
+                  {#each caseState.deductionSlots as slot}
+                    <p>
+                      <strong>{slot.prompt}</strong>
+                      {optionLabel(lastSubmittedAnswers[slot.id] ?? "")}
+                    </p>
+                  {/each}
+                </div>
+              </section>
+            {/if}
           </section>
+
+          <aside class="side-panel">
+            <h3>Available Clues</h3>
+            <div class="statement-list">
+              {#each answerOptions as option}
+                <p><strong>{option.label}</strong> <small>{option.description}</small></p>
+              {:else}
+                <p class="muted">No clues available for deduction yet.</p>
+              {/each}
+            </div>
+          </aside>
         </div>
       {/if}
     </section>
@@ -575,6 +695,74 @@
     border-left: 3px solid #7c2d12;
     padding: 0.75rem 0.9rem;
     background: #fff7ed;
+  }
+
+  .deduction-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .deduction-slot {
+    display: grid;
+    gap: 8px;
+    border: 1px solid #c7d0da;
+    border-radius: 7px;
+    padding: 0.9rem;
+    background: #f8fafc;
+  }
+
+  .deduction-slot.correct {
+    border-color: #15803d;
+    background: #f0fdf4;
+  }
+
+  .deduction-slot.incorrect {
+    border-color: #b45309;
+    background: #fffbeb;
+  }
+
+  .deduction-slot span {
+    color: #1d2430;
+    font-weight: 700;
+  }
+
+  .deduction-slot select {
+    min-height: 40px;
+    width: 100%;
+    border: 1px solid #aab6c4;
+    border-radius: 6px;
+    padding: 0 10px;
+    color: #1d2430;
+    background: #fff;
+    font: inherit;
+  }
+
+  .deduction-slot small,
+  .side-panel small {
+    display: block;
+    color: #64748b;
+  }
+
+  .primary-action {
+    min-height: 42px;
+    margin-top: 16px;
+    border: 1px solid #6f5132;
+    border-radius: 6px;
+    padding: 0 16px;
+    color: #fffdf8;
+    background: #6f5132;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .primary-action:hover {
+    background: #5d4227;
+  }
+
+  .last-theory {
+    margin-top: 20px;
   }
 
   .status-line {
