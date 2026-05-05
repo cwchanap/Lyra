@@ -373,6 +373,52 @@ impl InvestigationEngine {
         Ok(self.state.clone())
     }
 
+    pub fn interview_character(
+        &mut self,
+        character_id: &str,
+        topic_id: &str,
+    ) -> InvestigationResult<CaseState> {
+        let character = self
+            .state
+            .characters
+            .iter_mut()
+            .find(|character| character.id == character_id)
+            .ok_or_else(|| {
+                InvestigationError::new("unknownCharacter", "That person does not exist.")
+            })?;
+
+        let topic = character
+            .topics
+            .iter_mut()
+            .find(|topic| topic.id == topic_id)
+            .ok_or_else(|| {
+                InvestigationError::new("unknownTopic", "That interview topic does not exist.")
+            })?;
+
+        if topic.locked {
+            return Err(InvestigationError::new(
+                "lockedTopic",
+                topic
+                    .locked_reason
+                    .as_deref()
+                    .unwrap_or("That interview topic is locked."),
+            ));
+        }
+
+        topic.discussed = true;
+
+        if let Some(reveals) = self
+            .topic_reveals
+            .get(&(character_id.to_string(), topic_id.to_string()))
+            .cloned()
+        {
+            self.apply_reveals(reveals);
+        }
+        self.refresh_candidates();
+
+        Ok(self.state())
+    }
+
     fn apply_reveals(&mut self, reveals: Vec<Reveal>) {
         for reveal in reveals {
             match reveal {
@@ -513,5 +559,61 @@ mod tests {
         let error = engine.inspect_hotspot("missing").unwrap_err();
 
         assert_eq!(error.code, "unknownHotspot");
+    }
+
+    #[test]
+    fn interviewing_available_topic_reveals_statement() {
+        let mut engine = InvestigationEngine::new_demo_case();
+
+        let state = engine
+            .interview_character("iris", "timeline")
+            .expect("timeline should be available");
+
+        assert!(
+            state
+                .characters
+                .iter()
+                .find(|character| character.id == "iris")
+                .unwrap()
+                .topics
+                .iter()
+                .find(|topic| topic.id == "timeline")
+                .unwrap()
+                .discussed
+        );
+        assert!(
+            state
+                .statements
+                .iter()
+                .find(|statement| statement.id == "iris-tea")
+                .unwrap()
+                .discovered
+        );
+    }
+
+    #[test]
+    fn interviewing_locked_topic_returns_typed_error() {
+        let mut engine = InvestigationEngine::new_demo_case();
+
+        let error = engine.interview_character("marlow", "door").unwrap_err();
+
+        assert_eq!(error.code, "lockedTopic");
+    }
+
+    #[test]
+    fn unlocked_interview_topic_can_be_discussed() {
+        let mut engine = InvestigationEngine::new_demo_case();
+        engine.inspect_hotspot("balcony").unwrap();
+
+        let state = engine.interview_character("marlow", "door").unwrap();
+
+        assert!(
+            state
+                .statements
+                .iter()
+                .find(|statement| statement.id == "marlow-latch")
+                .unwrap()
+                .discovered
+        );
     }
 }
