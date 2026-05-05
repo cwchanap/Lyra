@@ -2,7 +2,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
 
-  type CaseStatus = "Investigating" | "Solved";
+  type CaseStatus = "investigating" | "solved";
 
   type CaseState = {
     id: string;
@@ -228,16 +228,25 @@
       caseState =
         refreshedCaseState ?? {
           ...caseState,
-          status: feedback.solved ? "Solved" : caseState.status,
+          status: feedback.solved ? "solved" : caseState.status,
           lastFeedback: feedback,
         };
     }
   }
 
   function feedbackForSlot(slotId: string): DeductionSlotResult | null {
+    const submittedAnswer = lastSubmittedAnswers[slotId] ?? "";
+    if (!submittedAnswer || (draftAnswers[slotId] ?? "") !== submittedAnswer) {
+      return null;
+    }
+
     return (
       caseState?.lastFeedback?.slotResults.find((result) => result.slotId === slotId) ?? null
     );
+  }
+
+  function statusLabel(status: CaseStatus): string {
+    return status === "solved" ? "Solved" : "Investigating";
   }
 
   function optionLabel(answerId: string): string {
@@ -260,7 +269,7 @@
         <p>{caseState.summary}</p>
       </div>
       <div class="header-actions">
-        <span class:solved={caseState.status === "Solved"}>{caseState.status}</span>
+        <span class:solved={caseState.status === "solved"}>{statusLabel(caseState.status)}</span>
         <button type="button" class="secondary-action" onclick={startCase}>Reset Case</button>
       </div>
     </header>
