@@ -99,7 +99,8 @@ Field labels are Traditional Chinese; reserved keyword values are English (`lock
   - `#### 取得時` (required) — dialogue that plays when this statement is first added to the log.
   - `#### 重新檢視` (optional) — dialogue that plays when the player re-reads it from the log.
 
-### 進入 / 退出 (H2)
+### Entry / Exit (H2)
+- **Headings:** `## 進入` (intro) and `## 退出` (outro).
 - **No metadata.**
 - **Body:** linear dialogue (intro plays on scene load; outro plays when the scene closes / Part advances).
 
@@ -107,7 +108,7 @@ Field labels are Traditional Chinese; reserved keyword values are English (`lock
 
 All reveals are automatic chains — there is no manual "present evidence" action in investigation scenes (that's interrogation-scene territory).
 
-### `揭露:` — declared on the source
+### Reveal (`揭露:`) — declared on the source
 
 A list of things this trigger collects/unlocks when the block completes (hotspot inspected, topic discussed, sub-location entered).
 
@@ -125,7 +126,7 @@ A list of things this trigger collects/unlocks when the block completes (hotspot
 
 **ID matching rule (strict):** the `<id>` in every target form must be the **exact anchor ID** declared on the target's heading via `{#id}`. If a Character heading is `### Character: 目擊者 田中誠 {#witness_tanaka}`, the reveal target form is `topic:witness_tanaka@<topic-id>` — never an abbreviation like `topic:witness@...`. The parser does string-match, not fuzzy-match.
 
-### `解鎖條件:` — declared on the locked target
+### Unlock Condition (`解鎖條件:`) — declared on the locked target
 
 Only on blocks with `狀態: locked`. A boolean expression that, when satisfied, flips the target to unlocked.
 
@@ -194,7 +195,7 @@ When asked to write an `investigation_scene_<N>.md`:
    - List characters per sub-location with their topics
    - List evidence and statements with their IDs
    - Draw the unlock graph mentally — does every locked block have a path?
-5. **Write the file in canonical order** (進入 → Sub-locations with their nested H3s → Evidence Manifest → Statement Manifest → 退出).
+5. **Write the file in canonical order** (`## 進入` → Sub-locations with their nested H3s → Evidence Manifest → Statement Manifest → `## 退出`).
 6. **Self-check before reporting done:**
    - Every dialogue line follows the base dialogue skill's format (≤100 chars, bracketed actions, etc.)
    - Every locked block has either a `解鎖條件` or an inbound `揭露`
