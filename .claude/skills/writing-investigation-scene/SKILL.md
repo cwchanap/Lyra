@@ -123,6 +123,8 @@ A list of things this trigger collects/unlocks when the block completes (hotspot
 | `hotspot:<id>` | Unlocks a previously locked hotspot in the same scene. Silent. |
 | `sublocation:<id>` | Unlocks a previously locked sub-location. Silent. |
 
+**ID matching rule (strict):** the `<id>` in every target form must be the **exact anchor ID** declared on the target's heading via `{#id}`. If a Character heading is `### Character: 目擊者 田中誠 {#witness_tanaka}`, the reveal target form is `topic:witness_tanaka@<topic-id>` — never an abbreviation like `topic:witness@...`. The parser does string-match, not fuzzy-match.
+
 ### `解鎖條件:` — declared on the locked target
 
 Only on blocks with `狀態: locked`. A boolean expression that, when satisfied, flips the target to unlocked.
