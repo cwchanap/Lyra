@@ -58,7 +58,8 @@ Four layers, each with a single responsibility. The pipeline is one-directional:
 │  - Emits one JSON per scene + one chapters.json index.         │
 │  - Fails the build on schema or reference errors.              │
 │                                                                │
-│  static/scenes/                   ← generated, in .gitignore   │
+│  src-tauri/resources/scenes/      ← generated, gitignored,     │
+│                                     bundled as Tauri resources │
 │    chapters.json                  ← chapter order + scene refs │
 │    chapter_<N>/scene_<K>.json     ← one per scene              │
 └─────────────────────────┬──────────────────────────────────────┘
@@ -181,16 +182,26 @@ scripts/
   __fixtures__/            ← golden inputs for tests + Rust integration test
 
 static/stories_plan/...    ← authored source (existing)
-static/scenes/...          ← generated, gitignored, read at runtime
+src-tauri/resources/scenes/...   ← generated, gitignored, bundled as Tauri resources
 ```
 
 Two `package.json` scripts:
 - `scenes:compile` — one-shot. Wired into `tauri.conf.json`'s `beforeDevCommand` and `beforeBuildCommand`.
 - `scenes:watch` — chokidar-watches `static/stories_plan/**/*.md`, recompiles affected files on save.
 
+### 3a.1. Scene asset delivery (hard invariant)
+
+Generated scene JSON is **bundled as Tauri resources**, not served by Vite. This is the only path that works identically in dev and packaged builds; it also keeps the "engine owns the data" invariant intact (the frontend never fetches scene JSON over HTTP).
+
+- **Output directory:** `src-tauri/resources/scenes/` (a sibling of `src-tauri/src/`, gitignored).
+- **`tauri.conf.json`:** `bundle.resources` must include `"resources/scenes/**/*"`. The compile script's first action on every run is to create the directory if missing; CI fails the build if `bundle.resources` is missing this entry (asserted by a one-line test in `compile-scenes.ts`).
+- **Runtime resolution (Rust):** the loader uses `app.path().resolve("scenes/chapters.json", BaseDirectory::Resource)?` to obtain the absolute path, then reads via `tokio::fs::read`. Same code path in dev and prod — Tauri's `BaseDirectory::Resource` resolves to the dev resource dir during `tauri dev` and to the bundled resource dir in packaged builds.
+- **Frontend:** never reads scene JSON directly. All access is via Tauri commands.
+- **Acceptance gate:** step 7 of the implementation order adds a packaged-build smoke test — `bun run tauri build`, launch the produced bundle on the host platform, verify `start_game` returns a valid `GameStateView` (not a `sceneLoadFailed` error). This is non-negotiable; the design is wrong if the bundle can't find scenes.
+
 ### 3b. JSON output shape
 
-**`static/scenes/chapters.json`** — `id` is the source directory name; `title` and `summary` come from the chapter manifest's H1 and `**Summary:**` field. `file` paths are relative to `static/scenes/`.
+**`src-tauri/resources/scenes/chapters.json`** — `id` is the source directory name; `title` and `summary` come from the chapter manifest's H1 and `**Summary:**` field. `file` paths are relative to the `scenes/` resource root.
 
 ```json
 {
@@ -332,7 +343,7 @@ A single run of `compile-scenes.ts` processes the whole `static/stories_plan/` t
 1. **Discover.** Scan `static/stories_plan/chapter_*/` directories, sorted by directory name. Each directory's `chapter.md` is required.
 2. **Parse.** Per-file AST for every `.md` referenced by any chapter manifest. Chapter ID is derived from the directory name (e.g., `chapter_1`); the H1 title and `Summary:` come from `chapter.md`.
 3. **Resolve & validate** across all files — builds a single game-global registry of evidence and statement IDs so cross-chapter collisions can be detected.
-4. **Emit** JSON files under `static/scenes/` mirroring the source directory structure, plus the top-level `chapters.json` index.
+4. **Emit** JSON files under `src-tauri/resources/scenes/` mirroring the source directory structure, plus the top-level `chapters.json` index.
 
 ### 3d. Validation (compile-time errors)
 
@@ -340,17 +351,19 @@ Per-file (extends the writer-skill's existing parser-guarantee list):
 - H1 title present; exactly one.
 - First sub-location is `Status: unlocked`.
 - Every sub-location has one `[場景：...]` tag.
-- Every reveal target ID resolves to a declared anchor (same scene for `topic:` / `hotspot:` / `sublocation:`; same or any prior-chapter scene for `evidence:` / `statement:`).
-- Every unlock predicate ID resolves similarly.
+- **Every `Reveals:` target ID resolves to a declaration in the same scene file** — for *all* target kinds (`evidence:`, `statement:`, `topic:`, `hotspot:`, `sublocation:`). Cross-scene reveal targets are a validation error. Rationale: a reveal newly *adds* an item or unlocks a block; both operations require the definition (dialogue body, manifest entry) to be physically present in this scene's JSON. A later chapter cannot "newly collect" an item already collected in an earlier one.
+- **Every `Unlock:` predicate ID may reference either the same scene or any prior chapter** for the `evidence_collected` and `statement_acquired` predicates (these are read-only inventory checks). The `topic_discussed` and `hotspot_investigated` predicates remain strictly scene-local — they reference per-scene runtime state, which does not persist across scenes.
 - Every locked block has at least one unlock path; no circular chains.
 - No block has both an inbound `Reveals` and a self `Unlock`.
 - Every Evidence Manifest entry has `#### On Collect`; every Statement entry has `#### On Acquire`.
 
 Cross-file (built from the single compile run's global registry):
 - Every chapter manifest references files that exist in the same chapter directory with valid scene-type prefixes.
-- Evidence and statement IDs are unique across the entire game (compile error on collision; both source locations reported).
-- An `Unlock:` predicate may reference an evidence/statement ID declared in any earlier chapter (by `chapter_<N>` ordering); references to IDs declared in a *later* chapter fail validation, to enforce one-way payoff.
+- Evidence and statement IDs are unique across the entire game (compile error on collision; both source locations reported). This uniqueness is what lets a later-chapter `Unlock:` predicate reference an earlier-chapter ID unambiguously.
+- An `Unlock:` predicate referencing an evidence/statement ID declared in a *later* chapter (by `chapter_<N>` ordering) fails validation — enforces one-way foreshadow payoff and prevents temporal-paradox unlock chains.
 - Hotspot/topic/sub-location IDs are scene-local — no global check.
+
+**Engine implication of the Reveals-is-scene-local rule:** `EvidenceDef` and `StatementDef` stay on `InvestigationSceneState`; no game-global definition registry is needed. The `Inventory` holds *snapshots* of each collected item's def (name, description, details, `onReexamine`), cloned in at collection time — see §4b. This is how reexamine still works for a chapter-1 clue while playing chapter 5: the inventory record carries everything it needs, the source scene is free to unload.
 
 Warnings (don't fail the build):
 - Dialogue line over 100 Chinese characters.
@@ -376,7 +389,7 @@ src-tauri/src/
     schema.rs             ← serde types matching compile-script JSON 1:1
     unlock.rs             ← UnlockExpr evaluator + "auto" mode resolution
     reveals.rs            ← RevealTarget application; chained-queue construction
-    loader.rs             ← read static/scenes/chapters.json + scene JSONs
+    loader.rs             ← read src-tauri/resources/scenes/** via BaseDirectory::Resource
     view.rs               ← GameStateView (camelCase snapshot for FE)
     error.rs              ← GameError (renamed from InvestigationError)
 ```
@@ -397,8 +410,34 @@ pub struct GameState {
 }
 
 pub struct Inventory {
-    evidence: HashMap<String, EvidenceRecord>,
+    evidence: HashMap<String, EvidenceRecord>,    // see note below
     statements: HashMap<String, StatementRecord>,
+}
+
+// Inventory records are self-contained snapshots. When a reveal collects
+// evidence or acquires a statement, the engine clones the relevant
+// EvidenceDef / StatementDef from the source InvestigationSceneState into
+// the record. The inventory then carries name, description, details, and
+// onReexamine dialogue forward — so reexamine still works after the
+// source scene is unloaded (e.g., reexamining a chapter-1 clue while in
+// chapter 5). The source scene's defs remain scene-local; the inventory
+// holds a frozen copy taken at collection time.
+pub struct EvidenceRecord {
+    id: String,
+    name: String,
+    description: String,
+    details: String,
+    on_reexamine: Option<Vec<DialogueItem>>,
+    collected_in_chapter_id: String,
+    collected_in_scene_id: String,
+}
+pub struct StatementRecord {
+    id: String,
+    speaker: String,
+    content: String,
+    on_reexamine: Option<Vec<DialogueItem>>,
+    acquired_in_chapter_id: String,
+    acquired_in_scene_id: String,
 }
 
 pub struct ChapterState {
@@ -451,10 +490,13 @@ pub enum Mode {
         scene_tag: Option<String>,   // last sceneTag seen — for backdrop
     },
     Explore { sublocation_id: String },
-    SceneTransition,
     GameComplete,
 }
 ```
+
+No `SceneTransition` variant. Scene loading is fully internal to `advance_dialogue` — when an outro queue empties, the engine advances the scene index, loads the next scene, primes its intro queue (if any), and returns a `Dialogue` (or `Explore`) snapshot in the **same call**. The frontend never lands on a "transitional" mode it can't exit.
+
+A scene change is visible to the FE as `chapter.id` or `scene.id` differing between consecutive snapshots — sufficient for a CSS fade animation if desired. The chapter→chapter transition is the same: when the last scene of the last chapter advances, the engine returns `GameComplete`; the FE never needs an explicit "acknowledge transition" command.
 
 ```
                     ┌──────────────┐
@@ -474,12 +516,17 @@ pub enum Mode {
                        ▼
                   Dialogue plays outro
                        │
-                       │ outro queue empties
+                       │ outro queue empties → engine internally:
+                       │   advance scene_idx, load next scene,
+                       │   prime its intro queue
                        ▼
-                  SceneTransition → next scene in manifest → ...
-                                                            │
-                                                            ▼
-                                                       GameComplete
+                  (same advance_dialogue call returns Dialogue
+                   for the new scene's intro, or Explore if no intro)
+                       │
+                       │ ... eventually last scene of last chapter
+                       │     completes its outro
+                       ▼
+                  GameComplete
 ```
 
 ### 4d. Reveal/queue construction
@@ -631,8 +678,6 @@ The frontend reads `gameState.mode.type` and renders the matching component. It 
                onInspect={inspectHotspot}
                onInterview={interviewTopic}
                onEnterSublocation={enterSublocation} />
-{:else if gameState.mode.type === "sceneTransition"}
-  <SceneTransition />
 {:else if gameState.mode.type === "gameComplete"}
   <GameComplete />
 {/if}
@@ -735,7 +780,7 @@ Visual register beyond structural decisions is deferred to the `frontend-design`
 | `state.rs` | Inventory add/dedup; chapter-state advance; cross-scene inventory persistence. |
 | `loader.rs` | Round-trip a fixture JSON via serde; missing-file error path. |
 
-One integration test under `src-tauri/tests/full_playthrough.rs` loads a fixture chapter and walks the full mode machine: `start_game` → intro → `inspect_hotspot` → chained queue → drain → outro → `SceneTransition` → next scene loaded.
+One integration test under `src-tauri/tests/full_playthrough.rs` loads a fixture chapter and walks the full mode machine: `start_game` → intro → `inspect_hotspot` → chained queue → drain → outro → assert next scene loaded inside the same `advance_dialogue` return (no transient transition mode) → ... → `GameComplete`.
 
 **Frontend:** no test runner today. Rely on `bun run check` for type safety and manual verification. Adding Playwright/Vitest is deferred.
 
@@ -800,7 +845,7 @@ Skills first → parser → engine → frontend → port real drafts. Each phase
    - Integration test under `src-tauri/tests/full_playthrough.rs` lights up at the end.
 5. **Frontend rewrite.** Types → game-client → components → replace `+page.svelte`. `bun run check` greenlit. Manual playthrough of the fixture chapter via `bun run tauri dev`.
 6. **Port the existing drafts** (`chapter_1/scene_0.md`, `chapter_1/investigation_scene_1.md`) to the finalized schema. Author `chapter_1/chapter.md`. Verify full chapter-1 playthrough.
-7. **Tauri capability + bundling.** Ensure `static/scenes/` is shipped with the bundle (`tauri.conf.json` `bundle.resources` or via Vite static handling). Add filesystem read capability if needed. Run `bun run tauri build` and verify the bundle plays.
+7. **Tauri bundling acceptance gate.** Ensure `tauri.conf.json` `bundle.resources` includes `"resources/scenes/**/*"`. No new filesystem capability is needed (the loader uses `BaseDirectory::Resource`, which is always permitted to the app). Run `bun run tauri build`, launch the produced bundle, and verify `start_game` returns a real `GameStateView` rather than `sceneLoadFailed`. This is an acceptance gate — the slice is not done until a packaged bundle plays the fixture chapter end-to-end.
 
 ## Open questions reserved for the implementation plan
 
