@@ -30,6 +30,13 @@ Two-process desktop app: a **SvelteKit SPA frontend** rendered inside a **Tauri 
 
 Uses Svelte 5 runes (`$state`, `$props`, etc.) — see `src/routes/+page.svelte`. Use rune syntax and event attributes like `onsubmit={...}` rather than legacy `on:submit` / `export let` patterns.
 
+## Project domain
+
+This repo is a detective/mystery game (《東京雨證：第零證人》, Traditional Chinese). Narrative content lives in `static/stories_plan/` — `General Plan.md` is the 8-chapter overview, `第_1_章_..._詳細計劃.md` is the per-chapter detail plan, and `chapter_1/` holds playable scripts (`scene_0.md`, `investigation_scene_1.md`). Design plans for engine features live under `docs/plans/`.
+
+- **The Rust engine does not load these markdown files.** `InvestigationEngine::new_demo_case()` (`src-tauri/src/investigation.rs`) hardcodes a demo case used by every command in `lib.rs`. Editing markdown under `static/stories_plan/` will not change in-game behavior — wiring a real loader is unbuilt work.
+- **Authoring scripts:** project-specific skills `writing-detective-game-dialogue` and `writing-investigation-scene` (in `.claude/skills/`) define the required script format. Invoke them via the `Skill` tool when asked to write or extend chapter scripts or investigation scenes; don't free-form the format.
+
 ## Misc
 
 - `AGENTS.md` is a symlink to `CLAUDE.md`; edit one, both update.
