@@ -31,6 +31,7 @@ The pipeline is **scene-type-specific, not scene-specific.** Adding a new invest
 - Audio (music, voice, SFX).
 - Frontend test framework.
 - Cross-chapter foreshadow-payoff fixtures (await chapter 2+ authoring).
+- **Cross-chapter `Unlock` reachability analysis.** Statically prove that every cross-chapter unlock predicate references evidence/statement that is guaranteed-collected on every completion path through the source chapter. Required before chapter 2 authoring; not needed for this slice because chapter 1 is the only authored content. See §3d for the v1 mitigation (informational warning + writer discipline).
 
 ## Architecture overview
 
@@ -185,9 +186,52 @@ static/stories_plan/...    ← authored source (existing)
 src-tauri/resources/scenes/...   ← generated, gitignored, bundled as Tauri resources
 ```
 
-Two `package.json` scripts:
-- `scenes:compile` — one-shot. Wired into `tauri.conf.json`'s `beforeDevCommand` and `beforeBuildCommand`.
-- `scenes:watch` — chokidar-watches `static/stories_plan/**/*.md`, recompiles affected files on save.
+### 3a.0. Exact script and Tauri command wiring
+
+The wiring is the hot path for the dev loop, so the spec pins the exact strings rather than hand-waving "wired into Tauri." Critical because `beforeDevCommand` must keep Vite (the long-lived process) running — replacing it with `scenes:compile` would kill the dev loop.
+
+**`package.json` scripts:**
+
+```json
+{
+  "scripts": {
+    "scenes:compile": "bun run scripts/compile-scenes.ts",
+    "scenes:watch":   "bun run scripts/compile-scenes.ts --watch",
+    "dev":            "vite",
+    "dev:tauri":      "bun run scenes:compile && bun run dev",
+    "build":          "vite build",
+    "build:tauri":    "bun run scenes:compile && bun run build",
+    "tauri":          "tauri"
+  }
+}
+```
+
+**`src-tauri/tauri.conf.json` (the `build` section):**
+
+```json
+{
+  "build": {
+    "beforeDevCommand":   "bun run dev:tauri",
+    "beforeBuildCommand": "bun run build:tauri",
+    "devUrl":  "http://localhost:1420",
+    "frontendDist": "../build"
+  }
+}
+```
+
+Why this works:
+- `dev:tauri` runs `scenes:compile` to completion (fast — parses ~30 KB of markdown), *then* hands off to `bun run dev` (Vite, long-lived). Tauri's `beforeDevCommand` waits for Vite to be reachable on port 1420; Vite stays alive for the whole dev session. Scene JSON exists on disk before the Rust app starts.
+- `build:tauri` runs `scenes:compile`, then `bun run build` (Vite production build, exits). `bundle.resources` then ships the generated scenes.
+- `scenes:watch` is **manual**, run in a second terminal during writing iteration. Auto-spawning it via `concurrently` is a polish item, listed in Open Questions.
+
+**CI assertion (in `scripts/compile-scenes.ts`):**
+
+The compile script's first action on every run is to verify `tauri.conf.json` has:
+- `build.beforeDevCommand === "bun run dev:tauri"`
+- `build.beforeBuildCommand === "bun run build:tauri"`
+- `bundle.resources` includes `"resources/scenes/**/*"` (already specified in §3a.1)
+
+If any of the three is missing/mismatched, the script fails before doing any compilation work. This catches accidental config drift before it produces a broken dev or shipping build.
 
 ### 3a.1. Scene asset delivery (hard invariant)
 
@@ -369,6 +413,9 @@ Warnings (don't fail the build):
 - Dialogue line over 100 Chinese characters.
 - Reserved prefix in `Reveals:` / `Unlock:` (`chapter:`, `flag:`).
 - Outro without explicit `Unlock` (informational — falls back to `"auto"`).
+- **Cross-chapter `Unlock:` predicate referencing an evidence/statement ID whose source chapter's outro condition does not trivially imply it.** "Trivially imply" in v1 = the source chapter's Outro is `"auto"` AND the referenced item is on a path that the auto-completion guarantees (i.e., collected from a hotspot/topic that is unlocked at scene start, not gated behind an optional reveal chain). Anything more complex falls through to a warning. The warning is informational — the writer must manually verify the cross-chapter reference is actually reachable on all paths through the source chapter.
+
+**Known limitation — cross-chapter unlock reachability is not statically validated in v1.** A later chapter can author an `Unlock:` predicate that requires a prior-chapter optional clue; a player who skipped that clue reaches a soft-locked state with no way to progress. This is unblocked in this slice only because chapter 1 is the only authored content (no cross-chapter references can be authored yet). Full reachability analysis (boolean-graph proof that every cross-chapter predicate is satisfied on every completion path through the source chapter) is a deferred follow-up that **must land before chapter 2 authoring begins** (tracked under "Out of scope" in the Scope section). Until then, the writer is responsible for keeping cross-chapter references on the source chapter's mandatory completion path.
 
 ## Rust engine
 
@@ -488,11 +535,41 @@ pub enum Mode {
         current: DialogueItem,
         queue_remaining: usize,
         scene_tag: Option<String>,   // last sceneTag seen — for backdrop
+        queue_token: QueueToken,     // see §4c.1
     },
     Explore { sublocation_id: String },
     GameComplete,
 }
+
+pub struct QueueToken {
+    pub scene_id: String,
+    pub queue_gen: u64,   // increments every time a new DialogueQueue is constructed
+    pub cursor: usize,
+}
 ```
+
+### 4c.1. Dialogue progression idempotency
+
+`advance_dialogue` accepts an `expected: QueueToken` argument observed from the most recent `Mode::Dialogue` snapshot. The engine compares against current state:
+
+- **Match** → advance the cursor as described in §4d; return the new snapshot (with a fresh `queue_token`).
+- **Mismatch** → no state change; return the *current* snapshot unchanged. This is not an error — it is the optimistic-concurrency answer for stale requests.
+
+This makes duplicate input naturally idempotent under three real triggers:
+
+| Trigger | Failure without token | Behavior with token |
+|---|---|---|
+| Double-click the dialogue box | Second click advances cursor twice, skipping a line. | Second click carries the same `cursor`; engine sees stale token; no-op. |
+| `keydown` repeat on Space/Enter | Each repeat event fires `advance_dialogue`; lines skip rapidly. | All repeats after the first carry stale token; no-op. |
+| Click during slow Tauri round-trip | Second click queues before first response renders; advances twice. | Second click uses pre-response state; token mismatches by the time it runs; no-op. |
+
+`queue_gen` increments whenever the engine constructs a **new** queue (intro queue, hotspot inspect queue, outro queue, reexamine queue, sub-location transition queue). This means a stale token referencing the previous queue is detected even if the new queue happens to be at `cursor: 0` like the old one was.
+
+**Frontend complement:** the FE adds defense-in-depth guards even though the engine is the authority:
+- An `inFlight` boolean on the dialogue advance handler — set on click/key, cleared in the response handler. Click/key handlers early-return if `inFlight` is set.
+- `keydown` handler checks `event.repeat` and returns early for repeat events.
+
+Neither FE guard is required for correctness — the engine's token check is sufficient — but together they prevent unnecessary round-trips.
 
 No `SceneTransition` variant. Scene loading is fully internal to `advance_dialogue` — when an outro queue empties, the engine advances the scene index, loads the next scene, primes its intro queue (if any), and returns a `Dialogue` (or `Explore`) snapshot in the **same call**. The frontend never lands on a "transitional" mode it can't exit.
 
@@ -610,7 +687,7 @@ fn outro_satisfied(scene: &InvestigationSceneState, inv: &Inventory) -> bool {
 ```rust
 #[tauri::command] fn start_game(state)                            -> Result<GameStateView, GameError>
 #[tauri::command] fn get_state(state)                             -> Result<GameStateView, GameError>
-#[tauri::command] fn advance_dialogue(state)                      -> Result<GameStateView, GameError>
+#[tauri::command] fn advance_dialogue(state, expected: QueueToken) -> Result<GameStateView, GameError>
 #[tauri::command] fn enter_sublocation(state, sublocationId)      -> Result<GameStateView, GameError>
 #[tauri::command] fn inspect_hotspot(state, hotspotId)            -> Result<GameStateView, GameError>
 #[tauri::command] fn interview_topic(state, characterId, topicId) -> Result<GameStateView, GameError>
@@ -776,7 +853,7 @@ Visual register beyond structural decisions is deferred to the `frontend-design`
 | `unlock.rs` | Every predicate; and/or combinators; auto-mode satisfaction. |
 | `reveals.rs` | Queue construction; dialogue ordering matches writer-skill "Play order"; silent unlocks for topic/hotspot/sublocation. |
 | `scenes/investigation.rs` | inspect / interview / enter flows; locked-block errors; first-inspect vs. reexamine semantics. |
-| `scenes/linear.rs` | advance_dialogue cursor; queue-empty transition. |
+| `scenes/linear.rs` | advance_dialogue cursor; queue-empty transition; idempotency (two rapid `advance_dialogue` calls with the same token advance the cursor by 1, not 2). |
 | `state.rs` | Inventory add/dedup; chapter-state advance; cross-scene inventory persistence. |
 | `loader.rs` | Round-trip a fixture JSON via serde; missing-file error path. |
 
@@ -851,7 +928,6 @@ Skills first → parser → engine → frontend → port real drafts. Each phase
 
 These are the small choices that don't change the design but need to be decided during implementation:
 
-- Whether to embed `chapters.json` via `include_str!` at build time vs. always read from disk via `tokio::fs` (currently leaning toward disk-read always, for simplicity).
 - Engine-provided fallback dialogue line text for reexamine without `On Reexamine` ("（沒有新發現。）" or similar).
-- Whether `bun run scenes:watch` should be auto-spawned by `bun run tauri dev` via `concurrently`, or run manually in a second terminal.
+- Whether `bun run scenes:watch` should be auto-spawned by `bun run tauri dev` via `concurrently`, or run manually in a second terminal. (Default per §3a.0 is manual.)
 - Exact CSS register for the dialogue box (handled by `frontend-design` skill during implementation).
