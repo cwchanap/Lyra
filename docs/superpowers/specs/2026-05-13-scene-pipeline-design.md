@@ -31,7 +31,7 @@ The pipeline is **scene-type-specific, not scene-specific.** Adding a new invest
 - Audio (music, voice, SFX).
 - Frontend test framework.
 - Cross-chapter foreshadow-payoff fixtures (await chapter 2+ authoring).
-- **Cross-chapter `Unlock` reachability analysis.** Statically prove that every cross-chapter unlock predicate references evidence/statement that is guaranteed-collected on every completion path through the source chapter. Required before chapter 2 authoring; not needed for this slice because chapter 1 is the only authored content. See §3d for the v1 mitigation (informational warning + writer discipline).
+- **Cross-chapter `Unlock:` predicates (feature) AND the reachability validator that must accompany them.** v1 disallows cross-chapter unlock predicates entirely (compile error) — see §3d. Re-enabling the feature requires shipping both the predicate support and a static reachability analyzer that proves no cross-chapter predicate can be unsatisfiable on a chapter-completion path. These must land together; one without the other is broken-by-design.
 
 ## Architecture overview
 
@@ -97,7 +97,7 @@ Four layers, each with a single responsibility. The pipeline is one-directional:
 
 ### State scope
 
-State is hierarchical to match detective-genre semantics — evidence and statements accumulate game-wide so foreshadow payoffs can span chapters.
+State is hierarchical to match detective-genre semantics — evidence and statements accumulate game-wide so the player keeps everything they've found across all chapters (re-examinable from inventory, referenceable by future linear-scene narrative branches). Engine-level unlock predicates are scoped to a single scene in v1; see §3d "v1 restriction" for the rationale.
 
 | Scope | What lives here | Resets when |
 |---|---|---|
@@ -105,7 +105,7 @@ State is hierarchical to match detective-genre semantics — evidence and statem
 | **Chapter** | `currentSceneIdx`, chapter-local progress | Chapter advance |
 | **Scene** | Hotspot/topic/sub-location/dialogue-queue state | Scene advance (state frozen, not reset, on completion) |
 
-Authored unlock expressions in chapter 5 can therefore reference `evidence:blue_umbrella` collected in chapter 1.
+Inventory persistence is independent of the §3d v1 restriction on cross-chapter unlock predicates — those are progression gates, not inventory facts.
 
 ### ID namespace
 
@@ -396,15 +396,14 @@ Per-file (extends the writer-skill's existing parser-guarantee list):
 - First sub-location is `Status: unlocked`.
 - Every sub-location has one `[場景：...]` tag.
 - **Every `Reveals:` target ID resolves to a declaration in the same scene file** — for *all* target kinds (`evidence:`, `statement:`, `topic:`, `hotspot:`, `sublocation:`). Cross-scene reveal targets are a validation error. Rationale: a reveal newly *adds* an item or unlocks a block; both operations require the definition (dialogue body, manifest entry) to be physically present in this scene's JSON. A later chapter cannot "newly collect" an item already collected in an earlier one.
-- **Every `Unlock:` predicate ID may reference either the same scene or any prior chapter** for the `evidence_collected` and `statement_acquired` predicates (these are read-only inventory checks). The `topic_discussed` and `hotspot_investigated` predicates remain strictly scene-local — they reference per-scene runtime state, which does not persist across scenes.
+- **Every `Unlock:` predicate ID must resolve to a declaration in the same scene file.** All four predicate kinds (`evidence_collected`, `statement_acquired`, `topic_discussed`, `hotspot_investigated`) are scene-local in v1. Cross-scene unlock predicates are a validation error. See "v1 restriction" callout below for the rationale; the inventory itself is still game-global (a chapter-1 evidence remains collected and viewable in chapter 5), only the *progression gate* is scoped.
 - Every locked block has at least one unlock path; no circular chains.
 - No block has both an inbound `Reveals` and a self `Unlock`.
 - Every Evidence Manifest entry has `#### On Collect`; every Statement entry has `#### On Acquire`.
 
 Cross-file (built from the single compile run's global registry):
 - Every chapter manifest references files that exist in the same chapter directory with valid scene-type prefixes.
-- Evidence and statement IDs are unique across the entire game (compile error on collision; both source locations reported). This uniqueness is what lets a later-chapter `Unlock:` predicate reference an earlier-chapter ID unambiguously.
-- An `Unlock:` predicate referencing an evidence/statement ID declared in a *later* chapter (by `chapter_<N>` ordering) fails validation — enforces one-way foreshadow payoff and prevents temporal-paradox unlock chains.
+- Evidence and statement IDs are unique across the entire game (compile error on collision; both source locations reported). Uniqueness is preserved even though cross-chapter `Unlock:` predicates are disallowed — it lets the inventory dedupe across chapters and keeps the namespace clean for the post-v1 feature.
 - Hotspot/topic/sub-location IDs are scene-local — no global check.
 
 **Engine implication of the Reveals-is-scene-local rule:** `EvidenceDef` and `StatementDef` stay on `InvestigationSceneState`; no game-global definition registry is needed. The `Inventory` holds *snapshots* of each collected item's def (name, description, details, `onReexamine`), cloned in at collection time — see §4b. This is how reexamine still works for a chapter-1 clue while playing chapter 5: the inventory record carries everything it needs, the source scene is free to unload.
@@ -413,9 +412,12 @@ Warnings (don't fail the build):
 - Dialogue line over 100 Chinese characters.
 - Reserved prefix in `Reveals:` / `Unlock:` (`chapter:`, `flag:`).
 - Outro without explicit `Unlock` (informational — falls back to `"auto"`).
-- **Cross-chapter `Unlock:` predicate referencing an evidence/statement ID whose source chapter's outro condition does not trivially imply it.** "Trivially imply" in v1 = the source chapter's Outro is `"auto"` AND the referenced item is on a path that the auto-completion guarantees (i.e., collected from a hotspot/topic that is unlocked at scene start, not gated behind an optional reveal chain). Anything more complex falls through to a warning. The warning is informational — the writer must manually verify the cross-chapter reference is actually reachable on all paths through the source chapter.
 
-**Known limitation — cross-chapter unlock reachability is not statically validated in v1.** A later chapter can author an `Unlock:` predicate that requires a prior-chapter optional clue; a player who skipped that clue reaches a soft-locked state with no way to progress. This is unblocked in this slice only because chapter 1 is the only authored content (no cross-chapter references can be authored yet). Full reachability analysis (boolean-graph proof that every cross-chapter predicate is satisfied on every completion path through the source chapter) is a deferred follow-up that **must land before chapter 2 authoring begins** (tracked under "Out of scope" in the Scope section). Until then, the writer is responsible for keeping cross-chapter references on the source chapter's mandatory completion path.
+**v1 restriction — cross-chapter `Unlock:` predicates are disallowed and produce a compile error.** Detection is straightforward: every `evidence_collected` / `statement_acquired` predicate is checked against the same scene's `Evidence Manifest` / `Statement Manifest`; references to IDs declared in any other scene file (whether earlier, later, or same-chapter different-scene) fail validation. Rationale: the alternative — allowing later chapters to gate progression on prior-chapter evidence without statically proving the predicate is satisfiable on every completion path through the source chapter — admits a soft-lock failure mode (a player who missed an optional clue reaches a later chapter with no way to progress). Validating reachability requires non-trivial boolean-graph analysis that is not in scope for this slice. The constraint costs nothing today (chapter 1 has no cross-chapter references to author against) and forces an explicit design decision when chapter 2 is on deck.
+
+**Narrative foreshadow payoff is not blocked by this restriction.** The inventory remains game-global (§4b, §5e) — a chapter-1 clue is still in the player's inventory in chapter 5 and re-examinable from the Inventory panel. What's removed is only the *engine-level progression gate* across chapter boundaries. A writer who wants "if you found the blue umbrella in chapter 1, this chapter 5 character reacts differently" can author that as a linear-scene dialogue branch (a future feature, also out of scope today), or as a chapter-local hint, without engine-level unlock predicates reaching across chapters.
+
+Re-enabling the cross-chapter feature post-v1 requires shipping both (a) lifting the validation rule **and** (b) a reachability-analysis validator that prevents the soft-lock failure mode. The two must land together, tracked in "Out of scope."
 
 ## Rust engine
 
@@ -844,6 +846,7 @@ Visual register beyond structural decisions is deferred to the `frontend-design`
 **Compile script (bun:test):**
 - `parser/` tests: golden inputs → expected AST. Fixture corpus under `scripts/__fixtures__/`.
 - `validator/` tests: positive + negative case for each rule from §3d.
+- **Negative fixture: cross-chapter `Unlock:` predicate.** A two-chapter fixture where `chapter_2/investigation_scene_test.md` declares an `Unlock:` predicate referencing `evidence:` declared in `chapter_1`. Validator must fail with a clear error pointing at both the predicate location and the cross-chapter reference. Locks the v1 restriction (§3d) against accidental regression.
 - One snapshot test compiling the real `chapter_1/` and asserting the JSON output matches a committed snapshot.
 
 **Rust engine (`cargo test`, tests next to code via `#[cfg(test)] mod tests`):**
