@@ -220,6 +220,55 @@ For Chapter 1 specifically:
 
 For other chapters: read that chapter's row in `General Plan.md` and the matching `_詳細計劃.md`. Stay strict.
 
+## Linear scene file format (`chapter_<N>/scene_<K>.md`)
+
+A file matching `chapter_<N>/scene_<K>.md` is a **linear-dialogue scene** — a single queue of dialogue the player clicks through, with no hotspots, characters to question, or branching choices. These are used for intro cutscenes, in-car conversations, transitions, and chapter endings.
+
+### Required structure
+
+Exactly one H1 title line at the top, then dialogue. **No H2 or deeper headings are allowed in a linear scene file.** The parser reads the file top-to-bottom and emits dialogue items in source order.
+
+```
+# Scene 0: 接案
+
+[場景：吉祥寺街道，深夜，雨夜。律師相馬律撐傘走進雨鐘咖啡館。]
+
+[相馬律收起傘，在門口抖了抖。]
+
+**早坂茜**：你來得比我想的快。
+
+**相馬律**：黑瀨刑警在嗎？
+
+[場景：咖啡館主廳。]
+
+**早坂茜**：在裡面。
+```
+
+### Item kinds the parser recognizes
+
+| Source line | Kind |
+|---|---|
+| `[場景：...]` (square brackets with `場景：` prefix) | scene tag |
+| `[anything else inside brackets]` | bracketed action |
+| `**Name**：text` (Markdown bold name, full-width colon, dialogue text) | dialogue line |
+| blank line | separator (ignored) |
+
+### Linear scene semantics
+
+- The file is one linear queue. The parser walks it once and emits items in source order.
+- End-of-file = end-of-scene. The engine advances to the next scene in the chapter manifest.
+- Linear scenes carry **no metadata** beyond the H1 title — no `Status`, no `Unlock`, no `Reveals`. They never gate progression.
+- A linear scene may contain multiple `[場景：...]` tags if it spans multiple physical locations (e.g., 咖啡館 → 街道 → 警車內). Each scene tag updates the visible backdrop.
+
+### Common mistakes (linear scenes)
+
+| Mistake | Fix |
+|---|---|
+| Using H2 headings (`## Some Section`) inside a linear scene | Linear scenes are flat. Remove the heading; if structural blocks are needed, this should be an investigation scene. |
+| Adding metadata like `**Status:** unlocked` | Linear scenes have no metadata. Remove. |
+| Forgetting a `[場景：...]` tag at the top | A linear scene should open with a scene tag so the engine can render a backdrop from the first frame. |
+| Mixing investigation-scene blocks (`### Hotspot:`) into a linear scene | Wrong scene type. Move that content to an `investigation_scene_<N>.md` file. |
+
 ## Core spirit
 
 > You are not writing a novel. You are writing a script the player will click through one line at a time.
