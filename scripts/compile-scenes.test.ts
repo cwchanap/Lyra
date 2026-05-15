@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -39,5 +39,38 @@ describe("compile (end-to-end against valid fixture)", () => {
     } finally {
       rmSync(outRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe("snapshot: valid fixture JSON output", () => {
+  let outRoot: string;
+  let chaptersJson: unknown;
+  let linearJson: unknown;
+  let investigationJson: unknown;
+
+  beforeAll(() => {
+    outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-snap-"));
+    const result = compile({
+      sourceRoot: "scripts/__fixtures__/valid",
+      outputRoot: outRoot,
+    });
+    if (!result.ok) throw new Error(formatErrors(result.errors));
+    chaptersJson = JSON.parse(readFileSync(resolve(outRoot, "chapters.json"), "utf-8"));
+    linearJson = JSON.parse(readFileSync(resolve(outRoot, "chapter_1/scene_0.json"), "utf-8"));
+    investigationJson = JSON.parse(readFileSync(resolve(outRoot, "chapter_1/investigation_scene_1.json"), "utf-8"));
+  });
+
+  afterAll(() => {
+    rmSync(outRoot, { recursive: true, force: true });
+  });
+
+  it("matches the chapters.json snapshot", () => {
+    expect(chaptersJson).toMatchSnapshot();
+  });
+  it("matches the linear scene snapshot", () => {
+    expect(linearJson).toMatchSnapshot();
+  });
+  it("matches the investigation scene snapshot", () => {
+    expect(investigationJson).toMatchSnapshot();
   });
 });
