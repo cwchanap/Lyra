@@ -112,6 +112,52 @@ describe("parseInvestigationScene", () => {
     expect(result.error.code).toBe("sublocationNoSceneTag");
   });
 
+  it("rejects an invalid Status value on a sub-location", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** lockd
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Outro
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("invalidStatusValue");
+  });
+
+  it("rejects an unrecognized dialogue line (typo'd speaker markup)", () => {
+    const source = `
+# Scene 1: x
+
+## Intro
+
+A：bad line missing the bold markup
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+## Outro
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("unrecognizedDialogueLine");
+  });
+
   it("parses an On Reexamine block for an evidence entry", () => {
     const source = `
 # Scene 1: x

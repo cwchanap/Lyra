@@ -47,6 +47,10 @@ export function compile(opts: CompileOptions): CompileResult {
   const chapters: ASTChapter[] = [];
   const scenes: SceneRecord[] = [];
   const errors: CompileError[] = [];
+  // Filenames the orchestrator deliberately skipped because they use a reserved
+  // (future) scene-type prefix. The validator must treat these as accepted (not
+  // missing) when checking chapter manifest file references.
+  const skippedReservedFiles = new Set<string>();
 
   // 1. Discover chapter directories.
   let dirs: string[];
@@ -117,6 +121,7 @@ export function compile(opts: CompileOptions): CompileResult {
         console.warn(
           `[compile-scenes] interrogation_scene file "${file}" reserved for future scene type — skipped.`,
         );
+        skippedReservedFiles.add(`${dirName}/${file}`);
       } else {
         errors.push({
           code: "sceneFileUnknownType",
@@ -129,7 +134,7 @@ export function compile(opts: CompileOptions): CompileResult {
   }
 
   // 4. Validate.
-  errors.push(...validate({ chapters, scenes }));
+  errors.push(...validate({ chapters, scenes, skippedReservedFiles }));
 
   if (errors.length > 0) return { ok: false, errors };
 
