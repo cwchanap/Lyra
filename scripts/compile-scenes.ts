@@ -36,7 +36,11 @@ async function main() {
       .watch(`${SOURCE_ROOT}/**/*.md`, { ignoreInitial: true })
       .on("all", async (event, path) => {
         console.log(`[compile-scenes] ${event} ${path} — recompiling.`);
-        await runOnce();
+        try {
+          await runOnce();
+        } catch (err) {
+          console.error(`[compile-scenes] Unexpected error during recompilation (${event} ${path}):`, err);
+        }
       });
   }
 }
