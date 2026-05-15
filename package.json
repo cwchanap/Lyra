@@ -9,7 +9,11 @@
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "scenes:compile": "bun run scripts/compile-scenes.ts",
+    "scenes:watch": "bun run scripts/compile-scenes.ts --watch",
+    "dev:tauri": "bun run scenes:compile && bun run dev",
+    "build:tauri": "bun run scenes:compile && bun run build"
   },
   "license": "MIT",
   "dependencies": {
