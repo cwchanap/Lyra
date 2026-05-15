@@ -29,6 +29,12 @@ export type SceneRecord = {
 export type ValidatorInput = {
   chapters: ASTChapter[];
   scenes: SceneRecord[];
+  /**
+   * Files the orchestrator skipped because they use a reserved (future)
+   * scene-type prefix. The chapter-manifest "file exists" check must treat
+   * these as accepted, not missing.
+   */
+  skippedReservedFiles?: Set<string>;
 };
 
 export function validate(input: ValidatorInput): CompileError[] {
@@ -76,12 +82,14 @@ export function validate(input: ValidatorInput): CompileError[] {
   }
 
   // ---- Pass 3: chapter manifests refer to existing files. ----
+  const skipped = input.skippedReservedFiles ?? new Set<string>();
   for (const chapter of input.chapters) {
     const sceneFilesInChapter = new Set(
       input.scenes.filter((s) => s.chapterId === chapter.dirName).map((s) => s.file),
     );
     for (const file of chapter.sceneFiles) {
-      if (!sceneFilesInChapter.has(file)) {
+      const skippedKey = `${chapter.dirName}/${file}`;
+      if (!sceneFilesInChapter.has(file) && !skipped.has(skippedKey)) {
         errors.push({
           code: "chapterManifestMissingFile",
           message: `Chapter ${chapter.dirName} lists "${file}" but no such file was loaded.`,

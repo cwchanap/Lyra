@@ -80,7 +80,9 @@ export function parseInvestigationScene(
 
     if (tok.text === "Intro") {
       cur.next();
-      intro = consumeDialogueUntilHeading(cur, 2);
+      const r = consumeDialogueUntilHeading(cur, 2);
+      if (!r.ok) return r;
+      intro = r.value;
     } else if (tok.text.startsWith("Sub-location:")) {
       const sub = parseSublocation(cur);
       if (!sub.ok) return sub;
@@ -142,7 +144,9 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
-  const status = (meta.value.Status ?? "unlocked") as "locked" | "unlocked";
+  const statusCheck = validateStatus(meta.value.Status, "unlocked", cur.sourceFile, head.line);
+  if (!statusCheck.ok) return statusCheck;
+  const status = statusCheck.value;
   let unlock: UnlockExpr | null = null;
   if (meta.value.Unlock) {
     const r = parseUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);
@@ -222,7 +226,9 @@ function parseHotspot(cur: Cursor): { ok: true; value: ASTHotspot } | { ok: fals
   if (!meta.ok) return meta;
   const description = meta.value.Description;
   if (!description) return fail(cur.sourceFile, head.line, "hotspotMissingDescription", `Hotspot ${id} missing Description.`);
-  const status = (meta.value.Status ?? "unlocked") as "locked" | "unlocked";
+  const statusCheck = validateStatus(meta.value.Status, "unlocked", cur.sourceFile, head.line);
+  if (!statusCheck.ok) return statusCheck;
+  const status = statusCheck.value;
   let unlock: UnlockExpr | null = null;
   if (meta.value.Unlock) {
     const r = parseUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);
@@ -232,8 +238,12 @@ function parseHotspot(cur: Cursor): { ok: true; value: ASTHotspot } | { ok: fals
   const reveals = meta.value.Reveals ? parseRevealsList(meta.value.Reveals, cur.sourceFile, head.line) : { ok: true as const, value: [] as RevealTarget[] };
   if (!reveals.ok) return reveals;
 
-  const inspectDialogue = consumeDialogueUntilHeading(cur, 3);
-  const onReexamine = consumeOptionalOnReexamine(cur, 4);
+  const inspectRes = consumeDialogueUntilHeading(cur, 3);
+  if (!inspectRes.ok) return inspectRes;
+  const inspectDialogue = inspectRes.value;
+  const reexamRes = consumeOptionalOnReexamine(cur, 4);
+  if (!reexamRes.ok) return reexamRes;
+  const onReexamine = reexamRes.value;
 
   return {
     ok: true,
@@ -307,7 +317,9 @@ function parseTopic(cur: Cursor, characterId: string): { ok: true; value: ASTTop
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
-  const status = (meta.value.Status ?? "unlocked") as "locked" | "unlocked";
+  const statusCheck = validateStatus(meta.value.Status, "unlocked", cur.sourceFile, head.line);
+  if (!statusCheck.ok) return statusCheck;
+  const status = statusCheck.value;
   let unlock: UnlockExpr | null = null;
   if (meta.value.Unlock) {
     const r = parseUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);
@@ -317,8 +329,12 @@ function parseTopic(cur: Cursor, characterId: string): { ok: true; value: ASTTop
   const reveals = meta.value.Reveals ? parseRevealsList(meta.value.Reveals, cur.sourceFile, head.line) : { ok: true as const, value: [] as RevealTarget[] };
   if (!reveals.ok) return reveals;
 
-  const topicDialogue = consumeDialogueUntilHeading(cur, 4);
-  const onReexamine = consumeOptionalOnReexamine(cur, 5);
+  const topicRes = consumeDialogueUntilHeading(cur, 4);
+  if (!topicRes.ok) return topicRes;
+  const topicDialogue = topicRes.value;
+  const reexamRes = consumeOptionalOnReexamine(cur, 5);
+  if (!reexamRes.ok) return reexamRes;
+  const onReexamine = reexamRes.value;
 
   return {
     ok: true,
@@ -378,12 +394,16 @@ function parseEvidenceEntry(cur: Cursor): { ok: true; value: ASTEvidence } | { o
     if (next.kind === "heading" && next.level === 4) {
       if (next.text === "On Collect") {
         cur.next();
-        onCollect = consumeDialogueUntilHeading(cur, 4);
+        const r = consumeDialogueUntilHeading(cur, 4);
+        if (!r.ok) return r;
+        onCollect = r.value;
         continue;
       }
       if (next.text === "On Reexamine") {
         cur.next();
-        onReexamine = consumeDialogueUntilHeading(cur, 4);
+        const r = consumeDialogueUntilHeading(cur, 4);
+        if (!r.ok) return r;
+        onReexamine = r.value;
         continue;
       }
       return fail(cur.sourceFile, next.line, "evidenceUnknownH4", `Unknown H4 under evidence ${id}: ${next.text}.`);
@@ -449,12 +469,16 @@ function parseStatementEntry(cur: Cursor): { ok: true; value: ASTStatement } | {
     if (next.kind === "heading" && next.level === 4) {
       if (next.text === "On Acquire") {
         cur.next();
-        onAcquire = consumeDialogueUntilHeading(cur, 4);
+        const r = consumeDialogueUntilHeading(cur, 4);
+        if (!r.ok) return r;
+        onAcquire = r.value;
         continue;
       }
       if (next.text === "On Reexamine") {
         cur.next();
-        onReexamine = consumeDialogueUntilHeading(cur, 4);
+        const r = consumeDialogueUntilHeading(cur, 4);
+        if (!r.ok) return r;
+        onReexamine = r.value;
         continue;
       }
       return fail(cur.sourceFile, next.line, "statementUnknownH4", `Unknown H4 under statement ${id}: ${next.text}.`);
@@ -491,7 +515,9 @@ function parseOutro(cur: Cursor): { ok: true; value: ASTOutro } | { ok: false; e
     if (!r.ok) return r;
     unlock = r.value;
   }
-  const dialogue = consumeDialogueUntilHeading(cur, 2);
+  const r = consumeDialogueUntilHeading(cur, 2);
+  if (!r.ok) return r;
+  const dialogue = r.value;
   return { ok: true, value: { unlock, dialogue } };
 }
 
@@ -507,12 +533,20 @@ function consumeMetadata(
   }
 }
 
-function consumeDialogueUntilHeading(cur: Cursor, _atOrAboveLevel: number): DialogueItem[] {
+type DialogueResult =
+  | { ok: true; value: DialogueItem[] }
+  | { ok: false; error: CompileError };
+
+function consumeDialogueUntilHeading(cur: Cursor, _atOrAboveLevel: number): DialogueResult {
   // Stops at ANY heading regardless of level. Every dialogue body in this
   // grammar terminates at the next heading (the next structural block or an
   // optional sub-block like On Reexamine), so a level-aware check would
   // silently swallow headings whose level exceeds the cutoff. The level
   // parameter is kept for documentation but no longer affects behavior.
+  //
+  // Unknown/metadata tokens inside a dialogue body are a hard error — they
+  // indicate authoring mistakes (typo'd dialogue line, stray metadata) that
+  // would otherwise be silently lost.
   const out: DialogueItem[] = [];
   while (true) {
     const next = cur.peek();
@@ -522,17 +556,43 @@ function consumeDialogueUntilHeading(cur: Cursor, _atOrAboveLevel: number): Dial
     if (next.kind === "sceneTag") out.push({ kind: "sceneTag", text: next.text });
     else if (next.kind === "action") out.push({ kind: "action", text: next.text });
     else if (next.kind === "dialogue") out.push({ kind: "line", speaker: next.speaker, text: next.text });
+    else if (next.kind === "metadata") {
+      return {
+        ok: false,
+        error: {
+          code: "strayMetadataInDialogueBody",
+          message: `Stray metadata in dialogue body: ${next.key}.`,
+          sourceFile: cur.sourceFile,
+          line: next.line,
+        },
+      };
+    } else if (next.kind === "unknown") {
+      return {
+        ok: false,
+        error: {
+          code: "unrecognizedDialogueLine",
+          message: `Unrecognized line in dialogue body: ${next.text}.`,
+          sourceFile: cur.sourceFile,
+          line: next.line,
+        },
+      };
+    }
   }
-  return out;
+  return { ok: true, value: out };
 }
 
-function consumeOptionalOnReexamine(cur: Cursor, expectedLevel: number): DialogueItem[] | null {
+function consumeOptionalOnReexamine(
+  cur: Cursor,
+  expectedLevel: number,
+): { ok: true; value: DialogueItem[] | null } | { ok: false; error: CompileError } {
   const next = cur.peek();
-  if (!next || next.kind !== "heading") return null;
-  if (next.level !== expectedLevel) return null;
-  if (next.text !== "On Reexamine") return null;
+  if (!next || next.kind !== "heading") return { ok: true, value: null };
+  if (next.level !== expectedLevel) return { ok: true, value: null };
+  if (next.text !== "On Reexamine") return { ok: true, value: null };
   cur.next();
-  return consumeDialogueUntilHeading(cur, expectedLevel);
+  const r = consumeDialogueUntilHeading(cur, expectedLevel);
+  if (!r.ok) return r;
+  return { ok: true, value: r.value };
 }
 
 function parseRevealsList(
@@ -594,4 +654,23 @@ function fail(
   message: string,
 ): { ok: false; error: CompileError } {
   return { ok: false, error: { code, message, sourceFile, line } };
+}
+
+function validateStatus(
+  raw: string | undefined,
+  fallback: "locked" | "unlocked",
+  sourceFile: string,
+  line: number,
+): { ok: true; value: "locked" | "unlocked" } | { ok: false; error: CompileError } {
+  if (raw === undefined) return { ok: true, value: fallback };
+  if (raw === "locked" || raw === "unlocked") return { ok: true, value: raw };
+  return {
+    ok: false,
+    error: {
+      code: "invalidStatusValue",
+      message: `Status must be "locked" or "unlocked"; got "${raw}".`,
+      sourceFile,
+      line,
+    },
+  };
 }
