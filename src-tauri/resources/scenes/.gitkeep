@@ -1,0 +1,2 @@
+# Preserved across compile runs. The orchestrator must not blanket-delete
+# this directory. Generated content lives alongside this file.
