@@ -63,7 +63,8 @@ Every `investigation_scene_<N>.md` follows this top-to-bottom order:
 | H1 | `# Scene N: <title>` (exactly one per file) |
 | H2 | `## Intro`, `## Sub-location:`, `## Evidence Manifest`, `## Statement Manifest`, `## Outro` |
 | H3 | `### Hotspot:`, `### Character:`, `### evidence:`, `### statement:` |
-| H4 | `#### Topic:`, `#### On Collect` / `#### On Reexamine`, `#### On Acquire` / `#### On Reexamine` |
+| H4 | `#### Topic:`, `#### On Collect` / `#### On Reexamine` (under evidence), `#### On Acquire` / `#### On Reexamine` (under statement), `#### On Reexamine` (under Hotspot) |
+| H5 | `##### On Reexamine` (under Topic only) |
 
 **Hotspots and Characters always live inside a Sub-location block.** Even single-location scenes wrap everything in one Sub-location for parser uniformity.
 
@@ -79,7 +80,8 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 ### Hotspot (H3, inside a Sub-location)
 - **Required:** `Description`
 - **Optional:** `Status` (defaults to `unlocked`), `Unlock`, `Reveals` (list)
-- **Body:** inspect dialogue (plays once when the player clicks this hotspot).
+- **Body:** inspect dialogue (plays on the player's **first** click on this hotspot, followed by `Reveals:` chain dialogue).
+- **Optional sub-block:** `#### On Reexamine` — H4 immediately under this Hotspot's body. Plays on every click **after** the first. No new reveals fire on reexamine. If `#### On Reexamine` is absent, subsequent clicks play an engine-provided fallback line (configured in the engine, not authored here).
 
 ### Character (H3, inside a Sub-location)
 - **Required:** `Role`, `Bio`
@@ -89,7 +91,8 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 ### Topic (H4, inside a Character)
 - **Required:** `Status`
 - **Optional:** `Unlock`, `Reveals` (list)
-- **Body:** topic dialogue (plays when the player selects this topic).
+- **Body:** topic dialogue (plays on the player's **first** selection of this topic, followed by `Reveals:` chain dialogue).
+- **Optional sub-block:** `#### On Reexamine` — H5 immediately under this Topic's body. Plays on every selection **after** the first. No new reveals fire on reexamine. If absent, the engine plays a fallback line on subsequent selections.
 
 ### Evidence Manifest entry (H3 under `## Evidence Manifest`)
 - **Heading:** `### evidence:<id> {#id}`
@@ -105,10 +108,17 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
   - `#### On Acquire` (required) — dialogue that plays when this statement is first added to the log.
   - `#### On Reexamine` (optional) — dialogue that plays when the player re-reads it from the log.
 
-### Intro / Outro (H2)
-- **Headings:** `## Intro` and `## Outro`.
+### Intro (H2)
+- **Heading:** `## Intro`.
 - **No metadata.**
-- **Body:** linear dialogue (intro plays on scene load; outro plays when the scene closes / Part advances).
+- **Body:** linear dialogue. Plays on scene load.
+
+### Outro (H2)
+- **Heading:** `## Outro`.
+- **Optional metadata:** `**Unlock:** <expression>` — a boolean expression (same grammar as the per-block `Unlock:`) that gates when the Outro becomes playable.
+  - When omitted, the Outro defaults to **auto-completion**: it plays when every unlocked hotspot has been inspected and every unlocked topic has been discussed in the scene.
+  - When present, the Outro plays the moment the expression evaluates true.
+- **Body:** linear dialogue. When the Outro queue empties, the engine advances to the next scene in the chapter manifest.
 
 ## Reveal / unlock syntax
 
@@ -173,6 +183,13 @@ When the player completes a trigger that has a `Reveals:` list, dialogue plays i
 - **Transition dialogue:** the body of a sub-location block (between metadata and the first nested H3) plays once on first entry.
 - **First-entry reveals:** `Reveals:` on a sub-location triggers when the player first enters it — useful for environmental discoveries not tied to a specific hotspot.
 - **Character placement:** characters belong to exactly one sub-location. If the same person needs to be in two physical areas, declare them once per sub-location with topics appropriate to that location. Duplication is accepted; it keeps "who is here right now" trivially answerable.
+
+## ID namespace rules
+
+- **Evidence and statement IDs are game-global.** A single ID like `evidence:blue_umbrella` may be declared in only one scene file across the entire game (one chapter, one investigation scene). Compile-time duplicate declarations are an error.
+- **Hotspot, topic, and sub-location IDs are scene-local.** They may repeat across different scene files freely. Cross-scene references to these kinds are not supported.
+- **`Reveals:` targets must always resolve to a declaration in the *same scene file*** — for all five kinds (`evidence:`, `statement:`, `topic:`, `hotspot:`, `sublocation:`). A reveal newly *adds* an item or unlocks a block; it requires the definition to be physically present in this scene's JSON output.
+- **`Unlock:` predicates must also resolve to a declaration in the same scene file** in v1. Cross-chapter unlock predicates are disallowed (compile error). This is a v1 restriction — see the spec for rationale.
 
 ## Parser validation guarantees
 
@@ -288,6 +305,12 @@ A reduced fragment exercising every block type in canonical order. Use as a stru
 
 **相馬律**：剛被推過。
 
+#### On Reexamine
+
+[相馬律又推了一下貨架。]
+
+**相馬律**：輪子很順。已經被推過至少一次。
+
 ## Evidence Manifest
 
 ### evidence:cooling_coffee {#cooling_coffee}
@@ -340,11 +363,14 @@ A reduced fragment exercising every block type in canonical order. Use as a stru
 **早坂茜**：他不像是在撒謊。
 
 ## Outro
+- **Unlock:** hotspot:wheeled_shelf investigated and statement:hayasaka_says_alive acquired
 
 [相馬律站在倉庫門口回頭看了一眼。]
 
 **相馬律**：走吧。
 ```
+
+**Note on locked blocks:** locked sub-locations, hotspots, and topics are entirely hidden from the player until their unlock condition is satisfied. There is no "locked, look later" hint shown in-game. The `Unlock:` expression is parser-internal — it determines *when* the block becomes visible, never displayed.
 
 ## Future work
 
