@@ -32,10 +32,15 @@ Uses Svelte 5 runes (`$state`, `$props`, etc.) — see `src/routes/+page.svelte`
 
 ## Project domain
 
-This repo is a detective/mystery game (《東京雨證：第零證人》, Traditional Chinese). Narrative content lives in `static/stories_plan/` — `General Plan.md` is the 8-chapter overview, `第_1_章_..._詳細計劃.md` is the per-chapter detail plan, and `chapter_1/` holds playable scripts (`scene_0.md`, `investigation_scene_1.md`). Design plans for engine features live under `docs/plans/`.
+This repo is a detective/mystery game (《東京雨證：第零證人》, Traditional Chinese). Narrative content lives in `static/stories_plan/` — `General Plan.md` is the 8-chapter overview, `第_1_章_..._詳細計劃.md` is the per-chapter detail plan, and `chapter_<N>/` holds:
 
-- **The Rust engine does not load these markdown files.** `InvestigationEngine::new_demo_case()` (`src-tauri/src/investigation.rs`) hardcodes a demo case used by every command in `lib.rs`. Editing markdown under `static/stories_plan/` will not change in-game behavior — wiring a real loader is unbuilt work.
-- **Authoring scripts:** project-specific skills `writing-detective-game-dialogue` and `writing-investigation-scene` (in `.claude/skills/`) define the required script format. Invoke them via the `Skill` tool when asked to write or extend chapter scripts or investigation scenes; don't free-form the format.
+- `chapter.md` — the chapter manifest (title, summary, ordered scene list). Authored via the `writing-chapter-manifest` skill.
+- `scene_<K>.md` — linear-dialogue scenes (intros, transitions, endings). Authored via `writing-detective-game-dialogue`.
+- `investigation_scene_<K>.md` — interactive investigation scenes (hotspots, characters, evidence). Authored via `writing-investigation-scene`.
+
+A Bun-based compile script (`scripts/compile-scenes.ts`) transforms authored markdown into validated JSON under `src-tauri/resources/scenes/`, which the Rust engine reads at runtime via `BaseDirectory::Resource`. The compile script is wired into Tauri's `beforeDevCommand` and `beforeBuildCommand` — the dev loop is `bun run tauri dev` (which chains `scenes:compile` before `vite`); for incremental rebuilds during writing iteration, run `bun run scenes:watch` in a second terminal.
+
+Design spec: `docs/superpowers/specs/2026-05-13-scene-pipeline-design.md`. Skill authoring formats are owned by the three skills above — when writing or modifying scene content, invoke the relevant skill via the `Skill` tool rather than free-forming the format.
 
 ## Misc
 
