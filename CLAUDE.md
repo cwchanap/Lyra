@@ -40,6 +40,8 @@ This repo is a detective/mystery game (《東京雨證：第零證人》, Tradit
 
 A Bun-based compile script (`scripts/compile-scenes.ts`) transforms authored markdown into validated JSON under `src-tauri/resources/scenes/`, which the Rust engine reads at runtime via `BaseDirectory::Resource`. The compile script is wired into Tauri's `beforeDevCommand` and `beforeBuildCommand` — the dev loop is `bun run tauri dev` (which chains `scenes:compile` before `vite`); for incremental rebuilds during writing iteration, run `bun run scenes:watch` in a second terminal.
 
+**Status note:** the three writer skills, the design spec, and this documentation are landed; the compile script (`scripts/compile-scenes.ts`), the `bun run scenes:compile` / `scenes:watch` scripts, the `src-tauri/resources/scenes/` resource path, and the Tauri `beforeDevCommand`/`beforeBuildCommand` rewiring land in subsequent tasks on the `feature/scene-pipeline-plan-a` branch. While that work is in progress, the engine still uses the hardcoded demo case in `src-tauri/src/investigation.rs`. The note will be removed once the branch is mergeable.
+
 Design spec: `docs/superpowers/specs/2026-05-13-scene-pipeline-design.md`. Skill authoring formats are owned by the three skills above — when writing or modifying scene content, invoke the relevant skill via the `Skill` tool rather than free-forming the format.
 
 ## Misc
