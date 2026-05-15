@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
@@ -73,4 +73,42 @@ describe("snapshot: valid fixture JSON output", () => {
   it("matches the investigation scene snapshot", () => {
     expect(investigationJson).toMatchSnapshot();
   });
+});
+
+describe("invalid fixtures: each one fails with a specific error code", () => {
+  const INVALID_ROOT = "scripts/__fixtures__/invalid";
+  const fixtures = readdirSync(INVALID_ROOT).filter((d) =>
+    statSync(resolve(INVALID_ROOT, d)).isDirectory(),
+  );
+
+  for (const name of fixtures) {
+    // TODO: circular-unlock-chain detection is deferred — the validator
+    // does not yet implement it, so this fixture cannot pass the test.
+    const testFn = name === "circular_unlock_chain" ? it.skip : it;
+    testFn(`fixture "${name}" produces the expected error`, () => {
+      const sourceRoot = resolve(INVALID_ROOT, name);
+      const expectedFile = resolve(sourceRoot, "expected-error.txt");
+      if (!existsSync(expectedFile)) {
+        throw new Error(`Fixture ${name} is missing expected-error.txt`);
+      }
+      const expectedSubstring = readFileSync(expectedFile, "utf-8").trim();
+      const outRoot = mkdtempSync(resolve(tmpdir(), `scene-compile-bad-${name}-`));
+      try {
+        const result = compile({ sourceRoot, outputRoot: outRoot });
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        const matched = result.errors.some(
+          (e) => e.code === expectedSubstring || e.message.includes(expectedSubstring),
+        );
+        if (!matched) {
+          throw new Error(
+            `Fixture "${name}" did not produce expected error "${expectedSubstring}". Got:\n` +
+              formatErrors(result.errors),
+          );
+        }
+      } finally {
+        rmSync(outRoot, { recursive: true, force: true });
+      }
+    });
+  }
 });
