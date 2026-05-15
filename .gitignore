@@ -16,4 +16,5 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+src-tauri/resources/scenes/
 .claude/settings.local.json
