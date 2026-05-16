@@ -450,6 +450,7 @@
 **相馬律**：KTR-042。片桐悠真的維護帳號。
 
 ### Hotspot: 被害者隨身碟 {#victim_usb_spot}
+- **Description:** 遺體旁邊地板上的一個細小黑色物體，靠近手機，不在口袋裡。
 - **Status:** locked
 - **Unlock:** evidence:victim_phone collected
 - **Reveals:** [evidence:victim_usb]
