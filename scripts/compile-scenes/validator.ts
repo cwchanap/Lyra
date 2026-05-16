@@ -131,11 +131,56 @@ function validateInvestigationScene(rec: SceneRecord, errors: CompileError[]): v
   const localHotspot = new Set<string>();
   const localTopic = new Set<string>();
   const localSublocation = new Set<string>();
+  const localCharacter = new Set<string>();
 
   for (const sub of scene.sublocations) {
+    const prev = localSublocation.size;
     localSublocation.add(sub.id);
-    for (const h of sub.hotspots) localHotspot.add(h.id);
-    for (const c of sub.characters) for (const t of c.topics) localTopic.add(`${c.id}@${t.id}`);
+    if (localSublocation.size === prev) {
+      errors.push({
+        code: "duplicateSceneLocalId",
+        message: `Duplicate sub-location id "${sub.id}" within scene — sub-location ids must be unique within a scene.`,
+        sourceFile: scene.sourceFile,
+        line: sub.line,
+      });
+    }
+    for (const h of sub.hotspots) {
+      const prevH = localHotspot.size;
+      localHotspot.add(h.id);
+      if (localHotspot.size === prevH) {
+        errors.push({
+          code: "duplicateSceneLocalId",
+          message: `Duplicate hotspot id "${h.id}" within scene — hotspot ids must be unique within a scene.`,
+          sourceFile: scene.sourceFile,
+          line: h.line,
+        });
+      }
+    }
+    for (const c of sub.characters) {
+      const prevC = localCharacter.size;
+      localCharacter.add(c.id);
+      if (localCharacter.size === prevC) {
+        errors.push({
+          code: "duplicateSceneLocalId",
+          message: `Duplicate character id "${c.id}" within scene — character ids must be unique within a scene.`,
+          sourceFile: scene.sourceFile,
+          line: c.line,
+        });
+      }
+      for (const t of c.topics) {
+        const key = `${c.id}@${t.id}`;
+        const prevT = localTopic.size;
+        localTopic.add(key);
+        if (localTopic.size === prevT) {
+          errors.push({
+            code: "duplicateSceneLocalId",
+            message: `Duplicate topic key "${key}" within scene — topic ids must be unique per character within a scene.`,
+            sourceFile: scene.sourceFile,
+            line: t.line,
+          });
+        }
+      }
+    }
   }
 
   const inboundReveals = new Map<string, { source: string; line: number }>();
@@ -441,7 +486,10 @@ function checkInternalReachability(
   while (changed) {
     changed = false;
 
-    // Collect Reveals from all reachable content in this sub-location.
+    // Collect Reveals from all reachable content in this sub-location AND
+    // from reachable blocks in other reachable sub-locations (their unlocked
+    // blocks are seeded into `reachable` and may reveal evidence/statements
+    // needed by locked blocks here).
     const allReveals: RevealTarget[] = [...sub.reveals];
     for (const h of sub.hotspots) {
       if (reachable.has(`hotspot:${h.id}`)) allReveals.push(...h.reveals);
@@ -449,6 +497,21 @@ function checkInternalReachability(
     for (const c of sub.characters) {
       for (const t of c.topics) {
         if (reachable.has(`topic:${c.id}@${t.id}`)) allReveals.push(...t.reveals);
+      }
+    }
+    // Cross-sublocation: include reveals from reachable blocks in other
+    // reachable sub-locations so that evidence_collected / statement_acquired
+    // predicates can match items revealed there.
+    for (const otherSub of scene.sublocations) {
+      if (otherSub.id === sub.id) continue;
+      if (!reachableSubs.has(otherSub.id)) continue;
+      for (const h of otherSub.hotspots) {
+        if (reachable.has(`hotspot:${h.id}`)) allReveals.push(...h.reveals);
+      }
+      for (const c of otherSub.characters) {
+        for (const t of c.topics) {
+          if (reachable.has(`topic:${c.id}@${t.id}`)) allReveals.push(...t.reveals);
+        }
       }
     }
 
