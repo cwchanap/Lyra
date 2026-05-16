@@ -17,7 +17,8 @@ export type ChapterParseResult =
   | { ok: true; value: ASTChapter }
   | { ok: false; error: CompileError };
 
-const NUMBERED_FILE_RE = /^(\d+)\.\s+(\S+\.md)\s*$/;
+// Reject path separators to prevent directory traversal (e.g. "../other/evil.md").
+const NUMBERED_FILE_RE = /^(\d+)\.\s+([^\/\\]+\.md)\s*$/;
 
 export function parseChapter(
   source: string,

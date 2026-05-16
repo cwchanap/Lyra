@@ -99,4 +99,34 @@ describe("parseChapter", () => {
     if (result.ok) return;
     expect(result.error.code).toBe("chapterMalformedSceneRow");
   });
+
+  it("rejects a scene-list entry with path traversal (..)", () => {
+    const source = `
+# Chapter 1: foo
+
+**Summary:** bar
+
+## Scenes
+1. ../chapter_2/scene_0.md
+`.trim();
+    const result = parseChapter(source, "chapter_1/chapter.md", "chapter_1");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("chapterMalformedSceneRow");
+  });
+
+  it("rejects a scene-list entry with absolute path", () => {
+    const source = `
+# Chapter 1: foo
+
+**Summary:** bar
+
+## Scenes
+1. /etc/passwd.md
+`.trim();
+    const result = parseChapter(source, "chapter_1/chapter.md", "chapter_1");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("chapterMalformedSceneRow");
+  });
 });

@@ -181,6 +181,15 @@ impl GameEngine {
         }
 
         if !outro_already_played && outro_satisfied {
+            if outro_dialogue.is_empty() {
+                // Empty outro: mark played and advance immediately rather than
+                // creating an empty queue that would leave the scene in Explore
+                // with no way to reach the outro_already_played branch.
+                if let SceneRuntime::Investigation(inv) = &mut self.scene {
+                    inv.outro_played = true;
+                }
+                return Ok(true);
+            }
             let queue_gen = self.alloc_queue_gen();
             if let SceneRuntime::Investigation(inv) = &mut self.scene {
                 inv.pending_queue = Some(DialogueQueue {
