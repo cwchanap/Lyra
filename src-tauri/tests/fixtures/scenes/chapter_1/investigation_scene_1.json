@@ -1,0 +1,274 @@
+{
+  "type": "investigation",
+  "id": "investigation_scene_1",
+  "title": "測試調查場景",
+  "intro": [
+    {
+      "kind": "action",
+      "text": "相馬律與早坂茜進入測試現場。"
+    },
+    {
+      "kind": "line",
+      "speaker": "相馬律",
+      "text": "開始調查。"
+    }
+  ],
+  "sublocations": [
+    {
+      "id": "main_hall",
+      "status": "unlocked",
+      "unlock": null,
+      "reveals": [],
+      "sceneTag": "測試主廳，明亮。",
+      "transitionDialogue": [
+        {
+          "kind": "action",
+          "text": "兩人環視主廳。"
+        },
+        {
+          "kind": "line",
+          "speaker": "早坂茜",
+          "text": "先看看這裡。"
+        }
+      ],
+      "hotspots": [
+        {
+          "id": "table",
+          "label": "桌子",
+          "description": "一張木桌，桌上有一杯咖啡。",
+          "status": "unlocked",
+          "unlock": null,
+          "reveals": [
+            {
+              "kind": "evidence",
+              "id": "coffee"
+            },
+            {
+              "kind": "sublocation",
+              "id": "back_room"
+            }
+          ],
+          "inspectDialogue": [
+            {
+              "kind": "action",
+              "text": "相馬律靠近桌子。"
+            },
+            {
+              "kind": "line",
+              "speaker": "相馬律",
+              "text": "還是熱的。"
+            }
+          ],
+          "onReexamine": [
+            {
+              "kind": "line",
+              "speaker": "相馬律",
+              "text": "咖啡已經涼了。"
+            }
+          ]
+        },
+        {
+          "id": "window",
+          "label": "窗戶",
+          "description": "窗戶半開，外面正在下雨。",
+          "status": "unlocked",
+          "unlock": null,
+          "reveals": [],
+          "inspectDialogue": [
+            {
+              "kind": "action",
+              "text": "相馬律看了一眼窗外。"
+            },
+            {
+              "kind": "line",
+              "speaker": "相馬律",
+              "text": "雨還在下。"
+            }
+          ],
+          "onReexamine": null
+        }
+      ],
+      "characters": [
+        {
+          "id": "witness",
+          "name": "證人",
+          "role": "證人",
+          "bio": "案發時在現場的證人。",
+          "topics": [
+            {
+              "id": "timeline",
+              "label": "案發時間",
+              "status": "unlocked",
+              "unlock": null,
+              "reveals": [
+                {
+                  "kind": "statement",
+                  "id": "witness_alibi"
+                }
+              ],
+              "topicDialogue": [
+                {
+                  "kind": "line",
+                  "speaker": "證人",
+                  "text": "我那時候在桌邊。"
+                }
+              ],
+              "onReexamine": [
+                {
+                  "kind": "line",
+                  "speaker": "證人",
+                  "text": "和剛才一樣，我在桌邊。"
+                }
+              ]
+            },
+            {
+              "id": "motive",
+              "label": "動機",
+              "status": "locked",
+              "unlock": {
+                "predicate": "evidence_collected",
+                "id": "coffee"
+              },
+              "reveals": [],
+              "topicDialogue": [
+                {
+                  "kind": "line",
+                  "speaker": "證人",
+                  "text": "我沒有動機。"
+                }
+              ],
+              "onReexamine": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "back_room",
+      "status": "locked",
+      "unlock": null,
+      "reveals": [],
+      "sceneTag": "測試後室，昏暗。",
+      "transitionDialogue": [
+        {
+          "kind": "action",
+          "text": "兩人推門進入後室。"
+        },
+        {
+          "kind": "line",
+          "speaker": "早坂茜",
+          "text": "這裡比較冷。"
+        }
+      ],
+      "hotspots": [
+        {
+          "id": "cabinet",
+          "label": "櫥櫃",
+          "description": "一個上鎖的櫥櫃。",
+          "status": "unlocked",
+          "unlock": null,
+          "reveals": [
+            {
+              "kind": "evidence",
+              "id": "locked_box"
+            }
+          ],
+          "inspectDialogue": [
+            {
+              "kind": "action",
+              "text": "相馬律試了試櫥櫃。"
+            },
+            {
+              "kind": "line",
+              "speaker": "相馬律",
+              "text": "鎖著的。"
+            }
+          ],
+          "onReexamine": null
+        }
+      ],
+      "characters": []
+    }
+  ],
+  "evidenceManifest": [
+    {
+      "id": "coffee",
+      "name": "還熱的咖啡",
+      "description": "一杯仍微熱的咖啡。",
+      "details": "杯壁溫度約 50°C，最近 10 分鐘內被沖泡。",
+      "onCollect": [
+        {
+          "kind": "line",
+          "speaker": "相馬律",
+          "text": "證明有人在這裡。"
+        }
+      ],
+      "onReexamine": [
+        {
+          "kind": "line",
+          "speaker": "相馬律",
+          "text": "時間不對。"
+        }
+      ]
+    },
+    {
+      "id": "locked_box",
+      "name": "上鎖的小盒",
+      "description": "櫥櫃內的金屬盒。",
+      "details": "盒身有刻字，但鎖未撬開。",
+      "onCollect": [
+        {
+          "kind": "line",
+          "speaker": "相馬律",
+          "text": "先帶走。"
+        }
+      ],
+      "onReexamine": null
+    }
+  ],
+  "statementManifest": [
+    {
+      "id": "witness_alibi",
+      "speaker": "證人",
+      "content": "「案發時我在桌邊。」",
+      "onAcquire": [
+        {
+          "kind": "line",
+          "speaker": "早坂茜",
+          "text": "他說在桌邊。"
+        }
+      ],
+      "onReexamine": [
+        {
+          "kind": "line",
+          "speaker": "早坂茜",
+          "text": "他堅持是在桌邊。"
+        }
+      ]
+    }
+  ],
+  "outro": {
+    "unlock": {
+      "op": "and",
+      "left": {
+        "predicate": "hotspot_investigated",
+        "id": "cabinet"
+      },
+      "right": {
+        "predicate": "statement_acquired",
+        "id": "witness_alibi"
+      }
+    },
+    "dialogue": [
+      {
+        "kind": "action",
+        "text": "相馬律走出測試現場。"
+      },
+      {
+        "kind": "line",
+        "speaker": "相馬律",
+        "text": "測試完成。"
+      }
+    ]
+  }
+}

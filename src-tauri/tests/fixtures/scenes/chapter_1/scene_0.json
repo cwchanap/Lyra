@@ -1,0 +1,34 @@
+{
+  "type": "linear",
+  "id": "scene_0",
+  "title": "測試線性場景",
+  "queue": [
+    {
+      "kind": "sceneTag",
+      "text": "測試場景前廳，深夜。"
+    },
+    {
+      "kind": "action",
+      "text": "相馬律走進場景。"
+    },
+    {
+      "kind": "line",
+      "speaker": "相馬律",
+      "text": "測試開始。"
+    },
+    {
+      "kind": "line",
+      "speaker": "早坂茜",
+      "text": "好。"
+    },
+    {
+      "kind": "sceneTag",
+      "text": "測試場景內室。"
+    },
+    {
+      "kind": "line",
+      "speaker": "相馬律",
+      "text": "場景切換。"
+    }
+  ]
+}
