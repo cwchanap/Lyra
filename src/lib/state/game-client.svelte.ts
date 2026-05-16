@@ -1,6 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { GameError, GameStateView, QueueToken } from "./types";
 
+const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const DEV_HTTP_BASE = "http://127.0.0.1:1421";
+
+async function httpInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const r = await fetch(`${DEV_HTTP_BASE}/${command}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args ?? {}),
+  });
+  const text = await r.text();
+  if (!r.ok) {
+    try { throw JSON.parse(text); } catch { throw new Error(text || `${command} failed (${r.status})`); }
+  }
+  return JSON.parse(text) as T;
+}
+
 export const gameState = $state<{
   value: GameStateView | null;
   error: string | null;
@@ -22,7 +38,7 @@ function normalizeError(error: unknown): string {
 async function runCommand<T>(command: string, args?: Record<string, unknown>): Promise<T | null> {
   gameState.error = null;
   try {
-    return await invoke<T>(command, args);
+    return isTauri ? await invoke<T>(command, args) : await httpInvoke<T>(command, args);
   } catch (e) {
     gameState.error = normalizeError(e);
     return null;

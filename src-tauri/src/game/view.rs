@@ -13,7 +13,7 @@ pub struct GameStateView {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ModeView {
     Dialogue {
         current: DialogueItem,
@@ -44,7 +44,7 @@ pub struct ChapterView {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SceneView {
     Linear { id: String, title: String, index: usize, total: usize },
     Investigation {
