@@ -89,13 +89,19 @@ export function emitChaptersIndex(chapters: ASTChapter[]): JSONChaptersIndex {
       id: c.dirName,
       title: c.title,
       summary: c.summary,
-      scenes: c.sceneFiles.map((f) => {
-        const type = inferType(f);
-        const jsonName = f.replace(/\.md$/, ".json");
-        return { type, file: `${c.dirName}/${jsonName}` };
-      }),
+      scenes: c.sceneFiles
+        .filter((f) => !isReservedSceneFile(f))
+        .map((f) => {
+          const type = inferType(f);
+          const jsonName = f.replace(/\.md$/, ".json");
+          return { type, file: `${c.dirName}/${jsonName}` };
+        }),
     })),
   };
+}
+
+function isReservedSceneFile(filename: string): boolean {
+  return filename.startsWith("interrogation_scene_");
 }
 
 function inferType(filename: string): "linear" | "investigation" {

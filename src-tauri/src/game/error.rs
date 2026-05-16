@@ -21,6 +21,9 @@ impl GameError {
         Self::new("wrongMode", format!("Action '{action}' is not valid while in mode '{mode}'."))
     }
     pub fn no_active_dialogue() -> Self { Self::new("noActiveDialogue", "No dialogue queue is currently active.") }
+    pub fn dialogue_active(action: &str) -> Self {
+        Self::new("dialogueActive", format!("Action '{action}' is not allowed while a dialogue is playing."))
+    }
     pub fn unknown_hotspot(id: &str) -> Self { Self::new("unknownHotspot", format!("Hotspot '{id}' does not exist in the current scene.")) }
     pub fn locked_hotspot(id: &str) -> Self { Self::new("lockedHotspot", format!("Hotspot '{id}' is locked.")) }
     pub fn unknown_character(id: &str) -> Self { Self::new("unknownCharacter", format!("Character '{id}' does not exist.")) }

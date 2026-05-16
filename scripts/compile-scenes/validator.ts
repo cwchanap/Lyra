@@ -87,9 +87,12 @@ export function validate(input: ValidatorInput): CompileError[] {
     const sceneFilesInChapter = new Set(
       input.scenes.filter((s) => s.chapterId === chapter.dirName).map((s) => s.file),
     );
+    let playableSceneCount = 0;
     for (const file of chapter.sceneFiles) {
       const skippedKey = `${chapter.dirName}/${file}`;
-      if (!sceneFilesInChapter.has(file) && !skipped.has(skippedKey)) {
+      if (sceneFilesInChapter.has(file)) {
+        playableSceneCount += 1;
+      } else if (!skipped.has(skippedKey)) {
         errors.push({
           code: "chapterManifestMissingFile",
           message: `Chapter ${chapter.dirName} lists "${file}" but no such file was loaded.`,
@@ -97,6 +100,14 @@ export function validate(input: ValidatorInput): CompileError[] {
           line: chapter.line,
         });
       }
+    }
+    if (playableSceneCount === 0 && chapter.sceneFiles.length > 0) {
+      errors.push({
+        code: "chapterNoPlayableScenes",
+        message: `Chapter ${chapter.dirName} has no playable scenes — every listed file is a reserved placeholder.`,
+        sourceFile: chapter.sourceFile,
+        line: chapter.line,
+      });
     }
   }
 
