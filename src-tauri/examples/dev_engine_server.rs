@@ -13,7 +13,10 @@ use lyra_lib::game::{GameEngine, GameError, GameStateView, QueueToken};
 use serde::Deserialize;
 
 const ADDR: &str = "127.0.0.1:1421";
-const RESOURCES: &str = "/Users/chanwaichan/workspace/Lyra/src-tauri/resources/scenes";
+
+fn resources_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/scenes")
+}
 
 struct ServerState {
     engine: Mutex<Option<GameEngine>>,
@@ -103,7 +106,7 @@ fn write_response(stream: &mut TcpStream, status: u16, content_type: &str, body:
 fn dispatch(state: &ServerState, command: &str, body: &[u8]) -> Result<String, GameError> {
     match command {
         "start_game" | "reset_game" => {
-            let engine = GameEngine::new_started(PathBuf::from(RESOURCES))?;
+            let engine = GameEngine::new_started(resources_dir())?;
             let mut guard = state.engine.lock().map_err(|_| GameError::unavailable())?;
             let view = engine.view();
             *guard = Some(engine);

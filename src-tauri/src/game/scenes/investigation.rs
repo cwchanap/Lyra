@@ -44,20 +44,20 @@ impl InvestigationSceneState {
     pub fn id(&self) -> &str { &self.def.id }
     pub fn title(&self) -> &str { &self.def.title }
 
-    pub fn outro_satisfied(&self, inv: &impl UnlockContext) -> bool {
+    pub fn outro_satisfied(&self, ctx: &impl UnlockContext) -> bool {
         match &self.def.outro.unlock {
             OutroUnlock::Auto(_) => {
-                self.all_unlocked_hotspots_inspected() && self.all_unlocked_topics_discussed()
+                self.all_unlocked_hotspots_inspected(ctx) && self.all_unlocked_topics_discussed(ctx)
             }
-            OutroUnlock::Expr(expr) => unlock::evaluate(expr, inv),
+            OutroUnlock::Expr(expr) => unlock::evaluate(expr, ctx),
         }
     }
 
-    fn all_unlocked_hotspots_inspected(&self) -> bool {
+    fn all_unlocked_hotspots_inspected(&self, ctx: &impl UnlockContext) -> bool {
         for sub in &self.def.sublocations {
-            if !self.is_sublocation_unlocked(&sub.id) { continue; }
+            if !self.is_sublocation_unlocked(&sub.id, ctx) { continue; }
             for h in &sub.hotspots {
-                if self.is_block_unlocked(&format!("hotspot:{}", h.id), h.status, h.unlock.as_ref())
+                if self.is_block_unlocked(&format!("hotspot:{}", h.id), h.status, h.unlock.as_ref(), ctx)
                     && !self.inspected_hotspots.contains(&h.id)
                 {
                     return false;
@@ -67,12 +67,12 @@ impl InvestigationSceneState {
         true
     }
 
-    fn all_unlocked_topics_discussed(&self) -> bool {
+    fn all_unlocked_topics_discussed(&self, ctx: &impl UnlockContext) -> bool {
         for sub in &self.def.sublocations {
-            if !self.is_sublocation_unlocked(&sub.id) { continue; }
+            if !self.is_sublocation_unlocked(&sub.id, ctx) { continue; }
             for c in &sub.characters {
                 for t in &c.topics {
-                    if self.is_block_unlocked(&format!("topic:{}@{}", c.id, t.id), t.status, t.unlock.as_ref())
+                    if self.is_block_unlocked(&format!("topic:{}@{}", c.id, t.id), t.status, t.unlock.as_ref(), ctx)
                         && !self.discussed_topics.contains(&(c.id.clone(), t.id.clone()))
                     {
                         return false;
@@ -83,19 +83,33 @@ impl InvestigationSceneState {
         true
     }
 
-    pub fn is_sublocation_unlocked(&self, id: &str) -> bool {
+    pub fn is_sublocation_unlocked(&self, id: &str, ctx: &impl UnlockContext) -> bool {
         let key = format!("sublocation:{id}");
         let def = self.def.sublocations.iter().find(|s| s.id == id);
         match def {
             None => false,
-            Some(s) => self.is_block_unlocked(&key, s.status, s.unlock.as_ref()),
+            Some(s) => self.is_block_unlocked(&key, s.status, s.unlock.as_ref(), ctx),
         }
     }
 
-    pub fn is_block_unlocked(&self, key: &str, status: LockStatus, _unlock: Option<&UnlockExpr>) -> bool {
+    pub fn is_block_unlocked(
+        &self,
+        key: &str,
+        status: LockStatus,
+        unlock: Option<&UnlockExpr>,
+        ctx: &impl UnlockContext,
+    ) -> bool {
         match status {
             LockStatus::Unlocked => true,
-            LockStatus::Locked => self.unlocked_overrides.contains(key),
+            LockStatus::Locked => {
+                if self.unlocked_overrides.contains(key) {
+                    return true;
+                }
+                match unlock {
+                    Some(expr) => unlock::evaluate(expr, ctx),
+                    None => false,
+                }
+            }
         }
     }
 

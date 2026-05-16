@@ -10,7 +10,7 @@
 
 <aside class:open>
   <button class="toggle" type="button" onclick={() => (open = !open)}>
-    📋 {open ? "Hide" : "Inventory"} ({inventory.evidence.length}/{inventory.statements.length})
+    📋 {open ? "Hide" : "Inventory"} (證 {inventory.evidence.length} · 言 {inventory.statements.length})
   </button>
   {#if open}
     <div class="panel">
