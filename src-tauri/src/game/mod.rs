@@ -579,12 +579,13 @@ impl GameEngine {
     }
 
     fn chapter_view(&self) -> ChapterView {
-        let c = &self.chapters[self.current_chapter_idx.min(self.chapters.len() - 1)];
+        let clamped = self.current_chapter_idx.min(self.chapters.len() - 1);
+        let c = &self.chapters[clamped];
         ChapterView {
             id: c.id.clone(),
             title: c.title.clone(),
             summary: c.summary.clone(),
-            index: self.current_chapter_idx,
+            index: clamped,
             total: self.chapters.len(),
         }
     }
