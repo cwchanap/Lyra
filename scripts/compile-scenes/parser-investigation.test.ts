@@ -158,6 +158,38 @@ A：bad line missing the bold markup
     expect(result.error.code).toBe("unrecognizedDialogueLine");
   });
 
+  it("rejects a stray H4 heading inside a sub-location body", () => {
+    const source = `
+# Scene 1: x
+
+## Intro
+
+**A**：hi
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+#### On Reexam
+
+**A**：oops wrong heading
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Outro
+
+**A**：done.
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("sublocationStrayHeading");
+  });
+
   it("parses an On Reexamine block for an evidence entry", () => {
     const source = `
 # Scene 1: x

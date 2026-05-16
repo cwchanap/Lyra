@@ -15,7 +15,14 @@ async function httpInvoke<T>(command: string, args?: Record<string, unknown>): P
   });
   const text = await r.text();
   if (!r.ok) {
-    try { throw JSON.parse(text); } catch { throw new Error(text || `${command} failed (${r.status})`); }
+    try {
+      throw JSON.parse(text);
+    } catch (e) {
+      // If JSON.parse threw SyntaxError, fall back to raw text.
+      // Otherwise re-throw the parsed error object (preserves .message for normalizeError).
+      if (e instanceof SyntaxError) throw new Error(text || `${command} failed (${r.status})`);
+      throw e;
+    }
   }
   return JSON.parse(text) as T;
 }

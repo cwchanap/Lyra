@@ -81,6 +81,15 @@ export function validate(input: ValidatorInput): CompileError[] {
     validateInvestigationScene(rec, errors);
   }
 
+  // ---- Pass 2b: reachability analysis for locked blocks. ----
+  // A locked block is reachable if it can be unlocked through a chain of
+  // Reveals / Unlock predicates starting from initially-unlocked blocks.
+  // Cycles (A needs B, B needs A) or dead-ends produce unreachable blocks.
+  for (const rec of input.scenes) {
+    if (rec.ast.kind !== "investigationScene") continue;
+    checkReachability(rec.ast, errors);
+  }
+
   // ---- Pass 3: chapter manifests refer to existing files. ----
   const skipped = input.skippedReservedFiles ?? new Set<string>();
   for (const chapter of input.chapters) {
@@ -264,6 +273,282 @@ function checkLockedReachability(
     errors.push({ code: "revealsAndUnlockBoth", message: `${key} has both inbound Reveals and self Unlock — pick one.`, sourceFile, line });
   if (!hasInbound && !hasUnlock)
     errors.push({ code: "lockedBlockUnreachable", message: `${key} is locked but unreachable (no Unlock and no inbound Reveals).`, sourceFile, line });
+}
+
+/**
+ * Reachability analysis for locked blocks within a single investigation scene.
+ *
+ * Two-level model:
+ *   1. Sub-location reachability: a locked sub-location is reachable when an
+ *      already-reachable block's Reveals includes it, or its Unlock predicate
+ *      is satisfiable by reachable content.
+ *   2. Hotspot/topic reachability: a hotspot or topic is only reachable if its
+ *      parent sub-location is reachable AND the block itself is unlocked or
+ *      becomes reachable via Reveals/Unlock within that sub-location.
+ *
+ * After fixed-point propagation, any locked block still not reached gets an
+ * error. This catches cyclic dependencies (A needs B, B needs A) and dead-end
+ * chains.
+ */
+function checkReachability(scene: ASTInvestigationScene, errors: CompileError[]): void {
+  // --- Phase 1: sub-location reachability ---
+  const subReachable = new Set<string>();
+
+  // Seed: unlocked sub-locations.
+  for (const sub of scene.sublocations) {
+    if (sub.status === "unlocked") subReachable.add(sub.id);
+  }
+
+  // Collect Reveals from reachable content inside sub-locations.
+  // We need to know what each reachable sub-location's unlocked content can reveal.
+  const subRevealsBySubId = new Map<string, RevealTarget[]>();
+  for (const sub of scene.sublocations) {
+    const reveals: RevealTarget[] = [...sub.reveals];
+    for (const h of sub.hotspots) reveals.push(...h.reveals);
+    for (const c of sub.characters) for (const t of c.topics) reveals.push(...t.reveals);
+    subRevealsBySubId.set(sub.id, reveals);
+  }
+
+  // Fixed-point propagation for sub-locations.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const sub of scene.sublocations) {
+      if (subReachable.has(sub.id)) continue;
+      if (sub.status !== "locked") continue;
+
+      // Check if any reachable sub-location's content reveals this sub-location.
+      const reachedByReveal = [...subReachable].some((rid) => {
+        const revs = subRevealsBySubId.get(rid) ?? [];
+        return revs.some((r) => r.kind === "sublocation" && r.id === sub.id);
+      });
+      if (reachedByReveal) {
+        subReachable.add(sub.id);
+        changed = true;
+        continue;
+      }
+
+      // Check if this sub-location's Unlock predicate is satisfiable.
+      // For sub-location Unlock, predicate blocks must be in reachable sub-locations.
+      if (sub.unlock && isSubUnlockSatisfiable(sub.unlock, subReachable, scene)) {
+        subReachable.add(sub.id);
+        changed = true;
+      }
+    }
+  }
+
+  // --- Phase 2: hotspot/topic reachability within each sub-location ---
+  for (const sub of scene.sublocations) {
+    if (subReachable.has(sub.id)) {
+      // Sub-location is reachable. Check internal blocks.
+      checkInternalReachability(sub, scene, subReachable, errors);
+    } else if (sub.status === "locked") {
+      // Entire sub-location is unreachable → all locked internal blocks are too.
+      for (const h of sub.hotspots) {
+        if (h.status === "locked") {
+          errors.push({
+            code: "lockedBlockUnreachable",
+            message: `hotspot:${h.id} is locked but unreachable — parent sub-location ${sub.id} is unreachable (possible cycle or dead-end).`,
+            sourceFile: scene.sourceFile,
+            line: h.line,
+          });
+        }
+      }
+      for (const c of sub.characters) {
+        for (const t of c.topics) {
+          if (t.status === "locked") {
+            errors.push({
+              code: "lockedBlockUnreachable",
+              message: `topic:${c.id}@${t.id} is locked but unreachable — parent sub-location ${sub.id} is unreachable (possible cycle or dead-end).`,
+              sourceFile: scene.sourceFile,
+              line: t.line,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Report unreachable locked sub-locations.
+  for (const sub of scene.sublocations) {
+    if (sub.status === "locked" && !subReachable.has(sub.id)) {
+      errors.push({
+        code: "lockedBlockUnreachable",
+        message: `sublocation:${sub.id} is locked but unreachable — no chain of Reveals/Unlock predicates from an unlocked block leads to it (possible cycle or dead-end).`,
+        sourceFile: scene.sourceFile,
+        line: sub.line,
+      });
+    }
+  }
+}
+
+/**
+ * Checks reachability of hotspots and topics within a single reachable sub-location.
+ * Unlock predicates may reference blocks in other reachable sub-locations.
+ */
+function checkInternalReachability(
+  sub: ASTSublocation,
+  scene: ASTInvestigationScene,
+  reachableSubs: Set<string>,
+  errors: CompileError[],
+): void {
+  const reachable = new Set<string>();
+
+  // Seed: unlocked hotspots and topics in this sub-location.
+  for (const h of sub.hotspots) {
+    if (h.status === "unlocked") reachable.add(`hotspot:${h.id}`);
+  }
+  for (const c of sub.characters) {
+    for (const t of c.topics) {
+      if (t.status === "unlocked") reachable.add(`topic:${c.id}@${t.id}`);
+    }
+  }
+
+  // Also seed with unlocked hotspots/topics from other reachable sub-locations,
+  // since Unlock predicates can reference them.
+  for (const otherSub of scene.sublocations) {
+    if (otherSub.id === sub.id) continue;
+    if (!reachableSubs.has(otherSub.id)) continue;
+    for (const h of otherSub.hotspots) {
+      if (h.status === "unlocked") reachable.add(`hotspot:${h.id}`);
+    }
+    for (const c of otherSub.characters) {
+      for (const t of c.topics) {
+        if (t.status === "unlocked") reachable.add(`topic:${c.id}@${t.id}`);
+      }
+    }
+  }
+
+  // Fixed-point propagation within the sub-location.
+  let changed = true;
+  while (changed) {
+    changed = false;
+
+    // Collect Reveals from all reachable content in this sub-location.
+    const allReveals: RevealTarget[] = [...sub.reveals];
+    for (const h of sub.hotspots) {
+      if (reachable.has(`hotspot:${h.id}`)) allReveals.push(...h.reveals);
+    }
+    for (const c of sub.characters) {
+      for (const t of c.topics) {
+        if (reachable.has(`topic:${c.id}@${t.id}`)) allReveals.push(...t.reveals);
+      }
+    }
+
+    for (const h of sub.hotspots) {
+      if (reachable.has(`hotspot:${h.id}`) || h.status !== "locked") continue;
+      const reachedByReveal = allReveals.some((r) => r.kind === "hotspot" && r.id === h.id);
+      if (reachedByReveal) { reachable.add(`hotspot:${h.id}`); changed = true; continue; }
+      if (h.unlock && isUnlockSatisfiable(h.unlock, reachable)) {
+        reachable.add(`hotspot:${h.id}`); changed = true;
+      }
+    }
+    for (const c of sub.characters) {
+      for (const t of c.topics) {
+        const key = `topic:${c.id}@${t.id}`;
+        if (reachable.has(key) || t.status !== "locked") continue;
+        const reachedByReveal = allReveals.some((r) => r.kind === "topic" && r.characterId === c.id && r.topicId === t.id);
+        if (reachedByReveal) { reachable.add(key); changed = true; continue; }
+        if (t.unlock && isUnlockSatisfiable(t.unlock, reachable)) {
+          reachable.add(key); changed = true;
+        }
+      }
+    }
+  }
+
+  // Report unreachable locked internal blocks.
+  for (const h of sub.hotspots) {
+    if (h.status === "locked" && !reachable.has(`hotspot:${h.id}`)) {
+      errors.push({
+        code: "lockedBlockUnreachable",
+        message: `hotspot:${h.id} is locked but unreachable within sub-location ${sub.id} — no chain of Reveals/Unlock predicates leads to it.`,
+        sourceFile: scene.sourceFile,
+        line: h.line,
+      });
+    }
+  }
+  for (const c of sub.characters) {
+    for (const t of c.topics) {
+      const key = `topic:${c.id}@${t.id}`;
+      if (t.status === "locked" && !reachable.has(key)) {
+        errors.push({
+          code: "lockedBlockUnreachable",
+          message: `topic:${key} is locked but unreachable within sub-location ${sub.id} — no chain of Reveals/Unlock predicates leads to it.`,
+          sourceFile: scene.sourceFile,
+          line: t.line,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Evaluates whether a sub-location's Unlock predicate is satisfiable given
+ * the set of currently-reachable sub-locations. A hotspot/topic predicate is
+ * satisfiable when it exists in a reachable sub-location and is itself
+ * reachable within that sub-location. For simplicity, we check only that the
+ * referenced block's parent sub-location is reachable (the block's own status
+ * being "unlocked" inside it is sufficient for the Unlock to be achievable).
+ */
+function isSubUnlockSatisfiable(
+  expr: UnlockExpr,
+  reachableSubs: Set<string>,
+  scene: ASTInvestigationScene,
+): boolean {
+  if ("op" in expr) {
+    if (expr.op === "and") {
+      return isSubUnlockSatisfiable(expr.left, reachableSubs, scene)
+          && isSubUnlockSatisfiable(expr.right, reachableSubs, scene);
+    }
+    return isSubUnlockSatisfiable(expr.left, reachableSubs, scene)
+        || isSubUnlockSatisfiable(expr.right, reachableSubs, scene);
+  }
+  switch (expr.predicate) {
+    case "hotspot_investigated": {
+      // Find which sub-location contains this hotspot and check reachability.
+      const parentSub = scene.sublocations.find((s) => s.hotspots.some((h) => h.id === expr.id));
+      return parentSub != null && reachableSubs.has(parentSub.id);
+    }
+    case "topic_discussed": {
+      const parentSub = scene.sublocations.find((s) =>
+        s.characters.some((c) => c.id === expr.characterId && c.topics.some((t) => t.id === expr.topicId)),
+      );
+      return parentSub != null && reachableSubs.has(parentSub.id);
+    }
+    case "evidence_collected":
+    case "statement_acquired":
+      return true;
+  }
+}
+
+/**
+ * Evaluates whether an UnlockExpr can be satisfied given the current set of
+ * reachable blocks. A predicate is satisfiable when the block it references
+ * (hotspot, topic, evidence, statement) is already reachable. For evidence and
+ * statements, they are always "reachable" since collecting/acquiring them is
+ * triggered by Reveals from reachable blocks.
+ */
+function isUnlockSatisfiable(expr: UnlockExpr, reachable: Set<string>): boolean {
+  if ("op" in expr) {
+    if (expr.op === "and") {
+      return isUnlockSatisfiable(expr.left, reachable) && isUnlockSatisfiable(expr.right, reachable);
+    }
+    // "or"
+    return isUnlockSatisfiable(expr.left, reachable) || isUnlockSatisfiable(expr.right, reachable);
+  }
+  switch (expr.predicate) {
+    case "hotspot_investigated":
+      return reachable.has(`hotspot:${expr.id}`);
+    case "topic_discussed":
+      return reachable.has(`topic:${expr.characterId}@${expr.topicId}`);
+    // evidence_collected and statement_acquired are triggered by Reveals from
+    // reachable blocks, so once the Reveals chain reaches this point they are
+    // satisfiable. We treat them as always satisfiable in the reachability
+    // graph (the validator already confirmed they exist in the manifest).
+    case "evidence_collected":
+    case "statement_acquired":
+      return true;
+  }
 }
 
 function walkUnlock(expr: UnlockExpr, fn: (atom: Extract<UnlockExpr, { predicate: string }>) => void): void {
