@@ -22,7 +22,7 @@ fn unavailable_error() -> GameError {
 fn start_game(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<GameStateView, GameError> {
     let resources_dir = app
         .path()
-        .resolve("scenes", BaseDirectory::Resource)
+        .resolve("resources/scenes", BaseDirectory::Resource)
         .map_err(|e| GameError::scene_load_failed(format!("cannot resolve resources dir: {e}")))?;
     let engine = GameEngine::new_started(resources_dir)?;
     let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
