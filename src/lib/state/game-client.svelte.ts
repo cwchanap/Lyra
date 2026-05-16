@@ -5,6 +5,9 @@ const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
 const DEV_HTTP_BASE = "http://127.0.0.1:1421";
 
 async function httpInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (!import.meta.env.DEV) {
+    throw new Error("Tauri runtime unavailable; HTTP fallback is disabled in production builds.");
+  }
   const r = await fetch(`${DEV_HTTP_BASE}/${command}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -46,17 +49,29 @@ async function runCommand<T>(command: string, args?: Record<string, unknown>): P
 }
 
 export async function startGame() {
+  if (gameState.inFlight) return;
+  gameState.inFlight = true;
   gameState.loading = true;
-  const v = await runCommand<GameStateView>("start_game");
-  if (v) gameState.value = v;
-  gameState.loading = false;
+  try {
+    const v = await runCommand<GameStateView>("start_game");
+    if (v) gameState.value = v;
+  } finally {
+    gameState.loading = false;
+    gameState.inFlight = false;
+  }
 }
 
 export async function resetGame() {
+  if (gameState.inFlight) return;
+  gameState.inFlight = true;
   gameState.loading = true;
-  const v = await runCommand<GameStateView>("reset_game");
-  if (v) gameState.value = v;
-  gameState.loading = false;
+  try {
+    const v = await runCommand<GameStateView>("reset_game");
+    if (v) gameState.value = v;
+  } finally {
+    gameState.loading = false;
+    gameState.inFlight = false;
+  }
 }
 
 export async function advanceDialogue(expected: QueueToken) {

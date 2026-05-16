@@ -12,10 +12,11 @@
   }
   function handleKey(e: KeyboardEvent) {
     if (e.repeat) return;
-    if (e.key === " " || e.key === "Enter") {
-      e.preventDefault();
-      onAdvance(queueToken);
-    }
+    if (e.key !== " " && e.key !== "Enter") return;
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    e.preventDefault();
+    onAdvance(queueToken);
   }
 </script>
 

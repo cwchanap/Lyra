@@ -253,6 +253,7 @@ impl GameEngine {
             .clone();
         let new_scene = load_scene_runtime(&self.resources_dir, &scene_ref, queue_gen)?;
         self.scene = new_scene;
+        self.last_scene_tag = None;
         self.prime_initial_queue();
         Ok(())
     }
@@ -282,7 +283,8 @@ impl GameEngine {
                 .find(|h| h.id == hotspot_id)
                 .ok_or_else(|| GameError::unknown_hotspot(hotspot_id))?
                 .clone();
-            if !inv.is_block_unlocked(&format!("hotspot:{}", hotspot_id), hot_def.status, hot_def.unlock.as_ref()) {
+            let ctx = SceneAndInventoryCtx { scene: inv, inventory: &self.inventory };
+            if !inv.is_block_unlocked(&format!("hotspot:{}", hotspot_id), hot_def.status, hot_def.unlock.as_ref(), &ctx) {
                 return Err(GameError::locked_hotspot(hotspot_id));
             }
             let first_time = !inv.inspected_hotspots.contains(hotspot_id);
@@ -349,7 +351,8 @@ impl GameEngine {
                 .ok_or_else(|| GameError::unknown_topic(character_id, topic_id))?
                 .clone();
             let key = format!("topic:{character_id}@{topic_id}");
-            if !inv.is_block_unlocked(&key, topic.status, topic.unlock.as_ref()) {
+            let ctx = SceneAndInventoryCtx { scene: inv, inventory: &self.inventory };
+            if !inv.is_block_unlocked(&key, topic.status, topic.unlock.as_ref(), &ctx) {
                 return Err(GameError::locked_topic(character_id, topic_id));
             }
             let first_time = !inv.discussed_topics.contains(&(character_id.into(), topic_id.into()));
@@ -391,7 +394,8 @@ impl GameEngine {
                 .find(|s| s.id == sublocation_id)
                 .ok_or_else(|| GameError::unknown_sublocation(sublocation_id))?
                 .clone();
-            if !inv.is_block_unlocked(&format!("sublocation:{}", sublocation_id), def.status, def.unlock.as_ref()) {
+            let ctx = SceneAndInventoryCtx { scene: inv, inventory: &self.inventory };
+            if !inv.is_block_unlocked(&format!("sublocation:{}", sublocation_id), def.status, def.unlock.as_ref(), &ctx) {
                 return Err(GameError::locked_sublocation(sublocation_id));
             }
             let first_entry = !inv.entered_sublocations.contains(sublocation_id);
@@ -539,18 +543,19 @@ impl GameEngine {
                 total,
             },
             SceneRuntime::Investigation(inv) => {
+                let ctx = SceneAndInventoryCtx { scene: inv, inventory: &self.inventory };
                 let visible_sublocations: Vec<SublocationView> = inv
                     .def
                     .sublocations
                     .iter()
-                    .filter(|s| inv.is_block_unlocked(&format!("sublocation:{}", s.id), s.status, s.unlock.as_ref()))
+                    .filter(|s| inv.is_block_unlocked(&format!("sublocation:{}", s.id), s.status, s.unlock.as_ref(), &ctx))
                     .map(|s| SublocationView {
                         id: s.id.clone(),
                         scene_tag: s.scene_tag.clone(),
                         hotspots: s
                             .hotspots
                             .iter()
-                            .filter(|h| inv.is_block_unlocked(&format!("hotspot:{}", h.id), h.status, h.unlock.as_ref()))
+                            .filter(|h| inv.is_block_unlocked(&format!("hotspot:{}", h.id), h.status, h.unlock.as_ref(), &ctx))
                             .map(|h| HotspotView {
                                 id: h.id.clone(),
                                 label: h.label.clone(),
@@ -569,7 +574,7 @@ impl GameEngine {
                                 topics: c
                                     .topics
                                     .iter()
-                                    .filter(|t| inv.is_block_unlocked(&format!("topic:{}@{}", c.id, t.id), t.status, t.unlock.as_ref()))
+                                    .filter(|t| inv.is_block_unlocked(&format!("topic:{}@{}", c.id, t.id), t.status, t.unlock.as_ref(), &ctx))
                                     .map(|t| TopicView {
                                         id: t.id.clone(),
                                         label: t.label.clone(),
