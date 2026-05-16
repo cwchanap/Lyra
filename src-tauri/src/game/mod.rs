@@ -200,33 +200,53 @@ impl GameEngine {
     }
 
     fn advance_into_first_sublocation(&mut self) {
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
+
         // Phase 1 — read out the data we need without holding a mutable borrow into self.scene.
-        let chosen: Option<(String, Vec<DialogueItem>)> = match &self.scene {
+        let chosen = match &self.scene {
             SceneRuntime::Investigation(inv) => inv
                 .def
                 .sublocations
                 .iter()
                 .find(|s| s.status == LockStatus::Unlocked)
-                .map(|s| (s.id.clone(), s.transition_dialogue.clone())),
+                .map(|s| (s.id.clone(), s.scene_tag.clone(), s.transition_dialogue.clone(), s.reveals.clone())),
             _ => None,
         };
-        let Some((id, transition)) = chosen else { return; };
+        let Some((id, scene_tag, transition, sub_reveals)) = chosen else { return; };
 
-        // Phase 2 — compute: allocate queue gen if needed.
-        let queue_gen = if transition.is_empty() { None } else { Some(self.alloc_queue_gen()) };
-
-        // Phase 3 — write: mutate the scene.
-        if let SceneRuntime::Investigation(inv) = &mut self.scene {
+        // Phase 2 — write: mutate scene + inventory; reveals fire on first entry.
+        let queue_items = {
+            let inv = match &mut self.scene {
+                SceneRuntime::Investigation(i) => i,
+                _ => return,
+            };
+            let first_entry = !inv.entered_sublocations.contains(&id);
             inv.current_sublocation_id = Some(id.clone());
             inv.record_sublocation_entered(&id);
-            if let Some(qg) = queue_gen {
+            if first_entry {
+                reveals::apply_reveals_and_build_queue(
+                    inv,
+                    &mut self.inventory,
+                    transition,
+                    &sub_reveals,
+                    &chapter_id,
+                )
+            } else {
+                Vec::new()
+            }
+        };
+
+        if !queue_items.is_empty() {
+            let queue_gen = self.alloc_queue_gen();
+            if let SceneRuntime::Investigation(inv) = &mut self.scene {
                 inv.pending_queue = Some(DialogueQueue {
-                    items: transition,
+                    items: queue_items,
                     cursor: 0,
-                    queue_gen: qg,
+                    queue_gen,
                 });
             }
         }
+        self.last_scene_tag = Some(scene_tag);
     }
 
     fn alloc_queue_gen(&mut self) -> u64 {
@@ -267,6 +287,9 @@ impl GameEngine {
                 SceneRuntime::Investigation(i) => i,
                 _ => return Err(GameError::wrong_mode("inspect_hotspot", "linear")),
             };
+            if inv.pending_queue.as_ref().is_some_and(|q| q.cursor < q.items.len()) {
+                return Err(GameError::dialogue_active("inspect_hotspot"));
+            }
             let sublocation_id = inv
                 .current_sublocation_id
                 .clone()
@@ -329,6 +352,9 @@ impl GameEngine {
                 SceneRuntime::Investigation(i) => i,
                 _ => return Err(GameError::wrong_mode("interview_topic", "linear")),
             };
+            if inv.pending_queue.as_ref().is_some_and(|q| q.cursor < q.items.len()) {
+                return Err(GameError::dialogue_active("interview_topic"));
+            }
             let sub_id = inv
                 .current_sublocation_id
                 .clone()
@@ -382,11 +408,16 @@ impl GameEngine {
     }
 
     pub fn enter_sublocation(&mut self, sublocation_id: &str) -> Result<GameStateView, GameError> {
-        let (transition, first_entry) = {
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
+
+        let (scene_tag, transition_dialogue, sub_reveals, first_entry) = {
             let inv = match &self.scene {
                 SceneRuntime::Investigation(i) => i,
                 _ => return Err(GameError::wrong_mode("enter_sublocation", "linear")),
             };
+            if inv.pending_queue.as_ref().is_some_and(|q| q.cursor < q.items.len()) {
+                return Err(GameError::dialogue_active("enter_sublocation"));
+            }
             let def = inv
                 .def
                 .sublocations
@@ -399,26 +430,46 @@ impl GameEngine {
                 return Err(GameError::locked_sublocation(sublocation_id));
             }
             let first_entry = !inv.entered_sublocations.contains(sublocation_id);
-            (def.transition_dialogue, first_entry)
+            (def.scene_tag, def.transition_dialogue, def.reveals, first_entry)
         };
 
-        let queue_gen = if first_entry && !transition.is_empty() {
-            Some(self.alloc_queue_gen())
-        } else {
-            None
-        };
-
-        if let SceneRuntime::Investigation(inv) = &mut self.scene {
+        let queue_items: Vec<DialogueItem> = if first_entry {
+            let inv = match &mut self.scene {
+                SceneRuntime::Investigation(i) => i,
+                _ => unreachable!("checked above"),
+            };
             inv.current_sublocation_id = Some(sublocation_id.into());
             inv.record_sublocation_entered(sublocation_id);
-            if let Some(qg) = queue_gen {
-                inv.pending_queue = Some(DialogueQueue { items: transition, cursor: 0, queue_gen: qg });
+            reveals::apply_reveals_and_build_queue(
+                inv,
+                &mut self.inventory,
+                transition_dialogue,
+                &sub_reveals,
+                &chapter_id,
+            )
+        } else {
+            if let SceneRuntime::Investigation(inv) = &mut self.scene {
+                inv.current_sublocation_id = Some(sublocation_id.into());
+            }
+            Vec::new()
+        };
+
+        if !queue_items.is_empty() {
+            let queue_gen = self.alloc_queue_gen();
+            if let SceneRuntime::Investigation(inv) = &mut self.scene {
+                inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
             }
         }
+        self.last_scene_tag = Some(scene_tag);
         Ok(self.view())
     }
 
     pub fn reexamine_evidence(&mut self, id: &str) -> Result<GameStateView, GameError> {
+        if let SceneRuntime::Investigation(inv) = &self.scene {
+            if inv.pending_queue.as_ref().is_some_and(|q| q.cursor < q.items.len()) {
+                return Err(GameError::dialogue_active("reexamine_evidence"));
+            }
+        }
         let rec = self
             .inventory
             .evidence
@@ -443,6 +494,11 @@ impl GameEngine {
     }
 
     pub fn reexamine_statement(&mut self, id: &str) -> Result<GameStateView, GameError> {
+        if let SceneRuntime::Investigation(inv) = &self.scene {
+            if inv.pending_queue.as_ref().is_some_and(|q| q.cursor < q.items.len()) {
+                return Err(GameError::dialogue_active("reexamine_statement"));
+            }
+        }
         let rec = self
             .inventory
             .statements

@@ -89,6 +89,16 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "chapterManifestMissingFile")).toBeDefined();
   });
 
+  it("rejects a chapter whose only scenes are reserved placeholders", () => {
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [],
+      skippedReservedFiles: new Set(["chapter_1/interrogation_scene_1.md"]),
+    });
+    expect(errors.find((e) => e.code === "chapterNoPlayableScenes")).toBeDefined();
+    expect(errors.find((e) => e.code === "chapterManifestMissingFile")).toBeUndefined();
+  });
+
   it("rejects a hotspot whose Reveals target an undeclared evidence id", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.sublocations[0]!.hotspots[0]!.reveals = [{ kind: "evidence", id: "ghost" }];
