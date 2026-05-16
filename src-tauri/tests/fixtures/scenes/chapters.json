@@ -1,0 +1,19 @@
+{
+  "chapters": [
+    {
+      "id": "chapter_1",
+      "title": "測試章節",
+      "summary": "一個用來驗證解析器與校驗器所有路徑的最小測試章節。",
+      "scenes": [
+        {
+          "type": "linear",
+          "file": "chapter_1/scene_0.json"
+        },
+        {
+          "type": "investigation",
+          "file": "chapter_1/investigation_scene_1.json"
+        }
+      ]
+    }
+  ]
+}
