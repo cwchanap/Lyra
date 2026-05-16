@@ -340,4 +340,201 @@ describe("validator", () => {
     // (room_b reachable + unlock references reachable hotspot h1)
     expect(errors).toEqual([]);
   });
+
+  it("rejects a locked block whose evidence_collected predicate references evidence only revealed by itself", () => {
+    // A locked hotspot requires evidence:x, but evidence:x is only revealed
+    // by that same locked hotspot — a circular dependency the runtime can never resolve.
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.evidenceManifest = [
+      { id: "ev1", name: "ev1", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+    ];
+    scene.sublocations[0]!.hotspots = [
+      {
+        id: "h1",
+        label: "h1",
+        description: "h1",
+        status: "unlocked",
+        unlock: null,
+        reveals: [],
+        inspectDialogue: [{ kind: "line", speaker: "A", text: "hi" }],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 4,
+      },
+      {
+        id: "h2",
+        label: "h2",
+        description: "h2",
+        status: "locked",
+        unlock: { predicate: "evidence_collected", id: "ev1" },
+        reveals: [{ kind: "evidence", id: "ev1" }],
+        inspectDialogue: [{ kind: "line", speaker: "A", text: "found it" }],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 8,
+      },
+    ];
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    const reachErr = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("h2"));
+    expect(reachErr).toBeDefined();
+  });
+
+  it("accepts a locked block whose evidence_collected predicate references evidence revealed by a reachable block", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.evidenceManifest = [
+      { id: "ev1", name: "ev1", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+    ];
+    scene.sublocations[0]!.hotspots = [
+      {
+        id: "h1",
+        label: "h1",
+        description: "h1",
+        status: "unlocked",
+        unlock: null,
+        reveals: [{ kind: "evidence", id: "ev1" }],
+        inspectDialogue: [{ kind: "line", speaker: "A", text: "hi" }],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 4,
+      },
+      {
+        id: "h2",
+        label: "h2",
+        description: "h2",
+        status: "locked",
+        unlock: { predicate: "evidence_collected", id: "ev1" },
+        reveals: [],
+        inspectDialogue: [{ kind: "line", speaker: "A", text: "unlocked" }],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 8,
+      },
+    ];
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it("rejects a locked block whose statement_acquired predicate references a statement only revealed by another unreachable block", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.statementManifest = [
+      { id: "st1", name: "st1", summary: "s", details: "d", speaker: "X", onAcquire: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+    ];
+    scene.sublocations[0]!.hotspots = [
+      {
+        id: "h1",
+        label: "h1",
+        description: "h1",
+        status: "unlocked",
+        unlock: null,
+        reveals: [],
+        inspectDialogue: [{ kind: "line", speaker: "A", text: "hi" }],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 4,
+      },
+      {
+        id: "h2",
+        label: "h2",
+        description: "h2",
+        status: "locked",
+        unlock: { predicate: "statement_acquired", id: "st1" },
+        reveals: [],
+        inspectDialogue: [{ kind: "line", speaker: "A", text: "unlocked" }],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 8,
+      },
+      {
+        id: "h3",
+        label: "h3",
+        description: "h3",
+        status: "locked",
+        unlock: { predicate: "hotspot_investigated", id: "h2" },
+        reveals: [{ kind: "statement", id: "st1" }],
+        inspectDialogue: [{ kind: "line", speaker: "A", text: "locked" }],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 12,
+      },
+    ];
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    // h2 needs st1, st1 is only revealed by h3, h3 needs h2 — deadlock.
+    const reachErr = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("h2"));
+    expect(reachErr).toBeDefined();
+  });
+
+  it("rejects a locked sub-location whose evidence_collected unlock references evidence not revealed by any reachable sub-location", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.evidenceManifest = [
+      { id: "ev1", name: "ev1", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+    ];
+    scene.sublocations = [
+      {
+        id: "room_a",
+        status: "unlocked",
+        unlock: null,
+        reveals: [],
+        sceneTag: "room a",
+        transitionDialogue: [],
+        hotspots: [
+          {
+            id: "h1",
+            label: "h1",
+            description: "h1",
+            status: "unlocked",
+            unlock: null,
+            reveals: [],
+            inspectDialogue: [{ kind: "line", speaker: "A", text: "hi" }],
+            onReexamine: null,
+            sourceFile: "i.md",
+            line: 4,
+          },
+        ],
+        characters: [],
+        sourceFile: "i.md",
+        line: 2,
+      },
+      {
+        id: "room_b",
+        status: "locked",
+        unlock: { predicate: "evidence_collected", id: "ev1" },
+        reveals: [],
+        sceneTag: "room b",
+        transitionDialogue: [],
+        hotspots: [
+          {
+            id: "h2",
+            label: "h2",
+            description: "h2",
+            status: "unlocked",
+            unlock: null,
+            reveals: [{ kind: "evidence", id: "ev1" }],
+            inspectDialogue: [{ kind: "line", speaker: "B", text: "found" }],
+            onReexamine: null,
+            sourceFile: "i.md",
+            line: 15,
+          },
+        ],
+        characters: [],
+        sourceFile: "i.md",
+        line: 12,
+      },
+    ];
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    // room_b needs evidence:ev1, but ev1 is only revealed inside room_b itself.
+    const reachErr = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("room_b"));
+    expect(reachErr).toBeDefined();
+  });
 });

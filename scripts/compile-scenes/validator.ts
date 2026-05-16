@@ -309,6 +309,21 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
     subRevealsBySubId.set(sub.id, reveals);
   }
 
+  // Track evidence/statements revealed by unlocked content in reachable sub-locations.
+  const reachableItems = new Set<string>();
+
+  function refreshReachableItems(): void {
+    reachableItems.clear();
+    for (const rid of subReachable) {
+      const revs = subRevealsBySubId.get(rid) ?? [];
+      for (const r of revs) {
+        if (r.kind === "evidence") reachableItems.add(`evidence:${r.id}`);
+        if (r.kind === "statement") reachableItems.add(`statement:${r.id}`);
+      }
+    }
+  }
+  refreshReachableItems();
+
   // Fixed-point propagation for sub-locations.
   let changed = true;
   while (changed) {
@@ -324,14 +339,16 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
       });
       if (reachedByReveal) {
         subReachable.add(sub.id);
+        refreshReachableItems();
         changed = true;
         continue;
       }
 
       // Check if this sub-location's Unlock predicate is satisfiable.
       // For sub-location Unlock, predicate blocks must be in reachable sub-locations.
-      if (sub.unlock && isSubUnlockSatisfiable(sub.unlock, subReachable, scene)) {
+      if (sub.unlock && isSubUnlockSatisfiable(sub.unlock, subReachable, scene, reachableItems)) {
         subReachable.add(sub.id);
+        refreshReachableItems();
         changed = true;
       }
     }
@@ -435,6 +452,18 @@ function checkInternalReachability(
       }
     }
 
+    // Add evidence/statement IDs revealed by reachable blocks to the reachable
+    // set so that evidence_collected / statement_acquired predicates can be
+    // checked against actual reachability.
+    for (const r of allReveals) {
+      if (r.kind === "evidence" && !reachable.has(`evidence:${r.id}`)) {
+        reachable.add(`evidence:${r.id}`); changed = true;
+      }
+      if (r.kind === "statement" && !reachable.has(`statement:${r.id}`)) {
+        reachable.add(`statement:${r.id}`); changed = true;
+      }
+    }
+
     for (const h of sub.hotspots) {
       if (reachable.has(`hotspot:${h.id}`) || h.status !== "locked") continue;
       const reachedByReveal = allReveals.some((r) => r.kind === "hotspot" && r.id === h.id);
@@ -489,19 +518,22 @@ function checkInternalReachability(
  * reachable within that sub-location. For simplicity, we check only that the
  * referenced block's parent sub-location is reachable (the block's own status
  * being "unlocked" inside it is sufficient for the Unlock to be achievable).
+ * Evidence/statement predicates check whether any reachable sub-location's
+ * unlocked content or sub-location-level reveals expose that item.
  */
 function isSubUnlockSatisfiable(
   expr: UnlockExpr,
   reachableSubs: Set<string>,
   scene: ASTInvestigationScene,
+  reachableItems: Set<string>,
 ): boolean {
   if ("op" in expr) {
     if (expr.op === "and") {
-      return isSubUnlockSatisfiable(expr.left, reachableSubs, scene)
-          && isSubUnlockSatisfiable(expr.right, reachableSubs, scene);
+      return isSubUnlockSatisfiable(expr.left, reachableSubs, scene, reachableItems)
+          && isSubUnlockSatisfiable(expr.right, reachableSubs, scene, reachableItems);
     }
-    return isSubUnlockSatisfiable(expr.left, reachableSubs, scene)
-        || isSubUnlockSatisfiable(expr.right, reachableSubs, scene);
+    return isSubUnlockSatisfiable(expr.left, reachableSubs, scene, reachableItems)
+        || isSubUnlockSatisfiable(expr.right, reachableSubs, scene, reachableItems);
   }
   switch (expr.predicate) {
     case "hotspot_investigated": {
@@ -516,8 +548,9 @@ function isSubUnlockSatisfiable(
       return parentSub != null && reachableSubs.has(parentSub.id);
     }
     case "evidence_collected":
+      return reachableItems.has(`evidence:${expr.id}`);
     case "statement_acquired":
-      return true;
+      return reachableItems.has(`statement:${expr.id}`);
   }
 }
 
@@ -525,8 +558,8 @@ function isSubUnlockSatisfiable(
  * Evaluates whether an UnlockExpr can be satisfied given the current set of
  * reachable blocks. A predicate is satisfiable when the block it references
  * (hotspot, topic, evidence, statement) is already reachable. For evidence and
- * statements, they are always "reachable" since collecting/acquiring them is
- * triggered by Reveals from reachable blocks.
+ * statements, reachability requires that they be revealed by a reachable block
+ * in a prior iteration of the fixed-point loop.
  */
 function isUnlockSatisfiable(expr: UnlockExpr, reachable: Set<string>): boolean {
   if ("op" in expr) {
@@ -541,13 +574,10 @@ function isUnlockSatisfiable(expr: UnlockExpr, reachable: Set<string>): boolean 
       return reachable.has(`hotspot:${expr.id}`);
     case "topic_discussed":
       return reachable.has(`topic:${expr.characterId}@${expr.topicId}`);
-    // evidence_collected and statement_acquired are triggered by Reveals from
-    // reachable blocks, so once the Reveals chain reaches this point they are
-    // satisfiable. We treat them as always satisfiable in the reachability
-    // graph (the validator already confirmed they exist in the manifest).
     case "evidence_collected":
+      return reachable.has(`evidence:${expr.id}`);
     case "statement_acquired":
-      return true;
+      return reachable.has(`statement:${expr.id}`);
   }
 }
 

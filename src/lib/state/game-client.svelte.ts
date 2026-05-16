@@ -93,22 +93,52 @@ export async function advanceDialogue(expected: QueueToken) {
 }
 
 export async function inspectHotspot(hotspotId: string) {
-  const v = await runCommand<GameStateView>("inspect_hotspot", { hotspotId });
-  if (v) gameState.value = v;
+  if (gameState.inFlight) return;
+  gameState.inFlight = true;
+  try {
+    const v = await runCommand<GameStateView>("inspect_hotspot", { hotspotId });
+    if (v) gameState.value = v;
+  } finally {
+    gameState.inFlight = false;
+  }
 }
 export async function interviewTopic(characterId: string, topicId: string) {
-  const v = await runCommand<GameStateView>("interview_topic", { characterId, topicId });
-  if (v) gameState.value = v;
+  if (gameState.inFlight) return;
+  gameState.inFlight = true;
+  try {
+    const v = await runCommand<GameStateView>("interview_topic", { characterId, topicId });
+    if (v) gameState.value = v;
+  } finally {
+    gameState.inFlight = false;
+  }
 }
 export async function enterSublocation(sublocationId: string) {
-  const v = await runCommand<GameStateView>("enter_sublocation", { sublocationId });
-  if (v) gameState.value = v;
+  if (gameState.inFlight) return;
+  gameState.inFlight = true;
+  try {
+    const v = await runCommand<GameStateView>("enter_sublocation", { sublocationId });
+    if (v) gameState.value = v;
+  } finally {
+    gameState.inFlight = false;
+  }
 }
 export async function reexamineEvidence(evidenceId: string) {
-  const v = await runCommand<GameStateView>("reexamine_evidence", { evidenceId });
-  if (v) gameState.value = v;
+  if (gameState.inFlight) return;
+  gameState.inFlight = true;
+  try {
+    const v = await runCommand<GameStateView>("reexamine_evidence", { evidenceId });
+    if (v) gameState.value = v;
+  } finally {
+    gameState.inFlight = false;
+  }
 }
 export async function reexamineStatement(statementId: string) {
-  const v = await runCommand<GameStateView>("reexamine_statement", { statementId });
-  if (v) gameState.value = v;
+  if (gameState.inFlight) return;
+  gameState.inFlight = true;
+  try {
+    const v = await runCommand<GameStateView>("reexamine_statement", { statementId });
+    if (v) gameState.value = v;
+  } finally {
+    gameState.inFlight = false;
+  }
 }
