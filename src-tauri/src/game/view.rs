@@ -1,5 +1,5 @@
 // src-tauri/src/game/view.rs
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use crate::game::schema::DialogueItem;
 use crate::game::state::Inventory;
 
@@ -25,7 +25,7 @@ pub enum ModeView {
     GameComplete,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueToken {
     pub scene_id: String,
