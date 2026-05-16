@@ -68,4 +68,35 @@ describe("parseChapter", () => {
     if (result.ok) return;
     expect(result.error.code).toBe("chapterNoScenes");
   });
+
+  it("rejects a malformed scene-list entry (missing .md extension)", () => {
+    const source = `
+# Chapter 1: foo
+
+**Summary:** bar
+
+## Scenes
+1. scene_0.md
+2. investigation_scene_1
+`.trim();
+    const result = parseChapter(source, "chapter_1/chapter.md", "chapter_1");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("chapterMalformedSceneRow");
+  });
+
+  it("rejects a malformed scene-list entry (trailing comment)", () => {
+    const source = `
+# Chapter 1: foo
+
+**Summary:** bar
+
+## Scenes
+1. scene_0.md # note
+`.trim();
+    const result = parseChapter(source, "chapter_1/chapter.md", "chapter_1");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("chapterMalformedSceneRow");
+  });
 });

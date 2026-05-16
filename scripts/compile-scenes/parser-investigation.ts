@@ -191,6 +191,8 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
       return fail(cur.sourceFile, next.line, "sublocationStrayMetadata", `Stray metadata inside sub-location body: ${next.key}.`);
     } else if (next.kind === "unknown") {
       return fail(cur.sourceFile, next.line, "sublocationUnknownLine", `Unrecognized line in sub-location: ${next.text}.`);
+    } else if (next.kind === "heading") {
+      return fail(cur.sourceFile, next.line, "sublocationStrayHeading", `Unexpected H${next.level} "${next.text}" in sub-location body. Only H3 (Hotspot/Character) blocks are allowed here.`);
     }
   }
 

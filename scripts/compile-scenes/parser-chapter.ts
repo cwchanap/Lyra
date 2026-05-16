@@ -64,8 +64,12 @@ export function parseChapter(
       const m = NUMBERED_FILE_RE.exec(line);
       if (m) {
         sceneFiles.push(m[2] ?? "");
+      } else if (/^\d+\.\s/.test(line)) {
+        // Looks like a numbered entry but doesn't match the strict pattern
+        // (e.g. missing .md extension, trailing text, wrong format).
+        return fail(sourceFile, lineNum, "chapterMalformedSceneRow", `Scene list entry is malformed; expected "N. <file>.md". Got: ${line}`);
       }
-      // Anything else inside the Scenes block (blank line we already skipped) is ignored.
+      // Non-numbered, non-blank lines inside Scenes are ignored (e.g. comments).
     }
   }
 
