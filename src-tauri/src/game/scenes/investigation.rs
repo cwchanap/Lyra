@@ -13,6 +13,7 @@ pub struct InvestigationSceneState {
     pub outro_played: bool,
     pub current_sublocation_id: Option<String>,
     pub pending_queue: Option<DialogueQueue>,
+    pub intro_queue_gen: u64,
     pub inspected_hotspots: HashSet<String>,
     pub discussed_topics: HashSet<(String, String)>,
     pub entered_sublocations: HashSet<String>,
@@ -27,13 +28,14 @@ pub struct DialogueQueue {
 }
 
 impl InvestigationSceneState {
-    pub fn from_json(def: InvestigationSceneJson) -> Self {
+    pub fn from_json(def: InvestigationSceneJson, intro_queue_gen: u64) -> Self {
         Self {
             def,
             intro_played: false,
             outro_played: false,
             current_sublocation_id: None,
             pending_queue: None,
+            intro_queue_gen,
             inspected_hotspots: HashSet::new(),
             discussed_topics: HashSet::new(),
             entered_sublocations: HashSet::new(),
@@ -156,6 +158,7 @@ mod tests {
             },
             intro_played: false, outro_played: false,
             current_sublocation_id: None, pending_queue: None,
+            intro_queue_gen: 1,
             inspected_hotspots: HashSet::new(),
             discussed_topics: HashSet::new(),
             entered_sublocations: HashSet::new(),
