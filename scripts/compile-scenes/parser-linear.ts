@@ -76,6 +76,15 @@ export function parseLinearScene(
     }
   }
 
+  if (queue.length === 0) {
+    return fail(
+      sourceFile,
+      titleToken.line,
+      "linearSceneEmptyQueue",
+      "Linear scene has no dialogue items after the heading. An empty scene causes the engine to end the game immediately.",
+    );
+  }
+
   return {
     ok: true,
     value: {

@@ -132,7 +132,6 @@ function validateInvestigationScene(rec: SceneRecord, errors: CompileError[]): v
   const localHotspot = new Set<string>();
   const localTopic = new Set<string>();
   const localSublocation = new Set<string>();
-  const localCharacter = new Set<string>();
 
   for (const sub of scene.sublocations) {
     const prev = localSublocation.size;
@@ -145,6 +144,12 @@ function validateInvestigationScene(rec: SceneRecord, errors: CompileError[]): v
         line: sub.line,
       });
     }
+
+    // Character IDs are scoped per sub-location: the same NPC can appear in
+    // different sub-locations with distinct topics.  The `character@topic`
+    // uniqueness check below catches ambiguous topic overlap across sub-locations.
+    const subLocalCharacter = new Set<string>();
+
     for (const h of sub.hotspots) {
       const prevH = localHotspot.size;
       localHotspot.add(h.id);
@@ -158,12 +163,12 @@ function validateInvestigationScene(rec: SceneRecord, errors: CompileError[]): v
       }
     }
     for (const c of sub.characters) {
-      const prevC = localCharacter.size;
-      localCharacter.add(c.id);
-      if (localCharacter.size === prevC) {
+      const prevC = subLocalCharacter.size;
+      subLocalCharacter.add(c.id);
+      if (subLocalCharacter.size === prevC) {
         errors.push({
           code: "duplicateSceneLocalId",
-          message: `Duplicate character id "${c.id}" within scene — character ids must be unique within a scene.`,
+          message: `Duplicate character id "${c.id}" within sub-location "${sub.id}" — character ids must be unique within a sub-location.`,
           sourceFile: scene.sourceFile,
           line: c.line,
         });

@@ -84,7 +84,15 @@ impl GameEngine {
 
     fn prime_initial_queue(&mut self) {
         let needs_initial_sub = match &mut self.scene {
-            SceneRuntime::Linear(_) => false,
+            SceneRuntime::Linear(s) => {
+                // Consume leading SceneTag items so the first visible frame
+                // has the correct backdrop tag.
+                while let Some(DialogueItem::SceneTag { text }) = s.queue.get(s.cursor).cloned() {
+                    self.last_scene_tag = Some(text);
+                    s.cursor += 1;
+                }
+                false
+            }
             SceneRuntime::Investigation(inv) => {
                 if !inv.intro_played && !inv.def.intro.is_empty() {
                     inv.pending_queue = Some(DialogueQueue {
@@ -878,5 +886,50 @@ mod tests {
 
         let view = engine.interview_topic("witness", "alibi").unwrap();
         assert!(matches!(view.mode, ModeView::GameComplete));
+    }
+
+    #[test]
+    fn prime_initial_queue_consumes_leading_scene_tags_in_linear_scene() {
+        use crate::game::schema::LinearSceneJson;
+        let scene_json = LinearSceneJson {
+            id: "scene_0".into(),
+            title: "Test".into(),
+            queue: vec![
+                DialogueItem::SceneTag { text: "吉祥寺街道".into() },
+                DialogueItem::SceneTag { text: "雨中".into() },
+                DialogueItem::Line { speaker: "A".into(), text: "hello".into() },
+            ],
+        };
+        let mut engine = GameEngine {
+            resources_dir: PathBuf::new(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Linear,
+                    file: "chapter_1/scene_0.json".into(),
+                }],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Linear(LinearSceneState::from_json(scene_json, 1)),
+            last_scene_tag: None,
+            inventory: Inventory::default(),
+            next_queue_gen: 2,
+        };
+        engine.prime_initial_queue();
+
+        // Both leading SceneTags should be consumed; last_scene_tag holds the
+        // most recent tag text and the cursor points at the first real item.
+        assert_eq!(engine.last_scene_tag, Some("雨中".into()));
+        let view = engine.view();
+        match &view.mode {
+            ModeView::Dialogue { current, scene_tag, .. } => {
+                assert!(matches!(current, DialogueItem::Line { .. }));
+                assert_eq!(scene_tag.as_deref(), Some("雨中"));
+            }
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
     }
 }

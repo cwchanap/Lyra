@@ -913,7 +913,7 @@ describe("validator", () => {
     expect(dup).toBeDefined();
   });
 
-  it("rejects duplicate character ids within the same scene", () => {
+  it("rejects duplicate character ids within the same sub-location", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.sublocations[0]!.characters = [
       {
@@ -922,6 +922,36 @@ describe("validator", () => {
         role: "witness",
         bio: "bio",
         topics: [],
+        sourceFile: "i.md",
+        line: 10,
+      },
+      {
+        id: "npc", // duplicate character id within same sub-location
+        name: "NPC Dup",
+        role: "suspect",
+        bio: "bio",
+        topics: [],
+        sourceFile: "i.md",
+        line: 11,
+      },
+    ];
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    const dup = errors.find((e) => e.code === "duplicateSceneLocalId" && e.message.includes("character") && e.message.includes("npc"));
+    expect(dup).toBeDefined();
+  });
+
+  it("allows the same character id in different sub-locations", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.sublocations[0]!.characters = [
+      {
+        id: "npc",
+        name: "NPC",
+        role: "witness",
+        bio: "bio",
+        topics: [{ id: "alibi", label: "Alibi", status: "unlocked" as const, unlock: null, reveals: [], topicDialogue: [], onReexamine: null, sourceFile: "i.md", line: 10 }],
         sourceFile: "i.md",
         line: 10,
       },
@@ -936,11 +966,11 @@ describe("validator", () => {
       hotspots: [],
       characters: [
         {
-          id: "npc", // duplicate character id
+          id: "npc", // same character id, different sub-location — allowed
           name: "NPC Again",
           role: "suspect",
           bio: "bio",
-          topics: [],
+          topics: [{ id: "motive", label: "Motive", status: "unlocked" as const, unlock: null, reveals: [], topicDialogue: [], onReexamine: null, sourceFile: "i.md", line: 25 }],
           sourceFile: "i.md",
           line: 25,
         },
@@ -952,8 +982,8 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    const dup = errors.find((e) => e.code === "duplicateSceneLocalId" && e.message.includes("character") && e.message.includes("npc"));
-    expect(dup).toBeDefined();
+    const dup = errors.find((e) => e.code === "duplicateSceneLocalId" && e.message.includes("character"));
+    expect(dup).toBeUndefined();
   });
 
   // ---- P2: cycle detection across sub-location boundary via locked-block reveals ----

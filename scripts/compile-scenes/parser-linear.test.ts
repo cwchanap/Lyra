@@ -67,4 +67,12 @@ describe("parseLinearScene", () => {
       "line",
     ]);
   });
+
+  it("rejects a linear scene with no dialogue items after the heading", () => {
+    const source = `# Scene 0: empty`.trim();
+    const result = parseLinearScene(source, "scene_0.md", "scene_0");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("linearSceneEmptyQueue");
+  });
 });
