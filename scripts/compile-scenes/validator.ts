@@ -346,16 +346,19 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
   }
 
   // Collect Reveals from reachable content inside sub-locations.
-  // We need to know what each reachable sub-location's unlocked content can reveal.
+  // Only count reveals from blocks proven reachable — locked blocks whose
+  // unlock conditions haven't been satisfied yet must not contribute their
+  // reveals, otherwise cyclic dependencies can be masked.
   const subRevealsBySubId = new Map<string, RevealTarget[]>();
   for (const sub of scene.sublocations) {
-    const reveals: RevealTarget[] = [...sub.reveals];
-    for (const h of sub.hotspots) reveals.push(...h.reveals);
-    for (const c of sub.characters) for (const t of c.topics) reveals.push(...t.reveals);
-    subRevealsBySubId.set(sub.id, reveals);
+    if (subReachable.has(sub.id)) {
+      subRevealsBySubId.set(sub.id, collectRevealsFromReachableBlocks(sub, scene, subReachable));
+    } else {
+      subRevealsBySubId.set(sub.id, [...sub.reveals]);
+    }
   }
 
-  // Track evidence/statements revealed by unlocked content in reachable sub-locations.
+  // Track evidence/statements revealed by reachable content in reachable sub-locations.
   const reachableItems = new Set<string>();
 
   function refreshReachableItems(): void {
@@ -385,6 +388,7 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
       });
       if (reachedByReveal) {
         subReachable.add(sub.id);
+        subRevealsBySubId.set(sub.id, collectRevealsFromReachableBlocks(sub, scene, subReachable));
         refreshReachableItems();
         changed = true;
         continue;
@@ -394,6 +398,7 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
       // For sub-location Unlock, predicate blocks must be in reachable sub-locations.
       if (sub.unlock && isSubUnlockSatisfiable(sub.unlock, subReachable, scene, reachableItems)) {
         subReachable.add(sub.id);
+        subRevealsBySubId.set(sub.id, collectRevealsFromReachableBlocks(sub, scene, subReachable));
         refreshReachableItems();
         changed = true;
       }
@@ -663,6 +668,30 @@ function collectReachableAtoms(
   }
 
   return reachable;
+}
+
+/**
+ * Collects RevealTargets from all reachable blocks within a sub-location.
+ * Uses collectReachableAtoms to determine which blocks are actually reachable
+ * (considering internal unlock chains and cross-sublocation dependencies),
+ * then gathers reveals from only those blocks.
+ */
+function collectRevealsFromReachableBlocks(
+  sub: ASTSublocation,
+  scene: ASTInvestigationScene,
+  reachableSubs: Set<string>,
+): RevealTarget[] {
+  const reachableAtoms = collectReachableAtoms(sub, scene, reachableSubs);
+  const reveals: RevealTarget[] = [...sub.reveals];
+  for (const h of sub.hotspots) {
+    if (reachableAtoms.has(`hotspot:${h.id}`)) reveals.push(...h.reveals);
+  }
+  for (const c of sub.characters) {
+    for (const t of c.topics) {
+      if (reachableAtoms.has(`topic:${c.id}@${t.id}`)) reveals.push(...t.reveals);
+    }
+  }
+  return reveals;
 }
 
 /**
