@@ -879,4 +879,76 @@ describe("validator", () => {
     const dup = errors.find((e) => e.code === "duplicateSceneLocalId" && e.message.includes("character") && e.message.includes("npc"));
     expect(dup).toBeDefined();
   });
+
+  // ---- P2: cycle detection across sub-location boundary via locked-block reveals ----
+
+  it("rejects a cycle where a locked hotspot reveals evidence needed to unlock the sub-location containing its own unlock condition", () => {
+    // Sub A (unlocked, entry): locked hotspot H1 reveals evidence:key, unlock: hotspot_investigated:H2
+    // Sub B (locked, unlock: evidence_collected:key): unlocked hotspot H2
+    // Cycle: to get evidence:key need H1, H1 needs H2 (in B), B needs evidence:key.
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.evidenceManifest = [
+      { id: "key", name: "key", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+    ];
+    scene.sublocations = [
+      {
+        id: "room_a",
+        status: "unlocked",
+        unlock: null,
+        reveals: [],
+        sceneTag: "room a",
+        transitionDialogue: [],
+        hotspots: [
+          {
+            id: "h1",
+            label: "h1",
+            description: "locked hotspot in entry",
+            status: "locked",
+            unlock: { predicate: "hotspot_investigated", id: "h2" },
+            reveals: [{ kind: "evidence", id: "key" }],
+            inspectDialogue: [{ kind: "line", speaker: "A", text: "found key" }],
+            onReexamine: null,
+            sourceFile: "i.md",
+            line: 4,
+          },
+        ],
+        characters: [],
+        sourceFile: "i.md",
+        line: 2,
+      },
+      {
+        id: "room_b",
+        status: "locked",
+        unlock: { predicate: "evidence_collected", id: "key" },
+        reveals: [],
+        sceneTag: "room b",
+        transitionDialogue: [],
+        hotspots: [
+          {
+            id: "h2",
+            label: "h2",
+            description: "unlocked hotspot in gated sub-location",
+            status: "unlocked",
+            unlock: null,
+            reveals: [],
+            inspectDialogue: [{ kind: "line", speaker: "B", text: "hi" }],
+            onReexamine: null,
+            sourceFile: "i.md",
+            line: 15,
+          },
+        ],
+        characters: [],
+        sourceFile: "i.md",
+        line: 12,
+      },
+    ];
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    // room_b should be unreachable because evidence:key is only revealed by
+    // locked h1, which itself depends on h2 inside room_b.
+    const reachErr = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("room_b"));
+    expect(reachErr).toBeDefined();
+  });
 });

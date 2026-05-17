@@ -149,6 +149,10 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
   const status = statusCheck.value;
   let unlock: UnlockExpr | null = null;
   if (meta.value.Unlock) {
+    if (status !== "locked") {
+      return fail(cur.sourceFile, head.line, "unlockOnNonLockedBlock",
+        `Block has an Unlock condition but Status is "${status}". Set Status to "locked" or remove the Unlock.`);
+    }
     const r = parseUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);
     if (!r.ok) return r;
     unlock = r.value;
@@ -233,6 +237,10 @@ function parseHotspot(cur: Cursor): { ok: true; value: ASTHotspot } | { ok: fals
   const status = statusCheck.value;
   let unlock: UnlockExpr | null = null;
   if (meta.value.Unlock) {
+    if (status !== "locked") {
+      return fail(cur.sourceFile, head.line, "unlockOnNonLockedBlock",
+        `Block has an Unlock condition but Status is "${status}". Set Status to "locked" or remove the Unlock.`);
+    }
     const r = parseUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);
     if (!r.ok) return r;
     unlock = r.value;
@@ -324,6 +332,10 @@ function parseTopic(cur: Cursor, characterId: string): { ok: true; value: ASTTop
   const status = statusCheck.value;
   let unlock: UnlockExpr | null = null;
   if (meta.value.Unlock) {
+    if (status !== "locked") {
+      return fail(cur.sourceFile, head.line, "unlockOnNonLockedBlock",
+        `Block has an Unlock condition but Status is "${status}". Set Status to "locked" or remove the Unlock.`);
+    }
     const r = parseUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);
     if (!r.ok) return r;
     unlock = r.value;

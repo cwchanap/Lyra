@@ -224,4 +224,78 @@ A：bad line missing the bold markup
     if (!result.ok) return;
     expect(result.value.evidenceManifest[0]?.onReexamine?.length).toBeGreaterThan(0);
   });
+
+  it("rejects a hotspot with Unlock but no Status (defaults to unlocked)", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+- **Unlock:** evidence:key collected
+
+**A**：observed.
+
+## Outro
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("unlockOnNonLockedBlock");
+  });
+
+  it("rejects a hotspot with Unlock and Status: unlocked", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+- **Status:** unlocked
+- **Unlock:** evidence:key collected
+
+**A**：observed.
+
+## Outro
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("unlockOnNonLockedBlock");
+  });
+
+  it("rejects a topic with Unlock but no Status (defaults to unlocked)", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Character: npc {#npc}
+- **Role:** witness
+- **Bio:** bio
+
+#### Topic: secret {#secret}
+- **Label:** Secret
+- **Unlock:** evidence:key collected
+
+**npc**：secret.
+
+## Outro
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("unlockOnNonLockedBlock");
+  });
 });
