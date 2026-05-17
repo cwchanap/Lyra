@@ -1057,4 +1057,146 @@ describe("validator", () => {
     const reachErr = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("room_b"));
     expect(reachErr).toBeDefined();
   });
+
+  // ---- Outro predicate reachability ----
+
+  it("rejects an Outro whose evidence_collected predicate references evidence never revealed by any reachable block", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.evidenceManifest = [
+      { id: "phantom", name: "Phantom", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+    ];
+    scene.sublocations[0]!.hotspots = [
+      {
+        id: "h1",
+        label: "h1",
+        description: "h1",
+        status: "unlocked",
+        unlock: null,
+        reveals: [], // does NOT reveal evidence:phantom
+        inspectDialogue: [{ kind: "line", speaker: "A", text: "hi" }],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 4,
+      },
+    ];
+    scene.outro = {
+      unlock: { predicate: "evidence_collected", id: "phantom" },
+      dialogue: [],
+    };
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    const outroErr = errors.find((e) => e.code === "outroPredicateUnreachable" && e.message.includes("phantom"));
+    expect(outroErr).toBeDefined();
+  });
+
+  it("rejects an Outro whose statement_acquired predicate references a statement never revealed by any reachable block", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.statementManifest = [
+      { id: "ghost_stmt", speaker: "X", content: "s", onAcquire: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+    ];
+    scene.outro = {
+      unlock: { predicate: "statement_acquired", id: "ghost_stmt" },
+      dialogue: [],
+    };
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    const outroErr = errors.find((e) => e.code === "outroPredicateUnreachable" && e.message.includes("ghost_stmt"));
+    expect(outroErr).toBeDefined();
+  });
+
+  it("accepts an Outro whose evidence_collected predicate references evidence revealed by a reachable block", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.evidenceManifest = [
+      { id: "real_ev", name: "Real", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+    ];
+    scene.sublocations[0]!.hotspots = [
+      {
+        id: "h1",
+        label: "h1",
+        description: "h1",
+        status: "unlocked",
+        unlock: null,
+        reveals: [{ kind: "evidence", id: "real_ev" }],
+        inspectDialogue: [{ kind: "line", speaker: "A", text: "hi" }],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 4,
+      },
+    ];
+    scene.outro = {
+      unlock: { predicate: "evidence_collected", id: "real_ev" },
+      dialogue: [],
+    };
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it("rejects an Outro whose topic_discussed predicate references a topic in an unreachable sub-location", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.sublocations = [
+      {
+        id: "room_a",
+        status: "unlocked",
+        unlock: null,
+        reveals: [],
+        sceneTag: "a",
+        transitionDialogue: [],
+        hotspots: [],
+        characters: [],
+        sourceFile: "i.md",
+        line: 2,
+      },
+      {
+        id: "room_b",
+        status: "locked",
+        unlock: { predicate: "hotspot_investigated", id: "nonexistent" }, // can never be satisfied
+        reveals: [],
+        sceneTag: "b",
+        transitionDialogue: [],
+        hotspots: [],
+        characters: [
+          {
+            id: "npc",
+            name: "NPC",
+            role: "witness",
+            bio: "bio",
+            topics: [
+              {
+                id: "secret",
+                label: "Secret",
+                status: "unlocked",
+                unlock: null,
+                reveals: [],
+                topicDialogue: [{ kind: "line", speaker: "NPC", text: "hi" }],
+                onReexamine: null,
+                sourceFile: "i.md",
+                line: 15,
+              },
+            ],
+            sourceFile: "i.md",
+            line: 12,
+          },
+        ],
+        sourceFile: "i.md",
+        line: 10,
+      },
+    ];
+    scene.outro = {
+      unlock: { predicate: "topic_discussed", characterId: "npc", topicId: "secret" },
+      dialogue: [],
+    };
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    const outroErr = errors.find((e) => e.code === "outroPredicateUnreachable" && e.message.includes("npc@secret"));
+    expect(outroErr).toBeDefined();
+  });
 });

@@ -475,13 +475,16 @@ impl GameEngine {
             Vec::new()
         };
 
-        if !queue_items.is_empty() {
+        if queue_items.is_empty() {
+            self.last_scene_tag = Some(scene_tag);
+            self.on_queue_exhausted()?;
+        } else {
             let queue_gen = self.alloc_queue_gen();
             if let SceneRuntime::Investigation(inv) = &mut self.scene {
                 inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
             }
+            self.last_scene_tag = Some(scene_tag);
         }
-        self.last_scene_tag = Some(scene_tag);
         Ok(self.view())
     }
 
@@ -931,5 +934,62 @@ mod tests {
             }
             other => panic!("expected Dialogue mode, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn silent_sublocation_entry_can_complete_scene() {
+        // Scene with two unlocked sublocations. Room A is the first.
+        // Entering room B on first visit reveals evidence that satisfies the Outro.
+        // The transition dialogue is empty, so the queue is empty after entry.
+        // The engine should detect the satisfied Outro and advance to GameComplete.
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            intro: vec![],
+            sublocations: vec![
+                SublocationJson {
+                    id: "room_a".into(),
+                    status: LockStatus::Unlocked,
+                    unlock: None,
+                    reveals: vec![],
+                    scene_tag: "room_a".into(),
+                    transition_dialogue: vec![],
+                    hotspots: vec![],
+                    characters: vec![],
+                },
+                SublocationJson {
+                    id: "room_b".into(),
+                    status: LockStatus::Unlocked,
+                    unlock: None,
+                    reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                    scene_tag: "room_b".into(),
+                    transition_dialogue: vec![],
+                    hotspots: vec![],
+                    characters: vec![],
+                },
+            ],
+            evidence_manifest: vec![EvidenceJson {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
+                    _predicate: crate::game::schema::PredicateEvidenceCollected::X,
+                    id: "note".into(),
+                }),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.prime_initial_queue();
+
+        // Player is in room_a (first unlocked sublocation). Enter room_b.
+        let view = engine.enter_sublocation("room_b").unwrap();
+        assert!(matches!(view.mode, ModeView::GameComplete));
     }
 }

@@ -453,6 +453,74 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
       });
     }
   }
+
+  // --- Phase 3: Outro unlock reachability for inventory predicates ---
+  // Evidence/statement predicates in the Outro expression must reference items
+  // that can actually be collected/acquired through the reveal chain. If an
+  // item is declared but never revealed by any reachable trigger, the scene is
+  // unwinnable at runtime.
+  if (scene.outro.unlock !== "auto") {
+    // Collect all evidence/statements revealed by reachable content.
+    const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable);
+    walkUnlock(scene.outro.unlock, (pred) => {
+      switch (pred.predicate) {
+        case "evidence_collected":
+          if (!reachableAtoms.has(`evidence:${pred.id}`)) {
+            errors.push({
+              code: "outroPredicateUnreachable",
+              message: `Outro requires evidence:${pred.id} collected, but no reachable block reveals this evidence — scene is unwinnable.`,
+              sourceFile: scene.sourceFile,
+              line: scene.line,
+            });
+          }
+          break;
+        case "statement_acquired":
+          if (!reachableAtoms.has(`statement:${pred.id}`)) {
+            errors.push({
+              code: "outroPredicateUnreachable",
+              message: `Outro requires statement:${pred.id} acquired, but no reachable block reveals this statement — scene is unwinnable.`,
+              sourceFile: scene.sourceFile,
+              line: scene.line,
+            });
+          }
+          break;
+        case "topic_discussed": {
+          const parentSub = scene.sublocations.find((s) =>
+            s.characters.some((c) => c.id === pred.characterId && c.topics.some((t) => t.id === pred.topicId)),
+          );
+          if (
+            !parentSub
+            || !subReachable.has(parentSub.id)
+            || !collectReachableAtoms(parentSub, scene, subReachable).has(`topic:${pred.characterId}@${pred.topicId}`)
+          ) {
+            errors.push({
+              code: "outroPredicateUnreachable",
+              message: `Outro requires topic:${pred.characterId}@${pred.topicId} discussed, but that topic is not reachable — scene is unwinnable.`,
+              sourceFile: scene.sourceFile,
+              line: scene.line,
+            });
+          }
+          break;
+        }
+        case "hotspot_investigated": {
+          const parentSub = scene.sublocations.find((s) => s.hotspots.some((h) => h.id === pred.id));
+          if (
+            !parentSub
+            || !subReachable.has(parentSub.id)
+            || !collectReachableAtoms(parentSub, scene, subReachable).has(`hotspot:${pred.id}`)
+          ) {
+            errors.push({
+              code: "outroPredicateUnreachable",
+              message: `Outro requires hotspot:${pred.id} investigated, but that hotspot is not reachable — scene is unwinnable.`,
+              sourceFile: scene.sourceFile,
+              line: scene.line,
+            });
+          }
+          break;
+        }
+      }
+    });
+  }
 }
 
 /**
