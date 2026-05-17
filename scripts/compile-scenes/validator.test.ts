@@ -423,7 +423,7 @@ describe("validator", () => {
   it("rejects a locked block whose statement_acquired predicate references a statement only revealed by another unreachable block", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.statementManifest = [
-      { id: "st1", name: "st1", summary: "s", details: "d", speaker: "X", onAcquire: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+      { id: "st1", speaker: "X", content: "s", onAcquire: [], onReexamine: null, sourceFile: "i.md", line: 30 },
     ];
     scene.sublocations[0]!.hotspots = [
       {
@@ -628,7 +628,7 @@ describe("validator", () => {
   it("accepts a locked hotspot whose statement_acquired predicate references a statement revealed by an unlocked hotspot in another sub-location", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.statementManifest = [
-      { id: "st1", name: "st1", summary: "s", details: "d", speaker: "X", onAcquire: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+      { id: "st1", speaker: "X", content: "s", onAcquire: [], onReexamine: null, sourceFile: "i.md", line: 30 },
     ];
     // room_a: unlocked hotspot reveals statement:st1
     scene.sublocations[0]!.hotspots = [
@@ -676,6 +676,106 @@ describe("validator", () => {
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
     expect(errors).toEqual([]);
+  });
+
+  it("accepts a locked hotspot whose evidence_collected predicate references evidence from another sub-location entry reveal", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.evidenceManifest = [
+      { id: "ev_entry", name: "ev_entry", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+    ];
+    scene.sublocations[0]!.reveals = [{ kind: "evidence", id: "ev_entry" }];
+    scene.sublocations.push({
+      id: "room_b",
+      status: "unlocked",
+      unlock: null,
+      reveals: [],
+      sceneTag: "room b",
+      transitionDialogue: [],
+      hotspots: [
+        {
+          id: "h2",
+          label: "h2",
+          description: "h2",
+          status: "locked",
+          unlock: { predicate: "evidence_collected", id: "ev_entry" },
+          reveals: [],
+          inspectDialogue: [{ kind: "line", speaker: "B", text: "hi" }],
+          onReexamine: null,
+          sourceFile: "i.md",
+          line: 12,
+        },
+      ],
+      characters: [],
+      sourceFile: "i.md",
+      line: 10,
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it("rejects a sub-location unlock that depends on a hotspot only revealed from inside that sub-location", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.sublocations = [
+      {
+        id: "room_a",
+        status: "unlocked",
+        unlock: null,
+        reveals: [],
+        sceneTag: "room a",
+        transitionDialogue: [],
+        hotspots: [
+          {
+            id: "hidden",
+            label: "hidden",
+            description: "hidden",
+            status: "locked",
+            unlock: null,
+            reveals: [],
+            inspectDialogue: [{ kind: "line", speaker: "A", text: "hidden" }],
+            onReexamine: null,
+            sourceFile: "i.md",
+            line: 8,
+          },
+        ],
+        characters: [],
+        sourceFile: "i.md",
+        line: 2,
+      },
+      {
+        id: "room_b",
+        status: "locked",
+        unlock: { predicate: "hotspot_investigated", id: "hidden" },
+        reveals: [],
+        sceneTag: "room b",
+        transitionDialogue: [],
+        hotspots: [
+          {
+            id: "revealer",
+            label: "revealer",
+            description: "revealer",
+            status: "unlocked",
+            unlock: null,
+            reveals: [{ kind: "hotspot", id: "hidden" }],
+            inspectDialogue: [{ kind: "line", speaker: "B", text: "reveals" }],
+            onReexamine: null,
+            sourceFile: "i.md",
+            line: 18,
+          },
+        ],
+        characters: [],
+        sourceFile: "i.md",
+        line: 14,
+      },
+    ];
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    const reachErr = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("room_b"));
+    expect(reachErr).toBeDefined();
   });
 
   // ---- P2: duplicate scene-local id detection ----
