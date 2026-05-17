@@ -350,11 +350,12 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
   // unlock conditions haven't been satisfied yet must not contribute their
   // reveals, otherwise cyclic dependencies can be masked.
   const subRevealsBySubId = new Map<string, RevealTarget[]>();
-  for (const sub of scene.sublocations) {
-    if (subReachable.has(sub.id)) {
+
+  function refreshReachableReveals(): void {
+    subRevealsBySubId.clear();
+    for (const sub of scene.sublocations) {
+      if (!subReachable.has(sub.id)) continue;
       subRevealsBySubId.set(sub.id, collectRevealsFromReachableBlocks(sub, scene, subReachable));
-    } else {
-      subRevealsBySubId.set(sub.id, [...sub.reveals]);
     }
   }
 
@@ -371,11 +372,14 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
       }
     }
   }
+  refreshReachableReveals();
   refreshReachableItems();
 
   // Fixed-point propagation for sub-locations.
   let changed = true;
   while (changed) {
+    refreshReachableReveals();
+    refreshReachableItems();
     changed = false;
     for (const sub of scene.sublocations) {
       if (subReachable.has(sub.id)) continue;
@@ -388,8 +392,6 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
       });
       if (reachedByReveal) {
         subReachable.add(sub.id);
-        subRevealsBySubId.set(sub.id, collectRevealsFromReachableBlocks(sub, scene, subReachable));
-        refreshReachableItems();
         changed = true;
         continue;
       }
@@ -398,8 +400,6 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
       // For sub-location Unlock, predicate blocks must be in reachable sub-locations.
       if (sub.unlock && isSubUnlockSatisfiable(sub.unlock, subReachable, scene, reachableItems)) {
         subReachable.add(sub.id);
-        subRevealsBySubId.set(sub.id, collectRevealsFromReachableBlocks(sub, scene, subReachable));
-        refreshReachableItems();
         changed = true;
       }
     }
@@ -460,100 +460,7 @@ function checkInternalReachability(
   reachableSubs: Set<string>,
   errors: CompileError[],
 ): void {
-  const reachable = new Set<string>();
-
-  // Seed: unlocked hotspots and topics in this sub-location.
-  for (const h of sub.hotspots) {
-    if (h.status === "unlocked") reachable.add(`hotspot:${h.id}`);
-  }
-  for (const c of sub.characters) {
-    for (const t of c.topics) {
-      if (t.status === "unlocked") reachable.add(`topic:${c.id}@${t.id}`);
-    }
-  }
-
-  // Also seed with unlocked hotspots/topics from other reachable sub-locations,
-  // since Unlock predicates can reference them.
-  for (const otherSub of scene.sublocations) {
-    if (otherSub.id === sub.id) continue;
-    if (!reachableSubs.has(otherSub.id)) continue;
-    for (const h of otherSub.hotspots) {
-      if (h.status === "unlocked") reachable.add(`hotspot:${h.id}`);
-    }
-    for (const c of otherSub.characters) {
-      for (const t of c.topics) {
-        if (t.status === "unlocked") reachable.add(`topic:${c.id}@${t.id}`);
-      }
-    }
-  }
-
-  // Fixed-point propagation within the sub-location.
-  let changed = true;
-  while (changed) {
-    changed = false;
-
-    // Collect Reveals from all reachable content in this sub-location AND
-    // from reachable blocks in other reachable sub-locations (their unlocked
-    // blocks are seeded into `reachable` and may reveal evidence/statements
-    // needed by locked blocks here).
-    const allReveals: RevealTarget[] = [...sub.reveals];
-    for (const h of sub.hotspots) {
-      if (reachable.has(`hotspot:${h.id}`)) allReveals.push(...h.reveals);
-    }
-    for (const c of sub.characters) {
-      for (const t of c.topics) {
-        if (reachable.has(`topic:${c.id}@${t.id}`)) allReveals.push(...t.reveals);
-      }
-    }
-    // Cross-sublocation: include reveals from reachable blocks in other
-    // reachable sub-locations so that evidence_collected / statement_acquired
-    // predicates can match items revealed there.
-    for (const otherSub of scene.sublocations) {
-      if (otherSub.id === sub.id) continue;
-      if (!reachableSubs.has(otherSub.id)) continue;
-      allReveals.push(...otherSub.reveals);
-      for (const h of otherSub.hotspots) {
-        if (reachable.has(`hotspot:${h.id}`)) allReveals.push(...h.reveals);
-      }
-      for (const c of otherSub.characters) {
-        for (const t of c.topics) {
-          if (reachable.has(`topic:${c.id}@${t.id}`)) allReveals.push(...t.reveals);
-        }
-      }
-    }
-
-    // Add evidence/statement IDs revealed by reachable blocks to the reachable
-    // set so that evidence_collected / statement_acquired predicates can be
-    // checked against actual reachability.
-    for (const r of allReveals) {
-      if (r.kind === "evidence" && !reachable.has(`evidence:${r.id}`)) {
-        reachable.add(`evidence:${r.id}`); changed = true;
-      }
-      if (r.kind === "statement" && !reachable.has(`statement:${r.id}`)) {
-        reachable.add(`statement:${r.id}`); changed = true;
-      }
-    }
-
-    for (const h of sub.hotspots) {
-      if (reachable.has(`hotspot:${h.id}`) || h.status !== "locked") continue;
-      const reachedByReveal = allReveals.some((r) => r.kind === "hotspot" && r.id === h.id);
-      if (reachedByReveal) { reachable.add(`hotspot:${h.id}`); changed = true; continue; }
-      if (h.unlock && isUnlockSatisfiable(h.unlock, reachable)) {
-        reachable.add(`hotspot:${h.id}`); changed = true;
-      }
-    }
-    for (const c of sub.characters) {
-      for (const t of c.topics) {
-        const key = `topic:${c.id}@${t.id}`;
-        if (reachable.has(key) || t.status !== "locked") continue;
-        const reachedByReveal = allReveals.some((r) => r.kind === "topic" && r.characterId === c.id && r.topicId === t.id);
-        if (reachedByReveal) { reachable.add(key); changed = true; continue; }
-        if (t.unlock && isUnlockSatisfiable(t.unlock, reachable)) {
-          reachable.add(key); changed = true;
-        }
-      }
-    }
-  }
+  const reachable = collectReachableAtoms(sub, scene, reachableSubs);
 
   // Report unreachable locked internal blocks.
   for (const h of sub.hotspots) {
@@ -586,24 +493,22 @@ function collectReachableAtoms(
   scene: ASTInvestigationScene,
   reachableSubs: Set<string>,
 ): Set<string> {
+  void sub;
+  return collectReachableAtomsAcrossReachableSublocations(scene, reachableSubs);
+}
+
+function collectReachableAtomsAcrossReachableSublocations(
+  scene: ASTInvestigationScene,
+  reachableSubs: Set<string>,
+): Set<string> {
   const reachable = new Set<string>();
 
-  for (const h of sub.hotspots) {
-    if (h.status === "unlocked") reachable.add(`hotspot:${h.id}`);
-  }
-  for (const c of sub.characters) {
-    for (const t of c.topics) {
-      if (t.status === "unlocked") reachable.add(`topic:${c.id}@${t.id}`);
-    }
-  }
-
-  for (const otherSub of scene.sublocations) {
-    if (otherSub.id === sub.id) continue;
-    if (!reachableSubs.has(otherSub.id)) continue;
-    for (const h of otherSub.hotspots) {
+  for (const sub of scene.sublocations) {
+    if (!reachableSubs.has(sub.id)) continue;
+    for (const h of sub.hotspots) {
       if (h.status === "unlocked") reachable.add(`hotspot:${h.id}`);
     }
-    for (const c of otherSub.characters) {
+    for (const c of sub.characters) {
       for (const t of c.topics) {
         if (t.status === "unlocked") reachable.add(`topic:${c.id}@${t.id}`);
       }
@@ -614,23 +519,14 @@ function collectReachableAtoms(
   while (changed) {
     changed = false;
 
-    const allReveals: RevealTarget[] = [...sub.reveals];
-    for (const h of sub.hotspots) {
-      if (reachable.has(`hotspot:${h.id}`)) allReveals.push(...h.reveals);
-    }
-    for (const c of sub.characters) {
-      for (const t of c.topics) {
-        if (reachable.has(`topic:${c.id}@${t.id}`)) allReveals.push(...t.reveals);
-      }
-    }
-    for (const otherSub of scene.sublocations) {
-      if (otherSub.id === sub.id) continue;
-      if (!reachableSubs.has(otherSub.id)) continue;
-      allReveals.push(...otherSub.reveals);
-      for (const h of otherSub.hotspots) {
+    const allReveals: RevealTarget[] = [];
+    for (const sub of scene.sublocations) {
+      if (!reachableSubs.has(sub.id)) continue;
+      allReveals.push(...sub.reveals);
+      for (const h of sub.hotspots) {
         if (reachable.has(`hotspot:${h.id}`)) allReveals.push(...h.reveals);
       }
-      for (const c of otherSub.characters) {
+      for (const c of sub.characters) {
         for (const t of c.topics) {
           if (reachable.has(`topic:${c.id}@${t.id}`)) allReveals.push(...t.reveals);
         }
@@ -646,22 +542,25 @@ function collectReachableAtoms(
       }
     }
 
-    for (const h of sub.hotspots) {
-      if (reachable.has(`hotspot:${h.id}`) || h.status !== "locked") continue;
-      const reachedByReveal = allReveals.some((r) => r.kind === "hotspot" && r.id === h.id);
-      if (reachedByReveal) { reachable.add(`hotspot:${h.id}`); changed = true; continue; }
-      if (h.unlock && isUnlockSatisfiable(h.unlock, reachable)) {
-        reachable.add(`hotspot:${h.id}`); changed = true;
+    for (const sub of scene.sublocations) {
+      if (!reachableSubs.has(sub.id)) continue;
+      for (const h of sub.hotspots) {
+        if (reachable.has(`hotspot:${h.id}`) || h.status !== "locked") continue;
+        const reachedByReveal = allReveals.some((r) => r.kind === "hotspot" && r.id === h.id);
+        if (reachedByReveal) { reachable.add(`hotspot:${h.id}`); changed = true; continue; }
+        if (h.unlock && isUnlockSatisfiable(h.unlock, reachable)) {
+          reachable.add(`hotspot:${h.id}`); changed = true;
+        }
       }
-    }
-    for (const c of sub.characters) {
-      for (const t of c.topics) {
-        const key = `topic:${c.id}@${t.id}`;
-        if (reachable.has(key) || t.status !== "locked") continue;
-        const reachedByReveal = allReveals.some((r) => r.kind === "topic" && r.characterId === c.id && r.topicId === t.id);
-        if (reachedByReveal) { reachable.add(key); changed = true; continue; }
-        if (t.unlock && isUnlockSatisfiable(t.unlock, reachable)) {
-          reachable.add(key); changed = true;
+      for (const c of sub.characters) {
+        for (const t of c.topics) {
+          const key = `topic:${c.id}@${t.id}`;
+          if (reachable.has(key) || t.status !== "locked") continue;
+          const reachedByReveal = allReveals.some((r) => r.kind === "topic" && r.characterId === c.id && r.topicId === t.id);
+          if (reachedByReveal) { reachable.add(key); changed = true; continue; }
+          if (t.unlock && isUnlockSatisfiable(t.unlock, reachable)) {
+            reachable.add(key); changed = true;
+          }
         }
       }
     }

@@ -67,7 +67,7 @@ mod tests {
             sublocations: vec![], evidence_manifest: defs,
             statement_manifest: vec![],
             outro: OutroJson { unlock: OutroUnlock::Auto(AutoMarker::Auto), dialogue: vec![] },
-        })
+        }, 1)
     }
 
     #[test]

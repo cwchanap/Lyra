@@ -716,6 +716,82 @@ describe("validator", () => {
     expect(errors).toEqual([]);
   });
 
+  it("accepts a locked block unlocked by evidence revealed through another reachable sub-location's locked-block chain", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.evidenceManifest = [
+      { id: "ev_chain", name: "ev_chain", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+    ];
+    scene.sublocations = [
+      {
+        id: "room_a",
+        status: "unlocked",
+        unlock: null,
+        reveals: [],
+        sceneTag: "room a",
+        transitionDialogue: [],
+        hotspots: [
+          {
+            id: "a1",
+            label: "a1",
+            description: "a1",
+            status: "locked",
+            unlock: { predicate: "evidence_collected", id: "ev_chain" },
+            reveals: [],
+            inspectDialogue: [{ kind: "line", speaker: "A", text: "unlocked" }],
+            onReexamine: null,
+            sourceFile: "i.md",
+            line: 8,
+          },
+        ],
+        characters: [],
+        sourceFile: "i.md",
+        line: 2,
+      },
+      {
+        id: "room_b",
+        status: "unlocked",
+        unlock: null,
+        reveals: [],
+        sceneTag: "room b",
+        transitionDialogue: [],
+        hotspots: [
+          {
+            id: "b1",
+            label: "b1",
+            description: "b1",
+            status: "unlocked",
+            unlock: null,
+            reveals: [{ kind: "hotspot", id: "b2" }],
+            inspectDialogue: [{ kind: "line", speaker: "B", text: "first" }],
+            onReexamine: null,
+            sourceFile: "i.md",
+            line: 18,
+          },
+          {
+            id: "b2",
+            label: "b2",
+            description: "b2",
+            status: "locked",
+            unlock: null,
+            reveals: [{ kind: "evidence", id: "ev_chain" }],
+            inspectDialogue: [{ kind: "line", speaker: "B", text: "second" }],
+            onReexamine: null,
+            sourceFile: "i.md",
+            line: 24,
+          },
+        ],
+        characters: [],
+        sourceFile: "i.md",
+        line: 14,
+      },
+    ];
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    expect(errors).toEqual([]);
+  });
+
   it("rejects a sub-location unlock that depends on a hotspot only revealed from inside that sub-location", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.sublocations = [

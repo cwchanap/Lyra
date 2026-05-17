@@ -90,7 +90,7 @@ impl GameEngine {
                     inv.pending_queue = Some(DialogueQueue {
                         items: inv.def.intro.clone(),
                         cursor: 0,
-                        queue_gen: 1,
+                        queue_gen: inv.intro_queue_gen,
                     });
                     inv.intro_played = true;
                     false
@@ -248,11 +248,7 @@ impl GameEngine {
         if !queue_items.is_empty() {
             let queue_gen = self.alloc_queue_gen();
             if let SceneRuntime::Investigation(inv) = &mut self.scene {
-                inv.pending_queue = Some(DialogueQueue {
-                    items: queue_items,
-                    cursor: 0,
-                    queue_gen,
-                });
+                inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
             }
         }
         self.last_scene_tag = Some(scene_tag);
@@ -346,9 +342,13 @@ impl GameEngine {
         };
 
         // Phase 3 — write: attach the queue.
-        let queue_gen = self.alloc_queue_gen();
-        if let SceneRuntime::Investigation(inv) = &mut self.scene {
-            inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
+        if queue_items.is_empty() {
+            self.on_queue_exhausted()?;
+        } else {
+            let queue_gen = self.alloc_queue_gen();
+            if let SceneRuntime::Investigation(inv) = &mut self.scene {
+                inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
+            }
         }
         Ok(self.view())
     }
@@ -409,9 +409,13 @@ impl GameEngine {
             }
         };
 
-        let queue_gen = self.alloc_queue_gen();
-        if let SceneRuntime::Investigation(inv) = &mut self.scene {
-            inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
+        if queue_items.is_empty() {
+            self.on_queue_exhausted()?;
+        } else {
+            let queue_gen = self.alloc_queue_gen();
+            if let SceneRuntime::Investigation(inv) = &mut self.scene {
+                inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
+            }
         }
         Ok(self.view())
     }
@@ -673,7 +677,7 @@ fn load_scene_runtime(
     let json = loader::load_scene(resources_dir, &scene_ref.file)?;
     Ok(match json {
         SceneJson::Linear(j) => SceneRuntime::Linear(LinearSceneState::from_json(j, queue_gen)),
-        SceneJson::Investigation(j) => SceneRuntime::Investigation(InvestigationSceneState::from_json(j)),
+        SceneJson::Investigation(j) => SceneRuntime::Investigation(InvestigationSceneState::from_json(j, queue_gen)),
     })
 }
 
@@ -686,4 +690,193 @@ impl<'a> unlock::UnlockContext for SceneAndInventoryCtx<'a> {
     fn statement_acquired(&self, id: &str) -> bool { self.inventory.has_statement(id) }
     fn topic_discussed(&self, c: &str, t: &str) -> bool { self.scene.topic_discussed(c, t) }
     fn hotspot_investigated(&self, id: &str) -> bool { self.scene.hotspot_investigated(id) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::schema::{
+        CharacterJson, EvidenceJson, HotspotJson, InvestigationSceneJson, LockStatus,
+        OutroJson, OutroUnlock, RevealTarget, SceneType, SublocationJson, TopicJson,
+        UnlockExpr,
+    };
+
+    fn investigation_scene_with_intro(id: &str, intro: Vec<DialogueItem>) -> InvestigationSceneJson {
+        InvestigationSceneJson {
+            id: id.into(),
+            title: id.into(),
+            intro,
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                transition_dialogue: vec![],
+                hotspots: vec![],
+                characters: vec![],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Auto(crate::game::schema::AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        }
+    }
+
+    fn empty_engine_with_scene(scene: InvestigationSceneJson, intro_queue_gen: u64) -> GameEngine {
+        GameEngine {
+            resources_dir: PathBuf::new(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Investigation,
+                    file: "chapter_1/investigation_scene_1.json".into(),
+                }],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Investigation(InvestigationSceneState::from_json(scene, intro_queue_gen)),
+            last_scene_tag: None,
+            inventory: Inventory::default(),
+            next_queue_gen: intro_queue_gen + 1,
+        }
+    }
+
+    fn token_from(view: &GameStateView) -> QueueToken {
+        match &view.mode {
+            ModeView::Dialogue { queue_token, .. } => queue_token.clone(),
+            other => panic!("expected dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stale_intro_token_does_not_advance_later_scene_with_same_id() {
+        let first_scene = investigation_scene_with_intro(
+            "investigation_scene_1",
+            vec![DialogueItem::Line { speaker: "A".into(), text: "first".into() }],
+        );
+        let mut engine = empty_engine_with_scene(first_scene, 3);
+        engine.prime_initial_queue();
+        let stale_token = token_from(&engine.view());
+
+        let next_scene = investigation_scene_with_intro(
+            "investigation_scene_1",
+            vec![DialogueItem::Line { speaker: "B".into(), text: "second".into() }],
+        );
+        engine.scene = SceneRuntime::Investigation(InvestigationSceneState::from_json(next_scene, 7));
+        engine.last_scene_tag = None;
+        engine.prime_initial_queue();
+
+        let before = token_from(&engine.view());
+        assert_ne!(stale_token, before);
+
+        let after = token_from(&engine.advance_dialogue(stale_token).unwrap());
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn silent_first_hotspot_action_can_complete_scene() {
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            intro: vec![],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                transition_dialogue: vec![],
+                hotspots: vec![HotspotJson {
+                    id: "desk".into(),
+                    label: "Desk".into(),
+                    description: "Desk".into(),
+                    status: LockStatus::Unlocked,
+                    unlock: None,
+                    reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                    inspect_dialogue: vec![],
+                    on_reexamine: None,
+                }],
+                characters: vec![],
+            }],
+            evidence_manifest: vec![EvidenceJson {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
+                    _predicate: crate::game::schema::PredicateEvidenceCollected::X,
+                    id: "note".into(),
+                }),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.prime_initial_queue();
+
+        let view = engine.inspect_hotspot("desk").unwrap();
+        assert!(matches!(view.mode, ModeView::GameComplete));
+    }
+
+    #[test]
+    fn silent_first_topic_action_can_complete_scene() {
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            intro: vec![],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                transition_dialogue: vec![],
+                hotspots: vec![],
+                characters: vec![CharacterJson {
+                    id: "witness".into(),
+                    name: "Witness".into(),
+                    role: "Witness".into(),
+                    bio: "Witness".into(),
+                    topics: vec![TopicJson {
+                        id: "alibi".into(),
+                        label: "Alibi".into(),
+                        status: LockStatus::Unlocked,
+                        unlock: None,
+                        reveals: vec![RevealTarget::Statement { id: "alibi_statement".into() }],
+                        topic_dialogue: vec![],
+                        on_reexamine: None,
+                    }],
+                }],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![crate::game::schema::StatementJson {
+                id: "alibi_statement".into(),
+                speaker: "Witness".into(),
+                content: "I was elsewhere".into(),
+                on_acquire: vec![],
+                on_reexamine: None,
+            }],
+            outro: OutroJson {
+                unlock: OutroUnlock::Expr(UnlockExpr::StatementAcquired {
+                    _predicate: crate::game::schema::PredicateStatementAcquired::X,
+                    id: "alibi_statement".into(),
+                }),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.prime_initial_queue();
+
+        let view = engine.interview_topic("witness", "alibi").unwrap();
+        assert!(matches!(view.mode, ModeView::GameComplete));
+    }
 }
