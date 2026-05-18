@@ -83,6 +83,7 @@ impl GameEngine {
     }
 
     fn prime_initial_queue(&mut self) -> Result<(), GameError> {
+        let mut intro_queue = None;
         let needs_initial_sub = match &mut self.scene {
             SceneRuntime::Linear(s) => {
                 // Consume leading SceneTag items so the first visible frame
@@ -101,11 +102,7 @@ impl GameEngine {
             }
             SceneRuntime::Investigation(inv) => {
                 if !inv.intro_played && !inv.def.intro.is_empty() {
-                    inv.pending_queue = Some(DialogueQueue {
-                        items: inv.def.intro.clone(),
-                        cursor: 0,
-                        queue_gen: inv.intro_queue_gen,
-                    });
+                    intro_queue = Some((inv.def.intro.clone(), inv.intro_queue_gen));
                     inv.intro_played = true;
                     false
                 } else {
@@ -113,6 +110,9 @@ impl GameEngine {
                 }
             }
         };
+        if let Some((items, queue_gen)) = intro_queue {
+            self.install_investigation_queue(items, queue_gen)?;
+        }
         if needs_initial_sub {
             self.advance_into_first_sublocation()?;
         }
@@ -204,6 +204,35 @@ impl GameEngine {
         }
     }
 
+    fn install_investigation_queue(
+        &mut self,
+        items: Vec<DialogueItem>,
+        queue_gen: u64,
+    ) -> Result<(), GameError> {
+        match &mut self.scene {
+            SceneRuntime::Investigation(inv) => {
+                inv.pending_queue = Some(DialogueQueue {
+                    items,
+                    cursor: 0,
+                    queue_gen,
+                });
+            }
+            SceneRuntime::Linear(_) => unreachable!("investigation queue installed outside investigation scene"),
+        }
+        self.consume_scene_tags_at_cursor();
+        let exhausted = match &self.scene {
+            SceneRuntime::Investigation(inv) => inv
+                .pending_queue
+                .as_ref()
+                .map_or(true, |q| q.cursor >= q.items.len()),
+            SceneRuntime::Linear(_) => unreachable!("investigation queue installed outside investigation scene"),
+        };
+        if exhausted {
+            self.on_queue_exhausted()?;
+        }
+        Ok(())
+    }
+
     fn on_queue_exhausted(&mut self) -> Result<(), GameError> {
         match &self.scene {
             SceneRuntime::Linear(_) => {
@@ -248,13 +277,9 @@ impl GameEngine {
             }
             let queue_gen = self.alloc_queue_gen();
             if let SceneRuntime::Investigation(inv) = &mut self.scene {
-                inv.pending_queue = Some(DialogueQueue {
-                    items: outro_dialogue,
-                    cursor: 0,
-                    queue_gen,
-                });
                 inv.outro_played = true;
             }
+            self.install_investigation_queue(outro_dialogue, queue_gen)?;
             return Ok(false);
         }
 
@@ -306,10 +331,8 @@ impl GameEngine {
             self.on_queue_exhausted()?;
         } else {
             let queue_gen = self.alloc_queue_gen();
-            if let SceneRuntime::Investigation(inv) = &mut self.scene {
-                inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
-            }
             self.last_scene_tag = Some(scene_tag);
+            self.install_investigation_queue(queue_items, queue_gen)?;
         }
         Ok(())
     }
@@ -406,9 +429,7 @@ impl GameEngine {
             self.on_queue_exhausted()?;
         } else {
             let queue_gen = self.alloc_queue_gen();
-            if let SceneRuntime::Investigation(inv) = &mut self.scene {
-                inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
-            }
+            self.install_investigation_queue(queue_items, queue_gen)?;
         }
         Ok(self.view())
     }
@@ -473,9 +494,7 @@ impl GameEngine {
             self.on_queue_exhausted()?;
         } else {
             let queue_gen = self.alloc_queue_gen();
-            if let SceneRuntime::Investigation(inv) = &mut self.scene {
-                inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
-            }
+            self.install_investigation_queue(queue_items, queue_gen)?;
         }
         Ok(self.view())
     }
@@ -532,10 +551,8 @@ impl GameEngine {
             self.on_queue_exhausted()?;
         } else {
             let queue_gen = self.alloc_queue_gen();
-            if let SceneRuntime::Investigation(inv) = &mut self.scene {
-                inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
-            }
             self.last_scene_tag = Some(scene_tag);
+            self.install_investigation_queue(queue_items, queue_gen)?;
         }
         Ok(self.view())
     }
@@ -562,13 +579,12 @@ impl GameEngine {
         };
         let queue_gen = self.alloc_queue_gen();
         match &mut self.scene {
-            SceneRuntime::Investigation(inv) => {
-                inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
-            }
+            SceneRuntime::Investigation(_) => {}
             SceneRuntime::Linear(_) => {
                 return Err(GameError::wrong_mode("reexamine_evidence", "linear"));
             }
         }
+        self.install_investigation_queue(queue_items, queue_gen)?;
         Ok(self.view())
     }
 
@@ -594,13 +610,12 @@ impl GameEngine {
         };
         let queue_gen = self.alloc_queue_gen();
         match &mut self.scene {
-            SceneRuntime::Investigation(inv) => {
-                inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
-            }
+            SceneRuntime::Investigation(_) => {}
             SceneRuntime::Linear(_) => {
                 return Err(GameError::wrong_mode("reexamine_statement", "linear"));
             }
         }
+        self.install_investigation_queue(queue_items, queue_gen)?;
         Ok(self.view())
     }
 
@@ -847,6 +862,79 @@ mod tests {
 
         let after = token_from(&engine.advance_dialogue(stale_token).unwrap());
         assert_eq!(before, after);
+    }
+
+    #[test]
+    fn prime_initial_queue_consumes_leading_scene_tags_in_investigation_intro() {
+        let scene = investigation_scene_with_intro(
+            "investigation_scene_1",
+            vec![
+                DialogueItem::SceneTag { text: "吉祥寺街道".into() },
+                DialogueItem::SceneTag { text: "雨中".into() },
+                DialogueItem::Line { speaker: "A".into(), text: "hello".into() },
+            ],
+        );
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.prime_initial_queue().unwrap();
+
+        assert_eq!(engine.last_scene_tag, Some("雨中".into()));
+        let view = engine.view();
+        match &view.mode {
+            ModeView::Dialogue { current, scene_tag, .. } => {
+                assert!(matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "hello"));
+                assert_eq!(scene_tag.as_deref(), Some("雨中"));
+            }
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inspect_hotspot_consumes_leading_scene_tags_in_investigation_queue() {
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            intro: vec![],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                label: "Room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                transition_dialogue: vec![],
+                hotspots: vec![HotspotJson {
+                    id: "desk".into(),
+                    label: "Desk".into(),
+                    description: "Desk".into(),
+                    status: LockStatus::Unlocked,
+                    unlock: None,
+                    reveals: vec![],
+                    inspect_dialogue: vec![
+                        DialogueItem::SceneTag { text: "desk_closeup".into() },
+                        DialogueItem::Line { speaker: "A".into(), text: "found it".into() },
+                    ],
+                    on_reexamine: None,
+                }],
+                characters: vec![],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Auto(crate::game::schema::AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.prime_initial_queue().unwrap();
+
+        let view = engine.inspect_hotspot("desk").unwrap();
+        match &view.mode {
+            ModeView::Dialogue { current, scene_tag, .. } => {
+                assert!(matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "found it"));
+                assert_eq!(scene_tag.as_deref(), Some("desk_closeup"));
+            }
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
     }
 
     #[test]
