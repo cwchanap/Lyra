@@ -78,11 +78,11 @@ impl GameEngine {
             inventory: Inventory::default(),
             next_queue_gen: 2,
         };
-        engine.prime_initial_queue();
+        engine.prime_initial_queue()?;
         Ok(engine)
     }
 
-    fn prime_initial_queue(&mut self) {
+    fn prime_initial_queue(&mut self) -> Result<(), GameError> {
         let needs_initial_sub = match &mut self.scene {
             SceneRuntime::Linear(s) => {
                 // Consume leading SceneTag items so the first visible frame
@@ -90,6 +90,12 @@ impl GameEngine {
                 while let Some(DialogueItem::SceneTag { text }) = s.queue.get(s.cursor).cloned() {
                     self.last_scene_tag = Some(text);
                     s.cursor += 1;
+                }
+                // If the entire scene is tag-only (or empty), advance to the
+                // next scene so we don't stall on GameComplete.
+                if s.cursor >= s.queue.len() {
+                    self.advance_scene()?;
+                    return Ok(());
                 }
                 false
             }
@@ -108,8 +114,9 @@ impl GameEngine {
             }
         };
         if needs_initial_sub {
-            self.advance_into_first_sublocation();
+            self.advance_into_first_sublocation()?;
         }
+        Ok(())
     }
 
     pub fn view(&self) -> GameStateView {
@@ -184,7 +191,7 @@ impl GameEngine {
         };
 
         if no_current_sublocation {
-            self.advance_into_first_sublocation();
+            self.advance_into_first_sublocation()?;
             return Ok(false);
         }
 
@@ -216,7 +223,7 @@ impl GameEngine {
         Ok(false)
     }
 
-    fn advance_into_first_sublocation(&mut self) {
+    fn advance_into_first_sublocation(&mut self) -> Result<(), GameError> {
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
         // Phase 1 — read out the data we need without holding a mutable borrow into self.scene.
@@ -229,13 +236,13 @@ impl GameEngine {
                 .map(|s| (s.id.clone(), s.scene_tag.clone(), s.transition_dialogue.clone(), s.reveals.clone())),
             _ => None,
         };
-        let Some((id, scene_tag, transition, sub_reveals)) = chosen else { return; };
+        let Some((id, scene_tag, transition, sub_reveals)) = chosen else { return Ok(()) };
 
         // Phase 2 — write: mutate scene + inventory; reveals fire on first entry.
         let queue_items = {
             let inv = match &mut self.scene {
                 SceneRuntime::Investigation(i) => i,
-                _ => return,
+                _ => return Ok(()),
             };
             let first_entry = !inv.entered_sublocations.contains(&id);
             inv.current_sublocation_id = Some(id.clone());
@@ -253,13 +260,17 @@ impl GameEngine {
             }
         };
 
-        if !queue_items.is_empty() {
+        if queue_items.is_empty() {
+            self.last_scene_tag = Some(scene_tag);
+            self.on_queue_exhausted()?;
+        } else {
             let queue_gen = self.alloc_queue_gen();
             if let SceneRuntime::Investigation(inv) = &mut self.scene {
                 inv.pending_queue = Some(DialogueQueue { items: queue_items, cursor: 0, queue_gen });
             }
+            self.last_scene_tag = Some(scene_tag);
         }
-        self.last_scene_tag = Some(scene_tag);
+        Ok(())
     }
 
     fn alloc_queue_gen(&mut self) -> u64 {
@@ -287,7 +298,7 @@ impl GameEngine {
         let new_scene = load_scene_runtime(&self.resources_dir, &scene_ref, queue_gen)?;
         self.scene = new_scene;
         self.last_scene_tag = None;
-        self.prime_initial_queue();
+        self.prime_initial_queue()?;
         Ok(())
     }
 
@@ -771,7 +782,7 @@ mod tests {
             vec![DialogueItem::Line { speaker: "A".into(), text: "first".into() }],
         );
         let mut engine = empty_engine_with_scene(first_scene, 3);
-        engine.prime_initial_queue();
+        engine.prime_initial_queue().unwrap();
         let stale_token = token_from(&engine.view());
 
         let next_scene = investigation_scene_with_intro(
@@ -780,7 +791,7 @@ mod tests {
         );
         engine.scene = SceneRuntime::Investigation(InvestigationSceneState::from_json(next_scene, 7));
         engine.last_scene_tag = None;
-        engine.prime_initial_queue();
+        engine.prime_initial_queue().unwrap();
 
         let before = token_from(&engine.view());
         assert_ne!(stale_token, before);
@@ -832,7 +843,7 @@ mod tests {
             },
         };
         let mut engine = empty_engine_with_scene(scene, 1);
-        engine.prime_initial_queue();
+        engine.prime_initial_queue().unwrap();
 
         let view = engine.inspect_hotspot("desk").unwrap();
         assert!(matches!(view.mode, ModeView::GameComplete));
@@ -885,7 +896,7 @@ mod tests {
             },
         };
         let mut engine = empty_engine_with_scene(scene, 1);
-        engine.prime_initial_queue();
+        engine.prime_initial_queue().unwrap();
 
         let view = engine.interview_topic("witness", "alibi").unwrap();
         assert!(matches!(view.mode, ModeView::GameComplete));
@@ -921,7 +932,7 @@ mod tests {
             inventory: Inventory::default(),
             next_queue_gen: 2,
         };
-        engine.prime_initial_queue();
+        engine.prime_initial_queue().unwrap();
 
         // Both leading SceneTags should be consumed; last_scene_tag holds the
         // most recent tag text and the cursor points at the first real item.
@@ -986,10 +997,91 @@ mod tests {
             },
         };
         let mut engine = empty_engine_with_scene(scene, 1);
-        engine.prime_initial_queue();
+        engine.prime_initial_queue().unwrap();
 
         // Player is in room_a (first unlocked sublocation). Enter room_b.
         let view = engine.enter_sublocation("room_b").unwrap();
         assert!(matches!(view.mode, ModeView::GameComplete));
+    }
+
+    #[test]
+    fn silent_initial_sublocation_entry_runs_outro_check() {
+        // First sublocation's reveals satisfy the outro on initial entry.
+        // With the fix, prime_initial_queue triggers on_queue_exhausted which
+        // detects the satisfied outro and advances to GameComplete.
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            intro: vec![],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                scene_tag: "room".into(),
+                transition_dialogue: vec![],
+                hotspots: vec![],
+                characters: vec![],
+            }],
+            evidence_manifest: vec![EvidenceJson {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
+                    _predicate: crate::game::schema::PredicateEvidenceCollected::X,
+                    id: "note".into(),
+                }),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.prime_initial_queue().unwrap();
+
+        // The initial entry reveal collected "note" which satisfies the outro.
+        // on_queue_exhausted should fire, advancing to GameComplete.
+        assert!(matches!(engine.view().mode, ModeView::GameComplete));
+    }
+
+    #[test]
+    fn tag_only_linear_scene_advances_to_game_complete() {
+        use crate::game::schema::LinearSceneJson;
+        // A chapter with a single tag-only scene should advance to GameComplete
+        // instead of stalling with the cursor at the end of the queue.
+        let tag_only_json = LinearSceneJson {
+            id: "scene_0".into(),
+            title: "Tag Only".into(),
+            queue: vec![
+                DialogueItem::SceneTag { text: "吉祥寺街道".into() },
+            ],
+        };
+        let mut engine = GameEngine {
+            resources_dir: PathBuf::new(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Linear,
+                    file: "chapter_1/scene_0.json".into(),
+                }],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Linear(LinearSceneState::from_json(tag_only_json, 1)),
+            last_scene_tag: None,
+            inventory: Inventory::default(),
+            next_queue_gen: 2,
+        };
+        engine.prime_initial_queue().unwrap();
+
+        // Scene was tag-only → advance_scene ran → past last chapter → GameComplete.
+        assert!(matches!(engine.view().mode, ModeView::GameComplete));
+        assert_eq!(engine.last_scene_tag, Some("吉祥寺街道".into()));
     }
 }
