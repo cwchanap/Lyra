@@ -462,64 +462,7 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
   if (scene.outro.unlock !== "auto") {
     // Collect all evidence/statements revealed by reachable content.
     const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable);
-    walkUnlock(scene.outro.unlock, (pred) => {
-      switch (pred.predicate) {
-        case "evidence_collected":
-          if (!reachableAtoms.has(`evidence:${pred.id}`)) {
-            errors.push({
-              code: "outroPredicateUnreachable",
-              message: `Outro requires evidence:${pred.id} collected, but no reachable block reveals this evidence — scene is unwinnable.`,
-              sourceFile: scene.sourceFile,
-              line: scene.line,
-            });
-          }
-          break;
-        case "statement_acquired":
-          if (!reachableAtoms.has(`statement:${pred.id}`)) {
-            errors.push({
-              code: "outroPredicateUnreachable",
-              message: `Outro requires statement:${pred.id} acquired, but no reachable block reveals this statement — scene is unwinnable.`,
-              sourceFile: scene.sourceFile,
-              line: scene.line,
-            });
-          }
-          break;
-        case "topic_discussed": {
-          const parentSub = scene.sublocations.find((s) =>
-            s.characters.some((c) => c.id === pred.characterId && c.topics.some((t) => t.id === pred.topicId)),
-          );
-          if (
-            !parentSub
-            || !subReachable.has(parentSub.id)
-            || !collectReachableAtoms(parentSub, scene, subReachable).has(`topic:${pred.characterId}@${pred.topicId}`)
-          ) {
-            errors.push({
-              code: "outroPredicateUnreachable",
-              message: `Outro requires topic:${pred.characterId}@${pred.topicId} discussed, but that topic is not reachable — scene is unwinnable.`,
-              sourceFile: scene.sourceFile,
-              line: scene.line,
-            });
-          }
-          break;
-        }
-        case "hotspot_investigated": {
-          const parentSub = scene.sublocations.find((s) => s.hotspots.some((h) => h.id === pred.id));
-          if (
-            !parentSub
-            || !subReachable.has(parentSub.id)
-            || !collectReachableAtoms(parentSub, scene, subReachable).has(`hotspot:${pred.id}`)
-          ) {
-            errors.push({
-              code: "outroPredicateUnreachable",
-              message: `Outro requires hotspot:${pred.id} investigated, but that hotspot is not reachable — scene is unwinnable.`,
-              sourceFile: scene.sourceFile,
-              line: scene.line,
-            });
-          }
-          break;
-        }
-      }
-    });
+    errors.push(...collectOutroUnlockErrors(scene.outro.unlock, scene, subReachable, reachableAtoms));
   }
 }
 
@@ -735,6 +678,91 @@ function isUnlockSatisfiable(expr: UnlockExpr, reachable: Set<string>): boolean 
       return reachable.has(`evidence:${expr.id}`);
     case "statement_acquired":
       return reachable.has(`statement:${expr.id}`);
+  }
+}
+
+function collectOutroUnlockErrors(
+  expr: UnlockExpr,
+  scene: ASTInvestigationScene,
+  reachableSubs: Set<string>,
+  reachableAtoms: Set<string>,
+): CompileError[] {
+  if ("op" in expr) {
+    const leftErrors = collectOutroUnlockErrors(expr.left, scene, reachableSubs, reachableAtoms);
+    const rightErrors = collectOutroUnlockErrors(expr.right, scene, reachableSubs, reachableAtoms);
+    if (expr.op === "and") {
+      return [...leftErrors, ...rightErrors];
+    }
+    return leftErrors.length === 0 || rightErrors.length === 0
+      ? []
+      : [...leftErrors, ...rightErrors];
+  }
+  return outroPredicateReachable(expr, scene, reachableSubs, reachableAtoms)
+    ? []
+    : [outroPredicateUnreachableError(expr, scene)];
+}
+
+function outroPredicateReachable(
+  pred: Extract<UnlockExpr, { predicate: string }>,
+  scene: ASTInvestigationScene,
+  reachableSubs: Set<string>,
+  reachableAtoms: Set<string>,
+): boolean {
+  switch (pred.predicate) {
+    case "evidence_collected":
+      return reachableAtoms.has(`evidence:${pred.id}`);
+    case "statement_acquired":
+      return reachableAtoms.has(`statement:${pred.id}`);
+    case "topic_discussed": {
+      const parentSub = scene.sublocations.find((s) =>
+        s.characters.some((c) => c.id === pred.characterId && c.topics.some((t) => t.id === pred.topicId)),
+      );
+      return parentSub != null
+        && reachableSubs.has(parentSub.id)
+        && collectReachableAtoms(parentSub, scene, reachableSubs).has(`topic:${pred.characterId}@${pred.topicId}`);
+    }
+    case "hotspot_investigated": {
+      const parentSub = scene.sublocations.find((s) => s.hotspots.some((h) => h.id === pred.id));
+      return parentSub != null
+        && reachableSubs.has(parentSub.id)
+        && collectReachableAtoms(parentSub, scene, reachableSubs).has(`hotspot:${pred.id}`);
+    }
+  }
+}
+
+function outroPredicateUnreachableError(
+  pred: Extract<UnlockExpr, { predicate: string }>,
+  scene: ASTInvestigationScene,
+): CompileError {
+  switch (pred.predicate) {
+    case "evidence_collected":
+      return {
+        code: "outroPredicateUnreachable",
+        message: `Outro requires evidence:${pred.id} collected, but no reachable block reveals this evidence — scene is unwinnable.`,
+        sourceFile: scene.sourceFile,
+        line: scene.line,
+      };
+    case "statement_acquired":
+      return {
+        code: "outroPredicateUnreachable",
+        message: `Outro requires statement:${pred.id} acquired, but no reachable block reveals this statement — scene is unwinnable.`,
+        sourceFile: scene.sourceFile,
+        line: scene.line,
+      };
+    case "topic_discussed":
+      return {
+        code: "outroPredicateUnreachable",
+        message: `Outro requires topic:${pred.characterId}@${pred.topicId} discussed, but that topic is not reachable — scene is unwinnable.`,
+        sourceFile: scene.sourceFile,
+        line: scene.line,
+      };
+    case "hotspot_investigated":
+      return {
+        code: "outroPredicateUnreachable",
+        message: `Outro requires hotspot:${pred.id} investigated, but that hotspot is not reachable — scene is unwinnable.`,
+        sourceFile: scene.sourceFile,
+        line: scene.line,
+      };
   }
 }
 

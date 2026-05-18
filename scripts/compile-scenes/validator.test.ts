@@ -1159,6 +1159,77 @@ describe("validator", () => {
     expect(errors).toEqual([]);
   });
 
+  it("accepts an Outro OR expression when one reachable branch can satisfy it", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.evidenceManifest = [
+      { id: "real_ev", name: "Real", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+      { id: "red_herring", name: "Red Herring", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 21 },
+    ];
+    scene.sublocations[0]!.hotspots = [
+      {
+        id: "h1",
+        label: "h1",
+        description: "h1",
+        status: "unlocked",
+        unlock: null,
+        reveals: [{ kind: "evidence", id: "real_ev" }],
+        inspectDialogue: [{ kind: "line", speaker: "A", text: "hi" }],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 4,
+      },
+    ];
+    scene.outro = {
+      unlock: {
+        op: "or",
+        left: { predicate: "evidence_collected", id: "real_ev" },
+        right: { predicate: "evidence_collected", id: "red_herring" },
+      },
+      dialogue: [],
+    };
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "outroPredicateUnreachable")).toBeUndefined();
+  });
+
+  it("rejects an Outro AND expression when one branch is unreachable", () => {
+    const scene = mkInvestigationScene({ id: "i" });
+    scene.evidenceManifest = [
+      { id: "real_ev", name: "Real", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+      { id: "red_herring", name: "Red Herring", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 21 },
+    ];
+    scene.sublocations[0]!.hotspots = [
+      {
+        id: "h1",
+        label: "h1",
+        description: "h1",
+        status: "unlocked",
+        unlock: null,
+        reveals: [{ kind: "evidence", id: "real_ev" }],
+        inspectDialogue: [{ kind: "line", speaker: "A", text: "hi" }],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 4,
+      },
+    ];
+    scene.outro = {
+      unlock: {
+        op: "and",
+        left: { predicate: "evidence_collected", id: "real_ev" },
+        right: { predicate: "evidence_collected", id: "red_herring" },
+      },
+      dialogue: [],
+    };
+    const errors = validate({
+      chapters: [mkChapter(1, ["i.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+    });
+    const outroErr = errors.find((e) => e.code === "outroPredicateUnreachable" && e.message.includes("red_herring"));
+    expect(outroErr).toBeDefined();
+  });
+
   it("rejects an Outro whose topic_discussed predicate references a topic in an unreachable sub-location", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.sublocations = [
