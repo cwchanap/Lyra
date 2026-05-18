@@ -19,7 +19,7 @@
       onclick={() => onEnter(sub.id)}
       type="button"
     >
-      {sub.sceneTag}
+      {sub.label}
     </button>
   {/each}
 </nav>

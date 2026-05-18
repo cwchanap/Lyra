@@ -136,7 +136,7 @@ impl GameEngine {
         if current_token != expected {
             return Ok(self.view());
         }
-        let exhausted = match &mut self.scene {
+        let _ = match &mut self.scene {
             SceneRuntime::Linear(s) => s.advance(),
             SceneRuntime::Investigation(inv) => {
                 let q = inv.pending_queue.as_mut().ok_or_else(GameError::no_active_dialogue)?;
@@ -144,9 +144,21 @@ impl GameEngine {
                 q.cursor >= q.items.len()
             }
         };
+        // Capture the just-consumed item as a scene tag if applicable.
         if let Some(DialogueItem::SceneTag { text }) = self.peek_just_consumed() {
             self.last_scene_tag = Some(text);
         }
+        // Skip over any consecutive SceneTag items so the next visible frame
+        // is a real dialogue/action line. This mirrors the leading-tag skip
+        // in prime_initial_queue.
+        self.consume_scene_tags_at_cursor();
+        let exhausted = match &self.scene {
+            SceneRuntime::Linear(s) => s.cursor >= s.queue.len(),
+            SceneRuntime::Investigation(inv) => inv
+                .pending_queue
+                .as_ref()
+                .map_or(true, |q| q.cursor >= q.items.len()),
+        };
         if exhausted {
             self.on_queue_exhausted()?;
         }
@@ -160,6 +172,35 @@ impl GameEngine {
                 .pending_queue
                 .as_ref()
                 .and_then(|q| q.items.get(q.cursor.saturating_sub(1)).cloned()),
+        }
+    }
+
+    /// Advance past any consecutive SceneTag items at the current cursor,
+    /// updating `last_scene_tag` for each. Leaves the cursor positioned on
+    /// the first non-SceneTag item (or at the end of the queue).
+    fn consume_scene_tags_at_cursor(&mut self) {
+        loop {
+            let tag = match &mut self.scene {
+                SceneRuntime::Linear(s) => s.queue.get(s.cursor).cloned(),
+                SceneRuntime::Investigation(inv) => inv
+                    .pending_queue
+                    .as_ref()
+                    .and_then(|q| q.items.get(q.cursor).cloned()),
+            };
+            match tag {
+                Some(DialogueItem::SceneTag { text }) => {
+                    self.last_scene_tag = Some(text);
+                    match &mut self.scene {
+                        SceneRuntime::Linear(s) => s.cursor += 1,
+                        SceneRuntime::Investigation(inv) => {
+                            if let Some(q) = inv.pending_queue.as_mut() {
+                                q.cursor += 1;
+                            }
+                        }
+                    }
+                }
+                _ => break,
+            }
         }
     }
 
@@ -649,6 +690,7 @@ impl GameEngine {
                     .filter(|s| inv.is_block_unlocked(&format!("sublocation:{}", s.id), s.status, s.unlock.as_ref(), &ctx))
                     .map(|s| SublocationView {
                         id: s.id.clone(),
+                        label: s.label.clone(),
                         scene_tag: s.scene_tag.clone(),
                         hotspots: s
                             .hotspots
@@ -736,6 +778,7 @@ mod tests {
             intro,
             sublocations: vec![SublocationJson {
                 id: "room".into(),
+                label: "Room".into(),
                 status: LockStatus::Unlocked,
                 unlock: None,
                 reveals: vec![],
@@ -814,6 +857,7 @@ mod tests {
             intro: vec![],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
+                label: "Room".into(),
                 status: LockStatus::Unlocked,
                 unlock: None,
                 reveals: vec![],
@@ -863,6 +907,7 @@ mod tests {
             intro: vec![],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
+                label: "Room".into(),
                 status: LockStatus::Unlocked,
                 unlock: None,
                 reveals: vec![],
@@ -916,6 +961,7 @@ mod tests {
             intro: vec![],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
+                label: "Room".into(),
                 status: LockStatus::Unlocked,
                 unlock: None,
                 reveals: vec![],
@@ -1004,6 +1050,62 @@ mod tests {
     }
 
     #[test]
+    fn advance_dialogue_skips_mid_scene_tags_in_linear_scene() {
+        // Queue: Line → SceneTag → SceneTag → Line
+        // Advancing past the first Line should skip both SceneTags and land
+        // directly on the second Line, with last_scene_tag holding the final tag.
+        use crate::game::schema::LinearSceneJson;
+        let scene_json = LinearSceneJson {
+            id: "scene_0".into(),
+            title: "Test".into(),
+            queue: vec![
+                DialogueItem::Line { speaker: "A".into(), text: "first".into() },
+                DialogueItem::SceneTag { text: "mid_scene_1".into() },
+                DialogueItem::SceneTag { text: "mid_scene_2".into() },
+                DialogueItem::Line { speaker: "B".into(), text: "second".into() },
+            ],
+        };
+        let mut engine = GameEngine {
+            resources_dir: PathBuf::new(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Linear,
+                    file: "chapter_1/scene_0.json".into(),
+                }],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Linear(LinearSceneState::from_json(scene_json, 1)),
+            last_scene_tag: None,
+            inventory: Inventory::default(),
+            next_queue_gen: 2,
+        };
+        // prime_initial_queue: no leading tags, cursor at 0 (first Line)
+        engine.prime_initial_queue().unwrap();
+        assert_eq!(engine.last_scene_tag, None);
+
+        let view = engine.view();
+        let token = match &view.mode {
+            ModeView::Dialogue { queue_token, .. } => queue_token.clone(),
+            other => panic!("expected Dialogue, got {other:?}"),
+        };
+
+        // Advance past "first" — should skip both SceneTags, land on "second"
+        let view = engine.advance_dialogue(token).unwrap();
+        assert_eq!(engine.last_scene_tag, Some("mid_scene_2".into()));
+        match &view.mode {
+            ModeView::Dialogue { current, scene_tag, .. } => {
+                assert!(matches!(current, DialogueItem::Line { speaker, text } if speaker == "B" && text == "second"));
+                assert_eq!(scene_tag.as_deref(), Some("mid_scene_2"));
+            }
+            other => panic!("expected Dialogue after mid-scene tag skip, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn silent_sublocation_entry_can_complete_scene() {
         // Scene with two unlocked sublocations. Room A is the first.
         // Entering room B on first visit reveals evidence that satisfies the Outro.
@@ -1016,6 +1118,7 @@ mod tests {
             sublocations: vec![
                 SublocationJson {
                     id: "room_a".into(),
+                    label: "Room A".into(),
                     status: LockStatus::Unlocked,
                     unlock: None,
                     reveals: vec![],
@@ -1026,6 +1129,7 @@ mod tests {
                 },
                 SublocationJson {
                     id: "room_b".into(),
+                    label: "Room B".into(),
                     status: LockStatus::Unlocked,
                     unlock: None,
                     reveals: vec![RevealTarget::Evidence { id: "note".into() }],
@@ -1071,6 +1175,7 @@ mod tests {
             intro: vec![],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
+                label: "Room".into(),
                 status: LockStatus::Unlocked,
                 unlock: None,
                 reveals: vec![RevealTarget::Evidence { id: "note".into() }],

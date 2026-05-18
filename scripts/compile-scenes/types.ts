@@ -63,6 +63,7 @@ export type ASTInvestigationScene = Located<{
 
 export type ASTSublocation = Located<{
   id: string;
+  label: string;
   status: "locked" | "unlocked";
   unlock: UnlockExpr | null;
   reveals: RevealTarget[];
@@ -148,6 +149,7 @@ export type JSONInvestigationScene = {
   intro: DialogueItem[];
   sublocations: Array<{
     id: string;
+    label: string;
     status: "locked" | "unlocked";
     unlock: UnlockExpr | null;
     reveals: RevealTarget[];

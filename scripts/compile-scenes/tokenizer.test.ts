@@ -80,4 +80,32 @@ describe("tokenizer", () => {
     const tokens = tokenize("**早坂茜**: text", "test.md");
     expect(tokens[0]?.kind).toBe("unknown");
   });
+
+  it("handles multi-line scene-tag bracket blocks", () => {
+    const source = `[場景：吉祥寺雨鐘咖啡館，深夜。外頭下著細雨，店內燈光昏黃。
+吧台後傳出咖啡機的低鳴，空氣中混著金木犀拿鐵的香氣。]`;
+    const tokens = tokenize(source, "test.md");
+    expect(tokens).toEqual([
+      {
+        kind: "sceneTag",
+        text: "吉祥寺雨鐘咖啡館，深夜。外頭下著細雨，店內燈光昏黃。 吧台後傳出咖啡機的低鳴，空氣中混著金木犀拿鐵的香氣。",
+        sourceFile: "test.md",
+        line: 1,
+      },
+    ]);
+  });
+
+  it("handles multi-line action bracket blocks", () => {
+    const source = `[相馬律看了一眼窗外，
+然後轉過身來。]`;
+    const tokens = tokenize(source, "test.md");
+    expect(tokens).toEqual([
+      {
+        kind: "action",
+        text: "相馬律看了一眼窗外， 然後轉過身來。",
+        sourceFile: "test.md",
+        line: 1,
+      },
+    ]);
+  });
 });
