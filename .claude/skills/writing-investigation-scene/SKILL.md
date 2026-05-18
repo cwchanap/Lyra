@@ -92,7 +92,7 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 - **Required:** `Status`
 - **Optional:** `Unlock`, `Reveals` (list)
 - **Body:** topic dialogue (plays on the player's **first** selection of this topic, followed by `Reveals:` chain dialogue).
-- **Optional sub-block:** `#### On Reexamine` — H5 immediately under this Topic's body. Plays on every selection **after** the first. No new reveals fire on reexamine. If absent, the engine plays a fallback line on subsequent selections.
+- **Optional sub-block:** `##### On Reexamine` — H5 immediately under this Topic's body. Plays on every selection **after** the first. No new reveals fire on reexamine. If absent, the engine plays a fallback line on subsequent selections.
 
 ### Evidence Manifest entry (H3 under `## Evidence Manifest`)
 - **Heading:** `### evidence:<id> {#id}`

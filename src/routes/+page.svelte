@@ -48,11 +48,13 @@
     {:else if gameState.value.mode.type === "gameComplete"}
       <GameComplete onReset={resetGame} />
     {/if}
-    <InventoryPanel
-      inventory={gameState.value.inventory}
-      onReexamineEvidence={reexamineEvidence}
-      onReexamineStatement={reexamineStatement}
-    />
+    {#if gameState.value.mode.type !== "gameComplete"}
+      <InventoryPanel
+        inventory={gameState.value.inventory}
+        onReexamineEvidence={reexamineEvidence}
+        onReexamineStatement={reexamineStatement}
+      />
+    {/if}
   </GameShell>
 {:else if gameState.error}
   <main>
