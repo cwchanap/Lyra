@@ -26,6 +26,7 @@ const mkInvestigationScene = (overrides: Partial<ASTInvestigationScene> = {}): A
   sublocations: [
     {
       id: "room",
+      label: "Room",
       status: "unlocked",
       unlock: null,
       reveals: [],
@@ -165,6 +166,7 @@ describe("validator", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.sublocations.push({
       id: "orphan",
+      label: "Orphan",
       status: "locked",
       unlock: null,
       reveals: [],
@@ -187,6 +189,7 @@ describe("validator", () => {
     scene.sublocations[0]!.hotspots[0]!.reveals = [{ kind: "sublocation", id: "double_path" }];
     scene.sublocations.push({
       id: "double_path",
+      label: "Double Path",
       status: "locked",
       unlock: { predicate: "hotspot_investigated", id: "thing" },
       reveals: [],
@@ -211,6 +214,7 @@ describe("validator", () => {
     scene.sublocations = [
       {
         id: "room_a",
+        label: "Room A",
         status: "unlocked", // first must be unlocked per parser rule
         unlock: null,
         reveals: [],
@@ -223,6 +227,7 @@ describe("validator", () => {
       },
       {
         id: "room_b",
+        label: "Room B",
         status: "locked",
         // Needs hotspot inside room_c
         unlock: { predicate: "hotspot_investigated", id: "hc" },
@@ -249,6 +254,7 @@ describe("validator", () => {
       },
       {
         id: "room_c",
+        label: "Room C",
         status: "locked",
         // Needs hotspot inside room_b — mutual deadlock
         unlock: { predicate: "hotspot_investigated", id: "hb" },
@@ -309,6 +315,7 @@ describe("validator", () => {
     ];
     scene.sublocations.push({
       id: "room_b",
+      label: "Room B",
       status: "locked",
       unlock: null, // unlocked via Reveals from h1
       reveals: [],
@@ -480,6 +487,7 @@ describe("validator", () => {
     scene.sublocations = [
       {
         id: "room_a",
+        label: "Room A",
         status: "unlocked",
         unlock: null,
         reveals: [],
@@ -505,6 +513,7 @@ describe("validator", () => {
       },
       {
         id: "room_b",
+        label: "Room B",
         status: "locked",
         unlock: { predicate: "evidence_collected", id: "ev1" },
         reveals: [],
@@ -586,6 +595,7 @@ describe("validator", () => {
     // room_b also unlocked, has a locked topic needing evidence:ev1
     scene.sublocations.push({
       id: "room_b",
+      label: "Room B",
       status: "unlocked",
       unlock: null,
       reveals: [],
@@ -648,6 +658,7 @@ describe("validator", () => {
     // room_b: locked hotspot needs statement:st1
     scene.sublocations.push({
       id: "room_b",
+      label: "Room B",
       status: "unlocked",
       unlock: null,
       reveals: [],
@@ -686,6 +697,7 @@ describe("validator", () => {
     scene.sublocations[0]!.reveals = [{ kind: "evidence", id: "ev_entry" }];
     scene.sublocations.push({
       id: "room_b",
+      label: "Room B",
       status: "unlocked",
       unlock: null,
       reveals: [],
@@ -724,6 +736,7 @@ describe("validator", () => {
     scene.sublocations = [
       {
         id: "room_a",
+        label: "Room A",
         status: "unlocked",
         unlock: null,
         reveals: [],
@@ -749,6 +762,7 @@ describe("validator", () => {
       },
       {
         id: "room_b",
+        label: "Room B",
         status: "unlocked",
         unlock: null,
         reveals: [],
@@ -797,6 +811,7 @@ describe("validator", () => {
     scene.sublocations = [
       {
         id: "room_a",
+        label: "Room A",
         status: "unlocked",
         unlock: null,
         reveals: [],
@@ -822,6 +837,7 @@ describe("validator", () => {
       },
       {
         id: "room_b",
+        label: "Room B",
         status: "locked",
         unlock: { predicate: "hotspot_investigated", id: "hidden" },
         reveals: [],
@@ -860,6 +876,7 @@ describe("validator", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.sublocations.push({
       id: "room_b",
+      label: "Room B",
       status: "unlocked",
       unlock: null,
       reveals: [],
@@ -895,6 +912,7 @@ describe("validator", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.sublocations.push({
       id: "room", // duplicate of the first sub-location
+      label: "Room Again",
       status: "unlocked",
       unlock: null,
       reveals: [],
@@ -958,6 +976,7 @@ describe("validator", () => {
     ];
     scene.sublocations.push({
       id: "room_b",
+      label: "Room B",
       status: "unlocked",
       unlock: null,
       reveals: [],
@@ -999,6 +1018,7 @@ describe("validator", () => {
     scene.sublocations = [
       {
         id: "room_a",
+        label: "Room A",
         status: "unlocked",
         unlock: null,
         reveals: [],
@@ -1024,6 +1044,7 @@ describe("validator", () => {
       },
       {
         id: "room_b",
+        label: "Room B",
         status: "locked",
         unlock: { predicate: "evidence_collected", id: "key" },
         reveals: [],
@@ -1143,6 +1164,7 @@ describe("validator", () => {
     scene.sublocations = [
       {
         id: "room_a",
+        label: "Room A",
         status: "unlocked",
         unlock: null,
         reveals: [],
@@ -1155,6 +1177,7 @@ describe("validator", () => {
       },
       {
         id: "room_b",
+        label: "Room B",
         status: "locked",
         unlock: { predicate: "hotspot_investigated", id: "nonexistent" }, // can never be satisfied
         reveals: [],
