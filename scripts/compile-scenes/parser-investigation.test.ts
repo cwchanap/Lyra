@@ -112,6 +112,27 @@ describe("parseInvestigationScene", () => {
     expect(result.error.code).toBe("sublocationNoSceneTag");
   });
 
+  it("rejects a sub-location with no Status (Status is required)", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Outro
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("sublocationMissingStatus");
+  });
+
   it("rejects an invalid Status value on a sub-location", () => {
     const source = `
 # Scene 1: x
