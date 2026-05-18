@@ -43,9 +43,9 @@
 </aside>
 
 <style>
-  aside { position: fixed; top: 24px; right: 24px; width: 320px; }
-  .toggle { padding: 8px 14px; background: #161b22; color: #e6edf3; border: 1px solid #30363d; border-radius: 999px; cursor: pointer; font: inherit; }
-  .panel { margin-top: 8px; padding: 14px; background: #0d1117; border: 1px solid #30363d; border-radius: 10px; max-height: 70vh; overflow-y: auto; }
+  aside { position: fixed; top: 24px; right: 24px; width: 320px; pointer-events: none; }
+  .toggle { pointer-events: auto; padding: 8px 14px; background: #161b22; color: #e6edf3; border: 1px solid #30363d; border-radius: 999px; cursor: pointer; font: inherit; }
+  .panel { pointer-events: auto; margin-top: 8px; padding: 14px; background: #0d1117; border: 1px solid #30363d; border-radius: 10px; max-height: 70vh; overflow-y: auto; }
   h3 { margin: 12px 0 8px; color: #e6edf3; font-size: 0.9rem; }
   section button { display: block; width: 100%; text-align: left; padding: 8px 10px; margin-bottom: 6px; background: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #d0d7de; cursor: pointer; font: inherit; }
   section button:hover { border-color: #58a6ff; }
