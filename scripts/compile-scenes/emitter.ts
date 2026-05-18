@@ -30,6 +30,7 @@ export function emitInvestigationScene(ast: ASTInvestigationScene): JSONInvestig
     intro: ast.intro,
     sublocations: ast.sublocations.map((sub) => ({
       id: sub.id,
+      label: sub.label,
       status: sub.status,
       unlock: sub.unlock,
       reveals: sub.reveals,

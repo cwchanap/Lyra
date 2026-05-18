@@ -61,6 +61,7 @@ pub enum SceneView {
 #[serde(rename_all = "camelCase")]
 pub struct SublocationView {
     pub id: String,
+    pub label: String,
     pub scene_tag: String,
     pub hotspots: Vec<HotspotView>,
     pub characters: Vec<CharacterView>,

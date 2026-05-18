@@ -44,6 +44,7 @@ export type CharacterView = {
 };
 export type SublocationView = {
   id: string;
+  label: string;
   sceneTag: string;
   hotspots: HotspotView[];
   characters: CharacterView[];

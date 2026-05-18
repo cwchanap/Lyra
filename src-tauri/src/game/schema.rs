@@ -167,6 +167,7 @@ pub struct InvestigationSceneJson {
 #[serde(rename_all = "camelCase")]
 pub struct SublocationJson {
     pub id: String,
+    pub label: String,
     pub status: LockStatus,
     pub unlock: Option<UnlockExpr>,
     pub reveals: Vec<RevealTarget>,

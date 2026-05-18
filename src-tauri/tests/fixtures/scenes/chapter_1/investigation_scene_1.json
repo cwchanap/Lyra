@@ -16,6 +16,7 @@
   "sublocations": [
     {
       "id": "main_hall",
+      "label": "主廳",
       "status": "unlocked",
       "unlock": null,
       "reveals": [],
@@ -145,6 +146,7 @@
     },
     {
       "id": "back_room",
+      "label": "後室",
       "status": "locked",
       "unlock": null,
       "reveals": [],

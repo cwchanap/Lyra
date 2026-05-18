@@ -73,6 +73,7 @@ export function tokenize(source: string, sourceFile: string): Token[] {
       continue;
     }
 
+    // Check for single-line bracketed blocks first.
     const bracketed = BRACKETED_RE.exec(trimmed);
     if (bracketed) {
       const inner = bracketed[1] ?? "";
@@ -86,6 +87,40 @@ export function tokenize(source: string, sourceFile: string): Token[] {
       } else {
         tokens.push({ kind: "action", text: inner, sourceFile, line });
       }
+      continue;
+    }
+
+    // Multi-line bracketed block: starts with "[" but doesn't end with "]" on
+    // the same line. Accumulate subsequent lines until a closing "]" is found.
+    if (trimmed.startsWith("[")) {
+      let accumulated = trimmed;
+      let endLine = line;
+      while (i + 1 < lines.length && !accumulated.includes("]")) {
+        i++;
+        const nextTrimmed = (lines[i] ?? "").trim();
+        if (nextTrimmed.length === 0) continue;
+        accumulated += "\n" + nextTrimmed;
+        endLine = i + 1;
+      }
+      const multiMatch = /^\[(.+?)\]\s*$/s.exec(accumulated);
+      if (multiMatch) {
+        // Normalise internal newlines to spaces for downstream consumers.
+        const inner = (multiMatch[1] ?? "").replace(/\n/g, " ");
+        if (inner.startsWith(SCENE_TAG_PREFIX)) {
+          tokens.push({
+            kind: "sceneTag",
+            text: inner.slice(SCENE_TAG_PREFIX.length),
+            sourceFile,
+            line,
+          });
+        } else {
+          tokens.push({ kind: "action", text: inner, sourceFile, line });
+        }
+        continue;
+      }
+      // If we accumulated lines but still couldn't parse a valid bracket
+      // block, emit the original first line as unknown.
+      tokens.push({ kind: "unknown", text: trimmed, sourceFile, line });
       continue;
     }
 

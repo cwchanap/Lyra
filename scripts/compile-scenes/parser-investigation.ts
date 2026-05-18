@@ -141,6 +141,7 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
   if (!id) return fail(cur.sourceFile, head.line, "sublocationMissingAnchor", "Sub-location heading must include {#id}.");
   const labelMatch = /^Sub-location:\s*(.+)$/.exec(head.text);
   if (!labelMatch) return fail(cur.sourceFile, head.line, "sublocationMalformedHeading", `Malformed sub-location heading: ${head.text}`);
+  const label = (labelMatch[1] ?? "").trim();
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
@@ -206,6 +207,7 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
     ok: true,
     value: {
       id,
+      label,
       status,
       unlock,
       reveals: reveals.value,
