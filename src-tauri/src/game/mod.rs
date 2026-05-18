@@ -500,6 +500,9 @@ impl GameEngine {
     }
 
     pub fn reexamine_evidence(&mut self, id: &str) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
         if let SceneRuntime::Investigation(inv) = &self.scene {
             if inv.pending_queue.as_ref().is_some_and(|q| q.cursor < q.items.len()) {
                 return Err(GameError::dialogue_active("reexamine_evidence"));
@@ -529,6 +532,9 @@ impl GameEngine {
     }
 
     pub fn reexamine_statement(&mut self, id: &str) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
         if let SceneRuntime::Investigation(inv) = &self.scene {
             if inv.pending_queue.as_ref().is_some_and(|q| q.cursor < q.items.len()) {
                 return Err(GameError::dialogue_active("reexamine_statement"));
@@ -900,6 +906,56 @@ mod tests {
 
         let view = engine.interview_topic("witness", "alibi").unwrap();
         assert!(matches!(view.mode, ModeView::GameComplete));
+    }
+
+    #[test]
+    fn inventory_reexamine_returns_game_complete_after_completion() {
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            intro: vec![],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                transition_dialogue: vec![],
+                hotspots: vec![],
+                characters: vec![],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Auto(crate::game::schema::AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.inventory.evidence.push(crate::game::state::EvidenceRecord {
+            id: "note".into(),
+            name: "Note".into(),
+            description: "Note".into(),
+            details: "Note".into(),
+            on_reexamine: Some(vec![DialogueItem::Line { speaker: "A".into(), text: "look".into() }]),
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "investigation_scene_1".into(),
+        });
+        engine.inventory.statements.push(crate::game::state::StatementRecord {
+            id: "alibi".into(),
+            speaker: "Witness".into(),
+            content: "I was elsewhere".into(),
+            on_reexamine: Some(vec![DialogueItem::Line { speaker: "Witness".into(), text: "again".into() }]),
+            acquired_in_chapter_id: "chapter_1".into(),
+            acquired_in_scene_id: "investigation_scene_1".into(),
+        });
+        engine.current_chapter_idx = engine.chapters.len();
+
+        let evidence_err = engine.reexamine_evidence("note").unwrap_err();
+        assert_eq!(evidence_err.code, "gameComplete");
+
+        let statement_err = engine.reexamine_statement("alibi").unwrap_err();
+        assert_eq!(statement_err.code, "gameComplete");
     }
 
     #[test]
