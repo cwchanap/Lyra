@@ -145,6 +145,9 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  if (meta.value.Status === undefined) {
+    return fail(cur.sourceFile, head.line, "sublocationMissingStatus", "Sub-location requires an explicit Status (locked or unlocked).");
+  }
   const statusCheck = validateStatus(meta.value.Status, "unlocked", cur.sourceFile, head.line);
   if (!statusCheck.ok) return statusCheck;
   const status = statusCheck.value;
