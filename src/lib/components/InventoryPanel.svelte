@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Inventory } from "../state/types";
-  let { inventory, onReexamineEvidence, onReexamineStatement }: {
+  let { inventory, reexamineEnabled, onReexamineEvidence, onReexamineStatement }: {
     inventory: Inventory;
+    reexamineEnabled: boolean;
     onReexamineEvidence: (id: string) => void;
     onReexamineStatement: (id: string) => void;
   } = $props();
@@ -20,7 +21,7 @@
           <p class="empty">尚未收集。</p>
         {/if}
         {#each inventory.evidence as e}
-          <button type="button" onclick={() => onReexamineEvidence(e.id)}>
+          <button type="button" disabled={!reexamineEnabled} onclick={() => onReexamineEvidence(e.id)}>
             <strong>{e.name}</strong>
             <small>{e.description}</small>
           </button>
@@ -32,7 +33,7 @@
           <p class="empty">尚未取得。</p>
         {/if}
         {#each inventory.statements as s}
-          <button type="button" onclick={() => onReexamineStatement(s.id)}>
+          <button type="button" disabled={!reexamineEnabled} onclick={() => onReexamineStatement(s.id)}>
             <strong>{s.speaker}</strong>
             <small>{s.content}</small>
           </button>
@@ -49,6 +50,8 @@
   h3 { margin: 12px 0 8px; color: #e6edf3; font-size: 0.9rem; }
   section button { display: block; width: 100%; text-align: left; padding: 8px 10px; margin-bottom: 6px; background: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #d0d7de; cursor: pointer; font: inherit; }
   section button:hover { border-color: #58a6ff; }
+  section button:disabled { opacity: 0.6; cursor: not-allowed; }
+  section button:disabled:hover { border-color: #30363d; }
   section button strong { display: block; color: #58a6ff; }
   section button small { color: #8b949e; }
   .empty { color: #8b949e; font-size: 0.85rem; }

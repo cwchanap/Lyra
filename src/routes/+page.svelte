@@ -11,6 +11,7 @@
     reexamineEvidence,
     reexamineStatement,
   } from "$lib/state/game-client.svelte";
+  import { canReexamineInventory, shouldShowInventoryPanel } from "$lib/state/mode";
   import DialogueBox from "$lib/components/DialogueBox.svelte";
   import ExploreView from "$lib/components/ExploreView.svelte";
   import SceneBackdrop from "$lib/components/SceneBackdrop.svelte";
@@ -48,9 +49,10 @@
     {:else if gameState.value.mode.type === "gameComplete"}
       <GameComplete onReset={resetGame} />
     {/if}
-    {#if gameState.value.mode.type !== "gameComplete"}
+    {#if shouldShowInventoryPanel(gameState.value.mode)}
       <InventoryPanel
         inventory={gameState.value.inventory}
+        reexamineEnabled={canReexamineInventory(gameState.value.mode)}
         onReexamineEvidence={reexamineEvidence}
         onReexamineStatement={reexamineStatement}
       />
