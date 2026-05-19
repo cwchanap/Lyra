@@ -51,6 +51,7 @@ export function compile(opts: CompileOptions): CompileResult {
   // (future) scene-type prefix. The validator must treat these as accepted (not
   // missing) when checking chapter manifest file references.
   const skippedReservedFiles = new Set<string>();
+  const failedParseFiles = new Set<string>();
 
   // 1. Discover chapter directories.
   let dirs: string[];
@@ -122,11 +123,17 @@ export function compile(opts: CompileOptions): CompileResult {
       const sourceFileTag = `${dirName}/${file}`;
       if (file.startsWith("scene_")) {
         const parsed = parseLinearScene(source, sourceFileTag, sceneId);
-        if (!parsed.ok) errors.push(parsed.error);
+        if (!parsed.ok) {
+          errors.push(parsed.error);
+          failedParseFiles.add(sourceFileTag);
+        }
         else scenes.push({ chapterId: dirName, file, ast: parsed.value });
       } else if (file.startsWith("investigation_scene_")) {
         const parsed = parseInvestigationScene(source, sourceFileTag, sceneId);
-        if (!parsed.ok) errors.push(parsed.error);
+        if (!parsed.ok) {
+          errors.push(parsed.error);
+          failedParseFiles.add(sourceFileTag);
+        }
         else scenes.push({ chapterId: dirName, file, ast: parsed.value });
       } else if (file.startsWith("interrogation_scene_")) {
         console.warn(
@@ -145,7 +152,7 @@ export function compile(opts: CompileOptions): CompileResult {
   }
 
   // 4. Validate.
-  errors.push(...validate({ chapters, scenes, skippedReservedFiles }));
+  errors.push(...validate({ chapters, scenes, skippedReservedFiles, failedParseFiles }));
 
   if (errors.length > 0) return { ok: false, errors };
 

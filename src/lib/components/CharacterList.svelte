@@ -1,11 +1,15 @@
 <script lang="ts">
   import type { CharacterView } from "../state/types";
-  let { characters, onInterview }: { characters: CharacterView[]; onInterview: (cId: string, tId: string) => void } = $props();
+  let { characters, onInterview, disabled = false }: {
+    characters: CharacterView[];
+    onInterview: (cId: string, tId: string) => void;
+    disabled?: boolean;
+  } = $props();
 </script>
 
 {#if characters.length > 0}
   <section class="list">
-    {#each characters as c}
+    {#each characters as c (c.id)}
       <article>
         <header>
           <strong>{c.name}</strong>
@@ -13,8 +17,8 @@
         </header>
         <p class="bio">{c.bio}</p>
         <div class="topics">
-          {#each c.topics as t}
-            <button class:done={t.discussed} type="button" onclick={() => onInterview(c.id, t.id)}>
+          {#each c.topics as t (t.id)}
+            <button class:done={t.discussed} type="button" {disabled} onclick={() => onInterview(c.id, t.id)}>
               • {t.label}
             </button>
           {/each}
@@ -37,4 +41,5 @@
   }
   .topics button:hover { border-color: #58a6ff; }
   .topics button.done { opacity: 0.7; }
+  .topics button:disabled { cursor: wait; opacity: 0.6; }
 </style>

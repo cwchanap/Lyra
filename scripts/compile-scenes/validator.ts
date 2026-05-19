@@ -36,6 +36,11 @@ export type ValidatorInput = {
    * these as accepted, not missing.
    */
   skippedReservedFiles?: Set<string>;
+  /**
+   * Files the orchestrator did read but could not parse. They should not also
+   * be reported as missing from the chapter manifest.
+   */
+  failedParseFiles?: Set<string>;
 };
 
 export function validate(input: ValidatorInput): CompileError[] {
@@ -93,6 +98,7 @@ export function validate(input: ValidatorInput): CompileError[] {
 
   // ---- Pass 3: chapter manifests refer to existing files. ----
   const skipped = input.skippedReservedFiles ?? new Set<string>();
+  const failedParse = input.failedParseFiles ?? new Set<string>();
   for (const chapter of input.chapters) {
     const sceneFilesInChapter = new Set(
       input.scenes.filter((s) => s.chapterId === chapter.dirName).map((s) => s.file),
@@ -102,7 +108,7 @@ export function validate(input: ValidatorInput): CompileError[] {
       const skippedKey = `${chapter.dirName}/${file}`;
       if (sceneFilesInChapter.has(file)) {
         playableSceneCount += 1;
-      } else if (!skipped.has(skippedKey)) {
+      } else if (!skipped.has(skippedKey) && !failedParse.has(skippedKey)) {
         errors.push({
           code: "chapterManifestMissingFile",
           message: `Chapter ${chapter.dirName} lists "${file}" but no such file was loaded.`,
@@ -356,11 +362,11 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
   // reveals, otherwise cyclic dependencies can be masked.
   const subRevealsBySubId = new Map<string, RevealTarget[]>();
 
-  function refreshReachableReveals(): void {
+  function refreshReachableReveals(reachableAtoms: Set<string>): void {
     subRevealsBySubId.clear();
     for (const sub of scene.sublocations) {
       if (!subReachable.has(sub.id)) continue;
-      subRevealsBySubId.set(sub.id, collectRevealsFromReachableBlocks(sub, scene, subReachable));
+      subRevealsBySubId.set(sub.id, collectRevealsFromReachableBlocks(sub, reachableAtoms));
     }
   }
 
@@ -377,13 +383,11 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
       }
     }
   }
-  refreshReachableReveals();
-  refreshReachableItems();
-
   // Fixed-point propagation for sub-locations.
   let changed = true;
   while (changed) {
-    refreshReachableReveals();
+    const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable);
+    refreshReachableReveals(reachableAtoms);
     refreshReachableItems();
     changed = false;
     for (const sub of scene.sublocations) {
@@ -403,7 +407,7 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
 
       // Check if this sub-location's Unlock predicate is satisfiable.
       // For sub-location Unlock, predicate blocks must be in reachable sub-locations.
-      if (sub.unlock && isSubUnlockSatisfiable(sub.unlock, subReachable, scene, reachableItems)) {
+      if (sub.unlock && isSubUnlockSatisfiable(sub.unlock, subReachable, scene, reachableItems, reachableAtoms)) {
         subReachable.add(sub.id);
         changed = true;
       }
@@ -411,10 +415,11 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
   }
 
   // --- Phase 2: hotspot/topic reachability within each sub-location ---
+  const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable);
   for (const sub of scene.sublocations) {
     if (subReachable.has(sub.id)) {
       // Sub-location is reachable. Check internal blocks.
-      checkInternalReachability(sub, scene, subReachable, errors);
+      checkInternalReachability(sub, scene, reachableAtoms, errors);
     } else if (sub.status === "locked") {
       // Entire sub-location is unreachable → all locked internal blocks are too.
       for (const h of sub.hotspots) {
@@ -461,7 +466,6 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
   // unwinnable at runtime.
   if (scene.outro.unlock !== "auto") {
     // Collect all evidence/statements revealed by reachable content.
-    const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable);
     errors.push(...collectOutroUnlockErrors(scene.outro.unlock, scene, subReachable, reachableAtoms));
   }
 }
@@ -473,14 +477,12 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
 function checkInternalReachability(
   sub: ASTSublocation,
   scene: ASTInvestigationScene,
-  reachableSubs: Set<string>,
+  reachableAtoms: Set<string>,
   errors: CompileError[],
 ): void {
-  const reachable = collectReachableAtoms(sub, scene, reachableSubs);
-
   // Report unreachable locked internal blocks.
   for (const h of sub.hotspots) {
-    if (h.status === "locked" && !reachable.has(`hotspot:${h.id}`)) {
+    if (h.status === "locked" && !reachableAtoms.has(`hotspot:${h.id}`)) {
       errors.push({
         code: "lockedBlockUnreachable",
         message: `hotspot:${h.id} is locked but unreachable within sub-location ${sub.id} — no chain of Reveals/Unlock predicates leads to it.`,
@@ -492,7 +494,7 @@ function checkInternalReachability(
   for (const c of sub.characters) {
     for (const t of c.topics) {
       const key = `topic:${c.id}@${t.id}`;
-      if (t.status === "locked" && !reachable.has(key)) {
+      if (t.status === "locked" && !reachableAtoms.has(key)) {
         errors.push({
           code: "lockedBlockUnreachable",
           message: `topic:${key} is locked but unreachable within sub-location ${sub.id} — no chain of Reveals/Unlock predicates leads to it.`,
@@ -502,15 +504,6 @@ function checkInternalReachability(
       }
     }
   }
-}
-
-function collectReachableAtoms(
-  sub: ASTSublocation,
-  scene: ASTInvestigationScene,
-  reachableSubs: Set<string>,
-): Set<string> {
-  void sub;
-  return collectReachableAtomsAcrossReachableSublocations(scene, reachableSubs);
 }
 
 function collectReachableAtomsAcrossReachableSublocations(
@@ -593,10 +586,8 @@ function collectReachableAtomsAcrossReachableSublocations(
  */
 function collectRevealsFromReachableBlocks(
   sub: ASTSublocation,
-  scene: ASTInvestigationScene,
-  reachableSubs: Set<string>,
+  reachableAtoms: Set<string>,
 ): RevealTarget[] {
-  const reachableAtoms = collectReachableAtoms(sub, scene, reachableSubs);
   const reveals: RevealTarget[] = [...sub.reveals];
   for (const h of sub.hotspots) {
     if (reachableAtoms.has(`hotspot:${h.id}`)) reveals.push(...h.reveals);
@@ -622,14 +613,15 @@ function isSubUnlockSatisfiable(
   reachableSubs: Set<string>,
   scene: ASTInvestigationScene,
   reachableItems: Set<string>,
+  reachableAtoms: Set<string>,
 ): boolean {
   if ("op" in expr) {
     if (expr.op === "and") {
-      return isSubUnlockSatisfiable(expr.left, reachableSubs, scene, reachableItems)
-          && isSubUnlockSatisfiable(expr.right, reachableSubs, scene, reachableItems);
+      return isSubUnlockSatisfiable(expr.left, reachableSubs, scene, reachableItems, reachableAtoms)
+          && isSubUnlockSatisfiable(expr.right, reachableSubs, scene, reachableItems, reachableAtoms);
     }
-    return isSubUnlockSatisfiable(expr.left, reachableSubs, scene, reachableItems)
-        || isSubUnlockSatisfiable(expr.right, reachableSubs, scene, reachableItems);
+    return isSubUnlockSatisfiable(expr.left, reachableSubs, scene, reachableItems, reachableAtoms)
+        || isSubUnlockSatisfiable(expr.right, reachableSubs, scene, reachableItems, reachableAtoms);
   }
   switch (expr.predicate) {
     case "hotspot_investigated": {
@@ -637,7 +629,7 @@ function isSubUnlockSatisfiable(
       const parentSub = scene.sublocations.find((s) => s.hotspots.some((h) => h.id === expr.id));
       return parentSub != null
         && reachableSubs.has(parentSub.id)
-        && collectReachableAtoms(parentSub, scene, reachableSubs).has(`hotspot:${expr.id}`);
+        && reachableAtoms.has(`hotspot:${expr.id}`);
     }
     case "topic_discussed": {
       const parentSub = scene.sublocations.find((s) =>
@@ -645,7 +637,7 @@ function isSubUnlockSatisfiable(
       );
       return parentSub != null
         && reachableSubs.has(parentSub.id)
-        && collectReachableAtoms(parentSub, scene, reachableSubs).has(`topic:${expr.characterId}@${expr.topicId}`);
+        && reachableAtoms.has(`topic:${expr.characterId}@${expr.topicId}`);
     }
     case "evidence_collected":
       return reachableItems.has(`evidence:${expr.id}`);
@@ -719,13 +711,13 @@ function outroPredicateReachable(
       );
       return parentSub != null
         && reachableSubs.has(parentSub.id)
-        && collectReachableAtoms(parentSub, scene, reachableSubs).has(`topic:${pred.characterId}@${pred.topicId}`);
+        && reachableAtoms.has(`topic:${pred.characterId}@${pred.topicId}`);
     }
     case "hotspot_investigated": {
       const parentSub = scene.sublocations.find((s) => s.hotspots.some((h) => h.id === pred.id));
       return parentSub != null
         && reachableSubs.has(parentSub.id)
-        && collectReachableAtoms(parentSub, scene, reachableSubs).has(`hotspot:${pred.id}`);
+        && reachableAtoms.has(`hotspot:${pred.id}`);
     }
   }
 }

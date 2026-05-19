@@ -2,7 +2,11 @@
 // Tauri shell does, so the SPA can be driven from a regular browser (Chrome
 // DevTools MCP / Playwright) without WKWebView. Not bundled, not shipped.
 //
-// Listens on 127.0.0.1:1421. CORS open to localhost:1420 (Vite dev port).
+// Listens on 127.0.0.1:1421. CORS is limited to localhost:1420
+// (the Vite dev port pinned in vite.config.js).
+
+#[cfg(not(any(debug_assertions, feature = "dev-engine-server")))]
+compile_error!("dev_engine_server is dev-only; build it in debug mode or enable the dev-engine-server feature.");
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -13,6 +17,7 @@ use lyra_lib::game::{GameEngine, GameError, GameStateView, QueueToken};
 use serde::Deserialize;
 
 const ADDR: &str = "127.0.0.1:1421";
+const CORS_ORIGIN: &str = "http://localhost:1420";
 
 fn resources_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/scenes")
@@ -23,7 +28,9 @@ struct ServerState {
 }
 
 fn main() {
-    let state = ServerState { engine: Mutex::new(None) };
+    let state = ServerState {
+        engine: Mutex::new(None),
+    };
     let listener = TcpListener::bind(ADDR).expect("bind");
     eprintln!("[dev_engine_server] listening on http://{ADDR}");
     for stream in listener.incoming() {
@@ -38,7 +45,9 @@ fn handle(mut stream: TcpStream, state: &ServerState) {
     let mut reader = BufReader::new(stream.try_clone().expect("clone"));
     // Parse request line + headers.
     let mut request_line = String::new();
-    if reader.read_line(&mut request_line).is_err() { return; }
+    if reader.read_line(&mut request_line).is_err() {
+        return;
+    }
     let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 2 {
         return;
@@ -47,17 +56,36 @@ fn handle(mut stream: TcpStream, state: &ServerState) {
     let path = parts[1];
 
     let mut content_length = 0usize;
+    let mut origin: Option<String> = None;
     loop {
         let mut line = String::new();
-        if reader.read_line(&mut line).is_err() { return; }
-        if line == "\r\n" || line.is_empty() { break; }
-        if let Some(v) = line.strip_prefix("Content-Length: ").or_else(|| line.strip_prefix("content-length: ")) {
+        if reader.read_line(&mut line).is_err() {
+            return;
+        }
+        if line == "\r\n" || line.is_empty() {
+            break;
+        }
+        if let Some(v) = line
+            .strip_prefix("Content-Length: ")
+            .or_else(|| line.strip_prefix("content-length: "))
+        {
             content_length = v.trim().parse().unwrap_or(0);
+        }
+        if let Some(v) = line
+            .strip_prefix("Origin: ")
+            .or_else(|| line.strip_prefix("origin: "))
+        {
+            origin = Some(v.trim().to_string());
         }
     }
 
     if method == "OPTIONS" {
-        write_response(&mut stream, 204, "", "");
+        let status = if cors_allowed(origin.as_deref()) {
+            204
+        } else {
+            403
+        };
+        write_response(&mut stream, status, "", "", origin.as_deref());
         return;
     }
 
@@ -72,23 +100,42 @@ fn handle(mut stream: TcpStream, state: &ServerState) {
 
     let result = dispatch(state, command, &body);
     match result {
-        Ok(json) => write_response(&mut stream, 200, "application/json", &json),
+        Ok(json) => write_response(
+            &mut stream,
+            200,
+            "application/json",
+            &json,
+            origin.as_deref(),
+        ),
         Err(err) => {
             let json = serde_json::to_string(&err).unwrap_or_else(|_| "{}".into());
-            write_response(&mut stream, 400, "application/json", &json);
+            write_response(
+                &mut stream,
+                400,
+                "application/json",
+                &json,
+                origin.as_deref(),
+            );
         }
     }
 }
 
-fn write_response(stream: &mut TcpStream, status: u16, content_type: &str, body: &str) {
+fn write_response(
+    stream: &mut TcpStream,
+    status: u16,
+    content_type: &str,
+    body: &str,
+    origin: Option<&str>,
+) {
     let reason = match status {
         200 => "OK",
         204 => "No Content",
         400 => "Bad Request",
+        403 => "Forbidden",
         _ => "Status",
     };
     let body_bytes = body.as_bytes();
-    let cors = "Access-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET,POST,OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n";
+    let cors = cors_headers(origin);
     let head = if content_type.is_empty() {
         format!("HTTP/1.1 {status} {reason}\r\n{cors}Content-Length: 0\r\n\r\n")
     } else {
@@ -100,6 +147,25 @@ fn write_response(stream: &mut TcpStream, status: u16, content_type: &str, body:
     let _ = stream.write_all(head.as_bytes());
     if !body_bytes.is_empty() {
         let _ = stream.write_all(body_bytes);
+    }
+}
+
+fn cors_allowed(origin: Option<&str>) -> bool {
+    origin.is_none_or(|value| value == CORS_ORIGIN)
+}
+
+fn cors_headers(origin: Option<&str>) -> String {
+    let allow_origin = if cors_allowed(origin) {
+        origin.unwrap_or(CORS_ORIGIN)
+    } else {
+        ""
+    };
+    if allow_origin.is_empty() {
+        "Vary: Origin\r\n".into()
+    } else {
+        format!(
+            "Access-Control-Allow-Origin: {allow_origin}\r\nAccess-Control-Allow-Methods: GET,POST,OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nVary: Origin\r\n",
+        )
     }
 }
 
@@ -115,44 +181,65 @@ fn dispatch(state: &ServerState, command: &str, body: &[u8]) -> Result<String, G
         "get_state" => with_engine(state, |e| Ok(e.view())),
         "advance_dialogue" => {
             #[derive(Deserialize)]
-            struct Args { expected: QueueToken }
+            struct Args {
+                expected: QueueToken,
+            }
             let args: Args = parse_body(body)?;
             with_engine(state, |e| e.advance_dialogue(args.expected.clone()))
         }
         "inspect_hotspot" => {
             #[derive(Deserialize)]
-            struct Args { #[serde(rename = "hotspotId")] hotspot_id: String }
+            struct Args {
+                #[serde(rename = "hotspotId")]
+                hotspot_id: String,
+            }
             let args: Args = parse_body(body)?;
             with_engine(state, |e| e.inspect_hotspot(&args.hotspot_id))
         }
         "interview_topic" => {
             #[derive(Deserialize)]
             struct Args {
-                #[serde(rename = "characterId")] character_id: String,
-                #[serde(rename = "topicId")] topic_id: String,
+                #[serde(rename = "characterId")]
+                character_id: String,
+                #[serde(rename = "topicId")]
+                topic_id: String,
             }
             let args: Args = parse_body(body)?;
-            with_engine(state, |e| e.interview_topic(&args.character_id, &args.topic_id))
+            with_engine(state, |e| {
+                e.interview_topic(&args.character_id, &args.topic_id)
+            })
         }
         "enter_sublocation" => {
             #[derive(Deserialize)]
-            struct Args { #[serde(rename = "sublocationId")] sublocation_id: String }
+            struct Args {
+                #[serde(rename = "sublocationId")]
+                sublocation_id: String,
+            }
             let args: Args = parse_body(body)?;
             with_engine(state, |e| e.enter_sublocation(&args.sublocation_id))
         }
         "reexamine_evidence" => {
             #[derive(Deserialize)]
-            struct Args { #[serde(rename = "evidenceId")] evidence_id: String }
+            struct Args {
+                #[serde(rename = "evidenceId")]
+                evidence_id: String,
+            }
             let args: Args = parse_body(body)?;
             with_engine(state, |e| e.reexamine_evidence(&args.evidence_id))
         }
         "reexamine_statement" => {
             #[derive(Deserialize)]
-            struct Args { #[serde(rename = "statementId")] statement_id: String }
+            struct Args {
+                #[serde(rename = "statementId")]
+                statement_id: String,
+            }
             let args: Args = parse_body(body)?;
             with_engine(state, |e| e.reexamine_statement(&args.statement_id))
         }
-        other => Err(GameError::new("unknownCommand", format!("unknown command: {other}"))),
+        other => Err(GameError::new(
+            "unknownCommand",
+            format!("unknown command: {other}"),
+        )),
     }
 }
 

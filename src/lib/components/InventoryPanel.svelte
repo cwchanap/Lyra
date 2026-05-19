@@ -1,17 +1,18 @@
 <script lang="ts">
   import type { Inventory } from "../state/types";
-  let { inventory, reexamineEnabled, onReexamineEvidence, onReexamineStatement }: {
+  let { inventory, reexamineEnabled, onReexamineEvidence, onReexamineStatement, disabled = false }: {
     inventory: Inventory;
     reexamineEnabled: boolean;
     onReexamineEvidence: (id: string) => void;
     onReexamineStatement: (id: string) => void;
+    disabled?: boolean;
   } = $props();
   let open = $state(false);
 </script>
 
 <aside class:open>
   <button class="toggle" type="button" onclick={() => (open = !open)}>
-    📋 {open ? "Hide" : "Inventory"} (證 {inventory.evidence.length} · 言 {inventory.statements.length})
+    📋 {open ? "收合" : "物證"} (證 {inventory.evidence.length} · 言 {inventory.statements.length})
   </button>
   {#if open}
     <div class="panel">
@@ -20,8 +21,8 @@
         {#if inventory.evidence.length === 0}
           <p class="empty">尚未收集。</p>
         {/if}
-        {#each inventory.evidence as e}
-          <button type="button" disabled={!reexamineEnabled} onclick={() => onReexamineEvidence(e.id)}>
+        {#each inventory.evidence as e (e.id)}
+          <button type="button" disabled={!reexamineEnabled || disabled} onclick={() => onReexamineEvidence(e.id)}>
             <strong>{e.name}</strong>
             <small>{e.description}</small>
           </button>
@@ -32,8 +33,8 @@
         {#if inventory.statements.length === 0}
           <p class="empty">尚未取得。</p>
         {/if}
-        {#each inventory.statements as s}
-          <button type="button" disabled={!reexamineEnabled} onclick={() => onReexamineStatement(s.id)}>
+        {#each inventory.statements as s (s.id)}
+          <button type="button" disabled={!reexamineEnabled || disabled} onclick={() => onReexamineStatement(s.id)}>
             <strong>{s.speaker}</strong>
             <small>{s.content}</small>
           </button>
