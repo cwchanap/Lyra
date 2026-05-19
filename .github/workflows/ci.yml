@@ -58,6 +58,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run Vitest with coverage
+        run: bun run test -- --coverage.enabled
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -76,13 +84,13 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Generate coverage
-        run: cargo llvm-cov --manifest-path src-tauri/Cargo.toml --lcov --output-path lcov.info
+      - name: Generate Rust coverage
+        run: cargo llvm-cov --manifest-path src-tauri/Cargo.toml --lcov --output-path lcov-rust.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: lcov.info
+          files: coverage/lcov.info,lcov-rust.info
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
