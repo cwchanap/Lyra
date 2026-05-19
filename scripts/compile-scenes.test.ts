@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
@@ -97,10 +97,7 @@ describe("invalid fixtures: each one fails with a specific error code", () => {
   );
 
   for (const name of fixtures) {
-    // TODO: circular-unlock-chain detection is deferred — the validator
-    // does not yet implement it, so this fixture cannot pass the test.
-    const testFn = name === "circular_unlock_chain" ? it.skip : it;
-    testFn(`fixture "${name}" produces the expected error`, () => {
+    it(`fixture "${name}" produces the expected error`, () => {
       const sourceRoot = resolve(INVALID_ROOT, name);
       const expectedFile = resolve(sourceRoot, "expected-error.txt");
       if (!existsSync(expectedFile)) {
@@ -126,4 +123,30 @@ describe("invalid fixtures: each one fails with a specific error code", () => {
       }
     });
   }
+});
+
+describe("compile parse failure handling", () => {
+  it("does not report a manifest missing-file error for a scene that failed to parse", () => {
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-parse-fail-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-parse-fail-out-"));
+    try {
+      const chapterRoot = resolve(sourceRoot, "chapter_1");
+      mkdirSync(chapterRoot, { recursive: true });
+      writeFileSync(
+        resolve(chapterRoot, "chapter.md"),
+        "# Chapter 1: Parse Fail\n\n**Summary:** s\n\n## Scenes\n1. scene_0.md\n",
+      );
+      writeFileSync(resolve(chapterRoot, "scene_0.md"), "this is not a valid linear scene\n");
+
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+
+      expect(result.errors.some((e) => e.code === "linearSceneMissingTitle")).toBe(true);
+      expect(result.errors.some((e) => e.code === "chapterManifestMissingFile")).toBe(false);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
 });

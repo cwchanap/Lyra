@@ -9,11 +9,13 @@
     onInspect,
     onInterview,
     onEnterSublocation,
+    disabled = false,
   }: {
     scene: SceneView;
     onInspect: (id: string) => void;
     onInterview: (cId: string, tId: string) => void;
     onEnterSublocation: (id: string) => void;
+    disabled?: boolean;
   } = $props();
 
   let inv = $derived(scene.kind === "investigation" ? scene : null);
@@ -27,9 +29,10 @@
     sublocations={inv.visibleSublocations}
     currentId={inv.currentSublocationId}
     onEnter={onEnterSublocation}
+    {disabled}
   />
-  <HotspotGrid hotspots={currentSub.hotspots} {onInspect} />
-  <CharacterList characters={currentSub.characters} {onInterview} />
+  <HotspotGrid hotspots={currentSub.hotspots} {onInspect} {disabled} />
+  <CharacterList characters={currentSub.characters} {onInterview} {disabled} />
 {:else if inv}
   <p class="muted">尚未進入任何地點。</p>
 {/if}

@@ -40,7 +40,10 @@ export const gameState = $state<{
 });
 
 function normalizeError(error: unknown): string {
-  if (error && typeof error === "object" && "message" in error) return String((error as GameError).message);
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as Partial<GameError>).message;
+    if (typeof message === "string") return message;
+  }
   if (typeof error === "string") return error;
   return "Game command failed.";
 }
@@ -55,90 +58,43 @@ async function runCommand<T>(command: string, args?: Record<string, unknown>): P
   }
 }
 
-export async function startGame() {
+async function dispatchGameCommand(command: string, args?: Record<string, unknown>, loading = false) {
   if (gameState.inFlight) return;
   gameState.inFlight = true;
-  gameState.loading = true;
+  if (loading) gameState.loading = true;
   try {
-    const v = await runCommand<GameStateView>("start_game");
+    const v = await runCommand<GameStateView>(command, args);
     if (v) gameState.value = v;
   } finally {
-    gameState.loading = false;
+    if (loading) gameState.loading = false;
     gameState.inFlight = false;
   }
+}
+
+export async function startGame() {
+  await dispatchGameCommand("start_game", undefined, true);
 }
 
 export async function resetGame() {
-  if (gameState.inFlight) return;
-  gameState.inFlight = true;
-  gameState.loading = true;
-  try {
-    const v = await runCommand<GameStateView>("reset_game");
-    if (v) gameState.value = v;
-  } finally {
-    gameState.loading = false;
-    gameState.inFlight = false;
-  }
+  await dispatchGameCommand("reset_game", undefined, true);
 }
 
 export async function advanceDialogue(expected: QueueToken) {
-  if (gameState.inFlight) return;
-  gameState.inFlight = true;
-  try {
-    const v = await runCommand<GameStateView>("advance_dialogue", { expected });
-    if (v) gameState.value = v;
-  } finally {
-    gameState.inFlight = false;
-  }
+  await dispatchGameCommand("advance_dialogue", { expected });
 }
 
 export async function inspectHotspot(hotspotId: string) {
-  if (gameState.inFlight) return;
-  gameState.inFlight = true;
-  try {
-    const v = await runCommand<GameStateView>("inspect_hotspot", { hotspotId });
-    if (v) gameState.value = v;
-  } finally {
-    gameState.inFlight = false;
-  }
+  await dispatchGameCommand("inspect_hotspot", { hotspotId });
 }
 export async function interviewTopic(characterId: string, topicId: string) {
-  if (gameState.inFlight) return;
-  gameState.inFlight = true;
-  try {
-    const v = await runCommand<GameStateView>("interview_topic", { characterId, topicId });
-    if (v) gameState.value = v;
-  } finally {
-    gameState.inFlight = false;
-  }
+  await dispatchGameCommand("interview_topic", { characterId, topicId });
 }
 export async function enterSublocation(sublocationId: string) {
-  if (gameState.inFlight) return;
-  gameState.inFlight = true;
-  try {
-    const v = await runCommand<GameStateView>("enter_sublocation", { sublocationId });
-    if (v) gameState.value = v;
-  } finally {
-    gameState.inFlight = false;
-  }
+  await dispatchGameCommand("enter_sublocation", { sublocationId });
 }
 export async function reexamineEvidence(evidenceId: string) {
-  if (gameState.inFlight) return;
-  gameState.inFlight = true;
-  try {
-    const v = await runCommand<GameStateView>("reexamine_evidence", { evidenceId });
-    if (v) gameState.value = v;
-  } finally {
-    gameState.inFlight = false;
-  }
+  await dispatchGameCommand("reexamine_evidence", { evidenceId });
 }
 export async function reexamineStatement(statementId: string) {
-  if (gameState.inFlight) return;
-  gameState.inFlight = true;
-  try {
-    const v = await runCommand<GameStateView>("reexamine_statement", { statementId });
-    if (v) gameState.value = v;
-  } finally {
-    gameState.inFlight = false;
-  }
+  await dispatchGameCommand("reexamine_statement", { statementId });
 }

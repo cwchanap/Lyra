@@ -217,7 +217,9 @@ impl GameEngine {
                     queue_gen,
                 });
             }
-            SceneRuntime::Linear(_) => unreachable!("investigation queue installed outside investigation scene"),
+            SceneRuntime::Linear(_) => {
+                return Err(GameError::internal("investigation queue installed outside investigation scene".into()));
+            }
         }
         self.consume_scene_tags_at_cursor();
         let exhausted = match &self.scene {
@@ -225,7 +227,9 @@ impl GameEngine {
                 .pending_queue
                 .as_ref()
                 .map_or(true, |q| q.cursor >= q.items.len()),
-            SceneRuntime::Linear(_) => unreachable!("investigation queue installed outside investigation scene"),
+            SceneRuntime::Linear(_) => {
+                return Err(GameError::internal("investigation queue installed outside investigation scene".into()));
+            }
         };
         if exhausted {
             self.on_queue_exhausted()?;
@@ -409,7 +413,7 @@ impl GameEngine {
         let queue_items = if first_time {
             let inv = match &mut self.scene {
                 SceneRuntime::Investigation(i) => i,
-                _ => unreachable!("checked above"),
+                _ => return Err(GameError::internal("scene changed during inspect_hotspot".into())),
             };
             inv.record_inspect(hotspot_id);
             let body = hot_def.inspect_dialogue.clone();
@@ -484,7 +488,7 @@ impl GameEngine {
         let queue_items = if first_time {
             let inv = match &mut self.scene {
                 SceneRuntime::Investigation(i) => i,
-                _ => unreachable!("checked above"),
+                _ => return Err(GameError::internal("scene changed during interview_topic".into())),
             };
             inv.record_topic_discussed(character_id, topic_id);
             let body = topic.topic_dialogue.clone();
@@ -537,7 +541,7 @@ impl GameEngine {
         let queue_items: Vec<DialogueItem> = if first_entry {
             let inv = match &mut self.scene {
                 SceneRuntime::Investigation(i) => i,
-                _ => unreachable!("checked above"),
+                _ => return Err(GameError::internal("scene changed during enter_sublocation".into())),
             };
             inv.current_sublocation_id = Some(sublocation_id.into());
             inv.record_sublocation_entered(sublocation_id);

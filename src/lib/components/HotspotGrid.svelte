@@ -1,11 +1,15 @@
 <script lang="ts">
   import type { HotspotView } from "../state/types";
-  let { hotspots, onInspect }: { hotspots: HotspotView[]; onInspect: (id: string) => void } = $props();
+  let { hotspots, onInspect, disabled = false }: {
+    hotspots: HotspotView[];
+    onInspect: (id: string) => void;
+    disabled?: boolean;
+  } = $props();
 </script>
 
 <section class="grid">
-  {#each hotspots as h}
-    <button class:done={h.inspected} type="button" onclick={() => onInspect(h.id)}>
+  {#each hotspots as h (h.id)}
+    <button class:done={h.inspected} type="button" {disabled} onclick={() => onInspect(h.id)}>
       <strong>{h.label}</strong>
       <small>{h.description}</small>
     </button>
@@ -23,6 +27,7 @@
   }
   button:hover { border-color: #58a6ff; }
   button.done { opacity: 0.75; }
+  button:disabled { cursor: wait; opacity: 0.6; }
   strong { display: block; margin-bottom: 6px; }
   small { color: #8b949e; }
 </style>

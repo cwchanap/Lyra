@@ -1,16 +1,19 @@
 <script lang="ts">
   import type { DialogueItem, QueueToken } from "../state/types";
 
-  let { current, queueToken, onAdvance }: {
+  let { current, queueToken, onAdvance, disabled = false }: {
     current: DialogueItem;
     queueToken: QueueToken;
     onAdvance: (t: QueueToken) => void;
+    disabled?: boolean;
   } = $props();
 
   function handleClick() {
+    if (disabled) return;
     onAdvance(queueToken);
   }
   function handleKey(e: KeyboardEvent) {
+    if (disabled) return;
     if (e.repeat) return;
     if (e.key !== " " && e.key !== "Enter") return;
     const active = document.activeElement;
@@ -22,7 +25,7 @@
 
 <svelte:window onkeydown={handleKey} />
 
-<button class="box" onclick={handleClick} type="button" aria-label="Advance dialogue">
+<button class="box" onclick={handleClick} type="button" aria-label="推進對話" {disabled}>
   {#if current.kind === "sceneTag"}
     <span class="placeholder">（場景切換）</span>
   {:else if current.kind === "action"}
@@ -55,6 +58,7 @@
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
   }
   .box:hover { border-color: #58a6ff; }
+  .box:disabled { cursor: wait; opacity: 0.72; }
   .speaker { font-weight: 700; color: #58a6ff; display: block; margin-bottom: 6px; }
   .text { margin: 0; line-height: 1.6; }
   .action { margin: 0; font-style: italic; color: #8b949e; text-align: center; }

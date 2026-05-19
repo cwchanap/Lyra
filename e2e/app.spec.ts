@@ -1,8 +1,176 @@
-import { test, expect } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+type MockWindow = Window & {
+  __TAURI_INTERNALS__: {
+    invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+    transformCallback: () => number;
+    unregisterCallback: () => void;
+  };
+  __LYRA_E2E_FAIL_NEXT_INSPECT__?: boolean;
+};
+
+async function installTauriMock(page: Page) {
+  await page.addInitScript(() => {
+    const win = window as MockWindow;
+    const chapter = {
+      id: "chapter_1",
+      title: "測試章節",
+      summary: "測試摘要",
+      index: 0,
+      total: 1,
+    };
+    const inventory = {
+      evidence: [],
+      statements: [],
+    };
+    const scene = {
+      kind: "investigation",
+      id: "investigation_scene_1",
+      title: "測試調查場景",
+      index: 0,
+      total: 1,
+      currentSublocationId: "main_hall",
+      visibleSublocations: [{
+        id: "main_hall",
+        label: "主廳",
+        sceneTag: "測試主廳，明亮。",
+        hotspots: [{
+          id: "table",
+          label: "桌子",
+          description: "一張木桌，桌上有一杯咖啡。",
+          inspected: false,
+        }],
+        characters: [{
+          id: "witness",
+          name: "證人",
+          role: "證人",
+          bio: "案發時在現場的證人。",
+          topics: [{
+            id: "timeline",
+            label: "案發時間",
+            discussed: false,
+          }],
+        }],
+      }],
+    };
+
+    const introView = {
+      chapter,
+      inventory,
+      scene: { kind: "linear", id: "scene_0", title: "測試線性場景", index: 0, total: 1 },
+      mode: {
+        type: "dialogue",
+        current: { kind: "line", speaker: "相馬律", text: "測試開始。" },
+        queueRemaining: 0,
+        sceneTag: "測試場景前廳，深夜。",
+        queueToken: { sceneId: "scene_0", queueGen: 1, cursor: 0 },
+      },
+    };
+    const exploreView = {
+      chapter,
+      inventory,
+      scene,
+      mode: { type: "explore", sublocationId: "main_hall" },
+    };
+    const inspectedView = {
+      chapter,
+      inventory: {
+        evidence: [{
+          id: "coffee",
+          name: "還熱的咖啡",
+          description: "一杯仍微熱的咖啡。",
+          details: "杯壁溫度約 50°C。",
+          onReexamine: null,
+          collectedInChapterId: "chapter_1",
+          collectedInSceneId: "investigation_scene_1",
+        }],
+        statements: [],
+      },
+      scene: {
+        ...scene,
+        visibleSublocations: [{
+          ...scene.visibleSublocations[0],
+          hotspots: [{ ...scene.visibleSublocations[0].hotspots[0], inspected: true }],
+        }],
+      },
+      mode: {
+        type: "dialogue",
+        current: { kind: "line", speaker: "相馬律", text: "還是熱的。" },
+        queueRemaining: 0,
+        sceneTag: "測試主廳，明亮。",
+        queueToken: { sceneId: "investigation_scene_1", queueGen: 2, cursor: 0 },
+      },
+    };
+
+    win.__TAURI_INTERNALS__ = {
+      invoke: async (command) => {
+        if (command === "start_game" || command === "reset_game") return introView;
+        if (command === "advance_dialogue") return exploreView;
+        if (command === "inspect_hotspot") {
+          if (win.__LYRA_E2E_FAIL_NEXT_INSPECT__) {
+            win.__LYRA_E2E_FAIL_NEXT_INSPECT__ = false;
+            throw { code: "lockedHotspot", message: "Hotspot 'table' is locked." };
+          }
+          return inspectedView;
+        }
+        if (command === "interview_topic") {
+          return {
+            ...exploreView,
+            scene: {
+              ...scene,
+              visibleSublocations: [{
+                ...scene.visibleSublocations[0],
+                characters: [{
+                  ...scene.visibleSublocations[0].characters[0],
+                  topics: [{ ...scene.visibleSublocations[0].characters[0].topics[0], discussed: true }],
+                }],
+              }],
+            },
+          };
+        }
+        return exploreView;
+      },
+      transformCallback: () => 0,
+      unregisterCallback: () => {},
+    };
+  });
+}
 
 test.describe("App shell", () => {
-  test("loads without errors", async ({ page }) => {
+  test.beforeEach(async ({ page }) => {
+    await installTauriMock(page);
+  });
+
+  test("advances dialogue into investigation controls", async ({ page }) => {
     await page.goto("/");
-    await expect(page).toHaveTitle(/lyra/i);
+    await expect(page).toHaveTitle(/東京雨證/);
+    await expect(page.getByText("測試開始。")).toBeVisible();
+
+    await page.getByRole("button", { name: "推進對話" }).click();
+
+    await expect(page.getByRole("button", { name: "主廳" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /桌子/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /案發時間/ })).toBeVisible();
+  });
+
+  test("inspects a hotspot and shows inventory", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "推進對話" }).click();
+    await page.getByRole("button", { name: /桌子/ }).click();
+
+    await expect(page.getByText("還是熱的。")).toBeVisible();
+    await page.getByRole("button", { name: /物證/ }).click();
+    await expect(page.getByText("還熱的咖啡")).toBeVisible();
+  });
+
+  test("surfaces command errors in the banner", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "推進對話" }).click();
+    await page.evaluate(() => {
+      (window as MockWindow).__LYRA_E2E_FAIL_NEXT_INSPECT__ = true;
+    });
+    await page.getByRole("button", { name: /桌子/ }).click();
+
+    await expect(page.getByRole("alert")).toContainText("Hotspot 'table' is locked.");
   });
 });

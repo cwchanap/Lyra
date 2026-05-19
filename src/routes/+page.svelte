@@ -26,9 +26,9 @@
 </script>
 
 {#if gameState.loading}
-  <main><p class="status">Loading…</p></main>
+  <main><p class="status">載入中...</p></main>
 {:else if gameState.value}
-  <GameShell gameState={gameState.value} onReset={resetGame}>
+  <GameShell gameState={gameState.value} onReset={resetGame} disabled={gameState.inFlight}>
     {#if gameState.error}
       <ErrorBanner message={gameState.error} />
     {/if}
@@ -38,6 +38,7 @@
         current={gameState.value.mode.current}
         queueToken={gameState.value.mode.queueToken}
         onAdvance={advanceDialogue}
+        disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "explore"}
       <ExploreView
@@ -45,9 +46,10 @@
         onInspect={inspectHotspot}
         onInterview={interviewTopic}
         onEnterSublocation={enterSublocation}
+        disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "gameComplete"}
-      <GameComplete onReset={resetGame} />
+      <GameComplete onReset={resetGame} disabled={gameState.inFlight} />
     {/if}
     {#if shouldShowInventoryPanel(gameState.value.mode)}
       <InventoryPanel
@@ -55,13 +57,14 @@
         reexamineEnabled={canReexamineInventory(gameState.value.mode)}
         onReexamineEvidence={reexamineEvidence}
         onReexamineStatement={reexamineStatement}
+        disabled={gameState.inFlight}
       />
     {/if}
   </GameShell>
 {:else if gameState.error}
   <main>
     <ErrorBanner message={gameState.error} />
-    <button onclick={startGame} type="button">Retry</button>
+    <button onclick={startGame} disabled={gameState.inFlight} type="button">重試</button>
   </main>
 {/if}
 

@@ -5,10 +5,12 @@
   let {
     gameState,
     onReset,
+    disabled = false,
     children,
   }: {
     gameState: GameStateView;
     onReset: () => void;
+    disabled?: boolean;
     children: Snippet;
   } = $props();
 </script>
@@ -19,7 +21,7 @@
     <h1>{gameState.chapter.title}</h1>
     <p class="summary">{gameState.chapter.summary}</p>
   </div>
-  <button type="button" onclick={onReset}>重新開始</button>
+  <button type="button" onclick={onReset} {disabled}>重新開始</button>
 </header>
 
 {@render children()}
@@ -37,4 +39,5 @@
     border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font: inherit;
   }
   header > button:hover { border-color: #58a6ff; }
+  header > button:disabled { opacity: 0.6; cursor: wait; }
 </style>
