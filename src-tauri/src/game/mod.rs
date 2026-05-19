@@ -367,6 +367,9 @@ impl GameEngine {
     }
 
     pub fn inspect_hotspot(&mut self, hotspot_id: &str) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
         // Phase 1 — read: clone defs and check locks without holding self.scene mutably.
@@ -435,6 +438,9 @@ impl GameEngine {
     }
 
     pub fn interview_topic(&mut self, character_id: &str, topic_id: &str) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
         let (topic, first_time) = {
@@ -500,6 +506,9 @@ impl GameEngine {
     }
 
     pub fn enter_sublocation(&mut self, sublocation_id: &str) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
         let (scene_tag, transition_dialogue, sub_reveals, first_entry) = {
@@ -1090,6 +1099,43 @@ mod tests {
 
         let statement_err = engine.reexamine_statement("alibi").unwrap_err();
         assert_eq!(statement_err.code, "gameComplete");
+    }
+
+    #[test]
+    fn action_commands_return_game_complete_after_completion() {
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            intro: vec![],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                label: "Room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                transition_dialogue: vec![],
+                hotspots: vec![],
+                characters: vec![],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Auto(crate::game::schema::AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.current_chapter_idx = engine.chapters.len();
+
+        let inspect_err = engine.inspect_hotspot("any_hotspot").unwrap_err();
+        assert_eq!(inspect_err.code, "gameComplete");
+
+        let interview_err = engine.interview_topic("any_char", "any_topic").unwrap_err();
+        assert_eq!(interview_err.code, "gameComplete");
+
+        let enter_err = engine.enter_sublocation("any_sub").unwrap_err();
+        assert_eq!(enter_err.code, "gameComplete");
     }
 
     #[test]

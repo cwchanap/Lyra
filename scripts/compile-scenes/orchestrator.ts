@@ -71,6 +71,17 @@ export function compile(opts: CompileOptions): CompileResult {
   }
 
   // 2 & 3. For each chapter, parse the manifest then each scene.
+  if (dirs.length === 0) {
+    return {
+      ok: false,
+      errors: [{
+        code: "noChaptersFound",
+        message: `No chapter_<N> directories found under ${opts.sourceRoot}`,
+        sourceFile: opts.sourceRoot,
+        line: 0,
+      }],
+    };
+  }
   for (const dirName of dirs) {
     const chapterDir = resolve(opts.sourceRoot, dirName);
     const manifestPath = resolve(chapterDir, "chapter.md");
