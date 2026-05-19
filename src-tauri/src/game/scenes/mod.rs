@@ -7,7 +7,7 @@ use investigation::InvestigationSceneState;
 #[derive(Debug, Clone)]
 pub enum SceneRuntime {
     Linear(LinearSceneState),
-    Investigation(InvestigationSceneState),
+    Investigation(Box<InvestigationSceneState>),
 }
 
 impl SceneRuntime {

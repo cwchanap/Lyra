@@ -157,7 +157,7 @@ impl GameEngine {
             SceneRuntime::Investigation(inv) => inv
                 .pending_queue
                 .as_ref()
-                .map_or(true, |q| q.cursor >= q.items.len()),
+                .is_none_or(|q| q.cursor >= q.items.len()),
         };
         if exhausted {
             self.on_queue_exhausted()?;
@@ -226,7 +226,7 @@ impl GameEngine {
             SceneRuntime::Investigation(inv) => inv
                 .pending_queue
                 .as_ref()
-                .map_or(true, |q| q.cursor >= q.items.len()),
+                .is_none_or(|q| q.cursor >= q.items.len()),
             SceneRuntime::Linear(_) => {
                 return Err(GameError::internal("investigation queue installed outside investigation scene".into()));
             }
@@ -775,7 +775,7 @@ fn load_scene_runtime(
     let json = loader::load_scene(resources_dir, &scene_ref.file)?;
     Ok(match json {
         SceneJson::Linear(j) => SceneRuntime::Linear(LinearSceneState::from_json(j, queue_gen)),
-        SceneJson::Investigation(j) => SceneRuntime::Investigation(InvestigationSceneState::from_json(j, queue_gen)),
+        SceneJson::Investigation(j) => SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(j, queue_gen))),
     })
 }
 
@@ -838,7 +838,7 @@ mod tests {
             }],
             current_chapter_idx: 0,
             current_scene_idx: 0,
-            scene: SceneRuntime::Investigation(InvestigationSceneState::from_json(scene, intro_queue_gen)),
+            scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(scene, intro_queue_gen))),
             last_scene_tag: None,
             inventory: Inventory::default(),
             next_queue_gen: intro_queue_gen + 1,
@@ -866,7 +866,7 @@ mod tests {
             "investigation_scene_1",
             vec![DialogueItem::Line { speaker: "B".into(), text: "second".into() }],
         );
-        engine.scene = SceneRuntime::Investigation(InvestigationSceneState::from_json(next_scene, 7));
+        engine.scene = SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(next_scene, 7)));
         engine.last_scene_tag = None;
         engine.prime_initial_queue().unwrap();
 
