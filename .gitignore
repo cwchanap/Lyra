@@ -21,3 +21,7 @@ src-tauri/resources/scenes/*
 .claude/settings.local.json
 .devin/config.local.json
 .tmp-*
+
+coverage/
+test-results/
+playwright-report/
