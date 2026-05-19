@@ -40,6 +40,21 @@ describe("compile (end-to-end against valid fixture)", () => {
       rmSync(outRoot, { recursive: true, force: true });
     }
   });
+
+  it("fails with noChaptersFound when source root has no chapter directories", () => {
+    const emptyDir = mkdtempSync(resolve(tmpdir(), "scene-compile-empty-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-empty-out-"));
+    try {
+      const result = compile({ sourceRoot: emptyDir, outputRoot: outRoot });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0].code).toBe("noChaptersFound");
+    } finally {
+      rmSync(emptyDir, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("snapshot: valid fixture JSON output", () => {
