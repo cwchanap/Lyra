@@ -349,12 +349,28 @@ function validateInterrogationScene(
 
     if (phase.kind === "inquiry") {
       if (phase.complete !== "auto") checkUnlock(phase.complete, phase.line, { checkCrossSceneInventory: false });
+      if (phase.required && !interrogationFlow.phaseCompletable.get(phase.id)) {
+        errors.push({
+          code: "interrogationNoValidCompletionPath",
+          message: `Required inquiry phase "${phase.id}" has no satisfiable completion path.`,
+          sourceFile: scene.sourceFile,
+          line: phase.line,
+        });
+      }
       for (const question of phase.questions) {
         checkReveals(`question:${question.id}`, question.line, question.reveals);
         checkUnlock(question.unlock, question.line, { checkCrossSceneInventory: false });
       }
     } else {
       validateTestimonyPhaseResults(scene, phase, errors);
+      if (phase.required && !interrogationFlow.phaseCompletable.get(phase.id)) {
+        errors.push({
+          code: "interrogationNoValidContradictionPath",
+          message: `Required testimony phase "${phase.id}" has no valid Contradiction plus On Correct result path.`,
+          sourceFile: scene.sourceFile,
+          line: phase.line,
+        });
+      }
       const obtainableBeforePhase = interrogationFlow.beforePhase.get(phase.id) ?? new Set<string>();
       for (const statement of phase.statements) {
         checkReveals(`testimonyStatement:${statement.id}`, statement.line, statement.reveals);
@@ -576,6 +592,7 @@ type InterrogationInventoryMode = "obtainable" | "guaranteed";
 
 type InterrogationInventoryAnalysis = {
   beforePhase: Map<string, Set<string>>;
+  phaseCompletable: Map<string, boolean>;
   afterScene: Set<string>;
 };
 
@@ -585,6 +602,7 @@ function analyzeInterrogationInventory(
 ): InterrogationInventoryAnalysis {
   const inventory = new Set(options.initialInventory);
   const beforePhase = new Map<string, Set<string>>();
+  const phaseCompletable = new Map<string, boolean>();
   const answeredQuestions = new Set<string>();
   const completedPhases = new Set<string>();
   const revealedQuestions = new Set<string>();
@@ -598,10 +616,14 @@ function analyzeInterrogationInventory(
       `phase:${phase.id}`,
       { inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases },
     )) {
+      phaseCompletable.set(phase.id, false);
       continue;
     }
 
-    if (options.mode === "guaranteed" && !phase.required) continue;
+    if (options.mode === "guaranteed" && !phase.required) {
+      phaseCompletable.set(phase.id, true);
+      continue;
+    }
 
     if (phase.kind === "inquiry") {
       const complete = collectInquiryInventory(phase, {
@@ -612,6 +634,7 @@ function analyzeInterrogationInventory(
         revealedQuestions,
         revealedPhases,
       });
+      phaseCompletable.set(phase.id, complete);
       if (complete || options.mode === "obtainable") completedPhases.add(phase.id);
     } else {
       const hasValidCorrectPath = collectTestimonyResultInventory(phase, {
@@ -619,11 +642,12 @@ function analyzeInterrogationInventory(
         revealedQuestions,
         revealedPhases,
       });
+      phaseCompletable.set(phase.id, hasValidCorrectPath);
       if (hasValidCorrectPath || options.mode === "obtainable") completedPhases.add(phase.id);
     }
   }
 
-  return { beforePhase, afterScene: inventory };
+  return { beforePhase, phaseCompletable, afterScene: inventory };
 }
 
 type InterrogationInventoryState = {

@@ -1516,6 +1516,46 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "interrogationContradictionUnresolved")).toBeDefined();
   });
 
+  it("rejects required testimony phases with no valid contradiction path", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkTestimonyPhase({
+          id: "testimony",
+          required: true,
+          statements: [
+            mkTestimonyStatement({ id: "s1", contradiction: null, onCorrect: null }),
+            mkTestimonyStatement({ id: "s2", contradiction: null, onCorrect: "win" }),
+          ],
+          results: [mkResult({ id: "win" })],
+        }),
+      ],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationNoValidContradictionPath")).toBeDefined();
+  });
+
+  it("rejects required inquiry phases whose explicit completion inventory is locally declared but unobtainable", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "inquiry",
+          required: true,
+          complete: { predicate: "evidence_collected", id: "missing" },
+          questions: [mkQuestion({ id: "q" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("missing")],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath")).toBeDefined();
+  });
+
   it("does not guarantee a required inquiry question reveal when the question is locked by unobtainable inventory", () => {
     const source = mkInterrogationScene({
       phases: [
