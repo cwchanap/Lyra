@@ -10,6 +10,9 @@
     enterSublocation,
     reexamineEvidence,
     reexamineStatement,
+    answerInterrogationQuestion,
+    pressTestimonyStatement,
+    presentTestimonyItem,
   } from "$lib/state/game-client.svelte";
   import { canReexamineInventory, shouldShowInventoryPanel } from "$lib/state/mode";
   import DialogueBox from "$lib/components/DialogueBox.svelte";
@@ -19,6 +22,7 @@
   import InventoryPanel from "$lib/components/InventoryPanel.svelte";
   import ErrorBanner from "$lib/components/ErrorBanner.svelte";
   import GameComplete from "$lib/components/GameComplete.svelte";
+  import InterrogationView from "$lib/components/InterrogationView.svelte";
 
   onMount(() => {
     void startGame();
@@ -46,6 +50,15 @@
         onInspect={inspectHotspot}
         onInterview={interviewTopic}
         onEnterSublocation={enterSublocation}
+        disabled={gameState.inFlight}
+      />
+    {:else if gameState.value.mode.type === "interrogation"}
+      <InterrogationView
+        scene={gameState.value.scene}
+        inventory={gameState.value.inventory}
+        onAnswerQuestion={answerInterrogationQuestion}
+        onPressStatement={pressTestimonyStatement}
+        onPresentItem={presentTestimonyItem}
         disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "gameComplete"}
