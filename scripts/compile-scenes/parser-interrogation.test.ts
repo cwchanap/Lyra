@@ -32,6 +32,7 @@ const VALID_SOURCE = `# Scene 2: 第一次詢問與交叉詢問
 ## Phase: 若槻蓮的行動證詞 {#wakatsuki_testimony}
 - **Kind:** testimony
 - **Required:** true
+- **Status:** locked
 - **Unlock:** statement:wakatsuki_entered_for_beans acquired
 
 [場景：警視廳臨時證據審查室，深夜，投影幕顯示 KAGAMI 門鎖時間線。]
@@ -112,6 +113,31 @@ describe("parseInterrogationScene", () => {
     expect(parsed.value.phases.map((p) => p.kind)).toEqual(["inquiry", "testimony"]);
     expect(parsed.value.phases[0]!.id).toBe("wakatsuki_inquiry");
     expect(parsed.value.phases[1]!.id).toBe("wakatsuki_testimony");
+    const inquiry = parsed.value.phases[0]!;
+    expect(inquiry.kind).toBe("inquiry");
+    if (inquiry.kind === "inquiry") {
+      expect(inquiry.questions[0]!.onReask).toEqual([
+        { kind: "line", speaker: "若槻蓮", text: "我說過了，是咖啡豆。" },
+      ]);
+    }
+    const testimony = parsed.value.phases[1]!;
+    expect(testimony.kind).toBe("testimony");
+    if (testimony.kind === "testimony") {
+      expect(testimony.unlock).toEqual({
+        predicate: "statement_acquired",
+        id: "wakatsuki_entered_for_beans",
+      });
+      expect(testimony.statements[0]!.contradiction).toEqual({
+        kind: "evidence",
+        id: "coffee_machine_cleaning_log",
+      });
+      expect(testimony.statements[0]!.onCorrect).toBe("breakthrough_cleaning_time");
+      expect(testimony.statements[0]!.onWrong).toBe("wrong_time_record");
+      expect(testimony.results[0]!.reveals).toContainEqual({
+        kind: "statement",
+        id: "kagami_timeline_inconsistent",
+      });
+    }
     expect(parsed.value.evidenceManifest[0]!.id).toBe("coffee_machine_cleaning_log");
     expect(parsed.value.statementManifest.map((s) => s.id)).toContain("kagami_timeline_inconsistent");
   });
@@ -121,5 +147,33 @@ describe("parseInterrogationScene", () => {
     const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.error.code).toBe("interrogationPhaseMissingSubject");
+  });
+
+  it("rejects an interrogation scene with no phases", () => {
+    const source = VALID_SOURCE.replace(/## Phase:[\s\S]*?## Evidence Manifest/, "## Evidence Manifest");
+    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error.code).toBe("interrogationSceneNoPhases");
+  });
+
+  it("rejects an unlocked phase with Unlock metadata", () => {
+    const source = VALID_SOURCE.replace("- **Status:** locked", "- **Status:** unlocked");
+    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error.code).toBe("unlockOnNonLockedBlock");
+  });
+
+  it("rejects an inquiry phase with no questions", () => {
+    const source = VALID_SOURCE.replace(/### Question:[\s\S]*?## Phase:/, "## Phase:");
+    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error.code).toBe("interrogationInquiryNoQuestions");
+  });
+
+  it("rejects a testimony phase with no results", () => {
+    const source = VALID_SOURCE.replace(/### Result: breakthrough_cleaning_time[\s\S]*?## Evidence Manifest/, "## Evidence Manifest");
+    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error.code).toBe("testimonyNoResults");
   });
 });
