@@ -2,8 +2,8 @@
 use crate::game::error::GameError;
 use crate::game::schema::{
     ChaptersIndexJson, InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationRevealTarget,
-    InterrogationSceneJson, InterrogationUnlockExpr, InventoryTarget, InvestigationSceneJson,
-    OutroUnlock, RevealTarget, SceneJson, UnlockExpr,
+    InterrogationSceneJson, InterrogationUnlockExpr, InvestigationSceneJson, OutroUnlock,
+    RevealTarget, SceneJson, UnlockExpr,
 };
 use std::collections::HashSet;
 use std::fs;
@@ -277,15 +277,6 @@ fn validate_interrogation_scene_references(
                     )?;
                 }
                 for statement in testimony_statements {
-                    if let Some(target) = &statement.contradiction {
-                        validate_interrogation_inventory_target(
-                            target,
-                            &evidence,
-                            &statements,
-                            file_rel,
-                            "contradiction",
-                        )?;
-                    }
                     validate_testimony_result_reference(
                         statement.on_correct.as_deref(),
                         &result_ids,
@@ -419,28 +410,6 @@ fn validate_interrogation_reveals(
     Ok(())
 }
 
-fn validate_interrogation_inventory_target(
-    target: &InventoryTarget,
-    evidence: &HashSet<&str>,
-    statements: &HashSet<&str>,
-    file_rel: &str,
-    label: &str,
-) -> Result<(), GameError> {
-    match target {
-        InventoryTarget::Evidence { id } if !evidence.contains(id.as_str()) => {
-            Err(GameError::scene_validation_failed(format!(
-                "{file_rel}: unresolved interrogation {label} evidence:{id}",
-            )))
-        }
-        InventoryTarget::Statement { id } if !statements.contains(id.as_str()) => {
-            Err(GameError::scene_validation_failed(format!(
-                "{file_rel}: unresolved interrogation {label} statement:{id}",
-            )))
-        }
-        _ => Ok(()),
-    }
-}
-
 fn validate_unlock(
     unlock: Option<&UnlockExpr>,
     evidence: &HashSet<&str>,
@@ -517,20 +486,6 @@ fn validate_interrogation_unlock(
                 phases,
                 file_rel,
             )
-        }
-        InterrogationUnlockExpr::EvidenceCollected { id, .. }
-            if !evidence.contains(id.as_str()) =>
-        {
-            Err(GameError::scene_validation_failed(format!(
-                "{file_rel}: unresolved interrogation unlock predicate evidence:{id}",
-            )))
-        }
-        InterrogationUnlockExpr::StatementAcquired { id, .. }
-            if !statements.contains(id.as_str()) =>
-        {
-            Err(GameError::scene_validation_failed(format!(
-                "{file_rel}: unresolved interrogation unlock predicate statement:{id}",
-            )))
         }
         InterrogationUnlockExpr::QuestionAnswered { id, .. }
             if !questions.contains(id.as_str()) =>
@@ -793,6 +748,104 @@ mod tests {
         let err = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
         assert!(err.message.contains("interrogation result:missing_result"));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn accepts_interrogation_scene_with_external_inventory_contradiction() {
+        let d = unique_temp_dir();
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_1",
+                "title": "External Inventory",
+                "intro": [],
+                "phases": [{
+                    "kind": "testimony",
+                    "id": "testimony",
+                    "label": "Testimony",
+                    "subject": { "id": "suspect", "name": "Suspect", "role": "Suspect", "bio": "Bio" },
+                    "required": true,
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "Room",
+                    "entryDialogue": [],
+                    "statements": [{
+                        "id": "statement_1",
+                        "label": "Statement",
+                        "content": "Content",
+                        "contradiction": { "kind": "evidence", "id": "external_receipt" },
+                        "onCorrect": "win",
+                        "onWrong": null,
+                        "onPress": null,
+                        "onPresent": null,
+                        "onWrongPresent": null,
+                        "reveals": []
+                    }],
+                    "results": [{ "id": "win", "label": "Win", "reveals": [], "dialogue": [] }]
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let parsed = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap();
+        assert!(matches!(parsed, SceneJson::Interrogation(_)));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn accepts_interrogation_scene_with_external_inventory_unlock_predicate() {
+        let d = unique_temp_dir();
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_1",
+                "title": "External Unlock",
+                "intro": [],
+                "phases": [{
+                    "kind": "inquiry",
+                    "id": "inquiry",
+                    "label": "Inquiry",
+                    "subject": { "id": "suspect", "name": "Suspect", "role": "Suspect", "bio": "Bio" },
+                    "required": true,
+                    "status": "locked",
+                    "unlock": { "predicate": "evidence_collected", "id": "external_key" },
+                    "reveals": [],
+                    "sceneTag": "Room",
+                    "entryDialogue": [],
+                    "complete": { "predicate": "statement_acquired", "id": "external_statement" },
+                    "questions": [{
+                        "id": "known_question",
+                        "label": "Known Question",
+                        "kind": "question",
+                        "parentQuestionId": null,
+                        "status": "locked",
+                        "required": true,
+                        "unlock": { "predicate": "statement_acquired", "id": "external_statement" },
+                        "reveals": [],
+                        "answerDialogue": [],
+                        "onReask": null
+                    }]
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": { "predicate": "evidence_collected", "id": "external_key" }, "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let parsed = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap();
+        assert!(matches!(parsed, SceneJson::Interrogation(_)));
         let _ = fs::remove_dir_all(d);
     }
 }

@@ -19,7 +19,7 @@ use scenes::SceneRuntime;
 use scenes::investigation::{DialogueQueue, InvestigationSceneState};
 use scenes::linear::LinearSceneState;
 use schema::{
-    DialogueItem, LockStatus, SceneJson,
+    DialogueItem, LockStatus, SceneJson, SceneType,
 };
 use state::{ChapterManifest, Inventory, SceneRef};
 use view::{
@@ -139,35 +139,50 @@ impl GameEngine {
         if current_token != expected {
             return Ok(self.view());
         }
-        let _ = match &mut self.scene {
-            SceneRuntime::Linear(s) => s.advance(),
-            SceneRuntime::Investigation(inv) => {
-                let q = inv.pending_queue.as_mut().ok_or_else(GameError::no_active_dialogue)?;
-                q.cursor += 1;
-                q.cursor >= q.items.len()
+
+        let previous_scene = self.scene.clone();
+        let previous_last_scene_tag = self.last_scene_tag.clone();
+        let previous_next_queue_gen = self.next_queue_gen;
+
+        let result = (|| -> Result<(), GameError> {
+            let _ = match &mut self.scene {
+                SceneRuntime::Linear(s) => s.advance(),
+                SceneRuntime::Investigation(inv) => {
+                    let q = inv.pending_queue.as_mut().ok_or_else(GameError::no_active_dialogue)?;
+                    q.cursor += 1;
+                    q.cursor >= q.items.len()
+                }
+                SceneRuntime::Interrogation(_) => return Err(GameError::unsupported_scene_type("interrogation")),
+            };
+            // Capture the just-consumed item as a scene tag if applicable.
+            if let Some(DialogueItem::SceneTag { text }) = self.peek_just_consumed() {
+                self.last_scene_tag = Some(text);
             }
-            SceneRuntime::Interrogation(_) => return Err(GameError::unsupported_scene_type("interrogation")),
-        };
-        // Capture the just-consumed item as a scene tag if applicable.
-        if let Some(DialogueItem::SceneTag { text }) = self.peek_just_consumed() {
-            self.last_scene_tag = Some(text);
-        }
-        // Skip over any consecutive SceneTag items so the next visible frame
-        // is a real dialogue/action line. This mirrors the leading-tag skip
-        // in prime_initial_queue.
-        self.consume_scene_tags_at_cursor();
-        let exhausted = match &self.scene {
-            SceneRuntime::Linear(s) => s.cursor >= s.queue.len(),
-            SceneRuntime::Investigation(inv) => inv
-                .pending_queue
-                .as_ref()
-                .is_none_or(|q| q.cursor >= q.items.len()),
-            SceneRuntime::Interrogation(_) => {
-                return Err(GameError::unsupported_scene_type("interrogation"));
+            // Skip over any consecutive SceneTag items so the next visible frame
+            // is a real dialogue/action line. This mirrors the leading-tag skip
+            // in prime_initial_queue.
+            self.consume_scene_tags_at_cursor();
+            let exhausted = match &self.scene {
+                SceneRuntime::Linear(s) => s.cursor >= s.queue.len(),
+                SceneRuntime::Investigation(inv) => inv
+                    .pending_queue
+                    .as_ref()
+                    .is_none_or(|q| q.cursor >= q.items.len()),
+                SceneRuntime::Interrogation(_) => {
+                    return Err(GameError::unsupported_scene_type("interrogation"));
+                }
+            };
+            if exhausted {
+                self.on_queue_exhausted()?;
             }
-        };
-        if exhausted {
-            self.on_queue_exhausted()?;
+            Ok(())
+        })();
+
+        if let Err(err) = result {
+            self.scene = previous_scene;
+            self.last_scene_tag = previous_last_scene_tag;
+            self.next_queue_gen = previous_next_queue_gen;
+            return Err(err);
         }
         Ok(self.view())
     }
@@ -367,25 +382,45 @@ impl GameEngine {
     }
 
     fn advance_scene(&mut self) -> Result<(), GameError> {
-        self.current_scene_idx += 1;
-        let chapter = &self.chapters[self.current_chapter_idx];
-        if self.current_scene_idx >= chapter.scenes.len() {
-            self.current_chapter_idx += 1;
-            self.current_scene_idx = 0;
-            if self.current_chapter_idx >= self.chapters.len() {
+        let mut next_chapter_idx = self.current_chapter_idx;
+        let mut next_scene_idx = self.current_scene_idx + 1;
+        let chapter = &self.chapters[next_chapter_idx];
+        if next_scene_idx >= chapter.scenes.len() {
+            next_chapter_idx += 1;
+            next_scene_idx = 0;
+            if next_chapter_idx >= self.chapters.len() {
+                self.current_chapter_idx = next_chapter_idx;
+                self.current_scene_idx = next_scene_idx;
                 return Ok(());
             }
         }
-        let queue_gen = self.alloc_queue_gen();
-        let scene_ref = self.chapters[self.current_chapter_idx]
+        let queue_gen = self.next_queue_gen;
+        let scene_ref = self.chapters[next_chapter_idx]
             .scenes
-            .get(self.current_scene_idx)
+            .get(next_scene_idx)
             .ok_or_else(|| GameError::chapter_load_failed("scene index out of bounds".into()))?
             .clone();
         let new_scene = load_scene_runtime(&self.resources_dir, &scene_ref, queue_gen)?;
+
+        let previous_chapter_idx = self.current_chapter_idx;
+        let previous_scene_idx = self.current_scene_idx;
+        let previous_scene = self.scene.clone();
+        let previous_last_scene_tag = self.last_scene_tag.clone();
+        let previous_next_queue_gen = self.next_queue_gen;
+
+        self.current_chapter_idx = next_chapter_idx;
+        self.current_scene_idx = next_scene_idx;
         self.scene = new_scene;
         self.last_scene_tag = None;
-        self.prime_initial_queue()?;
+        self.next_queue_gen += 1;
+        if let Err(err) = self.prime_initial_queue() {
+            self.current_chapter_idx = previous_chapter_idx;
+            self.current_scene_idx = previous_scene_idx;
+            self.scene = previous_scene;
+            self.last_scene_tag = previous_last_scene_tag;
+            self.next_queue_gen = previous_next_queue_gen;
+            return Err(err);
+        }
         Ok(())
     }
 
@@ -803,11 +838,36 @@ fn load_scene_runtime(
     queue_gen: u64,
 ) -> Result<SceneRuntime, GameError> {
     let json = loader::load_scene(resources_dir, &scene_ref.file)?;
+    let actual_type = scene_json_type(&json);
+    if scene_ref.scene_type != actual_type {
+        return Err(GameError::scene_validation_failed(format!(
+            "{}: chapter manifest declares {} but scene JSON contains {}",
+            scene_ref.file,
+            scene_type_label(scene_ref.scene_type),
+            scene_type_label(actual_type),
+        )));
+    }
     Ok(match json {
         SceneJson::Linear(j) => SceneRuntime::Linear(LinearSceneState::from_json(j, queue_gen)),
         SceneJson::Investigation(j) => SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(j, queue_gen))),
         SceneJson::Interrogation(_) => return Err(GameError::unsupported_scene_type("interrogation")),
     })
+}
+
+fn scene_json_type(json: &SceneJson) -> SceneType {
+    match json {
+        SceneJson::Linear(_) => SceneType::Linear,
+        SceneJson::Investigation(_) => SceneType::Investigation,
+        SceneJson::Interrogation(_) => SceneType::Interrogation,
+    }
+}
+
+fn scene_type_label(scene_type: SceneType) -> &'static str {
+    match scene_type {
+        SceneType::Linear => "linear",
+        SceneType::Investigation => "investigation",
+        SceneType::Interrogation => "interrogation",
+    }
 }
 
 struct SceneAndInventoryCtx<'a> {
@@ -1281,7 +1341,7 @@ mod tests {
 
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let n = SEQ.fetch_add(1, Ordering::Relaxed);
-        let d = std::env::temp_dir().join(format!("lyra-runtime-test-{}-{}", std::process::id(), n));
+        let d = std::env::temp_dir().join(format!("lyra-runtime-unsupported-test-{}-{}", std::process::id(), n));
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
         fs::write(
@@ -1311,6 +1371,117 @@ mod tests {
 
         assert_eq!(err.code, "unsupportedSceneType");
         assert!(err.message.contains("interrogation"));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn load_scene_runtime_rejects_manifest_scene_type_mismatch() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("lyra-runtime-mismatch-test-{}-{}", std::process::id(), n));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Wrong Kind",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let err = load_scene_runtime(
+            &d,
+            &SceneRef {
+                scene_type: SceneType::Interrogation,
+                file: "chapter_1/interrogation_scene_1.json".into(),
+            },
+            1,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert!(err.message.contains("declares interrogation"));
+        assert!(err.message.contains("contains linear"));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn failed_scene_advance_keeps_previous_dialogue_view() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("lyra-advance-test-{}-{}", std::process::id(), n));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter 1",
+                    "summary": "Summary",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_0.json" },
+                        { "type": "interrogation", "file": "chapter_1/interrogation_scene_1.json" }
+                    ]
+                }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("scene_0.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Opening",
+                "queue": [{ "kind": "line", "speaker": "A", "text": "before" }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_1",
+                "title": "Interrogation",
+                "intro": [],
+                "phases": [],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let before = engine.view();
+        let token = token_from(&before);
+        let err = engine.advance_dialogue(token).unwrap_err();
+        assert_eq!(err.code, "unsupportedSceneType");
+
+        let after = engine.view();
+        match after.mode {
+            ModeView::Dialogue { current, .. } => {
+                assert!(matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "before"));
+            }
+            other => panic!("expected previous dialogue mode after failed advance, got {other:?}"),
+        }
+        match after.scene {
+            SceneView::Linear { id, index, total, .. } => {
+                assert_eq!(id, "scene_0");
+                assert_eq!(index, 0);
+                assert_eq!(total, 2);
+            }
+            other => panic!("expected previous linear scene after failed advance, got {other:?}"),
+        }
         let _ = fs::remove_dir_all(d);
     }
 
