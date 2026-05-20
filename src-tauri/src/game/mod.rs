@@ -412,7 +412,6 @@ impl GameEngine {
             if scene.outro_played {
                 return Ok(true);
             }
-            scene.refresh_phase_completion(&self.inventory);
         }
 
         let phase_to_enter = {
@@ -480,6 +479,14 @@ impl GameEngine {
             return Ok(false);
         }
 
+        {
+            let scene = match &mut self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => return Ok(false),
+            };
+            scene.refresh_phase_completion(&self.inventory);
+        }
+
         let (outro_satisfied, outro_dialogue) = {
             let scene = match &self.scene {
                 SceneRuntime::Interrogation(scene) => scene,
@@ -494,6 +501,19 @@ impl GameEngine {
                 scene.def.outro.dialogue.clone(),
             )
         };
+
+        if !outro_satisfied {
+            let scene = match &self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => return Ok(false),
+            };
+            if scene.current_phase_id.is_none() {
+                return Err(GameError::scene_validation_failed(format!(
+                    "{} has no available interrogation phase and its outro is not satisfied.",
+                    scene.def.id
+                )));
+            }
+        }
 
         if outro_satisfied {
             if let SceneRuntime::Interrogation(scene) = &mut self.scene {
@@ -918,22 +938,27 @@ impl GameEngine {
         if self.current_chapter_idx >= self.chapters.len() {
             return Err(GameError::game_complete());
         }
-        if let SceneRuntime::Investigation(inv) = &self.scene {
-            if inv
-                .pending_queue
-                .as_ref()
-                .is_some_and(|q| q.cursor < q.items.len())
-            {
-                return Err(GameError::dialogue_active("reexamine_evidence"));
+        match &self.scene {
+            SceneRuntime::Investigation(inv) => {
+                if inv
+                    .pending_queue
+                    .as_ref()
+                    .is_some_and(|q| q.cursor < q.items.len())
+                {
+                    return Err(GameError::dialogue_active("reexamine_evidence"));
+                }
             }
-        }
-        if let SceneRuntime::Interrogation(scene) = &self.scene {
-            if scene
-                .pending_queue
-                .as_ref()
-                .is_some_and(|q| q.cursor < q.items.len())
-            {
-                return Err(GameError::dialogue_active("reexamine_evidence"));
+            SceneRuntime::Interrogation(scene) => {
+                if scene
+                    .pending_queue
+                    .as_ref()
+                    .is_some_and(|q| q.cursor < q.items.len())
+                {
+                    return Err(GameError::dialogue_active("reexamine_evidence"));
+                }
+            }
+            SceneRuntime::Linear(_) => {
+                return Err(GameError::wrong_mode("reexamine_evidence", "linear"));
             }
         }
         let rec = self
@@ -949,37 +974,40 @@ impl GameEngine {
                 text: REEXAMINE_FALLBACK_TEXT.into(),
             }],
         };
-        let queue_gen = self.alloc_queue_gen();
-        match &mut self.scene {
-            SceneRuntime::Investigation(_) | SceneRuntime::Interrogation(_) => {}
-            SceneRuntime::Linear(_) => {
-                return Err(GameError::wrong_mode("reexamine_evidence", "linear"));
-            }
-        }
-        self.install_scene_queue(queue_items, queue_gen)?;
-        Ok(self.view())
+        let snapshot = self.snapshot();
+        let result = (|| -> Result<GameStateView, GameError> {
+            let queue_gen = self.alloc_queue_gen();
+            self.install_scene_queue(queue_items, queue_gen)?;
+            Ok(self.view())
+        })();
+        self.restore_on_error(snapshot, result)
     }
 
     pub fn reexamine_statement(&mut self, id: &str) -> Result<GameStateView, GameError> {
         if self.current_chapter_idx >= self.chapters.len() {
             return Err(GameError::game_complete());
         }
-        if let SceneRuntime::Investigation(inv) = &self.scene {
-            if inv
-                .pending_queue
-                .as_ref()
-                .is_some_and(|q| q.cursor < q.items.len())
-            {
-                return Err(GameError::dialogue_active("reexamine_statement"));
+        match &self.scene {
+            SceneRuntime::Investigation(inv) => {
+                if inv
+                    .pending_queue
+                    .as_ref()
+                    .is_some_and(|q| q.cursor < q.items.len())
+                {
+                    return Err(GameError::dialogue_active("reexamine_statement"));
+                }
             }
-        }
-        if let SceneRuntime::Interrogation(scene) = &self.scene {
-            if scene
-                .pending_queue
-                .as_ref()
-                .is_some_and(|q| q.cursor < q.items.len())
-            {
-                return Err(GameError::dialogue_active("reexamine_statement"));
+            SceneRuntime::Interrogation(scene) => {
+                if scene
+                    .pending_queue
+                    .as_ref()
+                    .is_some_and(|q| q.cursor < q.items.len())
+                {
+                    return Err(GameError::dialogue_active("reexamine_statement"));
+                }
+            }
+            SceneRuntime::Linear(_) => {
+                return Err(GameError::wrong_mode("reexamine_statement", "linear"));
             }
         }
         let rec = self
@@ -995,15 +1023,13 @@ impl GameEngine {
                 text: REEXAMINE_FALLBACK_TEXT.into(),
             }],
         };
-        let queue_gen = self.alloc_queue_gen();
-        match &mut self.scene {
-            SceneRuntime::Investigation(_) | SceneRuntime::Interrogation(_) => {}
-            SceneRuntime::Linear(_) => {
-                return Err(GameError::wrong_mode("reexamine_statement", "linear"));
-            }
-        }
-        self.install_scene_queue(queue_items, queue_gen)?;
-        Ok(self.view())
+        let snapshot = self.snapshot();
+        let result = (|| -> Result<GameStateView, GameError> {
+            let queue_gen = self.alloc_queue_gen();
+            self.install_scene_queue(queue_items, queue_gen)?;
+            Ok(self.view())
+        })();
+        self.restore_on_error(snapshot, result)
     }
 
     pub fn answer_interrogation_question(
@@ -1672,11 +1698,12 @@ mod tests {
     use super::*;
     use crate::game::schema::{
         AutoMarker, CharacterJson, EvidenceJson, HotspotJson, InterrogationOutroJson,
-        InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationSceneJson, InventoryTarget,
-        InvestigationSceneJson, LockStatus, OutroJson, OutroUnlock, RevealTarget, SceneType,
-        SubjectJson, SublocationJson, TestimonyResultJson, TestimonyStatementJson, TopicJson,
-        UnlockExpr,
+        InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationSceneJson,
+        InterrogationUnlockExpr, InventoryTarget, InvestigationSceneJson, LockStatus, OutroJson,
+        OutroUnlock, RevealTarget, SceneType, SubjectJson, SublocationJson, TestimonyResultJson,
+        TestimonyStatementJson, TopicJson, UnlockExpr,
     };
+    use crate::game::state::{EvidenceRecord, StatementRecord};
 
     fn investigation_scene_with_intro(
         id: &str,
@@ -1789,6 +1816,77 @@ mod tests {
         }
     }
 
+    fn empty_inquiry_interrogation_scene() -> InterrogationSceneJson {
+        InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "inquiry".into(),
+                label: "Inquiry".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![crate::game::schema::InterrogationRevealTarget::Evidence {
+                    id: "note".into(),
+                }],
+                scene_tag: "interrogation_room".into(),
+                entry_dialogue: vec![DialogueItem::Line {
+                    speaker: "A".into(),
+                    text: "entry".into(),
+                }],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![],
+            }],
+            evidence_manifest: vec![EvidenceJson {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        }
+    }
+
+    fn locked_unsatisfied_interrogation_scene() -> InterrogationSceneJson {
+        InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "locked_inquiry".into(),
+                label: "Locked Inquiry".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Locked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "interrogation_room".into(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Expr(
+                    InterrogationUnlockExpr::EvidenceCollected {
+                        _predicate: crate::game::schema::PredicateEvidenceCollected::X,
+                        id: "missing".into(),
+                    },
+                ),
+                dialogue: vec![],
+            },
+        }
+    }
+
     fn empty_engine_with_interrogation_scene(
         scene: InterrogationSceneJson,
         intro_queue_gen: u64,
@@ -1814,6 +1912,183 @@ mod tests {
             inventory: Inventory::default(),
             next_queue_gen: intro_queue_gen + 1,
         }
+    }
+
+    fn completed_interrogation_engine_with_bad_next_scene(
+        resources_dir: PathBuf,
+        inventory: Inventory,
+    ) -> GameEngine {
+        let mut scene = InterrogationSceneState::from_json(testimony_interrogation_scene(), 1);
+        scene.current_phase_id = None;
+        scene.outro_played = true;
+        GameEngine {
+            resources_dir,
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![
+                    SceneRef {
+                        scene_type: SceneType::Interrogation,
+                        file: "chapter_1/interrogation_scene_1.json".into(),
+                    },
+                    SceneRef {
+                        scene_type: SceneType::Interrogation,
+                        file: "chapter_1/interrogation_scene_2.json".into(),
+                    },
+                ],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Interrogation(Box::new(scene)),
+            last_scene_tag: Some("before".into()),
+            inventory,
+            next_queue_gen: 7,
+        }
+    }
+
+    #[test]
+    fn interrogation_enters_empty_inquiry_before_auto_completion() {
+        let mut engine =
+            empty_engine_with_interrogation_scene(empty_inquiry_interrogation_scene(), 1);
+
+        engine.prime_initial_queue().unwrap();
+
+        assert!(engine.inventory.has_evidence("note"));
+        assert_eq!(engine.last_scene_tag.as_deref(), Some("interrogation_room"));
+        let view = engine.view();
+        match view.mode {
+            ModeView::Dialogue {
+                current, scene_tag, ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "entry")
+                );
+                assert_eq!(scene_tag.as_deref(), Some("interrogation_room"));
+            }
+            other => panic!("expected entry dialogue before auto-completion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn interrogation_without_available_phase_and_unsatisfied_outro_errors_instead_of_completing() {
+        let mut engine =
+            empty_engine_with_interrogation_scene(locked_unsatisfied_interrogation_scene(), 1);
+
+        let err = engine.prime_initial_queue().unwrap_err();
+
+        assert_eq!(err.code, "sceneValidationFailed");
+    }
+
+    #[test]
+    fn reexamine_evidence_rolls_back_tag_only_queue_when_scene_advance_fails() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-reexamine-evidence-rollback-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_2.json"),
+            r#"{
+                "type": "linear",
+                "id": "interrogation_scene_2",
+                "title": "Wrong Type",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let inventory = Inventory {
+            evidence: vec![EvidenceRecord {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                on_reexamine: Some(vec![DialogueItem::SceneTag {
+                    text: "tag_only".into(),
+                }]),
+                collected_in_chapter_id: "chapter_1".into(),
+                collected_in_scene_id: "interrogation_scene_1".into(),
+            }],
+            statements: vec![],
+        };
+        let mut engine = completed_interrogation_engine_with_bad_next_scene(d.clone(), inventory);
+        let previous_last_scene_tag = engine.last_scene_tag.clone();
+        let previous_next_queue_gen = engine.next_queue_gen;
+
+        let err = engine.reexamine_evidence("note").unwrap_err();
+
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert_eq!(engine.current_scene_idx, 0);
+        assert_eq!(engine.last_scene_tag, previous_last_scene_tag);
+        assert_eq!(engine.next_queue_gen, previous_next_queue_gen);
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene after rollback");
+        };
+        assert!(scene.pending_queue.is_none());
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn reexamine_statement_rolls_back_tag_only_queue_when_scene_advance_fails() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-reexamine-statement-rollback-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_2.json"),
+            r#"{
+                "type": "linear",
+                "id": "interrogation_scene_2",
+                "title": "Wrong Type",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let inventory = Inventory {
+            evidence: vec![],
+            statements: vec![StatementRecord {
+                id: "alibi".into(),
+                speaker: "Witness".into(),
+                content: "Alibi".into(),
+                on_reexamine: Some(vec![DialogueItem::SceneTag {
+                    text: "tag_only".into(),
+                }]),
+                acquired_in_chapter_id: "chapter_1".into(),
+                acquired_in_scene_id: "interrogation_scene_1".into(),
+            }],
+        };
+        let mut engine = completed_interrogation_engine_with_bad_next_scene(d.clone(), inventory);
+        let previous_last_scene_tag = engine.last_scene_tag.clone();
+        let previous_next_queue_gen = engine.next_queue_gen;
+
+        let err = engine.reexamine_statement("alibi").unwrap_err();
+
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert_eq!(engine.current_scene_idx, 0);
+        assert_eq!(engine.last_scene_tag, previous_last_scene_tag);
+        assert_eq!(engine.next_queue_gen, previous_next_queue_gen);
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene after rollback");
+        };
+        assert!(scene.pending_queue.is_none());
+        let _ = fs::remove_dir_all(d);
     }
 
     #[test]
