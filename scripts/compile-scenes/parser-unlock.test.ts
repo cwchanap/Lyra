@@ -102,6 +102,16 @@ describe("parseUnlockExpr", () => {
 });
 
 describe("parseInterrogationUnlockExpr", () => {
+  it.each([
+    ["evidence:coffee_receipt collected", { predicate: "evidence_collected", id: "coffee_receipt" }],
+    ["statement:witness_alibi acquired", { predicate: "statement_acquired", id: "witness_alibi" }],
+    ["question:hidden_discarded_beans answered", { predicate: "question_answered", id: "hidden_discarded_beans" }],
+    ["phase:wakatsuki_inquiry completed", { predicate: "phase_completed", id: "wakatsuki_inquiry" }],
+  ])("parses allowed interrogation predicate form %s", (source, value) => {
+    const result = parseInterrogationUnlockExpr(source, "interrogation_scene_2.md", 10);
+    expect(result).toEqual({ ok: true, value });
+  });
+
   it("parses question_answered and phase_completed predicates", () => {
     const result = parseInterrogationUnlockExpr(
       "question:hidden_discarded_beans answered and phase:wakatsuki_inquiry completed",
