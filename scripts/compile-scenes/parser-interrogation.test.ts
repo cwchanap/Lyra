@@ -163,6 +163,32 @@ describe("parseInterrogationScene", () => {
     if (!parsed.ok) expect(parsed.error.code).toBe("unlockOnNonLockedBlock");
   });
 
+  it("rejects a default-unlocked question with Unlock metadata", () => {
+    const source = VALID_SOURCE.replace(
+      "- **Status:** unlocked\n- **Reveals:** [statement:wakatsuki_entered_for_beans]",
+      "- **Unlock:** statement:wakatsuki_entered_for_beans acquired\n- **Reveals:** [statement:wakatsuki_entered_for_beans]",
+    );
+    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error.code).toBe("unlockOnNonLockedBlock");
+  });
+
+  it("rejects a default-unlocked follow-up with Unlock metadata", () => {
+    const source = VALID_SOURCE.replace(
+      "\n## Phase: 若槻蓮的行動證詞",
+      `
+#### Follow-up: 追問咖啡豆 {#beans_follow_up}
+- **Unlock:** question:entered_storage answered
+
+**相馬律**：再說一次咖啡豆的事。
+
+## Phase: 若槻蓮的行動證詞`,
+    );
+    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error.code).toBe("unlockOnNonLockedBlock");
+  });
+
   it("rejects an inquiry phase with no questions", () => {
     const source = VALID_SOURCE.replace(/### Question:[\s\S]*?## Phase:/, "## Phase:");
     const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
