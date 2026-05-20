@@ -37,6 +37,15 @@ pub struct GameEngine {
     next_queue_gen: u64,
 }
 
+struct GameSnapshot {
+    current_chapter_idx: usize,
+    current_scene_idx: usize,
+    scene: SceneRuntime,
+    last_scene_tag: Option<String>,
+    inventory: Inventory,
+    next_queue_gen: u64,
+}
+
 const REEXAMINE_FALLBACK_TEXT: &str = "（沒有新發現。）";
 
 impl GameEngine {
@@ -381,6 +390,40 @@ impl GameEngine {
         g
     }
 
+    fn snapshot(&self) -> GameSnapshot {
+        GameSnapshot {
+            current_chapter_idx: self.current_chapter_idx,
+            current_scene_idx: self.current_scene_idx,
+            scene: self.scene.clone(),
+            last_scene_tag: self.last_scene_tag.clone(),
+            inventory: self.inventory.clone(),
+            next_queue_gen: self.next_queue_gen,
+        }
+    }
+
+    fn restore_snapshot(&mut self, snapshot: GameSnapshot) {
+        self.current_chapter_idx = snapshot.current_chapter_idx;
+        self.current_scene_idx = snapshot.current_scene_idx;
+        self.scene = snapshot.scene;
+        self.last_scene_tag = snapshot.last_scene_tag;
+        self.inventory = snapshot.inventory;
+        self.next_queue_gen = snapshot.next_queue_gen;
+    }
+
+    fn restore_on_error<T>(
+        &mut self,
+        snapshot: GameSnapshot,
+        result: Result<T, GameError>,
+    ) -> Result<T, GameError> {
+        match result {
+            Ok(value) => Ok(value),
+            Err(err) => {
+                self.restore_snapshot(snapshot);
+                Err(err)
+            }
+        }
+    }
+
     fn advance_scene(&mut self) -> Result<(), GameError> {
         let mut next_chapter_idx = self.current_chapter_idx;
         let mut next_scene_idx = self.current_scene_idx + 1;
@@ -463,36 +506,40 @@ impl GameEngine {
             (hot_def, first_time)
         };
 
-        // Phase 2 — compute: build queue (mutates scene + inventory together).
-        let queue_items = if first_time {
-            let inv = match &mut self.scene {
-                SceneRuntime::Investigation(i) => i,
-                _ => return Err(GameError::internal("scene changed during inspect_hotspot".into())),
+        let snapshot = self.snapshot();
+        let result = (|| -> Result<GameStateView, GameError> {
+            // Phase 2 — compute: build queue (mutates scene + inventory together).
+            let queue_items = if first_time {
+                let inv = match &mut self.scene {
+                    SceneRuntime::Investigation(i) => i,
+                    _ => return Err(GameError::internal("scene changed during inspect_hotspot".into())),
+                };
+                inv.record_inspect(hotspot_id);
+                let body = hot_def.inspect_dialogue.clone();
+                reveals::apply_reveals_and_build_queue(
+                    inv,
+                    &mut self.inventory,
+                    body,
+                    &hot_def.reveals,
+                    &chapter_id,
+                )
+            } else {
+                match hot_def.on_reexamine.clone() {
+                    Some(q) if !q.is_empty() => q,
+                    _ => vec![DialogueItem::Action { text: REEXAMINE_FALLBACK_TEXT.into() }],
+                }
             };
-            inv.record_inspect(hotspot_id);
-            let body = hot_def.inspect_dialogue.clone();
-            reveals::apply_reveals_and_build_queue(
-                inv,
-                &mut self.inventory,
-                body,
-                &hot_def.reveals,
-                &chapter_id,
-            )
-        } else {
-            match hot_def.on_reexamine.clone() {
-                Some(q) if !q.is_empty() => q,
-                _ => vec![DialogueItem::Action { text: REEXAMINE_FALLBACK_TEXT.into() }],
-            }
-        };
 
-        // Phase 3 — write: attach the queue.
-        if queue_items.is_empty() {
-            self.on_queue_exhausted()?;
-        } else {
-            let queue_gen = self.alloc_queue_gen();
-            self.install_investigation_queue(queue_items, queue_gen)?;
-        }
-        Ok(self.view())
+            // Phase 3 — write: attach the queue.
+            if queue_items.is_empty() {
+                self.on_queue_exhausted()?;
+            } else {
+                let queue_gen = self.alloc_queue_gen();
+                self.install_investigation_queue(queue_items, queue_gen)?;
+            }
+            Ok(self.view())
+        })();
+        self.restore_on_error(snapshot, result)
     }
 
     pub fn interview_topic(&mut self, character_id: &str, topic_id: &str) -> Result<GameStateView, GameError> {
@@ -539,28 +586,32 @@ impl GameEngine {
             (topic, first_time)
         };
 
-        let queue_items = if first_time {
-            let inv = match &mut self.scene {
-                SceneRuntime::Investigation(i) => i,
-                _ => return Err(GameError::internal("scene changed during interview_topic".into())),
+        let snapshot = self.snapshot();
+        let result = (|| -> Result<GameStateView, GameError> {
+            let queue_items = if first_time {
+                let inv = match &mut self.scene {
+                    SceneRuntime::Investigation(i) => i,
+                    _ => return Err(GameError::internal("scene changed during interview_topic".into())),
+                };
+                inv.record_topic_discussed(character_id, topic_id);
+                let body = topic.topic_dialogue.clone();
+                reveals::apply_reveals_and_build_queue(inv, &mut self.inventory, body, &topic.reveals, &chapter_id)
+            } else {
+                match topic.on_reexamine.clone() {
+                    Some(q) if !q.is_empty() => q,
+                    _ => vec![DialogueItem::Action { text: REEXAMINE_FALLBACK_TEXT.into() }],
+                }
             };
-            inv.record_topic_discussed(character_id, topic_id);
-            let body = topic.topic_dialogue.clone();
-            reveals::apply_reveals_and_build_queue(inv, &mut self.inventory, body, &topic.reveals, &chapter_id)
-        } else {
-            match topic.on_reexamine.clone() {
-                Some(q) if !q.is_empty() => q,
-                _ => vec![DialogueItem::Action { text: REEXAMINE_FALLBACK_TEXT.into() }],
-            }
-        };
 
-        if queue_items.is_empty() {
-            self.on_queue_exhausted()?;
-        } else {
-            let queue_gen = self.alloc_queue_gen();
-            self.install_investigation_queue(queue_items, queue_gen)?;
-        }
-        Ok(self.view())
+            if queue_items.is_empty() {
+                self.on_queue_exhausted()?;
+            } else {
+                let queue_gen = self.alloc_queue_gen();
+                self.install_investigation_queue(queue_items, queue_gen)?;
+            }
+            Ok(self.view())
+        })();
+        self.restore_on_error(snapshot, result)
     }
 
     pub fn enter_sublocation(&mut self, sublocation_id: &str) -> Result<GameStateView, GameError> {
@@ -592,36 +643,40 @@ impl GameEngine {
             (def.scene_tag, def.transition_dialogue, def.reveals, first_entry)
         };
 
-        let queue_items: Vec<DialogueItem> = if first_entry {
-            let inv = match &mut self.scene {
-                SceneRuntime::Investigation(i) => i,
-                _ => return Err(GameError::internal("scene changed during enter_sublocation".into())),
-            };
-            inv.current_sublocation_id = Some(sublocation_id.into());
-            inv.record_sublocation_entered(sublocation_id);
-            reveals::apply_reveals_and_build_queue(
-                inv,
-                &mut self.inventory,
-                transition_dialogue,
-                &sub_reveals,
-                &chapter_id,
-            )
-        } else {
-            if let SceneRuntime::Investigation(inv) = &mut self.scene {
+        let snapshot = self.snapshot();
+        let result = (|| -> Result<GameStateView, GameError> {
+            let queue_items: Vec<DialogueItem> = if first_entry {
+                let inv = match &mut self.scene {
+                    SceneRuntime::Investigation(i) => i,
+                    _ => return Err(GameError::internal("scene changed during enter_sublocation".into())),
+                };
                 inv.current_sublocation_id = Some(sublocation_id.into());
-            }
-            Vec::new()
-        };
+                inv.record_sublocation_entered(sublocation_id);
+                reveals::apply_reveals_and_build_queue(
+                    inv,
+                    &mut self.inventory,
+                    transition_dialogue,
+                    &sub_reveals,
+                    &chapter_id,
+                )
+            } else {
+                if let SceneRuntime::Investigation(inv) = &mut self.scene {
+                    inv.current_sublocation_id = Some(sublocation_id.into());
+                }
+                Vec::new()
+            };
 
-        if queue_items.is_empty() {
-            self.last_scene_tag = Some(scene_tag);
-            self.on_queue_exhausted()?;
-        } else {
-            let queue_gen = self.alloc_queue_gen();
-            self.last_scene_tag = Some(scene_tag);
-            self.install_investigation_queue(queue_items, queue_gen)?;
-        }
-        Ok(self.view())
+            if queue_items.is_empty() {
+                self.last_scene_tag = Some(scene_tag);
+                self.on_queue_exhausted()?;
+            } else {
+                let queue_gen = self.alloc_queue_gen();
+                self.last_scene_tag = Some(scene_tag);
+                self.install_investigation_queue(queue_items, queue_gen)?;
+            }
+            Ok(self.view())
+        })();
+        self.restore_on_error(snapshot, result)
     }
 
     pub fn reexamine_evidence(&mut self, id: &str) -> Result<GameStateView, GameError> {
@@ -1482,6 +1537,130 @@ mod tests {
             }
             other => panic!("expected previous linear scene after failed advance, got {other:?}"),
         }
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn failed_silent_investigation_completion_rolls_back_action_state() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("lyra-silent-action-rollback-test-{}-{}", std::process::id(), n));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_1",
+                "title": "Interrogation",
+                "intro": [],
+                "phases": [],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            intro: vec![],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                label: "Room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                transition_dialogue: vec![],
+                hotspots: vec![HotspotJson {
+                    id: "desk".into(),
+                    label: "Desk".into(),
+                    description: "Desk".into(),
+                    status: LockStatus::Unlocked,
+                    unlock: None,
+                    reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                    inspect_dialogue: vec![],
+                    on_reexamine: None,
+                }],
+                characters: vec![],
+            }],
+            evidence_manifest: vec![EvidenceJson {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
+                    _predicate: crate::game::schema::PredicateEvidenceCollected::X,
+                    id: "note".into(),
+                }),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = GameEngine {
+            resources_dir: d.clone(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![
+                    SceneRef {
+                        scene_type: SceneType::Investigation,
+                        file: "chapter_1/investigation_scene_1.json".into(),
+                    },
+                    SceneRef {
+                        scene_type: SceneType::Interrogation,
+                        file: "chapter_1/interrogation_scene_1.json".into(),
+                    },
+                ],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(scene, 1))),
+            last_scene_tag: None,
+            inventory: Inventory::default(),
+            next_queue_gen: 2,
+        };
+        engine.prime_initial_queue().unwrap();
+        let previous_last_scene_tag = engine.last_scene_tag.clone();
+        let previous_next_queue_gen = engine.next_queue_gen;
+
+        let err = engine.inspect_hotspot("desk").unwrap_err();
+        assert_eq!(err.code, "unsupportedSceneType");
+
+        assert_eq!(engine.current_chapter_idx, 0);
+        assert_eq!(engine.current_scene_idx, 0);
+        assert_eq!(engine.last_scene_tag, previous_last_scene_tag);
+        assert_eq!(engine.next_queue_gen, previous_next_queue_gen);
+        assert!(engine.inventory.evidence.is_empty());
+
+        let SceneRuntime::Investigation(inv) = &engine.scene else {
+            panic!("expected investigation scene after failed silent completion");
+        };
+        assert_eq!(inv.current_sublocation_id.as_deref(), Some("room"));
+        assert!(inv.inspected_hotspots.is_empty());
+        assert!(!inv.outro_played);
+
+        let view = engine.view();
+        assert!(matches!(view.mode, ModeView::Explore { sublocation_id } if sublocation_id == "room"));
+        match view.scene {
+            SceneView::Investigation { id, index, total, .. } => {
+                assert_eq!(id, "investigation_scene_1");
+                assert_eq!(index, 0);
+                assert_eq!(total, 2);
+            }
+            other => panic!("expected previous investigation scene after failed advance, got {other:?}"),
+        }
+
         let _ = fs::remove_dir_all(d);
     }
 
