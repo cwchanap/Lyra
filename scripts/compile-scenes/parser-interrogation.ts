@@ -200,6 +200,7 @@ function parseInquiryPhase(cur: Cursor, phaseMeta: PhaseMeta): { ok: true; value
     if (!next) break;
     if (next.kind === "heading" && next.level <= 2) break;
     if (next.kind === "heading" && next.level === 3 && next.text.startsWith("Subject:")) {
+      if (subject) return fail(cur.sourceFile, next.line, "interrogationPhaseDuplicateSubject", `Phase ${phaseMeta.id} declared multiple Subject blocks.`);
       const s = parseSubject(cur);
       if (!s.ok) return s;
       subject = s.value;
@@ -270,12 +271,14 @@ function parseTestimonyPhase(cur: Cursor, phaseMeta: PhaseMeta): { ok: true; val
     if (!next) break;
     if (next.kind === "heading" && next.level <= 2) break;
     if (next.kind === "heading" && next.level === 3 && next.text.startsWith("Subject:")) {
+      if (subject) return fail(cur.sourceFile, next.line, "interrogationPhaseDuplicateSubject", `Phase ${phaseMeta.id} declared multiple Subject blocks.`);
       const s = parseSubject(cur);
       if (!s.ok) return s;
       subject = s.value;
       continue;
     }
     if (next.kind === "heading" && next.level === 3 && next.text === "Testimony") {
+      if (hasTestimonyContainer) return fail(cur.sourceFile, next.line, "testimonyDuplicateContainer", `Testimony phase ${phaseMeta.id} declared multiple Testimony containers.`);
       cur.next();
       hasTestimonyContainer = true;
       while (true) {
