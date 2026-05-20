@@ -96,6 +96,16 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
                 );
                 return;
             }
+            ModeView::Interrogation { .. } => {
+                let view = engine.view();
+                assert!(
+                    view.chapter.index < view.chapter.total,
+                    "chapter index ({}) should be < total ({})",
+                    view.chapter.index,
+                    view.chapter.total,
+                );
+                return;
+            }
             ModeView::GameComplete => {
                 // Verify chapter index is clamped.
                 let view = engine.view();

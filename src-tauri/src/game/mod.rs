@@ -3,27 +3,29 @@
 // GameEngine — the single owner of mutable game state.
 
 pub mod error;
+pub mod loader;
+pub mod reveals;
+pub mod scenes;
 pub mod schema;
 pub mod state;
 pub mod unlock;
-pub mod reveals;
-pub mod scenes;
-pub mod loader;
 pub mod view;
 
 pub use error::GameError;
 pub use view::{GameStateView, ModeView, QueueToken};
 
-use std::path::PathBuf;
-use scenes::SceneRuntime;
+use scenes::interrogation::{phase_id, InterrogationSceneAndInventoryCtx, InterrogationSceneState};
 use scenes::investigation::{DialogueQueue, InvestigationSceneState};
 use scenes::linear::LinearSceneState;
+use scenes::SceneRuntime;
 use schema::{
-    DialogueItem, LockStatus, SceneJson, SceneType,
+    DialogueItem, InterrogationPhaseJson, InventoryTarget, LockStatus, SceneJson, SceneType,
 };
 use state::{ChapterManifest, Inventory, SceneRef};
+use std::path::PathBuf;
 use view::{
-    CharacterView, ChapterView, HotspotView, SceneView, SublocationView, TopicView,
+    ChapterView, CharacterView, HotspotView, InquiryQuestionView, InterrogationPhaseView,
+    SceneView, SubjectView, SublocationView, TestimonyStatementView, TopicView,
 };
 
 pub struct GameEngine {
@@ -47,6 +49,7 @@ struct GameSnapshot {
 }
 
 const REEXAMINE_FALLBACK_TEXT: &str = "（沒有新發現。）";
+const WRONG_PRESENT_FALLBACK_TEXT: &str = "（這個提示還不足以推翻證詞。）";
 
 impl GameEngine {
     pub fn new_started(resources_dir: PathBuf) -> Result<Self, GameError> {
@@ -62,13 +65,18 @@ impl GameEngine {
                 scenes: c
                     .scenes
                     .into_iter()
-                    .map(|s| SceneRef { scene_type: s.scene_type, file: s.file })
+                    .map(|s| SceneRef {
+                        scene_type: s.scene_type,
+                        file: s.file,
+                    })
                     .collect(),
             })
             .collect();
 
         if chapters.is_empty() {
-            return Err(GameError::chapter_load_failed("chapters.json has no chapters.".into()));
+            return Err(GameError::chapter_load_failed(
+                "chapters.json has no chapters.".into(),
+            ));
         }
 
         let first_scene_ref = chapters[0]
@@ -93,6 +101,7 @@ impl GameEngine {
 
     fn prime_initial_queue(&mut self) -> Result<(), GameError> {
         let mut intro_queue = None;
+        let mut needs_interrogation_advance = false;
         let needs_initial_sub = match &mut self.scene {
             SceneRuntime::Linear(s) => {
                 // Consume leading SceneTag items so the first visible frame
@@ -118,15 +127,26 @@ impl GameEngine {
                     true
                 }
             }
-            SceneRuntime::Interrogation(_) => {
-                return Err(GameError::unsupported_scene_type("interrogation"));
+            SceneRuntime::Interrogation(scene) => {
+                if !scene.intro_played && !scene.def.intro.is_empty() {
+                    intro_queue = Some((scene.def.intro.clone(), scene.intro_queue_gen));
+                    scene.intro_played = true;
+                    false
+                } else {
+                    scene.intro_played = true;
+                    needs_interrogation_advance = true;
+                    false
+                }
             }
         };
         if let Some((items, queue_gen)) = intro_queue {
-            self.install_investigation_queue(items, queue_gen)?;
+            self.install_scene_queue(items, queue_gen)?;
         }
         if needs_initial_sub {
             self.advance_into_first_sublocation()?;
+        }
+        if needs_interrogation_advance && self.try_advance_interrogation()? {
+            self.advance_scene()?;
         }
         Ok(())
     }
@@ -155,11 +175,21 @@ impl GameEngine {
             let _ = match &mut self.scene {
                 SceneRuntime::Linear(s) => s.advance(),
                 SceneRuntime::Investigation(inv) => {
-                    let q = inv.pending_queue.as_mut().ok_or_else(GameError::no_active_dialogue)?;
+                    let q = inv
+                        .pending_queue
+                        .as_mut()
+                        .ok_or_else(GameError::no_active_dialogue)?;
                     q.cursor += 1;
                     q.cursor >= q.items.len()
                 }
-                SceneRuntime::Interrogation(_) => return Err(GameError::unsupported_scene_type("interrogation")),
+                SceneRuntime::Interrogation(scene) => {
+                    let q = scene
+                        .pending_queue
+                        .as_mut()
+                        .ok_or_else(GameError::no_active_dialogue)?;
+                    q.cursor += 1;
+                    q.cursor >= q.items.len()
+                }
             };
             // Capture the just-consumed item as a scene tag if applicable.
             if let Some(DialogueItem::SceneTag { text }) = self.peek_just_consumed() {
@@ -175,9 +205,10 @@ impl GameEngine {
                     .pending_queue
                     .as_ref()
                     .is_none_or(|q| q.cursor >= q.items.len()),
-                SceneRuntime::Interrogation(_) => {
-                    return Err(GameError::unsupported_scene_type("interrogation"));
-                }
+                SceneRuntime::Interrogation(scene) => scene
+                    .pending_queue
+                    .as_ref()
+                    .is_none_or(|q| q.cursor >= q.items.len()),
             };
             if exhausted {
                 self.on_queue_exhausted()?;
@@ -199,7 +230,10 @@ impl GameEngine {
                 .pending_queue
                 .as_ref()
                 .and_then(|q| q.items.get(q.cursor.saturating_sub(1)).cloned()),
-            SceneRuntime::Interrogation(_) => None,
+            SceneRuntime::Interrogation(scene) => scene
+                .pending_queue
+                .as_ref()
+                .and_then(|q| q.items.get(q.cursor.saturating_sub(1)).cloned()),
         }
     }
 
@@ -214,7 +248,10 @@ impl GameEngine {
                     .pending_queue
                     .as_ref()
                     .and_then(|q| q.items.get(q.cursor).cloned()),
-                SceneRuntime::Interrogation(_) => None,
+                SceneRuntime::Interrogation(scene) => scene
+                    .pending_queue
+                    .as_ref()
+                    .and_then(|q| q.items.get(q.cursor).cloned()),
             };
             match tag {
                 Some(DialogueItem::SceneTag { text }) => {
@@ -226,7 +263,11 @@ impl GameEngine {
                                 q.cursor += 1;
                             }
                         }
-                        SceneRuntime::Interrogation(_) => {}
+                        SceneRuntime::Interrogation(scene) => {
+                            if let Some(q) = scene.pending_queue.as_mut() {
+                                q.cursor += 1;
+                            }
+                        }
                     }
                 }
                 _ => break,
@@ -235,6 +276,14 @@ impl GameEngine {
     }
 
     fn install_investigation_queue(
+        &mut self,
+        items: Vec<DialogueItem>,
+        queue_gen: u64,
+    ) -> Result<(), GameError> {
+        self.install_scene_queue(items, queue_gen)
+    }
+
+    fn install_scene_queue(
         &mut self,
         items: Vec<DialogueItem>,
         queue_gen: u64,
@@ -248,10 +297,16 @@ impl GameEngine {
                 });
             }
             SceneRuntime::Linear(_) => {
-                return Err(GameError::internal("investigation queue installed outside investigation scene".into()));
+                return Err(GameError::internal(
+                    "dialogue queue installed outside queued scene".into(),
+                ));
             }
-            SceneRuntime::Interrogation(_) => {
-                return Err(GameError::internal("investigation queue installed outside investigation scene".into()));
+            SceneRuntime::Interrogation(scene) => {
+                scene.pending_queue = Some(DialogueQueue {
+                    items,
+                    cursor: 0,
+                    queue_gen,
+                });
             }
         }
         self.consume_scene_tags_at_cursor();
@@ -261,11 +316,14 @@ impl GameEngine {
                 .as_ref()
                 .is_none_or(|q| q.cursor >= q.items.len()),
             SceneRuntime::Linear(_) => {
-                return Err(GameError::internal("investigation queue installed outside investigation scene".into()));
+                return Err(GameError::internal(
+                    "dialogue queue installed outside queued scene".into(),
+                ));
             }
-            SceneRuntime::Interrogation(_) => {
-                return Err(GameError::internal("investigation queue installed outside investigation scene".into()));
-            }
+            SceneRuntime::Interrogation(scene) => scene
+                .pending_queue
+                .as_ref()
+                .is_none_or(|q| q.cursor >= q.items.len()),
         };
         if exhausted {
             self.on_queue_exhausted()?;
@@ -284,7 +342,9 @@ impl GameEngine {
                 }
             }
             SceneRuntime::Interrogation(_) => {
-                return Err(GameError::unsupported_scene_type("interrogation"));
+                if self.try_advance_interrogation()? {
+                    self.advance_scene()?;
+                }
             }
         }
         Ok(())
@@ -298,9 +358,17 @@ impl GameEngine {
                 _ => return Ok(false),
             };
             inv.pending_queue = None;
-            let ctx = SceneAndInventoryCtx { scene: inv, inventory: &self.inventory };
+            let ctx = SceneAndInventoryCtx {
+                scene: inv,
+                inventory: &self.inventory,
+            };
             let sat = inv.outro_satisfied(&ctx);
-            (sat, inv.outro_played, inv.def.outro.dialogue.clone(), inv.current_sublocation_id.is_none())
+            (
+                sat,
+                inv.outro_played,
+                inv.def.outro.dialogue.clone(),
+                inv.current_sublocation_id.is_none(),
+            )
         };
 
         if no_current_sublocation {
@@ -332,6 +400,114 @@ impl GameEngine {
         Ok(false)
     }
 
+    fn try_advance_interrogation(&mut self) -> Result<bool, GameError> {
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
+
+        {
+            let scene = match &mut self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => return Ok(false),
+            };
+            scene.pending_queue = None;
+            if scene.outro_played {
+                return Ok(true);
+            }
+            scene.refresh_phase_completion(&self.inventory);
+        }
+
+        let phase_to_enter = {
+            let scene = match &self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => return Ok(false),
+            };
+            scene
+                .current_phase_id
+                .as_deref()
+                .filter(|id| !scene.phase_entered(id))
+                .and_then(|id| {
+                    scene
+                        .def
+                        .phases
+                        .iter()
+                        .find(|phase| phase_id(phase) == id)
+                        .cloned()
+                })
+        };
+
+        if let Some(phase) = phase_to_enter {
+            let (phase_id, scene_tag, entry_dialogue, reveals) = match &phase {
+                InterrogationPhaseJson::Inquiry {
+                    id,
+                    scene_tag,
+                    entry_dialogue,
+                    reveals,
+                    ..
+                }
+                | InterrogationPhaseJson::Testimony {
+                    id,
+                    scene_tag,
+                    entry_dialogue,
+                    reveals,
+                    ..
+                } => (
+                    id.clone(),
+                    scene_tag.clone(),
+                    entry_dialogue.clone(),
+                    reveals.clone(),
+                ),
+            };
+            let queue_items = {
+                let scene = match &mut self.scene {
+                    SceneRuntime::Interrogation(scene) => scene,
+                    _ => return Ok(false),
+                };
+                scene.mark_phase_entered(&phase_id);
+                reveals::apply_interrogation_reveals_and_build_queue(
+                    scene,
+                    &mut self.inventory,
+                    entry_dialogue,
+                    &reveals,
+                    &chapter_id,
+                )
+            };
+            self.last_scene_tag = Some(scene_tag);
+            if queue_items.is_empty() {
+                self.on_queue_exhausted()?;
+            } else {
+                let queue_gen = self.alloc_queue_gen();
+                self.install_scene_queue(queue_items, queue_gen)?;
+            }
+            return Ok(false);
+        }
+
+        let (outro_satisfied, outro_dialogue) = {
+            let scene = match &self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => return Ok(false),
+            };
+            let ctx = InterrogationSceneAndInventoryCtx {
+                scene,
+                inventory: &self.inventory,
+            };
+            (
+                scene.outro_satisfied(&ctx),
+                scene.def.outro.dialogue.clone(),
+            )
+        };
+
+        if outro_satisfied {
+            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                scene.outro_played = true;
+            }
+            if outro_dialogue.is_empty() {
+                return Ok(true);
+            }
+            let queue_gen = self.alloc_queue_gen();
+            self.install_scene_queue(outro_dialogue, queue_gen)?;
+        }
+        Ok(false)
+    }
+
     fn advance_into_first_sublocation(&mut self) -> Result<(), GameError> {
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
@@ -342,10 +518,19 @@ impl GameEngine {
                 .sublocations
                 .iter()
                 .find(|s| s.status == LockStatus::Unlocked)
-                .map(|s| (s.id.clone(), s.scene_tag.clone(), s.transition_dialogue.clone(), s.reveals.clone())),
+                .map(|s| {
+                    (
+                        s.id.clone(),
+                        s.scene_tag.clone(),
+                        s.transition_dialogue.clone(),
+                        s.reveals.clone(),
+                    )
+                }),
             _ => None,
         };
-        let Some((id, scene_tag, transition, sub_reveals)) = chosen else { return Ok(()) };
+        let Some((id, scene_tag, transition, sub_reveals)) = chosen else {
+            return Ok(());
+        };
 
         // Phase 2 — write: mutate scene + inventory; reveals fire on first entry.
         let queue_items = {
@@ -467,13 +652,16 @@ impl GameEngine {
                 SceneRuntime::Investigation(i) => i,
                 _ => return Err(GameError::wrong_mode("inspect_hotspot", "linear")),
             };
-            if inv.pending_queue.as_ref().is_some_and(|q| q.cursor < q.items.len()) {
+            if inv
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
                 return Err(GameError::dialogue_active("inspect_hotspot"));
             }
-            let sublocation_id = inv
-                .current_sublocation_id
-                .clone()
-                .ok_or_else(|| GameError::wrong_mode("inspect_hotspot", "no sublocation entered"))?;
+            let sublocation_id = inv.current_sublocation_id.clone().ok_or_else(|| {
+                GameError::wrong_mode("inspect_hotspot", "no sublocation entered")
+            })?;
             let sub_def = inv
                 .def
                 .sublocations
@@ -486,8 +674,16 @@ impl GameEngine {
                 .find(|h| h.id == hotspot_id)
                 .ok_or_else(|| GameError::unknown_hotspot(hotspot_id))?
                 .clone();
-            let ctx = SceneAndInventoryCtx { scene: inv, inventory: &self.inventory };
-            if !inv.is_block_unlocked(&format!("hotspot:{}", hotspot_id), hot_def.status, hot_def.unlock.as_ref(), &ctx) {
+            let ctx = SceneAndInventoryCtx {
+                scene: inv,
+                inventory: &self.inventory,
+            };
+            if !inv.is_block_unlocked(
+                &format!("hotspot:{}", hotspot_id),
+                hot_def.status,
+                hot_def.unlock.as_ref(),
+                &ctx,
+            ) {
                 return Err(GameError::locked_hotspot(hotspot_id));
             }
             let first_time = !inv.inspected_hotspots.contains(hotspot_id);
@@ -500,7 +696,11 @@ impl GameEngine {
             let queue_items = if first_time {
                 let inv = match &mut self.scene {
                     SceneRuntime::Investigation(i) => i,
-                    _ => return Err(GameError::internal("scene changed during inspect_hotspot".into())),
+                    _ => {
+                        return Err(GameError::internal(
+                            "scene changed during inspect_hotspot".into(),
+                        ))
+                    }
                 };
                 inv.record_inspect(hotspot_id);
                 let body = hot_def.inspect_dialogue.clone();
@@ -514,7 +714,9 @@ impl GameEngine {
             } else {
                 match hot_def.on_reexamine.clone() {
                     Some(q) if !q.is_empty() => q,
-                    _ => vec![DialogueItem::Action { text: REEXAMINE_FALLBACK_TEXT.into() }],
+                    _ => vec![DialogueItem::Action {
+                        text: REEXAMINE_FALLBACK_TEXT.into(),
+                    }],
                 }
             };
 
@@ -530,7 +732,11 @@ impl GameEngine {
         self.restore_on_error(snapshot, result)
     }
 
-    pub fn interview_topic(&mut self, character_id: &str, topic_id: &str) -> Result<GameStateView, GameError> {
+    pub fn interview_topic(
+        &mut self,
+        character_id: &str,
+        topic_id: &str,
+    ) -> Result<GameStateView, GameError> {
         if self.current_chapter_idx >= self.chapters.len() {
             return Err(GameError::game_complete());
         }
@@ -541,13 +747,16 @@ impl GameEngine {
                 SceneRuntime::Investigation(i) => i,
                 _ => return Err(GameError::wrong_mode("interview_topic", "linear")),
             };
-            if inv.pending_queue.as_ref().is_some_and(|q| q.cursor < q.items.len()) {
+            if inv
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
                 return Err(GameError::dialogue_active("interview_topic"));
             }
-            let sub_id = inv
-                .current_sublocation_id
-                .clone()
-                .ok_or_else(|| GameError::wrong_mode("interview_topic", "no sublocation entered"))?;
+            let sub_id = inv.current_sublocation_id.clone().ok_or_else(|| {
+                GameError::wrong_mode("interview_topic", "no sublocation entered")
+            })?;
             let sub_def = inv
                 .def
                 .sublocations
@@ -566,11 +775,16 @@ impl GameEngine {
                 .ok_or_else(|| GameError::unknown_topic(character_id, topic_id))?
                 .clone();
             let key = format!("topic:{character_id}@{topic_id}");
-            let ctx = SceneAndInventoryCtx { scene: inv, inventory: &self.inventory };
+            let ctx = SceneAndInventoryCtx {
+                scene: inv,
+                inventory: &self.inventory,
+            };
             if !inv.is_block_unlocked(&key, topic.status, topic.unlock.as_ref(), &ctx) {
                 return Err(GameError::locked_topic(character_id, topic_id));
             }
-            let first_time = !inv.discussed_topics.contains(&(character_id.into(), topic_id.into()));
+            let first_time = !inv
+                .discussed_topics
+                .contains(&(character_id.into(), topic_id.into()));
             (topic, first_time)
         };
 
@@ -579,15 +793,27 @@ impl GameEngine {
             let queue_items = if first_time {
                 let inv = match &mut self.scene {
                     SceneRuntime::Investigation(i) => i,
-                    _ => return Err(GameError::internal("scene changed during interview_topic".into())),
+                    _ => {
+                        return Err(GameError::internal(
+                            "scene changed during interview_topic".into(),
+                        ))
+                    }
                 };
                 inv.record_topic_discussed(character_id, topic_id);
                 let body = topic.topic_dialogue.clone();
-                reveals::apply_reveals_and_build_queue(inv, &mut self.inventory, body, &topic.reveals, &chapter_id)
+                reveals::apply_reveals_and_build_queue(
+                    inv,
+                    &mut self.inventory,
+                    body,
+                    &topic.reveals,
+                    &chapter_id,
+                )
             } else {
                 match topic.on_reexamine.clone() {
                     Some(q) if !q.is_empty() => q,
-                    _ => vec![DialogueItem::Action { text: REEXAMINE_FALLBACK_TEXT.into() }],
+                    _ => vec![DialogueItem::Action {
+                        text: REEXAMINE_FALLBACK_TEXT.into(),
+                    }],
                 }
             };
 
@@ -613,7 +839,11 @@ impl GameEngine {
                 SceneRuntime::Investigation(i) => i,
                 _ => return Err(GameError::wrong_mode("enter_sublocation", "linear")),
             };
-            if inv.pending_queue.as_ref().is_some_and(|q| q.cursor < q.items.len()) {
+            if inv
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
                 return Err(GameError::dialogue_active("enter_sublocation"));
             }
             let def = inv
@@ -623,12 +853,25 @@ impl GameEngine {
                 .find(|s| s.id == sublocation_id)
                 .ok_or_else(|| GameError::unknown_sublocation(sublocation_id))?
                 .clone();
-            let ctx = SceneAndInventoryCtx { scene: inv, inventory: &self.inventory };
-            if !inv.is_block_unlocked(&format!("sublocation:{}", sublocation_id), def.status, def.unlock.as_ref(), &ctx) {
+            let ctx = SceneAndInventoryCtx {
+                scene: inv,
+                inventory: &self.inventory,
+            };
+            if !inv.is_block_unlocked(
+                &format!("sublocation:{}", sublocation_id),
+                def.status,
+                def.unlock.as_ref(),
+                &ctx,
+            ) {
                 return Err(GameError::locked_sublocation(sublocation_id));
             }
             let first_entry = !inv.entered_sublocations.contains(sublocation_id);
-            (def.scene_tag, def.transition_dialogue, def.reveals, first_entry)
+            (
+                def.scene_tag,
+                def.transition_dialogue,
+                def.reveals,
+                first_entry,
+            )
         };
 
         let snapshot = self.snapshot();
@@ -636,7 +879,11 @@ impl GameEngine {
             let queue_items: Vec<DialogueItem> = if first_entry {
                 let inv = match &mut self.scene {
                     SceneRuntime::Investigation(i) => i,
-                    _ => return Err(GameError::internal("scene changed during enter_sublocation".into())),
+                    _ => {
+                        return Err(GameError::internal(
+                            "scene changed during enter_sublocation".into(),
+                        ))
+                    }
                 };
                 inv.current_sublocation_id = Some(sublocation_id.into());
                 inv.record_sublocation_entered(sublocation_id);
@@ -672,7 +919,20 @@ impl GameEngine {
             return Err(GameError::game_complete());
         }
         if let SceneRuntime::Investigation(inv) = &self.scene {
-            if inv.pending_queue.as_ref().is_some_and(|q| q.cursor < q.items.len()) {
+            if inv
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
+                return Err(GameError::dialogue_active("reexamine_evidence"));
+            }
+        }
+        if let SceneRuntime::Interrogation(scene) = &self.scene {
+            if scene
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
                 return Err(GameError::dialogue_active("reexamine_evidence"));
             }
         }
@@ -685,19 +945,18 @@ impl GameEngine {
             .ok_or_else(|| GameError::unknown_evidence(id))?;
         let queue_items = match rec.on_reexamine.clone() {
             Some(q) if !q.is_empty() => q,
-            _ => vec![DialogueItem::Action { text: REEXAMINE_FALLBACK_TEXT.into() }],
+            _ => vec![DialogueItem::Action {
+                text: REEXAMINE_FALLBACK_TEXT.into(),
+            }],
         };
         let queue_gen = self.alloc_queue_gen();
         match &mut self.scene {
-            SceneRuntime::Investigation(_) => {}
+            SceneRuntime::Investigation(_) | SceneRuntime::Interrogation(_) => {}
             SceneRuntime::Linear(_) => {
                 return Err(GameError::wrong_mode("reexamine_evidence", "linear"));
             }
-            SceneRuntime::Interrogation(_) => {
-                return Err(GameError::wrong_mode("reexamine_evidence", "interrogation"));
-            }
         }
-        self.install_investigation_queue(queue_items, queue_gen)?;
+        self.install_scene_queue(queue_items, queue_gen)?;
         Ok(self.view())
     }
 
@@ -706,7 +965,20 @@ impl GameEngine {
             return Err(GameError::game_complete());
         }
         if let SceneRuntime::Investigation(inv) = &self.scene {
-            if inv.pending_queue.as_ref().is_some_and(|q| q.cursor < q.items.len()) {
+            if inv
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
+                return Err(GameError::dialogue_active("reexamine_statement"));
+            }
+        }
+        if let SceneRuntime::Interrogation(scene) = &self.scene {
+            if scene
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
                 return Err(GameError::dialogue_active("reexamine_statement"));
             }
         }
@@ -719,27 +991,354 @@ impl GameEngine {
             .ok_or_else(|| GameError::unknown_statement(id))?;
         let queue_items = match rec.on_reexamine.clone() {
             Some(q) if !q.is_empty() => q,
-            _ => vec![DialogueItem::Action { text: REEXAMINE_FALLBACK_TEXT.into() }],
+            _ => vec![DialogueItem::Action {
+                text: REEXAMINE_FALLBACK_TEXT.into(),
+            }],
         };
         let queue_gen = self.alloc_queue_gen();
         match &mut self.scene {
-            SceneRuntime::Investigation(_) => {}
+            SceneRuntime::Investigation(_) | SceneRuntime::Interrogation(_) => {}
             SceneRuntime::Linear(_) => {
                 return Err(GameError::wrong_mode("reexamine_statement", "linear"));
             }
-            SceneRuntime::Interrogation(_) => {
-                return Err(GameError::wrong_mode("reexamine_statement", "interrogation"));
-            }
         }
-        self.install_investigation_queue(queue_items, queue_gen)?;
+        self.install_scene_queue(queue_items, queue_gen)?;
         Ok(self.view())
+    }
+
+    pub fn answer_interrogation_question(
+        &mut self,
+        question_id: &str,
+    ) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
+
+        let (question, first_time) = {
+            let scene = match &self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => {
+                    return Err(GameError::wrong_mode(
+                        "answer_interrogation_question",
+                        "not interrogation",
+                    ))
+                }
+            };
+            if scene
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
+                return Err(GameError::dialogue_active("answer_interrogation_question"));
+            }
+            let phase_id = scene
+                .current_phase_id
+                .as_deref()
+                .ok_or_else(|| GameError::locked_interrogation_question(question_id))?;
+            let Some(InterrogationPhaseJson::Inquiry { questions, .. }) = scene
+                .def
+                .phases
+                .iter()
+                .find(|phase| phase_id == crate::game::scenes::interrogation::phase_id(phase))
+            else {
+                return Err(GameError::locked_interrogation_question(question_id));
+            };
+            let question = questions
+                .iter()
+                .find(|question| question.id == question_id)
+                .cloned()
+                .ok_or_else(|| {
+                    if scene.def.phases.iter().any(|phase| match phase {
+                        InterrogationPhaseJson::Inquiry { questions, .. } => {
+                            questions.iter().any(|q| q.id == question_id)
+                        }
+                        InterrogationPhaseJson::Testimony { .. } => false,
+                    }) {
+                        GameError::locked_interrogation_question(question_id)
+                    } else {
+                        GameError::unknown_interrogation_question(question_id)
+                    }
+                })?;
+            let ctx = InterrogationSceneAndInventoryCtx {
+                scene,
+                inventory: &self.inventory,
+            };
+            if !scene.is_question_unlocked(&question, &ctx) {
+                return Err(GameError::locked_interrogation_question(question_id));
+            }
+            let first_time = !scene.answered_questions.contains(question_id);
+            (question, first_time)
+        };
+
+        let snapshot = self.snapshot();
+        let result = (|| -> Result<GameStateView, GameError> {
+            let queue_items = {
+                let scene = match &mut self.scene {
+                    SceneRuntime::Interrogation(scene) => scene,
+                    _ => {
+                        return Err(GameError::internal(
+                            "scene changed during answer_interrogation_question".into(),
+                        ))
+                    }
+                };
+                if first_time {
+                    scene.record_question_answered(question_id);
+                    reveals::apply_interrogation_reveals_and_build_queue(
+                        scene,
+                        &mut self.inventory,
+                        question.answer_dialogue.clone(),
+                        &question.reveals,
+                        &chapter_id,
+                    )
+                } else {
+                    question
+                        .on_reask
+                        .clone()
+                        .unwrap_or(question.answer_dialogue.clone())
+                }
+            };
+
+            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                scene.refresh_phase_completion(&self.inventory);
+            }
+            if queue_items.is_empty() {
+                self.on_queue_exhausted()?;
+            } else {
+                let queue_gen = self.alloc_queue_gen();
+                self.install_scene_queue(queue_items, queue_gen)?;
+            }
+            Ok(self.view())
+        })();
+        self.restore_on_error(snapshot, result)
+    }
+
+    pub fn press_testimony_statement(
+        &mut self,
+        statement_id: &str,
+    ) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
+
+        let (statement, first_time) = {
+            let scene = match &self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => {
+                    return Err(GameError::wrong_mode(
+                        "press_testimony_statement",
+                        "not interrogation",
+                    ))
+                }
+            };
+            if scene
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
+                return Err(GameError::dialogue_active("press_testimony_statement"));
+            }
+            let phase_id = scene
+                .current_phase_id
+                .as_deref()
+                .ok_or_else(|| GameError::unknown_testimony_statement(statement_id))?;
+            let Some(InterrogationPhaseJson::Testimony { statements, .. }) = scene
+                .def
+                .phases
+                .iter()
+                .find(|phase| phase_id == crate::game::scenes::interrogation::phase_id(phase))
+            else {
+                return Err(GameError::unknown_testimony_statement(statement_id));
+            };
+            let statement = statements
+                .iter()
+                .find(|statement| statement.id == statement_id)
+                .cloned()
+                .ok_or_else(|| GameError::unknown_testimony_statement(statement_id))?;
+            let first_time = !scene.pressed_statements.contains(statement_id);
+            (statement, first_time)
+        };
+
+        let snapshot = self.snapshot();
+        let result = (|| -> Result<GameStateView, GameError> {
+            let queue_items = {
+                let scene = match &mut self.scene {
+                    SceneRuntime::Interrogation(scene) => scene,
+                    _ => {
+                        return Err(GameError::internal(
+                            "scene changed during press_testimony_statement".into(),
+                        ))
+                    }
+                };
+                scene.record_statement_pressed(statement_id);
+                if first_time {
+                    reveals::apply_interrogation_reveals_and_build_queue(
+                        scene,
+                        &mut self.inventory,
+                        statement.on_press.clone().unwrap_or_default(),
+                        &statement.reveals,
+                        &chapter_id,
+                    )
+                } else {
+                    statement.on_press.clone().unwrap_or_default()
+                }
+            };
+            if queue_items.is_empty() {
+                self.on_queue_exhausted()?;
+            } else {
+                let queue_gen = self.alloc_queue_gen();
+                self.install_scene_queue(queue_items, queue_gen)?;
+            }
+            Ok(self.view())
+        })();
+        self.restore_on_error(snapshot, result)
+    }
+
+    pub fn present_testimony_item(
+        &mut self,
+        statement_id: &str,
+        item_kind: &str,
+        item_id: &str,
+    ) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
+        if !self.inventory_target_exists(item_kind, item_id) {
+            return Err(GameError::unknown_inventory_target(item_kind, item_id));
+        }
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
+
+        let (phase_id_value, statement, result, correct) = {
+            let scene = match &self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => {
+                    return Err(GameError::wrong_mode(
+                        "present_testimony_item",
+                        "not interrogation",
+                    ))
+                }
+            };
+            if scene
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
+                return Err(GameError::dialogue_active("present_testimony_item"));
+            }
+            let phase_id_value = scene
+                .current_phase_id
+                .clone()
+                .ok_or_else(|| GameError::unknown_testimony_statement(statement_id))?;
+            let Some(InterrogationPhaseJson::Testimony {
+                statements,
+                results,
+                ..
+            }) = scene.def.phases.iter().find(|phase| {
+                phase_id_value == crate::game::scenes::interrogation::phase_id(phase)
+            })
+            else {
+                return Err(GameError::unknown_testimony_statement(statement_id));
+            };
+            let statement = statements
+                .iter()
+                .find(|statement| statement.id == statement_id)
+                .cloned()
+                .ok_or_else(|| GameError::unknown_testimony_statement(statement_id))?;
+            let correct = statement
+                .contradiction
+                .as_ref()
+                .is_some_and(|target| inventory_target_matches(target, item_kind, item_id));
+            let result_id = if correct {
+                statement.on_correct.as_deref()
+            } else {
+                statement.on_wrong.as_deref()
+            };
+            let result = match result_id {
+                Some(id) => Some(
+                    results
+                        .iter()
+                        .find(|result| result.id == id)
+                        .cloned()
+                        .ok_or_else(|| GameError::unknown_testimony_result(id))?,
+                ),
+                None => None,
+            };
+            (phase_id_value, statement, result, correct)
+        };
+
+        let snapshot = self.snapshot();
+        let result_view = (|| -> Result<GameStateView, GameError> {
+            let mut queue_items = if correct {
+                statement.on_present.clone().unwrap_or_default()
+            } else {
+                statement.on_wrong_present.clone().unwrap_or_else(|| {
+                    vec![DialogueItem::Action {
+                        text: WRONG_PRESENT_FALLBACK_TEXT.into(),
+                    }]
+                })
+            };
+
+            if correct {
+                if let Some(result) = result {
+                    let scene = match &mut self.scene {
+                        SceneRuntime::Interrogation(scene) => scene,
+                        _ => {
+                            return Err(GameError::internal(
+                                "scene changed during present_testimony_item".into(),
+                            ))
+                        }
+                    };
+                    queue_items = reveals::apply_interrogation_reveals_and_build_queue(
+                        scene,
+                        &mut self.inventory,
+                        queue_items,
+                        &result.reveals,
+                        &chapter_id,
+                    );
+                    queue_items.extend(result.dialogue);
+                }
+                if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                    scene.record_correct_present(&phase_id_value);
+                    scene.refresh_phase_completion(&self.inventory);
+                }
+            } else {
+                if let Some(result) = result {
+                    queue_items.extend(result.dialogue);
+                }
+                if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                    scene.record_wrong_present(statement_id);
+                }
+            }
+
+            if queue_items.is_empty() {
+                self.on_queue_exhausted()?;
+            } else {
+                let queue_gen = self.alloc_queue_gen();
+                self.install_scene_queue(queue_items, queue_gen)?;
+            }
+            Ok(self.view())
+        })();
+        self.restore_on_error(snapshot, result_view)
+    }
+
+    fn inventory_target_exists(&self, item_kind: &str, item_id: &str) -> bool {
+        match item_kind {
+            "evidence" => self.inventory.has_evidence(item_id),
+            "statement" => self.inventory.has_statement(item_id),
+            _ => false,
+        }
     }
 
     fn current_queue_token(&self) -> Option<QueueToken> {
         match &self.scene {
             SceneRuntime::Linear(s) => {
                 if s.cursor < s.queue.len() {
-                    Some(QueueToken { scene_id: s.id.clone(), queue_gen: s.queue_gen, cursor: s.cursor })
+                    Some(QueueToken {
+                        scene_id: s.id.clone(),
+                        queue_gen: s.queue_gen,
+                        cursor: s.cursor,
+                    })
                 } else {
                     None
                 }
@@ -752,7 +1351,14 @@ impl GameEngine {
                 }),
                 _ => None,
             },
-            SceneRuntime::Interrogation(_) => unreachable!("interrogation runtime is unsupported until Task 7"),
+            SceneRuntime::Interrogation(scene) => match &scene.pending_queue {
+                Some(q) if q.cursor < q.items.len() => Some(QueueToken {
+                    scene_id: scene.def.id.clone(),
+                    queue_gen: q.queue_gen,
+                    cursor: q.cursor,
+                }),
+                _ => None,
+            },
         }
     }
 
@@ -767,7 +1373,10 @@ impl GameEngine {
                 .pending_queue
                 .as_ref()
                 .and_then(|q| q.items.get(q.cursor).cloned()),
-            SceneRuntime::Interrogation(_) => None,
+            SceneRuntime::Interrogation(scene) => scene
+                .pending_queue
+                .as_ref()
+                .and_then(|q| q.items.get(q.cursor).cloned()),
         };
         match (current_item, token) {
             (Some(item), Some(t)) => ModeView::Dialogue {
@@ -779,18 +1388,29 @@ impl GameEngine {
                         .as_ref()
                         .map(|q| q.items.len().saturating_sub(q.cursor + 1))
                         .unwrap_or(0),
-                    SceneRuntime::Interrogation(_) => unreachable!("interrogation runtime is unsupported until Task 7"),
+                    SceneRuntime::Interrogation(scene) => scene
+                        .pending_queue
+                        .as_ref()
+                        .map(|q| q.items.len().saturating_sub(q.cursor + 1))
+                        .unwrap_or(0),
                 },
                 scene_tag: self.last_scene_tag.clone(),
                 queue_token: t,
             },
             _ => match &self.scene {
                 SceneRuntime::Investigation(inv) => match &inv.current_sublocation_id {
-                    Some(sub_id) => ModeView::Explore { sublocation_id: sub_id.clone() },
+                    Some(sub_id) => ModeView::Explore {
+                        sublocation_id: sub_id.clone(),
+                    },
                     None => ModeView::GameComplete,
                 },
                 SceneRuntime::Linear(_) => ModeView::GameComplete,
-                SceneRuntime::Interrogation(_) => unreachable!("interrogation runtime is unsupported until Task 7"),
+                SceneRuntime::Interrogation(scene) => match &scene.current_phase_id {
+                    Some(phase_id) => ModeView::Interrogation {
+                        phase_id: phase_id.clone(),
+                    },
+                    None => ModeView::GameComplete,
+                },
             },
         }
     }
@@ -808,7 +1428,9 @@ impl GameEngine {
     }
 
     fn scene_view(&self) -> SceneView {
-        let total = self.chapters[self.current_chapter_idx.min(self.chapters.len() - 1)].scenes.len();
+        let total = self.chapters[self.current_chapter_idx.min(self.chapters.len() - 1)]
+            .scenes
+            .len();
         match &self.scene {
             SceneRuntime::Linear(s) => SceneView::Linear {
                 id: s.id.clone(),
@@ -817,12 +1439,22 @@ impl GameEngine {
                 total,
             },
             SceneRuntime::Investigation(inv) => {
-                let ctx = SceneAndInventoryCtx { scene: inv, inventory: &self.inventory };
+                let ctx = SceneAndInventoryCtx {
+                    scene: inv,
+                    inventory: &self.inventory,
+                };
                 let visible_sublocations: Vec<SublocationView> = inv
                     .def
                     .sublocations
                     .iter()
-                    .filter(|s| inv.is_block_unlocked(&format!("sublocation:{}", s.id), s.status, s.unlock.as_ref(), &ctx))
+                    .filter(|s| {
+                        inv.is_block_unlocked(
+                            &format!("sublocation:{}", s.id),
+                            s.status,
+                            s.unlock.as_ref(),
+                            &ctx,
+                        )
+                    })
                     .map(|s| SublocationView {
                         id: s.id.clone(),
                         label: s.label.clone(),
@@ -830,7 +1462,14 @@ impl GameEngine {
                         hotspots: s
                             .hotspots
                             .iter()
-                            .filter(|h| inv.is_block_unlocked(&format!("hotspot:{}", h.id), h.status, h.unlock.as_ref(), &ctx))
+                            .filter(|h| {
+                                inv.is_block_unlocked(
+                                    &format!("hotspot:{}", h.id),
+                                    h.status,
+                                    h.unlock.as_ref(),
+                                    &ctx,
+                                )
+                            })
                             .map(|h| HotspotView {
                                 id: h.id.clone(),
                                 label: h.label.clone(),
@@ -849,11 +1488,20 @@ impl GameEngine {
                                 topics: c
                                     .topics
                                     .iter()
-                                    .filter(|t| inv.is_block_unlocked(&format!("topic:{}@{}", c.id, t.id), t.status, t.unlock.as_ref(), &ctx))
+                                    .filter(|t| {
+                                        inv.is_block_unlocked(
+                                            &format!("topic:{}@{}", c.id, t.id),
+                                            t.status,
+                                            t.unlock.as_ref(),
+                                            &ctx,
+                                        )
+                                    })
                                     .map(|t| TopicView {
                                         id: t.id.clone(),
                                         label: t.label.clone(),
-                                        discussed: inv.discussed_topics.contains(&(c.id.clone(), t.id.clone())),
+                                        discussed: inv
+                                            .discussed_topics
+                                            .contains(&(c.id.clone(), t.id.clone())),
                                     })
                                     .collect(),
                             })
@@ -870,8 +1518,91 @@ impl GameEngine {
                     visible_sublocations,
                 }
             }
-            SceneRuntime::Interrogation(_) => unreachable!("interrogation runtime is unsupported until Task 7"),
+            SceneRuntime::Interrogation(scene) => {
+                let ctx = InterrogationSceneAndInventoryCtx {
+                    scene,
+                    inventory: &self.inventory,
+                };
+                let visible_phases = scene
+                    .def
+                    .phases
+                    .iter()
+                    .filter(|phase| scene.is_phase_unlocked(phase, &ctx))
+                    .map(|phase| match phase {
+                        InterrogationPhaseJson::Inquiry {
+                            id,
+                            label,
+                            subject,
+                            questions,
+                            ..
+                        } => InterrogationPhaseView {
+                            id: id.clone(),
+                            label: label.clone(),
+                            kind: "inquiry".into(),
+                            subject: SubjectView {
+                                id: subject.id.clone(),
+                                name: subject.name.clone(),
+                                role: subject.role.clone(),
+                                bio: subject.bio.clone(),
+                            },
+                            questions: questions
+                                .iter()
+                                .filter(|question| scene.is_question_unlocked(question, &ctx))
+                                .map(|question| InquiryQuestionView {
+                                    id: question.id.clone(),
+                                    label: question.label.clone(),
+                                    answered: scene.answered_questions.contains(&question.id),
+                                })
+                                .collect(),
+                            testimony: vec![],
+                        },
+                        InterrogationPhaseJson::Testimony {
+                            id,
+                            label,
+                            subject,
+                            statements,
+                            ..
+                        } => InterrogationPhaseView {
+                            id: id.clone(),
+                            label: label.clone(),
+                            kind: "testimony".into(),
+                            subject: SubjectView {
+                                id: subject.id.clone(),
+                                name: subject.name.clone(),
+                                role: subject.role.clone(),
+                                bio: subject.bio.clone(),
+                            },
+                            questions: vec![],
+                            testimony: statements
+                                .iter()
+                                .map(|statement| TestimonyStatementView {
+                                    id: statement.id.clone(),
+                                    label: statement.label.clone(),
+                                    content: statement.content.clone(),
+                                    pressed: scene.pressed_statements.contains(&statement.id),
+                                })
+                                .collect(),
+                        },
+                    })
+                    .collect();
+
+                SceneView::Interrogation {
+                    id: scene.def.id.clone(),
+                    title: scene.def.title.clone(),
+                    index: self.current_scene_idx,
+                    total,
+                    current_phase_id: scene.current_phase_id.clone(),
+                    visible_phases,
+                }
+            }
         }
+    }
+}
+
+fn inventory_target_matches(target: &InventoryTarget, item_kind: &str, item_id: &str) -> bool {
+    match target {
+        InventoryTarget::Evidence { id } => item_kind == "evidence" && id == item_id,
+        InventoryTarget::Statement { id } => item_kind == "statement" && id == item_id,
     }
 }
 
@@ -892,8 +1623,12 @@ fn load_scene_runtime(
     }
     Ok(match json {
         SceneJson::Linear(j) => SceneRuntime::Linear(LinearSceneState::from_json(j, queue_gen)),
-        SceneJson::Investigation(j) => SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(j, queue_gen))),
-        SceneJson::Interrogation(_) => return Err(GameError::unsupported_scene_type("interrogation")),
+        SceneJson::Investigation(j) => {
+            SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(j, queue_gen)))
+        }
+        SceneJson::Interrogation(j) => {
+            SceneRuntime::Interrogation(Box::new(InterrogationSceneState::from_json(j, queue_gen)))
+        }
     })
 }
 
@@ -918,22 +1653,32 @@ struct SceneAndInventoryCtx<'a> {
     inventory: &'a Inventory,
 }
 impl<'a> unlock::UnlockContext for SceneAndInventoryCtx<'a> {
-    fn evidence_collected(&self, id: &str) -> bool { self.inventory.has_evidence(id) }
-    fn statement_acquired(&self, id: &str) -> bool { self.inventory.has_statement(id) }
-    fn topic_discussed(&self, c: &str, t: &str) -> bool { self.scene.topic_discussed(c, t) }
-    fn hotspot_investigated(&self, id: &str) -> bool { self.scene.hotspot_investigated(id) }
+    fn evidence_collected(&self, id: &str) -> bool {
+        self.inventory.has_evidence(id)
+    }
+    fn statement_acquired(&self, id: &str) -> bool {
+        self.inventory.has_statement(id)
+    }
+    fn topic_discussed(&self, c: &str, t: &str) -> bool {
+        self.scene.topic_discussed(c, t)
+    }
+    fn hotspot_investigated(&self, id: &str) -> bool {
+        self.scene.hotspot_investigated(id)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::game::schema::{
-        CharacterJson, EvidenceJson, HotspotJson, InvestigationSceneJson, LockStatus,
-        OutroJson, OutroUnlock, RevealTarget, SceneType, SublocationJson, TopicJson,
-        UnlockExpr,
+        CharacterJson, EvidenceJson, HotspotJson, InvestigationSceneJson, LockStatus, OutroJson,
+        OutroUnlock, RevealTarget, SceneType, SublocationJson, TopicJson, UnlockExpr,
     };
 
-    fn investigation_scene_with_intro(id: &str, intro: Vec<DialogueItem>) -> InvestigationSceneJson {
+    fn investigation_scene_with_intro(
+        id: &str,
+        intro: Vec<DialogueItem>,
+    ) -> InvestigationSceneJson {
         InvestigationSceneJson {
             id: id.into(),
             title: id.into(),
@@ -972,7 +1717,10 @@ mod tests {
             }],
             current_chapter_idx: 0,
             current_scene_idx: 0,
-            scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(scene, intro_queue_gen))),
+            scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(
+                scene,
+                intro_queue_gen,
+            ))),
             last_scene_tag: None,
             inventory: Inventory::default(),
             next_queue_gen: intro_queue_gen + 1,
@@ -990,7 +1738,10 @@ mod tests {
     fn stale_intro_token_does_not_advance_later_scene_with_same_id() {
         let first_scene = investigation_scene_with_intro(
             "investigation_scene_1",
-            vec![DialogueItem::Line { speaker: "A".into(), text: "first".into() }],
+            vec![DialogueItem::Line {
+                speaker: "A".into(),
+                text: "first".into(),
+            }],
         );
         let mut engine = empty_engine_with_scene(first_scene, 3);
         engine.prime_initial_queue().unwrap();
@@ -998,9 +1749,14 @@ mod tests {
 
         let next_scene = investigation_scene_with_intro(
             "investigation_scene_1",
-            vec![DialogueItem::Line { speaker: "B".into(), text: "second".into() }],
+            vec![DialogueItem::Line {
+                speaker: "B".into(),
+                text: "second".into(),
+            }],
         );
-        engine.scene = SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(next_scene, 7)));
+        engine.scene = SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(
+            next_scene, 7,
+        )));
         engine.last_scene_tag = None;
         engine.prime_initial_queue().unwrap();
 
@@ -1016,9 +1772,16 @@ mod tests {
         let scene = investigation_scene_with_intro(
             "investigation_scene_1",
             vec![
-                DialogueItem::SceneTag { text: "吉祥寺街道".into() },
-                DialogueItem::SceneTag { text: "雨中".into() },
-                DialogueItem::Line { speaker: "A".into(), text: "hello".into() },
+                DialogueItem::SceneTag {
+                    text: "吉祥寺街道".into(),
+                },
+                DialogueItem::SceneTag {
+                    text: "雨中".into(),
+                },
+                DialogueItem::Line {
+                    speaker: "A".into(),
+                    text: "hello".into(),
+                },
             ],
         );
         let mut engine = empty_engine_with_scene(scene, 1);
@@ -1027,8 +1790,12 @@ mod tests {
         assert_eq!(engine.last_scene_tag, Some("雨中".into()));
         let view = engine.view();
         match &view.mode {
-            ModeView::Dialogue { current, scene_tag, .. } => {
-                assert!(matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "hello"));
+            ModeView::Dialogue {
+                current, scene_tag, ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "hello")
+                );
                 assert_eq!(scene_tag.as_deref(), Some("雨中"));
             }
             other => panic!("expected Dialogue mode, got {other:?}"),
@@ -1057,8 +1824,13 @@ mod tests {
                     unlock: None,
                     reveals: vec![],
                     inspect_dialogue: vec![
-                        DialogueItem::SceneTag { text: "desk_closeup".into() },
-                        DialogueItem::Line { speaker: "A".into(), text: "found it".into() },
+                        DialogueItem::SceneTag {
+                            text: "desk_closeup".into(),
+                        },
+                        DialogueItem::Line {
+                            speaker: "A".into(),
+                            text: "found it".into(),
+                        },
                     ],
                     on_reexamine: None,
                 }],
@@ -1076,8 +1848,12 @@ mod tests {
 
         let view = engine.inspect_hotspot("desk").unwrap();
         match &view.mode {
-            ModeView::Dialogue { current, scene_tag, .. } => {
-                assert!(matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "found it"));
+            ModeView::Dialogue {
+                current, scene_tag, ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "found it")
+                );
                 assert_eq!(scene_tag.as_deref(), Some("desk_closeup"));
             }
             other => panic!("expected Dialogue mode, got {other:?}"),
@@ -1159,7 +1935,9 @@ mod tests {
                         label: "Alibi".into(),
                         status: LockStatus::Unlocked,
                         unlock: None,
-                        reveals: vec![RevealTarget::Statement { id: "alibi_statement".into() }],
+                        reveals: vec![RevealTarget::Statement {
+                            id: "alibi_statement".into(),
+                        }],
                         topic_dialogue: vec![],
                         on_reexamine: None,
                     }],
@@ -1213,23 +1991,35 @@ mod tests {
             },
         };
         let mut engine = empty_engine_with_scene(scene, 1);
-        engine.inventory.evidence.push(crate::game::state::EvidenceRecord {
-            id: "note".into(),
-            name: "Note".into(),
-            description: "Note".into(),
-            details: "Note".into(),
-            on_reexamine: Some(vec![DialogueItem::Line { speaker: "A".into(), text: "look".into() }]),
-            collected_in_chapter_id: "chapter_1".into(),
-            collected_in_scene_id: "investigation_scene_1".into(),
-        });
-        engine.inventory.statements.push(crate::game::state::StatementRecord {
-            id: "alibi".into(),
-            speaker: "Witness".into(),
-            content: "I was elsewhere".into(),
-            on_reexamine: Some(vec![DialogueItem::Line { speaker: "Witness".into(), text: "again".into() }]),
-            acquired_in_chapter_id: "chapter_1".into(),
-            acquired_in_scene_id: "investigation_scene_1".into(),
-        });
+        engine
+            .inventory
+            .evidence
+            .push(crate::game::state::EvidenceRecord {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                on_reexamine: Some(vec![DialogueItem::Line {
+                    speaker: "A".into(),
+                    text: "look".into(),
+                }]),
+                collected_in_chapter_id: "chapter_1".into(),
+                collected_in_scene_id: "investigation_scene_1".into(),
+            });
+        engine
+            .inventory
+            .statements
+            .push(crate::game::state::StatementRecord {
+                id: "alibi".into(),
+                speaker: "Witness".into(),
+                content: "I was elsewhere".into(),
+                on_reexamine: Some(vec![DialogueItem::Line {
+                    speaker: "Witness".into(),
+                    text: "again".into(),
+                }]),
+                acquired_in_chapter_id: "chapter_1".into(),
+                acquired_in_scene_id: "investigation_scene_1".into(),
+            });
         engine.current_chapter_idx = engine.chapters.len();
 
         let evidence_err = engine.reexamine_evidence("note").unwrap_err();
@@ -1283,9 +2073,16 @@ mod tests {
             id: "scene_0".into(),
             title: "Test".into(),
             queue: vec![
-                DialogueItem::SceneTag { text: "吉祥寺街道".into() },
-                DialogueItem::SceneTag { text: "雨中".into() },
-                DialogueItem::Line { speaker: "A".into(), text: "hello".into() },
+                DialogueItem::SceneTag {
+                    text: "吉祥寺街道".into(),
+                },
+                DialogueItem::SceneTag {
+                    text: "雨中".into(),
+                },
+                DialogueItem::Line {
+                    speaker: "A".into(),
+                    text: "hello".into(),
+                },
             ],
         };
         let mut engine = GameEngine {
@@ -1313,7 +2110,9 @@ mod tests {
         assert_eq!(engine.last_scene_tag, Some("雨中".into()));
         let view = engine.view();
         match &view.mode {
-            ModeView::Dialogue { current, scene_tag, .. } => {
+            ModeView::Dialogue {
+                current, scene_tag, ..
+            } => {
                 assert!(matches!(current, DialogueItem::Line { .. }));
                 assert_eq!(scene_tag.as_deref(), Some("雨中"));
             }
@@ -1331,10 +2130,20 @@ mod tests {
             id: "scene_0".into(),
             title: "Test".into(),
             queue: vec![
-                DialogueItem::Line { speaker: "A".into(), text: "first".into() },
-                DialogueItem::SceneTag { text: "mid_scene_1".into() },
-                DialogueItem::SceneTag { text: "mid_scene_2".into() },
-                DialogueItem::Line { speaker: "B".into(), text: "second".into() },
+                DialogueItem::Line {
+                    speaker: "A".into(),
+                    text: "first".into(),
+                },
+                DialogueItem::SceneTag {
+                    text: "mid_scene_1".into(),
+                },
+                DialogueItem::SceneTag {
+                    text: "mid_scene_2".into(),
+                },
+                DialogueItem::Line {
+                    speaker: "B".into(),
+                    text: "second".into(),
+                },
             ],
         };
         let mut engine = GameEngine {
@@ -1369,8 +2178,12 @@ mod tests {
         let view = engine.advance_dialogue(token).unwrap();
         assert_eq!(engine.last_scene_tag, Some("mid_scene_2".into()));
         match &view.mode {
-            ModeView::Dialogue { current, scene_tag, .. } => {
-                assert!(matches!(current, DialogueItem::Line { speaker, text } if speaker == "B" && text == "second"));
+            ModeView::Dialogue {
+                current, scene_tag, ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "B" && text == "second")
+                );
                 assert_eq!(scene_tag.as_deref(), Some("mid_scene_2"));
             }
             other => panic!("expected Dialogue after mid-scene tag skip, got {other:?}"),
@@ -1378,13 +2191,17 @@ mod tests {
     }
 
     #[test]
-    fn load_scene_runtime_rejects_interrogation_until_runtime_exists() {
+    fn load_scene_runtime_accepts_interrogation_scene() {
         use std::fs;
         use std::sync::atomic::{AtomicU64, Ordering};
 
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let n = SEQ.fetch_add(1, Ordering::Relaxed);
-        let d = std::env::temp_dir().join(format!("lyra-runtime-unsupported-test-{}-{}", std::process::id(), n));
+        let d = std::env::temp_dir().join(format!(
+            "lyra-runtime-unsupported-test-{}-{}",
+            std::process::id(),
+            n
+        ));
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
         fs::write(
@@ -1402,7 +2219,7 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_scene_runtime(
+        let runtime = load_scene_runtime(
             &d,
             &SceneRef {
                 scene_type: SceneType::Interrogation,
@@ -1410,10 +2227,9 @@ mod tests {
             },
             1,
         )
-        .unwrap_err();
+        .unwrap();
 
-        assert_eq!(err.code, "unsupportedSceneType");
-        assert!(err.message.contains("interrogation"));
+        assert!(matches!(runtime, SceneRuntime::Interrogation(_)));
         let _ = fs::remove_dir_all(d);
     }
 
@@ -1424,7 +2240,11 @@ mod tests {
 
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let n = SEQ.fetch_add(1, Ordering::Relaxed);
-        let d = std::env::temp_dir().join(format!("lyra-runtime-mismatch-test-{}-{}", std::process::id(), n));
+        let d = std::env::temp_dir().join(format!(
+            "lyra-runtime-mismatch-test-{}-{}",
+            std::process::id(),
+            n
+        ));
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
         fs::write(
@@ -1461,7 +2281,8 @@ mod tests {
 
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let n = SEQ.fetch_add(1, Ordering::Relaxed);
-        let d = std::env::temp_dir().join(format!("lyra-advance-test-{}-{}", std::process::id(), n));
+        let d =
+            std::env::temp_dir().join(format!("lyra-advance-test-{}-{}", std::process::id(), n));
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
         fs::write(
@@ -1492,14 +2313,10 @@ mod tests {
         fs::write(
             chapter_dir.join("interrogation_scene_1.json"),
             r#"{
-                "type": "interrogation",
+                "type": "linear",
                 "id": "interrogation_scene_1",
-                "title": "Interrogation",
-                "intro": [],
-                "phases": [],
-                "evidenceManifest": [],
-                "statementManifest": [],
-                "outro": { "unlock": "auto", "dialogue": [] }
+                "title": "Wrong Type",
+                "queue": []
             }"#,
         )
         .unwrap();
@@ -1508,17 +2325,21 @@ mod tests {
         let before = engine.view();
         let token = token_from(&before);
         let err = engine.advance_dialogue(token).unwrap_err();
-        assert_eq!(err.code, "unsupportedSceneType");
+        assert_eq!(err.code, "sceneValidationFailed");
 
         let after = engine.view();
         match after.mode {
             ModeView::Dialogue { current, .. } => {
-                assert!(matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "before"));
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "before")
+                );
             }
             other => panic!("expected previous dialogue mode after failed advance, got {other:?}"),
         }
         match after.scene {
-            SceneView::Linear { id, index, total, .. } => {
+            SceneView::Linear {
+                id, index, total, ..
+            } => {
                 assert_eq!(id, "scene_0");
                 assert_eq!(index, 0);
                 assert_eq!(total, 2);
@@ -1535,7 +2356,11 @@ mod tests {
 
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let n = SEQ.fetch_add(1, Ordering::Relaxed);
-        let d = std::env::temp_dir().join(format!("lyra-initial-transition-rollback-test-{}-{}", std::process::id(), n));
+        let d = std::env::temp_dir().join(format!(
+            "lyra-initial-transition-rollback-test-{}-{}",
+            std::process::id(),
+            n
+        ));
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
         fs::write(
@@ -1601,14 +2426,10 @@ mod tests {
         fs::write(
             chapter_dir.join("interrogation_scene_1.json"),
             r#"{
-                "type": "interrogation",
+                "type": "linear",
                 "id": "interrogation_scene_1",
-                "title": "Interrogation",
-                "intro": [],
-                "phases": [],
-                "evidenceManifest": [],
-                "statementManifest": [],
-                "outro": { "unlock": "auto", "dialogue": [] }
+                "title": "Wrong Type",
+                "queue": []
             }"#,
         )
         .unwrap();
@@ -1617,13 +2438,15 @@ mod tests {
         let token = token_from(&engine.view());
 
         let err = engine.advance_dialogue(token).unwrap_err();
-        assert_eq!(err.code, "unsupportedSceneType");
+        assert_eq!(err.code, "sceneValidationFailed");
 
         assert!(engine.inventory.evidence.is_empty());
         assert_eq!(engine.current_chapter_idx, 0);
         assert_eq!(engine.current_scene_idx, 0);
         match engine.view().scene {
-            SceneView::Linear { id, index, total, .. } => {
+            SceneView::Linear {
+                id, index, total, ..
+            } => {
                 assert_eq!(id, "scene_0");
                 assert_eq!(index, 0);
                 assert_eq!(total, 3);
@@ -1641,20 +2464,20 @@ mod tests {
 
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let n = SEQ.fetch_add(1, Ordering::Relaxed);
-        let d = std::env::temp_dir().join(format!("lyra-intro-rollback-test-{}-{}", std::process::id(), n));
+        let d = std::env::temp_dir().join(format!(
+            "lyra-intro-rollback-test-{}-{}",
+            std::process::id(),
+            n
+        ));
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
         fs::write(
             chapter_dir.join("interrogation_scene_1.json"),
             r#"{
-                "type": "interrogation",
+                "type": "linear",
                 "id": "interrogation_scene_1",
-                "title": "Interrogation",
-                "intro": [],
-                "phases": [],
-                "evidenceManifest": [],
-                "statementManifest": [],
-                "outro": { "unlock": "auto", "dialogue": [] }
+                "title": "Wrong Type",
+                "queue": []
             }"#,
         )
         .unwrap();
@@ -1662,7 +2485,10 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
-            intro: vec![DialogueItem::Line { speaker: "A".into(), text: "intro".into() }],
+            intro: vec![DialogueItem::Line {
+                speaker: "A".into(),
+                text: "intro".into(),
+            }],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
                 label: "Room".into(),
@@ -1710,7 +2536,9 @@ mod tests {
             }],
             current_chapter_idx: 0,
             current_scene_idx: 0,
-            scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(scene, 1))),
+            scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(
+                scene, 1,
+            ))),
             last_scene_tag: None,
             inventory: Inventory::default(),
             next_queue_gen: 2,
@@ -1719,7 +2547,7 @@ mod tests {
         let token = token_from(&engine.view());
 
         let err = engine.advance_dialogue(token).unwrap_err();
-        assert_eq!(err.code, "unsupportedSceneType");
+        assert_eq!(err.code, "sceneValidationFailed");
 
         assert!(engine.inventory.evidence.is_empty());
         assert_eq!(engine.current_chapter_idx, 0);
@@ -1727,17 +2555,23 @@ mod tests {
         let view = engine.view();
         match view.mode {
             ModeView::Dialogue { current, .. } => {
-                assert!(matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "intro"));
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "intro")
+                );
             }
             other => panic!("expected previous intro dialogue after failed advance, got {other:?}"),
         }
         match view.scene {
-            SceneView::Investigation { id, index, total, .. } => {
+            SceneView::Investigation {
+                id, index, total, ..
+            } => {
                 assert_eq!(id, "investigation_scene_1");
                 assert_eq!(index, 0);
                 assert_eq!(total, 2);
             }
-            other => panic!("expected previous investigation scene after failed advance, got {other:?}"),
+            other => {
+                panic!("expected previous investigation scene after failed advance, got {other:?}")
+            }
         }
 
         let _ = fs::remove_dir_all(d);
@@ -1750,20 +2584,20 @@ mod tests {
 
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let n = SEQ.fetch_add(1, Ordering::Relaxed);
-        let d = std::env::temp_dir().join(format!("lyra-silent-action-rollback-test-{}-{}", std::process::id(), n));
+        let d = std::env::temp_dir().join(format!(
+            "lyra-silent-action-rollback-test-{}-{}",
+            std::process::id(),
+            n
+        ));
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
         fs::write(
             chapter_dir.join("interrogation_scene_1.json"),
             r#"{
-                "type": "interrogation",
+                "type": "linear",
                 "id": "interrogation_scene_1",
-                "title": "Interrogation",
-                "intro": [],
-                "phases": [],
-                "evidenceManifest": [],
-                "statementManifest": [],
-                "outro": { "unlock": "auto", "dialogue": [] }
+                "title": "Wrong Type",
+                "queue": []
             }"#,
         )
         .unwrap();
@@ -1828,7 +2662,9 @@ mod tests {
             }],
             current_chapter_idx: 0,
             current_scene_idx: 0,
-            scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(scene, 1))),
+            scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(
+                scene, 1,
+            ))),
             last_scene_tag: None,
             inventory: Inventory::default(),
             next_queue_gen: 2,
@@ -1838,7 +2674,7 @@ mod tests {
         let previous_next_queue_gen = engine.next_queue_gen;
 
         let err = engine.inspect_hotspot("desk").unwrap_err();
-        assert_eq!(err.code, "unsupportedSceneType");
+        assert_eq!(err.code, "sceneValidationFailed");
 
         assert_eq!(engine.current_chapter_idx, 0);
         assert_eq!(engine.current_scene_idx, 0);
@@ -1854,14 +2690,20 @@ mod tests {
         assert!(!inv.outro_played);
 
         let view = engine.view();
-        assert!(matches!(view.mode, ModeView::Explore { sublocation_id } if sublocation_id == "room"));
+        assert!(
+            matches!(view.mode, ModeView::Explore { sublocation_id } if sublocation_id == "room")
+        );
         match view.scene {
-            SceneView::Investigation { id, index, total, .. } => {
+            SceneView::Investigation {
+                id, index, total, ..
+            } => {
                 assert_eq!(id, "investigation_scene_1");
                 assert_eq!(index, 0);
                 assert_eq!(total, 2);
             }
-            other => panic!("expected previous investigation scene after failed advance, got {other:?}"),
+            other => {
+                panic!("expected previous investigation scene after failed advance, got {other:?}")
+            }
         }
 
         let _ = fs::remove_dir_all(d);
@@ -1979,9 +2821,9 @@ mod tests {
         let tag_only_json = LinearSceneJson {
             id: "scene_0".into(),
             title: "Tag Only".into(),
-            queue: vec![
-                DialogueItem::SceneTag { text: "吉祥寺街道".into() },
-            ],
+            queue: vec![DialogueItem::SceneTag {
+                text: "吉祥寺街道".into(),
+            }],
         };
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),

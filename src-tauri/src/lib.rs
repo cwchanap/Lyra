@@ -5,8 +5,8 @@
 pub mod game;
 
 use std::sync::Mutex;
-use tauri::Manager;
 use tauri::path::BaseDirectory;
+use tauri::Manager;
 
 use game::{GameEngine, GameError, GameStateView, QueueToken};
 
@@ -19,7 +19,10 @@ fn unavailable_error() -> GameError {
 }
 
 #[tauri::command]
-fn start_game(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<GameStateView, GameError> {
+fn start_game(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<GameStateView, GameError> {
     let resources_dir = app
         .path()
         .resolve("resources/scenes", BaseDirectory::Resource)
@@ -32,63 +35,122 @@ fn start_game(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Resul
 }
 
 #[tauri::command]
-fn reset_game(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<GameStateView, GameError> {
+fn reset_game(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<GameStateView, GameError> {
     start_game(app, state)
 }
 
 #[tauri::command]
 fn get_state(state: tauri::State<'_, AppState>) -> Result<GameStateView, GameError> {
     let guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    guard.as_ref().map(|e| e.view()).ok_or_else(GameError::game_not_started)
+    guard
+        .as_ref()
+        .map(|e| e.view())
+        .ok_or_else(GameError::game_not_started)
 }
 
 #[tauri::command]
-fn advance_dialogue(state: tauri::State<'_, AppState>, expected: QueueToken) -> Result<GameStateView, GameError> {
+fn advance_dialogue(
+    state: tauri::State<'_, AppState>,
+    expected: QueueToken,
+) -> Result<GameStateView, GameError> {
     let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
     let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
     engine.advance_dialogue(expected)
 }
 
 #[tauri::command]
-fn inspect_hotspot(state: tauri::State<'_, AppState>, hotspot_id: String) -> Result<GameStateView, GameError> {
+fn inspect_hotspot(
+    state: tauri::State<'_, AppState>,
+    hotspot_id: String,
+) -> Result<GameStateView, GameError> {
     let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
     let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
     engine.inspect_hotspot(&hotspot_id)
 }
 
 #[tauri::command]
-fn interview_topic(state: tauri::State<'_, AppState>, character_id: String, topic_id: String) -> Result<GameStateView, GameError> {
+fn interview_topic(
+    state: tauri::State<'_, AppState>,
+    character_id: String,
+    topic_id: String,
+) -> Result<GameStateView, GameError> {
     let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
     let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
     engine.interview_topic(&character_id, &topic_id)
 }
 
 #[tauri::command]
-fn enter_sublocation(state: tauri::State<'_, AppState>, sublocation_id: String) -> Result<GameStateView, GameError> {
+fn enter_sublocation(
+    state: tauri::State<'_, AppState>,
+    sublocation_id: String,
+) -> Result<GameStateView, GameError> {
     let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
     let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
     engine.enter_sublocation(&sublocation_id)
 }
 
 #[tauri::command]
-fn reexamine_evidence(state: tauri::State<'_, AppState>, evidence_id: String) -> Result<GameStateView, GameError> {
+fn reexamine_evidence(
+    state: tauri::State<'_, AppState>,
+    evidence_id: String,
+) -> Result<GameStateView, GameError> {
     let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
     let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
     engine.reexamine_evidence(&evidence_id)
 }
 
 #[tauri::command]
-fn reexamine_statement(state: tauri::State<'_, AppState>, statement_id: String) -> Result<GameStateView, GameError> {
+fn reexamine_statement(
+    state: tauri::State<'_, AppState>,
+    statement_id: String,
+) -> Result<GameStateView, GameError> {
     let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
     let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
     engine.reexamine_statement(&statement_id)
+}
+
+#[tauri::command]
+fn answer_interrogation_question(
+    state: tauri::State<'_, AppState>,
+    question_id: String,
+) -> Result<GameStateView, GameError> {
+    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
+    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    engine.answer_interrogation_question(&question_id)
+}
+
+#[tauri::command]
+fn press_testimony_statement(
+    state: tauri::State<'_, AppState>,
+    statement_id: String,
+) -> Result<GameStateView, GameError> {
+    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
+    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    engine.press_testimony_statement(&statement_id)
+}
+
+#[tauri::command]
+fn present_testimony_item(
+    state: tauri::State<'_, AppState>,
+    statement_id: String,
+    item_kind: String,
+    item_id: String,
+) -> Result<GameStateView, GameError> {
+    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
+    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    engine.present_testimony_item(&statement_id, &item_kind, &item_id)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(AppState { engine: Mutex::new(None) })
+        .manage(AppState {
+            engine: Mutex::new(None),
+        })
         .invoke_handler(tauri::generate_handler![
             start_game,
             reset_game,
@@ -99,6 +161,9 @@ pub fn run() {
             enter_sublocation,
             reexamine_evidence,
             reexamine_statement,
+            answer_interrogation_question,
+            press_testimony_statement,
+            present_testimony_item,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
