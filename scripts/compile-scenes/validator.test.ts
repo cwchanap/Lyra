@@ -1556,6 +1556,59 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath")).toBeDefined();
   });
 
+  it("does not treat an incompletable optional phase as completed for later unlocks", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "optional_dead_end",
+          required: false,
+          complete: { predicate: "evidence_collected", id: "missing" },
+          questions: [mkQuestion({ id: "optional_q" })],
+        }),
+        mkInquiryPhase({
+          id: "requires_dead_end",
+          required: true,
+          status: "locked",
+          unlock: { predicate: "phase_completed", id: "optional_dead_end" },
+          questions: [mkQuestion({ id: "blocked_q" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("missing")],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath" && e.message.includes("requires_dead_end"))).toBeDefined();
+  });
+
+  it("accepts same-scene testimony contradictions using inventory revealed on phase entry", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "entry_reveal",
+          reveals: [{ kind: "evidence", id: "entry_log" }],
+          questions: [mkQuestion({ id: "q" })],
+        }),
+        mkTestimonyPhase({
+          id: "testimony",
+          statements: [mkTestimonyStatement({
+            id: "s",
+            contradiction: { kind: "evidence", id: "entry_log" },
+            onCorrect: "win",
+          })],
+          results: [mkResult({ id: "win" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("entry_log")],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors).toEqual([]);
+  });
+
   it("does not guarantee a required inquiry question reveal when the question is locked by unobtainable inventory", () => {
     const source = mkInterrogationScene({
       phases: [
@@ -1661,5 +1714,67 @@ describe("validator", () => {
       ],
     });
     expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("future_statement"))).toBeDefined();
+  });
+
+  it("does not guarantee testimony result reveals that occur on only one alternate correct path", () => {
+    const source = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "source_inquiry",
+          questions: [
+            mkQuestion({
+              id: "q",
+              reveals: [
+                { kind: "evidence", id: "log_a" },
+                { kind: "evidence", id: "log_b" },
+              ],
+            }),
+          ],
+        }),
+        mkTestimonyPhase({
+          id: "source_testimony",
+          statements: [
+            mkTestimonyStatement({
+              id: "a",
+              contradiction: { kind: "evidence", id: "log_a" },
+              onCorrect: "path_a",
+            }),
+            mkTestimonyStatement({
+              id: "b",
+              contradiction: { kind: "evidence", id: "log_b" },
+              onCorrect: "path_b",
+            }),
+          ],
+          results: [
+            mkResult({ id: "path_a", reveals: [{ kind: "evidence", id: "only_path_a" }] }),
+            mkResult({ id: "path_b", reveals: [{ kind: "evidence", id: "only_path_b" }] }),
+          ],
+        }),
+      ],
+      evidenceManifest: [
+        mkEvidence("log_a"),
+        mkEvidence("log_b"),
+        mkEvidence("only_path_a"),
+        mkEvidence("only_path_b"),
+      ],
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "only_path_a" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("only_path_a"))).toBeDefined();
   });
 });

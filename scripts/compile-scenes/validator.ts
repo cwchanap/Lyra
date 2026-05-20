@@ -609,21 +609,25 @@ function analyzeInterrogationInventory(
   const revealedPhases = new Set<string>();
 
   for (const phase of scene.phases) {
-    beforePhase.set(phase.id, new Set(inventory));
     if (!interrogationBlockReachable(
       phase.status,
       phase.unlock,
       `phase:${phase.id}`,
       { inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases },
     )) {
+      beforePhase.set(phase.id, new Set(inventory));
       phaseCompletable.set(phase.id, false);
       continue;
     }
 
     if (options.mode === "guaranteed" && !phase.required) {
+      beforePhase.set(phase.id, new Set(inventory));
       phaseCompletable.set(phase.id, true);
       continue;
     }
+
+    addInterrogationRevealsToState({ inventory, revealedQuestions, revealedPhases }, phase.reveals);
+    beforePhase.set(phase.id, new Set(inventory));
 
     if (phase.kind === "inquiry") {
       const complete = collectInquiryInventory(phase, {
@@ -635,15 +639,16 @@ function analyzeInterrogationInventory(
         revealedPhases,
       });
       phaseCompletable.set(phase.id, complete);
-      if (complete || options.mode === "obtainable") completedPhases.add(phase.id);
+      if (complete) completedPhases.add(phase.id);
     } else {
       const hasValidCorrectPath = collectTestimonyResultInventory(phase, {
+        mode: options.mode,
         inventory,
         revealedQuestions,
         revealedPhases,
       });
       phaseCompletable.set(phase.id, hasValidCorrectPath);
-      if (hasValidCorrectPath || options.mode === "obtainable") completedPhases.add(phase.id);
+      if (hasValidCorrectPath) completedPhases.add(phase.id);
     }
   }
 
@@ -674,8 +679,7 @@ function collectInquiryInventory(
       if (!interrogationBlockReachable(question.status, question.unlock, `question:${question.id}`, state)) continue;
 
       state.answeredQuestions.add(question.id);
-      addInterrogationInventoryReveals(state.inventory, question.reveals);
-      addInterrogationBlockReveals(state, question.reveals);
+      addInterrogationRevealsToState(state, question.reveals);
       changed = true;
     }
   }
@@ -707,19 +711,29 @@ function requiredQuestionPredicates(expr: InterrogationUnlockExpr): Set<string> 
 
 function collectTestimonyResultInventory(
   phase: ASTTestimonyPhase,
-  state: Pick<InterrogationInventoryState, "inventory" | "revealedQuestions" | "revealedPhases">,
+  state: Pick<InterrogationInventoryState, "inventory" | "revealedQuestions" | "revealedPhases"> & { mode: InterrogationInventoryMode },
 ): boolean {
-  let hasValidCorrectPath = false;
+  const validPathReveals: InterrogationRevealTarget[][] = [];
   for (const statement of phase.statements) {
     if (statement.contradiction === null || statement.onCorrect === null) continue;
     if (!state.inventory.has(inventoryAtom(statement.contradiction))) continue;
     const result = phase.results.find((candidate) => candidate.id === statement.onCorrect);
     if (!result) continue;
-    hasValidCorrectPath = true;
-    addInterrogationInventoryReveals(state.inventory, result.reveals);
-    addInterrogationBlockReveals(state, result.reveals);
+    validPathReveals.push(result.reveals);
   }
-  return hasValidCorrectPath;
+
+  if (validPathReveals.length === 0) return false;
+  if (state.mode === "obtainable") {
+    for (const reveals of validPathReveals) {
+      addInterrogationRevealsToState(state, reveals);
+    }
+    return true;
+  }
+
+  for (const reveal of commonInterrogationReveals(validPathReveals)) {
+    addInterrogationRevealsToState(state, [reveal]);
+  }
+  return true;
 }
 
 function interrogationBlockReachable(
@@ -764,6 +778,24 @@ function addInterrogationBlockReveals(
     if (reveal.kind === "question") state.revealedQuestions.add(reveal.id);
     if (reveal.kind === "phase") state.revealedPhases.add(reveal.id);
   }
+}
+
+function addInterrogationRevealsToState(
+  state: Pick<InterrogationInventoryState, "inventory" | "revealedQuestions" | "revealedPhases">,
+  reveals: InterrogationRevealTarget[],
+): void {
+  addInterrogationInventoryReveals(state.inventory, reveals);
+  addInterrogationBlockReveals(state, reveals);
+}
+
+function commonInterrogationReveals(paths: InterrogationRevealTarget[][]): InterrogationRevealTarget[] {
+  if (paths.length === 0) return [];
+  let common = new Set(paths[0]!.map(interrogationRevealKey));
+  for (const path of paths.slice(1)) {
+    const keys = new Set(path.map(interrogationRevealKey));
+    common = new Set([...common].filter((key) => keys.has(key)));
+  }
+  return paths[0]!.filter((reveal) => common.has(interrogationRevealKey(reveal)));
 }
 
 function inventoryAtom(target: InventoryTarget): string {
