@@ -116,6 +116,9 @@ export function parseInterrogationScene(
   if (!outro) {
     return fail(sourceFile, first.line, "interrogationSceneMissingOutro", "Interrogation scene must end with `## Outro`.");
   }
+  if (phases.length === 0) {
+    return fail(sourceFile, first.line, "interrogationSceneNoPhases", "Interrogation scene must declare at least one phase.");
+  }
 
   return {
     ok: true,
@@ -223,6 +226,7 @@ function parseInquiryPhase(cur: Cursor, phaseMeta: PhaseMeta): { ok: true; value
 
   if (sceneTag === null) return fail(cur.sourceFile, phaseMeta.head.line, "interrogationPhaseNoSceneTag", "Interrogation phase body must include exactly one [場景：...] tag.");
   if (!subject) return fail(cur.sourceFile, phaseMeta.head.line, "interrogationPhaseMissingSubject", `Phase ${phaseMeta.id} must declare a Subject.`);
+  if (questions.length === 0) return fail(cur.sourceFile, phaseMeta.head.line, "interrogationInquiryNoQuestions", `Inquiry phase ${phaseMeta.id} must declare at least one question.`);
 
   const complete = phaseMeta.meta.Complete
     ? parseInterrogationUnlockExpr(phaseMeta.meta.Complete, cur.sourceFile, phaseMeta.head.line)
@@ -302,6 +306,8 @@ function parseTestimonyPhase(cur: Cursor, phaseMeta: PhaseMeta): { ok: true; val
   if (sceneTag === null) return fail(cur.sourceFile, phaseMeta.head.line, "interrogationPhaseNoSceneTag", "Interrogation phase body must include exactly one [場景：...] tag.");
   if (!subject) return fail(cur.sourceFile, phaseMeta.head.line, "interrogationPhaseMissingSubject", `Phase ${phaseMeta.id} must declare a Subject.`);
   if (!hasTestimonyContainer) return fail(cur.sourceFile, phaseMeta.head.line, "testimonyMissingContainer", `Testimony phase ${phaseMeta.id} must declare ### Testimony.`);
+  if (statements.length === 0) return fail(cur.sourceFile, phaseMeta.head.line, "testimonyNoStatements", `Testimony phase ${phaseMeta.id} must declare at least one statement.`);
+  if (results.length === 0) return fail(cur.sourceFile, phaseMeta.head.line, "testimonyNoResults", `Testimony phase ${phaseMeta.id} must declare at least one result.`);
 
   return {
     ok: true,
@@ -342,10 +348,16 @@ function parseInquiryQuestion(
   if (!meta.ok) return meta;
   const status = validateStatus(meta.value.Status, "unlocked", cur.sourceFile, head.line);
   if (!status.ok) return status;
-  const unlock = meta.value.Unlock
-    ? parseInterrogationUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line)
-    : { ok: true as const, value: null };
-  if (!unlock.ok) return unlock;
+  let unlock: InterrogationUnlockExpr | null = null;
+  if (meta.value.Unlock) {
+    if (status.value !== "locked") {
+      return fail(cur.sourceFile, head.line, "unlockOnNonLockedBlock",
+        `Block has an Unlock condition but Status is "${status.value}". Set Status to "locked" or remove the Unlock.`);
+    }
+    const r = parseInterrogationUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);
+    if (!r.ok) return r;
+    unlock = r.value;
+  }
   const reveals = meta.value.Reveals
     ? parseInterrogationRevealsList(meta.value.Reveals, cur.sourceFile, head.line)
     : { ok: true as const, value: [] as InterrogationRevealTarget[] };
@@ -377,7 +389,7 @@ function parseInquiryQuestion(
       parentQuestionId,
       status: status.value,
       required: required.value,
-      unlock: unlock.value,
+      unlock,
       reveals: reveals.value,
       answerDialogue: answer.value,
       onReask,
@@ -518,15 +530,21 @@ function parseCommonPhaseMeta(
   if (!required.ok) return required;
   const status = validateStatus(phaseMeta.meta.Status, "unlocked", phaseMeta.head.sourceFile, phaseMeta.head.line);
   if (!status.ok) return status;
-  const unlock = phaseMeta.meta.Unlock
-    ? parseInterrogationUnlockExpr(phaseMeta.meta.Unlock, phaseMeta.head.sourceFile, phaseMeta.head.line)
-    : { ok: true as const, value: null };
-  if (!unlock.ok) return unlock;
+  let unlock: InterrogationUnlockExpr | null = null;
+  if (phaseMeta.meta.Unlock) {
+    if (status.value !== "locked") {
+      return fail(phaseMeta.head.sourceFile, phaseMeta.head.line, "unlockOnNonLockedBlock",
+        `Block has an Unlock condition but Status is "${status.value}". Set Status to "locked" or remove the Unlock.`);
+    }
+    const r = parseInterrogationUnlockExpr(phaseMeta.meta.Unlock, phaseMeta.head.sourceFile, phaseMeta.head.line);
+    if (!r.ok) return r;
+    unlock = r.value;
+  }
   const reveals = phaseMeta.meta.Reveals
     ? parseInterrogationRevealsList(phaseMeta.meta.Reveals, phaseMeta.head.sourceFile, phaseMeta.head.line)
     : { ok: true as const, value: [] as InterrogationRevealTarget[] };
   if (!reveals.ok) return reveals;
-  return { ok: true, value: { required: required.value, status: status.value, unlock: unlock.value, reveals: reveals.value } };
+  return { ok: true, value: { required: required.value, status: status.value, unlock, reveals: reveals.value } };
 }
 
 function consumePhaseBodyToken(
@@ -571,6 +589,15 @@ type DialogueResult =
   | { ok: false; error: CompileError };
 
 function consumeDialogueUntilHeading(cur: Cursor, _atOrAboveLevel: number): DialogueResult {
+  // Stops at ANY heading regardless of level. Every dialogue body in this
+  // grammar terminates at the next heading (the next structural block or an
+  // optional sub-block like On Reask), so a level-aware check would silently
+  // swallow headings whose level exceeds the cutoff. The level parameter is
+  // kept for documentation but no longer affects behavior.
+  //
+  // Unknown/metadata tokens inside a dialogue body are a hard error -- they
+  // indicate authoring mistakes (typo'd dialogue line, stray metadata) that
+  // would otherwise be silently lost.
   const out: DialogueItem[] = [];
   while (true) {
     const next = cur.peek();
