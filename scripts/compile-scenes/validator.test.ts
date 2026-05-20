@@ -1554,6 +1554,44 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("later_log"))).toBeDefined();
   });
 
+  it("does not guarantee a required inquiry question reveal when explicit phase completion can skip it", () => {
+    const source = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "source_inquiry",
+          complete: { predicate: "question_answered", id: "gate" },
+          questions: [
+            mkQuestion({ id: "gate", required: true }),
+            mkQuestion({
+              id: "skippable_required",
+              required: true,
+              reveals: [{ kind: "evidence", id: "skippable_log" }],
+            }),
+          ],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("skippable_log")],
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "skippable_log" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("skippable_log"))).toBeDefined();
+  });
+
   it("does not guarantee testimony result reveals from statements with no contradiction", () => {
     const source = mkInterrogationScene({
       phases: [
