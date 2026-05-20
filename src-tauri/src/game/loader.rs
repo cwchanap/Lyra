@@ -195,8 +195,6 @@ fn validate_interrogation_scene_references(
                 )?;
                 validate_interrogation_unlock(
                     unlock.as_ref(),
-                    &evidence,
-                    &statements,
                     &questions,
                     &phases,
                     file_rel,
@@ -204,8 +202,6 @@ fn validate_interrogation_scene_references(
                 if let InterrogationOutroUnlock::Expr(expr) = complete {
                     validate_interrogation_unlock(
                         Some(expr),
-                        &evidence,
-                        &statements,
                         &questions,
                         &phases,
                         file_rel,
@@ -229,8 +225,6 @@ fn validate_interrogation_scene_references(
                     )?;
                     validate_interrogation_unlock(
                         question.unlock.as_ref(),
-                        &evidence,
-                        &statements,
                         &questions,
                         &phases,
                         file_rel,
@@ -260,8 +254,6 @@ fn validate_interrogation_scene_references(
                 )?;
                 validate_interrogation_unlock(
                     unlock.as_ref(),
-                    &evidence,
-                    &statements,
                     &questions,
                     &phases,
                     file_rel,
@@ -303,8 +295,6 @@ fn validate_interrogation_scene_references(
     if let InterrogationOutroUnlock::Expr(expr) = &scene.outro.unlock {
         validate_interrogation_unlock(
             Some(expr),
-            &evidence,
-            &statements,
             &questions,
             &phases,
             file_rel,
@@ -461,8 +451,6 @@ fn validate_unlock(
 
 fn validate_interrogation_unlock(
     unlock: Option<&InterrogationUnlockExpr>,
-    evidence: &HashSet<&str>,
-    statements: &HashSet<&str>,
     questions: &HashSet<&str>,
     phases: &HashSet<&str>,
     file_rel: &str,
@@ -472,16 +460,12 @@ fn validate_interrogation_unlock(
         InterrogationUnlockExpr::Combinator { left, right, .. } => {
             validate_interrogation_unlock(
                 Some(left),
-                evidence,
-                statements,
                 questions,
                 phases,
                 file_rel,
             )?;
             validate_interrogation_unlock(
                 Some(right),
-                evidence,
-                statements,
                 questions,
                 phases,
                 file_rel,
