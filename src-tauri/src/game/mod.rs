@@ -16,6 +16,7 @@ pub use view::{GameStateView, ModeView, QueueToken};
 
 use std::path::PathBuf;
 use scenes::SceneRuntime;
+use scenes::interrogation::InterrogationSceneState;
 use scenes::investigation::{DialogueQueue, InvestigationSceneState};
 use scenes::linear::LinearSceneState;
 use schema::{
@@ -109,6 +110,7 @@ impl GameEngine {
                     true
                 }
             }
+            SceneRuntime::Interrogation(_) => false,
         };
         if let Some((items, queue_gen)) = intro_queue {
             self.install_investigation_queue(items, queue_gen)?;
@@ -143,6 +145,7 @@ impl GameEngine {
                 q.cursor += 1;
                 q.cursor >= q.items.len()
             }
+            SceneRuntime::Interrogation(_) => return Err(GameError::no_active_dialogue()),
         };
         // Capture the just-consumed item as a scene tag if applicable.
         if let Some(DialogueItem::SceneTag { text }) = self.peek_just_consumed() {
@@ -158,6 +161,7 @@ impl GameEngine {
                 .pending_queue
                 .as_ref()
                 .is_none_or(|q| q.cursor >= q.items.len()),
+            SceneRuntime::Interrogation(_) => true,
         };
         if exhausted {
             self.on_queue_exhausted()?;
@@ -172,6 +176,7 @@ impl GameEngine {
                 .pending_queue
                 .as_ref()
                 .and_then(|q| q.items.get(q.cursor.saturating_sub(1)).cloned()),
+            SceneRuntime::Interrogation(_) => None,
         }
     }
 
@@ -186,6 +191,7 @@ impl GameEngine {
                     .pending_queue
                     .as_ref()
                     .and_then(|q| q.items.get(q.cursor).cloned()),
+                SceneRuntime::Interrogation(_) => None,
             };
             match tag {
                 Some(DialogueItem::SceneTag { text }) => {
@@ -197,6 +203,7 @@ impl GameEngine {
                                 q.cursor += 1;
                             }
                         }
+                        SceneRuntime::Interrogation(_) => {}
                     }
                 }
                 _ => break,
@@ -220,6 +227,9 @@ impl GameEngine {
             SceneRuntime::Linear(_) => {
                 return Err(GameError::internal("investigation queue installed outside investigation scene".into()));
             }
+            SceneRuntime::Interrogation(_) => {
+                return Err(GameError::internal("investigation queue installed outside investigation scene".into()));
+            }
         }
         self.consume_scene_tags_at_cursor();
         let exhausted = match &self.scene {
@@ -228,6 +238,9 @@ impl GameEngine {
                 .as_ref()
                 .is_none_or(|q| q.cursor >= q.items.len()),
             SceneRuntime::Linear(_) => {
+                return Err(GameError::internal("investigation queue installed outside investigation scene".into()));
+            }
+            SceneRuntime::Interrogation(_) => {
                 return Err(GameError::internal("investigation queue installed outside investigation scene".into()));
             }
         };
@@ -247,6 +260,7 @@ impl GameEngine {
                     self.advance_scene()?;
                 }
             }
+            SceneRuntime::Interrogation(_) => {}
         }
         Ok(())
     }
@@ -596,6 +610,9 @@ impl GameEngine {
             SceneRuntime::Linear(_) => {
                 return Err(GameError::wrong_mode("reexamine_evidence", "linear"));
             }
+            SceneRuntime::Interrogation(_) => {
+                return Err(GameError::wrong_mode("reexamine_evidence", "interrogation"));
+            }
         }
         self.install_investigation_queue(queue_items, queue_gen)?;
         Ok(self.view())
@@ -627,6 +644,9 @@ impl GameEngine {
             SceneRuntime::Linear(_) => {
                 return Err(GameError::wrong_mode("reexamine_statement", "linear"));
             }
+            SceneRuntime::Interrogation(_) => {
+                return Err(GameError::wrong_mode("reexamine_statement", "interrogation"));
+            }
         }
         self.install_investigation_queue(queue_items, queue_gen)?;
         Ok(self.view())
@@ -649,6 +669,7 @@ impl GameEngine {
                 }),
                 _ => None,
             },
+            SceneRuntime::Interrogation(_) => None,
         }
     }
 
@@ -663,6 +684,7 @@ impl GameEngine {
                 .pending_queue
                 .as_ref()
                 .and_then(|q| q.items.get(q.cursor).cloned()),
+            SceneRuntime::Interrogation(_) => None,
         };
         match (current_item, token) {
             (Some(item), Some(t)) => ModeView::Dialogue {
@@ -674,6 +696,7 @@ impl GameEngine {
                         .as_ref()
                         .map(|q| q.items.len().saturating_sub(q.cursor + 1))
                         .unwrap_or(0),
+                    SceneRuntime::Interrogation(_) => 0,
                 },
                 scene_tag: self.last_scene_tag.clone(),
                 queue_token: t,
@@ -684,6 +707,7 @@ impl GameEngine {
                     None => ModeView::GameComplete,
                 },
                 SceneRuntime::Linear(_) => ModeView::GameComplete,
+                SceneRuntime::Interrogation(_) => ModeView::GameComplete,
             },
         }
     }
@@ -763,6 +787,12 @@ impl GameEngine {
                     visible_sublocations,
                 }
             }
+            SceneRuntime::Interrogation(scene) => SceneView::Linear {
+                id: scene.def.id.clone(),
+                title: scene.def.title.clone(),
+                index: self.current_scene_idx,
+                total,
+            },
         }
     }
 }
@@ -776,6 +806,7 @@ fn load_scene_runtime(
     Ok(match json {
         SceneJson::Linear(j) => SceneRuntime::Linear(LinearSceneState::from_json(j, queue_gen)),
         SceneJson::Investigation(j) => SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(j, queue_gen))),
+        SceneJson::Interrogation(j) => SceneRuntime::Interrogation(Box::new(InterrogationSceneState::from_json(j, queue_gen))),
     })
 }
 

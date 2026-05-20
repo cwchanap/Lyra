@@ -32,6 +32,7 @@ fn validate_scene_references(scene: &SceneJson, file_rel: &str) -> Result<(), Ga
     match scene {
         SceneJson::Linear(_) => Ok(()),
         SceneJson::Investigation(scene) => validate_investigation_scene_references(scene, file_rel),
+        SceneJson::Interrogation(_) => Ok(()),
     }
 }
 
