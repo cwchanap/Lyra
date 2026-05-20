@@ -638,12 +638,15 @@ function collectInquiryInventory(
   phase: ASTInquiryPhase,
   state: InterrogationInventoryState & { mode: InterrogationInventoryMode },
 ): boolean {
+  const guaranteedQuestionIds = state.mode === "guaranteed"
+    ? guaranteedInquiryQuestionIds(phase)
+    : null;
   let changed = true;
   while (changed) {
     changed = false;
     for (const question of phase.questions) {
       if (state.answeredQuestions.has(question.id)) continue;
-      if (state.mode === "guaranteed" && !question.required) continue;
+      if (guaranteedQuestionIds !== null && !guaranteedQuestionIds.has(question.id)) continue;
       if (!interrogationBlockReachable(question.status, question.unlock, `question:${question.id}`, state)) continue;
 
       state.answeredQuestions.add(question.id);
@@ -653,7 +656,29 @@ function collectInquiryInventory(
     }
   }
 
+  if (phase.complete !== "auto") return interrogationUnlockSatisfiable(phase.complete, state);
   return phase.questions.every((question) => !question.required || state.answeredQuestions.has(question.id));
+}
+
+function guaranteedInquiryQuestionIds(phase: ASTInquiryPhase): Set<string> {
+  if (phase.complete === "auto") {
+    return new Set(phase.questions.filter((question) => question.required).map((question) => question.id));
+  }
+  const requiredQuestionIds = new Set(phase.questions.filter((question) => question.required).map((question) => question.id));
+  return new Set(
+    [...requiredQuestionPredicates(phase.complete)].filter((questionId) => requiredQuestionIds.has(questionId)),
+  );
+}
+
+function requiredQuestionPredicates(expr: InterrogationUnlockExpr): Set<string> {
+  if ("op" in expr) {
+    const left = requiredQuestionPredicates(expr.left);
+    const right = requiredQuestionPredicates(expr.right);
+    if (expr.op === "and") return new Set([...left, ...right]);
+    return new Set([...left].filter((questionId) => right.has(questionId)));
+  }
+  if (expr.predicate === "question_answered") return new Set([expr.id]);
+  return new Set<string>();
 }
 
 function collectTestimonyResultInventory(
