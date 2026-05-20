@@ -9,6 +9,12 @@ describe("mode helpers", () => {
     expect(canReexamineInventory(mode)).toBe(true);
   });
 
+  it("shows the inventory panel in interrogation mode and enables reexamine", () => {
+    const mode: Mode = { type: "interrogation", phaseId: "wakatsuki_testimony" };
+    expect(shouldShowInventoryPanel(mode)).toBe(true);
+    expect(canReexamineInventory(mode)).toBe(true);
+  });
+
   it("shows the inventory panel in dialogue mode but disables reexamine", () => {
     const mode: Mode = {
       type: "dialogue",

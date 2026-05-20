@@ -5,5 +5,5 @@ export function shouldShowInventoryPanel(mode: Mode): boolean {
 }
 
 export function canReexamineInventory(mode: Mode): boolean {
-  return mode.type === "explore";
+  return mode.type === "explore" || mode.type === "interrogation";
 }

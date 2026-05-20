@@ -98,3 +98,12 @@ export async function reexamineEvidence(evidenceId: string) {
 export async function reexamineStatement(statementId: string) {
   await dispatchGameCommand("reexamine_statement", { statementId });
 }
+export async function answerInterrogationQuestion(questionId: string) {
+  await dispatchGameCommand("answer_interrogation_question", { questionId });
+}
+export async function pressTestimonyStatement(statementId: string) {
+  await dispatchGameCommand("press_testimony_statement", { statementId });
+}
+export async function presentTestimonyItem(statementId: string, itemKind: "evidence" | "statement", itemId: string) {
+  await dispatchGameCommand("present_testimony_item", { statementId, itemKind, itemId });
+}

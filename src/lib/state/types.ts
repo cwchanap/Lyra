@@ -14,6 +14,7 @@ export type QueueToken = {
 export type Mode =
   | { type: "dialogue"; current: DialogueItem; queueRemaining: number; sceneTag: string | null; queueToken: QueueToken }
   | { type: "explore"; sublocationId: string }
+  | { type: "interrogation"; phaseId: string }
   | { type: "gameComplete" };
 
 export type ChapterView = {
@@ -49,6 +50,31 @@ export type SublocationView = {
   hotspots: HotspotView[];
   characters: CharacterView[];
 };
+export type InterrogationPhaseView = {
+  id: string;
+  label: string;
+  kind: "inquiry" | "testimony";
+  subject: SubjectView;
+  questions: InquiryQuestionView[];
+  testimony: TestimonyStatementView[];
+};
+export type SubjectView = {
+  id: string;
+  name: string;
+  role: string;
+  bio: string;
+};
+export type InquiryQuestionView = {
+  id: string;
+  label: string;
+  answered: boolean;
+};
+export type TestimonyStatementView = {
+  id: string;
+  label: string;
+  content: string;
+  pressed: boolean;
+};
 
 export type SceneView =
   | { kind: "linear"; id: string; title: string; index: number; total: number }
@@ -60,6 +86,15 @@ export type SceneView =
       total: number;
       currentSublocationId: string | null;
       visibleSublocations: SublocationView[];
+    }
+  | {
+      kind: "interrogation";
+      id: string;
+      title: string;
+      index: number;
+      total: number;
+      currentPhaseId: string | null;
+      visiblePhases: InterrogationPhaseView[];
     };
 
 export type EvidenceRecord = {
