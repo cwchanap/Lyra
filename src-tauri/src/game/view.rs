@@ -1,7 +1,7 @@
 // src-tauri/src/game/view.rs
-use serde::{Deserialize, Serialize};
 use crate::game::schema::DialogueItem;
 use crate::game::state::Inventory;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,7 +13,11 @@ pub struct GameStateView {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ModeView {
     Dialogue {
         current: DialogueItem,
@@ -21,7 +25,12 @@ pub enum ModeView {
         scene_tag: Option<String>,
         queue_token: QueueToken,
     },
-    Explore { sublocation_id: String },
+    Explore {
+        sublocation_id: String,
+    },
+    Interrogation {
+        phase_id: String,
+    },
     GameComplete,
 }
 
@@ -44,9 +53,18 @@ pub struct ChapterView {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum SceneView {
-    Linear { id: String, title: String, index: usize, total: usize },
+    Linear {
+        id: String,
+        title: String,
+        index: usize,
+        total: usize,
+    },
     Investigation {
         id: String,
         title: String,
@@ -54,6 +72,14 @@ pub enum SceneView {
         total: usize,
         current_sublocation_id: Option<String>,
         visible_sublocations: Vec<SublocationView>,
+    },
+    Interrogation {
+        id: String,
+        title: String,
+        index: usize,
+        total: usize,
+        current_phase_id: Option<String>,
+        visible_phases: Vec<InterrogationPhaseView>,
     },
 }
 
@@ -92,4 +118,41 @@ pub struct TopicView {
     pub id: String,
     pub label: String,
     pub discussed: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InterrogationPhaseView {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+    pub subject: SubjectView,
+    pub questions: Vec<InquiryQuestionView>,
+    pub testimony: Vec<TestimonyStatementView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubjectView {
+    pub id: String,
+    pub name: String,
+    pub role: String,
+    pub bio: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InquiryQuestionView {
+    pub id: String,
+    pub label: String,
+    pub answered: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestimonyStatementView {
+    pub id: String,
+    pub label: String,
+    pub content: String,
+    pub pressed: bool,
 }
