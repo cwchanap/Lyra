@@ -2,17 +2,32 @@
 
 use std::path::PathBuf;
 
-use lyra_lib::game::view::ModeView;
+use lyra_lib::game::view::{ModeView, SceneView};
 use lyra_lib::game::{GameEngine, GameStateView, QueueToken};
 
 fn fixture_resources() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/scenes")
 }
 
+fn project_resources() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/scenes")
+}
+
 fn token_from(view: &GameStateView) -> QueueToken {
     match &view.mode {
         ModeView::Dialogue { queue_token, .. } => queue_token.clone(),
         other => panic!("expected Dialogue mode, got: {:?}", other),
+    }
+}
+
+fn advance_all_dialogue(engine: &mut GameEngine, mut view: GameStateView) -> GameStateView {
+    loop {
+        match &view.mode {
+            ModeView::Dialogue { queue_token, .. } => {
+                view = engine.advance_dialogue(queue_token.clone()).unwrap();
+            }
+            _ => return view,
+        }
     }
 }
 
@@ -28,6 +43,81 @@ fn advance_until_explore(engine: &mut GameEngine) -> GameStateView {
         }
     }
     panic!("fixture did not reach Explore mode");
+}
+
+fn inspect_hotspot_and_advance(engine: &mut GameEngine, hotspot_id: &str) -> GameStateView {
+    let view = engine.inspect_hotspot(hotspot_id).unwrap();
+    advance_all_dialogue(engine, view)
+}
+
+fn interview_topic_and_advance(
+    engine: &mut GameEngine,
+    character_id: &str,
+    topic_id: &str,
+) -> GameStateView {
+    let view = engine.interview_topic(character_id, topic_id).unwrap();
+    advance_all_dialogue(engine, view)
+}
+
+fn enter_sublocation_and_advance(engine: &mut GameEngine, sublocation_id: &str) -> GameStateView {
+    let view = engine.enter_sublocation(sublocation_id).unwrap();
+    advance_all_dialogue(engine, view)
+}
+
+fn advance_project_investigation_to_interrogation(engine: &mut GameEngine) -> GameStateView {
+    let initial = engine.view();
+    let view = advance_all_dialogue(engine, initial);
+    assert!(matches!(view.mode, ModeView::Explore { .. }));
+
+    for hotspot_id in [
+        "blue_umbrella_stand",
+        "torn_sleeve_spot",
+        "entrance_monitor",
+    ] {
+        inspect_hotspot_and_advance(engine, hotspot_id);
+    }
+
+    enter_sublocation_and_advance(engine, "main_floor");
+    for hotspot_id in ["osmanthus_sign", "window_seat"] {
+        inspect_hotspot_and_advance(engine, hotspot_id);
+    }
+    for (character_id, topic_id) in [
+        ("kuruse", "case_timeline"),
+        ("kuruse", "suspect_info"),
+        ("hayasaka", "case_overview"),
+        ("hayasaka", "renjis_secret"),
+    ] {
+        interview_topic_and_advance(engine, character_id, topic_id);
+    }
+
+    enter_sublocation_and_advance(engine, "bar_area");
+    for hotspot_id in ["coffee_machine", "milk_frother", "time_card_machine"] {
+        inspect_hotspot_and_advance(engine, hotspot_id);
+    }
+
+    enter_sublocation_and_advance(engine, "staff_corridor");
+    for hotspot_id in ["smart_lock", "kagami_label"] {
+        inspect_hotspot_and_advance(engine, hotspot_id);
+    }
+
+    enter_sublocation_and_advance(engine, "storeroom");
+    for hotspot_id in [
+        "half_latte_storeroom",
+        "victim_position",
+        "brass_bell",
+        "back_door",
+        "wheeled_shelf",
+        "victim_phone_spot",
+        "victim_usb_spot",
+    ] {
+        inspect_hotspot_and_advance(engine, hotspot_id);
+    }
+
+    enter_sublocation_and_advance(engine, "main_floor");
+    interview_topic_and_advance(engine, "kuruse", "kagami_system");
+    interview_topic_and_advance(engine, "kuruse", "victim_background");
+
+    interview_topic_and_advance(engine, "hayasaka", "kagami_record")
 }
 
 #[test]
@@ -119,6 +209,65 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
             }
         }
     }
+}
+
+#[test]
+fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
+    let mut engine = GameEngine::new_started(project_resources()).unwrap();
+    let view = advance_project_investigation_to_interrogation(&mut engine);
+    assert!(
+        matches!(view.mode, ModeView::Interrogation { ref phase_id } if phase_id == "wakatsuki_inquiry"),
+        "expected wakatsuki inquiry, got {:?}",
+        view.mode,
+    );
+
+    let view = engine
+        .answer_interrogation_question("entered_storage")
+        .unwrap();
+    let view = advance_all_dialogue(&mut engine, view);
+    assert!(view.inventory.has_evidence("coffee_machine_cleaning_log"));
+    assert!(view.inventory.has_statement("wakatsuki_entered_for_beans"));
+    assert!(
+        matches!(view.mode, ModeView::Interrogation { ref phase_id } if phase_id == "wakatsuki_testimony"),
+        "expected wakatsuki testimony, got {:?}",
+        view.mode,
+    );
+
+    let view = engine.press_testimony_statement("cleaning_button").unwrap();
+    let view = advance_all_dialogue(&mut engine, view);
+    assert!(
+        matches!(view.mode, ModeView::Interrogation { ref phase_id } if phase_id == "wakatsuki_testimony"),
+        "expected to remain in testimony after pressing, got {:?}",
+        view.mode,
+    );
+
+    assert!(view.inventory.has_evidence("coffee_machine_log"));
+    let view = engine
+        .present_testimony_item("cleaning_button", "evidence", "coffee_machine_log")
+        .unwrap();
+    let view = advance_all_dialogue(&mut engine, view);
+    assert!(
+        matches!(view.mode, ModeView::Interrogation { ref phase_id } if phase_id == "wakatsuki_testimony"),
+        "expected wrong evidence to keep testimony active, got {:?}",
+        view.mode,
+    );
+
+    let view = engine
+        .present_testimony_item("cleaning_button", "evidence", "coffee_machine_cleaning_log")
+        .unwrap();
+    let view = advance_all_dialogue(&mut engine, view);
+
+    let reached_next_scene_or_complete = matches!(view.mode, ModeView::GameComplete)
+        || match &view.scene {
+            SceneView::Linear { index, .. }
+            | SceneView::Investigation { index, .. }
+            | SceneView::Interrogation { index, .. } => *index > 2,
+        };
+    assert!(
+        reached_next_scene_or_complete,
+        "expected next scene or game completion after correct present, got {:?}",
+        view.mode,
+    );
 }
 
 #[test]
