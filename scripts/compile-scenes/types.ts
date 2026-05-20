@@ -23,12 +23,28 @@ export type RevealTarget =
   | { kind: "hotspot"; id: string }
   | { kind: "sublocation"; id: string };
 
+export type InventoryTarget =
+  | { kind: "evidence"; id: string }
+  | { kind: "statement"; id: string };
+
+export type InterrogationRevealTarget =
+  | InventoryTarget
+  | { kind: "question"; id: string }
+  | { kind: "phase"; id: string };
+
 export type UnlockExpr =
   | { op: "and" | "or"; left: UnlockExpr; right: UnlockExpr }
   | { predicate: "evidence_collected"; id: string }
   | { predicate: "statement_acquired"; id: string }
   | { predicate: "topic_discussed"; characterId: string; topicId: string }
   | { predicate: "hotspot_investigated"; id: string };
+
+export type InterrogationUnlockExpr =
+  | { op: "and" | "or"; left: InterrogationUnlockExpr; right: InterrogationUnlockExpr }
+  | { predicate: "evidence_collected"; id: string }
+  | { predicate: "statement_acquired"; id: string }
+  | { predicate: "question_answered"; id: string }
+  | { predicate: "phase_completed"; id: string };
 
 // ----- AST: per-file parser output -------------------------------------------
 

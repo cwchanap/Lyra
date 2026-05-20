@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseUnlockExpr } from "./parser-unlock";
+import { parseInterrogationUnlockExpr, parseUnlockExpr } from "./parser-unlock";
 import type { UnlockExpr } from "./types";
 
 describe("parseUnlockExpr", () => {
@@ -98,5 +98,33 @@ describe("parseUnlockExpr", () => {
   it("rejects an empty string", () => {
     const result = parseUnlockExpr("", "test.md", 5);
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("parseInterrogationUnlockExpr", () => {
+  it("parses question_answered and phase_completed predicates", () => {
+    const result = parseInterrogationUnlockExpr(
+      "question:hidden_discarded_beans answered and phase:wakatsuki_inquiry completed",
+      "interrogation_scene_2.md",
+      12,
+    );
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        op: "and",
+        left: { predicate: "question_answered", id: "hidden_discarded_beans" },
+        right: { predicate: "phase_completed", id: "wakatsuki_inquiry" },
+      },
+    });
+  });
+
+  it("keeps interrogation unlocks limited to inventory, question, and phase predicates", () => {
+    const result = parseInterrogationUnlockExpr(
+      "hotspot:counter investigated",
+      "interrogation_scene_2.md",
+      20,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("unlockUnknownPredicate");
   });
 });
