@@ -29,6 +29,20 @@ const VALID_SOURCE = `# Scene 2: 第一次詢問與交叉詢問
 
 **若槻蓮**：我說過了，是咖啡豆。
 
+#### Follow-up: 追問咖啡豆 {#beans_follow_up}
+- **Status:** locked
+- **Unlock:** question:entered_storage answered
+- **Required:** false
+- **Reveals:** [evidence:coffee_machine_cleaning_log]
+
+**相馬律**：再說一次咖啡豆的事。
+
+**若槻蓮**：我進倉庫前看到咖啡機還沒清潔。
+
+##### On Reask
+
+**若槻蓮**：我只能確定當時還沒清潔。
+
 ## Phase: 若槻蓮的行動證詞 {#wakatsuki_testimony}
 - **Kind:** testimony
 - **Required:** true
@@ -119,6 +133,21 @@ describe("parseInterrogationScene", () => {
       expect(inquiry.questions[0]!.onReask).toEqual([
         { kind: "line", speaker: "若槻蓮", text: "我說過了，是咖啡豆。" },
       ]);
+      expect(inquiry.questions[1]).toMatchObject({
+        id: "beans_follow_up",
+        kind: "followUp",
+        parentQuestionId: "entered_storage",
+        status: "locked",
+        required: false,
+        reveals: [{ kind: "evidence", id: "coffee_machine_cleaning_log" }],
+      });
+      expect(inquiry.questions[1]!.unlock).toEqual({
+        predicate: "question_answered",
+        id: "entered_storage",
+      });
+      expect(inquiry.questions[1]!.onReask).toEqual([
+        { kind: "line", speaker: "若槻蓮", text: "我只能確定當時還沒清潔。" },
+      ]);
     }
     const testimony = parsed.value.phases[1]!;
     expect(testimony.kind).toBe("testimony");
@@ -147,6 +176,32 @@ describe("parseInterrogationScene", () => {
     const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.error.code).toBe("interrogationPhaseMissingSubject");
+  });
+
+  it("rejects a phase with duplicate subjects", () => {
+    const source = VALID_SOURCE.replace(
+      "### Question: 進倉庫的理由",
+      `### Subject: 若槻蓮 {#wakatsuki_ren_duplicate}
+- **Role:** 第一嫌疑人
+- **Bio:** 重複的詢問對象。
+
+### Question: 進倉庫的理由`,
+    );
+    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error.code).toBe("interrogationPhaseDuplicateSubject");
+  });
+
+  it("rejects a testimony phase with duplicate testimony containers", () => {
+    const source = VALID_SOURCE.replace(
+      "### Result: breakthrough_cleaning_time",
+      `### Testimony
+
+### Result: breakthrough_cleaning_time`,
+    );
+    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error.code).toBe("testimonyDuplicateContainer");
   });
 
   it("rejects an interrogation scene with no phases", () => {
