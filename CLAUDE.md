@@ -37,9 +37,9 @@ This repo is a detective/mystery game (《東京雨證：第零證人》, Tradit
 - `chapter.md` — the chapter manifest (title, summary, ordered scene list). Authored via the `writing-chapter-manifest` skill.
 - `scene_<K>.md` — linear-dialogue scenes (intros, transitions, endings). Authored via `writing-detective-game-dialogue`.
 - `investigation_scene_<K>.md` — interactive investigation scenes (hotspots, characters, evidence). Authored via `writing-investigation-scene`.
-- `interrogation_scene_<K>.md` — suspect inquiry and testimony cross-examination scenes. Authored via `writing-interrogation-scene`.
+- `interrogation_scene_<K>.md` — authored and compiler-validated suspect inquiry and testimony cross-examination scenes. Authored via `writing-interrogation-scene`.
 
-A Bun-based compile script (`scripts/compile-scenes.ts`) transforms authored markdown into validated JSON under `src-tauri/resources/scenes/`, which the Rust engine reads at runtime via `BaseDirectory::Resource`. The compile script is wired into Tauri's `beforeDevCommand` and `beforeBuildCommand` — the dev loop is `bun run tauri dev` (which chains `scenes:compile` before `vite`); for incremental rebuilds during writing iteration, run `bun run scenes:watch` in a second terminal.
+A Bun-based compile script (`scripts/compile-scenes.ts`) transforms authored markdown into validated JSON under `src-tauri/resources/scenes/`. For runtime-supported scene types, the Rust engine reads that JSON via `BaseDirectory::Resource`; interrogation runtime support lands in later engine/frontend tasks. The compile script is wired into Tauri's `beforeDevCommand` and `beforeBuildCommand` — the dev loop is `bun run tauri dev` (which chains `scenes:compile` before `vite`); for incremental rebuilds during writing iteration, run `bun run scenes:watch` in a second terminal.
 
 Design spec: `docs/superpowers/specs/2026-05-13-scene-pipeline-design.md`. Skill authoring formats are owned by the scene authoring skills above — when writing or modifying scene content, invoke the relevant skill via the `Skill` tool rather than free-forming the format.
 

@@ -27,7 +27,7 @@ Use when the file you are authoring is `chapter_<N>/investigation_scene_<N>.md` 
 
 **Do not use for** `chapter_<N>/scene_<N>.md` — those are linear dialogue scenes (intro cutscenes, transitions, in-car conversations). For linear scenes, use `writing-detective-game-dialogue` directly.
 
-**Also not for** `interrogation_scene_<N>.md` — those are playable suspect inquiry and testimony cross-examination scenes. Use `writing-interrogation-scene`.
+**Also not for** `interrogation_scene_<N>.md` — those are authored and compiler-validated suspect inquiry and testimony cross-examination scenes. Use `writing-interrogation-scene`.
 
 ## File skeleton (canonical order)
 
@@ -193,7 +193,7 @@ When the player completes a trigger that has a `Reveals:` list, dialogue plays i
 
 ## Parser validation guarantees
 
-A future parser/validator will check the following — author with them in mind:
+The parser/validator checks the following — author with them in mind:
 
 - Every `Reveals:` target resolves to a declared ID in the same file.
 - Every `Unlock:` predicate references a declared ID in the same file.
@@ -238,7 +238,7 @@ When asked to write an `investigation_scene_<N>.md`:
 | First sub-location declared as `Status: locked` | Set to `unlocked` — the player must be able to enter |
 | Evidence Manifest entry without `#### On Collect` | Add it; even one short line is required |
 | Manifest entries placed inline under their producing hotspot/topic | Move to the dedicated `## Evidence Manifest` / `## Statement Manifest` sections near the file bottom |
-| Inline dialogue describes "present this evidence to the witness" | That belongs in a future `interrogation_scene` — investigation scenes only collect, not confront |
+| Inline dialogue describes "present this evidence to the witness" | That belongs in the separate `interrogation_scene_<N>.md` format covered by `writing-interrogation-scene`; investigation scenes only collect, not confront |
 | Dialogue line >100 Chinese characters | Split per the base dialogue skill |
 | Action/expression written into a dialogue line | Move to a `[ ]` bracket on its own line |
 | Field labels written in Chinese (e.g. `**狀態：**`) | Use English labels (`**Status:**`); only field *values* are Chinese |
@@ -374,4 +374,4 @@ A reduced fragment exercising every block type in canonical order. Use as a stru
 
 ## Related scene type
 
-Confrontation (presenting evidence to characters / statements), deduction slot filling, and testimony cross-examination are **not** part of investigation scenes. They belong to the separate playable `interrogation_scene_<N>.md` file format covered by `writing-interrogation-scene`.
+Confrontation (presenting evidence to characters / statements), deduction slot filling, and testimony cross-examination are **not** part of investigation scenes. They belong to the separate authored and compiler-validated `interrogation_scene_<N>.md` file format covered by `writing-interrogation-scene`.

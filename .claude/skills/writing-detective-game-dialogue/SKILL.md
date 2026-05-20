@@ -112,7 +112,7 @@ Keep it concise, concrete, image-promptable.
 
 ## File organisation
 
-Each chapter is split into **one file per scene**. Two file kinds exist:
+Each chapter is split into **one file per scene**. Three authored file kinds exist:
 
 ```
 static/stories_plan/
@@ -121,13 +121,14 @@ static/stories_plan/
   chapter_X/
     scene_0.md                                     ← linear dialogue scene (this skill)
     investigation_scene_1.md                       ← interactive investigation (see writing-investigation-scene)
-    scene_2.md
-    investigation_scene_3.md
+    interrogation_scene_2.md                       ← inquiry / testimony authoring (see writing-interrogation-scene)
+    scene_3.md
     ...
 ```
 
 - **`scene_<N>.md`** — linear dialogue (intro cutscenes, transitions, in-car conversations). Covered fully by this skill.
 - **`investigation_scene_<N>.md`** — interactive scenes with hotspots, characters, evidence and statement manifests. Authored using the **`writing-investigation-scene`** skill, which inherits the base dialogue rules from this skill. Use that skill when the file you are writing has the `investigation_scene_` prefix.
+- **`interrogation_scene_<N>.md`** — suspect inquiry and testimony cross-examination authoring. Use the **`writing-interrogation-scene`** skill; this skill supplies only the base dialogue rules for its dialogue bodies.
 
 ### Path convention
 

@@ -49,7 +49,7 @@ Scene type is inferred from filename prefix — do **not** add a type annotation
 |---|---|
 | `scene_<K>.md` | Linear dialogue (uses `writing-detective-game-dialogue` linear format) |
 | `investigation_scene_<K>.md` | Interactive investigation (uses `writing-investigation-scene`) |
-| `interrogation_scene_<K>.md` | Playable interrogation scene (uses `writing-interrogation-scene`) |
+| `interrogation_scene_<K>.md` | Authored and compiler-validated interrogation scene (uses `writing-interrogation-scene`) |
 
 ## Parser validation guarantees
 
@@ -60,7 +60,7 @@ The compile-time parser checks the following — the manifest fails the build if
 - `## Scenes` list present, non-empty.
 - Every listed filename exists in this chapter's directory.
 - Every listed filename matches a known scene-type prefix.
-- `interrogation_scene_<K>.md` is a playable interrogation scene authored by `writing-interrogation-scene`.
+- `interrogation_scene_<K>.md` is an authored and compiler-validated interrogation scene format owned by `writing-interrogation-scene`; runtime handling is outside this checkpoint and lands with the later engine/frontend tasks.
 
 ## Cross-chapter ordering
 
