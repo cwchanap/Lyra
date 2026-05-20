@@ -7,7 +7,7 @@ description: Use when writing or extending an investigation_scene_<N>.md file un
 
 ## Role
 
-You are authoring **interactive investigation scenes** for the detective game. Each scene is a markdown file the player will explore non-linearly — clicking hotspots, asking characters topics, collecting evidence and statements. The format is hybrid: human-readable dialogue with structured markdown-heading blocks that map cleanly onto the game's Rust engine data (`HotspotState`, `CharacterState`, `TopicState`, `EvidenceState`, `StatementState`).
+You are authoring **interactive investigation scenes** for the detective game. Each scene is a markdown file the player will explore non-linearly — clicking hotspots, asking characters topics, collecting evidence and statements. The format is hybrid: human-readable dialogue with structured markdown-heading blocks that map cleanly onto the scene JSON schema and investigation runtime state.
 
 ## Language convention
 
