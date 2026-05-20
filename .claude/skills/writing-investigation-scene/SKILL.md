@@ -27,7 +27,7 @@ Use when the file you are authoring is `chapter_<N>/investigation_scene_<N>.md` 
 
 **Do not use for** `chapter_<N>/scene_<N>.md` — those are linear dialogue scenes (intro cutscenes, transitions, in-car conversations). For linear scenes, use `writing-detective-game-dialogue` directly.
 
-**Also not for** `interrogation_scene_<N>.md` (a future format covering confrontation and deduction) — that has its own skill, designed separately when needed.
+**Also not for** `interrogation_scene_<N>.md` — those are playable suspect inquiry and testimony cross-examination scenes. Use `writing-interrogation-scene`.
 
 ## File skeleton (canonical order)
 
@@ -372,6 +372,6 @@ A reduced fragment exercising every block type in canonical order. Use as a stru
 
 **Note on locked blocks:** locked sub-locations, hotspots, and topics are entirely hidden from the player until their unlock condition is satisfied. There is no "locked, look later" hint shown in-game. The `Unlock:` expression is parser-internal — it determines *when* the block becomes visible, never displayed.
 
-## Future work
+## Related scene type
 
-Confrontation (presenting evidence to characters / statements), deduction slot filling, and testimony cross-examination are **not** part of investigation scenes. They belong to a separate `interrogation_scene_<N>.md` file format covered by a future `writing-interrogation-scene` skill — to be designed when that scene type is ready to build.
+Confrontation (presenting evidence to characters / statements), deduction slot filling, and testimony cross-examination are **not** part of investigation scenes. They belong to the separate playable `interrogation_scene_<N>.md` file format covered by `writing-interrogation-scene`.
