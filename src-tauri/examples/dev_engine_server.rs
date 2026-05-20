@@ -236,6 +236,39 @@ fn dispatch(state: &ServerState, command: &str, body: &[u8]) -> Result<String, G
             let args: Args = parse_body(body)?;
             with_engine(state, |e| e.reexamine_statement(&args.statement_id))
         }
+        "answer_interrogation_question" => {
+            #[derive(Deserialize)]
+            struct Args {
+                #[serde(rename = "questionId")]
+                question_id: String,
+            }
+            let args: Args = parse_body(body)?;
+            with_engine(state, |e| e.answer_interrogation_question(&args.question_id))
+        }
+        "press_testimony_statement" => {
+            #[derive(Deserialize)]
+            struct Args {
+                #[serde(rename = "statementId")]
+                statement_id: String,
+            }
+            let args: Args = parse_body(body)?;
+            with_engine(state, |e| e.press_testimony_statement(&args.statement_id))
+        }
+        "present_testimony_item" => {
+            #[derive(Deserialize)]
+            struct Args {
+                #[serde(rename = "statementId")]
+                statement_id: String,
+                #[serde(rename = "itemKind")]
+                item_kind: String,
+                #[serde(rename = "itemId")]
+                item_id: String,
+            }
+            let args: Args = parse_body(body)?;
+            with_engine(state, |e| {
+                e.present_testimony_item(&args.statement_id, &args.item_kind, &args.item_id)
+            })
+        }
         other => Err(GameError::new(
             "unknownCommand",
             format!("unknown command: {other}"),
@@ -259,4 +292,38 @@ fn serialize(v: GameStateView) -> Result<String, GameError> {
 
 fn parse_body<T: for<'de> Deserialize<'de>>(body: &[u8]) -> Result<T, GameError> {
     serde_json::from_slice(body).map_err(|e| GameError::parse_failure(format!("body json: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_state() -> ServerState {
+        ServerState {
+            engine: Mutex::new(None),
+        }
+    }
+
+    #[test]
+    fn interrogation_commands_dispatch_camel_case_args() {
+        let state = empty_state();
+
+        for (command, body) in [
+            (
+                "answer_interrogation_question",
+                r#"{"questionId":"wakatsuki_where"}"#,
+            ),
+            (
+                "press_testimony_statement",
+                r#"{"statementId":"wakatsuki_statement_1"}"#,
+            ),
+            (
+                "present_testimony_item",
+                r#"{"statementId":"wakatsuki_statement_1","itemKind":"evidence","itemId":"receipt"}"#,
+            ),
+        ] {
+            let err = dispatch(&state, command, body.as_bytes()).unwrap_err();
+            assert_eq!(err.code, "gameNotStarted");
+        }
+    }
 }
