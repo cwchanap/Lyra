@@ -6,12 +6,24 @@
 
 import type {
   ASTChapter,
+  ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
-  JSONChaptersIndex,
+  JSONInterrogationScene,
   JSONInvestigationScene,
   JSONLinearScene,
 } from "./types";
+
+type SceneIndexType = "linear" | "investigation" | "interrogation";
+
+type EmittedChaptersIndex = {
+  chapters: Array<{
+    id: string;
+    title: string;
+    summary: string;
+    scenes: Array<{ type: SceneIndexType; file: string }>;
+  }>;
+};
 
 export function emitLinearScene(ast: ASTLinearScene): JSONLinearScene {
   return {
@@ -84,14 +96,100 @@ export function emitInvestigationScene(ast: ASTInvestigationScene): JSONInvestig
   };
 }
 
-export function emitChaptersIndex(chapters: ASTChapter[]): JSONChaptersIndex {
+export function emitInterrogationScene(ast: ASTInterrogationScene): JSONInterrogationScene {
+  return {
+    type: "interrogation",
+    id: ast.id,
+    title: ast.title,
+    intro: ast.intro,
+    phases: ast.phases.map((phase) => {
+      const common = {
+        id: phase.id,
+        label: phase.label,
+        subject: {
+          id: phase.subject.id,
+          name: phase.subject.name,
+          role: phase.subject.role,
+          bio: phase.subject.bio,
+        },
+        required: phase.required,
+        status: phase.status,
+        unlock: phase.unlock,
+        reveals: phase.reveals,
+        sceneTag: phase.sceneTag,
+        entryDialogue: phase.entryDialogue,
+      };
+      if (phase.kind === "inquiry") {
+        return {
+          kind: "inquiry",
+          ...common,
+          complete: phase.complete,
+          questions: phase.questions.map((q) => ({
+            id: q.id,
+            label: q.label,
+            kind: q.kind,
+            parentQuestionId: q.parentQuestionId,
+            status: q.status,
+            required: q.required,
+            unlock: q.unlock,
+            reveals: q.reveals,
+            answerDialogue: q.answerDialogue,
+            onReask: q.onReask,
+          })),
+        };
+      }
+      return {
+        kind: "testimony",
+        ...common,
+        statements: phase.statements.map((s) => ({
+          id: s.id,
+          label: s.label,
+          content: s.content,
+          contradiction: s.contradiction,
+          onCorrect: s.onCorrect,
+          onWrong: s.onWrong,
+          onPress: s.onPress,
+          onPresent: s.onPresent,
+          onWrongPresent: s.onWrongPresent,
+          reveals: s.reveals,
+        })),
+        results: phase.results.map((r) => ({
+          id: r.id,
+          label: r.label,
+          reveals: r.reveals,
+          dialogue: r.dialogue,
+        })),
+      };
+    }),
+    evidenceManifest: ast.evidenceManifest.map((e) => ({
+      id: e.id,
+      name: e.name,
+      description: e.description,
+      details: e.details,
+      onCollect: e.onCollect,
+      onReexamine: e.onReexamine,
+    })),
+    statementManifest: ast.statementManifest.map((s) => ({
+      id: s.id,
+      speaker: s.speaker,
+      content: s.content,
+      onAcquire: s.onAcquire,
+      onReexamine: s.onReexamine,
+    })),
+    outro: {
+      unlock: ast.outro.unlock,
+      dialogue: ast.outro.dialogue,
+    },
+  };
+}
+
+export function emitChaptersIndex(chapters: ASTChapter[]): EmittedChaptersIndex {
   return {
     chapters: chapters.map((c) => ({
       id: c.dirName,
       title: c.title,
       summary: c.summary,
       scenes: c.sceneFiles
-        .filter((f) => !isReservedSceneFile(f))
         .map((f) => {
           const type = inferType(f);
           const jsonName = f.replace(/\.md$/, ".json");
@@ -101,11 +199,8 @@ export function emitChaptersIndex(chapters: ASTChapter[]): JSONChaptersIndex {
   };
 }
 
-function isReservedSceneFile(filename: string): boolean {
-  return filename.startsWith("interrogation_scene_");
-}
-
-function inferType(filename: string): "linear" | "investigation" {
+function inferType(filename: string): SceneIndexType {
+  if (filename.startsWith("interrogation_scene_")) return "interrogation";
   if (filename.startsWith("investigation_scene_")) return "investigation";
   if (filename.startsWith("scene_")) return "linear";
   throw new Error(`emit: cannot infer scene type from filename "${filename}". Validator should have caught this.`);

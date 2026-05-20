@@ -13,6 +13,7 @@
 
 import type {
   ASTChapter,
+  ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
   ASTSublocation,
@@ -24,7 +25,7 @@ import type {
 export type SceneRecord = {
   chapterId: string;
   file: string;
-  ast: ASTLinearScene | ASTInvestigationScene;
+  ast: ASTLinearScene | ASTInvestigationScene | ASTInterrogationScene;
 };
 
 export type ValidatorInput = {
