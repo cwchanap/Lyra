@@ -2,8 +2,17 @@ import { describe, expect, it } from "bun:test";
 import { validate } from "./validator";
 import type {
   ASTChapter,
+  ASTEvidence,
+  ASTInquiryPhase,
+  ASTInquiryQuestion,
+  ASTInterrogationPhase,
+  ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
+  ASTStatement,
+  ASTTestimonyPhase,
+  ASTTestimonyResult,
+  ASTTestimonyStatement,
   DialogueItem,
 } from "./types";
 
@@ -58,6 +67,137 @@ const mkInvestigationScene = (overrides: Partial<ASTInvestigationScene> = {}): A
   line: 1,
   ...overrides,
 });
+
+const mkEvidence = (id: string): ASTEvidence => ({
+  id,
+  name: id,
+  description: id,
+  details: id,
+  onCollect: [],
+  onReexamine: null,
+  sourceFile: "interrogation_scene_1.md",
+  line: 1,
+});
+
+const mkStatement = (id: string): ASTStatement => ({
+  id,
+  speaker: "Witness",
+  content: id,
+  onAcquire: [],
+  onReexamine: null,
+  sourceFile: "interrogation_scene_1.md",
+  line: 1,
+});
+
+const mkQuestion = (overrides: Partial<ASTInquiryQuestion> = {}): ASTInquiryQuestion => ({
+  id: "question",
+  label: "Question",
+  kind: "question",
+  parentQuestionId: null,
+  status: "unlocked",
+  required: true,
+  unlock: null,
+  reveals: [],
+  answerDialogue: [],
+  onReask: null,
+  sourceFile: "interrogation_scene_1.md",
+  line: 1,
+  ...overrides,
+});
+
+const mkResult = (overrides: Partial<ASTTestimonyResult> = {}): ASTTestimonyResult => ({
+  id: "result",
+  label: "Result",
+  reveals: [],
+  dialogue: [],
+  sourceFile: "interrogation_scene_1.md",
+  line: 1,
+  ...overrides,
+});
+
+const mkTestimonyStatement = (overrides: Partial<ASTTestimonyStatement> = {}): ASTTestimonyStatement => ({
+  id: "statement",
+  label: "Statement",
+  content: "Statement",
+  contradiction: null,
+  onCorrect: null,
+  onWrong: null,
+  onPress: null,
+  onPresent: null,
+  onWrongPresent: null,
+  reveals: [],
+  sourceFile: "interrogation_scene_1.md",
+  line: 1,
+  ...overrides,
+});
+
+const mkInquiryPhase = (overrides: Partial<ASTInquiryPhase> = {}): ASTInquiryPhase => ({
+  kind: "inquiry",
+  id: "inquiry",
+  label: "Inquiry",
+  subject: {
+    id: "subject",
+    name: "Subject",
+    role: "Witness",
+    bio: "Bio",
+    sourceFile: "interrogation_scene_1.md",
+    line: 1,
+  },
+  required: true,
+  status: "unlocked",
+  unlock: null,
+  reveals: [],
+  sceneTag: "room",
+  entryDialogue: [],
+  complete: "auto",
+  questions: [mkQuestion()],
+  sourceFile: "interrogation_scene_1.md",
+  line: 1,
+  ...overrides,
+});
+
+const mkTestimonyPhase = (overrides: Partial<ASTTestimonyPhase> = {}): ASTTestimonyPhase => ({
+  kind: "testimony",
+  id: "testimony",
+  label: "Testimony",
+  subject: {
+    id: "subject",
+    name: "Subject",
+    role: "Witness",
+    bio: "Bio",
+    sourceFile: "interrogation_scene_1.md",
+    line: 1,
+  },
+  required: true,
+  status: "unlocked",
+  unlock: null,
+  reveals: [],
+  sceneTag: "room",
+  entryDialogue: [],
+  statements: [mkTestimonyStatement()],
+  results: [mkResult()],
+  sourceFile: "interrogation_scene_1.md",
+  line: 1,
+  ...overrides,
+});
+
+const mkInterrogationScene = (overrides: Partial<ASTInterrogationScene> = {}): ASTInterrogationScene => {
+  const phases = overrides.phases ?? [mkInquiryPhase(), mkTestimonyPhase()];
+
+  return {
+    kind: "interrogationScene",
+    id: "interrogation_scene_1",
+    title: "Interrogation",
+    intro: [],
+    phases: phases as ASTInterrogationPhase[],
+    evidenceManifest: [],
+    statementManifest: [],
+    outro: { unlock: "auto", dialogue: [] },
+    sourceFile: "interrogation_scene_1.md",
+    line: 1,
+    ...overrides,
+  };
+};
 
 const mkChapter = (number: number, sceneFiles: string[]): ASTChapter => ({
   kind: "chapter",
@@ -1292,5 +1432,65 @@ describe("validator", () => {
     });
     const outroErr = errors.find((e) => e.code === "outroPredicateUnreachable" && e.message.includes("npc@secret"));
     expect(outroErr).toBeDefined();
+  });
+
+  it("accepts an interrogation scene whose testimony uses same-scene evidence revealed by an earlier inquiry", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "inquiry",
+          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "log" }] })],
+        }),
+        mkTestimonyPhase({
+          id: "testimony",
+          statements: [mkTestimonyStatement({ id: "s", contradiction: { kind: "evidence", id: "log" }, onCorrect: "win" })],
+          results: [mkResult({ id: "win" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("log")],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors).toEqual([]);
+  });
+
+  it("rejects unresolved testimony result references", () => {
+    const scene = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({ id: "s", contradiction: { kind: "evidence", id: "log" }, onCorrect: "missing" })],
+        results: [],
+      })],
+      evidenceManifest: [mkEvidence("log")],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationResultUnresolved")).toBeDefined();
+  });
+
+  it("rejects cross-scene evidence that is not guaranteed by an earlier scene", () => {
+    const sourceInvestigation = mkInvestigationScene({ id: "investigation_scene_1" });
+    sourceInvestigation.evidenceManifest = [mkEvidence("optional_log")];
+    const interrogation = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "s",
+          contradiction: { kind: "evidence", id: "optional_log" },
+          onCorrect: "win",
+        })],
+        results: [mkResult({ id: "win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["investigation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "investigation_scene_1.md", ast: sourceInvestigation },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: interrogation },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed")).toBeDefined();
   });
 });

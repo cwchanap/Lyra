@@ -14,10 +14,14 @@
 import type {
   ASTChapter,
   ASTInterrogationScene,
+  ASTTestimonyPhase,
+  ASTTestimonyStatement,
   ASTInvestigationScene,
   ASTLinearScene,
   ASTSublocation,
   CompileError,
+  InterrogationRevealTarget,
+  InterrogationUnlockExpr,
   RevealTarget,
   UnlockExpr,
 } from "./types";
@@ -44,6 +48,12 @@ export type ValidatorInput = {
   failedParseFiles?: Set<string>;
 };
 
+type CorpusContext = {
+  globalEvidence: Map<string, { chapterId: string; sourceFile: string; line: number }>;
+  globalStatement: Map<string, { chapterId: string; sourceFile: string; line: number }>;
+  guaranteedInventoryBeforeScene: Map<string, Set<string>>;
+};
+
 export function validate(input: ValidatorInput): CompileError[] {
   const errors: CompileError[] = [];
   const globalEvidence = new Map<string, { chapterId: string; sourceFile: string; line: number }>();
@@ -51,7 +61,7 @@ export function validate(input: ValidatorInput): CompileError[] {
 
   // ---- Pass 1: build global registries. ----
   for (const rec of input.scenes) {
-    if (rec.ast.kind !== "investigationScene") continue;
+    if (rec.ast.kind !== "investigationScene" && rec.ast.kind !== "interrogationScene") continue;
     const scene = rec.ast;
 
     for (const e of scene.evidenceManifest) {
@@ -82,10 +92,17 @@ export function validate(input: ValidatorInput): CompileError[] {
     }
   }
 
+  const guaranteedInventoryBeforeScene = buildGuaranteedInventoryBeforeScene(input);
+  const corpusContext: CorpusContext = {
+    globalEvidence,
+    globalStatement,
+    guaranteedInventoryBeforeScene,
+  };
+
   // ---- Pass 2: per-scene ID resolution + locked-block reachability. ----
   for (const rec of input.scenes) {
-    if (rec.ast.kind !== "investigationScene") continue;
-    validateInvestigationScene(rec, errors);
+    if (rec.ast.kind === "investigationScene") validateInvestigationScene(rec, errors);
+    if (rec.ast.kind === "interrogationScene") validateInterrogationScene(rec, errors, corpusContext);
   }
 
   // ---- Pass 2b: reachability analysis for locked blocks. ----
@@ -129,6 +146,471 @@ export function validate(input: ValidatorInput): CompileError[] {
   }
 
   return errors;
+}
+
+function validateInterrogationScene(
+  rec: SceneRecord,
+  errors: CompileError[],
+  corpusContext: CorpusContext,
+): void {
+  const scene = rec.ast as ASTInterrogationScene;
+  const sceneKey = sceneRecordKey(rec);
+  const guaranteedBefore = corpusContext.guaranteedInventoryBeforeScene.get(sceneKey) ?? new Set<string>();
+
+  const localEvidence = new Set(scene.evidenceManifest.map((e) => e.id));
+  const localStatement = new Set(scene.statementManifest.map((s) => s.id));
+  const localPhase = new Set<string>();
+  const localQuestion = new Set<string>();
+  const localTestimonyStatement = new Set<string>();
+  const subjectById = new Map<string, { name: string; role: string; bio: string }>();
+  const inboundReveals = new Map<string, Set<string>>();
+
+  const addInboundReveal = (target: string, source: string) => {
+    const existing = inboundReveals.get(target) ?? new Set<string>();
+    existing.add(source);
+    inboundReveals.set(target, existing);
+  };
+
+  const checkDuplicate = (set: Set<string>, id: string, label: string, line: number) => {
+    if (set.has(id)) {
+      errors.push({
+        code: "duplicateInterrogationId",
+        message: `Duplicate ${label} id "${id}" within interrogation scene.`,
+        sourceFile: scene.sourceFile,
+        line,
+      });
+    }
+    set.add(id);
+  };
+
+  for (const phase of scene.phases) {
+    checkDuplicate(localPhase, phase.id, "phase", phase.line);
+    const priorSubject = subjectById.get(phase.subject.id);
+    if (priorSubject) {
+      if (
+        priorSubject.name !== phase.subject.name
+        || priorSubject.role !== phase.subject.role
+        || priorSubject.bio !== phase.subject.bio
+      ) {
+        errors.push({
+          code: "interrogationSubjectConflict",
+          message: `Subject id "${phase.subject.id}" is reused with different name, role, or bio.`,
+          sourceFile: scene.sourceFile,
+          line: phase.subject.line,
+        });
+      }
+    } else {
+      subjectById.set(phase.subject.id, {
+        name: phase.subject.name,
+        role: phase.subject.role,
+        bio: phase.subject.bio,
+      });
+    }
+
+    if (phase.kind === "inquiry") {
+      for (const question of phase.questions) {
+        checkDuplicate(localQuestion, question.id, "question", question.line);
+      }
+    } else {
+      for (const statement of phase.statements) {
+        checkDuplicate(localTestimonyStatement, statement.id, "testimony statement", statement.line);
+      }
+
+      const resultIds = new Set<string>();
+      for (const result of phase.results) {
+        if (resultIds.has(result.id)) {
+          errors.push({
+            code: "duplicateInterrogationId",
+            message: `Duplicate result id "${result.id}" within testimony phase "${phase.id}".`,
+            sourceFile: scene.sourceFile,
+            line: result.line,
+          });
+        }
+        resultIds.add(result.id);
+      }
+    }
+  }
+
+  const checkReveals = (source: string, line: number, reveals: InterrogationRevealTarget[]) => {
+    for (const reveal of reveals) {
+      const targetKey = interrogationRevealKey(reveal);
+      switch (reveal.kind) {
+        case "evidence":
+          if (!localEvidence.has(reveal.id)) {
+            errors.push({
+              code: "interrogationRevealUnresolved",
+              message: `Reveal target evidence:${reveal.id} not declared in this interrogation scene's Evidence Manifest.`,
+              sourceFile: scene.sourceFile,
+              line,
+            });
+          }
+          break;
+        case "statement":
+          if (!localStatement.has(reveal.id)) {
+            errors.push({
+              code: "interrogationRevealUnresolved",
+              message: `Reveal target statement:${reveal.id} not declared in this interrogation scene's Statement Manifest.`,
+              sourceFile: scene.sourceFile,
+              line,
+            });
+          }
+          break;
+        case "question":
+          if (!localQuestion.has(reveal.id)) {
+            errors.push({
+              code: "interrogationRevealUnresolved",
+              message: `Reveal target question:${reveal.id} not declared in this interrogation scene.`,
+              sourceFile: scene.sourceFile,
+              line,
+            });
+          }
+          break;
+        case "phase":
+          if (!localPhase.has(reveal.id)) {
+            errors.push({
+              code: "interrogationRevealUnresolved",
+              message: `Reveal target phase:${reveal.id} not declared in this interrogation scene.`,
+              sourceFile: scene.sourceFile,
+              line,
+            });
+          }
+          break;
+      }
+      addInboundReveal(targetKey, source);
+    }
+  };
+
+  const checkUnlock = (
+    expr: InterrogationUnlockExpr | null,
+    line: number,
+    options: { checkCrossSceneInventory: boolean },
+  ) => {
+    if (expr === null) return;
+    walkInterrogationUnlock(expr, (pred) => {
+      switch (pred.predicate) {
+        case "evidence_collected":
+          if (!knownEvidence(pred.id, scene, corpusContext)) {
+            errors.push({
+              code: "interrogationUnlockUnresolved",
+              message: `Unlock predicate evidence:${pred.id} collected — id not declared in any loaded Evidence Manifest.`,
+              sourceFile: scene.sourceFile,
+              line,
+            });
+          } else if (options.checkCrossSceneInventory && !localEvidence.has(pred.id) && !guaranteedBefore.has(`evidence:${pred.id}`)) {
+            errors.push(crossSceneInventoryError(scene, line, `evidence:${pred.id}`));
+          }
+          break;
+        case "statement_acquired":
+          if (!knownStatement(pred.id, scene, corpusContext)) {
+            errors.push({
+              code: "interrogationUnlockUnresolved",
+              message: `Unlock predicate statement:${pred.id} acquired — id not declared in any loaded Statement Manifest.`,
+              sourceFile: scene.sourceFile,
+              line,
+            });
+          } else if (options.checkCrossSceneInventory && !localStatement.has(pred.id) && !guaranteedBefore.has(`statement:${pred.id}`)) {
+            errors.push(crossSceneInventoryError(scene, line, `statement:${pred.id}`));
+          }
+          break;
+        case "question_answered":
+          if (!localQuestion.has(pred.id)) {
+            errors.push({
+              code: "interrogationUnlockUnresolved",
+              message: `Unlock predicate question:${pred.id} answered — question not declared in this interrogation scene.`,
+              sourceFile: scene.sourceFile,
+              line,
+            });
+          }
+          break;
+        case "phase_completed":
+          if (!localPhase.has(pred.id)) {
+            errors.push({
+              code: "interrogationUnlockUnresolved",
+              message: `Unlock predicate phase:${pred.id} completed — phase not declared in this interrogation scene.`,
+              sourceFile: scene.sourceFile,
+              line,
+            });
+          }
+          break;
+      }
+    });
+  };
+
+  for (const phase of scene.phases) {
+    const phaseSource = `phase:${phase.id}`;
+    checkReveals(phaseSource, phase.line, phase.reveals);
+    checkUnlock(phase.unlock, phase.line, { checkCrossSceneInventory: true });
+
+    if (phase.kind === "inquiry") {
+      if (phase.complete !== "auto") checkUnlock(phase.complete, phase.line, { checkCrossSceneInventory: false });
+      for (const question of phase.questions) {
+        checkReveals(`question:${question.id}`, question.line, question.reveals);
+        checkUnlock(question.unlock, question.line, { checkCrossSceneInventory: false });
+      }
+    } else {
+      validateTestimonyPhaseResults(scene, phase, errors);
+      for (const statement of phase.statements) {
+        checkReveals(`testimonyStatement:${statement.id}`, statement.line, statement.reveals);
+        validateContradiction(scene, statement, errors, corpusContext, localEvidence, localStatement, guaranteedBefore);
+      }
+      for (const result of phase.results) {
+        checkReveals(`result:${phase.id}:${result.id}`, result.line, result.reveals);
+      }
+    }
+  }
+
+  if (scene.outro.unlock !== "auto") {
+    checkUnlock(scene.outro.unlock, scene.line, { checkCrossSceneInventory: false });
+  }
+
+  for (const phase of scene.phases) {
+    checkInterrogationLockedReachability(
+      `phase:${phase.id}`,
+      phase.status,
+      phase.unlock !== null,
+      inboundFromOtherBlock(inboundReveals, `phase:${phase.id}`),
+      scene.sourceFile,
+      phase.line,
+      errors,
+    );
+    if (phase.kind !== "inquiry") continue;
+    for (const question of phase.questions) {
+      checkInterrogationLockedReachability(
+        `question:${question.id}`,
+        question.status,
+        question.unlock !== null,
+        inboundFromOtherBlock(inboundReveals, `question:${question.id}`),
+        scene.sourceFile,
+        question.line,
+        errors,
+      );
+    }
+  }
+}
+
+function validateTestimonyPhaseResults(
+  scene: ASTInterrogationScene,
+  phase: ASTTestimonyPhase,
+  errors: CompileError[],
+): void {
+  const resultIds = new Set(phase.results.map((result) => result.id));
+  for (const statement of phase.statements) {
+    if (statement.contradiction && statement.onCorrect === null) {
+      errors.push({
+        code: "interrogationContradictionMissingCorrectResult",
+        message: `Testimony statement "${statement.id}" has a Contradiction but no On Correct result.`,
+        sourceFile: scene.sourceFile,
+        line: statement.line,
+      });
+    }
+    for (const [field, resultId] of [["On Correct", statement.onCorrect], ["On Wrong", statement.onWrong]] as const) {
+      if (resultId !== null && !resultIds.has(resultId)) {
+        errors.push({
+          code: "interrogationResultUnresolved",
+          message: `Testimony statement "${statement.id}" ${field} references missing result "${resultId}" in phase "${phase.id}".`,
+          sourceFile: scene.sourceFile,
+          line: statement.line,
+        });
+      }
+    }
+  }
+}
+
+function validateContradiction(
+  scene: ASTInterrogationScene,
+  statement: ASTTestimonyStatement,
+  errors: CompileError[],
+  corpusContext: CorpusContext,
+  localEvidence: Set<string>,
+  localStatement: Set<string>,
+  guaranteedBefore: Set<string>,
+): void {
+  if (statement.contradiction === null) return;
+  const target = statement.contradiction;
+  if (target.kind === "evidence") {
+    if (!knownEvidence(target.id, scene, corpusContext)) {
+      errors.push({
+        code: "interrogationContradictionUnresolved",
+        message: `Contradiction target evidence:${target.id} not declared in any loaded Evidence Manifest.`,
+        sourceFile: scene.sourceFile,
+        line: statement.line,
+      });
+    } else if (!localEvidence.has(target.id) && !guaranteedBefore.has(`evidence:${target.id}`)) {
+      errors.push(crossSceneInventoryError(scene, statement.line, `evidence:${target.id}`));
+    }
+    return;
+  }
+  if (!knownStatement(target.id, scene, corpusContext)) {
+    errors.push({
+      code: "interrogationContradictionUnresolved",
+      message: `Contradiction target statement:${target.id} not declared in any loaded Statement Manifest.`,
+      sourceFile: scene.sourceFile,
+      line: statement.line,
+    });
+  } else if (!localStatement.has(target.id) && !guaranteedBefore.has(`statement:${target.id}`)) {
+    errors.push(crossSceneInventoryError(scene, statement.line, `statement:${target.id}`));
+  }
+}
+
+function checkInterrogationLockedReachability(
+  key: string,
+  status: "locked" | "unlocked",
+  hasUnlock: boolean,
+  hasInbound: boolean,
+  sourceFile: string,
+  line: number,
+  errors: CompileError[],
+): void {
+  if (status !== "locked") return;
+  if (hasInbound && hasUnlock) {
+    errors.push({
+      code: "interrogationRevealsAndUnlockBoth",
+      message: `${key} has both an inbound Reveals and a self Unlock — pick one.`,
+      sourceFile,
+      line,
+    });
+  }
+  if (!hasInbound && !hasUnlock) {
+    errors.push({
+      code: "interrogationLockedBlockUnreachable",
+      message: `${key} is locked but unreachable (no Unlock and no inbound Reveals).`,
+      sourceFile,
+      line,
+    });
+  }
+}
+
+function buildGuaranteedInventoryBeforeScene(input: ValidatorInput): Map<string, Set<string>> {
+  const recordsByKey = new Map(input.scenes.map((rec) => [sceneRecordKey(rec), rec]));
+  const guaranteedBefore = new Map<string, Set<string>>();
+  const cumulative = new Set<string>();
+
+  for (const chapter of input.chapters) {
+    for (const file of chapter.sceneFiles) {
+      const key = `${chapter.dirName}/${file}`;
+      const rec = recordsByKey.get(key);
+      if (!rec) continue;
+      guaranteedBefore.set(key, new Set(cumulative));
+      for (const item of guaranteedInventoryFromScene(rec.ast)) {
+        cumulative.add(item);
+      }
+    }
+  }
+
+  for (const rec of input.scenes) {
+    const key = sceneRecordKey(rec);
+    if (!guaranteedBefore.has(key)) guaranteedBefore.set(key, new Set(cumulative));
+  }
+
+  return guaranteedBefore;
+}
+
+function guaranteedInventoryFromScene(scene: SceneRecord["ast"]): Set<string> {
+  if (scene.kind === "investigationScene") return guaranteedInventoryFromInvestigation(scene);
+  if (scene.kind === "interrogationScene") return guaranteedInventoryFromInterrogation(scene);
+  return new Set<string>();
+}
+
+function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set<string> {
+  const guaranteed = new Set<string>();
+  if (scene.outro.unlock === "auto") {
+    for (const sub of scene.sublocations) {
+      if (sub.status !== "unlocked") continue;
+      for (const hotspot of sub.hotspots) {
+        if (hotspot.status !== "unlocked") continue;
+        addInventoryReveals(guaranteed, hotspot.reveals);
+      }
+      for (const character of sub.characters) {
+        for (const topic of character.topics) {
+          if (topic.status !== "unlocked") continue;
+          addInventoryReveals(guaranteed, topic.reveals);
+        }
+      }
+    }
+    return guaranteed;
+  }
+
+  for (const item of requiredInventoryPredicates(scene.outro.unlock)) {
+    guaranteed.add(item);
+  }
+  return guaranteed;
+}
+
+function guaranteedInventoryFromInterrogation(scene: ASTInterrogationScene): Set<string> {
+  const guaranteed = new Set<string>();
+  for (const phase of scene.phases) {
+    if (!phase.required) continue;
+    if (phase.kind === "inquiry") {
+      for (const question of phase.questions) {
+        if (question.required) addInterrogationInventoryReveals(guaranteed, question.reveals);
+      }
+    } else {
+      const correctResultIds = new Set(
+        phase.statements.flatMap((statement) => statement.onCorrect === null ? [] : [statement.onCorrect]),
+      );
+      for (const result of phase.results) {
+        if (correctResultIds.has(result.id)) addInterrogationInventoryReveals(guaranteed, result.reveals);
+      }
+    }
+  }
+  return guaranteed;
+}
+
+function addInventoryReveals(out: Set<string>, reveals: RevealTarget[]): void {
+  for (const reveal of reveals) {
+    if (reveal.kind === "evidence") out.add(`evidence:${reveal.id}`);
+    if (reveal.kind === "statement") out.add(`statement:${reveal.id}`);
+  }
+}
+
+function addInterrogationInventoryReveals(out: Set<string>, reveals: InterrogationRevealTarget[]): void {
+  for (const reveal of reveals) {
+    if (reveal.kind === "evidence") out.add(`evidence:${reveal.id}`);
+    if (reveal.kind === "statement") out.add(`statement:${reveal.id}`);
+  }
+}
+
+function requiredInventoryPredicates(expr: UnlockExpr): Set<string> {
+  if ("op" in expr) {
+    const left = requiredInventoryPredicates(expr.left);
+    const right = requiredInventoryPredicates(expr.right);
+    if (expr.op === "and") return new Set([...left, ...right]);
+    return new Set([...left].filter((item) => right.has(item)));
+  }
+  if (expr.predicate === "evidence_collected") return new Set([`evidence:${expr.id}`]);
+  if (expr.predicate === "statement_acquired") return new Set([`statement:${expr.id}`]);
+  return new Set<string>();
+}
+
+function knownEvidence(id: string, scene: ASTInterrogationScene, corpusContext: CorpusContext): boolean {
+  return scene.evidenceManifest.some((evidence) => evidence.id === id) || corpusContext.globalEvidence.has(id);
+}
+
+function knownStatement(id: string, scene: ASTInterrogationScene, corpusContext: CorpusContext): boolean {
+  return scene.statementManifest.some((statement) => statement.id === id) || corpusContext.globalStatement.has(id);
+}
+
+function crossSceneInventoryError(
+  scene: ASTInterrogationScene,
+  line: number,
+  item: string,
+): CompileError {
+  return {
+    code: "crossSceneInventoryNotGuaranteed",
+    message: `${item} is referenced from a prior scene, but the compiler cannot prove it is guaranteed before this interrogation scene.`,
+    sourceFile: scene.sourceFile,
+    line,
+  };
+}
+
+function inboundFromOtherBlock(inboundReveals: Map<string, Set<string>>, key: string): boolean {
+  const sources = inboundReveals.get(key);
+  if (!sources) return false;
+  return [...sources].some((source) => source !== key);
+}
+
+function sceneRecordKey(rec: SceneRecord): string {
+  return `${rec.chapterId}/${rec.file}`;
 }
 
 function validateInvestigationScene(rec: SceneRecord, errors: CompileError[]): void {
@@ -768,6 +1250,18 @@ function walkUnlock(expr: UnlockExpr, fn: (atom: Extract<UnlockExpr, { predicate
   }
 }
 
+function walkInterrogationUnlock(
+  expr: InterrogationUnlockExpr,
+  fn: (atom: Extract<InterrogationUnlockExpr, { predicate: string }>) => void,
+): void {
+  if ("op" in expr) {
+    walkInterrogationUnlock(expr.left, fn);
+    walkInterrogationUnlock(expr.right, fn);
+  } else {
+    fn(expr);
+  }
+}
+
 function revealKey(r: RevealTarget): string {
   switch (r.kind) {
     case "topic":
@@ -775,4 +1269,8 @@ function revealKey(r: RevealTarget): string {
     default:
       return `${r.kind}:${r.id}`;
   }
+}
+
+function interrogationRevealKey(r: InterrogationRevealTarget): string {
+  return `${r.kind}:${r.id}`;
 }
