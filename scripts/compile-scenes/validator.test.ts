@@ -1493,4 +1493,95 @@ describe("validator", () => {
     });
     expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed")).toBeDefined();
   });
+
+  it("rejects same-scene testimony contradictions when the manifest item is never obtainable before testimony", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkTestimonyPhase({
+          id: "testimony",
+          statements: [mkTestimonyStatement({
+            id: "s",
+            contradiction: { kind: "evidence", id: "unrevealed_log" },
+            onCorrect: "win",
+          })],
+          results: [mkResult({ id: "win" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("unrevealed_log")],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationContradictionUnresolved")).toBeDefined();
+  });
+
+  it("does not guarantee a required inquiry question reveal when the question is locked by unobtainable inventory", () => {
+    const source = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "source_inquiry",
+          questions: [
+            mkQuestion({
+              id: "locked_question",
+              status: "locked",
+              unlock: { predicate: "evidence_collected", id: "missing_key" },
+              required: true,
+              reveals: [{ kind: "evidence", id: "later_log" }],
+            }),
+          ],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("missing_key"), mkEvidence("later_log")],
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "s",
+          contradiction: { kind: "evidence", id: "later_log" },
+          onCorrect: "win",
+        })],
+        results: [mkResult({ id: "win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("later_log"))).toBeDefined();
+  });
+
+  it("does not guarantee testimony result reveals from statements with no contradiction", () => {
+    const source = mkInterrogationScene({
+      phases: [
+        mkTestimonyPhase({
+          id: "source_testimony",
+          statements: [mkTestimonyStatement({ id: "s", contradiction: null, onCorrect: "win" })],
+          results: [mkResult({ id: "win", reveals: [{ kind: "statement", id: "future_statement" }] })],
+        }),
+      ],
+      statementManifest: [mkStatement("future_statement")],
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "statement", id: "future_statement" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("future_statement"))).toBeDefined();
+  });
 });

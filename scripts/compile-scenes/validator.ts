@@ -13,6 +13,7 @@
 
 import type {
   ASTChapter,
+  ASTInquiryPhase,
   ASTInterrogationScene,
   ASTTestimonyPhase,
   ASTTestimonyStatement,
@@ -22,6 +23,7 @@ import type {
   CompileError,
   InterrogationRevealTarget,
   InterrogationUnlockExpr,
+  InventoryTarget,
   RevealTarget,
   UnlockExpr,
 } from "./types";
@@ -164,6 +166,10 @@ function validateInterrogationScene(
   const localTestimonyStatement = new Set<string>();
   const subjectById = new Map<string, { name: string; role: string; bio: string }>();
   const inboundReveals = new Map<string, Set<string>>();
+  const interrogationFlow = analyzeInterrogationInventory(scene, {
+    mode: "obtainable",
+    initialInventory: guaranteedBefore,
+  });
 
   const addInboundReveal = (target: string, source: string) => {
     const existing = inboundReveals.get(target) ?? new Set<string>();
@@ -349,9 +355,19 @@ function validateInterrogationScene(
       }
     } else {
       validateTestimonyPhaseResults(scene, phase, errors);
+      const obtainableBeforePhase = interrogationFlow.beforePhase.get(phase.id) ?? new Set<string>();
       for (const statement of phase.statements) {
         checkReveals(`testimonyStatement:${statement.id}`, statement.line, statement.reveals);
-        validateContradiction(scene, statement, errors, corpusContext, localEvidence, localStatement, guaranteedBefore);
+        validateContradiction(
+          scene,
+          statement,
+          errors,
+          corpusContext,
+          localEvidence,
+          localStatement,
+          obtainableBeforePhase,
+          guaranteedBefore,
+        );
       }
       for (const result of phase.results) {
         checkReveals(`result:${phase.id}:${result.id}`, result.line, result.reveals);
@@ -423,6 +439,7 @@ function validateContradiction(
   corpusContext: CorpusContext,
   localEvidence: Set<string>,
   localStatement: Set<string>,
+  obtainableBeforePhase: Set<string>,
   guaranteedBefore: Set<string>,
 ): void {
   if (statement.contradiction === null) return;
@@ -435,6 +452,13 @@ function validateContradiction(
         sourceFile: scene.sourceFile,
         line: statement.line,
       });
+    } else if (localEvidence.has(target.id) && !obtainableBeforePhase.has(`evidence:${target.id}`)) {
+      errors.push({
+        code: "interrogationContradictionUnresolved",
+        message: `Contradiction target evidence:${target.id} is declared locally but is not obtainable before this testimony phase.`,
+        sourceFile: scene.sourceFile,
+        line: statement.line,
+      });
     } else if (!localEvidence.has(target.id) && !guaranteedBefore.has(`evidence:${target.id}`)) {
       errors.push(crossSceneInventoryError(scene, statement.line, `evidence:${target.id}`));
     }
@@ -444,6 +468,13 @@ function validateContradiction(
     errors.push({
       code: "interrogationContradictionUnresolved",
       message: `Contradiction target statement:${target.id} not declared in any loaded Statement Manifest.`,
+      sourceFile: scene.sourceFile,
+      line: statement.line,
+    });
+  } else if (localStatement.has(target.id) && !obtainableBeforePhase.has(`statement:${target.id}`)) {
+    errors.push({
+      code: "interrogationContradictionUnresolved",
+      message: `Contradiction target statement:${target.id} is declared locally but is not obtainable before this testimony phase.`,
       sourceFile: scene.sourceFile,
       line: statement.line,
     });
@@ -491,7 +522,7 @@ function buildGuaranteedInventoryBeforeScene(input: ValidatorInput): Map<string,
       const rec = recordsByKey.get(key);
       if (!rec) continue;
       guaranteedBefore.set(key, new Set(cumulative));
-      for (const item of guaranteedInventoryFromScene(rec.ast)) {
+      for (const item of guaranteedInventoryFromScene(rec.ast, cumulative)) {
         cumulative.add(item);
       }
     }
@@ -505,9 +536,14 @@ function buildGuaranteedInventoryBeforeScene(input: ValidatorInput): Map<string,
   return guaranteedBefore;
 }
 
-function guaranteedInventoryFromScene(scene: SceneRecord["ast"]): Set<string> {
+function guaranteedInventoryFromScene(scene: SceneRecord["ast"], initialInventory: Set<string>): Set<string> {
   if (scene.kind === "investigationScene") return guaranteedInventoryFromInvestigation(scene);
-  if (scene.kind === "interrogationScene") return guaranteedInventoryFromInterrogation(scene);
+  if (scene.kind === "interrogationScene") {
+    return analyzeInterrogationInventory(scene, {
+      mode: "guaranteed",
+      initialInventory,
+    }).afterScene;
+  }
   return new Set<string>();
 }
 
@@ -536,24 +572,153 @@ function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set
   return guaranteed;
 }
 
-function guaranteedInventoryFromInterrogation(scene: ASTInterrogationScene): Set<string> {
-  const guaranteed = new Set<string>();
+type InterrogationInventoryMode = "obtainable" | "guaranteed";
+
+type InterrogationInventoryAnalysis = {
+  beforePhase: Map<string, Set<string>>;
+  afterScene: Set<string>;
+};
+
+function analyzeInterrogationInventory(
+  scene: ASTInterrogationScene,
+  options: { mode: InterrogationInventoryMode; initialInventory: Set<string> },
+): InterrogationInventoryAnalysis {
+  const inventory = new Set(options.initialInventory);
+  const beforePhase = new Map<string, Set<string>>();
+  const answeredQuestions = new Set<string>();
+  const completedPhases = new Set<string>();
+  const revealedQuestions = new Set<string>();
+  const revealedPhases = new Set<string>();
+
   for (const phase of scene.phases) {
-    if (!phase.required) continue;
+    beforePhase.set(phase.id, new Set(inventory));
+    if (!interrogationBlockReachable(
+      phase.status,
+      phase.unlock,
+      `phase:${phase.id}`,
+      { inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases },
+    )) {
+      continue;
+    }
+
+    if (options.mode === "guaranteed" && !phase.required) continue;
+
     if (phase.kind === "inquiry") {
-      for (const question of phase.questions) {
-        if (question.required) addInterrogationInventoryReveals(guaranteed, question.reveals);
-      }
+      const complete = collectInquiryInventory(phase, {
+        mode: options.mode,
+        inventory,
+        answeredQuestions,
+        completedPhases,
+        revealedQuestions,
+        revealedPhases,
+      });
+      if (complete || options.mode === "obtainable") completedPhases.add(phase.id);
     } else {
-      const correctResultIds = new Set(
-        phase.statements.flatMap((statement) => statement.onCorrect === null ? [] : [statement.onCorrect]),
-      );
-      for (const result of phase.results) {
-        if (correctResultIds.has(result.id)) addInterrogationInventoryReveals(guaranteed, result.reveals);
-      }
+      const hasValidCorrectPath = collectTestimonyResultInventory(phase, {
+        inventory,
+        revealedQuestions,
+        revealedPhases,
+      });
+      if (hasValidCorrectPath || options.mode === "obtainable") completedPhases.add(phase.id);
     }
   }
-  return guaranteed;
+
+  return { beforePhase, afterScene: inventory };
+}
+
+type InterrogationInventoryState = {
+  inventory: Set<string>;
+  answeredQuestions: Set<string>;
+  completedPhases: Set<string>;
+  revealedQuestions: Set<string>;
+  revealedPhases: Set<string>;
+};
+
+function collectInquiryInventory(
+  phase: ASTInquiryPhase,
+  state: InterrogationInventoryState & { mode: InterrogationInventoryMode },
+): boolean {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const question of phase.questions) {
+      if (state.answeredQuestions.has(question.id)) continue;
+      if (state.mode === "guaranteed" && !question.required) continue;
+      if (!interrogationBlockReachable(question.status, question.unlock, `question:${question.id}`, state)) continue;
+
+      state.answeredQuestions.add(question.id);
+      addInterrogationInventoryReveals(state.inventory, question.reveals);
+      addInterrogationBlockReveals(state, question.reveals);
+      changed = true;
+    }
+  }
+
+  return phase.questions.every((question) => !question.required || state.answeredQuestions.has(question.id));
+}
+
+function collectTestimonyResultInventory(
+  phase: ASTTestimonyPhase,
+  state: Pick<InterrogationInventoryState, "inventory" | "revealedQuestions" | "revealedPhases">,
+): boolean {
+  let hasValidCorrectPath = false;
+  for (const statement of phase.statements) {
+    if (statement.contradiction === null || statement.onCorrect === null) continue;
+    if (!state.inventory.has(inventoryAtom(statement.contradiction))) continue;
+    const result = phase.results.find((candidate) => candidate.id === statement.onCorrect);
+    if (!result) continue;
+    hasValidCorrectPath = true;
+    addInterrogationInventoryReveals(state.inventory, result.reveals);
+    addInterrogationBlockReveals(state, result.reveals);
+  }
+  return hasValidCorrectPath;
+}
+
+function interrogationBlockReachable(
+  status: "locked" | "unlocked",
+  unlock: InterrogationUnlockExpr | null,
+  key: string,
+  state: InterrogationInventoryState,
+): boolean {
+  if (status === "unlocked") return true;
+  if (key.startsWith("question:") && state.revealedQuestions.has(key.slice("question:".length))) return true;
+  if (key.startsWith("phase:") && state.revealedPhases.has(key.slice("phase:".length))) return true;
+  return unlock !== null && interrogationUnlockSatisfiable(unlock, state);
+}
+
+function interrogationUnlockSatisfiable(
+  expr: InterrogationUnlockExpr,
+  state: Pick<InterrogationInventoryState, "inventory" | "answeredQuestions" | "completedPhases">,
+): boolean {
+  if ("op" in expr) {
+    if (expr.op === "and") {
+      return interrogationUnlockSatisfiable(expr.left, state) && interrogationUnlockSatisfiable(expr.right, state);
+    }
+    return interrogationUnlockSatisfiable(expr.left, state) || interrogationUnlockSatisfiable(expr.right, state);
+  }
+  switch (expr.predicate) {
+    case "evidence_collected":
+      return state.inventory.has(`evidence:${expr.id}`);
+    case "statement_acquired":
+      return state.inventory.has(`statement:${expr.id}`);
+    case "question_answered":
+      return state.answeredQuestions.has(expr.id);
+    case "phase_completed":
+      return state.completedPhases.has(expr.id);
+  }
+}
+
+function addInterrogationBlockReveals(
+  state: Pick<InterrogationInventoryState, "revealedQuestions" | "revealedPhases">,
+  reveals: InterrogationRevealTarget[],
+): void {
+  for (const reveal of reveals) {
+    if (reveal.kind === "question") state.revealedQuestions.add(reveal.id);
+    if (reveal.kind === "phase") state.revealedPhases.add(reveal.id);
+  }
+}
+
+function inventoryAtom(target: InventoryTarget): string {
+  return `${target.kind}:${target.id}`;
 }
 
 function addInventoryReveals(out: Set<string>, reveals: RevealTarget[]): void {
