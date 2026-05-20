@@ -16,10 +16,14 @@
 // Operator precedence: `and` binds tighter than `or`.
 // =============================================================================
 
-import type { CompileError, UnlockExpr } from "./types";
+import type { CompileError, InterrogationUnlockExpr, UnlockExpr } from "./types";
 
 export type ParseResult =
   | { ok: true; value: UnlockExpr }
+  | { ok: false; error: CompileError };
+
+export type InterrogationParseResult =
+  | { ok: true; value: InterrogationUnlockExpr }
   | { ok: false; error: CompileError };
 
 const ID_RE = /[a-z0-9_]+/y;
@@ -82,6 +86,28 @@ export function parseUnlockExpr(
     return failure(sourceFile, line, "unlockEmpty", "Unlock expression is empty.");
   }
   const expr = parseOr(tokens);
+  if (!expr.ok) return expr;
+  if (!tokens.atEnd()) {
+    return failure(
+      sourceFile,
+      line,
+      "unlockTrailing",
+      `Trailing tokens after parsed expression: "${tokens.peek()}"`,
+    );
+  }
+  return expr;
+}
+
+export function parseInterrogationUnlockExpr(
+  source: string,
+  sourceFile: string,
+  line: number,
+): InterrogationParseResult {
+  const tokens = new Tokens(source.trim(), sourceFile, line);
+  if (tokens.atEnd()) {
+    return failure(sourceFile, line, "unlockEmpty", "Unlock expression is empty.");
+  }
+  const expr = parseInterrogationOr(tokens);
   if (!expr.ok) return expr;
   if (!tokens.atEnd()) {
     return failure(
@@ -169,6 +195,82 @@ function parsePredicate(t: Tokens): ParseResult {
   );
 }
 
-function failure(sourceFile: string, line: number, code: string, message: string): ParseResult {
+function parseInterrogationOr(t: Tokens): InterrogationParseResult {
+  let left = parseInterrogationAnd(t);
+  if (!left.ok) return left;
+  while (t.consumeWord("or")) {
+    const right = parseInterrogationAnd(t);
+    if (!right.ok) return right;
+    left = { ok: true, value: { op: "or", left: left.value, right: right.value } };
+  }
+  return left;
+}
+
+function parseInterrogationAnd(t: Tokens): InterrogationParseResult {
+  let left = parseInterrogationAtom(t);
+  if (!left.ok) return left;
+  while (t.consumeWord("and")) {
+    const right = parseInterrogationAtom(t);
+    if (!right.ok) return right;
+    left = { ok: true, value: { op: "and", left: left.value, right: right.value } };
+  }
+  return left;
+}
+
+function parseInterrogationAtom(t: Tokens): InterrogationParseResult {
+  if (t.consume("(")) {
+    const inner = parseInterrogationOr(t);
+    if (!inner.ok) return inner;
+    if (!t.consume(")")) {
+      return failure(t.sourceFile, t.line, "unlockUnclosedParen", "Missing closing paren.");
+    }
+    return inner;
+  }
+  return parseInterrogationPredicate(t);
+}
+
+function parseInterrogationPredicate(t: Tokens): InterrogationParseResult {
+  if (t.consume("evidence:")) {
+    const id = t.consumeId();
+    if (!id) return failure(t.sourceFile, t.line, "unlockMissingId", "Missing evidence id.");
+    if (!t.consumeWord("collected"))
+      return failure(t.sourceFile, t.line, "unlockMissingVerb", `Expected "collected" after evidence:${id}.`);
+    return { ok: true, value: { predicate: "evidence_collected", id } };
+  }
+  if (t.consume("statement:")) {
+    const id = t.consumeId();
+    if (!id) return failure(t.sourceFile, t.line, "unlockMissingId", "Missing statement id.");
+    if (!t.consumeWord("acquired"))
+      return failure(t.sourceFile, t.line, "unlockMissingVerb", `Expected "acquired" after statement:${id}.`);
+    return { ok: true, value: { predicate: "statement_acquired", id } };
+  }
+  if (t.consume("question:")) {
+    const id = t.consumeId();
+    if (!id) return failure(t.sourceFile, t.line, "unlockMissingId", "Missing question id.");
+    if (!t.consumeWord("answered"))
+      return failure(t.sourceFile, t.line, "unlockMissingVerb", `Expected "answered" after question:${id}.`);
+    return { ok: true, value: { predicate: "question_answered", id } };
+  }
+  if (t.consume("phase:")) {
+    const id = t.consumeId();
+    if (!id) return failure(t.sourceFile, t.line, "unlockMissingId", "Missing phase id.");
+    if (!t.consumeWord("completed"))
+      return failure(t.sourceFile, t.line, "unlockMissingVerb", `Expected "completed" after phase:${id}.`);
+    return { ok: true, value: { predicate: "phase_completed", id } };
+  }
+  return failure(
+    t.sourceFile,
+    t.line,
+    "unlockUnknownPredicate",
+    `Unknown predicate prefix at: "${t.peek()}"`,
+  );
+}
+
+function failure(
+  sourceFile: string,
+  line: number,
+  code: string,
+  message: string,
+): { ok: false; error: CompileError } {
   return { ok: false, error: { code, message, sourceFile, line } };
 }
