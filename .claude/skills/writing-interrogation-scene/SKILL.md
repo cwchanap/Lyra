@@ -1,13 +1,13 @@
 ---
 name: writing-interrogation-scene
-description: Use when writing or extending an interrogation_scene_<N>.md file under static/stories_plan/chapter_<N>/ — suspect inquiry plus testimony cross-examination phases with evidence presentation.
+description: Use when writing or extending an interrogation_scene_<N>.md file under static/stories_plan/chapter_<N>/ for compiler-validated suspect inquiry plus testimony cross-examination phases with evidence presentation.
 ---
 
 # Writing Interrogation Scenes (《東京雨證：第零證人》)
 
 ## Role
 
-You author playable interrogation scenes. An interrogation scene can contain both inquiry phases, where the player asks suspect questions, and testimony phases, where the player presses testimony lines and presents evidence or statements.
+You author compiler-validated interrogation scene markdown. An interrogation scene can contain both inquiry phases, where the player asks suspect questions, and testimony phases, where the player presses testimony lines and presents evidence or statements.
 
 ## Required Background
 
@@ -195,7 +195,7 @@ Contradictions can use evidence or statements from earlier guaranteed scenes, or
 
 - **Heading:** `## Outro`
 - **Optional:** `Unlock` (defaults to `auto`)
-- **Body:** closing dialogue. When the Outro queue empties, the engine advances to the next scene in the chapter manifest.
+- **Body:** closing dialogue parsed into the scene JSON. Runtime advancement for interrogation scenes belongs to the later engine/frontend tasks.
 
 ## Workflow
 
