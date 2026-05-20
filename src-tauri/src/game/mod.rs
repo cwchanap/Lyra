@@ -414,68 +414,7 @@ impl GameEngine {
             }
         }
 
-        let phase_to_enter = {
-            let scene = match &self.scene {
-                SceneRuntime::Interrogation(scene) => scene,
-                _ => return Ok(false),
-            };
-            scene
-                .current_phase_id
-                .as_deref()
-                .filter(|id| !scene.phase_entered(id))
-                .and_then(|id| {
-                    scene
-                        .def
-                        .phases
-                        .iter()
-                        .find(|phase| phase_id(phase) == id)
-                        .cloned()
-                })
-        };
-
-        if let Some(phase) = phase_to_enter {
-            let (phase_id, scene_tag, entry_dialogue, reveals) = match &phase {
-                InterrogationPhaseJson::Inquiry {
-                    id,
-                    scene_tag,
-                    entry_dialogue,
-                    reveals,
-                    ..
-                }
-                | InterrogationPhaseJson::Testimony {
-                    id,
-                    scene_tag,
-                    entry_dialogue,
-                    reveals,
-                    ..
-                } => (
-                    id.clone(),
-                    scene_tag.clone(),
-                    entry_dialogue.clone(),
-                    reveals.clone(),
-                ),
-            };
-            let queue_items = {
-                let scene = match &mut self.scene {
-                    SceneRuntime::Interrogation(scene) => scene,
-                    _ => return Ok(false),
-                };
-                scene.mark_phase_entered(&phase_id);
-                reveals::apply_interrogation_reveals_and_build_queue(
-                    scene,
-                    &mut self.inventory,
-                    entry_dialogue,
-                    &reveals,
-                    &chapter_id,
-                )
-            };
-            self.last_scene_tag = Some(scene_tag);
-            if queue_items.is_empty() {
-                self.on_queue_exhausted()?;
-            } else {
-                let queue_gen = self.alloc_queue_gen();
-                self.install_scene_queue(queue_items, queue_gen)?;
-            }
+        if self.try_enter_current_interrogation_phase(&chapter_id)? {
             return Ok(false);
         }
 
@@ -485,6 +424,10 @@ impl GameEngine {
                 _ => return Ok(false),
             };
             scene.refresh_phase_completion(&self.inventory);
+        }
+
+        if self.try_enter_current_interrogation_phase(&chapter_id)? {
+            return Ok(false);
         }
 
         let (outro_satisfied, outro_dialogue) = {
@@ -526,6 +469,78 @@ impl GameEngine {
             self.install_scene_queue(outro_dialogue, queue_gen)?;
         }
         Ok(false)
+    }
+
+    fn try_enter_current_interrogation_phase(
+        &mut self,
+        chapter_id: &str,
+    ) -> Result<bool, GameError> {
+        let phase_to_enter = {
+            let scene = match &self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => return Ok(false),
+            };
+            scene
+                .current_phase_id
+                .as_deref()
+                .filter(|id| !scene.phase_entered(id))
+                .and_then(|id| {
+                    scene
+                        .def
+                        .phases
+                        .iter()
+                        .find(|phase| phase_id(phase) == id)
+                        .cloned()
+                })
+        };
+
+        let Some(phase) = phase_to_enter else {
+            return Ok(false);
+        };
+
+        let (phase_id, scene_tag, entry_dialogue, reveals) = match &phase {
+            InterrogationPhaseJson::Inquiry {
+                id,
+                scene_tag,
+                entry_dialogue,
+                reveals,
+                ..
+            }
+            | InterrogationPhaseJson::Testimony {
+                id,
+                scene_tag,
+                entry_dialogue,
+                reveals,
+                ..
+            } => (
+                id.clone(),
+                scene_tag.clone(),
+                entry_dialogue.clone(),
+                reveals.clone(),
+            ),
+        };
+        let queue_items = {
+            let scene = match &mut self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => return Ok(false),
+            };
+            scene.mark_phase_entered(&phase_id);
+            reveals::apply_interrogation_reveals_and_build_queue(
+                scene,
+                &mut self.inventory,
+                entry_dialogue,
+                &reveals,
+                chapter_id,
+            )
+        };
+        self.last_scene_tag = Some(scene_tag);
+        if queue_items.is_empty() {
+            self.on_queue_exhausted()?;
+        } else {
+            let queue_gen = self.alloc_queue_gen();
+            self.install_scene_queue(queue_items, queue_gen)?;
+        }
+        Ok(true)
     }
 
     fn advance_into_first_sublocation(&mut self) -> Result<(), GameError> {
@@ -1249,9 +1264,6 @@ impl GameEngine {
             {
                 return Err(GameError::dialogue_active("present_testimony_item"));
             }
-            if !self.inventory_target_exists(item_kind, item_id) {
-                return Err(GameError::unknown_inventory_target(item_kind, item_id));
-            }
             let phase_id_value = scene
                 .current_phase_id
                 .clone()
@@ -1271,6 +1283,9 @@ impl GameEngine {
                 .find(|statement| statement.id == statement_id)
                 .cloned()
                 .ok_or_else(|| GameError::unknown_testimony_statement(statement_id))?;
+            if !self.inventory_target_exists(item_kind, item_id) {
+                return Err(GameError::unknown_inventory_target(item_kind, item_id));
+            }
             let correct = statement
                 .contradiction
                 .as_ref()
@@ -1887,6 +1902,59 @@ mod tests {
         }
     }
 
+    fn locked_inventory_unlocked_interrogation_scene() -> InterrogationSceneJson {
+        InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "inventory_unlocked_inquiry".into(),
+                label: "Inventory Unlocked Inquiry".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Locked,
+                unlock: Some(InterrogationUnlockExpr::EvidenceCollected {
+                    _predicate: crate::game::schema::PredicateEvidenceCollected::X,
+                    id: "key".into(),
+                }),
+                reveals: vec![crate::game::schema::InterrogationRevealTarget::Evidence {
+                    id: "note".into(),
+                }],
+                scene_tag: "interrogation_room".into(),
+                entry_dialogue: vec![DialogueItem::Line {
+                    speaker: "A".into(),
+                    text: "entry".into(),
+                }],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![crate::game::schema::InquiryQuestionJson {
+                    id: "required_question".into(),
+                    label: "Required Question".into(),
+                    kind: crate::game::schema::InquiryQuestionKind::Question,
+                    parent_question_id: None,
+                    status: LockStatus::Unlocked,
+                    required: true,
+                    unlock: None,
+                    reveals: vec![],
+                    answer_dialogue: vec![],
+                    on_reask: None,
+                }],
+            }],
+            evidence_manifest: vec![EvidenceJson {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        }
+    }
+
     fn empty_engine_with_interrogation_scene(
         scene: InterrogationSceneJson,
         intro_queue_gen: u64,
@@ -1978,6 +2046,36 @@ mod tests {
         let err = engine.prime_initial_queue().unwrap_err();
 
         assert_eq!(err.code, "sceneValidationFailed");
+    }
+
+    #[test]
+    fn interrogation_enters_inventory_unlocked_phase_after_refresh() {
+        let mut engine = empty_engine_with_interrogation_scene(
+            locked_inventory_unlocked_interrogation_scene(),
+            1,
+        );
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "key".into(),
+            name: "Key".into(),
+            description: "Key".into(),
+            details: "Key".into(),
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "previous_scene".into(),
+        });
+
+        engine.prime_initial_queue().unwrap();
+
+        assert!(engine.inventory.has_evidence("note"));
+        assert_eq!(engine.last_scene_tag.as_deref(), Some("interrogation_room"));
+        let token = token_from(&engine.view());
+        let view = engine.advance_dialogue(token).unwrap();
+        match view.mode {
+            ModeView::Interrogation { phase_id } => {
+                assert_eq!(phase_id, "inventory_unlocked_inquiry");
+            }
+            other => panic!("expected interrogation mode after phase entry, got {other:?}"),
+        }
     }
 
     #[test]
@@ -2122,6 +2220,17 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.code, "dialogueActive");
+    }
+
+    #[test]
+    fn interrogation_present_testimony_item_resolves_unknown_statement_before_missing_inventory() {
+        let mut engine = empty_engine_with_interrogation_scene(testimony_interrogation_scene(), 1);
+
+        let err = engine
+            .present_testimony_item("missing_statement", "evidence", "missing_item")
+            .unwrap_err();
+
+        assert_eq!(err.code, "unknownTestimonyStatement");
     }
 
     #[test]
