@@ -1,6 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { emitChaptersIndex, emitInterrogationScene, emitInvestigationScene, emitLinearScene } from "./emitter";
-import type { ASTChapter, ASTInterrogationScene, ASTInvestigationScene, ASTLinearScene } from "./types";
+import type {
+  ASTChapter,
+  ASTInterrogationScene,
+  ASTInvestigationScene,
+  ASTLinearScene,
+  JSONChaptersIndex,
+} from "./types";
 
 describe("emitter", () => {
   it("emits a linear scene JSON", () => {
@@ -87,11 +93,11 @@ describe("emitter", () => {
       number: 1,
       title: "t",
       summary: "s",
-      sceneFiles: ["scene_0.md", "investigation_scene_1.md"],
+      sceneFiles: ["scene_0.md", "investigation_scene_1.md", "interrogation_scene_2.md"],
       sourceFile: "chapter_1/chapter.md",
       line: 1,
     };
-    const idx = emitChaptersIndex([chapter]);
+    const idx: JSONChaptersIndex = emitChaptersIndex([chapter]);
     expect(idx).toEqual({
       chapters: [
         {
@@ -101,6 +107,7 @@ describe("emitter", () => {
           scenes: [
             { type: "linear", file: "chapter_1/scene_0.json" },
             { type: "investigation", file: "chapter_1/investigation_scene_1.json" },
+            { type: "interrogation", file: "chapter_1/interrogation_scene_2.json" },
           ],
         },
       ],

@@ -72,7 +72,26 @@ describe("compile (end-to-end against valid fixture)", () => {
         type: "interrogation",
         file: "chapter_1/interrogation_scene_1.json",
       });
-      expect(readJson("chapter_1/interrogation_scene_1.json").type).toBe("interrogation");
+      const interrogation = readJson("chapter_1/interrogation_scene_1.json");
+      expect(interrogation.type).toBe("interrogation");
+      expect(interrogation.phases.map((phase: { kind: string }) => phase.kind)).toEqual(["inquiry", "testimony"]);
+      expect(interrogation.phases[0].questions[0].id).toBe("entered_storage");
+      expect(interrogation.phases[1].statements[0].contradiction).toEqual({
+        kind: "evidence",
+        id: "coffee_machine_cleaning_log",
+      });
+      expect(interrogation.phases[1].results[0].reveals).toContainEqual({
+        kind: "statement",
+        id: "kagami_timeline_inconsistent",
+      });
+      expect(interrogation.evidenceManifest.map((e: { id: string }) => e.id)).toEqual([
+        "coffee_machine_cleaning_log",
+      ]);
+      expect(interrogation.statementManifest.map((s: { id: string }) => s.id)).toEqual([
+        "wakatsuki_entered_for_beans",
+        "kagami_timeline_inconsistent",
+      ]);
+      expect(interrogation.outro).toMatchObject({ unlock: "auto" });
     } finally {
       rmSync(outRoot, { recursive: true, force: true });
     }
