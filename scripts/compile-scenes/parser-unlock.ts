@@ -3,7 +3,7 @@
 //
 // Recursive-descent parser for Unlock: expressions.
 //
-// Grammar:
+// Investigation grammar:
 //   expr  := or
 //   or    := and ( "or" and )*
 //   and   := atom ( "and" atom )*
@@ -12,6 +12,12 @@
 //          | "statement:" ID " acquired"
 //          | "topic:"     ID "@" ID " discussed"
 //          | "hotspot:"   ID " investigated"
+//
+// Interrogation grammar uses the same operators and parentheses, with predicates:
+//   pred  := "evidence:"   ID " collected"
+//          | "statement:"  ID " acquired"
+//          | "question:"   ID " answered"
+//          | "phase:"      ID " completed"
 //
 // Operator precedence: `and` binds tighter than `or`.
 // =============================================================================
