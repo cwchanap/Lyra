@@ -445,11 +445,7 @@ impl GameEngine {
             .clone();
         let new_scene = load_scene_runtime(&self.resources_dir, &scene_ref, queue_gen)?;
 
-        let previous_chapter_idx = self.current_chapter_idx;
-        let previous_scene_idx = self.current_scene_idx;
-        let previous_scene = self.scene.clone();
-        let previous_last_scene_tag = self.last_scene_tag.clone();
-        let previous_next_queue_gen = self.next_queue_gen;
+        let snapshot = self.snapshot();
 
         self.current_chapter_idx = next_chapter_idx;
         self.current_scene_idx = next_scene_idx;
@@ -457,11 +453,7 @@ impl GameEngine {
         self.last_scene_tag = None;
         self.next_queue_gen += 1;
         if let Err(err) = self.prime_initial_queue() {
-            self.current_chapter_idx = previous_chapter_idx;
-            self.current_scene_idx = previous_scene_idx;
-            self.scene = previous_scene;
-            self.last_scene_tag = previous_last_scene_tag;
-            self.next_queue_gen = previous_next_queue_gen;
+            self.restore_snapshot(snapshot);
             return Err(err);
         }
         Ok(())
@@ -1537,6 +1529,112 @@ mod tests {
             }
             other => panic!("expected previous linear scene after failed advance, got {other:?}"),
         }
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn failed_initial_silent_investigation_transition_rolls_back_inventory() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("lyra-initial-transition-rollback-test-{}-{}", std::process::id(), n));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter 1",
+                    "summary": "Summary",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_0.json" },
+                        { "type": "investigation", "file": "chapter_1/investigation_scene_1.json" },
+                        { "type": "interrogation", "file": "chapter_1/interrogation_scene_1.json" }
+                    ]
+                }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("scene_0.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Opening",
+                "queue": [{ "kind": "line", "speaker": "A", "text": "before" }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("investigation_scene_1.json"),
+            r#"{
+                "type": "investigation",
+                "id": "investigation_scene_1",
+                "title": "Investigation",
+                "intro": [],
+                "sublocations": [{
+                    "id": "room",
+                    "label": "Room",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [{ "kind": "evidence", "id": "note" }],
+                    "sceneTag": "room",
+                    "transitionDialogue": [],
+                    "hotspots": [],
+                    "characters": []
+                }],
+                "evidenceManifest": [{
+                    "id": "note",
+                    "name": "Note",
+                    "description": "Note",
+                    "details": "Note",
+                    "onCollect": [],
+                    "onReexamine": null
+                }],
+                "statementManifest": [],
+                "outro": {
+                    "unlock": { "predicate": "evidence_collected", "id": "note" },
+                    "dialogue": []
+                }
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_1",
+                "title": "Interrogation",
+                "intro": [],
+                "phases": [],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let token = token_from(&engine.view());
+
+        let err = engine.advance_dialogue(token).unwrap_err();
+        assert_eq!(err.code, "unsupportedSceneType");
+
+        assert!(engine.inventory.evidence.is_empty());
+        assert_eq!(engine.current_chapter_idx, 0);
+        assert_eq!(engine.current_scene_idx, 0);
+        match engine.view().scene {
+            SceneView::Linear { id, index, total, .. } => {
+                assert_eq!(id, "scene_0");
+                assert_eq!(index, 0);
+                assert_eq!(total, 3);
+            }
+            other => panic!("expected previous linear scene after failed advance, got {other:?}"),
+        }
+
         let _ = fs::remove_dir_all(d);
     }
 
