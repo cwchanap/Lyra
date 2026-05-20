@@ -1204,9 +1204,6 @@ impl GameEngine {
         if self.current_chapter_idx >= self.chapters.len() {
             return Err(GameError::game_complete());
         }
-        if !self.inventory_target_exists(item_kind, item_id) {
-            return Err(GameError::unknown_inventory_target(item_kind, item_id));
-        }
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
         let (phase_id_value, statement, result, correct) = {
@@ -1225,6 +1222,9 @@ impl GameEngine {
                 .is_some_and(|q| q.cursor < q.items.len())
             {
                 return Err(GameError::dialogue_active("present_testimony_item"));
+            }
+            if !self.inventory_target_exists(item_kind, item_id) {
+                return Err(GameError::unknown_inventory_target(item_kind, item_id));
             }
             let phase_id_value = scene
                 .current_phase_id
@@ -1671,8 +1671,11 @@ impl<'a> unlock::UnlockContext for SceneAndInventoryCtx<'a> {
 mod tests {
     use super::*;
     use crate::game::schema::{
-        CharacterJson, EvidenceJson, HotspotJson, InvestigationSceneJson, LockStatus, OutroJson,
-        OutroUnlock, RevealTarget, SceneType, SublocationJson, TopicJson, UnlockExpr,
+        AutoMarker, CharacterJson, EvidenceJson, HotspotJson, InterrogationOutroJson,
+        InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationSceneJson, InventoryTarget,
+        InvestigationSceneJson, LockStatus, OutroJson, OutroUnlock, RevealTarget, SceneType,
+        SubjectJson, SublocationJson, TestimonyResultJson, TestimonyStatementJson, TopicJson,
+        UnlockExpr,
     };
 
     fn investigation_scene_with_intro(
@@ -1732,6 +1735,118 @@ mod tests {
             ModeView::Dialogue { queue_token, .. } => queue_token.clone(),
             other => panic!("expected dialogue mode, got {other:?}"),
         }
+    }
+
+    fn subject() -> SubjectJson {
+        SubjectJson {
+            id: "suspect".into(),
+            name: "Suspect".into(),
+            role: "Witness".into(),
+            bio: "Quiet.".into(),
+        }
+    }
+
+    fn testimony_interrogation_scene() -> InterrogationSceneJson {
+        InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Testimony {
+                id: "testimony".into(),
+                label: "Testimony".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                entry_dialogue: vec![],
+                statements: vec![TestimonyStatementJson {
+                    id: "statement".into(),
+                    label: "Statement".into(),
+                    content: "I did nothing.".into(),
+                    contradiction: Some(InventoryTarget::Evidence { id: "log".into() }),
+                    on_correct: Some("correct".into()),
+                    on_wrong: None,
+                    on_press: None,
+                    on_present: None,
+                    on_wrong_present: None,
+                    reveals: vec![],
+                }],
+                results: vec![TestimonyResultJson {
+                    id: "correct".into(),
+                    label: "Correct".into(),
+                    reveals: vec![],
+                    dialogue: vec![],
+                }],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        }
+    }
+
+    fn empty_engine_with_interrogation_scene(
+        scene: InterrogationSceneJson,
+        intro_queue_gen: u64,
+    ) -> GameEngine {
+        GameEngine {
+            resources_dir: PathBuf::new(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Interrogation,
+                    file: "chapter_1/interrogation_scene_1.json".into(),
+                }],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Interrogation(Box::new(InterrogationSceneState::from_json(
+                scene,
+                intro_queue_gen,
+            ))),
+            last_scene_tag: None,
+            inventory: Inventory::default(),
+            next_queue_gen: intro_queue_gen + 1,
+        }
+    }
+
+    #[test]
+    fn present_testimony_item_rejects_non_interrogation_before_missing_inventory() {
+        let scene = investigation_scene_with_intro("investigation_scene_1", vec![]);
+        let mut engine = empty_engine_with_scene(scene, 1);
+
+        let err = engine
+            .present_testimony_item("statement", "evidence", "missing")
+            .unwrap_err();
+
+        assert_eq!(err.code, "wrongMode");
+    }
+
+    #[test]
+    fn present_testimony_item_rejects_active_interrogation_dialogue_before_missing_inventory() {
+        let mut engine = empty_engine_with_interrogation_scene(testimony_interrogation_scene(), 1);
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        scene.pending_queue = Some(DialogueQueue {
+            items: vec![DialogueItem::Action {
+                text: "dialogue".into(),
+            }],
+            cursor: 0,
+            queue_gen: 2,
+        });
+
+        let err = engine
+            .present_testimony_item("statement", "evidence", "missing")
+            .unwrap_err();
+
+        assert_eq!(err.code, "dialogueActive");
     }
 
     #[test]

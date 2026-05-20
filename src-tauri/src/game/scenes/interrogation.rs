@@ -29,7 +29,6 @@ impl InterrogationSceneState {
             .phases
             .iter()
             .find(|phase| phase_required(phase) && phase_status(phase) == LockStatus::Unlocked)
-            .or_else(|| def.phases.iter().find(|phase| phase_required(phase)))
             .map(|phase| phase_id(phase).to_string());
         Self {
             def,
@@ -379,6 +378,38 @@ mod tests {
         }
     }
 
+    fn inquiry_phase_with_status(id: &str, status: LockStatus) -> InterrogationPhaseJson {
+        let mut scene = one_question_inquiry_scene();
+        let InterrogationPhaseJson::Inquiry {
+            label,
+            subject,
+            required,
+            unlock,
+            reveals,
+            scene_tag,
+            entry_dialogue,
+            complete,
+            questions,
+            ..
+        } = scene.phases.remove(0)
+        else {
+            panic!("expected inquiry phase");
+        };
+        InterrogationPhaseJson::Inquiry {
+            id: id.into(),
+            label,
+            subject,
+            required,
+            status,
+            unlock,
+            reveals,
+            scene_tag,
+            entry_dialogue,
+            complete,
+            questions,
+        }
+    }
+
     #[test]
     fn inquiry_phase_completes_after_required_question_answered() {
         let mut scene = InterrogationSceneState::from_json(one_question_inquiry_scene(), 1);
@@ -386,6 +417,35 @@ mod tests {
         scene.record_question_answered("reason");
         scene.refresh_phase_completion(&Inventory::default());
         assert!(scene.completed_phases.contains("inquiry"));
+    }
+
+    #[test]
+    fn interrogation_initial_phase_skips_locked_required_phase() {
+        let mut def = one_question_inquiry_scene();
+        def.phases = vec![
+            inquiry_phase_with_status("locked_inquiry", LockStatus::Locked),
+            inquiry_phase_with_status("unlocked_inquiry", LockStatus::Unlocked),
+        ];
+
+        let scene = InterrogationSceneState::from_json(def, 1);
+
+        assert_eq!(
+            scene.current_phase_id().as_deref(),
+            Some("unlocked_inquiry")
+        );
+    }
+
+    #[test]
+    fn interrogation_initial_phase_is_none_when_all_required_phases_locked() {
+        let mut def = one_question_inquiry_scene();
+        def.phases = vec![
+            inquiry_phase_with_status("first_locked_inquiry", LockStatus::Locked),
+            inquiry_phase_with_status("second_locked_inquiry", LockStatus::Locked),
+        ];
+
+        let scene = InterrogationSceneState::from_json(def, 1);
+
+        assert_eq!(scene.current_phase_id(), None);
     }
 
     #[test]
