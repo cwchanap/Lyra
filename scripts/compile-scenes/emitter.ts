@@ -9,21 +9,11 @@ import type {
   ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
+  JSONChaptersIndex,
   JSONInterrogationScene,
   JSONInvestigationScene,
   JSONLinearScene,
 } from "./types";
-
-type SceneIndexType = "linear" | "investigation" | "interrogation";
-
-type EmittedChaptersIndex = {
-  chapters: Array<{
-    id: string;
-    title: string;
-    summary: string;
-    scenes: Array<{ type: SceneIndexType; file: string }>;
-  }>;
-};
 
 export function emitLinearScene(ast: ASTLinearScene): JSONLinearScene {
   return {
@@ -183,7 +173,7 @@ export function emitInterrogationScene(ast: ASTInterrogationScene): JSONInterrog
   };
 }
 
-export function emitChaptersIndex(chapters: ASTChapter[]): EmittedChaptersIndex {
+export function emitChaptersIndex(chapters: ASTChapter[]): JSONChaptersIndex {
   return {
     chapters: chapters.map((c) => ({
       id: c.dirName,
@@ -199,7 +189,7 @@ export function emitChaptersIndex(chapters: ASTChapter[]): EmittedChaptersIndex 
   };
 }
 
-function inferType(filename: string): SceneIndexType {
+function inferType(filename: string): JSONChaptersIndex["chapters"][number]["scenes"][number]["type"] {
   if (filename.startsWith("interrogation_scene_")) return "interrogation";
   if (filename.startsWith("investigation_scene_")) return "investigation";
   if (filename.startsWith("scene_")) return "linear";

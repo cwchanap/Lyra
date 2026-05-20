@@ -237,7 +237,7 @@ export type JSONChaptersIndex = {
     id: string;
     title: string;
     summary: string;
-    scenes: Array<{ type: "linear" | "investigation"; file: string }>;
+    scenes: Array<{ type: "linear" | "investigation" | "interrogation"; file: string }>;
   }>;
 };
 
