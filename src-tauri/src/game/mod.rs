@@ -149,9 +149,7 @@ impl GameEngine {
             return Ok(self.view());
         }
 
-        let previous_scene = self.scene.clone();
-        let previous_last_scene_tag = self.last_scene_tag.clone();
-        let previous_next_queue_gen = self.next_queue_gen;
+        let snapshot = self.snapshot();
 
         let result = (|| -> Result<(), GameError> {
             let _ = match &mut self.scene {
@@ -188,9 +186,7 @@ impl GameEngine {
         })();
 
         if let Err(err) = result {
-            self.scene = previous_scene;
-            self.last_scene_tag = previous_last_scene_tag;
-            self.next_queue_gen = previous_next_queue_gen;
+            self.restore_snapshot(snapshot);
             return Err(err);
         }
         Ok(self.view())
@@ -1633,6 +1629,115 @@ mod tests {
                 assert_eq!(total, 3);
             }
             other => panic!("expected previous linear scene after failed advance, got {other:?}"),
+        }
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn failed_investigation_intro_completion_rolls_back_inventory() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("lyra-intro-rollback-test-{}-{}", std::process::id(), n));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_1",
+                "title": "Interrogation",
+                "intro": [],
+                "phases": [],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            intro: vec![DialogueItem::Line { speaker: "A".into(), text: "intro".into() }],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                label: "Room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                scene_tag: "room".into(),
+                transition_dialogue: vec![],
+                hotspots: vec![],
+                characters: vec![],
+            }],
+            evidence_manifest: vec![EvidenceJson {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
+                    _predicate: crate::game::schema::PredicateEvidenceCollected::X,
+                    id: "note".into(),
+                }),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = GameEngine {
+            resources_dir: d.clone(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![
+                    SceneRef {
+                        scene_type: SceneType::Investigation,
+                        file: "chapter_1/investigation_scene_1.json".into(),
+                    },
+                    SceneRef {
+                        scene_type: SceneType::Interrogation,
+                        file: "chapter_1/interrogation_scene_1.json".into(),
+                    },
+                ],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(scene, 1))),
+            last_scene_tag: None,
+            inventory: Inventory::default(),
+            next_queue_gen: 2,
+        };
+        engine.prime_initial_queue().unwrap();
+        let token = token_from(&engine.view());
+
+        let err = engine.advance_dialogue(token).unwrap_err();
+        assert_eq!(err.code, "unsupportedSceneType");
+
+        assert!(engine.inventory.evidence.is_empty());
+        assert_eq!(engine.current_chapter_idx, 0);
+        assert_eq!(engine.current_scene_idx, 0);
+        let view = engine.view();
+        match view.mode {
+            ModeView::Dialogue { current, .. } => {
+                assert!(matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "intro"));
+            }
+            other => panic!("expected previous intro dialogue after failed advance, got {other:?}"),
+        }
+        match view.scene {
+            SceneView::Investigation { id, index, total, .. } => {
+                assert_eq!(id, "investigation_scene_1");
+                assert_eq!(index, 0);
+                assert_eq!(total, 2);
+            }
+            other => panic!("expected previous investigation scene after failed advance, got {other:?}"),
         }
 
         let _ = fs::remove_dir_all(d);
