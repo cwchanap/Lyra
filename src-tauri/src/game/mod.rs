@@ -412,6 +412,7 @@ impl GameEngine {
             if scene.outro_played {
                 return Ok(true);
             }
+            scene.refresh_current_phase(&self.inventory);
         }
 
         if self.try_enter_current_interrogation_phase(&chapter_id)? {
@@ -1955,6 +1956,100 @@ mod tests {
         }
     }
 
+    fn source_order_inventory_unlocked_interrogation_scene() -> InterrogationSceneJson {
+        InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            intro: vec![],
+            phases: vec![
+                InterrogationPhaseJson::Inquiry {
+                    id: "early_inventory_inquiry".into(),
+                    label: "Early Inventory Inquiry".into(),
+                    subject: subject(),
+                    required: true,
+                    status: LockStatus::Locked,
+                    unlock: Some(InterrogationUnlockExpr::EvidenceCollected {
+                        _predicate: crate::game::schema::PredicateEvidenceCollected::X,
+                        id: "key".into(),
+                    }),
+                    reveals: vec![crate::game::schema::InterrogationRevealTarget::Evidence {
+                        id: "early_note".into(),
+                    }],
+                    scene_tag: "early_room".into(),
+                    entry_dialogue: vec![DialogueItem::Line {
+                        speaker: "A".into(),
+                        text: "early entry".into(),
+                    }],
+                    complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                    questions: vec![crate::game::schema::InquiryQuestionJson {
+                        id: "early_question".into(),
+                        label: "Early Question".into(),
+                        kind: crate::game::schema::InquiryQuestionKind::Question,
+                        parent_question_id: None,
+                        status: LockStatus::Unlocked,
+                        required: true,
+                        unlock: None,
+                        reveals: vec![],
+                        answer_dialogue: vec![],
+                        on_reask: None,
+                    }],
+                },
+                InterrogationPhaseJson::Inquiry {
+                    id: "late_static_inquiry".into(),
+                    label: "Late Static Inquiry".into(),
+                    subject: subject(),
+                    required: true,
+                    status: LockStatus::Unlocked,
+                    unlock: None,
+                    reveals: vec![crate::game::schema::InterrogationRevealTarget::Evidence {
+                        id: "late_note".into(),
+                    }],
+                    scene_tag: "late_room".into(),
+                    entry_dialogue: vec![DialogueItem::Line {
+                        speaker: "A".into(),
+                        text: "late entry".into(),
+                    }],
+                    complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                    questions: vec![crate::game::schema::InquiryQuestionJson {
+                        id: "late_question".into(),
+                        label: "Late Question".into(),
+                        kind: crate::game::schema::InquiryQuestionKind::Question,
+                        parent_question_id: None,
+                        status: LockStatus::Unlocked,
+                        required: true,
+                        unlock: None,
+                        reveals: vec![],
+                        answer_dialogue: vec![],
+                        on_reask: None,
+                    }],
+                },
+            ],
+            evidence_manifest: vec![
+                EvidenceJson {
+                    id: "early_note".into(),
+                    name: "Early Note".into(),
+                    description: "Early Note".into(),
+                    details: "Early Note".into(),
+                    on_collect: vec![],
+                    on_reexamine: None,
+                },
+                EvidenceJson {
+                    id: "late_note".into(),
+                    name: "Late Note".into(),
+                    description: "Late Note".into(),
+                    details: "Late Note".into(),
+                    on_collect: vec![],
+                    on_reexamine: None,
+                },
+            ],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        }
+    }
+
     fn empty_engine_with_interrogation_scene(
         scene: InterrogationSceneJson,
         intro_queue_gen: u64,
@@ -2075,6 +2170,41 @@ mod tests {
                 assert_eq!(phase_id, "inventory_unlocked_inquiry");
             }
             other => panic!("expected interrogation mode after phase entry, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn interrogation_enters_earlier_inventory_unlocked_phase_before_later_static_phase() {
+        let mut engine = empty_engine_with_interrogation_scene(
+            source_order_inventory_unlocked_interrogation_scene(),
+            1,
+        );
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "key".into(),
+            name: "Key".into(),
+            description: "Key".into(),
+            details: "Key".into(),
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "previous_scene".into(),
+        });
+
+        engine.prime_initial_queue().unwrap();
+
+        assert!(engine.inventory.has_evidence("early_note"));
+        assert!(!engine.inventory.has_evidence("late_note"));
+        assert_eq!(engine.last_scene_tag.as_deref(), Some("early_room"));
+        let view = engine.view();
+        match view.mode {
+            ModeView::Dialogue {
+                current, scene_tag, ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "early entry")
+                );
+                assert_eq!(scene_tag.as_deref(), Some("early_room"));
+            }
+            other => panic!("expected early phase entry dialogue, got {other:?}"),
         }
     }
 
