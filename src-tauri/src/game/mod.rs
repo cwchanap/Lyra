@@ -16,7 +16,6 @@ pub use view::{GameStateView, ModeView, QueueToken};
 
 use std::path::PathBuf;
 use scenes::SceneRuntime;
-use scenes::interrogation::InterrogationSceneState;
 use scenes::investigation::{DialogueQueue, InvestigationSceneState};
 use scenes::linear::LinearSceneState;
 use schema::{
@@ -110,7 +109,9 @@ impl GameEngine {
                     true
                 }
             }
-            SceneRuntime::Interrogation(_) => false,
+            SceneRuntime::Interrogation(_) => {
+                return Err(GameError::unsupported_scene_type("interrogation"));
+            }
         };
         if let Some((items, queue_gen)) = intro_queue {
             self.install_investigation_queue(items, queue_gen)?;
@@ -145,7 +146,7 @@ impl GameEngine {
                 q.cursor += 1;
                 q.cursor >= q.items.len()
             }
-            SceneRuntime::Interrogation(_) => return Err(GameError::no_active_dialogue()),
+            SceneRuntime::Interrogation(_) => return Err(GameError::unsupported_scene_type("interrogation")),
         };
         // Capture the just-consumed item as a scene tag if applicable.
         if let Some(DialogueItem::SceneTag { text }) = self.peek_just_consumed() {
@@ -161,7 +162,9 @@ impl GameEngine {
                 .pending_queue
                 .as_ref()
                 .is_none_or(|q| q.cursor >= q.items.len()),
-            SceneRuntime::Interrogation(_) => true,
+            SceneRuntime::Interrogation(_) => {
+                return Err(GameError::unsupported_scene_type("interrogation"));
+            }
         };
         if exhausted {
             self.on_queue_exhausted()?;
@@ -260,7 +263,9 @@ impl GameEngine {
                     self.advance_scene()?;
                 }
             }
-            SceneRuntime::Interrogation(_) => {}
+            SceneRuntime::Interrogation(_) => {
+                return Err(GameError::unsupported_scene_type("interrogation"));
+            }
         }
         Ok(())
     }
@@ -669,7 +674,7 @@ impl GameEngine {
                 }),
                 _ => None,
             },
-            SceneRuntime::Interrogation(_) => None,
+            SceneRuntime::Interrogation(_) => unreachable!("interrogation runtime is unsupported until Task 7"),
         }
     }
 
@@ -696,7 +701,7 @@ impl GameEngine {
                         .as_ref()
                         .map(|q| q.items.len().saturating_sub(q.cursor + 1))
                         .unwrap_or(0),
-                    SceneRuntime::Interrogation(_) => 0,
+                    SceneRuntime::Interrogation(_) => unreachable!("interrogation runtime is unsupported until Task 7"),
                 },
                 scene_tag: self.last_scene_tag.clone(),
                 queue_token: t,
@@ -707,7 +712,7 @@ impl GameEngine {
                     None => ModeView::GameComplete,
                 },
                 SceneRuntime::Linear(_) => ModeView::GameComplete,
-                SceneRuntime::Interrogation(_) => ModeView::GameComplete,
+                SceneRuntime::Interrogation(_) => unreachable!("interrogation runtime is unsupported until Task 7"),
             },
         }
     }
@@ -787,12 +792,7 @@ impl GameEngine {
                     visible_sublocations,
                 }
             }
-            SceneRuntime::Interrogation(scene) => SceneView::Linear {
-                id: scene.def.id.clone(),
-                title: scene.def.title.clone(),
-                index: self.current_scene_idx,
-                total,
-            },
+            SceneRuntime::Interrogation(_) => unreachable!("interrogation runtime is unsupported until Task 7"),
         }
     }
 }
@@ -806,7 +806,7 @@ fn load_scene_runtime(
     Ok(match json {
         SceneJson::Linear(j) => SceneRuntime::Linear(LinearSceneState::from_json(j, queue_gen)),
         SceneJson::Investigation(j) => SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(j, queue_gen))),
-        SceneJson::Interrogation(j) => SceneRuntime::Interrogation(Box::new(InterrogationSceneState::from_json(j, queue_gen))),
+        SceneJson::Interrogation(_) => return Err(GameError::unsupported_scene_type("interrogation")),
     })
 }
 
@@ -1272,6 +1272,46 @@ mod tests {
             }
             other => panic!("expected Dialogue after mid-scene tag skip, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn load_scene_runtime_rejects_interrogation_until_runtime_exists() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("lyra-runtime-test-{}-{}", std::process::id(), n));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_1",
+                "title": "Interrogation",
+                "intro": [],
+                "phases": [],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let err = load_scene_runtime(
+            &d,
+            &SceneRef {
+                scene_type: SceneType::Interrogation,
+                file: "chapter_1/interrogation_scene_1.json".into(),
+            },
+            1,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, "unsupportedSceneType");
+        assert!(err.message.contains("interrogation"));
+        let _ = fs::remove_dir_all(d);
     }
 
     #[test]

@@ -1,7 +1,9 @@
 // src-tauri/src/game/loader.rs
 use crate::game::error::GameError;
 use crate::game::schema::{
-    ChaptersIndexJson, InvestigationSceneJson, OutroUnlock, RevealTarget, SceneJson, UnlockExpr,
+    ChaptersIndexJson, InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationRevealTarget,
+    InterrogationSceneJson, InterrogationUnlockExpr, InventoryTarget, InvestigationSceneJson,
+    OutroUnlock, RevealTarget, SceneJson, UnlockExpr,
 };
 use std::collections::HashSet;
 use std::fs;
@@ -32,7 +34,7 @@ fn validate_scene_references(scene: &SceneJson, file_rel: &str) -> Result<(), Ga
     match scene {
         SceneJson::Linear(_) => Ok(()),
         SceneJson::Investigation(scene) => validate_investigation_scene_references(scene, file_rel),
-        SceneJson::Interrogation(_) => Ok(()),
+        SceneJson::Interrogation(scene) => validate_interrogation_scene_references(scene, file_rel),
     }
 }
 
@@ -140,6 +142,202 @@ fn validate_investigation_scene_references(
     Ok(())
 }
 
+fn validate_interrogation_scene_references(
+    scene: &InterrogationSceneJson,
+    file_rel: &str,
+) -> Result<(), GameError> {
+    let evidence: HashSet<&str> = scene
+        .evidence_manifest
+        .iter()
+        .map(|e| e.id.as_str())
+        .collect();
+    let statements: HashSet<&str> = scene
+        .statement_manifest
+        .iter()
+        .map(|s| s.id.as_str())
+        .collect();
+    let mut phases: HashSet<&str> = HashSet::new();
+    let mut questions: HashSet<&str> = HashSet::new();
+
+    for phase in &scene.phases {
+        match phase {
+            InterrogationPhaseJson::Inquiry {
+                id, questions: qs, ..
+            } => {
+                phases.insert(id.as_str());
+                for question in qs {
+                    questions.insert(question.id.as_str());
+                }
+            }
+            InterrogationPhaseJson::Testimony { id, .. } => {
+                phases.insert(id.as_str());
+            }
+        }
+    }
+
+    for phase in &scene.phases {
+        match phase {
+            InterrogationPhaseJson::Inquiry {
+                id,
+                unlock,
+                reveals,
+                complete,
+                questions: qs,
+                ..
+            } => {
+                validate_interrogation_reveals(
+                    reveals,
+                    &evidence,
+                    &statements,
+                    &questions,
+                    &phases,
+                    file_rel,
+                )?;
+                validate_interrogation_unlock(
+                    unlock.as_ref(),
+                    &evidence,
+                    &statements,
+                    &questions,
+                    &phases,
+                    file_rel,
+                )?;
+                if let InterrogationOutroUnlock::Expr(expr) = complete {
+                    validate_interrogation_unlock(
+                        Some(expr),
+                        &evidence,
+                        &statements,
+                        &questions,
+                        &phases,
+                        file_rel,
+                    )?;
+                }
+                for question in qs {
+                    if let Some(parent_id) = &question.parent_question_id {
+                        if !questions.contains(parent_id.as_str()) {
+                            return Err(GameError::scene_validation_failed(format!(
+                                "{file_rel}: unresolved interrogation question parent:{parent_id}",
+                            )));
+                        }
+                    }
+                    validate_interrogation_reveals(
+                        &question.reveals,
+                        &evidence,
+                        &statements,
+                        &questions,
+                        &phases,
+                        file_rel,
+                    )?;
+                    validate_interrogation_unlock(
+                        question.unlock.as_ref(),
+                        &evidence,
+                        &statements,
+                        &questions,
+                        &phases,
+                        file_rel,
+                    )?;
+                }
+                if !phases.contains(id.as_str()) {
+                    return Err(GameError::scene_validation_failed(format!(
+                        "{file_rel}: unresolved interrogation phase:{id}",
+                    )));
+                }
+            }
+            InterrogationPhaseJson::Testimony {
+                unlock,
+                reveals,
+                statements: testimony_statements,
+                results,
+                ..
+            } => {
+                let result_ids: HashSet<&str> = results.iter().map(|r| r.id.as_str()).collect();
+                validate_interrogation_reveals(
+                    reveals,
+                    &evidence,
+                    &statements,
+                    &questions,
+                    &phases,
+                    file_rel,
+                )?;
+                validate_interrogation_unlock(
+                    unlock.as_ref(),
+                    &evidence,
+                    &statements,
+                    &questions,
+                    &phases,
+                    file_rel,
+                )?;
+                for result in results {
+                    validate_interrogation_reveals(
+                        &result.reveals,
+                        &evidence,
+                        &statements,
+                        &questions,
+                        &phases,
+                        file_rel,
+                    )?;
+                }
+                for statement in testimony_statements {
+                    if let Some(target) = &statement.contradiction {
+                        validate_interrogation_inventory_target(
+                            target,
+                            &evidence,
+                            &statements,
+                            file_rel,
+                            "contradiction",
+                        )?;
+                    }
+                    validate_testimony_result_reference(
+                        statement.on_correct.as_deref(),
+                        &result_ids,
+                        file_rel,
+                    )?;
+                    validate_testimony_result_reference(
+                        statement.on_wrong.as_deref(),
+                        &result_ids,
+                        file_rel,
+                    )?;
+                    validate_interrogation_reveals(
+                        &statement.reveals,
+                        &evidence,
+                        &statements,
+                        &questions,
+                        &phases,
+                        file_rel,
+                    )?;
+                }
+            }
+        }
+    }
+
+    if let InterrogationOutroUnlock::Expr(expr) = &scene.outro.unlock {
+        validate_interrogation_unlock(
+            Some(expr),
+            &evidence,
+            &statements,
+            &questions,
+            &phases,
+            file_rel,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn validate_testimony_result_reference(
+    result_id: Option<&str>,
+    result_ids: &HashSet<&str>,
+    file_rel: &str,
+) -> Result<(), GameError> {
+    if let Some(id) = result_id {
+        if !result_ids.contains(id) {
+            return Err(GameError::scene_validation_failed(format!(
+                "{file_rel}: unresolved interrogation result:{id}",
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn validate_reveals(
     reveals: &[RevealTarget],
     evidence: &HashSet<&str>,
@@ -185,6 +383,64 @@ fn validate_reveals(
     Ok(())
 }
 
+fn validate_interrogation_reveals(
+    reveals: &[InterrogationRevealTarget],
+    evidence: &HashSet<&str>,
+    statements: &HashSet<&str>,
+    questions: &HashSet<&str>,
+    phases: &HashSet<&str>,
+    file_rel: &str,
+) -> Result<(), GameError> {
+    for reveal in reveals {
+        match reveal {
+            InterrogationRevealTarget::Evidence { id } if !evidence.contains(id.as_str()) => {
+                return Err(GameError::scene_validation_failed(format!(
+                    "{file_rel}: unresolved interrogation reveal target evidence:{id}",
+                )));
+            }
+            InterrogationRevealTarget::Statement { id } if !statements.contains(id.as_str()) => {
+                return Err(GameError::scene_validation_failed(format!(
+                    "{file_rel}: unresolved interrogation reveal target statement:{id}",
+                )));
+            }
+            InterrogationRevealTarget::Question { id } if !questions.contains(id.as_str()) => {
+                return Err(GameError::scene_validation_failed(format!(
+                    "{file_rel}: unresolved interrogation reveal target question:{id}",
+                )));
+            }
+            InterrogationRevealTarget::Phase { id } if !phases.contains(id.as_str()) => {
+                return Err(GameError::scene_validation_failed(format!(
+                    "{file_rel}: unresolved interrogation reveal target phase:{id}",
+                )));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_interrogation_inventory_target(
+    target: &InventoryTarget,
+    evidence: &HashSet<&str>,
+    statements: &HashSet<&str>,
+    file_rel: &str,
+    label: &str,
+) -> Result<(), GameError> {
+    match target {
+        InventoryTarget::Evidence { id } if !evidence.contains(id.as_str()) => {
+            Err(GameError::scene_validation_failed(format!(
+                "{file_rel}: unresolved interrogation {label} evidence:{id}",
+            )))
+        }
+        InventoryTarget::Statement { id } if !statements.contains(id.as_str()) => {
+            Err(GameError::scene_validation_failed(format!(
+                "{file_rel}: unresolved interrogation {label} statement:{id}",
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
 fn validate_unlock(
     unlock: Option<&UnlockExpr>,
     evidence: &HashSet<&str>,
@@ -228,6 +484,64 @@ fn validate_unlock(
         } if !topics.contains(&(character_id.clone(), topic_id.clone())) => {
             Err(GameError::scene_validation_failed(format!(
                 "{file_rel}: unresolved unlock predicate topic:{character_id}@{topic_id}",
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_interrogation_unlock(
+    unlock: Option<&InterrogationUnlockExpr>,
+    evidence: &HashSet<&str>,
+    statements: &HashSet<&str>,
+    questions: &HashSet<&str>,
+    phases: &HashSet<&str>,
+    file_rel: &str,
+) -> Result<(), GameError> {
+    let Some(expr) = unlock else { return Ok(()) };
+    match expr {
+        InterrogationUnlockExpr::Combinator { left, right, .. } => {
+            validate_interrogation_unlock(
+                Some(left),
+                evidence,
+                statements,
+                questions,
+                phases,
+                file_rel,
+            )?;
+            validate_interrogation_unlock(
+                Some(right),
+                evidence,
+                statements,
+                questions,
+                phases,
+                file_rel,
+            )
+        }
+        InterrogationUnlockExpr::EvidenceCollected { id, .. }
+            if !evidence.contains(id.as_str()) =>
+        {
+            Err(GameError::scene_validation_failed(format!(
+                "{file_rel}: unresolved interrogation unlock predicate evidence:{id}",
+            )))
+        }
+        InterrogationUnlockExpr::StatementAcquired { id, .. }
+            if !statements.contains(id.as_str()) =>
+        {
+            Err(GameError::scene_validation_failed(format!(
+                "{file_rel}: unresolved interrogation unlock predicate statement:{id}",
+            )))
+        }
+        InterrogationUnlockExpr::QuestionAnswered { id, .. }
+            if !questions.contains(id.as_str()) =>
+        {
+            Err(GameError::scene_validation_failed(format!(
+                "{file_rel}: unresolved interrogation unlock predicate question:{id}",
+            )))
+        }
+        InterrogationUnlockExpr::PhaseCompleted { id, .. } if !phases.contains(id.as_str()) => {
+            Err(GameError::scene_validation_failed(format!(
+                "{file_rel}: unresolved interrogation unlock predicate phase:{id}",
             )))
         }
         _ => Ok(()),
@@ -347,6 +661,138 @@ mod tests {
         let err = load_scene(&d, "chapter_1/investigation_scene_1.json").unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
         assert!(err.message.contains("unlock predicate evidence:missing"));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn rejects_interrogation_scene_with_unresolved_reveal_target() {
+        let d = unique_temp_dir();
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_1",
+                "title": "Broken Reveal",
+                "intro": [],
+                "phases": [{
+                    "kind": "inquiry",
+                    "id": "inquiry",
+                    "label": "Inquiry",
+                    "subject": { "id": "suspect", "name": "Suspect", "role": "Suspect", "bio": "Bio" },
+                    "required": true,
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [{ "kind": "evidence", "id": "missing" }],
+                    "sceneTag": "Room",
+                    "entryDialogue": [],
+                    "complete": "auto",
+                    "questions": []
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let err = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap_err();
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert!(err
+            .message
+            .contains("interrogation reveal target evidence:missing"));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn rejects_interrogation_scene_with_unresolved_question_unlock_predicate() {
+        let d = unique_temp_dir();
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_1",
+                "title": "Broken Unlock",
+                "intro": [],
+                "phases": [{
+                    "kind": "inquiry",
+                    "id": "inquiry",
+                    "label": "Inquiry",
+                    "subject": { "id": "suspect", "name": "Suspect", "role": "Suspect", "bio": "Bio" },
+                    "required": true,
+                    "status": "locked",
+                    "unlock": { "predicate": "question_answered", "id": "missing_question" },
+                    "reveals": [],
+                    "sceneTag": "Room",
+                    "entryDialogue": [],
+                    "complete": "auto",
+                    "questions": []
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let err = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap_err();
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert!(err
+            .message
+            .contains("interrogation unlock predicate question:missing_question"));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn rejects_interrogation_scene_with_unresolved_testimony_result() {
+        let d = unique_temp_dir();
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_1",
+                "title": "Broken Result",
+                "intro": [],
+                "phases": [{
+                    "kind": "testimony",
+                    "id": "testimony",
+                    "label": "Testimony",
+                    "subject": { "id": "suspect", "name": "Suspect", "role": "Suspect", "bio": "Bio" },
+                    "required": true,
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "Room",
+                    "entryDialogue": [],
+                    "statements": [{
+                        "id": "statement_1",
+                        "label": "Statement",
+                        "content": "Content",
+                        "contradiction": null,
+                        "onCorrect": "missing_result",
+                        "onWrong": null,
+                        "onPress": null,
+                        "onPresent": null,
+                        "onWrongPresent": null,
+                        "reveals": []
+                    }],
+                    "results": []
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let err = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap_err();
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert!(err.message.contains("interrogation result:missing_result"));
         let _ = fs::remove_dir_all(d);
     }
 }

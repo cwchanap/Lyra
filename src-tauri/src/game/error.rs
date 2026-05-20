@@ -35,6 +35,7 @@ impl GameError {
     pub fn unknown_statement(id: &str) -> Self { Self::new("unknownStatement", format!("Statement '{id}' is not in the inventory.")) }
     pub fn scene_load_failed(detail: String) -> Self { Self::new("sceneLoadFailed", detail) }
     pub fn scene_validation_failed(detail: String) -> Self { Self::new("sceneValidationFailed", detail) }
+    pub fn unsupported_scene_type(scene_type: &str) -> Self { Self::new("unsupportedSceneType", format!("Scene type '{scene_type}' is not supported by the runtime yet.")) }
     pub fn chapter_load_failed(detail: String) -> Self { Self::new("chapterLoadFailed", detail) }
     pub fn parse_failure(detail: String) -> Self { Self::new("parseFailure", detail) }
     pub fn game_complete() -> Self { Self::new("gameComplete", "The game has been completed; reset to play again.") }
