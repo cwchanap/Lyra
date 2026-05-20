@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { emitChaptersIndex, emitInvestigationScene, emitLinearScene } from "./emitter";
-import type { ASTChapter, ASTInvestigationScene, ASTLinearScene } from "./types";
+import { emitChaptersIndex, emitInterrogationScene, emitInvestigationScene, emitLinearScene } from "./emitter";
+import type { ASTChapter, ASTInterrogationScene, ASTInvestigationScene, ASTLinearScene } from "./types";
 
 describe("emitter", () => {
   it("emits a linear scene JSON", () => {
@@ -43,6 +43,41 @@ describe("emitter", () => {
     const json = emitInvestigationScene(ast);
     expect(json.outro.unlock).toBe("auto");
     expect(json.type).toBe("investigation");
+  });
+
+  it("emits interrogation scene JSON", () => {
+    const ast: ASTInterrogationScene = {
+      kind: "interrogationScene",
+      id: "interrogation_scene_1",
+      title: "詢問",
+      intro: [],
+      phases: [{
+        kind: "inquiry",
+        id: "p",
+        label: "問話",
+        subject: { id: "suspect", name: "嫌疑人", role: "嫌疑人", bio: "沉默。", sourceFile: "x", line: 4 },
+        required: true,
+        status: "unlocked",
+        unlock: null,
+        reveals: [],
+        sceneTag: "詢問室",
+        entryDialogue: [],
+        complete: "auto",
+        questions: [],
+        sourceFile: "x",
+        line: 2,
+      }],
+      evidenceManifest: [],
+      statementManifest: [],
+      outro: { unlock: "auto", dialogue: [] },
+      sourceFile: "x",
+      line: 1,
+    };
+    expect(emitInterrogationScene(ast)).toMatchObject({
+      type: "interrogation",
+      id: "interrogation_scene_1",
+      phases: [{ kind: "inquiry", id: "p", subject: { id: "suspect" } }],
+    });
   });
 
   it("emits a chapters index", () => {

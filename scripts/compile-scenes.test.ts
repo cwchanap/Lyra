@@ -55,6 +55,28 @@ describe("compile (end-to-end against valid fixture)", () => {
       rmSync(outRoot, { recursive: true, force: true });
     }
   });
+
+  it("compiles interrogation scenes into the chapter output", () => {
+    const outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-interrogation-"));
+    const readJson = (path: string) => JSON.parse(readFileSync(resolve(outRoot, path), "utf-8"));
+    try {
+      const result = compile({
+        sourceRoot: "scripts/__fixtures__/valid_interrogation",
+        outputRoot: outRoot,
+      });
+      if (!result.ok) {
+        throw new Error("Compile failed:\n" + formatErrors(result.errors));
+      }
+
+      expect(readJson("chapters.json").chapters[0].scenes[1]).toEqual({
+        type: "interrogation",
+        file: "chapter_1/interrogation_scene_1.json",
+      });
+      expect(readJson("chapter_1/interrogation_scene_1.json").type).toBe("interrogation");
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("snapshot: valid fixture JSON output", () => {

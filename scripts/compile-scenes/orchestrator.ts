@@ -30,8 +30,9 @@ import { dirname, resolve } from "node:path";
 import { parseChapter } from "./parser-chapter";
 import { parseLinearScene } from "./parser-linear";
 import { parseInvestigationScene } from "./parser-investigation";
+import { parseInterrogationScene } from "./parser-interrogation";
 import { validate, type SceneRecord } from "./validator";
-import { emitChaptersIndex, emitInvestigationScene, emitLinearScene } from "./emitter";
+import { emitChaptersIndex, emitInterrogationScene, emitInvestigationScene, emitLinearScene } from "./emitter";
 import type { ASTChapter, CompileError } from "./types";
 
 export type CompileOptions = {
@@ -47,9 +48,6 @@ export function compile(opts: CompileOptions): CompileResult {
   const chapters: ASTChapter[] = [];
   const scenes: SceneRecord[] = [];
   const errors: CompileError[] = [];
-  // Filenames the orchestrator deliberately skipped because they use a reserved
-  // (future) scene-type prefix. The validator must treat these as accepted (not
-  // missing) when checking chapter manifest file references.
   const skippedReservedFiles = new Set<string>();
   const failedParseFiles = new Set<string>();
 
@@ -136,10 +134,12 @@ export function compile(opts: CompileOptions): CompileResult {
         }
         else scenes.push({ chapterId: dirName, file, ast: parsed.value });
       } else if (file.startsWith("interrogation_scene_")) {
-        console.warn(
-          `[compile-scenes] interrogation_scene file "${file}" reserved for future scene type — skipped.`,
-        );
-        skippedReservedFiles.add(`${dirName}/${file}`);
+        const parsed = parseInterrogationScene(source, sourceFileTag, sceneId);
+        if (!parsed.ok) {
+          errors.push(parsed.error);
+          failedParseFiles.add(sourceFileTag);
+        }
+        else scenes.push({ chapterId: dirName, file, ast: parsed.value });
       } else {
         errors.push({
           code: "sceneFileUnknownType",
@@ -172,7 +172,11 @@ export function compile(opts: CompileOptions): CompileResult {
 
   for (const rec of scenes) {
     const json =
-      rec.ast.kind === "linearScene" ? emitLinearScene(rec.ast) : emitInvestigationScene(rec.ast);
+      rec.ast.kind === "linearScene"
+        ? emitLinearScene(rec.ast)
+        : rec.ast.kind === "investigationScene"
+          ? emitInvestigationScene(rec.ast)
+          : emitInterrogationScene(rec.ast);
     const outFile = resolve(opts.outputRoot, rec.chapterId, rec.file.replace(/\.md$/, ".json"));
     mkdirSync(dirname(outFile), { recursive: true });
     writeFileSync(outFile, JSON.stringify(json, null, 2) + "\n");
