@@ -30,6 +30,11 @@ impl InterrogationSceneState {
             .phases
             .iter()
             .find(|phase| phase_required(phase) && phase_status(phase) == LockStatus::Unlocked)
+            .or_else(|| {
+                def.phases
+                    .iter()
+                    .find(|phase| phase_status(phase) == LockStatus::Unlocked)
+            })
             .map(|phase| phase_id(phase).to_string());
         Self {
             def,
@@ -121,6 +126,15 @@ impl InterrogationSceneState {
                     phase_required(phase)
                         && self.is_phase_unlocked(phase, &ctx)
                         && !self.completed_phases.contains(phase_id(phase))
+                })
+                .or_else(|| {
+                    self.def
+                        .phases
+                        .iter()
+                        .find(|phase| {
+                            self.is_phase_unlocked(phase, &ctx)
+                                && !self.completed_phases.contains(phase_id(phase))
+                        })
                 })
                 .map(|phase| phase_id(phase).to_string())
         };
@@ -412,6 +426,37 @@ mod tests {
         }
     }
 
+    fn optional_inquiry_phase(id: &str, status: LockStatus) -> InterrogationPhaseJson {
+        let mut scene = one_question_inquiry_scene();
+        let InterrogationPhaseJson::Inquiry {
+            label,
+            subject,
+            unlock,
+            reveals,
+            scene_tag,
+            entry_dialogue,
+            complete,
+            questions,
+            ..
+        } = scene.phases.remove(0)
+        else {
+            panic!("expected inquiry phase");
+        };
+        InterrogationPhaseJson::Inquiry {
+            id: id.into(),
+            label,
+            subject,
+            required: false,
+            status,
+            unlock,
+            reveals,
+            scene_tag,
+            entry_dialogue,
+            complete,
+            questions,
+        }
+    }
+
     #[test]
     fn inquiry_phase_completes_after_required_question_answered() {
         let mut scene = InterrogationSceneState::from_json(one_question_inquiry_scene(), 1);
@@ -592,5 +637,122 @@ mod tests {
         };
         // Outro should NOT be satisfied — locked required phase is still incomplete.
         assert!(!scene.outro_satisfied(&ctx));
+    }
+
+    #[test]
+    fn optional_phase_becomes_current_when_no_required_phase_unlocked() {
+        // One required (locked), one optional (unlocked).
+        // The optional phase should become current since no required phase is available.
+        let mut def = one_question_inquiry_scene();
+        def.phases = vec![
+            inquiry_phase_with_status("locked_required", LockStatus::Locked),
+            optional_inquiry_phase("optional_unlocked", LockStatus::Unlocked),
+        ];
+
+        let scene = InterrogationSceneState::from_json(def, 1);
+
+        assert_eq!(
+            scene.current_phase_id().as_deref(),
+            Some("optional_unlocked")
+        );
+    }
+
+    #[test]
+    fn optional_phase_does_not_take_priority_over_required() {
+        // One required (unlocked), one optional (unlocked).
+        // The required phase should be current, not the optional one.
+        let mut def = one_question_inquiry_scene();
+        def.phases = vec![
+            optional_inquiry_phase("optional_first", LockStatus::Unlocked),
+            inquiry_phase_with_status("required_second", LockStatus::Unlocked),
+        ];
+
+        let scene = InterrogationSceneState::from_json(def, 1);
+
+        assert_eq!(
+            scene.current_phase_id().as_deref(),
+            Some("required_second")
+        );
+    }
+
+    #[test]
+    fn optional_phase_becomes_current_after_required_completed() {
+        // One required (unlocked), one optional (unlocked, with a different question id).
+        // After completing the required phase, the optional one should become current.
+        let mut def = one_question_inquiry_scene();
+        def.phases = vec![
+            inquiry_phase_with_status("required_phase", LockStatus::Unlocked),
+            InterrogationPhaseJson::Inquiry {
+                id: "optional_phase".into(),
+                label: "Optional".into(),
+                subject: subject(),
+                required: false,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![crate::game::schema::InquiryQuestionJson {
+                    id: "opt_question".into(),
+                    label: "Opt Q".into(),
+                    kind: crate::game::schema::InquiryQuestionKind::Question,
+                    parent_question_id: None,
+                    status: LockStatus::Unlocked,
+                    required: true,
+                    unlock: None,
+                    reveals: vec![],
+                    answer_dialogue: vec![DialogueItem::Action {
+                        text: "optional answer".into(),
+                    }],
+                    on_reask: None,
+                }],
+            },
+        ];
+
+        let mut scene = InterrogationSceneState::from_json(def, 1);
+        let inventory = Inventory::default();
+
+        // Initially the required phase is current.
+        assert_eq!(scene.current_phase_id().as_deref(), Some("required_phase"));
+
+        // Complete the required phase.
+        scene.record_question_answered("reason");
+        scene.refresh_phase_completion(&inventory);
+        assert!(scene.completed_phases.contains("required_phase"));
+
+        // After completing required, the optional phase becomes current.
+        assert_eq!(scene.current_phase_id().as_deref(), Some("optional_phase"));
+    }
+
+    #[test]
+    fn scene_with_only_optional_phases_sets_current() {
+        // All phases are optional and unlocked — one should still become current.
+        let mut def = one_question_inquiry_scene();
+        def.phases = vec![
+            optional_inquiry_phase("opt_a", LockStatus::Unlocked),
+            optional_inquiry_phase("opt_b", LockStatus::Unlocked),
+        ];
+
+        let scene = InterrogationSceneState::from_json(def, 1);
+
+        assert_eq!(scene.current_phase_id().as_deref(), Some("opt_a"));
+    }
+
+    #[test]
+    fn optional_phase_not_blocking_outro() {
+        // One optional (unlocked), no required phases.
+        // Outro should be satisfied immediately since no required phases exist.
+        let mut def = one_question_inquiry_scene();
+        def.phases = vec![optional_inquiry_phase("optional", LockStatus::Unlocked)];
+
+        let scene = InterrogationSceneState::from_json(def, 1);
+        let inventory = Inventory::default();
+        let ctx = InterrogationSceneAndInventoryCtx {
+            scene: &scene,
+            inventory: &inventory,
+        };
+
+        assert!(scene.outro_satisfied(&ctx));
     }
 }
