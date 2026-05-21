@@ -1331,6 +1331,9 @@ impl GameEngine {
                             ))
                         }
                     };
+                    // Append result dialogue first so the narrative explanation
+                    // plays before the acquire/collect callback text from reveals.
+                    queue_items.extend(result.dialogue);
                     queue_items = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
                         &mut self.inventory,
@@ -1338,7 +1341,6 @@ impl GameEngine {
                         &result.reveals,
                         &chapter_id,
                     );
-                    queue_items.extend(result.dialogue);
                 }
                 if let SceneRuntime::Interrogation(scene) = &mut self.scene {
                     scene.record_correct_present(&phase_id_value);
@@ -3477,5 +3479,136 @@ mod tests {
         // Scene was tag-only → advance_scene ran → past last chapter → GameComplete.
         assert!(matches!(engine.view().mode, ModeView::GameComplete));
         assert_eq!(engine.last_scene_tag, Some("吉祥寺街道".into()));
+    }
+
+    #[test]
+    fn correct_present_dialogue_plays_before_reveal_on_collect() {
+        use crate::game::schema::{
+            InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
+            InterrogationRevealTarget, InterrogationSceneJson, StatementJson,
+            TestimonyResultJson, TestimonyStatementJson,
+        };
+
+        // Build a testimony scene where the correct-present result has both
+        // dialogue and a reveal of a statement whose on_acquire text should
+        // appear AFTER the result dialogue.
+        let scene = InterrogationSceneJson {
+            id: "ordering_test".into(),
+            title: "Ordering Test".into(),
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Testimony {
+                id: "testimony".into(),
+                label: "Testimony".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                entry_dialogue: vec![],
+                statements: vec![TestimonyStatementJson {
+                    id: "s1".into(),
+                    label: "S1".into(),
+                    content: "I am innocent.".into(),
+                    contradiction: Some(InventoryTarget::Evidence {
+                        id: "contradiction_ev".into(),
+                    }),
+                    on_correct: Some("correct_result".into()),
+                    on_wrong: None,
+                    on_press: None,
+                    on_present: None,
+                    on_wrong_present: None,
+                    reveals: vec![],
+                }],
+                results: vec![TestimonyResultJson {
+                    id: "correct_result".into(),
+                    label: "Correct!".into(),
+                    reveals: vec![InterrogationRevealTarget::Statement {
+                        id: "acquired_stmt".into(),
+                    }],
+                    dialogue: vec![DialogueItem::Line {
+                        speaker: "Detective".into(),
+                        text: "Contradiction explained!".into(),
+                    }],
+                }],
+            }],
+            evidence_manifest: vec![EvidenceJson {
+                id: "contradiction_ev".into(),
+                name: "Contradiction".into(),
+                description: "d".into(),
+                details: "d".into(),
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![StatementJson {
+                id: "acquired_stmt".into(),
+                speaker: "Witness".into(),
+                content: "The truth".into(),
+                on_acquire: vec![DialogueItem::Line {
+                    speaker: "Narrator".into(),
+                    text: "Statement acquired: the truth".into(),
+                }],
+                on_reexamine: None,
+            }],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
+
+        // Pre-load the contradiction evidence so present succeeds.
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "contradiction_ev".into(),
+            name: "Contradiction".into(),
+            description: "d".into(),
+            details: "d".into(),
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "previous_scene".into(),
+        });
+
+        engine.prime_initial_queue().unwrap();
+
+        // Advance through the entry phase to reach interrogation mode.
+        while matches!(engine.view().mode, ModeView::Dialogue { .. }) {
+            let tok = token_from(&engine.view());
+            engine.advance_dialogue(tok).unwrap();
+            if matches!(engine.view().mode, ModeView::Interrogation { .. }) {
+                break;
+            }
+        }
+
+        // Present the correct evidence.
+        let view = engine.present_testimony_item("s1", "evidence", "contradiction_ev").unwrap();
+
+        // We should be in Dialogue mode with result dialogue first, then
+        // on_acquire text.  Advance and verify ordering.
+        match &view.mode {
+            ModeView::Dialogue { current, queue_remaining, .. } => {
+                // First item: the result dialogue (narrative explanation).
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "Detective" && text == "Contradiction explained!"),
+                    "Expected result dialogue first, got {:?}",
+                    current
+                );
+                assert_eq!(*queue_remaining, 1, "Expected 1 remaining item (on_acquire text)");
+
+                // Advance to the next item: on_acquire text from the reveal.
+                let tok = token_from(&view);
+                let view2 = engine.advance_dialogue(tok).unwrap();
+                match &view2.mode {
+                    ModeView::Dialogue { current, .. } => {
+                        assert!(
+                            matches!(current, DialogueItem::Line { speaker, text } if speaker == "Narrator" && text == "Statement acquired: the truth"),
+                            "Expected on_acquire text second, got {:?}",
+                            current
+                        );
+                    }
+                    other => panic!("Expected Dialogue mode for on_acquire text, got {:?}", other),
+                }
+            }
+            other => panic!("Expected Dialogue mode after correct present, got {:?}", other),
+        }
     }
 }

@@ -569,14 +569,10 @@ function interrogationOutroPredicateReachable(
     case "statement_acquired":
       return flow.afterScene.has(`statement:${pred.id}`);
     case "question_answered":
-      // A question is reachable if it belongs to a completable phase.
-      for (const phase of scene.phases) {
-        if (!flow.phaseCompletable.get(phase.id)) continue;
-        if (phase.kind === "inquiry" && phase.questions.some((q) => q.id === pred.id)) {
-          return true;
-        }
-      }
-      return false;
+      // A question is reachable only if it was actually answerable within the
+      // scene (present in the answeredQuestions set from inventory analysis),
+      // not merely present in a completable phase.
+      return flow.answeredQuestions.has(pred.id);
     case "phase_completed":
       return flow.phaseCompletable.get(pred.id) === true;
   }
@@ -657,16 +653,57 @@ function guaranteedInventoryFromScene(scene: SceneRecord["ast"], initialInventor
 function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set<string> {
   const guaranteed = new Set<string>();
   if (scene.outro.unlock === "auto") {
+    // For auto-outro, the runtime requires every reachable block (including
+    // blocks that become reachable through transitive reveal/unlock chains) to
+    // be cleared before the player can leave.  So reveals from ALL reachable
+    // blocks are guaranteed — not just the initially-unlocked ones.
+    const subReachable = new Set<string>();
     for (const sub of scene.sublocations) {
-      if (sub.status !== "unlocked") continue;
-      for (const hotspot of sub.hotspots) {
-        if (hotspot.status !== "unlocked") continue;
-        addInventoryReveals(guaranteed, hotspot.reveals);
+      if (sub.status === "unlocked") subReachable.add(sub.id);
+    }
+    // Fixed-point for sub-location reachability (mirrors checkReachability).
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable);
+      for (const sub of scene.sublocations) {
+        if (subReachable.has(sub.id)) continue;
+        if (sub.status !== "locked") continue;
+        const reachedByReveal = [...subReachable].some((rid) => {
+          const revs = collectRevealsFromReachableBlocks(
+            scene.sublocations.find((s) => s.id === rid)!,
+            reachableAtoms,
+          );
+          return revs.some((r) => r.kind === "sublocation" && r.id === sub.id);
+        });
+        if (reachedByReveal) { subReachable.add(sub.id); changed = true; continue; }
+        const reachableItems = new Set<string>();
+        for (const rid of subReachable) {
+          const revs = collectRevealsFromReachableBlocks(
+            scene.sublocations.find((s) => s.id === rid)!,
+            reachableAtoms,
+          );
+          for (const r of revs) {
+            if (r.kind === "evidence") reachableItems.add(`evidence:${r.id}`);
+            if (r.kind === "statement") reachableItems.add(`statement:${r.id}`);
+          }
+        }
+        if (sub.unlock && isSubUnlockSatisfiable(sub.unlock, subReachable, scene, reachableItems, reachableAtoms)) {
+          subReachable.add(sub.id);
+          changed = true;
+        }
       }
-      for (const character of sub.characters) {
-        for (const topic of character.topics) {
-          if (topic.status !== "unlocked") continue;
-          addInventoryReveals(guaranteed, topic.reveals);
+    }
+    // Collect inventory from all reachable blocks.
+    const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable);
+    for (const sub of scene.sublocations) {
+      if (!subReachable.has(sub.id)) continue;
+      for (const h of sub.hotspots) {
+        if (reachableAtoms.has(`hotspot:${h.id}`)) addInventoryReveals(guaranteed, h.reveals);
+      }
+      for (const c of sub.characters) {
+        for (const t of c.topics) {
+          if (reachableAtoms.has(`topic:${c.id}@${t.id}`)) addInventoryReveals(guaranteed, t.reveals);
         }
       }
     }
@@ -684,6 +721,7 @@ type InterrogationInventoryMode = "obtainable" | "guaranteed";
 type InterrogationInventoryAnalysis = {
   beforePhase: Map<string, Set<string>>;
   phaseCompletable: Map<string, boolean>;
+  answeredQuestions: Set<string>;
   afterScene: Set<string>;
 };
 
@@ -743,7 +781,7 @@ function analyzeInterrogationInventory(
     }
   }
 
-  return { beforePhase, phaseCompletable, afterScene: inventory };
+  return { beforePhase, phaseCompletable, answeredQuestions, afterScene: inventory };
 }
 
 type InterrogationInventoryState = {
@@ -804,11 +842,15 @@ function collectTestimonyResultInventory(
   phase: ASTTestimonyPhase,
   state: Pick<InterrogationInventoryState, "inventory" | "revealedQuestions" | "revealedPhases"> & { mode: InterrogationInventoryMode },
 ): boolean {
-  // Press reveals: the player can press any statement within the testimony
-  // phase before presenting, so all statement-level press reveals are
-  // obtainable within the phase.
-  for (const statement of phase.statements) {
-    addInterrogationRevealsToState(state, statement.reveals);
+  // Press reveals: the player *can* press any statement, but pressing is
+  // optional — a player may complete the phase by presenting evidence without
+  // ever pressing.  In obtainable mode we include press reveals (the player
+  // has the option to collect them).  In guaranteed mode we skip them because
+  // they are not guaranteed to be collected.
+  if (state.mode === "obtainable") {
+    for (const statement of phase.statements) {
+      addInterrogationRevealsToState(state, statement.reveals);
+    }
   }
 
   const validPathReveals: InterrogationRevealTarget[][] = [];

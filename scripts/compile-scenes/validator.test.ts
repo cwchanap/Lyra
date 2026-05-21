@@ -1917,17 +1917,27 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
   });
 
-  it("rejects an interrogation outro whose question_answered predicate references a question in an incompletable phase", () => {
+  it("rejects an interrogation outro whose question_answered predicate references a question that is never answerable", () => {
+    // "dead_q" is locked and requires evidence "unobtainable" which is never
+    // revealed in this scene, so the question can never be answered even
+    // though the phase itself is completable via the other required question.
     const scene = mkInterrogationScene({
       phases: [
         mkInquiryPhase({
           id: "inquiry",
           required: true,
-          complete: { predicate: "evidence_collected", id: "missing" },
-          questions: [mkQuestion({ id: "dead_q" })],
+          questions: [
+            mkQuestion({ id: "reachable_q", reveals: [{ kind: "evidence", id: "phase_ev" }] }),
+            mkQuestion({
+              id: "dead_q",
+              status: "locked",
+              required: false,
+              unlock: { predicate: "evidence_collected", id: "unobtainable" },
+            }),
+          ],
         }),
       ],
-      evidenceManifest: [mkEvidence("missing")],
+      evidenceManifest: [mkEvidence("phase_ev"), mkEvidence("unobtainable")],
       outro: {
         unlock: { predicate: "question_answered", id: "dead_q" },
         dialogue: [],
@@ -1990,5 +2000,142 @@ describe("validator", () => {
     });
     const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("phantom"));
     expect(outroErr).toBeDefined();
+  });
+
+  it("does not guarantee press-only reveals for cross-scene inventory", () => {
+    // Press reveals are optional — the player may complete the testimony by
+    // presenting without pressing any statement.  So a later scene should NOT
+    // be able to depend on evidence only obtainable via a press reveal.
+    const source = mkInterrogationScene({
+      phases: [
+        mkTestimonyPhase({
+          id: "testimony",
+          statements: [
+            mkTestimonyStatement({
+              id: "s1",
+              reveals: [{ kind: "evidence", id: "press_only_ev" }],
+              contradiction: { kind: "evidence", id: "initial_ev" },
+              onCorrect: "win",
+            }),
+          ],
+          results: [mkResult({ id: "win" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("initial_ev"), mkEvidence("press_only_ev")],
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "press_only_ev" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("press_only_ev"))).toBeDefined();
+  });
+
+  it("accepts an answerable question as outro predicate even when phase is incompletable", () => {
+    // The question itself IS answerable (unlocked, reachable) — the phase just
+    // won't complete due to an unrelated completion condition. The runtime only
+    // checks if the question was answered, not if the phase completed.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "inquiry",
+          required: true,
+          complete: { predicate: "evidence_collected", id: "missing" },
+          questions: [mkQuestion({ id: "answerable_q" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("missing")],
+      outro: {
+        unlock: { predicate: "question_answered", id: "answerable_q" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+  });
+
+  it("guarantees investigation reveals from transitively reachable locked blocks", () => {
+    // An investigation with auto-outro where a locked hotspot's unlock is
+    // satisfied by evidence from an initially unlocked hotspot. The locked
+    // hotspot's reveals are guaranteed because the auto-outro requires the
+    // player to clear all reachable blocks before leaving.
+    const investigation = mkInvestigationScene({
+      id: "investigation_1",
+      sourceFile: "investigation_1.md",
+      sublocations: [
+        {
+          id: "room",
+          label: "Room",
+          status: "unlocked",
+          unlock: null,
+          reveals: [],
+          sceneTag: "tag",
+          transitionDialogue: [],
+          hotspots: [
+            {
+              id: "unlocked_h",
+              label: "Unlocked Hotspot",
+              description: "d",
+              status: "unlocked",
+              unlock: null,
+              reveals: [{ kind: "evidence", id: "key_evidence" }],
+              inspectDialogue: [],
+              onReexamine: null,
+              sourceFile: "investigation_1.md",
+              line: 3,
+            },
+            {
+              id: "locked_h",
+              label: "Locked Hotspot",
+              description: "d",
+              status: "locked",
+              unlock: { predicate: "evidence_collected", id: "key_evidence" },
+              reveals: [{ kind: "evidence", id: "chained_evidence" }],
+              inspectDialogue: [],
+              onReexamine: null,
+              sourceFile: "investigation_1.md",
+              line: 8,
+            },
+          ],
+          characters: [],
+          sourceFile: "investigation_1.md",
+          line: 2,
+        },
+      ],
+      evidenceManifest: [mkEvidence("key_evidence"), mkEvidence("chained_evidence")],
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "chained_evidence" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "investigation_1.md", ast: investigation },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("chained_evidence"))).toBeUndefined();
   });
 });
