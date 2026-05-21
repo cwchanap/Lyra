@@ -1516,6 +1516,34 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "interrogationContradictionUnresolved")).toBeDefined();
   });
 
+  it("accepts press-then-present: evidence revealed by pressing one statement used as contradiction against another", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkTestimonyPhase({
+          id: "testimony",
+          statements: [
+            mkTestimonyStatement({
+              id: "s1",
+              reveals: [{ kind: "evidence", id: "press_evidence" }],
+            }),
+            mkTestimonyStatement({
+              id: "s2",
+              contradiction: { kind: "evidence", id: "press_evidence" },
+              onCorrect: "win",
+            }),
+          ],
+          results: [mkResult({ id: "win" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("press_evidence")],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors).toEqual([]);
+  });
+
   it("rejects required testimony phases with no valid contradiction path", () => {
     const scene = mkInterrogationScene({
       phases: [

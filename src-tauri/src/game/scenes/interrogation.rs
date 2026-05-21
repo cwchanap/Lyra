@@ -180,7 +180,7 @@ impl InterrogationSceneState {
                 .def
                 .phases
                 .iter()
-                .filter(|phase| phase_required(phase) && self.is_phase_unlocked(phase, ctx))
+                .filter(|phase| phase_required(phase))
                 .all(|phase| self.completed_phases.contains(phase_id(phase))),
             InterrogationOutroUnlock::Expr(expr) => unlock::evaluate_interrogation(expr, ctx),
         }
@@ -528,5 +528,64 @@ mod tests {
         };
         assert!(!scene.completed_phases.contains("inquiry"));
         assert!(!scene.phase_complete(&scene.def.phases[0], &ctx));
+    }
+
+    #[test]
+    fn outro_not_satisfied_when_locked_required_phase_is_incomplete() {
+        // Two required phases: one unlocked (completable), one locked.
+        // Completing the unlocked phase should NOT satisfy the outro
+        // because the locked required phase is still incomplete.
+        let def = InterrogationSceneJson {
+            id: "interrogation".into(),
+            title: "Interrogation".into(),
+            intro: vec![],
+            phases: vec![
+                InterrogationPhaseJson::Inquiry {
+                    id: "unlocked_inquiry".into(),
+                    label: "Unlocked Inquiry".into(),
+                    subject: subject(),
+                    required: true,
+                    status: LockStatus::Unlocked,
+                    unlock: None,
+                    reveals: vec![],
+                    scene_tag: "room".into(),
+                    entry_dialogue: vec![],
+                    complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                    questions: vec![crate::game::schema::InquiryQuestionJson {
+                        id: "q1".into(),
+                        label: "Q1".into(),
+                        kind: crate::game::schema::InquiryQuestionKind::Question,
+                        parent_question_id: None,
+                        status: LockStatus::Unlocked,
+                        required: true,
+                        unlock: None,
+                        reveals: vec![],
+                        answer_dialogue: vec![DialogueItem::Action {
+                            text: "asked".into(),
+                        }],
+                        on_reask: None,
+                    }],
+                },
+                inquiry_phase_with_status("locked_inquiry", LockStatus::Locked),
+            ],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: outro(),
+        };
+        let mut scene = InterrogationSceneState::from_json(def, 1);
+        let inventory = Inventory::default();
+
+        // Answer the unlocked phase's question and complete it.
+        scene.record_question_answered("q1");
+        scene.refresh_phase_completion(&inventory);
+
+        assert!(scene.completed_phases.contains("unlocked_inquiry"));
+
+        let ctx = InterrogationSceneAndInventoryCtx {
+            scene: &scene,
+            inventory: &inventory,
+        };
+        // Outro should NOT be satisfied — locked required phase is still incomplete.
+        assert!(!scene.outro_satisfied(&ctx));
     }
 }
