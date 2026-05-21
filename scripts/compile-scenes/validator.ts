@@ -372,6 +372,16 @@ function validateInterrogationScene(
         });
       }
       const obtainableBeforePhase = interrogationFlow.beforePhase.get(phase.id) ?? new Set<string>();
+      // Press reveals are obtainable within the phase: the player can press
+      // any statement before presenting, so all statement-level reveals are
+      // available as contradiction targets within the same testimony phase.
+      const obtainableInPhase = new Set(obtainableBeforePhase);
+      for (const statement of phase.statements) {
+        for (const reveal of statement.reveals) {
+          if (reveal.kind === "evidence") obtainableInPhase.add(`evidence:${reveal.id}`);
+          if (reveal.kind === "statement") obtainableInPhase.add(`statement:${reveal.id}`);
+        }
+      }
       for (const statement of phase.statements) {
         checkReveals(`testimonyStatement:${statement.id}`, statement.line, statement.reveals);
         validateContradiction(
@@ -381,7 +391,7 @@ function validateInterrogationScene(
           corpusContext,
           localEvidence,
           localStatement,
-          obtainableBeforePhase,
+          obtainableInPhase,
           guaranteedBefore,
         );
       }
@@ -794,6 +804,13 @@ function collectTestimonyResultInventory(
   phase: ASTTestimonyPhase,
   state: Pick<InterrogationInventoryState, "inventory" | "revealedQuestions" | "revealedPhases"> & { mode: InterrogationInventoryMode },
 ): boolean {
+  // Press reveals: the player can press any statement within the testimony
+  // phase before presenting, so all statement-level press reveals are
+  // obtainable within the phase.
+  for (const statement of phase.statements) {
+    addInterrogationRevealsToState(state, statement.reveals);
+  }
+
   const validPathReveals: InterrogationRevealTarget[][] = [];
   for (const statement of phase.statements) {
     if (statement.contradiction === null || statement.onCorrect === null) continue;
