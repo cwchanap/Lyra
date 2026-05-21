@@ -1777,4 +1777,190 @@ describe("validator", () => {
     });
     expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("only_path_a"))).toBeDefined();
   });
+
+  // ---- Interrogation outro reachability ----
+
+  it("rejects an interrogation outro whose evidence_collected predicate references evidence never obtainable in the scene", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "inquiry",
+          questions: [mkQuestion({ id: "q" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("phantom")],
+      outro: {
+        unlock: { predicate: "evidence_collected", id: "phantom" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("phantom"));
+    expect(outroErr).toBeDefined();
+  });
+
+  it("accepts an interrogation outro whose evidence_collected predicate references evidence obtainable from a question reveal", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "inquiry",
+          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "key" }] })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("key")],
+      outro: {
+        unlock: { predicate: "evidence_collected", id: "key" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+  });
+
+  it("rejects an interrogation outro whose statement_acquired predicate references a statement never obtainable in the scene", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "inquiry",
+          questions: [mkQuestion({ id: "q" })],
+        }),
+      ],
+      statementManifest: [mkStatement("ghost_stmt")],
+      outro: {
+        unlock: { predicate: "statement_acquired", id: "ghost_stmt" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("ghost_stmt"));
+    expect(outroErr).toBeDefined();
+  });
+
+  it("rejects an interrogation outro whose phase_completed predicate references a phase with no valid completion path", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "dead_end",
+          required: true,
+          complete: { predicate: "evidence_collected", id: "missing" },
+          questions: [mkQuestion({ id: "q" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("missing")],
+      outro: {
+        unlock: { predicate: "phase_completed", id: "dead_end" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("dead_end"));
+    expect(outroErr).toBeDefined();
+  });
+
+  it("accepts an interrogation outro with a phase_completed predicate referencing a completable phase", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "inquiry",
+          questions: [mkQuestion({ id: "q" })],
+        }),
+      ],
+      outro: {
+        unlock: { predicate: "phase_completed", id: "inquiry" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+  });
+
+  it("rejects an interrogation outro whose question_answered predicate references a question in an incompletable phase", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "inquiry",
+          required: true,
+          complete: { predicate: "evidence_collected", id: "missing" },
+          questions: [mkQuestion({ id: "dead_q" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("missing")],
+      outro: {
+        unlock: { predicate: "question_answered", id: "dead_q" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("dead_q"));
+    expect(outroErr).toBeDefined();
+  });
+
+  it("accepts an interrogation outro OR expression when one branch is obtainable", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "inquiry",
+          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "real_ev" }] })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("real_ev"), mkEvidence("red_herring")],
+      outro: {
+        unlock: {
+          op: "or",
+          left: { predicate: "evidence_collected", id: "real_ev" },
+          right: { predicate: "evidence_collected", id: "red_herring" },
+        },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+  });
+
+  it("rejects an interrogation outro AND expression when one branch is unobtainable", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "inquiry",
+          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "real_ev" }] })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("real_ev"), mkEvidence("phantom")],
+      outro: {
+        unlock: {
+          op: "and",
+          left: { predicate: "evidence_collected", id: "real_ev" },
+          right: { predicate: "evidence_collected", id: "phantom" },
+        },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("phantom"));
+    expect(outroErr).toBeDefined();
+  });
 });

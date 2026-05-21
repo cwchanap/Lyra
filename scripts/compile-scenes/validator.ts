@@ -393,6 +393,7 @@ function validateInterrogationScene(
 
   if (scene.outro.unlock !== "auto") {
     checkUnlock(scene.outro.unlock, scene.line, { checkCrossSceneInventory: false });
+    errors.push(...collectInterrogationOutroUnlockErrors(scene.outro.unlock, scene, interrogationFlow));
   }
 
   for (const phase of scene.phases) {
@@ -524,6 +525,86 @@ function checkInterrogationLockedReachability(
       sourceFile,
       line,
     });
+  }
+}
+
+function collectInterrogationOutroUnlockErrors(
+  expr: InterrogationUnlockExpr,
+  scene: ASTInterrogationScene,
+  flow: InterrogationInventoryAnalysis,
+): CompileError[] {
+  if ("op" in expr) {
+    const leftErrors = collectInterrogationOutroUnlockErrors(expr.left, scene, flow);
+    const rightErrors = collectInterrogationOutroUnlockErrors(expr.right, scene, flow);
+    if (expr.op === "and") {
+      return [...leftErrors, ...rightErrors];
+    }
+    return leftErrors.length === 0 || rightErrors.length === 0
+      ? []
+      : [...leftErrors, ...rightErrors];
+  }
+  return interrogationOutroPredicateReachable(expr, scene, flow)
+    ? []
+    : [interrogationOutroPredicateUnreachableError(expr, scene)];
+}
+
+function interrogationOutroPredicateReachable(
+  pred: Extract<InterrogationUnlockExpr, { predicate: string }>,
+  scene: ASTInterrogationScene,
+  flow: InterrogationInventoryAnalysis,
+): boolean {
+  switch (pred.predicate) {
+    case "evidence_collected":
+      return flow.afterScene.has(`evidence:${pred.id}`);
+    case "statement_acquired":
+      return flow.afterScene.has(`statement:${pred.id}`);
+    case "question_answered":
+      // A question is reachable if it belongs to a completable phase.
+      for (const phase of scene.phases) {
+        if (!flow.phaseCompletable.get(phase.id)) continue;
+        if (phase.kind === "inquiry" && phase.questions.some((q) => q.id === pred.id)) {
+          return true;
+        }
+      }
+      return false;
+    case "phase_completed":
+      return flow.phaseCompletable.get(pred.id) === true;
+  }
+}
+
+function interrogationOutroPredicateUnreachableError(
+  pred: Extract<InterrogationUnlockExpr, { predicate: string }>,
+  scene: ASTInterrogationScene,
+): CompileError {
+  switch (pred.predicate) {
+    case "evidence_collected":
+      return {
+        code: "interrogationOutroPredicateUnreachable",
+        message: `Outro requires evidence:${pred.id} collected, but it is not obtainable within this scene — scene is unwinnable.`,
+        sourceFile: scene.sourceFile,
+        line: scene.line,
+      };
+    case "statement_acquired":
+      return {
+        code: "interrogationOutroPredicateUnreachable",
+        message: `Outro requires statement:${pred.id} acquired, but it is not obtainable within this scene — scene is unwinnable.`,
+        sourceFile: scene.sourceFile,
+        line: scene.line,
+      };
+    case "question_answered":
+      return {
+        code: "interrogationOutroPredicateUnreachable",
+        message: `Outro requires question:${pred.id} answered, but no completable phase contains this question — scene is unwinnable.`,
+        sourceFile: scene.sourceFile,
+        line: scene.line,
+      };
+    case "phase_completed":
+      return {
+        code: "interrogationOutroPredicateUnreachable",
+        message: `Outro requires phase:${pred.id} completed, but that phase has no valid completion path — scene is unwinnable.`,
+        sourceFile: scene.sourceFile,
+        line: scene.line,
+      };
   }
 }
 
