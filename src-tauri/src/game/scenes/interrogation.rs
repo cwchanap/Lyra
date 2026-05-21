@@ -166,9 +166,7 @@ impl InterrogationSceneState {
             } => match complete {
                 InterrogationOutroUnlock::Auto(_) => questions
                     .iter()
-                    .filter(|question| {
-                        question.required && self.is_question_unlocked(question, ctx)
-                    })
+                    .filter(|question| question.required)
                     .all(|question| self.answered_questions.contains(&question.id)),
                 InterrogationOutroUnlock::Expr(expr) => unlock::evaluate_interrogation(expr, ctx),
             },
@@ -460,5 +458,75 @@ mod tests {
         let mut scene = InterrogationSceneState::from_json(one_testimony_scene(), 1);
         scene.record_correct_present("testimony");
         assert!(scene.completed_phases.contains("testimony"));
+    }
+
+    #[test]
+    fn inquiry_phase_does_not_auto_complete_when_required_question_is_locked() {
+        // Phase has two required questions: one unlocked, one locked.
+        // Answering only the unlocked one should NOT complete the phase,
+        // because the locked required question still needs to be answered.
+        let def = InterrogationSceneJson {
+            id: "interrogation".into(),
+            title: "Interrogation".into(),
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "inquiry".into(),
+                label: "Inquiry".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![
+                    crate::game::schema::InquiryQuestionJson {
+                        id: "unlocked_q".into(),
+                        label: "Unlocked".into(),
+                        kind: crate::game::schema::InquiryQuestionKind::Question,
+                        parent_question_id: None,
+                        status: LockStatus::Unlocked,
+                        required: true,
+                        unlock: None,
+                        reveals: vec![],
+                        answer_dialogue: vec![DialogueItem::Action {
+                            text: "asked".into(),
+                        }],
+                        on_reask: None,
+                    },
+                    crate::game::schema::InquiryQuestionJson {
+                        id: "locked_q".into(),
+                        label: "Locked".into(),
+                        kind: crate::game::schema::InquiryQuestionKind::Question,
+                        parent_question_id: None,
+                        status: LockStatus::Locked,
+                        required: true,
+                        unlock: None,
+                        reveals: vec![],
+                        answer_dialogue: vec![DialogueItem::Action {
+                            text: "secret".into(),
+                        }],
+                        on_reask: None,
+                    },
+                ],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: outro(),
+        };
+        let mut scene = InterrogationSceneState::from_json(def, 1);
+        let inventory = Inventory::default();
+
+        // Answer only the unlocked question — phase should NOT complete.
+        scene.record_question_answered("unlocked_q");
+        scene.refresh_phase_completion(&inventory);
+
+        let ctx = InterrogationSceneAndInventoryCtx {
+            scene: &scene,
+            inventory: &inventory,
+        };
+        assert!(!scene.completed_phases.contains("inquiry"));
+        assert!(!scene.phase_complete(&scene.def.phases[0], &ctx));
     }
 }
