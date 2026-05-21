@@ -9,8 +9,8 @@ fn fixture_resources() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/scenes")
 }
 
-fn project_resources() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/scenes")
+fn full_fixture_resources() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/full_scenes")
 }
 
 fn token_from(view: &GameStateView) -> QueueToken {
@@ -213,7 +213,7 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
 
 #[test]
 fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
-    let mut engine = GameEngine::new_started(project_resources()).unwrap();
+    let mut engine = GameEngine::new_started(full_fixture_resources()).unwrap();
     let view = advance_project_investigation_to_interrogation(&mut engine);
     assert!(
         matches!(view.mode, ModeView::Interrogation { ref phase_id } if phase_id == "wakatsuki_inquiry"),
