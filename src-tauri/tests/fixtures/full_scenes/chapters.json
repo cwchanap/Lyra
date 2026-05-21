@@ -1,0 +1,23 @@
+{
+  "chapters": [
+    {
+      "id": "chapter_1",
+      "title": "雨鐘咖啡館殺人事件",
+      "summary": "律師相馬律與早坂茜在深夜的雨鐘咖啡館，調查若槻蓮被指控殺害增田圭的命案。",
+      "scenes": [
+        {
+          "type": "linear",
+          "file": "chapter_1/scene_0.json"
+        },
+        {
+          "type": "investigation",
+          "file": "chapter_1/investigation_scene_1.json"
+        },
+        {
+          "type": "interrogation",
+          "file": "chapter_1/interrogation_scene_2.json"
+        }
+      ]
+    }
+  ]
+}
