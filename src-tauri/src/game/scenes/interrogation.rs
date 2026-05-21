@@ -18,6 +18,7 @@ pub struct InterrogationSceneState {
     pub intro_queue_gen: u64,
     pub answered_questions: HashSet<String>,
     pub pressed_statements: HashSet<String>,
+    pub wrong_presented_statements: HashSet<String>,
     pub completed_phases: HashSet<String>,
     pub unlocked_overrides: HashSet<String>,
     entered_phases: HashSet<String>,
@@ -39,6 +40,7 @@ impl InterrogationSceneState {
             intro_queue_gen,
             answered_questions: HashSet::new(),
             pressed_statements: HashSet::new(),
+            wrong_presented_statements: HashSet::new(),
             completed_phases: HashSet::new(),
             unlocked_overrides: HashSet::new(),
             entered_phases: HashSet::new(),
@@ -64,7 +66,9 @@ impl InterrogationSceneState {
         self.pressed_statements.insert(id.into());
     }
 
-    pub fn record_wrong_present(&mut self, _statement_id: &str) {}
+    pub fn record_wrong_present(&mut self, statement_id: &str) {
+        self.wrong_presented_statements.insert(statement_id.into());
+    }
 
     pub fn record_correct_present(&mut self, phase_id: &str) {
         self.completed_phases.insert(phase_id.into());
@@ -451,6 +455,7 @@ mod tests {
         let mut scene = InterrogationSceneState::from_json(one_testimony_scene(), 1);
         scene.record_wrong_present("cleaning_button");
         assert!(!scene.completed_phases.contains("testimony"));
+        assert!(scene.wrong_presented_statements.contains("cleaning_button"));
     }
 
     #[test]

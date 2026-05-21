@@ -24,8 +24,9 @@ use schema::{
 use state::{ChapterManifest, Inventory, SceneRef};
 use std::path::PathBuf;
 use view::{
-    ChapterView, CharacterView, HotspotView, InquiryQuestionView, InterrogationPhaseView,
-    SceneView, SubjectView, SublocationView, TestimonyStatementView, TopicView,
+    ChapterView, CharacterView, HotspotView, InquiryQuestionView, InterrogationPhaseKindView,
+    InterrogationPhaseView, SceneView, SubjectView, SublocationView, TestimonyStatementView,
+    TopicView,
 };
 
 pub struct GameEngine {
@@ -133,6 +134,8 @@ impl GameEngine {
                     scene.intro_played = true;
                     false
                 } else {
+                    // Empty or already-played intros are considered consumed;
+                    // the phase machine can advance immediately.
                     scene.intro_played = true;
                     needs_interrogation_advance = true;
                     false
@@ -1349,6 +1352,21 @@ impl GameEngine {
             } else {
                 if let Some(result) = result {
                     queue_items.extend(result.dialogue);
+                    let scene = match &mut self.scene {
+                        SceneRuntime::Interrogation(scene) => scene,
+                        _ => {
+                            return Err(GameError::internal(
+                                "scene changed during present_testimony_item".into(),
+                            ))
+                        }
+                    };
+                    queue_items = reveals::apply_interrogation_reveals_and_build_queue(
+                        scene,
+                        &mut self.inventory,
+                        queue_items,
+                        &result.reveals,
+                        &chapter_id,
+                    );
                 }
                 if let SceneRuntime::Interrogation(scene) = &mut self.scene {
                     scene.record_wrong_present(statement_id);
@@ -1582,7 +1600,7 @@ impl GameEngine {
                         } => InterrogationPhaseView {
                             id: id.clone(),
                             label: label.clone(),
-                            kind: "inquiry".into(),
+                            kind: InterrogationPhaseKindView::Inquiry,
                             subject: SubjectView {
                                 id: subject.id.clone(),
                                 name: subject.name.clone(),
@@ -1609,7 +1627,7 @@ impl GameEngine {
                         } => InterrogationPhaseView {
                             id: id.clone(),
                             label: label.clone(),
-                            kind: "testimony".into(),
+                            kind: InterrogationPhaseKindView::Testimony,
                             subject: SubjectView {
                                 id: subject.id.clone(),
                                 name: subject.name.clone(),
@@ -1716,10 +1734,10 @@ mod tests {
     use super::*;
     use crate::game::schema::{
         AutoMarker, CharacterJson, EvidenceJson, HotspotJson, InterrogationOutroJson,
-        InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationSceneJson,
-        InterrogationUnlockExpr, InventoryTarget, InvestigationSceneJson, LockStatus, OutroJson,
-        OutroUnlock, RevealTarget, SceneType, SubjectJson, SublocationJson, TestimonyResultJson,
-        TestimonyStatementJson, TopicJson, UnlockExpr,
+        InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationRevealTarget,
+        InterrogationSceneJson, InterrogationUnlockExpr, InventoryTarget, InvestigationSceneJson,
+        LockStatus, OutroJson, OutroUnlock, RevealTarget, SceneType, SubjectJson, SublocationJson,
+        TestimonyResultJson, TestimonyStatementJson, TopicJson, UnlockExpr,
     };
     use crate::game::state::{EvidenceRecord, StatementRecord};
 
@@ -2363,6 +2381,56 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.code, "unknownTestimonyStatement");
+    }
+
+    #[test]
+    fn wrong_testimony_result_applies_reveals() {
+        let mut def = testimony_interrogation_scene();
+        let InterrogationPhaseJson::Testimony {
+            statements,
+            results,
+            ..
+        } = &mut def.phases[0]
+        else {
+            panic!("expected testimony phase");
+        };
+        statements[0].on_wrong = Some("wrong".into());
+        results.push(TestimonyResultJson {
+            id: "wrong".into(),
+            label: "Wrong".into(),
+            reveals: vec![InterrogationRevealTarget::Evidence { id: "hint".into() }],
+            dialogue: vec![],
+        });
+        def.evidence_manifest.push(EvidenceJson {
+            id: "hint".into(),
+            name: "Hint".into(),
+            description: "Hint".into(),
+            details: "Hint".into(),
+            on_collect: vec![],
+            on_reexamine: None,
+        });
+        let mut engine = empty_engine_with_interrogation_scene(def, 1);
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "wrong_item".into(),
+            name: "Wrong Item".into(),
+            description: "Wrong Item".into(),
+            details: "Wrong Item".into(),
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "previous_scene".into(),
+        });
+
+        let view = engine
+            .present_testimony_item("statement", "evidence", "wrong_item")
+            .unwrap();
+
+        assert!(engine.inventory.has_evidence("hint"));
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(scene.wrong_presented_statements.contains("statement"));
+        assert!(!scene.completed_phases.contains("testimony"));
+        assert!(matches!(view.mode, ModeView::Dialogue { .. }));
     }
 
     #[test]
@@ -3485,8 +3553,8 @@ mod tests {
     fn correct_present_dialogue_plays_before_reveal_on_collect() {
         use crate::game::schema::{
             InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
-            InterrogationRevealTarget, InterrogationSceneJson, StatementJson,
-            TestimonyResultJson, TestimonyStatementJson,
+            InterrogationRevealTarget, InterrogationSceneJson, StatementJson, TestimonyResultJson,
+            TestimonyStatementJson,
         };
 
         // Build a testimony scene where the correct-present result has both

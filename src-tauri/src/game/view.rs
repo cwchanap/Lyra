@@ -125,10 +125,17 @@ pub struct TopicView {
 pub struct InterrogationPhaseView {
     pub id: String,
     pub label: String,
-    pub kind: String,
+    pub kind: InterrogationPhaseKindView,
     pub subject: SubjectView,
     pub questions: Vec<InquiryQuestionView>,
     pub testimony: Vec<TestimonyStatementView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InterrogationPhaseKindView {
+    Inquiry,
+    Testimony,
 }
 
 #[derive(Debug, Clone, Serialize)]

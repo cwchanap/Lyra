@@ -84,18 +84,6 @@ impl GameError {
             format!("Statement '{id}' is not in the inventory."),
         )
     }
-    pub fn unknown_interrogation_phase(id: &str) -> Self {
-        Self::new(
-            "unknownInterrogationPhase",
-            format!("Interrogation phase '{id}' does not exist."),
-        )
-    }
-    pub fn locked_interrogation_phase(id: &str) -> Self {
-        Self::new(
-            "lockedInterrogationPhase",
-            format!("Interrogation phase '{id}' is locked."),
-        )
-    }
     pub fn unknown_interrogation_question(id: &str) -> Self {
         Self::new(
             "unknownInterrogationQuestion",
