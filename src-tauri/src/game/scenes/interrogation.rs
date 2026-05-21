@@ -182,10 +182,22 @@ impl InterrogationSceneState {
                 questions,
                 ..
             } => match complete {
-                InterrogationOutroUnlock::Auto(_) => questions
-                    .iter()
-                    .filter(|question| question.required)
-                    .all(|question| self.answered_questions.contains(&question.id)),
+                InterrogationOutroUnlock::Auto(_) => {
+                    let all_required_answered = questions
+                        .iter()
+                        .filter(|question| question.required)
+                        .all(|question| self.answered_questions.contains(&question.id));
+                    if !all_required_answered {
+                        return false;
+                    }
+                    // Do not auto-complete while unlocked questions remain unanswered,
+                    // so the player can interact with optional follow-ups that may have
+                    // just become visible after a required question was answered.
+                    !questions.iter().any(|question| {
+                        self.is_question_unlocked(question, ctx)
+                            && !self.answered_questions.contains(&question.id)
+                    })
+                }
                 InterrogationOutroUnlock::Expr(expr) => unlock::evaluate_interrogation(expr, ctx),
             },
             InterrogationPhaseJson::Testimony { .. } => false,
@@ -754,5 +766,98 @@ mod tests {
         };
 
         assert!(scene.outro_satisfied(&ctx));
+    }
+
+    #[test]
+    fn auto_complete_waits_for_unlocked_optional_follow_up() {
+        // An inquiry with one required question whose answer unlocks an optional
+        // follow-up. After answering the required question, the phase must NOT
+        // auto-complete because the optional follow-up is now unlocked but
+        // unanswered — the player has not had a chance to interact with it.
+        use crate::game::schema::{InquiryQuestionKind, InterrogationUnlockExpr, PredicateQuestionAnswered};
+
+        let def = InterrogationSceneJson {
+            id: "interrogation".into(),
+            title: "Interrogation".into(),
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "inquiry".into(),
+                label: "Inquiry".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![
+                    crate::game::schema::InquiryQuestionJson {
+                        id: "required_q".into(),
+                        label: "Required".into(),
+                        kind: InquiryQuestionKind::Question,
+                        parent_question_id: None,
+                        status: LockStatus::Unlocked,
+                        required: true,
+                        unlock: None,
+                        reveals: vec![],
+                        answer_dialogue: vec![DialogueItem::Action {
+                            text: "answered".into(),
+                        }],
+                        on_reask: None,
+                    },
+                    crate::game::schema::InquiryQuestionJson {
+                        id: "optional_followup".into(),
+                        label: "Follow Up".into(),
+                        kind: InquiryQuestionKind::FollowUp,
+                        parent_question_id: Some("required_q".into()),
+                        status: LockStatus::Locked,
+                        required: false,
+                        // Unlocked once required_q is answered.
+                        unlock: Some(InterrogationUnlockExpr::QuestionAnswered {
+                            _predicate: PredicateQuestionAnswered::X,
+                            id: "required_q".into(),
+                        }),
+                        reveals: vec![],
+                        answer_dialogue: vec![DialogueItem::Action {
+                            text: "follow-up answered".into(),
+                        }],
+                        on_reask: None,
+                    },
+                ],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: outro(),
+        };
+
+        let mut scene = InterrogationSceneState::from_json(def, 1);
+        let inventory = Inventory::default();
+
+        // Answer the required question — this should satisfy the "all required
+        // answered" check, but the optional follow-up is now unlocked & unanswered.
+        scene.record_question_answered("required_q");
+        scene.refresh_phase_completion(&inventory);
+
+        let ctx = InterrogationSceneAndInventoryCtx {
+            scene: &scene,
+            inventory: &inventory,
+        };
+        assert!(
+            !scene.phase_complete(&scene.def.phases[0], &ctx),
+            "phase should NOT auto-complete while an unlocked optional follow-up is unanswered"
+        );
+        assert!(
+            !scene.completed_phases.contains("inquiry"),
+            "inquiry should not be in completed_phases set"
+        );
+
+        // Now answer the optional follow-up — phase should auto-complete.
+        scene.record_question_answered("optional_followup");
+        scene.refresh_phase_completion(&inventory);
+        assert!(
+            scene.completed_phases.contains("inquiry"),
+            "inquiry should auto-complete after all unlocked questions are answered"
+        );
     }
 }
