@@ -1261,12 +1261,16 @@ impl GameEngine {
                     statement.on_press.clone().unwrap_or_default()
                 }
             };
-            if queue_items.is_empty() {
-                self.on_queue_exhausted()?;
+            let items = if queue_items.is_empty() {
+                vec![DialogueItem::Line {
+                    speaker: "Narrator".into(),
+                    text: "你仔細思考了這句話，但沒有發現新的線索。".into(),
+                }]
             } else {
-                let queue_gen = self.alloc_queue_gen();
-                self.install_scene_queue(queue_items, queue_gen)?;
-            }
+                queue_items
+            };
+            let queue_gen = self.alloc_queue_gen();
+            self.install_scene_queue(items, queue_gen)?;
             Ok(self.view())
         })();
         self.restore_on_error(snapshot, result)
@@ -3806,6 +3810,104 @@ mod tests {
                 }
             }
             other => panic!("Expected Dialogue mode after correct present, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn press_statement_with_no_press_content_returns_fallback_feedback() {
+        use crate::game::schema::{
+            InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
+            InterrogationSceneJson, TestimonyStatementJson,
+        };
+
+        // A testimony scene with a statement that has no on_press, no reveals,
+        // and no contradiction — pressing should still produce fallback feedback.
+        let scene = InterrogationSceneJson {
+            id: "press_fallback_test".into(),
+            title: "Press Fallback Test".into(),
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Testimony {
+                id: "testimony".into(),
+                label: "Testimony".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                entry_dialogue: vec![],
+                statements: vec![TestimonyStatementJson {
+                    id: "s1".into(),
+                    label: "S1".into(),
+                    content: "Nothing to press here.".into(),
+                    contradiction: None,
+                    on_correct: None,
+                    on_wrong: None,
+                    on_press: None,
+                    on_present: None,
+                    on_wrong_present: None,
+                    reveals: vec![],
+                }],
+                results: vec![],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
+        engine.prime_initial_queue().unwrap();
+
+        // Advance through entry to reach interrogation mode.
+        while matches!(engine.view().mode, ModeView::Dialogue { .. }) {
+            let tok = token_from(&engine.view());
+            engine.advance_dialogue(tok).unwrap();
+            if matches!(engine.view().mode, ModeView::Interrogation { .. }) {
+                break;
+            }
+        }
+
+        // Press the statement with no on_press and no reveals.
+        let view = engine.press_testimony_statement("s1").unwrap();
+
+        // Should be in Dialogue mode showing fallback feedback.
+        match &view.mode {
+            ModeView::Dialogue { current, queue_remaining, .. } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text }
+                        if speaker == "Narrator" && !text.is_empty()),
+                    "Expected fallback narrator line, got {:?}",
+                    current
+                );
+                assert_eq!(*queue_remaining, 0, "Expected single fallback item");
+            }
+            other => panic!("Expected Dialogue mode with fallback, got {:?}", other),
+        }
+
+        // Advance past the fallback line — should return to interrogation.
+        let tok = token_from(&view);
+        let view2 = engine.advance_dialogue(tok).unwrap();
+        assert!(
+            matches!(view2.mode, ModeView::Interrogation { .. }),
+            "Expected Interrogation mode after advancing fallback, got {:?}",
+            view2.mode
+        );
+
+        // Press again (not first time) — should still produce fallback.
+        let view3 = engine.press_testimony_statement("s1").unwrap();
+        match &view3.mode {
+            ModeView::Dialogue { current, queue_remaining, .. } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text }
+                        if speaker == "Narrator" && !text.is_empty()),
+                    "Expected fallback narrator line on re-press, got {:?}",
+                    current
+                );
+                assert_eq!(*queue_remaining, 0, "Expected single fallback item on re-press");
+            }
+            other => panic!("Expected Dialogue mode with fallback on re-press, got {:?}", other),
         }
     }
 }
