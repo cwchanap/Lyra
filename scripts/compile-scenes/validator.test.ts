@@ -1713,6 +1713,49 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("skippable_log"))).toBeDefined();
   });
 
+  it("guarantees inquiry question reveal when phase complete depends on that inventory item", () => {
+    // When an inquiry phase's complete expression references evidence_collected
+    // or statement_acquired, and the only way to obtain that item is by answering
+    // a question in the same phase, that question is mandatory for phase
+    // completion and its reveals should be guaranteed.
+    const source = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "source_inquiry",
+          complete: { predicate: "evidence_collected", id: "gated_evidence" },
+          questions: [
+            mkQuestion({
+              id: "revealer",
+              required: false,
+              reveals: [{ kind: "evidence", id: "gated_evidence" }],
+            }),
+          ],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("gated_evidence")],
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "gated_evidence" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    // The question "revealer" is mandatory because its reveal (gated_evidence)
+    // is required by the phase complete expression. So gated_evidence IS guaranteed.
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("gated_evidence"))).toBeUndefined();
+  });
+
   it("does not guarantee testimony result reveals from statements with no contradiction", () => {
     const source = mkInterrogationScene({
       phases: [
@@ -2231,21 +2274,124 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("chained_evidence"))).toBeUndefined();
   });
 
-  it("does not guarantee entry reveals from unlocked empty sub-locations", () => {
+  it("does not guarantee entry reveals from non-first unlocked empty sub-locations", () => {
     // An investigation with auto-outro where an unlocked sub-location has no
-    // hotspots or topics. The player never needs to enter it, so its entry
-    // reveals should NOT be guaranteed — even if those reveals would unlock
-    // another sub-location.
+    // hotspots or topics and is NOT the first unlocked sub-location. The player
+    // never needs to enter it, so its entry reveals should NOT be guaranteed —
+    // even if those reveals would unlock another sub-location.
+    // (The first unlocked sub-location IS always auto-entered by the runtime.)
     const investigation = mkInvestigationScene({
       id: "investigation_1",
       sourceFile: "investigation_1.md",
       sublocations: [
+        {
+          id: "first_room",
+          label: "First Room",
+          status: "unlocked",
+          unlock: null,
+          reveals: [],
+          sceneTag: "tag",
+          transitionDialogue: [],
+          hotspots: [
+            {
+              id: "first_h",
+              label: "First Thing",
+              description: "d",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              inspectDialogue: [],
+              onReexamine: null,
+              sourceFile: "investigation_1.md",
+              line: 3,
+            },
+          ],
+          characters: [],
+          sourceFile: "investigation_1.md",
+          line: 2,
+        },
         {
           id: "empty_room",
           label: "Empty Room",
           status: "unlocked",
           unlock: null,
           reveals: [{ kind: "sublocation", id: "locked_room" }],
+          sceneTag: "tag",
+          transitionDialogue: [],
+          hotspots: [],
+          characters: [],
+          sourceFile: "investigation_1.md",
+          line: 5,
+        },
+        {
+          id: "locked_room",
+          label: "Locked Room",
+          status: "locked",
+          unlock: null,
+          reveals: [],
+          sceneTag: "tag",
+          transitionDialogue: [],
+          hotspots: [
+            {
+              id: "secret_h",
+              label: "Secret",
+              description: "d",
+              status: "unlocked",
+              unlock: null,
+              reveals: [{ kind: "evidence", id: "unentered_evidence" }],
+              inspectDialogue: [],
+              onReexamine: null,
+              sourceFile: "investigation_1.md",
+              line: 11,
+            },
+          ],
+          characters: [],
+          sourceFile: "investigation_1.md",
+          line: 9,
+        },
+      ],
+      evidenceManifest: [mkEvidence("unentered_evidence")],
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "unentered_evidence" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "investigation_1.md", ast: investigation },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    // The empty_room is not first and not mandatory (no hotspots/topics), so
+    // its entry reveals don't fire. locked_room never becomes reachable.
+    // unentered_evidence is NOT guaranteed.
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("unentered_evidence"))).toBeDefined();
+  });
+
+  it("guarantees entry reveals from auto-entered first empty sub-location", () => {
+    // The runtime automatically enters the first unlocked sub-location
+    // (advance_into_first_sublocation), firing its entry reveals even if it
+    // has no hotspots or topics. Evidence from those entry reveals IS guaranteed.
+    const investigation = mkInvestigationScene({
+      id: "investigation_1",
+      sourceFile: "investigation_1.md",
+      sublocations: [
+        {
+          id: "empty_first",
+          label: "Empty First Room",
+          status: "unlocked",
+          unlock: null,
+          reveals: [
+            { kind: "evidence", id: "auto_entry_evidence" },
+            { kind: "sublocation", id: "locked_room" },
+          ],
           sceneTag: "tag",
           transitionDialogue: [],
           hotspots: [],
@@ -2268,7 +2414,7 @@ describe("validator", () => {
               description: "d",
               status: "unlocked",
               unlock: null,
-              reveals: [{ kind: "evidence", id: "unentered_evidence" }],
+              reveals: [],
               inspectDialogue: [],
               onReexamine: null,
               sourceFile: "investigation_1.md",
@@ -2280,13 +2426,13 @@ describe("validator", () => {
           line: 6,
         },
       ],
-      evidenceManifest: [mkEvidence("unentered_evidence")],
+      evidenceManifest: [mkEvidence("auto_entry_evidence")],
     });
     const later = mkInterrogationScene({
       phases: [mkTestimonyPhase({
         statements: [mkTestimonyStatement({
           id: "later_s",
-          contradiction: { kind: "evidence", id: "unentered_evidence" },
+          contradiction: { kind: "evidence", id: "auto_entry_evidence" },
           onCorrect: "later_win",
         })],
         results: [mkResult({ id: "later_win" })],
@@ -2299,10 +2445,9 @@ describe("validator", () => {
         { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
       ],
     });
-    // The empty_room is not mandatory (no hotspots/topics), so its entry
-    // reveals don't fire. locked_room never becomes reachable.
-    // unentered_evidence is NOT guaranteed.
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("unentered_evidence"))).toBeDefined();
+    // empty_first is auto-entered by the runtime, so auto_entry_evidence IS
+    // guaranteed — no cross-scene error expected.
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("auto_entry_evidence"))).toBeUndefined();
   });
 
   it("guarantees entry reveal inventory from mandatory sub-locations", () => {
