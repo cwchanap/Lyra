@@ -653,35 +653,65 @@ function guaranteedInventoryFromScene(scene: SceneRecord["ast"], initialInventor
 function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set<string> {
   const guaranteed = new Set<string>();
   if (scene.outro.unlock === "auto") {
-    // For auto-outro, the runtime requires every reachable block (including
-    // blocks that become reachable through transitive reveal/unlock chains) to
-    // be cleared before the player can leave.  So reveals from ALL reachable
-    // blocks are guaranteed — not just the initially-unlocked ones.
+    // For auto-outro, the runtime requires every unlocked hotspot to be
+    // inspected and every unlocked topic to be discussed.  The player must
+    // enter any sub-location that has reachable hotspots/topics ("mandatory"
+    // sub-locations).  Entry reveals from such sub-locations are guaranteed
+    // to fire.  Entry reveals from sub-locations with no interactive content
+    // are NOT guaranteed — the player can skip them without entering.
+
     const subReachable = new Set<string>();
     for (const sub of scene.sublocations) {
       if (sub.status === "unlocked") subReachable.add(sub.id);
     }
-    // Fixed-point for sub-location reachability (mirrors checkReachability).
+
+    // Track which sub-locations are mandatory (player must enter them).
+    // A sub-location is mandatory if it has any reachable hotspot or topic
+    // that the auto-outro check requires the player to interact with.
+    const subMandatory = new Set<string>();
+
+    // Fixed-point for sub-location reachability, mandatoriness, and inventory.
     let changed = true;
     while (changed) {
       changed = false;
-      const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable);
+
+      // Compute reachable atoms using only entry reveals from mandatory sub-locations.
+      const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable, subMandatory);
+
+      // Update mandatory set: a reachable sub-location is mandatory if it has
+      // any reachable hotspot or topic.
+      for (const sub of scene.sublocations) {
+        if (!subReachable.has(sub.id) || subMandatory.has(sub.id)) continue;
+        const hasReachableContent =
+          sub.hotspots.some((h) => reachableAtoms.has(`hotspot:${h.id}`))
+          || sub.characters.some((c) => c.topics.some((t) => reachableAtoms.has(`topic:${c.id}@${t.id}`)));
+        if (hasReachableContent) {
+          subMandatory.add(sub.id);
+          changed = true;
+        }
+      }
+
+      // Expand sub-location reachability using only mandatory entry reveals.
       for (const sub of scene.sublocations) {
         if (subReachable.has(sub.id)) continue;
         if (sub.status !== "locked") continue;
         const reachedByReveal = [...subReachable].some((rid) => {
+          if (!subMandatory.has(rid)) return false;
           const revs = collectRevealsFromReachableBlocks(
             scene.sublocations.find((s) => s.id === rid)!,
             reachableAtoms,
+            subMandatory,
           );
           return revs.some((r) => r.kind === "sublocation" && r.id === sub.id);
         });
         if (reachedByReveal) { subReachable.add(sub.id); changed = true; continue; }
         const reachableItems = new Set<string>();
         for (const rid of subReachable) {
+          if (!subMandatory.has(rid)) continue;
           const revs = collectRevealsFromReachableBlocks(
             scene.sublocations.find((s) => s.id === rid)!,
             reachableAtoms,
+            subMandatory,
           );
           for (const r of revs) {
             if (r.kind === "evidence") reachableItems.add(`evidence:${r.id}`);
@@ -694,8 +724,9 @@ function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set
         }
       }
     }
-    // Collect inventory from all reachable blocks.
-    const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable);
+
+    // Collect inventory from reachable hotspots and topics.
+    const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable, subMandatory);
     for (const sub of scene.sublocations) {
       if (!subReachable.has(sub.id)) continue;
       for (const h of sub.hotspots) {
@@ -707,6 +738,14 @@ function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set
         }
       }
     }
+
+    // Entry reveals from mandatory sub-locations are also guaranteed — the
+    // player must enter those sub-locations, so their entry reveals fire.
+    for (const sub of scene.sublocations) {
+      if (!subMandatory.has(sub.id)) continue;
+      addInventoryReveals(guaranteed, sub.reveals);
+    }
+
     return guaranteed;
   }
 
@@ -819,12 +858,19 @@ function collectInquiryInventory(
 
 function guaranteedInquiryQuestionIds(phase: ASTInquiryPhase): Set<string> {
   if (phase.complete === "auto") {
-    return new Set(phase.questions.filter((question) => question.required).map((question) => question.id));
+    // For auto-complete, the runtime waits for ALL unlocked questions to be
+    // answered before auto-completing (see Rust phase_complete: it checks that
+    // no unlocked question remains unanswered, regardless of required flag).
+    // So every question that can become reachable is guaranteed to be answered.
+    // The reachability check inside collectInquiryInventory's fixed-point loop
+    // handles which questions are actually reachable; we include all IDs here
+    // so the loop doesn't filter out optional follow-ups.
+    return new Set(phase.questions.map((question) => question.id));
   }
-  const requiredQuestionIds = new Set(phase.questions.filter((question) => question.required).map((question) => question.id));
-  return new Set(
-    [...requiredQuestionPredicates(phase.complete)].filter((questionId) => requiredQuestionIds.has(questionId)),
-  );
+  // For explicit complete expressions, any question mentioned in the completion
+  // predicate is mandatory — the player must answer it to complete the phase.
+  // This is true regardless of the question's Required flag.
+  return new Set([...requiredQuestionPredicates(phase.complete)]);
 }
 
 function requiredQuestionPredicates(expr: InterrogationUnlockExpr): Set<string> {
@@ -1378,6 +1424,7 @@ function checkInternalReachability(
 function collectReachableAtomsAcrossReachableSublocations(
   scene: ASTInvestigationScene,
   reachableSubs: Set<string>,
+  mandatorySubs?: Set<string>,
 ): Set<string> {
   const reachable = new Set<string>();
 
@@ -1400,7 +1447,12 @@ function collectReachableAtomsAcrossReachableSublocations(
     const allReveals: RevealTarget[] = [];
     for (const sub of scene.sublocations) {
       if (!reachableSubs.has(sub.id)) continue;
-      allReveals.push(...sub.reveals);
+      // Only include sub-location entry reveals if this sub-location is
+      // mandatory (player must enter it). When mandatorySubs is not provided,
+      // all entry reveals are included (obtainable/reachability analysis).
+      if (!mandatorySubs || mandatorySubs.has(sub.id)) {
+        allReveals.push(...sub.reveals);
+      }
       for (const h of sub.hotspots) {
         if (reachable.has(`hotspot:${h.id}`)) allReveals.push(...h.reveals);
       }
@@ -1456,8 +1508,14 @@ function collectReachableAtomsAcrossReachableSublocations(
 function collectRevealsFromReachableBlocks(
   sub: ASTSublocation,
   reachableAtoms: Set<string>,
+  mandatorySubs?: Set<string>,
 ): RevealTarget[] {
-  const reveals: RevealTarget[] = [...sub.reveals];
+  // Only include sub-location entry reveals if this sub-location is mandatory
+  // (the player must enter it for auto-outro). When mandatorySubs is not
+  // provided, all entry reveals are included (obtainable/reachability analysis).
+  const reveals: RevealTarget[] = (!mandatorySubs || mandatorySubs.has(sub.id))
+    ? [...sub.reveals]
+    : [];
   for (const h of sub.hotspots) {
     if (reachableAtoms.has(`hotspot:${h.id}`)) reveals.push(...h.reveals);
   }
