@@ -783,7 +783,17 @@ function analyzeInterrogationInventory(
   const revealedQuestions = new Set<string>();
   const revealedPhases = new Set<string>();
 
-  for (const phase of scene.phases) {
+  // Process required phases before optional phases to match the runtime's
+  // refresh_current_phase which always selects required unlocked phases first.
+  // If optional phases were processed first, their reveals could incorrectly
+  // satisfy required-phase completion conditions that the runtime would evaluate
+  // before the optional phase ever runs.
+  const orderedPhases = [
+    ...scene.phases.filter((p) => p.required),
+    ...scene.phases.filter((p) => !p.required),
+  ];
+
+  for (const phase of orderedPhases) {
     if (!interrogationBlockReachable(
       phase.status,
       phase.unlock,
@@ -912,7 +922,10 @@ function inventoryPredicatesFromExpr(expr: InterrogationUnlockExpr): Set<string>
   if ("op" in expr) {
     const left = inventoryPredicatesFromExpr(expr.left);
     const right = inventoryPredicatesFromExpr(expr.right);
-    return new Set([...left, ...right]);
+    if (expr.op === "and") return new Set([...left, ...right]);
+    // For OR, intersect: only items needed by BOTH branches are guaranteed,
+    // since the player can complete via either branch independently.
+    return new Set([...left].filter((item) => right.has(item)));
   }
   if (expr.predicate === "evidence_collected") return new Set([`evidence:${expr.id}`]);
   if (expr.predicate === "statement_acquired") return new Set([`statement:${expr.id}`]);
