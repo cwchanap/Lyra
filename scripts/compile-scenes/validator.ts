@@ -852,6 +852,9 @@ function collectInquiryInventory(
   phase: ASTInquiryPhase,
   state: InterrogationInventoryState & { mode: InterrogationInventoryMode },
 ): boolean {
+  const explicitComplete = phase.complete === "auto" ? null : phase.complete;
+  if (explicitComplete && interrogationUnlockSatisfiable(explicitComplete, state)) return true;
+
   const guaranteedQuestionIds = state.mode === "guaranteed"
     ? guaranteedInquiryQuestionIds(phase)
     : null;
@@ -865,11 +868,12 @@ function collectInquiryInventory(
 
       state.answeredQuestions.add(question.id);
       addInterrogationRevealsToState(state, question.reveals);
+      if (explicitComplete && interrogationUnlockSatisfiable(explicitComplete, state)) return true;
       changed = true;
     }
   }
 
-  if (phase.complete !== "auto") return interrogationUnlockSatisfiable(phase.complete, state);
+  if (explicitComplete) return interrogationUnlockSatisfiable(explicitComplete, state);
   return phase.questions.every((question) => !question.required || state.answeredQuestions.has(question.id));
 }
 
