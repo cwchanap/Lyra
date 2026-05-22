@@ -1849,6 +1849,56 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("only_path_a"))).toBeDefined();
   });
 
+  it("does not guarantee inquiry question bonus reveals from one alternate completion source", () => {
+    const source = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "source_inquiry",
+          complete: { predicate: "evidence_collected", id: "shared_gate" },
+          questions: [
+            mkQuestion({
+              id: "path_a",
+              reveals: [
+                { kind: "evidence", id: "shared_gate" },
+                { kind: "evidence", id: "only_path_a" },
+              ],
+            }),
+            mkQuestion({
+              id: "path_b",
+              reveals: [
+                { kind: "evidence", id: "shared_gate" },
+                { kind: "evidence", id: "only_path_b" },
+              ],
+            }),
+          ],
+        }),
+      ],
+      evidenceManifest: [
+        mkEvidence("shared_gate"),
+        mkEvidence("only_path_a"),
+        mkEvidence("only_path_b"),
+      ],
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "only_path_a" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("only_path_a"))).toBeDefined();
+  });
+
   // ---- Interrogation outro reachability ----
 
   it("rejects an interrogation outro whose evidence_collected predicate references evidence never obtainable in the scene", () => {
@@ -2577,6 +2627,61 @@ describe("validator", () => {
       scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
     });
     expect(errors.find((e) => e.code === "interrogationNoValidContradictionPath" && e.message.includes("required_testimony"))).toBeDefined();
+  });
+
+  it("rejects a later required phase unlocked only by one alternate correct testimony result", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "source_inquiry",
+          questions: [
+            mkQuestion({
+              id: "q",
+              reveals: [
+                { kind: "evidence", id: "log_a" },
+                { kind: "evidence", id: "log_b" },
+              ],
+            }),
+          ],
+        }),
+        mkTestimonyPhase({
+          id: "source_testimony",
+          statements: [
+            mkTestimonyStatement({
+              id: "a",
+              contradiction: { kind: "evidence", id: "log_a" },
+              onCorrect: "path_a",
+            }),
+            mkTestimonyStatement({
+              id: "b",
+              contradiction: { kind: "evidence", id: "log_b" },
+              onCorrect: "path_b",
+            }),
+          ],
+          results: [
+            mkResult({ id: "path_a", reveals: [{ kind: "evidence", id: "only_path_a" }] }),
+            mkResult({ id: "path_b", reveals: [{ kind: "evidence", id: "only_path_b" }] }),
+          ],
+        }),
+        mkInquiryPhase({
+          id: "branch_locked_followup",
+          status: "locked",
+          unlock: { predicate: "evidence_collected", id: "only_path_a" },
+          questions: [mkQuestion({ id: "followup_q" })],
+        }),
+      ],
+      evidenceManifest: [
+        mkEvidence("log_a"),
+        mkEvidence("log_b"),
+        mkEvidence("only_path_a"),
+        mkEvidence("only_path_b"),
+      ],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath" && e.message.includes("branch_locked_followup"))).toBeDefined();
   });
 
   it("does not guarantee inventory from only one branch of an OR complete expression for cross-scene checks", () => {
