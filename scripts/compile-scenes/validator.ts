@@ -670,6 +670,13 @@ function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set
     // that the auto-outro check requires the player to interact with.
     const subMandatory = new Set<string>();
 
+    // The runtime automatically enters the first unlocked sub-location
+    // (advance_into_first_sublocation uses .find on Unlocked status),
+    // firing its entry reveals even if it has no interactive content.
+    // Mirror this by marking the first unlocked sub-location as mandatory.
+    const firstUnlocked = scene.sublocations.find((s) => s.status === "unlocked");
+    if (firstUnlocked) subMandatory.add(firstUnlocked.id);
+
     // Fixed-point for sub-location reachability, mandatoriness, and inventory.
     let changed = true;
     while (changed) {
@@ -870,7 +877,24 @@ function guaranteedInquiryQuestionIds(phase: ASTInquiryPhase): Set<string> {
   // For explicit complete expressions, any question mentioned in the completion
   // predicate is mandatory — the player must answer it to complete the phase.
   // This is true regardless of the question's Required flag.
-  return new Set([...requiredQuestionPredicates(phase.complete)]);
+  const mandatoryIds = new Set([...requiredQuestionPredicates(phase.complete)]);
+
+  // Additionally, questions whose reveals contain inventory items referenced by
+  // evidence_collected or statement_acquired predicates in the complete expression
+  // are mandatory — the phase cannot complete without those items in inventory.
+  const requiredInventoryAtoms = inventoryPredicatesFromExpr(phase.complete);
+  if (requiredInventoryAtoms.size > 0) {
+    for (const question of phase.questions) {
+      if (mandatoryIds.has(question.id)) continue;
+      const questionRevealsInventory = question.reveals.some((r) =>
+        (r.kind === "evidence" && requiredInventoryAtoms.has(`evidence:${r.id}`))
+        || (r.kind === "statement" && requiredInventoryAtoms.has(`statement:${r.id}`)),
+      );
+      if (questionRevealsInventory) mandatoryIds.add(question.id);
+    }
+  }
+
+  return mandatoryIds;
 }
 
 function requiredQuestionPredicates(expr: InterrogationUnlockExpr): Set<string> {
@@ -881,6 +905,17 @@ function requiredQuestionPredicates(expr: InterrogationUnlockExpr): Set<string> 
     return new Set([...left].filter((questionId) => right.has(questionId)));
   }
   if (expr.predicate === "question_answered") return new Set([expr.id]);
+  return new Set<string>();
+}
+
+function inventoryPredicatesFromExpr(expr: InterrogationUnlockExpr): Set<string> {
+  if ("op" in expr) {
+    const left = inventoryPredicatesFromExpr(expr.left);
+    const right = inventoryPredicatesFromExpr(expr.right);
+    return new Set([...left, ...right]);
+  }
+  if (expr.predicate === "evidence_collected") return new Set([`evidence:${expr.id}`]);
+  if (expr.predicate === "statement_acquired") return new Set([`statement:${expr.id}`]);
   return new Set<string>();
 }
 
