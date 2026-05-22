@@ -1994,6 +1994,38 @@ describe("validator", () => {
     expect(outroErr).toBeDefined();
   });
 
+  it("rejects an interrogation outro requiring a question unlocked after explicit inquiry completion", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "inquiry",
+          complete: { predicate: "question_answered", id: "q1" },
+          questions: [
+            mkQuestion({
+              id: "q1",
+              reveals: [{ kind: "question", id: "q2" }],
+            }),
+            mkQuestion({
+              id: "q2",
+              required: false,
+              status: "locked",
+            }),
+          ],
+        }),
+      ],
+      outro: {
+        unlock: { predicate: "question_answered", id: "q2" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("q2"));
+    expect(outroErr).toBeDefined();
+  });
+
   it("accepts an interrogation outro OR expression when one branch is obtainable", () => {
     const scene = mkInterrogationScene({
       phases: [

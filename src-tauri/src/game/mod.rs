@@ -14,7 +14,9 @@ pub mod view;
 pub use error::GameError;
 pub use view::{GameStateView, ModeView, QueueToken};
 
-use scenes::interrogation::{phase_id, InterrogationSceneAndInventoryCtx, InterrogationSceneState};
+use scenes::interrogation::{
+    phase_id, phase_required, InterrogationSceneAndInventoryCtx, InterrogationSceneState,
+};
 use scenes::investigation::{DialogueQueue, InvestigationSceneState};
 use scenes::linear::LinearSceneState;
 use scenes::SceneRuntime;
@@ -418,7 +420,9 @@ impl GameEngine {
             scene.refresh_current_phase(&self.inventory);
         }
 
-        if self.try_enter_current_interrogation_phase(&chapter_id)? {
+        if self.should_enter_current_interrogation_phase()
+            && self.try_enter_current_interrogation_phase(&chapter_id)?
+        {
             return Ok(false);
         }
 
@@ -430,7 +434,9 @@ impl GameEngine {
             scene.refresh_phase_completion(&self.inventory);
         }
 
-        if self.try_enter_current_interrogation_phase(&chapter_id)? {
+        if self.should_enter_current_interrogation_phase()
+            && self.try_enter_current_interrogation_phase(&chapter_id)?
+        {
             return Ok(false);
         }
 
@@ -473,6 +479,32 @@ impl GameEngine {
             self.install_scene_queue(outro_dialogue, queue_gen)?;
         }
         Ok(false)
+    }
+
+    fn should_enter_current_interrogation_phase(&self) -> bool {
+        let scene = match &self.scene {
+            SceneRuntime::Interrogation(scene) => scene,
+            _ => return false,
+        };
+        let Some(current_phase_id) = scene.current_phase_id.as_deref() else {
+            return false;
+        };
+        let Some(current_phase) = scene
+            .def
+            .phases
+            .iter()
+            .find(|phase| phase_id(phase) == current_phase_id)
+        else {
+            return false;
+        };
+        if phase_required(current_phase) {
+            return true;
+        }
+        let ctx = InterrogationSceneAndInventoryCtx {
+            scene,
+            inventory: &self.inventory,
+        };
+        !scene.outro_satisfied(&ctx)
     }
 
     fn try_enter_current_interrogation_phase(
@@ -2225,6 +2257,103 @@ mod tests {
                 assert_eq!(scene_tag.as_deref(), Some("early_room"));
             }
             other => panic!("expected early phase entry dialogue, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn interrogation_auto_outro_skips_optional_phase_after_required_completion() {
+        let inquiry_phase = |
+            id: &str,
+            required: bool,
+            question_id: &str,
+            reveals: Vec<InterrogationRevealTarget>,
+            entry_dialogue: Vec<DialogueItem>,
+        | {
+            InterrogationPhaseJson::Inquiry {
+                id: id.into(),
+                label: id.into(),
+                subject: subject(),
+                required,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals,
+                scene_tag: "interrogation_room".into(),
+                entry_dialogue,
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![crate::game::schema::InquiryQuestionJson {
+                    id: question_id.into(),
+                    label: question_id.into(),
+                    kind: crate::game::schema::InquiryQuestionKind::Question,
+                    parent_question_id: None,
+                    status: LockStatus::Unlocked,
+                    required: true,
+                    unlock: None,
+                    reveals: vec![],
+                    answer_dialogue: vec![],
+                    on_reask: None,
+                }],
+            }
+        };
+        let scene = InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            intro: vec![],
+            phases: vec![
+                inquiry_phase("required_inquiry", true, "required_q", vec![], vec![]),
+                inquiry_phase(
+                    "optional_inquiry",
+                    false,
+                    "optional_q",
+                    vec![InterrogationRevealTarget::Evidence {
+                        id: "optional_leak".into(),
+                    }],
+                    vec![DialogueItem::Line {
+                        speaker: "A".into(),
+                        text: "optional entry".into(),
+                    }],
+                ),
+            ],
+            evidence_manifest: vec![EvidenceJson {
+                id: "optional_leak".into(),
+                name: "Optional Leak".into(),
+                description: "Optional Leak".into(),
+                details: "Optional Leak".into(),
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![DialogueItem::Line {
+                    speaker: "A".into(),
+                    text: "outro".into(),
+                }],
+            },
+        };
+        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
+
+        engine.prime_initial_queue().unwrap();
+        assert!(matches!(
+            engine.view().mode,
+            ModeView::Interrogation { ref phase_id } if phase_id == "required_inquiry"
+        ));
+
+        let view = engine.answer_interrogation_question("required_q").unwrap();
+
+        assert!(!engine.inventory.has_evidence("optional_leak"));
+        if let SceneRuntime::Interrogation(scene) = &engine.scene {
+            assert!(!scene.phase_entered("optional_inquiry"));
+        } else {
+            panic!("expected interrogation scene");
+        }
+        match view.mode {
+            ModeView::Dialogue { current, .. } => {
+                assert!(
+                    matches!(&current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "outro"),
+                    "expected outro dialogue, got {current:?}"
+                );
+            }
+            other => panic!("expected outro dialogue after required completion, got {other:?}"),
         }
     }
 
