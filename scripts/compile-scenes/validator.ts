@@ -763,7 +763,53 @@ function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set
   for (const item of requiredInventoryPredicates(scene.outro.unlock)) {
     guaranteed.add(item);
   }
+
+  // The outro may also require hotspot/topic interactions whose reveals
+  // (evidence, statements) are guaranteed because the outro cannot unlock
+  // without those interactions firing.
+  for (const item of requiredInteractionReveals(scene.outro.unlock, scene)) {
+    guaranteed.add(item);
+  }
+
   return guaranteed;
+}
+
+function requiredInteractionReveals(
+  expr: UnlockExpr,
+  scene: ASTInvestigationScene,
+): Set<string> {
+  if ("op" in expr) {
+    const left = requiredInteractionReveals(expr.left, scene);
+    const right = requiredInteractionReveals(expr.right, scene);
+    if (expr.op === "and") return new Set([...left, ...right]);
+    return new Set([...left].filter((item) => right.has(item)));
+  }
+  if (expr.predicate === "hotspot_investigated") {
+    for (const sub of scene.sublocations) {
+      const hotspot = sub.hotspots.find((h) => h.id === expr.id);
+      if (hotspot) {
+        const reveals = new Set<string>();
+        addInventoryReveals(reveals, hotspot.reveals);
+        return reveals;
+      }
+    }
+    return new Set<string>();
+  }
+  if (expr.predicate === "topic_discussed") {
+    for (const sub of scene.sublocations) {
+      const char = sub.characters.find((c) => c.id === expr.characterId);
+      if (char) {
+        const topic = char.topics.find((t) => t.id === expr.topicId);
+        if (topic) {
+          const reveals = new Set<string>();
+          addInventoryReveals(reveals, topic.reveals);
+          return reveals;
+        }
+      }
+    }
+    return new Set<string>();
+  }
+  return new Set<string>();
 }
 
 type InterrogationInventoryMode = "obtainable" | "guaranteed";
@@ -811,7 +857,26 @@ function analyzeInterrogationInventory(
 
     if (options.mode === "guaranteed" && !phase.required) {
       beforePhase.set(phase.id, new Set(inventory));
-      phaseCompletable.set(phase.id, true);
+      // Evaluate completability on a cloned state so that optional-phase
+      // reveals don't pollute the guaranteed inventory, but the outro
+      // validation can still detect incompletable optional phases.
+      const clone = cloneInterrogationInventoryState({ inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases });
+      addInterrogationRevealsToState(clone, phase.reveals);
+      if (phase.kind === "inquiry") {
+        const complete = collectInquiryInventory(phase, {
+          mode: "guaranteed",
+          ...clone,
+        });
+        phaseCompletable.set(phase.id, complete);
+      } else {
+        const hasValidCorrectPath = collectTestimonyResultInventory(phase, {
+          mode: "guaranteed",
+          inventory: clone.inventory,
+          revealedQuestions: clone.revealedQuestions,
+          revealedPhases: clone.revealedPhases,
+        });
+        phaseCompletable.set(phase.id, hasValidCorrectPath);
+      }
       continue;
     }
 
