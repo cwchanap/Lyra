@@ -2168,10 +2168,12 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("press_only_ev"))).toBeDefined();
   });
 
-  it("accepts an answerable question as outro predicate even when phase is incompletable", () => {
-    // The question itself IS answerable (unlocked, reachable) — the phase just
-    // won't complete due to an unrelated completion condition. The runtime only
-    // checks if the question was answered, not if the phase completed.
+  it("rejects an interrogation outro question_answered predicate when the required phase has no guaranteed completion path", () => {
+    // The question IS reachable in isolation, but the required phase has an
+    // unsatisfiable completion condition (evidence:missing is never obtainable).
+    // With guaranteed flow analysis, there are zero completion paths, so the
+    // question is not in guaranteed answeredQuestions. The scene is unwinnable
+    // regardless — the phase can't complete, so the outro is never reached.
     const scene = mkInterrogationScene({
       phases: [
         mkInquiryPhase({
@@ -2191,7 +2193,8 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
       scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
     });
-    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath" && e.message.includes("inquiry"))).toBeDefined();
+    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("answerable_q"))).toBeDefined();
   });
 
   it("guarantees auto-complete optional follow-up reveals for cross-scene inventory", () => {
@@ -2732,5 +2735,117 @@ describe("validator", () => {
       ],
     });
     expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("branch_evidence"))).toBeDefined();
+  });
+
+  it("rejects an interrogation outro requiring evidence from only one of multiple correct testimony paths", () => {
+    // Testimony phase has two valid correct paths (two contradictions with
+    // different correct results). Result A reveals evidence:only_a, Result B
+    // reveals evidence:only_b. The outro requires evidence:only_a — but the
+    // player might pick path B and never obtain it, leaving the scene stuck.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "setup",
+          questions: [
+            mkQuestion({
+              id: "q",
+              reveals: [
+                { kind: "evidence", id: "log_a" },
+                { kind: "evidence", id: "log_b" },
+              ],
+            }),
+          ],
+        }),
+        mkTestimonyPhase({
+          id: "testimony",
+          statements: [
+            mkTestimonyStatement({
+              id: "s_a",
+              contradiction: { kind: "evidence", id: "log_a" },
+              onCorrect: "result_a",
+            }),
+            mkTestimonyStatement({
+              id: "s_b",
+              contradiction: { kind: "evidence", id: "log_b" },
+              onCorrect: "result_b",
+            }),
+          ],
+          results: [
+            mkResult({ id: "result_a", reveals: [{ kind: "evidence", id: "only_a" }] }),
+            mkResult({ id: "result_b", reveals: [{ kind: "evidence", id: "only_b" }] }),
+          ],
+        }),
+      ],
+      evidenceManifest: [
+        mkEvidence("log_a"),
+        mkEvidence("log_b"),
+        mkEvidence("only_a"),
+        mkEvidence("only_b"),
+      ],
+      outro: {
+        unlock: { predicate: "evidence_collected", id: "only_a" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("only_a"))).toBeDefined();
+  });
+
+  it("accepts an interrogation outro requiring evidence common to all correct testimony paths", () => {
+    // Two valid correct paths that BOTH reveal the same evidence:shared.
+    // The outro requires evidence:shared — guaranteed because every path
+    // produces it.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "setup",
+          questions: [
+            mkQuestion({
+              id: "q",
+              reveals: [
+                { kind: "evidence", id: "log_a" },
+                { kind: "evidence", id: "log_b" },
+              ],
+            }),
+          ],
+        }),
+        mkTestimonyPhase({
+          id: "testimony",
+          statements: [
+            mkTestimonyStatement({
+              id: "s_a",
+              contradiction: { kind: "evidence", id: "log_a" },
+              onCorrect: "result_a",
+            }),
+            mkTestimonyStatement({
+              id: "s_b",
+              contradiction: { kind: "evidence", id: "log_b" },
+              onCorrect: "result_b",
+            }),
+          ],
+          results: [
+            mkResult({ id: "result_a", reveals: [{ kind: "evidence", id: "shared" }] }),
+            mkResult({ id: "result_b", reveals: [{ kind: "evidence", id: "shared" }] }),
+          ],
+        }),
+      ],
+      evidenceManifest: [
+        mkEvidence("log_a"),
+        mkEvidence("log_b"),
+        mkEvidence("shared"),
+      ],
+      outro: {
+        unlock: { predicate: "evidence_collected", id: "shared" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
   });
 });

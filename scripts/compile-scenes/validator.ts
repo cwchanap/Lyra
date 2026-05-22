@@ -407,7 +407,7 @@ function validateInterrogationScene(
 
   if (scene.outro.unlock !== "auto") {
     checkUnlock(scene.outro.unlock, scene.line, { checkCrossSceneInventory: false });
-    errors.push(...collectInterrogationOutroUnlockErrors(scene.outro.unlock, scene, interrogationFlow));
+    errors.push(...collectInterrogationOutroUnlockErrors(scene.outro.unlock, scene, guaranteedInterrogationFlow));
   }
 
   for (const phase of scene.phases) {
@@ -590,21 +590,21 @@ function interrogationOutroPredicateUnreachableError(
     case "evidence_collected":
       return {
         code: "interrogationOutroPredicateUnreachable",
-        message: `Outro requires evidence:${pred.id} collected, but it is not obtainable within this scene — scene is unwinnable.`,
+        message: `Outro requires evidence:${pred.id} collected, but it is not guaranteed on all valid paths within this scene — scene may be unwinnable depending on player choices.`,
         sourceFile: scene.sourceFile,
         line: scene.line,
       };
     case "statement_acquired":
       return {
         code: "interrogationOutroPredicateUnreachable",
-        message: `Outro requires statement:${pred.id} acquired, but it is not obtainable within this scene — scene is unwinnable.`,
+        message: `Outro requires statement:${pred.id} acquired, but it is not guaranteed on all valid paths within this scene — scene may be unwinnable depending on player choices.`,
         sourceFile: scene.sourceFile,
         line: scene.line,
       };
     case "question_answered":
       return {
         code: "interrogationOutroPredicateUnreachable",
-        message: `Outro requires question:${pred.id} answered, but no completable phase contains this question — scene is unwinnable.`,
+        message: `Outro requires question:${pred.id} answered, but no guaranteed completion path answers this question — scene may be unwinnable depending on player choices.`,
         sourceFile: scene.sourceFile,
         line: scene.line,
       };
