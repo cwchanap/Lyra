@@ -2506,4 +2506,94 @@ describe("validator", () => {
     });
     expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("entry_evidence"))).toBeUndefined();
   });
+
+  it("rejects a required testimony phase whose contradiction evidence comes from an earlier optional phase", () => {
+    // When an optional phase is listed before a required phase in the file,
+    // the runtime selects the required phase first (refresh_current_phase
+    // prioritises required phases).  The validator must match this ordering —
+    // otherwise the optional phase's reveals incorrectly satisfy the required
+    // phase's completion, producing a scene that compiles but is unwinnable.
+    const scene = mkInterrogationScene({
+      phases: [
+        // Optional inquiry listed first — reveals evidence.
+        mkInquiryPhase({
+          id: "optional_inquiry",
+          required: false,
+          questions: [
+            mkQuestion({
+              id: "opt_q1",
+              required: false,
+              reveals: [{ kind: "evidence", id: "opt_evidence" }],
+            }),
+          ],
+        }),
+        // Required testimony that depends on the optional phase's evidence.
+        mkTestimonyPhase({
+          id: "required_testimony",
+          statements: [mkTestimonyStatement({
+            id: "stmt",
+            contradiction: { kind: "evidence", id: "opt_evidence" },
+            onCorrect: "win",
+          })],
+          results: [mkResult({ id: "win" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("opt_evidence")],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationNoValidContradictionPath" && e.message.includes("required_testimony"))).toBeDefined();
+  });
+
+  it("does not guarantee inventory from only one branch of an OR complete expression for cross-scene checks", () => {
+    // When an inquiry phase completes via `evidence_collected:A OR
+    // question_answered:Q2`, only inventory items needed by BOTH branches are
+    // guaranteed.  If evidence:A is only needed by one branch, a question
+    // revealing evidence:A should NOT be mandatory, and evidence:A should not
+    // be considered guaranteed for later scenes.
+    const source = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "source_inquiry",
+          complete: {
+            op: "or",
+            left: { predicate: "evidence_collected", id: "branch_evidence" },
+            right: { predicate: "question_answered", id: "gate_q" },
+          },
+          questions: [
+            mkQuestion({
+              id: "gate_q",
+              required: true,
+            }),
+            mkQuestion({
+              id: "evidence_q",
+              required: false,
+              reveals: [{ kind: "evidence", id: "branch_evidence" }],
+            }),
+          ],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("branch_evidence")],
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "branch_evidence" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("branch_evidence"))).toBeDefined();
+  });
 });
