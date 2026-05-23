@@ -771,6 +771,12 @@ function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set
     guaranteed.add(item);
   }
 
+  // The runtime always auto-enters the first unlocked sub-location
+  // (advance_into_first_sublocation), regardless of outro type, so its
+  // entry reveals are guaranteed even for explicit-outro investigations.
+  const firstUnlocked = scene.sublocations.find((s) => s.status === "unlocked");
+  if (firstUnlocked) addInventoryReveals(guaranteed, firstUnlocked.reveals);
+
   return guaranteed;
 }
 
@@ -1010,16 +1016,21 @@ function analyzeInterrogationInventory(
         // Evaluate the phase on a clone to see what it produces
         const clone = cloneInterrogationInventoryState(currentState);
         addInterrogationRevealsToState(clone, phase.reveals);
+        let cloneCompletable: boolean;
         if (phase.kind === "inquiry") {
-          collectInquiryInventory(phase, { mode: "guaranteed", ...clone });
+          cloneCompletable = collectInquiryInventory(phase, { mode: "guaranteed", ...clone });
         } else {
-          collectTestimonyResultInventory(phase, {
+          cloneCompletable = collectTestimonyResultInventory(phase, {
             mode: "guaranteed",
             inventory: clone.inventory,
             revealedQuestions: clone.revealedQuestions,
             revealedPhases: clone.revealedPhases,
           });
         }
+        // Mark the phase as completed on the clone so that
+        // phase_completed predicates in the outro expression are
+        // detected by cloneProducesNeededOutroAtom.
+        if (cloneCompletable) clone.completedPhases.add(phase.id);
 
         // Check if the clone produces anything the outro needs that the
         // current state doesn't have.
