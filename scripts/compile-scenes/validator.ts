@@ -964,16 +964,20 @@ function analyzeInterrogationInventory(
         // Check if this optional phase's reveals would unlock any locked required phase.
         const clone = cloneInterrogationInventoryState(state);
         addInterrogationRevealsToState(clone, phase.reveals);
+        let completable: boolean;
         if (phase.kind === "inquiry") {
-          collectInquiryInventory(phase, { mode: "guaranteed", ...clone });
+          completable = collectInquiryInventory(phase, { mode: "guaranteed", ...clone });
         } else {
-          collectTestimonyResultInventory(phase, {
+          completable = collectTestimonyResultInventory(phase, {
             mode: "guaranteed",
             inventory: clone.inventory,
             revealedQuestions: clone.revealedQuestions,
             revealedPhases: clone.revealedPhases,
           });
         }
+        // Mark the phase as completed in the clone so that phase_completed
+        // predicates in downstream unlock checks evaluate correctly.
+        if (completable) clone.completedPhases.add(phase.id);
 
         const unlocksLockedRequired = orderedPhases.some((other) =>
           other.required
