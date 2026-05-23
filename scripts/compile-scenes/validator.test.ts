@@ -3298,4 +3298,109 @@ describe("validator", () => {
     });
     expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath")).toBeUndefined();
   });
+
+  it("guarantees entry reveals from first sub-location for explicit-outro investigations", () => {
+    // Even with an explicit outro, the runtime auto-enters the first unlocked
+    // sub-location, so its entry reveals are guaranteed for cross-scene checks.
+    const investigation = mkInvestigationScene({
+      id: "investigation_1",
+      sourceFile: "investigation_1.md",
+      sublocations: [
+        {
+          id: "entry_room",
+          label: "Entry Room",
+          status: "unlocked",
+          unlock: null,
+          reveals: [{ kind: "evidence", id: "entry_only_evidence" }],
+          sceneTag: "tag",
+          transitionDialogue: [],
+          hotspots: [
+            {
+              id: "h1",
+              label: "Hotspot",
+              description: "d",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              inspectDialogue: [],
+              onReexamine: null,
+              sourceFile: "investigation_1.md",
+              line: 3,
+            },
+          ],
+          characters: [],
+          sourceFile: "investigation_1.md",
+          line: 2,
+        },
+      ],
+      evidenceManifest: [mkEvidence("entry_only_evidence")],
+      outro: {
+        unlock: { predicate: "hotspot_investigated", id: "h1" },
+        dialogue: [],
+      },
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "entry_only_evidence" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "investigation_1.md", ast: investigation },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("entry_only_evidence"))).toBeUndefined();
+  });
+
+  it("forces an optional phase when the outro requires phase_completed for that phase", () => {
+    // An interrogation scene where the outro uses a phase_completed predicate
+    // for an optional phase.  The outro-forced loop must detect this via the
+    // clone's completedPhases set, so the phase is promoted to forced and its
+    // reveals become guaranteed.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "optional_phase",
+          required: false,
+          questions: [
+            mkQuestion({
+              id: "opt_q",
+              required: false,
+              reveals: [{ kind: "evidence", id: "phase_forced_evidence" }],
+            }),
+          ],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("phase_forced_evidence")],
+      outro: {
+        unlock: { predicate: "phase_completed", id: "optional_phase" },
+        dialogue: [],
+      },
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "phase_forced_evidence" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("phase_forced_evidence"))).toBeUndefined();
+  });
 });
