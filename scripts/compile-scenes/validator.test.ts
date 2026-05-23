@@ -2224,6 +2224,40 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
   });
 
+  it("forces an optional phase when a required phase is unlocked by phase_completed of the optional phase", () => {
+    // Optional inquiry phase A is the only path forward. Required inquiry
+    // phase B uses `Unlock: phase:A completed`. The forced-optional detection
+    // must mark A as completed in the clone so that `phase_completed` evaluates
+    // to true and B is recognised as reachable.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "optional_inquiry",
+          required: false,
+          questions: [mkQuestion({ id: "oq", reveals: [{ kind: "evidence", id: "bridge_ev" }] })],
+        }),
+        mkInquiryPhase({
+          id: "required_inquiry",
+          required: true,
+          status: "locked",
+          unlock: { predicate: "phase_completed", id: "optional_inquiry" },
+          questions: [mkQuestion({ id: "rq", reveals: [{ kind: "evidence", id: "final_ev" }] })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("bridge_ev"), mkEvidence("final_ev")],
+      outro: {
+        unlock: { predicate: "evidence_collected", id: "final_ev" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath")).toBeUndefined();
+    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+  });
+
   it("rejects an interrogation outro whose question_answered predicate references a question that is never answerable", () => {
     // "dead_q" is locked and requires evidence "unobtainable" which is never
     // revealed in this scene, so the question can never be answered even
