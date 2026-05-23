@@ -833,76 +833,157 @@ function analyzeInterrogationInventory(
   const revealedQuestions = new Set<string>();
   const revealedPhases = new Set<string>();
 
-  // Process required phases before optional phases to match the runtime's
-  // refresh_current_phase which always selects required unlocked phases first.
-  // If optional phases were processed first, their reveals could incorrectly
-  // satisfy required-phase completion conditions that the runtime would evaluate
-  // before the optional phase ever runs.
+  // Process phases with a fixed-point iteration that mirrors the runtime's
+  // refresh_current_phase behavior:
+  //   1. The runtime prefers required unlocked phases over optional ones.
+  //   2. When all required phases are locked, the runtime falls through to
+  //      optional unlocked phases. After an optional phase completes and
+  //      reveals new items, the runtime re-evaluates and may now find a
+  //      previously-locked required phase unlocked.
+  //   3. A single-pass required-then-optional ordering would evaluate locked
+  //      required phases before their optional-phase unlockers run, producing
+  //      false-positive interrogationNoValidCompletionPath errors.
+  //
+  // The loop below repeatedly attempts to process reachable phases until no
+  // new progress is made. Each iteration processes required phases first
+  // (matching the runtime's preference), then optional phases. Phases that
+  // become reachable due to newly revealed inventory are picked up on the
+  // next iteration.
+  //
+  // In guaranteed mode, optional phases are normally evaluated on clones so
+  // their reveals don't pollute the guaranteed inventory. However, when an
+  // optional phase is the only unlocked path (because all required phases are
+  // locked), the runtime forces the player through it — so its reveals ARE
+  // guaranteed. A second inner loop detects these "effectively forced"
+  // optional phases: if an optional phase's reveals include something that
+  // would unlock a locked required phase, that optional phase is processed
+  // on the main state.
   const orderedPhases = [
     ...scene.phases.filter((p) => p.required),
     ...scene.phases.filter((p) => !p.required),
   ];
+  const processed = new Set<string>();
+  const forcedOptional = new Set<string>();
+  let madeProgress = true;
+  while (madeProgress) {
+    madeProgress = false;
 
-  for (const phase of orderedPhases) {
-    if (!interrogationBlockReachable(
-      phase.status,
-      phase.unlock,
-      `phase:${phase.id}`,
-      { inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases },
-    )) {
-      beforePhase.set(phase.id, new Set(inventory));
-      phaseCompletable.set(phase.id, false);
-      continue;
-    }
+    for (const phase of orderedPhases) {
+      if (processed.has(phase.id)) continue;
 
-    if (options.mode === "guaranteed" && !phase.required) {
+      if (!interrogationBlockReachable(
+        phase.status,
+        phase.unlock,
+        `phase:${phase.id}`,
+        { inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases },
+      )) {
+        beforePhase.set(phase.id, new Set(inventory));
+        phaseCompletable.set(phase.id, false);
+        continue;
+      }
+
+      processed.add(phase.id);
+      madeProgress = true;
+
+      if (options.mode === "guaranteed" && !phase.required && !forcedOptional.has(phase.id)) {
+        beforePhase.set(phase.id, new Set(inventory));
+        // Evaluate completability on a cloned state so that optional-phase
+        // reveals don't pollute the guaranteed inventory, but the outro
+        // validation can still detect incompletable optional phases.
+        // Note: even though the phase is "processed" (entered), its reveals
+        // are NOT in the main state. The forced-optional detection below
+        // will re-evaluate such phases if their reveals could unlock locked
+        // required phases.
+        const clone = cloneInterrogationInventoryState({ inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases });
+        addInterrogationRevealsToState(clone, phase.reveals);
+        if (phase.kind === "inquiry") {
+          const complete = collectInquiryInventory(phase, {
+            mode: "guaranteed",
+            ...clone,
+          });
+          phaseCompletable.set(phase.id, complete);
+        } else {
+          const hasValidCorrectPath = collectTestimonyResultInventory(phase, {
+            mode: "guaranteed",
+            inventory: clone.inventory,
+            revealedQuestions: clone.revealedQuestions,
+            revealedPhases: clone.revealedPhases,
+          });
+          phaseCompletable.set(phase.id, hasValidCorrectPath);
+        }
+        continue;
+      }
+
+      addInterrogationRevealsToState({ inventory, revealedQuestions, revealedPhases }, phase.reveals);
       beforePhase.set(phase.id, new Set(inventory));
-      // Evaluate completability on a cloned state so that optional-phase
-      // reveals don't pollute the guaranteed inventory, but the outro
-      // validation can still detect incompletable optional phases.
-      const clone = cloneInterrogationInventoryState({ inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases });
-      addInterrogationRevealsToState(clone, phase.reveals);
+
       if (phase.kind === "inquiry") {
         const complete = collectInquiryInventory(phase, {
-          mode: "guaranteed",
-          ...clone,
+          mode: options.mode,
+          inventory,
+          answeredQuestions,
+          completedPhases,
+          revealedQuestions,
+          revealedPhases,
         });
         phaseCompletable.set(phase.id, complete);
+        if (complete) completedPhases.add(phase.id);
       } else {
         const hasValidCorrectPath = collectTestimonyResultInventory(phase, {
-          mode: "guaranteed",
-          inventory: clone.inventory,
-          revealedQuestions: clone.revealedQuestions,
-          revealedPhases: clone.revealedPhases,
+          mode: options.mode,
+          inventory,
+          revealedQuestions,
+          revealedPhases,
         });
         phaseCompletable.set(phase.id, hasValidCorrectPath);
+        if (hasValidCorrectPath) completedPhases.add(phase.id);
       }
-      continue;
     }
 
-    addInterrogationRevealsToState({ inventory, revealedQuestions, revealedPhases }, phase.reveals);
-    beforePhase.set(phase.id, new Set(inventory));
+    // In guaranteed mode, detect effectively-forced optional phases: those
+    // whose reveals would unlock a locked required phase. These phases are
+    // forced because the player has no alternative path — the required
+    // phase is locked, so the runtime will direct the player to the optional
+    // phase, which then unlocks the required phase.
+    // This also re-evaluates optional phases that were already processed on
+    // a clone — if their reveals are needed to unlock a required phase, they
+    // must be promoted to forced and reprocessed on the main state.
+    if (options.mode === "guaranteed") {
+      for (const phase of orderedPhases) {
+        if (phase.required || forcedOptional.has(phase.id)) continue;
 
-    if (phase.kind === "inquiry") {
-      const complete = collectInquiryInventory(phase, {
-        mode: options.mode,
-        inventory,
-        answeredQuestions,
-        completedPhases,
-        revealedQuestions,
-        revealedPhases,
-      });
-      phaseCompletable.set(phase.id, complete);
-      if (complete) completedPhases.add(phase.id);
-    } else {
-      const hasValidCorrectPath = collectTestimonyResultInventory(phase, {
-        mode: options.mode,
-        inventory,
-        revealedQuestions,
-        revealedPhases,
-      });
-      phaseCompletable.set(phase.id, hasValidCorrectPath);
-      if (hasValidCorrectPath) completedPhases.add(phase.id);
+        const state = { inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases };
+        if (!interrogationBlockReachable(phase.status, phase.unlock, `phase:${phase.id}`, state)) continue;
+
+        // Check if this optional phase's reveals would unlock any locked required phase.
+        const clone = cloneInterrogationInventoryState(state);
+        addInterrogationRevealsToState(clone, phase.reveals);
+        if (phase.kind === "inquiry") {
+          collectInquiryInventory(phase, { mode: "guaranteed", ...clone });
+        } else {
+          collectTestimonyResultInventory(phase, {
+            mode: "guaranteed",
+            inventory: clone.inventory,
+            revealedQuestions: clone.revealedQuestions,
+            revealedPhases: clone.revealedPhases,
+          });
+        }
+
+        const unlocksLockedRequired = orderedPhases.some((other) =>
+          other.required
+          && !processed.has(other.id)
+          && !interrogationBlockReachable(other.status, other.unlock, `phase:${other.id}`, state)
+          && interrogationBlockReachable(other.status, other.unlock, `phase:${other.id}`, clone),
+        );
+
+        if (unlocksLockedRequired) {
+          forcedOptional.add(phase.id);
+          // Remove from processed so it gets re-evaluated on the main state
+          // in the next outer-loop iteration.
+          processed.delete(phase.id);
+          madeProgress = true;
+        }
+      }
     }
   }
 

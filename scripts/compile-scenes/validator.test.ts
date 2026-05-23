@@ -3194,4 +3194,108 @@ describe("validator", () => {
     });
     expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
   });
+
+  it("accepts a locked required phase unlocked by an earlier optional phase's reveals", () => {
+    // When a required phase starts locked and an optional phase (appearing
+    // earlier in source order) reveals the evidence or phase unlock that
+    // satisfies the required phase's unlock condition, the runtime skips the
+    // locked required phase, enters the optional phase, and then returns to
+    // the now-unlocked required phase. The validator must not report a false
+    // positive interrogationNoValidCompletionPath for this valid scene.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "optional_setup",
+          required: false,
+          questions: [
+            mkQuestion({
+              id: "opt_q",
+              required: false,
+              reveals: [{ kind: "evidence", id: "unlock_key" }],
+            }),
+          ],
+        }),
+        mkInquiryPhase({
+          id: "locked_required",
+          required: true,
+          status: "locked",
+          unlock: { predicate: "evidence_collected", id: "unlock_key" },
+          questions: [mkQuestion({ id: "locked_q" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("unlock_key")],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath")).toBeUndefined();
+  });
+
+  it("still rejects a locked required phase when no phase reveals its unlock", () => {
+    // A locked required phase whose unlock condition is never satisfied by
+    // any phase in the scene should still produce an error, even with the
+    // fixed-point iteration.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "optional_setup",
+          required: false,
+          questions: [
+            mkQuestion({
+              id: "opt_q",
+              required: false,
+              reveals: [{ kind: "evidence", id: "wrong_key" }],
+            }),
+          ],
+        }),
+        mkInquiryPhase({
+          id: "locked_required",
+          required: true,
+          status: "locked",
+          unlock: { predicate: "evidence_collected", id: "missing_key" },
+          questions: [mkQuestion({ id: "locked_q" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("wrong_key"), mkEvidence("missing_key")],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath" && e.message.includes("locked_required"))).toBeDefined();
+  });
+
+  it("accepts a locked required phase unlocked by an optional phase's phase reveal", () => {
+    // A locked required phase whose unlock condition references a phase
+    // completion that is only produced by an optional phase should still
+    // be accepted if the optional phase is the only unlocked path available.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "optional_first",
+          required: false,
+          questions: [
+            mkQuestion({
+              id: "opt_q",
+              required: false,
+            }),
+          ],
+          reveals: [{ kind: "phase", id: "locked_required" }],
+        }),
+        mkInquiryPhase({
+          id: "locked_required",
+          required: true,
+          status: "locked",
+          unlock: null,
+          questions: [mkQuestion({ id: "locked_q" })],
+        }),
+      ],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath")).toBeUndefined();
+  });
 });
