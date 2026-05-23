@@ -2057,6 +2057,173 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
   });
 
+  it("accepts outro requiring evidence from a forced optional inquiry phase", () => {
+    // An optional inquiry phase reveals evidence that the outro requires.
+    // Every successful playthrough must complete this phase, so it is forced
+    // and the outro predicate should be reachable.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "forced_inquiry",
+          required: false,
+          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "clue" }] })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("clue")],
+      outro: {
+        unlock: { predicate: "evidence_collected", id: "clue" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+  });
+
+  it("accepts outro requiring statement from a forced optional testimony phase", () => {
+    // An optional testimony phase produces a statement via its correct-result
+    // reveals. The outro requires that statement, forcing the phase.
+    // A required inquiry phase provides the evidence needed for the contradiction.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "required_inquiry",
+          required: true,
+          questions: [mkQuestion({ id: "rq", reveals: [{ kind: "evidence", id: "initial_ev" }] })],
+        }),
+        mkTestimonyPhase({
+          id: "forced_testimony",
+          required: false,
+          statements: [
+            mkTestimonyStatement({
+              id: "s1",
+              contradiction: { kind: "evidence", id: "initial_ev" },
+              onCorrect: "correct",
+            }),
+          ],
+          results: [mkResult({ id: "correct", reveals: [{ kind: "statement", id: "forced_stmt" }] })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("initial_ev")],
+      statementManifest: [mkStatement("forced_stmt")],
+      outro: {
+        unlock: { predicate: "statement_acquired", id: "forced_stmt" },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+  });
+
+  it("guarantees forced optional phase reveals for cross-scene inventory", () => {
+    // An optional inquiry phase reveals evidence that the outro requires.
+    // The outro forces this phase, so its evidence should be guaranteed for
+    // cross-scene inventory checks.
+    const source = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "forced_inquiry",
+          required: false,
+          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "forced_ev" }] })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("forced_ev")],
+      outro: {
+        unlock: { predicate: "evidence_collected", id: "forced_ev" },
+        dialogue: [],
+      },
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "forced_ev" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("forced_ev"))).toBeUndefined();
+  });
+
+  it("does not force optional phases whose output the outro does not require", () => {
+    // An optional phase reveals evidence, but the outro does NOT require it.
+    // The phase remains truly optional and its evidence is NOT guaranteed.
+    const source = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "truly_optional",
+          required: false,
+          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "optional_ev" }] })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("optional_ev")],
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "optional_ev" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("optional_ev"))).toBeDefined();
+  });
+
+  it("accepts outro AND expression when forced optional phases collectively satisfy all branches", () => {
+    // Two optional phases: one reveals evidence_a, the other evidence_b.
+    // The outro requires BOTH (AND). Both phases are forced.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "opt_a",
+          required: false,
+          questions: [mkQuestion({ id: "qa", reveals: [{ kind: "evidence", id: "ev_a" }] })],
+        }),
+        mkInquiryPhase({
+          id: "opt_b",
+          required: false,
+          questions: [mkQuestion({ id: "qb", reveals: [{ kind: "evidence", id: "ev_b" }] })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("ev_a"), mkEvidence("ev_b")],
+      outro: {
+        unlock: {
+          op: "and",
+          left: { predicate: "evidence_collected", id: "ev_a" },
+          right: { predicate: "evidence_collected", id: "ev_b" },
+        },
+        dialogue: [],
+      },
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
+      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+    });
+    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+  });
+
   it("rejects an interrogation outro whose question_answered predicate references a question that is never answerable", () => {
     // "dead_q" is locked and requires evidence "unobtainable" which is never
     // revealed in this scene, so the question can never be answered even
