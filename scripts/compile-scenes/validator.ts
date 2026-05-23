@@ -906,7 +906,106 @@ function analyzeInterrogationInventory(
     }
   }
 
+  // Forced optional phases: when the outro depends on items only available from
+  // optional phases, every successful playthrough must collect those items.
+  // Identify forced optional phases via fixed-point and include their contributions.
+  if (options.mode === "guaranteed" && scene.outro.unlock !== "auto") {
+    const outroExpr = scene.outro.unlock;
+    const forced = new Set<string>();
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const currentState = { inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases };
+      // If the outro is already fully satisfied, no more forced phases needed.
+      if (interrogationUnlockSatisfiable(outroExpr, currentState)) break;
+
+      for (const phase of orderedPhases) {
+        if (phase.required || forced.has(phase.id)) continue;
+        if (phaseCompletable.get(phase.id) !== true) continue;
+        if (!interrogationBlockReachable(
+          phase.status, phase.unlock, `phase:${phase.id}`, currentState,
+        )) continue;
+
+        // Evaluate the phase on a clone to see what it produces
+        const clone = cloneInterrogationInventoryState(currentState);
+        addInterrogationRevealsToState(clone, phase.reveals);
+        if (phase.kind === "inquiry") {
+          collectInquiryInventory(phase, { mode: "guaranteed", ...clone });
+        } else {
+          collectTestimonyResultInventory(phase, {
+            mode: "guaranteed",
+            inventory: clone.inventory,
+            revealedQuestions: clone.revealedQuestions,
+            revealedPhases: clone.revealedPhases,
+          });
+        }
+
+        // Check if the clone produces anything the outro needs that the
+        // current state doesn't have.
+        if (cloneProducesNeededOutroAtom(outroExpr, currentState, clone)) {
+          // Phase is forced — process it on the main state.
+          forced.add(phase.id);
+          addInterrogationRevealsToState({ inventory, revealedQuestions, revealedPhases }, phase.reveals);
+          beforePhase.set(phase.id, new Set(inventory));
+          if (phase.kind === "inquiry") {
+            const complete = collectInquiryInventory(phase, {
+              mode: "guaranteed",
+              inventory,
+              answeredQuestions,
+              completedPhases,
+              revealedQuestions,
+              revealedPhases,
+            });
+            phaseCompletable.set(phase.id, complete);
+            if (complete) completedPhases.add(phase.id);
+          } else {
+            const hasValidCorrectPath = collectTestimonyResultInventory(phase, {
+              mode: "guaranteed",
+              inventory,
+              revealedQuestions,
+              revealedPhases,
+            });
+            phaseCompletable.set(phase.id, hasValidCorrectPath);
+            if (hasValidCorrectPath) completedPhases.add(phase.id);
+          }
+          changed = true;
+          break; // Restart while-loop with updated state
+        }
+      }
+    }
+  }
+
   return { beforePhase, phaseCompletable, answeredQuestions, afterScene: inventory };
+}
+
+/**
+ * Returns true if `clone` produces at least one atom that the outro expression
+ * requires and that `base` does not already provide. This is used to detect
+ * "forced" optional phases — phases whose output the outro depends on.
+ */
+function cloneProducesNeededOutroAtom(
+  expr: InterrogationUnlockExpr,
+  base: Pick<InterrogationInventoryState, "inventory" | "answeredQuestions" | "completedPhases">,
+  clone: Pick<InterrogationInventoryState, "inventory" | "answeredQuestions" | "completedPhases">,
+): boolean {
+  if ("op" in expr) {
+    return cloneProducesNeededOutroAtom(expr.left, base, clone)
+      || cloneProducesNeededOutroAtom(expr.right, base, clone);
+  }
+  switch (expr.predicate) {
+    case "evidence_collected": {
+      const atom = `evidence:${expr.id}`;
+      return !base.inventory.has(atom) && clone.inventory.has(atom);
+    }
+    case "statement_acquired": {
+      const atom = `statement:${expr.id}`;
+      return !base.inventory.has(atom) && clone.inventory.has(atom);
+    }
+    case "question_answered":
+      return !base.answeredQuestions.has(expr.id) && clone.answeredQuestions.has(expr.id);
+    case "phase_completed":
+      return !base.completedPhases.has(expr.id) && clone.completedPhases.has(expr.id);
+  }
 }
 
 type InterrogationInventoryState = {
