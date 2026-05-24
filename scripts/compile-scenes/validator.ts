@@ -1230,6 +1230,7 @@ function collectTestimonyResultInventory(
   // ever pressing.  In obtainable mode we include press reveals (the player
   // has the option to collect them).  In guaranteed mode we skip them because
   // they are not guaranteed to be collected.
+  const baseInventory = new Set(state.inventory);
   const availableForContradictions = new Set(state.inventory);
   if (state.mode === "obtainable") {
     for (const statement of phase.statements) {
@@ -1248,7 +1249,11 @@ function collectTestimonyResultInventory(
     if (!availableForContradictions.has(inventoryAtom(statement.contradiction))) continue;
     const result = phase.results.find((candidate) => candidate.id === statement.onCorrect);
     if (!result) continue;
-    validPathReveals.push(result.reveals);
+    const pathReveals = [...result.reveals];
+    if (state.mode === "guaranteed" && !baseInventory.has(inventoryAtom(statement.contradiction))) {
+      pathReveals.push(statement.contradiction);
+    }
+    validPathReveals.push(pathReveals);
   }
 
   if (validPathReveals.length === 0) return false;

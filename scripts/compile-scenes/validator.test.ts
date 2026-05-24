@@ -2416,6 +2416,47 @@ describe("validator", () => {
     expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("press_only_ev"))).toBeDefined();
   });
 
+  it("guarantees press reveals that are required on every valid testimony completion path", () => {
+    const source = mkInterrogationScene({
+      phases: [
+        mkTestimonyPhase({
+          id: "testimony",
+          statements: [
+            mkTestimonyStatement({
+              id: "press_to_reveal",
+              reveals: [{ kind: "evidence", id: "pressed_ev" }],
+            }),
+            mkTestimonyStatement({
+              id: "use_pressed",
+              contradiction: { kind: "evidence", id: "pressed_ev" },
+              onCorrect: "win",
+            }),
+          ],
+          results: [mkResult({ id: "win" })],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("pressed_ev")],
+    });
+    const later = mkInterrogationScene({
+      phases: [mkTestimonyPhase({
+        statements: [mkTestimonyStatement({
+          id: "later_s",
+          contradiction: { kind: "evidence", id: "pressed_ev" },
+          onCorrect: "later_win",
+        })],
+        results: [mkResult({ id: "later_win" })],
+      })],
+    });
+    const errors = validate({
+      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      scenes: [
+        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
+        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      ],
+    });
+    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("pressed_ev"))).toBeUndefined();
+  });
+
   it("rejects an interrogation outro question_answered predicate when the required phase has no guaranteed completion path", () => {
     // The question IS reachable in isolation, but the required phase has an
     // unsatisfiable completion condition (evidence:missing is never obtainable).
