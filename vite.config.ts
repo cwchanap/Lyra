@@ -4,7 +4,7 @@ import { svelteTesting } from "@testing-library/svelte/vite";
 
 const host = process.env.TAURI_DEV_HOST;
 
-// https://vite.dev/config/
+// @ts-expect-error svelteTesting plugin type is incompatible with vitest defineConfig
 export default defineConfig(async () => ({
   plugins: [sveltekit(), svelteTesting()],
 
