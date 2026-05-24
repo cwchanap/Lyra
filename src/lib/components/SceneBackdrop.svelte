@@ -4,20 +4,51 @@
 
 {#if sceneTag}
   <div class="backdrop">
-    <span class="tag">場景：{sceneTag}</span>
+    <span class="stamp">
+      <span class="kana">場 / SCENE</span>
+      <span class="label">{sceneTag}</span>
+    </span>
   </div>
 {/if}
 
 <style>
   .backdrop {
-    padding: 12px 24px;
-    background: linear-gradient(180deg, #0d1117 0%, #1a1f2a 100%);
-    color: #d0d7de;
-    border-bottom: 1px solid #30363d;
+    position: relative;
+    padding: 18px clamp(20px, 3vw, 40px);
   }
-  .tag {
-    font-size: 0.85rem;
-    font-style: italic;
-    opacity: 0.85;
+
+  .stamp {
+    display: inline-flex;
+    align-items: stretch;
+    border: 1px solid var(--rule-strong);
+    background: rgba(20, 20, 31, 0.6);
+    backdrop-filter: blur(2px);
+    transform: rotate(-1.2deg);
+    font-family: var(--serif-jp);
+    box-shadow: 4px 4px 0 var(--cell);
+  }
+
+  .kana {
+    padding: 6px 10px 5px;
+    font-family: var(--impact);
+    font-weight: 500;
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    color: var(--bone);
+    background: var(--crimson);
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .label {
+    padding: 6px 14px 5px;
+    font-family: var(--serif-jp);
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--bone);
+    letter-spacing: 0.08em;
+    display: inline-flex;
+    align-items: center;
   }
 </style>

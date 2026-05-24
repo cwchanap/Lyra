@@ -1,7 +1,12 @@
 <script lang="ts">
   import type { DialogueItem, QueueToken } from "../state/types";
 
-  let { current, queueToken, onAdvance, disabled = false }: {
+  let {
+    current,
+    queueToken,
+    onAdvance,
+    disabled = false,
+  }: {
     current: DialogueItem;
     queueToken: QueueToken;
     onAdvance: (t: QueueToken) => void;
@@ -25,43 +30,166 @@
 
 <svelte:window onkeydown={handleKey} />
 
-<button class="box" onclick={handleClick} type="button" aria-label="推進對話" {disabled}>
+<button
+  class="box"
+  class:scene={current.kind === "sceneTag"}
+  class:action={current.kind === "action"}
+  class:line={current.kind === "line"}
+  onclick={handleClick}
+  type="button"
+  aria-label="推進對話"
+  {disabled}
+>
   {#if current.kind === "sceneTag"}
-    <span class="placeholder">（場景切換）</span>
+    <span class="kind">場 · SCENE</span>
+    <p class="text-scene">（場景切換）</p>
   {:else if current.kind === "action"}
-    <p class="action">{current.text}</p>
+    <span class="kind">敘述 · NARRATION</span>
+    <p class="text-action">{current.text}</p>
   {:else if current.kind === "line"}
-    <div class="line">
-      <span class="speaker">{current.speaker}</span>
-      <p class="text">{current.text}</p>
+    <div class="line-grid">
+      <div class="speaker-block">
+        <span class="kind">發言 · LINE</span>
+        <span class="speaker">{current.speaker}</span>
+      </div>
+      <p class="text-line">{current.text}</p>
     </div>
   {/if}
-  <span class="hint">點擊或按 Space ▶</span>
+
+  <div class="hint">
+    <span class="key">Space</span>
+    <span class="arrow">▶</span>
+  </div>
 </button>
 
 <style>
   .box {
     position: fixed;
     left: 50%;
-    bottom: 32px;
+    bottom: 28px;
     transform: translateX(-50%);
-    min-width: 60ch;
-    max-width: 80ch;
-    padding: 24px 28px 32px;
-    background: rgba(13, 17, 23, 0.95);
-    color: #e6edf3;
-    border: 1px solid #30363d;
-    border-radius: 12px;
+    width: min(960px, calc(100vw - 56px));
+    padding: 22px 28px 24px;
+    background: rgba(20, 20, 31, 0.94);
+    color: var(--bone);
+    border: 1px solid var(--rule-strong);
+    border-left: 3px solid var(--crimson);
+    clip-path: polygon(
+      0 0,
+      calc(100% - 22px) 0,
+      100% 22px,
+      100% 100%,
+      22px 100%,
+      0 calc(100% - 22px)
+    );
     text-align: left;
     cursor: pointer;
     font: inherit;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+    z-index: 30;
+    transition: border-color 0.2s, background 0.2s;
   }
-  .box:hover { border-color: #58a6ff; }
-  .box:disabled { cursor: wait; opacity: 0.72; }
-  .speaker { font-weight: 700; color: #58a6ff; display: block; margin-bottom: 6px; }
-  .text { margin: 0; line-height: 1.6; }
-  .action { margin: 0; font-style: italic; color: #8b949e; text-align: center; }
-  .placeholder { color: #8b949e; font-style: italic; }
-  .hint { position: absolute; right: 14px; bottom: 8px; font-size: 0.75rem; color: #8b949e; }
+
+  .box:hover:not(:disabled) {
+    border-color: var(--crimson);
+    background: rgba(29, 29, 43, 0.96);
+  }
+
+  .box:disabled {
+    cursor: wait;
+    opacity: 0.7;
+  }
+
+  .kind {
+    display: inline-block;
+    font-family: var(--impact);
+    font-weight: 500;
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    color: var(--crimson);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .speaker {
+    display: block;
+    font-family: var(--display-jp);
+    font-weight: 400;
+    font-size: 18px;
+    letter-spacing: 0.1em;
+    color: var(--bone);
+    line-height: 1.1;
+  }
+
+  .speaker-block {
+    flex: 0 0 auto;
+    min-width: 140px;
+    padding-right: 22px;
+    border-right: 1px solid var(--rule-strong);
+  }
+
+  .line-grid {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+  }
+
+  .text-line {
+    margin: 4px 0 0;
+    font-family: var(--serif-jp);
+    font-size: 16px;
+    line-height: 1.75;
+    color: var(--bone);
+    letter-spacing: 0.04em;
+    flex: 1 1 auto;
+  }
+
+  .text-action {
+    margin: 0;
+    font-family: var(--serif-it);
+    font-style: italic;
+    color: var(--bone-dim);
+    text-align: center;
+    font-size: 17px;
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+  }
+
+  .text-scene {
+    margin: 0;
+    font-family: var(--serif-jp);
+    color: var(--bone-faint);
+    font-style: italic;
+    text-align: center;
+    font-size: 14px;
+  }
+
+  .box.action,
+  .box.scene {
+    border-left-color: var(--rule-strong);
+  }
+
+  .hint {
+    position: absolute;
+    right: 22px;
+    bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    color: var(--bone-faint);
+    text-transform: uppercase;
+  }
+
+  .hint .key {
+    padding: 2px 6px 1px;
+    border: 1px solid var(--rule-strong);
+  }
+
+  .hint .arrow {
+    color: var(--crimson);
+    animation: lyra-pulse 1.6s ease-in-out infinite;
+  }
 </style>
