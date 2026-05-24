@@ -38,7 +38,6 @@
     if (gameState.error) {
       return;
     }
-    gameState.value = null;
     gameState.error = null;
   }
 </script>

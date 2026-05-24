@@ -144,9 +144,14 @@ if (shouldRegisterPlaywrightSuite) {
       await installTauriMock(page);
     });
 
-    test("advances dialogue into investigation controls", async ({ page }) => {
+    async function startFromMenu(page: Page) {
       await page.goto("/");
       await expect(page).toHaveTitle(/東京雨證/);
+      await page.getByRole("button", { name: /開始調查/ }).click();
+    }
+
+    test("advances dialogue into investigation controls", async ({ page }) => {
+      await startFromMenu(page);
       await expect(page.getByText("測試開始。")).toBeVisible();
 
       await page.getByRole("button", { name: "推進對話" }).click();
@@ -157,7 +162,7 @@ if (shouldRegisterPlaywrightSuite) {
     });
 
     test("inspects a hotspot and shows inventory", async ({ page }) => {
-      await page.goto("/");
+      await startFromMenu(page);
       await page.getByRole("button", { name: "推進對話" }).click();
       await page.getByRole("button", { name: /桌子/ }).click();
 
@@ -167,7 +172,7 @@ if (shouldRegisterPlaywrightSuite) {
     });
 
     test("surfaces command errors in the banner", async ({ page }) => {
-      await page.goto("/");
+      await startFromMenu(page);
       await page.getByRole("button", { name: "推進對話" }).click();
       await page.evaluate(() => {
         (window as MockWindow).__LYRA_E2E_FAIL_NEXT_INSPECT__ = true;
