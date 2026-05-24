@@ -1,13 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 
 type MockWindow = Window & {
-  __TAURI_INTERNALS__: {
+  __TAURI_INTERNALS__?: {
     invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
     transformCallback: () => number;
     unregisterCallback: () => void;
   };
   __LYRA_E2E_FAIL_NEXT_INSPECT__?: boolean;
 };
+
+const shouldRegisterPlaywrightSuite = !("Bun" in globalThis);
 
 async function installTauriMock(page: Page) {
   await page.addInitScript(() => {
@@ -136,41 +138,43 @@ async function installTauriMock(page: Page) {
   });
 }
 
-test.describe("App shell", () => {
-  test.beforeEach(async ({ page }) => {
-    await installTauriMock(page);
-  });
-
-  test("advances dialogue into investigation controls", async ({ page }) => {
-    await page.goto("/");
-    await expect(page).toHaveTitle(/東京雨證/);
-    await expect(page.getByText("測試開始。")).toBeVisible();
-
-    await page.getByRole("button", { name: "推進對話" }).click();
-
-    await expect(page.getByRole("button", { name: "主廳" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /桌子/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /案發時間/ })).toBeVisible();
-  });
-
-  test("inspects a hotspot and shows inventory", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "推進對話" }).click();
-    await page.getByRole("button", { name: /桌子/ }).click();
-
-    await expect(page.getByText("還是熱的。")).toBeVisible();
-    await page.getByRole("button", { name: /物證/ }).click();
-    await expect(page.getByText("還熱的咖啡")).toBeVisible();
-  });
-
-  test("surfaces command errors in the banner", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("button", { name: "推進對話" }).click();
-    await page.evaluate(() => {
-      (window as MockWindow).__LYRA_E2E_FAIL_NEXT_INSPECT__ = true;
+if (shouldRegisterPlaywrightSuite) {
+  test.describe("App shell", () => {
+    test.beforeEach(async ({ page }) => {
+      await installTauriMock(page);
     });
-    await page.getByRole("button", { name: /桌子/ }).click();
 
-    await expect(page.getByRole("alert")).toContainText("Hotspot 'table' is locked.");
+    test("advances dialogue into investigation controls", async ({ page }) => {
+      await page.goto("/");
+      await expect(page).toHaveTitle(/東京雨證/);
+      await expect(page.getByText("測試開始。")).toBeVisible();
+
+      await page.getByRole("button", { name: "推進對話" }).click();
+
+      await expect(page.getByRole("button", { name: "主廳" })).toBeVisible();
+      await expect(page.getByRole("button", { name: /桌子/ })).toBeVisible();
+      await expect(page.getByRole("button", { name: /案發時間/ })).toBeVisible();
+    });
+
+    test("inspects a hotspot and shows inventory", async ({ page }) => {
+      await page.goto("/");
+      await page.getByRole("button", { name: "推進對話" }).click();
+      await page.getByRole("button", { name: /桌子/ }).click();
+
+      await expect(page.getByText("還是熱的。")).toBeVisible();
+      await page.getByRole("button", { name: /物證/ }).click();
+      await expect(page.getByText("還熱的咖啡")).toBeVisible();
+    });
+
+    test("surfaces command errors in the banner", async ({ page }) => {
+      await page.goto("/");
+      await page.getByRole("button", { name: "推進對話" }).click();
+      await page.evaluate(() => {
+        (window as MockWindow).__LYRA_E2E_FAIL_NEXT_INSPECT__ = true;
+      });
+      await page.getByRole("button", { name: /桌子/ }).click();
+
+      await expect(page.getByRole("alert")).toContainText("Hotspot 'table' is locked.");
+    });
   });
-});
+}
