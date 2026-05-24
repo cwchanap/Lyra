@@ -35,6 +35,9 @@
 
   async function handleReset() {
     await resetGame();
+    if (gameState.error) {
+      return;
+    }
     gameState.value = null;
     gameState.error = null;
   }
@@ -88,20 +91,23 @@
 {:else}
   <MainMenu onNewGame={startGame} onExit={handleExit} disabled={gameState.inFlight} />
   {#if gameState.error}
-    <ErrorBanner message={gameState.error} />
+    <div class="menu-error">
+      <ErrorBanner message={gameState.error} />
+    </div>
   {/if}
 {/if}
 
 <style>
-  :global(body) {
-    margin: 0;
-    background: #0d1117;
-    color: #e6edf3;
-    font-family: Inter, system-ui, -apple-system, sans-serif;
-    min-height: 100vh;
-  }
   .status {
     padding: 32px;
-    color: #8b949e;
+    color: var(--bone-dim);
+  }
+  .menu-error {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 16px;
   }
 </style>
