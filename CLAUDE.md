@@ -11,7 +11,9 @@ Package manager is **bun** (see `bun.lock`). Tauri's `beforeDevCommand`/`beforeB
 - `bun run tauri build` — produce desktop bundles for all targets in `tauri.conf.json`.
 - `bun run check` — type-check Svelte + TS (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
 - `bun run check:watch` — same in watch mode.
-- Rust-side checks: `cd src-tauri && cargo check` / `cargo clippy` / `cargo test`. Rust unit tests live alongside the code (e.g. `#[cfg(test)] mod tests` in `src-tauri/src/game/`). No frontend test runner is wired up yet.
+- `bun run test` / `bun run test:watch` — Vitest unit tests for frontend logic (e.g. `src/lib/state/mode.test.ts`). Run a single file with `bun run test src/lib/state/mode.test.ts` or a single case with `bun run test -t "test name"`.
+- `bun run test:e2e` / `bun run test:e2e:ui` — Playwright e2e tests in `e2e/` (config: `playwright.config.ts`). These spin up `bun run preview` on port 4173 and exercise the **built static SPA in a browser** — `invoke()` calls to Tauri will not work here, so e2e tests must cover only the pure-frontend surface.
+- Rust-side checks: `cd src-tauri && cargo check` / `cargo clippy` / `cargo test`. Rust unit tests live alongside the code (e.g. `#[cfg(test)] mod tests` in `src-tauri/src/game/`).
 
 ## Architecture
 
