@@ -335,7 +335,7 @@
   }
 
   .stage {
-    position: absolute;
+    position: fixed;
     inset: 0;
     overflow: hidden;
     background:
@@ -871,6 +871,9 @@
   }
 
   @media (max-width: 980px) {
+    .lyra-menu {
+      overflow-y: auto;
+    }
     .menu {
       grid-template-columns: 1fr;
       grid-template-rows: auto auto auto auto;
