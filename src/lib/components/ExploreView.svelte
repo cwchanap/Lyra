@@ -38,5 +38,10 @@
 {/if}
 
 <style>
-  .muted { padding: 24px; color: #8b949e; }
+  .muted {
+    padding: 24px clamp(20px, 3vw, 40px);
+    color: var(--bone-faint);
+    font-family: var(--serif-jp);
+    font-style: italic;
+  }
 </style>

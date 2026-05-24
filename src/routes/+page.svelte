@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import {
     gameState,
     startGame,
@@ -23,16 +22,26 @@
   import ErrorBanner from "$lib/components/ErrorBanner.svelte";
   import GameComplete from "$lib/components/GameComplete.svelte";
   import InterrogationView from "$lib/components/InterrogationView.svelte";
+  import MainMenu from "$lib/components/MainMenu.svelte";
 
-  onMount(() => {
-    void startGame();
-  });
+  async function handleExit() {
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().close();
+    } catch (e) {
+      console.warn("Window close unavailable in this runtime:", e);
+    }
+  }
+
+  async function handleReset() {
+    await resetGame();
+    gameState.value = null;
+    gameState.error = null;
+  }
 </script>
 
-{#if gameState.loading}
-  <main><p class="status">載入中...</p></main>
-{:else if gameState.value}
-  <GameShell gameState={gameState.value} onReset={resetGame} disabled={gameState.inFlight}>
+{#if gameState.value}
+  <GameShell gameState={gameState.value} onReset={handleReset} disabled={gameState.inFlight}>
     {#if gameState.error}
       <ErrorBanner message={gameState.error} />
     {/if}
@@ -62,7 +71,7 @@
         disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "gameComplete"}
-      <GameComplete onReset={resetGame} disabled={gameState.inFlight} />
+      <GameComplete onReset={handleReset} disabled={gameState.inFlight} />
     {/if}
     {#if shouldShowInventoryPanel(gameState.value.mode)}
       <InventoryPanel
@@ -74,11 +83,13 @@
       />
     {/if}
   </GameShell>
-{:else if gameState.error}
-  <main>
+{:else if gameState.loading}
+  <main><p class="status">載入中...</p></main>
+{:else}
+  <MainMenu onNewGame={startGame} onExit={handleExit} disabled={gameState.inFlight} />
+  {#if gameState.error}
     <ErrorBanner message={gameState.error} />
-    <button onclick={startGame} disabled={gameState.inFlight} type="button">重試</button>
-  </main>
+  {/if}
 {/if}
 
 <style>
@@ -89,5 +100,8 @@
     font-family: Inter, system-ui, -apple-system, sans-serif;
     min-height: 100vh;
   }
-  .status { padding: 32px; color: #8b949e; }
+  .status {
+    padding: 32px;
+    color: #8b949e;
+  }
 </style>

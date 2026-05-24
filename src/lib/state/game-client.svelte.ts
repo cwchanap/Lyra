@@ -35,7 +35,7 @@ export const gameState = $state<{
 }>({
   value: null,
   error: null,
-  loading: true,
+  loading: false,
   inFlight: false,
 });
 

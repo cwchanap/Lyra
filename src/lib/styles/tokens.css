@@ -1,0 +1,64 @@
+:root {
+  --bg-deep: #07070d;
+  --bg-violet: #160820;
+  --bg-blood: #1a0510;
+  --cell: #040408;
+  --char: #14141f;
+  --char-2: #1d1d2b;
+  --char-3: #232333;
+
+  --bone: #ece4cf;
+  --bone-dim: #8b8674;
+  --bone-faint: #5a5648;
+
+  --crimson: #d4143a;
+  --crimson-deep: #6a0a1a;
+  --crimson-soft: rgba(212, 20, 58, 0.12);
+  --cyan: #34d8ff;
+  --cyan-deep: #1a5f80;
+  --cyan-soft: rgba(52, 216, 255, 0.1);
+  --amber: #b08545;
+  --umbrella: #4a78c8;
+
+  --rule: rgba(236, 228, 207, 0.14);
+  --rule-strong: rgba(236, 228, 207, 0.32);
+
+  --display-jp: "Dela Gothic One", "Noto Serif TC", serif;
+  --serif-jp: "Shippori Mincho", "Noto Serif TC", serif;
+  --body-jp: "Shippori Mincho", "Noto Serif TC", serif;
+  --impact: "Antonio", "Dela Gothic One", sans-serif;
+  --serif-it: "Cormorant Garamond", serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-deep);
+  color: var(--bone);
+  font-family: var(--body-jp);
+  min-height: 100vh;
+}
+
+body {
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+button {
+  font-family: inherit;
+}
+
+@keyframes lyra-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@keyframes lyra-glitch {
+  0%   { clip-path: inset(0 0 80% 0); transform: translate(2px, 0); }
+  25%  { clip-path: inset(40% 0 30% 0); transform: translate(-1px, 0); }
+  50%  { clip-path: inset(70% 0 10% 0); transform: translate(2px, 0); }
+  75%  { clip-path: inset(20% 0 50% 0); transform: translate(-2px, 0); }
+  100% { clip-path: inset(60% 0 20% 0); transform: translate(1px, 0); }
+}
