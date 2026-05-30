@@ -80,15 +80,16 @@ export function loadAssetConfig(configRoot: string): AssetConfigResult {
   }
 
   const errors: CompileError[] = [];
+  const warnings: CompileError[] = [];
   const policy = asRecord(readYaml(policyPath, errors), policyPath, "assetPolicyMalformed", errors);
   const charactersYaml = asRecord(readOptionalYaml(resolve(configRoot, "characters.yaml"), errors) ?? { characters: [] }, "characters.yaml", "assetCharactersFileMalformed", errors);
   const audioYaml = asRecord(readOptionalYaml(resolve(configRoot, "audio.yaml"), errors) ?? { bgm: {}, bgs: {} }, "audio.yaml", "assetAudioFileMalformed", errors);
   if (errors.length > 0) return { ok: false, errors };
 
   const enabled = policy?.assets?.enabled === true;
-  const globalStylePrompt = text(policy?.globalStyle?.prompt);
-  const types = buildTypePolicies(policy?.types, enabled, errors);
-  const characters = buildCharacters(arrayOrEmpty(charactersYaml?.characters, "characters.yaml", "assetCharactersMalformed", errors), enabled, errors);
+  const globalStylePrompt = textWithWarn(policy?.globalStyle?.prompt, "globalStyle.prompt", "policy.yaml", warnings);
+  const types = buildTypePolicies(policy?.types, enabled, errors, warnings);
+  const characters = buildCharacters(arrayOrEmpty(charactersYaml?.characters, "characters.yaml", "assetCharactersMalformed", errors), enabled, errors, warnings);
   const audio = buildAudio(audioYaml ?? {}, errors);
 
   if (enabled && !globalStylePrompt) {
@@ -98,21 +99,21 @@ export function loadAssetConfig(configRoot: string): AssetConfigResult {
   return {
     ok: true,
     value: { enabled, globalStylePrompt, types, characters, audio },
-    warnings: [],
+    warnings,
   };
 }
 
-function buildTypePolicies(raw: unknown, enabled: boolean, errors: CompileError[]): Record<AssetTypeName, AssetTypePolicy> {
+function buildTypePolicies(raw: unknown, enabled: boolean, errors: CompileError[], warnings: CompileError[]): Record<AssetTypeName, AssetTypePolicy> {
   const src = isRecord(raw) ? raw : {};
   const out = defaultTypes();
   for (const key of ["background", "portrait", "evidence", "audio"] as const) {
     const value = asOptionalRecord(src[key], "policy.yaml", "assetPolicyTypeMalformed", errors);
     if (!value) continue;
     out[key] = {
-      dimensions: tuple(value.dimensions) ?? out[key].dimensions,
-      format: text(value.format) || out[key].format,
+      dimensions: tupleWithWarn(value.dimensions, `types.${key}.dimensions`, "policy.yaml", warnings) ?? out[key].dimensions,
+      format: textWithWarn(value.format, `types.${key}.format`, "policy.yaml", warnings) || out[key].format,
       transparency: typeof value.transparency === "boolean" ? value.transparency : out[key].transparency,
-      prompt: text(value.prompt),
+      prompt: textWithWarn(value.prompt, `types.${key}.prompt`, "policy.yaml", warnings),
       loop: typeof value.loop === "boolean" ? value.loop : out[key].loop,
     };
   }
@@ -124,15 +125,26 @@ function buildTypePolicies(raw: unknown, enabled: boolean, errors: CompileError[
   return out;
 }
 
-function buildCharacters(raw: unknown[], enabled: boolean, errors: CompileError[]) {
+function buildCharacters(raw: unknown[], enabled: boolean, errors: CompileError[], warnings: CompileError[]) {
   const byId = new Map<string, CharacterConfig>();
   const byDisplayName = new Map<string, CharacterConfig>();
   for (const item of raw) {
     const c = asRecord(item, "characters.yaml", "assetCharacterMalformed", errors);
     if (!c) continue;
-    const id = text(c.id);
+    const idRaw = c.id;
+    const id = textWithWarn(idRaw, "id", "characters.yaml", warnings);
     const idIsSafe = !id || SAFE_ASSET_SLUG.test(id);
-    const displayNames = Array.isArray(c.displayNames) ? c.displayNames.map(text).filter(Boolean) : [];
+    const idPresentButWrongType = idRaw !== undefined && idRaw !== null && typeof idRaw !== "string";
+    const displayNames = Array.isArray(c.displayNames)
+      ? c.displayNames.flatMap((v) => {
+          if (typeof v !== "string") {
+            warnings.push(error("characters.yaml", "assetConfigWrongType", `Field "displayNames" entry expected string, got ${typeof v}.`));
+            return [];
+          }
+          const trimmed = v.trim();
+          return trimmed ? [trimmed] : [];
+        })
+      : [];
     const portraitMode = c.portraitMode === "none" ? "none" : "portrait";
     const expressions = new Map<string, CharacterExpressionConfig>();
     const rawExpressions = asOptionalRecord(c.expressions, "characters.yaml", "assetCharacterExpressionsMalformed", errors) ?? {};
@@ -154,7 +166,7 @@ function buildCharacters(raw: unknown[], enabled: boolean, errors: CompileError[
       referenceAssetId: text(c.referenceAssetId) || null,
       expressions,
     };
-    if (!id) errors.push(error("characters.yaml", "assetCharacterMissingId", "Each character requires id."));
+    if (!id && !idPresentButWrongType) errors.push(error("characters.yaml", "assetCharacterMissingId", "Each character requires id."));
     if (id && !idIsSafe) {
       errors.push(error("characters.yaml", "assetCharacterIdMalformed", `Character id ${id} must be a snake_case slug.`));
     }
@@ -212,6 +224,24 @@ function readOptionalYaml(path: string, errors: CompileError[]) {
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+/** Like text(), but emits a warning when the value is present but not a string. */
+function textWithWarn(value: unknown, fieldName: string, sourceFile: string, warnings: CompileError[]): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return value.trim();
+  warnings.push(error(sourceFile, "assetConfigWrongType", `Field "${fieldName}" expected string, got ${typeof value}.`));
+  return "";
+}
+
+/** Like tuple(), but emits a warning when the value is present but malformed. */
+function tupleWithWarn(value: unknown, fieldName: string, sourceFile: string, warnings: CompileError[]): [number, number] | undefined {
+  if (value === undefined || value === null) return undefined;
+  const result = tuple(value);
+  if (result === undefined) {
+    warnings.push(error(sourceFile, "assetConfigWrongType", `Field "${fieldName}" expected [number, number], got ${JSON.stringify(value)}.`));
+  }
+  return result;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

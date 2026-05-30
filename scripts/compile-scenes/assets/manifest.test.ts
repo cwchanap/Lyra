@@ -1,6 +1,17 @@
 import { describe, expect, it } from "bun:test";
 import { expectedPath, publicPath } from "./manifest";
 
+// Cross-check: these test cases MUST produce the same output as
+// publicPathForStoryAsset() in src/lib/assets/story-assets.ts.
+// If you change either function, update both and keep these tests passing.
+const CROSS_CHECK_CASES: Array<{ assetId: string; type: "background" | "portrait" | "evidence" | "audio"; expected: string }> = [
+  { assetId: "portrait.hayasaka_akane.concerned", type: "portrait", expected: "/assets/portraits/hayasaka_akane/concerned.png" },
+  { assetId: "background.chapter_1.scene_0.tag_001", type: "background", expected: "/assets/backgrounds/chapter_1/scene_0/tag_001.png" },
+  { assetId: "audio.bgm.rain_mystery_low", type: "audio", expected: "/assets/audio/bgm/rain_mystery_low.ogg" },
+  { assetId: "audio.bgs.street_rain", type: "audio", expected: "/assets/audio/bgs/street_rain.ogg" },
+  { assetId: "evidence.coffee_receipt", type: "evidence", expected: "/assets/evidence/coffee_receipt.png" },
+];
+
 describe("story asset manifest paths", () => {
   it("maps portrait asset IDs to typed static asset paths", () => {
     expect(publicPath("portrait.hayasaka_akane.concerned", "portrait")).toBe("/assets/portraits/hayasaka_akane/concerned.png");
@@ -20,5 +31,11 @@ describe("story asset manifest paths", () => {
   it("maps evidence asset IDs to evidence paths", () => {
     expect(publicPath("evidence.coffee_receipt", "evidence")).toBe("/assets/evidence/coffee_receipt.png");
     expect(expectedPath("evidence.coffee_receipt", "evidence")).toBe("static/assets/evidence/coffee_receipt.png");
+  });
+
+  it("cross-check: publicPath matches publicPathForStoryAsset contract", () => {
+    for (const { assetId, type, expected } of CROSS_CHECK_CASES) {
+      expect(publicPath(assetId, type)).toBe(expected);
+    }
   });
 });

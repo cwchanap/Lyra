@@ -85,12 +85,8 @@ impl LastVisualCue {
 }
 
 fn audio_cue_view(cue: &schema::AudioCueJson) -> AudioCueView {
-    let channel = match cue.channel {
-        schema::AudioChannelJson::Bgm => "bgm",
-        schema::AudioChannelJson::Bgs => "bgs",
-    };
     AudioCueView {
-        channel: channel.into(),
+        channel: cue.channel,
         asset_id: cue.asset_id.clone(),
     }
 }
@@ -1943,10 +1939,10 @@ mod tests {
                     Some("background.chapter_1.cafe")
                 );
                 let bgm = bgm.unwrap();
-                assert_eq!(bgm.channel, "bgm");
+                assert_eq!(bgm.channel, AudioChannelJson::Bgm);
                 assert_eq!(bgm.asset_id.as_deref(), Some("audio.bgm.cafe"));
                 let bgs = bgs.unwrap();
-                assert_eq!(bgs.channel, "bgs");
+                assert_eq!(bgs.channel, AudioChannelJson::Bgs);
                 assert_eq!(bgs.asset_id.as_deref(), Some("audio.bgs.rain"));
             }
             other => panic!("expected explore mode, got {other:?}"),
@@ -2032,10 +2028,10 @@ mod tests {
                     Some("background.chapter_1.interrogation")
                 );
                 let bgm = bgm.unwrap();
-                assert_eq!(bgm.channel, "bgm");
+                assert_eq!(bgm.channel, AudioChannelJson::Bgm);
                 assert_eq!(bgm.asset_id.as_deref(), Some("audio.bgm.tension"));
                 let bgs = bgs.unwrap();
-                assert_eq!(bgs.channel, "bgs");
+                assert_eq!(bgs.channel, AudioChannelJson::Bgs);
                 assert_eq!(bgs.asset_id.as_deref(), Some("audio.bgs.roomtone"));
             }
             other => panic!("expected interrogation mode, got {other:?}"),

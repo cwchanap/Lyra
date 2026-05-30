@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
 import type { AssetConfig, AudioChannel } from "./config";
-import { buildAssetManifest, type AssetManifest, type AssetManifestEntry } from "./manifest";
+import { buildAssetManifest, expectedPath, type AssetManifest, type AssetManifestEntry } from "./manifest";
 import type {
   ASTEvidence,
   ASTInterrogationPhase,
@@ -42,11 +43,13 @@ export function enrichScenesWithAssets(input: { scenes: SceneRecord[]; config: A
   const errors: CompileError[] = [];
   const requests = new Map<string, ManifestDraft>();
   const scenes = input.scenes.map((scene) => enrichScene(scene, input.config, requests, errors));
+  const manifest = buildAssetManifest({ entries: [...requests.values()], config: input.config });
+  const warnings = checkAssetExistence(manifest.entries);
 
   return {
     scenes,
-    manifest: buildAssetManifest({ entries: [...requests.values()], config: input.config }),
-    warnings: [],
+    manifest,
+    warnings,
     errors,
   };
 }
@@ -298,4 +301,24 @@ function putRequest(requests: Map<string, ManifestDraft>, entry: ManifestDraft):
 
 function compileError(sourceFile: string, line: number, code: string, message: string): CompileError {
   return { sourceFile, line, code, message };
+}
+
+/**
+ * Check whether each manifest entry's expected file exists on disk.
+ * Returns warnings (not errors) for missing files — assets may be generated
+ * after compilation, so missing files don't block the pipeline.
+ */
+function checkAssetExistence(entries: AssetManifestEntry[]): CompileError[] {
+  const warnings: CompileError[] = [];
+  for (const entry of entries) {
+    if (!existsSync(entry.expectedPath)) {
+      warnings.push({
+        sourceFile: entry.expectedPath,
+        line: 1,
+        code: "assetFileMissing",
+        message: `Expected asset file not found: ${entry.expectedPath} (assetId: ${entry.assetId}, type: ${entry.type})`,
+      });
+    }
+  }
+  return warnings;
 }

@@ -67,11 +67,20 @@ impl VisualAssetCueJson {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AssetTypeJson {
+    Background,
+    Portrait,
+    Evidence,
+    Audio,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetRefJson {
     #[serde(rename = "type")]
-    pub asset_type: String,
+    pub asset_type: AssetTypeJson,
     pub asset_id: String,
 }
 
@@ -732,5 +741,20 @@ mod tests {
         let json = r#"{"kind":"question","id":"hidden"}"#;
         let parsed: InterrogationRevealTarget = serde_json::from_str(json).unwrap();
         assert!(matches!(parsed, InterrogationRevealTarget::Question { id } if id == "hidden"));
+    }
+
+    #[test]
+    fn deserializes_asset_ref_with_typed_asset_type() {
+        let json = r#"{"type": "background", "assetId": "background.chapter_1.scene_0.tag_001"}"#;
+        let parsed: AssetRefJson = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.asset_type, AssetTypeJson::Background);
+        assert_eq!(parsed.asset_id, "background.chapter_1.scene_0.tag_001");
+    }
+
+    #[test]
+    fn rejects_invalid_asset_type_at_deserialization() {
+        let json = r#"{"type": "bckground", "assetId": "bg"}"#;
+        let result = serde_json::from_str::<AssetRefJson>(json);
+        assert!(result.is_err());
     }
 }

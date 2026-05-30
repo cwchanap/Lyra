@@ -338,3 +338,64 @@ function investigationScene(input: { imagePrompt: string | null }): SceneRecord 
     },
   };
 }
+
+describe("enrichScenesWithAssets — asset existence warnings", () => {
+  it("emits warnings for manifest entries whose expected files do not exist", () => {
+    const cfg = config();
+    const scene: SceneRecord = {
+      chapterId: "chapter_1",
+      file: "scene_0.md",
+      ast: {
+        kind: "linearScene",
+        id: "scene_0",
+        title: "Test",
+        queue: [
+          { kind: "sceneTag", text: "Street", assetCue: { backgroundPrompt: "city", backgroundAssetId: null, bgm: { channel: "bgm", assetId: "rain_mystery_low" }, bgs: null } },
+          { kind: "line", speaker: "早坂茜", text: "Hi", expression: "concerned", portrait: null },
+        ],
+        assetRefs: [],
+        sourceFile: "chapter_1/scene_0.md",
+        line: 1,
+      },
+    };
+    const result = enrichScenesWithAssets({ scenes: [scene], config: cfg });
+    expect(result.errors.length).toBe(0);
+    // The asset files don't exist on disk, so we should get warnings
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.warnings.every((w) => w.code === "assetFileMissing")).toBe(true);
+    const paths = result.warnings.map((w) => w.sourceFile);
+    expect(paths.some((p) => p.includes("assets/backgrounds"))).toBe(true);
+    expect(paths.some((p) => p.includes("assets/audio"))).toBe(true);
+    expect(paths.some((p) => p.includes("assets/portraits"))).toBe(true);
+  });
+
+  it("emits no warnings when disabled config produces empty manifest", () => {
+    const disabledConfig: AssetConfig = {
+      enabled: false,
+      globalStylePrompt: "",
+      types: {
+        background: { dimensions: [1920, 1080], format: "png", transparency: false, prompt: "" },
+        portrait: { dimensions: [768, 1024], format: "png", transparency: true, prompt: "" },
+        evidence: { dimensions: [512, 512], format: "png", transparency: true, prompt: "" },
+        audio: { format: "ogg", loop: true, prompt: "" },
+      },
+      characters: { byId: new Map(), byDisplayName: new Map() },
+      audio: { bgm: new Map(), bgs: new Map() },
+    };
+    const scene: SceneRecord = {
+      chapterId: "chapter_1",
+      file: "scene_0.md",
+      ast: {
+        kind: "linearScene",
+        id: "scene_0",
+        title: "Test",
+        queue: [{ kind: "action", text: "test" }],
+        assetRefs: [],
+        sourceFile: "chapter_1/scene_0.md",
+        line: 1,
+      },
+    };
+    const result = enrichScenesWithAssets({ scenes: [scene], config: disabledConfig });
+    expect(result.warnings.length).toBe(0);
+  });
+});
