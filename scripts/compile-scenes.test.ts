@@ -96,6 +96,30 @@ describe("compile (end-to-end against valid fixture)", () => {
       rmSync(outRoot, { recursive: true, force: true });
     }
   });
+
+  it("emits story asset manifest for an asset-enabled fixture", () => {
+    const outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-assets-scenes-"));
+    const assetOutRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-assets-manifest-"));
+    try {
+      const result = compile({
+        sourceRoot: "scripts/__fixtures__/asset_enabled/stories_plan",
+        outputRoot: outRoot,
+        assetConfigRoot: "scripts/__fixtures__/asset_enabled/assets/config",
+        assetOutputRoot: assetOutRoot,
+      });
+      if (!result.ok) throw new Error("Compile failed:\n" + formatErrors(result.errors));
+      expect(result.assetReport.enabled).toBe(true);
+      expect(result.assetReport.requested.background).toBeGreaterThan(0);
+
+      const manifest = JSON.parse(readFileSync(resolve(assetOutRoot, "manifest.json"), "utf-8"));
+      expect(manifest.enabled).toBe(true);
+      expect(manifest.entries.some((entry: { assetId: string }) => entry.assetId.startsWith("background."))).toBe(true);
+      expect(manifest.entries.some((entry: { assetId: string }) => entry.assetId.startsWith("portrait."))).toBe(true);
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+      rmSync(assetOutRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("snapshot: valid fixture JSON output", () => {

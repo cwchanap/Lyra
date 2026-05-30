@@ -13,6 +13,8 @@ import { checkTauriConfig } from "./compile-scenes/config-check";
 
 const SOURCE_ROOT = resolve(process.cwd(), "static/stories_plan");
 const OUTPUT_ROOT = resolve(process.cwd(), "src-tauri/resources/scenes");
+const ASSET_CONFIG_ROOT = resolve(process.cwd(), "static/assets/config");
+const ASSET_OUTPUT_ROOT = resolve(process.cwd(), "src-tauri/resources/assets");
 
 const args = process.argv.slice(2);
 const isWatch = args.includes("--watch");
@@ -31,11 +33,11 @@ async function main() {
 
   if (isWatch) {
     const chokidar = await import("chokidar");
-    console.log(`[compile-scenes] Watching ${SOURCE_ROOT} for changes…`);
+    console.log(`[compile-scenes] Watching ${SOURCE_ROOT} and ${ASSET_CONFIG_ROOT} for changes...`);
     chokidar
-      .watch(`${SOURCE_ROOT}/**/*.md`, { ignoreInitial: true })
+      .watch([`${SOURCE_ROOT}/**/*.md`, `${ASSET_CONFIG_ROOT}/**/*.yaml`], { ignoreInitial: true })
       .on("all", async (event, path) => {
-        console.log(`[compile-scenes] ${event} ${path} — recompiling.`);
+        console.log(`[compile-scenes] ${event} ${path} - recompiling.`);
         try {
           await runOnce();
         } catch (err) {
@@ -46,7 +48,12 @@ async function main() {
 }
 
 async function runOnce() {
-  const result = compile({ sourceRoot: SOURCE_ROOT, outputRoot: OUTPUT_ROOT });
+  const result = compile({
+    sourceRoot: SOURCE_ROOT,
+    outputRoot: OUTPUT_ROOT,
+    assetConfigRoot: ASSET_CONFIG_ROOT,
+    assetOutputRoot: ASSET_OUTPUT_ROOT,
+  });
   if (!result.ok) {
     console.error("[compile-scenes] FAILED with " + result.errors.length + " error(s):");
     console.error(formatErrors(result.errors));
@@ -54,4 +61,10 @@ async function runOnce() {
     return;
   }
   console.log(`[compile-scenes] OK — ${result.chaptersCompiled} chapter(s), ${result.scenesCompiled} scene(s).`);
+  if (result.assetReport.enabled) {
+    const r = result.assetReport.requested;
+    console.log(
+      `[compile-scenes] Assets - backgrounds ${r.background}, portraits ${r.portrait}, evidence ${r.evidence}, audio ${r.audio}; warnings ${result.assetReport.warnings.length}.`,
+    );
+  }
 }
