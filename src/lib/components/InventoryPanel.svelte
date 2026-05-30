@@ -26,11 +26,11 @@
 
   $effect(() => {
     let cancelled = false;
-    const entries = inventory.evidence.map((e) => [e.id, e.imageAssetId] as const);
-    evidenceImages = Object.fromEntries(entries.map(([id]) => [id, placeholderForStoryAsset("evidence")]));
+    const entries = inventory.evidence
+      .map((e) => [e.id, e.imageAssetId] as const)
+      .filter((entry): entry is [string, string] => !!entry[1]);
 
     for (const [id, imageAssetId] of entries) {
-      if (!imageAssetId) continue;
       resolveStoryAsset(imageAssetId, "evidence").then((asset) => {
         if (!cancelled) {
           evidenceImages = {
