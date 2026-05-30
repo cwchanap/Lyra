@@ -51,6 +51,10 @@ Scene type is inferred from filename prefix — do **not** add a type annotation
 | `investigation_scene_<K>.md` | Interactive investigation (uses `writing-investigation-scene`) |
 | `interrogation_scene_<K>.md` | Authored and compiler-validated interrogation scene (uses `writing-interrogation-scene`) |
 
+## Asset generation scope
+
+The `chapter.md` scene list controls which authored scenes participate in compile-time asset generation. Draft files not listed in the manifest are ignored by the scene compiler and should not be expected to produce asset requests.
+
 ## Parser validation guarantees
 
 The compile-time parser checks the following — the manifest fails the build if any rule is violated:

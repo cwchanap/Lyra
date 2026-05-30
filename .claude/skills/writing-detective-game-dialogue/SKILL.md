@@ -110,6 +110,23 @@ Every `[場景：...]` block must cover:
 
 Keep it concise, concrete, image-promptable.
 
+## Asset metadata when assets are enabled
+
+When the project asset workflow is enabled, every `[場景：...]` tag in a linear scene must be followed immediately by production metadata:
+
+```markdown
+[場景：吉祥寺雨鐘咖啡館，深夜，雨夜。]
+- **Background Prompt:** Rainy midnight exterior of a small Tokyo cafe, warm interior light visible through glass, neo-noir detective visual novel background, no characters, no UI text.
+- **BGM:** rain_mystery_low
+- **BGS:** street_rain
+```
+
+- **Background Prompt:** English production metadata for background generation.
+- **BGM** and **BGS:** IDs from `static/assets/config/audio.yaml`, or `none`.
+- The first scene tag in an asset-enabled corpus must explicitly set both BGM and BGS. Later scene tags may omit a channel to keep the previous value.
+- Writers never write filesystem paths.
+- Dialogue may request speaker expression with `**角色名**[expression_slug]：台詞`. Omitted expression means `standard`.
+
 ## File organisation
 
 Each chapter is split into **one file per scene**. Three authored file kinds exist:

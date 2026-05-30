@@ -74,7 +74,9 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 
 ### Sub-location (H2)
 - **Required:** `Status` (`locked` or `unlocked`)
+- **Required when assets are enabled:** `Background Prompt`
 - **Optional:** `Unlock`, `Reveals` (list)
+- **Optional after first visual unit:** `BGM`, `BGS` (IDs from `static/assets/config/audio.yaml`, or `none`)
 - **Body:** `[場景：...]` tag (mandatory, immediately after metadata), then transition dialogue, then nested H3 Hotspot / Character blocks.
 
 ### Hotspot (H3, inside a Sub-location)
@@ -97,6 +99,7 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 ### Evidence Manifest entry (H3 under `## Evidence Manifest`)
 - **Heading:** `### evidence:<id> {#id}`
 - **Required:** `Name`, `Description`, `Details`
+- **Required when assets are enabled:** `Image Prompt` — English production prompt for the evidence icon. Do not include a path.
 - **Body:**
   - `#### On Collect` (required) — dialogue that plays when this evidence is first added to inventory.
   - `#### On Reexamine` (optional) — dialogue that plays when the player re-opens this item from inventory.
@@ -180,6 +183,7 @@ When the player completes a trigger that has a `Reveals:` list, dialogue plays i
 - **Entry point:** the first `## Sub-location:` block declared in the file is where the player starts. Its `Status` *must* be `unlocked`.
 - **Persistence:** once unlocked, a sub-location stays unlocked for the rest of the scene. Backtracking is allowed.
 - **Scene tag:** every sub-location must have its own `[場景:...]` tag immediately after the metadata. Different physical space → different AI image prompt.
+- **Asset metadata:** `[場景:...]`, `Background Prompt`, and `Image Prompt` are semantic production prompts, not filesystem paths. Writers never author paths.
 - **Transition dialogue:** the body of a sub-location block (between metadata and the first nested H3) plays once on first entry.
 - **First-entry reveals:** `Reveals:` on a sub-location triggers when the player first enters it — useful for environmental discoveries not tied to a specific hotspot.
 - **Character placement:** characters belong to exactly one sub-location. If the same person needs to be in two physical areas, declare them once per sub-location with topics appropriate to that location. Duplication is accepted; it keeps "who is here right now" trivially answerable.
