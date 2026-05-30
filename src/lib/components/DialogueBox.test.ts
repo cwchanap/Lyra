@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { waitFor } from "@testing-library/svelte";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import DialogueBox from "./DialogueBox.svelte";
 import type { DialogueItem, QueueToken } from "../state/types";
 
@@ -11,16 +12,20 @@ function renderDialogueBox(
   overrides?: { disabled?: boolean },
 ) {
   const onAdvance = vi.fn();
-  render(DialogueBox, {
+  const result = render(DialogueBox, {
     current,
     queueToken: token,
     onAdvance,
     ...overrides,
   });
-  return { onAdvance };
+  return { onAdvance, ...result };
 }
 
 describe("DialogueBox", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("renders an action dialogue item", () => {
     renderDialogueBox({ kind: "action", text: "Found evidence." });
     expect(screen.getByText("Found evidence.")).toBeInTheDocument();
@@ -32,6 +37,27 @@ describe("DialogueBox", () => {
     expect(screen.getByText("若月")).toBeInTheDocument();
     expect(screen.getByText("你好。")).toBeInTheDocument();
     expect(screen.getByText(/LINE/)).toBeInTheDocument();
+  });
+
+  it("renders a portrait placeholder when a line portrait image is missing", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false })));
+    const { container } = renderDialogueBox({
+      kind: "line",
+      speaker: "早坂茜",
+      text: "你不舒服？",
+      portrait: {
+        characterId: "hayasaka_akane",
+        expression: "concerned",
+        assetId: "portrait.hayasaka_akane.concerned_component_test",
+      },
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector("img.portrait")).toHaveAttribute(
+        "src",
+        expect.stringContaining("data:image/svg+xml"),
+      );
+    });
   });
 
   it("renders a sceneTag dialogue item", () => {

@@ -1,9 +1,26 @@
 // Mirrors the Rust GameStateView via Tauri's invoke() serialization.
 
+export type PortraitRef = {
+  characterId: string;
+  expression: string;
+  assetId: string;
+};
+
+export type AudioCue = {
+  channel: "bgm" | "bgs";
+  assetId: string | null;
+};
+
+export type VisualAssetCue = {
+  backgroundAssetId: string | null;
+  bgm: AudioCue | null;
+  bgs: AudioCue | null;
+};
+
 export type DialogueItem =
-  | { kind: "sceneTag"; text: string }
+  | { kind: "sceneTag"; text: string; assetCue?: VisualAssetCue | null }
   | { kind: "action"; text: string }
-  | { kind: "line"; speaker: string; text: string };
+  | { kind: "line"; speaker: string; text: string; portrait?: PortraitRef | null };
 
 export type QueueToken = {
   sceneId: string;
@@ -12,9 +29,15 @@ export type QueueToken = {
 };
 
 export type Mode =
-  | { type: "dialogue"; current: DialogueItem; queueRemaining: number; sceneTag: string | null; queueToken: QueueToken }
-  | { type: "explore"; sublocationId: string }
-  | { type: "interrogation"; phaseId: string }
+  | ({
+      type: "dialogue";
+      current: DialogueItem;
+      queueRemaining: number;
+      sceneTag: string | null;
+      queueToken: QueueToken;
+    } & VisualAssetCue)
+  | ({ type: "explore"; sublocationId: string } & VisualAssetCue)
+  | ({ type: "interrogation"; phaseId: string } & VisualAssetCue)
   | { type: "gameComplete" };
 
 export type ChapterView = {
@@ -102,6 +125,7 @@ export type EvidenceRecord = {
   name: string;
   description: string;
   details: string;
+  imageAssetId: string | null;
   onReexamine: DialogueItem[] | null;
   collectedInChapterId: string;
   collectedInSceneId: string;
