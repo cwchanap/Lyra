@@ -39,6 +39,12 @@ export type EvidenceImageCue = {
   imageAssetId: string | null;
 };
 
+export type JSONVisualAssetCue = {
+  backgroundAssetId: string | null;
+  bgm: AudioCue | null;
+  bgs: AudioCue | null;
+};
+
 export type DialogueItem =
   | {
       kind: "sceneTag";
@@ -52,6 +58,21 @@ export type DialogueItem =
       text: string;
       expression?: string | null;
       portrait?: PortraitRef | null;
+    };
+
+export type JSONDialogueItem =
+  | {
+      kind: "sceneTag";
+      text: string;
+      assetCue?: JSONVisualAssetCue | null;
+    }
+  | { kind: "action"; text: string }
+  | {
+      kind: "line";
+      speaker: string;
+      text: string;
+      expression: string | null;
+      portrait: PortraitRef | null;
     };
 
 export type RevealTarget =
@@ -290,7 +311,7 @@ export type JSONLinearScene = {
   type: "linear";
   id: string;
   title: string;
-  queue: DialogueItem[];
+  queue: JSONDialogueItem[];
   assetRefs: AssetRef[];
 };
 
@@ -298,7 +319,7 @@ export type JSONInvestigationScene = {
   type: "investigation";
   id: string;
   title: string;
-  intro: DialogueItem[];
+  intro: JSONDialogueItem[];
   assetRefs: AssetRef[];
   sublocations: Array<{
     id: string;
@@ -307,8 +328,10 @@ export type JSONInvestigationScene = {
     unlock: UnlockExpr | null;
     reveals: RevealTarget[];
     sceneTag: string;
-    assetCue: VisualAssetCue | null;
-    transitionDialogue: DialogueItem[];
+    backgroundAssetId: string | null;
+    bgm: AudioCue | null;
+    bgs: AudioCue | null;
+    transitionDialogue: JSONDialogueItem[];
     hotspots: Array<{
       id: string;
       label: string;
@@ -316,8 +339,8 @@ export type JSONInvestigationScene = {
       status: "locked" | "unlocked";
       unlock: UnlockExpr | null;
       reveals: RevealTarget[];
-      inspectDialogue: DialogueItem[];
-      onReexamine: DialogueItem[] | null;
+      inspectDialogue: JSONDialogueItem[];
+      onReexamine: JSONDialogueItem[] | null;
     }>;
     characters: Array<{
       id: string;
@@ -330,8 +353,8 @@ export type JSONInvestigationScene = {
         status: "locked" | "unlocked";
         unlock: UnlockExpr | null;
         reveals: RevealTarget[];
-        topicDialogue: DialogueItem[];
-        onReexamine: DialogueItem[] | null;
+        topicDialogue: JSONDialogueItem[];
+        onReexamine: JSONDialogueItem[] | null;
       }>;
     }>;
   }>;
@@ -340,20 +363,20 @@ export type JSONInvestigationScene = {
     name: string;
     description: string;
     details: string;
-    imageCue: EvidenceImageCue;
-    onCollect: DialogueItem[];
-    onReexamine: DialogueItem[] | null;
+    imageAssetId: string | null;
+    onCollect: JSONDialogueItem[];
+    onReexamine: JSONDialogueItem[] | null;
   }>;
   statementManifest: Array<{
     id: string;
     speaker: string;
     content: string;
-    onAcquire: DialogueItem[];
-    onReexamine: DialogueItem[] | null;
+    onAcquire: JSONDialogueItem[];
+    onReexamine: JSONDialogueItem[] | null;
   }>;
   outro: {
     unlock: "auto" | UnlockExpr;
-    dialogue: DialogueItem[];
+    dialogue: JSONDialogueItem[];
   };
 };
 
@@ -361,7 +384,7 @@ export type JSONInterrogationScene = {
   type: "interrogation";
   id: string;
   title: string;
-  intro: DialogueItem[];
+  intro: JSONDialogueItem[];
   assetRefs: AssetRef[];
   phases: JSONInterrogationPhase[];
   evidenceManifest: Array<{
@@ -369,20 +392,20 @@ export type JSONInterrogationScene = {
     name: string;
     description: string;
     details: string;
-    imageCue: EvidenceImageCue;
-    onCollect: DialogueItem[];
-    onReexamine: DialogueItem[] | null;
+    imageAssetId: string | null;
+    onCollect: JSONDialogueItem[];
+    onReexamine: JSONDialogueItem[] | null;
   }>;
   statementManifest: Array<{
     id: string;
     speaker: string;
     content: string;
-    onAcquire: DialogueItem[];
-    onReexamine: DialogueItem[] | null;
+    onAcquire: JSONDialogueItem[];
+    onReexamine: JSONDialogueItem[] | null;
   }>;
   outro: {
     unlock: "auto" | InterrogationUnlockExpr;
-    dialogue: DialogueItem[];
+    dialogue: JSONDialogueItem[];
   };
 };
 
@@ -404,8 +427,10 @@ export type JSONInterrogationPhase =
       unlock: InterrogationUnlockExpr | null;
       reveals: InterrogationRevealTarget[];
       sceneTag: string;
-      assetCue: VisualAssetCue | null;
-      entryDialogue: DialogueItem[];
+      backgroundAssetId: string | null;
+      bgm: AudioCue | null;
+      bgs: AudioCue | null;
+      entryDialogue: JSONDialogueItem[];
       complete: "auto" | InterrogationUnlockExpr;
       questions: JSONInquiryQuestion[];
     }
@@ -419,8 +444,10 @@ export type JSONInterrogationPhase =
       unlock: InterrogationUnlockExpr | null;
       reveals: InterrogationRevealTarget[];
       sceneTag: string;
-      assetCue: VisualAssetCue | null;
-      entryDialogue: DialogueItem[];
+      backgroundAssetId: string | null;
+      bgm: AudioCue | null;
+      bgs: AudioCue | null;
+      entryDialogue: JSONDialogueItem[];
       statements: JSONTestimonyStatement[];
       results: JSONTestimonyResult[];
     };
@@ -434,8 +461,8 @@ export type JSONInquiryQuestion = {
   required: boolean;
   unlock: InterrogationUnlockExpr | null;
   reveals: InterrogationRevealTarget[];
-  answerDialogue: DialogueItem[];
-  onReask: DialogueItem[] | null;
+  answerDialogue: JSONDialogueItem[];
+  onReask: JSONDialogueItem[] | null;
 };
 
 export type JSONTestimonyStatement = {
@@ -445,9 +472,9 @@ export type JSONTestimonyStatement = {
   contradiction: InventoryTarget | null;
   onCorrect: string | null;
   onWrong: string | null;
-  onPress: DialogueItem[] | null;
-  onPresent: DialogueItem[] | null;
-  onWrongPresent: DialogueItem[] | null;
+  onPress: JSONDialogueItem[] | null;
+  onPresent: JSONDialogueItem[] | null;
+  onWrongPresent: JSONDialogueItem[] | null;
   reveals: InterrogationRevealTarget[];
 };
 
@@ -455,7 +482,7 @@ export type JSONTestimonyResult = {
   id: string;
   label: string;
   reveals: InterrogationRevealTarget[];
-  dialogue: DialogueItem[];
+  dialogue: JSONDialogueItem[];
 };
 
 // ----- Compile errors --------------------------------------------------------
