@@ -209,9 +209,11 @@ function enrichLine(item: Extract<DialogueItem, { kind: "line" }>, context: Enri
 
 function enrichVisualCue(cue: VisualAssetCue | null, unitId: string, sourceFile: string, line: number, context: EnrichContext): VisualAssetCue | null {
   if (!cue) return null;
+  const bgm = enrichAudioCue(cue.bgm, sourceFile, line, context);
+  const bgs = enrichAudioCue(cue.bgs, sourceFile, line, context);
   if (!cue.backgroundPrompt) {
     context.errors.push(compileError(sourceFile, line, "assetMissingBackgroundPrompt", `Visual unit "${unitId}" requires Background Prompt when assets are enabled.`));
-    return { ...cue };
+    return { ...cue, bgm, bgs };
   }
 
   const backgroundAssetId = cue.backgroundAssetId ?? `background.${context.scene.chapterId}.${context.scene.ast.id}.${unitId}`;
@@ -226,8 +228,8 @@ function enrichVisualCue(cue: VisualAssetCue | null, unitId: string, sourceFile:
   return {
     ...cue,
     backgroundAssetId,
-    bgm: enrichAudioCue(cue.bgm, sourceFile, line, context),
-    bgs: enrichAudioCue(cue.bgs, sourceFile, line, context),
+    bgm,
+    bgs,
   };
 }
 
@@ -248,7 +250,7 @@ function enrichAudioCue(cue: VisualAssetCue["bgm"], sourceFile: string, line: nu
     source: { chapterId: context.scene.chapterId, sceneId: context.scene.ast.id, channel, id: cue.assetId },
     prompt: audio.prompt,
   });
-  return { ...cue };
+  return { ...cue, assetId };
 }
 
 function enrichEvidence(evidence: ASTEvidence, context: EnrichContext): ASTEvidence {
