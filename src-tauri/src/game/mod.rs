@@ -69,14 +69,17 @@ impl LastVisualCue {
     }
 
     fn apply_asset_cue(&mut self, asset_cue: Option<schema::VisualAssetCueJson>) {
-        if let Some(cue) = asset_cue {
+        let Some(cue) = asset_cue else {
+            return;
+        };
+        if cue.background_asset_id.is_some() {
             self.background_asset_id = cue.background_asset_id;
-            self.bgm = cue.bgm;
-            self.bgs = cue.bgs;
-        } else {
-            self.background_asset_id = None;
-            self.bgm = None;
-            self.bgs = None;
+        }
+        if let Some(bgm) = cue.bgm {
+            self.bgm = Some(bgm);
+        }
+        if let Some(bgs) = cue.bgs {
+            self.bgs = Some(bgs);
         }
     }
 }
@@ -578,7 +581,6 @@ impl GameEngine {
             InterrogationPhaseJson::Inquiry {
                 id,
                 scene_tag,
-                asset_cue,
                 entry_dialogue,
                 reveals,
                 ..
@@ -586,14 +588,13 @@ impl GameEngine {
             | InterrogationPhaseJson::Testimony {
                 id,
                 scene_tag,
-                asset_cue,
                 entry_dialogue,
                 reveals,
                 ..
             } => (
                 id.clone(),
                 scene_tag.clone(),
-                asset_cue.clone(),
+                phase.visual_asset_cue(),
                 entry_dialogue.clone(),
                 reveals.clone(),
             ),
@@ -636,7 +637,7 @@ impl GameEngine {
                     (
                         s.id.clone(),
                         s.scene_tag.clone(),
-                        s.asset_cue.clone(),
+                        s.visual_asset_cue(),
                         s.transition_dialogue.clone(),
                         s.reveals.clone(),
                     )
@@ -982,8 +983,8 @@ impl GameEngine {
             }
             let first_entry = !inv.entered_sublocations.contains(sublocation_id);
             (
-                def.scene_tag,
-                def.asset_cue,
+                def.scene_tag.clone(),
+                def.visual_asset_cue(),
                 def.transition_dialogue,
                 def.reveals,
                 first_entry,
@@ -1825,11 +1826,12 @@ impl<'a> unlock::UnlockContext for SceneAndInventoryCtx<'a> {
 mod tests {
     use super::*;
     use crate::game::schema::{
-        AutoMarker, CharacterJson, EvidenceJson, HotspotJson, InterrogationOutroJson,
-        InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationRevealTarget,
-        InterrogationSceneJson, InterrogationUnlockExpr, InventoryTarget, InvestigationSceneJson,
-        LockStatus, OutroJson, OutroUnlock, RevealTarget, SceneType, SubjectJson, SublocationJson,
-        TestimonyResultJson, TestimonyStatementJson, TopicJson, UnlockExpr,
+        AudioChannelJson, AudioCueJson, AutoMarker, CharacterJson, EvidenceJson, HotspotJson,
+        InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
+        InterrogationRevealTarget, InterrogationSceneJson, InterrogationUnlockExpr,
+        InventoryTarget, InvestigationSceneJson, LockStatus, OutroJson, OutroUnlock, RevealTarget,
+        SceneType, SubjectJson, SublocationJson, TestimonyResultJson, TestimonyStatementJson,
+        TopicJson, UnlockExpr, VisualAssetCueJson,
     };
     use crate::game::state::{EvidenceRecord, StatementRecord};
 
@@ -1850,6 +1852,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 transition_dialogue: vec![],
                 hotspots: vec![],
                 characters: vec![],
@@ -1894,6 +1897,184 @@ mod tests {
         }
     }
 
+    #[test]
+    fn flattened_sublocation_asset_fields_reach_explore_view() {
+        let json = r#"{
+            "type": "investigation",
+            "id": "investigation_scene_1",
+            "title": "Investigation",
+            "intro": [],
+            "sublocations": [{
+                "id": "cafe",
+                "label": "Cafe",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "咖啡館",
+                "backgroundAssetId": "background.chapter_1.cafe",
+                "bgm": { "channel": "bgm", "assetId": "audio.bgm.cafe" },
+                "bgs": { "channel": "bgs", "assetId": "audio.bgs.rain" },
+                "transitionDialogue": [],
+                "hotspots": [],
+                "characters": []
+            }],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": { "predicate": "hotspot_investigated", "id": "never" }, "dialogue": [] }
+        }"#;
+        let scene = match serde_json::from_str(json).unwrap() {
+            SceneJson::Investigation(scene) => scene,
+            other => panic!("expected investigation scene, got {other:?}"),
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+
+        engine.prime_initial_queue().unwrap();
+
+        match engine.view().mode {
+            ModeView::Explore {
+                sublocation_id,
+                background_asset_id,
+                bgm,
+                bgs,
+            } => {
+                assert_eq!(sublocation_id, "cafe");
+                assert_eq!(
+                    background_asset_id.as_deref(),
+                    Some("background.chapter_1.cafe")
+                );
+                let bgm = bgm.unwrap();
+                assert_eq!(bgm.channel, "bgm");
+                assert_eq!(bgm.asset_id.as_deref(), Some("audio.bgm.cafe"));
+                let bgs = bgs.unwrap();
+                assert_eq!(bgs.channel, "bgs");
+                assert_eq!(bgs.asset_id.as_deref(), Some("audio.bgs.rain"));
+            }
+            other => panic!("expected explore mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn flattened_interrogation_phase_asset_fields_reach_interrogation_view() {
+        let json = r#"{
+            "type": "interrogation",
+            "id": "interrogation_scene_1",
+            "title": "Interrogation",
+            "intro": [],
+            "phases": [{
+                "kind": "testimony",
+                "id": "phase_1",
+                "label": "證言",
+                "subject": { "id": "witness", "name": "Witness", "role": "Witness", "bio": "Quiet." },
+                "required": true,
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "詢問室",
+                "backgroundAssetId": "background.chapter_1.interrogation",
+                "bgm": { "channel": "bgm", "assetId": "audio.bgm.tension" },
+                "bgs": { "channel": "bgs", "assetId": "audio.bgs.roomtone" },
+                "entryDialogue": [],
+                "statements": [{
+                    "id": "s1",
+                    "label": "證言1",
+                    "content": "我在店裡。",
+                    "contradiction": null,
+                    "onCorrect": null,
+                    "onWrong": null,
+                    "onPress": null,
+                    "onPresent": null,
+                    "onWrongPresent": null,
+                    "reveals": []
+                }],
+                "results": []
+            }],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": { "predicate": "phase_completed", "id": "phase_1" }, "dialogue": [] }
+        }"#;
+        let scene = match serde_json::from_str(json).unwrap() {
+            SceneJson::Interrogation(scene) => scene,
+            other => panic!("expected interrogation scene, got {other:?}"),
+        };
+        let mut engine = GameEngine {
+            resources_dir: PathBuf::new(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Interrogation,
+                    file: "chapter_1/interrogation_scene_1.json".into(),
+                }],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Interrogation(Box::new(InterrogationSceneState::from_json(
+                scene, 1,
+            ))),
+            last_visual_cue: LastVisualCue::default(),
+            inventory: Inventory::default(),
+            next_queue_gen: 2,
+        };
+
+        engine.prime_initial_queue().unwrap();
+
+        match engine.view().mode {
+            ModeView::Interrogation {
+                phase_id,
+                background_asset_id,
+                bgm,
+                bgs,
+            } => {
+                assert_eq!(phase_id, "phase_1");
+                assert_eq!(
+                    background_asset_id.as_deref(),
+                    Some("background.chapter_1.interrogation")
+                );
+                let bgm = bgm.unwrap();
+                assert_eq!(bgm.channel, "bgm");
+                assert_eq!(bgm.asset_id.as_deref(), Some("audio.bgm.tension"));
+                let bgs = bgs.unwrap();
+                assert_eq!(bgs.channel, "bgs");
+                assert_eq!(bgs.asset_id.as_deref(), Some("audio.bgs.roomtone"));
+            }
+            other => panic!("expected interrogation mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn visual_cue_preserves_omitted_audio_channels_and_applies_explicit_stops() {
+        let mut cue = LastVisualCue {
+            scene_tag: Some("old".into()),
+            background_asset_id: Some("background.old".into()),
+            bgm: Some(AudioCueJson {
+                channel: AudioChannelJson::Bgm,
+                asset_id: Some("audio.bgm.old".into()),
+            }),
+            bgs: Some(AudioCueJson {
+                channel: AudioChannelJson::Bgs,
+                asset_id: Some("audio.bgs.old".into()),
+            }),
+        };
+
+        cue.set_scene_tag(
+            "new".into(),
+            Some(VisualAssetCueJson {
+                background_asset_id: Some("background.new".into()),
+                bgm: None,
+                bgs: Some(AudioCueJson {
+                    channel: AudioChannelJson::Bgs,
+                    asset_id: None,
+                }),
+            }),
+        );
+
+        assert_eq!(cue.scene_tag.as_deref(), Some("new"));
+        assert_eq!(cue.background_asset_id.as_deref(), Some("background.new"));
+        assert_eq!(cue.bgm.unwrap().asset_id.as_deref(), Some("audio.bgm.old"));
+        assert_eq!(cue.bgs.unwrap().asset_id, None);
+    }
+
     fn subject() -> SubjectJson {
         SubjectJson {
             id: "suspect".into(),
@@ -1919,6 +2100,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
                 statements: vec![TestimonyStatementJson {
                     id: "statement".into(),
@@ -1966,6 +2148,7 @@ mod tests {
                 }],
                 scene_tag: "interrogation_room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![DialogueItem::Line {
                     speaker: "A".into(),
                     text: "entry".into(),
@@ -2007,6 +2190,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "interrogation_room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![],
@@ -2046,6 +2230,7 @@ mod tests {
                 }],
                 scene_tag: "interrogation_room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![DialogueItem::Line {
                     speaker: "A".into(),
                     text: "entry".into(),
@@ -2104,6 +2289,7 @@ mod tests {
                     }],
                     scene_tag: "early_room".into(),
                     asset_cue: None,
+                    flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                     entry_dialogue: vec![DialogueItem::Line {
                         speaker: "A".into(),
                         text: "early entry".into(),
@@ -2135,6 +2321,7 @@ mod tests {
                     }],
                     scene_tag: "late_room".into(),
                     asset_cue: None,
+                    flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                     entry_dialogue: vec![DialogueItem::Line {
                         speaker: "A".into(),
                         text: "late entry".into(),
@@ -2372,6 +2559,7 @@ mod tests {
                 reveals,
                 scene_tag: "interrogation_room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue,
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![crate::game::schema::InquiryQuestionJson {
@@ -2753,6 +2941,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 transition_dialogue: vec![],
                 hotspots: vec![HotspotJson {
                     id: "desk".into(),
@@ -2815,6 +3004,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 transition_dialogue: vec![],
                 hotspots: vec![HotspotJson {
                     id: "desk".into(),
@@ -2868,6 +3058,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 transition_dialogue: vec![],
                 hotspots: vec![],
                 characters: vec![CharacterJson {
@@ -2926,6 +3117,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 transition_dialogue: vec![],
                 hotspots: vec![],
                 characters: vec![],
@@ -2994,6 +3186,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 transition_dialogue: vec![],
                 hotspots: vec![],
                 characters: vec![],
@@ -3460,6 +3653,7 @@ mod tests {
                 reveals: vec![RevealTarget::Evidence { id: "note".into() }],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 transition_dialogue: vec![],
                 hotspots: vec![],
                 characters: vec![],
@@ -3580,6 +3774,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 transition_dialogue: vec![],
                 hotspots: vec![HotspotJson {
                     id: "desk".into(),
@@ -3697,6 +3892,7 @@ mod tests {
                     reveals: vec![],
                     scene_tag: "room_a".into(),
                     asset_cue: None,
+                    flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                     transition_dialogue: vec![],
                     hotspots: vec![],
                     characters: vec![],
@@ -3709,6 +3905,7 @@ mod tests {
                     reveals: vec![RevealTarget::Evidence { id: "note".into() }],
                     scene_tag: "room_b".into(),
                     asset_cue: None,
+                    flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                     transition_dialogue: vec![],
                     hotspots: vec![],
                     characters: vec![],
@@ -3758,6 +3955,7 @@ mod tests {
                 reveals: vec![RevealTarget::Evidence { id: "note".into() }],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 transition_dialogue: vec![],
                 hotspots: vec![],
                 characters: vec![],
@@ -3853,6 +4051,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
                 statements: vec![TestimonyStatementJson {
                     id: "s1".into(),
@@ -4003,6 +4202,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
                 statements: vec![TestimonyStatementJson {
                     id: "s1".into(),
