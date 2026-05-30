@@ -83,7 +83,9 @@ Field labels are English. Reserved metadata values are English (`inquiry`, `test
 ### Phase (H2)
 - **Heading:** `## Phase: <label> {#phase_id}`
 - **Required:** `Kind` (`inquiry` or `testimony`)
+- **Required when assets are enabled:** `Background Prompt`
 - **Optional:** `Required` (`true` or `false`, defaults to `true`), `Status` (`locked` or `unlocked`, defaults to `unlocked`), `Unlock`, `Reveals`, `Complete` (inquiry phases only, defaults to `auto`)
+- **Optional after first visual unit:** `BGM`, `BGS` (IDs from `static/assets/config/audio.yaml`, or `none`)
 - **Body:** exactly one `[場景：...]` tag, then optional entry dialogue, then one `### Subject:` and the phase-specific blocks.
 
 Use `Required: false` for optional branches. If a phase has `Unlock`, its `Status` must be `locked`. A locked phase must be reachable by either its own `Unlock` or an inbound `Reveals` target from an earlier reachable block.
@@ -186,8 +188,10 @@ Hotspot, topic, and sub-location predicates are investigation-only. Do not use t
 
 Use the same manifest entry formats as `writing-investigation-scene`:
 
-- `### evidence:<id> {#id}` with `Name`, `Description`, `Details`, required `#### On Collect`, optional `#### On Reexamine`
+- `### evidence:<id> {#id}` with `Name`, `Description`, `Details`, required `Image Prompt` when assets are enabled, required `#### On Collect`, optional `#### On Reexamine`
 - `### statement:<id> {#id}` with `Speaker`, `Content`, required `#### On Acquire`, optional `#### On Reexamine`
+
+`Image Prompt` is an English production prompt for the evidence icon. Do not include a path. Phase scene tags and background prompts are semantic production prompts, not filesystem paths; writers never author paths.
 
 Contradictions can use evidence or statements from earlier guaranteed scenes, or from this interrogation scene if the item is obtainable before the testimony phase. If the compiler cannot prove the item is guaranteed, the build fails.
 
