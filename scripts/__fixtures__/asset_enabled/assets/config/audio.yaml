@@ -1,0 +1,11 @@
+bgm:
+  rain_mystery_low:
+    prompt: low tension detective cue, sparse piano, quiet synth pulse
+    loop: true
+bgs:
+  street_rain:
+    prompt: steady Tokyo street rain with distant traffic
+    loop: true
+  indoor_rain_window:
+    prompt: muffled rain against cafe windows and soft room tone
+    loop: true

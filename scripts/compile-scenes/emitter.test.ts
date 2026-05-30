@@ -29,7 +29,7 @@ describe("emitter", () => {
       id: "scene_0",
       title: "接案",
       queue: [
-        { kind: "sceneTag", text: "街道" },
+        { kind: "sceneTag", text: "街道", assetCue: null },
         { kind: "line", speaker: "A", text: "hi", expression: null, portrait: null },
         { kind: "line", speaker: "B", text: "worried", expression: "concerned", portrait: null },
       ],
@@ -86,16 +86,10 @@ describe("emitter", () => {
     expect(json.outro.unlock).toBe("auto");
     expect(json.type).toBe("investigation");
     expect(json.assetRefs).toEqual([{ type: "evidence", assetId: "evidence_photo" }]);
-    expect(json.sublocations[0]?.assetCue).toEqual({
-      backgroundPrompt: "rainy room",
-      backgroundAssetId: "bg_room",
-      bgm: { channel: "bgm", assetId: "music_room" },
-      bgs: { channel: "bgs", assetId: null },
-    });
-    expect(json.evidenceManifest[0]?.imageCue).toEqual({
-      imagePrompt: "wet photo",
-      imageAssetId: "evidence_photo",
-    });
+    expect(json.sublocations[0]?.backgroundAssetId).toBe("bg_room");
+    expect(json.sublocations[0]?.bgm).toEqual({ channel: "bgm", assetId: "music_room" });
+    expect(json.sublocations[0]?.bgs).toEqual({ channel: "bgs", assetId: null });
+    expect(json.evidenceManifest[0]?.imageAssetId).toBe("evidence_photo");
   });
 
   it("emits interrogation scene JSON", () => {
@@ -154,19 +148,13 @@ describe("emitter", () => {
         kind: "inquiry",
         id: "p",
         subject: { id: "suspect" },
-        assetCue: {
-          backgroundPrompt: null,
-          backgroundAssetId: "bg_interrogation_room",
-          bgm: null,
-          bgs: { channel: "bgs", assetId: "rain_loop" },
-        },
+        backgroundAssetId: "bg_interrogation_room",
+        bgm: null,
+        bgs: { channel: "bgs", assetId: "rain_loop" },
       }],
       evidenceManifest: [{
         id: "recording",
-        imageCue: {
-          imagePrompt: null,
-          imageAssetId: "evidence_recording",
-        },
+        imageAssetId: "evidence_recording",
       }],
     });
   });

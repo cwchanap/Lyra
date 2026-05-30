@@ -1,0 +1,23 @@
+assets:
+  enabled: true
+globalStyle:
+  prompt: Neo-noir Tokyo detective visual novel, rainy atmosphere, cinematic but grounded, no text in generated images.
+types:
+  background:
+    dimensions: [1920, 1080]
+    format: png
+    transparency: false
+    prompt: Wide background plate, no foreground dialogue character, no UI.
+  portrait:
+    dimensions: [768, 1024]
+    format: png
+    transparency: true
+    prompt: Half-body visual novel portrait, transparent background, consistent face.
+  evidence:
+    dimensions: [512, 512]
+    format: png
+    transparency: true
+    prompt: Isolated evidence icon, readable silhouette, transparent background.
+  audio:
+    format: ogg
+    loop: true

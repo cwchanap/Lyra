@@ -28,6 +28,11 @@ exports[`snapshot: valid fixture JSON output matches the linear scene snapshot 1
   "id": "scene_0",
   "queue": [
     {
+      "assetCue": {
+        "backgroundAssetId": null,
+        "bgm": null,
+        "bgs": null,
+      },
       "kind": "sceneTag",
       "text": "測試場景前廳，深夜。",
     },
@@ -50,6 +55,11 @@ exports[`snapshot: valid fixture JSON output matches the linear scene snapshot 1
       "text": "好。",
     },
     {
+      "assetCue": {
+        "backgroundAssetId": null,
+        "bgm": null,
+        "bgs": null,
+      },
       "kind": "sceneTag",
       "text": "測試場景內室。",
     },
@@ -74,10 +84,7 @@ exports[`snapshot: valid fixture JSON output matches the investigation scene sna
       "description": "一杯仍微熱的咖啡。",
       "details": "杯壁溫度約 50°C，最近 10 分鐘內被沖泡。",
       "id": "coffee",
-      "imageCue": {
-        "imageAssetId": null,
-        "imagePrompt": null,
-      },
+      "imageAssetId": null,
       "name": "還熱的咖啡",
       "onCollect": [
         {
@@ -102,10 +109,7 @@ exports[`snapshot: valid fixture JSON output matches the investigation scene sna
       "description": "櫥櫃內的金屬盒。",
       "details": "盒身有刻字，但鎖未撬開。",
       "id": "locked_box",
-      "imageCue": {
-        "imageAssetId": null,
-        "imagePrompt": null,
-      },
+      "imageAssetId": null,
       "name": "上鎖的小盒",
       "onCollect": [
         {
@@ -186,7 +190,9 @@ exports[`snapshot: valid fixture JSON output matches the investigation scene sna
   ],
   "sublocations": [
     {
-      "assetCue": null,
+      "backgroundAssetId": null,
+      "bgm": null,
+      "bgs": null,
       "characters": [
         {
           "bio": "案發時在現場的證人。",
@@ -331,7 +337,9 @@ exports[`snapshot: valid fixture JSON output matches the investigation scene sna
       "unlock": null,
     },
     {
-      "assetCue": null,
+      "backgroundAssetId": null,
+      "bgm": null,
+      "bgs": null,
       "characters": [],
       "hotspots": [
         {

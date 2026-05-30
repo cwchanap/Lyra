@@ -11,9 +11,12 @@ import type {
   ASTLinearScene,
   DialogueItem,
   JSONChaptersIndex,
+  JSONDialogueItem,
   JSONInterrogationScene,
   JSONInvestigationScene,
   JSONLinearScene,
+  JSONVisualAssetCue,
+  VisualAssetCue,
 } from "./types";
 
 export function emitLinearScene(ast: ASTLinearScene): JSONLinearScene {
@@ -40,7 +43,7 @@ export function emitInvestigationScene(ast: ASTInvestigationScene): JSONInvestig
       unlock: sub.unlock,
       reveals: sub.reveals,
       sceneTag: sub.sceneTag,
-      assetCue: sub.assetCue,
+      ...emitVisualFields(sub.assetCue),
       transitionDialogue: emitDialogueItems(sub.transitionDialogue),
       hotspots: sub.hotspots.map((h) => ({
         id: h.id,
@@ -73,7 +76,7 @@ export function emitInvestigationScene(ast: ASTInvestigationScene): JSONInvestig
       name: e.name,
       description: e.description,
       details: e.details,
-      imageCue: e.imageCue,
+      imageAssetId: e.imageCue.imageAssetId,
       onCollect: emitDialogueItems(e.onCollect),
       onReexamine: emitNullableDialogueItems(e.onReexamine),
     })),
@@ -113,7 +116,7 @@ export function emitInterrogationScene(ast: ASTInterrogationScene): JSONInterrog
         unlock: phase.unlock,
         reveals: phase.reveals,
         sceneTag: phase.sceneTag,
-        assetCue: phase.assetCue,
+        ...emitVisualFields(phase.assetCue),
         entryDialogue: emitDialogueItems(phase.entryDialogue),
       };
       if (phase.kind === "inquiry") {
@@ -163,7 +166,7 @@ export function emitInterrogationScene(ast: ASTInterrogationScene): JSONInterrog
       name: e.name,
       description: e.description,
       details: e.details,
-      imageCue: e.imageCue,
+      imageAssetId: e.imageCue.imageAssetId,
       onCollect: emitDialogueItems(e.onCollect),
       onReexamine: emitNullableDialogueItems(e.onReexamine),
     })),
@@ -181,20 +184,43 @@ export function emitInterrogationScene(ast: ASTInterrogationScene): JSONInterrog
   };
 }
 
-function emitDialogueItems(items: DialogueItem[]): DialogueItem[] {
+function emitDialogueItems(items: DialogueItem[]): JSONDialogueItem[] {
   return items.map(emitDialogueItem);
 }
 
-function emitNullableDialogueItems(items: DialogueItem[] | null): DialogueItem[] | null {
+function emitNullableDialogueItems(items: DialogueItem[] | null): JSONDialogueItem[] | null {
   return items ? emitDialogueItems(items) : null;
 }
 
-function emitDialogueItem(item: DialogueItem): DialogueItem {
+function emitDialogueItem(item: DialogueItem): JSONDialogueItem {
+  if (item.kind === "sceneTag") {
+    return {
+      ...item,
+      assetCue: emitVisualAssetCue(item.assetCue ?? null),
+    };
+  }
   if (item.kind !== "line") return item;
   return {
     ...item,
     expression: item.expression ?? null,
     portrait: item.portrait ?? null,
+  };
+}
+
+function emitVisualAssetCue(cue: VisualAssetCue | null): JSONVisualAssetCue | null {
+  if (!cue) return null;
+  return {
+    backgroundAssetId: cue.backgroundAssetId,
+    bgm: cue.bgm,
+    bgs: cue.bgs,
+  };
+}
+
+function emitVisualFields(cue: VisualAssetCue | null): JSONVisualAssetCue {
+  return {
+    backgroundAssetId: cue?.backgroundAssetId ?? null,
+    bgm: cue?.bgm ?? null,
+    bgs: cue?.bgs ?? null,
   };
 }
 
