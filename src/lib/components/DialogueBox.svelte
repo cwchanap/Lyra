@@ -54,48 +54,55 @@
 
 <svelte:window onkeydown={handleKey} />
 
-<button
-  class="box"
-  class:scene={current.kind === "sceneTag"}
-  class:action={current.kind === "action"}
-  class:line={current.kind === "line"}
-  onclick={handleClick}
-  type="button"
-  aria-label="推進對話"
-  {disabled}
->
-  {#if current.kind === "sceneTag"}
-    <span class="kind">場 · SCENE</span>
-    <p class="text-scene">（場景切換）</p>
-  {:else if current.kind === "action"}
-    <span class="kind">敘述 · NARRATION</span>
-    <p class="text-action">{current.text}</p>
-  {:else if current.kind === "line"}
-    {#if portraitAsset}
-      <img class="portrait" src={portraitAsset.url} alt="" aria-hidden="true" onerror={handlePortraitError} />
-    {/if}
-    <div class="line-grid">
-      <div class="speaker-block">
-        <span class="kind">發言 · LINE</span>
-        <span class="speaker">{current.speaker}</span>
-      </div>
-      <p class="text-line">{current.text}</p>
-    </div>
+<div class="wrapper" class:line={current.kind === "line"}>
+  {#if current.kind === "line" && portraitAsset}
+    <img class="portrait" src={portraitAsset.url} alt="" aria-hidden="true" onerror={handlePortraitError} />
   {/if}
+  <button
+    class="box"
+    class:scene={current.kind === "sceneTag"}
+    class:action={current.kind === "action"}
+    class:line={current.kind === "line"}
+    onclick={handleClick}
+    type="button"
+    aria-label="推進對話"
+    {disabled}
+  >
+    {#if current.kind === "sceneTag"}
+      <span class="kind">場 · SCENE</span>
+      <p class="text-scene">（場景切換）</p>
+    {:else if current.kind === "action"}
+      <span class="kind">敘述 · NARRATION</span>
+      <p class="text-action">{current.text}</p>
+    {:else if current.kind === "line"}
+      <div class="line-grid">
+        <div class="speaker-block">
+          <span class="kind">發言 · LINE</span>
+          <span class="speaker">{current.speaker}</span>
+        </div>
+        <p class="text-line">{current.text}</p>
+      </div>
+    {/if}
 
-  <div class="hint">
-    <span class="key">Space</span>
-    <span class="arrow">▶</span>
-  </div>
-</button>
+    <div class="hint">
+      <span class="key">Space</span>
+      <span class="arrow">▶</span>
+    </div>
+  </button>
+</div>
 
 <style>
-  .box {
+  .wrapper {
     position: fixed;
     left: 50%;
     bottom: 28px;
     transform: translateX(-50%);
     width: min(960px, calc(100vw - 56px));
+    z-index: 30;
+  }
+
+  .box {
+    width: 100%;
     padding: 22px 28px 24px;
     background: rgba(20, 20, 31, 0.94);
     color: var(--bone);
@@ -113,7 +120,6 @@
     cursor: pointer;
     font: inherit;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
-    z-index: 30;
     transition: border-color 0.2s, background 0.2s;
   }
 
@@ -136,6 +142,7 @@
     object-fit: contain;
     pointer-events: none;
     filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.58));
+    z-index: 1;
   }
 
   .kind {
