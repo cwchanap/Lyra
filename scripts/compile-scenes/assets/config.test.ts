@@ -277,4 +277,62 @@ characters:
       expect(result.value.characters.byId.get("draft")?.expressions.size).toBe(0);
     });
   });
+
+  it("warns when character id is present but not a string", () => {
+    withConfig({
+      "policy.yaml": "assets:\n  enabled: false\n",
+      "characters.yaml": `
+characters:
+  - id: 42
+    displayNames: ["數字"]
+`,
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.warnings.some((w) => w.code === "assetConfigWrongType" && w.message.includes('"id"'))).toBe(true);
+    });
+  });
+
+  it("warns when displayNames entry is not a string", () => {
+    withConfig({
+      "policy.yaml": "assets:\n  enabled: false\n",
+      "characters.yaml": `
+characters:
+  - id: test
+    displayNames: [42, "valid"]
+`,
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.warnings.some((w) => w.code === "assetConfigWrongType" && w.message.includes('"displayNames"'))).toBe(true);
+      // The valid string entry is still parsed
+      expect(result.value.characters.byDisplayName.has("valid")).toBe(true);
+    });
+  });
+
+  it("warns when type dimensions are present but malformed", () => {
+    withConfig({
+      "policy.yaml": `
+assets:
+  enabled: false
+types:
+  background:
+    dimensions: "not-array"
+    format: png
+`,
+      "characters.yaml": "characters: []\n",
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.warnings.some((w) => w.code === "assetConfigWrongType" && w.message.includes('"types.background.dimensions"'))).toBe(true);
+      // Falls back to default dimensions
+      expect(result.value.types.background.dimensions).toEqual([1920, 1080]);
+    });
+  });
 });

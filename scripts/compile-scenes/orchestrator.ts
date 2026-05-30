@@ -175,10 +175,11 @@ export function compile(opts: CompileOptions): CompileResult {
 
   let manifestToWrite: AssetManifest | null = null;
   if (assetConfig.ok) {
+    const configWarnings = assetConfig.warnings;
     const enriched = enrichScenesWithAssets({ scenes, config: assetConfig.value });
     scenes.splice(0, scenes.length, ...enriched.scenes);
     errors.push(...enriched.errors);
-    assetReport = makeAssetReport(enriched.manifest, enriched.warnings);
+    assetReport = makeAssetReport(enriched.manifest, [...configWarnings, ...enriched.warnings]);
     manifestToWrite = enriched.manifest;
   }
 

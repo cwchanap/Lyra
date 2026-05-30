@@ -1,5 +1,5 @@
 // src-tauri/src/game/view.rs
-use crate::game::schema::DialogueItem;
+use crate::game::schema::{AudioChannelJson, DialogueItem};
 use crate::game::state::Inventory;
 use serde::{Deserialize, Serialize};
 
@@ -46,7 +46,7 @@ pub enum ModeView {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioCueView {
-    pub channel: String,
+    pub channel: AudioChannelJson,
     pub asset_id: Option<String>,
 }
 
