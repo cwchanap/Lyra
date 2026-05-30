@@ -9,9 +9,11 @@ describe("story asset manifest paths", () => {
 
   it("maps background asset IDs to nested background paths", () => {
     expect(publicPath("background.chapter_1.scene_0.tag_001", "background")).toBe("/assets/backgrounds/chapter_1/scene_0/tag_001.png");
+    expect(expectedPath("background.chapter_1.scene_0.tag_001", "background")).toBe("static/assets/backgrounds/chapter_1/scene_0/tag_001.png");
   });
 
   it("maps audio asset IDs by channel", () => {
     expect(publicPath("audio.bgm.rain_mystery_low", "audio")).toBe("/assets/audio/bgm/rain_mystery_low.ogg");
+    expect(expectedPath("audio.bgm.rain_mystery_low", "audio")).toBe("static/assets/audio/bgm/rain_mystery_low.ogg");
   });
 });
