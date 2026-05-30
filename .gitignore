@@ -18,6 +18,8 @@ vite.config.ts.timestamp-*
 
 src-tauri/resources/scenes/*
 !src-tauri/resources/scenes/.gitkeep
+src-tauri/resources/assets/*
+!src-tauri/resources/assets/.gitkeep
 .claude/settings.local.json
 .devin/config.local.json
 .tmp-*
