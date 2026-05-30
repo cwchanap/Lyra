@@ -200,6 +200,46 @@ describe("enrichScenesWithAssets", () => {
     expect(result.errors.some((e) => e.code === "assetUnknownExpression")).toBe(true);
   });
 
+  it("errors for expression on no-portrait speaker", () => {
+    const noPortraitConfig = config();
+    const noPortraitCharacter = {
+      id: "narrator",
+      displayNames: ["旁白"],
+      portraitMode: "none" as const,
+      visualPrompt: null,
+      referenceAssetId: null,
+      expressions: new Map(),
+    };
+    noPortraitConfig.characters.byId.set("narrator", noPortraitCharacter);
+    noPortraitConfig.characters.byDisplayName.set("旁白", noPortraitCharacter);
+    const scenes = [linearScene([
+      { kind: "line", speaker: "旁白", expression: "concerned", portrait: null, text: "hi" },
+    ])];
+    const result = enrichScenesWithAssets({ scenes, config: noPortraitConfig });
+    expect(result.errors.some((e) => e.code === "assetExpressionOnNoPortraitSpeaker")).toBe(true);
+    const line = result.scenes[0]?.ast.kind === "linearScene" ? result.scenes[0].ast.queue[0] : null;
+    expect(line?.kind === "line" ? line.portrait : undefined).toBeNull();
+  });
+
+  it("does not error for no-portrait speaker without expression", () => {
+    const noPortraitConfig = config();
+    const noPortraitCharacter = {
+      id: "narrator",
+      displayNames: ["旁白"],
+      portraitMode: "none" as const,
+      visualPrompt: null,
+      referenceAssetId: null,
+      expressions: new Map(),
+    };
+    noPortraitConfig.characters.byId.set("narrator", noPortraitCharacter);
+    noPortraitConfig.characters.byDisplayName.set("旁白", noPortraitCharacter);
+    const scenes = [linearScene([
+      { kind: "line", speaker: "旁白", expression: null, portrait: null, text: "hi" },
+    ])];
+    const result = enrichScenesWithAssets({ scenes, config: noPortraitConfig });
+    expect(result.errors.some((e) => e.code === "assetExpressionOnNoPortraitSpeaker")).toBe(false);
+  });
+
   it("errors for unknown audio while still reporting missing background prompts", () => {
     const scenes = [linearScene([
       {

@@ -185,7 +185,12 @@ function enrichLine(item: Extract<DialogueItem, { kind: "line" }>, context: Enri
     context.errors.push(compileError(context.scene.ast.sourceFile, context.scene.ast.line, "assetUnknownSpeaker", `Unknown speaker "${item.speaker}" in asset-enabled scene.`));
     return { ...item, portrait: null };
   }
-  if (character.portraitMode === "none") return { ...item, portrait: null };
+  if (character.portraitMode === "none") {
+    if (item.expression) {
+      context.errors.push(compileError(context.scene.ast.sourceFile, context.scene.ast.line, "assetExpressionOnNoPortraitSpeaker", `Speaker "${item.speaker}" does not support portrait expressions.`));
+    }
+    return { ...item, portrait: null };
+  }
 
   const expression = item.expression ?? "standard";
   const expressionConfig = character.expressions.get(expression);
