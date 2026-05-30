@@ -314,6 +314,70 @@ characters:
     });
   });
 
+  it("rejects unsupported image format in type policy", () => {
+    withConfig({
+      "policy.yaml": `
+assets:
+  enabled: false
+types:
+  background:
+    format: webp
+`,
+      "characters.yaml": "characters: []\n",
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.some((e) => e.code === "assetPolicyUnsupportedFormat" && e.message.includes("webp"))).toBe(true);
+    });
+  });
+
+  it("rejects unsupported audio format in type policy", () => {
+    withConfig({
+      "policy.yaml": `
+assets:
+  enabled: false
+types:
+  audio:
+    format: mp3
+`,
+      "characters.yaml": "characters: []\n",
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.some((e) => e.code === "assetPolicyUnsupportedFormat" && e.message.includes("mp3"))).toBe(true);
+    });
+  });
+
+  it("accepts default formats without error", () => {
+    withConfig({
+      "policy.yaml": `
+assets:
+  enabled: false
+types:
+  background:
+    format: png
+  portrait:
+    format: png
+  evidence:
+    format: png
+  audio:
+    format: ogg
+`,
+      "characters.yaml": "characters: []\n",
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.types.background.format).toBe("png");
+      expect(result.value.types.audio.format).toBe("ogg");
+    });
+  });
+
   it("warns when type dimensions are present but malformed", () => {
     withConfig({
       "policy.yaml": `
