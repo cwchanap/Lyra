@@ -75,7 +75,12 @@
           <p class="empty">尚未收集。</p>
         {/if}
         {#each inventory.evidence as e, i (e.id)}
-          <button type="button" disabled={!reexamineEnabled || disabled} onclick={() => onReexamineEvidence(e.id)}>
+          <button
+            class="evidence-row"
+            type="button"
+            disabled={!reexamineEnabled || disabled}
+            onclick={() => onReexamineEvidence(e.id)}
+          >
             <span class="num">{String(i + 1).padStart(2, "0")}</span>
             {#if evidenceImages[e.id]}
               <img class="evidence-thumb" src={evidenceImages[e.id].url} alt="" aria-hidden="true" />
@@ -97,7 +102,12 @@
           <p class="empty">尚未取得。</p>
         {/if}
         {#each inventory.statements as s, i (s.id)}
-          <button type="button" disabled={!reexamineEnabled || disabled} onclick={() => onReexamineStatement(s.id)}>
+          <button
+            class="statement-row"
+            type="button"
+            disabled={!reexamineEnabled || disabled}
+            onclick={() => onReexamineStatement(s.id)}
+          >
             <span class="num">{String(i + 1).padStart(2, "0")}</span>
             <span class="entry">
               <strong>{s.speaker}</strong>
@@ -271,7 +281,7 @@
 
   section button {
     display: grid;
-    grid-template-columns: 32px 36px 1fr;
+    grid-template-columns: 32px 1fr;
     gap: 10px;
     width: 100%;
     text-align: left;
@@ -283,6 +293,10 @@
     cursor: pointer;
     font: inherit;
     transition: border-color 0.18s, background 0.18s;
+  }
+
+  section button.evidence-row {
+    grid-template-columns: 32px 36px 1fr;
   }
 
   section button:hover:not(:disabled) {

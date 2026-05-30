@@ -54,4 +54,21 @@ describe("InventoryPanel", () => {
       );
     });
   });
+
+  it("keeps statement rows on the non-thumbnail layout", async () => {
+    const user = userEvent.setup();
+
+    render(InventoryPanel, {
+      inventory,
+      reexamineEnabled: true,
+      onReexamineEvidence: vi.fn(),
+      onReexamineStatement: vi.fn(),
+    });
+
+    await user.click(screen.getByRole("button", { name: /EVIDENCE/ }));
+
+    const statementRow = screen.getByRole("button", { name: /若月/ });
+    expect(statementRow).toHaveClass("statement-row");
+    expect(statementRow.querySelector("img.evidence-thumb")).not.toBeInTheDocument();
+  });
 });
