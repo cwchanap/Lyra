@@ -5,10 +5,12 @@
 // Schema (see writing-detective-game-dialogue "Linear scene file format"):
 //   # Scene N: <title>
 //   <dialogue items in source order>
-// No H2+ headings, no metadata.
+// No H2+ headings. Metadata is allowed only as immediate visual/audio asset
+// cue metadata after a scene tag.
 // =============================================================================
 
 import { tokenize, type Token } from "./tokenizer";
+import { parseVisualAssetCue, rejectUnknownAssetMetadata, VISUAL_ASSET_METADATA_KEYS } from "./parser-assets";
 import type { ASTLinearScene, CompileError, DialogueItem } from "./types";
 
 export type LinearParseResult =
@@ -57,9 +59,21 @@ export function parseLinearScene(
           "linearSceneHasMetadata",
           `Linear scenes have no metadata. Found: ${tok.key}.`,
         );
-      case "sceneTag":
-        queue.push({ kind: "sceneTag", text: tok.text });
+      case "sceneTag": {
+        const meta: Record<string, string> = {};
+        const metadataLines: Record<string, number> = {};
+        while (tokens[i + 1]?.kind === "metadata") {
+          const next = tokens[++i]!;
+          if (next.kind === "metadata") {
+            meta[next.key] = next.value;
+            metadataLines[next.key] = next.line;
+          }
+        }
+        const bad = rejectUnknownAssetMetadata(meta, VISUAL_ASSET_METADATA_KEYS, sourceFile, tok.line, metadataLines);
+        if (bad) return { ok: false, error: bad };
+        queue.push({ kind: "sceneTag", text: tok.text, assetCue: parseVisualAssetCue(meta) });
         break;
+      }
       case "action":
         queue.push({ kind: "action", text: tok.text });
         break;
