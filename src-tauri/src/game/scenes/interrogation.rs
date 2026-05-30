@@ -335,6 +335,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![crate::game::schema::InquiryQuestionJson {
@@ -374,6 +375,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
                 statements: vec![TestimonyStatementJson {
                     id: "cleaning_button".into(),
@@ -438,6 +440,7 @@ mod tests {
             reveals,
             scene_tag,
             asset_cue: None,
+            flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
             entry_dialogue,
             complete,
             questions,
@@ -471,6 +474,7 @@ mod tests {
             reveals,
             scene_tag,
             asset_cue: None,
+            flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
             entry_dialogue,
             complete,
             questions,
@@ -550,6 +554,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![
@@ -623,6 +628,7 @@ mod tests {
                     reveals: vec![],
                     scene_tag: "room".into(),
                 asset_cue: None,
+                    flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                     entry_dialogue: vec![],
                     complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                     questions: vec![crate::game::schema::InquiryQuestionJson {
@@ -716,6 +722,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![crate::game::schema::InquiryQuestionJson {
@@ -804,6 +811,7 @@ mod tests {
                 reveals: vec![],
                 scene_tag: "room".into(),
                 asset_cue: None,
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![

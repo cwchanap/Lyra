@@ -50,7 +50,7 @@ pub enum AudioChannelJson {
     Bgs,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisualAssetCueJson {
     #[serde(default)]
@@ -59,6 +59,12 @@ pub struct VisualAssetCueJson {
     pub bgm: Option<AudioCueJson>,
     #[serde(default)]
     pub bgs: Option<AudioCueJson>,
+}
+
+impl VisualAssetCueJson {
+    pub fn is_empty(&self) -> bool {
+        self.background_asset_id.is_none() && self.bgm.is_none() && self.bgs.is_none()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -349,6 +355,8 @@ pub enum InterrogationPhaseJson {
         scene_tag: String,
         #[serde(default)]
         asset_cue: Option<VisualAssetCueJson>,
+        #[serde(flatten)]
+        flattened_asset_cue: VisualAssetCueJson,
         entry_dialogue: Vec<DialogueItem>,
         complete: InterrogationOutroUnlock,
         questions: Vec<InquiryQuestionJson>,
@@ -364,6 +372,8 @@ pub enum InterrogationPhaseJson {
         scene_tag: String,
         #[serde(default)]
         asset_cue: Option<VisualAssetCueJson>,
+        #[serde(flatten)]
+        flattened_asset_cue: VisualAssetCueJson,
         entry_dialogue: Vec<DialogueItem>,
         statements: Vec<TestimonyStatementJson>,
         results: Vec<TestimonyResultJson>,
@@ -436,9 +446,38 @@ pub struct SublocationJson {
     pub scene_tag: String,
     #[serde(default)]
     pub asset_cue: Option<VisualAssetCueJson>,
+    #[serde(flatten)]
+    pub flattened_asset_cue: VisualAssetCueJson,
     pub transition_dialogue: Vec<DialogueItem>,
     pub hotspots: Vec<HotspotJson>,
     pub characters: Vec<CharacterJson>,
+}
+
+impl SublocationJson {
+    pub fn visual_asset_cue(&self) -> Option<VisualAssetCueJson> {
+        self.asset_cue.clone().or_else(|| {
+            (!self.flattened_asset_cue.is_empty()).then(|| self.flattened_asset_cue.clone())
+        })
+    }
+}
+
+impl InterrogationPhaseJson {
+    pub fn visual_asset_cue(&self) -> Option<VisualAssetCueJson> {
+        match self {
+            Self::Inquiry {
+                asset_cue,
+                flattened_asset_cue,
+                ..
+            }
+            | Self::Testimony {
+                asset_cue,
+                flattened_asset_cue,
+                ..
+            } => asset_cue
+                .clone()
+                .or_else(|| (!flattened_asset_cue.is_empty()).then(|| flattened_asset_cue.clone())),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
