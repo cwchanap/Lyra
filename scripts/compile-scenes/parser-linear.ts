@@ -64,7 +64,13 @@ export function parseLinearScene(
         queue.push({ kind: "action", text: tok.text });
         break;
       case "dialogue":
-        queue.push({ kind: "line", speaker: tok.speaker, text: tok.text });
+        queue.push({
+          kind: "line",
+          speaker: tok.speaker,
+          text: tok.text,
+          expression: tok.expression,
+          portrait: null,
+        });
         break;
       case "unknown":
         return fail(
@@ -92,6 +98,7 @@ export function parseLinearScene(
       id,
       title,
       queue,
+      assetRefs: [],
       sourceFile,
       line: titleToken.line,
     },

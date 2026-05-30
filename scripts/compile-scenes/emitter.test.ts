@@ -17,7 +17,9 @@ describe("emitter", () => {
       queue: [
         { kind: "sceneTag", text: "街道" },
         { kind: "line", speaker: "A", text: "hi" },
+        { kind: "line", speaker: "B", text: "worried", expression: "concerned" },
       ],
+      assetRefs: [{ type: "background", assetId: "bg_street" }],
       sourceFile: "scene_0.md",
       line: 1,
     };
@@ -28,8 +30,10 @@ describe("emitter", () => {
       title: "接案",
       queue: [
         { kind: "sceneTag", text: "街道" },
-        { kind: "line", speaker: "A", text: "hi" },
+        { kind: "line", speaker: "A", text: "hi", expression: null, portrait: null },
+        { kind: "line", speaker: "B", text: "worried", expression: "concerned", portrait: null },
       ],
+      assetRefs: [{ type: "background", assetId: "bg_street" }],
     });
   });
 
@@ -39,16 +43,59 @@ describe("emitter", () => {
       id: "i",
       title: "t",
       intro: [],
-      sublocations: [],
-      evidenceManifest: [],
+      sublocations: [{
+        id: "room",
+        label: "Room",
+        status: "unlocked",
+        unlock: null,
+        reveals: [],
+        sceneTag: "a room",
+        assetCue: {
+          backgroundPrompt: "rainy room",
+          backgroundAssetId: "bg_room",
+          bgm: { channel: "bgm", assetId: "music_room" },
+          bgs: { channel: "bgs", assetId: null },
+        },
+        transitionDialogue: [],
+        hotspots: [],
+        characters: [],
+        sourceFile: "i.md",
+        line: 4,
+      }],
+      evidenceManifest: [{
+        id: "photo",
+        name: "Photo",
+        description: "A photo.",
+        details: "Photo details.",
+        imageCue: {
+          imagePrompt: "wet photo",
+          imageAssetId: "evidence_photo",
+        },
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 12,
+      }],
       statementManifest: [],
       outro: { unlock: "auto", dialogue: [] },
+      assetRefs: [{ type: "evidence", assetId: "evidence_photo" }],
       sourceFile: "i.md",
       line: 1,
     };
     const json = emitInvestigationScene(ast);
     expect(json.outro.unlock).toBe("auto");
     expect(json.type).toBe("investigation");
+    expect(json.assetRefs).toEqual([{ type: "evidence", assetId: "evidence_photo" }]);
+    expect(json.sublocations[0]?.assetCue).toEqual({
+      backgroundPrompt: "rainy room",
+      backgroundAssetId: "bg_room",
+      bgm: { channel: "bgm", assetId: "music_room" },
+      bgs: { channel: "bgs", assetId: null },
+    });
+    expect(json.evidenceManifest[0]?.imageCue).toEqual({
+      imagePrompt: "wet photo",
+      imageAssetId: "evidence_photo",
+    });
   });
 
   it("emits interrogation scene JSON", () => {
@@ -67,22 +114,60 @@ describe("emitter", () => {
         unlock: null,
         reveals: [],
         sceneTag: "詢問室",
+        assetCue: {
+          backgroundPrompt: null,
+          backgroundAssetId: "bg_interrogation_room",
+          bgm: null,
+          bgs: { channel: "bgs", assetId: "rain_loop" },
+        },
         entryDialogue: [],
         complete: "auto",
         questions: [],
         sourceFile: "x",
         line: 2,
       }],
-      evidenceManifest: [],
+      evidenceManifest: [{
+        id: "recording",
+        name: "錄音",
+        description: "走廊錄音。",
+        details: "有雨聲。",
+        imageCue: {
+          imagePrompt: null,
+          imageAssetId: "evidence_recording",
+        },
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "x",
+        line: 8,
+      }],
       statementManifest: [],
       outro: { unlock: "auto", dialogue: [] },
+      assetRefs: [{ type: "audio", assetId: "rain_loop" }],
       sourceFile: "x",
       line: 1,
     };
     expect(emitInterrogationScene(ast)).toMatchObject({
       type: "interrogation",
       id: "interrogation_scene_1",
-      phases: [{ kind: "inquiry", id: "p", subject: { id: "suspect" } }],
+      assetRefs: [{ type: "audio", assetId: "rain_loop" }],
+      phases: [{
+        kind: "inquiry",
+        id: "p",
+        subject: { id: "suspect" },
+        assetCue: {
+          backgroundPrompt: null,
+          backgroundAssetId: "bg_interrogation_room",
+          bgm: null,
+          bgs: { channel: "bgs", assetId: "rain_loop" },
+        },
+      }],
+      evidenceManifest: [{
+        id: "recording",
+        imageCue: {
+          imagePrompt: null,
+          imageAssetId: "evidence_recording",
+        },
+      }],
     });
   });
 

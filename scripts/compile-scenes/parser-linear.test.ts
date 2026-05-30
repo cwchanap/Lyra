@@ -20,7 +20,13 @@ describe("parseLinearScene", () => {
     expect(result.value.queue).toEqual([
       { kind: "sceneTag", text: "吉祥寺街道，深夜。" },
       { kind: "action", text: "相馬律收起傘。" },
-      { kind: "line", speaker: "早坂茜", text: "你來得比我想的快。" },
+      {
+        kind: "line",
+        speaker: "早坂茜",
+        text: "你來得比我想的快。",
+        expression: null,
+        portrait: null,
+      },
     ]);
   });
 
@@ -65,6 +71,26 @@ describe("parseLinearScene", () => {
       "line",
       "sceneTag",
       "line",
+    ]);
+  });
+
+  it("preserves dialogue expression tags", () => {
+    const source = `
+# Scene 0: expression
+
+**早坂茜**[concerned]：你不舒服？
+`.trim();
+    const result = parseLinearScene(source, "scene_0.md", "scene_0");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.queue).toEqual([
+      {
+        kind: "line",
+        speaker: "早坂茜",
+        text: "你不舒服？",
+        expression: "concerned",
+        portrait: null,
+      },
     ]);
   });
 

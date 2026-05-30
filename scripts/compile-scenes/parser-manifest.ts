@@ -89,6 +89,10 @@ function parseEvidenceEntry(cur: CursorLike): { ok: true; value: ASTEvidence } |
       name,
       description,
       details,
+      imageCue: {
+        imagePrompt: null,
+        imageAssetId: null,
+      },
       onCollect,
       onReexamine,
       sourceFile: cur.sourceFile,
@@ -198,7 +202,15 @@ function consumeDialogueUntilHeading(cur: CursorLike, _atOrAboveLevel: number): 
     cur.next();
     if (next.kind === "sceneTag") out.push({ kind: "sceneTag", text: next.text });
     else if (next.kind === "action") out.push({ kind: "action", text: next.text });
-    else if (next.kind === "dialogue") out.push({ kind: "line", speaker: next.speaker, text: next.text });
+    else if (next.kind === "dialogue") {
+      out.push({
+        kind: "line",
+        speaker: next.speaker,
+        text: next.text,
+        expression: next.expression,
+        portrait: null,
+      });
+    }
     else if (next.kind === "metadata") {
       return fail(cur.sourceFile, next.line, "strayMetadataInDialogueBody", `Stray metadata in dialogue body: ${next.key}.`);
     } else if (next.kind === "unknown") {

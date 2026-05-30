@@ -131,6 +131,7 @@ export function parseInterrogationScene(
       evidenceManifest,
       statementManifest,
       outro,
+      assetRefs: [],
       sourceFile,
       line: first.line,
     },
@@ -246,6 +247,7 @@ function parseInquiryPhase(cur: Cursor, phaseMeta: PhaseMeta): { ok: true; value
       unlock: common.value.unlock,
       reveals: common.value.reveals,
       sceneTag,
+      assetCue: null,
       entryDialogue,
       complete: complete.value,
       questions,
@@ -324,6 +326,7 @@ function parseTestimonyPhase(cur: Cursor, phaseMeta: PhaseMeta): { ok: true; val
       unlock: common.value.unlock,
       reveals: common.value.reveals,
       sceneTag,
+      assetCue: null,
       entryDialogue,
       statements,
       results,
@@ -567,7 +570,13 @@ function consumePhaseBodyToken(
     return { ok: true, value: { sceneTag } };
   }
   if (next.kind === "dialogue") {
-    entryDialogue.push({ kind: "line", speaker: next.speaker, text: next.text });
+    entryDialogue.push({
+      kind: "line",
+      speaker: next.speaker,
+      text: next.text,
+      expression: next.expression,
+      portrait: null,
+    });
     return { ok: true, value: { sceneTag } };
   }
   if (next.kind === "metadata") return fail(cur.sourceFile, next.line, "strayMetadataInDialogueBody", `Stray metadata in phase body: ${next.key}.`);
@@ -609,7 +618,15 @@ function consumeDialogueUntilHeading(cur: Cursor, _atOrAboveLevel: number): Dial
     cur.next();
     if (next.kind === "sceneTag") out.push({ kind: "sceneTag", text: next.text });
     else if (next.kind === "action") out.push({ kind: "action", text: next.text });
-    else if (next.kind === "dialogue") out.push({ kind: "line", speaker: next.speaker, text: next.text });
+    else if (next.kind === "dialogue") {
+      out.push({
+        kind: "line",
+        speaker: next.speaker,
+        text: next.text,
+        expression: next.expression,
+        portrait: null,
+      });
+    }
     else if (next.kind === "metadata") {
       return fail(cur.sourceFile, next.line, "strayMetadataInDialogueBody", `Stray metadata in dialogue body: ${next.key}.`);
     } else if (next.kind === "unknown") {

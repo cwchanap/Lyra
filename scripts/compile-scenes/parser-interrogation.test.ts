@@ -131,7 +131,13 @@ describe("parseInterrogationScene", () => {
     expect(inquiry.kind).toBe("inquiry");
     if (inquiry.kind === "inquiry") {
       expect(inquiry.questions[0]!.onReask).toEqual([
-        { kind: "line", speaker: "若槻蓮", text: "我說過了，是咖啡豆。" },
+        {
+          kind: "line",
+          speaker: "若槻蓮",
+          text: "我說過了，是咖啡豆。",
+          expression: null,
+          portrait: null,
+        },
       ]);
       expect(inquiry.questions[1]).toMatchObject({
         id: "beans_follow_up",
@@ -146,7 +152,13 @@ describe("parseInterrogationScene", () => {
         id: "entered_storage",
       });
       expect(inquiry.questions[1]!.onReask).toEqual([
-        { kind: "line", speaker: "若槻蓮", text: "我只能確定當時還沒清潔。" },
+        {
+          kind: "line",
+          speaker: "若槻蓮",
+          text: "我只能確定當時還沒清潔。",
+          expression: null,
+          portrait: null,
+        },
       ]);
     }
     const testimony = parsed.value.phases[1]!;

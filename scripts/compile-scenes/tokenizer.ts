@@ -25,13 +25,13 @@ export type Token =
   | { kind: "metadata"; key: string; value: string; sourceFile: string; line: number }
   | { kind: "sceneTag"; text: string; sourceFile: string; line: number }
   | { kind: "action"; text: string; sourceFile: string; line: number }
-  | { kind: "dialogue"; speaker: string; text: string; sourceFile: string; line: number }
+  | { kind: "dialogue"; speaker: string; expression: string | null; text: string; sourceFile: string; line: number }
   | { kind: "unknown"; text: string; sourceFile: string; line: number };
 
 const HEADING_RE = /^(#{1,5})\s+(.+?)(?:\s+\{#([a-z0-9_]+)\})?\s*$/;
 const METADATA_RE = /^-\s+\*\*([A-Za-z][A-Za-z0-9 ]*):\*\*\s+(.+?)\s*$/;
 const BRACKETED_RE = /^\[(.+?)\]\s*$/;
-const DIALOGUE_RE = /^\*\*([^*]+)\*\*：(.+?)\s*$/;
+const DIALOGUE_RE = /^\*\*([^*]+)\*\*(?:\[([a-z][a-z0-9_]*)\])?：(.+?)\s*$/;
 const SCENE_TAG_PREFIX = "場景：";
 
 export function tokenize(source: string, sourceFile: string): Token[] {
@@ -129,7 +129,8 @@ export function tokenize(source: string, sourceFile: string): Token[] {
       tokens.push({
         kind: "dialogue",
         speaker: dialogue[1] ?? "",
-        text: dialogue[2] ?? "",
+        expression: dialogue[2] ?? null,
+        text: dialogue[3] ?? "",
         sourceFile,
         line,
       });

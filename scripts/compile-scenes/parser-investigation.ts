@@ -128,6 +128,7 @@ export function parseInvestigationScene(
       evidenceManifest,
       statementManifest,
       outro,
+      assetRefs: [],
       sourceFile,
       line: first.line,
     },
@@ -195,7 +196,13 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
     } else if (next.kind === "action") {
       transitionDialogue.push({ kind: "action", text: next.text });
     } else if (next.kind === "dialogue") {
-      transitionDialogue.push({ kind: "line", speaker: next.speaker, text: next.text });
+      transitionDialogue.push({
+        kind: "line",
+        speaker: next.speaker,
+        text: next.text,
+        expression: next.expression,
+        portrait: null,
+      });
     } else if (next.kind === "metadata") {
       return fail(cur.sourceFile, next.line, "sublocationStrayMetadata", `Stray metadata inside sub-location body: ${next.key}.`);
     } else if (next.kind === "unknown") {
@@ -216,6 +223,7 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
       unlock,
       reveals: reveals.value,
       sceneTag,
+      assetCue: null,
       transitionDialogue,
       hotspots,
       characters,
@@ -425,7 +433,15 @@ function consumeDialogueUntilHeading(cur: Cursor, _atOrAboveLevel: number): Dial
     cur.next();
     if (next.kind === "sceneTag") out.push({ kind: "sceneTag", text: next.text });
     else if (next.kind === "action") out.push({ kind: "action", text: next.text });
-    else if (next.kind === "dialogue") out.push({ kind: "line", speaker: next.speaker, text: next.text });
+    else if (next.kind === "dialogue") {
+      out.push({
+        kind: "line",
+        speaker: next.speaker,
+        text: next.text,
+        expression: next.expression,
+        portrait: null,
+      });
+    }
     else if (next.kind === "metadata") {
       return {
         ok: false,

@@ -53,8 +53,32 @@ describe("tokenizer", () => {
   it("classifies a dialogue line with full-width colon", () => {
     const tokens = tokenize("**早坂茜**：你來得比我想的快。", "test.md");
     expect(tokens).toEqual([
-      { kind: "dialogue", speaker: "早坂茜", text: "你來得比我想的快。", sourceFile: "test.md", line: 1 },
+      {
+        kind: "dialogue",
+        speaker: "早坂茜",
+        expression: null,
+        text: "你來得比我想的快。",
+        sourceFile: "test.md",
+        line: 1,
+      },
     ]);
+  });
+
+  it("parses optional dialogue expression tags", () => {
+    expect(tokenize("**早坂茜**[concerned]：你不舒服？", "test.md")).toEqual([
+      {
+        kind: "dialogue",
+        speaker: "早坂茜",
+        expression: "concerned",
+        text: "你不舒服？",
+        sourceFile: "test.md",
+        line: 1,
+      },
+    ]);
+  });
+
+  it("rejects malformed expression brackets as unknown", () => {
+    expect(tokenize("**早坂茜**[擔心]：你不舒服？", "test.md")[0]?.kind).toBe("unknown");
   });
 
   it("ignores blank lines", () => {
