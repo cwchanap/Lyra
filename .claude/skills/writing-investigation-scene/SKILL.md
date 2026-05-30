@@ -182,8 +182,8 @@ When the player completes a trigger that has a `Reveals:` list, dialogue plays i
 
 - **Entry point:** the first `## Sub-location:` block declared in the file is where the player starts. Its `Status` *must* be `unlocked`.
 - **Persistence:** once unlocked, a sub-location stays unlocked for the rest of the scene. Backtracking is allowed.
-- **Scene tag:** every sub-location must have its own `[場景:...]` tag immediately after the metadata. Different physical space → different AI image prompt.
-- **Asset metadata:** `[場景:...]`, `Background Prompt`, and `Image Prompt` are semantic production prompts, not filesystem paths. Writers never author paths.
+- **Scene tag:** every sub-location must have its own `[場景：...]` tag immediately after the metadata. Different physical space → different AI image prompt.
+- **Asset metadata:** `[場景：...]`, `Background Prompt`, and `Image Prompt` are semantic production prompts, not filesystem paths. Writers never author paths.
 - **Transition dialogue:** the body of a sub-location block (between metadata and the first nested H3) plays once on first entry.
 - **First-entry reveals:** `Reveals:` on a sub-location triggers when the player first enters it — useful for environmental discoveries not tied to a specific hotspot.
 - **Character placement:** characters belong to exactly one sub-location. If the same person needs to be in two physical areas, declare them once per sub-location with topics appropriate to that location. Duplication is accepted; it keeps "who is here right now" trivially answerable.
@@ -205,7 +205,7 @@ The parser/validator checks the following — author with them in mind:
 - Every block with `Status: locked` is unlockable via at least one path (`Unlock:` on itself **or** inbound `Reveals` from another block).
 - The first `## Sub-location:` block in the file is `Status: unlocked`.
 - No target has both an inbound `Reveals` and an `Unlock` (warning).
-- Every Sub-location has exactly one `[場景:...]` tag in its body.
+- Every Sub-location has exactly one `[場景：...]` tag in its body.
 - Every Evidence Manifest entry has a `#### On Collect` sub-block.
 - Every Statement Manifest entry has a `#### On Acquire` sub-block.
 
@@ -227,7 +227,7 @@ When asked to write an `investigation_scene_<N>.md`:
    - Every dialogue line follows the base dialogue skill's format (≤100 chars, bracketed actions, etc.)
    - Every locked block has either an `Unlock` or an inbound `Reveals`
    - First sub-location is `Status: unlocked`
-   - Every sub-location has a `[場景:...]` tag
+   - Every sub-location has a `[場景：...]` tag
    - All `Reveals` and `Unlock` references resolve
 
 ## Common mistakes
@@ -236,7 +236,7 @@ When asked to write an `investigation_scene_<N>.md`:
 |---|---|
 | Hotspots written at H2 (sibling of Sub-location) instead of H3 inside | Move inside the relevant Sub-location block |
 | Topic dialogue written as separate H3 outside its Character | Nest Topic blocks as H4 under their Character (H3) |
-| Sub-location missing its own `[場景:...]` tag | Add one — every physical area needs its own image prompt |
+| Sub-location missing its own `[場景：...]` tag | Add one — every physical area needs its own image prompt |
 | Locked block with neither `Unlock` nor inbound `Reveals` | Add a path; otherwise it's permanently locked |
 | Locked block with BOTH `Unlock` and inbound `Reveals` | Pick one; remove the other |
 | First sub-location declared as `Status: locked` | Set to `unlocked` — the player must be able to enter |

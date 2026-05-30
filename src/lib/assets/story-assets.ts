@@ -36,6 +36,13 @@ export function placeholderForStoryAsset(type: Exclude<StoryAssetType, "audio">)
   };
 }
 
+export function placeholderForMissingStoryAsset(
+  assetId: string,
+  type: Exclude<StoryAssetType, "audio">,
+): ResolvedStoryAsset {
+  return { ...placeholderForStoryAsset(type), assetId };
+}
+
 export function resolveStoryAsset(
   assetId: string | null | undefined,
   type: StoryAssetType,
@@ -51,12 +58,5 @@ export function resolveStoryAsset(
 
 async function resolveUncached(assetId: string, type: StoryAssetType): Promise<ResolvedStoryAsset> {
   const url = publicPathForStoryAsset(assetId, type);
-  if (type === "audio") return { assetId, type, url, placeholder: false };
-  try {
-    const response = await fetch(url, { method: "HEAD" });
-    if (response.ok) return { assetId, type, url, placeholder: false };
-  } catch {
-    return { ...placeholderForStoryAsset(type), assetId };
-  }
-  return { ...placeholderForStoryAsset(type), assetId };
+  return { assetId, type, url, placeholder: false };
 }

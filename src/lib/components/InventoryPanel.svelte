@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    placeholderForMissingStoryAsset,
     placeholderForStoryAsset,
     resolveStoryAsset,
     type ResolvedStoryAsset,
@@ -44,6 +45,15 @@
       cancelled = true;
     };
   });
+
+  function handleEvidenceImageError(id: string) {
+    const current = evidenceImages[id];
+    if (!current || current.placeholder) return;
+    evidenceImages = {
+      ...evidenceImages,
+      [id]: placeholderForMissingStoryAsset(current.assetId, "evidence"),
+    };
+  }
 </script>
 
 <aside class:open>
@@ -83,7 +93,13 @@
           >
             <span class="num">{String(i + 1).padStart(2, "0")}</span>
             {#if evidenceImages[e.id]}
-              <img class="evidence-thumb" src={evidenceImages[e.id].url} alt="" aria-hidden="true" />
+              <img
+                class="evidence-thumb"
+                src={evidenceImages[e.id].url}
+                alt=""
+                aria-hidden="true"
+                onerror={() => handleEvidenceImageError(e.id)}
+              />
             {/if}
             <span class="entry">
               <strong>{e.name}</strong>

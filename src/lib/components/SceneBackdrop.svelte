@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { resolveStoryAsset, type ResolvedStoryAsset } from "$lib/assets/story-assets";
+  import {
+    placeholderForMissingStoryAsset,
+    resolveStoryAsset,
+    type ResolvedStoryAsset,
+  } from "$lib/assets/story-assets";
 
   let {
     sceneTag,
@@ -21,12 +25,17 @@
       cancelled = true;
     };
   });
+
+  function handleBackgroundError() {
+    if (!resolved || resolved.placeholder) return;
+    resolved = placeholderForMissingStoryAsset(resolved.assetId, "background");
+  }
 </script>
 
 {#if sceneTag || backgroundAssetId || resolved}
   <div class="backdrop">
     {#if resolved}
-      <img class="background-image" src={resolved.url} alt="" aria-hidden="true" />
+      <img class="background-image" src={resolved.url} alt="" aria-hidden="true" onerror={handleBackgroundError} />
     {/if}
     {#if sceneTag}
       <span class="stamp">
