@@ -11,7 +11,7 @@ const inventory: Inventory = {
       name: "咖啡收據",
       description: "收據上的時間被圈起。",
       details: "一張潮濕的收據。",
-      imageAssetId: "evidence.coffee_receipt_component_test",
+      imageAssetId: "evidence.coffee_receipt_load_error_component_test",
       onReexamine: null,
       collectedInChapterId: "chapter_1",
       collectedInSceneId: "scene_0",
@@ -34,8 +34,7 @@ describe("InventoryPanel", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders an evidence thumbnail placeholder when the evidence image is missing", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false })));
+  it("falls back to an evidence thumbnail placeholder when the image fails to load", async () => {
     const user = userEvent.setup();
 
     const { container } = render(InventoryPanel, {
@@ -46,6 +45,16 @@ describe("InventoryPanel", () => {
     });
 
     await user.click(screen.getByRole("button", { name: /EVIDENCE/ }));
+
+    await waitFor(() => {
+      expect(container.querySelector("img.evidence-thumb")).toHaveAttribute(
+        "src",
+        "/assets/evidence/coffee_receipt_load_error_component_test.png",
+      );
+    });
+
+    const image = container.querySelector("img.evidence-thumb") as HTMLImageElement;
+    image.dispatchEvent(new Event("error"));
 
     await waitFor(() => {
       expect(container.querySelector("img.evidence-thumb")).toHaveAttribute(

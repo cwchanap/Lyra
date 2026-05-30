@@ -45,26 +45,15 @@ describe("story asset resolver helpers", () => {
     await expect(resolveStoryAsset(undefined, "portrait")).resolves.toBeNull();
   });
 
-  it("uses HEAD to confirm image assets and returns the public URL when present", async () => {
-    const fetch = vi.fn(async () => ({ ok: true }));
+  it("resolves image assets to public URLs without a HEAD preflight", async () => {
+    const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
 
     await expect(resolveStoryAsset("background.chapter_1.scene_0.available", "background")).resolves.toMatchObject({
       url: "/assets/backgrounds/chapter_1/scene_0/available.png",
       placeholder: false,
     });
-    expect(fetch).toHaveBeenCalledWith("/assets/backgrounds/chapter_1/scene_0/available.png", { method: "HEAD" });
-
-  });
-
-  it("falls back to an image placeholder when HEAD fails", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false })));
-
-    await expect(resolveStoryAsset("portrait.hayasaka_akane.missing", "portrait")).resolves.toMatchObject({
-      assetId: "portrait.hayasaka_akane.missing",
-      placeholder: true,
-    });
-
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("does not fetch audio assets", async () => {

@@ -202,6 +202,43 @@ characters:
     });
   });
 
+  it("rejects character IDs that are not safe path slugs", () => {
+    withConfig({
+      "policy.yaml": "assets:\n  enabled: false\n",
+      "characters.yaml": `
+characters:
+  - id: ../hayasaka
+    displayNames: ["早坂茜"]
+`,
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.some((e) => e.code === "assetCharacterIdMalformed")).toBe(true);
+    });
+  });
+
+  it("rejects character expression IDs that are not safe path slugs", () => {
+    withConfig({
+      "policy.yaml": "assets:\n  enabled: false\n",
+      "characters.yaml": `
+characters:
+  - id: hayasaka_akane
+    displayNames: ["早坂茜"]
+    expressions:
+      ../concerned:
+        prompt: worried
+`,
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.some((e) => e.code === "assetCharacterExpressionIdMalformed")).toBe(true);
+    });
+  });
+
   it("returns fresh disabled config maps when policy is missing", () => {
     withConfig({}, (root) => {
       const first = loadAssetConfig(root);

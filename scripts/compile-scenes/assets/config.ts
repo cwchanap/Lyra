@@ -53,6 +53,8 @@ export type AssetConfigResult =
   | { ok: true; value: AssetConfig; warnings: CompileError[] }
   | { ok: false; errors: CompileError[] };
 
+const SAFE_ASSET_SLUG = /^[a-z0-9_]+$/;
+
 function defaultTypes(): Record<AssetTypeName, AssetTypePolicy> {
   return {
     background: { dimensions: [1920, 1080], format: "png", transparency: false, prompt: "" },
@@ -130,15 +132,20 @@ function buildCharacters(raw: unknown[], enabled: boolean, errors: CompileError[
     const c = asRecord(item, "characters.yaml", "assetCharacterMalformed", errors);
     if (!c) continue;
     const id = text(c.id);
+    const idIsSafe = !id || SAFE_ASSET_SLUG.test(id);
     const displayNames = Array.isArray(c.displayNames) ? c.displayNames.map(text).filter(Boolean) : [];
     const portraitMode = c.portraitMode === "none" ? "none" : "portrait";
     const expressions = new Map<string, CharacterExpressionConfig>();
     const rawExpressions = asOptionalRecord(c.expressions, "characters.yaml", "assetCharacterExpressionsMalformed", errors) ?? {};
     for (const [exprId, exprRaw] of Object.entries(rawExpressions)) {
+      const exprIdIsSafe = SAFE_ASSET_SLUG.test(exprId);
+      if (!exprIdIsSafe) {
+        errors.push(error("characters.yaml", "assetCharacterExpressionIdMalformed", `Character ${id || "(missing id)"} expression ${exprId} must be a snake_case slug.`));
+      }
       const expr = asRecord(exprRaw, "characters.yaml", "assetCharacterExpressionMalformed", errors);
       if (!expr) continue;
       const prompt = text(expr.prompt);
-      expressions.set(exprId, { id: exprId, prompt });
+      if (exprIdIsSafe) expressions.set(exprId, { id: exprId, prompt });
     }
     const config: CharacterConfig = {
       id,
@@ -149,6 +156,9 @@ function buildCharacters(raw: unknown[], enabled: boolean, errors: CompileError[
       expressions,
     };
     if (!id) errors.push(error("characters.yaml", "assetCharacterMissingId", "Each character requires id."));
+    if (id && !idIsSafe) {
+      errors.push(error("characters.yaml", "assetCharacterIdMalformed", `Character id ${id} must be a snake_case slug.`));
+    }
     if (displayNames.length === 0) errors.push(error("characters.yaml", "assetCharacterMissingDisplayNames", `Character ${id || "(missing id)"} requires displayNames.`));
     if (id && byId.has(id)) {
       errors.push(error("characters.yaml", "assetCharacterDuplicateId", `Character id ${id} is defined multiple times.`));
@@ -156,7 +166,7 @@ function buildCharacters(raw: unknown[], enabled: boolean, errors: CompileError[
     if (enabled && portraitMode === "portrait" && !expressions.has("standard")) {
       errors.push(error("characters.yaml", "assetCharacterMissingStandardExpression", `Character ${id} requires expressions.standard.`));
     }
-    if (id && !byId.has(id)) byId.set(id, config);
+    if (id && idIsSafe && !byId.has(id)) byId.set(id, config);
     for (const name of displayNames) {
       if (byDisplayName.has(name)) errors.push(error("characters.yaml", "assetCharacterAmbiguousDisplayName", `Display name ${name} maps to multiple characters.`));
       byDisplayName.set(name, config);

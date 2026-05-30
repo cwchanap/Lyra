@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { resolveStoryAsset, type ResolvedStoryAsset } from "$lib/assets/story-assets";
+  import {
+    placeholderForMissingStoryAsset,
+    resolveStoryAsset,
+    type ResolvedStoryAsset,
+  } from "$lib/assets/story-assets";
   import type { DialogueItem, QueueToken } from "../state/types";
 
   let {
@@ -27,6 +31,11 @@
       cancelled = true;
     };
   });
+
+  function handlePortraitError() {
+    if (!portraitAsset || portraitAsset.placeholder) return;
+    portraitAsset = placeholderForMissingStoryAsset(portraitAsset.assetId, "portrait");
+  }
 
   function handleClick() {
     if (disabled) return;
@@ -63,7 +72,7 @@
     <p class="text-action">{current.text}</p>
   {:else if current.kind === "line"}
     {#if portraitAsset}
-      <img class="portrait" src={portraitAsset.url} alt="" aria-hidden="true" />
+      <img class="portrait" src={portraitAsset.url} alt="" aria-hidden="true" onerror={handlePortraitError} />
     {/if}
     <div class="line-grid">
       <div class="speaker-block">

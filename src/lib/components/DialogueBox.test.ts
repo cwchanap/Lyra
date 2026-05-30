@@ -39,8 +39,7 @@ describe("DialogueBox", () => {
     expect(screen.getByText(/LINE/)).toBeInTheDocument();
   });
 
-  it("renders a portrait placeholder when a line portrait image is missing", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false })));
+  it("falls back to a portrait placeholder when the portrait image fails to load", async () => {
     const { container } = renderDialogueBox({
       kind: "line",
       speaker: "早坂茜",
@@ -48,9 +47,19 @@ describe("DialogueBox", () => {
       portrait: {
         characterId: "hayasaka_akane",
         expression: "concerned",
-        assetId: "portrait.hayasaka_akane.concerned_component_test",
+        assetId: "portrait.hayasaka_akane.load_error_component_test",
       },
     });
+
+    await waitFor(() => {
+      expect(container.querySelector("img.portrait")).toHaveAttribute(
+        "src",
+        "/assets/portraits/hayasaka_akane/load_error_component_test.png",
+      );
+    });
+
+    const image = container.querySelector("img.portrait") as HTMLImageElement;
+    image.dispatchEvent(new Event("error"));
 
     await waitFor(() => {
       expect(container.querySelector("img.portrait")).toHaveAttribute(
