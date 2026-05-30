@@ -103,6 +103,13 @@ export function loadAssetConfig(configRoot: string): AssetConfigResult {
   };
 }
 
+const SUPPORTED_FORMATS: Record<AssetTypeName, string> = {
+  background: "png",
+  portrait: "png",
+  evidence: "png",
+  audio: "ogg",
+};
+
 function buildTypePolicies(raw: unknown, enabled: boolean, errors: CompileError[], warnings: CompileError[]): Record<AssetTypeName, AssetTypePolicy> {
   const src = isRecord(raw) ? raw : {};
   const out = defaultTypes();
@@ -116,6 +123,9 @@ function buildTypePolicies(raw: unknown, enabled: boolean, errors: CompileError[
       prompt: textWithWarn(value.prompt, `types.${key}.prompt`, "policy.yaml", warnings),
       loop: typeof value.loop === "boolean" ? value.loop : out[key].loop,
     };
+    if (out[key].format && out[key].format !== SUPPORTED_FORMATS[key]) {
+      errors.push(error("policy.yaml", "assetPolicyUnsupportedFormat", `types.${key}.format "${out[key].format}" is not supported. Only "${SUPPORTED_FORMATS[key]}" is allowed.`));
+    }
   }
   if (enabled) {
     for (const key of ["background", "portrait", "evidence"] as const) {
