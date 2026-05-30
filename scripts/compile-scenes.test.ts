@@ -112,9 +112,11 @@ describe("compile (end-to-end against valid fixture)", () => {
       expect(result.assetReport.requested.background).toBeGreaterThan(0);
 
       const manifest = JSON.parse(readFileSync(resolve(assetOutRoot, "manifest.json"), "utf-8"));
+      const report = JSON.parse(readFileSync(resolve(assetOutRoot, "report.json"), "utf-8"));
       expect(manifest.enabled).toBe(true);
       expect(manifest.entries.some((entry: { assetId: string }) => entry.assetId.startsWith("background."))).toBe(true);
       expect(manifest.entries.some((entry: { assetId: string }) => entry.assetId.startsWith("portrait."))).toBe(true);
+      expect(report).toEqual(result.assetReport);
     } finally {
       rmSync(outRoot, { recursive: true, force: true });
       rmSync(assetOutRoot, { recursive: true, force: true });
