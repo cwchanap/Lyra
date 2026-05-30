@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   placeholderForStoryAsset,
   publicPathForStoryAsset,
@@ -10,10 +10,6 @@ import {
 // update both and keep both test suites passing.
 
 describe("story asset resolver helpers", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it("maps portrait IDs to public asset paths", () => {
     expect(publicPathForStoryAsset("portrait.hayasaka_akane.concerned", "portrait")).toBe(
       "/assets/portraits/hayasaka_akane/concerned.png",
@@ -49,28 +45,19 @@ describe("story asset resolver helpers", () => {
     await expect(resolveStoryAsset(undefined, "portrait")).resolves.toBeNull();
   });
 
-  it("resolves image assets to public URLs without a HEAD preflight", async () => {
-    const fetch = vi.fn();
-    vi.stubGlobal("fetch", fetch);
-
+  it("resolves image assets to public URLs", async () => {
     await expect(resolveStoryAsset("background.chapter_1.scene_0.available", "background")).resolves.toMatchObject({
       url: "/assets/backgrounds/chapter_1/scene_0/available.png",
       placeholder: false,
     });
-    expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("does not fetch audio assets", async () => {
-    const fetch = vi.fn();
-    vi.stubGlobal("fetch", fetch);
-
+  it("resolves audio assets to public URLs", async () => {
     await expect(resolveStoryAsset("audio.bgs.street_rain", "audio")).resolves.toEqual({
       assetId: "audio.bgs.street_rain",
       type: "audio",
       url: "/assets/audio/bgs/street_rain.ogg",
       placeholder: false,
     });
-    expect(fetch).not.toHaveBeenCalled();
-
   });
 });

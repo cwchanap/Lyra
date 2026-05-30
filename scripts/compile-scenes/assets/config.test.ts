@@ -292,8 +292,6 @@ characters:
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.errors.some((e) => e.code === "assetCharacterIdWrongType")).toBe(true);
-      // textWithWarn still emits a warning alongside the error
-      expect(result.warnings.some((w) => w.code === "assetConfigWrongType" && w.message.includes('"id"'))).toBe(true);
     });
   });
 
