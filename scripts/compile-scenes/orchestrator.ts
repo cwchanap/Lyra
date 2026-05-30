@@ -34,14 +34,25 @@ import { parseInterrogationScene } from "./parser-interrogation";
 import { validate, type SceneRecord } from "./validator";
 import { emitChaptersIndex, emitInterrogationScene, emitInvestigationScene, emitLinearScene } from "./emitter";
 import type { ASTChapter, CompileError } from "./types";
+import { loadAssetConfig } from "./assets/config";
+import { enrichScenesWithAssets } from "./assets/enrich";
+import type { AssetManifest } from "./assets/manifest";
 
 export type CompileOptions = {
-  sourceRoot: string; // e.g., "static/stories_plan"
-  outputRoot: string; // e.g., "src-tauri/resources/scenes"
+  sourceRoot: string;
+  outputRoot: string;
+  assetConfigRoot?: string;
+  assetOutputRoot?: string;
+};
+
+export type AssetReport = {
+  enabled: boolean;
+  requested: Record<"background" | "portrait" | "evidence" | "audio", number>;
+  warnings: CompileError[];
 };
 
 export type CompileResult =
-  | { ok: true; chaptersCompiled: number; scenesCompiled: number }
+  | { ok: true; chaptersCompiled: number; scenesCompiled: number; assetReport: AssetReport }
   | { ok: false; errors: CompileError[] };
 
 export function compile(opts: CompileOptions): CompileResult {
@@ -151,6 +162,26 @@ export function compile(opts: CompileOptions): CompileResult {
     }
   }
 
+  const assetConfig = loadAssetConfig(opts.assetConfigRoot ?? resolve(opts.sourceRoot, "../assets/config"));
+  if (!assetConfig.ok) {
+    errors.push(...assetConfig.errors);
+  }
+
+  let assetReport: AssetReport = {
+    enabled: false,
+    requested: { background: 0, portrait: 0, evidence: 0, audio: 0 },
+    warnings: [],
+  };
+
+  let manifestToWrite: AssetManifest | null = null;
+  if (assetConfig.ok) {
+    const enriched = enrichScenesWithAssets({ scenes, config: assetConfig.value });
+    scenes.splice(0, scenes.length, ...enriched.scenes);
+    errors.push(...enriched.errors);
+    assetReport = makeAssetReport(enriched.manifest, enriched.warnings);
+    manifestToWrite = enriched.manifest;
+  }
+
   // 4. Validate.
   errors.push(...validate({ chapters, scenes, skippedReservedFiles, failedParseFiles }));
 
@@ -185,7 +216,21 @@ export function compile(opts: CompileOptions): CompileResult {
   const idx = emitChaptersIndex(chapters);
   writeFileSync(resolve(opts.outputRoot, "chapters.json"), JSON.stringify(idx, null, 2) + "\n");
 
-  return { ok: true, chaptersCompiled: chapters.length, scenesCompiled: scenes.length };
+  if (opts.assetOutputRoot && manifestToWrite) {
+    mkdirSync(opts.assetOutputRoot, { recursive: true });
+    writeFileSync(resolve(opts.assetOutputRoot, "manifest.json"), JSON.stringify(manifestToWrite, null, 2) + "\n");
+    writeFileSync(resolve(opts.assetOutputRoot, "report.json"), JSON.stringify(assetReport, null, 2) + "\n");
+  }
+
+  return { ok: true, chaptersCompiled: chapters.length, scenesCompiled: scenes.length, assetReport };
+}
+
+function makeAssetReport(manifest: AssetManifest, warnings: CompileError[]): AssetReport {
+  const requested: AssetReport["requested"] = { background: 0, portrait: 0, evidence: 0, audio: 0 };
+  for (const entry of manifest.entries) {
+    requested[entry.type] += 1;
+  }
+  return { enabled: manifest.enabled, requested, warnings };
 }
 
 function byChapterNumber(a: string, b: string): number {
