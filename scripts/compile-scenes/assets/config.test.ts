@@ -278,7 +278,7 @@ characters:
     });
   });
 
-  it("warns when character id is present but not a string", () => {
+  it("rejects character id that is not a string", () => {
     withConfig({
       "policy.yaml": "assets:\n  enabled: false\n",
       "characters.yaml": `
@@ -289,8 +289,10 @@ characters:
       "audio.yaml": "bgm: {}\nbgs: {}\n",
     }, (root) => {
       const result = loadAssetConfig(root);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.some((e) => e.code === "assetCharacterIdWrongType")).toBe(true);
+      // textWithWarn still emits a warning alongside the error
       expect(result.warnings.some((w) => w.code === "assetConfigWrongType" && w.message.includes('"id"'))).toBe(true);
     });
   });
