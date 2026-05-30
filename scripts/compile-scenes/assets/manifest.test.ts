@@ -16,4 +16,9 @@ describe("story asset manifest paths", () => {
     expect(publicPath("audio.bgm.rain_mystery_low", "audio")).toBe("/assets/audio/bgm/rain_mystery_low.ogg");
     expect(expectedPath("audio.bgm.rain_mystery_low", "audio")).toBe("static/assets/audio/bgm/rain_mystery_low.ogg");
   });
+
+  it("maps evidence asset IDs to evidence paths", () => {
+    expect(publicPath("evidence.coffee_receipt", "evidence")).toBe("/assets/evidence/coffee_receipt.png");
+    expect(expectedPath("evidence.coffee_receipt", "evidence")).toBe("static/assets/evidence/coffee_receipt.png");
+  });
 });
