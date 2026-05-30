@@ -23,15 +23,31 @@ pub enum ModeView {
         current: DialogueItem,
         queue_remaining: usize,
         scene_tag: Option<String>,
+        background_asset_id: Option<String>,
+        bgm: Option<AudioCueView>,
+        bgs: Option<AudioCueView>,
         queue_token: QueueToken,
     },
     Explore {
         sublocation_id: String,
+        background_asset_id: Option<String>,
+        bgm: Option<AudioCueView>,
+        bgs: Option<AudioCueView>,
     },
     Interrogation {
         phase_id: String,
+        background_asset_id: Option<String>,
+        bgm: Option<AudioCueView>,
+        bgs: Option<AudioCueView>,
     },
     GameComplete,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioCueView {
+    pub channel: String,
+    pub asset_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

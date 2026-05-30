@@ -6,11 +6,67 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum DialogueItem {
-    SceneTag { text: String },
-    Action { text: String },
-    Line { speaker: String, text: String },
+    SceneTag {
+        text: String,
+        #[serde(default)]
+        asset_cue: Option<VisualAssetCueJson>,
+    },
+    Action {
+        text: String,
+    },
+    Line {
+        speaker: String,
+        text: String,
+        #[serde(default)]
+        portrait: Option<PortraitRefJson>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortraitRefJson {
+    pub character_id: String,
+    pub expression: String,
+    pub asset_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioCueJson {
+    pub channel: AudioChannelJson,
+    pub asset_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioChannelJson {
+    Bgm,
+    Bgs,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisualAssetCueJson {
+    #[serde(default)]
+    pub background_asset_id: Option<String>,
+    #[serde(default)]
+    pub bgm: Option<AudioCueJson>,
+    #[serde(default)]
+    pub bgs: Option<AudioCueJson>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetRefJson {
+    #[serde(rename = "type")]
+    pub asset_type: String,
+    pub asset_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -242,6 +298,8 @@ pub enum SceneJson {
 pub struct LinearSceneJson {
     pub id: String,
     pub title: String,
+    #[serde(default)]
+    pub asset_refs: Vec<AssetRefJson>,
     pub queue: Vec<DialogueItem>,
 }
 
@@ -250,6 +308,8 @@ pub struct LinearSceneJson {
 pub struct InvestigationSceneJson {
     pub id: String,
     pub title: String,
+    #[serde(default)]
+    pub asset_refs: Vec<AssetRefJson>,
     pub intro: Vec<DialogueItem>,
     pub sublocations: Vec<SublocationJson>,
     pub evidence_manifest: Vec<EvidenceJson>,
@@ -262,6 +322,8 @@ pub struct InvestigationSceneJson {
 pub struct InterrogationSceneJson {
     pub id: String,
     pub title: String,
+    #[serde(default)]
+    pub asset_refs: Vec<AssetRefJson>,
     pub intro: Vec<DialogueItem>,
     pub phases: Vec<InterrogationPhaseJson>,
     pub evidence_manifest: Vec<EvidenceJson>,
@@ -285,6 +347,8 @@ pub enum InterrogationPhaseJson {
         unlock: Option<InterrogationUnlockExpr>,
         reveals: Vec<InterrogationRevealTarget>,
         scene_tag: String,
+        #[serde(default)]
+        asset_cue: Option<VisualAssetCueJson>,
         entry_dialogue: Vec<DialogueItem>,
         complete: InterrogationOutroUnlock,
         questions: Vec<InquiryQuestionJson>,
@@ -298,6 +362,8 @@ pub enum InterrogationPhaseJson {
         unlock: Option<InterrogationUnlockExpr>,
         reveals: Vec<InterrogationRevealTarget>,
         scene_tag: String,
+        #[serde(default)]
+        asset_cue: Option<VisualAssetCueJson>,
         entry_dialogue: Vec<DialogueItem>,
         statements: Vec<TestimonyStatementJson>,
         results: Vec<TestimonyResultJson>,
@@ -368,6 +434,8 @@ pub struct SublocationJson {
     pub unlock: Option<UnlockExpr>,
     pub reveals: Vec<RevealTarget>,
     pub scene_tag: String,
+    #[serde(default)]
+    pub asset_cue: Option<VisualAssetCueJson>,
     pub transition_dialogue: Vec<DialogueItem>,
     pub hotspots: Vec<HotspotJson>,
     pub characters: Vec<CharacterJson>,
@@ -415,6 +483,8 @@ pub struct EvidenceJson {
     pub name: String,
     pub description: String,
     pub details: String,
+    #[serde(default)]
+    pub image_asset_id: Option<String>,
     pub on_collect: Vec<DialogueItem>,
     pub on_reexamine: Option<Vec<DialogueItem>>,
 }
@@ -466,6 +536,54 @@ mod tests {
                 assert_eq!(s.queue.len(), 3);
             }
             _ => panic!("expected Linear variant"),
+        }
+    }
+
+    #[test]
+    fn deserializes_dialogue_line_with_portrait() {
+        let json = r#"{
+            "kind": "line",
+            "speaker": "早坂茜",
+            "text": "你不舒服？",
+            "portrait": {
+                "characterId": "hayasaka_akane",
+                "expression": "concerned",
+                "assetId": "portrait.hayasaka_akane.concerned"
+            }
+        }"#;
+        let parsed: DialogueItem = serde_json::from_str(json).unwrap();
+        match parsed {
+            DialogueItem::Line { portrait, .. } => {
+                let portrait = portrait.unwrap();
+                assert_eq!(portrait.character_id, "hayasaka_akane");
+                assert_eq!(portrait.expression, "concerned");
+                assert_eq!(portrait.asset_id, "portrait.hayasaka_akane.concerned");
+            }
+            _ => panic!("expected line"),
+        }
+    }
+
+    #[test]
+    fn deserializes_scene_tag_with_asset_cue() {
+        let json = r#"{
+            "kind": "sceneTag",
+            "text": "咖啡館外",
+            "assetCue": {
+                "backgroundPrompt": null,
+                "backgroundAssetId": "background.chapter_1.scene_0.tag_001",
+                "bgm": { "channel": "bgm", "assetId": "audio.bgm.rain_mystery_low" },
+                "bgs": { "channel": "bgs", "assetId": null }
+            }
+        }"#;
+        let parsed: DialogueItem = serde_json::from_str(json).unwrap();
+        match parsed {
+            DialogueItem::SceneTag { asset_cue, .. } => {
+                assert_eq!(
+                    asset_cue.unwrap().background_asset_id.as_deref(),
+                    Some("background.chapter_1.scene_0.tag_001")
+                );
+            }
+            _ => panic!("expected scene tag"),
         }
     }
 

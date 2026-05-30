@@ -102,9 +102,11 @@ mod tests {
             name: id.into(),
             description: id.into(),
             details: id.into(),
+            image_asset_id: None,
             on_collect: vec![DialogueItem::Line {
                 speaker: "A".into(),
                 text: format!("collected {id}"),
+                portrait: None,
             }],
             on_reexamine: None,
         }
@@ -115,6 +117,7 @@ mod tests {
             InvestigationSceneJson {
                 id: "i".into(),
                 title: "i".into(),
+                asset_refs: vec![],
                 intro: vec![],
                 sublocations: vec![],
                 evidence_manifest: defs,
@@ -133,6 +136,7 @@ mod tests {
             InterrogationSceneJson {
                 id: "interrogation".into(),
                 title: "interrogation".into(),
+                asset_refs: vec![],
                 intro: vec![],
                 phases: vec![],
                 evidence_manifest: defs,
@@ -156,6 +160,7 @@ mod tests {
             vec![DialogueItem::Line {
                 speaker: "A".into(),
                 text: "trigger".into(),
+                portrait: None,
             }],
             &[RevealTarget::Evidence {
                 id: "coffee".into(),
@@ -218,6 +223,7 @@ mod tests {
             vec![DialogueItem::Line {
                 speaker: "A".into(),
                 text: "trigger".into(),
+                portrait: None,
             }],
             &[InterrogationRevealTarget::Evidence {
                 id: "receipt".into(),

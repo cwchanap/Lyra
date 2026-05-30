@@ -323,6 +323,7 @@ mod tests {
         InterrogationSceneJson {
             id: "interrogation".into(),
             title: "Interrogation".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
                 id: "inquiry".into(),
@@ -333,6 +334,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![crate::game::schema::InquiryQuestionJson {
@@ -360,6 +362,7 @@ mod tests {
         InterrogationSceneJson {
             id: "interrogation".into(),
             title: "Interrogation".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Testimony {
                 id: "testimony".into(),
@@ -370,6 +373,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 entry_dialogue: vec![],
                 statements: vec![TestimonyStatementJson {
                     id: "cleaning_button".into(),
@@ -415,6 +419,7 @@ mod tests {
             unlock,
             reveals,
             scene_tag,
+            asset_cue: None,
             entry_dialogue,
             complete,
             questions,
@@ -432,6 +437,7 @@ mod tests {
             unlock,
             reveals,
             scene_tag,
+            asset_cue: None,
             entry_dialogue,
             complete,
             questions,
@@ -446,6 +452,7 @@ mod tests {
             unlock,
             reveals,
             scene_tag,
+            asset_cue: None,
             entry_dialogue,
             complete,
             questions,
@@ -463,6 +470,7 @@ mod tests {
             unlock,
             reveals,
             scene_tag,
+            asset_cue: None,
             entry_dialogue,
             complete,
             questions,
@@ -530,6 +538,7 @@ mod tests {
         let def = InterrogationSceneJson {
             id: "interrogation".into(),
             title: "Interrogation".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
                 id: "inquiry".into(),
@@ -540,6 +549,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![
@@ -600,6 +610,7 @@ mod tests {
         let def = InterrogationSceneJson {
             id: "interrogation".into(),
             title: "Interrogation".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![
                 InterrogationPhaseJson::Inquiry {
@@ -611,6 +622,7 @@ mod tests {
                     unlock: None,
                     reveals: vec![],
                     scene_tag: "room".into(),
+                asset_cue: None,
                     entry_dialogue: vec![],
                     complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                     questions: vec![crate::game::schema::InquiryQuestionJson {
@@ -703,6 +715,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![crate::game::schema::InquiryQuestionJson {
@@ -779,6 +792,7 @@ mod tests {
         let def = InterrogationSceneJson {
             id: "interrogation".into(),
             title: "Interrogation".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
                 id: "inquiry".into(),
@@ -789,6 +803,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![

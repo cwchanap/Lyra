@@ -26,9 +26,9 @@ use schema::{
 use state::{ChapterManifest, Inventory, SceneRef};
 use std::path::PathBuf;
 use view::{
-    ChapterView, CharacterView, HotspotView, InquiryQuestionView, InterrogationPhaseKindView,
-    InterrogationPhaseView, SceneView, SubjectView, SublocationView, TestimonyStatementView,
-    TopicView,
+    AudioCueView, ChapterView, CharacterView, HotspotView, InquiryQuestionView,
+    InterrogationPhaseKindView, InterrogationPhaseView, SceneView, SubjectView, SublocationView,
+    TestimonyStatementView, TopicView,
 };
 
 pub struct GameEngine {
@@ -37,22 +37,60 @@ pub struct GameEngine {
     current_chapter_idx: usize,
     current_scene_idx: usize,
     scene: SceneRuntime,
-    last_scene_tag: Option<String>,
+    last_visual_cue: LastVisualCue,
     inventory: Inventory,
     next_queue_gen: u64,
+}
+
+#[derive(Debug, Clone, Default)]
+struct LastVisualCue {
+    scene_tag: Option<String>,
+    background_asset_id: Option<String>,
+    bgm: Option<schema::AudioCueJson>,
+    bgs: Option<schema::AudioCueJson>,
 }
 
 struct GameSnapshot {
     current_chapter_idx: usize,
     current_scene_idx: usize,
     scene: SceneRuntime,
-    last_scene_tag: Option<String>,
+    last_visual_cue: LastVisualCue,
     inventory: Inventory,
     next_queue_gen: u64,
 }
 
 const REEXAMINE_FALLBACK_TEXT: &str = "（沒有新發現。）";
 const WRONG_PRESENT_FALLBACK_TEXT: &str = "（這個提示還不足以推翻證詞。）";
+
+impl LastVisualCue {
+    fn set_scene_tag(&mut self, text: String, asset_cue: Option<schema::VisualAssetCueJson>) {
+        self.scene_tag = Some(text);
+        self.apply_asset_cue(asset_cue);
+    }
+
+    fn apply_asset_cue(&mut self, asset_cue: Option<schema::VisualAssetCueJson>) {
+        if let Some(cue) = asset_cue {
+            self.background_asset_id = cue.background_asset_id;
+            self.bgm = cue.bgm;
+            self.bgs = cue.bgs;
+        } else {
+            self.background_asset_id = None;
+            self.bgm = None;
+            self.bgs = None;
+        }
+    }
+}
+
+fn audio_cue_view(cue: &schema::AudioCueJson) -> AudioCueView {
+    let channel = match cue.channel {
+        schema::AudioChannelJson::Bgm => "bgm",
+        schema::AudioChannelJson::Bgs => "bgs",
+    };
+    AudioCueView {
+        channel: channel.into(),
+        asset_id: cue.asset_id.clone(),
+    }
+}
 
 impl GameEngine {
     pub fn new_started(resources_dir: PathBuf) -> Result<Self, GameError> {
@@ -94,7 +132,7 @@ impl GameEngine {
             current_chapter_idx: 0,
             current_scene_idx: 0,
             scene: initial_scene,
-            last_scene_tag: None,
+            last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
         };
@@ -109,8 +147,10 @@ impl GameEngine {
             SceneRuntime::Linear(s) => {
                 // Consume leading SceneTag items so the first visible frame
                 // has the correct backdrop tag.
-                while let Some(DialogueItem::SceneTag { text }) = s.queue.get(s.cursor).cloned() {
-                    self.last_scene_tag = Some(text);
+                while let Some(DialogueItem::SceneTag { text, asset_cue }) =
+                    s.queue.get(s.cursor).cloned()
+                {
+                    self.last_visual_cue.set_scene_tag(text, asset_cue);
                     s.cursor += 1;
                 }
                 // If the entire scene is tag-only (or empty), advance to the
@@ -197,8 +237,8 @@ impl GameEngine {
                 }
             };
             // Capture the just-consumed item as a scene tag if applicable.
-            if let Some(DialogueItem::SceneTag { text }) = self.peek_just_consumed() {
-                self.last_scene_tag = Some(text);
+            if let Some(DialogueItem::SceneTag { text, asset_cue }) = self.peek_just_consumed() {
+                self.last_visual_cue.set_scene_tag(text, asset_cue);
             }
             // Skip over any consecutive SceneTag items so the next visible frame
             // is a real dialogue/action line. This mirrors the leading-tag skip
@@ -243,7 +283,7 @@ impl GameEngine {
     }
 
     /// Advance past any consecutive SceneTag items at the current cursor,
-    /// updating `last_scene_tag` for each. Leaves the cursor positioned on
+    /// updating `last_visual_cue` for each. Leaves the cursor positioned on
     /// the first non-SceneTag item (or at the end of the queue).
     fn consume_scene_tags_at_cursor(&mut self) {
         loop {
@@ -259,8 +299,8 @@ impl GameEngine {
                     .and_then(|q| q.items.get(q.cursor).cloned()),
             };
             match tag {
-                Some(DialogueItem::SceneTag { text }) => {
-                    self.last_scene_tag = Some(text);
+                Some(DialogueItem::SceneTag { text, asset_cue }) => {
+                    self.last_visual_cue.set_scene_tag(text, asset_cue);
                     match &mut self.scene {
                         SceneRuntime::Linear(s) => s.cursor += 1,
                         SceneRuntime::Investigation(inv) => {
@@ -534,10 +574,11 @@ impl GameEngine {
             return Ok(false);
         };
 
-        let (phase_id, scene_tag, entry_dialogue, reveals) = match &phase {
+        let (phase_id, scene_tag, asset_cue, entry_dialogue, reveals) = match &phase {
             InterrogationPhaseJson::Inquiry {
                 id,
                 scene_tag,
+                asset_cue,
                 entry_dialogue,
                 reveals,
                 ..
@@ -545,12 +586,14 @@ impl GameEngine {
             | InterrogationPhaseJson::Testimony {
                 id,
                 scene_tag,
+                asset_cue,
                 entry_dialogue,
                 reveals,
                 ..
             } => (
                 id.clone(),
                 scene_tag.clone(),
+                asset_cue.clone(),
                 entry_dialogue.clone(),
                 reveals.clone(),
             ),
@@ -569,7 +612,7 @@ impl GameEngine {
                 chapter_id,
             )
         };
-        self.last_scene_tag = Some(scene_tag);
+        self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
         if queue_items.is_empty() {
             self.on_queue_exhausted()?;
         } else {
@@ -593,13 +636,14 @@ impl GameEngine {
                     (
                         s.id.clone(),
                         s.scene_tag.clone(),
+                        s.asset_cue.clone(),
                         s.transition_dialogue.clone(),
                         s.reveals.clone(),
                     )
                 }),
             _ => None,
         };
-        let Some((id, scene_tag, transition, sub_reveals)) = chosen else {
+        let Some((id, scene_tag, asset_cue, transition, sub_reveals)) = chosen else {
             return Ok(());
         };
 
@@ -626,11 +670,11 @@ impl GameEngine {
         };
 
         if queue_items.is_empty() {
-            self.last_scene_tag = Some(scene_tag);
+            self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
             self.on_queue_exhausted()?;
         } else {
             let queue_gen = self.alloc_queue_gen();
-            self.last_scene_tag = Some(scene_tag);
+            self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
             self.install_investigation_queue(queue_items, queue_gen)?;
         }
         Ok(())
@@ -647,7 +691,7 @@ impl GameEngine {
             current_chapter_idx: self.current_chapter_idx,
             current_scene_idx: self.current_scene_idx,
             scene: self.scene.clone(),
-            last_scene_tag: self.last_scene_tag.clone(),
+            last_visual_cue: self.last_visual_cue.clone(),
             inventory: self.inventory.clone(),
             next_queue_gen: self.next_queue_gen,
         }
@@ -657,7 +701,7 @@ impl GameEngine {
         self.current_chapter_idx = snapshot.current_chapter_idx;
         self.current_scene_idx = snapshot.current_scene_idx;
         self.scene = snapshot.scene;
-        self.last_scene_tag = snapshot.last_scene_tag;
+        self.last_visual_cue = snapshot.last_visual_cue;
         self.inventory = snapshot.inventory;
         self.next_queue_gen = snapshot.next_queue_gen;
     }
@@ -702,7 +746,7 @@ impl GameEngine {
         self.current_chapter_idx = next_chapter_idx;
         self.current_scene_idx = next_scene_idx;
         self.scene = new_scene;
-        self.last_scene_tag = None;
+        self.last_visual_cue = LastVisualCue::default();
         self.next_queue_gen += 1;
         if let Err(err) = self.prime_initial_queue() {
             self.restore_snapshot(snapshot);
@@ -905,7 +949,7 @@ impl GameEngine {
         }
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
-        let (scene_tag, transition_dialogue, sub_reveals, first_entry) = {
+        let (scene_tag, asset_cue, transition_dialogue, sub_reveals, first_entry) = {
             let inv = match &self.scene {
                 SceneRuntime::Investigation(i) => i,
                 _ => return Err(GameError::wrong_mode("enter_sublocation", "linear")),
@@ -939,6 +983,7 @@ impl GameEngine {
             let first_entry = !inv.entered_sublocations.contains(sublocation_id);
             (
                 def.scene_tag,
+                def.asset_cue,
                 def.transition_dialogue,
                 def.reveals,
                 first_entry,
@@ -973,11 +1018,12 @@ impl GameEngine {
             };
 
             if queue_items.is_empty() {
-                self.last_scene_tag = Some(scene_tag);
+                self.last_visual_cue
+                    .set_scene_tag(scene_tag.clone(), asset_cue.clone());
                 self.on_queue_exhausted()?;
             } else {
                 let queue_gen = self.alloc_queue_gen();
-                self.last_scene_tag = Some(scene_tag);
+                self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
                 self.install_investigation_queue(queue_items, queue_gen)?;
             }
             Ok(self.view())
@@ -1265,6 +1311,7 @@ impl GameEngine {
                 vec![DialogueItem::Line {
                     speaker: "Narrator".into(),
                     text: "你仔細思考了這句話，但沒有發現新的線索。".into(),
+                    portrait: None,
                 }]
             } else {
                 queue_items
@@ -1492,13 +1539,19 @@ impl GameEngine {
                         .map(|q| q.items.len().saturating_sub(q.cursor + 1))
                         .unwrap_or(0),
                 },
-                scene_tag: self.last_scene_tag.clone(),
+                scene_tag: self.last_visual_cue.scene_tag.clone(),
+                background_asset_id: self.last_visual_cue.background_asset_id.clone(),
+                bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
+                bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
                 queue_token: t,
             },
             _ => match &self.scene {
                 SceneRuntime::Investigation(inv) => match &inv.current_sublocation_id {
                     Some(sub_id) => ModeView::Explore {
                         sublocation_id: sub_id.clone(),
+                        background_asset_id: self.last_visual_cue.background_asset_id.clone(),
+                        bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
+                        bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
                     },
                     None => ModeView::GameComplete,
                 },
@@ -1506,6 +1559,9 @@ impl GameEngine {
                 SceneRuntime::Interrogation(scene) => match &scene.current_phase_id {
                     Some(phase_id) => ModeView::Interrogation {
                         phase_id: phase_id.clone(),
+                        background_asset_id: self.last_visual_cue.background_asset_id.clone(),
+                        bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
+                        bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
                     },
                     None => ModeView::GameComplete,
                 },
@@ -1784,6 +1840,7 @@ mod tests {
         InvestigationSceneJson {
             id: id.into(),
             title: id.into(),
+            asset_refs: vec![],
             intro,
             sublocations: vec![SublocationJson {
                 id: "room".into(),
@@ -1792,6 +1849,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 transition_dialogue: vec![],
                 hotspots: vec![],
                 characters: vec![],
@@ -1823,7 +1881,7 @@ mod tests {
                 scene,
                 intro_queue_gen,
             ))),
-            last_scene_tag: None,
+            last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: intro_queue_gen + 1,
         }
@@ -1849,6 +1907,7 @@ mod tests {
         InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Testimony {
                 id: "testimony".into(),
@@ -1859,6 +1918,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 entry_dialogue: vec![],
                 statements: vec![TestimonyStatementJson {
                     id: "statement".into(),
@@ -1892,6 +1952,7 @@ mod tests {
         InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
                 id: "inquiry".into(),
@@ -1904,9 +1965,11 @@ mod tests {
                     id: "note".into(),
                 }],
                 scene_tag: "interrogation_room".into(),
+                asset_cue: None,
                 entry_dialogue: vec![DialogueItem::Line {
                     speaker: "A".into(),
                     text: "entry".into(),
+                    portrait: None,
                 }],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![],
@@ -1916,6 +1979,7 @@ mod tests {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
             }],
@@ -1931,6 +1995,7 @@ mod tests {
         InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
                 id: "locked_inquiry".into(),
@@ -1941,6 +2006,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "interrogation_room".into(),
+                asset_cue: None,
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![],
@@ -1963,6 +2029,7 @@ mod tests {
         InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
                 id: "inventory_unlocked_inquiry".into(),
@@ -1978,9 +2045,11 @@ mod tests {
                     id: "note".into(),
                 }],
                 scene_tag: "interrogation_room".into(),
+                asset_cue: None,
                 entry_dialogue: vec![DialogueItem::Line {
                     speaker: "A".into(),
                     text: "entry".into(),
+                    portrait: None,
                 }],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![crate::game::schema::InquiryQuestionJson {
@@ -2001,6 +2070,7 @@ mod tests {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
             }],
@@ -2016,6 +2086,7 @@ mod tests {
         InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![
                 InterrogationPhaseJson::Inquiry {
@@ -2032,9 +2103,11 @@ mod tests {
                         id: "early_note".into(),
                     }],
                     scene_tag: "early_room".into(),
+                    asset_cue: None,
                     entry_dialogue: vec![DialogueItem::Line {
                         speaker: "A".into(),
                         text: "early entry".into(),
+                        portrait: None,
                     }],
                     complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                     questions: vec![crate::game::schema::InquiryQuestionJson {
@@ -2061,9 +2134,11 @@ mod tests {
                         id: "late_note".into(),
                     }],
                     scene_tag: "late_room".into(),
+                    asset_cue: None,
                     entry_dialogue: vec![DialogueItem::Line {
                         speaker: "A".into(),
                         text: "late entry".into(),
+                        portrait: None,
                     }],
                     complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                     questions: vec![crate::game::schema::InquiryQuestionJson {
@@ -2086,6 +2161,7 @@ mod tests {
                     name: "Early Note".into(),
                     description: "Early Note".into(),
                     details: "Early Note".into(),
+                    image_asset_id: None,
                     on_collect: vec![],
                     on_reexamine: None,
                 },
@@ -2094,6 +2170,7 @@ mod tests {
                     name: "Late Note".into(),
                     description: "Late Note".into(),
                     details: "Late Note".into(),
+                    image_asset_id: None,
                     on_collect: vec![],
                     on_reexamine: None,
                 },
@@ -2127,7 +2204,7 @@ mod tests {
                 scene,
                 intro_queue_gen,
             ))),
-            last_scene_tag: None,
+            last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: intro_queue_gen + 1,
         }
@@ -2160,7 +2237,10 @@ mod tests {
             current_chapter_idx: 0,
             current_scene_idx: 0,
             scene: SceneRuntime::Interrogation(Box::new(scene)),
-            last_scene_tag: Some("before".into()),
+            last_visual_cue: LastVisualCue {
+                scene_tag: Some("before".into()),
+                ..Default::default()
+            },
             inventory,
             next_queue_gen: 7,
         }
@@ -2174,14 +2254,17 @@ mod tests {
         engine.prime_initial_queue().unwrap();
 
         assert!(engine.inventory.has_evidence("note"));
-        assert_eq!(engine.last_scene_tag.as_deref(), Some("interrogation_room"));
+        assert_eq!(
+            engine.last_visual_cue.scene_tag.as_deref(),
+            Some("interrogation_room")
+        );
         let view = engine.view();
         match view.mode {
             ModeView::Dialogue {
                 current, scene_tag, ..
             } => {
                 assert!(
-                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "entry")
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "entry")
                 );
                 assert_eq!(scene_tag.as_deref(), Some("interrogation_room"));
             }
@@ -2210,6 +2293,7 @@ mod tests {
             name: "Key".into(),
             description: "Key".into(),
             details: "Key".into(),
+            image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
             collected_in_scene_id: "previous_scene".into(),
@@ -2218,11 +2302,14 @@ mod tests {
         engine.prime_initial_queue().unwrap();
 
         assert!(engine.inventory.has_evidence("note"));
-        assert_eq!(engine.last_scene_tag.as_deref(), Some("interrogation_room"));
+        assert_eq!(
+            engine.last_visual_cue.scene_tag.as_deref(),
+            Some("interrogation_room")
+        );
         let token = token_from(&engine.view());
         let view = engine.advance_dialogue(token).unwrap();
         match view.mode {
-            ModeView::Interrogation { phase_id } => {
+            ModeView::Interrogation { phase_id, .. } => {
                 assert_eq!(phase_id, "inventory_unlocked_inquiry");
             }
             other => panic!("expected interrogation mode after phase entry, got {other:?}"),
@@ -2240,6 +2327,7 @@ mod tests {
             name: "Key".into(),
             description: "Key".into(),
             details: "Key".into(),
+            image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
             collected_in_scene_id: "previous_scene".into(),
@@ -2249,14 +2337,17 @@ mod tests {
 
         assert!(engine.inventory.has_evidence("early_note"));
         assert!(!engine.inventory.has_evidence("late_note"));
-        assert_eq!(engine.last_scene_tag.as_deref(), Some("early_room"));
+        assert_eq!(
+            engine.last_visual_cue.scene_tag.as_deref(),
+            Some("early_room")
+        );
         let view = engine.view();
         match view.mode {
             ModeView::Dialogue {
                 current, scene_tag, ..
             } => {
                 assert!(
-                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "early entry")
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "early entry")
                 );
                 assert_eq!(scene_tag.as_deref(), Some("early_room"));
             }
@@ -2266,13 +2357,11 @@ mod tests {
 
     #[test]
     fn interrogation_auto_outro_skips_optional_phase_after_required_completion() {
-        let inquiry_phase = |
-            id: &str,
-            required: bool,
-            question_id: &str,
-            reveals: Vec<InterrogationRevealTarget>,
-            entry_dialogue: Vec<DialogueItem>,
-        | {
+        let inquiry_phase = |id: &str,
+                             required: bool,
+                             question_id: &str,
+                             reveals: Vec<InterrogationRevealTarget>,
+                             entry_dialogue: Vec<DialogueItem>| {
             InterrogationPhaseJson::Inquiry {
                 id: id.into(),
                 label: id.into(),
@@ -2282,6 +2371,7 @@ mod tests {
                 unlock: None,
                 reveals,
                 scene_tag: "interrogation_room".into(),
+                asset_cue: None,
                 entry_dialogue,
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![crate::game::schema::InquiryQuestionJson {
@@ -2301,6 +2391,7 @@ mod tests {
         let scene = InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![
                 inquiry_phase("required_inquiry", true, "required_q", vec![], vec![]),
@@ -2314,6 +2405,7 @@ mod tests {
                     vec![DialogueItem::Line {
                         speaker: "A".into(),
                         text: "optional entry".into(),
+                        portrait: None,
                     }],
                 ),
             ],
@@ -2322,6 +2414,7 @@ mod tests {
                 name: "Optional Leak".into(),
                 description: "Optional Leak".into(),
                 details: "Optional Leak".into(),
+                image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
             }],
@@ -2331,6 +2424,7 @@ mod tests {
                 dialogue: vec![DialogueItem::Line {
                     speaker: "A".into(),
                     text: "outro".into(),
+                    portrait: None,
                 }],
             },
         };
@@ -2339,7 +2433,7 @@ mod tests {
         engine.prime_initial_queue().unwrap();
         assert!(matches!(
             engine.view().mode,
-            ModeView::Interrogation { ref phase_id } if phase_id == "required_inquiry"
+            ModeView::Interrogation { ref phase_id, .. } if phase_id == "required_inquiry"
         ));
 
         let view = engine.answer_interrogation_question("required_q").unwrap();
@@ -2353,7 +2447,7 @@ mod tests {
         match view.mode {
             ModeView::Dialogue { current, .. } => {
                 assert!(
-                    matches!(&current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "outro"),
+                    matches!(&current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "outro"),
                     "expected outro dialogue, got {current:?}"
                 );
             }
@@ -2392,8 +2486,10 @@ mod tests {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                image_asset_id: None,
                 on_reexamine: Some(vec![DialogueItem::SceneTag {
                     text: "tag_only".into(),
+                    asset_cue: None,
                 }]),
                 collected_in_chapter_id: "chapter_1".into(),
                 collected_in_scene_id: "interrogation_scene_1".into(),
@@ -2401,14 +2497,14 @@ mod tests {
             statements: vec![],
         };
         let mut engine = completed_interrogation_engine_with_bad_next_scene(d.clone(), inventory);
-        let previous_last_scene_tag = engine.last_scene_tag.clone();
+        let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();
         let previous_next_queue_gen = engine.next_queue_gen;
 
         let err = engine.reexamine_evidence("note").unwrap_err();
 
         assert_eq!(err.code, "sceneValidationFailed");
         assert_eq!(engine.current_scene_idx, 0);
-        assert_eq!(engine.last_scene_tag, previous_last_scene_tag);
+        assert_eq!(engine.last_visual_cue.scene_tag, previous_scene_tag);
         assert_eq!(engine.next_queue_gen, previous_next_queue_gen);
         let SceneRuntime::Interrogation(scene) = &engine.scene else {
             panic!("expected interrogation scene after rollback");
@@ -2450,20 +2546,21 @@ mod tests {
                 content: "Alibi".into(),
                 on_reexamine: Some(vec![DialogueItem::SceneTag {
                     text: "tag_only".into(),
+                    asset_cue: None,
                 }]),
                 acquired_in_chapter_id: "chapter_1".into(),
                 acquired_in_scene_id: "interrogation_scene_1".into(),
             }],
         };
         let mut engine = completed_interrogation_engine_with_bad_next_scene(d.clone(), inventory);
-        let previous_last_scene_tag = engine.last_scene_tag.clone();
+        let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();
         let previous_next_queue_gen = engine.next_queue_gen;
 
         let err = engine.reexamine_statement("alibi").unwrap_err();
 
         assert_eq!(err.code, "sceneValidationFailed");
         assert_eq!(engine.current_scene_idx, 0);
-        assert_eq!(engine.last_scene_tag, previous_last_scene_tag);
+        assert_eq!(engine.last_visual_cue.scene_tag, previous_scene_tag);
         assert_eq!(engine.next_queue_gen, previous_next_queue_gen);
         let SceneRuntime::Interrogation(scene) = &engine.scene else {
             panic!("expected interrogation scene after rollback");
@@ -2539,6 +2636,7 @@ mod tests {
             name: "Hint".into(),
             description: "Hint".into(),
             details: "Hint".into(),
+            image_asset_id: None,
             on_collect: vec![],
             on_reexamine: None,
         });
@@ -2548,6 +2646,7 @@ mod tests {
             name: "Wrong Item".into(),
             description: "Wrong Item".into(),
             details: "Wrong Item".into(),
+            image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
             collected_in_scene_id: "previous_scene".into(),
@@ -2573,6 +2672,7 @@ mod tests {
             vec![DialogueItem::Line {
                 speaker: "A".into(),
                 text: "first".into(),
+                portrait: None,
             }],
         );
         let mut engine = empty_engine_with_scene(first_scene, 3);
@@ -2584,12 +2684,13 @@ mod tests {
             vec![DialogueItem::Line {
                 speaker: "B".into(),
                 text: "second".into(),
+                portrait: None,
             }],
         );
         engine.scene = SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(
             next_scene, 7,
         )));
-        engine.last_scene_tag = None;
+        engine.last_visual_cue.scene_tag = None;
         engine.prime_initial_queue().unwrap();
 
         let before = token_from(&engine.view());
@@ -2606,27 +2707,30 @@ mod tests {
             vec![
                 DialogueItem::SceneTag {
                     text: "吉祥寺街道".into(),
+                    asset_cue: None,
                 },
                 DialogueItem::SceneTag {
                     text: "雨中".into(),
+                    asset_cue: None,
                 },
                 DialogueItem::Line {
                     speaker: "A".into(),
                     text: "hello".into(),
+                    portrait: None,
                 },
             ],
         );
         let mut engine = empty_engine_with_scene(scene, 1);
         engine.prime_initial_queue().unwrap();
 
-        assert_eq!(engine.last_scene_tag, Some("雨中".into()));
+        assert_eq!(engine.last_visual_cue.scene_tag, Some("雨中".into()));
         let view = engine.view();
         match &view.mode {
             ModeView::Dialogue {
                 current, scene_tag, ..
             } => {
                 assert!(
-                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "hello")
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "hello")
                 );
                 assert_eq!(scene_tag.as_deref(), Some("雨中"));
             }
@@ -2639,6 +2743,7 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
@@ -2647,6 +2752,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 transition_dialogue: vec![],
                 hotspots: vec![HotspotJson {
                     id: "desk".into(),
@@ -2658,10 +2764,12 @@ mod tests {
                     inspect_dialogue: vec![
                         DialogueItem::SceneTag {
                             text: "desk_closeup".into(),
+                            asset_cue: None,
                         },
                         DialogueItem::Line {
                             speaker: "A".into(),
                             text: "found it".into(),
+                            portrait: None,
                         },
                     ],
                     on_reexamine: None,
@@ -2684,7 +2792,7 @@ mod tests {
                 current, scene_tag, ..
             } => {
                 assert!(
-                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "found it")
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "found it")
                 );
                 assert_eq!(scene_tag.as_deref(), Some("desk_closeup"));
             }
@@ -2697,6 +2805,7 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
@@ -2705,6 +2814,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 transition_dialogue: vec![],
                 hotspots: vec![HotspotJson {
                     id: "desk".into(),
@@ -2723,6 +2833,7 @@ mod tests {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
             }],
@@ -2747,6 +2858,7 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
@@ -2755,6 +2867,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 transition_dialogue: vec![],
                 hotspots: vec![],
                 characters: vec![CharacterJson {
@@ -2803,6 +2916,7 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
@@ -2811,6 +2925,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 transition_dialogue: vec![],
                 hotspots: vec![],
                 characters: vec![],
@@ -2831,9 +2946,11 @@ mod tests {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                image_asset_id: None,
                 on_reexamine: Some(vec![DialogueItem::Line {
                     speaker: "A".into(),
                     text: "look".into(),
+                    portrait: None,
                 }]),
                 collected_in_chapter_id: "chapter_1".into(),
                 collected_in_scene_id: "investigation_scene_1".into(),
@@ -2848,6 +2965,7 @@ mod tests {
                 on_reexamine: Some(vec![DialogueItem::Line {
                     speaker: "Witness".into(),
                     text: "again".into(),
+                    portrait: None,
                 }]),
                 acquired_in_chapter_id: "chapter_1".into(),
                 acquired_in_scene_id: "investigation_scene_1".into(),
@@ -2866,6 +2984,7 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
@@ -2874,6 +2993,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 transition_dialogue: vec![],
                 hotspots: vec![],
                 characters: vec![],
@@ -2904,16 +3024,20 @@ mod tests {
         let scene_json = LinearSceneJson {
             id: "scene_0".into(),
             title: "Test".into(),
+            asset_refs: vec![],
             queue: vec![
                 DialogueItem::SceneTag {
                     text: "吉祥寺街道".into(),
+                    asset_cue: None,
                 },
                 DialogueItem::SceneTag {
                     text: "雨中".into(),
+                    asset_cue: None,
                 },
                 DialogueItem::Line {
                     speaker: "A".into(),
                     text: "hello".into(),
+                    portrait: None,
                 },
             ],
         };
@@ -2931,15 +3055,15 @@ mod tests {
             current_chapter_idx: 0,
             current_scene_idx: 0,
             scene: SceneRuntime::Linear(LinearSceneState::from_json(scene_json, 1)),
-            last_scene_tag: None,
+            last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
         };
         engine.prime_initial_queue().unwrap();
 
-        // Both leading SceneTags should be consumed; last_scene_tag holds the
+        // Both leading SceneTags should be consumed; last_visual_cue.scene_tag holds the
         // most recent tag text and the cursor points at the first real item.
-        assert_eq!(engine.last_scene_tag, Some("雨中".into()));
+        assert_eq!(engine.last_visual_cue.scene_tag, Some("雨中".into()));
         let view = engine.view();
         match &view.mode {
             ModeView::Dialogue {
@@ -2956,25 +3080,30 @@ mod tests {
     fn advance_dialogue_skips_mid_scene_tags_in_linear_scene() {
         // Queue: Line → SceneTag → SceneTag → Line
         // Advancing past the first Line should skip both SceneTags and land
-        // directly on the second Line, with last_scene_tag holding the final tag.
+        // directly on the second Line, with last_visual_cue.scene_tag holding the final tag.
         use crate::game::schema::LinearSceneJson;
         let scene_json = LinearSceneJson {
             id: "scene_0".into(),
             title: "Test".into(),
+            asset_refs: vec![],
             queue: vec![
                 DialogueItem::Line {
                     speaker: "A".into(),
                     text: "first".into(),
+                    portrait: None,
                 },
                 DialogueItem::SceneTag {
                     text: "mid_scene_1".into(),
+                    asset_cue: None,
                 },
                 DialogueItem::SceneTag {
                     text: "mid_scene_2".into(),
+                    asset_cue: None,
                 },
                 DialogueItem::Line {
                     speaker: "B".into(),
                     text: "second".into(),
+                    portrait: None,
                 },
             ],
         };
@@ -2992,13 +3121,13 @@ mod tests {
             current_chapter_idx: 0,
             current_scene_idx: 0,
             scene: SceneRuntime::Linear(LinearSceneState::from_json(scene_json, 1)),
-            last_scene_tag: None,
+            last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
         };
         // prime_initial_queue: no leading tags, cursor at 0 (first Line)
         engine.prime_initial_queue().unwrap();
-        assert_eq!(engine.last_scene_tag, None);
+        assert_eq!(engine.last_visual_cue.scene_tag, None);
 
         let view = engine.view();
         let token = match &view.mode {
@@ -3008,13 +3137,13 @@ mod tests {
 
         // Advance past "first" — should skip both SceneTags, land on "second"
         let view = engine.advance_dialogue(token).unwrap();
-        assert_eq!(engine.last_scene_tag, Some("mid_scene_2".into()));
+        assert_eq!(engine.last_visual_cue.scene_tag, Some("mid_scene_2".into()));
         match &view.mode {
             ModeView::Dialogue {
                 current, scene_tag, ..
             } => {
                 assert!(
-                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "B" && text == "second")
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "B" && text == "second")
                 );
                 assert_eq!(scene_tag.as_deref(), Some("mid_scene_2"));
             }
@@ -3163,7 +3292,7 @@ mod tests {
         match after.mode {
             ModeView::Dialogue { current, .. } => {
                 assert!(
-                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "before")
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "before")
                 );
             }
             other => panic!("expected previous dialogue mode after failed advance, got {other:?}"),
@@ -3317,9 +3446,11 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            asset_refs: vec![],
             intro: vec![DialogueItem::Line {
                 speaker: "A".into(),
                 text: "intro".into(),
+                portrait: None,
             }],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
@@ -3328,6 +3459,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![RevealTarget::Evidence { id: "note".into() }],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 transition_dialogue: vec![],
                 hotspots: vec![],
                 characters: vec![],
@@ -3337,6 +3469,7 @@ mod tests {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
             }],
@@ -3371,7 +3504,7 @@ mod tests {
             scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(
                 scene, 1,
             ))),
-            last_scene_tag: None,
+            last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
         };
@@ -3388,7 +3521,7 @@ mod tests {
         match view.mode {
             ModeView::Dialogue { current, .. } => {
                 assert!(
-                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "A" && text == "intro")
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "intro")
                 );
             }
             other => panic!("expected previous intro dialogue after failed advance, got {other:?}"),
@@ -3437,6 +3570,7 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
@@ -3445,6 +3579,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 transition_dialogue: vec![],
                 hotspots: vec![HotspotJson {
                     id: "desk".into(),
@@ -3463,6 +3598,7 @@ mod tests {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
             }],
@@ -3497,12 +3633,12 @@ mod tests {
             scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(
                 scene, 1,
             ))),
-            last_scene_tag: None,
+            last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
         };
         engine.prime_initial_queue().unwrap();
-        let previous_last_scene_tag = engine.last_scene_tag.clone();
+        let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();
         let previous_next_queue_gen = engine.next_queue_gen;
 
         let err = engine.inspect_hotspot("desk").unwrap_err();
@@ -3510,7 +3646,7 @@ mod tests {
 
         assert_eq!(engine.current_chapter_idx, 0);
         assert_eq!(engine.current_scene_idx, 0);
-        assert_eq!(engine.last_scene_tag, previous_last_scene_tag);
+        assert_eq!(engine.last_visual_cue.scene_tag, previous_scene_tag);
         assert_eq!(engine.next_queue_gen, previous_next_queue_gen);
         assert!(engine.inventory.evidence.is_empty());
 
@@ -3523,7 +3659,7 @@ mod tests {
 
         let view = engine.view();
         assert!(
-            matches!(view.mode, ModeView::Explore { sublocation_id } if sublocation_id == "room")
+            matches!(view.mode, ModeView::Explore { sublocation_id, .. } if sublocation_id == "room")
         );
         match view.scene {
             SceneView::Investigation {
@@ -3550,6 +3686,7 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            asset_refs: vec![],
             intro: vec![],
             sublocations: vec![
                 SublocationJson {
@@ -3559,6 +3696,7 @@ mod tests {
                     unlock: None,
                     reveals: vec![],
                     scene_tag: "room_a".into(),
+                    asset_cue: None,
                     transition_dialogue: vec![],
                     hotspots: vec![],
                     characters: vec![],
@@ -3570,6 +3708,7 @@ mod tests {
                     unlock: None,
                     reveals: vec![RevealTarget::Evidence { id: "note".into() }],
                     scene_tag: "room_b".into(),
+                    asset_cue: None,
                     transition_dialogue: vec![],
                     hotspots: vec![],
                     characters: vec![],
@@ -3580,6 +3719,7 @@ mod tests {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
             }],
@@ -3608,6 +3748,7 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
                 id: "room".into(),
@@ -3616,6 +3757,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![RevealTarget::Evidence { id: "note".into() }],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 transition_dialogue: vec![],
                 hotspots: vec![],
                 characters: vec![],
@@ -3625,6 +3767,7 @@ mod tests {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
             }],
@@ -3653,8 +3796,10 @@ mod tests {
         let tag_only_json = LinearSceneJson {
             id: "scene_0".into(),
             title: "Tag Only".into(),
+            asset_refs: vec![],
             queue: vec![DialogueItem::SceneTag {
                 text: "吉祥寺街道".into(),
+                asset_cue: None,
             }],
         };
         let mut engine = GameEngine {
@@ -3671,7 +3816,7 @@ mod tests {
             current_chapter_idx: 0,
             current_scene_idx: 0,
             scene: SceneRuntime::Linear(LinearSceneState::from_json(tag_only_json, 1)),
-            last_scene_tag: None,
+            last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
         };
@@ -3679,7 +3824,7 @@ mod tests {
 
         // Scene was tag-only → advance_scene ran → past last chapter → GameComplete.
         assert!(matches!(engine.view().mode, ModeView::GameComplete));
-        assert_eq!(engine.last_scene_tag, Some("吉祥寺街道".into()));
+        assert_eq!(engine.last_visual_cue.scene_tag, Some("吉祥寺街道".into()));
     }
 
     #[test]
@@ -3696,6 +3841,7 @@ mod tests {
         let scene = InterrogationSceneJson {
             id: "ordering_test".into(),
             title: "Ordering Test".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Testimony {
                 id: "testimony".into(),
@@ -3706,6 +3852,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 entry_dialogue: vec![],
                 statements: vec![TestimonyStatementJson {
                     id: "s1".into(),
@@ -3730,6 +3877,7 @@ mod tests {
                     dialogue: vec![DialogueItem::Line {
                         speaker: "Detective".into(),
                         text: "Contradiction explained!".into(),
+                        portrait: None,
                     }],
                 }],
             }],
@@ -3738,6 +3886,7 @@ mod tests {
                 name: "Contradiction".into(),
                 description: "d".into(),
                 details: "d".into(),
+                image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
             }],
@@ -3748,6 +3897,7 @@ mod tests {
                 on_acquire: vec![DialogueItem::Line {
                     speaker: "Narrator".into(),
                     text: "Statement acquired: the truth".into(),
+                    portrait: None,
                 }],
                 on_reexamine: None,
             }],
@@ -3764,6 +3914,7 @@ mod tests {
             name: "Contradiction".into(),
             description: "d".into(),
             details: "d".into(),
+            image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
             collected_in_scene_id: "previous_scene".into(),
@@ -3781,19 +3932,28 @@ mod tests {
         }
 
         // Present the correct evidence.
-        let view = engine.present_testimony_item("s1", "evidence", "contradiction_ev").unwrap();
+        let view = engine
+            .present_testimony_item("s1", "evidence", "contradiction_ev")
+            .unwrap();
 
         // We should be in Dialogue mode with result dialogue first, then
         // on_acquire text.  Advance and verify ordering.
         match &view.mode {
-            ModeView::Dialogue { current, queue_remaining, .. } => {
+            ModeView::Dialogue {
+                current,
+                queue_remaining,
+                ..
+            } => {
                 // First item: the result dialogue (narrative explanation).
                 assert!(
-                    matches!(current, DialogueItem::Line { speaker, text } if speaker == "Detective" && text == "Contradiction explained!"),
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "Detective" && text == "Contradiction explained!"),
                     "Expected result dialogue first, got {:?}",
                     current
                 );
-                assert_eq!(*queue_remaining, 1, "Expected 1 remaining item (on_acquire text)");
+                assert_eq!(
+                    *queue_remaining, 1,
+                    "Expected 1 remaining item (on_acquire text)"
+                );
 
                 // Advance to the next item: on_acquire text from the reveal.
                 let tok = token_from(&view);
@@ -3801,15 +3961,21 @@ mod tests {
                 match &view2.mode {
                     ModeView::Dialogue { current, .. } => {
                         assert!(
-                            matches!(current, DialogueItem::Line { speaker, text } if speaker == "Narrator" && text == "Statement acquired: the truth"),
+                            matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "Narrator" && text == "Statement acquired: the truth"),
                             "Expected on_acquire text second, got {:?}",
                             current
                         );
                     }
-                    other => panic!("Expected Dialogue mode for on_acquire text, got {:?}", other),
+                    other => panic!(
+                        "Expected Dialogue mode for on_acquire text, got {:?}",
+                        other
+                    ),
                 }
             }
-            other => panic!("Expected Dialogue mode after correct present, got {:?}", other),
+            other => panic!(
+                "Expected Dialogue mode after correct present, got {:?}",
+                other
+            ),
         }
     }
 
@@ -3825,6 +3991,7 @@ mod tests {
         let scene = InterrogationSceneJson {
             id: "press_fallback_test".into(),
             title: "Press Fallback Test".into(),
+            asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Testimony {
                 id: "testimony".into(),
@@ -3835,6 +4002,7 @@ mod tests {
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
+                asset_cue: None,
                 entry_dialogue: vec![],
                 statements: vec![TestimonyStatementJson {
                     id: "s1".into(),
@@ -3874,9 +4042,13 @@ mod tests {
 
         // Should be in Dialogue mode showing fallback feedback.
         match &view.mode {
-            ModeView::Dialogue { current, queue_remaining, .. } => {
+            ModeView::Dialogue {
+                current,
+                queue_remaining,
+                ..
+            } => {
                 assert!(
-                    matches!(current, DialogueItem::Line { speaker, text }
+                    matches!(current, DialogueItem::Line { speaker, text, .. }
                         if speaker == "Narrator" && !text.is_empty()),
                     "Expected fallback narrator line, got {:?}",
                     current
@@ -3898,16 +4070,26 @@ mod tests {
         // Press again (not first time) — should still produce fallback.
         let view3 = engine.press_testimony_statement("s1").unwrap();
         match &view3.mode {
-            ModeView::Dialogue { current, queue_remaining, .. } => {
+            ModeView::Dialogue {
+                current,
+                queue_remaining,
+                ..
+            } => {
                 assert!(
-                    matches!(current, DialogueItem::Line { speaker, text }
+                    matches!(current, DialogueItem::Line { speaker, text, .. }
                         if speaker == "Narrator" && !text.is_empty()),
                     "Expected fallback narrator line on re-press, got {:?}",
                     current
                 );
-                assert_eq!(*queue_remaining, 0, "Expected single fallback item on re-press");
+                assert_eq!(
+                    *queue_remaining, 0,
+                    "Expected single fallback item on re-press"
+                );
             }
-            other => panic!("Expected Dialogue mode with fallback on re-press, got {:?}", other),
+            other => panic!(
+                "Expected Dialogue mode with fallback on re-press, got {:?}",
+                other
+            ),
         }
     }
 }
