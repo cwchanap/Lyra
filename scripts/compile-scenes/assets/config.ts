@@ -166,7 +166,11 @@ function buildCharacters(raw: unknown[], enabled: boolean, errors: CompileError[
       referenceAssetId: text(c.referenceAssetId) || null,
       expressions,
     };
-    if (!id && !idPresentButWrongType) errors.push(error("characters.yaml", "assetCharacterMissingId", "Each character requires id."));
+    if (idPresentButWrongType) {
+      errors.push(error("characters.yaml", "assetCharacterIdWrongType", `Character id must be a string, got ${typeof idRaw}.`));
+    } else if (!id) {
+      errors.push(error("characters.yaml", "assetCharacterMissingId", "Each character requires id."));
+    }
     if (id && !idIsSafe) {
       errors.push(error("characters.yaml", "assetCharacterIdMalformed", `Character id ${id} must be a snake_case slug.`));
     }
