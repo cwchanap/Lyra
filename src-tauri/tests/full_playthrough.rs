@@ -216,7 +216,7 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
     let mut engine = GameEngine::new_started(full_fixture_resources()).unwrap();
     let view = advance_project_investigation_to_interrogation(&mut engine);
     assert!(
-        matches!(view.mode, ModeView::Interrogation { ref phase_id } if phase_id == "wakatsuki_inquiry"),
+        matches!(view.mode, ModeView::Interrogation { ref phase_id, .. } if phase_id == "wakatsuki_inquiry"),
         "expected wakatsuki inquiry, got {:?}",
         view.mode,
     );
@@ -228,7 +228,7 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
     assert!(view.inventory.has_evidence("coffee_machine_cleaning_log"));
     assert!(view.inventory.has_statement("wakatsuki_entered_for_beans"));
     assert!(
-        matches!(view.mode, ModeView::Interrogation { ref phase_id } if phase_id == "wakatsuki_testimony"),
+        matches!(view.mode, ModeView::Interrogation { ref phase_id, .. } if phase_id == "wakatsuki_testimony"),
         "expected wakatsuki testimony, got {:?}",
         view.mode,
     );
@@ -236,7 +236,7 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
     let view = engine.press_testimony_statement("cleaning_button").unwrap();
     let view = advance_all_dialogue(&mut engine, view);
     assert!(
-        matches!(view.mode, ModeView::Interrogation { ref phase_id } if phase_id == "wakatsuki_testimony"),
+        matches!(view.mode, ModeView::Interrogation { ref phase_id, .. } if phase_id == "wakatsuki_testimony"),
         "expected to remain in testimony after pressing, got {:?}",
         view.mode,
     );
@@ -247,7 +247,7 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
         .unwrap();
     let view = advance_all_dialogue(&mut engine, view);
     assert!(
-        matches!(view.mode, ModeView::Interrogation { ref phase_id } if phase_id == "wakatsuki_testimony"),
+        matches!(view.mode, ModeView::Interrogation { ref phase_id, .. } if phase_id == "wakatsuki_testimony"),
         "expected wrong evidence to keep testimony active, got {:?}",
         view.mode,
     );

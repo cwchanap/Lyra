@@ -148,7 +148,7 @@ mod tests {
     fn record_inspect_marks_hotspot() {
         let mut s = InvestigationSceneState {
             def: InvestigationSceneJson {
-                id: "i".into(), title: "i".into(), intro: vec![],
+                id: "i".into(), title: "i".into(), asset_refs: vec![], intro: vec![],
                 sublocations: vec![], evidence_manifest: vec![],
                 statement_manifest: vec![],
                 outro: crate::game::schema::OutroJson {

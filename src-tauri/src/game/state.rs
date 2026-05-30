@@ -1,6 +1,6 @@
 // src-tauri/src/game/state.rs
-use serde::Serialize;
 use crate::game::schema::{DialogueItem, EvidenceJson, StatementJson};
+use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -9,6 +9,7 @@ pub struct EvidenceRecord {
     pub name: String,
     pub description: String,
     pub details: String,
+    pub image_asset_id: Option<String>,
     pub on_reexamine: Option<Vec<DialogueItem>>,
     pub collected_in_chapter_id: String,
     pub collected_in_scene_id: String,
@@ -45,12 +46,15 @@ impl Inventory {
         chapter_id: &str,
         scene_id: &str,
     ) -> bool {
-        if self.has_evidence(&def.id) { return false; }
+        if self.has_evidence(&def.id) {
+            return false;
+        }
         self.evidence.push(EvidenceRecord {
             id: def.id.clone(),
             name: def.name.clone(),
             description: def.description.clone(),
             details: def.details.clone(),
+            image_asset_id: def.image_asset_id.clone(),
             on_reexamine: def.on_reexamine.clone(),
             collected_in_chapter_id: chapter_id.into(),
             collected_in_scene_id: scene_id.into(),
@@ -63,7 +67,9 @@ impl Inventory {
         chapter_id: &str,
         scene_id: &str,
     ) -> bool {
-        if self.has_statement(&def.id) { return false; }
+        if self.has_statement(&def.id) {
+            return false;
+        }
         self.statements.push(StatementRecord {
             id: def.id.clone(),
             speaker: def.speaker.clone(),
@@ -100,6 +106,7 @@ mod tests {
             name: id.into(),
             description: id.into(),
             details: id.into(),
+            image_asset_id: None,
             on_collect: vec![],
             on_reexamine: None,
         }

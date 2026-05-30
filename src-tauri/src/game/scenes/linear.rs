@@ -40,7 +40,11 @@ mod tests {
     use super::*;
 
     fn line(text: &str) -> DialogueItem {
-        DialogueItem::Line { speaker: "A".into(), text: text.into() }
+        DialogueItem::Line {
+            speaker: "A".into(),
+            text: text.into(),
+            portrait: None,
+        }
     }
 
     #[test]
