@@ -12,6 +12,7 @@
 // =============================================================================
 
 import { tokenize, type Token } from "./tokenizer";
+import { parseVisualAssetCue, rejectReservedAssetMetadata, VISUAL_ASSET_METADATA_KEYS } from "./parser-assets";
 import { parseEvidenceManifest, parseStatementManifest } from "./parser-manifest";
 import { parseInterrogationUnlockExpr } from "./parser-unlock";
 import type {
@@ -31,6 +32,7 @@ import type {
   InterrogationRevealTarget,
   InterrogationUnlockExpr,
   InventoryTarget,
+  VisualAssetCue,
 } from "./types";
 
 export type InterrogationParseResult =
@@ -148,6 +150,8 @@ function parsePhase(cur: Cursor): { ok: true; value: ASTInterrogationPhase } | {
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, VISUAL_ASSET_METADATA_KEYS, cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const kind = meta.value.Kind;
   if (!kind) return fail(cur.sourceFile, head.line, "interrogationPhaseMissingKind", `Phase ${head.anchorId} requires Kind.`);
   if (kind === "inquiry") return parseInquiryPhase(cur, { head, id: head.anchorId, label, meta: meta.value });
@@ -170,6 +174,8 @@ function parseSubject(cur: Cursor): { ok: true; value: ASTSubject } | { ok: fals
   if (!nameMatch) return fail(cur.sourceFile, head.line, "interrogationSubjectMissingAnchor", `Malformed subject heading: ${head.text}`);
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const role = meta.value.Role;
   const bio = meta.value.Bio;
   if (!role || !bio) return fail(cur.sourceFile, head.line, "interrogationSubjectMissingMetadata", `Subject ${head.anchorId} requires Role and Bio.`);
@@ -247,7 +253,7 @@ function parseInquiryPhase(cur: Cursor, phaseMeta: PhaseMeta): { ok: true; value
       unlock: common.value.unlock,
       reveals: common.value.reveals,
       sceneTag,
-      assetCue: null,
+      assetCue: common.value.assetCue,
       entryDialogue,
       complete: complete.value,
       questions,
@@ -326,7 +332,7 @@ function parseTestimonyPhase(cur: Cursor, phaseMeta: PhaseMeta): { ok: true; val
       unlock: common.value.unlock,
       reveals: common.value.reveals,
       sceneTag,
-      assetCue: null,
+      assetCue: common.value.assetCue,
       entryDialogue,
       statements,
       results,
@@ -352,6 +358,8 @@ function parseInquiryQuestion(
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const status = validateStatus(meta.value.Status, "unlocked", cur.sourceFile, head.line);
   if (!status.ok) return status;
   let unlock: InterrogationUnlockExpr | null = null;
@@ -414,6 +422,8 @@ function parseTestimonyStatement(cur: Cursor): { ok: true; value: ASTTestimonySt
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const content = meta.value.Content;
   if (!content) return fail(cur.sourceFile, head.line, "testimonyStatementMissingContent", `Testimony statement ${head.anchorId} requires Content.`);
   const contradiction = meta.value.Contradiction
@@ -487,6 +497,8 @@ function parseTestimonyResult(cur: Cursor): { ok: true; value: ASTTestimonyResul
   if (!labelMatch) return fail(cur.sourceFile, head.line, "testimonyResultMissingAnchor", `Malformed testimony result heading: ${head.text}`);
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const reveals = meta.value.Reveals
     ? parseInterrogationRevealsList(meta.value.Reveals, cur.sourceFile, head.line)
     : { ok: true as const, value: [] as InterrogationRevealTarget[] };
@@ -513,6 +525,8 @@ function parseOutro(cur: Cursor): { ok: true; value: ASTInterrogationOutro } | {
   }
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   let unlock: InterrogationUnlockExpr | "auto" = "auto";
   if (meta.value.Unlock) {
     const r = parseInterrogationUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);
@@ -531,7 +545,10 @@ function parseCommonPhaseMeta(
   status: "locked" | "unlocked";
   unlock: InterrogationUnlockExpr | null;
   reveals: InterrogationRevealTarget[];
+  assetCue: VisualAssetCue;
 } } | { ok: false; error: CompileError } {
+  const badAssetMeta = rejectReservedAssetMetadata(phaseMeta.meta, VISUAL_ASSET_METADATA_KEYS, phaseMeta.head.sourceFile, phaseMeta.head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const required = parseBoolean(phaseMeta.meta.Required, true, phaseMeta.head.sourceFile, phaseMeta.head.line);
   if (!required.ok) return required;
   const status = validateStatus(phaseMeta.meta.Status, "unlocked", phaseMeta.head.sourceFile, phaseMeta.head.line);
@@ -550,7 +567,16 @@ function parseCommonPhaseMeta(
     ? parseInterrogationRevealsList(phaseMeta.meta.Reveals, phaseMeta.head.sourceFile, phaseMeta.head.line)
     : { ok: true as const, value: [] as InterrogationRevealTarget[] };
   if (!reveals.ok) return reveals;
-  return { ok: true, value: { required: required.value, status: status.value, unlock, reveals: reveals.value } };
+  return {
+    ok: true,
+    value: {
+      required: required.value,
+      status: status.value,
+      unlock,
+      reveals: reveals.value,
+      assetCue: parseVisualAssetCue(phaseMeta.meta),
+    },
+  };
 }
 
 function consumePhaseBodyToken(

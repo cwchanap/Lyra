@@ -18,7 +18,16 @@ describe("parseLinearScene", () => {
     expect(result.value.id).toBe("scene_0");
     expect(result.value.title).toBe("接案");
     expect(result.value.queue).toEqual([
-      { kind: "sceneTag", text: "吉祥寺街道，深夜。" },
+      {
+        kind: "sceneTag",
+        text: "吉祥寺街道，深夜。",
+        assetCue: {
+          backgroundPrompt: null,
+          backgroundAssetId: null,
+          bgm: null,
+          bgs: null,
+        },
+      },
       { kind: "action", text: "相馬律收起傘。" },
       {
         kind: "line",
@@ -28,6 +37,48 @@ describe("parseLinearScene", () => {
         portrait: null,
       },
     ]);
+  });
+
+  it("attaches asset metadata to the preceding scene tag", () => {
+    const source = `
+# Scene 0: 接案
+
+[場景：咖啡館外，雨夜。]
+- **Background Prompt:** Rainy exterior of a small Tokyo cafe at midnight.
+- **BGM:** rain_mystery_low
+- **BGS:** street_rain
+
+**早坂茜**：你來得比我想的快。
+`.trim();
+    const result = parseLinearScene(source, "scene_0.md", "scene_0");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.queue[0]).toEqual({
+      kind: "sceneTag",
+      text: "咖啡館外，雨夜。",
+      assetCue: {
+        backgroundPrompt: "Rainy exterior of a small Tokyo cafe at midnight.",
+        backgroundAssetId: null,
+        bgm: { channel: "bgm", assetId: "rain_mystery_low" },
+        bgs: { channel: "bgs", assetId: "street_rain" },
+      },
+    });
+  });
+
+  it("rejects evidence image metadata on a scene tag", () => {
+    const source = `
+# Scene 0: 接案
+
+[場景：咖啡館外，雨夜。]
+- **Image Prompt:** A key on transparent background.
+
+**早坂茜**：你來得比我想的快。
+`.trim();
+    const result = parseLinearScene(source, "scene_0.md", "scene_0");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("assetMetadataUnknownKey");
+    expect(result.error.line).toBe(4);
   });
 
   it("rejects a linear scene containing an H2 heading", () => {

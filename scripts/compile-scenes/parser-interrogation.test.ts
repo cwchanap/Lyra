@@ -183,6 +183,52 @@ describe("parseInterrogationScene", () => {
     expect(parsed.value.statementManifest.map((s) => s.id)).toContain("kagami_timeline_inconsistent");
   });
 
+  it("parses phase background and audio metadata", () => {
+    const parsed = parseInterrogationScene(
+      VALID_SOURCE.replace(
+        "- **Required:** true\n\n[場景：警視廳臨時詢問室",
+        "- **Required:** true\n- **Background Prompt:** Harsh police interview room at night.\n- **BGM:** rain_mystery_low\n- **BGS:** none\n\n[場景：警視廳臨時詢問室",
+      ),
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.phases[0]?.assetCue).toMatchObject({
+      backgroundPrompt: "Harsh police interview room at night.",
+      bgm: { channel: "bgm", assetId: "rain_mystery_low" },
+      bgs: { channel: "bgs", assetId: null },
+    });
+  });
+
+  it("rejects evidence image metadata on a phase", () => {
+    const parsed = parseInterrogationScene(
+      VALID_SOURCE.replace(
+        "- **Required:** true\n\n[場景：警視廳臨時詢問室",
+        "- **Required:** true\n- **Image Prompt:** Small brass key on transparent background.\n\n[場景：警視廳臨時詢問室",
+      ),
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error.code).toBe("assetMetadataUnknownKey");
+  });
+
+  it("rejects reserved asset metadata on a question", () => {
+    const parsed = parseInterrogationScene(
+      VALID_SOURCE.replace(
+        "- **Status:** unlocked\n- **Reveals:** [statement:wakatsuki_entered_for_beans]",
+        "- **Status:** unlocked\n- **Background Prompt:** Harsh police interview room at night.\n- **Reveals:** [statement:wakatsuki_entered_for_beans]",
+      ),
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error.code).toBe("assetMetadataUnknownKey");
+  });
+
   it("rejects a phase without a subject", () => {
     const source = VALID_SOURCE.replace(/### Subject:[\s\S]*?### Question:/, "### Question:");
     const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");

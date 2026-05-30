@@ -15,6 +15,7 @@
 // =============================================================================
 
 import { tokenize, type Token } from "./tokenizer";
+import { parseVisualAssetCue, rejectReservedAssetMetadata, VISUAL_ASSET_METADATA_KEYS } from "./parser-assets";
 import { parseUnlockExpr } from "./parser-unlock";
 import { parseEvidenceManifest, parseStatementManifest } from "./parser-manifest";
 import type {
@@ -147,6 +148,9 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, VISUAL_ASSET_METADATA_KEYS, cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
+  const assetCue = parseVisualAssetCue(meta.value);
   if (meta.value.Status === undefined) {
     return fail(cur.sourceFile, head.line, "sublocationMissingStatus", "Sub-location requires an explicit Status (locked or unlocked).");
   }
@@ -223,7 +227,7 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
       unlock,
       reveals: reveals.value,
       sceneTag,
-      assetCue: null,
+      assetCue,
       transitionDialogue,
       hotspots,
       characters,
@@ -244,6 +248,8 @@ function parseHotspot(cur: Cursor): { ok: true; value: ASTHotspot } | { ok: fals
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const description = meta.value.Description;
   if (!description) return fail(cur.sourceFile, head.line, "hotspotMissingDescription", `Hotspot ${id} missing Description.`);
   const statusCheck = validateStatus(meta.value.Status, "unlocked", cur.sourceFile, head.line);
@@ -297,6 +303,8 @@ function parseCharacter(cur: Cursor): { ok: true; value: ASTCharacter } | { ok: 
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const role = meta.value.Role;
   const bio = meta.value.Bio;
   if (!role) return fail(cur.sourceFile, head.line, "characterMissingRole", `Character ${id} missing Role.`);
@@ -341,6 +349,8 @@ function parseTopic(cur: Cursor, characterId: string): { ok: true; value: ASTTop
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const statusCheck = validateStatus(meta.value.Status, "unlocked", cur.sourceFile, head.line);
   if (!statusCheck.ok) return statusCheck;
   const status = statusCheck.value;
@@ -387,6 +397,8 @@ function parseOutro(cur: Cursor): { ok: true; value: ASTOutro } | { ok: false; e
   }
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   let unlock: UnlockExpr | "auto" = "auto";
   if (meta.value.Unlock) {
     const r = parseUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);

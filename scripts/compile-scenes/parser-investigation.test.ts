@@ -86,6 +86,206 @@ describe("parseInvestigationScene", () => {
     expect(result.value.outro.unlock).toBe("auto");
   });
 
+  it("parses sub-location background and audio metadata", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+- **Background Prompt:** Dim detective office with rain outside.
+- **BGM:** none
+- **BGS:** indoor_rain_window
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Evidence Manifest
+
+### evidence:foo {#foo}
+- **Name:** Foo
+- **Description:** A foo.
+- **Details:** Detail.
+- **Image Prompt:** Small brass key on transparent background.
+
+#### On Collect
+
+**A**：collected.
+
+## Outro
+
+**A**：done.
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.sublocations[0]?.assetCue).toMatchObject({
+      backgroundPrompt: "Dim detective office with rain outside.",
+      bgm: { channel: "bgm", assetId: null },
+      bgs: { channel: "bgs", assetId: "indoor_rain_window" },
+    });
+    expect(result.value.evidenceManifest[0]?.imageCue.imagePrompt).toBe("Small brass key on transparent background.");
+  });
+
+  it("rejects evidence image metadata on a sub-location", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+- **Image Prompt:** Small brass key on transparent background.
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Outro
+
+**A**：done.
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("assetMetadataUnknownKey");
+  });
+
+  it("rejects visual audio metadata on evidence", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Evidence Manifest
+
+### evidence:foo {#foo}
+- **Name:** Foo
+- **Description:** A foo.
+- **Details:** Detail.
+- **BGM:** rain_mystery_low
+
+#### On Collect
+
+**A**：collected.
+
+## Outro
+
+**A**：done.
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("assetMetadataUnknownKey");
+  });
+
+  it("rejects reserved asset metadata on a hotspot", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+- **BGM:** rain_mystery_low
+
+**A**：observed.
+
+## Outro
+
+**A**：done.
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("assetMetadataUnknownKey");
+  });
+
+  it("rejects reserved asset metadata on statement manifest entries", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Statement Manifest
+
+### statement:foo {#foo}
+- **Speaker:** A
+- **Content:** Foo.
+- **Image Prompt:** Small brass key on transparent background.
+
+#### On Acquire
+
+**A**：acquired.
+
+## Outro
+
+**A**：done.
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("assetMetadataUnknownKey");
+  });
+
+  it("defaults evidence image prompts to null", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Evidence Manifest
+
+### evidence:foo {#foo}
+- **Name:** Foo
+- **Description:** A foo.
+- **Details:** Detail.
+
+#### On Collect
+
+**A**：collected.
+
+## Outro
+
+**A**：done.
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.evidenceManifest[0]?.imageCue.imagePrompt).toBeNull();
+  });
+
   it("rejects an investigation scene with no H1 title", () => {
     const source = `## Intro\n**A**：hi`;
     const result = parseInvestigationScene(source, "i.md", "i");

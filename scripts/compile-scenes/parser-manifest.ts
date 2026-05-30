@@ -6,6 +6,7 @@
 // =============================================================================
 
 import type { Token } from "./tokenizer";
+import { EVIDENCE_IMAGE_METADATA_KEYS, rejectReservedAssetMetadata } from "./parser-assets";
 import type {
   ASTEvidence,
   ASTStatement,
@@ -48,9 +49,12 @@ function parseEvidenceEntry(cur: CursorLike): { ok: true; value: ASTEvidence } |
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, EVIDENCE_IMAGE_METADATA_KEYS, cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const name = meta.value.Name;
   const description = meta.value.Description;
   const details = meta.value.Details;
+  const imagePrompt = meta.value["Image Prompt"] ?? null;
   if (!name || !description || !details) return fail(cur.sourceFile, head.line, "evidenceMissingMetadata", `Evidence ${id} requires Name, Description, Details.`);
 
   let onCollect: DialogueItem[] | null = null;
@@ -90,7 +94,7 @@ function parseEvidenceEntry(cur: CursorLike): { ok: true; value: ASTEvidence } |
       description,
       details,
       imageCue: {
-        imagePrompt: null,
+        imagePrompt,
         imageAssetId: null,
       },
       onCollect,
@@ -130,6 +134,8 @@ function parseStatementEntry(cur: CursorLike): { ok: true; value: ASTStatement }
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const speaker = meta.value.Speaker;
   const content = meta.value.Content;
   if (!speaker || !content) return fail(cur.sourceFile, head.line, "statementMissingMetadata", `Statement ${id} requires Speaker and Content.`);
