@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { parse } from "yaml";
 import type { CompileError } from "../types";
 
 export type AssetTypeName = "background" | "portrait" | "evidence" | "audio";
@@ -199,7 +198,7 @@ function buildAudioMap(raw: unknown, channel: AudioChannel, errors: CompileError
 
 function readYaml(path: string, errors: CompileError[]) {
   try {
-    return parse(readFileSync(path, "utf-8"));
+    return Bun.YAML.parse(readFileSync(path, "utf-8"));
   } catch (e) {
     errors.push(error(path, "assetConfigUnreadable", `${path}: ${(e as Error).message}`));
     return null;
