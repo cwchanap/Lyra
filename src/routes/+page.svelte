@@ -48,7 +48,10 @@
       <ErrorBanner message={gameState.error} />
     {/if}
     {#if gameState.value.mode.type === "dialogue"}
-      <SceneBackdrop sceneTag={gameState.value.mode.sceneTag} />
+      <SceneBackdrop
+        sceneTag={gameState.value.mode.sceneTag}
+        backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
+      />
       <DialogueBox
         current={gameState.value.mode.current}
         queueToken={gameState.value.mode.queueToken}
@@ -56,6 +59,7 @@
         disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "explore"}
+      <SceneBackdrop sceneTag={null} backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null} />
       <ExploreView
         scene={gameState.value.scene}
         onInspect={inspectHotspot}
@@ -64,6 +68,7 @@
         disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "interrogation"}
+      <SceneBackdrop sceneTag={null} backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null} />
       <InterrogationView
         scene={gameState.value.scene}
         inventory={gameState.value.inventory}

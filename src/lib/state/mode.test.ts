@@ -4,13 +4,25 @@ import type { Mode } from "./types";
 
 describe("mode helpers", () => {
   it("shows the inventory panel in explore mode and enables reexamine", () => {
-    const mode: Mode = { type: "explore", sublocationId: "cafe_floor" };
+    const mode: Mode = {
+      type: "explore",
+      sublocationId: "cafe_floor",
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+    };
     expect(shouldShowInventoryPanel(mode)).toBe(true);
     expect(canReexamineInventory(mode)).toBe(true);
   });
 
   it("shows the inventory panel in interrogation mode and enables reexamine", () => {
-    const mode: Mode = { type: "interrogation", phaseId: "wakatsuki_testimony" };
+    const mode: Mode = {
+      type: "interrogation",
+      phaseId: "wakatsuki_testimony",
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+    };
     expect(shouldShowInventoryPanel(mode)).toBe(true);
     expect(canReexamineInventory(mode)).toBe(true);
   });
@@ -21,6 +33,9 @@ describe("mode helpers", () => {
       current: { kind: "action", text: "Found evidence." },
       queueRemaining: 0,
       sceneTag: null,
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
       queueToken: { sceneId: "scene_1", queueGen: 1, cursor: 0 },
     };
     expect(shouldShowInventoryPanel(mode)).toBe(true);

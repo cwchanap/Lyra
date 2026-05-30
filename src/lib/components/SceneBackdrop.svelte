@@ -1,13 +1,39 @@
 <script lang="ts">
-  let { sceneTag }: { sceneTag: string | null } = $props();
+  import { resolveStoryAsset, type ResolvedStoryAsset } from "$lib/assets/story-assets";
+
+  let {
+    sceneTag,
+    backgroundAssetId = null,
+  }: {
+    sceneTag: string | null;
+    backgroundAssetId?: string | null;
+  } = $props();
+
+  let resolved = $state<ResolvedStoryAsset | null>(null);
+
+  $effect(() => {
+    let cancelled = false;
+    resolved = null;
+    resolveStoryAsset(backgroundAssetId, "background").then((asset) => {
+      if (!cancelled) resolved = asset;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
 </script>
 
-{#if sceneTag}
+{#if sceneTag || backgroundAssetId || resolved}
   <div class="backdrop">
-    <span class="stamp">
-      <span class="kana">場 / SCENE</span>
-      <span class="label">{sceneTag}</span>
-    </span>
+    {#if resolved}
+      <img class="background-image" src={resolved.url} alt="" aria-hidden="true" />
+    {/if}
+    {#if sceneTag}
+      <span class="stamp">
+        <span class="kana">場 / SCENE</span>
+        <span class="label">{sceneTag}</span>
+      </span>
+    {/if}
   </div>
 {/if}
 
@@ -15,9 +41,23 @@
   .backdrop {
     position: relative;
     padding: 18px clamp(20px, 3vw, 40px);
+    min-height: 1px;
+  }
+
+  .background-image {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
+    opacity: 0.52;
+    pointer-events: none;
   }
 
   .stamp {
+    position: relative;
+    z-index: 1;
     display: inline-flex;
     align-items: stretch;
     border: 1px solid var(--rule-strong);

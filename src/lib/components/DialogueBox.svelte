@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolveStoryAsset, type ResolvedStoryAsset } from "$lib/assets/story-assets";
   import type { DialogueItem, QueueToken } from "../state/types";
 
   let {
@@ -12,6 +13,20 @@
     onAdvance: (t: QueueToken) => void;
     disabled?: boolean;
   } = $props();
+
+  let portraitAsset = $state<ResolvedStoryAsset | null>(null);
+  const portraitAssetId = $derived(current.kind === "line" ? current.portrait?.assetId ?? null : null);
+
+  $effect(() => {
+    let cancelled = false;
+    portraitAsset = null;
+    resolveStoryAsset(portraitAssetId, "portrait").then((asset) => {
+      if (!cancelled) portraitAsset = asset;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
 
   function handleClick() {
     if (disabled) return;
@@ -47,6 +62,9 @@
     <span class="kind">敘述 · NARRATION</span>
     <p class="text-action">{current.text}</p>
   {:else if current.kind === "line"}
+    {#if portraitAsset}
+      <img class="portrait" src={portraitAsset.url} alt="" aria-hidden="true" />
+    {/if}
     <div class="line-grid">
       <div class="speaker-block">
         <span class="kind">發言 · LINE</span>
@@ -98,6 +116,17 @@
   .box:disabled {
     cursor: wait;
     opacity: 0.7;
+  }
+
+  .portrait {
+    position: absolute;
+    left: 24px;
+    bottom: calc(100% - 8px);
+    height: min(320px, 42vh);
+    max-width: min(240px, 38vw);
+    object-fit: contain;
+    pointer-events: none;
+    filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.58));
   }
 
   .kind {

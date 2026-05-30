@@ -1,4 +1,9 @@
 <script lang="ts">
+  import {
+    placeholderForStoryAsset,
+    resolveStoryAsset,
+    type ResolvedStoryAsset,
+  } from "$lib/assets/story-assets";
   import type { Inventory } from "../state/types";
 
   let {
@@ -16,6 +21,29 @@
   } = $props();
 
   let open = $state(false);
+  let evidenceImages = $state<Record<string, ResolvedStoryAsset>>({});
+
+  $effect(() => {
+    let cancelled = false;
+    const entries = inventory.evidence.map((e) => [e.id, e.imageAssetId] as const);
+    evidenceImages = Object.fromEntries(entries.map(([id]) => [id, placeholderForStoryAsset("evidence")]));
+
+    for (const [id, imageAssetId] of entries) {
+      if (!imageAssetId) continue;
+      resolveStoryAsset(imageAssetId, "evidence").then((asset) => {
+        if (!cancelled) {
+          evidenceImages = {
+            ...evidenceImages,
+            [id]: asset ?? placeholderForStoryAsset("evidence"),
+          };
+        }
+      });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  });
 </script>
 
 <aside class:open>
@@ -49,6 +77,9 @@
         {#each inventory.evidence as e, i (e.id)}
           <button type="button" disabled={!reexamineEnabled || disabled} onclick={() => onReexamineEvidence(e.id)}>
             <span class="num">{String(i + 1).padStart(2, "0")}</span>
+            {#if evidenceImages[e.id]}
+              <img class="evidence-thumb" src={evidenceImages[e.id].url} alt="" aria-hidden="true" />
+            {/if}
             <span class="entry">
               <strong>{e.name}</strong>
               <small>{e.description}</small>
@@ -240,7 +271,7 @@
 
   section button {
     display: grid;
-    grid-template-columns: 32px 1fr;
+    grid-template-columns: 32px 36px 1fr;
     gap: 10px;
     width: 100%;
     text-align: left;
@@ -286,6 +317,16 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    min-width: 0;
+  }
+
+  .evidence-thumb {
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    align-self: start;
+    border: 1px solid var(--rule-strong);
+    background: var(--cell);
   }
 
   section button strong {
