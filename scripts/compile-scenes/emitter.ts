@@ -9,6 +9,7 @@ import type {
   ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
+  DialogueItem,
   JSONChaptersIndex,
   JSONInterrogationScene,
   JSONInvestigationScene,
@@ -20,7 +21,8 @@ export function emitLinearScene(ast: ASTLinearScene): JSONLinearScene {
     type: "linear",
     id: ast.id,
     title: ast.title,
-    queue: ast.queue,
+    queue: emitDialogueItems(ast.queue),
+    assetRefs: ast.assetRefs,
   };
 }
 
@@ -29,7 +31,8 @@ export function emitInvestigationScene(ast: ASTInvestigationScene): JSONInvestig
     type: "investigation",
     id: ast.id,
     title: ast.title,
-    intro: ast.intro,
+    intro: emitDialogueItems(ast.intro),
+    assetRefs: ast.assetRefs,
     sublocations: ast.sublocations.map((sub) => ({
       id: sub.id,
       label: sub.label,
@@ -37,7 +40,8 @@ export function emitInvestigationScene(ast: ASTInvestigationScene): JSONInvestig
       unlock: sub.unlock,
       reveals: sub.reveals,
       sceneTag: sub.sceneTag,
-      transitionDialogue: sub.transitionDialogue,
+      assetCue: sub.assetCue,
+      transitionDialogue: emitDialogueItems(sub.transitionDialogue),
       hotspots: sub.hotspots.map((h) => ({
         id: h.id,
         label: h.label,
@@ -45,8 +49,8 @@ export function emitInvestigationScene(ast: ASTInvestigationScene): JSONInvestig
         status: h.status,
         unlock: h.unlock,
         reveals: h.reveals,
-        inspectDialogue: h.inspectDialogue,
-        onReexamine: h.onReexamine,
+        inspectDialogue: emitDialogueItems(h.inspectDialogue),
+        onReexamine: emitNullableDialogueItems(h.onReexamine),
       })),
       characters: sub.characters.map((c) => ({
         id: c.id,
@@ -59,8 +63,8 @@ export function emitInvestigationScene(ast: ASTInvestigationScene): JSONInvestig
           status: t.status,
           unlock: t.unlock,
           reveals: t.reveals,
-          topicDialogue: t.topicDialogue,
-          onReexamine: t.onReexamine,
+          topicDialogue: emitDialogueItems(t.topicDialogue),
+          onReexamine: emitNullableDialogueItems(t.onReexamine),
         })),
       })),
     })),
@@ -69,19 +73,20 @@ export function emitInvestigationScene(ast: ASTInvestigationScene): JSONInvestig
       name: e.name,
       description: e.description,
       details: e.details,
-      onCollect: e.onCollect,
-      onReexamine: e.onReexamine,
+      imageCue: e.imageCue,
+      onCollect: emitDialogueItems(e.onCollect),
+      onReexamine: emitNullableDialogueItems(e.onReexamine),
     })),
     statementManifest: ast.statementManifest.map((s) => ({
       id: s.id,
       speaker: s.speaker,
       content: s.content,
-      onAcquire: s.onAcquire,
-      onReexamine: s.onReexamine,
+      onAcquire: emitDialogueItems(s.onAcquire),
+      onReexamine: emitNullableDialogueItems(s.onReexamine),
     })),
     outro: {
       unlock: ast.outro.unlock,
-      dialogue: ast.outro.dialogue,
+      dialogue: emitDialogueItems(ast.outro.dialogue),
     },
   };
 }
@@ -91,7 +96,8 @@ export function emitInterrogationScene(ast: ASTInterrogationScene): JSONInterrog
     type: "interrogation",
     id: ast.id,
     title: ast.title,
-    intro: ast.intro,
+    intro: emitDialogueItems(ast.intro),
+    assetRefs: ast.assetRefs,
     phases: ast.phases.map((phase) => {
       const common = {
         id: phase.id,
@@ -107,7 +113,8 @@ export function emitInterrogationScene(ast: ASTInterrogationScene): JSONInterrog
         unlock: phase.unlock,
         reveals: phase.reveals,
         sceneTag: phase.sceneTag,
-        entryDialogue: phase.entryDialogue,
+        assetCue: phase.assetCue,
+        entryDialogue: emitDialogueItems(phase.entryDialogue),
       };
       if (phase.kind === "inquiry") {
         return {
@@ -123,8 +130,8 @@ export function emitInterrogationScene(ast: ASTInterrogationScene): JSONInterrog
             required: q.required,
             unlock: q.unlock,
             reveals: q.reveals,
-            answerDialogue: q.answerDialogue,
-            onReask: q.onReask,
+            answerDialogue: emitDialogueItems(q.answerDialogue),
+            onReask: emitNullableDialogueItems(q.onReask),
           })),
         };
       }
@@ -138,16 +145,16 @@ export function emitInterrogationScene(ast: ASTInterrogationScene): JSONInterrog
           contradiction: s.contradiction,
           onCorrect: s.onCorrect,
           onWrong: s.onWrong,
-          onPress: s.onPress,
-          onPresent: s.onPresent,
-          onWrongPresent: s.onWrongPresent,
+          onPress: emitNullableDialogueItems(s.onPress),
+          onPresent: emitNullableDialogueItems(s.onPresent),
+          onWrongPresent: emitNullableDialogueItems(s.onWrongPresent),
           reveals: s.reveals,
         })),
         results: phase.results.map((r) => ({
           id: r.id,
           label: r.label,
           reveals: r.reveals,
-          dialogue: r.dialogue,
+          dialogue: emitDialogueItems(r.dialogue),
         })),
       };
     }),
@@ -156,20 +163,38 @@ export function emitInterrogationScene(ast: ASTInterrogationScene): JSONInterrog
       name: e.name,
       description: e.description,
       details: e.details,
-      onCollect: e.onCollect,
-      onReexamine: e.onReexamine,
+      imageCue: e.imageCue,
+      onCollect: emitDialogueItems(e.onCollect),
+      onReexamine: emitNullableDialogueItems(e.onReexamine),
     })),
     statementManifest: ast.statementManifest.map((s) => ({
       id: s.id,
       speaker: s.speaker,
       content: s.content,
-      onAcquire: s.onAcquire,
-      onReexamine: s.onReexamine,
+      onAcquire: emitDialogueItems(s.onAcquire),
+      onReexamine: emitNullableDialogueItems(s.onReexamine),
     })),
     outro: {
       unlock: ast.outro.unlock,
-      dialogue: ast.outro.dialogue,
+      dialogue: emitDialogueItems(ast.outro.dialogue),
     },
+  };
+}
+
+function emitDialogueItems(items: DialogueItem[]): DialogueItem[] {
+  return items.map(emitDialogueItem);
+}
+
+function emitNullableDialogueItems(items: DialogueItem[] | null): DialogueItem[] | null {
+  return items ? emitDialogueItems(items) : null;
+}
+
+function emitDialogueItem(item: DialogueItem): DialogueItem {
+  if (item.kind !== "line") return item;
+  return {
+    ...item,
+    expression: item.expression ?? null,
+    portrait: item.portrait ?? null,
   };
 }
 

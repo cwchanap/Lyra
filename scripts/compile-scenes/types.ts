@@ -11,10 +11,48 @@
 
 // ----- Shared atoms ----------------------------------------------------------
 
+export type AssetRef = {
+  type: "background" | "portrait" | "evidence" | "audio";
+  assetId: string;
+};
+
+export type PortraitRef = {
+  characterId: string;
+  expression: string;
+  assetId: string;
+};
+
+export type AudioCue = {
+  channel: "bgm" | "bgs";
+  assetId: string | null;
+};
+
+export type VisualAssetCue = {
+  backgroundPrompt: string | null;
+  backgroundAssetId: string | null;
+  bgm: AudioCue | null;
+  bgs: AudioCue | null;
+};
+
+export type EvidenceImageCue = {
+  imagePrompt: string | null;
+  imageAssetId: string | null;
+};
+
 export type DialogueItem =
-  | { kind: "sceneTag"; text: string }
+  | {
+      kind: "sceneTag";
+      text: string;
+      assetCue?: VisualAssetCue | null;
+    }
   | { kind: "action"; text: string }
-  | { kind: "line"; speaker: string; text: string };
+  | {
+      kind: "line";
+      speaker: string;
+      text: string;
+      expression?: string | null;
+      portrait?: PortraitRef | null;
+    };
 
 export type RevealTarget =
   | { kind: "evidence"; id: string }
@@ -64,6 +102,7 @@ export type ASTLinearScene = Located<{
   id: string; // derived from filename without .md
   title: string;
   queue: DialogueItem[];
+  assetRefs: AssetRef[];
 }>;
 
 export type ASTInvestigationScene = Located<{
@@ -75,6 +114,7 @@ export type ASTInvestigationScene = Located<{
   evidenceManifest: ASTEvidence[];
   statementManifest: ASTStatement[];
   outro: ASTOutro;
+  assetRefs: AssetRef[];
 }>;
 
 export type ASTSublocation = Located<{
@@ -84,6 +124,7 @@ export type ASTSublocation = Located<{
   unlock: UnlockExpr | null;
   reveals: RevealTarget[];
   sceneTag: string;
+  assetCue: VisualAssetCue | null;
   transitionDialogue: DialogueItem[];
   hotspots: ASTHotspot[];
   characters: ASTCharacter[];
@@ -123,6 +164,7 @@ export type ASTEvidence = Located<{
   name: string;
   description: string;
   details: string;
+  imageCue: EvidenceImageCue;
   onCollect: DialogueItem[];
   onReexamine: DialogueItem[] | null;
 }>;
@@ -149,6 +191,7 @@ export type ASTInterrogationScene = Located<{
   evidenceManifest: ASTEvidence[];
   statementManifest: ASTStatement[];
   outro: ASTInterrogationOutro;
+  assetRefs: AssetRef[];
 }>;
 
 export type ASTSubject = Located<{
@@ -172,6 +215,7 @@ export type ASTInquiryPhase = Located<{
   unlock: InterrogationUnlockExpr | null;
   reveals: InterrogationRevealTarget[];
   sceneTag: string;
+  assetCue: VisualAssetCue | null;
   entryDialogue: DialogueItem[];
   complete: "auto" | InterrogationUnlockExpr;
   questions: ASTInquiryQuestion[];
@@ -200,6 +244,7 @@ export type ASTTestimonyPhase = Located<{
   unlock: InterrogationUnlockExpr | null;
   reveals: InterrogationRevealTarget[];
   sceneTag: string;
+  assetCue: VisualAssetCue | null;
   entryDialogue: DialogueItem[];
   statements: ASTTestimonyStatement[];
   results: ASTTestimonyResult[];
@@ -246,6 +291,7 @@ export type JSONLinearScene = {
   id: string;
   title: string;
   queue: DialogueItem[];
+  assetRefs: AssetRef[];
 };
 
 export type JSONInvestigationScene = {
@@ -253,6 +299,7 @@ export type JSONInvestigationScene = {
   id: string;
   title: string;
   intro: DialogueItem[];
+  assetRefs: AssetRef[];
   sublocations: Array<{
     id: string;
     label: string;
@@ -260,6 +307,7 @@ export type JSONInvestigationScene = {
     unlock: UnlockExpr | null;
     reveals: RevealTarget[];
     sceneTag: string;
+    assetCue: VisualAssetCue | null;
     transitionDialogue: DialogueItem[];
     hotspots: Array<{
       id: string;
@@ -292,6 +340,7 @@ export type JSONInvestigationScene = {
     name: string;
     description: string;
     details: string;
+    imageCue: EvidenceImageCue;
     onCollect: DialogueItem[];
     onReexamine: DialogueItem[] | null;
   }>;
@@ -313,12 +362,14 @@ export type JSONInterrogationScene = {
   id: string;
   title: string;
   intro: DialogueItem[];
+  assetRefs: AssetRef[];
   phases: JSONInterrogationPhase[];
   evidenceManifest: Array<{
     id: string;
     name: string;
     description: string;
     details: string;
+    imageCue: EvidenceImageCue;
     onCollect: DialogueItem[];
     onReexamine: DialogueItem[] | null;
   }>;
@@ -353,6 +404,7 @@ export type JSONInterrogationPhase =
       unlock: InterrogationUnlockExpr | null;
       reveals: InterrogationRevealTarget[];
       sceneTag: string;
+      assetCue: VisualAssetCue | null;
       entryDialogue: DialogueItem[];
       complete: "auto" | InterrogationUnlockExpr;
       questions: JSONInquiryQuestion[];
@@ -367,6 +419,7 @@ export type JSONInterrogationPhase =
       unlock: InterrogationUnlockExpr | null;
       reveals: InterrogationRevealTarget[];
       sceneTag: string;
+      assetCue: VisualAssetCue | null;
       entryDialogue: DialogueItem[];
       statements: JSONTestimonyStatement[];
       results: JSONTestimonyResult[];
