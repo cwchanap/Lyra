@@ -362,8 +362,6 @@ pub enum InterrogationPhaseJson {
         unlock: Option<InterrogationUnlockExpr>,
         reveals: Vec<InterrogationRevealTarget>,
         scene_tag: String,
-        #[serde(default)]
-        asset_cue: Option<VisualAssetCueJson>,
         #[serde(flatten)]
         flattened_asset_cue: VisualAssetCueJson,
         entry_dialogue: Vec<DialogueItem>,
@@ -379,8 +377,6 @@ pub enum InterrogationPhaseJson {
         unlock: Option<InterrogationUnlockExpr>,
         reveals: Vec<InterrogationRevealTarget>,
         scene_tag: String,
-        #[serde(default)]
-        asset_cue: Option<VisualAssetCueJson>,
         #[serde(flatten)]
         flattened_asset_cue: VisualAssetCueJson,
         entry_dialogue: Vec<DialogueItem>,
@@ -453,8 +449,6 @@ pub struct SublocationJson {
     pub unlock: Option<UnlockExpr>,
     pub reveals: Vec<RevealTarget>,
     pub scene_tag: String,
-    #[serde(default)]
-    pub asset_cue: Option<VisualAssetCueJson>,
     #[serde(flatten)]
     pub flattened_asset_cue: VisualAssetCueJson,
     pub transition_dialogue: Vec<DialogueItem>,
@@ -464,28 +458,23 @@ pub struct SublocationJson {
 
 impl SublocationJson {
     pub fn visual_asset_cue(&self) -> Option<VisualAssetCueJson> {
-        self.asset_cue.clone().or_else(|| {
-            (!self.flattened_asset_cue.is_empty()).then(|| self.flattened_asset_cue.clone())
-        })
+        (!self.flattened_asset_cue.is_empty()).then(|| self.flattened_asset_cue.clone())
     }
 }
 
 impl InterrogationPhaseJson {
     pub fn visual_asset_cue(&self) -> Option<VisualAssetCueJson> {
-        match self {
+        let flattened = match self {
             Self::Inquiry {
-                asset_cue,
                 flattened_asset_cue,
                 ..
             }
             | Self::Testimony {
-                asset_cue,
                 flattened_asset_cue,
                 ..
-            } => asset_cue
-                .clone()
-                .or_else(|| (!flattened_asset_cue.is_empty()).then(|| flattened_asset_cue.clone())),
-        }
+            } => flattened_asset_cue,
+        };
+        (!flattened.is_empty()).then(|| flattened.clone())
     }
 }
 
@@ -756,5 +745,46 @@ mod tests {
         let json = r#"{"type": "bckground", "assetId": "bg"}"#;
         let result = serde_json::from_str::<AssetRefJson>(json);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn sublocation_visual_asset_cue_returns_none_when_empty() {
+        let sub = SublocationJson {
+            id: "test".into(),
+            label: "Test".into(),
+            status: LockStatus::Unlocked,
+            unlock: None,
+            reveals: vec![],
+            scene_tag: "test".into(),
+            flattened_asset_cue: VisualAssetCueJson::default(),
+            transition_dialogue: vec![],
+            hotspots: vec![],
+            characters: vec![],
+        };
+        assert!(sub.visual_asset_cue().is_none());
+    }
+
+    #[test]
+    fn sublocation_visual_asset_cue_returns_some_when_populated() {
+        let cue = VisualAssetCueJson {
+            background_asset_id: Some("bg.x".into()),
+            ..Default::default()
+        };
+        let sub = SublocationJson {
+            id: "test".into(),
+            label: "Test".into(),
+            status: LockStatus::Unlocked,
+            unlock: None,
+            reveals: vec![],
+            scene_tag: "test".into(),
+            flattened_asset_cue: cue.clone(),
+            transition_dialogue: vec![],
+            hotspots: vec![],
+            characters: vec![],
+        };
+        assert_eq!(
+            sub.visual_asset_cue(),
+            Some(cue)
+        );
     }
 }

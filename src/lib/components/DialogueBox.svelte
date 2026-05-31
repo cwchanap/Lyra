@@ -34,6 +34,7 @@
 
   function handlePortraitError() {
     if (!portraitAsset || portraitAsset.placeholder) return;
+    console.warn(`[DialogueBox] Missing portrait asset: ${portraitAsset.url} (assetId: ${portraitAsset.assetId})`);
     portraitAsset = placeholderForMissingStoryAsset(portraitAsset.assetId, "portrait");
   }
 

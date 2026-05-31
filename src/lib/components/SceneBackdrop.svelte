@@ -28,6 +28,7 @@
 
   function handleBackgroundError() {
     if (!resolved || resolved.placeholder) return;
+    console.warn(`[SceneBackdrop] Missing background asset: ${resolved.url} (assetId: ${resolved.assetId})`);
     resolved = placeholderForMissingStoryAsset(resolved.assetId, "background");
   }
 </script>

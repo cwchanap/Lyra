@@ -10,6 +10,8 @@ export type ResolvedStoryAsset = {
 const cache = new Map<string, Promise<ResolvedStoryAsset>>();
 
 export function publicPathForStoryAsset(assetId: string, type: StoryAssetType): string {
+  // KEEP IN SYNC with publicPath() in scripts/compile-scenes/assets/manifest.ts.
+  // manifest.test.ts cross-checks both; update both together.
   if (type === "portrait") {
     const [, characterId, expression] = assetId.split(".");
     return `/assets/portraits/${characterId}/${expression}.png`;
@@ -56,6 +58,12 @@ export function resolveStoryAsset(
   return promise;
 }
 
+/**
+ * Resolves an asset to its public URL. This is **path-construction-only** —
+ * it does NOT verify the file exists on disk. Existence is checked lazily
+ * by the browser (<img onerror>), which triggers the placeholder fallback
+ * in the component's error handler.
+ */
 async function resolveUncached(assetId: string, type: StoryAssetType): Promise<ResolvedStoryAsset> {
   const url = publicPathForStoryAsset(assetId, type);
   return { assetId, type, url, placeholder: false };
