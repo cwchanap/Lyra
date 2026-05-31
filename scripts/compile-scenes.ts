@@ -67,4 +67,10 @@ async function runOnce() {
       `[compile-scenes] Assets - backgrounds ${r.background}, portraits ${r.portrait}, evidence ${r.evidence}, audio ${r.audio}; warnings ${result.assetReport.warnings.length}.`,
     );
   }
+  if (result.assetReport.warnings.length > 0) {
+    console.warn(`[compile-scenes] Asset warnings (${result.assetReport.warnings.length}):`);
+    for (const w of result.assetReport.warnings) {
+      console.warn(`  - [${w.code}] ${w.message}`);
+    }
+  }
 }
