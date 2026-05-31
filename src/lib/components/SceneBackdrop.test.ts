@@ -7,6 +7,21 @@ describe("SceneBackdrop", () => {
     vi.unstubAllGlobals();
   });
 
+  it("renders the background image when backgroundAssetId is provided", async () => {
+    const { container } = render(SceneBackdrop, {
+      sceneTag: null,
+      backgroundAssetId: "background.chapter_1.scene_0.render_test",
+    });
+
+    await waitFor(() => {
+      const img = container.querySelector("img.background-image") as HTMLImageElement;
+      expect(img).toBeTruthy();
+      expect(img.getAttribute("src")).toBe(
+        "/assets/backgrounds/chapter_1/scene_0/render_test.png",
+      );
+    });
+  });
+
   it("falls back to a background placeholder when the image fails to load", async () => {
     const { container } = render(SceneBackdrop, {
       sceneTag: "雨夜咖啡館",
