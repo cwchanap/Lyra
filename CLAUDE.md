@@ -1,19 +1,43 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code and other coding agents working in
+this repository.
 
 ## Commands
 
-Package manager is **bun** (see `bun.lock`). Tauri's `beforeDevCommand`/`beforeBuildCommand` invoke `bun run dev`/`bun run build`, so use bun to keep behavior consistent.
+Package manager is **bun** (see `bun.lock`). Use bun for frontend, scene
+compiler, and Tauri commands so local runs match `tauri.conf.json`.
 
-- `bun run tauri dev` — full desktop app dev loop (spawns Vite on port 1420 + Rust app with HMR). This is the primary dev command.
-- `bun run dev` — frontend only in browser (no Tauri APIs available; `invoke()` calls will fail).
-- `bun run tauri build` — produce desktop bundles for all targets in `tauri.conf.json`.
-- `bun run check` — type-check Svelte + TS (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
-- `bun run check:watch` — same in watch mode.
-- `bun run test` / `bun run test:watch` — Vitest unit tests for frontend logic (e.g. `src/lib/state/mode.test.ts`). Run a single file with `bun run test src/lib/state/mode.test.ts` or a single case with `bun run test -t "test name"`.
-- `bun run test:e2e` / `bun run test:e2e:ui` — Playwright e2e tests in `e2e/` (config: `playwright.config.ts`). These spin up `bun run preview` on port 4173 and exercise the **built static SPA in a browser** — `invoke()` calls to Tauri will not work here, so e2e tests must cover only the pure-frontend surface.
-- Rust-side checks: `cd src-tauri && cargo check` / `cargo clippy` / `cargo test`. Rust unit tests live alongside the code (e.g. `#[cfg(test)] mod tests` in `src-tauri/src/game/`).
+- `bun run tauri dev` - full desktop app dev loop. Tauri runs
+  `bun run dev:tauri`, which compiles scenes and then starts Vite on port 1420
+  before launching the Rust shell with HMR. This is the primary dev command.
+- `bun run dev` - frontend only in a browser. Tauri APIs are unavailable here;
+  `invoke()` calls will fail unless mocked.
+- `bun run tauri build` - produce desktop bundles for all targets in
+  `tauri.conf.json`. Tauri runs `bun run build:tauri`, which compiles scenes
+  before `vite build`.
+- `bun run scenes:compile` - one-shot compile from `static/stories_plan/` and
+  `static/assets/config/` into Tauri resource JSON.
+- `bun run scenes:watch` - watch authored scene Markdown and asset YAML while
+  iterating on story content.
+- `bun run check` / `bun run check:watch` - type-check Svelte + TS
+  (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
+- `bun run test` / `bun run test:watch` - Vitest unit tests for frontend logic
+  and compile-script tests. Run a single file with
+  `bun run test src/lib/state/mode.test.ts` or a single case with
+  `bun run test -t "test name"`.
+- `bun run test:e2e` / `bun run test:e2e:ui` - Playwright e2e tests in `e2e/`
+  (config: `playwright.config.ts`). These spin up `bun run preview` on port
+  4173 and exercise the **built static SPA in a browser**. Tauri `invoke()`
+  calls do not work there, so e2e tests must cover only the pure-frontend
+  surface or explicit browser-safe mocks.
+- `bun run lint:all` - ESLint, Prettier check, Rust format check, and Rust
+  clippy with warnings denied.
+- Rust-side checks can be run through package scripts
+  (`bun run rust:fmt`, `bun run rust:lint`) or directly with
+  `cd src-tauri && cargo check` / `cargo clippy` / `cargo test`. Rust unit
+  tests live alongside the code, with integration coverage under
+  `src-tauri/tests/`.
 
 ## Architecture
 
@@ -28,23 +52,86 @@ Two-process desktop app: a **SvelteKit SPA frontend** rendered inside a **Tauri 
 - **Permissions** for Tauri APIs are allow-listed in `src-tauri/capabilities/default.json`. New plugins/APIs the frontend calls usually need a corresponding permission entry here or `invoke` will be rejected at runtime.
 - **Vite dev server** is pinned to port 1420 with `strictPort: true` (`vite.config.js`) because Tauri expects that exact port. `src-tauri/**` is excluded from the watcher so Rust changes don't trigger frontend reloads.
 
+## Scene Pipeline
+
+Lyra's playable content is compiler-driven:
+
+1. Authored Markdown lives under `static/stories_plan/`.
+2. Asset policy/catalog YAML lives under `static/assets/config/`.
+3. `scripts/compile-scenes.ts` validates and emits runtime JSON under
+   `src-tauri/resources/scenes/` and asset manifests/reports under
+   `src-tauri/resources/assets/`.
+4. Rust loads scenes and asset manifests from `BaseDirectory::Resource`.
+5. Svelte renders the typed game/view state returned by Rust commands.
+
+Keep the ownership boundary intact:
+
+- Do not hand-edit generated JSON in `src-tauri/resources/scenes/` or
+  `src-tauri/resources/assets/`; regenerate it with `bun run scenes:compile`.
+- Only `.gitkeep` files are tracked in those generated resource directories.
+  Generated JSON may appear locally after compile/build and is intentionally
+  ignored.
+- Writers author semantic intent only: dialogue, scene tags, prompts, speaker
+  expression IDs, and audio IDs. Writers must not author filesystem paths.
+- Character IDs, expression IDs, and asset IDs become path or manifest keys, so
+  keep slug validation in the compiler/config layer before generating paths.
+
 ## Svelte 5
 
-Uses Svelte 5 runes (`$state`, `$props`, etc.) — see `src/routes/+page.svelte`. Use rune syntax and event attributes like `onsubmit={...}` rather than legacy `on:submit` / `export let` patterns.
+Uses Svelte 5 runes (`$state`, `$props`, etc.) - see `src/routes/+page.svelte`
+and `src/lib/state/game-client.svelte.ts`. Use rune syntax and event
+attributes like `onsubmit={...}` rather than legacy `on:submit` /
+`export let` patterns.
 
 ## Project domain
 
-This repo is a detective/mystery game (《東京雨證：第零證人》, Traditional Chinese). Narrative content lives in `static/stories_plan/` — `General Plan.md` is the 8-chapter overview, `第_1_章_..._詳細計劃.md` is the per-chapter detail plan, and `chapter_<N>/` holds:
+This repo is a detective/mystery game (《東京雨證：第零證人》, Traditional
+Chinese). Narrative content lives in `static/stories_plan/`:
 
-- `chapter.md` — the chapter manifest (title, summary, ordered scene list). Authored via the `writing-chapter-manifest` skill.
-- `scene_<K>.md` — linear-dialogue scenes (intros, transitions, endings). Authored via `writing-detective-game-dialogue`.
-- `investigation_scene_<K>.md` — interactive investigation scenes (hotspots, characters, evidence). Authored via `writing-investigation-scene`.
-- `interrogation_scene_<K>.md` — authored and compiler-validated suspect inquiry and testimony cross-examination scenes. Authored via `writing-interrogation-scene`.
+- `General Plan.md` - the 8-chapter overview.
+- `第_1_章_..._詳細計劃.md` - the per-chapter detail plan.
+- `chapter_<N>/` - authored playable scene files:
+  - `chapter.md` - the chapter manifest (title, summary, ordered scene list).
+    Authored via the `writing-chapter-manifest` skill.
+  - `scene_<K>.md` - linear-dialogue scenes (intros, transitions, endings).
+    Authored via `writing-detective-game-dialogue`.
+  - `investigation_scene_<K>.md` - interactive investigation scenes (hotspots,
+    characters, evidence). Authored via `writing-investigation-scene`.
+  - `interrogation_scene_<K>.md` - authored and compiler-validated suspect
+    inquiry and testimony cross-examination scenes. Authored via
+    `writing-interrogation-scene`.
 
-A Bun-based compile script (`scripts/compile-scenes.ts`) transforms authored markdown into validated JSON under `src-tauri/resources/scenes/`. The Rust engine reads runtime-supported scene JSON via `BaseDirectory::Resource`, including interrogation scenes with frontend mode/view support. The compile script is wired into Tauri's `beforeDevCommand` and `beforeBuildCommand` — the dev loop is `bun run tauri dev` (which chains `scenes:compile` before `vite`); for incremental rebuilds during writing iteration, run `bun run scenes:watch` in a second terminal.
+Active writer instructions live in `.claude/skills/*/SKILL.md` and are part of
+the repo contract. When writing or modifying scene content, invoke the relevant
+skill rather than free-forming the format. These skills own details such as
+Traditional Chinese dialogue style, full-width `場景：` tags, investigation
+hotspots, interrogation phases, and asset metadata.
 
-Design spec: `docs/superpowers/specs/2026-05-13-scene-pipeline-design.md`. Skill authoring formats are owned by the scene authoring skills above — when writing or modifying scene content, invoke the relevant skill via the `Skill` tool rather than free-forming the format.
+Relevant design specs:
+
+- `docs/superpowers/specs/2026-05-13-scene-pipeline-design.md`
+- `docs/superpowers/specs/2026-05-19-interrogation-scene-design.md`
+- `docs/superpowers/specs/2026-05-30-story-asset-pipeline-design.md`
+
+## Verification Guidance
+
+Choose the smallest verification set that covers the change, then run the
+broader checks before claiming cross-stack work is done.
+
+- Scene authoring or compiler changes: `bun run scenes:compile` and focused
+  Vitest files under `scripts/compile-scenes*.test.ts`.
+- Asset pipeline changes: focused tests under `scripts/compile-scenes/assets/`,
+  `src/lib/assets/story-assets.test.ts`, then `bun run scenes:compile`.
+- Frontend component/state changes: focused Vitest tests, then `bun run check`.
+- Rust engine/runtime changes: focused `cargo test` filters where useful, then
+  `cd src-tauri && cargo test`; use `bun run rust:lint` before finalizing Rust
+  logic changes.
+- Full desktop smoke test: `bun run tauri dev`. Use this when the change depends
+  on real Tauri IPC or resource loading.
 
 ## Misc
 
 - `AGENTS.md` is a symlink to `CLAUDE.md`; edit one, both update.
+- Keep generated artifacts, local settings, build output, coverage, Playwright
+  reports, and `.worktrees/` out of commits unless the task explicitly changes
+  ignore policy.
