@@ -383,7 +383,7 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
         id: "scene_0",
         title: "Test",
         queue: [
-          { kind: "sceneTag", text: "Street", assetCue: { backgroundPrompt: "city", backgroundAssetId: null, bgm: { channel: "bgm", assetId: "nonexistent_bgm_a1b2c3" }, bgs: null } },
+          { kind: "sceneTag", text: "Street", assetCue: { backgroundPrompt: "city", backgroundAssetId: null, bgm: { channel: "bgm", assetId: "nonexistent_bgm_a1b2c3" }, bgs: { channel: "bgs", assetId: null } } },
           { kind: "line", speaker: "測試角色", text: "Hi", expression: "concerned", portrait: null },
         ],
         assetRefs: [],
@@ -564,8 +564,8 @@ function interrogationScene(phaseKind: "inquiry" | "testimony"): SceneRecord {
     assetCue: {
       backgroundPrompt: "Dark interrogation room.",
       backgroundAssetId: null,
-      bgm: null,
-      bgs: null,
+      bgm: { channel: "bgm", assetId: null },
+      bgs: { channel: "bgs", assetId: null },
     },
     entryDialogue: [
       { kind: "line" as const, speaker: "早坂茜", expression: "concerned", portrait: null, text: "你為什麼在這裡？" },
