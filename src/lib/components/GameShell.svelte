@@ -182,6 +182,5 @@
 
   main {
     position: relative;
-    z-index: 2;
   }
 </style>
