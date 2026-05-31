@@ -378,6 +378,33 @@ types:
     });
   });
 
+  it("warns when policy.yaml is absent but sibling catalog files exist", () => {
+    withConfig({
+      "characters.yaml": `
+characters:
+  - id: hayasaka_akane
+    displayNames: ["早坂茜"]
+`,
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.enabled).toBe(false);
+      expect(result.warnings.some((w) => w.code === "assetPolicyMissing")).toBe(true);
+      expect(result.warnings[0]?.message).toContain("characters.yaml");
+    });
+  });
+
+  it("returns no warnings when policy.yaml is absent and no siblings exist", () => {
+    withConfig({}, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.warnings).toEqual([]);
+    });
+  });
+
   it("warns when type dimensions are present but malformed", () => {
     withConfig({
       "policy.yaml": `

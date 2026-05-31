@@ -1,3 +1,12 @@
+// =============================================================================
+// scripts/compile-scenes/assets/enrich.ts
+//
+// Walks scene ASTs and injects concrete assetIds (background, portrait,
+// evidence, audio) using the config's character/expression/audio maps.
+// Collects manifest entries for every asset referenced. Validates that
+// speakers, expressions, and audio IDs are known when assets are enabled.
+// =============================================================================
+
 import { existsSync } from "node:fs";
 import type { AssetConfig, AudioChannel } from "./config";
 import { buildAssetManifest, expectedPath, type AssetManifest, type AssetManifestEntry } from "./manifest";
@@ -247,7 +256,7 @@ function enrichAudioCue(cue: VisualAssetCue["bgm"], sourceFile: string, line: nu
   const audio = context.config.audio[channel].get(cue.assetId);
   if (!audio) {
     context.errors.push(compileError(sourceFile, line, "assetUnknownAudio", `Unknown ${channel.toUpperCase()} asset "${cue.assetId}".`));
-    return { ...cue };
+    return { ...cue, assetId: null };
   }
 
   const assetId = audioAssetId(channel, cue.assetId);

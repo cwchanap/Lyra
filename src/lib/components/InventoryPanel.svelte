@@ -49,6 +49,7 @@
   function handleEvidenceImageError(id: string) {
     const current = evidenceImages[id];
     if (!current || current.placeholder) return;
+    console.warn(`[InventoryPanel] Missing evidence asset: ${current.url} (id: ${id}, assetId: ${current.assetId})`);
     evidenceImages = {
       ...evidenceImages,
       [id]: placeholderForMissingStoryAsset(current.assetId, "evidence"),

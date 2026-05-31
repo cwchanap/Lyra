@@ -1,3 +1,11 @@
+// =============================================================================
+// scripts/compile-scenes/assets/config.ts
+//
+// Loads and validates the asset pipeline configuration: policy.yaml,
+// characters.yaml, audio.yaml. Produces a typed AssetConfig (or collected
+// errors). Asset-ID slugs are validated here; bad slugs are hard errors.
+// =============================================================================
+
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { CompileError } from "../types";
@@ -6,12 +14,28 @@ export type AssetTypeName = "background" | "portrait" | "evidence" | "audio";
 export type ImageAssetTypeName = "background" | "portrait" | "evidence";
 export type AudioChannel = "bgm" | "bgs";
 
-export type AssetTypePolicy = {
+/** Policy for image asset types (background, portrait, evidence). */
+export type ImageAssetPolicy = {
   dimensions?: [number, number];
   format: string;
   transparency?: boolean;
   prompt: string;
+};
+
+/** Policy for audio asset types. No dimensions/transparency; has loop. */
+export type AudioAssetPolicy = {
+  format: string;
   loop?: boolean;
+  prompt: string;
+};
+
+/** Per-type policies, discriminated so image-only and audio-only fields
+ *  cannot cross-contaminate. */
+export type AssetTypePolicies = {
+  background: ImageAssetPolicy;
+  portrait: ImageAssetPolicy;
+  evidence: ImageAssetPolicy;
+  audio: AudioAssetPolicy;
 };
 
 export type CharacterExpressionConfig = {
@@ -37,7 +61,7 @@ export type AudioConfigEntry = {
 export type AssetConfig = {
   enabled: boolean;
   globalStylePrompt: string;
-  types: Record<AssetTypeName, AssetTypePolicy>;
+  types: AssetTypePolicies;
   characters: {
     byId: Map<string, CharacterConfig>;
     byDisplayName: Map<string, CharacterConfig>;
@@ -54,7 +78,7 @@ export type AssetConfigResult =
 
 const SAFE_ASSET_SLUG = /^[a-z0-9_]+$/;
 
-function defaultTypes(): Record<AssetTypeName, AssetTypePolicy> {
+function defaultTypes(): AssetTypePolicies {
   return {
     background: { dimensions: [1920, 1080], format: "png", transparency: false, prompt: "" },
     portrait: { dimensions: [768, 1024], format: "png", transparency: true, prompt: "" },
@@ -76,7 +100,20 @@ function emptyAssetConfig(): AssetConfig {
 export function loadAssetConfig(configRoot: string): AssetConfigResult {
   const policyPath = resolve(configRoot, "policy.yaml");
   if (!existsSync(policyPath)) {
-    return { ok: true, value: emptyAssetConfig(), warnings: [] };
+    const warnings: CompileError[] = [];
+    const siblings = ["characters.yaml", "audio.yaml"].filter((f) =>
+      existsSync(resolve(configRoot, f)),
+    );
+    if (siblings.length > 0) {
+      warnings.push(
+        error(
+          configRoot,
+          "assetPolicyMissing",
+          `policy.yaml is absent but ${siblings.join(", ")} exist. Asset pipeline is disabled. If this is unintentional (typo, partial checkout), add policy.yaml.`,
+        ),
+      );
+    }
+    return { ok: true, value: emptyAssetConfig(), warnings };
   }
 
   const errors: CompileError[] = [];
@@ -110,21 +147,37 @@ const SUPPORTED_FORMATS: Record<AssetTypeName, string> = {
   audio: "ogg",
 };
 
-function buildTypePolicies(raw: unknown, enabled: boolean, errors: CompileError[], warnings: CompileError[]): Record<AssetTypeName, AssetTypePolicy> {
+function buildTypePolicies(raw: unknown, enabled: boolean, errors: CompileError[], warnings: CompileError[]): AssetTypePolicies {
   const src = isRecord(raw) ? raw : {};
   const out = defaultTypes();
-  for (const key of ["background", "portrait", "evidence", "audio"] as const) {
+  // Image types: background, portrait, evidence
+  for (const key of ["background", "portrait", "evidence"] as const) {
     const value = asOptionalRecord(src[key], "policy.yaml", "assetPolicyTypeMalformed", errors);
     if (!value) continue;
+    const prev = out[key];
     out[key] = {
-      dimensions: tupleWithWarn(value.dimensions, `types.${key}.dimensions`, "policy.yaml", warnings) ?? out[key].dimensions,
-      format: textWithWarn(value.format, `types.${key}.format`, "policy.yaml", warnings) || out[key].format,
-      transparency: typeof value.transparency === "boolean" ? value.transparency : out[key].transparency,
+      dimensions: tupleWithWarn(value.dimensions, `types.${key}.dimensions`, "policy.yaml", warnings) ?? prev.dimensions,
+      format: textWithWarn(value.format, `types.${key}.format`, "policy.yaml", warnings) || prev.format,
+      transparency: typeof value.transparency === "boolean" ? value.transparency : prev.transparency,
       prompt: textWithWarn(value.prompt, `types.${key}.prompt`, "policy.yaml", warnings),
-      loop: typeof value.loop === "boolean" ? value.loop : out[key].loop,
     };
     if (out[key].format && out[key].format !== SUPPORTED_FORMATS[key]) {
       errors.push(error("policy.yaml", "assetPolicyUnsupportedFormat", `types.${key}.format "${out[key].format}" is not supported. Only "${SUPPORTED_FORMATS[key]}" is allowed.`));
+    }
+  }
+  // Audio type
+  {
+    const value = asOptionalRecord(src.audio, "policy.yaml", "assetPolicyTypeMalformed", errors);
+    if (value) {
+      const prev = out.audio;
+      out.audio = {
+        format: textWithWarn(value.format, "types.audio.format", "policy.yaml", warnings) || prev.format,
+        loop: typeof value.loop === "boolean" ? value.loop : prev.loop,
+        prompt: textWithWarn(value.prompt, "types.audio.prompt", "policy.yaml", warnings),
+      };
+      if (out.audio.format && out.audio.format !== SUPPORTED_FORMATS.audio) {
+        errors.push(error("policy.yaml", "assetPolicyUnsupportedFormat", `types.audio.format "${out.audio.format}" is not supported. Only "${SUPPORTED_FORMATS.audio}" is allowed.`));
+      }
     }
   }
   if (enabled) {
@@ -217,7 +270,7 @@ function buildAudioMap(raw: unknown, channel: AudioChannel, errors: CompileError
     if (!/^[a-z0-9_]+$/.test(id)) errors.push(error("audio.yaml", "assetAudioIdMalformed", `${channel}.${id} must be a snake_case slug.`));
     const record = asRecord(value, "audio.yaml", "assetAudioEntryMalformed", errors);
     if (!record) continue;
-    out.set(id, { id, prompt: text(record.prompt), loop: record.loop !== false });
+    out.set(id, { id, prompt: text(record.prompt), loop: typeof record.loop === "boolean" ? record.loop : true });
   }
   return out;
 }

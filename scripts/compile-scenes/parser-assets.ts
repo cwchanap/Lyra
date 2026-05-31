@@ -1,3 +1,12 @@
+// =============================================================================
+// scripts/compile-scenes/parser-assets.ts
+//
+// Parses asset-related metadata blocks from scene markdown: visual asset
+// cues (background prompt, BGM, BGS), evidence image prompts, and audio
+// cues. Validates cue structure and normalizes raw markdown values into
+// typed AST nodes consumed by the enrich layer.
+// =============================================================================
+
 import type { AudioCue, CompileError, VisualAssetCue } from "./types";
 
 const RESERVED_ASSET_METADATA_KEYS = ["Background Prompt", "BGM", "BGS", "Image Prompt"];

@@ -60,4 +60,12 @@ describe("story asset resolver helpers", () => {
       placeholder: false,
     });
   });
+
+  it("returns the same promise on repeated calls (cache hit)", async () => {
+    const first = resolveStoryAsset("background.cache_test.hit", "background");
+    const second = resolveStoryAsset("background.cache_test.hit", "background");
+    expect(first).toBe(second);
+    const result = await first;
+    expect(result?.assetId).toBe("background.cache_test.hit");
+  });
 });
