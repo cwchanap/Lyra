@@ -86,7 +86,7 @@
         {/if}
         {#each inventory.evidence as e, i (e.id)}
           <button
-            class="evidence-row"
+            class:evidence-row={!!evidenceImages[e.id]}
             type="button"
             disabled={!reexamineEnabled || disabled}
             onclick={() => onReexamineEvidence(e.id)}

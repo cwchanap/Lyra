@@ -80,4 +80,37 @@ describe("InventoryPanel", () => {
     expect(statementRow).toHaveClass("statement-row");
     expect(statementRow.querySelector("img.evidence-thumb")).not.toBeInTheDocument();
   });
+
+  it("does not apply evidence-row class when evidence has no image", async () => {
+    const user = userEvent.setup();
+
+    const inventoryNoImage: Inventory = {
+      evidence: [
+        {
+          id: "no_image_evidence",
+          name: "無圖物證",
+          description: "沒有附圖。",
+          details: "",
+          imageAssetId: null,
+          onReexamine: null,
+          collectedInChapterId: "chapter_1",
+          collectedInSceneId: "scene_0",
+        },
+      ],
+      statements: [],
+    };
+
+    const { container } = render(InventoryPanel, {
+      inventory: inventoryNoImage,
+      reexamineEnabled: true,
+      onReexamineEvidence: vi.fn(),
+      onReexamineStatement: vi.fn(),
+    });
+
+    await user.click(screen.getByRole("button", { name: /EVIDENCE/ }));
+
+    const evidenceButton = screen.getByRole("button", { name: /無圖物證/ });
+    expect(evidenceButton).not.toHaveClass("evidence-row");
+    expect(evidenceButton.querySelector("img.evidence-thumb")).not.toBeInTheDocument();
+  });
 });
