@@ -174,7 +174,7 @@ describe("enrichScenesWithAssets", () => {
     expect(result.scenes[1]?.ast.kind === "investigationScene" ? result.scenes[1].ast.evidenceManifest[0]?.imageCue.imageAssetId : null).toBe("evidence.coffee_receipt");
   });
 
-  it("errors for unknown speakers when assets are enabled", () => {
+  it("errors for unknown speakers with expression when assets are enabled", () => {
     const scenes: SceneRecord[] = [{
       chapterId: "chapter_1",
       file: "scene_0.md",
@@ -182,7 +182,7 @@ describe("enrichScenesWithAssets", () => {
         kind: "linearScene",
         id: "scene_0",
         title: "接案",
-        queue: [{ kind: "line", speaker: "不存在", expression: null, portrait: null, text: "hi" }],
+        queue: [{ kind: "line", speaker: "不存在", expression: "concerned", portrait: null, text: "hi" }],
         assetRefs: [],
         sourceFile: "chapter_1/scene_0.md",
         line: 1,
@@ -190,6 +190,26 @@ describe("enrichScenesWithAssets", () => {
     }];
     const result = enrichScenesWithAssets({ scenes, config: config() });
     expect(result.errors.some((e) => e.code === "assetUnknownSpeaker")).toBe(true);
+  });
+
+  it("exempts narrator-style lines (unknown speaker, no expression) from character lookup", () => {
+    const scenes: SceneRecord[] = [{
+      chapterId: "chapter_1",
+      file: "scene_0.md",
+      ast: {
+        kind: "linearScene",
+        id: "scene_0",
+        title: "接案",
+        queue: [{ kind: "line", speaker: "旁白", expression: null, portrait: null, text: "雨夜，街道無人。" }],
+        assetRefs: [],
+        sourceFile: "chapter_1/scene_0.md",
+        line: 1,
+      },
+    }];
+    const result = enrichScenesWithAssets({ scenes, config: config() });
+    expect(result.errors.some((e) => e.code === "assetUnknownSpeaker")).toBe(false);
+    const line = result.scenes[0]?.ast.kind === "linearScene" ? result.scenes[0].ast.queue[0] : null;
+    expect(line?.kind === "line" ? line.portrait : undefined).toBeNull();
   });
 
   it("errors for unknown expressions", () => {
@@ -260,6 +280,58 @@ describe("enrichScenesWithAssets", () => {
     expect(result.manifest.entries).toEqual([]);
   });
 
+  it("allows later scenes to omit BGM/BGS when an earlier scene already set them", () => {
+    // Scene 1 sets BGM + BGS. Scene 2's first visual cue intentionally omits
+    // them to keep the previous channel. The compiler must not require them.
+    const scene1: SceneRecord = {
+      chapterId: "chapter_1",
+      file: "scene_0.md",
+      ast: {
+        kind: "linearScene",
+        id: "scene_0",
+        title: "場景一",
+        queue: [{
+          kind: "sceneTag",
+          text: "咖啡館外",
+          assetCue: {
+            backgroundPrompt: "Rainy cafe.",
+            backgroundAssetId: null,
+            bgm: { channel: "bgm", assetId: "rain_mystery_low" },
+            bgs: { channel: "bgs", assetId: "street_rain" },
+          },
+        }],
+        assetRefs: [],
+        sourceFile: "chapter_1/scene_0.md",
+        line: 1,
+      },
+    };
+    const scene2: SceneRecord = {
+      chapterId: "chapter_1",
+      file: "scene_1.md",
+      ast: {
+        kind: "linearScene",
+        id: "scene_1",
+        title: "場景二",
+        queue: [{
+          kind: "sceneTag",
+          text: "咖啡館內",
+          assetCue: {
+            backgroundPrompt: "Interior.",
+            backgroundAssetId: null,
+            bgm: null,
+            bgs: null,
+          },
+        }],
+        assetRefs: [],
+        sourceFile: "chapter_1/scene_1.md",
+        line: 1,
+      },
+    };
+    const result = enrichScenesWithAssets({ scenes: [scene1, scene2], config: config() });
+    expect(result.errors.filter((e) => e.code === "assetFirstCueMissingBgm")).toHaveLength(0);
+    expect(result.errors.filter((e) => e.code === "assetFirstCueMissingBgs")).toHaveLength(0);
+  });
+
   it("errors for missing evidence image prompts", () => {
     const scenes = [investigationScene({ imagePrompt: null })];
     const result = enrichScenesWithAssets({ scenes, config: config() });
@@ -287,6 +359,23 @@ describe("enrichScenesWithAssets", () => {
     expect(result.errors).toEqual([]);
     expect(result.manifest).toEqual({ enabled: false, entries: [] });
     expect(result.scenes.map((scene) => scene.ast.assetRefs)).toEqual([[], []]);
+
+    // Visual cues are stripped — no raw audio IDs leak into the AST.
+    const linear = result.scenes[0]?.ast.kind === "linearScene" ? result.scenes[0].ast : null;
+    const tag = linear?.queue[0]?.kind === "sceneTag" ? linear.queue[0] : null;
+    expect(tag?.assetCue).toEqual({
+      backgroundPrompt: null,
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+    });
+
+    // Evidence image cues are stripped too.
+    const investigation = result.scenes[1]?.ast.kind === "investigationScene" ? result.scenes[1].ast : null;
+    expect(investigation?.evidenceManifest[0]?.imageCue).toEqual({
+      imagePrompt: null,
+      imageAssetId: null,
+    });
   });
 });
 
