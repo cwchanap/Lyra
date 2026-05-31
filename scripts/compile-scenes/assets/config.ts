@@ -155,10 +155,15 @@ function buildTypePolicies(raw: unknown, enabled: boolean, errors: CompileError[
     const value = asOptionalRecord(src[key], "policy.yaml", "assetPolicyTypeMalformed", errors);
     if (!value) continue;
     const prev = out[key];
+    const transparency = typeof value.transparency === "boolean"
+      ? value.transparency
+      : ("transparency" in value
+        ? (warnings.push(error("policy.yaml", "assetConfigWrongType", `Field "types.${key}.transparency" expected boolean, got ${typeof value.transparency}.`)), prev.transparency)
+        : prev.transparency);
     out[key] = {
       dimensions: tupleWithWarn(value.dimensions, `types.${key}.dimensions`, "policy.yaml", warnings) ?? prev.dimensions,
       format: textWithWarn(value.format, `types.${key}.format`, "policy.yaml", warnings) || prev.format,
-      transparency: typeof value.transparency === "boolean" ? value.transparency : prev.transparency,
+      transparency,
       prompt: textWithWarn(value.prompt, `types.${key}.prompt`, "policy.yaml", warnings),
     };
     if (out[key].format && out[key].format !== SUPPORTED_FORMATS[key]) {
@@ -170,9 +175,14 @@ function buildTypePolicies(raw: unknown, enabled: boolean, errors: CompileError[
     const value = asOptionalRecord(src.audio, "policy.yaml", "assetPolicyTypeMalformed", errors);
     if (value) {
       const prev = out.audio;
+      const loop = typeof value.loop === "boolean"
+        ? value.loop
+        : ("loop" in value
+          ? (warnings.push(error("policy.yaml", "assetConfigWrongType", `Field "types.audio.loop" expected boolean, got ${typeof value.loop}.`)), prev.loop)
+          : prev.loop);
       out.audio = {
         format: textWithWarn(value.format, "types.audio.format", "policy.yaml", warnings) || prev.format,
-        loop: typeof value.loop === "boolean" ? value.loop : prev.loop,
+        loop,
         prompt: textWithWarn(value.prompt, "types.audio.prompt", "policy.yaml", warnings),
       };
       if (out.audio.format && out.audio.format !== SUPPORTED_FORMATS.audio) {
@@ -338,6 +348,8 @@ function tuple(value: unknown): [number, number] | undefined {
   const a = Number(value[0]);
   const b = Number(value[1]);
   if (!Number.isFinite(a) || !Number.isFinite(b)) return undefined;
+  if (!Number.isInteger(a) || !Number.isInteger(b)) return undefined;
+  if (a <= 0 || b <= 0) return undefined;
   return [a, b];
 }
 

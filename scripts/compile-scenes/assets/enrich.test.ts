@@ -340,8 +340,41 @@ function investigationScene(input: { imagePrompt: string | null }): SceneRecord 
 }
 
 describe("enrichScenesWithAssets — asset existence warnings", () => {
+  /** Config with clearly-fake asset IDs that will never match real files on disk. */
+  function fakeFileConfig(): AssetConfig {
+    const character = {
+      id: "fake_char_zzz",
+      displayNames: ["測試角色"],
+      portraitMode: "portrait" as const,
+      visualPrompt: "test",
+      referenceAssetId: null,
+      expressions: new Map([
+        ["standard", { id: "standard", prompt: "neutral" }],
+        ["concerned", { id: "concerned", prompt: "worried" }],
+      ]),
+    };
+    return {
+      enabled: true,
+      globalStylePrompt: "test style",
+      types: {
+        background: { dimensions: [1920, 1080], format: "png", transparency: false, prompt: "wide bg" },
+        portrait: { dimensions: [768, 1024], format: "png", transparency: true, prompt: "portrait" },
+        evidence: { dimensions: [512, 512], format: "png", transparency: true, prompt: "evidence" },
+        audio: { format: "ogg", loop: true, prompt: "" },
+      },
+      characters: {
+        byId: new Map([[character.id, character]]),
+        byDisplayName: new Map([["測試角色", character]]),
+      },
+      audio: {
+        bgm: new Map([["nonexistent_bgm_a1b2c3", { id: "nonexistent_bgm_a1b2c3", prompt: "music", loop: true }]]),
+        bgs: new Map(),
+      },
+    };
+  }
+
   it("emits warnings for manifest entries whose expected files do not exist", () => {
-    const cfg = config();
+    const cfg = fakeFileConfig();
     const scene: SceneRecord = {
       chapterId: "chapter_1",
       file: "scene_0.md",
@@ -350,8 +383,8 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
         id: "scene_0",
         title: "Test",
         queue: [
-          { kind: "sceneTag", text: "Street", assetCue: { backgroundPrompt: "city", backgroundAssetId: null, bgm: { channel: "bgm", assetId: "rain_mystery_low" }, bgs: null } },
-          { kind: "line", speaker: "早坂茜", text: "Hi", expression: "concerned", portrait: null },
+          { kind: "sceneTag", text: "Street", assetCue: { backgroundPrompt: "city", backgroundAssetId: null, bgm: { channel: "bgm", assetId: "nonexistent_bgm_a1b2c3" }, bgs: null } },
+          { kind: "line", speaker: "測試角色", text: "Hi", expression: "concerned", portrait: null },
         ],
         assetRefs: [],
         sourceFile: "chapter_1/scene_0.md",
