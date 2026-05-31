@@ -34,7 +34,7 @@ characters:
       standard:
         prompt: anxious neutral expression
   - id: kuruse_toru
-    displayNames: ["黒瀨徹"]
+    displayNames: ["黑瀨徹"]
     portraitMode: portrait
     visualPrompt: middle-aged Tokyo police detective, rumpled coat, skeptical eyes.
     expressions:

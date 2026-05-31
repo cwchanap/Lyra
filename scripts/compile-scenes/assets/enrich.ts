@@ -65,7 +65,7 @@ export function enrichScenesWithAssets(input: { scenes: SceneRecord[]; config: A
 
 function enrichScene(scene: SceneRecord, config: AssetConfig, requests: Map<string, ManifestDraft>, errors: CompileError[]): SceneRecord {
   const refs = new Map<string, AssetRef>();
-  const context = { scene, config, requests, errors, refs, tagIndex: 0 };
+  const context = { scene, config, requests, errors, refs, tagIndex: 0, hadVisualCue: false };
 
   if (scene.ast.kind === "linearScene") {
     const ast: ASTLinearScene = {
@@ -92,6 +92,8 @@ type EnrichContext = {
   errors: CompileError[];
   refs: Map<string, AssetRef>;
   tagIndex: number;
+  /** Whether at least one visual cue has been seen in the current scene. */
+  hadVisualCue: boolean;
 };
 
 function enrichInvestigationScene(ast: ASTInvestigationScene, context: EnrichContext): ASTInvestigationScene {
@@ -226,8 +228,18 @@ function enrichLine(item: Extract<DialogueItem, { kind: "line" }>, context: Enri
 
 function enrichVisualCue(cue: VisualAssetCue | null, unitId: string, sourceFile: string, line: number, context: EnrichContext): VisualAssetCue | null {
   if (!cue) return null;
+  const isFirst = !context.hadVisualCue;
+  context.hadVisualCue = true;
   const bgm = enrichAudioCue(cue.bgm, sourceFile, line, context);
   const bgs = enrichAudioCue(cue.bgs, sourceFile, line, context);
+  if (isFirst) {
+    if (!cue.bgm) {
+      context.errors.push(compileError(sourceFile, line, "assetFirstCueMissingBgm", `First visual unit "${unitId}" must set BGM to a defined ID or \`none\` when assets are enabled.`));
+    }
+    if (!cue.bgs) {
+      context.errors.push(compileError(sourceFile, line, "assetFirstCueMissingBgs", `First visual unit "${unitId}" must set BGS to a defined ID or \`none\` when assets are enabled.`));
+    }
+  }
   if (!cue.backgroundPrompt) {
     context.errors.push(compileError(sourceFile, line, "assetMissingBackgroundPrompt", `Visual unit "${unitId}" requires Background Prompt when assets are enabled.`));
     return { ...cue, bgm, bgs };
