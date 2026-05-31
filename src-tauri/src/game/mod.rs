@@ -68,6 +68,14 @@ impl LastVisualCue {
         self.apply_asset_cue(asset_cue);
     }
 
+    /// Reset scene-specific visual fields for a scene boundary while
+    /// preserving BGM/BGS so that audio continuity is maintained when
+    /// the next scene omits audio fields (meaning "keep previous").
+    fn reset_for_new_scene(&mut self) {
+        self.scene_tag = None;
+        self.background_asset_id = None;
+    }
+
     fn apply_asset_cue(&mut self, asset_cue: Option<schema::VisualAssetCueJson>) {
         let Some(cue) = asset_cue else {
             return;
@@ -743,7 +751,7 @@ impl GameEngine {
         self.current_chapter_idx = next_chapter_idx;
         self.current_scene_idx = next_scene_idx;
         self.scene = new_scene;
-        self.last_visual_cue = LastVisualCue::default();
+        self.last_visual_cue.reset_for_new_scene();
         self.next_queue_gen += 1;
         if let Err(err) = self.prime_initial_queue() {
             self.restore_snapshot(snapshot);
@@ -4267,5 +4275,78 @@ mod tests {
                 other
             ),
         }
+    }
+
+    #[test]
+    fn reset_for_new_scene_preserves_audio_state() {
+        // reset_for_new_scene should clear scene_tag and background but
+        // preserve bgm/bgs so audio continuity is maintained across
+        // scene boundaries when the next scene omits audio fields.
+        use crate::game::schema::{AudioChannelJson, AudioCueJson};
+
+        let mut cue = LastVisualCue {
+            scene_tag: Some("old_scene_tag".into()),
+            background_asset_id: Some("background.old".into()),
+            bgm: Some(AudioCueJson {
+                channel: AudioChannelJson::Bgm,
+                asset_id: Some("rain_mystery_low".into()),
+            }),
+            bgs: Some(AudioCueJson {
+                channel: AudioChannelJson::Bgs,
+                asset_id: Some("indoor_rain".into()),
+            }),
+        };
+
+        cue.reset_for_new_scene();
+
+        // Scene-specific fields are cleared
+        assert_eq!(cue.scene_tag, None);
+        assert_eq!(cue.background_asset_id, None);
+
+        // Audio state is preserved
+        assert!(cue.bgm.is_some());
+        assert_eq!(cue.bgm.as_ref().unwrap().asset_id.as_deref(), Some("rain_mystery_low"));
+        assert!(cue.bgs.is_some());
+        assert_eq!(cue.bgs.as_ref().unwrap().asset_id.as_deref(), Some("indoor_rain"));
+    }
+
+    #[test]
+    fn apply_asset_cue_overwrites_audio_when_present() {
+        // When a new visual cue provides audio, apply_asset_cue should
+        // overwrite the carried-forward value. When it's None, the
+        // previous value should be preserved.
+        use crate::game::schema::{AudioChannelJson, AudioCueJson, VisualAssetCueJson};
+
+        let mut cue = LastVisualCue {
+            scene_tag: Some("scene_tag".into()),
+            background_asset_id: Some("bg_old".into()),
+            bgm: Some(AudioCueJson {
+                channel: AudioChannelJson::Bgm,
+                asset_id: Some("old_bgm".into()),
+            }),
+            bgs: Some(AudioCueJson {
+                channel: AudioChannelJson::Bgs,
+                asset_id: Some("old_bgs".into()),
+            }),
+        };
+
+        // Apply a cue that omits BGM (None) and provides new BGS
+        let new_cue = VisualAssetCueJson {
+            background_asset_id: Some("bg_new".into()),
+            bgm: None,
+            bgs: Some(AudioCueJson {
+                channel: AudioChannelJson::Bgs,
+                asset_id: Some("new_bgs".into()),
+            }),
+        };
+
+        cue.apply_asset_cue(Some(new_cue));
+
+        // BGM was omitted → previous value preserved
+        assert_eq!(cue.bgm.as_ref().unwrap().asset_id.as_deref(), Some("old_bgm"));
+        // BGS was provided → overwritten
+        assert_eq!(cue.bgs.as_ref().unwrap().asset_id.as_deref(), Some("new_bgs"));
+        // Background was provided → overwritten
+        assert_eq!(cue.background_asset_id.as_deref(), Some("bg_new"));
     }
 }

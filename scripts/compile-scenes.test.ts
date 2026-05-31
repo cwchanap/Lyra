@@ -3,6 +3,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
+import { enrichScenesWithAssets } from "./compile-scenes/assets/enrich";
+import type { AssetConfig } from "./compile-scenes/assets/config";
+import type { SceneRecord } from "./compile-scenes/validator";
 
 describe("compile (end-to-end against valid fixture)", () => {
   it("compiles the valid fixture without errors and emits expected files", () => {
@@ -215,5 +218,153 @@ describe("compile parse failure handling", () => {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(outRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe("asset enrichment: first visual cue audio validation", () => {
+  const enabledConfig: AssetConfig = {
+    enabled: true,
+    globalStylePrompt: "anime style",
+    types: {
+      background: { dimensions: [1920, 1080], format: "png", transparency: false, prompt: "" },
+      portrait: { dimensions: [768, 1024], format: "png", transparency: true, prompt: "" },
+      evidence: { dimensions: [512, 512], format: "png", transparency: true, prompt: "" },
+      audio: { format: "ogg", loop: true, prompt: "" },
+    },
+    characters: { byId: new Map(), byDisplayName: new Map() },
+    audio: {
+      bgm: new Map([["rain", { id: "rain", prompt: "rain", loop: true }]]),
+      bgs: new Map([["wind", { id: "wind", prompt: "wind", loop: true }]]),
+    },
+  };
+
+  it("errors when first scene tag omits BGM", () => {
+    const scene: SceneRecord = {
+      chapterId: "chapter_1",
+      file: "chapter_1/scene_0.md",
+      ast: {
+        kind: "linearScene",
+        id: "scene_0",
+        title: "Test",
+        sourceFile: "scene_0.md",
+        line: 1,
+        queue: [
+          {
+            kind: "sceneTag",
+            text: "Test Scene",
+            assetCue: {
+              backgroundPrompt: "a dark room",
+              backgroundAssetId: null,
+              bgm: null, // omitted — should error on first cue
+              bgs: { channel: "bgs", assetId: "wind" },
+            },
+          },
+        ],
+        assetRefs: [],
+      },
+    };
+    const result = enrichScenesWithAssets({ scenes: [scene], config: enabledConfig });
+    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgm")).toBe(true);
+    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgs")).toBe(false);
+  });
+
+  it("errors when first scene tag omits BGS", () => {
+    const scene: SceneRecord = {
+      chapterId: "chapter_1",
+      file: "chapter_1/scene_0.md",
+      ast: {
+        kind: "linearScene",
+        id: "scene_0",
+        title: "Test",
+        sourceFile: "scene_0.md",
+        line: 1,
+        queue: [
+          {
+            kind: "sceneTag",
+            text: "Test Scene",
+            assetCue: {
+              backgroundPrompt: "a dark room",
+              backgroundAssetId: null,
+              bgm: { channel: "bgm", assetId: "rain" },
+              bgs: null, // omitted — should error on first cue
+            },
+          },
+        ],
+        assetRefs: [],
+      },
+    };
+    const result = enrichScenesWithAssets({ scenes: [scene], config: enabledConfig });
+    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgs")).toBe(true);
+    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgm")).toBe(false);
+  });
+
+  it("does not error when first scene tag sets BGM and BGS to none", () => {
+    const scene: SceneRecord = {
+      chapterId: "chapter_1",
+      file: "chapter_1/scene_0.md",
+      ast: {
+        kind: "linearScene",
+        id: "scene_0",
+        title: "Test",
+        sourceFile: "scene_0.md",
+        line: 1,
+        queue: [
+          {
+            kind: "sceneTag",
+            text: "Test Scene",
+            assetCue: {
+              backgroundPrompt: "a dark room",
+              backgroundAssetId: null,
+              bgm: { channel: "bgm", assetId: null }, // explicit none — valid
+              bgs: { channel: "bgs", assetId: null }, // explicit none — valid
+            },
+          },
+        ],
+        assetRefs: [],
+      },
+    };
+    const result = enrichScenesWithAssets({ scenes: [scene], config: enabledConfig });
+    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgm")).toBe(false);
+    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgs")).toBe(false);
+  });
+
+  it("does not error when non-first scene tag omits BGM", () => {
+    const scene: SceneRecord = {
+      chapterId: "chapter_1",
+      file: "chapter_1/scene_0.md",
+      ast: {
+        kind: "linearScene",
+        id: "scene_0",
+        title: "Test",
+        sourceFile: "scene_0.md",
+        line: 1,
+        queue: [
+          {
+            kind: "sceneTag",
+            text: "First Scene",
+            assetCue: {
+              backgroundPrompt: "a dark room",
+              backgroundAssetId: null,
+              bgm: { channel: "bgm", assetId: "rain" },
+              bgs: { channel: "bgs", assetId: "wind" },
+            },
+          },
+          {
+            kind: "sceneTag",
+            text: "Second Scene",
+            assetCue: {
+              backgroundPrompt: "a light room",
+              backgroundAssetId: null,
+              bgm: null, // omitted on non-first — valid
+              bgs: null,
+            },
+          },
+        ],
+        assetRefs: [],
+      },
+    };
+    const result = enrichScenesWithAssets({ scenes: [scene], config: enabledConfig });
+    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgm")).toBe(false);
+    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgs")).toBe(false);
   });
 });
