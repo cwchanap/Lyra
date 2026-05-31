@@ -42,7 +42,7 @@ export type AssetEnrichmentResult = {
 export function enrichScenesWithAssets(input: { scenes: SceneRecord[]; config: AssetConfig }): AssetEnrichmentResult {
   if (!input.config.enabled) {
     return {
-      scenes: input.scenes.map((scene) => ({ ...scene, ast: { ...scene.ast, assetRefs: [] } })),
+      scenes: input.scenes.map((scene) => stripAssetData(scene)),
       manifest: buildAssetManifest({ entries: [], config: input.config }),
       warnings: [],
       errors: [],
@@ -51,7 +51,8 @@ export function enrichScenesWithAssets(input: { scenes: SceneRecord[]; config: A
 
   const errors: CompileError[] = [];
   const requests = new Map<string, ManifestDraft>();
-  const scenes = input.scenes.map((scene) => enrichScene(scene, input.config, requests, errors));
+  const corpusState = { hadVisualCue: false };
+  const scenes = input.scenes.map((scene) => enrichScene(scene, input.config, requests, errors, corpusState));
   const manifest = buildAssetManifest({ entries: [...requests.values()], config: input.config });
   const warnings = checkAssetExistence(manifest.entries);
 
@@ -63,9 +64,9 @@ export function enrichScenesWithAssets(input: { scenes: SceneRecord[]; config: A
   };
 }
 
-function enrichScene(scene: SceneRecord, config: AssetConfig, requests: Map<string, ManifestDraft>, errors: CompileError[]): SceneRecord {
+function enrichScene(scene: SceneRecord, config: AssetConfig, requests: Map<string, ManifestDraft>, errors: CompileError[], corpusState: { hadVisualCue: boolean }): SceneRecord {
   const refs = new Map<string, AssetRef>();
-  const context = { scene, config, requests, errors, refs, tagIndex: 0, hadVisualCue: false };
+  const context = { scene, config, requests, errors, refs, tagIndex: 0, hadVisualCue: corpusState.hadVisualCue, corpusState };
 
   if (scene.ast.kind === "linearScene") {
     const ast: ASTLinearScene = {
@@ -92,8 +93,10 @@ type EnrichContext = {
   errors: CompileError[];
   refs: Map<string, AssetRef>;
   tagIndex: number;
-  /** Whether at least one visual cue has been seen in the current scene. */
+  /** Whether at least one visual cue has been seen so far (corpus-scoped). */
   hadVisualCue: boolean;
+  /** Shared corpus state — updated when a visual cue is encountered. */
+  corpusState: { hadVisualCue: boolean };
 };
 
 function enrichInvestigationScene(ast: ASTInvestigationScene, context: EnrichContext): ASTInvestigationScene {
@@ -196,6 +199,13 @@ function enrichNullableDialogue(items: DialogueItem[] | null, context: EnrichCon
 function enrichLine(item: Extract<DialogueItem, { kind: "line" }>, context: EnrichContext): DialogueItem {
   const character = context.config.characters.byDisplayName.get(item.speaker);
   if (!character) {
+    // Narrator-style lines (unknown speaker, no expression) are exempt from
+    // character lookup — they never need a portrait.  Only error when the
+    // author explicitly requested an expression, which implies a portrait was
+    // expected.
+    if (!item.expression) {
+      return { ...item, portrait: null };
+    }
     context.errors.push(compileError(context.scene.ast.sourceFile, context.scene.ast.line, "assetUnknownSpeaker", `Unknown speaker "${item.speaker}" in asset-enabled scene.`));
     return { ...item, portrait: null };
   }
@@ -226,10 +236,149 @@ function enrichLine(item: Extract<DialogueItem, { kind: "line" }>, context: Enri
   return { ...item, expression, portrait: { characterId: character.id, expression, assetId } };
 }
 
+// -----------------------------------------------------------------------------
+// stripAssetData — deep-walks an AST and nulls out all visual/audio cues,
+// evidence image cues, and portrait refs so that a disabled asset pipeline
+// produces clean JSON with no raw, unvalidated IDs leaking through.
+// -----------------------------------------------------------------------------
+
+const NULL_VISUAL_CUE: VisualAssetCue = {
+  backgroundPrompt: null,
+  backgroundAssetId: null,
+  bgm: null,
+  bgs: null,
+};
+
+function stripAssetData(scene: SceneRecord): SceneRecord {
+  const ast = scene.ast;
+  if (ast.kind === "linearScene") {
+    return { ...scene, ast: { ...stripLinearScene(ast), assetRefs: [] } };
+  }
+  if (ast.kind === "investigationScene") {
+    return { ...scene, ast: { ...stripInvestigationScene(ast), assetRefs: [] } };
+  }
+  return { ...scene, ast: { ...stripInterrogationScene(ast), assetRefs: [] } };
+}
+
+function stripLinearScene(ast: ASTLinearScene): Omit<ASTLinearScene, "assetRefs"> {
+  return { ...ast, queue: stripDialogue(ast.queue) };
+}
+
+function stripInvestigationScene(ast: ASTInvestigationScene): Omit<ASTInvestigationScene, "assetRefs"> {
+  return {
+    ...ast,
+    intro: stripDialogue(ast.intro),
+    sublocations: ast.sublocations.map((sub) => ({
+      ...sub,
+      assetCue: stripVisualCue(sub.assetCue),
+      transitionDialogue: stripDialogue(sub.transitionDialogue),
+      hotspots: sub.hotspots.map((h) => ({
+        ...h,
+        inspectDialogue: stripDialogue(h.inspectDialogue),
+        onReexamine: stripNullableDialogue(h.onReexamine),
+      })),
+      characters: sub.characters.map((c) => ({
+        ...c,
+        topics: c.topics.map((t) => ({
+          ...t,
+          topicDialogue: stripDialogue(t.topicDialogue),
+          onReexamine: stripNullableDialogue(t.onReexamine),
+        })),
+      })),
+    })),
+    evidenceManifest: ast.evidenceManifest.map(stripEvidence),
+    statementManifest: ast.statementManifest.map((s) => ({
+      ...s,
+      onAcquire: stripDialogue(s.onAcquire),
+      onReexamine: stripNullableDialogue(s.onReexamine),
+    })),
+    outro: { ...ast.outro, dialogue: stripDialogue(ast.outro.dialogue) },
+  };
+}
+
+function stripInterrogationScene(ast: ASTInterrogationScene): Omit<ASTInterrogationScene, "assetRefs"> {
+  return {
+    ...ast,
+    intro: stripDialogue(ast.intro),
+    phases: ast.phases.map(stripPhase),
+    evidenceManifest: ast.evidenceManifest.map(stripEvidence),
+    statementManifest: ast.statementManifest.map((s) => ({
+      ...s,
+      onAcquire: stripDialogue(s.onAcquire),
+      onReexamine: stripNullableDialogue(s.onReexamine),
+    })),
+    outro: { ...ast.outro, dialogue: stripDialogue(ast.outro.dialogue) },
+  };
+}
+
+function stripPhase(phase: ASTInterrogationPhase): ASTInterrogationPhase {
+  const common = {
+    ...phase,
+    assetCue: stripVisualCue(phase.assetCue),
+    entryDialogue: stripDialogue(phase.entryDialogue),
+  };
+  if (phase.kind === "inquiry") {
+    return {
+      ...common,
+      kind: "inquiry",
+      questions: phase.questions.map((q) => ({
+        ...q,
+        answerDialogue: stripDialogue(q.answerDialogue),
+        onReask: stripNullableDialogue(q.onReask),
+      })),
+    };
+  }
+  return {
+    ...common,
+    kind: "testimony",
+    statements: phase.statements.map((s) => ({
+      ...s,
+      onPress: stripNullableDialogue(s.onPress),
+      onPresent: stripNullableDialogue(s.onPresent),
+      onWrongPresent: stripNullableDialogue(s.onWrongPresent),
+    })),
+    results: phase.results.map((r) => ({
+      ...r,
+      dialogue: stripDialogue(r.dialogue),
+    })),
+  };
+}
+
+function stripDialogue(items: DialogueItem[]): DialogueItem[] {
+  return items.map((item) => {
+    if (item.kind === "sceneTag") {
+      return { ...item, assetCue: item.assetCue ? { ...NULL_VISUAL_CUE } : null };
+    }
+    if (item.kind === "line") {
+      return { ...item, portrait: null };
+    }
+    return item;
+  });
+}
+
+function stripNullableDialogue(items: DialogueItem[] | null): DialogueItem[] | null {
+  return items ? stripDialogue(items) : null;
+}
+
+function stripVisualCue(cue: VisualAssetCue | null): VisualAssetCue | null {
+  if (!cue) return null;
+  return { ...NULL_VISUAL_CUE };
+}
+
+function stripEvidence(evidence: ASTEvidence): ASTEvidence {
+  return {
+    ...evidence,
+    imageCue: { imagePrompt: null, imageAssetId: null },
+    onCollect: stripDialogue(evidence.onCollect),
+    onReexamine: stripNullableDialogue(evidence.onReexamine),
+  };
+}
+
 function enrichVisualCue(cue: VisualAssetCue | null, unitId: string, sourceFile: string, line: number, context: EnrichContext): VisualAssetCue | null {
   if (!cue) return null;
   const isFirst = !context.hadVisualCue;
   context.hadVisualCue = true;
+  context.corpusState.hadVisualCue = true;
   const bgm = enrichAudioCue(cue.bgm, sourceFile, line, context);
   const bgs = enrichAudioCue(cue.bgs, sourceFile, line, context);
   if (isFirst) {
