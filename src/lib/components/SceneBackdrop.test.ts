@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { render, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import SceneBackdrop from "./SceneBackdrop.svelte";
@@ -20,6 +22,20 @@ describe("SceneBackdrop", () => {
         "/assets/backgrounds/chapter_1/scene_0/render_test.png",
       );
     });
+  });
+
+  it("places the background image in a lower layer with negative z-index", async () => {
+    // Scoped CSS is not injected into jsdom's document.styleSheets, so we
+    // verify the source Svelte file directly to prevent accidental regression
+    // of the z-index back to a positive value (which causes the backdrop to
+    // paint over the game UI).
+    const source = readFileSync(
+      resolve(import.meta.dirname!, "SceneBackdrop.svelte"),
+      "utf-8",
+    );
+    const match = source.match(/\.background-image\s*\{[^}]*z-index:\s*(-?\d+)/s);
+    expect(match).toBeTruthy();
+    expect(parseInt(match![1], 10)).toBeLessThan(0);
   });
 
   it("falls back to a background placeholder when the image fails to load", async () => {
