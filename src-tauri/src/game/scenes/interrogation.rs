@@ -128,13 +128,10 @@ impl InterrogationSceneState {
                         && !self.completed_phases.contains(phase_id(phase))
                 })
                 .or_else(|| {
-                    self.def
-                        .phases
-                        .iter()
-                        .find(|phase| {
-                            self.is_phase_unlocked(phase, &ctx)
-                                && !self.completed_phases.contains(phase_id(phase))
-                        })
+                    self.def.phases.iter().find(|phase| {
+                        self.is_phase_unlocked(phase, &ctx)
+                            && !self.completed_phases.contains(phase_id(phase))
+                    })
                 })
                 .map(|phase| phase_id(phase).to_string())
         };
@@ -691,10 +688,7 @@ mod tests {
 
         let scene = InterrogationSceneState::from_json(def, 1);
 
-        assert_eq!(
-            scene.current_phase_id().as_deref(),
-            Some("required_second")
-        );
+        assert_eq!(scene.current_phase_id().as_deref(), Some("required_second"));
     }
 
     #[test]
@@ -785,7 +779,9 @@ mod tests {
         // follow-up. After answering the required question, the phase must NOT
         // auto-complete because the optional follow-up is now unlocked but
         // unanswered — the player has not had a chance to interact with it.
-        use crate::game::schema::{InquiryQuestionKind, InterrogationUnlockExpr, PredicateQuestionAnswered};
+        use crate::game::schema::{
+            InquiryQuestionKind, InterrogationUnlockExpr, PredicateQuestionAnswered,
+        };
 
         let def = InterrogationSceneJson {
             id: "interrogation".into(),

@@ -15,7 +15,9 @@
 <section class="section">
   <header class="section-header">
     <span class="eyebrow">線索 · HOTSPOTS</span>
-    <span class="count">{hotspots.filter((h) => h.inspected).length} / {hotspots.length}</span>
+    <span class="count"
+      >{hotspots.filter((h) => h.inspected).length} / {hotspots.length}</span
+    >
   </header>
 
   <div class="grid">
@@ -87,7 +89,10 @@
     font: inherit;
     text-align: left;
     clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
-    transition: transform 0.18s, background 0.18s, border-color 0.18s;
+    transition:
+      transform 0.18s,
+      background 0.18s,
+      border-color 0.18s;
   }
 
   .card::before {

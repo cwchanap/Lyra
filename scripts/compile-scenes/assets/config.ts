@@ -80,9 +80,24 @@ const SAFE_ASSET_SLUG = /^[a-z0-9_]+$/;
 
 function defaultTypes(): AssetTypePolicies {
   return {
-    background: { dimensions: [1920, 1080], format: "png", transparency: false, prompt: "" },
-    portrait: { dimensions: [768, 1024], format: "png", transparency: true, prompt: "" },
-    evidence: { dimensions: [512, 512], format: "png", transparency: true, prompt: "" },
+    background: {
+      dimensions: [1920, 1080],
+      format: "png",
+      transparency: false,
+      prompt: "",
+    },
+    portrait: {
+      dimensions: [768, 1024],
+      format: "png",
+      transparency: true,
+      prompt: "",
+    },
+    evidence: {
+      dimensions: [512, 512],
+      format: "png",
+      transparency: true,
+      prompt: "",
+    },
     audio: { format: "ogg", loop: true, prompt: "" },
   };
 }
@@ -118,19 +133,60 @@ export function loadAssetConfig(configRoot: string): AssetConfigResult {
 
   const errors: CompileError[] = [];
   const warnings: CompileError[] = [];
-  const policy = asRecord(readYaml(policyPath, errors), policyPath, "assetPolicyMalformed", errors);
-  const charactersYaml = asRecord(readOptionalYaml(resolve(configRoot, "characters.yaml"), errors) ?? { characters: [] }, "characters.yaml", "assetCharactersFileMalformed", errors);
-  const audioYaml = asRecord(readOptionalYaml(resolve(configRoot, "audio.yaml"), errors) ?? { bgm: {}, bgs: {} }, "audio.yaml", "assetAudioFileMalformed", errors);
+  const policy = asRecord(
+    readYaml(policyPath, errors),
+    policyPath,
+    "assetPolicyMalformed",
+    errors,
+  );
+  const charactersYaml = asRecord(
+    readOptionalYaml(resolve(configRoot, "characters.yaml"), errors) ?? {
+      characters: [],
+    },
+    "characters.yaml",
+    "assetCharactersFileMalformed",
+    errors,
+  );
+  const audioYaml = asRecord(
+    readOptionalYaml(resolve(configRoot, "audio.yaml"), errors) ?? {
+      bgm: {},
+      bgs: {},
+    },
+    "audio.yaml",
+    "assetAudioFileMalformed",
+    errors,
+  );
   if (errors.length > 0) return { ok: false, errors };
 
   const enabled = policy?.assets?.enabled === true;
-  const globalStylePrompt = textWithWarn(policy?.globalStyle?.prompt, "globalStyle.prompt", "policy.yaml", warnings);
+  const globalStylePrompt = textWithWarn(
+    policy?.globalStyle?.prompt,
+    "globalStyle.prompt",
+    "policy.yaml",
+    warnings,
+  );
   const types = buildTypePolicies(policy?.types, enabled, errors, warnings);
-  const characters = buildCharacters(arrayOrEmpty(charactersYaml?.characters, "characters.yaml", "assetCharactersMalformed", errors), enabled, errors, warnings);
+  const characters = buildCharacters(
+    arrayOrEmpty(
+      charactersYaml?.characters,
+      "characters.yaml",
+      "assetCharactersMalformed",
+      errors,
+    ),
+    enabled,
+    errors,
+    warnings,
+  );
   const audio = buildAudio(audioYaml ?? {}, errors);
 
   if (enabled && !globalStylePrompt) {
-    errors.push(error(policyPath, "assetPolicyMissingGlobalStyle", "assets.enabled is true but globalStyle.prompt is empty."));
+    errors.push(
+      error(
+        policyPath,
+        "assetPolicyMissingGlobalStyle",
+        "assets.enabled is true but globalStyle.prompt is empty.",
+      ),
+    );
   }
   if (errors.length > 0) return { ok: false, errors };
   return {
@@ -147,71 +203,166 @@ const SUPPORTED_FORMATS: Record<AssetTypeName, string> = {
   audio: "ogg",
 };
 
-function buildTypePolicies(raw: unknown, enabled: boolean, errors: CompileError[], warnings: CompileError[]): AssetTypePolicies {
+function buildTypePolicies(
+  raw: unknown,
+  enabled: boolean,
+  errors: CompileError[],
+  warnings: CompileError[],
+): AssetTypePolicies {
   const src = isRecord(raw) ? raw : {};
   const out = defaultTypes();
   // Image types: background, portrait, evidence
   for (const key of ["background", "portrait", "evidence"] as const) {
-    const value = asOptionalRecord(src[key], "policy.yaml", "assetPolicyTypeMalformed", errors);
+    const value = asOptionalRecord(
+      src[key],
+      "policy.yaml",
+      "assetPolicyTypeMalformed",
+      errors,
+    );
     if (!value) continue;
     const prev = out[key];
-    const transparency = typeof value.transparency === "boolean"
-      ? value.transparency
-      : ("transparency" in value
-        ? (warnings.push(error("policy.yaml", "assetConfigWrongType", `Field "types.${key}.transparency" expected boolean, got ${typeof value.transparency}.`)), prev.transparency)
-        : prev.transparency);
+    const transparency =
+      typeof value.transparency === "boolean"
+        ? value.transparency
+        : "transparency" in value
+          ? (warnings.push(
+              error(
+                "policy.yaml",
+                "assetConfigWrongType",
+                `Field "types.${key}.transparency" expected boolean, got ${typeof value.transparency}.`,
+              ),
+            ),
+            prev.transparency)
+          : prev.transparency;
     out[key] = {
-      dimensions: tupleWithWarn(value.dimensions, `types.${key}.dimensions`, "policy.yaml", warnings) ?? prev.dimensions,
-      format: textWithWarn(value.format, `types.${key}.format`, "policy.yaml", warnings) || prev.format,
+      dimensions:
+        tupleWithWarn(
+          value.dimensions,
+          `types.${key}.dimensions`,
+          "policy.yaml",
+          warnings,
+        ) ?? prev.dimensions,
+      format:
+        textWithWarn(
+          value.format,
+          `types.${key}.format`,
+          "policy.yaml",
+          warnings,
+        ) || prev.format,
       transparency,
-      prompt: textWithWarn(value.prompt, `types.${key}.prompt`, "policy.yaml", warnings),
+      prompt: textWithWarn(
+        value.prompt,
+        `types.${key}.prompt`,
+        "policy.yaml",
+        warnings,
+      ),
     };
     if (out[key].format && out[key].format !== SUPPORTED_FORMATS[key]) {
-      errors.push(error("policy.yaml", "assetPolicyUnsupportedFormat", `types.${key}.format "${out[key].format}" is not supported. Only "${SUPPORTED_FORMATS[key]}" is allowed.`));
+      errors.push(
+        error(
+          "policy.yaml",
+          "assetPolicyUnsupportedFormat",
+          `types.${key}.format "${out[key].format}" is not supported. Only "${SUPPORTED_FORMATS[key]}" is allowed.`,
+        ),
+      );
     }
   }
   // Audio type
   {
-    const value = asOptionalRecord(src.audio, "policy.yaml", "assetPolicyTypeMalformed", errors);
+    const value = asOptionalRecord(
+      src.audio,
+      "policy.yaml",
+      "assetPolicyTypeMalformed",
+      errors,
+    );
     if (value) {
       const prev = out.audio;
-      const loop = typeof value.loop === "boolean"
-        ? value.loop
-        : ("loop" in value
-          ? (warnings.push(error("policy.yaml", "assetConfigWrongType", `Field "types.audio.loop" expected boolean, got ${typeof value.loop}.`)), prev.loop)
-          : prev.loop);
+      const loop =
+        typeof value.loop === "boolean"
+          ? value.loop
+          : "loop" in value
+            ? (warnings.push(
+                error(
+                  "policy.yaml",
+                  "assetConfigWrongType",
+                  `Field "types.audio.loop" expected boolean, got ${typeof value.loop}.`,
+                ),
+              ),
+              prev.loop)
+            : prev.loop;
       out.audio = {
-        format: textWithWarn(value.format, "types.audio.format", "policy.yaml", warnings) || prev.format,
+        format:
+          textWithWarn(
+            value.format,
+            "types.audio.format",
+            "policy.yaml",
+            warnings,
+          ) || prev.format,
         loop,
-        prompt: textWithWarn(value.prompt, "types.audio.prompt", "policy.yaml", warnings),
+        prompt: textWithWarn(
+          value.prompt,
+          "types.audio.prompt",
+          "policy.yaml",
+          warnings,
+        ),
       };
       if (out.audio.format && out.audio.format !== SUPPORTED_FORMATS.audio) {
-        errors.push(error("policy.yaml", "assetPolicyUnsupportedFormat", `types.audio.format "${out.audio.format}" is not supported. Only "${SUPPORTED_FORMATS.audio}" is allowed.`));
+        errors.push(
+          error(
+            "policy.yaml",
+            "assetPolicyUnsupportedFormat",
+            `types.audio.format "${out.audio.format}" is not supported. Only "${SUPPORTED_FORMATS.audio}" is allowed.`,
+          ),
+        );
       }
     }
   }
   if (enabled) {
     for (const key of ["background", "portrait", "evidence"] as const) {
-      if (!out[key].prompt) errors.push(error("policy.yaml", "assetPolicyMissingTypePrompt", `types.${key}.prompt is required when assets are enabled.`));
+      if (!out[key].prompt)
+        errors.push(
+          error(
+            "policy.yaml",
+            "assetPolicyMissingTypePrompt",
+            `types.${key}.prompt is required when assets are enabled.`,
+          ),
+        );
     }
   }
   return out;
 }
 
-function buildCharacters(raw: unknown[], enabled: boolean, errors: CompileError[], warnings: CompileError[]) {
+function buildCharacters(
+  raw: unknown[],
+  enabled: boolean,
+  errors: CompileError[],
+  warnings: CompileError[],
+) {
   const byId = new Map<string, CharacterConfig>();
   const byDisplayName = new Map<string, CharacterConfig>();
   for (const item of raw) {
-    const c = asRecord(item, "characters.yaml", "assetCharacterMalformed", errors);
+    const c = asRecord(
+      item,
+      "characters.yaml",
+      "assetCharacterMalformed",
+      errors,
+    );
     if (!c) continue;
     const idRaw = c.id;
     const id = textWithWarn(idRaw, "id", "characters.yaml", warnings);
     const idIsSafe = !id || SAFE_ASSET_SLUG.test(id);
-    const idPresentButWrongType = idRaw !== undefined && idRaw !== null && typeof idRaw !== "string";
+    const idPresentButWrongType =
+      idRaw !== undefined && idRaw !== null && typeof idRaw !== "string";
     const displayNames = Array.isArray(c.displayNames)
       ? c.displayNames.flatMap((v) => {
           if (typeof v !== "string") {
-            warnings.push(error("characters.yaml", "assetConfigWrongType", `Field "displayNames" entry expected string, got ${typeof v}.`));
+            warnings.push(
+              error(
+                "characters.yaml",
+                "assetConfigWrongType",
+                `Field "displayNames" entry expected string, got ${typeof v}.`,
+              ),
+            );
             return [];
           }
           const trimmed = v.trim();
@@ -220,13 +371,30 @@ function buildCharacters(raw: unknown[], enabled: boolean, errors: CompileError[
       : [];
     const portraitMode = c.portraitMode === "none" ? "none" : "portrait";
     const expressions = new Map<string, CharacterExpressionConfig>();
-    const rawExpressions = asOptionalRecord(c.expressions, "characters.yaml", "assetCharacterExpressionsMalformed", errors) ?? {};
+    const rawExpressions =
+      asOptionalRecord(
+        c.expressions,
+        "characters.yaml",
+        "assetCharacterExpressionsMalformed",
+        errors,
+      ) ?? {};
     for (const [exprId, exprRaw] of Object.entries(rawExpressions)) {
       const exprIdIsSafe = SAFE_ASSET_SLUG.test(exprId);
       if (!exprIdIsSafe) {
-        errors.push(error("characters.yaml", "assetCharacterExpressionIdMalformed", `Character ${id || "(missing id)"} expression ${exprId} must be a snake_case slug.`));
+        errors.push(
+          error(
+            "characters.yaml",
+            "assetCharacterExpressionIdMalformed",
+            `Character ${id || "(missing id)"} expression ${exprId} must be a snake_case slug.`,
+          ),
+        );
       }
-      const expr = asRecord(exprRaw, "characters.yaml", "assetCharacterExpressionMalformed", errors);
+      const expr = asRecord(
+        exprRaw,
+        "characters.yaml",
+        "assetCharacterExpressionMalformed",
+        errors,
+      );
       if (!expr) continue;
       const prompt = text(expr.prompt);
       if (exprIdIsSafe) expressions.set(exprId, { id: exprId, prompt });
@@ -240,28 +408,82 @@ function buildCharacters(raw: unknown[], enabled: boolean, errors: CompileError[
       expressions,
     };
     if (idPresentButWrongType) {
-      errors.push(error("characters.yaml", "assetCharacterIdWrongType", `Character id must be a string, got ${typeof idRaw}.`));
+      errors.push(
+        error(
+          "characters.yaml",
+          "assetCharacterIdWrongType",
+          `Character id must be a string, got ${typeof idRaw}.`,
+        ),
+      );
     } else if (!id) {
-      errors.push(error("characters.yaml", "assetCharacterMissingId", "Each character requires id."));
+      errors.push(
+        error(
+          "characters.yaml",
+          "assetCharacterMissingId",
+          "Each character requires id.",
+        ),
+      );
     }
     if (id && !idIsSafe) {
-      errors.push(error("characters.yaml", "assetCharacterIdMalformed", `Character id ${id} must be a snake_case slug.`));
+      errors.push(
+        error(
+          "characters.yaml",
+          "assetCharacterIdMalformed",
+          `Character id ${id} must be a snake_case slug.`,
+        ),
+      );
     }
-    if (displayNames.length === 0) errors.push(error("characters.yaml", "assetCharacterMissingDisplayNames", `Character ${id || "(missing id)"} requires displayNames.`));
+    if (displayNames.length === 0)
+      errors.push(
+        error(
+          "characters.yaml",
+          "assetCharacterMissingDisplayNames",
+          `Character ${id || "(missing id)"} requires displayNames.`,
+        ),
+      );
     if (id && byId.has(id)) {
-      errors.push(error("characters.yaml", "assetCharacterDuplicateId", `Character id ${id} is defined multiple times.`));
+      errors.push(
+        error(
+          "characters.yaml",
+          "assetCharacterDuplicateId",
+          `Character id ${id} is defined multiple times.`,
+        ),
+      );
     }
-    if (enabled && portraitMode === "portrait" && !expressions.has("standard")) {
-      errors.push(error("characters.yaml", "assetCharacterMissingStandardExpression", `Character ${id} requires expressions.standard.`));
+    if (
+      enabled &&
+      portraitMode === "portrait" &&
+      !expressions.has("standard")
+    ) {
+      errors.push(
+        error(
+          "characters.yaml",
+          "assetCharacterMissingStandardExpression",
+          `Character ${id} requires expressions.standard.`,
+        ),
+      );
     }
     if (id && idIsSafe && !byId.has(id)) byId.set(id, config);
     for (const name of displayNames) {
-      if (byDisplayName.has(name)) errors.push(error("characters.yaml", "assetCharacterAmbiguousDisplayName", `Display name ${name} maps to multiple characters.`));
+      if (byDisplayName.has(name))
+        errors.push(
+          error(
+            "characters.yaml",
+            "assetCharacterAmbiguousDisplayName",
+            `Display name ${name} maps to multiple characters.`,
+          ),
+        );
       byDisplayName.set(name, config);
     }
   }
   if (enabled && raw.length === 0) {
-    errors.push(error("characters.yaml", "assetCharactersMissing", "assets.enabled is true but characters.yaml has no characters."));
+    errors.push(
+      error(
+        "characters.yaml",
+        "assetCharactersMissing",
+        "assets.enabled is true but characters.yaml has no characters.",
+      ),
+    );
   }
   return { byId, byDisplayName };
 }
@@ -273,14 +495,36 @@ function buildAudio(raw: Record<string, unknown>, errors: CompileError[]) {
   };
 }
 
-function buildAudioMap(raw: unknown, channel: AudioChannel, errors: CompileError[]) {
+function buildAudioMap(
+  raw: unknown,
+  channel: AudioChannel,
+  errors: CompileError[],
+) {
   const out = new Map<string, AudioConfigEntry>();
-  const entries = asOptionalRecord(raw, "audio.yaml", "assetAudioChannelMalformed", errors) ?? {};
+  const entries =
+    asOptionalRecord(raw, "audio.yaml", "assetAudioChannelMalformed", errors) ??
+    {};
   for (const [id, value] of Object.entries(entries)) {
-    if (!/^[a-z0-9_]+$/.test(id)) errors.push(error("audio.yaml", "assetAudioIdMalformed", `${channel}.${id} must be a snake_case slug.`));
-    const record = asRecord(value, "audio.yaml", "assetAudioEntryMalformed", errors);
+    if (!/^[a-z0-9_]+$/.test(id))
+      errors.push(
+        error(
+          "audio.yaml",
+          "assetAudioIdMalformed",
+          `${channel}.${id} must be a snake_case slug.`,
+        ),
+      );
+    const record = asRecord(
+      value,
+      "audio.yaml",
+      "assetAudioEntryMalformed",
+      errors,
+    );
     if (!record) continue;
-    out.set(id, { id, prompt: text(record.prompt), loop: typeof record.loop === "boolean" ? record.loop : true });
+    out.set(id, {
+      id,
+      prompt: text(record.prompt),
+      loop: typeof record.loop === "boolean" ? record.loop : true,
+    });
   }
   return out;
 }
@@ -289,7 +533,9 @@ function readYaml(path: string, errors: CompileError[]) {
   try {
     return Bun.YAML.parse(readFileSync(path, "utf-8"));
   } catch (e) {
-    errors.push(error(path, "assetConfigUnreadable", `${path}: ${(e as Error).message}`));
+    errors.push(
+      error(path, "assetConfigUnreadable", `${path}: ${(e as Error).message}`),
+    );
     return null;
   }
 }
@@ -304,19 +550,41 @@ function text(value: unknown): string {
 }
 
 /** Like text(), but emits a warning when the value is present but not a string. */
-function textWithWarn(value: unknown, fieldName: string, sourceFile: string, warnings: CompileError[]): string {
+function textWithWarn(
+  value: unknown,
+  fieldName: string,
+  sourceFile: string,
+  warnings: CompileError[],
+): string {
   if (value === undefined || value === null) return "";
   if (typeof value === "string") return value.trim();
-  warnings.push(error(sourceFile, "assetConfigWrongType", `Field "${fieldName}" expected string, got ${typeof value}.`));
+  warnings.push(
+    error(
+      sourceFile,
+      "assetConfigWrongType",
+      `Field "${fieldName}" expected string, got ${typeof value}.`,
+    ),
+  );
   return "";
 }
 
 /** Like tuple(), but emits a warning when the value is present but malformed. */
-function tupleWithWarn(value: unknown, fieldName: string, sourceFile: string, warnings: CompileError[]): [number, number] | undefined {
+function tupleWithWarn(
+  value: unknown,
+  fieldName: string,
+  sourceFile: string,
+  warnings: CompileError[],
+): [number, number] | undefined {
   if (value === undefined || value === null) return undefined;
   const result = tuple(value);
   if (result === undefined) {
-    warnings.push(error(sourceFile, "assetConfigWrongType", `Field "${fieldName}" expected [number, number], got ${JSON.stringify(value)}.`));
+    warnings.push(
+      error(
+        sourceFile,
+        "assetConfigWrongType",
+        `Field "${fieldName}" expected [number, number], got ${JSON.stringify(value)}.`,
+      ),
+    );
   }
   return result;
 }
@@ -325,21 +593,40 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function asRecord(value: unknown, sourceFile: string, code: string, errors: CompileError[]): Record<string, unknown> | null {
+function asRecord(
+  value: unknown,
+  sourceFile: string,
+  code: string,
+  errors: CompileError[],
+): Record<string, unknown> | null {
   if (isRecord(value)) return value;
-  errors.push(error(sourceFile, code, `${sourceFile} contains an invalid object shape.`));
+  errors.push(
+    error(sourceFile, code, `${sourceFile} contains an invalid object shape.`),
+  );
   return null;
 }
 
-function asOptionalRecord(value: unknown, sourceFile: string, code: string, errors: CompileError[]): Record<string, unknown> | null {
+function asOptionalRecord(
+  value: unknown,
+  sourceFile: string,
+  code: string,
+  errors: CompileError[],
+): Record<string, unknown> | null {
   if (value === undefined) return null;
   return asRecord(value, sourceFile, code, errors);
 }
 
-function arrayOrEmpty(value: unknown, sourceFile: string, code: string, errors: CompileError[]): unknown[] {
+function arrayOrEmpty(
+  value: unknown,
+  sourceFile: string,
+  code: string,
+  errors: CompileError[],
+): unknown[] {
   if (value === undefined) return [];
   if (Array.isArray(value)) return value;
-  errors.push(error(sourceFile, code, `${sourceFile} contains an invalid array shape.`));
+  errors.push(
+    error(sourceFile, code, `${sourceFile} contains an invalid array shape.`),
+  );
   return [];
 }
 
@@ -353,6 +640,10 @@ function tuple(value: unknown): [number, number] | undefined {
   return [a, b];
 }
 
-function error(sourceFile: string, code: string, message: string): CompileError {
+function error(
+  sourceFile: string,
+  code: string,
+  message: string,
+): CompileError {
   return { sourceFile, line: 1, code, message };
 }

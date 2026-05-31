@@ -127,7 +127,9 @@ describe("parseInvestigationScene", () => {
       bgm: { channel: "bgm", assetId: null },
       bgs: { channel: "bgs", assetId: "indoor_rain_window" },
     });
-    expect(result.value.evidenceManifest[0]?.imageCue.imagePrompt).toBe("Small brass key on transparent background.");
+    expect(result.value.evidenceManifest[0]?.imageCue.imagePrompt).toBe(
+      "Small brass key on transparent background.",
+    );
   });
 
   it("rejects evidence image metadata on a sub-location", () => {
@@ -443,7 +445,9 @@ A：bad line missing the bold markup
     const result = parseInvestigationScene(source, "i.md", "i");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.evidenceManifest[0]?.onReexamine?.length).toBeGreaterThan(0);
+    expect(
+      result.value.evidenceManifest[0]?.onReexamine?.length,
+    ).toBeGreaterThan(0);
   });
 
   it("rejects a hotspot with Unlock but no Status (defaults to unlocked)", () => {

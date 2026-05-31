@@ -99,7 +99,11 @@ export type UnlockExpr =
   | { predicate: "hotspot_investigated"; id: string };
 
 export type InterrogationUnlockExpr =
-  | { op: "and" | "or"; left: InterrogationUnlockExpr; right: InterrogationUnlockExpr }
+  | {
+      op: "and" | "or";
+      left: InterrogationUnlockExpr;
+      right: InterrogationUnlockExpr;
+    }
   | { predicate: "evidence_collected"; id: string }
   | { predicate: "statement_acquired"; id: string }
   | { predicate: "question_answered"; id: string }
@@ -222,9 +226,7 @@ export type ASTSubject = Located<{
   bio: string;
 }>;
 
-export type ASTInterrogationPhase =
-  | ASTInquiryPhase
-  | ASTTestimonyPhase;
+export type ASTInterrogationPhase = ASTInquiryPhase | ASTTestimonyPhase;
 
 export type ASTInquiryPhase = Located<{
   kind: "inquiry";
@@ -303,7 +305,10 @@ export type JSONChaptersIndex = {
     id: string;
     title: string;
     summary: string;
-    scenes: Array<{ type: "linear" | "investigation" | "interrogation"; file: string }>;
+    scenes: Array<{
+      type: "linear" | "investigation" | "interrogation";
+      file: string;
+    }>;
   }>;
 };
 

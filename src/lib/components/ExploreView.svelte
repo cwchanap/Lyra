@@ -20,7 +20,8 @@
 
   let inv = $derived(scene.kind === "investigation" ? scene : null);
   let currentSub = $derived(
-    inv?.visibleSublocations.find((s) => s.id === inv.currentSublocationId) ?? null,
+    inv?.visibleSublocations.find((s) => s.id === inv.currentSublocationId) ??
+      null,
   );
 </script>
 

@@ -1,12 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { GameError, GameStateView, QueueToken } from "./types";
 
-const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const isTauri =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 const DEV_HTTP_BASE = "http://127.0.0.1:1421";
 
-async function httpInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+async function httpInvoke<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
   if (!import.meta.env.DEV) {
-    throw new Error("Tauri runtime unavailable; HTTP fallback is disabled in production builds.");
+    throw new Error(
+      "Tauri runtime unavailable; HTTP fallback is disabled in production builds.",
+    );
   }
   const r = await fetch(`${DEV_HTTP_BASE}/${command}`, {
     method: "POST",
@@ -20,7 +26,10 @@ async function httpInvoke<T>(command: string, args?: Record<string, unknown>): P
     } catch (e) {
       // If JSON.parse threw SyntaxError, fall back to raw text.
       // Otherwise re-throw the parsed error object (preserves .message for normalizeError).
-      if (e instanceof SyntaxError) throw new Error(text || `${command} failed (${r.status})`);
+      if (e instanceof SyntaxError)
+        throw new Error(text || `${command} failed (${r.status})`, {
+          cause: e,
+        });
       throw e;
     }
   }
@@ -48,17 +57,26 @@ function normalizeError(error: unknown): string {
   return "Game command failed.";
 }
 
-async function runCommand<T>(command: string, args?: Record<string, unknown>): Promise<T | null> {
+async function runCommand<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T | null> {
   gameState.error = null;
   try {
-    return isTauri ? await invoke<T>(command, args) : await httpInvoke<T>(command, args);
+    return isTauri
+      ? await invoke<T>(command, args)
+      : await httpInvoke<T>(command, args);
   } catch (e) {
     gameState.error = normalizeError(e);
     return null;
   }
 }
 
-async function dispatchGameCommand(command: string, args?: Record<string, unknown>, loading = false) {
+async function dispatchGameCommand(
+  command: string,
+  args?: Record<string, unknown>,
+  loading = false,
+) {
   if (gameState.inFlight) return;
   gameState.inFlight = true;
   if (loading) gameState.loading = true;
@@ -104,6 +122,14 @@ export async function answerInterrogationQuestion(questionId: string) {
 export async function pressTestimonyStatement(statementId: string) {
   await dispatchGameCommand("press_testimony_statement", { statementId });
 }
-export async function presentTestimonyItem(statementId: string, itemKind: "evidence" | "statement", itemId: string) {
-  await dispatchGameCommand("present_testimony_item", { statementId, itemKind, itemId });
+export async function presentTestimonyItem(
+  statementId: string,
+  itemKind: "evidence" | "statement",
+  itemId: string,
+) {
+  await dispatchGameCommand("present_testimony_item", {
+    statementId,
+    itemKind,
+    itemId,
+  });
 }

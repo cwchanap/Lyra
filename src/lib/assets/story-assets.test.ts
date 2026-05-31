@@ -11,15 +11,18 @@ import {
 
 describe("story asset resolver helpers", () => {
   it("maps portrait IDs to public asset paths", () => {
-    expect(publicPathForStoryAsset("portrait.hayasaka_akane.concerned", "portrait")).toBe(
-      "/assets/portraits/hayasaka_akane/concerned.png",
-    );
+    expect(
+      publicPathForStoryAsset("portrait.hayasaka_akane.concerned", "portrait"),
+    ).toBe("/assets/portraits/hayasaka_akane/concerned.png");
   });
 
   it("maps background IDs to nested public paths", () => {
-    expect(publicPathForStoryAsset("background.chapter_1.scene_0.tag_001", "background")).toBe(
-      "/assets/backgrounds/chapter_1/scene_0/tag_001.png",
-    );
+    expect(
+      publicPathForStoryAsset(
+        "background.chapter_1.scene_0.tag_001",
+        "background",
+      ),
+    ).toBe("/assets/backgrounds/chapter_1/scene_0/tag_001.png");
   });
 
   it("maps evidence IDs without the evidence prefix", () => {
@@ -35,7 +38,9 @@ describe("story asset resolver helpers", () => {
   });
 
   it("provides placeholders by image type", () => {
-    expect(placeholderForStoryAsset("background").url).toContain("data:image/svg+xml");
+    expect(placeholderForStoryAsset("background").url).toContain(
+      "data:image/svg+xml",
+    );
     expect(placeholderForStoryAsset("portrait").placeholder).toBe(true);
     expect(placeholderForStoryAsset("evidence").placeholder).toBe(true);
   });
@@ -46,14 +51,18 @@ describe("story asset resolver helpers", () => {
   });
 
   it("resolves image assets to public URLs", async () => {
-    await expect(resolveStoryAsset("background.chapter_1.scene_0.available", "background")).resolves.toMatchObject({
+    await expect(
+      resolveStoryAsset("background.chapter_1.scene_0.available", "background"),
+    ).resolves.toMatchObject({
       url: "/assets/backgrounds/chapter_1/scene_0/available.png",
       placeholder: false,
     });
   });
 
   it("resolves audio assets to public URLs", async () => {
-    await expect(resolveStoryAsset("audio.bgs.street_rain", "audio")).resolves.toEqual({
+    await expect(
+      resolveStoryAsset("audio.bgs.street_rain", "audio"),
+    ).resolves.toEqual({
       assetId: "audio.bgs.street_rain",
       type: "audio",
       url: "/assets/audio/bgs/street_rain.ogg",

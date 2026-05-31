@@ -73,7 +73,10 @@
     font-family: var(--serif-jp);
     font-size: 13px;
     letter-spacing: 0.06em;
-    transition: color 0.18s, border-color 0.18s, background 0.18s;
+    transition:
+      color 0.18s,
+      border-color 0.18s,
+      background 0.18s;
   }
 
   button:hover:not(:disabled) {

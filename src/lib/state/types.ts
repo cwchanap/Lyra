@@ -20,7 +20,12 @@ export type VisualAssetCue = {
 export type DialogueItem =
   | { kind: "sceneTag"; text: string; assetCue?: VisualAssetCue | null }
   | { kind: "action"; text: string }
-  | { kind: "line"; speaker: string; text: string; portrait?: PortraitRef | null };
+  | {
+      kind: "line";
+      speaker: string;
+      text: string;
+      portrait?: PortraitRef | null;
+    };
 
 export type QueueToken = {
   sceneId: string;

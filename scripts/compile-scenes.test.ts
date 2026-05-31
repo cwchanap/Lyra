@@ -1,5 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
@@ -21,7 +30,9 @@ describe("compile (end-to-end against valid fixture)", () => {
       expect(result.chaptersCompiled).toBe(1);
       expect(result.scenesCompiled).toBe(2);
 
-      const idx = JSON.parse(readFileSync(resolve(outRoot, "chapters.json"), "utf-8"));
+      const idx = JSON.parse(
+        readFileSync(resolve(outRoot, "chapters.json"), "utf-8"),
+      );
       expect(idx.chapters).toHaveLength(1);
       expect(idx.chapters[0].id).toBe("chapter_1");
       expect(idx.chapters[0].scenes).toEqual([
@@ -29,12 +40,17 @@ describe("compile (end-to-end against valid fixture)", () => {
         { type: "investigation", file: "chapter_1/investigation_scene_1.json" },
       ]);
 
-      const linear = JSON.parse(readFileSync(resolve(outRoot, "chapter_1/scene_0.json"), "utf-8"));
+      const linear = JSON.parse(
+        readFileSync(resolve(outRoot, "chapter_1/scene_0.json"), "utf-8"),
+      );
       expect(linear.type).toBe("linear");
       expect(linear.queue.length).toBeGreaterThan(0);
 
       const investigation = JSON.parse(
-        readFileSync(resolve(outRoot, "chapter_1/investigation_scene_1.json"), "utf-8"),
+        readFileSync(
+          resolve(outRoot, "chapter_1/investigation_scene_1.json"),
+          "utf-8",
+        ),
       );
       expect(investigation.type).toBe("investigation");
       expect(investigation.sublocations).toHaveLength(2);
@@ -60,8 +76,11 @@ describe("compile (end-to-end against valid fixture)", () => {
   });
 
   it("compiles interrogation scenes into the chapter output", () => {
-    const outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-interrogation-"));
-    const readJson = (path: string) => JSON.parse(readFileSync(resolve(outRoot, path), "utf-8"));
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-interrogation-"),
+    );
+    const readJson = (path: string) =>
+      JSON.parse(readFileSync(resolve(outRoot, path), "utf-8"));
     try {
       const result = compile({
         sourceRoot: "scripts/__fixtures__/valid_interrogation",
@@ -77,7 +96,9 @@ describe("compile (end-to-end against valid fixture)", () => {
       });
       const interrogation = readJson("chapter_1/interrogation_scene_1.json");
       expect(interrogation.type).toBe("interrogation");
-      expect(interrogation.phases.map((phase: { kind: string }) => phase.kind)).toEqual(["inquiry", "testimony"]);
+      expect(
+        interrogation.phases.map((phase: { kind: string }) => phase.kind),
+      ).toEqual(["inquiry", "testimony"]);
       expect(interrogation.phases[0].questions[0].id).toBe("entered_storage");
       expect(interrogation.phases[1].statements[0].contradiction).toEqual({
         kind: "evidence",
@@ -87,10 +108,12 @@ describe("compile (end-to-end against valid fixture)", () => {
         kind: "statement",
         id: "kagami_timeline_inconsistent",
       });
-      expect(interrogation.evidenceManifest.map((e: { id: string }) => e.id)).toEqual([
-        "coffee_machine_cleaning_log",
-      ]);
-      expect(interrogation.statementManifest.map((s: { id: string }) => s.id)).toEqual([
+      expect(
+        interrogation.evidenceManifest.map((e: { id: string }) => e.id),
+      ).toEqual(["coffee_machine_cleaning_log"]);
+      expect(
+        interrogation.statementManifest.map((s: { id: string }) => s.id),
+      ).toEqual([
         "wakatsuki_entered_for_beans",
         "kagami_timeline_inconsistent",
       ]);
@@ -101,8 +124,12 @@ describe("compile (end-to-end against valid fixture)", () => {
   });
 
   it("emits story asset manifest for an asset-enabled fixture", () => {
-    const outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-assets-scenes-"));
-    const assetOutRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-assets-manifest-"));
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-assets-scenes-"),
+    );
+    const assetOutRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-assets-manifest-"),
+    );
     try {
       const result = compile({
         sourceRoot: "scripts/__fixtures__/asset_enabled/stories_plan",
@@ -110,15 +137,28 @@ describe("compile (end-to-end against valid fixture)", () => {
         assetConfigRoot: "scripts/__fixtures__/asset_enabled/assets/config",
         assetOutputRoot: assetOutRoot,
       });
-      if (!result.ok) throw new Error("Compile failed:\n" + formatErrors(result.errors));
+      if (!result.ok)
+        throw new Error("Compile failed:\n" + formatErrors(result.errors));
       expect(result.assetReport.enabled).toBe(true);
       expect(result.assetReport.requested.background).toBeGreaterThan(0);
 
-      const manifest = JSON.parse(readFileSync(resolve(assetOutRoot, "manifest.json"), "utf-8"));
-      const report = JSON.parse(readFileSync(resolve(assetOutRoot, "report.json"), "utf-8"));
+      const manifest = JSON.parse(
+        readFileSync(resolve(assetOutRoot, "manifest.json"), "utf-8"),
+      );
+      const report = JSON.parse(
+        readFileSync(resolve(assetOutRoot, "report.json"), "utf-8"),
+      );
       expect(manifest.enabled).toBe(true);
-      expect(manifest.entries.some((entry: { assetId: string }) => entry.assetId.startsWith("background."))).toBe(true);
-      expect(manifest.entries.some((entry: { assetId: string }) => entry.assetId.startsWith("portrait."))).toBe(true);
+      expect(
+        manifest.entries.some((entry: { assetId: string }) =>
+          entry.assetId.startsWith("background."),
+        ),
+      ).toBe(true);
+      expect(
+        manifest.entries.some((entry: { assetId: string }) =>
+          entry.assetId.startsWith("portrait."),
+        ),
+      ).toBe(true);
       expect(report).toEqual(result.assetReport);
     } finally {
       rmSync(outRoot, { recursive: true, force: true });
@@ -140,9 +180,18 @@ describe("snapshot: valid fixture JSON output", () => {
       outputRoot: outRoot,
     });
     if (!result.ok) throw new Error(formatErrors(result.errors));
-    chaptersJson = JSON.parse(readFileSync(resolve(outRoot, "chapters.json"), "utf-8"));
-    linearJson = JSON.parse(readFileSync(resolve(outRoot, "chapter_1/scene_0.json"), "utf-8"));
-    investigationJson = JSON.parse(readFileSync(resolve(outRoot, "chapter_1/investigation_scene_1.json"), "utf-8"));
+    chaptersJson = JSON.parse(
+      readFileSync(resolve(outRoot, "chapters.json"), "utf-8"),
+    );
+    linearJson = JSON.parse(
+      readFileSync(resolve(outRoot, "chapter_1/scene_0.json"), "utf-8"),
+    );
+    investigationJson = JSON.parse(
+      readFileSync(
+        resolve(outRoot, "chapter_1/investigation_scene_1.json"),
+        "utf-8",
+      ),
+    );
   });
 
   afterAll(() => {
@@ -174,13 +223,17 @@ describe("invalid fixtures: each one fails with a specific error code", () => {
         throw new Error(`Fixture ${name} is missing expected-error.txt`);
       }
       const expectedSubstring = readFileSync(expectedFile, "utf-8").trim();
-      const outRoot = mkdtempSync(resolve(tmpdir(), `scene-compile-bad-${name}-`));
+      const outRoot = mkdtempSync(
+        resolve(tmpdir(), `scene-compile-bad-${name}-`),
+      );
       try {
         const result = compile({ sourceRoot, outputRoot: outRoot });
         expect(result.ok).toBe(false);
         if (result.ok) return;
         const matched = result.errors.some(
-          (e) => e.code === expectedSubstring || e.message.includes(expectedSubstring),
+          (e) =>
+            e.code === expectedSubstring ||
+            e.message.includes(expectedSubstring),
         );
         if (!matched) {
           throw new Error(
@@ -197,8 +250,12 @@ describe("invalid fixtures: each one fails with a specific error code", () => {
 
 describe("compile parse failure handling", () => {
   it("does not report a manifest missing-file error for a scene that failed to parse", () => {
-    const sourceRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-parse-fail-"));
-    const outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-parse-fail-out-"));
+    const sourceRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-parse-fail-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-parse-fail-out-"),
+    );
     try {
       const chapterRoot = resolve(sourceRoot, "chapter_1");
       mkdirSync(chapterRoot, { recursive: true });
@@ -206,14 +263,21 @@ describe("compile parse failure handling", () => {
         resolve(chapterRoot, "chapter.md"),
         "# Chapter 1: Parse Fail\n\n**Summary:** s\n\n## Scenes\n1. scene_0.md\n",
       );
-      writeFileSync(resolve(chapterRoot, "scene_0.md"), "this is not a valid linear scene\n");
+      writeFileSync(
+        resolve(chapterRoot, "scene_0.md"),
+        "this is not a valid linear scene\n",
+      );
 
       const result = compile({ sourceRoot, outputRoot: outRoot });
       expect(result.ok).toBe(false);
       if (result.ok) return;
 
-      expect(result.errors.some((e) => e.code === "linearSceneMissingTitle")).toBe(true);
-      expect(result.errors.some((e) => e.code === "chapterManifestMissingFile")).toBe(false);
+      expect(
+        result.errors.some((e) => e.code === "linearSceneMissingTitle"),
+      ).toBe(true);
+      expect(
+        result.errors.some((e) => e.code === "chapterManifestMissingFile"),
+      ).toBe(false);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(outRoot, { recursive: true, force: true });
@@ -226,9 +290,24 @@ describe("asset enrichment: first visual cue audio validation", () => {
     enabled: true,
     globalStylePrompt: "anime style",
     types: {
-      background: { dimensions: [1920, 1080], format: "png", transparency: false, prompt: "" },
-      portrait: { dimensions: [768, 1024], format: "png", transparency: true, prompt: "" },
-      evidence: { dimensions: [512, 512], format: "png", transparency: true, prompt: "" },
+      background: {
+        dimensions: [1920, 1080],
+        format: "png",
+        transparency: false,
+        prompt: "",
+      },
+      portrait: {
+        dimensions: [768, 1024],
+        format: "png",
+        transparency: true,
+        prompt: "",
+      },
+      evidence: {
+        dimensions: [512, 512],
+        format: "png",
+        transparency: true,
+        prompt: "",
+      },
       audio: { format: "ogg", loop: true, prompt: "" },
     },
     characters: { byId: new Map(), byDisplayName: new Map() },
@@ -263,9 +342,16 @@ describe("asset enrichment: first visual cue audio validation", () => {
         assetRefs: [],
       },
     };
-    const result = enrichScenesWithAssets({ scenes: [scene], config: enabledConfig });
-    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgm")).toBe(true);
-    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgs")).toBe(false);
+    const result = enrichScenesWithAssets({
+      scenes: [scene],
+      config: enabledConfig,
+    });
+    expect(
+      result.errors.some((e) => e.code === "assetFirstCueMissingBgm"),
+    ).toBe(true);
+    expect(
+      result.errors.some((e) => e.code === "assetFirstCueMissingBgs"),
+    ).toBe(false);
   });
 
   it("errors when first scene tag omits BGS", () => {
@@ -293,9 +379,16 @@ describe("asset enrichment: first visual cue audio validation", () => {
         assetRefs: [],
       },
     };
-    const result = enrichScenesWithAssets({ scenes: [scene], config: enabledConfig });
-    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgs")).toBe(true);
-    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgm")).toBe(false);
+    const result = enrichScenesWithAssets({
+      scenes: [scene],
+      config: enabledConfig,
+    });
+    expect(
+      result.errors.some((e) => e.code === "assetFirstCueMissingBgs"),
+    ).toBe(true);
+    expect(
+      result.errors.some((e) => e.code === "assetFirstCueMissingBgm"),
+    ).toBe(false);
   });
 
   it("does not error when first scene tag sets BGM and BGS to none", () => {
@@ -323,9 +416,16 @@ describe("asset enrichment: first visual cue audio validation", () => {
         assetRefs: [],
       },
     };
-    const result = enrichScenesWithAssets({ scenes: [scene], config: enabledConfig });
-    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgm")).toBe(false);
-    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgs")).toBe(false);
+    const result = enrichScenesWithAssets({
+      scenes: [scene],
+      config: enabledConfig,
+    });
+    expect(
+      result.errors.some((e) => e.code === "assetFirstCueMissingBgm"),
+    ).toBe(false);
+    expect(
+      result.errors.some((e) => e.code === "assetFirstCueMissingBgs"),
+    ).toBe(false);
   });
 
   it("does not error when non-first scene tag omits BGM", () => {
@@ -363,8 +463,15 @@ describe("asset enrichment: first visual cue audio validation", () => {
         assetRefs: [],
       },
     };
-    const result = enrichScenesWithAssets({ scenes: [scene], config: enabledConfig });
-    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgm")).toBe(false);
-    expect(result.errors.some((e) => e.code === "assetFirstCueMissingBgs")).toBe(false);
+    const result = enrichScenesWithAssets({
+      scenes: [scene],
+      config: enabledConfig,
+    });
+    expect(
+      result.errors.some((e) => e.code === "assetFirstCueMissingBgm"),
+    ).toBe(false);
+    expect(
+      result.errors.some((e) => e.code === "assetFirstCueMissingBgs"),
+    ).toBe(false);
   });
 });

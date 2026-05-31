@@ -120,11 +120,18 @@ const VALID_SOURCE = `# Scene 2: 第一次詢問與交叉詢問
 
 describe("parseInterrogationScene", () => {
   it("parses inquiry and testimony phases in one scene", () => {
-    const parsed = parseInterrogationScene(VALID_SOURCE, "chapter_1/interrogation_scene_2.md", "interrogation_scene_2");
+    const parsed = parseInterrogationScene(
+      VALID_SOURCE,
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(parsed.value.kind).toBe("interrogationScene");
-    expect(parsed.value.phases.map((p) => p.kind)).toEqual(["inquiry", "testimony"]);
+    expect(parsed.value.phases.map((p) => p.kind)).toEqual([
+      "inquiry",
+      "testimony",
+    ]);
     expect(parsed.value.phases[0]!.id).toBe("wakatsuki_inquiry");
     expect(parsed.value.phases[1]!.id).toBe("wakatsuki_testimony");
     const inquiry = parsed.value.phases[0]!;
@@ -172,15 +179,21 @@ describe("parseInterrogationScene", () => {
         kind: "evidence",
         id: "coffee_machine_cleaning_log",
       });
-      expect(testimony.statements[0]!.onCorrect).toBe("breakthrough_cleaning_time");
+      expect(testimony.statements[0]!.onCorrect).toBe(
+        "breakthrough_cleaning_time",
+      );
       expect(testimony.statements[0]!.onWrong).toBe("wrong_time_record");
       expect(testimony.results[0]!.reveals).toContainEqual({
         kind: "statement",
         id: "kagami_timeline_inconsistent",
       });
     }
-    expect(parsed.value.evidenceManifest[0]!.id).toBe("coffee_machine_cleaning_log");
-    expect(parsed.value.statementManifest.map((s) => s.id)).toContain("kagami_timeline_inconsistent");
+    expect(parsed.value.evidenceManifest[0]!.id).toBe(
+      "coffee_machine_cleaning_log",
+    );
+    expect(parsed.value.statementManifest.map((s) => s.id)).toContain(
+      "kagami_timeline_inconsistent",
+    );
   });
 
   it("parses phase background and audio metadata", () => {
@@ -230,10 +243,18 @@ describe("parseInterrogationScene", () => {
   });
 
   it("rejects a phase without a subject", () => {
-    const source = VALID_SOURCE.replace(/### Subject:[\s\S]*?### Question:/, "### Question:");
-    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    const source = VALID_SOURCE.replace(
+      /### Subject:[\s\S]*?### Question:/,
+      "### Question:",
+    );
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_2",
+    );
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.error.code).toBe("interrogationPhaseMissingSubject");
+    if (!parsed.ok)
+      expect(parsed.error.code).toBe("interrogationPhaseMissingSubject");
   });
 
   it("rejects a phase with duplicate subjects", () => {
@@ -245,9 +266,14 @@ describe("parseInterrogationScene", () => {
 
 ### Question: 進倉庫的理由`,
     );
-    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_2",
+    );
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.error.code).toBe("interrogationPhaseDuplicateSubject");
+    if (!parsed.ok)
+      expect(parsed.error.code).toBe("interrogationPhaseDuplicateSubject");
   });
 
   it("rejects a testimony phase with duplicate testimony containers", () => {
@@ -257,21 +283,41 @@ describe("parseInterrogationScene", () => {
 
 ### Result: breakthrough_cleaning_time`,
     );
-    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_2",
+    );
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.error.code).toBe("testimonyDuplicateContainer");
+    if (!parsed.ok)
+      expect(parsed.error.code).toBe("testimonyDuplicateContainer");
   });
 
   it("rejects an interrogation scene with no phases", () => {
-    const source = VALID_SOURCE.replace(/## Phase:[\s\S]*?## Evidence Manifest/, "## Evidence Manifest");
-    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    const source = VALID_SOURCE.replace(
+      /## Phase:[\s\S]*?## Evidence Manifest/,
+      "## Evidence Manifest",
+    );
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_2",
+    );
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.error.code).toBe("interrogationSceneNoPhases");
+    if (!parsed.ok)
+      expect(parsed.error.code).toBe("interrogationSceneNoPhases");
   });
 
   it("rejects an unlocked phase with Unlock metadata", () => {
-    const source = VALID_SOURCE.replace("- **Status:** locked", "- **Status:** unlocked");
-    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    const source = VALID_SOURCE.replace(
+      "- **Status:** locked",
+      "- **Status:** unlocked",
+    );
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_2",
+    );
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.error.code).toBe("unlockOnNonLockedBlock");
   });
@@ -281,7 +327,11 @@ describe("parseInterrogationScene", () => {
       "- **Status:** unlocked\n- **Reveals:** [statement:wakatsuki_entered_for_beans]",
       "- **Unlock:** statement:wakatsuki_entered_for_beans acquired\n- **Reveals:** [statement:wakatsuki_entered_for_beans]",
     );
-    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_2",
+    );
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.error.code).toBe("unlockOnNonLockedBlock");
   });
@@ -297,21 +347,40 @@ describe("parseInterrogationScene", () => {
 
 ## Phase: 若槻蓮的行動證詞`,
     );
-    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_2",
+    );
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.error.code).toBe("unlockOnNonLockedBlock");
   });
 
   it("rejects an inquiry phase with no questions", () => {
-    const source = VALID_SOURCE.replace(/### Question:[\s\S]*?## Phase:/, "## Phase:");
-    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    const source = VALID_SOURCE.replace(
+      /### Question:[\s\S]*?## Phase:/,
+      "## Phase:",
+    );
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_2",
+    );
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.error.code).toBe("interrogationInquiryNoQuestions");
+    if (!parsed.ok)
+      expect(parsed.error.code).toBe("interrogationInquiryNoQuestions");
   });
 
   it("rejects a testimony phase with no results", () => {
-    const source = VALID_SOURCE.replace(/### Result: breakthrough_cleaning_time[\s\S]*?## Evidence Manifest/, "## Evidence Manifest");
-    const parsed = parseInterrogationScene(source, "bad.md", "interrogation_scene_2");
+    const source = VALID_SOURCE.replace(
+      /### Result: breakthrough_cleaning_time[\s\S]*?## Evidence Manifest/,
+      "## Evidence Manifest",
+    );
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_2",
+    );
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) expect(parsed.error.code).toBe("testimonyNoResults");
   });

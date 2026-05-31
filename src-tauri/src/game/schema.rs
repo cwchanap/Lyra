@@ -782,9 +782,6 @@ mod tests {
             hotspots: vec![],
             characters: vec![],
         };
-        assert_eq!(
-            sub.visual_asset_cue(),
-            Some(cue)
-        );
+        assert_eq!(sub.visual_asset_cue(), Some(cue));
     }
 }

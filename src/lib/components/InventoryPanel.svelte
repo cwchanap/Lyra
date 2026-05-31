@@ -49,7 +49,9 @@
   function handleEvidenceImageError(id: string) {
     const current = evidenceImages[id];
     if (!current || current.placeholder) return;
-    console.warn(`[InventoryPanel] Missing evidence asset: ${current.url} (id: ${id}, assetId: ${current.assetId})`);
+    console.warn(
+      `[InventoryPanel] Missing evidence asset: ${current.url} (id: ${id}, assetId: ${current.assetId})`,
+    );
     evidenceImages = {
       ...evidenceImages,
       [id]: placeholderForMissingStoryAsset(current.assetId, "evidence"),
@@ -58,7 +60,12 @@
 </script>
 
 <aside class:open>
-  <button class="toggle" type="button" onclick={() => (open = !open)} aria-expanded={open}>
+  <button
+    class="toggle"
+    type="button"
+    onclick={() => (open = !open)}
+    aria-expanded={open}
+  >
     <span class="t-marker"></span>
     <span class="t-body">
       <span class="t-zh">{open ? "收合" : "物證"}</span>
@@ -74,7 +81,9 @@
     <div class="panel" role="region" aria-label="物證清單">
       <header class="panel-head">
         <span class="eyebrow">DOSSIER · 物證檔案</span>
-        <span class="sub">{inventory.evidence.length + inventory.statements.length} 項已歸檔</span>
+        <span class="sub"
+          >{inventory.evidence.length + inventory.statements.length} 項已歸檔</span
+        >
       </header>
 
       <section>
@@ -162,7 +171,9 @@
     border-right: none;
     cursor: pointer;
     font: inherit;
-    transition: border-color 0.18s, background 0.18s;
+    transition:
+      border-color 0.18s,
+      background 0.18s;
   }
 
   .toggle:hover {
@@ -309,7 +320,9 @@
     color: var(--bone);
     cursor: pointer;
     font: inherit;
-    transition: border-color 0.18s, background 0.18s;
+    transition:
+      border-color 0.18s,
+      background 0.18s;
   }
 
   section button.evidence-row {

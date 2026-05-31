@@ -4305,9 +4305,15 @@ mod tests {
 
         // Audio state is preserved
         assert!(cue.bgm.is_some());
-        assert_eq!(cue.bgm.as_ref().unwrap().asset_id.as_deref(), Some("rain_mystery_low"));
+        assert_eq!(
+            cue.bgm.as_ref().unwrap().asset_id.as_deref(),
+            Some("rain_mystery_low")
+        );
         assert!(cue.bgs.is_some());
-        assert_eq!(cue.bgs.as_ref().unwrap().asset_id.as_deref(), Some("indoor_rain"));
+        assert_eq!(
+            cue.bgs.as_ref().unwrap().asset_id.as_deref(),
+            Some("indoor_rain")
+        );
     }
 
     #[test]
@@ -4343,9 +4349,15 @@ mod tests {
         cue.apply_asset_cue(Some(new_cue));
 
         // BGM was omitted → previous value preserved
-        assert_eq!(cue.bgm.as_ref().unwrap().asset_id.as_deref(), Some("old_bgm"));
+        assert_eq!(
+            cue.bgm.as_ref().unwrap().asset_id.as_deref(),
+            Some("old_bgm")
+        );
         // BGS was provided → overwritten
-        assert_eq!(cue.bgs.as_ref().unwrap().asset_id.as_deref(), Some("new_bgs"));
+        assert_eq!(
+            cue.bgs.as_ref().unwrap().asset_id.as_deref(),
+            Some("new_bgs")
+        );
         // Background was provided → overwritten
         assert_eq!(cue.background_asset_id.as_deref(), Some("bg_new"));
     }

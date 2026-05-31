@@ -1,0 +1,14 @@
+.claude
+.svelte-kit
+build
+coverage
+dist
+docs
+node_modules
+playwright-report
+scripts/__fixtures__
+src-tauri/gen
+src-tauri/resources
+src-tauri/target
+static/stories_plan
+test-results

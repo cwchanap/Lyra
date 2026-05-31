@@ -1,30 +1,53 @@
 import { describe, expect, it } from "bun:test";
-import { tokenize, Token } from "./tokenizer";
+import { tokenize } from "./tokenizer";
 
 describe("tokenizer", () => {
   it("classifies an H1 heading without anchor", () => {
     const tokens = tokenize("# Scene 0: 接案", "test.md");
     expect(tokens).toEqual([
-      { kind: "heading", level: 1, text: "Scene 0: 接案", anchorId: null, sourceFile: "test.md", line: 1 },
+      {
+        kind: "heading",
+        level: 1,
+        text: "Scene 0: 接案",
+        anchorId: null,
+        sourceFile: "test.md",
+        line: 1,
+      },
     ]);
   });
 
   it("classifies an H3 heading with anchor id", () => {
     const tokens = tokenize("### Hotspot: 桌子 {#table}", "test.md");
     expect(tokens).toEqual([
-      { kind: "heading", level: 3, text: "Hotspot: 桌子", anchorId: "table", sourceFile: "test.md", line: 1 },
+      {
+        kind: "heading",
+        level: 3,
+        text: "Hotspot: 桌子",
+        anchorId: "table",
+        sourceFile: "test.md",
+        line: 1,
+      },
     ]);
   });
 
   it("classifies a metadata line", () => {
     const tokens = tokenize("- **Status:** locked", "test.md");
     expect(tokens).toEqual([
-      { kind: "metadata", key: "Status", value: "locked", sourceFile: "test.md", line: 1 },
+      {
+        kind: "metadata",
+        key: "Status",
+        value: "locked",
+        sourceFile: "test.md",
+        line: 1,
+      },
     ]);
   });
 
   it("classifies a metadata line whose value contains spaces", () => {
-    const tokens = tokenize("- **Unlock:** hotspot:foo investigated and topic:bar@baz discussed", "test.md");
+    const tokens = tokenize(
+      "- **Unlock:** hotspot:foo investigated and topic:bar@baz discussed",
+      "test.md",
+    );
     expect(tokens).toEqual([
       {
         kind: "metadata",
@@ -39,14 +62,24 @@ describe("tokenizer", () => {
   it("classifies a scene-tag bracketed line", () => {
     const tokens = tokenize("[場景：吉祥寺街道，深夜，雨夜。]", "test.md");
     expect(tokens).toEqual([
-      { kind: "sceneTag", text: "吉祥寺街道，深夜，雨夜。", sourceFile: "test.md", line: 1 },
+      {
+        kind: "sceneTag",
+        text: "吉祥寺街道，深夜，雨夜。",
+        sourceFile: "test.md",
+        line: 1,
+      },
     ]);
   });
 
   it("classifies a non-scene-tag bracketed line as an action", () => {
     const tokens = tokenize("[相馬律收起傘。]", "test.md");
     expect(tokens).toEqual([
-      { kind: "action", text: "相馬律收起傘。", sourceFile: "test.md", line: 1 },
+      {
+        kind: "action",
+        text: "相馬律收起傘。",
+        sourceFile: "test.md",
+        line: 1,
+      },
     ]);
   });
 
@@ -78,7 +111,9 @@ describe("tokenizer", () => {
   });
 
   it("rejects malformed expression brackets as unknown", () => {
-    expect(tokenize("**早坂茜**[擔心]：你不舒服？", "test.md")[0]?.kind).toBe("unknown");
+    expect(tokenize("**早坂茜**[擔心]：你不舒服？", "test.md")[0]?.kind).toBe(
+      "unknown",
+    );
   });
 
   it("ignores blank lines", () => {
@@ -94,9 +129,17 @@ describe("tokenizer", () => {
   });
 
   it("emits an unknown token for unrecognized content", () => {
-    const tokens = tokenize("just some random prose without any structure", "test.md");
+    const tokens = tokenize(
+      "just some random prose without any structure",
+      "test.md",
+    );
     expect(tokens).toEqual([
-      { kind: "unknown", text: "just some random prose without any structure", sourceFile: "test.md", line: 1 },
+      {
+        kind: "unknown",
+        text: "just some random prose without any structure",
+        sourceFile: "test.md",
+        line: 1,
+      },
     ]);
   });
 

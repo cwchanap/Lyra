@@ -16,7 +16,9 @@ describe("SceneBackdrop", () => {
     });
 
     await waitFor(() => {
-      const img = container.querySelector("img.background-image") as HTMLImageElement;
+      const img = container.querySelector(
+        "img.background-image",
+      ) as HTMLImageElement;
       expect(img).toBeTruthy();
       expect(img.getAttribute("src")).toBe(
         "/assets/backgrounds/chapter_1/scene_0/render_test.png",
@@ -33,7 +35,9 @@ describe("SceneBackdrop", () => {
       resolve(import.meta.dirname!, "SceneBackdrop.svelte"),
       "utf-8",
     );
-    const match = source.match(/\.background-image\s*\{[^}]*z-index:\s*(-?\d+)/s);
+    const match = source.match(
+      /\.background-image\s*\{[^}]*z-index:\s*(-?\d+)/s,
+    );
     expect(match).toBeTruthy();
     expect(parseInt(match![1], 10)).toBeLessThan(0);
   });
@@ -41,7 +45,8 @@ describe("SceneBackdrop", () => {
   it("falls back to a background placeholder when the image fails to load", async () => {
     const { container } = render(SceneBackdrop, {
       sceneTag: "雨夜咖啡館",
-      backgroundAssetId: "background.chapter_1.scene_0.load_error_component_test",
+      backgroundAssetId:
+        "background.chapter_1.scene_0.load_error_component_test",
     });
 
     expect(container).toHaveTextContent("雨夜咖啡館");
@@ -52,7 +57,9 @@ describe("SceneBackdrop", () => {
       );
     });
 
-    const image = container.querySelector("img.background-image") as HTMLImageElement;
+    const image = container.querySelector(
+      "img.background-image",
+    ) as HTMLImageElement;
     image.dispatchEvent(new Event("error"));
 
     await waitFor(() => {

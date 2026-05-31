@@ -1,5 +1,8 @@
 <script lang="ts">
-  let { onReset, disabled = false }: { onReset: () => void; disabled?: boolean } = $props();
+  let {
+    onReset,
+    disabled = false,
+  }: { onReset: () => void; disabled?: boolean } = $props();
 </script>
 
 <section class="complete">
@@ -13,7 +16,9 @@
     <span class="en">— ZERO WITNESS —</span>
   </h1>
 
-  <p class="line">調查結束。<br /><em>The dossier closes — but the rain keeps falling.</em></p>
+  <p class="line">
+    調查結束。<br /><em>The dossier closes — but the rain keeps falling.</em>
+  </p>
 
   <button onclick={onReset} type="button" {disabled}>
     <span class="num">00</span>
@@ -53,14 +58,13 @@
     letter-spacing: 0.32em;
     color: var(--crimson);
     border: 3px solid var(--crimson);
-    background:
-      repeating-linear-gradient(
-        45deg,
-        transparent 0,
-        transparent 6px,
-        rgba(212, 20, 58, 0.06) 6px,
-        rgba(212, 20, 58, 0.06) 7px
-      );
+    background: repeating-linear-gradient(
+      45deg,
+      transparent 0,
+      transparent 6px,
+      rgba(212, 20, 58, 0.06) 6px,
+      rgba(212, 20, 58, 0.06) 7px
+    );
     text-shadow: 0 0 12px rgba(212, 20, 58, 0.45);
     box-shadow: inset 0 0 0 1px rgba(212, 20, 58, 0.4);
   }
@@ -127,8 +131,18 @@
     cursor: pointer;
     font: inherit;
     text-align: left;
-    clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
-    transition: transform 0.18s, background 0.18s, border-color 0.18s;
+    clip-path: polygon(
+      0 0,
+      calc(100% - 16px) 0,
+      100% 16px,
+      100% 100%,
+      16px 100%,
+      0 calc(100% - 16px)
+    );
+    transition:
+      transform 0.18s,
+      background 0.18s,
+      border-color 0.18s;
   }
 
   button:hover:not(:disabled) {

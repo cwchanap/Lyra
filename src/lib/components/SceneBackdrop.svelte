@@ -28,7 +28,9 @@
 
   function handleBackgroundError() {
     if (!resolved || resolved.placeholder) return;
-    console.warn(`[SceneBackdrop] Missing background asset: ${resolved.url} (assetId: ${resolved.assetId})`);
+    console.warn(
+      `[SceneBackdrop] Missing background asset: ${resolved.url} (assetId: ${resolved.assetId})`,
+    );
     resolved = placeholderForMissingStoryAsset(resolved.assetId, "background");
   }
 </script>
@@ -36,7 +38,13 @@
 {#if sceneTag || backgroundAssetId || resolved}
   <div class="backdrop">
     {#if resolved}
-      <img class="background-image" src={resolved.url} alt="" aria-hidden="true" onerror={handleBackgroundError} />
+      <img
+        class="background-image"
+        src={resolved.url}
+        alt=""
+        aria-hidden="true"
+        onerror={handleBackgroundError}
+      />
     {/if}
     {#if sceneTag}
       <span class="stamp">

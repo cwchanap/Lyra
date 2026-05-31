@@ -27,7 +27,9 @@ const mkLinearScene = (id: string): ASTLinearScene => ({
   line: 1,
 });
 
-const mkInvestigationScene = (overrides: Partial<ASTInvestigationScene> = {}): ASTInvestigationScene => ({
+const mkInvestigationScene = (
+  overrides: Partial<ASTInvestigationScene> = {},
+): ASTInvestigationScene => ({
   kind: "investigationScene",
   id: overrides.id ?? "i",
   title: overrides.title ?? "i",
@@ -49,7 +51,9 @@ const mkInvestigationScene = (overrides: Partial<ASTInvestigationScene> = {}): A
           status: "unlocked",
           unlock: null,
           reveals: [],
-          inspectDialogue: [{ kind: "line", speaker: "A", text: "hi" }] as DialogueItem[],
+          inspectDialogue: [
+            { kind: "line", speaker: "A", text: "hi" },
+          ] as DialogueItem[],
           onReexamine: null,
           sourceFile: "i.md",
           line: 4,
@@ -89,7 +93,9 @@ const mkStatement = (id: string): ASTStatement => ({
   line: 1,
 });
 
-const mkQuestion = (overrides: Partial<ASTInquiryQuestion> = {}): ASTInquiryQuestion => ({
+const mkQuestion = (
+  overrides: Partial<ASTInquiryQuestion> = {},
+): ASTInquiryQuestion => ({
   id: "question",
   label: "Question",
   kind: "question",
@@ -105,7 +111,9 @@ const mkQuestion = (overrides: Partial<ASTInquiryQuestion> = {}): ASTInquiryQues
   ...overrides,
 });
 
-const mkResult = (overrides: Partial<ASTTestimonyResult> = {}): ASTTestimonyResult => ({
+const mkResult = (
+  overrides: Partial<ASTTestimonyResult> = {},
+): ASTTestimonyResult => ({
   id: "result",
   label: "Result",
   reveals: [],
@@ -115,7 +123,9 @@ const mkResult = (overrides: Partial<ASTTestimonyResult> = {}): ASTTestimonyResu
   ...overrides,
 });
 
-const mkTestimonyStatement = (overrides: Partial<ASTTestimonyStatement> = {}): ASTTestimonyStatement => ({
+const mkTestimonyStatement = (
+  overrides: Partial<ASTTestimonyStatement> = {},
+): ASTTestimonyStatement => ({
   id: "statement",
   label: "Statement",
   content: "Statement",
@@ -131,7 +141,9 @@ const mkTestimonyStatement = (overrides: Partial<ASTTestimonyStatement> = {}): A
   ...overrides,
 });
 
-const mkInquiryPhase = (overrides: Partial<ASTInquiryPhase> = {}): ASTInquiryPhase => ({
+const mkInquiryPhase = (
+  overrides: Partial<ASTInquiryPhase> = {},
+): ASTInquiryPhase => ({
   kind: "inquiry",
   id: "inquiry",
   label: "Inquiry",
@@ -156,7 +168,9 @@ const mkInquiryPhase = (overrides: Partial<ASTInquiryPhase> = {}): ASTInquiryPha
   ...overrides,
 });
 
-const mkTestimonyPhase = (overrides: Partial<ASTTestimonyPhase> = {}): ASTTestimonyPhase => ({
+const mkTestimonyPhase = (
+  overrides: Partial<ASTTestimonyPhase> = {},
+): ASTTestimonyPhase => ({
   kind: "testimony",
   id: "testimony",
   label: "Testimony",
@@ -181,7 +195,9 @@ const mkTestimonyPhase = (overrides: Partial<ASTTestimonyPhase> = {}): ASTTestim
   ...overrides,
 });
 
-const mkInterrogationScene = (overrides: Partial<ASTInterrogationScene> = {}): ASTInterrogationScene => {
+const mkInterrogationScene = (
+  overrides: Partial<ASTInterrogationScene> = {},
+): ASTInterrogationScene => {
   const phases = overrides.phases ?? [mkInquiryPhase(), mkTestimonyPhase()];
 
   return {
@@ -215,8 +231,16 @@ describe("validator", () => {
     const errors = validate({
       chapters: [mkChapter(1, ["scene_0.md", "investigation_scene_1.md"])],
       scenes: [
-        { chapterId: "chapter_1", file: "scene_0.md", ast: mkLinearScene("scene_0") },
-        { chapterId: "chapter_1", file: "investigation_scene_1.md", ast: mkInvestigationScene({ id: "investigation_scene_1" }) },
+        {
+          chapterId: "chapter_1",
+          file: "scene_0.md",
+          ast: mkLinearScene("scene_0"),
+        },
+        {
+          chapterId: "chapter_1",
+          file: "investigation_scene_1.md",
+          ast: mkInvestigationScene({ id: "investigation_scene_1" }),
+        },
       ],
     });
     expect(errors).toEqual([]);
@@ -227,7 +251,9 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["missing.md"])],
       scenes: [],
     });
-    expect(errors.find((e) => e.code === "chapterManifestMissingFile")).toBeDefined();
+    expect(
+      errors.find((e) => e.code === "chapterManifestMissingFile"),
+    ).toBeDefined();
   });
 
   it("rejects a chapter whose only scenes are reserved placeholders", () => {
@@ -236,28 +262,54 @@ describe("validator", () => {
       scenes: [],
       skippedReservedFiles: new Set(["chapter_1/interrogation_scene_1.md"]),
     });
-    expect(errors.find((e) => e.code === "chapterNoPlayableScenes")).toBeDefined();
-    expect(errors.find((e) => e.code === "chapterManifestMissingFile")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "chapterNoPlayableScenes"),
+    ).toBeDefined();
+    expect(
+      errors.find((e) => e.code === "chapterManifestMissingFile"),
+    ).toBeUndefined();
   });
 
   it("rejects a hotspot whose Reveals target an undeclared evidence id", () => {
     const scene = mkInvestigationScene({ id: "i" });
-    scene.sublocations[0]!.hotspots[0]!.reveals = [{ kind: "evidence", id: "ghost" }];
+    scene.sublocations[0]!.hotspots[0]!.reveals = [
+      { kind: "evidence", id: "ghost" },
+    ];
     const errors = validate({
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    expect(errors.find((e) => e.code === "unresolvedRevealTarget")).toBeDefined();
+    expect(
+      errors.find((e) => e.code === "unresolvedRevealTarget"),
+    ).toBeDefined();
   });
 
   it("rejects duplicate global evidence ids across chapters", () => {
     const scene1 = mkInvestigationScene({ id: "a" });
     scene1.evidenceManifest = [
-      { id: "dup", name: "n", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "a.md", line: 10 },
+      {
+        id: "dup",
+        name: "n",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "a.md",
+        line: 10,
+      },
     ];
     const scene2 = mkInvestigationScene({ id: "b" });
     scene2.evidenceManifest = [
-      { id: "dup", name: "n", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "b.md", line: 10 },
+      {
+        id: "dup",
+        name: "n",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "b.md",
+        line: 10,
+      },
     ];
     const errors = validate({
       chapters: [mkChapter(1, ["a.md"]), mkChapter(2, ["b.md"])],
@@ -266,13 +318,24 @@ describe("validator", () => {
         { chapterId: "chapter_2", file: "b.md", ast: scene2 },
       ],
     });
-    expect(errors.find((e) => e.code === "duplicateGlobalEvidenceId")).toBeDefined();
+    expect(
+      errors.find((e) => e.code === "duplicateGlobalEvidenceId"),
+    ).toBeDefined();
   });
 
   it("rejects a cross-chapter Unlock predicate (v1 restriction)", () => {
     const scene1 = mkInvestigationScene({ id: "a" });
     scene1.evidenceManifest = [
-      { id: "foo", name: "n", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "a.md", line: 10 },
+      {
+        id: "foo",
+        name: "n",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "a.md",
+        line: 10,
+      },
     ];
     const scene2 = mkInvestigationScene({ id: "b" });
     scene2.outro = {
@@ -299,7 +362,9 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    expect(errors.find((e) => e.code === "unresolvedUnlockPredicate")).toBeDefined();
+    expect(
+      errors.find((e) => e.code === "unresolvedUnlockPredicate"),
+    ).toBeDefined();
   });
 
   it("rejects a locked sub-location with no inbound Reveals and no Unlock", () => {
@@ -321,12 +386,16 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    expect(errors.find((e) => e.code === "lockedBlockUnreachable")).toBeDefined();
+    expect(
+      errors.find((e) => e.code === "lockedBlockUnreachable"),
+    ).toBeDefined();
   });
 
   it("rejects a block with BOTH an inbound Reveals and a self Unlock", () => {
     const scene = mkInvestigationScene({ id: "i" });
-    scene.sublocations[0]!.hotspots[0]!.reveals = [{ kind: "sublocation", id: "double_path" }];
+    scene.sublocations[0]!.hotspots[0]!.reveals = [
+      { kind: "sublocation", id: "double_path" },
+    ];
     scene.sublocations.push({
       id: "double_path",
       label: "Double Path",
@@ -429,9 +498,15 @@ describe("validator", () => {
     // room_c's Reveals targets hotspot:hc (inside itself), not a sublocation.
     // Neither has an inbound Reveals from a reachable block.
     // room_b needs hc (inside locked room_c), room_c needs hb (inside locked room_b) → cycle.
-    const reachErr = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("room_b"));
+    const reachErr = errors.find(
+      (e) =>
+        e.code === "lockedBlockUnreachable" && e.message.includes("room_b"),
+    );
     expect(reachErr).toBeDefined();
-    const reachErr2 = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("room_c"));
+    const reachErr2 = errors.find(
+      (e) =>
+        e.code === "lockedBlockUnreachable" && e.message.includes("room_c"),
+    );
     expect(reachErr2).toBeDefined();
   });
 
@@ -493,7 +568,16 @@ describe("validator", () => {
     // by that same locked hotspot — a circular dependency the runtime can never resolve.
     const scene = mkInvestigationScene({ id: "i" });
     scene.evidenceManifest = [
-      { id: "ev1", name: "ev1", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+      {
+        id: "ev1",
+        name: "ev1",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 20,
+      },
     ];
     scene.sublocations[0]!.hotspots = [
       {
@@ -525,14 +609,25 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    const reachErr = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("h2"));
+    const reachErr = errors.find(
+      (e) => e.code === "lockedBlockUnreachable" && e.message.includes("h2"),
+    );
     expect(reachErr).toBeDefined();
   });
 
   it("accepts a locked block whose evidence_collected predicate references evidence revealed by a reachable block", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.evidenceManifest = [
-      { id: "ev1", name: "ev1", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+      {
+        id: "ev1",
+        name: "ev1",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 20,
+      },
     ];
     scene.sublocations[0]!.hotspots = [
       {
@@ -570,7 +665,15 @@ describe("validator", () => {
   it("rejects a locked block whose statement_acquired predicate references a statement only revealed by another unreachable block", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.statementManifest = [
-      { id: "st1", speaker: "X", content: "s", onAcquire: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+      {
+        id: "st1",
+        speaker: "X",
+        content: "s",
+        onAcquire: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 30,
+      },
     ];
     scene.sublocations[0]!.hotspots = [
       {
@@ -615,14 +718,25 @@ describe("validator", () => {
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
     // h2 needs st1, st1 is only revealed by h3, h3 needs h2 — deadlock.
-    const reachErr = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("h2"));
+    const reachErr = errors.find(
+      (e) => e.code === "lockedBlockUnreachable" && e.message.includes("h2"),
+    );
     expect(reachErr).toBeDefined();
   });
 
   it("rejects a locked sub-location whose evidence_collected unlock references evidence not revealed by any reachable sub-location", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.evidenceManifest = [
-      { id: "ev1", name: "ev1", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+      {
+        id: "ev1",
+        name: "ev1",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 20,
+      },
     ];
     scene.sublocations = [
       {
@@ -683,7 +797,10 @@ describe("validator", () => {
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
     // room_b needs evidence:ev1, but ev1 is only revealed inside room_b itself.
-    const reachErr = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("room_b"));
+    const reachErr = errors.find(
+      (e) =>
+        e.code === "lockedBlockUnreachable" && e.message.includes("room_b"),
+    );
     expect(reachErr).toBeDefined();
   });
 
@@ -692,7 +809,16 @@ describe("validator", () => {
   it("accepts a locked topic whose evidence_collected predicate references evidence revealed by an unlocked hotspot in another sub-location", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.evidenceManifest = [
-      { id: "ev1", name: "ev1", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+      {
+        id: "ev1",
+        name: "ev1",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 20,
+      },
     ];
     // room_a has an unlocked hotspot that reveals evidence:ev1
     scene.sublocations[0]!.hotspots = [
@@ -722,7 +848,9 @@ describe("validator", () => {
             status: "locked",
             unlock: { predicate: "evidence_collected", id: "ev1" },
             reveals: [],
-            topicDialogue: [{ kind: "line", speaker: "NPC1", text: "unlocked" }],
+            topicDialogue: [
+              { kind: "line", speaker: "NPC1", text: "unlocked" },
+            ],
             onReexamine: null,
             sourceFile: "i.md",
             line: 10,
@@ -755,7 +883,9 @@ describe("validator", () => {
               status: "locked",
               unlock: { predicate: "evidence_collected", id: "ev1" },
               reveals: [],
-              topicDialogue: [{ kind: "line", speaker: "NPC2", text: "unlocked" }],
+              topicDialogue: [
+                { kind: "line", speaker: "NPC2", text: "unlocked" },
+              ],
               onReexamine: null,
               sourceFile: "i.md",
               line: 20,
@@ -778,7 +908,15 @@ describe("validator", () => {
   it("accepts a locked hotspot whose statement_acquired predicate references a statement revealed by an unlocked hotspot in another sub-location", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.statementManifest = [
-      { id: "st1", speaker: "X", content: "s", onAcquire: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+      {
+        id: "st1",
+        speaker: "X",
+        content: "s",
+        onAcquire: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 30,
+      },
     ];
     // room_a: unlocked hotspot reveals statement:st1
     scene.sublocations[0]!.hotspots = [
@@ -832,7 +970,16 @@ describe("validator", () => {
   it("accepts a locked hotspot whose evidence_collected predicate references evidence from another sub-location entry reveal", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.evidenceManifest = [
-      { id: "ev_entry", name: "ev_entry", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+      {
+        id: "ev_entry",
+        name: "ev_entry",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 30,
+      },
     ];
     scene.sublocations[0]!.reveals = [{ kind: "evidence", id: "ev_entry" }];
     scene.sublocations.push({
@@ -871,7 +1018,16 @@ describe("validator", () => {
   it("accepts a locked block unlocked by evidence revealed through another reachable sub-location's locked-block chain", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.evidenceManifest = [
-      { id: "ev_chain", name: "ev_chain", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+      {
+        id: "ev_chain",
+        name: "ev_chain",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 30,
+      },
     ];
     scene.sublocations = [
       {
@@ -1006,7 +1162,10 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    const reachErr = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("room_b"));
+    const reachErr = errors.find(
+      (e) =>
+        e.code === "lockedBlockUnreachable" && e.message.includes("room_b"),
+    );
     expect(reachErr).toBeDefined();
   });
 
@@ -1044,7 +1203,9 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    const dup = errors.find((e) => e.code === "duplicateSceneLocalId" && e.message.includes("thing"));
+    const dup = errors.find(
+      (e) => e.code === "duplicateSceneLocalId" && e.message.includes("thing"),
+    );
     expect(dup).toBeDefined();
   });
 
@@ -1067,7 +1228,12 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    const dup = errors.find((e) => e.code === "duplicateSceneLocalId" && e.message.includes("sub-location") && e.message.includes("room"));
+    const dup = errors.find(
+      (e) =>
+        e.code === "duplicateSceneLocalId" &&
+        e.message.includes("sub-location") &&
+        e.message.includes("room"),
+    );
     expect(dup).toBeDefined();
   });
 
@@ -1097,7 +1263,12 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    const dup = errors.find((e) => e.code === "duplicateSceneLocalId" && e.message.includes("character") && e.message.includes("npc"));
+    const dup = errors.find(
+      (e) =>
+        e.code === "duplicateSceneLocalId" &&
+        e.message.includes("character") &&
+        e.message.includes("npc"),
+    );
     expect(dup).toBeDefined();
   });
 
@@ -1109,7 +1280,19 @@ describe("validator", () => {
         name: "NPC",
         role: "witness",
         bio: "bio",
-        topics: [{ id: "alibi", label: "Alibi", status: "unlocked" as const, unlock: null, reveals: [], topicDialogue: [], onReexamine: null, sourceFile: "i.md", line: 10 }],
+        topics: [
+          {
+            id: "alibi",
+            label: "Alibi",
+            status: "unlocked" as const,
+            unlock: null,
+            reveals: [],
+            topicDialogue: [],
+            onReexamine: null,
+            sourceFile: "i.md",
+            line: 10,
+          },
+        ],
         sourceFile: "i.md",
         line: 10,
       },
@@ -1129,7 +1312,19 @@ describe("validator", () => {
           name: "NPC Again",
           role: "suspect",
           bio: "bio",
-          topics: [{ id: "motive", label: "Motive", status: "unlocked" as const, unlock: null, reveals: [], topicDialogue: [], onReexamine: null, sourceFile: "i.md", line: 25 }],
+          topics: [
+            {
+              id: "motive",
+              label: "Motive",
+              status: "unlocked" as const,
+              unlock: null,
+              reveals: [],
+              topicDialogue: [],
+              onReexamine: null,
+              sourceFile: "i.md",
+              line: 25,
+            },
+          ],
           sourceFile: "i.md",
           line: 25,
         },
@@ -1141,7 +1336,10 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    const dup = errors.find((e) => e.code === "duplicateSceneLocalId" && e.message.includes("character"));
+    const dup = errors.find(
+      (e) =>
+        e.code === "duplicateSceneLocalId" && e.message.includes("character"),
+    );
     expect(dup).toBeUndefined();
   });
 
@@ -1153,7 +1351,16 @@ describe("validator", () => {
     // Cycle: to get evidence:key need H1, H1 needs H2 (in B), B needs evidence:key.
     const scene = mkInvestigationScene({ id: "i" });
     scene.evidenceManifest = [
-      { id: "key", name: "key", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+      {
+        id: "key",
+        name: "key",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 30,
+      },
     ];
     scene.sublocations = [
       {
@@ -1172,7 +1379,9 @@ describe("validator", () => {
             status: "locked",
             unlock: { predicate: "hotspot_investigated", id: "h2" },
             reveals: [{ kind: "evidence", id: "key" }],
-            inspectDialogue: [{ kind: "line", speaker: "A", text: "found key" }],
+            inspectDialogue: [
+              { kind: "line", speaker: "A", text: "found key" },
+            ],
             onReexamine: null,
             sourceFile: "i.md",
             line: 4,
@@ -1215,7 +1424,10 @@ describe("validator", () => {
     });
     // room_b should be unreachable because evidence:key is only revealed by
     // locked h1, which itself depends on h2 inside room_b.
-    const reachErr = errors.find((e) => e.code === "lockedBlockUnreachable" && e.message.includes("room_b"));
+    const reachErr = errors.find(
+      (e) =>
+        e.code === "lockedBlockUnreachable" && e.message.includes("room_b"),
+    );
     expect(reachErr).toBeDefined();
   });
 
@@ -1224,7 +1436,16 @@ describe("validator", () => {
   it("rejects an Outro whose evidence_collected predicate references evidence never revealed by any reachable block", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.evidenceManifest = [
-      { id: "phantom", name: "Phantom", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+      {
+        id: "phantom",
+        name: "Phantom",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 20,
+      },
     ];
     scene.sublocations[0]!.hotspots = [
       {
@@ -1248,14 +1469,25 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    const outroErr = errors.find((e) => e.code === "outroPredicateUnreachable" && e.message.includes("phantom"));
+    const outroErr = errors.find(
+      (e) =>
+        e.code === "outroPredicateUnreachable" && e.message.includes("phantom"),
+    );
     expect(outroErr).toBeDefined();
   });
 
   it("rejects an Outro whose statement_acquired predicate references a statement never revealed by any reachable block", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.statementManifest = [
-      { id: "ghost_stmt", speaker: "X", content: "s", onAcquire: [], onReexamine: null, sourceFile: "i.md", line: 30 },
+      {
+        id: "ghost_stmt",
+        speaker: "X",
+        content: "s",
+        onAcquire: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 30,
+      },
     ];
     scene.outro = {
       unlock: { predicate: "statement_acquired", id: "ghost_stmt" },
@@ -1265,14 +1497,27 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    const outroErr = errors.find((e) => e.code === "outroPredicateUnreachable" && e.message.includes("ghost_stmt"));
+    const outroErr = errors.find(
+      (e) =>
+        e.code === "outroPredicateUnreachable" &&
+        e.message.includes("ghost_stmt"),
+    );
     expect(outroErr).toBeDefined();
   });
 
   it("accepts an Outro whose evidence_collected predicate references evidence revealed by a reachable block", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.evidenceManifest = [
-      { id: "real_ev", name: "Real", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
+      {
+        id: "real_ev",
+        name: "Real",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 20,
+      },
     ];
     scene.sublocations[0]!.hotspots = [
       {
@@ -1302,8 +1547,26 @@ describe("validator", () => {
   it("accepts an Outro OR expression when one reachable branch can satisfy it", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.evidenceManifest = [
-      { id: "real_ev", name: "Real", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
-      { id: "red_herring", name: "Red Herring", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 21 },
+      {
+        id: "real_ev",
+        name: "Real",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 20,
+      },
+      {
+        id: "red_herring",
+        name: "Red Herring",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 21,
+      },
     ];
     scene.sublocations[0]!.hotspots = [
       {
@@ -1331,14 +1594,34 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    expect(errors.find((e) => e.code === "outroPredicateUnreachable")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "outroPredicateUnreachable"),
+    ).toBeUndefined();
   });
 
   it("rejects an Outro AND expression when one branch is unreachable", () => {
     const scene = mkInvestigationScene({ id: "i" });
     scene.evidenceManifest = [
-      { id: "real_ev", name: "Real", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 20 },
-      { id: "red_herring", name: "Red Herring", description: "d", details: "x", onCollect: [], onReexamine: null, sourceFile: "i.md", line: 21 },
+      {
+        id: "real_ev",
+        name: "Real",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 20,
+      },
+      {
+        id: "red_herring",
+        name: "Red Herring",
+        description: "d",
+        details: "x",
+        onCollect: [],
+        onReexamine: null,
+        sourceFile: "i.md",
+        line: 21,
+      },
     ];
     scene.sublocations[0]!.hotspots = [
       {
@@ -1366,7 +1649,11 @@ describe("validator", () => {
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    const outroErr = errors.find((e) => e.code === "outroPredicateUnreachable" && e.message.includes("red_herring"));
+    const outroErr = errors.find(
+      (e) =>
+        e.code === "outroPredicateUnreachable" &&
+        e.message.includes("red_herring"),
+    );
     expect(outroErr).toBeDefined();
   });
 
@@ -1423,14 +1710,22 @@ describe("validator", () => {
       },
     ];
     scene.outro = {
-      unlock: { predicate: "topic_discussed", characterId: "npc", topicId: "secret" },
+      unlock: {
+        predicate: "topic_discussed",
+        characterId: "npc",
+        topicId: "secret",
+      },
       dialogue: [],
     };
     const errors = validate({
       chapters: [mkChapter(1, ["i.md"])],
       scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
     });
-    const outroErr = errors.find((e) => e.code === "outroPredicateUnreachable" && e.message.includes("npc@secret"));
+    const outroErr = errors.find(
+      (e) =>
+        e.code === "outroPredicateUnreachable" &&
+        e.message.includes("npc@secret"),
+    );
     expect(outroErr).toBeDefined();
   });
 
@@ -1439,11 +1734,19 @@ describe("validator", () => {
       phases: [
         mkInquiryPhase({
           id: "inquiry",
-          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "log" }] })],
+          questions: [
+            mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "log" }] }),
+          ],
         }),
         mkTestimonyPhase({
           id: "testimony",
-          statements: [mkTestimonyStatement({ id: "s", contradiction: { kind: "evidence", id: "log" }, onCorrect: "win" })],
+          statements: [
+            mkTestimonyStatement({
+              id: "s",
+              contradiction: { kind: "evidence", id: "log" },
+              onCorrect: "win",
+            }),
+          ],
           results: [mkResult({ id: "win" })],
         }),
       ],
@@ -1451,47 +1754,87 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
     expect(errors).toEqual([]);
   });
 
   it("rejects unresolved testimony result references", () => {
     const scene = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({ id: "s", contradiction: { kind: "evidence", id: "log" }, onCorrect: "missing" })],
-        results: [],
-      })],
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "s",
+              contradiction: { kind: "evidence", id: "log" },
+              onCorrect: "missing",
+            }),
+          ],
+          results: [],
+        }),
+      ],
       evidenceManifest: [mkEvidence("log")],
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationResultUnresolved")).toBeDefined();
+    expect(
+      errors.find((e) => e.code === "interrogationResultUnresolved"),
+    ).toBeDefined();
   });
 
   it("rejects cross-scene evidence that is not guaranteed by an earlier scene", () => {
-    const sourceInvestigation = mkInvestigationScene({ id: "investigation_scene_1" });
+    const sourceInvestigation = mkInvestigationScene({
+      id: "investigation_scene_1",
+    });
     sourceInvestigation.evidenceManifest = [mkEvidence("optional_log")];
     const interrogation = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "s",
-          contradiction: { kind: "evidence", id: "optional_log" },
-          onCorrect: "win",
-        })],
-        results: [mkResult({ id: "win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["investigation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "investigation_scene_1.md", ast: sourceInvestigation },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: interrogation },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "s",
+              contradiction: { kind: "evidence", id: "optional_log" },
+              onCorrect: "win",
+            }),
+          ],
+          results: [mkResult({ id: "win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed")).toBeDefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["investigation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "investigation_scene_1.md",
+          ast: sourceInvestigation,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: interrogation,
+        },
+      ],
+    });
+    expect(
+      errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed"),
+    ).toBeDefined();
   });
 
   it("rejects same-scene testimony contradictions when the manifest item is never obtainable before testimony", () => {
@@ -1499,11 +1842,13 @@ describe("validator", () => {
       phases: [
         mkTestimonyPhase({
           id: "testimony",
-          statements: [mkTestimonyStatement({
-            id: "s",
-            contradiction: { kind: "evidence", id: "unrevealed_log" },
-            onCorrect: "win",
-          })],
+          statements: [
+            mkTestimonyStatement({
+              id: "s",
+              contradiction: { kind: "evidence", id: "unrevealed_log" },
+              onCorrect: "win",
+            }),
+          ],
           results: [mkResult({ id: "win" })],
         }),
       ],
@@ -1511,9 +1856,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationContradictionUnresolved")).toBeDefined();
+    expect(
+      errors.find((e) => e.code === "interrogationContradictionUnresolved"),
+    ).toBeDefined();
   });
 
   it("accepts press-then-present: evidence revealed by pressing one statement used as contradiction against another", () => {
@@ -1539,7 +1892,13 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
     expect(errors).toEqual([]);
   });
@@ -1551,8 +1910,16 @@ describe("validator", () => {
           id: "testimony",
           required: true,
           statements: [
-            mkTestimonyStatement({ id: "s1", contradiction: null, onCorrect: null }),
-            mkTestimonyStatement({ id: "s2", contradiction: null, onCorrect: "win" }),
+            mkTestimonyStatement({
+              id: "s1",
+              contradiction: null,
+              onCorrect: null,
+            }),
+            mkTestimonyStatement({
+              id: "s2",
+              contradiction: null,
+              onCorrect: "win",
+            }),
           ],
           results: [mkResult({ id: "win" })],
         }),
@@ -1560,9 +1927,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationNoValidContradictionPath")).toBeDefined();
+    expect(
+      errors.find((e) => e.code === "interrogationNoValidContradictionPath"),
+    ).toBeDefined();
   });
 
   it("rejects required inquiry phases whose explicit completion inventory is locally declared but unobtainable", () => {
@@ -1579,9 +1954,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath")).toBeDefined();
+    expect(
+      errors.find((e) => e.code === "interrogationNoValidCompletionPath"),
+    ).toBeDefined();
   });
 
   it("does not treat an incompletable optional phase as completed for later unlocks", () => {
@@ -1605,9 +1988,21 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath" && e.message.includes("requires_dead_end"))).toBeDefined();
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "interrogationNoValidCompletionPath" &&
+          e.message.includes("requires_dead_end"),
+      ),
+    ).toBeDefined();
   });
 
   it("accepts same-scene testimony contradictions using inventory revealed on phase entry", () => {
@@ -1620,11 +2015,13 @@ describe("validator", () => {
         }),
         mkTestimonyPhase({
           id: "testimony",
-          statements: [mkTestimonyStatement({
-            id: "s",
-            contradiction: { kind: "evidence", id: "entry_log" },
-            onCorrect: "win",
-          })],
+          statements: [
+            mkTestimonyStatement({
+              id: "s",
+              contradiction: { kind: "evidence", id: "entry_log" },
+              onCorrect: "win",
+            }),
+          ],
           results: [mkResult({ id: "win" })],
         }),
       ],
@@ -1632,7 +2029,13 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
     expect(errors).toEqual([]);
   });
@@ -1656,23 +2059,43 @@ describe("validator", () => {
       evidenceManifest: [mkEvidence("missing_key"), mkEvidence("later_log")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "s",
-          contradiction: { kind: "evidence", id: "later_log" },
-          onCorrect: "win",
-        })],
-        results: [mkResult({ id: "win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "s",
+              contradiction: { kind: "evidence", id: "later_log" },
+              onCorrect: "win",
+            }),
+          ],
+          results: [mkResult({ id: "win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("later_log"))).toBeDefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("later_log"),
+      ),
+    ).toBeDefined();
   });
 
   it("does not guarantee a required inquiry question reveal when explicit phase completion can skip it", () => {
@@ -1694,23 +2117,43 @@ describe("validator", () => {
       evidenceManifest: [mkEvidence("skippable_log")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "skippable_log" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "skippable_log" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("skippable_log"))).toBeDefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("skippable_log"),
+      ),
+    ).toBeDefined();
   });
 
   it("guarantees inquiry question reveal when phase complete depends on that inventory item", () => {
@@ -1735,25 +2178,45 @@ describe("validator", () => {
       evidenceManifest: [mkEvidence("gated_evidence")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "gated_evidence" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "gated_evidence" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
+      ],
     });
     const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
       scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
       ],
     });
     // The question "revealer" is mandatory because its reveal (gated_evidence)
     // is required by the phase complete expression. So gated_evidence IS guaranteed.
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("gated_evidence"))).toBeUndefined();
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("gated_evidence"),
+      ),
+    ).toBeUndefined();
   });
 
   it("does not guarantee testimony result reveals from statements with no contradiction", () => {
@@ -1761,30 +2224,61 @@ describe("validator", () => {
       phases: [
         mkTestimonyPhase({
           id: "source_testimony",
-          statements: [mkTestimonyStatement({ id: "s", contradiction: null, onCorrect: "win" })],
-          results: [mkResult({ id: "win", reveals: [{ kind: "statement", id: "future_statement" }] })],
+          statements: [
+            mkTestimonyStatement({
+              id: "s",
+              contradiction: null,
+              onCorrect: "win",
+            }),
+          ],
+          results: [
+            mkResult({
+              id: "win",
+              reveals: [{ kind: "statement", id: "future_statement" }],
+            }),
+          ],
         }),
       ],
       statementManifest: [mkStatement("future_statement")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "statement", id: "future_statement" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "statement", id: "future_statement" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("future_statement"))).toBeDefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("future_statement"),
+      ),
+    ).toBeDefined();
   });
 
   it("does not guarantee testimony result reveals that occur on only one alternate correct path", () => {
@@ -1817,8 +2311,14 @@ describe("validator", () => {
             }),
           ],
           results: [
-            mkResult({ id: "path_a", reveals: [{ kind: "evidence", id: "only_path_a" }] }),
-            mkResult({ id: "path_b", reveals: [{ kind: "evidence", id: "only_path_b" }] }),
+            mkResult({
+              id: "path_a",
+              reveals: [{ kind: "evidence", id: "only_path_a" }],
+            }),
+            mkResult({
+              id: "path_b",
+              reveals: [{ kind: "evidence", id: "only_path_b" }],
+            }),
           ],
         }),
       ],
@@ -1830,23 +2330,43 @@ describe("validator", () => {
       ],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "only_path_a" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "only_path_a" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("only_path_a"))).toBeDefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("only_path_a"),
+      ),
+    ).toBeDefined();
   });
 
   it("does not guarantee inquiry question bonus reveals from one alternate completion source", () => {
@@ -1880,23 +2400,43 @@ describe("validator", () => {
       ],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "only_path_a" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "only_path_a" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("only_path_a"))).toBeDefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("only_path_a"),
+      ),
+    ).toBeDefined();
   });
 
   // ---- Interrogation outro reachability ----
@@ -1917,9 +2457,19 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("phantom"));
+    const outroErr = errors.find(
+      (e) =>
+        e.code === "interrogationOutroPredicateUnreachable" &&
+        e.message.includes("phantom"),
+    );
     expect(outroErr).toBeDefined();
   });
 
@@ -1928,7 +2478,9 @@ describe("validator", () => {
       phases: [
         mkInquiryPhase({
           id: "inquiry",
-          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "key" }] })],
+          questions: [
+            mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "key" }] }),
+          ],
         }),
       ],
       evidenceManifest: [mkEvidence("key")],
@@ -1939,9 +2491,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "interrogationOutroPredicateUnreachable"),
+    ).toBeUndefined();
   });
 
   it("rejects an interrogation outro whose statement_acquired predicate references a statement never obtainable in the scene", () => {
@@ -1960,9 +2520,19 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("ghost_stmt"));
+    const outroErr = errors.find(
+      (e) =>
+        e.code === "interrogationOutroPredicateUnreachable" &&
+        e.message.includes("ghost_stmt"),
+    );
     expect(outroErr).toBeDefined();
   });
 
@@ -1984,9 +2554,19 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("dead_end"));
+    const outroErr = errors.find(
+      (e) =>
+        e.code === "interrogationOutroPredicateUnreachable" &&
+        e.message.includes("dead_end"),
+    );
     expect(outroErr).toBeDefined();
   });
 
@@ -2005,9 +2585,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "interrogationOutroPredicateUnreachable"),
+    ).toBeUndefined();
   });
 
   it("rejects an interrogation outro whose phase_completed predicate references an incompletable optional phase", () => {
@@ -2030,9 +2618,19 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("optional_dead"));
+    const outroErr = errors.find(
+      (e) =>
+        e.code === "interrogationOutroPredicateUnreachable" &&
+        e.message.includes("optional_dead"),
+    );
     expect(outroErr).toBeDefined();
   });
 
@@ -2052,9 +2650,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "interrogationOutroPredicateUnreachable"),
+    ).toBeUndefined();
   });
 
   it("accepts outro requiring evidence from a forced optional inquiry phase", () => {
@@ -2066,7 +2672,12 @@ describe("validator", () => {
         mkInquiryPhase({
           id: "forced_inquiry",
           required: false,
-          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "clue" }] })],
+          questions: [
+            mkQuestion({
+              id: "q",
+              reveals: [{ kind: "evidence", id: "clue" }],
+            }),
+          ],
         }),
       ],
       evidenceManifest: [mkEvidence("clue")],
@@ -2077,9 +2688,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "interrogationOutroPredicateUnreachable"),
+    ).toBeUndefined();
   });
 
   it("accepts outro requiring statement from a forced optional testimony phase", () => {
@@ -2091,7 +2710,12 @@ describe("validator", () => {
         mkInquiryPhase({
           id: "required_inquiry",
           required: true,
-          questions: [mkQuestion({ id: "rq", reveals: [{ kind: "evidence", id: "initial_ev" }] })],
+          questions: [
+            mkQuestion({
+              id: "rq",
+              reveals: [{ kind: "evidence", id: "initial_ev" }],
+            }),
+          ],
         }),
         mkTestimonyPhase({
           id: "forced_testimony",
@@ -2103,7 +2727,12 @@ describe("validator", () => {
               onCorrect: "correct",
             }),
           ],
-          results: [mkResult({ id: "correct", reveals: [{ kind: "statement", id: "forced_stmt" }] })],
+          results: [
+            mkResult({
+              id: "correct",
+              reveals: [{ kind: "statement", id: "forced_stmt" }],
+            }),
+          ],
         }),
       ],
       evidenceManifest: [mkEvidence("initial_ev")],
@@ -2115,9 +2744,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "interrogationOutroPredicateUnreachable"),
+    ).toBeUndefined();
   });
 
   it("guarantees forced optional phase reveals for cross-scene inventory", () => {
@@ -2129,7 +2766,12 @@ describe("validator", () => {
         mkInquiryPhase({
           id: "forced_inquiry",
           required: false,
-          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "forced_ev" }] })],
+          questions: [
+            mkQuestion({
+              id: "q",
+              reveals: [{ kind: "evidence", id: "forced_ev" }],
+            }),
+          ],
         }),
       ],
       evidenceManifest: [mkEvidence("forced_ev")],
@@ -2139,23 +2781,43 @@ describe("validator", () => {
       },
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "forced_ev" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "forced_ev" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("forced_ev"))).toBeUndefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("forced_ev"),
+      ),
+    ).toBeUndefined();
   });
 
   it("does not force optional phases whose output the outro does not require", () => {
@@ -2166,29 +2828,54 @@ describe("validator", () => {
         mkInquiryPhase({
           id: "truly_optional",
           required: false,
-          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "optional_ev" }] })],
+          questions: [
+            mkQuestion({
+              id: "q",
+              reveals: [{ kind: "evidence", id: "optional_ev" }],
+            }),
+          ],
         }),
       ],
       evidenceManifest: [mkEvidence("optional_ev")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "optional_ev" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "optional_ev" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("optional_ev"))).toBeDefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("optional_ev"),
+      ),
+    ).toBeDefined();
   });
 
   it("accepts outro AND expression when forced optional phases collectively satisfy all branches", () => {
@@ -2199,12 +2886,22 @@ describe("validator", () => {
         mkInquiryPhase({
           id: "opt_a",
           required: false,
-          questions: [mkQuestion({ id: "qa", reveals: [{ kind: "evidence", id: "ev_a" }] })],
+          questions: [
+            mkQuestion({
+              id: "qa",
+              reveals: [{ kind: "evidence", id: "ev_a" }],
+            }),
+          ],
         }),
         mkInquiryPhase({
           id: "opt_b",
           required: false,
-          questions: [mkQuestion({ id: "qb", reveals: [{ kind: "evidence", id: "ev_b" }] })],
+          questions: [
+            mkQuestion({
+              id: "qb",
+              reveals: [{ kind: "evidence", id: "ev_b" }],
+            }),
+          ],
         }),
       ],
       evidenceManifest: [mkEvidence("ev_a"), mkEvidence("ev_b")],
@@ -2219,9 +2916,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "interrogationOutroPredicateUnreachable"),
+    ).toBeUndefined();
   });
 
   it("forces an optional phase when a required phase is unlocked by phase_completed of the optional phase", () => {
@@ -2234,14 +2939,24 @@ describe("validator", () => {
         mkInquiryPhase({
           id: "optional_inquiry",
           required: false,
-          questions: [mkQuestion({ id: "oq", reveals: [{ kind: "evidence", id: "bridge_ev" }] })],
+          questions: [
+            mkQuestion({
+              id: "oq",
+              reveals: [{ kind: "evidence", id: "bridge_ev" }],
+            }),
+          ],
         }),
         mkInquiryPhase({
           id: "required_inquiry",
           required: true,
           status: "locked",
           unlock: { predicate: "phase_completed", id: "optional_inquiry" },
-          questions: [mkQuestion({ id: "rq", reveals: [{ kind: "evidence", id: "final_ev" }] })],
+          questions: [
+            mkQuestion({
+              id: "rq",
+              reveals: [{ kind: "evidence", id: "final_ev" }],
+            }),
+          ],
         }),
       ],
       evidenceManifest: [mkEvidence("bridge_ev"), mkEvidence("final_ev")],
@@ -2252,10 +2967,20 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath")).toBeUndefined();
-    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "interrogationNoValidCompletionPath"),
+    ).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "interrogationOutroPredicateUnreachable"),
+    ).toBeUndefined();
   });
 
   it("rejects an interrogation outro whose question_answered predicate references a question that is never answerable", () => {
@@ -2268,7 +2993,10 @@ describe("validator", () => {
           id: "inquiry",
           required: true,
           questions: [
-            mkQuestion({ id: "reachable_q", reveals: [{ kind: "evidence", id: "phase_ev" }] }),
+            mkQuestion({
+              id: "reachable_q",
+              reveals: [{ kind: "evidence", id: "phase_ev" }],
+            }),
             mkQuestion({
               id: "dead_q",
               status: "locked",
@@ -2286,9 +3014,19 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("dead_q"));
+    const outroErr = errors.find(
+      (e) =>
+        e.code === "interrogationOutroPredicateUnreachable" &&
+        e.message.includes("dead_q"),
+    );
     expect(outroErr).toBeDefined();
   });
 
@@ -2318,9 +3056,19 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("q2"));
+    const outroErr = errors.find(
+      (e) =>
+        e.code === "interrogationOutroPredicateUnreachable" &&
+        e.message.includes("q2"),
+    );
     expect(outroErr).toBeDefined();
   });
 
@@ -2329,7 +3077,12 @@ describe("validator", () => {
       phases: [
         mkInquiryPhase({
           id: "inquiry",
-          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "real_ev" }] })],
+          questions: [
+            mkQuestion({
+              id: "q",
+              reveals: [{ kind: "evidence", id: "real_ev" }],
+            }),
+          ],
         }),
       ],
       evidenceManifest: [mkEvidence("real_ev"), mkEvidence("red_herring")],
@@ -2344,9 +3097,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "interrogationOutroPredicateUnreachable"),
+    ).toBeUndefined();
   });
 
   it("rejects an interrogation outro AND expression when one branch is unobtainable", () => {
@@ -2354,7 +3115,12 @@ describe("validator", () => {
       phases: [
         mkInquiryPhase({
           id: "inquiry",
-          questions: [mkQuestion({ id: "q", reveals: [{ kind: "evidence", id: "real_ev" }] })],
+          questions: [
+            mkQuestion({
+              id: "q",
+              reveals: [{ kind: "evidence", id: "real_ev" }],
+            }),
+          ],
         }),
       ],
       evidenceManifest: [mkEvidence("real_ev"), mkEvidence("phantom")],
@@ -2369,9 +3135,19 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    const outroErr = errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("phantom"));
+    const outroErr = errors.find(
+      (e) =>
+        e.code === "interrogationOutroPredicateUnreachable" &&
+        e.message.includes("phantom"),
+    );
     expect(outroErr).toBeDefined();
   });
 
@@ -2397,23 +3173,43 @@ describe("validator", () => {
       evidenceManifest: [mkEvidence("initial_ev"), mkEvidence("press_only_ev")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "press_only_ev" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "press_only_ev" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("press_only_ev"))).toBeDefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("press_only_ev"),
+      ),
+    ).toBeDefined();
   });
 
   it("guarantees press reveals that are required on every valid testimony completion path", () => {
@@ -2438,23 +3234,43 @@ describe("validator", () => {
       evidenceManifest: [mkEvidence("pressed_ev")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "pressed_ev" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "pressed_ev" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("pressed_ev"))).toBeUndefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("pressed_ev"),
+      ),
+    ).toBeUndefined();
   });
 
   it("rejects an interrogation outro question_answered predicate when the required phase has no guaranteed completion path", () => {
@@ -2480,10 +3296,28 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath" && e.message.includes("inquiry"))).toBeDefined();
-    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("answerable_q"))).toBeDefined();
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "interrogationNoValidCompletionPath" &&
+          e.message.includes("inquiry"),
+      ),
+    ).toBeDefined();
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "interrogationOutroPredicateUnreachable" &&
+          e.message.includes("answerable_q"),
+      ),
+    ).toBeDefined();
   });
 
   it("guarantees auto-complete optional follow-up reveals for cross-scene inventory", () => {
@@ -2519,23 +3353,43 @@ describe("validator", () => {
       evidenceManifest: [mkEvidence("followup_ev")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "followup_ev" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "followup_ev" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("followup_ev"))).toBeUndefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("followup_ev"),
+      ),
+    ).toBeUndefined();
   });
 
   it("guarantees explicit-complete optional question reveals for cross-scene inventory", () => {
@@ -2559,23 +3413,43 @@ describe("validator", () => {
       evidenceManifest: [mkEvidence("explicit_ev")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "explicit_ev" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "explicit_ev" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("explicit_ev"))).toBeUndefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("explicit_ev"),
+      ),
+    ).toBeUndefined();
   });
 
   it("guarantees investigation reveals from transitively reachable locked blocks", () => {
@@ -2626,26 +3500,49 @@ describe("validator", () => {
           line: 2,
         },
       ],
-      evidenceManifest: [mkEvidence("key_evidence"), mkEvidence("chained_evidence")],
-    });
-    const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "chained_evidence" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "investigation_1.md", ast: investigation },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      evidenceManifest: [
+        mkEvidence("key_evidence"),
+        mkEvidence("chained_evidence"),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("chained_evidence"))).toBeUndefined();
+    const later = mkInterrogationScene({
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "chained_evidence" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
+      ],
+    });
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "investigation_1.md",
+          ast: investigation,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("chained_evidence"),
+      ),
+    ).toBeUndefined();
   });
 
   it("does not guarantee entry reveals from non-first unlocked empty sub-locations", () => {
@@ -2727,26 +3624,46 @@ describe("validator", () => {
       evidenceManifest: [mkEvidence("unentered_evidence")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "unentered_evidence" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "unentered_evidence" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
+      ],
     });
     const errors = validate({
-      chapters: [mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"])],
+      chapters: [
+        mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"]),
+      ],
       scenes: [
-        { chapterId: "chapter_1", file: "investigation_1.md", ast: investigation },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+        {
+          chapterId: "chapter_1",
+          file: "investigation_1.md",
+          ast: investigation,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
       ],
     });
     // The empty_room is not first and not mandatory (no hotspots/topics), so
     // its entry reveals don't fire. locked_room never becomes reachable.
     // unentered_evidence is NOT guaranteed.
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("unentered_evidence"))).toBeDefined();
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("unentered_evidence"),
+      ),
+    ).toBeDefined();
   });
 
   it("guarantees entry reveals from auto-entered first empty sub-location", () => {
@@ -2803,25 +3720,45 @@ describe("validator", () => {
       evidenceManifest: [mkEvidence("auto_entry_evidence")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "auto_entry_evidence" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "auto_entry_evidence" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
+      ],
     });
     const errors = validate({
-      chapters: [mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"])],
+      chapters: [
+        mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"]),
+      ],
       scenes: [
-        { chapterId: "chapter_1", file: "investigation_1.md", ast: investigation },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+        {
+          chapterId: "chapter_1",
+          file: "investigation_1.md",
+          ast: investigation,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
       ],
     });
     // empty_first is auto-entered by the runtime, so auto_entry_evidence IS
     // guaranteed — no cross-scene error expected.
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("auto_entry_evidence"))).toBeUndefined();
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("auto_entry_evidence"),
+      ),
+    ).toBeUndefined();
   });
 
   it("guarantees entry reveal inventory from mandatory sub-locations", () => {
@@ -2862,23 +3799,43 @@ describe("validator", () => {
       evidenceManifest: [mkEvidence("entry_evidence")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "entry_evidence" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "investigation_1.md", ast: investigation },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "entry_evidence" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("entry_evidence"))).toBeUndefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "investigation_1.md",
+          ast: investigation,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("entry_evidence"),
+      ),
+    ).toBeUndefined();
   });
 
   it("guarantees evidence from hotspot reveals when an explicit outro requires that hotspot investigated", () => {
@@ -2923,23 +3880,43 @@ describe("validator", () => {
       },
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "hotspot_evidence" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "investigation_1.md", ast: investigation },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "hotspot_evidence" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("hotspot_evidence"))).toBeUndefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "investigation_1.md",
+          ast: investigation,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("hotspot_evidence"),
+      ),
+    ).toBeUndefined();
   });
 
   it("guarantees evidence from topic reveals when an explicit outro requires that topic discussed", () => {
@@ -2989,28 +3966,52 @@ describe("validator", () => {
       ],
       evidenceManifest: [mkEvidence("topic_evidence")],
       outro: {
-        unlock: { predicate: "topic_discussed", characterId: "npc", topicId: "motive" },
+        unlock: {
+          predicate: "topic_discussed",
+          characterId: "npc",
+          topicId: "motive",
+        },
         dialogue: [],
       },
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "topic_evidence" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "investigation_1.md", ast: investigation },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "topic_evidence" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("topic_evidence"))).toBeUndefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "investigation_1.md",
+          ast: investigation,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("topic_evidence"),
+      ),
+    ).toBeUndefined();
   });
 
   it("rejects a required testimony phase whose contradiction evidence comes from an earlier optional phase", () => {
@@ -3036,11 +4037,13 @@ describe("validator", () => {
         // Required testimony that depends on the optional phase's evidence.
         mkTestimonyPhase({
           id: "required_testimony",
-          statements: [mkTestimonyStatement({
-            id: "stmt",
-            contradiction: { kind: "evidence", id: "opt_evidence" },
-            onCorrect: "win",
-          })],
+          statements: [
+            mkTestimonyStatement({
+              id: "stmt",
+              contradiction: { kind: "evidence", id: "opt_evidence" },
+              onCorrect: "win",
+            }),
+          ],
           results: [mkResult({ id: "win" })],
         }),
       ],
@@ -3048,9 +4051,21 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationNoValidContradictionPath" && e.message.includes("required_testimony"))).toBeDefined();
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "interrogationNoValidContradictionPath" &&
+          e.message.includes("required_testimony"),
+      ),
+    ).toBeDefined();
   });
 
   it("rejects a later required phase unlocked only by one alternate correct testimony result", () => {
@@ -3083,8 +4098,14 @@ describe("validator", () => {
             }),
           ],
           results: [
-            mkResult({ id: "path_a", reveals: [{ kind: "evidence", id: "only_path_a" }] }),
-            mkResult({ id: "path_b", reveals: [{ kind: "evidence", id: "only_path_b" }] }),
+            mkResult({
+              id: "path_a",
+              reveals: [{ kind: "evidence", id: "only_path_a" }],
+            }),
+            mkResult({
+              id: "path_b",
+              reveals: [{ kind: "evidence", id: "only_path_b" }],
+            }),
           ],
         }),
         mkInquiryPhase({
@@ -3103,9 +4124,21 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath" && e.message.includes("branch_locked_followup"))).toBeDefined();
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "interrogationNoValidCompletionPath" &&
+          e.message.includes("branch_locked_followup"),
+      ),
+    ).toBeDefined();
   });
 
   it("does not guarantee inventory from only one branch of an OR complete expression for cross-scene checks", () => {
@@ -3139,23 +4172,43 @@ describe("validator", () => {
       evidenceManifest: [mkEvidence("branch_evidence")],
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "branch_evidence" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: source },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "branch_evidence" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("branch_evidence"))).toBeDefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: source,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("branch_evidence"),
+      ),
+    ).toBeDefined();
   });
 
   it("rejects an interrogation outro requiring evidence from only one of multiple correct testimony paths", () => {
@@ -3192,8 +4245,14 @@ describe("validator", () => {
             }),
           ],
           results: [
-            mkResult({ id: "result_a", reveals: [{ kind: "evidence", id: "only_a" }] }),
-            mkResult({ id: "result_b", reveals: [{ kind: "evidence", id: "only_b" }] }),
+            mkResult({
+              id: "result_a",
+              reveals: [{ kind: "evidence", id: "only_a" }],
+            }),
+            mkResult({
+              id: "result_b",
+              reveals: [{ kind: "evidence", id: "only_b" }],
+            }),
           ],
         }),
       ],
@@ -3210,9 +4269,21 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable" && e.message.includes("only_a"))).toBeDefined();
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "interrogationOutroPredicateUnreachable" &&
+          e.message.includes("only_a"),
+      ),
+    ).toBeDefined();
   });
 
   it("accepts an interrogation outro requiring evidence common to all correct testimony paths", () => {
@@ -3248,8 +4319,14 @@ describe("validator", () => {
             }),
           ],
           results: [
-            mkResult({ id: "result_a", reveals: [{ kind: "evidence", id: "shared" }] }),
-            mkResult({ id: "result_b", reveals: [{ kind: "evidence", id: "shared" }] }),
+            mkResult({
+              id: "result_a",
+              reveals: [{ kind: "evidence", id: "shared" }],
+            }),
+            mkResult({
+              id: "result_b",
+              reveals: [{ kind: "evidence", id: "shared" }],
+            }),
           ],
         }),
       ],
@@ -3265,9 +4342,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationOutroPredicateUnreachable")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "interrogationOutroPredicateUnreachable"),
+    ).toBeUndefined();
   });
 
   it("accepts a locked required phase unlocked by an earlier optional phase's reveals", () => {
@@ -3302,9 +4387,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "interrogationNoValidCompletionPath"),
+    ).toBeUndefined();
   });
 
   it("still rejects a locked required phase when no phase reveals its unlock", () => {
@@ -3336,9 +4429,21 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath" && e.message.includes("locked_required"))).toBeDefined();
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "interrogationNoValidCompletionPath" &&
+          e.message.includes("locked_required"),
+      ),
+    ).toBeDefined();
   });
 
   it("accepts a locked required phase unlocked by an optional phase's phase reveal", () => {
@@ -3369,9 +4474,17 @@ describe("validator", () => {
     });
     const errors = validate({
       chapters: [mkChapter(1, ["interrogation_scene_1.md"])],
-      scenes: [{ chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene }],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+      ],
     });
-    expect(errors.find((e) => e.code === "interrogationNoValidCompletionPath")).toBeUndefined();
+    expect(
+      errors.find((e) => e.code === "interrogationNoValidCompletionPath"),
+    ).toBeUndefined();
   });
 
   it("guarantees entry reveals from first sub-location for explicit-outro investigations", () => {
@@ -3415,23 +4528,43 @@ describe("validator", () => {
       },
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "entry_only_evidence" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "investigation_1.md", ast: investigation },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "entry_only_evidence" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("entry_only_evidence"))).toBeUndefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["investigation_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "investigation_1.md",
+          ast: investigation,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("entry_only_evidence"),
+      ),
+    ).toBeUndefined();
   });
 
   it("forces an optional phase when the outro requires phase_completed for that phase", () => {
@@ -3460,22 +4593,42 @@ describe("validator", () => {
       },
     });
     const later = mkInterrogationScene({
-      phases: [mkTestimonyPhase({
-        statements: [mkTestimonyStatement({
-          id: "later_s",
-          contradiction: { kind: "evidence", id: "phase_forced_evidence" },
-          onCorrect: "later_win",
-        })],
-        results: [mkResult({ id: "later_win" })],
-      })],
-    });
-    const errors = validate({
-      chapters: [mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"])],
-      scenes: [
-        { chapterId: "chapter_1", file: "interrogation_scene_1.md", ast: scene },
-        { chapterId: "chapter_1", file: "interrogation_scene_2.md", ast: later },
+      phases: [
+        mkTestimonyPhase({
+          statements: [
+            mkTestimonyStatement({
+              id: "later_s",
+              contradiction: { kind: "evidence", id: "phase_forced_evidence" },
+              onCorrect: "later_win",
+            }),
+          ],
+          results: [mkResult({ id: "later_win" })],
+        }),
       ],
     });
-    expect(errors.find((e) => e.code === "crossSceneInventoryNotGuaranteed" && e.message.includes("phase_forced_evidence"))).toBeUndefined();
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["interrogation_scene_1.md", "interrogation_scene_2.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: scene,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_2.md",
+          ast: later,
+        },
+      ],
+    });
+    expect(
+      errors.find(
+        (e) =>
+          e.code === "crossSceneInventoryNotGuaranteed" &&
+          e.message.includes("phase_forced_evidence"),
+      ),
+    ).toBeUndefined();
   });
 });

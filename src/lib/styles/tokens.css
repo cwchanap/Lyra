@@ -51,14 +51,34 @@ button {
 }
 
 @keyframes lyra-pulse {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 @keyframes lyra-glitch {
-  0%   { clip-path: inset(0 0 80% 0); transform: translate(2px, 0); }
-  25%  { clip-path: inset(40% 0 30% 0); transform: translate(-1px, 0); }
-  50%  { clip-path: inset(70% 0 10% 0); transform: translate(2px, 0); }
-  75%  { clip-path: inset(20% 0 50% 0); transform: translate(-2px, 0); }
-  100% { clip-path: inset(60% 0 20% 0); transform: translate(1px, 0); }
+  0% {
+    clip-path: inset(0 0 80% 0);
+    transform: translate(2px, 0);
+  }
+  25% {
+    clip-path: inset(40% 0 30% 0);
+    transform: translate(-1px, 0);
+  }
+  50% {
+    clip-path: inset(70% 0 10% 0);
+    transform: translate(2px, 0);
+  }
+  75% {
+    clip-path: inset(20% 0 50% 0);
+    transform: translate(-2px, 0);
+  }
+  100% {
+    clip-path: inset(60% 0 20% 0);
+    transform: translate(1px, 0);
+  }
 }

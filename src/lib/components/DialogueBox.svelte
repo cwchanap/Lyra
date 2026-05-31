@@ -19,7 +19,9 @@
   } = $props();
 
   let portraitAsset = $state<ResolvedStoryAsset | null>(null);
-  const portraitAssetId = $derived(current.kind === "line" ? current.portrait?.assetId ?? null : null);
+  const portraitAssetId = $derived(
+    current.kind === "line" ? (current.portrait?.assetId ?? null) : null,
+  );
 
   $effect(() => {
     let cancelled = false;
@@ -34,8 +36,13 @@
 
   function handlePortraitError() {
     if (!portraitAsset || portraitAsset.placeholder) return;
-    console.warn(`[DialogueBox] Missing portrait asset: ${portraitAsset.url} (assetId: ${portraitAsset.assetId})`);
-    portraitAsset = placeholderForMissingStoryAsset(portraitAsset.assetId, "portrait");
+    console.warn(
+      `[DialogueBox] Missing portrait asset: ${portraitAsset.url} (assetId: ${portraitAsset.assetId})`,
+    );
+    portraitAsset = placeholderForMissingStoryAsset(
+      portraitAsset.assetId,
+      "portrait",
+    );
   }
 
   function handleClick() {
@@ -57,7 +64,13 @@
 
 <div class="wrapper" class:line={current.kind === "line"}>
   {#if current.kind === "line" && portraitAsset}
-    <img class="portrait" src={portraitAsset.url} alt="" aria-hidden="true" onerror={handlePortraitError} />
+    <img
+      class="portrait"
+      src={portraitAsset.url}
+      alt=""
+      aria-hidden="true"
+      onerror={handlePortraitError}
+    />
   {/if}
   <button
     class="box"
@@ -121,7 +134,9 @@
     cursor: pointer;
     font: inherit;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
-    transition: border-color 0.2s, background 0.2s;
+    transition:
+      border-color 0.2s,
+      background 0.2s;
   }
 
   .box:hover:not(:disabled) {

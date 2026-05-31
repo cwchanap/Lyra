@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import { parseInterrogationUnlockExpr, parseUnlockExpr } from "./parser-unlock";
-import type { UnlockExpr } from "./types";
 
 describe("parseUnlockExpr", () => {
   it("parses a single evidence_collected predicate", () => {
@@ -20,15 +19,27 @@ describe("parseUnlockExpr", () => {
   });
 
   it("parses a topic_discussed predicate with character@topic syntax", () => {
-    const result = parseUnlockExpr("topic:witness@motive discussed", "test.md", 5);
+    const result = parseUnlockExpr(
+      "topic:witness@motive discussed",
+      "test.md",
+      5,
+    );
     expect(result).toEqual({
       ok: true,
-      value: { predicate: "topic_discussed", characterId: "witness", topicId: "motive" },
+      value: {
+        predicate: "topic_discussed",
+        characterId: "witness",
+        topicId: "motive",
+      },
     });
   });
 
   it("parses a hotspot_investigated predicate", () => {
-    const result = parseUnlockExpr("hotspot:back_door investigated", "test.md", 5);
+    const result = parseUnlockExpr(
+      "hotspot:back_door investigated",
+      "test.md",
+      5,
+    );
     expect(result).toEqual({
       ok: true,
       value: { predicate: "hotspot_investigated", id: "back_door" },
@@ -103,12 +114,28 @@ describe("parseUnlockExpr", () => {
 
 describe("parseInterrogationUnlockExpr", () => {
   it.each([
-    ["evidence:coffee_receipt collected", { predicate: "evidence_collected", id: "coffee_receipt" }],
-    ["statement:witness_alibi acquired", { predicate: "statement_acquired", id: "witness_alibi" }],
-    ["question:hidden_discarded_beans answered", { predicate: "question_answered", id: "hidden_discarded_beans" }],
-    ["phase:wakatsuki_inquiry completed", { predicate: "phase_completed", id: "wakatsuki_inquiry" }],
+    [
+      "evidence:coffee_receipt collected",
+      { predicate: "evidence_collected", id: "coffee_receipt" },
+    ],
+    [
+      "statement:witness_alibi acquired",
+      { predicate: "statement_acquired", id: "witness_alibi" },
+    ],
+    [
+      "question:hidden_discarded_beans answered",
+      { predicate: "question_answered", id: "hidden_discarded_beans" },
+    ],
+    [
+      "phase:wakatsuki_inquiry completed",
+      { predicate: "phase_completed", id: "wakatsuki_inquiry" },
+    ],
   ])("parses allowed interrogation predicate form %s", (source, value) => {
-    const result = parseInterrogationUnlockExpr(source, "interrogation_scene_2.md", 10);
+    const result = parseInterrogationUnlockExpr(
+      source,
+      "interrogation_scene_2.md",
+      10,
+    );
     expect(result).toEqual({ ok: true, value });
   });
 

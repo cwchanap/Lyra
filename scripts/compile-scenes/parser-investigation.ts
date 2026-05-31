@@ -15,9 +15,16 @@
 // =============================================================================
 
 import { tokenize, type Token } from "./tokenizer";
-import { parseVisualAssetCue, rejectReservedAssetMetadata, VISUAL_ASSET_METADATA_KEYS } from "./parser-assets";
+import {
+  parseVisualAssetCue,
+  rejectReservedAssetMetadata,
+  VISUAL_ASSET_METADATA_KEYS,
+} from "./parser-assets";
 import { parseUnlockExpr } from "./parser-unlock";
-import { parseEvidenceManifest, parseStatementManifest } from "./parser-manifest";
+import {
+  parseEvidenceManifest,
+  parseStatementManifest,
+} from "./parser-manifest";
 import type {
   ASTCharacter,
   ASTEvidence,
@@ -39,7 +46,10 @@ export type InvestigationParseResult =
 
 class Cursor {
   i = 0;
-  constructor(public readonly tokens: Token[], public readonly sourceFile: string) {}
+  constructor(
+    public readonly tokens: Token[],
+    public readonly sourceFile: string,
+  ) {}
   peek(): Token | undefined {
     return this.tokens[this.i];
   }
@@ -61,7 +71,12 @@ export function parseInvestigationScene(
 
   const first = cur.peek();
   if (!first || first.kind !== "heading" || first.level !== 1) {
-    return fail(sourceFile, first?.line ?? 1, "investigationSceneMissingTitle", "Investigation scene must start with `# Scene N: <title>`.");
+    return fail(
+      sourceFile,
+      first?.line ?? 1,
+      "investigationSceneMissingTitle",
+      "Investigation scene must start with `# Scene N: <title>`.",
+    );
   }
   cur.next();
   const titleMatch = /^Scene\s+\d+:\s*(.+)$/.exec(first.text);
@@ -77,7 +92,12 @@ export function parseInvestigationScene(
     const tok = cur.peek();
     if (!tok) break;
     if (tok.kind !== "heading" || tok.level !== 2) {
-      return fail(sourceFile, tok.line, "investigationSceneUnexpectedToken", `Expected H2 block heading at scene top level; got: ${describe(tok)}.`);
+      return fail(
+        sourceFile,
+        tok.line,
+        "investigationSceneUnexpectedToken",
+        `Expected H2 block heading at scene top level; got: ${describe(tok)}.`,
+      );
     }
 
     if (tok.text === "Intro") {
@@ -104,18 +124,38 @@ export function parseInvestigationScene(
       if (!o.ok) return o;
       outro = o.value;
     } else {
-      return fail(sourceFile, tok.line, "investigationSceneUnknownH2", `Unknown H2 heading: ${tok.text}.`);
+      return fail(
+        sourceFile,
+        tok.line,
+        "investigationSceneUnknownH2",
+        `Unknown H2 heading: ${tok.text}.`,
+      );
     }
   }
 
   if (!outro) {
-    return fail(sourceFile, first.line, "investigationSceneMissingOutro", "Investigation scene must end with `## Outro`.");
+    return fail(
+      sourceFile,
+      first.line,
+      "investigationSceneMissingOutro",
+      "Investigation scene must end with `## Outro`.",
+    );
   }
   if (sublocations.length === 0) {
-    return fail(sourceFile, first.line, "investigationSceneNoSublocation", "Investigation scene must declare at least one sub-location.");
+    return fail(
+      sourceFile,
+      first.line,
+      "investigationSceneNoSublocation",
+      "Investigation scene must declare at least one sub-location.",
+    );
   }
   if (sublocations[0]?.status !== "unlocked") {
-    return fail(sourceFile, sublocations[0]?.line ?? 1, "firstSublocationLocked", "The first sub-location must be Status: unlocked.");
+    return fail(
+      sourceFile,
+      sublocations[0]?.line ?? 1,
+      "firstSublocationLocked",
+      "The first sub-location must be Status: unlocked.",
+    );
   }
 
   return {
@@ -136,38 +176,78 @@ export function parseInvestigationScene(
   };
 }
 
-function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { ok: false; error: CompileError } {
+function parseSublocation(
+  cur: Cursor,
+): { ok: true; value: ASTSublocation } | { ok: false; error: CompileError } {
   const head = cur.next();
   if (!head || head.kind !== "heading" || head.level !== 2)
-    return fail(cur.sourceFile, head?.line ?? 1, "internalParserState", "parseSublocation called off-position.");
+    return fail(
+      cur.sourceFile,
+      head?.line ?? 1,
+      "internalParserState",
+      "parseSublocation called off-position.",
+    );
   const id = head.anchorId;
-  if (!id) return fail(cur.sourceFile, head.line, "sublocationMissingAnchor", "Sub-location heading must include {#id}.");
+  if (!id)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "sublocationMissingAnchor",
+      "Sub-location heading must include {#id}.",
+    );
   const labelMatch = /^Sub-location:\s*(.+)$/.exec(head.text);
-  if (!labelMatch) return fail(cur.sourceFile, head.line, "sublocationMalformedHeading", `Malformed sub-location heading: ${head.text}`);
+  if (!labelMatch)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "sublocationMalformedHeading",
+      `Malformed sub-location heading: ${head.text}`,
+    );
   const label = (labelMatch[1] ?? "").trim();
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
-  const badAssetMeta = rejectReservedAssetMetadata(meta.value, VISUAL_ASSET_METADATA_KEYS, cur.sourceFile, head.line);
+  const badAssetMeta = rejectReservedAssetMetadata(
+    meta.value,
+    VISUAL_ASSET_METADATA_KEYS,
+    cur.sourceFile,
+    head.line,
+  );
   if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const assetCue = parseVisualAssetCue(meta.value);
   if (meta.value.Status === undefined) {
-    return fail(cur.sourceFile, head.line, "sublocationMissingStatus", "Sub-location requires an explicit Status (locked or unlocked).");
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "sublocationMissingStatus",
+      "Sub-location requires an explicit Status (locked or unlocked).",
+    );
   }
-  const statusCheck = validateStatus(meta.value.Status, "unlocked", cur.sourceFile, head.line);
+  const statusCheck = validateStatus(
+    meta.value.Status,
+    "unlocked",
+    cur.sourceFile,
+    head.line,
+  );
   if (!statusCheck.ok) return statusCheck;
   const status = statusCheck.value;
   let unlock: UnlockExpr | null = null;
   if (meta.value.Unlock) {
     if (status !== "locked") {
-      return fail(cur.sourceFile, head.line, "unlockOnNonLockedBlock",
-        `Block has an Unlock condition but Status is "${status}". Set Status to "locked" or remove the Unlock.`);
+      return fail(
+        cur.sourceFile,
+        head.line,
+        "unlockOnNonLockedBlock",
+        `Block has an Unlock condition but Status is "${status}". Set Status to "locked" or remove the Unlock.`,
+      );
     }
     const r = parseUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);
     if (!r.ok) return r;
     unlock = r.value;
   }
-  const reveals = meta.value.Reveals ? parseRevealsList(meta.value.Reveals, cur.sourceFile, head.line) : { ok: true as const, value: [] as RevealTarget[] };
+  const reveals = meta.value.Reveals
+    ? parseRevealsList(meta.value.Reveals, cur.sourceFile, head.line)
+    : { ok: true as const, value: [] as RevealTarget[] };
   if (!reveals.ok) return reveals;
 
   let sceneTag: string | null = null;
@@ -189,13 +269,24 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
         if (!c.ok) return c;
         characters.push(c.value);
       } else {
-        return fail(cur.sourceFile, next.line, "sublocationUnknownH3", `Unknown H3 inside sub-location: ${next.text}.`);
+        return fail(
+          cur.sourceFile,
+          next.line,
+          "sublocationUnknownH3",
+          `Unknown H3 inside sub-location: ${next.text}.`,
+        );
       }
       continue;
     }
     cur.next();
     if (next.kind === "sceneTag") {
-      if (sceneTag !== null) return fail(cur.sourceFile, next.line, "sublocationDuplicateSceneTag", "Sub-location declared multiple [場景：...] tags.");
+      if (sceneTag !== null)
+        return fail(
+          cur.sourceFile,
+          next.line,
+          "sublocationDuplicateSceneTag",
+          "Sub-location declared multiple [場景：...] tags.",
+        );
       sceneTag = next.text;
     } else if (next.kind === "action") {
       transitionDialogue.push({ kind: "action", text: next.text });
@@ -208,15 +299,36 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
         portrait: null,
       });
     } else if (next.kind === "metadata") {
-      return fail(cur.sourceFile, next.line, "sublocationStrayMetadata", `Stray metadata inside sub-location body: ${next.key}.`);
+      return fail(
+        cur.sourceFile,
+        next.line,
+        "sublocationStrayMetadata",
+        `Stray metadata inside sub-location body: ${next.key}.`,
+      );
     } else if (next.kind === "unknown") {
-      return fail(cur.sourceFile, next.line, "sublocationUnknownLine", `Unrecognized line in sub-location: ${next.text}.`);
+      return fail(
+        cur.sourceFile,
+        next.line,
+        "sublocationUnknownLine",
+        `Unrecognized line in sub-location: ${next.text}.`,
+      );
     } else if (next.kind === "heading") {
-      return fail(cur.sourceFile, next.line, "sublocationStrayHeading", `Unexpected H${next.level} "${next.text}" in sub-location body. Only H3 (Hotspot/Character) blocks are allowed here.`);
+      return fail(
+        cur.sourceFile,
+        next.line,
+        "sublocationStrayHeading",
+        `Unexpected H${next.level} "${next.text}" in sub-location body. Only H3 (Hotspot/Character) blocks are allowed here.`,
+      );
     }
   }
 
-  if (sceneTag === null) return fail(cur.sourceFile, head.line, "sublocationNoSceneTag", "Sub-location body must include exactly one [場景：...] tag.");
+  if (sceneTag === null)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "sublocationNoSceneTag",
+      "Sub-location body must include exactly one [場景：...] tag.",
+    );
 
   return {
     ok: true,
@@ -237,35 +349,77 @@ function parseSublocation(cur: Cursor): { ok: true; value: ASTSublocation } | { 
   };
 }
 
-function parseHotspot(cur: Cursor): { ok: true; value: ASTHotspot } | { ok: false; error: CompileError } {
+function parseHotspot(
+  cur: Cursor,
+): { ok: true; value: ASTHotspot } | { ok: false; error: CompileError } {
   const head = cur.next();
-  if (!head || head.kind !== "heading" || head.level !== 3) return fail(cur.sourceFile, head?.line ?? 1, "internalParserState", "parseHotspot called off-position.");
+  if (!head || head.kind !== "heading" || head.level !== 3)
+    return fail(
+      cur.sourceFile,
+      head?.line ?? 1,
+      "internalParserState",
+      "parseHotspot called off-position.",
+    );
   const id = head.anchorId;
-  if (!id) return fail(cur.sourceFile, head.line, "hotspotMissingAnchor", "Hotspot heading needs {#id}.");
+  if (!id)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "hotspotMissingAnchor",
+      "Hotspot heading needs {#id}.",
+    );
   const labelMatch = /^Hotspot:\s*(.+)$/.exec(head.text);
-  if (!labelMatch) return fail(cur.sourceFile, head.line, "hotspotMalformedHeading", `Malformed hotspot heading: ${head.text}`);
+  if (!labelMatch)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "hotspotMalformedHeading",
+      `Malformed hotspot heading: ${head.text}`,
+    );
   const label = (labelMatch[1] ?? "").trim();
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
-  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  const badAssetMeta = rejectReservedAssetMetadata(
+    meta.value,
+    [],
+    cur.sourceFile,
+    head.line,
+  );
   if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const description = meta.value.Description;
-  if (!description) return fail(cur.sourceFile, head.line, "hotspotMissingDescription", `Hotspot ${id} missing Description.`);
-  const statusCheck = validateStatus(meta.value.Status, "unlocked", cur.sourceFile, head.line);
+  if (!description)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "hotspotMissingDescription",
+      `Hotspot ${id} missing Description.`,
+    );
+  const statusCheck = validateStatus(
+    meta.value.Status,
+    "unlocked",
+    cur.sourceFile,
+    head.line,
+  );
   if (!statusCheck.ok) return statusCheck;
   const status = statusCheck.value;
   let unlock: UnlockExpr | null = null;
   if (meta.value.Unlock) {
     if (status !== "locked") {
-      return fail(cur.sourceFile, head.line, "unlockOnNonLockedBlock",
-        `Block has an Unlock condition but Status is "${status}". Set Status to "locked" or remove the Unlock.`);
+      return fail(
+        cur.sourceFile,
+        head.line,
+        "unlockOnNonLockedBlock",
+        `Block has an Unlock condition but Status is "${status}". Set Status to "locked" or remove the Unlock.`,
+      );
     }
     const r = parseUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);
     if (!r.ok) return r;
     unlock = r.value;
   }
-  const reveals = meta.value.Reveals ? parseRevealsList(meta.value.Reveals, cur.sourceFile, head.line) : { ok: true as const, value: [] as RevealTarget[] };
+  const reveals = meta.value.Reveals
+    ? parseRevealsList(meta.value.Reveals, cur.sourceFile, head.line)
+    : { ok: true as const, value: [] as RevealTarget[] };
   if (!reveals.ok) return reveals;
 
   const inspectRes = consumeDialogueUntilHeading(cur, 3);
@@ -292,36 +446,82 @@ function parseHotspot(cur: Cursor): { ok: true; value: ASTHotspot } | { ok: fals
   };
 }
 
-function parseCharacter(cur: Cursor): { ok: true; value: ASTCharacter } | { ok: false; error: CompileError } {
+function parseCharacter(
+  cur: Cursor,
+): { ok: true; value: ASTCharacter } | { ok: false; error: CompileError } {
   const head = cur.next();
-  if (!head || head.kind !== "heading" || head.level !== 3) return fail(cur.sourceFile, head?.line ?? 1, "internalParserState", "parseCharacter called off-position.");
+  if (!head || head.kind !== "heading" || head.level !== 3)
+    return fail(
+      cur.sourceFile,
+      head?.line ?? 1,
+      "internalParserState",
+      "parseCharacter called off-position.",
+    );
   const id = head.anchorId;
-  if (!id) return fail(cur.sourceFile, head.line, "characterMissingAnchor", "Character heading needs {#id}.");
+  if (!id)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "characterMissingAnchor",
+      "Character heading needs {#id}.",
+    );
   const nameMatch = /^Character:\s*(.+)$/.exec(head.text);
-  if (!nameMatch) return fail(cur.sourceFile, head.line, "characterMalformedHeading", `Malformed character heading: ${head.text}`);
+  if (!nameMatch)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "characterMalformedHeading",
+      `Malformed character heading: ${head.text}`,
+    );
   const name = (nameMatch[1] ?? "").trim();
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
-  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  const badAssetMeta = rejectReservedAssetMetadata(
+    meta.value,
+    [],
+    cur.sourceFile,
+    head.line,
+  );
   if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const role = meta.value.Role;
   const bio = meta.value.Bio;
-  if (!role) return fail(cur.sourceFile, head.line, "characterMissingRole", `Character ${id} missing Role.`);
-  if (!bio) return fail(cur.sourceFile, head.line, "characterMissingBio", `Character ${id} missing Bio.`);
+  if (!role)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "characterMissingRole",
+      `Character ${id} missing Role.`,
+    );
+  if (!bio)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "characterMissingBio",
+      `Character ${id} missing Bio.`,
+    );
 
   const topics: ASTTopic[] = [];
   while (true) {
     const next = cur.peek();
     if (!next) break;
     if (next.kind === "heading" && next.level <= 3) break;
-    if (next.kind === "heading" && next.level === 4 && next.text.startsWith("Topic:")) {
-      const t = parseTopic(cur, id);
+    if (
+      next.kind === "heading" &&
+      next.level === 4 &&
+      next.text.startsWith("Topic:")
+    ) {
+      const t = parseTopic(cur);
       if (!t.ok) return t;
       topics.push(t.value);
       continue;
     }
-    return fail(cur.sourceFile, next.line, "characterBodyUnexpected", `Character body should only contain #### Topic blocks. Got: ${describe(next)}.`);
+    return fail(
+      cur.sourceFile,
+      next.line,
+      "characterBodyUnexpected",
+      `Character body should only contain #### Topic blocks. Got: ${describe(next)}.`,
+    );
   }
 
   return {
@@ -338,33 +538,69 @@ function parseCharacter(cur: Cursor): { ok: true; value: ASTCharacter } | { ok: 
   };
 }
 
-function parseTopic(cur: Cursor, characterId: string): { ok: true; value: ASTTopic } | { ok: false; error: CompileError } {
+function parseTopic(
+  cur: Cursor,
+): { ok: true; value: ASTTopic } | { ok: false; error: CompileError } {
   const head = cur.next();
-  if (!head || head.kind !== "heading" || head.level !== 4) return fail(cur.sourceFile, head?.line ?? 1, "internalParserState", "parseTopic called off-position.");
+  if (!head || head.kind !== "heading" || head.level !== 4)
+    return fail(
+      cur.sourceFile,
+      head?.line ?? 1,
+      "internalParserState",
+      "parseTopic called off-position.",
+    );
   const id = head.anchorId;
-  if (!id) return fail(cur.sourceFile, head.line, "topicMissingAnchor", "Topic heading needs {#id}.");
+  if (!id)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "topicMissingAnchor",
+      "Topic heading needs {#id}.",
+    );
   const labelMatch = /^Topic:\s*(.+)$/.exec(head.text);
-  if (!labelMatch) return fail(cur.sourceFile, head.line, "topicMalformedHeading", `Malformed topic heading: ${head.text}`);
+  if (!labelMatch)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "topicMalformedHeading",
+      `Malformed topic heading: ${head.text}`,
+    );
   const label = (labelMatch[1] ?? "").trim();
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
-  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  const badAssetMeta = rejectReservedAssetMetadata(
+    meta.value,
+    [],
+    cur.sourceFile,
+    head.line,
+  );
   if (badAssetMeta) return { ok: false, error: badAssetMeta };
-  const statusCheck = validateStatus(meta.value.Status, "unlocked", cur.sourceFile, head.line);
+  const statusCheck = validateStatus(
+    meta.value.Status,
+    "unlocked",
+    cur.sourceFile,
+    head.line,
+  );
   if (!statusCheck.ok) return statusCheck;
   const status = statusCheck.value;
   let unlock: UnlockExpr | null = null;
   if (meta.value.Unlock) {
     if (status !== "locked") {
-      return fail(cur.sourceFile, head.line, "unlockOnNonLockedBlock",
-        `Block has an Unlock condition but Status is "${status}". Set Status to "locked" or remove the Unlock.`);
+      return fail(
+        cur.sourceFile,
+        head.line,
+        "unlockOnNonLockedBlock",
+        `Block has an Unlock condition but Status is "${status}". Set Status to "locked" or remove the Unlock.`,
+      );
     }
     const r = parseUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);
     if (!r.ok) return r;
     unlock = r.value;
   }
-  const reveals = meta.value.Reveals ? parseRevealsList(meta.value.Reveals, cur.sourceFile, head.line) : { ok: true as const, value: [] as RevealTarget[] };
+  const reveals = meta.value.Reveals
+    ? parseRevealsList(meta.value.Reveals, cur.sourceFile, head.line)
+    : { ok: true as const, value: [] as RevealTarget[] };
   if (!reveals.ok) return reveals;
 
   const topicRes = consumeDialogueUntilHeading(cur, 4);
@@ -390,14 +626,31 @@ function parseTopic(cur: Cursor, characterId: string): { ok: true; value: ASTTop
   };
 }
 
-function parseOutro(cur: Cursor): { ok: true; value: ASTOutro } | { ok: false; error: CompileError } {
+function parseOutro(
+  cur: Cursor,
+): { ok: true; value: ASTOutro } | { ok: false; error: CompileError } {
   const head = cur.next();
-  if (!head || head.kind !== "heading" || head.level !== 2 || head.text !== "Outro") {
-    return fail(cur.sourceFile, head?.line ?? 1, "internalParserState", "parseOutro called off-position.");
+  if (
+    !head ||
+    head.kind !== "heading" ||
+    head.level !== 2 ||
+    head.text !== "Outro"
+  ) {
+    return fail(
+      cur.sourceFile,
+      head?.line ?? 1,
+      "internalParserState",
+      "parseOutro called off-position.",
+    );
   }
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
-  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  const badAssetMeta = rejectReservedAssetMetadata(
+    meta.value,
+    [],
+    cur.sourceFile,
+    head.line,
+  );
   if (badAssetMeta) return { ok: false, error: badAssetMeta };
   let unlock: UnlockExpr | "auto" = "auto";
   if (meta.value.Unlock) {
@@ -413,7 +666,9 @@ function parseOutro(cur: Cursor): { ok: true; value: ASTOutro } | { ok: false; e
 
 function consumeMetadata(
   cur: Cursor,
-): { ok: true; value: Record<string, string> } | { ok: false; error: CompileError } {
+):
+  | { ok: true; value: Record<string, string> }
+  | { ok: false; error: CompileError } {
   const out: Record<string, string> = {};
   while (true) {
     const next = cur.peek();
@@ -427,7 +682,10 @@ type DialogueResult =
   | { ok: true; value: DialogueItem[] }
   | { ok: false; error: CompileError };
 
-function consumeDialogueUntilHeading(cur: Cursor, _atOrAboveLevel: number): DialogueResult {
+function consumeDialogueUntilHeading(
+  cur: Cursor,
+  _atOrAboveLevel: number,
+): DialogueResult {
   // Stops at ANY heading regardless of level. Every dialogue body in this
   // grammar terminates at the next heading (the next structural block or an
   // optional sub-block like On Reexamine), so a level-aware check would
@@ -443,8 +701,10 @@ function consumeDialogueUntilHeading(cur: Cursor, _atOrAboveLevel: number): Dial
     if (!next) break;
     if (next.kind === "heading") break;
     cur.next();
-    if (next.kind === "sceneTag") out.push({ kind: "sceneTag", text: next.text });
-    else if (next.kind === "action") out.push({ kind: "action", text: next.text });
+    if (next.kind === "sceneTag")
+      out.push({ kind: "sceneTag", text: next.text });
+    else if (next.kind === "action")
+      out.push({ kind: "action", text: next.text });
     else if (next.kind === "dialogue") {
       out.push({
         kind: "line",
@@ -453,8 +713,7 @@ function consumeDialogueUntilHeading(cur: Cursor, _atOrAboveLevel: number): Dial
         expression: next.expression,
         portrait: null,
       });
-    }
-    else if (next.kind === "metadata") {
+    } else if (next.kind === "metadata") {
       return {
         ok: false,
         error: {
@@ -482,7 +741,9 @@ function consumeDialogueUntilHeading(cur: Cursor, _atOrAboveLevel: number): Dial
 function consumeOptionalOnReexamine(
   cur: Cursor,
   expectedLevel: number,
-): { ok: true; value: DialogueItem[] | null } | { ok: false; error: CompileError } {
+):
+  | { ok: true; value: DialogueItem[] | null }
+  | { ok: false; error: CompileError } {
   const next = cur.peek();
   if (!next || next.kind !== "heading") return { ok: true, value: null };
   if (next.level !== expectedLevel) return { ok: true, value: null };
@@ -499,8 +760,17 @@ function parseRevealsList(
   line: number,
 ): { ok: true; value: RevealTarget[] } | { ok: false; error: CompileError } {
   const m = /^\[(.*)\]\s*$/.exec(raw.trim());
-  if (!m) return fail(sourceFile, line, "revealsMalformed", `Reveals value must be a [list]. Got: ${raw}`);
-  const items = (m[1] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!m)
+    return fail(
+      sourceFile,
+      line,
+      "revealsMalformed",
+      `Reveals value must be a [list]. Got: ${raw}`,
+    );
+  const items = (m[1] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   const out: RevealTarget[] = [];
   for (const item of items) {
     const target = parseRevealTarget(item, sourceFile, line);
@@ -516,15 +786,36 @@ function parseRevealTarget(
   line: number,
 ): { ok: true; value: RevealTarget } | { ok: false; error: CompileError } {
   const m = /^(evidence|statement|hotspot|sublocation|topic):(.+)$/.exec(raw);
-  if (!m) return fail(sourceFile, line, "revealUnknownPrefix", `Unknown reveal target prefix: ${raw}`);
+  if (!m)
+    return fail(
+      sourceFile,
+      line,
+      "revealUnknownPrefix",
+      `Unknown reveal target prefix: ${raw}`,
+    );
   const kind = m[1] as RevealTarget["kind"];
   const tail = m[2] ?? "";
   if (kind === "topic") {
     const mt = /^([a-z0-9_]+)@([a-z0-9_]+)$/.exec(tail);
-    if (!mt) return fail(sourceFile, line, "revealTopicMalformed", `Topic reveal must be topic:<char>@<topic>. Got: ${raw}`);
-    return { ok: true, value: { kind: "topic", characterId: mt[1] ?? "", topicId: mt[2] ?? "" } };
+    if (!mt)
+      return fail(
+        sourceFile,
+        line,
+        "revealTopicMalformed",
+        `Topic reveal must be topic:<char>@<topic>. Got: ${raw}`,
+      );
+    return {
+      ok: true,
+      value: { kind: "topic", characterId: mt[1] ?? "", topicId: mt[2] ?? "" },
+    };
   }
-  if (!/^[a-z0-9_]+$/.test(tail)) return fail(sourceFile, line, "revealIdMalformed", `Reveal id must be snake_case slug: ${raw}`);
+  if (!/^[a-z0-9_]+$/.test(tail))
+    return fail(
+      sourceFile,
+      line,
+      "revealIdMalformed",
+      `Reveal id must be snake_case slug: ${raw}`,
+    );
   return { ok: true, value: { kind, id: tail } };
 }
 
@@ -559,7 +850,9 @@ function validateStatus(
   fallback: "locked" | "unlocked",
   sourceFile: string,
   line: number,
-): { ok: true; value: "locked" | "unlocked" } | { ok: false; error: CompileError } {
+):
+  | { ok: true; value: "locked" | "unlocked" }
+  | { ok: false; error: CompileError } {
   if (raw === undefined) return { ok: true, value: fallback };
   if (raw === "locked" || raw === "unlocked") return { ok: true, value: raw };
   return {

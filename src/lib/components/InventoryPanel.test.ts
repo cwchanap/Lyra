@@ -53,7 +53,9 @@ describe("InventoryPanel", () => {
       );
     });
 
-    const image = container.querySelector("img.evidence-thumb") as HTMLImageElement;
+    const image = container.querySelector(
+      "img.evidence-thumb",
+    ) as HTMLImageElement;
     image.dispatchEvent(new Event("error"));
 
     await waitFor(() => {
@@ -78,7 +80,9 @@ describe("InventoryPanel", () => {
 
     const statementRow = screen.getByRole("button", { name: /若月/ });
     expect(statementRow).toHaveClass("statement-row");
-    expect(statementRow.querySelector("img.evidence-thumb")).not.toBeInTheDocument();
+    expect(
+      statementRow.querySelector("img.evidence-thumb"),
+    ).not.toBeInTheDocument();
   });
 
   it("does not apply evidence-row class when evidence has no image", async () => {
@@ -100,7 +104,7 @@ describe("InventoryPanel", () => {
       statements: [],
     };
 
-    const { container } = render(InventoryPanel, {
+    render(InventoryPanel, {
       inventory: inventoryNoImage,
       reexamineEnabled: true,
       onReexamineEvidence: vi.fn(),
@@ -111,6 +115,8 @@ describe("InventoryPanel", () => {
 
     const evidenceButton = screen.getByRole("button", { name: /無圖物證/ });
     expect(evidenceButton).not.toHaveClass("evidence-row");
-    expect(evidenceButton.querySelector("img.evidence-thumb")).not.toBeInTheDocument();
+    expect(
+      evidenceButton.querySelector("img.evidence-thumb"),
+    ).not.toBeInTheDocument();
   });
 });

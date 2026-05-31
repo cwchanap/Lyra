@@ -33,15 +33,22 @@ async function main() {
 
   if (isWatch) {
     const chokidar = await import("chokidar");
-    console.log(`[compile-scenes] Watching ${SOURCE_ROOT} and ${ASSET_CONFIG_ROOT} for changes...`);
+    console.log(
+      `[compile-scenes] Watching ${SOURCE_ROOT} and ${ASSET_CONFIG_ROOT} for changes...`,
+    );
     chokidar
-      .watch([`${SOURCE_ROOT}/**/*.md`, `${ASSET_CONFIG_ROOT}/**/*.yaml`], { ignoreInitial: true })
+      .watch([`${SOURCE_ROOT}/**/*.md`, `${ASSET_CONFIG_ROOT}/**/*.yaml`], {
+        ignoreInitial: true,
+      })
       .on("all", async (event, path) => {
         console.log(`[compile-scenes] ${event} ${path} - recompiling.`);
         try {
           await runOnce();
         } catch (err) {
-          console.error(`[compile-scenes] Unexpected error during recompilation (${event} ${path}):`, err);
+          console.error(
+            `[compile-scenes] Unexpected error during recompilation (${event} ${path}):`,
+            err,
+          );
         }
       });
   }
@@ -55,12 +62,16 @@ async function runOnce() {
     assetOutputRoot: ASSET_OUTPUT_ROOT,
   });
   if (!result.ok) {
-    console.error("[compile-scenes] FAILED with " + result.errors.length + " error(s):");
+    console.error(
+      "[compile-scenes] FAILED with " + result.errors.length + " error(s):",
+    );
     console.error(formatErrors(result.errors));
     if (!isWatch) process.exit(2);
     return;
   }
-  console.log(`[compile-scenes] OK — ${result.chaptersCompiled} chapter(s), ${result.scenesCompiled} scene(s).`);
+  console.log(
+    `[compile-scenes] OK — ${result.chaptersCompiled} chapter(s), ${result.scenesCompiled} scene(s).`,
+  );
   if (result.assetReport.enabled) {
     const r = result.assetReport.requested;
     console.log(
@@ -68,7 +79,9 @@ async function runOnce() {
     );
   }
   if (result.assetReport.warnings.length > 0) {
-    console.warn(`[compile-scenes] Asset warnings (${result.assetReport.warnings.length}):`);
+    console.warn(
+      `[compile-scenes] Asset warnings (${result.assetReport.warnings.length}):`,
+    );
     for (const w of result.assetReport.warnings) {
       console.warn(`  - [${w.code}] ${w.message}`);
     }

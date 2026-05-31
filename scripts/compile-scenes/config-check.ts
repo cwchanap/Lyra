@@ -20,41 +20,56 @@ export type ConfigCheckResult =
   | { ok: true }
   | { ok: false; problems: string[] };
 
-export function checkTauriConfig(repoRoot: string = process.cwd()): ConfigCheckResult {
+export function checkTauriConfig(
+  repoRoot: string = process.cwd(),
+): ConfigCheckResult {
   const configPath = resolve(repoRoot, "src-tauri/tauri.conf.json");
   let raw: string;
   try {
     raw = readFileSync(configPath, "utf-8");
   } catch (e) {
-    return { ok: false, problems: [`Cannot read ${configPath}: ${(e as Error).message}`] };
+    return {
+      ok: false,
+      problems: [`Cannot read ${configPath}: ${(e as Error).message}`],
+    };
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
-    return { ok: false, problems: [`Invalid JSON in ${configPath}: ${(e as Error).message}`] };
+    return {
+      ok: false,
+      problems: [`Invalid JSON in ${configPath}: ${(e as Error).message}`],
+    };
   }
 
   const problems: string[] = [];
-  const cfg = parsed as { build?: { beforeDevCommand?: string; beforeBuildCommand?: string }; bundle?: { resources?: unknown } };
+  const cfg = parsed as {
+    build?: { beforeDevCommand?: string; beforeBuildCommand?: string };
+    bundle?: { resources?: unknown };
+  };
 
   const beforeDev = cfg.build?.beforeDevCommand;
   if (beforeDev !== EXPECTED_BEFORE_DEV) {
-    problems.push(`build.beforeDevCommand should be "${EXPECTED_BEFORE_DEV}", got: ${JSON.stringify(beforeDev)}`);
+    problems.push(
+      `build.beforeDevCommand should be "${EXPECTED_BEFORE_DEV}", got: ${JSON.stringify(beforeDev)}`,
+    );
   }
 
   const beforeBuild = cfg.build?.beforeBuildCommand;
   if (beforeBuild !== EXPECTED_BEFORE_BUILD) {
-    problems.push(`build.beforeBuildCommand should be "${EXPECTED_BEFORE_BUILD}", got: ${JSON.stringify(beforeBuild)}`);
+    problems.push(
+      `build.beforeBuildCommand should be "${EXPECTED_BEFORE_BUILD}", got: ${JSON.stringify(beforeBuild)}`,
+    );
   }
 
   const resources = cfg.bundle?.resources;
-  const ok =
-    Array.isArray(resources) &&
-    resources.includes(REQUIRED_RESOURCE);
+  const ok = Array.isArray(resources) && resources.includes(REQUIRED_RESOURCE);
   if (!ok) {
-    problems.push(`bundle.resources must include "${REQUIRED_RESOURCE}". Got: ${JSON.stringify(resources)}`);
+    problems.push(
+      `bundle.resources must include "${REQUIRED_RESOURCE}". Got: ${JSON.stringify(resources)}`,
+    );
   }
 
   return problems.length === 0 ? { ok: true } : { ok: false, problems };

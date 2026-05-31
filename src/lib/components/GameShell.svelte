@@ -23,10 +23,15 @@
     <div class="left">
       <span class="case-marker">
         <span class="diamond"></span>
-        FILE&nbsp;{String(gameState.chapter.index + 1).padStart(2, "0")}&nbsp;/&nbsp;{String(gameState.chapter.total).padStart(2, "0")}
+        FILE&nbsp;{String(gameState.chapter.index + 1).padStart(
+          2,
+          "0",
+        )}&nbsp;/&nbsp;{String(gameState.chapter.total).padStart(2, "0")}
       </span>
       <div class="title-row">
-        <p class="eyebrow">第&nbsp;{gameState.chapter.index + 1}&nbsp;章&nbsp;·&nbsp;CHAPTER</p>
+        <p class="eyebrow">
+          第&nbsp;{gameState.chapter.index + 1}&nbsp;章&nbsp;·&nbsp;CHAPTER
+        </p>
         <h1>{gameState.chapter.title}</h1>
       </div>
       <p class="summary">{gameState.chapter.summary}</p>
@@ -145,7 +150,10 @@
     text-transform: uppercase;
     line-height: 1.2;
     text-align: left;
-    transition: color 0.18s, border-color 0.18s, background 0.18s;
+    transition:
+      color 0.18s,
+      border-color 0.18s,
+      background 0.18s;
   }
 
   header > button:hover:not(:disabled) {
@@ -177,7 +185,13 @@
     z-index: 2;
     height: 1px;
     margin: 0 clamp(20px, 3vw, 40px);
-    background: linear-gradient(90deg, transparent, var(--rule-strong) 12%, var(--rule-strong) 88%, transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--rule-strong) 12%,
+      var(--rule-strong) 88%,
+      transparent
+    );
   }
 
   main {

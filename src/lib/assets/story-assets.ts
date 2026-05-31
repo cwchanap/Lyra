@@ -9,7 +9,10 @@ export type ResolvedStoryAsset = {
 
 const cache = new Map<string, Promise<ResolvedStoryAsset>>();
 
-export function publicPathForStoryAsset(assetId: string, type: StoryAssetType): string {
+export function publicPathForStoryAsset(
+  assetId: string,
+  type: StoryAssetType,
+): string {
   // KEEP IN SYNC with publicPath() in scripts/compile-scenes/assets/manifest.ts.
   // manifest.test.ts cross-checks both; update both together.
   if (type === "portrait") {
@@ -26,8 +29,15 @@ export function publicPathForStoryAsset(assetId: string, type: StoryAssetType): 
   return `/assets/backgrounds/${assetId.replace(/^background\./, "").replaceAll(".", "/")}.png`;
 }
 
-export function placeholderForStoryAsset(type: Exclude<StoryAssetType, "audio">): ResolvedStoryAsset {
-  const color = type === "background" ? "101018" : type === "portrait" ? "181820" : "202018";
+export function placeholderForStoryAsset(
+  type: Exclude<StoryAssetType, "audio">,
+): ResolvedStoryAsset {
+  const color =
+    type === "background"
+      ? "101018"
+      : type === "portrait"
+        ? "181820"
+        : "202018";
   const label = type.toUpperCase();
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="100%" height="100%" fill="#${color}"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#d8d0bf" font-family="serif" font-size="28">${label} MISSING</text></svg>`;
   return {
@@ -64,7 +74,10 @@ export function resolveStoryAsset(
  * by the browser (<img onerror>), which triggers the placeholder fallback
  * in the component's error handler.
  */
-async function resolveUncached(assetId: string, type: StoryAssetType): Promise<ResolvedStoryAsset> {
+async function resolveUncached(
+  assetId: string,
+  type: StoryAssetType,
+): Promise<ResolvedStoryAsset> {
   const url = publicPathForStoryAsset(assetId, type);
   return { assetId, type, url, placeholder: false };
 }

@@ -29,7 +29,9 @@ export function emitLinearScene(ast: ASTLinearScene): JSONLinearScene {
   };
 }
 
-export function emitInvestigationScene(ast: ASTInvestigationScene): JSONInvestigationScene {
+export function emitInvestigationScene(
+  ast: ASTInvestigationScene,
+): JSONInvestigationScene {
   return {
     type: "investigation",
     id: ast.id,
@@ -94,7 +96,9 @@ export function emitInvestigationScene(ast: ASTInvestigationScene): JSONInvestig
   };
 }
 
-export function emitInterrogationScene(ast: ASTInterrogationScene): JSONInterrogationScene {
+export function emitInterrogationScene(
+  ast: ASTInterrogationScene,
+): JSONInterrogationScene {
   return {
     type: "interrogation",
     id: ast.id,
@@ -188,7 +192,9 @@ function emitDialogueItems(items: DialogueItem[]): JSONDialogueItem[] {
   return items.map(emitDialogueItem);
 }
 
-function emitNullableDialogueItems(items: DialogueItem[] | null): JSONDialogueItem[] | null {
+function emitNullableDialogueItems(
+  items: DialogueItem[] | null,
+): JSONDialogueItem[] | null {
   return items ? emitDialogueItems(items) : null;
 }
 
@@ -207,7 +213,9 @@ function emitDialogueItem(item: DialogueItem): JSONDialogueItem {
   };
 }
 
-function emitVisualAssetCue(cue: VisualAssetCue | null): JSONVisualAssetCue | null {
+function emitVisualAssetCue(
+  cue: VisualAssetCue | null,
+): JSONVisualAssetCue | null {
   if (!cue) return null;
   return {
     backgroundAssetId: cue.backgroundAssetId,
@@ -230,19 +238,22 @@ export function emitChaptersIndex(chapters: ASTChapter[]): JSONChaptersIndex {
       id: c.dirName,
       title: c.title,
       summary: c.summary,
-      scenes: c.sceneFiles
-        .map((f) => {
-          const type = inferType(f);
-          const jsonName = f.replace(/\.md$/, ".json");
-          return { type, file: `${c.dirName}/${jsonName}` };
-        }),
+      scenes: c.sceneFiles.map((f) => {
+        const type = inferType(f);
+        const jsonName = f.replace(/\.md$/, ".json");
+        return { type, file: `${c.dirName}/${jsonName}` };
+      }),
     })),
   };
 }
 
-function inferType(filename: string): JSONChaptersIndex["chapters"][number]["scenes"][number]["type"] {
+function inferType(
+  filename: string,
+): JSONChaptersIndex["chapters"][number]["scenes"][number]["type"] {
   if (filename.startsWith("interrogation_scene_")) return "interrogation";
   if (filename.startsWith("investigation_scene_")) return "investigation";
   if (filename.startsWith("scene_")) return "linear";
-  throw new Error(`emit: cannot infer scene type from filename "${filename}". Validator should have caught this.`);
+  throw new Error(
+    `emit: cannot infer scene type from filename "${filename}". Validator should have caught this.`,
+  );
 }

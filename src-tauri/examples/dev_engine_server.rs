@@ -243,7 +243,9 @@ fn dispatch(state: &ServerState, command: &str, body: &[u8]) -> Result<String, G
                 question_id: String,
             }
             let args: Args = parse_body(body)?;
-            with_engine(state, |e| e.answer_interrogation_question(&args.question_id))
+            with_engine(state, |e| {
+                e.answer_interrogation_question(&args.question_id)
+            })
         }
         "press_testimony_statement" => {
             #[derive(Deserialize)]

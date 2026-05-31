@@ -25,7 +25,9 @@
   onMount(() => {
     const tickClock = () => {
       const now = new Date();
-      const jst = new Date(now.getTime() + (now.getTimezoneOffset() + 540) * 60000);
+      const jst = new Date(
+        now.getTime() + (now.getTimezoneOffset() + 540) * 60000,
+      );
       const p = (n: number) => String(n).padStart(2, "0");
       clock = `${p(jst.getHours())} : ${p(jst.getMinutes())} : ${p(jst.getSeconds())} JST`;
     };
@@ -37,7 +39,14 @@
     const ctx = cvs.getContext("2d");
     if (!ctx) return () => window.clearInterval(clockTimer);
 
-    type Drop = { x: number; y: number; len: number; speed: number; opacity: number; slant: number };
+    type Drop = {
+      x: number;
+      y: number;
+      len: number;
+      speed: number;
+      opacity: number;
+      slant: number;
+    };
     let drops: Drop[] = [];
     let raf = 0;
 
@@ -65,7 +74,12 @@
     const draw = () => {
       ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
       for (const d of drops) {
-        const g = ctx.createLinearGradient(d.x, d.y, d.x - d.slant * d.len, d.y + d.len);
+        const g = ctx.createLinearGradient(
+          d.x,
+          d.y,
+          d.x - d.slant * d.len,
+          d.y + d.len,
+        );
         g.addColorStop(0, `rgba(200, 220, 240, ${d.opacity})`);
         g.addColorStop(1, "rgba(200, 220, 240, 0)");
         ctx.strokeStyle = g;
@@ -89,7 +103,11 @@
     window.addEventListener("resize", resize);
     raf = window.requestAnimationFrame(draw);
 
-    const cards = Array.from(document.querySelectorAll<HTMLButtonElement>(".lyra-menu .card:not(:disabled)"));
+    const cards = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        ".lyra-menu .card:not(:disabled)",
+      ),
+    );
     let focusIndex = 0;
     const focusCard = (n: number) => {
       if (cards.length === 0) return;
@@ -136,7 +154,10 @@
   <main class="menu" aria-label="主選單">
     <div class="titlebar">
       <div class="titlebar-left">
-        <span class="case-marker"><span class="diamond"></span>EP.&nbsp;ZERO&nbsp;·&nbsp;CASE&nbsp;OPEN</span>
+        <span class="case-marker"
+          ><span class="diamond"
+          ></span>EP.&nbsp;ZERO&nbsp;·&nbsp;CASE&nbsp;OPEN</span
+        >
         <span class="kana-strip">トウキョウ・アメ・ショウ</span>
       </div>
       <div class="titlebar-right">
@@ -167,16 +188,39 @@
               <stop offset="100%" stop-color="#100513" />
             </linearGradient>
             <clipPath id="lyra-eye-shape">
-              <path d="M30,210 Q170,40 290,40 Q430,40 530,210 Q430,360 290,360 Q170,360 30,210 Z" />
+              <path
+                d="M30,210 Q170,40 290,40 Q430,40 530,210 Q430,360 290,360 Q170,360 30,210 Z"
+              />
             </clipPath>
           </defs>
 
           <g clip-path="url(#lyra-eye-shape)">
             <rect x="0" y="0" width="560" height="400" fill="#ece4cf" />
             <g>
-              <ellipse cx="280" cy="210" rx="135" ry="155" fill="url(#lyra-iris)" />
-              <ellipse cx="280" cy="240" rx="120" ry="120" fill="url(#lyra-iris-inner)" />
-              <ellipse cx="280" cy="210" rx="135" ry="155" fill="none" stroke="#040408" stroke-width="3" stroke-opacity="0.5" />
+              <ellipse
+                cx="280"
+                cy="210"
+                rx="135"
+                ry="155"
+                fill="url(#lyra-iris)"
+              />
+              <ellipse
+                cx="280"
+                cy="240"
+                rx="120"
+                ry="120"
+                fill="url(#lyra-iris-inner)"
+              />
+              <ellipse
+                cx="280"
+                cy="210"
+                rx="135"
+                ry="155"
+                fill="none"
+                stroke="#040408"
+                stroke-width="3"
+                stroke-opacity="0.5"
+              />
 
               <g opacity="0.55">
                 <rect x="178" y="240" width="22" height="80" fill="#04060f" />
@@ -204,7 +248,12 @@
                 </g>
               </g>
 
-              <g stroke="#ece4cf" stroke-width="1.2" opacity="0.4" stroke-linecap="round">
+              <g
+                stroke="#ece4cf"
+                stroke-width="1.2"
+                opacity="0.4"
+                stroke-linecap="round"
+              >
                 <line x1="200" y1="150" x2="195" y2="170" />
                 <line x1="220" y1="120" x2="215" y2="146" />
                 <line x1="240" y1="160" x2="234" y2="184" />
@@ -217,16 +266,45 @@
               </g>
 
               <ellipse cx="280" cy="220" rx="46" ry="70" fill="#040408" />
-              <ellipse cx="252" cy="172" rx="22" ry="32" fill="#ece4cf" opacity="0.92" />
-              <ellipse cx="320" cy="260" rx="5" ry="7" fill="#d4143a" opacity="0.9" />
+              <ellipse
+                cx="252"
+                cy="172"
+                rx="22"
+                ry="32"
+                fill="#ece4cf"
+                opacity="0.92"
+              />
+              <ellipse
+                cx="320"
+                cy="260"
+                rx="5"
+                ry="7"
+                fill="#d4143a"
+                opacity="0.9"
+              />
             </g>
 
-            <path d="M30,210 Q170,40 290,40 Q430,40 530,210 L530,90 Q300,30 30,90 Z" fill="url(#lyra-upper-lid)" opacity="0.92" />
+            <path
+              d="M30,210 Q170,40 290,40 Q430,40 530,210 L530,90 Q300,30 30,90 Z"
+              fill="url(#lyra-upper-lid)"
+              opacity="0.92"
+            />
           </g>
 
-          <path d="M30,210 Q170,40 290,40 Q430,40 530,210 Q430,360 290,360 Q170,360 30,210 Z" fill="none" stroke="#040408" stroke-width="6" stroke-linejoin="round" />
+          <path
+            d="M30,210 Q170,40 290,40 Q430,40 530,210 Q430,360 290,360 Q170,360 30,210 Z"
+            fill="none"
+            stroke="#040408"
+            stroke-width="6"
+            stroke-linejoin="round"
+          />
 
-          <g stroke="#040408" stroke-width="9" stroke-linecap="round" fill="none">
+          <g
+            stroke="#040408"
+            stroke-width="9"
+            stroke-linecap="round"
+            fill="none"
+          >
             <path d="M90,130 Q70,80 50,60" />
             <path d="M150,80 Q140,40 130,10" />
             <path d="M220,55 Q215,18 210,-10" />
@@ -236,10 +314,19 @@
             <path d="M510,150 Q540,120 564,108" />
           </g>
 
-          <path d="M120,-10 Q260,-30 460,10" stroke="#040408" stroke-width="14" fill="none" stroke-linecap="round" />
+          <path
+            d="M120,-10 Q260,-30 460,10"
+            stroke="#040408"
+            stroke-width="14"
+            fill="none"
+            stroke-linecap="round"
+          />
 
           <g opacity="0.85">
-            <path d="M180,320 Q186,348 192,362 Q198,348 204,320 Z" fill="#34d8ff" />
+            <path
+              d="M180,320 Q186,348 192,362 Q198,348 204,320 Z"
+              fill="#34d8ff"
+            />
             <ellipse cx="190" cy="336" rx="2" ry="2.6" fill="#ece4cf" />
           </g>
         </svg>
@@ -262,12 +349,19 @@
         <span class="num">01</span>
         <span class="label">
           <span class="zh" data-text="開始調查">開始調查</span>
-          <span class="sub">NEW GAME&nbsp;·&nbsp;<b>第一章「雨鐘咖啡館」</b></span>
+          <span class="sub"
+            >NEW GAME&nbsp;·&nbsp;<b>第一章「雨鐘咖啡館」</b></span
+          >
         </span>
         <span class="chip">ENTER&nbsp;▶</span>
       </button>
 
-      <button class="card" type="button" onclick={onContinue} disabled={disabled || !onContinue}>
+      <button
+        class="card"
+        type="button"
+        onclick={onContinue}
+        disabled={disabled || !onContinue}
+      >
         <span class="num">02</span>
         <span class="label">
           <span class="zh" data-text="繼續追蹤">繼續追蹤</span>
@@ -276,7 +370,12 @@
         <span class="chip">LOAD</span>
       </button>
 
-      <button class="card" type="button" onclick={onArchive} disabled={disabled || !onArchive}>
+      <button
+        class="card"
+        type="button"
+        onclick={onArchive}
+        disabled={disabled || !onArchive}
+      >
         <span class="num">03</span>
         <span class="label">
           <span class="zh" data-text="案件檔案">案件檔案</span>
@@ -285,7 +384,12 @@
         <span class="chip">OPEN</span>
       </button>
 
-      <button class="card" type="button" onclick={onSettings} disabled={disabled || !onSettings}>
+      <button
+        class="card"
+        type="button"
+        onclick={onSettings}
+        disabled={disabled || !onSettings}
+      >
         <span class="num">04</span>
         <span class="label">
           <span class="zh" data-text="系統設定">系統設定</span>
@@ -294,7 +398,12 @@
         <span class="chip">EDIT</span>
       </button>
 
-      <button class="card danger" type="button" onclick={onExit} disabled={disabled || !onExit}>
+      <button
+        class="card danger"
+        type="button"
+        onclick={onExit}
+        disabled={disabled || !onExit}
+      >
         <span class="num">05</span>
         <span class="label">
           <span class="zh" data-text="結束偵查">結束偵查</span>
@@ -306,7 +415,9 @@
 
     <footer class="footer">
       <div class="narration">
-        ▸ 序章·東京。<b>雨</b>把這座城市的影子洗得更深了——而某個人，正在這場雨裡，<em>決定</em>你會先看見哪一塊真相。
+        ▸ 序章·東京。<b>雨</b
+        >把這座城市的影子洗得更深了——而某個人，正在這場雨裡，<em>決定</em
+        >你會先看見哪一塊真相。
       </div>
       <div class="footer-center">— Episode Zero · Continue? —</div>
       <div class="keys">
@@ -339,8 +450,16 @@
     inset: 0;
     overflow: hidden;
     background:
-      radial-gradient(ellipse 55% 65% at 78% 30%, rgba(212, 20, 58, 0.22), transparent 65%),
-      radial-gradient(ellipse 60% 55% at 12% 86%, rgba(52, 216, 255, 0.1), transparent 70%),
+      radial-gradient(
+        ellipse 55% 65% at 78% 30%,
+        rgba(212, 20, 58, 0.22),
+        transparent 65%
+      ),
+      radial-gradient(
+        ellipse 60% 55% at 12% 86%,
+        rgba(52, 216, 255, 0.1),
+        transparent 70%
+      ),
       linear-gradient(170deg, #07070d 0%, #100513 50%, #1a0510 100%);
   }
 
@@ -350,10 +469,22 @@
     pointer-events: none;
     opacity: 0.22;
     mix-blend-mode: screen;
-    background-image: radial-gradient(circle at center, rgba(236, 228, 207, 0.6) 0.7px, transparent 1.2px);
+    background-image: radial-gradient(
+      circle at center,
+      rgba(236, 228, 207, 0.6) 0.7px,
+      transparent 1.2px
+    );
     background-size: 9px 9px;
-    -webkit-mask-image: radial-gradient(ellipse 70% 70% at 70% 30%, black 0%, transparent 72%);
-    mask-image: radial-gradient(ellipse 70% 70% at 70% 30%, black 0%, transparent 72%);
+    -webkit-mask-image: radial-gradient(
+      ellipse 70% 70% at 70% 30%,
+      black 0%,
+      transparent 72%
+    );
+    mask-image: radial-gradient(
+      ellipse 70% 70% at 70% 30%,
+      black 0%,
+      transparent 72%
+    );
   }
 
   .speedlines {
@@ -368,8 +499,18 @@
       rgba(236, 228, 207, 0.7) 2.5deg,
       transparent 2.7deg
     );
-    -webkit-mask-image: radial-gradient(circle at 82% 42%, transparent 22%, black 65%, transparent 100%);
-    mask-image: radial-gradient(circle at 82% 42%, transparent 22%, black 65%, transparent 100%);
+    -webkit-mask-image: radial-gradient(
+      circle at 82% 42%,
+      transparent 22%,
+      black 65%,
+      transparent 100%
+    );
+    mask-image: radial-gradient(
+      circle at 82% 42%,
+      transparent 22%,
+      black 65%,
+      transparent 100%
+    );
     mix-blend-mode: screen;
   }
 
@@ -378,7 +519,12 @@
     inset: 0;
     pointer-events: none;
     z-index: 60;
-    background: repeating-linear-gradient(to bottom, transparent 0, transparent 3px, rgba(0, 0, 0, 0.22) 4px);
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 3px,
+      rgba(0, 0, 0, 0.22) 4px
+    );
     mix-blend-mode: multiply;
   }
 
@@ -393,11 +539,21 @@
     animation: lyra-grain-shift 1.4s steps(6) infinite;
   }
   @keyframes lyra-grain-shift {
-    0% { transform: translate(0, 0); }
-    25% { transform: translate(-4%, 3%); }
-    50% { transform: translate(3%, -2%); }
-    75% { transform: translate(-2%, -4%); }
-    100% { transform: translate(0, 0); }
+    0% {
+      transform: translate(0, 0);
+    }
+    25% {
+      transform: translate(-4%, 3%);
+    }
+    50% {
+      transform: translate(3%, -2%);
+    }
+    75% {
+      transform: translate(-2%, -4%);
+    }
+    100% {
+      transform: translate(0, 0);
+    }
   }
 
   canvas.weather {
@@ -416,7 +572,13 @@
     left: -10vw;
     right: -10vw;
     height: 8vh;
-    background: linear-gradient(90deg, var(--cell) 0%, var(--cell) 68%, var(--crimson) 68%, var(--crimson) 100%);
+    background: linear-gradient(
+      90deg,
+      var(--cell) 0%,
+      var(--cell) 68%,
+      var(--crimson) 68%,
+      var(--crimson) 100%
+    );
     transform: rotate(-1.6deg);
     border-bottom: 1px solid var(--rule-strong);
   }
@@ -425,7 +587,13 @@
     left: -10vw;
     right: -10vw;
     height: 7vh;
-    background: linear-gradient(90deg, var(--crimson) 0%, var(--crimson) 30%, var(--cell) 30%, var(--cell) 100%);
+    background: linear-gradient(
+      90deg,
+      var(--crimson) 0%,
+      var(--crimson) 30%,
+      var(--cell) 30%,
+      var(--cell) 100%
+    );
     transform: rotate(-1.2deg);
     border-top: 1px solid var(--rule-strong);
   }
@@ -463,8 +631,14 @@
     opacity: 1;
   }
   @keyframes lyra-zero-pop {
-    0% { transform: translate(-30px, 16px); opacity: 0; }
-    100% { transform: translate(0, 0); opacity: 0.85; }
+    0% {
+      transform: translate(-30px, 16px);
+      opacity: 0;
+    }
+    100% {
+      transform: translate(0, 0);
+      opacity: 0.85;
+    }
   }
 
   .glyph-ame {
@@ -483,8 +657,14 @@
     animation: lyra-ame-pop 1.1s cubic-bezier(0.2, 0.9, 0.2, 1) 0.4s both;
   }
   @keyframes lyra-ame-pop {
-    0% { transform: rotate(6deg) translate(40px, -16px); opacity: 0; }
-    100% { transform: rotate(6deg) translate(0, 0); opacity: 1; }
+    0% {
+      transform: rotate(6deg) translate(40px, -16px);
+      opacity: 0;
+    }
+    100% {
+      transform: rotate(6deg) translate(0, 0);
+      opacity: 1;
+    }
   }
 
   .menu {
@@ -587,8 +767,14 @@
     animation: lyra-hero-in 1.2s cubic-bezier(0.2, 0.9, 0.2, 1) 0.45s both;
   }
   @keyframes lyra-hero-in {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
   .eye-wrap svg {
     width: 100%;
@@ -691,18 +877,44 @@
     font-family: inherit;
     text-align: left;
     outline: none;
-    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
-    transition: transform 0.22s cubic-bezier(0.2, 0.9, 0.2, 1), background 0.22s ease, border-color 0.22s ease;
+    clip-path: polygon(
+      0 0,
+      calc(100% - 18px) 0,
+      100% 18px,
+      100% 100%,
+      18px 100%,
+      0 calc(100% - 18px)
+    );
+    transition:
+      transform 0.22s cubic-bezier(0.2, 0.9, 0.2, 1),
+      background 0.22s ease,
+      border-color 0.22s ease;
     animation: lyra-card-in 0.6s cubic-bezier(0.2, 0.9, 0.2, 1) both;
   }
-  .card:nth-child(1) { animation-delay: 0.75s; }
-  .card:nth-child(2) { animation-delay: 0.88s; }
-  .card:nth-child(3) { animation-delay: 1.01s; }
-  .card:nth-child(4) { animation-delay: 1.14s; }
-  .card:nth-child(5) { animation-delay: 1.27s; }
+  .card:nth-child(1) {
+    animation-delay: 0.75s;
+  }
+  .card:nth-child(2) {
+    animation-delay: 0.88s;
+  }
+  .card:nth-child(3) {
+    animation-delay: 1.01s;
+  }
+  .card:nth-child(4) {
+    animation-delay: 1.14s;
+  }
+  .card:nth-child(5) {
+    animation-delay: 1.27s;
+  }
   @keyframes lyra-card-in {
-    from { opacity: 0; transform: translateX(24px); }
-    to { opacity: 1; transform: translateX(0); }
+    from {
+      opacity: 0;
+      transform: translateX(24px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
   }
 
   .card::after {

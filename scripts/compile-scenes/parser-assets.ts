@@ -9,12 +9,19 @@
 
 import type { AudioCue, CompileError, VisualAssetCue } from "./types";
 
-const RESERVED_ASSET_METADATA_KEYS = ["Background Prompt", "BGM", "BGS", "Image Prompt"];
+const RESERVED_ASSET_METADATA_KEYS = [
+  "Background Prompt",
+  "BGM",
+  "BGS",
+  "Image Prompt",
+];
 
 export const VISUAL_ASSET_METADATA_KEYS = ["Background Prompt", "BGM", "BGS"];
 export const EVIDENCE_IMAGE_METADATA_KEYS = ["Image Prompt"];
 
-export function parseVisualAssetCue(meta: Record<string, string>): VisualAssetCue {
+export function parseVisualAssetCue(
+  meta: Record<string, string>,
+): VisualAssetCue {
   return {
     backgroundPrompt: meta["Background Prompt"] ?? null,
     backgroundAssetId: null,
@@ -23,13 +30,18 @@ export function parseVisualAssetCue(meta: Record<string, string>): VisualAssetCu
   };
 }
 
-export function parseAudioCue(channel: "bgm" | "bgs", raw: string | undefined): AudioCue | null {
+export function parseAudioCue(
+  channel: "bgm" | "bgs",
+  raw: string | undefined,
+): AudioCue | null {
   if (raw === undefined) return null;
   if (raw === "none") return { channel, assetId: null };
   return { channel, assetId: raw };
 }
 
-export function metadataWithoutAssetKeys(meta: Record<string, string>): Record<string, string> {
+export function metadataWithoutAssetKeys(
+  meta: Record<string, string>,
+): Record<string, string> {
   const copy = { ...meta };
   delete copy["Background Prompt"];
   delete copy.BGM;
@@ -66,7 +78,10 @@ export function rejectReservedAssetMetadata(
   metadataLines: Record<string, number> = {},
 ): CompileError | null {
   for (const key of Object.keys(meta)) {
-    if (RESERVED_ASSET_METADATA_KEYS.includes(key) && !allowedReservedKeys.includes(key)) {
+    if (
+      RESERVED_ASSET_METADATA_KEYS.includes(key) &&
+      !allowedReservedKeys.includes(key)
+    ) {
       return {
         sourceFile,
         line: metadataLines[key] ?? line,

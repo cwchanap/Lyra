@@ -13,7 +13,10 @@
     pressTestimonyStatement,
     presentTestimonyItem,
   } from "$lib/state/game-client.svelte";
-  import { canReexamineInventory, shouldShowInventoryPanel } from "$lib/state/mode";
+  import {
+    canReexamineInventory,
+    shouldShowInventoryPanel,
+  } from "$lib/state/mode";
   import DialogueBox from "$lib/components/DialogueBox.svelte";
   import ExploreView from "$lib/components/ExploreView.svelte";
   import SceneBackdrop from "$lib/components/SceneBackdrop.svelte";
@@ -43,7 +46,11 @@
 </script>
 
 {#if gameState.value}
-  <GameShell gameState={gameState.value} onReset={handleReset} disabled={gameState.inFlight}>
+  <GameShell
+    gameState={gameState.value}
+    onReset={handleReset}
+    disabled={gameState.inFlight}
+  >
     {#if gameState.error}
       <ErrorBanner message={gameState.error} />
     {/if}
@@ -59,7 +66,10 @@
         disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "explore"}
-      <SceneBackdrop sceneTag={null} backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null} />
+      <SceneBackdrop
+        sceneTag={null}
+        backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
+      />
       <ExploreView
         scene={gameState.value.scene}
         onInspect={inspectHotspot}
@@ -68,7 +78,10 @@
         disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "interrogation"}
-      <SceneBackdrop sceneTag={null} backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null} />
+      <SceneBackdrop
+        sceneTag={null}
+        backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
+      />
       <InterrogationView
         scene={gameState.value.scene}
         inventory={gameState.value.inventory}
@@ -93,7 +106,11 @@
 {:else if gameState.loading}
   <main><p class="status">載入中...</p></main>
 {:else}
-  <MainMenu onNewGame={startGame} onExit={handleExit} disabled={gameState.inFlight} />
+  <MainMenu
+    onNewGame={startGame}
+    onExit={handleExit}
+    disabled={gameState.inFlight}
+  />
   {#if gameState.error}
     <div class="menu-error">
       <ErrorBanner message={gameState.error} />

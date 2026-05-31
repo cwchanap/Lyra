@@ -21,9 +21,24 @@ function config(): AssetConfig {
     enabled: true,
     globalStylePrompt: "noir style",
     types: {
-      background: { dimensions: [1920, 1080], format: "png", transparency: false, prompt: "wide bg" },
-      portrait: { dimensions: [768, 1024], format: "png", transparency: true, prompt: "portrait" },
-      evidence: { dimensions: [512, 512], format: "png", transparency: true, prompt: "evidence" },
+      background: {
+        dimensions: [1920, 1080],
+        format: "png",
+        transparency: false,
+        prompt: "wide bg",
+      },
+      portrait: {
+        dimensions: [768, 1024],
+        format: "png",
+        transparency: true,
+        prompt: "portrait",
+      },
+      evidence: {
+        dimensions: [512, 512],
+        format: "png",
+        transparency: true,
+        prompt: "evidence",
+      },
       audio: { format: "ogg", loop: true, prompt: "" },
     },
     characters: {
@@ -31,8 +46,15 @@ function config(): AssetConfig {
       byDisplayName: new Map([["早坂茜", character]]),
     },
     audio: {
-      bgm: new Map([["rain_mystery_low", { id: "rain_mystery_low", prompt: "music", loop: true }]]),
-      bgs: new Map([["street_rain", { id: "street_rain", prompt: "rain", loop: true }]]),
+      bgm: new Map([
+        [
+          "rain_mystery_low",
+          { id: "rain_mystery_low", prompt: "music", loop: true },
+        ],
+      ]),
+      bgs: new Map([
+        ["street_rain", { id: "street_rain", prompt: "rain", loop: true }],
+      ]),
     },
   };
 }
@@ -58,12 +80,19 @@ describe("enrichScenesWithAssets", () => {
                 bgs: { channel: "bgs", assetId: "street_rain" },
               },
             },
-            { kind: "line", speaker: "早坂茜", expression: "concerned", portrait: null, text: "你不舒服？" },
+            {
+              kind: "line",
+              speaker: "早坂茜",
+              expression: "concerned",
+              portrait: null,
+              text: "你不舒服？",
+            },
             {
               kind: "sceneTag",
               text: "咖啡館內",
               assetCue: {
-                backgroundPrompt: "Quiet cafe interior with rain on the windows.",
+                backgroundPrompt:
+                  "Quiet cafe interior with rain on the windows.",
                 backgroundAssetId: null,
                 bgm: { channel: "bgm", assetId: null },
                 bgs: null,
@@ -84,20 +113,22 @@ describe("enrichScenesWithAssets", () => {
           title: "調查",
           intro: [],
           sublocations: [],
-          evidenceManifest: [{
-            id: "coffee_receipt",
-            name: "收據",
-            description: "A cafe receipt.",
-            details: "Printed shortly before the incident.",
-            imageCue: {
-              imagePrompt: "Cafe receipt isolated on transparent background.",
-              imageAssetId: null,
+          evidenceManifest: [
+            {
+              id: "coffee_receipt",
+              name: "收據",
+              description: "A cafe receipt.",
+              details: "Printed shortly before the incident.",
+              imageCue: {
+                imagePrompt: "Cafe receipt isolated on transparent background.",
+                imageAssetId: null,
+              },
+              onCollect: [],
+              onReexamine: null,
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 12,
             },
-            onCollect: [],
-            onReexamine: null,
-            sourceFile: "chapter_1/investigation_scene_1.md",
-            line: 12,
-          }],
+          ],
           statementManifest: [],
           outro: { unlock: "auto", dialogue: [] },
           assetRefs: [],
@@ -111,11 +142,17 @@ describe("enrichScenesWithAssets", () => {
     const linearRefs = result.scenes[0]?.ast.assetRefs ?? [];
     const investigationRefs = result.scenes[1]?.ast.assetRefs ?? [];
     const manifestIds = result.manifest.entries.map((e) => e.assetId);
-    const linear = result.scenes[0]?.ast.kind === "linearScene" ? result.scenes[0].ast : null;
-    const firstTag = linear?.queue[0]?.kind === "sceneTag" ? linear.queue[0] : null;
-    const secondTag = linear?.queue[2]?.kind === "sceneTag" ? linear.queue[2] : null;
+    const linear =
+      result.scenes[0]?.ast.kind === "linearScene"
+        ? result.scenes[0].ast
+        : null;
+    const firstTag =
+      linear?.queue[0]?.kind === "sceneTag" ? linear.queue[0] : null;
+    const secondTag =
+      linear?.queue[2]?.kind === "sceneTag" ? linear.queue[2] : null;
     const emitted = linear ? emitLinearScene(linear) : null;
-    const emittedFirstTag = emitted?.queue[0]?.kind === "sceneTag" ? emitted.queue[0] : null;
+    const emittedFirstTag =
+      emitted?.queue[0]?.kind === "sceneTag" ? emitted.queue[0] : null;
 
     expect(result.errors).toEqual([]);
     expect(linearRefs).toContainEqual({
@@ -138,11 +175,23 @@ describe("enrichScenesWithAssets", () => {
       type: "audio",
       assetId: "audio.bgs.street_rain",
     });
-    expect(firstTag?.assetCue?.bgm).toEqual({ channel: "bgm", assetId: "audio.bgm.rain_mystery_low" });
-    expect(firstTag?.assetCue?.bgs).toEqual({ channel: "bgs", assetId: "audio.bgs.street_rain" });
+    expect(firstTag?.assetCue?.bgm).toEqual({
+      channel: "bgm",
+      assetId: "audio.bgm.rain_mystery_low",
+    });
+    expect(firstTag?.assetCue?.bgs).toEqual({
+      channel: "bgs",
+      assetId: "audio.bgs.street_rain",
+    });
     expect(secondTag?.assetCue?.bgm).toEqual({ channel: "bgm", assetId: null });
-    expect(emittedFirstTag?.assetCue?.bgm).toEqual({ channel: "bgm", assetId: "audio.bgm.rain_mystery_low" });
-    expect(emittedFirstTag?.assetCue?.bgs).toEqual({ channel: "bgs", assetId: "audio.bgs.street_rain" });
+    expect(emittedFirstTag?.assetCue?.bgm).toEqual({
+      channel: "bgm",
+      assetId: "audio.bgm.rain_mystery_low",
+    });
+    expect(emittedFirstTag?.assetCue?.bgs).toEqual({
+      channel: "bgs",
+      assetId: "audio.bgs.street_rain",
+    });
     expect(linearRefs).not.toContainEqual({
       type: "audio",
       assetId: "audio.bgm.null",
@@ -153,71 +202,124 @@ describe("enrichScenesWithAssets", () => {
     expect(manifestIds).toContain("audio.bgm.rain_mystery_low");
     expect(manifestIds).toContain("audio.bgs.street_rain");
     expect(manifestIds).not.toContain("audio.bgm.null");
-    expect(result.manifest.entries.find((e) => e.assetId === "evidence.coffee_receipt")).toMatchObject({
+    expect(
+      result.manifest.entries.find(
+        (e) => e.assetId === "evidence.coffee_receipt",
+      ),
+    ).toMatchObject({
       type: "evidence",
       promptParts: {
         entryPrompt: "Cafe receipt isolated on transparent background.",
       },
     });
-    expect(result.manifest.entries.find((e) => e.assetId === "audio.bgm.rain_mystery_low")).toMatchObject({
+    expect(
+      result.manifest.entries.find(
+        (e) => e.assetId === "audio.bgm.rain_mystery_low",
+      ),
+    ).toMatchObject({
       type: "audio",
       promptParts: {
         entryPrompt: "music",
       },
     });
-    expect(result.manifest.entries.find((e) => e.assetId === "audio.bgs.street_rain")).toMatchObject({
+    expect(
+      result.manifest.entries.find(
+        (e) => e.assetId === "audio.bgs.street_rain",
+      ),
+    ).toMatchObject({
       type: "audio",
       promptParts: {
         entryPrompt: "rain",
       },
     });
-    expect(result.scenes[1]?.ast.kind === "investigationScene" ? result.scenes[1].ast.evidenceManifest[0]?.imageCue.imageAssetId : null).toBe("evidence.coffee_receipt");
+    expect(
+      result.scenes[1]?.ast.kind === "investigationScene"
+        ? result.scenes[1].ast.evidenceManifest[0]?.imageCue.imageAssetId
+        : null,
+    ).toBe("evidence.coffee_receipt");
   });
 
   it("errors for unknown speakers with expression when assets are enabled", () => {
-    const scenes: SceneRecord[] = [{
-      chapterId: "chapter_1",
-      file: "scene_0.md",
-      ast: {
-        kind: "linearScene",
-        id: "scene_0",
-        title: "接案",
-        queue: [{ kind: "line", speaker: "不存在", expression: "concerned", portrait: null, text: "hi" }],
-        assetRefs: [],
-        sourceFile: "chapter_1/scene_0.md",
-        line: 1,
+    const scenes: SceneRecord[] = [
+      {
+        chapterId: "chapter_1",
+        file: "scene_0.md",
+        ast: {
+          kind: "linearScene",
+          id: "scene_0",
+          title: "接案",
+          queue: [
+            {
+              kind: "line",
+              speaker: "不存在",
+              expression: "concerned",
+              portrait: null,
+              text: "hi",
+            },
+          ],
+          assetRefs: [],
+          sourceFile: "chapter_1/scene_0.md",
+          line: 1,
+        },
       },
-    }];
+    ];
     const result = enrichScenesWithAssets({ scenes, config: config() });
-    expect(result.errors.some((e) => e.code === "assetUnknownSpeaker")).toBe(true);
+    expect(result.errors.some((e) => e.code === "assetUnknownSpeaker")).toBe(
+      true,
+    );
   });
 
   it("exempts narrator-style lines (unknown speaker, no expression) from character lookup", () => {
-    const scenes: SceneRecord[] = [{
-      chapterId: "chapter_1",
-      file: "scene_0.md",
-      ast: {
-        kind: "linearScene",
-        id: "scene_0",
-        title: "接案",
-        queue: [{ kind: "line", speaker: "旁白", expression: null, portrait: null, text: "雨夜，街道無人。" }],
-        assetRefs: [],
-        sourceFile: "chapter_1/scene_0.md",
-        line: 1,
+    const scenes: SceneRecord[] = [
+      {
+        chapterId: "chapter_1",
+        file: "scene_0.md",
+        ast: {
+          kind: "linearScene",
+          id: "scene_0",
+          title: "接案",
+          queue: [
+            {
+              kind: "line",
+              speaker: "旁白",
+              expression: null,
+              portrait: null,
+              text: "雨夜，街道無人。",
+            },
+          ],
+          assetRefs: [],
+          sourceFile: "chapter_1/scene_0.md",
+          line: 1,
+        },
       },
-    }];
+    ];
     const result = enrichScenesWithAssets({ scenes, config: config() });
-    expect(result.errors.some((e) => e.code === "assetUnknownSpeaker")).toBe(false);
-    const line = result.scenes[0]?.ast.kind === "linearScene" ? result.scenes[0].ast.queue[0] : null;
+    expect(result.errors.some((e) => e.code === "assetUnknownSpeaker")).toBe(
+      false,
+    );
+    const line =
+      result.scenes[0]?.ast.kind === "linearScene"
+        ? result.scenes[0].ast.queue[0]
+        : null;
     expect(line?.kind === "line" ? line.portrait : undefined).toBeNull();
   });
 
   it("errors for unknown expressions", () => {
-    const scenes = [linearScene([
-      { kind: "line", speaker: "早坂茜", expression: "angry", portrait: null, text: "hi" },
-    ])];
+    const scenes = [
+      linearScene([
+        {
+          kind: "line",
+          speaker: "早坂茜",
+          expression: "angry",
+          portrait: null,
+          text: "hi",
+        },
+      ]),
+    ];
     const result = enrichScenesWithAssets({ scenes, config: config() });
-    expect(result.errors.some((e) => e.code === "assetUnknownExpression")).toBe(true);
+    expect(result.errors.some((e) => e.code === "assetUnknownExpression")).toBe(
+      true,
+    );
   });
 
   it("errors for expression on no-portrait speaker", () => {
@@ -232,12 +334,27 @@ describe("enrichScenesWithAssets", () => {
     };
     noPortraitConfig.characters.byId.set("narrator", noPortraitCharacter);
     noPortraitConfig.characters.byDisplayName.set("旁白", noPortraitCharacter);
-    const scenes = [linearScene([
-      { kind: "line", speaker: "旁白", expression: "concerned", portrait: null, text: "hi" },
-    ])];
+    const scenes = [
+      linearScene([
+        {
+          kind: "line",
+          speaker: "旁白",
+          expression: "concerned",
+          portrait: null,
+          text: "hi",
+        },
+      ]),
+    ];
     const result = enrichScenesWithAssets({ scenes, config: noPortraitConfig });
-    expect(result.errors.some((e) => e.code === "assetExpressionOnNoPortraitSpeaker")).toBe(true);
-    const line = result.scenes[0]?.ast.kind === "linearScene" ? result.scenes[0].ast.queue[0] : null;
+    expect(
+      result.errors.some(
+        (e) => e.code === "assetExpressionOnNoPortraitSpeaker",
+      ),
+    ).toBe(true);
+    const line =
+      result.scenes[0]?.ast.kind === "linearScene"
+        ? result.scenes[0].ast.queue[0]
+        : null;
     expect(line?.kind === "line" ? line.portrait : undefined).toBeNull();
   });
 
@@ -253,29 +370,47 @@ describe("enrichScenesWithAssets", () => {
     };
     noPortraitConfig.characters.byId.set("narrator", noPortraitCharacter);
     noPortraitConfig.characters.byDisplayName.set("旁白", noPortraitCharacter);
-    const scenes = [linearScene([
-      { kind: "line", speaker: "旁白", expression: null, portrait: null, text: "hi" },
-    ])];
+    const scenes = [
+      linearScene([
+        {
+          kind: "line",
+          speaker: "旁白",
+          expression: null,
+          portrait: null,
+          text: "hi",
+        },
+      ]),
+    ];
     const result = enrichScenesWithAssets({ scenes, config: noPortraitConfig });
-    expect(result.errors.some((e) => e.code === "assetExpressionOnNoPortraitSpeaker")).toBe(false);
+    expect(
+      result.errors.some(
+        (e) => e.code === "assetExpressionOnNoPortraitSpeaker",
+      ),
+    ).toBe(false);
   });
 
   it("errors for unknown audio while still reporting missing background prompts", () => {
-    const scenes = [linearScene([
-      {
-        kind: "sceneTag",
-        text: "咖啡館外",
-        assetCue: {
-          backgroundPrompt: null,
-          backgroundAssetId: null,
-          bgm: { channel: "bgm", assetId: "missing_bgm" },
-          bgs: { channel: "bgs", assetId: "missing_bgs" },
+    const scenes = [
+      linearScene([
+        {
+          kind: "sceneTag",
+          text: "咖啡館外",
+          assetCue: {
+            backgroundPrompt: null,
+            backgroundAssetId: null,
+            bgm: { channel: "bgm", assetId: "missing_bgm" },
+            bgs: { channel: "bgs", assetId: "missing_bgs" },
+          },
         },
-      },
-    ])];
+      ]),
+    ];
     const result = enrichScenesWithAssets({ scenes, config: config() });
-    expect(result.errors.map((e) => e.code)).toContain("assetMissingBackgroundPrompt");
-    expect(result.errors.filter((e) => e.code === "assetUnknownAudio")).toHaveLength(2);
+    expect(result.errors.map((e) => e.code)).toContain(
+      "assetMissingBackgroundPrompt",
+    );
+    expect(
+      result.errors.filter((e) => e.code === "assetUnknownAudio"),
+    ).toHaveLength(2);
     expect(result.scenes[0]?.ast.assetRefs).toEqual([]);
     expect(result.manifest.entries).toEqual([]);
   });
@@ -290,16 +425,18 @@ describe("enrichScenesWithAssets", () => {
         kind: "linearScene",
         id: "scene_0",
         title: "場景一",
-        queue: [{
-          kind: "sceneTag",
-          text: "咖啡館外",
-          assetCue: {
-            backgroundPrompt: "Rainy cafe.",
-            backgroundAssetId: null,
-            bgm: { channel: "bgm", assetId: "rain_mystery_low" },
-            bgs: { channel: "bgs", assetId: "street_rain" },
+        queue: [
+          {
+            kind: "sceneTag",
+            text: "咖啡館外",
+            assetCue: {
+              backgroundPrompt: "Rainy cafe.",
+              backgroundAssetId: null,
+              bgm: { channel: "bgm", assetId: "rain_mystery_low" },
+              bgs: { channel: "bgs", assetId: "street_rain" },
+            },
           },
-        }],
+        ],
         assetRefs: [],
         sourceFile: "chapter_1/scene_0.md",
         line: 1,
@@ -312,30 +449,41 @@ describe("enrichScenesWithAssets", () => {
         kind: "linearScene",
         id: "scene_1",
         title: "場景二",
-        queue: [{
-          kind: "sceneTag",
-          text: "咖啡館內",
-          assetCue: {
-            backgroundPrompt: "Interior.",
-            backgroundAssetId: null,
-            bgm: null,
-            bgs: null,
+        queue: [
+          {
+            kind: "sceneTag",
+            text: "咖啡館內",
+            assetCue: {
+              backgroundPrompt: "Interior.",
+              backgroundAssetId: null,
+              bgm: null,
+              bgs: null,
+            },
           },
-        }],
+        ],
         assetRefs: [],
         sourceFile: "chapter_1/scene_1.md",
         line: 1,
       },
     };
-    const result = enrichScenesWithAssets({ scenes: [scene1, scene2], config: config() });
-    expect(result.errors.filter((e) => e.code === "assetFirstCueMissingBgm")).toHaveLength(0);
-    expect(result.errors.filter((e) => e.code === "assetFirstCueMissingBgs")).toHaveLength(0);
+    const result = enrichScenesWithAssets({
+      scenes: [scene1, scene2],
+      config: config(),
+    });
+    expect(
+      result.errors.filter((e) => e.code === "assetFirstCueMissingBgm"),
+    ).toHaveLength(0);
+    expect(
+      result.errors.filter((e) => e.code === "assetFirstCueMissingBgs"),
+    ).toHaveLength(0);
   });
 
   it("errors for missing evidence image prompts", () => {
     const scenes = [investigationScene({ imagePrompt: null })];
     const result = enrichScenesWithAssets({ scenes, config: config() });
-    expect(result.errors.some((e) => e.code === "assetMissingEvidenceImagePrompt")).toBe(true);
+    expect(
+      result.errors.some((e) => e.code === "assetMissingEvidenceImagePrompt"),
+    ).toBe(true);
     expect(result.scenes[0]?.ast.assetRefs).toEqual([]);
     expect(result.manifest.entries).toEqual([]);
   });
@@ -343,17 +491,21 @@ describe("enrichScenesWithAssets", () => {
   it("returns empty manifest and asset refs when assets are disabled", () => {
     const disabled = { ...config(), enabled: false };
     const scenes = [
-      linearScene([{
-        kind: "sceneTag",
-        text: "咖啡館外",
-        assetCue: {
-          backgroundPrompt: "Rainy Tokyo cafe exterior.",
-          backgroundAssetId: null,
-          bgm: { channel: "bgm", assetId: "rain_mystery_low" },
-          bgs: { channel: "bgs", assetId: "street_rain" },
+      linearScene([
+        {
+          kind: "sceneTag",
+          text: "咖啡館外",
+          assetCue: {
+            backgroundPrompt: "Rainy Tokyo cafe exterior.",
+            backgroundAssetId: null,
+            bgm: { channel: "bgm", assetId: "rain_mystery_low" },
+            bgs: { channel: "bgs", assetId: "street_rain" },
+          },
         },
-      }]),
-      investigationScene({ imagePrompt: "Cafe receipt isolated on transparent background." }),
+      ]),
+      investigationScene({
+        imagePrompt: "Cafe receipt isolated on transparent background.",
+      }),
     ];
     const result = enrichScenesWithAssets({ scenes, config: disabled });
     expect(result.errors).toEqual([]);
@@ -361,7 +513,10 @@ describe("enrichScenesWithAssets", () => {
     expect(result.scenes.map((scene) => scene.ast.assetRefs)).toEqual([[], []]);
 
     // Visual cues are stripped — no raw audio IDs leak into the AST.
-    const linear = result.scenes[0]?.ast.kind === "linearScene" ? result.scenes[0].ast : null;
+    const linear =
+      result.scenes[0]?.ast.kind === "linearScene"
+        ? result.scenes[0].ast
+        : null;
     const tag = linear?.queue[0]?.kind === "sceneTag" ? linear.queue[0] : null;
     expect(tag?.assetCue).toEqual({
       backgroundPrompt: null,
@@ -371,7 +526,10 @@ describe("enrichScenesWithAssets", () => {
     });
 
     // Evidence image cues are stripped too.
-    const investigation = result.scenes[1]?.ast.kind === "investigationScene" ? result.scenes[1].ast : null;
+    const investigation =
+      result.scenes[1]?.ast.kind === "investigationScene"
+        ? result.scenes[1].ast
+        : null;
     expect(investigation?.evidenceManifest[0]?.imageCue).toEqual({
       imagePrompt: null,
       imageAssetId: null,
@@ -395,7 +553,9 @@ function linearScene(queue: DialogueItem[]): SceneRecord {
   };
 }
 
-function investigationScene(input: { imagePrompt: string | null }): SceneRecord {
+function investigationScene(input: {
+  imagePrompt: string | null;
+}): SceneRecord {
   return {
     chapterId: "chapter_1",
     file: "investigation_scene_1.md",
@@ -405,20 +565,22 @@ function investigationScene(input: { imagePrompt: string | null }): SceneRecord 
       title: "調查",
       intro: [],
       sublocations: [],
-      evidenceManifest: [{
-        id: "coffee_receipt",
-        name: "收據",
-        description: "A cafe receipt.",
-        details: "Printed shortly before the incident.",
-        imageCue: {
-          imagePrompt: input.imagePrompt,
-          imageAssetId: null,
+      evidenceManifest: [
+        {
+          id: "coffee_receipt",
+          name: "收據",
+          description: "A cafe receipt.",
+          details: "Printed shortly before the incident.",
+          imageCue: {
+            imagePrompt: input.imagePrompt,
+            imageAssetId: null,
+          },
+          onCollect: [],
+          onReexamine: null,
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 12,
         },
-        onCollect: [],
-        onReexamine: null,
-        sourceFile: "chapter_1/investigation_scene_1.md",
-        line: 12,
-      }],
+      ],
       statementManifest: [],
       outro: { unlock: "auto", dialogue: [] },
       assetRefs: [],
@@ -446,9 +608,24 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
       enabled: true,
       globalStylePrompt: "test style",
       types: {
-        background: { dimensions: [1920, 1080], format: "png", transparency: false, prompt: "wide bg" },
-        portrait: { dimensions: [768, 1024], format: "png", transparency: true, prompt: "portrait" },
-        evidence: { dimensions: [512, 512], format: "png", transparency: true, prompt: "evidence" },
+        background: {
+          dimensions: [1920, 1080],
+          format: "png",
+          transparency: false,
+          prompt: "wide bg",
+        },
+        portrait: {
+          dimensions: [768, 1024],
+          format: "png",
+          transparency: true,
+          prompt: "portrait",
+        },
+        evidence: {
+          dimensions: [512, 512],
+          format: "png",
+          transparency: true,
+          prompt: "evidence",
+        },
         audio: { format: "ogg", loop: true, prompt: "" },
       },
       characters: {
@@ -456,7 +633,12 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
         byDisplayName: new Map([["測試角色", character]]),
       },
       audio: {
-        bgm: new Map([["nonexistent_bgm_a1b2c3", { id: "nonexistent_bgm_a1b2c3", prompt: "music", loop: true }]]),
+        bgm: new Map([
+          [
+            "nonexistent_bgm_a1b2c3",
+            { id: "nonexistent_bgm_a1b2c3", prompt: "music", loop: true },
+          ],
+        ]),
         bgs: new Map(),
       },
     };
@@ -472,8 +654,23 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
         id: "scene_0",
         title: "Test",
         queue: [
-          { kind: "sceneTag", text: "Street", assetCue: { backgroundPrompt: "city", backgroundAssetId: null, bgm: { channel: "bgm", assetId: "nonexistent_bgm_a1b2c3" }, bgs: { channel: "bgs", assetId: null } } },
-          { kind: "line", speaker: "測試角色", text: "Hi", expression: "concerned", portrait: null },
+          {
+            kind: "sceneTag",
+            text: "Street",
+            assetCue: {
+              backgroundPrompt: "city",
+              backgroundAssetId: null,
+              bgm: { channel: "bgm", assetId: "nonexistent_bgm_a1b2c3" },
+              bgs: { channel: "bgs", assetId: null },
+            },
+          },
+          {
+            kind: "line",
+            speaker: "測試角色",
+            text: "Hi",
+            expression: "concerned",
+            portrait: null,
+          },
         ],
         assetRefs: [],
         sourceFile: "chapter_1/scene_0.md",
@@ -484,7 +681,9 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
     expect(result.errors.length).toBe(0);
     // The asset files don't exist on disk, so we should get warnings
     expect(result.warnings.length).toBeGreaterThan(0);
-    expect(result.warnings.every((w) => w.code === "assetFileMissing")).toBe(true);
+    expect(result.warnings.every((w) => w.code === "assetFileMissing")).toBe(
+      true,
+    );
     const paths = result.warnings.map((w) => w.sourceFile);
     expect(paths.some((p) => p.includes("assets/backgrounds"))).toBe(true);
     expect(paths.some((p) => p.includes("assets/audio"))).toBe(true);
@@ -496,9 +695,24 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
       enabled: false,
       globalStylePrompt: "",
       types: {
-        background: { dimensions: [1920, 1080], format: "png", transparency: false, prompt: "" },
-        portrait: { dimensions: [768, 1024], format: "png", transparency: true, prompt: "" },
-        evidence: { dimensions: [512, 512], format: "png", transparency: true, prompt: "" },
+        background: {
+          dimensions: [1920, 1080],
+          format: "png",
+          transparency: false,
+          prompt: "",
+        },
+        portrait: {
+          dimensions: [768, 1024],
+          format: "png",
+          transparency: true,
+          prompt: "",
+        },
+        evidence: {
+          dimensions: [512, 512],
+          format: "png",
+          transparency: true,
+          prompt: "",
+        },
         audio: { format: "ogg", loop: true, prompt: "" },
       },
       characters: { byId: new Map(), byDisplayName: new Map() },
@@ -517,7 +731,10 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
         line: 1,
       },
     };
-    const result = enrichScenesWithAssets({ scenes: [scene], config: disabledConfig });
+    const result = enrichScenesWithAssets({
+      scenes: [scene],
+      config: disabledConfig,
+    });
     expect(result.warnings.length).toBe(0);
   });
 });
@@ -538,7 +755,9 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
     if (phase?.kind !== "inquiry") return;
 
     // Phase assetCue enriched with background ref
-    expect(phase.assetCue?.backgroundAssetId).toBe("background.chapter_1.interrogation_scene_2.p");
+    expect(phase.assetCue?.backgroundAssetId).toBe(
+      "background.chapter_1.interrogation_scene_2.p",
+    );
     expect(ast.assetRefs).toContainEqual({
       type: "background",
       assetId: "background.chapter_1.interrogation_scene_2.p",
@@ -548,7 +767,9 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
     const entryLine = phase.entryDialogue[0];
     expect(entryLine?.kind).toBe("line");
     if (entryLine?.kind === "line") {
-      expect(entryLine.portrait?.assetId).toBe("portrait.hayasaka_akane.concerned");
+      expect(entryLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.concerned",
+      );
     }
 
     // Question answer dialogue enriched
@@ -556,12 +777,16 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
     const answerLine = question?.answerDialogue[0];
     expect(answerLine?.kind).toBe("line");
     if (answerLine?.kind === "line") {
-      expect(answerLine.portrait?.assetId).toBe("portrait.hayasaka_akane.standard");
+      expect(answerLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.standard",
+      );
     }
 
     // Manifest has background + 2 portraits (entry + question)
     const manifestIds = result.manifest.entries.map((e) => e.assetId);
-    expect(manifestIds).toContain("background.chapter_1.interrogation_scene_2.p");
+    expect(manifestIds).toContain(
+      "background.chapter_1.interrogation_scene_2.p",
+    );
     expect(manifestIds).toContain("portrait.hayasaka_akane.concerned");
     expect(manifestIds).toContain("portrait.hayasaka_akane.standard");
   });
@@ -577,28 +802,36 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
     if (phase?.kind !== "testimony") return;
 
     // Phase assetCue enriched
-    expect(phase.assetCue?.backgroundAssetId).toBe("background.chapter_1.interrogation_scene_2.p");
+    expect(phase.assetCue?.backgroundAssetId).toBe(
+      "background.chapter_1.interrogation_scene_2.p",
+    );
 
     // Statement onPress enriched
     const stmt = phase.statements[0];
     const pressLine = stmt?.onPress?.[0];
     expect(pressLine?.kind).toBe("line");
     if (pressLine?.kind === "line") {
-      expect(pressLine.portrait?.assetId).toBe("portrait.hayasaka_akane.concerned");
+      expect(pressLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.concerned",
+      );
     }
 
     // Statement onPresent enriched
     const presentLine = stmt?.onPresent?.[0];
     expect(presentLine?.kind).toBe("line");
     if (presentLine?.kind === "line") {
-      expect(presentLine.portrait?.assetId).toBe("portrait.hayasaka_akane.standard");
+      expect(presentLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.standard",
+      );
     }
 
     // Statement onWrongPresent enriched
     const wrongLine = stmt?.onWrongPresent?.[0];
     expect(wrongLine?.kind).toBe("line");
     if (wrongLine?.kind === "line") {
-      expect(wrongLine.portrait?.assetId).toBe("portrait.hayasaka_akane.standard");
+      expect(wrongLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.standard",
+      );
     }
 
     // Result dialogue enriched
@@ -606,7 +839,9 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
     const resultLine = res?.dialogue[0];
     expect(resultLine?.kind).toBe("line");
     if (resultLine?.kind === "line") {
-      expect(resultLine.portrait?.assetId).toBe("portrait.hayasaka_akane.standard");
+      expect(resultLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.standard",
+      );
     }
   });
 
@@ -626,20 +861,31 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
     const introLine = ast.intro[0];
     expect(introLine?.kind).toBe("line");
     if (introLine?.kind === "line") {
-      expect(introLine.portrait?.assetId).toBe("portrait.hayasaka_akane.standard");
+      expect(introLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.standard",
+      );
     }
 
     // Outro enriched
     const outroLine = ast.outro.dialogue[0];
     expect(outroLine?.kind).toBe("line");
     if (outroLine?.kind === "line") {
-      expect(outroLine.portrait?.assetId).toBe("portrait.hayasaka_akane.standard");
+      expect(outroLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.standard",
+      );
     }
   });
 });
 
 function interrogationScene(phaseKind: "inquiry" | "testimony"): SceneRecord {
-  const subject = { id: "suspect", name: "嫌疑人", role: "嫌疑人", bio: "沉默。", sourceFile: "chapter_1/interrogation_scene_2.md", line: 10 };
+  const subject = {
+    id: "suspect",
+    name: "嫌疑人",
+    role: "嫌疑人",
+    bio: "沉默。",
+    sourceFile: "chapter_1/interrogation_scene_2.md",
+    line: 10,
+  };
 
   const basePhase = {
     id: "p",
@@ -657,7 +903,13 @@ function interrogationScene(phaseKind: "inquiry" | "testimony"): SceneRecord {
       bgs: { channel: "bgs", assetId: null },
     },
     entryDialogue: [
-      { kind: "line" as const, speaker: "早坂茜", expression: "concerned", portrait: null, text: "你為什麼在這裡？" },
+      {
+        kind: "line" as const,
+        speaker: "早坂茜",
+        expression: "concerned",
+        portrait: null,
+        text: "你為什麼在這裡？",
+      },
     ],
     sourceFile: "chapter_1/interrogation_scene_2.md",
     line: 20,
@@ -672,48 +924,72 @@ function interrogationScene(phaseKind: "inquiry" | "testimony"): SceneRecord {
         id: "interrogation_scene_2",
         title: "詢問",
         intro: [
-          { kind: "line" as const, speaker: "早坂茜", expression: null, portrait: null, text: "開始吧。" },
-        ],
-        phases: [{
-          ...basePhase,
-          kind: "inquiry" as const,
-          complete: "auto" as const,
-          questions: [{
-            id: "q1",
-            label: "動機",
-            kind: "question" as const,
-            parentQuestionId: null,
-            status: "unlocked" as const,
-            required: true,
-            unlock: null,
-            reveals: [],
-            answerDialogue: [
-              { kind: "line" as const, speaker: "早坂茜", expression: null, portrait: null, text: "說吧。" },
-            ],
-            onReask: null,
-            sourceFile: "chapter_1/interrogation_scene_2.md",
-            line: 30,
-          }],
-        }],
-        evidenceManifest: [{
-          id: "bloody_knife",
-          name: "血刀",
-          description: "A blood-stained knife.",
-          details: "Found at the scene.",
-          imageCue: {
-            imagePrompt: "Blood-stained knife on transparent background.",
-            imageAssetId: null,
+          {
+            kind: "line" as const,
+            speaker: "早坂茜",
+            expression: null,
+            portrait: null,
+            text: "開始吧。",
           },
-          onCollect: [],
-          onReexamine: null,
-          sourceFile: "chapter_1/interrogation_scene_2.md",
-          line: 40,
-        }],
+        ],
+        phases: [
+          {
+            ...basePhase,
+            kind: "inquiry" as const,
+            complete: "auto" as const,
+            questions: [
+              {
+                id: "q1",
+                label: "動機",
+                kind: "question" as const,
+                parentQuestionId: null,
+                status: "unlocked" as const,
+                required: true,
+                unlock: null,
+                reveals: [],
+                answerDialogue: [
+                  {
+                    kind: "line" as const,
+                    speaker: "早坂茜",
+                    expression: null,
+                    portrait: null,
+                    text: "說吧。",
+                  },
+                ],
+                onReask: null,
+                sourceFile: "chapter_1/interrogation_scene_2.md",
+                line: 30,
+              },
+            ],
+          },
+        ],
+        evidenceManifest: [
+          {
+            id: "bloody_knife",
+            name: "血刀",
+            description: "A blood-stained knife.",
+            details: "Found at the scene.",
+            imageCue: {
+              imagePrompt: "Blood-stained knife on transparent background.",
+              imageAssetId: null,
+            },
+            onCollect: [],
+            onReexamine: null,
+            sourceFile: "chapter_1/interrogation_scene_2.md",
+            line: 40,
+          },
+        ],
         statementManifest: [],
         outro: {
           unlock: "auto" as const,
           dialogue: [
-            { kind: "line" as const, speaker: "早坂茜", expression: null, portrait: null, text: "結束了。" },
+            {
+              kind: "line" as const,
+              speaker: "早坂茜",
+              expression: null,
+              portrait: null,
+              text: "結束了。",
+            },
           ],
         },
         assetRefs: [],
@@ -731,40 +1007,70 @@ function interrogationScene(phaseKind: "inquiry" | "testimony"): SceneRecord {
       id: "interrogation_scene_2",
       title: "證言",
       intro: [],
-      phases: [{
-        ...basePhase,
-        kind: "testimony" as const,
-        statements: [{
-          id: "s1",
-          label: "不在場證明",
-          content: "我那時候在家。",
-          contradiction: null,
-          onCorrect: null,
-          onWrong: null,
-          onPress: [
-            { kind: "line" as const, speaker: "早坂茜", expression: "concerned", portrait: null, text: "確定嗎？" },
+      phases: [
+        {
+          ...basePhase,
+          kind: "testimony" as const,
+          statements: [
+            {
+              id: "s1",
+              label: "不在場證明",
+              content: "我那時候在家。",
+              contradiction: null,
+              onCorrect: null,
+              onWrong: null,
+              onPress: [
+                {
+                  kind: "line" as const,
+                  speaker: "早坂茜",
+                  expression: "concerned",
+                  portrait: null,
+                  text: "確定嗎？",
+                },
+              ],
+              onPresent: [
+                {
+                  kind: "line" as const,
+                  speaker: "早坂茜",
+                  expression: null,
+                  portrait: null,
+                  text: "看看這個。",
+                },
+              ],
+              onWrongPresent: [
+                {
+                  kind: "line" as const,
+                  speaker: "早坂茜",
+                  expression: null,
+                  portrait: null,
+                  text: "這不對。",
+                },
+              ],
+              reveals: [],
+              sourceFile: "chapter_1/interrogation_scene_2.md",
+              line: 50,
+            },
           ],
-          onPresent: [
-            { kind: "line" as const, speaker: "早坂茜", expression: null, portrait: null, text: "看看這個。" },
+          results: [
+            {
+              id: "r1",
+              label: "真相",
+              reveals: [],
+              dialogue: [
+                {
+                  kind: "line" as const,
+                  speaker: "早坂茜",
+                  expression: null,
+                  portrait: null,
+                  text: "就是這樣。",
+                },
+              ],
+              sourceFile: "chapter_1/interrogation_scene_2.md",
+              line: 60,
+            },
           ],
-          onWrongPresent: [
-            { kind: "line" as const, speaker: "早坂茜", expression: null, portrait: null, text: "這不對。" },
-          ],
-          reveals: [],
-          sourceFile: "chapter_1/interrogation_scene_2.md",
-          line: 50,
-        }],
-        results: [{
-          id: "r1",
-          label: "真相",
-          reveals: [],
-          dialogue: [
-            { kind: "line" as const, speaker: "早坂茜", expression: null, portrait: null, text: "就是這樣。" },
-          ],
-          sourceFile: "chapter_1/interrogation_scene_2.md",
-          line: 60,
-        }],
-      }],
+        },
+      ],
       evidenceManifest: [],
       statementManifest: [],
       outro: { unlock: "auto" as const, dialogue: [] },

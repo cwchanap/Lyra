@@ -1,10 +1,9 @@
 // src-tauri/src/game/scenes/investigation.rs
-use std::collections::HashSet;
 use crate::game::schema::{
-    DialogueItem, InvestigationSceneJson, LockStatus, OutroUnlock,
-    UnlockExpr,
+    DialogueItem, InvestigationSceneJson, LockStatus, OutroUnlock, UnlockExpr,
 };
 use crate::game::unlock::{self, UnlockContext};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct InvestigationSceneState {
@@ -43,8 +42,12 @@ impl InvestigationSceneState {
         }
     }
 
-    pub fn id(&self) -> &str { &self.def.id }
-    pub fn title(&self) -> &str { &self.def.title }
+    pub fn id(&self) -> &str {
+        &self.def.id
+    }
+    pub fn title(&self) -> &str {
+        &self.def.title
+    }
 
     pub fn outro_satisfied(&self, ctx: &impl UnlockContext) -> bool {
         match &self.def.outro.unlock {
@@ -57,10 +60,16 @@ impl InvestigationSceneState {
 
     fn all_unlocked_hotspots_inspected(&self, ctx: &impl UnlockContext) -> bool {
         for sub in &self.def.sublocations {
-            if !self.is_sublocation_unlocked(&sub.id, ctx) { continue; }
+            if !self.is_sublocation_unlocked(&sub.id, ctx) {
+                continue;
+            }
             for h in &sub.hotspots {
-                if self.is_block_unlocked(&format!("hotspot:{}", h.id), h.status, h.unlock.as_ref(), ctx)
-                    && !self.inspected_hotspots.contains(&h.id)
+                if self.is_block_unlocked(
+                    &format!("hotspot:{}", h.id),
+                    h.status,
+                    h.unlock.as_ref(),
+                    ctx,
+                ) && !self.inspected_hotspots.contains(&h.id)
                 {
                     return false;
                 }
@@ -71,11 +80,19 @@ impl InvestigationSceneState {
 
     fn all_unlocked_topics_discussed(&self, ctx: &impl UnlockContext) -> bool {
         for sub in &self.def.sublocations {
-            if !self.is_sublocation_unlocked(&sub.id, ctx) { continue; }
+            if !self.is_sublocation_unlocked(&sub.id, ctx) {
+                continue;
+            }
             for c in &sub.characters {
                 for t in &c.topics {
-                    if self.is_block_unlocked(&format!("topic:{}@{}", c.id, t.id), t.status, t.unlock.as_ref(), ctx)
-                        && !self.discussed_topics.contains(&(c.id.clone(), t.id.clone()))
+                    if self.is_block_unlocked(
+                        &format!("topic:{}@{}", c.id, t.id),
+                        t.status,
+                        t.unlock.as_ref(),
+                        ctx,
+                    ) && !self
+                        .discussed_topics
+                        .contains(&(c.id.clone(), t.id.clone()))
                     {
                         return false;
                     }
@@ -119,7 +136,8 @@ impl InvestigationSceneState {
         self.inspected_hotspots.insert(hotspot_id.into());
     }
     pub fn record_topic_discussed(&mut self, character_id: &str, topic_id: &str) {
-        self.discussed_topics.insert((character_id.into(), topic_id.into()));
+        self.discussed_topics
+            .insert((character_id.into(), topic_id.into()));
     }
     pub fn record_sublocation_entered(&mut self, id: &str) {
         self.entered_sublocations.insert(id.into());
@@ -130,10 +148,15 @@ impl InvestigationSceneState {
 }
 
 impl UnlockContext for InvestigationSceneState {
-    fn evidence_collected(&self, _id: &str) -> bool { false }
-    fn statement_acquired(&self, _id: &str) -> bool { false }
+    fn evidence_collected(&self, _id: &str) -> bool {
+        false
+    }
+    fn statement_acquired(&self, _id: &str) -> bool {
+        false
+    }
     fn topic_discussed(&self, c: &str, t: &str) -> bool {
-        self.discussed_topics.contains(&(c.to_string(), t.to_string()))
+        self.discussed_topics
+            .contains(&(c.to_string(), t.to_string()))
     }
     fn hotspot_investigated(&self, id: &str) -> bool {
         self.inspected_hotspots.contains(id)
@@ -148,16 +171,22 @@ mod tests {
     fn record_inspect_marks_hotspot() {
         let mut s = InvestigationSceneState {
             def: InvestigationSceneJson {
-                id: "i".into(), title: "i".into(), asset_refs: vec![], intro: vec![],
-                sublocations: vec![], evidence_manifest: vec![],
+                id: "i".into(),
+                title: "i".into(),
+                asset_refs: vec![],
+                intro: vec![],
+                sublocations: vec![],
+                evidence_manifest: vec![],
                 statement_manifest: vec![],
                 outro: crate::game::schema::OutroJson {
                     unlock: OutroUnlock::Auto(crate::game::schema::AutoMarker::Auto),
                     dialogue: vec![],
                 },
             },
-            intro_played: false, outro_played: false,
-            current_sublocation_id: None, pending_queue: None,
+            intro_played: false,
+            outro_played: false,
+            current_sublocation_id: None,
+            pending_queue: None,
             intro_queue_gen: 1,
             inspected_hotspots: HashSet::new(),
             discussed_topics: HashSet::new(),

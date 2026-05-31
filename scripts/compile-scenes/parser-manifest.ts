@@ -6,7 +6,10 @@
 // =============================================================================
 
 import type { Token } from "./tokenizer";
-import { EVIDENCE_IMAGE_METADATA_KEYS, rejectReservedAssetMetadata } from "./parser-assets";
+import {
+  EVIDENCE_IMAGE_METADATA_KEYS,
+  rejectReservedAssetMetadata,
+} from "./parser-assets";
 import type {
   ASTEvidence,
   ASTStatement,
@@ -34,28 +37,64 @@ export function parseEvidenceManifest(
       entries.push(e.value);
       continue;
     }
-    return fail(cur.sourceFile, tok.line, "evidenceManifestUnexpected", `Unexpected content in Evidence Manifest: ${describe(tok)}.`);
+    return fail(
+      cur.sourceFile,
+      tok.line,
+      "evidenceManifestUnexpected",
+      `Unexpected content in Evidence Manifest: ${describe(tok)}.`,
+    );
   }
   return { ok: true, value: entries };
 }
 
-function parseEvidenceEntry(cur: CursorLike): { ok: true; value: ASTEvidence } | { ok: false; error: CompileError } {
+function parseEvidenceEntry(
+  cur: CursorLike,
+): { ok: true; value: ASTEvidence } | { ok: false; error: CompileError } {
   const head = cur.next();
-  if (!head || head.kind !== "heading" || head.level !== 3) return fail(cur.sourceFile, head?.line ?? 1, "internalParserState", "parseEvidenceEntry called off-position.");
+  if (!head || head.kind !== "heading" || head.level !== 3)
+    return fail(
+      cur.sourceFile,
+      head?.line ?? 1,
+      "internalParserState",
+      "parseEvidenceEntry called off-position.",
+    );
   const m = /^evidence:([a-z0-9_]+)$/.exec(head.text);
-  if (!m) return fail(cur.sourceFile, head.line, "evidenceMalformedHeading", `Evidence heading must be "### evidence:<id> {#<id>}". Got: ${head.text}`);
+  if (!m)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "evidenceMalformedHeading",
+      `Evidence heading must be "### evidence:<id> {#<id>}". Got: ${head.text}`,
+    );
   const id = m[1] ?? "";
-  if (head.anchorId !== id) return fail(cur.sourceFile, head.line, "evidenceAnchorMismatch", `Evidence anchor #${head.anchorId} does not match id ${id}.`);
+  if (head.anchorId !== id)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "evidenceAnchorMismatch",
+      `Evidence anchor #${head.anchorId} does not match id ${id}.`,
+    );
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
-  const badAssetMeta = rejectReservedAssetMetadata(meta.value, EVIDENCE_IMAGE_METADATA_KEYS, cur.sourceFile, head.line);
+  const badAssetMeta = rejectReservedAssetMetadata(
+    meta.value,
+    EVIDENCE_IMAGE_METADATA_KEYS,
+    cur.sourceFile,
+    head.line,
+  );
   if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const name = meta.value.Name;
   const description = meta.value.Description;
   const details = meta.value.Details;
   const imagePrompt = meta.value["Image Prompt"] ?? null;
-  if (!name || !description || !details) return fail(cur.sourceFile, head.line, "evidenceMissingMetadata", `Evidence ${id} requires Name, Description, Details.`);
+  if (!name || !description || !details)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "evidenceMissingMetadata",
+      `Evidence ${id} requires Name, Description, Details.`,
+    );
 
   let onCollect: DialogueItem[] | null = null;
   let onReexamine: DialogueItem[] | null = null;
@@ -79,12 +118,28 @@ function parseEvidenceEntry(cur: CursorLike): { ok: true; value: ASTEvidence } |
         onReexamine = r.value;
         continue;
       }
-      return fail(cur.sourceFile, next.line, "evidenceUnknownH4", `Unknown H4 under evidence ${id}: ${next.text}.`);
+      return fail(
+        cur.sourceFile,
+        next.line,
+        "evidenceUnknownH4",
+        `Unknown H4 under evidence ${id}: ${next.text}.`,
+      );
     }
-    return fail(cur.sourceFile, next.line, "evidenceUnexpectedToken", `Unexpected token in evidence ${id}: ${describe(next)}.`);
+    return fail(
+      cur.sourceFile,
+      next.line,
+      "evidenceUnexpectedToken",
+      `Unexpected token in evidence ${id}: ${describe(next)}.`,
+    );
   }
 
-  if (!onCollect) return fail(cur.sourceFile, head.line, "evidenceMissingOnCollect", `Evidence ${id} must define #### On Collect.`);
+  if (!onCollect)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "evidenceMissingOnCollect",
+      `Evidence ${id} must define #### On Collect.`,
+    );
 
   return {
     ok: true,
@@ -119,26 +174,62 @@ export function parseStatementManifest(
       entries.push(e.value);
       continue;
     }
-    return fail(cur.sourceFile, tok.line, "statementManifestUnexpected", `Unexpected content in Statement Manifest: ${describe(tok)}.`);
+    return fail(
+      cur.sourceFile,
+      tok.line,
+      "statementManifestUnexpected",
+      `Unexpected content in Statement Manifest: ${describe(tok)}.`,
+    );
   }
   return { ok: true, value: entries };
 }
 
-function parseStatementEntry(cur: CursorLike): { ok: true; value: ASTStatement } | { ok: false; error: CompileError } {
+function parseStatementEntry(
+  cur: CursorLike,
+): { ok: true; value: ASTStatement } | { ok: false; error: CompileError } {
   const head = cur.next();
-  if (!head || head.kind !== "heading" || head.level !== 3) return fail(cur.sourceFile, head?.line ?? 1, "internalParserState", "parseStatementEntry called off-position.");
+  if (!head || head.kind !== "heading" || head.level !== 3)
+    return fail(
+      cur.sourceFile,
+      head?.line ?? 1,
+      "internalParserState",
+      "parseStatementEntry called off-position.",
+    );
   const m = /^statement:([a-z0-9_]+)$/.exec(head.text);
-  if (!m) return fail(cur.sourceFile, head.line, "statementMalformedHeading", `Statement heading must be "### statement:<id> {#<id>}". Got: ${head.text}`);
+  if (!m)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "statementMalformedHeading",
+      `Statement heading must be "### statement:<id> {#<id>}". Got: ${head.text}`,
+    );
   const id = m[1] ?? "";
-  if (head.anchorId !== id) return fail(cur.sourceFile, head.line, "statementAnchorMismatch", `Statement anchor #${head.anchorId} does not match id ${id}.`);
+  if (head.anchorId !== id)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "statementAnchorMismatch",
+      `Statement anchor #${head.anchorId} does not match id ${id}.`,
+    );
 
   const meta = consumeMetadata(cur);
   if (!meta.ok) return meta;
-  const badAssetMeta = rejectReservedAssetMetadata(meta.value, [], cur.sourceFile, head.line);
+  const badAssetMeta = rejectReservedAssetMetadata(
+    meta.value,
+    [],
+    cur.sourceFile,
+    head.line,
+  );
   if (badAssetMeta) return { ok: false, error: badAssetMeta };
   const speaker = meta.value.Speaker;
   const content = meta.value.Content;
-  if (!speaker || !content) return fail(cur.sourceFile, head.line, "statementMissingMetadata", `Statement ${id} requires Speaker and Content.`);
+  if (!speaker || !content)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "statementMissingMetadata",
+      `Statement ${id} requires Speaker and Content.`,
+    );
 
   let onAcquire: DialogueItem[] | null = null;
   let onReexamine: DialogueItem[] | null = null;
@@ -162,12 +253,28 @@ function parseStatementEntry(cur: CursorLike): { ok: true; value: ASTStatement }
         onReexamine = r.value;
         continue;
       }
-      return fail(cur.sourceFile, next.line, "statementUnknownH4", `Unknown H4 under statement ${id}: ${next.text}.`);
+      return fail(
+        cur.sourceFile,
+        next.line,
+        "statementUnknownH4",
+        `Unknown H4 under statement ${id}: ${next.text}.`,
+      );
     }
-    return fail(cur.sourceFile, next.line, "statementUnexpectedToken", `Unexpected token in statement ${id}: ${describe(next)}.`);
+    return fail(
+      cur.sourceFile,
+      next.line,
+      "statementUnexpectedToken",
+      `Unexpected token in statement ${id}: ${describe(next)}.`,
+    );
   }
 
-  if (!onAcquire) return fail(cur.sourceFile, head.line, "statementMissingOnAcquire", `Statement ${id} must define #### On Acquire.`);
+  if (!onAcquire)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "statementMissingOnAcquire",
+      `Statement ${id} must define #### On Acquire.`,
+    );
 
   return {
     ok: true,
@@ -185,7 +292,9 @@ function parseStatementEntry(cur: CursorLike): { ok: true; value: ASTStatement }
 
 function consumeMetadata(
   cur: CursorLike,
-): { ok: true; value: Record<string, string> } | { ok: false; error: CompileError } {
+):
+  | { ok: true; value: Record<string, string> }
+  | { ok: false; error: CompileError } {
   const out: Record<string, string> = {};
   while (true) {
     const next = cur.peek();
@@ -199,15 +308,20 @@ type DialogueResult =
   | { ok: true; value: DialogueItem[] }
   | { ok: false; error: CompileError };
 
-function consumeDialogueUntilHeading(cur: CursorLike, _atOrAboveLevel: number): DialogueResult {
+function consumeDialogueUntilHeading(
+  cur: CursorLike,
+  _atOrAboveLevel: number,
+): DialogueResult {
   const out: DialogueItem[] = [];
   while (true) {
     const next = cur.peek();
     if (!next) break;
     if (next.kind === "heading") break;
     cur.next();
-    if (next.kind === "sceneTag") out.push({ kind: "sceneTag", text: next.text });
-    else if (next.kind === "action") out.push({ kind: "action", text: next.text });
+    if (next.kind === "sceneTag")
+      out.push({ kind: "sceneTag", text: next.text });
+    else if (next.kind === "action")
+      out.push({ kind: "action", text: next.text });
     else if (next.kind === "dialogue") {
       out.push({
         kind: "line",
@@ -216,11 +330,20 @@ function consumeDialogueUntilHeading(cur: CursorLike, _atOrAboveLevel: number): 
         expression: next.expression,
         portrait: null,
       });
-    }
-    else if (next.kind === "metadata") {
-      return fail(cur.sourceFile, next.line, "strayMetadataInDialogueBody", `Stray metadata in dialogue body: ${next.key}.`);
+    } else if (next.kind === "metadata") {
+      return fail(
+        cur.sourceFile,
+        next.line,
+        "strayMetadataInDialogueBody",
+        `Stray metadata in dialogue body: ${next.key}.`,
+      );
     } else if (next.kind === "unknown") {
-      return fail(cur.sourceFile, next.line, "unrecognizedDialogueLine", `Unrecognized line in dialogue body: ${next.text}.`);
+      return fail(
+        cur.sourceFile,
+        next.line,
+        "unrecognizedDialogueLine",
+        `Unrecognized line in dialogue body: ${next.text}.`,
+      );
     }
   }
   return { ok: true, value: out };

@@ -18,7 +18,7 @@ export type ChapterParseResult =
   | { ok: false; error: CompileError };
 
 // Reject path separators to prevent directory traversal (e.g. "../other/evil.md").
-const NUMBERED_FILE_RE = /^(\d+)\.\s+([^\/\\]+\.md)\s*$/;
+const NUMBERED_FILE_RE = /^(\d+)\.\s+([^/\\]+\.md)\s*$/;
 
 export function parseChapter(
   source: string,
@@ -43,7 +43,12 @@ export function parseChapter(
     if (line.startsWith("# ")) {
       const m = /^#\s+Chapter\s+(\d+):\s+(.+?)\s*$/.exec(line);
       if (!m) {
-        return fail(sourceFile, lineNum, "chapterMalformedH1", `H1 must match "# Chapter <N>: <title>"; got: ${line}`);
+        return fail(
+          sourceFile,
+          lineNum,
+          "chapterMalformedH1",
+          `H1 must match "# Chapter <N>: <title>"; got: ${line}`,
+        );
       }
       chapterNumber = Number(m[1]);
       title = m[2] ?? "";
@@ -68,14 +73,24 @@ export function parseChapter(
       } else if (/^\d+\.\s/.test(line)) {
         // Looks like a numbered entry but doesn't match the strict pattern
         // (e.g. missing .md extension, trailing text, wrong format).
-        return fail(sourceFile, lineNum, "chapterMalformedSceneRow", `Scene list entry is malformed; expected "N. <file>.md". Got: ${line}`);
+        return fail(
+          sourceFile,
+          lineNum,
+          "chapterMalformedSceneRow",
+          `Scene list entry is malformed; expected "N. <file>.md". Got: ${line}`,
+        );
       }
       // Non-numbered, non-blank lines inside Scenes are ignored (e.g. comments).
     }
   }
 
   if (chapterNumber === null || title === null) {
-    return fail(sourceFile, 1, "chapterMissingH1", "Manifest missing # Chapter <N>: <title> heading.");
+    return fail(
+      sourceFile,
+      1,
+      "chapterMissingH1",
+      "Manifest missing # Chapter <N>: <title> heading.",
+    );
   }
 
   const expectedNumber = parseChapterDirNumber(dirName);
@@ -89,10 +104,20 @@ export function parseChapter(
   }
 
   if (summary === null || summary === "") {
-    return fail(sourceFile, 1, "chapterMissingSummary", "Manifest missing **Summary:** field.");
+    return fail(
+      sourceFile,
+      1,
+      "chapterMissingSummary",
+      "Manifest missing **Summary:** field.",
+    );
   }
   if (sceneFiles.length === 0) {
-    return fail(sourceFile, 1, "chapterNoScenes", "Manifest must list at least one scene under ## Scenes.");
+    return fail(
+      sourceFile,
+      1,
+      "chapterNoScenes",
+      "Manifest must list at least one scene under ## Scenes.",
+    );
   }
 
   return {

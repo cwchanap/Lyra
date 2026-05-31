@@ -32,7 +32,12 @@ import { parseLinearScene } from "./parser-linear";
 import { parseInvestigationScene } from "./parser-investigation";
 import { parseInterrogationScene } from "./parser-interrogation";
 import { validate, type SceneRecord } from "./validator";
-import { emitChaptersIndex, emitInterrogationScene, emitInvestigationScene, emitLinearScene } from "./emitter";
+import {
+  emitChaptersIndex,
+  emitInterrogationScene,
+  emitInvestigationScene,
+  emitLinearScene,
+} from "./emitter";
 import type { ASTChapter, CompileError } from "./types";
 import { loadAssetConfig } from "./assets/config";
 import { enrichScenesWithAssets } from "./assets/enrich";
@@ -52,7 +57,12 @@ export type AssetReport = {
 };
 
 export type CompileResult =
-  | { ok: true; chaptersCompiled: number; scenesCompiled: number; assetReport: AssetReport }
+  | {
+      ok: true;
+      chaptersCompiled: number;
+      scenesCompiled: number;
+      assetReport: AssetReport;
+    }
   | { ok: false; errors: CompileError[] };
 
 export function compile(opts: CompileOptions): CompileResult {
@@ -66,17 +76,23 @@ export function compile(opts: CompileOptions): CompileResult {
   let dirs: string[];
   try {
     dirs = readdirSync(opts.sourceRoot)
-      .filter((d) => /^chapter_\d+$/.test(d) && statSync(resolve(opts.sourceRoot, d)).isDirectory())
+      .filter(
+        (d) =>
+          /^chapter_\d+$/.test(d) &&
+          statSync(resolve(opts.sourceRoot, d)).isDirectory(),
+      )
       .sort(byChapterNumber);
   } catch (e) {
     return {
       ok: false,
-      errors: [{
-        code: "sourceRootUnreadable",
-        message: `${opts.sourceRoot}: ${(e as Error).message}`,
-        sourceFile: opts.sourceRoot,
-        line: 0,
-      }],
+      errors: [
+        {
+          code: "sourceRootUnreadable",
+          message: `${opts.sourceRoot}: ${(e as Error).message}`,
+          sourceFile: opts.sourceRoot,
+          line: 0,
+        },
+      ],
     };
   }
 
@@ -84,12 +100,14 @@ export function compile(opts: CompileOptions): CompileResult {
   if (dirs.length === 0) {
     return {
       ok: false,
-      errors: [{
-        code: "noChaptersFound",
-        message: `No chapter_<N> directories found under ${opts.sourceRoot}`,
-        sourceFile: opts.sourceRoot,
-        line: 0,
-      }],
+      errors: [
+        {
+          code: "noChaptersFound",
+          message: `No chapter_<N> directories found under ${opts.sourceRoot}`,
+          sourceFile: opts.sourceRoot,
+          line: 0,
+        },
+      ],
     };
   }
   for (const dirName of dirs) {
@@ -107,7 +125,11 @@ export function compile(opts: CompileOptions): CompileResult {
       });
       continue;
     }
-    const chapter = parseChapter(manifestSource, `${dirName}/chapter.md`, dirName);
+    const chapter = parseChapter(
+      manifestSource,
+      `${dirName}/chapter.md`,
+      dirName,
+    );
     if (!chapter.ok) {
       errors.push(chapter.error);
       continue;
@@ -135,22 +157,19 @@ export function compile(opts: CompileOptions): CompileResult {
         if (!parsed.ok) {
           errors.push(parsed.error);
           failedParseFiles.add(sourceFileTag);
-        }
-        else scenes.push({ chapterId: dirName, file, ast: parsed.value });
+        } else scenes.push({ chapterId: dirName, file, ast: parsed.value });
       } else if (file.startsWith("investigation_scene_")) {
         const parsed = parseInvestigationScene(source, sourceFileTag, sceneId);
         if (!parsed.ok) {
           errors.push(parsed.error);
           failedParseFiles.add(sourceFileTag);
-        }
-        else scenes.push({ chapterId: dirName, file, ast: parsed.value });
+        } else scenes.push({ chapterId: dirName, file, ast: parsed.value });
       } else if (file.startsWith("interrogation_scene_")) {
         const parsed = parseInterrogationScene(source, sourceFileTag, sceneId);
         if (!parsed.ok) {
           errors.push(parsed.error);
           failedParseFiles.add(sourceFileTag);
-        }
-        else scenes.push({ chapterId: dirName, file, ast: parsed.value });
+        } else scenes.push({ chapterId: dirName, file, ast: parsed.value });
       } else {
         errors.push({
           code: "sceneFileUnknownType",
@@ -162,7 +181,9 @@ export function compile(opts: CompileOptions): CompileResult {
     }
   }
 
-  const assetConfig = loadAssetConfig(opts.assetConfigRoot ?? resolve(opts.sourceRoot, "../assets/config"));
+  const assetConfig = loadAssetConfig(
+    opts.assetConfigRoot ?? resolve(opts.sourceRoot, "../assets/config"),
+  );
   if (!assetConfig.ok) {
     errors.push(...assetConfig.errors);
   }
@@ -176,15 +197,23 @@ export function compile(opts: CompileOptions): CompileResult {
   let manifestToWrite: AssetManifest | null = null;
   if (assetConfig.ok) {
     const configWarnings = assetConfig.warnings;
-    const enriched = enrichScenesWithAssets({ scenes, config: assetConfig.value });
+    const enriched = enrichScenesWithAssets({
+      scenes,
+      config: assetConfig.value,
+    });
     scenes.splice(0, scenes.length, ...enriched.scenes);
     errors.push(...enriched.errors);
-    assetReport = makeAssetReport(enriched.manifest, [...configWarnings, ...enriched.warnings]);
+    assetReport = makeAssetReport(enriched.manifest, [
+      ...configWarnings,
+      ...enriched.warnings,
+    ]);
     manifestToWrite = enriched.manifest;
   }
 
   // 4. Validate.
-  errors.push(...validate({ chapters, scenes, skippedReservedFiles, failedParseFiles }));
+  errors.push(
+    ...validate({ chapters, scenes, skippedReservedFiles, failedParseFiles }),
+  );
 
   if (errors.length > 0) return { ok: false, errors };
 
@@ -209,25 +238,51 @@ export function compile(opts: CompileOptions): CompileResult {
         : rec.ast.kind === "investigationScene"
           ? emitInvestigationScene(rec.ast)
           : emitInterrogationScene(rec.ast);
-    const outFile = resolve(opts.outputRoot, rec.chapterId, rec.file.replace(/\.md$/, ".json"));
+    const outFile = resolve(
+      opts.outputRoot,
+      rec.chapterId,
+      rec.file.replace(/\.md$/, ".json"),
+    );
     mkdirSync(dirname(outFile), { recursive: true });
     writeFileSync(outFile, JSON.stringify(json, null, 2) + "\n");
   }
 
   const idx = emitChaptersIndex(chapters);
-  writeFileSync(resolve(opts.outputRoot, "chapters.json"), JSON.stringify(idx, null, 2) + "\n");
+  writeFileSync(
+    resolve(opts.outputRoot, "chapters.json"),
+    JSON.stringify(idx, null, 2) + "\n",
+  );
 
   if (opts.assetOutputRoot && manifestToWrite) {
     mkdirSync(opts.assetOutputRoot, { recursive: true });
-    writeFileSync(resolve(opts.assetOutputRoot, "manifest.json"), JSON.stringify(manifestToWrite, null, 2) + "\n");
-    writeFileSync(resolve(opts.assetOutputRoot, "report.json"), JSON.stringify(assetReport, null, 2) + "\n");
+    writeFileSync(
+      resolve(opts.assetOutputRoot, "manifest.json"),
+      JSON.stringify(manifestToWrite, null, 2) + "\n",
+    );
+    writeFileSync(
+      resolve(opts.assetOutputRoot, "report.json"),
+      JSON.stringify(assetReport, null, 2) + "\n",
+    );
   }
 
-  return { ok: true, chaptersCompiled: chapters.length, scenesCompiled: scenes.length, assetReport };
+  return {
+    ok: true,
+    chaptersCompiled: chapters.length,
+    scenesCompiled: scenes.length,
+    assetReport,
+  };
 }
 
-function makeAssetReport(manifest: AssetManifest, warnings: CompileError[]): AssetReport {
-  const requested: AssetReport["requested"] = { background: 0, portrait: 0, evidence: 0, audio: 0 };
+function makeAssetReport(
+  manifest: AssetManifest,
+  warnings: CompileError[],
+): AssetReport {
+  const requested: AssetReport["requested"] = {
+    background: 0,
+    portrait: 0,
+    evidence: 0,
+    audio: 0,
+  };
   for (const entry of manifest.entries) {
     requested[entry.type] += 1;
   }
@@ -241,5 +296,7 @@ function byChapterNumber(a: string, b: string): number {
 }
 
 export function formatErrors(errors: CompileError[]): string {
-  return errors.map((e) => `${e.sourceFile}:${e.line}\t[${e.code}] ${e.message}`).join("\n");
+  return errors
+    .map((e) => `${e.sourceFile}:${e.line}\t[${e.code}] ${e.message}`)
+    .join("\n");
 }

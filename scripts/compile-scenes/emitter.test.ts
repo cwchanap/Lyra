@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { emitChaptersIndex, emitInterrogationScene, emitInvestigationScene, emitLinearScene } from "./emitter";
+import {
+  emitChaptersIndex,
+  emitInterrogationScene,
+  emitInvestigationScene,
+  emitLinearScene,
+} from "./emitter";
 import type {
   ASTChapter,
   ASTInterrogationScene,
@@ -17,7 +22,12 @@ describe("emitter", () => {
       queue: [
         { kind: "sceneTag", text: "街道" },
         { kind: "line", speaker: "A", text: "hi" },
-        { kind: "line", speaker: "B", text: "worried", expression: "concerned" },
+        {
+          kind: "line",
+          speaker: "B",
+          text: "worried",
+          expression: "concerned",
+        },
       ],
       assetRefs: [{ type: "background", assetId: "bg_street" }],
       sourceFile: "scene_0.md",
@@ -30,8 +40,20 @@ describe("emitter", () => {
       title: "接案",
       queue: [
         { kind: "sceneTag", text: "街道", assetCue: null },
-        { kind: "line", speaker: "A", text: "hi", expression: null, portrait: null },
-        { kind: "line", speaker: "B", text: "worried", expression: "concerned", portrait: null },
+        {
+          kind: "line",
+          speaker: "A",
+          text: "hi",
+          expression: null,
+          portrait: null,
+        },
+        {
+          kind: "line",
+          speaker: "B",
+          text: "worried",
+          expression: "concerned",
+          portrait: null,
+        },
       ],
       assetRefs: [{ type: "background", assetId: "bg_street" }],
     });
@@ -43,39 +65,43 @@ describe("emitter", () => {
       id: "i",
       title: "t",
       intro: [],
-      sublocations: [{
-        id: "room",
-        label: "Room",
-        status: "unlocked",
-        unlock: null,
-        reveals: [],
-        sceneTag: "a room",
-        assetCue: {
-          backgroundPrompt: "rainy room",
-          backgroundAssetId: "bg_room",
-          bgm: { channel: "bgm", assetId: "music_room" },
-          bgs: { channel: "bgs", assetId: null },
+      sublocations: [
+        {
+          id: "room",
+          label: "Room",
+          status: "unlocked",
+          unlock: null,
+          reveals: [],
+          sceneTag: "a room",
+          assetCue: {
+            backgroundPrompt: "rainy room",
+            backgroundAssetId: "bg_room",
+            bgm: { channel: "bgm", assetId: "music_room" },
+            bgs: { channel: "bgs", assetId: null },
+          },
+          transitionDialogue: [],
+          hotspots: [],
+          characters: [],
+          sourceFile: "i.md",
+          line: 4,
         },
-        transitionDialogue: [],
-        hotspots: [],
-        characters: [],
-        sourceFile: "i.md",
-        line: 4,
-      }],
-      evidenceManifest: [{
-        id: "photo",
-        name: "Photo",
-        description: "A photo.",
-        details: "Photo details.",
-        imageCue: {
-          imagePrompt: "wet photo",
-          imageAssetId: "evidence_photo",
+      ],
+      evidenceManifest: [
+        {
+          id: "photo",
+          name: "Photo",
+          description: "A photo.",
+          details: "Photo details.",
+          imageCue: {
+            imagePrompt: "wet photo",
+            imageAssetId: "evidence_photo",
+          },
+          onCollect: [],
+          onReexamine: null,
+          sourceFile: "i.md",
+          line: 12,
         },
-        onCollect: [],
-        onReexamine: null,
-        sourceFile: "i.md",
-        line: 12,
-      }],
+      ],
       statementManifest: [],
       outro: { unlock: "auto", dialogue: [] },
       assetRefs: [{ type: "evidence", assetId: "evidence_photo" }],
@@ -85,10 +111,18 @@ describe("emitter", () => {
     const json = emitInvestigationScene(ast);
     expect(json.outro.unlock).toBe("auto");
     expect(json.type).toBe("investigation");
-    expect(json.assetRefs).toEqual([{ type: "evidence", assetId: "evidence_photo" }]);
+    expect(json.assetRefs).toEqual([
+      { type: "evidence", assetId: "evidence_photo" },
+    ]);
     expect(json.sublocations[0]?.backgroundAssetId).toBe("bg_room");
-    expect(json.sublocations[0]?.bgm).toEqual({ channel: "bgm", assetId: "music_room" });
-    expect(json.sublocations[0]?.bgs).toEqual({ channel: "bgs", assetId: null });
+    expect(json.sublocations[0]?.bgm).toEqual({
+      channel: "bgm",
+      assetId: "music_room",
+    });
+    expect(json.sublocations[0]?.bgs).toEqual({
+      channel: "bgs",
+      assetId: null,
+    });
     expect(json.evidenceManifest[0]?.imageAssetId).toBe("evidence_photo");
   });
 
@@ -98,42 +132,53 @@ describe("emitter", () => {
       id: "interrogation_scene_1",
       title: "詢問",
       intro: [],
-      phases: [{
-        kind: "inquiry",
-        id: "p",
-        label: "問話",
-        subject: { id: "suspect", name: "嫌疑人", role: "嫌疑人", bio: "沉默。", sourceFile: "x", line: 4 },
-        required: true,
-        status: "unlocked",
-        unlock: null,
-        reveals: [],
-        sceneTag: "詢問室",
-        assetCue: {
-          backgroundPrompt: null,
-          backgroundAssetId: "bg_interrogation_room",
-          bgm: null,
-          bgs: { channel: "bgs", assetId: "rain_loop" },
+      phases: [
+        {
+          kind: "inquiry",
+          id: "p",
+          label: "問話",
+          subject: {
+            id: "suspect",
+            name: "嫌疑人",
+            role: "嫌疑人",
+            bio: "沉默。",
+            sourceFile: "x",
+            line: 4,
+          },
+          required: true,
+          status: "unlocked",
+          unlock: null,
+          reveals: [],
+          sceneTag: "詢問室",
+          assetCue: {
+            backgroundPrompt: null,
+            backgroundAssetId: "bg_interrogation_room",
+            bgm: null,
+            bgs: { channel: "bgs", assetId: "rain_loop" },
+          },
+          entryDialogue: [],
+          complete: "auto",
+          questions: [],
+          sourceFile: "x",
+          line: 2,
         },
-        entryDialogue: [],
-        complete: "auto",
-        questions: [],
-        sourceFile: "x",
-        line: 2,
-      }],
-      evidenceManifest: [{
-        id: "recording",
-        name: "錄音",
-        description: "走廊錄音。",
-        details: "有雨聲。",
-        imageCue: {
-          imagePrompt: null,
-          imageAssetId: "evidence_recording",
+      ],
+      evidenceManifest: [
+        {
+          id: "recording",
+          name: "錄音",
+          description: "走廊錄音。",
+          details: "有雨聲。",
+          imageCue: {
+            imagePrompt: null,
+            imageAssetId: "evidence_recording",
+          },
+          onCollect: [],
+          onReexamine: null,
+          sourceFile: "x",
+          line: 8,
         },
-        onCollect: [],
-        onReexamine: null,
-        sourceFile: "x",
-        line: 8,
-      }],
+      ],
       statementManifest: [],
       outro: { unlock: "auto", dialogue: [] },
       assetRefs: [{ type: "audio", assetId: "rain_loop" }],
@@ -144,18 +189,22 @@ describe("emitter", () => {
       type: "interrogation",
       id: "interrogation_scene_1",
       assetRefs: [{ type: "audio", assetId: "rain_loop" }],
-      phases: [{
-        kind: "inquiry",
-        id: "p",
-        subject: { id: "suspect" },
-        backgroundAssetId: "bg_interrogation_room",
-        bgm: null,
-        bgs: { channel: "bgs", assetId: "rain_loop" },
-      }],
-      evidenceManifest: [{
-        id: "recording",
-        imageAssetId: "evidence_recording",
-      }],
+      phases: [
+        {
+          kind: "inquiry",
+          id: "p",
+          subject: { id: "suspect" },
+          backgroundAssetId: "bg_interrogation_room",
+          bgm: null,
+          bgs: { channel: "bgs", assetId: "rain_loop" },
+        },
+      ],
+      evidenceManifest: [
+        {
+          id: "recording",
+          imageAssetId: "evidence_recording",
+        },
+      ],
     });
   });
 
@@ -166,7 +215,11 @@ describe("emitter", () => {
       number: 1,
       title: "t",
       summary: "s",
-      sceneFiles: ["scene_0.md", "investigation_scene_1.md", "interrogation_scene_2.md"],
+      sceneFiles: [
+        "scene_0.md",
+        "investigation_scene_1.md",
+        "interrogation_scene_2.md",
+      ],
       sourceFile: "chapter_1/chapter.md",
       line: 1,
     };
@@ -179,8 +232,14 @@ describe("emitter", () => {
           summary: "s",
           scenes: [
             { type: "linear", file: "chapter_1/scene_0.json" },
-            { type: "investigation", file: "chapter_1/investigation_scene_1.json" },
-            { type: "interrogation", file: "chapter_1/interrogation_scene_2.json" },
+            {
+              type: "investigation",
+              file: "chapter_1/investigation_scene_1.json",
+            },
+            {
+              type: "interrogation",
+              file: "chapter_1/interrogation_scene_2.json",
+            },
           ],
         },
       ],

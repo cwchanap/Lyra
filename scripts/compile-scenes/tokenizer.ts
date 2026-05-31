@@ -22,10 +22,23 @@ export type Token =
       sourceFile: string;
       line: number;
     }
-  | { kind: "metadata"; key: string; value: string; sourceFile: string; line: number }
+  | {
+      kind: "metadata";
+      key: string;
+      value: string;
+      sourceFile: string;
+      line: number;
+    }
   | { kind: "sceneTag"; text: string; sourceFile: string; line: number }
   | { kind: "action"; text: string; sourceFile: string; line: number }
-  | { kind: "dialogue"; speaker: string; expression: string | null; text: string; sourceFile: string; line: number }
+  | {
+      kind: "dialogue";
+      speaker: string;
+      expression: string | null;
+      text: string;
+      sourceFile: string;
+      line: number;
+    }
   | { kind: "unknown"; text: string; sourceFile: string; line: number };
 
 const HEADING_RE = /^(#{1,5})\s+(.+?)(?:\s+\{#([a-z0-9_]+)\})?\s*$/;
@@ -94,13 +107,11 @@ export function tokenize(source: string, sourceFile: string): Token[] {
     // the same line. Accumulate subsequent lines until a closing "]" is found.
     if (trimmed.startsWith("[")) {
       let accumulated = trimmed;
-      let endLine = line;
       while (i + 1 < lines.length && !accumulated.includes("]")) {
         i++;
         const nextTrimmed = (lines[i] ?? "").trim();
         if (nextTrimmed.length === 0) continue;
         accumulated += "\n" + nextTrimmed;
-        endLine = i + 1;
       }
       const multiMatch = /^\[(.+?)\]\s*$/s.exec(accumulated);
       if (multiMatch) {

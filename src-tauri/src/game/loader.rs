@@ -193,19 +193,9 @@ fn validate_interrogation_scene_references(
                     &phases,
                     file_rel,
                 )?;
-                validate_interrogation_unlock(
-                    unlock.as_ref(),
-                    &questions,
-                    &phases,
-                    file_rel,
-                )?;
+                validate_interrogation_unlock(unlock.as_ref(), &questions, &phases, file_rel)?;
                 if let InterrogationOutroUnlock::Expr(expr) = complete {
-                    validate_interrogation_unlock(
-                        Some(expr),
-                        &questions,
-                        &phases,
-                        file_rel,
-                    )?;
+                    validate_interrogation_unlock(Some(expr), &questions, &phases, file_rel)?;
                 }
                 for question in qs {
                     if let Some(parent_id) = &question.parent_question_id {
@@ -252,12 +242,7 @@ fn validate_interrogation_scene_references(
                     &phases,
                     file_rel,
                 )?;
-                validate_interrogation_unlock(
-                    unlock.as_ref(),
-                    &questions,
-                    &phases,
-                    file_rel,
-                )?;
+                validate_interrogation_unlock(unlock.as_ref(), &questions, &phases, file_rel)?;
                 for result in results {
                     validate_interrogation_reveals(
                         &result.reveals,
@@ -293,12 +278,7 @@ fn validate_interrogation_scene_references(
     }
 
     if let InterrogationOutroUnlock::Expr(expr) = &scene.outro.unlock {
-        validate_interrogation_unlock(
-            Some(expr),
-            &questions,
-            &phases,
-            file_rel,
-        )?;
+        validate_interrogation_unlock(Some(expr), &questions, &phases, file_rel)?;
     }
 
     Ok(())
@@ -458,18 +438,8 @@ fn validate_interrogation_unlock(
     let Some(expr) = unlock else { return Ok(()) };
     match expr {
         InterrogationUnlockExpr::Combinator { left, right, .. } => {
-            validate_interrogation_unlock(
-                Some(left),
-                questions,
-                phases,
-                file_rel,
-            )?;
-            validate_interrogation_unlock(
-                Some(right),
-                questions,
-                phases,
-                file_rel,
-            )
+            validate_interrogation_unlock(Some(left), questions, phases, file_rel)?;
+            validate_interrogation_unlock(Some(right), questions, phases, file_rel)
         }
         InterrogationUnlockExpr::QuestionAnswered { id, .. }
             if !questions.contains(id.as_str()) =>

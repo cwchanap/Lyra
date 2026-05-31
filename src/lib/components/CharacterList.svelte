@@ -33,7 +33,12 @@
           <div class="topics">
             <span class="topics-label">詢問項目 · TOPICS</span>
             {#each c.topics as t (t.id)}
-              <button class:done={t.discussed} type="button" {disabled} onclick={() => onInterview(c.id, t.id)}>
+              <button
+                class:done={t.discussed}
+                type="button"
+                {disabled}
+                onclick={() => onInterview(c.id, t.id)}
+              >
                 <span class="topic-mark">{t.discussed ? "▣" : "▸"}</span>
                 <span class="topic-label">{t.label}</span>
                 {#if t.discussed}
@@ -170,7 +175,9 @@
     font: inherit;
     font-family: var(--serif-jp);
     font-size: 13px;
-    transition: border-color 0.18s, background 0.18s;
+    transition:
+      border-color 0.18s,
+      background 0.18s;
   }
 
   .topics button:hover:not(:disabled) {

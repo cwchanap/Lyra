@@ -11,7 +11,14 @@
     const ctx = cvs.getContext("2d");
     if (!ctx) return;
 
-    type Drop = { x: number; y: number; len: number; speed: number; opacity: number; slant: number };
+    type Drop = {
+      x: number;
+      y: number;
+      len: number;
+      speed: number;
+      opacity: number;
+      slant: number;
+    };
     let drops: Drop[] = [];
     let raf = 0;
 
@@ -41,7 +48,12 @@
     const draw = () => {
       ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
       for (const d of drops) {
-        const g = ctx.createLinearGradient(d.x, d.y, d.x - d.slant * d.len, d.y + d.len);
+        const g = ctx.createLinearGradient(
+          d.x,
+          d.y,
+          d.x - d.slant * d.len,
+          d.y + d.len,
+        );
         g.addColorStop(0, `rgba(200, 220, 240, ${d.opacity})`);
         g.addColorStop(1, "rgba(200, 220, 240, 0)");
         ctx.strokeStyle = g;
@@ -93,8 +105,16 @@
     position: absolute;
     inset: 0;
     background:
-      radial-gradient(ellipse 60% 50% at 80% 12%, rgba(212, 20, 58, 0.10), transparent 65%),
-      radial-gradient(ellipse 50% 50% at 8% 92%, rgba(52, 216, 255, 0.06), transparent 70%),
+      radial-gradient(
+        ellipse 60% 50% at 80% 12%,
+        rgba(212, 20, 58, 0.1),
+        transparent 65%
+      ),
+      radial-gradient(
+        ellipse 50% 50% at 8% 92%,
+        rgba(52, 216, 255, 0.06),
+        transparent 70%
+      ),
       linear-gradient(170deg, #07070d 0%, #0d0612 55%, #120410 100%);
   }
 
@@ -109,16 +129,32 @@
     inset: -10%;
     opacity: 0.12;
     mix-blend-mode: screen;
-    background-image: radial-gradient(circle at center, rgba(236, 228, 207, 0.6) 0.6px, transparent 1.1px);
+    background-image: radial-gradient(
+      circle at center,
+      rgba(236, 228, 207, 0.6) 0.6px,
+      transparent 1.1px
+    );
     background-size: 11px 11px;
-    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 75% 25%, black 0%, transparent 75%);
-    mask-image: radial-gradient(ellipse 80% 70% at 75% 25%, black 0%, transparent 75%);
+    -webkit-mask-image: radial-gradient(
+      ellipse 80% 70% at 75% 25%,
+      black 0%,
+      transparent 75%
+    );
+    mask-image: radial-gradient(
+      ellipse 80% 70% at 75% 25%,
+      black 0%,
+      transparent 75%
+    );
   }
 
   .vignette {
     position: absolute;
     inset: 0;
-    background: radial-gradient(ellipse 100% 80% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.55) 100%);
+    background: radial-gradient(
+      ellipse 100% 80% at 50% 50%,
+      transparent 50%,
+      rgba(0, 0, 0, 0.55) 100%
+    );
   }
 
   .scan {

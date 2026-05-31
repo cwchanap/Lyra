@@ -30,13 +30,22 @@ export type AssetManifest = {
 };
 
 export function buildAssetManifest(input: {
-  entries: Array<{ assetId: string; type: AssetManifestEntry["type"]; source: Record<string, string>; prompt: string; subjectPrompt?: string }>;
+  entries: Array<{
+    assetId: string;
+    type: AssetManifestEntry["type"];
+    source: Record<string, string>;
+    prompt: string;
+    subjectPrompt?: string;
+  }>;
   config: AssetConfig;
 }): AssetManifest {
   return {
     enabled: input.config.enabled,
     entries: input.entries.map((entry) => {
-      const policy = entry.type === "audio" ? input.config.types.audio : input.config.types[entry.type];
+      const policy =
+        entry.type === "audio"
+          ? input.config.types.audio
+          : input.config.types[entry.type];
       const promptParts = {
         globalStyle: input.config.globalStylePrompt,
         typePrompt: policy.prompt,
@@ -56,11 +65,17 @@ export function buildAssetManifest(input: {
   };
 }
 
-export function expectedPath(assetId: string, type: AssetManifestEntry["type"]): string {
+export function expectedPath(
+  assetId: string,
+  type: AssetManifestEntry["type"],
+): string {
   return `static${publicPath(assetId, type)}`;
 }
 
-export function publicPath(assetId: string, type: AssetManifestEntry["type"]): string {
+export function publicPath(
+  assetId: string,
+  type: AssetManifestEntry["type"],
+): string {
   // KEEP IN SYNC with publicPathForStoryAsset() in src/lib/assets/story-assets.ts.
   // manifest.test.ts cross-checks both; update both together.
   if (type === "portrait") {

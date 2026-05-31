@@ -18,7 +18,10 @@ describe("parseChapter", () => {
     expect(result.value.number).toBe(1);
     expect(result.value.title).toBe("雨鐘咖啡館殺人事件");
     expect(result.value.summary).toBe("律師相馬律調查咖啡館。");
-    expect(result.value.sceneFiles).toEqual(["scene_0.md", "investigation_scene_1.md"]);
+    expect(result.value.sceneFiles).toEqual([
+      "scene_0.md",
+      "investigation_scene_1.md",
+    ]);
   });
 
   it("rejects a manifest with no H1", () => {

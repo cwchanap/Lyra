@@ -51,19 +51,35 @@ export type ValidatorInput = {
 };
 
 type CorpusContext = {
-  globalEvidence: Map<string, { chapterId: string; sourceFile: string; line: number }>;
-  globalStatement: Map<string, { chapterId: string; sourceFile: string; line: number }>;
+  globalEvidence: Map<
+    string,
+    { chapterId: string; sourceFile: string; line: number }
+  >;
+  globalStatement: Map<
+    string,
+    { chapterId: string; sourceFile: string; line: number }
+  >;
   guaranteedInventoryBeforeScene: Map<string, Set<string>>;
 };
 
 export function validate(input: ValidatorInput): CompileError[] {
   const errors: CompileError[] = [];
-  const globalEvidence = new Map<string, { chapterId: string; sourceFile: string; line: number }>();
-  const globalStatement = new Map<string, { chapterId: string; sourceFile: string; line: number }>();
+  const globalEvidence = new Map<
+    string,
+    { chapterId: string; sourceFile: string; line: number }
+  >();
+  const globalStatement = new Map<
+    string,
+    { chapterId: string; sourceFile: string; line: number }
+  >();
 
   // ---- Pass 1: build global registries. ----
   for (const rec of input.scenes) {
-    if (rec.ast.kind !== "investigationScene" && rec.ast.kind !== "interrogationScene") continue;
+    if (
+      rec.ast.kind !== "investigationScene" &&
+      rec.ast.kind !== "interrogationScene"
+    )
+      continue;
     const scene = rec.ast;
 
     for (const e of scene.evidenceManifest) {
@@ -76,7 +92,11 @@ export function validate(input: ValidatorInput): CompileError[] {
           line: e.line,
         });
       } else {
-        globalEvidence.set(e.id, { chapterId: rec.chapterId, sourceFile: e.sourceFile, line: e.line });
+        globalEvidence.set(e.id, {
+          chapterId: rec.chapterId,
+          sourceFile: e.sourceFile,
+          line: e.line,
+        });
       }
     }
     for (const s of scene.statementManifest) {
@@ -89,12 +109,17 @@ export function validate(input: ValidatorInput): CompileError[] {
           line: s.line,
         });
       } else {
-        globalStatement.set(s.id, { chapterId: rec.chapterId, sourceFile: s.sourceFile, line: s.line });
+        globalStatement.set(s.id, {
+          chapterId: rec.chapterId,
+          sourceFile: s.sourceFile,
+          line: s.line,
+        });
       }
     }
   }
 
-  const guaranteedInventoryBeforeScene = buildGuaranteedInventoryBeforeScene(input);
+  const guaranteedInventoryBeforeScene =
+    buildGuaranteedInventoryBeforeScene(input);
   const corpusContext: CorpusContext = {
     globalEvidence,
     globalStatement,
@@ -103,8 +128,10 @@ export function validate(input: ValidatorInput): CompileError[] {
 
   // ---- Pass 2: per-scene ID resolution + locked-block reachability. ----
   for (const rec of input.scenes) {
-    if (rec.ast.kind === "investigationScene") validateInvestigationScene(rec, errors);
-    if (rec.ast.kind === "interrogationScene") validateInterrogationScene(rec, errors, corpusContext);
+    if (rec.ast.kind === "investigationScene")
+      validateInvestigationScene(rec, errors);
+    if (rec.ast.kind === "interrogationScene")
+      validateInterrogationScene(rec, errors, corpusContext);
   }
 
   // ---- Pass 2b: reachability analysis for locked blocks. ----
@@ -121,7 +148,9 @@ export function validate(input: ValidatorInput): CompileError[] {
   const failedParse = input.failedParseFiles ?? new Set<string>();
   for (const chapter of input.chapters) {
     const sceneFilesInChapter = new Set(
-      input.scenes.filter((s) => s.chapterId === chapter.dirName).map((s) => s.file),
+      input.scenes
+        .filter((s) => s.chapterId === chapter.dirName)
+        .map((s) => s.file),
     );
     let playableSceneCount = 0;
     for (const file of chapter.sceneFiles) {
@@ -157,14 +186,19 @@ function validateInterrogationScene(
 ): void {
   const scene = rec.ast as ASTInterrogationScene;
   const sceneKey = sceneRecordKey(rec);
-  const guaranteedBefore = corpusContext.guaranteedInventoryBeforeScene.get(sceneKey) ?? new Set<string>();
+  const guaranteedBefore =
+    corpusContext.guaranteedInventoryBeforeScene.get(sceneKey) ??
+    new Set<string>();
 
   const localEvidence = new Set(scene.evidenceManifest.map((e) => e.id));
   const localStatement = new Set(scene.statementManifest.map((s) => s.id));
   const localPhase = new Set<string>();
   const localQuestion = new Set<string>();
   const localTestimonyStatement = new Set<string>();
-  const subjectById = new Map<string, { name: string; role: string; bio: string }>();
+  const subjectById = new Map<
+    string,
+    { name: string; role: string; bio: string }
+  >();
   const inboundReveals = new Map<string, Set<string>>();
   const interrogationFlow = analyzeInterrogationInventory(scene, {
     mode: "obtainable",
@@ -181,7 +215,12 @@ function validateInterrogationScene(
     inboundReveals.set(target, existing);
   };
 
-  const checkDuplicate = (set: Set<string>, id: string, label: string, line: number) => {
+  const checkDuplicate = (
+    set: Set<string>,
+    id: string,
+    label: string,
+    line: number,
+  ) => {
     if (set.has(id)) {
       errors.push({
         code: "duplicateInterrogationId",
@@ -198,9 +237,9 @@ function validateInterrogationScene(
     const priorSubject = subjectById.get(phase.subject.id);
     if (priorSubject) {
       if (
-        priorSubject.name !== phase.subject.name
-        || priorSubject.role !== phase.subject.role
-        || priorSubject.bio !== phase.subject.bio
+        priorSubject.name !== phase.subject.name ||
+        priorSubject.role !== phase.subject.role ||
+        priorSubject.bio !== phase.subject.bio
       ) {
         errors.push({
           code: "interrogationSubjectConflict",
@@ -223,7 +262,12 @@ function validateInterrogationScene(
       }
     } else {
       for (const statement of phase.statements) {
-        checkDuplicate(localTestimonyStatement, statement.id, "testimony statement", statement.line);
+        checkDuplicate(
+          localTestimonyStatement,
+          statement.id,
+          "testimony statement",
+          statement.line,
+        );
       }
 
       const resultIds = new Set<string>();
@@ -241,7 +285,11 @@ function validateInterrogationScene(
     }
   }
 
-  const checkReveals = (source: string, line: number, reveals: InterrogationRevealTarget[]) => {
+  const checkReveals = (
+    source: string,
+    line: number,
+    reveals: InterrogationRevealTarget[],
+  ) => {
     for (const reveal of reveals) {
       const targetKey = interrogationRevealKey(reveal);
       switch (reveal.kind) {
@@ -306,8 +354,14 @@ function validateInterrogationScene(
               sourceFile: scene.sourceFile,
               line,
             });
-          } else if (options.checkCrossSceneInventory && !localEvidence.has(pred.id) && !guaranteedBefore.has(`evidence:${pred.id}`)) {
-            errors.push(crossSceneInventoryError(scene, line, `evidence:${pred.id}`));
+          } else if (
+            options.checkCrossSceneInventory &&
+            !localEvidence.has(pred.id) &&
+            !guaranteedBefore.has(`evidence:${pred.id}`)
+          ) {
+            errors.push(
+              crossSceneInventoryError(scene, line, `evidence:${pred.id}`),
+            );
           }
           break;
         case "statement_acquired":
@@ -318,8 +372,14 @@ function validateInterrogationScene(
               sourceFile: scene.sourceFile,
               line,
             });
-          } else if (options.checkCrossSceneInventory && !localStatement.has(pred.id) && !guaranteedBefore.has(`statement:${pred.id}`)) {
-            errors.push(crossSceneInventoryError(scene, line, `statement:${pred.id}`));
+          } else if (
+            options.checkCrossSceneInventory &&
+            !localStatement.has(pred.id) &&
+            !guaranteedBefore.has(`statement:${pred.id}`)
+          ) {
+            errors.push(
+              crossSceneInventoryError(scene, line, `statement:${pred.id}`),
+            );
           }
           break;
         case "question_answered":
@@ -352,8 +412,14 @@ function validateInterrogationScene(
     checkUnlock(phase.unlock, phase.line, { checkCrossSceneInventory: true });
 
     if (phase.kind === "inquiry") {
-      if (phase.complete !== "auto") checkUnlock(phase.complete, phase.line, { checkCrossSceneInventory: false });
-      if (phase.required && !guaranteedInterrogationFlow.phaseCompletable.get(phase.id)) {
+      if (phase.complete !== "auto")
+        checkUnlock(phase.complete, phase.line, {
+          checkCrossSceneInventory: false,
+        });
+      if (
+        phase.required &&
+        !guaranteedInterrogationFlow.phaseCompletable.get(phase.id)
+      ) {
         errors.push({
           code: "interrogationNoValidCompletionPath",
           message: `Required inquiry phase "${phase.id}" has no satisfiable completion path.`,
@@ -362,12 +428,21 @@ function validateInterrogationScene(
         });
       }
       for (const question of phase.questions) {
-        checkReveals(`question:${question.id}`, question.line, question.reveals);
-        checkUnlock(question.unlock, question.line, { checkCrossSceneInventory: false });
+        checkReveals(
+          `question:${question.id}`,
+          question.line,
+          question.reveals,
+        );
+        checkUnlock(question.unlock, question.line, {
+          checkCrossSceneInventory: false,
+        });
       }
     } else {
       validateTestimonyPhaseResults(scene, phase, errors);
-      if (phase.required && !guaranteedInterrogationFlow.phaseCompletable.get(phase.id)) {
+      if (
+        phase.required &&
+        !guaranteedInterrogationFlow.phaseCompletable.get(phase.id)
+      ) {
         errors.push({
           code: "interrogationNoValidContradictionPath",
           message: `Required testimony phase "${phase.id}" has no valid Contradiction plus On Correct result path.`,
@@ -375,19 +450,26 @@ function validateInterrogationScene(
           line: phase.line,
         });
       }
-      const obtainableBeforePhase = interrogationFlow.beforePhase.get(phase.id) ?? new Set<string>();
+      const obtainableBeforePhase =
+        interrogationFlow.beforePhase.get(phase.id) ?? new Set<string>();
       // Press reveals are obtainable within the phase: the player can press
       // any statement before presenting, so all statement-level reveals are
       // available as contradiction targets within the same testimony phase.
       const obtainableInPhase = new Set(obtainableBeforePhase);
       for (const statement of phase.statements) {
         for (const reveal of statement.reveals) {
-          if (reveal.kind === "evidence") obtainableInPhase.add(`evidence:${reveal.id}`);
-          if (reveal.kind === "statement") obtainableInPhase.add(`statement:${reveal.id}`);
+          if (reveal.kind === "evidence")
+            obtainableInPhase.add(`evidence:${reveal.id}`);
+          if (reveal.kind === "statement")
+            obtainableInPhase.add(`statement:${reveal.id}`);
         }
       }
       for (const statement of phase.statements) {
-        checkReveals(`testimonyStatement:${statement.id}`, statement.line, statement.reveals);
+        checkReveals(
+          `testimonyStatement:${statement.id}`,
+          statement.line,
+          statement.reveals,
+        );
         validateContradiction(
           scene,
           statement,
@@ -400,14 +482,26 @@ function validateInterrogationScene(
         );
       }
       for (const result of phase.results) {
-        checkReveals(`result:${phase.id}:${result.id}`, result.line, result.reveals);
+        checkReveals(
+          `result:${phase.id}:${result.id}`,
+          result.line,
+          result.reveals,
+        );
       }
     }
   }
 
   if (scene.outro.unlock !== "auto") {
-    checkUnlock(scene.outro.unlock, scene.line, { checkCrossSceneInventory: false });
-    errors.push(...collectInterrogationOutroUnlockErrors(scene.outro.unlock, scene, guaranteedInterrogationFlow));
+    checkUnlock(scene.outro.unlock, scene.line, {
+      checkCrossSceneInventory: false,
+    });
+    errors.push(
+      ...collectInterrogationOutroUnlockErrors(
+        scene.outro.unlock,
+        scene,
+        guaranteedInterrogationFlow,
+      ),
+    );
   }
 
   for (const phase of scene.phases) {
@@ -450,7 +544,10 @@ function validateTestimonyPhaseResults(
         line: statement.line,
       });
     }
-    for (const [field, resultId] of [["On Correct", statement.onCorrect], ["On Wrong", statement.onWrong]] as const) {
+    for (const [field, resultId] of [
+      ["On Correct", statement.onCorrect],
+      ["On Wrong", statement.onWrong],
+    ] as const) {
       if (resultId !== null && !resultIds.has(resultId)) {
         errors.push({
           code: "interrogationResultUnresolved",
@@ -483,15 +580,27 @@ function validateContradiction(
         sourceFile: scene.sourceFile,
         line: statement.line,
       });
-    } else if (localEvidence.has(target.id) && !obtainableBeforePhase.has(`evidence:${target.id}`)) {
+    } else if (
+      localEvidence.has(target.id) &&
+      !obtainableBeforePhase.has(`evidence:${target.id}`)
+    ) {
       errors.push({
         code: "interrogationContradictionUnresolved",
         message: `Contradiction target evidence:${target.id} is declared locally but is not obtainable before this testimony phase.`,
         sourceFile: scene.sourceFile,
         line: statement.line,
       });
-    } else if (!localEvidence.has(target.id) && !guaranteedBefore.has(`evidence:${target.id}`)) {
-      errors.push(crossSceneInventoryError(scene, statement.line, `evidence:${target.id}`));
+    } else if (
+      !localEvidence.has(target.id) &&
+      !guaranteedBefore.has(`evidence:${target.id}`)
+    ) {
+      errors.push(
+        crossSceneInventoryError(
+          scene,
+          statement.line,
+          `evidence:${target.id}`,
+        ),
+      );
     }
     return;
   }
@@ -502,15 +611,23 @@ function validateContradiction(
       sourceFile: scene.sourceFile,
       line: statement.line,
     });
-  } else if (localStatement.has(target.id) && !obtainableBeforePhase.has(`statement:${target.id}`)) {
+  } else if (
+    localStatement.has(target.id) &&
+    !obtainableBeforePhase.has(`statement:${target.id}`)
+  ) {
     errors.push({
       code: "interrogationContradictionUnresolved",
       message: `Contradiction target statement:${target.id} is declared locally but is not obtainable before this testimony phase.`,
       sourceFile: scene.sourceFile,
       line: statement.line,
     });
-  } else if (!localStatement.has(target.id) && !guaranteedBefore.has(`statement:${target.id}`)) {
-    errors.push(crossSceneInventoryError(scene, statement.line, `statement:${target.id}`));
+  } else if (
+    !localStatement.has(target.id) &&
+    !guaranteedBefore.has(`statement:${target.id}`)
+  ) {
+    errors.push(
+      crossSceneInventoryError(scene, statement.line, `statement:${target.id}`),
+    );
   }
 }
 
@@ -548,8 +665,16 @@ function collectInterrogationOutroUnlockErrors(
   flow: InterrogationInventoryAnalysis,
 ): CompileError[] {
   if ("op" in expr) {
-    const leftErrors = collectInterrogationOutroUnlockErrors(expr.left, scene, flow);
-    const rightErrors = collectInterrogationOutroUnlockErrors(expr.right, scene, flow);
+    const leftErrors = collectInterrogationOutroUnlockErrors(
+      expr.left,
+      scene,
+      flow,
+    );
+    const rightErrors = collectInterrogationOutroUnlockErrors(
+      expr.right,
+      scene,
+      flow,
+    );
     if (expr.op === "and") {
       return [...leftErrors, ...rightErrors];
     }
@@ -618,8 +743,12 @@ function interrogationOutroPredicateUnreachableError(
   }
 }
 
-function buildGuaranteedInventoryBeforeScene(input: ValidatorInput): Map<string, Set<string>> {
-  const recordsByKey = new Map(input.scenes.map((rec) => [sceneRecordKey(rec), rec]));
+function buildGuaranteedInventoryBeforeScene(
+  input: ValidatorInput,
+): Map<string, Set<string>> {
+  const recordsByKey = new Map(
+    input.scenes.map((rec) => [sceneRecordKey(rec), rec]),
+  );
   const guaranteedBefore = new Map<string, Set<string>>();
   const cumulative = new Set<string>();
 
@@ -637,14 +766,19 @@ function buildGuaranteedInventoryBeforeScene(input: ValidatorInput): Map<string,
 
   for (const rec of input.scenes) {
     const key = sceneRecordKey(rec);
-    if (!guaranteedBefore.has(key)) guaranteedBefore.set(key, new Set(cumulative));
+    if (!guaranteedBefore.has(key))
+      guaranteedBefore.set(key, new Set(cumulative));
   }
 
   return guaranteedBefore;
 }
 
-function guaranteedInventoryFromScene(scene: SceneRecord["ast"], initialInventory: Set<string>): Set<string> {
-  if (scene.kind === "investigationScene") return guaranteedInventoryFromInvestigation(scene);
+function guaranteedInventoryFromScene(
+  scene: SceneRecord["ast"],
+  initialInventory: Set<string>,
+): Set<string> {
+  if (scene.kind === "investigationScene")
+    return guaranteedInventoryFromInvestigation(scene);
   if (scene.kind === "interrogationScene") {
     return analyzeInterrogationInventory(scene, {
       mode: "guaranteed",
@@ -654,7 +788,9 @@ function guaranteedInventoryFromScene(scene: SceneRecord["ast"], initialInventor
   return new Set<string>();
 }
 
-function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set<string> {
+function guaranteedInventoryFromInvestigation(
+  scene: ASTInvestigationScene,
+): Set<string> {
   const guaranteed = new Set<string>();
   if (scene.outro.unlock === "auto") {
     // For auto-outro, the runtime requires every unlocked hotspot to be
@@ -678,7 +814,9 @@ function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set
     // (advance_into_first_sublocation uses .find on Unlocked status),
     // firing its entry reveals even if it has no interactive content.
     // Mirror this by marking the first unlocked sub-location as mandatory.
-    const firstUnlocked = scene.sublocations.find((s) => s.status === "unlocked");
+    const firstUnlocked = scene.sublocations.find(
+      (s) => s.status === "unlocked",
+    );
     if (firstUnlocked) subMandatory.add(firstUnlocked.id);
 
     // Fixed-point for sub-location reachability, mandatoriness, and inventory.
@@ -687,15 +825,21 @@ function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set
       changed = false;
 
       // Compute reachable atoms using only entry reveals from mandatory sub-locations.
-      const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable, subMandatory);
+      const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(
+        scene,
+        subReachable,
+        subMandatory,
+      );
 
       // Update mandatory set: a reachable sub-location is mandatory if it has
       // any reachable hotspot or topic.
       for (const sub of scene.sublocations) {
         if (!subReachable.has(sub.id) || subMandatory.has(sub.id)) continue;
         const hasReachableContent =
-          sub.hotspots.some((h) => reachableAtoms.has(`hotspot:${h.id}`))
-          || sub.characters.some((c) => c.topics.some((t) => reachableAtoms.has(`topic:${c.id}@${t.id}`)));
+          sub.hotspots.some((h) => reachableAtoms.has(`hotspot:${h.id}`)) ||
+          sub.characters.some((c) =>
+            c.topics.some((t) => reachableAtoms.has(`topic:${c.id}@${t.id}`)),
+          );
         if (hasReachableContent) {
           subMandatory.add(sub.id);
           changed = true;
@@ -715,7 +859,11 @@ function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set
           );
           return revs.some((r) => r.kind === "sublocation" && r.id === sub.id);
         });
-        if (reachedByReveal) { subReachable.add(sub.id); changed = true; continue; }
+        if (reachedByReveal) {
+          subReachable.add(sub.id);
+          changed = true;
+          continue;
+        }
         const reachableItems = new Set<string>();
         for (const rid of subReachable) {
           if (!subMandatory.has(rid)) continue;
@@ -729,7 +877,16 @@ function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set
             if (r.kind === "statement") reachableItems.add(`statement:${r.id}`);
           }
         }
-        if (sub.unlock && isSubUnlockSatisfiable(sub.unlock, subReachable, scene, reachableItems, reachableAtoms)) {
+        if (
+          sub.unlock &&
+          isSubUnlockSatisfiable(
+            sub.unlock,
+            subReachable,
+            scene,
+            reachableItems,
+            reachableAtoms,
+          )
+        ) {
           subReachable.add(sub.id);
           changed = true;
         }
@@ -737,15 +894,21 @@ function guaranteedInventoryFromInvestigation(scene: ASTInvestigationScene): Set
     }
 
     // Collect inventory from reachable hotspots and topics.
-    const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable, subMandatory);
+    const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(
+      scene,
+      subReachable,
+      subMandatory,
+    );
     for (const sub of scene.sublocations) {
       if (!subReachable.has(sub.id)) continue;
       for (const h of sub.hotspots) {
-        if (reachableAtoms.has(`hotspot:${h.id}`)) addInventoryReveals(guaranteed, h.reveals);
+        if (reachableAtoms.has(`hotspot:${h.id}`))
+          addInventoryReveals(guaranteed, h.reveals);
       }
       for (const c of sub.characters) {
         for (const t of c.topics) {
-          if (reachableAtoms.has(`topic:${c.id}@${t.id}`)) addInventoryReveals(guaranteed, t.reveals);
+          if (reachableAtoms.has(`topic:${c.id}@${t.id}`))
+            addInventoryReveals(guaranteed, t.reveals);
         }
       }
     }
@@ -877,12 +1040,20 @@ function analyzeInterrogationInventory(
     for (const phase of orderedPhases) {
       if (processed.has(phase.id)) continue;
 
-      if (!interrogationBlockReachable(
-        phase.status,
-        phase.unlock,
-        `phase:${phase.id}`,
-        { inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases },
-      )) {
+      if (
+        !interrogationBlockReachable(
+          phase.status,
+          phase.unlock,
+          `phase:${phase.id}`,
+          {
+            inventory,
+            answeredQuestions,
+            completedPhases,
+            revealedQuestions,
+            revealedPhases,
+          },
+        )
+      ) {
         beforePhase.set(phase.id, new Set(inventory));
         phaseCompletable.set(phase.id, false);
         continue;
@@ -891,7 +1062,11 @@ function analyzeInterrogationInventory(
       processed.add(phase.id);
       madeProgress = true;
 
-      if (options.mode === "guaranteed" && !phase.required && !forcedOptional.has(phase.id)) {
+      if (
+        options.mode === "guaranteed" &&
+        !phase.required &&
+        !forcedOptional.has(phase.id)
+      ) {
         beforePhase.set(phase.id, new Set(inventory));
         // Evaluate completability on a cloned state so that optional-phase
         // reveals don't pollute the guaranteed inventory, but the outro
@@ -900,7 +1075,13 @@ function analyzeInterrogationInventory(
         // are NOT in the main state. The forced-optional detection below
         // will re-evaluate such phases if their reveals could unlock locked
         // required phases.
-        const clone = cloneInterrogationInventoryState({ inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases });
+        const clone = cloneInterrogationInventoryState({
+          inventory,
+          answeredQuestions,
+          completedPhases,
+          revealedQuestions,
+          revealedPhases,
+        });
         addInterrogationRevealsToState(clone, phase.reveals);
         if (phase.kind === "inquiry") {
           const complete = collectInquiryInventory(phase, {
@@ -920,7 +1101,10 @@ function analyzeInterrogationInventory(
         continue;
       }
 
-      addInterrogationRevealsToState({ inventory, revealedQuestions, revealedPhases }, phase.reveals);
+      addInterrogationRevealsToState(
+        { inventory, revealedQuestions, revealedPhases },
+        phase.reveals,
+      );
       beforePhase.set(phase.id, new Set(inventory));
 
       if (phase.kind === "inquiry") {
@@ -958,15 +1142,32 @@ function analyzeInterrogationInventory(
       for (const phase of orderedPhases) {
         if (phase.required || forcedOptional.has(phase.id)) continue;
 
-        const state = { inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases };
-        if (!interrogationBlockReachable(phase.status, phase.unlock, `phase:${phase.id}`, state)) continue;
+        const state = {
+          inventory,
+          answeredQuestions,
+          completedPhases,
+          revealedQuestions,
+          revealedPhases,
+        };
+        if (
+          !interrogationBlockReachable(
+            phase.status,
+            phase.unlock,
+            `phase:${phase.id}`,
+            state,
+          )
+        )
+          continue;
 
         // Check if this optional phase's reveals would unlock any locked required phase.
         const clone = cloneInterrogationInventoryState(state);
         addInterrogationRevealsToState(clone, phase.reveals);
         let completable: boolean;
         if (phase.kind === "inquiry") {
-          completable = collectInquiryInventory(phase, { mode: "guaranteed", ...clone });
+          completable = collectInquiryInventory(phase, {
+            mode: "guaranteed",
+            ...clone,
+          });
         } else {
           completable = collectTestimonyResultInventory(phase, {
             mode: "guaranteed",
@@ -979,11 +1180,22 @@ function analyzeInterrogationInventory(
         // predicates in downstream unlock checks evaluate correctly.
         if (completable) clone.completedPhases.add(phase.id);
 
-        const unlocksLockedRequired = orderedPhases.some((other) =>
-          other.required
-          && !processed.has(other.id)
-          && !interrogationBlockReachable(other.status, other.unlock, `phase:${other.id}`, state)
-          && interrogationBlockReachable(other.status, other.unlock, `phase:${other.id}`, clone),
+        const unlocksLockedRequired = orderedPhases.some(
+          (other) =>
+            other.required &&
+            !processed.has(other.id) &&
+            !interrogationBlockReachable(
+              other.status,
+              other.unlock,
+              `phase:${other.id}`,
+              state,
+            ) &&
+            interrogationBlockReachable(
+              other.status,
+              other.unlock,
+              `phase:${other.id}`,
+              clone,
+            ),
         );
 
         if (unlocksLockedRequired) {
@@ -1006,23 +1218,38 @@ function analyzeInterrogationInventory(
     let changed = true;
     while (changed) {
       changed = false;
-      const currentState = { inventory, answeredQuestions, completedPhases, revealedQuestions, revealedPhases };
+      const currentState = {
+        inventory,
+        answeredQuestions,
+        completedPhases,
+        revealedQuestions,
+        revealedPhases,
+      };
       // If the outro is already fully satisfied, no more forced phases needed.
       if (interrogationUnlockSatisfiable(outroExpr, currentState)) break;
 
       for (const phase of orderedPhases) {
         if (phase.required || forced.has(phase.id)) continue;
         if (phaseCompletable.get(phase.id) !== true) continue;
-        if (!interrogationBlockReachable(
-          phase.status, phase.unlock, `phase:${phase.id}`, currentState,
-        )) continue;
+        if (
+          !interrogationBlockReachable(
+            phase.status,
+            phase.unlock,
+            `phase:${phase.id}`,
+            currentState,
+          )
+        )
+          continue;
 
         // Evaluate the phase on a clone to see what it produces
         const clone = cloneInterrogationInventoryState(currentState);
         addInterrogationRevealsToState(clone, phase.reveals);
         let cloneCompletable: boolean;
         if (phase.kind === "inquiry") {
-          cloneCompletable = collectInquiryInventory(phase, { mode: "guaranteed", ...clone });
+          cloneCompletable = collectInquiryInventory(phase, {
+            mode: "guaranteed",
+            ...clone,
+          });
         } else {
           cloneCompletable = collectTestimonyResultInventory(phase, {
             mode: "guaranteed",
@@ -1041,7 +1268,10 @@ function analyzeInterrogationInventory(
         if (cloneProducesNeededOutroAtom(outroExpr, currentState, clone)) {
           // Phase is forced — process it on the main state.
           forced.add(phase.id);
-          addInterrogationRevealsToState({ inventory, revealedQuestions, revealedPhases }, phase.reveals);
+          addInterrogationRevealsToState(
+            { inventory, revealedQuestions, revealedPhases },
+            phase.reveals,
+          );
           beforePhase.set(phase.id, new Set(inventory));
           if (phase.kind === "inquiry") {
             const complete = collectInquiryInventory(phase, {
@@ -1071,7 +1301,12 @@ function analyzeInterrogationInventory(
     }
   }
 
-  return { beforePhase, phaseCompletable, answeredQuestions, afterScene: inventory };
+  return {
+    beforePhase,
+    phaseCompletable,
+    answeredQuestions,
+    afterScene: inventory,
+  };
 }
 
 /**
@@ -1081,12 +1316,20 @@ function analyzeInterrogationInventory(
  */
 function cloneProducesNeededOutroAtom(
   expr: InterrogationUnlockExpr,
-  base: Pick<InterrogationInventoryState, "inventory" | "answeredQuestions" | "completedPhases">,
-  clone: Pick<InterrogationInventoryState, "inventory" | "answeredQuestions" | "completedPhases">,
+  base: Pick<
+    InterrogationInventoryState,
+    "inventory" | "answeredQuestions" | "completedPhases"
+  >,
+  clone: Pick<
+    InterrogationInventoryState,
+    "inventory" | "answeredQuestions" | "completedPhases"
+  >,
 ): boolean {
   if ("op" in expr) {
-    return cloneProducesNeededOutroAtom(expr.left, base, clone)
-      || cloneProducesNeededOutroAtom(expr.right, base, clone);
+    return (
+      cloneProducesNeededOutroAtom(expr.left, base, clone) ||
+      cloneProducesNeededOutroAtom(expr.right, base, clone)
+    );
   }
   switch (expr.predicate) {
     case "evidence_collected": {
@@ -1098,9 +1341,14 @@ function cloneProducesNeededOutroAtom(
       return !base.inventory.has(atom) && clone.inventory.has(atom);
     }
     case "question_answered":
-      return !base.answeredQuestions.has(expr.id) && clone.answeredQuestions.has(expr.id);
+      return (
+        !base.answeredQuestions.has(expr.id) &&
+        clone.answeredQuestions.has(expr.id)
+      );
     case "phase_completed":
-      return !base.completedPhases.has(expr.id) && clone.completedPhases.has(expr.id);
+      return (
+        !base.completedPhases.has(expr.id) && clone.completedPhases.has(expr.id)
+      );
   }
 }
 
@@ -1117,31 +1365,58 @@ function collectInquiryInventory(
   state: InterrogationInventoryState & { mode: InterrogationInventoryMode },
 ): boolean {
   const explicitComplete = phase.complete === "auto" ? null : phase.complete;
-  if (explicitComplete && interrogationUnlockSatisfiable(explicitComplete, state)) return true;
+  if (
+    explicitComplete &&
+    interrogationUnlockSatisfiable(explicitComplete, state)
+  )
+    return true;
   if (explicitComplete && state.mode === "guaranteed") {
-    return collectGuaranteedExplicitInquiryInventory(phase, state, explicitComplete);
+    return collectGuaranteedExplicitInquiryInventory(
+      phase,
+      state,
+      explicitComplete,
+    );
   }
 
-  const guaranteedQuestionIds = state.mode === "guaranteed"
-    ? guaranteedInquiryQuestionIds(phase)
-    : null;
+  const guaranteedQuestionIds =
+    state.mode === "guaranteed" ? guaranteedInquiryQuestionIds(phase) : null;
   let changed = true;
   while (changed) {
     changed = false;
     for (const question of phase.questions) {
       if (state.answeredQuestions.has(question.id)) continue;
-      if (guaranteedQuestionIds !== null && !guaranteedQuestionIds.has(question.id)) continue;
-      if (!interrogationBlockReachable(question.status, question.unlock, `question:${question.id}`, state)) continue;
+      if (
+        guaranteedQuestionIds !== null &&
+        !guaranteedQuestionIds.has(question.id)
+      )
+        continue;
+      if (
+        !interrogationBlockReachable(
+          question.status,
+          question.unlock,
+          `question:${question.id}`,
+          state,
+        )
+      )
+        continue;
 
       state.answeredQuestions.add(question.id);
       addInterrogationRevealsToState(state, question.reveals);
-      if (explicitComplete && interrogationUnlockSatisfiable(explicitComplete, state)) return true;
+      if (
+        explicitComplete &&
+        interrogationUnlockSatisfiable(explicitComplete, state)
+      )
+        return true;
       changed = true;
     }
   }
 
-  if (explicitComplete) return interrogationUnlockSatisfiable(explicitComplete, state);
-  return phase.questions.every((question) => !question.required || state.answeredQuestions.has(question.id));
+  if (explicitComplete)
+    return interrogationUnlockSatisfiable(explicitComplete, state);
+  return phase.questions.every(
+    (question) =>
+      !question.required || state.answeredQuestions.has(question.id),
+  );
 }
 
 function collectGuaranteedExplicitInquiryInventory(
@@ -1156,10 +1431,22 @@ function collectGuaranteedExplicitInquiryInventory(
   );
   if (completionStates.length === 0) return false;
 
-  replaceSet(state.inventory, commonSet(completionStates.map((path) => path.inventory)));
-  replaceSet(state.answeredQuestions, commonSet(completionStates.map((path) => path.answeredQuestions)));
-  replaceSet(state.revealedQuestions, commonSet(completionStates.map((path) => path.revealedQuestions)));
-  replaceSet(state.revealedPhases, commonSet(completionStates.map((path) => path.revealedPhases)));
+  replaceSet(
+    state.inventory,
+    commonSet(completionStates.map((path) => path.inventory)),
+  );
+  replaceSet(
+    state.answeredQuestions,
+    commonSet(completionStates.map((path) => path.answeredQuestions)),
+  );
+  replaceSet(
+    state.revealedQuestions,
+    commonSet(completionStates.map((path) => path.revealedQuestions)),
+  );
+  replaceSet(
+    state.revealedPhases,
+    commonSet(completionStates.map((path) => path.revealedPhases)),
+  );
   return true;
 }
 
@@ -1173,17 +1460,29 @@ function collectExplicitInquiryCompletionStates(
   const completions: InterrogationInventoryState[] = [];
   for (const question of phase.questions) {
     if (state.answeredQuestions.has(question.id)) continue;
-    if (!interrogationBlockReachable(question.status, question.unlock, `question:${question.id}`, state)) continue;
+    if (
+      !interrogationBlockReachable(
+        question.status,
+        question.unlock,
+        `question:${question.id}`,
+        state,
+      )
+    )
+      continue;
 
     const next = cloneInterrogationInventoryState(state);
     next.answeredQuestions.add(question.id);
     addInterrogationRevealsToState(next, question.reveals);
-    completions.push(...collectExplicitInquiryCompletionStates(phase, next, complete));
+    completions.push(
+      ...collectExplicitInquiryCompletionStates(phase, next, complete),
+    );
   }
   return completions;
 }
 
-function cloneInterrogationInventoryState(state: InterrogationInventoryState): InterrogationInventoryState {
+function cloneInterrogationInventoryState(
+  state: InterrogationInventoryState,
+): InterrogationInventoryState {
   return {
     inventory: new Set(state.inventory),
     answeredQuestions: new Set(state.answeredQuestions),
@@ -1223,7 +1522,10 @@ function guaranteedInquiryQuestionIds(phase: ASTInquiryPhase): Set<string> {
 
 function collectTestimonyResultInventory(
   phase: ASTTestimonyPhase,
-  state: Pick<InterrogationInventoryState, "inventory" | "revealedQuestions" | "revealedPhases"> & { mode: InterrogationInventoryMode },
+  state: Pick<
+    InterrogationInventoryState,
+    "inventory" | "revealedQuestions" | "revealedPhases"
+  > & { mode: InterrogationInventoryMode },
 ): boolean {
   // Press reveals: the player *can* press any statement, but pressing is
   // optional — a player may complete the phase by presenting evidence without
@@ -1235,22 +1537,35 @@ function collectTestimonyResultInventory(
   if (state.mode === "obtainable") {
     for (const statement of phase.statements) {
       addInterrogationRevealsToState(state, statement.reveals);
-      addInterrogationInventoryReveals(availableForContradictions, statement.reveals);
+      addInterrogationInventoryReveals(
+        availableForContradictions,
+        statement.reveals,
+      );
     }
   } else {
     for (const statement of phase.statements) {
-      addInterrogationInventoryReveals(availableForContradictions, statement.reveals);
+      addInterrogationInventoryReveals(
+        availableForContradictions,
+        statement.reveals,
+      );
     }
   }
 
   const validPathReveals: InterrogationRevealTarget[][] = [];
   for (const statement of phase.statements) {
-    if (statement.contradiction === null || statement.onCorrect === null) continue;
-    if (!availableForContradictions.has(inventoryAtom(statement.contradiction))) continue;
-    const result = phase.results.find((candidate) => candidate.id === statement.onCorrect);
+    if (statement.contradiction === null || statement.onCorrect === null)
+      continue;
+    if (!availableForContradictions.has(inventoryAtom(statement.contradiction)))
+      continue;
+    const result = phase.results.find(
+      (candidate) => candidate.id === statement.onCorrect,
+    );
     if (!result) continue;
     const pathReveals = [...result.reveals];
-    if (state.mode === "guaranteed" && !baseInventory.has(inventoryAtom(statement.contradiction))) {
+    if (
+      state.mode === "guaranteed" &&
+      !baseInventory.has(inventoryAtom(statement.contradiction))
+    ) {
       pathReveals.push(statement.contradiction);
     }
     validPathReveals.push(pathReveals);
@@ -1277,20 +1592,37 @@ function interrogationBlockReachable(
   state: InterrogationInventoryState,
 ): boolean {
   if (status === "unlocked") return true;
-  if (key.startsWith("question:") && state.revealedQuestions.has(key.slice("question:".length))) return true;
-  if (key.startsWith("phase:") && state.revealedPhases.has(key.slice("phase:".length))) return true;
+  if (
+    key.startsWith("question:") &&
+    state.revealedQuestions.has(key.slice("question:".length))
+  )
+    return true;
+  if (
+    key.startsWith("phase:") &&
+    state.revealedPhases.has(key.slice("phase:".length))
+  )
+    return true;
   return unlock !== null && interrogationUnlockSatisfiable(unlock, state);
 }
 
 function interrogationUnlockSatisfiable(
   expr: InterrogationUnlockExpr,
-  state: Pick<InterrogationInventoryState, "inventory" | "answeredQuestions" | "completedPhases">,
+  state: Pick<
+    InterrogationInventoryState,
+    "inventory" | "answeredQuestions" | "completedPhases"
+  >,
 ): boolean {
   if ("op" in expr) {
     if (expr.op === "and") {
-      return interrogationUnlockSatisfiable(expr.left, state) && interrogationUnlockSatisfiable(expr.right, state);
+      return (
+        interrogationUnlockSatisfiable(expr.left, state) &&
+        interrogationUnlockSatisfiable(expr.right, state)
+      );
     }
-    return interrogationUnlockSatisfiable(expr.left, state) || interrogationUnlockSatisfiable(expr.right, state);
+    return (
+      interrogationUnlockSatisfiable(expr.left, state) ||
+      interrogationUnlockSatisfiable(expr.right, state)
+    );
   }
   switch (expr.predicate) {
     case "evidence_collected":
@@ -1305,7 +1637,10 @@ function interrogationUnlockSatisfiable(
 }
 
 function addInterrogationBlockReveals(
-  state: Pick<InterrogationInventoryState, "revealedQuestions" | "revealedPhases">,
+  state: Pick<
+    InterrogationInventoryState,
+    "revealedQuestions" | "revealedPhases"
+  >,
   reveals: InterrogationRevealTarget[],
 ): void {
   for (const reveal of reveals) {
@@ -1315,21 +1650,28 @@ function addInterrogationBlockReveals(
 }
 
 function addInterrogationRevealsToState(
-  state: Pick<InterrogationInventoryState, "inventory" | "revealedQuestions" | "revealedPhases">,
+  state: Pick<
+    InterrogationInventoryState,
+    "inventory" | "revealedQuestions" | "revealedPhases"
+  >,
   reveals: InterrogationRevealTarget[],
 ): void {
   addInterrogationInventoryReveals(state.inventory, reveals);
   addInterrogationBlockReveals(state, reveals);
 }
 
-function commonInterrogationReveals(paths: InterrogationRevealTarget[][]): InterrogationRevealTarget[] {
+function commonInterrogationReveals(
+  paths: InterrogationRevealTarget[][],
+): InterrogationRevealTarget[] {
   if (paths.length === 0) return [];
   let common = new Set(paths[0]!.map(interrogationRevealKey));
   for (const path of paths.slice(1)) {
     const keys = new Set(path.map(interrogationRevealKey));
     common = new Set([...common].filter((key) => keys.has(key)));
   }
-  return paths[0]!.filter((reveal) => common.has(interrogationRevealKey(reveal)));
+  return paths[0]!.filter((reveal) =>
+    common.has(interrogationRevealKey(reveal)),
+  );
 }
 
 function inventoryAtom(target: InventoryTarget): string {
@@ -1343,7 +1685,10 @@ function addInventoryReveals(out: Set<string>, reveals: RevealTarget[]): void {
   }
 }
 
-function addInterrogationInventoryReveals(out: Set<string>, reveals: InterrogationRevealTarget[]): void {
+function addInterrogationInventoryReveals(
+  out: Set<string>,
+  reveals: InterrogationRevealTarget[],
+): void {
   for (const reveal of reveals) {
     if (reveal.kind === "evidence") out.add(`evidence:${reveal.id}`);
     if (reveal.kind === "statement") out.add(`statement:${reveal.id}`);
@@ -1357,17 +1702,33 @@ function requiredInventoryPredicates(expr: UnlockExpr): Set<string> {
     if (expr.op === "and") return new Set([...left, ...right]);
     return new Set([...left].filter((item) => right.has(item)));
   }
-  if (expr.predicate === "evidence_collected") return new Set([`evidence:${expr.id}`]);
-  if (expr.predicate === "statement_acquired") return new Set([`statement:${expr.id}`]);
+  if (expr.predicate === "evidence_collected")
+    return new Set([`evidence:${expr.id}`]);
+  if (expr.predicate === "statement_acquired")
+    return new Set([`statement:${expr.id}`]);
   return new Set<string>();
 }
 
-function knownEvidence(id: string, scene: ASTInterrogationScene, corpusContext: CorpusContext): boolean {
-  return scene.evidenceManifest.some((evidence) => evidence.id === id) || corpusContext.globalEvidence.has(id);
+function knownEvidence(
+  id: string,
+  scene: ASTInterrogationScene,
+  corpusContext: CorpusContext,
+): boolean {
+  return (
+    scene.evidenceManifest.some((evidence) => evidence.id === id) ||
+    corpusContext.globalEvidence.has(id)
+  );
 }
 
-function knownStatement(id: string, scene: ASTInterrogationScene, corpusContext: CorpusContext): boolean {
-  return scene.statementManifest.some((statement) => statement.id === id) || corpusContext.globalStatement.has(id);
+function knownStatement(
+  id: string,
+  scene: ASTInterrogationScene,
+  corpusContext: CorpusContext,
+): boolean {
+  return (
+    scene.statementManifest.some((statement) => statement.id === id) ||
+    corpusContext.globalStatement.has(id)
+  );
 }
 
 function crossSceneInventoryError(
@@ -1383,7 +1744,10 @@ function crossSceneInventoryError(
   };
 }
 
-function inboundFromOtherBlock(inboundReveals: Map<string, Set<string>>, key: string): boolean {
+function inboundFromOtherBlock(
+  inboundReveals: Map<string, Set<string>>,
+  key: string,
+): boolean {
   const sources = inboundReveals.get(key);
   if (!sources) return false;
   return [...sources].some((source) => source !== key);
@@ -1393,7 +1757,10 @@ function sceneRecordKey(rec: SceneRecord): string {
   return `${rec.chapterId}/${rec.file}`;
 }
 
-function validateInvestigationScene(rec: SceneRecord, errors: CompileError[]): void {
+function validateInvestigationScene(
+  rec: SceneRecord,
+  errors: CompileError[],
+): void {
   const scene = rec.ast as ASTInvestigationScene;
 
   const localEvidence = new Set(scene.evidenceManifest.map((e) => e.id));
@@ -1486,15 +1853,30 @@ function validateInvestigationScene(rec: SceneRecord, errors: CompileError[]): v
           break;
         case "hotspot":
           if (!localHotspot.has(r.id))
-            errors.push({ code: "unresolvedRevealTarget", message: `Reveal target hotspot:${r.id} not declared in this scene.`, sourceFile: scene.sourceFile, line });
+            errors.push({
+              code: "unresolvedRevealTarget",
+              message: `Reveal target hotspot:${r.id} not declared in this scene.`,
+              sourceFile: scene.sourceFile,
+              line,
+            });
           break;
         case "topic":
           if (!localTopic.has(`${r.characterId}@${r.topicId}`))
-            errors.push({ code: "unresolvedRevealTarget", message: `Reveal target topic:${r.characterId}@${r.topicId} not declared in this scene.`, sourceFile: scene.sourceFile, line });
+            errors.push({
+              code: "unresolvedRevealTarget",
+              message: `Reveal target topic:${r.characterId}@${r.topicId} not declared in this scene.`,
+              sourceFile: scene.sourceFile,
+              line,
+            });
           break;
         case "sublocation":
           if (!localSublocation.has(r.id))
-            errors.push({ code: "unresolvedRevealTarget", message: `Reveal target sublocation:${r.id} not declared in this scene.`, sourceFile: scene.sourceFile, line });
+            errors.push({
+              code: "unresolvedRevealTarget",
+              message: `Reveal target sublocation:${r.id} not declared in this scene.`,
+              sourceFile: scene.sourceFile,
+              line,
+            });
           break;
       }
       inboundReveals.set(key, { source, line });
@@ -1503,13 +1885,20 @@ function validateInvestigationScene(rec: SceneRecord, errors: CompileError[]): v
 
   for (const sub of scene.sublocations) {
     checkReveals(`sublocation:${sub.id}`, sub.line, sub.reveals);
-    for (const h of sub.hotspots) checkReveals(`hotspot:${h.id}`, h.line, h.reveals);
-    for (const c of sub.characters) for (const t of c.topics) checkReveals(`topic:${c.id}@${t.id}`, t.line, t.reveals);
+    for (const h of sub.hotspots)
+      checkReveals(`hotspot:${h.id}`, h.line, h.reveals);
+    for (const c of sub.characters)
+      for (const t of c.topics)
+        checkReveals(`topic:${c.id}@${t.id}`, t.line, t.reveals);
   }
 
   // v1 restriction (spec §3d): all four predicate kinds must resolve scene-local.
   // We don't distinguish "doesn't exist anywhere" vs. "exists in another scene".
-  const checkUnlock = (expr: UnlockExpr | null, sourceFile: string, line: number) => {
+  const checkUnlock = (
+    expr: UnlockExpr | null,
+    sourceFile: string,
+    line: number,
+  ) => {
     if (expr === null) return;
     walkUnlock(expr, (pred) => {
       switch (pred.predicate) {
@@ -1557,10 +1946,13 @@ function validateInvestigationScene(rec: SceneRecord, errors: CompileError[]): v
 
   for (const sub of scene.sublocations) {
     checkUnlock(sub.unlock, scene.sourceFile, sub.line);
-    for (const h of sub.hotspots) checkUnlock(h.unlock, scene.sourceFile, h.line);
-    for (const c of sub.characters) for (const t of c.topics) checkUnlock(t.unlock, scene.sourceFile, t.line);
+    for (const h of sub.hotspots)
+      checkUnlock(h.unlock, scene.sourceFile, h.line);
+    for (const c of sub.characters)
+      for (const t of c.topics) checkUnlock(t.unlock, scene.sourceFile, t.line);
   }
-  if (scene.outro.unlock !== "auto") checkUnlock(scene.outro.unlock, scene.sourceFile, scene.line);
+  if (scene.outro.unlock !== "auto")
+    checkUnlock(scene.outro.unlock, scene.sourceFile, scene.line);
 
   for (const sub of scene.sublocations) {
     const key = `sublocation:${sub.id}`;
@@ -1568,14 +1960,41 @@ function validateInvestigationScene(rec: SceneRecord, errors: CompileError[]): v
       const hasInbound = inboundReveals.has(key);
       const hasUnlock = sub.unlock !== null;
       if (hasInbound && hasUnlock)
-        errors.push({ code: "revealsAndUnlockBoth", message: `sublocation ${sub.id} has both an inbound Reveals and a self Unlock — pick one.`, sourceFile: scene.sourceFile, line: sub.line });
+        errors.push({
+          code: "revealsAndUnlockBoth",
+          message: `sublocation ${sub.id} has both an inbound Reveals and a self Unlock — pick one.`,
+          sourceFile: scene.sourceFile,
+          line: sub.line,
+        });
       if (!hasInbound && !hasUnlock)
-        errors.push({ code: "lockedBlockUnreachable", message: `sublocation ${sub.id} is locked but has no Unlock and no inbound Reveals — unreachable.`, sourceFile: scene.sourceFile, line: sub.line });
+        errors.push({
+          code: "lockedBlockUnreachable",
+          message: `sublocation ${sub.id} is locked but has no Unlock and no inbound Reveals — unreachable.`,
+          sourceFile: scene.sourceFile,
+          line: sub.line,
+        });
     }
-    for (const h of sub.hotspots) checkLockedReachability(`hotspot:${h.id}`, h.status, h.unlock !== null, inboundReveals.has(`hotspot:${h.id}`), scene.sourceFile, h.line, errors);
+    for (const h of sub.hotspots)
+      checkLockedReachability(
+        `hotspot:${h.id}`,
+        h.status,
+        h.unlock !== null,
+        inboundReveals.has(`hotspot:${h.id}`),
+        scene.sourceFile,
+        h.line,
+        errors,
+      );
     for (const c of sub.characters)
       for (const t of c.topics)
-        checkLockedReachability(`topic:${c.id}@${t.id}`, t.status, t.unlock !== null, inboundReveals.has(`topic:${c.id}@${t.id}`), scene.sourceFile, t.line, errors);
+        checkLockedReachability(
+          `topic:${c.id}@${t.id}`,
+          t.status,
+          t.unlock !== null,
+          inboundReveals.has(`topic:${c.id}@${t.id}`),
+          scene.sourceFile,
+          t.line,
+          errors,
+        );
   }
 }
 
@@ -1590,9 +2009,19 @@ function checkLockedReachability(
 ) {
   if (status !== "locked") return;
   if (hasInbound && hasUnlock)
-    errors.push({ code: "revealsAndUnlockBoth", message: `${key} has both inbound Reveals and self Unlock — pick one.`, sourceFile, line });
+    errors.push({
+      code: "revealsAndUnlockBoth",
+      message: `${key} has both inbound Reveals and self Unlock — pick one.`,
+      sourceFile,
+      line,
+    });
   if (!hasInbound && !hasUnlock)
-    errors.push({ code: "lockedBlockUnreachable", message: `${key} is locked but unreachable (no Unlock and no inbound Reveals).`, sourceFile, line });
+    errors.push({
+      code: "lockedBlockUnreachable",
+      message: `${key} is locked but unreachable (no Unlock and no inbound Reveals).`,
+      sourceFile,
+      line,
+    });
 }
 
 /**
@@ -1610,7 +2039,10 @@ function checkLockedReachability(
  * error. This catches cyclic dependencies (A needs B, B needs A) and dead-end
  * chains.
  */
-function checkReachability(scene: ASTInvestigationScene, errors: CompileError[]): void {
+function checkReachability(
+  scene: ASTInvestigationScene,
+  errors: CompileError[],
+): void {
   // --- Phase 1: sub-location reachability ---
   const subReachable = new Set<string>();
 
@@ -1629,7 +2061,10 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
     subRevealsBySubId.clear();
     for (const sub of scene.sublocations) {
       if (!subReachable.has(sub.id)) continue;
-      subRevealsBySubId.set(sub.id, collectRevealsFromReachableBlocks(sub, reachableAtoms));
+      subRevealsBySubId.set(
+        sub.id,
+        collectRevealsFromReachableBlocks(sub, reachableAtoms),
+      );
     }
   }
 
@@ -1649,7 +2084,10 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
   // Fixed-point propagation for sub-locations.
   let changed = true;
   while (changed) {
-    const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable);
+    const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(
+      scene,
+      subReachable,
+    );
     refreshReachableReveals(reachableAtoms);
     refreshReachableItems();
     changed = false;
@@ -1670,7 +2108,16 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
 
       // Check if this sub-location's Unlock predicate is satisfiable.
       // For sub-location Unlock, predicate blocks must be in reachable sub-locations.
-      if (sub.unlock && isSubUnlockSatisfiable(sub.unlock, subReachable, scene, reachableItems, reachableAtoms)) {
+      if (
+        sub.unlock &&
+        isSubUnlockSatisfiable(
+          sub.unlock,
+          subReachable,
+          scene,
+          reachableItems,
+          reachableAtoms,
+        )
+      ) {
         subReachable.add(sub.id);
         changed = true;
       }
@@ -1678,7 +2125,10 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
   }
 
   // --- Phase 2: hotspot/topic reachability within each sub-location ---
-  const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(scene, subReachable);
+  const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(
+    scene,
+    subReachable,
+  );
   for (const sub of scene.sublocations) {
     if (subReachable.has(sub.id)) {
       // Sub-location is reachable. Check internal blocks.
@@ -1729,7 +2179,14 @@ function checkReachability(scene: ASTInvestigationScene, errors: CompileError[])
   // unwinnable at runtime.
   if (scene.outro.unlock !== "auto") {
     // Collect all evidence/statements revealed by reachable content.
-    errors.push(...collectOutroUnlockErrors(scene.outro.unlock, scene, subReachable, reachableAtoms));
+    errors.push(
+      ...collectOutroUnlockErrors(
+        scene.outro.unlock,
+        scene,
+        subReachable,
+        reachableAtoms,
+      ),
+    );
   }
 }
 
@@ -1806,17 +2263,20 @@ function collectReachableAtomsAcrossReachableSublocations(
       }
       for (const c of sub.characters) {
         for (const t of c.topics) {
-          if (reachable.has(`topic:${c.id}@${t.id}`)) allReveals.push(...t.reveals);
+          if (reachable.has(`topic:${c.id}@${t.id}`))
+            allReveals.push(...t.reveals);
         }
       }
     }
 
     for (const r of allReveals) {
       if (r.kind === "evidence" && !reachable.has(`evidence:${r.id}`)) {
-        reachable.add(`evidence:${r.id}`); changed = true;
+        reachable.add(`evidence:${r.id}`);
+        changed = true;
       }
       if (r.kind === "statement" && !reachable.has(`statement:${r.id}`)) {
-        reachable.add(`statement:${r.id}`); changed = true;
+        reachable.add(`statement:${r.id}`);
+        changed = true;
       }
     }
 
@@ -1824,20 +2284,37 @@ function collectReachableAtomsAcrossReachableSublocations(
       if (!reachableSubs.has(sub.id)) continue;
       for (const h of sub.hotspots) {
         if (reachable.has(`hotspot:${h.id}`) || h.status !== "locked") continue;
-        const reachedByReveal = allReveals.some((r) => r.kind === "hotspot" && r.id === h.id);
-        if (reachedByReveal) { reachable.add(`hotspot:${h.id}`); changed = true; continue; }
+        const reachedByReveal = allReveals.some(
+          (r) => r.kind === "hotspot" && r.id === h.id,
+        );
+        if (reachedByReveal) {
+          reachable.add(`hotspot:${h.id}`);
+          changed = true;
+          continue;
+        }
         if (h.unlock && isUnlockSatisfiable(h.unlock, reachable)) {
-          reachable.add(`hotspot:${h.id}`); changed = true;
+          reachable.add(`hotspot:${h.id}`);
+          changed = true;
         }
       }
       for (const c of sub.characters) {
         for (const t of c.topics) {
           const key = `topic:${c.id}@${t.id}`;
           if (reachable.has(key) || t.status !== "locked") continue;
-          const reachedByReveal = allReveals.some((r) => r.kind === "topic" && r.characterId === c.id && r.topicId === t.id);
-          if (reachedByReveal) { reachable.add(key); changed = true; continue; }
+          const reachedByReveal = allReveals.some(
+            (r) =>
+              r.kind === "topic" &&
+              r.characterId === c.id &&
+              r.topicId === t.id,
+          );
+          if (reachedByReveal) {
+            reachable.add(key);
+            changed = true;
+            continue;
+          }
           if (t.unlock && isUnlockSatisfiable(t.unlock, reachable)) {
-            reachable.add(key); changed = true;
+            reachable.add(key);
+            changed = true;
           }
         }
       }
@@ -1861,15 +2338,15 @@ function collectRevealsFromReachableBlocks(
   // Only include sub-location entry reveals if this sub-location is mandatory
   // (the player must enter it for auto-outro). When mandatorySubs is not
   // provided, all entry reveals are included (obtainable/reachability analysis).
-  const reveals: RevealTarget[] = (!mandatorySubs || mandatorySubs.has(sub.id))
-    ? [...sub.reveals]
-    : [];
+  const reveals: RevealTarget[] =
+    !mandatorySubs || mandatorySubs.has(sub.id) ? [...sub.reveals] : [];
   for (const h of sub.hotspots) {
     if (reachableAtoms.has(`hotspot:${h.id}`)) reveals.push(...h.reveals);
   }
   for (const c of sub.characters) {
     for (const t of c.topics) {
-      if (reachableAtoms.has(`topic:${c.id}@${t.id}`)) reveals.push(...t.reveals);
+      if (reachableAtoms.has(`topic:${c.id}@${t.id}`))
+        reveals.push(...t.reveals);
     }
   }
   return reveals;
@@ -1892,27 +2369,65 @@ function isSubUnlockSatisfiable(
 ): boolean {
   if ("op" in expr) {
     if (expr.op === "and") {
-      return isSubUnlockSatisfiable(expr.left, reachableSubs, scene, reachableItems, reachableAtoms)
-          && isSubUnlockSatisfiable(expr.right, reachableSubs, scene, reachableItems, reachableAtoms);
+      return (
+        isSubUnlockSatisfiable(
+          expr.left,
+          reachableSubs,
+          scene,
+          reachableItems,
+          reachableAtoms,
+        ) &&
+        isSubUnlockSatisfiable(
+          expr.right,
+          reachableSubs,
+          scene,
+          reachableItems,
+          reachableAtoms,
+        )
+      );
     }
-    return isSubUnlockSatisfiable(expr.left, reachableSubs, scene, reachableItems, reachableAtoms)
-        || isSubUnlockSatisfiable(expr.right, reachableSubs, scene, reachableItems, reachableAtoms);
+    return (
+      isSubUnlockSatisfiable(
+        expr.left,
+        reachableSubs,
+        scene,
+        reachableItems,
+        reachableAtoms,
+      ) ||
+      isSubUnlockSatisfiable(
+        expr.right,
+        reachableSubs,
+        scene,
+        reachableItems,
+        reachableAtoms,
+      )
+    );
   }
   switch (expr.predicate) {
     case "hotspot_investigated": {
       // Find which sub-location contains this hotspot and check reachability.
-      const parentSub = scene.sublocations.find((s) => s.hotspots.some((h) => h.id === expr.id));
-      return parentSub != null
-        && reachableSubs.has(parentSub.id)
-        && reachableAtoms.has(`hotspot:${expr.id}`);
+      const parentSub = scene.sublocations.find((s) =>
+        s.hotspots.some((h) => h.id === expr.id),
+      );
+      return (
+        parentSub != null &&
+        reachableSubs.has(parentSub.id) &&
+        reachableAtoms.has(`hotspot:${expr.id}`)
+      );
     }
     case "topic_discussed": {
       const parentSub = scene.sublocations.find((s) =>
-        s.characters.some((c) => c.id === expr.characterId && c.topics.some((t) => t.id === expr.topicId)),
+        s.characters.some(
+          (c) =>
+            c.id === expr.characterId &&
+            c.topics.some((t) => t.id === expr.topicId),
+        ),
       );
-      return parentSub != null
-        && reachableSubs.has(parentSub.id)
-        && reachableAtoms.has(`topic:${expr.characterId}@${expr.topicId}`);
+      return (
+        parentSub != null &&
+        reachableSubs.has(parentSub.id) &&
+        reachableAtoms.has(`topic:${expr.characterId}@${expr.topicId}`)
+      );
     }
     case "evidence_collected":
       return reachableItems.has(`evidence:${expr.id}`);
@@ -1928,13 +2443,22 @@ function isSubUnlockSatisfiable(
  * statements, reachability requires that they be revealed by a reachable block
  * in a prior iteration of the fixed-point loop.
  */
-function isUnlockSatisfiable(expr: UnlockExpr, reachable: Set<string>): boolean {
+function isUnlockSatisfiable(
+  expr: UnlockExpr,
+  reachable: Set<string>,
+): boolean {
   if ("op" in expr) {
     if (expr.op === "and") {
-      return isUnlockSatisfiable(expr.left, reachable) && isUnlockSatisfiable(expr.right, reachable);
+      return (
+        isUnlockSatisfiable(expr.left, reachable) &&
+        isUnlockSatisfiable(expr.right, reachable)
+      );
     }
     // "or"
-    return isUnlockSatisfiable(expr.left, reachable) || isUnlockSatisfiable(expr.right, reachable);
+    return (
+      isUnlockSatisfiable(expr.left, reachable) ||
+      isUnlockSatisfiable(expr.right, reachable)
+    );
   }
   switch (expr.predicate) {
     case "hotspot_investigated":
@@ -1955,8 +2479,18 @@ function collectOutroUnlockErrors(
   reachableAtoms: Set<string>,
 ): CompileError[] {
   if ("op" in expr) {
-    const leftErrors = collectOutroUnlockErrors(expr.left, scene, reachableSubs, reachableAtoms);
-    const rightErrors = collectOutroUnlockErrors(expr.right, scene, reachableSubs, reachableAtoms);
+    const leftErrors = collectOutroUnlockErrors(
+      expr.left,
+      scene,
+      reachableSubs,
+      reachableAtoms,
+    );
+    const rightErrors = collectOutroUnlockErrors(
+      expr.right,
+      scene,
+      reachableSubs,
+      reachableAtoms,
+    );
     if (expr.op === "and") {
       return [...leftErrors, ...rightErrors];
     }
@@ -1982,17 +2516,27 @@ function outroPredicateReachable(
       return reachableAtoms.has(`statement:${pred.id}`);
     case "topic_discussed": {
       const parentSub = scene.sublocations.find((s) =>
-        s.characters.some((c) => c.id === pred.characterId && c.topics.some((t) => t.id === pred.topicId)),
+        s.characters.some(
+          (c) =>
+            c.id === pred.characterId &&
+            c.topics.some((t) => t.id === pred.topicId),
+        ),
       );
-      return parentSub != null
-        && reachableSubs.has(parentSub.id)
-        && reachableAtoms.has(`topic:${pred.characterId}@${pred.topicId}`);
+      return (
+        parentSub != null &&
+        reachableSubs.has(parentSub.id) &&
+        reachableAtoms.has(`topic:${pred.characterId}@${pred.topicId}`)
+      );
     }
     case "hotspot_investigated": {
-      const parentSub = scene.sublocations.find((s) => s.hotspots.some((h) => h.id === pred.id));
-      return parentSub != null
-        && reachableSubs.has(parentSub.id)
-        && reachableAtoms.has(`hotspot:${pred.id}`);
+      const parentSub = scene.sublocations.find((s) =>
+        s.hotspots.some((h) => h.id === pred.id),
+      );
+      return (
+        parentSub != null &&
+        reachableSubs.has(parentSub.id) &&
+        reachableAtoms.has(`hotspot:${pred.id}`)
+      );
     }
   }
 }
@@ -2033,7 +2577,10 @@ function outroPredicateUnreachableError(
   }
 }
 
-function walkUnlock(expr: UnlockExpr, fn: (atom: Extract<UnlockExpr, { predicate: string }>) => void): void {
+function walkUnlock(
+  expr: UnlockExpr,
+  fn: (atom: Extract<UnlockExpr, { predicate: string }>) => void,
+): void {
   if ("op" in expr) {
     walkUnlock(expr.left, fn);
     walkUnlock(expr.right, fn);

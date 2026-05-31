@@ -13,13 +13,19 @@
     inventory: Inventory;
     onAnswerQuestion: (questionId: string) => void | Promise<void>;
     onPressStatement: (statementId: string) => void | Promise<void>;
-    onPresentItem: (statementId: string, itemKind: "evidence" | "statement", itemId: string) => void | Promise<void>;
+    onPresentItem: (
+      statementId: string,
+      itemKind: "evidence" | "statement",
+      itemId: string,
+    ) => void | Promise<void>;
     disabled?: boolean;
   } = $props();
 
   let interrogation = $derived(scene.kind === "interrogation" ? scene : null);
   let currentPhase = $derived(
-    interrogation?.visiblePhases.find((phase) => phase.id === interrogation.currentPhaseId) ?? null,
+    interrogation?.visiblePhases.find(
+      (phase) => phase.id === interrogation.currentPhaseId,
+    ) ?? null,
   );
 </script>
 
@@ -29,7 +35,9 @@
       <div class="phase-id">
         <span class="kind-marker {currentPhase.kind}">
           <span class="diamond"></span>
-          {currentPhase.kind === "inquiry" ? "詢問 · INQUIRY" : "證詞 · TESTIMONY"}
+          {currentPhase.kind === "inquiry"
+            ? "詢問 · INQUIRY"
+            : "證詞 · TESTIMONY"}
         </span>
         <h2>{currentPhase.label}</h2>
       </div>
@@ -47,10 +55,18 @@
     {#if currentPhase.kind === "inquiry"}
       <div class="question-grid">
         {#each currentPhase.questions as question, i (question.id)}
-          <button class="qcard" class:done={question.answered} type="button" {disabled} onclick={() => onAnswerQuestion(question.id)}>
+          <button
+            class="qcard"
+            class:done={question.answered}
+            type="button"
+            {disabled}
+            onclick={() => onAnswerQuestion(question.id)}
+          >
             <span class="qnum">Q.{String(i + 1).padStart(2, "0")}</span>
             <span class="qbody">{question.label}</span>
-            <span class="qstatus">{question.answered ? "已詢問" : "未詢問"}</span>
+            <span class="qstatus"
+              >{question.answered ? "已詢問" : "未詢問"}</span
+            >
           </button>
         {/each}
       </div>
@@ -63,11 +79,18 @@
                 <span class="snum">§{String(i + 1).padStart(2, "0")}</span>
                 <strong>{statement.label}</strong>
               </div>
-              <span class="status">{statement.pressed ? "● 已追問" : "○ 未追問"}</span>
+              <span class="status"
+                >{statement.pressed ? "● 已追問" : "○ 未追問"}</span
+              >
             </header>
             <blockquote class="statement-quote">{statement.content}</blockquote>
             <div class="statement-actions">
-              <button class="primary" type="button" {disabled} onclick={() => onPressStatement(statement.id)}>
+              <button
+                class="primary"
+                type="button"
+                {disabled}
+                onclick={() => onPressStatement(statement.id)}
+              >
                 <span class="act-mark">▸</span>
                 <span>{statement.pressed ? "再次追問" : "追問"}</span>
                 <span class="act-en">PRESS</span>
@@ -75,13 +98,25 @@
               {#if inventory.evidence.length + inventory.statements.length > 0}
                 <span class="present-label">提示 · PRESENT</span>
                 {#each inventory.evidence as item (item.id)}
-                  <button class="secondary" type="button" {disabled} onclick={() => onPresentItem(statement.id, "evidence", item.id)}>
+                  <button
+                    class="secondary"
+                    type="button"
+                    {disabled}
+                    onclick={() =>
+                      onPresentItem(statement.id, "evidence", item.id)}
+                  >
                     <span class="item-kind">證</span>
                     <span>{item.name}</span>
                   </button>
                 {/each}
                 {#each inventory.statements as item (item.id)}
-                  <button class="secondary" type="button" {disabled} onclick={() => onPresentItem(statement.id, "statement", item.id)}>
+                  <button
+                    class="secondary"
+                    type="button"
+                    {disabled}
+                    onclick={() =>
+                      onPresentItem(statement.id, "statement", item.id)}
+                  >
                     <span class="item-kind alt">言</span>
                     <span>{item.speaker}</span>
                   </button>
@@ -222,7 +257,10 @@
     font: inherit;
     text-align: left;
     clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
-    transition: transform 0.18s, background 0.18s, border-color 0.18s;
+    transition:
+      transform 0.18s,
+      background 0.18s,
+      border-color 0.18s;
   }
 
   .qcard::before {
@@ -421,7 +459,10 @@
     font-family: var(--serif-jp);
     font-size: 13px;
     letter-spacing: 0.04em;
-    transition: border-color 0.18s, background 0.18s, color 0.18s;
+    transition:
+      border-color 0.18s,
+      background 0.18s,
+      color 0.18s;
   }
 
   .statement-actions button:hover:not(:disabled) {

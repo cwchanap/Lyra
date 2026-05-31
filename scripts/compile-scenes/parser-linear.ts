@@ -9,8 +9,12 @@
 // cue metadata after a scene tag.
 // =============================================================================
 
-import { tokenize, type Token } from "./tokenizer";
-import { parseVisualAssetCue, rejectUnknownAssetMetadata, VISUAL_ASSET_METADATA_KEYS } from "./parser-assets";
+import { tokenize } from "./tokenizer";
+import {
+  parseVisualAssetCue,
+  rejectUnknownAssetMetadata,
+  VISUAL_ASSET_METADATA_KEYS,
+} from "./parser-assets";
 import type { ASTLinearScene, CompileError, DialogueItem } from "./types";
 
 export type LinearParseResult =
@@ -24,7 +28,11 @@ export function parseLinearScene(
 ): LinearParseResult {
   const tokens = tokenize(source, sourceFile);
 
-  if (tokens.length === 0 || tokens[0]?.kind !== "heading" || tokens[0].level !== 1) {
+  if (
+    tokens.length === 0 ||
+    tokens[0]?.kind !== "heading" ||
+    tokens[0].level !== 1
+  ) {
     return fail(
       sourceFile,
       tokens[0]?.line ?? 1,
@@ -69,9 +77,19 @@ export function parseLinearScene(
             metadataLines[next.key] = next.line;
           }
         }
-        const bad = rejectUnknownAssetMetadata(meta, VISUAL_ASSET_METADATA_KEYS, sourceFile, tok.line, metadataLines);
+        const bad = rejectUnknownAssetMetadata(
+          meta,
+          VISUAL_ASSET_METADATA_KEYS,
+          sourceFile,
+          tok.line,
+          metadataLines,
+        );
         if (bad) return { ok: false, error: bad };
-        queue.push({ kind: "sceneTag", text: tok.text, assetCue: parseVisualAssetCue(meta) });
+        queue.push({
+          kind: "sceneTag",
+          text: tok.text,
+          assetCue: parseVisualAssetCue(meta),
+        });
         break;
       }
       case "action":
@@ -119,6 +137,11 @@ export function parseLinearScene(
   };
 }
 
-function fail(sourceFile: string, line: number, code: string, message: string): LinearParseResult {
+function fail(
+  sourceFile: string,
+  line: number,
+  code: string,
+  message: string,
+): LinearParseResult {
   return { ok: false, error: { code, message, sourceFile, line } };
 }
