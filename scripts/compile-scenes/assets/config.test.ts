@@ -405,6 +405,87 @@ characters:
     });
   });
 
+  it("warns when image type transparency is present but not boolean", () => {
+    withConfig({
+      "policy.yaml": `
+assets:
+  enabled: false
+types:
+  background:
+    transparency: "yes"
+`,
+      "characters.yaml": "characters: []\n",
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.warnings.some((w) => w.code === "assetConfigWrongType" && w.message.includes('"types.background.transparency"'))).toBe(true);
+      // Falls back to default (false for background)
+      expect(result.value.types.background.transparency).toBe(false);
+    });
+  });
+
+  it("warns when audio loop is present but not boolean", () => {
+    withConfig({
+      "policy.yaml": `
+assets:
+  enabled: false
+types:
+  audio:
+    loop: "always"
+`,
+      "characters.yaml": "characters: []\n",
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.warnings.some((w) => w.code === "assetConfigWrongType" && w.message.includes('"types.audio.loop"'))).toBe(true);
+      // Falls back to default (true)
+      expect(result.value.types.audio.loop).toBe(true);
+    });
+  });
+
+  it("does not warn when transparency is omitted", () => {
+    withConfig({
+      "policy.yaml": `
+assets:
+  enabled: false
+types:
+  background:
+    format: png
+`,
+      "characters.yaml": "characters: []\n",
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.warnings.some((w) => w.message.includes("transparency"))).toBe(false);
+    });
+  });
+
+  it("does not warn when transparency is a valid boolean", () => {
+    withConfig({
+      "policy.yaml": `
+assets:
+  enabled: false
+types:
+  portrait:
+    transparency: true
+`,
+      "characters.yaml": "characters: []\n",
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.warnings.some((w) => w.message.includes("transparency"))).toBe(false);
+      expect(result.value.types.portrait.transparency).toBe(true);
+    });
+  });
+
   it("warns when type dimensions are present but malformed", () => {
     withConfig({
       "policy.yaml": `
@@ -424,6 +505,48 @@ types:
       expect(result.warnings.some((w) => w.code === "assetConfigWrongType" && w.message.includes('"types.background.dimensions"'))).toBe(true);
       // Falls back to default dimensions
       expect(result.value.types.background.dimensions).toEqual([1920, 1080]);
+    });
+  });
+
+  it("warns when type dimensions contain zero or negative values", () => {
+    withConfig({
+      "policy.yaml": `
+assets:
+  enabled: false
+types:
+  background:
+    dimensions: [0, -5]
+    format: png
+`,
+      "characters.yaml": "characters: []\n",
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.warnings.some((w) => w.code === "assetConfigWrongType" && w.message.includes('"types.background.dimensions"'))).toBe(true);
+      expect(result.value.types.background.dimensions).toEqual([1920, 1080]);
+    });
+  });
+
+  it("warns when type dimensions contain non-integer values", () => {
+    withConfig({
+      "policy.yaml": `
+assets:
+  enabled: false
+types:
+  portrait:
+    dimensions: [768.5, 1024.9]
+    format: png
+`,
+      "characters.yaml": "characters: []\n",
+      "audio.yaml": "bgm: {}\nbgs: {}\n",
+    }, (root) => {
+      const result = loadAssetConfig(root);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.warnings.some((w) => w.code === "assetConfigWrongType" && w.message.includes('"types.portrait.dimensions"'))).toBe(true);
+      expect(result.value.types.portrait.dimensions).toEqual([768, 1024]);
     });
   });
 });
