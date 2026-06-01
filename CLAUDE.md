@@ -86,11 +86,17 @@ attributes like `onsubmit={...}` rather than legacy `on:submit` /
 ## Project domain
 
 This repo is a detective/mystery game (《東京雨證：第零證人》, Traditional
-Chinese). Narrative content lives in `static/stories_plan/`:
+Chinese). Two distinct trees hold narrative content — do not conflate them:
 
-- `General Plan.md` - the 8-chapter overview.
-- `第_1_章_..._詳細計劃.md` - the per-chapter detail plan.
-- `chapter_<N>/` - authored playable scene files:
+- **Planning/design** lives in `docs/stories_plan/` (not consumed by the
+  compiler): the story bible (`tokyo_rain_witness_final_story_bible_v*.md`),
+  per-chapter writing plans, agent addenda, and planning copies of `chapter.md`.
+  This is reference for writers, not runtime input.
+- **Authored playable content** lives in `static/stories_plan/chapter_<N>/` —
+  this is the compiler's `SOURCE_ROOT` (`scripts/compile-scenes.ts`). A fresh
+  checkout may have an empty/absent `static/stories_plan/` because the prior
+  authored scenes were removed during the pipeline migration (commit 9513ac4);
+  re-author here, not under `docs/`. Files in this tree:
   - `chapter.md` - the chapter manifest (title, summary, ordered scene list).
     Authored via the `writing-chapter-manifest` skill.
   - `scene_<K>.md` - linear-dialogue scenes (intros, transitions, endings).
@@ -100,6 +106,10 @@ Chinese). Narrative content lives in `static/stories_plan/`:
   - `interrogation_scene_<K>.md` - authored and compiler-validated suspect
     inquiry and testimony cross-examination scenes. Authored via
     `writing-interrogation-scene`.
+
+Compiler unit tests use fixtures under `scripts/__fixtures__/` (e.g.
+`valid/`, `valid_interrogation/`, `asset_enabled/`, and `invalid/<case>/` with
+matching `expected-error.txt`), not the live `static/stories_plan/` tree.
 
 Active writer instructions live in `.claude/skills/*/SKILL.md` and are part of
 the repo contract. When writing or modifying scene content, invoke the relevant
