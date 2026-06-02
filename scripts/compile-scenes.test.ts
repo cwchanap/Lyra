@@ -475,3 +475,44 @@ describe("asset enrichment: first visual cue audio validation", () => {
     ).toBe(false);
   });
 });
+
+describe("compile (multiple source roots)", () => {
+  it("merges chapters across roots and skips a non-existent root", () => {
+    const outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-multi-"));
+    const missingRoot = resolve(tmpdir(), "scene-compile-definitely-missing");
+    rmSync(missingRoot, { recursive: true, force: true });
+    try {
+      const result = compile({
+        sourceRoot: ["scripts/__fixtures__/valid", missingRoot],
+        outputRoot: outRoot,
+      });
+      if (!result.ok) {
+        throw new Error("Compile failed:\n" + formatErrors(result.errors));
+      }
+      expect(result.chaptersCompiled).toBe(1);
+      expect(result.scenesCompiled).toBe(2);
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("errors with duplicateChapter when the same chapter appears in two roots", () => {
+    const outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-dup-"));
+    try {
+      const result = compile({
+        sourceRoot: [
+          "scripts/__fixtures__/valid",
+          "scripts/__fixtures__/valid",
+        ],
+        outputRoot: outRoot,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.some((e) => e.code === "duplicateChapter")).toBe(
+        true,
+      );
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+});
