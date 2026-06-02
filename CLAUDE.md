@@ -16,8 +16,9 @@ compiler, and Tauri commands so local runs match `tauri.conf.json`.
 - `bun run tauri build` - produce desktop bundles for all targets in
   `tauri.conf.json`. Tauri runs `bun run build:tauri`, which compiles scenes
   before `vite build`.
-- `bun run scenes:compile` - one-shot compile from `static/stories_plan/` and
-  `static/assets/config/` into Tauri resource JSON.
+- `bun run scenes:compile` - one-shot compile. Merges scenes from both
+  `static/stories_plan/` and `docs/stories_plan/` (a root that does not exist
+  is skipped) plus `static/assets/config/` into Tauri resource JSON.
 - `bun run scenes:watch` - watch authored scene Markdown and asset YAML while
   iterating on story content.
 - `bun run check` / `bun run check:watch` - type-check Svelte + TS
@@ -56,7 +57,10 @@ Two-process desktop app: a **SvelteKit SPA frontend** rendered inside a **Tauri 
 
 Lyra's playable content is compiler-driven:
 
-1. Authored Markdown lives under `static/stories_plan/`.
+1. Authored Markdown lives under `static/stories_plan/` and/or
+   `docs/stories_plan/`. The compiler merges both source roots in a single
+   pass; a root that does not exist is skipped, and the same `chapter_<N>`
+   must not appear in both roots.
 2. Asset policy/catalog YAML lives under `static/assets/config/`.
 3. `scripts/compile-scenes.ts` validates and emits runtime JSON under
    `src-tauri/resources/scenes/` and asset manifests/reports under
@@ -86,17 +90,19 @@ attributes like `onsubmit={...}` rather than legacy `on:submit` /
 ## Project domain
 
 This repo is a detective/mystery game (《東京雨證：第零證人》, Traditional
-Chinese). Two distinct trees hold narrative content — do not conflate them:
+Chinese). Narrative content has two kinds — keep them straight even though both
+roots now feed the compiler:
 
-- **Planning/design** lives in `docs/stories_plan/` (not consumed by the
-  compiler): the story bible (`tokyo_rain_witness_final_story_bible_v*.md`),
-  per-chapter writing plans, agent addenda, and planning copies of `chapter.md`.
-  This is reference for writers, not runtime input.
-- **Authored playable content** lives in `static/stories_plan/chapter_<N>/` —
-  this is the compiler's `SOURCE_ROOT` (`scripts/compile-scenes.ts`). A fresh
-  checkout may have an empty/absent `static/stories_plan/` because the prior
-  authored scenes were removed during the pipeline migration (commit 9513ac4);
-  re-author here, not under `docs/`. Files in this tree:
+- **Planning/design** is reference for writers, not playable input: the story
+  bible (`tokyo_rain_witness_final_story_bible_v*.md`), per-chapter writing
+  plans, and agent addenda. The compiler only descends into `chapter_<N>/`
+  directories and within each only reads the files its `chapter.md` manifest
+  lists, so planning docs are ignored even when they sit beside authored scenes.
+- **Authored playable content** lives in `<root>/chapter_<N>/`, where `<root>`
+  is either `static/stories_plan/` or `docs/stories_plan/` — the compiler
+  merges both (`scripts/compile-scenes.ts` passes them as a `sourceRoot` list;
+  `compile()` skips a missing root and rejects a `chapter_<N>` that appears in
+  both). A given chapter must live in exactly one root. Files in a chapter dir:
   - `chapter.md` - the chapter manifest (title, summary, ordered scene list).
     Authored via the `writing-chapter-manifest` skill.
   - `scene_<K>.md` - linear-dialogue scenes (intros, transitions, endings).
@@ -109,7 +115,8 @@ Chinese). Two distinct trees hold narrative content — do not conflate them:
 
 Compiler unit tests use fixtures under `scripts/__fixtures__/` (e.g.
 `valid/`, `valid_interrogation/`, `asset_enabled/`, and `invalid/<case>/` with
-matching `expected-error.txt`), not the live `static/stories_plan/` tree.
+matching `expected-error.txt`), not the live `static/stories_plan/` or
+`docs/stories_plan/` trees.
 
 Active writer instructions live in `.claude/skills/*/SKILL.md` and are part of
 the repo contract. When writing or modifying scene content, invoke the relevant

@@ -44,7 +44,11 @@ import { enrichScenesWithAssets } from "./assets/enrich";
 import type { AssetManifest } from "./assets/manifest";
 
 export type CompileOptions = {
-  sourceRoot: string;
+  /**
+   * One source tree, or several to merge in a single pass. Roots that do not
+   * exist are skipped; the same chapter_<N> in two roots is a collision.
+   */
+  sourceRoot: string | string[];
   outputRoot: string;
   assetConfigRoot?: string;
   assetOutputRoot?: string;
@@ -72,46 +76,68 @@ export function compile(opts: CompileOptions): CompileResult {
   const skippedReservedFiles = new Set<string>();
   const failedParseFiles = new Set<string>();
 
-  // 1. Discover chapter directories.
-  let dirs: string[];
-  try {
-    dirs = readdirSync(opts.sourceRoot)
-      .filter(
+  const sourceRoots = Array.isArray(opts.sourceRoot)
+    ? opts.sourceRoot
+    : [opts.sourceRoot];
+
+  // 1. Discover chapter directories across every source root, then merge.
+  //
+  // Roots are optional: a path that does not exist is skipped (e.g. an empty
+  // static/ tree while all authored content lives under docs/). A root that
+  // exists but cannot be read is a hard error. The same chapter_<N> appearing
+  // in more than one root is a collision — each chapter must live in exactly
+  // one root, since they all emit into the same outputRoot/chapter_<N>/.
+  const discovered: { dirName: string; chapterDir: string }[] = [];
+  const claimedBy = new Map<string, string>(); // dirName -> root that owns it
+  for (const root of sourceRoots) {
+    if (!existsSync(root)) continue;
+    let entries: string[];
+    try {
+      entries = readdirSync(root).filter(
         (d) =>
-          /^chapter_\d+$/.test(d) &&
-          statSync(resolve(opts.sourceRoot, d)).isDirectory(),
-      )
-      .sort(byChapterNumber);
-  } catch (e) {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "sourceRootUnreadable",
-          message: `${opts.sourceRoot}: ${(e as Error).message}`,
-          sourceFile: opts.sourceRoot,
+          /^chapter_\d+$/.test(d) && statSync(resolve(root, d)).isDirectory(),
+      );
+    } catch (e) {
+      errors.push({
+        code: "sourceRootUnreadable",
+        message: `${root}: ${(e as Error).message}`,
+        sourceFile: root,
+        line: 0,
+      });
+      continue;
+    }
+    for (const dirName of entries) {
+      const owner = claimedBy.get(dirName);
+      if (owner !== undefined) {
+        errors.push({
+          code: "duplicateChapter",
+          message: `Chapter "${dirName}" found in multiple source roots (${owner} and ${root}); each chapter must be defined in exactly one root.`,
+          sourceFile: resolve(root, dirName),
           line: 0,
-        },
-      ],
-    };
+        });
+        continue;
+      }
+      claimedBy.set(dirName, root);
+      discovered.push({ dirName, chapterDir: resolve(root, dirName) });
+    }
   }
+  discovered.sort((a, b) => byChapterNumber(a.dirName, b.dirName));
 
   // 2 & 3. For each chapter, parse the manifest then each scene.
-  if (dirs.length === 0) {
+  if (discovered.length === 0 && errors.length === 0) {
     return {
       ok: false,
       errors: [
         {
           code: "noChaptersFound",
-          message: `No chapter_<N> directories found under ${opts.sourceRoot}`,
-          sourceFile: opts.sourceRoot,
+          message: `No chapter_<N> directories found under: ${sourceRoots.join(", ")}`,
+          sourceFile: sourceRoots[0],
           line: 0,
         },
       ],
     };
   }
-  for (const dirName of dirs) {
-    const chapterDir = resolve(opts.sourceRoot, dirName);
+  for (const { dirName, chapterDir } of discovered) {
     const manifestPath = resolve(chapterDir, "chapter.md");
     let manifestSource: string;
     try {
@@ -182,7 +208,7 @@ export function compile(opts: CompileOptions): CompileResult {
   }
 
   const assetConfig = loadAssetConfig(
-    opts.assetConfigRoot ?? resolve(opts.sourceRoot, "../assets/config"),
+    opts.assetConfigRoot ?? resolve(sourceRoots[0], "../assets/config"),
   );
   if (!assetConfig.ok) {
     errors.push(...assetConfig.errors);

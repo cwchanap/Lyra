@@ -11,7 +11,13 @@ import { resolve } from "node:path";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
 import { checkTauriConfig } from "./compile-scenes/config-check";
 
-const SOURCE_ROOT = resolve(process.cwd(), "static/stories_plan");
+// Source trees compiled into the runtime, merged in a single pass. A root that
+// does not exist is skipped, so an empty static/ tree is fine while authored
+// content lives under docs/. The same chapter_<N> must not appear in both.
+const SOURCE_ROOTS = [
+  resolve(process.cwd(), "static/stories_plan"),
+  resolve(process.cwd(), "docs/stories_plan"),
+];
 const OUTPUT_ROOT = resolve(process.cwd(), "src-tauri/resources/scenes");
 const ASSET_CONFIG_ROOT = resolve(process.cwd(), "static/assets/config");
 const ASSET_OUTPUT_ROOT = resolve(process.cwd(), "src-tauri/resources/assets");
@@ -34,12 +40,18 @@ async function main() {
   if (isWatch) {
     const chokidar = await import("chokidar");
     console.log(
-      `[compile-scenes] Watching ${SOURCE_ROOT} and ${ASSET_CONFIG_ROOT} for changes...`,
+      `[compile-scenes] Watching ${SOURCE_ROOTS.join(", ")} and ${ASSET_CONFIG_ROOT} for changes...`,
     );
     chokidar
-      .watch([`${SOURCE_ROOT}/**/*.md`, `${ASSET_CONFIG_ROOT}/**/*.yaml`], {
-        ignoreInitial: true,
-      })
+      .watch(
+        [
+          ...SOURCE_ROOTS.map((root) => `${root}/**/*.md`),
+          `${ASSET_CONFIG_ROOT}/**/*.yaml`,
+        ],
+        {
+          ignoreInitial: true,
+        },
+      )
       .on("all", async (event, path) => {
         console.log(`[compile-scenes] ${event} ${path} - recompiling.`);
         try {
@@ -56,7 +68,7 @@ async function main() {
 
 async function runOnce() {
   const result = compile({
-    sourceRoot: SOURCE_ROOT,
+    sourceRoot: SOURCE_ROOTS,
     outputRoot: OUTPUT_ROOT,
     assetConfigRoot: ASSET_CONFIG_ROOT,
     assetOutputRoot: ASSET_OUTPUT_ROOT,
