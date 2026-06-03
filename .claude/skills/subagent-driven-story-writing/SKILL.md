@@ -62,9 +62,10 @@ format details (those live in the `writing-*` skills this skill dispatches to).
    locked block with no inbound path; a missing `#### On Collect`; an H2 inside
    a linear scene; a dialogue line >100 chars) and re-run until green. Don't
    edit the compiler.
-7. **REVIEW gate.** Dispatch a separate review subagent (capable model) — see
-   the review contract below. Triage findings: fix Blocker/Important, re-run the
-   GREEN gate, then re-review if needed. Minor/"no change required" can ship.
+7. **REVIEW gate.** Dispatch a separate review subagent (capable model) whose
+   brief's first action is to invoke Skill `reviewing-story-scenes` — see the
+   review brief below. Triage findings: fix Blocker/Important, re-run the GREEN
+   gate, then re-review if needed. Minor/"no change required" can ship.
 8. **Report and stop.** State files written, the `OK` line, and the review
    verdict. Commit only if the user asks (branch off `main` first).
 
@@ -91,20 +92,24 @@ Because the agent has none of your context, every brief carries all of:
 - **A self-check list** to run before returning, plus "report a 3–5 line summary
   and the final IDs used."
 
-## Review-subagent contract
+## Review-subagent brief
 
-Give it the files under review **and** the authoritative sources to check
-against, and have it evaluate four axes, then **edit nothing**:
+The review subagent owns *how* to review: its brief's first action is to invoke
+Skill `reviewing-story-scenes`, which defines the four axes (canon/factual,
+forbidden/premature reveals, voice & style, cross-beat continuity), the verdict
+format (SHIP / FIX-RECOMMENDED / BLOCKERS-PRESENT), and the edit-nothing rule.
+Your job is to hand it what that skill needs:
 
-1. **Canon / factual** — names, victim, times, locations, roster vs bible/plan.
-2. **Forbidden content** — the plan/addendum 不要做 items; premature reveals.
-3. **Writing-style consistency** — per-character voice vs addendum; internal
-   consistency; Traditional Chinese only (no Simplified, no JP-only kanji).
-4. **Cross-beat continuity** — hand-offs and planted details pay off.
+- The exact files under review, and the chapter id.
+- The authoritative sources to check against: the story bible, the chapter
+  construction plan, and the writing addendum (under `docs/stories_plan/` and/or
+  `static/stories_plan/`).
+- "First action: invoke Skill `reviewing-story-scenes`. Edit nothing — return a
+  findings report only, not corrected files."
 
-Output: a verdict (SHIP / FIX-RECOMMENDED / BLOCKERS-PRESENT) and findings as
-`Severity — file:line — issue — suggested fix` with the offending text quoted,
-plus a short strengths list so remediation doesn't regress what works.
+Don't restate the axes, verdict, or finding format in the brief — the skill owns
+them. It returns a verdict plus `Severity — file:line — issue — suggested fix`
+findings (offending text quoted, source cited) and a short strengths list.
 
 ## Common Mistakes
 
@@ -117,6 +122,7 @@ plus a short strengths list so remediation doesn't regress what works.
 | Shipping on a clean compile alone | The compiler can't catch a canon contradiction or flat voice — the review gate is mandatory. |
 | Committing unprompted | Commit only when the user asks; branch off `main`. |
 
-**Related skills:** `writing-chapter-manifest`, `writing-detective-game-dialogue`,
+**Related skills:** `reviewing-story-scenes` (the REVIEW gate),
+`writing-chapter-manifest`, `writing-detective-game-dialogue`,
 `writing-investigation-scene`, `writing-interrogation-scene`;
 superpowers:dispatching-parallel-agents, superpowers:subagent-driven-development.
