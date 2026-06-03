@@ -29,7 +29,7 @@ Use when the user asks you to:
    - Character name in Markdown **bold**.
    - Full-width colon `：` between name and dialogue.
    - One blank line between dialogue lines.
-4. **Natural, direct voice.** Lines should sound like something the character would actually say, matching their personality. Avoid ornate literary phrasing. Keep reasoning beats clear, not winding.
+4. **Natural, direct voice.** Lines should sound like something the character would actually say, matching their personality. Avoid ornate literary phrasing. Keep reasoning beats clear, not winding. **Before writing any character's lines, read `characters.md` (see "Character reference" below) and match that character's 台詞風格 / 禁止 entry.**
 5. **Scene tags on every scene change.** `[場景：...]` block at the top of every new scene, covering 地點 / 時間 / 天氣 / 氛圍 / 視覺要素 — feeds AI background-image generation.
 6. **All non-dialogue content lives in `[ ]` brackets** — facial expressions, body language, atmospheric beats, prop movement. Brackets are filtered out of the in-game dialogue UI; they serve as production reference only.
 7. **Traditional Chinese only.** No simplified characters. No raw Japanese kanji forms (経 → 經, 実 → 實). Japanese-style proper names (相馬律, 早坂茜, 神谷澪) are kept as-is.
@@ -183,23 +183,44 @@ Each `scene_<N>.md` is **one scene only**. Structure:
 
 - `General Plan.md` — the eight-chapter master outline. **Do not modify.** Read it to understand cross-chapter foreshadowing pacing.
 - `第_X_章_..._詳細計劃.md` — per-chapter setup, characters, clues, timeline. **Read before** writing that chapter's script.
+- `characters.md` — consolidated cast reference (see below). **Read before** writing any character's dialogue.
 - `chapter_X/scene_<N>.md` — the output of this skill (one file per scene).
+
+### Character reference (`stories_plan/characters.md`)
+
+`characters.md` sits at the root of the `stories_plan/` tree (currently
+`docs/stories_plan/characters.md`). It is the single source for each character's
+**設定 (background) / 性格 (personality) / 台詞風格 (voice) / 禁止 (avoid + spoiler seals)**,
+consolidated from the story bible. It is planning material, **not** a scene file —
+the compiler ignores it.
+
+Use it like this:
+
+- **Before writing a character's lines**, open their entry and write to the 台詞風格 examples
+  (sentence length, register, verbal tics) — not a generic voice.
+- **Honour the 禁止 / 🔒 主線封印 list.** Each entry flags what would break the character or leak
+  a sealed reveal. This is the per-character companion to the chapter-level foreshadowing rules
+  in `General Plan.md`.
+- If `characters.md` and the story bible ever disagree, the **story bible wins** (characters.md says so).
+- Adding a new named character? Add their entry to `characters.md` in the same four-field shape.
 
 ## Writing workflow
 
 When asked to write any part of a chapter:
 
 1. **Read the matching `_詳細計劃.md`** in full — characters, timeline, clue placement, foreshadow seeds.
-2. **Check `General Plan.md` for the chapter's row** — which foreshadows are seeded *this* chapter, and critically, which secrets **must not yet be revealed** (青葉火災, 雨宮真實身份, KAGAMI 大陰謀 framing, etc.).
-3. **Confirm scope with the user before writing** — which Part(s)? If unclear, write one Part and stop, so tone can be reviewed before scaling.
-4. **Plan the Part structure** — opening scene tag, 3–5 conversation beats, ending moment. Output the plan first when scope is ambiguous.
-5. **Write each Part starting with `[場景：...]`**.
-6. **Advance plot via dialogue**, 旁白 only when necessary.
-7. **Self-check before reporting done:**
+2. **Read `characters.md`** for every character who speaks in this scene — lock their 台詞風格 and 禁止 entries before drafting lines.
+3. **Check `General Plan.md` for the chapter's row** — which foreshadows are seeded *this* chapter, and critically, which secrets **must not yet be revealed** (青葉火災, 雨宮真實身份, KAGAMI 大陰謀 framing, etc.).
+4. **Confirm scope with the user before writing** — which Part(s)? If unclear, write one Part and stop, so tone can be reviewed before scaling.
+5. **Plan the Part structure** — opening scene tag, 3–5 conversation beats, ending moment. Output the plan first when scope is ambiguous.
+6. **Write each Part starting with `[場景：...]`**.
+7. **Advance plot via dialogue**, 旁白 only when necessary.
+8. **Self-check before reporting done:**
    - Any line >100 Chinese characters? Split it.
    - Any action/expression inline with dialogue? Move it into `[ ]`.
    - Every scene change has a scene tag?
    - No simplified Chinese? No 経/実-style kanji?
+   - Does each character's voice match their `characters.md` 台詞風格, with no 禁止 / 🔒 line crossed?
    - Foreshadows match the chapter's pacing in `General Plan.md`?
 
 ## Quick reference
