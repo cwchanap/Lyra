@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { parseInterrogationScene } from "./parser-interrogation";
 
 const VALID_SOURCE = `# Scene 2: 第一次詢問與交叉詢問

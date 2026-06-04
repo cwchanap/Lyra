@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { expectedPath, publicPath } from "./manifest";
 
 // Cross-check: these test cases MUST produce the same output as

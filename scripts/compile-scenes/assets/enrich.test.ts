@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "vitest";
 import { enrichScenesWithAssets } from "./enrich";
 import { emitLinearScene } from "../emitter";
 import type { AssetConfig } from "./config";
