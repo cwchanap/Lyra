@@ -82,7 +82,7 @@ Expected: FAIL — `sceneFileMissing` for `scene_0.md`, `investigation_scene_1.m
 ```markdown
 # Chapter 1: 雨鐘咖啡館殺人事件
 
-**Summary:** 律師相馬律與早坂茜接下委託，在 KAGAMI 摘要與雨鐘咖啡館現場之間，重新檢視三宅蒼太被指為兇手的命案。
+**Summary:** 偵探相馬律與律師早坂茜接下委託，在 KAGAMI 摘要與雨鐘咖啡館現場之間，重新檢視三宅蒼太被指為兇手的命案。
 
 ## Scenes
 1. scene_0.md
@@ -225,7 +225,7 @@ Read each reported `[code] file:line message` and fix the offending file directl
 
 - [ ] **Step 3: Sanity-check the validator itself is unbroken (no code changed)**
 
-Run: `bun run test scripts/compile-scenes`
+Run: `bun run test scripts/compile-scenes*.test.ts`
 Expected: PASS (all compiler unit tests green — we changed no compiler code, so this only guards against an accidental edit).
 
 ---
