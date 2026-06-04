@@ -330,7 +330,7 @@ Expected: `OK — 1 chapter(s), 2 scene(s).`
 - Read/verify: all 13 scene files + `chapter.md`.
 
 - [ ] **Step 1: Full compile** — `bun run scenes:compile` → `OK — 1 chapter(s), 13 scene(s).`
-- [ ] **Step 2: Compiler tests sanity** — `bun test scripts/` → all pass (no compiler code changed).
+- [ ] **Step 2: Compiler tests sanity** — `bun test scripts/compile-scenes*.test.ts` → all pass (no compiler code changed).
 - [ ] **Step 3: Chapter-wide review subagent** — dispatch a final review subagent over the full Chapter 1 (0–11) for cross-beat arc consistency: the three 證據包 (三宅小謊 / 第三者動線 / 門鎖時序) each pay off; no forbidden item in proof order; the Appendix-A transition hooks land; 雨宮/`ZW_A16`/藍傘/90秒 all left unresolved per Beat 11.
 - [ ] **Step 4: Report** — files written, the `OK — 1 chapter(s), 13 scene(s).` line, review verdicts, and the `docs/` draft caveat. Commit only if the user asks (branch off `main`).
 

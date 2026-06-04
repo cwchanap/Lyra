@@ -107,7 +107,7 @@ subagent's finding verbatim; do not rewrite its evidence.
 
 ## Phase 4: Output format
 
-```
+```markdown
 ## Review Report: Chapter N 《...》
 
 **Subagent axes:** Canon, Forbidden, Voice, Continuity — all completed.

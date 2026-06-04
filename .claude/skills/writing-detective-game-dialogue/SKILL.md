@@ -1,6 +1,6 @@
 ---
 name: writing-detective-game-dialogue
-description: Use when writing or expanding chapter scripts for the Lyra detective game project 《東京雨證：第零證人》 under static/stories_plan/. Output must be Traditional Chinese game-style dialogue with scene tags, bracketed stage directions, per-line bold character labels, and short (≤100 Chinese char) dialogue lines — not prose. Trigger when given a chapter detail plan (詳細計劃) and asked to produce a playable script (劇本), or to extend an existing 劇本.
+description: Use when writing or expanding chapter scripts for the Lyra detective game project 《東京雨證：第零證人》 under docs/stories_plan/ or static/stories_plan/. Output must be Traditional Chinese game-style dialogue with scene tags, bracketed stage directions, per-line bold character labels, and short (≤100 Chinese char) dialogue lines — not prose. Trigger when given a chapter detail plan (詳細計劃) and asked to produce a playable script (劇本), or to extend an existing 劇本.
 ---
 
 # Writing Detective Game Dialogue (《東京雨證：第零證人》)
@@ -132,7 +132,7 @@ When the project asset workflow is enabled, every `[場景：...]` tag in a line
 Each chapter is split into **one file per scene**. Three authored file kinds exist:
 
 ```
-static/stories_plan/
+stories_plan/               ← either docs/stories_plan/ or static/stories_plan/
   General Plan.md                                  ← master outline (do not modify)
   第_X_章_<章節標題>_詳細計劃.md                       ← per-chapter planning (read before writing)
   chapter_X/
@@ -150,7 +150,7 @@ static/stories_plan/
 ### Path convention
 
 - **All filenames and folder names are English / ASCII.** Only the file **contents** are Traditional Chinese.
-- **Folder:** `static/stories_plan/chapter_<N>/` where `<N>` is the chapter number (e.g. `chapter_1/`, `chapter_2/`).
+- **Folder:** `<stories_plan_root>/chapter_<N>/` where `<stories_plan_root>` is either `docs/stories_plan/` or `static/stories_plan/`, and `<N>` is the chapter number (e.g. `chapter_1/`, `chapter_2/`).
 - **Filename:** `scene_<N>.md` — scene numbers align with the Part numbers in the chapter's `_詳細計劃.md` (so Part 0 → `scene_0.md`, Part 1 → `scene_1.md`, etc.).
 - Create the folder if it doesn't exist before writing.
 

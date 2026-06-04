@@ -28,41 +28,46 @@ const isWatch = args.includes("--watch");
 await main();
 
 async function main() {
-  const cfg = checkTauriConfig(process.cwd());
-  if (!cfg.ok) {
-    console.error("[compile-scenes] Tauri config check FAILED:");
-    for (const p of cfg.problems) console.error("  - " + p);
+  try {
+    const cfg = checkTauriConfig(process.cwd());
+    if (!cfg.ok) {
+      console.error("[compile-scenes] Tauri config check FAILED:");
+      for (const p of cfg.problems) console.error("  - " + p);
+      process.exit(1);
+    }
+
+    await runOnce();
+
+    if (isWatch) {
+      const chokidar = await import("chokidar");
+      console.log(
+        `[compile-scenes] Watching ${SOURCE_ROOTS.join(", ")} and ${ASSET_CONFIG_ROOT} for changes...`,
+      );
+      chokidar
+        .watch(
+          [
+            ...SOURCE_ROOTS.map((root) => `${root}/chapter_*/*.md`),
+            `${ASSET_CONFIG_ROOT}/**/*.yaml`,
+          ],
+          {
+            ignoreInitial: true,
+          },
+        )
+        .on("all", async (event, path) => {
+          console.log(`[compile-scenes] ${event} ${path} - recompiling.`);
+          try {
+            await runOnce();
+          } catch (err) {
+            console.error(
+              `[compile-scenes] Unexpected error during recompilation (${event} ${path}):`,
+              err,
+            );
+          }
+        });
+    }
+  } catch (err) {
+    console.error("[compile-scenes] Fatal error in main:", err);
     process.exit(1);
-  }
-
-  await runOnce();
-
-  if (isWatch) {
-    const chokidar = await import("chokidar");
-    console.log(
-      `[compile-scenes] Watching ${SOURCE_ROOTS.join(", ")} and ${ASSET_CONFIG_ROOT} for changes...`,
-    );
-    chokidar
-      .watch(
-        [
-          ...SOURCE_ROOTS.map((root) => `${root}/**/*.md`),
-          `${ASSET_CONFIG_ROOT}/**/*.yaml`,
-        ],
-        {
-          ignoreInitial: true,
-        },
-      )
-      .on("all", async (event, path) => {
-        console.log(`[compile-scenes] ${event} ${path} - recompiling.`);
-        try {
-          await runOnce();
-        } catch (err) {
-          console.error(
-            `[compile-scenes] Unexpected error during recompilation (${event} ${path}):`,
-            err,
-          );
-        }
-      });
   }
 }
 
