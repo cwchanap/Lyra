@@ -26,7 +26,9 @@ authoritative source you **cite**, never against your own memory of the story.
 Not for: authoring or fixing scene content (use the `writing-*` skills);
 structural/schema validation (that is the compiler's job).
 
-## Before you review: load the sources (mandatory)
+---
+
+## Phase 1: Load sources (mandatory — you do this)
 
 You cannot judge canon or forbidden reveals from memory — you will assert wrong
 "facts" and destroy correct content. For the chapter under review (under
@@ -37,68 +39,124 @@ You cannot judge canon or forbidden reveals from memory — you will assert wron
   each scene is supposed to accomplish.
 - **Chapter writing addendum** `*_addendum.md` — per-character voice, Do/Don't,
   the 不要做 forbidden-reveal list, and 伏筆留白 (what may be *shown* vs *said*).
+- **Scene files** — every `scene_*.md`, `investigation_scene_*.md`, and
+  `interrogation_scene_*.md` in the chapter directory.
 - The relevant `writing-*` skills for format rules (≤100-char dialogue lines,
   Traditional-only, scene structure).
 
 If a source you need is not in your brief, **say so and request it. Do not
 guess canon.**
 
-## The four review axes
+**You must read every file yourself.** The subagents you spawn will not
+re-read; they work from the excerpts you quote in their brief.
 
-| Axis | Check |
+---
+
+## Phase 2: Spawn parallel subagents — one per axis
+
+Do not review all axes yourself in one pass. Instead, launch **four background
+subagents in parallel**, each responsible for exactly one axis.
+
+### Brief template for each subagent
+
+Front-load the context. Each subagent brief must contain:
+
+1. The **axis definition** (copy from the table below).
+2. The **canonical sources** — paste the relevant excerpts from bible, plan,
+   addendum, and any `writing-*` skill rules this axis needs.
+3. The **scene files** — paste every dialogue line, stage direction, and
+   metadata field that this axis must inspect. Do not ask the subagent to
+   re-read files; give it the text.
+4. **Citation requirement:** every Blocker or Important finding must quote the
+   offending text and cite the exact source line it was checked against.
+5. **Output format:**
+   - `BLOCKERS-PRESENT` / `FIX-RECOMMENDED` / `SHIP` for this axis only.
+   - One-line findings: `Severity — file:line — issue — suggested fix`
+   - A short strengths list.
+
+### The four axes
+
+| Axis | Check | Sources the subagent needs |
+|---|---|---|
+| **1. Canon / factual** | Names, victim, true culprit, times, locations, roster match bible/plan. Verify against the bible line — never assume (e.g. confirm the suspect's exact given name rather than trusting recall). | Bible character sections + chapter plan roster + `chapter.md` summary + scene dialogue mentioning names/roles/times |
+| **2. Forbidden / premature reveals** | Nothing on the addendum 不要做 / 伏筆留白 list surfaces early. A detail allowed to be *shown* must not be *explained*. | Addendum forbidden-reveal list + bible sealed-lore sections + all scene dialogue and evidence descriptions |
+| **3. Voice & style** | Each character matches the addendum voice guide; no exposition 講義 / system lectures; dialogue lines ≤100 Chinese chars; **Traditional Chinese only** (no Simplified, no JP-only kanji). | Addendum voice guides + `writing-detective-game-dialogue` format rules + all character dialogue lines |
+| **4. Cross-beat continuity** | Hand-offs between scenes land; planted seeds pay off; evidence/statement IDs referenced across files resolve; the chapter's required evidence-package seeds are all present. | Plan evidence-package list + all scene files (outros, intros, evidence manifests, statement manifests, unlock chains) |
+
+**Launch order:** spawn all four at once. They have no shared state and no
+sequential dependencies.
+
+---
+
+## Phase 3: Synthesize the four axis reports
+
+After all four subagents return, produce **exactly one consolidated findings
+report** with:
+
+1. **Verdict** — the worst of the four axis verdicts (BLOCKERS-PRESENT wins
+   over FIX-RECOMMENDED wins over SHIP).
+2. **All findings merged** — deduplicate if the same `file:line` issue was
+   caught by two axes. Keep the more severe severity.
+3. **Strengths** — merged strengths from all four subagents, deduplicated.
+
+**Do not synthesize by watering down.** If Axis 1 says BLOCKERS-PRESENT and
+Axis 3 says SHIP, the consolidated verdict is BLOCKERS-PRESENT. Quote the
+subagent's finding verbatim; do not rewrite its evidence.
+
+---
+
+## Phase 4: Output format
+
+```
+## Review Report: Chapter N 《...》
+
+**Subagent axes:** Canon, Forbidden, Voice, Continuity — all completed.
+
+### Verdict: [BLOCKERS-PRESENT / FIX-RECOMMENDED / SHIP]
+
+### Findings
+
+[One line per finding: Severity — file:line — issue — suggested fix]
+[Blocker / Important findings must include the quoted offending text]
+[Canon/Forbidden findings must cite the source line checked against]
+
+### Strengths
+
+[Bulleted list of what already works]
+```
+
+---
+
+## Cardinal rules (apply to you AND every subagent)
+
+| Rule | Enforcement |
 |---|---|
-| **1. Canon / factual** | Names, victim, true culprit, times, locations, roster match bible/plan. Verify against the bible line — never assume (e.g. confirm the suspect's exact given name rather than trusting recall). |
-| **2. Forbidden / premature reveals** | Nothing on the addendum 不要做 / 伏筆留白 list surfaces early (e.g. A-90, ZERO WITNESS full name, decoding `ZW_A16.lock`, the 青葉 old case or an explicit flashback, 雨宮 appearing, the blue umbrella being forensically examined, 金木犀 becoming evidence). A detail allowed to be *shown* must not be *explained*. |
-| **3. Voice & style** | Each character matches the addendum voice guide; no exposition 講義 / system lectures; dialogue lines ≤100 Chinese chars; **Traditional Chinese only** (no Simplified characters, no JP-only kanji). |
-| **4. Cross-beat continuity** | Hand-offs between scenes land; planted seeds pay off; evidence/statement IDs referenced across files resolve; the chapter's required evidence-package seeds are all present. |
+| **Edit nothing** | You and every subagent produce reports only. No `edit`, `write`, or `notebook_edit` on scene files. |
+| **Cite, don't assume** | Every canon/forbidden claim must quote the bible/addendum line it was checked against. |
+| **No rewrites** | Quote the offending text; describe the fix in words. Do not produce a "corrected" file. |
+| **No structural changes** | Renumbering scenes, deleting characters, or rewriting beats is out of scope. Flag only. |
+| **No memory claims** | If the source line is absent, the finding is a question, not a fact. |
 
-## Output: a report, nothing else
+## Red flags — STOP, you or a subagent is about to overstep:
 
-End with exactly one verdict:
-
-- **BLOCKERS-PRESENT** — at least one canon break or forbidden reveal.
-- **FIX-RECOMMENDED** — voice/continuity issues that mislead but don't break canon.
-- **SHIP** — only Minor / no-change items remain.
-
-Write each finding on one line:
-
-`Severity — file:line — issue — suggested fix`
-
-with the **offending text quoted**, and for canon/forbidden findings the
-**source line you checked against** cited. Severity ∈ Blocker / Important /
-Minor. Close with a short **strengths** list so remediation doesn't regress
-what already works.
-
-## You edit nothing — even when the brief says "fix it"
-
-The cardinal failure is a reviewer that "helpfully" rewrites. You don't hold the
-orchestrator's plan, the IDs, or the full canon, so an edit you make can delete
-correct content or bake in a fact you only assumed. Report; let the owner apply.
-
-| Excuse | Reality |
-|---|---|
-| "The brief said 'fix it'." | Your deliverable is the report. Applying fixes is the orchestrator's job — flag it, don't apply it. |
-| "I know the canon, I'll just correct the name." | Cite the bible line instead. If you can't find it, you don't know it — flag it as a question. |
-| "I'll rewrite the line to show what I mean." | Quote the offending text and describe the fix in words. Don't apply it. |
-| "This extra character / wrong scene number — I'll remove it." | Out of scope. Flag the structural issue; the orchestrator owns manifest and structure. |
-| "I'm confident he's a detective, not a lawyer." | Confidence ≠ canon. The authored text and `chapter.md` may already settle it. Cite, don't override. |
-
-**Red flags — STOP, you are about to overstep:**
-
-- You opened Edit/Write on a scene file.
+- An `Edit` or `Write` tool is opened on a scene file.
+- A subagent's output is a corrected file instead of a findings list + verdict.
 - You're stating a canon "fact" with no source line in front of you.
 - You're renumbering scenes, deleting characters, or rewriting beats.
-- Your output is a corrected file instead of a findings list + verdict.
 
 ## Common Mistakes
 
 | Mistake | Fix |
 |---|---|
 | Reviewing prose quality in a vacuum | Load bible + plan + addendum first; most blockers are canon/forbidden and invisible without them. |
-| Treating a clean compile as done | The compiler can't see a canon contradiction or a flat voice — that's your job. |
+| Treating a clean compile as done | The compiler can't see a canon contradiction or a flat voice — that's the subagents' job. |
 | Asserting canon from memory | Cite the source line; if it's absent, request the source. |
 | Editing or "fixing" the files | Report only. Edit nothing. |
 | Findings without a location or a quote | Every finding: `file:line` + quoted text + suggested fix. |
+| Monolithic single-agent review | Spawn four parallel subagents. One brain trying to hold bible, plan, addendum, voice guides, format rules, and all scene text at once misses things. |
+| Subagent re-reading files | You read the files; paste excerpts into each subagent brief. Each axis reviewer works from your excerpt, not by re-reading source files. |
+
+---
 
 **Related skills:** dispatched by `subagent-driven-story-writing` as its REVIEW
 gate. Format rules live in `writing-detective-game-dialogue`,
