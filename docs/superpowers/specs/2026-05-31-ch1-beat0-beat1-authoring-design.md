@@ -4,7 +4,7 @@
 **Status:** Approved (design); pending spec review → writing-plans
 **Scope:** Author the playable scene content for Chapter 1 Beat 0 (冷開場) and
 Beat 1 (相馬事務所日常), driven by two subagents, each using the proper writing
-skill. No engine/compiler code changes.
+skill. Includes small compiler/pipeline changes needed to validate draft scenes under `docs/stories_plan/`.
 
 ---
 
@@ -29,7 +29,7 @@ output location.
   suspect is **三宅蒼太**, not 若槻蓮. The stale planning `chapter.md` and the
   `writing-investigation-scene` SKILL.md worked example both still show 若槻蓮 —
   these are NOT canon. Bible: 三宅蒼太 ×16, 若槻蓮 ×0.
-- **Roster:** 相馬律 (young detective-lawyer, evidence-believer, not yet a
+- **Roster:** 相馬律 (young private detective / evidence analyst, evidence-believer, not yet a
   genius), 早坂茜 (procedural lawyer partner, paper-receipt habit), 三宅蒼太
   (surface suspect / cafe staff), 增田圭 (victim), 北見修一 (true killer — does
   NOT appear in Beat 0/1), 神谷澪 (gatekeeper — not in Beat 0/1), 黑瀨徹 (field
@@ -42,10 +42,10 @@ Per user instruction, author into **`docs/stories_plan/chapter_1/`**, NOT
 
 Consequence and handling:
 
-- The compiler CLI (`bun run scenes:compile`) and the runtime build read only
-  `static/stories_plan/` (`SOURCE_ROOT` is hardcoded in
-  `scripts/compile-scenes.ts`). Files under `docs/` are **drafts** — not in the
-  playable build until later moved/copied to `static/`.
+- The compiler CLI (`bun run scenes:compile`) and the runtime build merge scene sources from
+  `static/stories_plan/` and `docs/stories_plan/` (a root that does not exist is skipped).
+  Files under `docs/` can be treated as drafts by convention, but they will compile into the
+  playable build unless excluded by how `scripts/compile-scenes.ts` is configured.
 - Validation is still performed by invoking the underlying `compile()` function
   (`scripts/compile-scenes/orchestrator.ts`) directly with
   `sourceRoot = docs/stories_plan`, `assetConfigRoot = static/assets/config`,

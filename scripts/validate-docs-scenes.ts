@@ -3,28 +3,33 @@
 // docs/stories_plan/ using the same compiler the CLI uses, without writing
 // into the tracked static/ source tree. Output JSON goes to a throwaway temp
 // dir and is discarded. Exit 0 = clean, exit 1 = compile errors.
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { compile } from "./compile-scenes/orchestrator";
 
 const outputRoot = mkdtempSync(resolve(tmpdir(), "lyra-docs-scenes-"));
-const result = compile({
-  sourceRoot: resolve(process.cwd(), "docs/stories_plan"),
-  outputRoot,
-  assetConfigRoot: resolve(process.cwd(), "static/assets/config"),
-  assetOutputRoot: outputRoot,
-});
 
-if (result.ok) {
-  console.log(
-    `OK: chapters=${result.chaptersCompiled} scenes=${result.scenesCompiled}`,
-  );
-  process.exit(0);
-}
+try {
+  const result = compile({
+    sourceRoot: resolve(process.cwd(), "docs/stories_plan"),
+    outputRoot,
+    assetConfigRoot: resolve(process.cwd(), "static/assets/config"),
+    assetOutputRoot: outputRoot,
+  });
 
-console.error(`FAIL: ${result.errors.length} error(s)`);
-for (const e of result.errors) {
-  console.error(`  [${e.code}] ${e.sourceFile}:${e.line} ${e.message}`);
+  if (result.ok) {
+    console.log(
+      `OK: chapters=${result.chaptersCompiled} scenes=${result.scenesCompiled}`,
+    );
+    process.exit(0);
+  }
+
+  console.error(`FAIL: ${result.errors.length} error(s)`);
+  for (const e of result.errors) {
+    console.error(`  [${e.code}] ${e.sourceFile}:${e.line} ${e.message}`);
+  }
+  process.exit(1);
+} finally {
+  rmSync(outputRoot, { recursive: true, force: true });
 }
-process.exit(1);
