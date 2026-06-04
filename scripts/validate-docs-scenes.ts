@@ -22,14 +22,14 @@ try {
     console.log(
       `OK: chapters=${result.chaptersCompiled} scenes=${result.scenesCompiled}`,
     );
-    process.exit(0);
+    process.exitCode = 0;
+  } else {
+    console.error(`FAIL: ${result.errors.length} error(s)`);
+    for (const e of result.errors) {
+      console.error(`  [${e.code}] ${e.sourceFile}:${e.line} ${e.message}`);
+    }
+    process.exitCode = 1;
   }
-
-  console.error(`FAIL: ${result.errors.length} error(s)`);
-  for (const e of result.errors) {
-    console.error(`  [${e.code}] ${e.sourceFile}:${e.line} ${e.message}`);
-  }
-  process.exit(1);
 } finally {
   rmSync(outputRoot, { recursive: true, force: true });
 }
