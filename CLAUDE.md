@@ -79,6 +79,11 @@ Keep the ownership boundary intact:
   expression IDs, and audio IDs. Writers must not author filesystem paths.
 - Character IDs, expression IDs, and asset IDs become path or manifest keys, so
   keep slug validation in the compiler/config layer before generating paths.
+- When asked to generate or edit raster image assets, always use the `imagegen`
+  skill/tools at `/Users/chanwaichan/.codex/skills/.system/imagegen/SKILL.md`
+  if available. If those tools are unavailable, tell the user to run the image
+  request in the Codex app instead of substituting non-image placeholders or
+  another generation path.
 
 ## Svelte 5
 
