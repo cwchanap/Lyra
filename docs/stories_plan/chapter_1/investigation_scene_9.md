@@ -18,6 +18,7 @@
 
 ## Sub-location: 承包商資料窗口 {#contractor_desk}
 - **Status:** unlocked
+- **Background Prompt:** KAGAMI contractor records office service window in daylight, glass partition, file cabinets, limited-scope reply packet on desk, bureaucratic restraint, no readable text.
 
 [場景：KAGAMI 外包資料審查辦公室／承包商聯絡窗口，白日，玻璃隔板後一排檔案櫃，桌上攤著一份限定範圍的調閱回函。]
 
@@ -87,6 +88,7 @@
 
 ## Sub-location: 質問北見 {#confront_kitami}
 - **Status:** locked
+- **Background Prompt:** Small white interview room under exposed fluorescent tubes, forensic printouts spread on table, plain walls, restrained office pressure, no readable document text.
 
 [場景：訪談室，白日，日光燈管把一切照得毫無死角。窄小的房間，四面白牆，桌上攤開一批死者手機鑑識的列印件。北見修一坐在對面，手裡攥著一張摺痕很深的名片。四十出頭，身形中等偏軟，穿著樣板式的商務便裝——那種設計上就是為了不讓人記住的款式。一副金屬框眼鏡，鏡架滑下來一點，他每隔幾秒就用中指推回去。一張在職場上習慣被忽略的人的臉。]
 
@@ -192,6 +194,7 @@
 - **Name:** 臨時維護工單
 - **Description:** 案發當晚臨時排定的後場門鎖維護工單。
 - **Details:** 工單標的是後場那扇門鎖，底下對應一組外包維護憑證。工單本身只證明那晚排了一次臨時維護，還要再對到憑證、對到人。
+- **Image Prompt:** Temporary maintenance work order sheet with a doorlock icon and clipped approval stamp shape, all fields unreadable, isolated evidence icon.
 
 #### On Collect
 
@@ -203,6 +206,7 @@
 - **Name:** 北見外包維護權限
 - **Description:** 外包維護權限名單裡，那晚能動用該憑證的人。
 - **Details:** 名單上 K 開頭的承包商不只一個，編碼也相近。但把那晚的臨時工單和那組外包憑證一起對，能動用的只落在北見修一身上。這是北見的名字第一次對到具體的人。
+- **Image Prompt:** Contractor access-permission list with one highlighted row and keycard symbol, names and codes unreadable, isolated evidence icon.
 
 #### On Collect
 
@@ -214,6 +218,7 @@
 - **Name:** 承包商資材包傘套來源比對
 - **Description:** 資材包清單裡的透明傘套，與後場那只濕傘套的來源比對。
 - **Details:** 資材包傘套的尺寸與摺痕，跟後場牆角那只濕傘套一致。它單獨不能定罪，只能把那個更早進場的人，從一般客人推向承包商這條線；要對到某一個人，還得靠臨時工單和外包憑證。
+- **Image Prompt:** Transparent umbrella sleeve comparison card with two matching sleeve silhouettes and fold marks, no readable labels, isolated evidence icon.
 
 #### On Collect
 
@@ -225,6 +230,7 @@
 - **Name:** 增田未送出備忘
 - **Description:** 死者手機鑑識裡，一則沒送出的純文字備忘。
 - **Details:** 備忘只有三行：「22:50 雨鐘。校驗值確認。K。」22:50 是備忘裡約定的時間地點，不是維護開啟（維護開是 22:52）。它證明增田知道這場碰面有風險，在等一個跟校驗值有關的人，但光這則不能定北見，要跟工單、憑證、那個 K 一起看。
+- **Image Prompt:** Unsent phone memo printout with three short blurred rows and a folded corner, all text unreadable, isolated evidence icon.
 
 #### On Collect
 
@@ -236,6 +242,7 @@
 - **Name:** 增田檢舉草稿
 - **Description:** 監察信箱草稿匣裡，一份沒送出的檢舉草稿。
 - **Details:** 草稿沒送出，只躺在監察信箱的草稿匣，程序還沒走完。它記著北見有異常存取，但光一份草稿，證不了資料是怎麼流出去的。增田本來帶了 USB，想當場比對買家鏈校驗值的最後一段。
+- **Image Prompt:** Unsent whistleblower draft document in a folder with attachment tab shapes, all paragraphs unreadable, isolated evidence icon.
 
 #### On Collect
 
@@ -247,6 +254,7 @@
 - **Name:** 北見資料盜賣紀錄
 - **Description:** 檢舉草稿附件裡那張沒完成的異常存取整理表。
 - **Details:** 表上記著北見的帳號多次在排程外接觸試點資料，有一部分匯到外部傳輸載體。它還沒證到最終買家是誰，但足夠顯示北見有盜賣資料的嫌疑，構成這一晚的動機與壓力來源。
+- **Image Prompt:** Incomplete abnormal-access spreadsheet printout with external-transfer arrow shapes and highlighted rows, all entries unreadable, isolated evidence icon.
 
 #### On Collect
 

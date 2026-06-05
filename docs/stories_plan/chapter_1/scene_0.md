@@ -1,6 +1,9 @@
 # Scene 0: 冷開場 — 摘要的乾淨故事
 
 [場景：純黑底的 KAGAMI 摘要介面，沒有任何人，只有一行行靜靜浮現的資料。冷白色字體，邊緣乾淨，沒有雜訊。]
+- **Background Prompt:** Minimal black KAGAMI evidence-summary interface, cold white aligned data rows implied by abstract glowing lines, clean machine logic, no readable text, no people, no UI labels.
+- **BGM:** none
+- **BGS:** none
 
 **旁白**：一份案件摘要，正在生成。
 
@@ -25,6 +28,7 @@
 [摘要完成。畫面右下角閃過一行極小的灰字，幾乎看不見：merge delay: 89.7s。隨即消失。]
 
 [場景：警署會面室外的走廊，日光燈下，空氣安靜。牆上的螢幕還亮著那份摘要。]
+- **Background Prompt:** Quiet Japanese police meeting-room corridor under pale fluorescent light, wall monitor showing an unreadable case-summary layout, empty bench, tense still air.
 
 [螢幕上仍寫著一行：主要嫌疑人：三宅蒼太。]
 

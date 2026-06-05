@@ -24,6 +24,7 @@
 - **Kind:** testimony
 - **Required:** true
 - **Status:** unlocked
+- **Background Prompt:** KAGAMI evidence-summary review hearing room in daylight, long table with case-summary report and collected records, restrained legal tension, no readable text.
 
 [場景：KAGAMI 證據摘要審查會，白日，長桌上攤著摘要報告與幾份從現場帶回的紀錄。]
 
@@ -73,6 +74,7 @@
 - **Required:** true
 - **Status:** locked
 - **Unlock:** phase:p1 completed
+- **Background Prompt:** Review hearing table with time-related cafe evidence, forensic preliminary sheet and small record cards arranged under cold daylight, no readable document text.
 
 [場景：KAGAMI 證據摘要審查會，白日，桌面換上現場帶回的時間相關紀錄與鑑識初判。]
 
@@ -124,6 +126,7 @@
 - **Required:** true
 - **Status:** locked
 - **Unlock:** phase:p2 completed
+- **Background Prompt:** Review hearing table covered with an L-shaped backroom floor plan and floor-drying record cards, officials across the table, quiet pressure, no readable labels.
 
 [場景：KAGAMI 證據摘要審查會，白日，桌上鋪開後場 L 型平面圖與地面乾燥分布的紀錄。]
 
@@ -173,6 +176,7 @@
 - **Required:** true
 - **Status:** locked
 - **Unlock:** phase:p3 completed
+- **Background Prompt:** KAGAMI review hearing room with a limited-record authorization form centered before the presiding official, formal stamp pad, no readable text.
 
 [場景：KAGAMI 證據摘要審查會，白日，神谷澪面前擺著原始門鎖紀錄的調閱授權單。]
 
@@ -211,6 +215,7 @@
 - **Required:** true
 - **Status:** locked
 - **Unlock:** phase:gate completed
+- **Background Prompt:** Hearing table with approved doorlock excerpt beside a printed summary timetable, two parallel record stacks, precise procedural mood, no readable rows.
 
 [場景：KAGAMI 證據摘要審查會，白日，桌面中央攤著剛核准的限定片段與門鎖摘要時刻表。]
 
@@ -264,6 +269,7 @@
 - **Required:** true
 - **Status:** locked
 - **Unlock:** phase:p4 completed
+- **Background Prompt:** Final review hearing table with work order, credential card, memo, draft, and umbrella-sleeve comparison arranged as an evidence chain, no readable text.
 
 [場景：KAGAMI 證據摘要審查會，白日，桌面攤開工單、憑證、備忘、草稿與傘套比對，匯成一條完整的鏈。]
 
@@ -318,6 +324,7 @@
 - **Name:** 核准片段（限定調出）
 - **Description:** 審查會核准的後場門鎖限定調出片段，範圍嚴格框定在六個欄位。
 - **Details:** 限定範圍為後場門鎖、二十二點五十到二十三點十、事件序號、憑證類型、同步時間、保全鏈標記。它把同步合併時間，與本機事件順序分了開來——讓二十三點零七分五十秒那一刻，現出它「校時合流」的真面目，而不是某個人的事件時間。
+- **Image Prompt:** Approved limited doorlock excerpt with two separated timeline columns and evidence-chain marker shapes, all rows unreadable, isolated evidence icon.
 
 #### On Collect
 

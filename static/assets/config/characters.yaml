@@ -1,1 +1,97 @@
-characters: []
+characters:
+  - id: soma_ritsu
+    displayNames: ["相馬律"]
+    portraitMode: portrait
+    visualPrompt: >
+      26-year-old Japanese private detective, slim build, slightly disheveled
+      dark hair, shirt sleeves rolled to the elbows, quiet orderly posture,
+      worn leather case folder nearby, observant but inexperienced.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: calm focused expression, restrained concern, eyes attentive
+
+  - id: hayasaka_akane
+    displayNames: ["早坂茜"]
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese woman in her early thirties, practical defense attorney, sturdy
+      composed build, structured dark jacket over casual clothes, neatly tied
+      hair, organized document bag, direct procedural presence.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: composed attentive expression, professional calm
+      stern:
+        prompt: firm serious expression, brows slightly set, controlled voice
+
+  - id: miyake_mother
+    displayNames: ["三宅母親"]
+    portraitMode: portrait
+    visualPrompt: >
+      Middle-aged Japanese mother, modest everyday clothes, tired restrained
+      face, hands often tense around a convenience-store rice-ball bag,
+      quiet dignity, not crying.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: quiet restrained expression, worried but holding together
+      strained:
+        prompt: pained controlled expression, fingers tense, short fragile smile
+
+  - id: clerk
+    displayNames: ["書記官"]
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese review-board clerk behind a narrow counter, plain office attire,
+      precise bureaucratic posture, neutral face, controlled gatekeeping manner.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: neutral procedural expression, professional distance
+
+  - id: takase_manager
+    displayNames: ["店長高瀨"]
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese cafe manager in her late thirties to early forties, apron over
+      loose casual clothes, tired brow from running a small shop for years,
+      practical ordinary presence, one hand habitually wiping a clean counter.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: plain practical expression, tired but cooperative
+      tired:
+        prompt: visibly fatigued expression, shoulders slightly lowered
+
+  - id: katase
+    displayNames: ["片瀨"]
+    portraitMode: portrait
+    visualPrompt: >
+      Petite Japanese cafe employee in her early twenties, uniform apron, small
+      colorful hair tie and tiny earrings, hurried end-of-shift energy, glancing
+      toward the time.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: hurried polite expression, slightly anxious about catching train
+
+  - id: miyake_sota
+    displayNames: ["三宅蒼太"]
+    portraitMode: none
+
+  - id: kamiya_mio
+    displayNames: ["神谷澪"]
+    portraitMode: none
+
+  - id: kurose_toru
+    displayNames: ["黑瀨徹"]
+    portraitMode: none
+
+  - id: kitami_shuichi
+    displayNames: ["北見修一"]
+    portraitMode: none
+
+  - id: contractor_supervisor
+    displayNames: ["承包商主管"]
+    portraitMode: none

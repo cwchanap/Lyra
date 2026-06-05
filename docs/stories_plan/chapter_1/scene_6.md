@@ -1,6 +1,7 @@
 # Scene 6: 喘息 — 商店街避雨
 
 [場景：吉祥寺商店街，傍晚，雨。一家便利店的屋簷下，相馬與早坂站著避雨。屋簷邊緣的雨水一條線地落下，街上行人撐著各色的傘走過。]
+- **Background Prompt:** Kichijoji shopping street at rainy dusk under a convenience-store awning, wet pavement, passing umbrellas, muted storefront light, no readable signage.
 
 **旁白**：審查會結束後，雨又下起來了。
 
@@ -55,6 +56,7 @@
 [他沒再追問，把這句話按在心裡。]
 
 [場景：同一處屋簷下，傍晚，雨。街角立著一個回收桶，一名路人快步走過，手裡拎著一截濕掉的傘套。]
+- **Background Prompt:** Same rainy awning corner at dusk, street recycling bin nearby, passerby motion implied with a wet transparent umbrella sleeve, wet pavement reflections.
 
 [一名路人從雨裡鑽進屋簷，把手上一截濕傘套揉成一團。]
 
@@ -77,6 +79,7 @@
 [相馬點點頭，喝了一口咖啡。]
 
 [場景：便利店門口，傍晚，雨漸小。一名雨鐘的女店員片瀨剛巧路過，認出兩人，停下腳步，神情有些趕時間。]
+- **Background Prompt:** Convenience-store entrance at late rainy dusk, rain easing, cafe employee in apron pausing near the doorway, commuter hurry in the background, no readable labels.
 
 [一名穿著雨鐘制服外套的女店員停在門口，認出了他們。]
 
@@ -115,6 +118,7 @@
 [相馬把這句話也記下，低頭看那三堆紙。]
 
 [場景：商店街，傍晚，雨快停了。屋簷外的天色透出一點亮，街面被雨水洗得發光。相馬把空咖啡罐丟進回收桶。]
+- **Background Prompt:** Kichijoji shopping street as rain is nearly stopping, brighter strip of sky, clean wet pavement reflections, small recycling bin under awning, calm after tension.
 
 **相馬律**：早坂小姐。我想回雨鐘一趟。
 
