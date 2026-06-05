@@ -39,25 +39,24 @@ authored Traditional Chinese scene content.
 ### Backgrounds
 
 Generate 16:9 background plates for the selected slice. The required starter
-set is eight plates, with two optional split plates allowed when spatial
-clarity needs them. Do not exceed ten backgrounds in this first pack.
+set is nine plates. Do not add additional backgrounds in this first pack unless
+the implementation plan is revised first.
 
 1. KAGAMI summary cold-open interface, black and cold-white, abstracted with no
    readable text.
 2. Police meeting-room corridor with a wall monitor showing an unreadable
    summary layout.
-3. Somai detective office exterior / rainy morning intro.
-4. Somai detective office interior, small, paper-stacked, broken coffee machine.
-5. Hayasaka law office, rainy morning, case summary and thermos on the table.
-6. Review-board entry window, narrow corridor and metal door.
-7. Review-board exterior hallway, wet city light through long windows.
-8. Rain Bell cafe front room at rainy night after closing.
-9. Optional: Rain Bell back corridor as a separate plate.
-10. Optional: Rain Bell inner storage entrance as a separate plate.
+3. Somai detective office interior, small, paper-stacked, broken coffee machine.
+4. Hayasaka law office, rainy morning, case summary and thermos on the table.
+5. Review-board entry window, narrow corridor and metal door.
+6. Review-board exterior hallway, wet city light through long windows.
+7. Rain Bell cafe front room at rainy night after closing.
+8. Rain Bell back corridor, narrow L-shaped sightline clue.
+9. Rain Bell inner storage entrance, high shelves and dark sightline occlusion.
 
-The optional cafe back corridor and inner storage entrance should be generated
-as separate focused backgrounds if a single reusable cafe-back plate does not
-make the L-shaped sightline clue clear.
+The current asset pipeline attaches investigation-scene background cues to
+sub-locations, not investigation intros. The Somai office exterior intro remains
+story text for this pack; adding playable intro backgrounds is out of scope.
 
 ### Portraits
 
