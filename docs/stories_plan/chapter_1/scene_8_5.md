@@ -1,6 +1,7 @@
 # Scene 8.5: 短暫誤判整理點
 
 [場景：吉祥寺商店街屋簷下，深夜，雨仍未停。屋簷邊掛著一塊臨時白板，旁邊放著相馬從事務所帶來的資料夾，雨聲蓋過遠處的人聲。]
+- **Background Prompt:** Kichijoji shopping street under an awning at rainy night, temporary whiteboard and case folder set up for evidence sorting, wet street glow, no readable board text.
 
 **早坂茜**：先停一下。卡片翻太快了。
 

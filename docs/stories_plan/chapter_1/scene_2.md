@@ -1,6 +1,7 @@
 # Scene 2: 委託與程序入口 — 三宅母親求助
 
 [場景：早坂律師事務所，上午，雨後。窗外的天還陰著，室內安靜。桌上一台壞掉的咖啡機，旁邊放著一份攤開的案件摘要。]
+- **Background Prompt:** Hayasaka law office on a rainy morning, quiet interior, case summary papers, thermos and rice-ball bag on table, restrained emotional tension, no readable document text.
 
 **旁白**：三宅蒼太的母親，坐在相馬對面。
 
@@ -51,6 +52,7 @@
 [母親點了點頭，把飯糰袋往相馬那邊推了推。]
 
 [場景：審查會入口，書記官窗口前，上午。狹長的走道，盡頭是一道金屬門，門邊一塊小窗口亮著燈。]
+- **Background Prompt:** Review-board entry window in a narrow institutional corridor, metal door at the end, small lit counter window, cold procedural mood.
 
 **旁白**：審查會的入口，比相馬想的要冷清。
 
@@ -95,6 +97,7 @@
 **書記官**：登記好了。十分鐘後進場。
 
 [場景：審查會外走廊，上午。長窗外是濕漉漉的街，光線發白。走廊很長，盡頭是那道還沒開的門。]
+- **Background Prompt:** Long review-board exterior hallway with wet city light through windows, pale morning after rain, closed door at far end, quiet legal pressure.
 
 **旁白**：離進場還有一點時間。
 

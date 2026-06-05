@@ -14,6 +14,7 @@
 
 ## Sub-location: 雨鐘前場 {#front}
 - **Status:** unlocked
+- **Background Prompt:** Rain Bell cafe front room at rainy night after closing, dim half-light, counter, register, umbrella stand with blue transparent umbrella, wet glass door, no readable signage.
 
 [場景：吉祥寺咖啡館「雨鐘」前場，雨夜，閉店後。]
 
@@ -148,6 +149,7 @@
 
 ## Sub-location: 後場走廊 {#corridor}
 - **Status:** locked
+- **Background Prompt:** Narrow Rain Bell back corridor, L-shaped turn, stacked paper cups and cake boxes, cleaning rack, half-open fire door, fluorescent hum, sightline blocked.
 
 [場景：雨鐘後場 L 型走廊，狹窄，紙箱與清潔用品堆疊。]
 
@@ -205,6 +207,7 @@
 
 ## Sub-location: 內側倉庫入口 {#inner_entry}
 - **Status:** locked
+- **Background Prompt:** Dark inner storage entrance of Rain Bell cafe, high shelves, thin dust, sensor light just out of range, occluded view into deeper storage, tense spatial clue.
 
 [場景：雨鐘內側倉庫入口，高貨架，光線昏暗。]
 
@@ -250,6 +253,7 @@
 - **Name:** 兩杯咖啡訂單 `K.`
 - **Description:** 增田圭當晚的訂單，點了兩杯咖啡，第二杯杯套備註寫著「K.」。
 - **Details:** 店內習慣以首字母標杯，「K.」只是首字母，不是完整姓名。
+- **Image Prompt:** Two takeaway coffee cups and a cup sleeve with an unreadable single initial mark implied, cafe receipt beside them, isolated evidence icon.
 
 #### On Collect
 
@@ -259,6 +263,7 @@
 - **Name:** 閉店監視器截圖
 - **Description:** 閉店前約二三十秒的監視器畫面：三宅補紙杯、進後場拿清潔用品、取紙箱、擦桌、倒垃圾。
 - **Details:** 畫面顯示三宅多次來回後場，皆為閉店例行動線。
+- **Image Prompt:** Small surveillance monitor screenshot thumbnail showing a blurred cafe backroom route, unreadable timestamp blocks, isolated evidence icon.
 
 #### On Collect
 
@@ -268,6 +273,7 @@
 - **Name:** 三宅打卡紀錄
 - **Description:** 當月打卡表顯示三宅蒼太當晚值班，負責關店。
 - **Details:** 紀錄顯示當晚由三宅一人收尾。
+- **Image Prompt:** Monthly staff timecard sheet on a clipboard, grid layout implied with unreadable marks, isolated evidence icon.
 
 #### On Collect
 
@@ -277,6 +283,7 @@
 - **Name:** 門鎖摘要合併時間表
 - **Description:** KAGAMI 門鎖系統列印出的摘要，把門鎖事件排在二十三點零七分五十秒。
 - **Details:** 摘要將事件排成一條時間線，目前只作現場紀錄。
+- **Image Prompt:** Printed doorlock event timetable sheet with clean columns and unreadable rows, isolated evidence icon.
 
 #### On Collect
 
@@ -286,6 +293,7 @@
 - **Name:** 閉店維護 routine 紀錄
 - **Description:** 後場白板上的閉店維護流程：22:50 閉店開始、22:52 維護模式開啟，部分項目未完成。
 - **Details:** 維護紀錄冊未蓋章、維護模式未關，流程未走完即中斷。
+- **Image Prompt:** Cafe closing-routine whiteboard checklist with several unreadable tick marks and two blank lines, isolated evidence icon.
 
 #### On Collect
 
@@ -295,6 +303,7 @@
 - **Name:** 後場 L 型平面圖
 - **Description:** 後場的平面示意圖，呈 L 型，標出走廊轉角與內側倉庫的位置。
 - **Details:** 平面顯示走廊轉角、半掩防火門與高貨架造成多重視線遮蔽。
+- **Image Prompt:** Simple L-shaped backroom floor plan diagram with blocked sightline geometry, no readable labels, isolated evidence icon.
 
 #### On Collect
 

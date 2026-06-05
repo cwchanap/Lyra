@@ -18,6 +18,7 @@
 
 ## Sub-location: 後場門口 {#back_door}
 - **Status:** unlocked
+- **Background Prompt:** Rain Bell cafe back door at rainy night, non-slip mat, half-dry water trace on floor, wet umbrella sleeve on wall, dark rear alley beyond.
 
 [場景：雨鐘咖啡館後場門口，深夜，雨夜。止滑墊鋪在門檻內側，地上有半乾的水痕，牆角掛著一只濕傘套，門外是後巷入口。]
 
@@ -95,6 +96,7 @@
 
 ## Sub-location: 內側倉庫 {#inner}
 - **Status:** locked
+- **Background Prompt:** Cold inner storage room of a small Tokyo cafe, high metal shelves casting long shadows, stopped old wall clock, shelf impact mark on floor, hard sensor light.
 
 [場景：雨鐘咖啡館內側倉庫，冷，金屬味，高貨架投下長影，深處有一台停擺的舊掛鐘，地上一道貨架撞痕。]
 
@@ -204,6 +206,7 @@
 - **Name:** 雨宮匿名訊息縮圖
 - **Description:** 署名雨宮的匿名訊息：「雨會替東京洗掉腳印。」附一張低解析度的外包縮圖。
 - **Details:** 縮圖只露出止滑墊、半乾水痕和傘套邊角的一角，標記 preview_cache / contractor_thumb。它出現的時機，是在警方把儲藏入口照片匯入摘要之後，不是案發前的警告，也不是發現屍體當下送達。
+- **Image Prompt:** Low-resolution anonymous message thumbnail on a phone, cropped wet floor mat and umbrella sleeve shapes, unreadable interface marks, isolated evidence icon.
 
 #### On Collect
 
@@ -217,6 +220,7 @@
 - **Name:** 地板雨水乾燥圖
 - **Description:** 後場門口止滑墊旁，半乾水痕的乾燥分布。
 - **Details:** 水痕邊緣已經收乾，跟縮圖裡的那塊墊子位置一致。乾燥程度顯示這灘水比現在更早被帶進來。
+- **Image Prompt:** Forensic-style floor moisture drying map around a non-slip mat, pale blue water-shape overlays, no readable labels, isolated evidence icon.
 
 #### On Collect
 
@@ -230,6 +234,7 @@
 - **Name:** 濕傘套
 - **Description:** 掛在牆角、邊角仍在滴水的濕傘套。
 - **Details:** 傘套濕度明顯比地上的半乾水痕新，顯示先後有不只一次有人從後巷帶著雨水進來。
+- **Image Prompt:** Wet transparent umbrella sleeve hanging from a cafe backroom wall hook, visible droplets, isolated evidence icon, no readable text.
 
 #### On Collect
 
@@ -241,6 +246,7 @@
 - **Name:** 咖啡機最後出杯紀錄
 - **Description:** 收銀的最後一筆出杯紀錄，兩杯，間隔很短。
 - **Details:** 出杯紀錄不能定出死亡的那一分鐘，但能證明增田在等第二個人，而且那場碰面比摘要敘述的更早就開始。
+- **Image Prompt:** Cafe espresso machine output slip beside two small cup icons, timing rows implied but unreadable, isolated evidence icon.
 
 #### On Collect
 
@@ -252,6 +258,7 @@
 - **Name:** 舊掛鐘照片
 - **Description:** 停在接近 22:59 的舊掛鐘照片。
 - **Details:** 指針卡住的時間落在約 22:59，疑似遭撞擊停擺。一台舊鐘無法單獨錨定真正的時間，只能當旁證。
+- **Image Prompt:** Photo print of an old cafe wall clock stopped near an unreadable late-night position, cracked shadowed frame, isolated evidence icon.
 
 #### On Collect
 
@@ -263,6 +270,7 @@
 - **Name:** 死者手機通知紀錄
 - **Description:** 死者手機掉落位置與最後一則通知的時間紀錄。
 - **Details:** 最後一則通知約落在 22:58，與舊掛鐘的 22:59 幾乎重疊，把衝突發生的時間往前拉到接近 22:58。
+- **Image Prompt:** Smartphone near a storage-room shelf impact mark with a blurred notification row, unreadable timestamp blocks, isolated evidence icon.
 
 #### On Collect
 
@@ -274,6 +282,7 @@
 - **Name:** 金屬咖啡豆罐（兇器候補）
 - **Description:** 不鏽鋼備品罐，罐身有新的擦拭痕，罐口有一處小凹。
 - **Details:** 擦拭痕與罐口的凹陷支持一場普通的物理性兇殺，並把衝突時間往前推；它不是複雜的謎題，只是順手的鈍器。
+- **Image Prompt:** Stainless steel cafe bean can with fresh wipe marks and a small dent on the rim, isolated evidence icon, no readable branding.
 
 #### On Collect
 
@@ -285,6 +294,7 @@
 - **Name:** 法醫初步死亡範圍
 - **Description:** 黑瀨提供的法醫初步簡報摘錄。
 - **Details:** 法醫判定後頭部鈍器傷，死亡時間給的是一段範圍而非精確時刻；該範圍與接近 22:58 的衝突點並不矛盾。
+- **Image Prompt:** Forensic preliminary report excerpt on a clipboard, range bar and body-outline marks implied but unreadable, isolated evidence icon.
 
 #### On Collect
 
@@ -296,6 +306,7 @@
 - **Name:** 三宅視角 replay
 - **Description:** 站在三宅 23:06 站位上的後場視線記錄。
 - **Details:** 從該站位看得見清潔用品架、蛋糕盒、紙杯箱、半掩防火門與高貨架陰影，但看不到增田倒下位置、舊掛鐘與深處血跡。它只證明三宅看不見屍體，不構成完整的不在場證明。
+- **Image Prompt:** First-person sightline replay card from a cafe backroom, shelves blocking a deeper storage area, simple view cone overlay without labels, isolated evidence icon.
 
 #### On Collect
 

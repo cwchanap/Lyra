@@ -34,6 +34,7 @@
 - **Kind:** inquiry
 - **Required:** true
 - **Status:** unlocked
+- **Background Prompt:** Late-night Japanese police interrogation room, small table under hard lamps, rain-dark window, vending-machine glow from waiting area implied, tense but quiet.
 
 [場景：警署詢問室，深夜。室內只有一張桌子與兩盞燈，氣氛壓抑，窗外仍在下雨。]
 
@@ -88,6 +89,7 @@
 - **Required:** true
 - **Status:** locked
 - **Unlock:** phase:ask_miyake completed
+- **Background Prompt:** Police interrogation room at night with case records spread across the table, white lamp glare, rain streaks on dark glass, controlled pressure.
 
 [場景：警署詢問室，深夜。雨聲透過窗縫滲進來，桌上攤著幾份從現場帶回的紀錄。]
 
@@ -195,6 +197,7 @@
 - **Name:** 蛋糕盒（準備丟棄品）
 - **Description:** 三宅當晚從後場帶走的蛋糕盒，原是店裡準備丟棄的剩品。
 - **Details:** 三宅為了帶給生病的母親而拿走，因怕被當成偷竊，一開始隱瞞了這件事。
+- **Image Prompt:** Small flattened cafe cake box with a plain disposal sticker shape, slightly worn cardboard, isolated evidence icon, no readable text.
 
 #### On Collect
 
@@ -204,6 +207,7 @@
 - **Name:** 三宅母親通話紀錄
 - **Description:** 三宅在二十二點五十六分前後，於員工休息區撥給母親的一通私人電話。
 - **Details:** 目前僅為三宅口述，屬待確認項目，需日後向電信方正式調閱核實。
+- **Image Prompt:** Smartphone call-log screen mockup with one highlighted outgoing call row, all marks unreadable, isolated evidence icon.
 
 #### On Collect
 

@@ -1,2 +1,36 @@
 assets:
-  enabled: false
+  enabled: true
+
+globalStyle:
+  prompt: >
+    Grounded neo-noir Japanese detective visual novel, realistic Tokyo interiors,
+    rainy cinematic atmosphere, restrained varied color, adult character tone,
+    no anime exaggeration, no readable text in image, no watermark.
+
+types:
+  background:
+    dimensions: [1920, 1080]
+    format: png
+    transparency: false
+    prompt: >
+      Wide 16:9 background plate for visual novel gameplay, no foreground
+      dialogue characters, no UI overlay, no readable text, clear spatial
+      composition, cinematic but grounded lighting.
+  portrait:
+    dimensions: [768, 1024]
+    format: png
+    transparency: true
+    prompt: >
+      Half-body visual novel character portrait, consistent face and outfit,
+      neutral three-quarter stance, transparent background, crisp edges, no
+      props unless specified, no text.
+  evidence:
+    dimensions: [512, 512]
+    format: png
+    transparency: true
+    prompt: >
+      Isolated evidence icon, readable silhouette at small UI sizes, clean
+      object-focused composition, transparent background, no readable text.
+  audio:
+    format: ogg
+    loop: true
