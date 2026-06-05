@@ -93,9 +93,9 @@ assets:
 
 globalStyle:
   prompt: >
-    Grounded neo-noir Japanese detective visual novel, realistic Tokyo interiors,
+    Grounded anime neo-noir Japanese detective visual novel, stylized Tokyo interiors,
     rainy cinematic atmosphere, restrained varied color, adult character tone,
-    no anime exaggeration, no readable text in image, no watermark.
+    no chibi or comedy exaggeration, no readable text in image, no watermark.
 
 types:
   background:
@@ -389,9 +389,9 @@ Use one built-in `image_gen` call per row. Prompt format:
 Use case: illustration-story
 Asset type: 16:9 visual novel background plate
 Primary request: use the exact row-specific background prompt from Task 2.
-Style: grounded neo-noir Japanese detective visual novel, realistic Tokyo interiors, rainy cinematic atmosphere, restrained varied color, adult tone, no anime exaggeration.
+Style: grounded anime neo-noir Japanese detective visual novel, stylized Tokyo interiors, rainy cinematic atmosphere, restrained varied color, serious adult tone, no chibi or comedy exaggeration.
 Composition: wide background plate, no foreground dialogue characters, clear gameplay-readable space, no UI overlay.
-Avoid: readable text, logos, watermarks, subtitles, exaggerated anime styling, decorative gradients.
+Avoid: readable text, logos, watermarks, subtitles, chibi styling, comedy exaggeration, decorative gradients.
 Output: PNG-like raster image, 16:9 composition.
 ```
 
@@ -432,9 +432,9 @@ Use one built-in `image_gen` call per portrait. Prompt format:
 Use case: illustration-story
 Asset type: half-body visual novel character portrait for transparent PNG
 Primary request: combine the exact character `visualPrompt` from `characters.yaml` with the exact expression prompt for the portrait being generated.
-Style: grounded neo-noir Japanese detective visual novel, realistic adult proportions, restrained color, consistent face and outfit across expressions for the same character.
+Style: grounded anime neo-noir Japanese detective visual novel, serious adult anime proportions, restrained color, consistent face and outfit across expressions for the same character.
 Background handling: Create the character on a perfectly flat solid #00ff00 chroma-key background for background removal. The background must be one uniform color with no shadows, gradients, texture, reflections, floor plane, or lighting variation. Keep the subject fully separated from the background with crisp edges and generous padding. Do not use #00ff00 anywhere in the subject.
-Avoid: readable text, logos, watermarks, props not specified, exaggerated anime styling, full-body tiny framing.
+Avoid: readable text, logos, watermarks, props not specified, chibi styling, comedy exaggeration, full-body tiny framing.
 ```
 
 - [ ] **Step 3: Remove chroma key for each portrait**
@@ -486,7 +486,7 @@ Use one built-in `image_gen` call per starter evidence item. Prompt format:
 Use case: illustration-story
 Asset type: isolated detective evidence icon for transparent PNG
 Primary request: use the exact starter evidence `Image Prompt` from Task 2.
-Style: grounded neo-noir Japanese detective visual novel, realistic object rendering, restrained color, object-focused.
+Style: grounded anime neo-noir Japanese detective visual novel, stylized but grounded object rendering, restrained color, object-focused.
 Background handling: Create the evidence object on a perfectly flat solid #00ff00 chroma-key background for background removal. The background must be one uniform color with no shadows, gradients, texture, reflections, floor plane, or lighting variation. Keep the object fully separated from the background with crisp edges and generous padding. Do not use #00ff00 anywhere in the object.
 Avoid: readable text, logos, watermarks, decorative UI frames, overly tiny details.
 ```

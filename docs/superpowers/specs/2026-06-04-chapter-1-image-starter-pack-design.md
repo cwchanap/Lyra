@@ -20,12 +20,12 @@ The starter pack covers the opening case loop only:
 
 ## Visual Direction
 
-Use a grounded neo-noir visual novel style:
+Use a grounded anime neo-noir visual novel style:
 
-- realistic Tokyo interiors and rainy street atmosphere
+- stylized Tokyo interiors and rainy street atmosphere
 - cinematic but restrained lighting
 - muted, varied color with no saturated one-note palette
-- grounded adult character designs, no anime exaggeration
+- serious adult anime character designs, no chibi or comedy exaggeration
 - no baked-in readable UI or document text in generated images
 - no watermarks, logos, subtitles, or decorative text
 
