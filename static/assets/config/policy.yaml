@@ -3,9 +3,9 @@ assets:
 
 globalStyle:
   prompt: >
-    Grounded neo-noir Japanese detective visual novel, realistic Tokyo interiors,
+    Grounded anime neo-noir Japanese detective visual novel, stylized Tokyo interiors,
     rainy cinematic atmosphere, restrained varied color, adult character tone,
-    no anime exaggeration, no readable text in image, no watermark.
+    no chibi or comedy exaggeration, no readable text in image, no watermark.
 
 types:
   background:
