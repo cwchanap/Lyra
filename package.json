@@ -10,7 +10,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "editor:dev": "bun run --cwd apps/layout-editor tauri dev",
-    "editor:build": "bun run --cwd apps/layout-editor tauri build",
+    "editor:build": "bun run --cwd apps/layout-editor tauri build --bundles app",
     "editor:check": "bun run --cwd apps/layout-editor check",
     "lint": "svelte-kit sync && eslint .",
     "lint:fix": "svelte-kit sync && eslint . --fix",
