@@ -22,6 +22,7 @@
     "clerk",
     "hayasaka_akane",
     "miyake_mother",
+    "miyake_sota",
     "soma_ritsu",
     "takase_manager",
   ]);

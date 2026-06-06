@@ -82,6 +82,7 @@ describe("DialogueBox", () => {
     ["clerk", "standard"],
     ["hayasaka_akane", "standard"],
     ["miyake_mother", "standard"],
+    ["miyake_sota", "standard"],
     ["soma_ritsu", "standard"],
     ["takase_manager", "standard"],
   ])(

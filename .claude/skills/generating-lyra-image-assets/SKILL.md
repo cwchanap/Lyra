@@ -53,7 +53,10 @@ with `bun run scenes:compile`.
    - Lyra style: grounded anime neo-noir Japanese detective visual novel
    - constraints: no readable text, no logos, no watermark
    - for backgrounds: no foreground dialogue characters and leave lower-area
-     composition usable for the dialogue UI
+     composition usable for the dialogue UI; explicitly request a wide 16:9
+     composition
+   - for portraits: explicitly request a vertical 3:4 character portrait
+   - for evidence: explicitly request a square 1:1 object-focused icon
    - for portraits/evidence: transparent output workflow from `imagegen`
 4. Use the built-in `image_gen` tool by default. For batches, issue one
    built-in call per asset; do not switch to CLI fallback just because there
@@ -62,7 +65,7 @@ with `bun run scenes:compile`.
    `$CODEX_HOME/generated_images/...` into the expected workspace path. Keep
    the original generated file in place.
 6. Normalize the workspace PNG to the policy dimensions:
-   - backgrounds: exact policy canvas, opaque PNG
+   - backgrounds: exact policy canvas, opaque PNG, preserving aspect ratio
    - portraits: exact policy canvas, RGBA, subject fitted without cropping and
      bottom-aligned
    - evidence: exact policy canvas, RGBA, subject fitted without cropping and
@@ -92,10 +95,53 @@ first:
 Ask before using CLI `gpt-image-1.5` true transparency unless the user already
 requested CLI/API fallback.
 
+## Size And Aspect Handling
+
+The built-in `image_gen` tool accepts a prompt only; it cannot guarantee exact
+pixel dimensions or a hard aspect ratio. Treat prompt text such as "16:9",
+"portrait 3:4", or "square 1:1" as guidance, then verify the generated PNG
+before committing it.
+
+Use the target ratio from `static/assets/config/policy.yaml` for the asset type:
+
+| Type | Policy canvas | Target ratio | Prompt cue |
+| --- | --- | --- | --- |
+| background | `1920x1080` | `16:9` | wide background plate |
+| portrait | `768x1024` | `3:4` | vertical character portrait |
+| evidence | `512x512` | `1:1` | square object icon |
+
+Always repack final workspace files to the dimensions in
+`static/assets/config/policy.yaml`, but never use non-uniform scaling that
+stretches width and height by different factors. Use this order:
+
+1. Measure the generated image dimensions.
+2. If the generated aspect ratio is close to the policy ratio, resize uniformly
+   to the policy canvas.
+3. If the generated aspect ratio is not close, crop or pad to the policy ratio
+   while preserving scale, then resize uniformly to the policy canvas.
+4. Inspect the result before accepting it, especially for background
+   composition and portrait placement.
+
+For example, a generated `1672x941` background plate is close enough to resize
+uniformly to `1920x1080` because its aspect ratio is effectively `16:9`. A
+landscape portrait or rectangular evidence image is not close enough for its
+asset type; crop/pad only if the subject still fits naturally, otherwise
+regenerate with a stronger type-specific ratio cue.
+
+If the user explicitly approves CLI/API fallback for exact-size generation,
+choose a valid generation size supported by the model that matches the asset
+ratio, then downscale proportionally to the policy canvas. Useful examples:
+`2048x1152` or `3840x2160` for backgrounds, `768x1024` or `1536x2048` for
+portraits, and square sizes for evidence. Do not request dimensions from models
+that have size divisibility or range rules unless both dimensions satisfy that
+model's requirements.
+
 ## Common Mistakes
 
 - Leaving project-bound images only under `$CODEX_HOME/generated_images/...`.
 - Saving portraits/evidence at generator canvas size instead of policy size.
+- Stretching generated images to policy dimensions when their source aspect
+  ratio does not match.
 - Cropping transparent assets by visible pixels but forgetting to repack them
   to the declared canvas.
 - Treating `batch` as permission to use CLI fallback.
