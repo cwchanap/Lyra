@@ -79,7 +79,16 @@ async function installTauriMock(page: Page) {
       },
       mode: {
         type: "dialogue",
-        current: { kind: "line", speaker: "相馬律", text: "測試開始。" },
+        current: {
+          kind: "line",
+          speaker: "早坂茜",
+          text: "測試開始。",
+          portrait: {
+            characterId: "hayasaka_akane",
+            expression: "standard",
+            assetId: "portrait.hayasaka_akane.standard",
+          },
+        },
         queueRemaining: 0,
         sceneTag: "測試場景前廳，深夜。",
         queueToken: { sceneId: "scene_0", queueGen: 1, cursor: 0 },
@@ -202,6 +211,21 @@ if (shouldRegisterPlaywrightSuite) {
       await expect(
         page.getByRole("button", { name: /案發時間/ }),
       ).toBeVisible();
+    });
+
+    test("keeps right-side portraits inside the viewport", async ({ page }) => {
+      await startFromMenu(page);
+
+      const portrait = page.locator("img.portrait");
+      await expect(portrait).toHaveAttribute("data-placement", "right");
+      await expect(portrait).toBeVisible();
+
+      const box = await portrait.boundingBox();
+      const viewport = page.viewportSize();
+      expect(box).not.toBeNull();
+      expect(viewport).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width + 0.5);
     });
 
     test("inspects a hotspot and shows inventory", async ({ page }) => {
