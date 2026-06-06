@@ -5,12 +5,14 @@
 
   let {
     scene,
+    backgroundAssetId = null,
     onInspect,
     onInterview,
     onEnterSublocation,
     disabled = false,
   }: {
     scene: SceneView;
+    backgroundAssetId?: string | null;
     onInspect: (id: string) => void;
     onInterview: (cId: string, tId: string) => void;
     onEnterSublocation: (id: string) => void;
@@ -33,6 +35,7 @@
   />
   <InvestigationSceneSurface
     sublocation={currentSub}
+    {backgroundAssetId}
     {onInspect}
     {onInterview}
     {disabled}

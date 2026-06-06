@@ -15,11 +15,13 @@
 
   let {
     sublocation,
+    backgroundAssetId = null,
     onInspect,
     onInterview,
     disabled = false,
   }: {
     sublocation: SublocationView;
+    backgroundAssetId?: string | null;
     onInspect: (id: string) => void;
     onInterview: (characterId: string, topicId: string) => void;
     disabled?: boolean;
@@ -27,6 +29,7 @@
 
   let activeCharacterId = $state<string | null>(null);
   let portraits = $state<Record<string, ResolvedStoryAsset | null>>({});
+  let background = $state<ResolvedStoryAsset | null>(null);
 
   let placedHotspots = $derived(
     sublocation.hotspots.filter(
@@ -67,6 +70,19 @@
     };
   });
 
+  $effect(() => {
+    let cancelled = false;
+    background = null;
+
+    resolveStoryAsset(backgroundAssetId, "background").then((asset) => {
+      if (!cancelled) background = asset;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  });
+
   function percent(value: number) {
     return `${value * 100}%`;
   }
@@ -86,6 +102,21 @@
   function interviewActive(topic: TopicView) {
     if (!activeCharacter) return;
     onInterview(activeCharacter.id, topic.id);
+  }
+
+  function closeTopics() {
+    activeCharacterId = null;
+  }
+
+  function handleBackgroundError() {
+    if (!background || background.placeholder) return;
+    console.warn(
+      `[InvestigationSceneSurface] Missing background asset: ${background.url} (assetId: ${background.assetId})`,
+    );
+    background = placeholderForMissingStoryAsset(
+      background.assetId,
+      "background",
+    );
   }
 
   function handlePortraitError(
@@ -108,6 +139,16 @@
 
 <section class="surface-shell" aria-label={`${sublocation.label}調查場景`}>
   <div class="scene-surface">
+    {#if background}
+      <img
+        class="background-image"
+        src={background.url}
+        alt=""
+        aria-hidden="true"
+        onerror={handleBackgroundError}
+      />
+    {/if}
+
     <div class="scene-label">
       <span class="eyebrow">INVESTIGATION</span>
       <strong>{sublocation.label}</strong>
@@ -137,6 +178,7 @@
         type="button"
         aria-label={`詢問：${character.name}`}
         aria-expanded={activeCharacterId === character.id}
+        aria-haspopup="dialog"
         style={spriteStyle(character.layout)}
         {disabled}
         onclick={() => toggleCharacter(character.id)}
@@ -158,12 +200,22 @@
     {#if activeCharacter}
       <div
         class="topic-popover"
-        role="group"
+        role="dialog"
         aria-label={`${activeCharacter.name}詢問項目`}
       >
         <div class="topic-heading">
-          <strong>{activeCharacter.name}</strong>
-          <span>{activeCharacter.role}</span>
+          <div>
+            <strong>{activeCharacter.name}</strong>
+            <span>{activeCharacter.role}</span>
+          </div>
+          <button
+            class="close-topics"
+            type="button"
+            aria-label="關閉詢問項目"
+            onclick={closeTopics}
+          >
+            ×
+          </button>
         </div>
         <div class="topic-actions">
           {#each activeCharacter.topics as topic (topic.id)}
@@ -220,6 +272,7 @@
                 <div class="witness-copy">
                   <strong>{character.name}</strong>
                   <small>{character.role}</small>
+                  <p>{character.bio}</p>
                 </div>
                 <div class="fallback-topics">
                   {#each character.topics as topic (topic.id)}
@@ -254,6 +307,7 @@
     position: relative;
     min-height: clamp(340px, 54vh, 620px);
     overflow: hidden;
+    isolation: isolate;
     border-block: 1px solid var(--rule-strong);
     background:
       linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
@@ -262,11 +316,22 @@
     background-size: 32px 32px;
   }
 
+  .background-image {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.62;
+    pointer-events: none;
+  }
+
   .scene-label {
     position: absolute;
     left: 18px;
     top: 16px;
-    z-index: 2;
+    z-index: 5;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -298,12 +363,12 @@
   .hotspot-target,
   .character-target {
     position: absolute;
-    z-index: 3;
     color: var(--bone);
     cursor: pointer;
   }
 
   .hotspot-target {
+    z-index: 4;
     left: var(--x);
     top: var(--y);
     width: var(--w);
@@ -358,6 +423,7 @@
   }
 
   .character-target {
+    z-index: 2;
     left: var(--x);
     top: var(--y);
     width: var(--w);
@@ -365,12 +431,9 @@
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    min-width: 78px;
-    min-height: 130px;
     padding: 0;
     border: 0;
     background: transparent;
-    transform: translate(-50%, -100%);
   }
 
   .character-target img,
@@ -378,6 +441,7 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+    object-position: bottom center;
     filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.48));
   }
 
@@ -425,7 +489,7 @@
     position: absolute;
     right: 18px;
     bottom: 18px;
-    z-index: 5;
+    z-index: 6;
     width: min(320px, calc(100% - 36px));
     padding: 12px;
     border: 1px solid var(--rule-strong);
@@ -441,6 +505,13 @@
     gap: 4px;
   }
 
+  .topic-heading {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
   .topic-heading strong,
   .witness-copy strong {
     font-family: var(--display-jp);
@@ -451,10 +522,38 @@
 
   .topic-heading span,
   .witness-copy small {
+    display: block;
     color: var(--bone-dim);
     font-family: var(--serif-jp);
     font-size: 12px;
     letter-spacing: 0.06em;
+  }
+
+  .witness-copy p {
+    margin: 4px 0 0;
+    color: var(--bone-dim);
+    font-family: var(--serif-jp);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .close-topics {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    border: 1px solid var(--rule);
+    background: transparent;
+    color: var(--bone-dim);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .close-topics:hover:not(:disabled),
+  .close-topics:focus-visible:not(:disabled) {
+    border-color: var(--crimson);
+    color: var(--bone);
   }
 
   .topic-actions,
