@@ -2,6 +2,9 @@
 
 ## Intro
 
+[場景：雨鐘咖啡館後場，夜晚。店長辦公角落亮著暖燈，牆邊維護螢幕待機。]
+- **Background Prompt:** Rain Bell cafe backroom at night near the manager office corner, warm practical lamp, maintenance screen idle on the wall, stacked boxes and account books, quiet procedural tension, no readable UI text.
+
 [相馬律與早坂茜回到雨鐘咖啡館後場，店長高瀨在角落等他們。]
 
 **店長高瀨**：早坂律師、相馬先生，我想到一件事。

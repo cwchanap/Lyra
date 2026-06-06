@@ -2,6 +2,9 @@
 
 ## Intro
 
+[場景：雨鐘咖啡館外，雨夜，閉店後。玻璃門前的路燈映著濕地面，店內只剩半盞燈。]
+- **Background Prompt:** Exterior of Rain Bell cafe at rainy night after closing, wet glass door, dim interior light visible through the window, umbrellas being closed at the entrance, reflective pavement, serious detective mystery mood, no readable signage.
+
 [雨夜。相馬律與早坂茜在「雨鐘」門口收傘，玻璃門上還貼著閉店的牌子。]
 
 **相馬律**：閉店後的店，比白天安靜得多。
