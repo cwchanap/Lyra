@@ -381,12 +381,14 @@ export type JSONInvestigationScene = {
       reveals: RevealTarget[];
       inspectDialogue: JSONDialogueItem[];
       onReexamine: JSONDialogueItem[] | null;
+      layout: JSONHotspotLayout | null;
     }>;
     characters: Array<{
       id: string;
       name: string;
       role: string;
       bio: string;
+      layout: JSONCharacterLayout | null;
       topics: Array<{
         id: string;
         label: string;
