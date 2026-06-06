@@ -117,16 +117,18 @@ describe("parseInvestigationLayoutJson", () => {
 
   it("rejects non-finite coordinates", () => {
     const result = parseInvestigationLayoutJson(
-      validLayoutJson({
-        sublocations: {
-          main_hall: {
-            hotspots: {
-              table: { kind: "rect", x: "NaN", y: 0.2, w: 0.3, h: 0.4 },
+      `{
+        "version": 1,
+        "sceneId": "investigation_scene_1",
+        "sublocations": {
+          "main_hall": {
+            "hotspots": {
+              "table": { "kind": "rect", "x": 1e999, "y": 0.2, "w": 0.3, "h": 0.4 }
             },
-            characters: {},
-          },
-        },
-      }),
+            "characters": {}
+          }
+        }
+      }`,
       sourceFile,
     );
 
