@@ -1,5 +1,5 @@
 // src-tauri/src/game/view.rs
-use crate::game::schema::{AudioChannelJson, DialogueItem};
+use crate::game::schema::{AudioChannelJson, CharacterLayoutJson, DialogueItem, HotspotLayoutJson};
 use crate::game::state::Inventory;
 use serde::{Deserialize, Serialize};
 
@@ -116,6 +116,7 @@ pub struct HotspotView {
     pub label: String,
     pub description: String,
     pub inspected: bool,
+    pub layout: Option<HotspotLayoutJson>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -125,6 +126,7 @@ pub struct CharacterView {
     pub name: String,
     pub role: String,
     pub bio: String,
+    pub layout: Option<CharacterLayoutJson>,
     pub topics: Vec<TopicView>,
 }
 

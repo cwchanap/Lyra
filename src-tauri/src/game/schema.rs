@@ -84,6 +84,39 @@ pub struct AssetRefJson {
     pub asset_id: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum HotspotLayoutJson {
+    Rect { x: f64, y: f64, w: f64, h: f64 },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum CharacterLayoutJson {
+    Sprite {
+        asset_id: String,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        anchor: CharacterLayoutAnchorJson,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CharacterLayoutAnchorJson {
+    BottomCenter,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -487,6 +520,8 @@ pub struct HotspotJson {
     pub status: LockStatus,
     pub unlock: Option<UnlockExpr>,
     pub reveals: Vec<RevealTarget>,
+    #[serde(default)]
+    pub layout: Option<HotspotLayoutJson>,
     pub inspect_dialogue: Vec<DialogueItem>,
     pub on_reexamine: Option<Vec<DialogueItem>>,
 }
@@ -498,6 +533,8 @@ pub struct CharacterJson {
     pub name: String,
     pub role: String,
     pub bio: String,
+    #[serde(default)]
+    pub layout: Option<CharacterLayoutJson>,
     pub topics: Vec<TopicJson>,
 }
 
@@ -745,6 +782,46 @@ mod tests {
         let json = r#"{"type": "bckground", "assetId": "bg"}"#;
         let result = serde_json::from_str::<AssetRefJson>(json);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserializes_hotspot_layout() {
+        let json = r#"{
+            "id": "table",
+            "label": "桌面",
+            "description": "桌上有一只杯子。",
+            "status": "unlocked",
+            "unlock": null,
+            "reveals": [],
+            "layout": { "kind": "rect", "x": 0.18, "y": 0.52, "w": 0.16, "h": 0.12 },
+            "inspectDialogue": []
+        }"#;
+        let parsed: HotspotJson = serde_json::from_str(json).unwrap();
+        let HotspotLayoutJson::Rect { x, .. } = parsed.layout.unwrap();
+        assert_eq!(x, 0.18);
+    }
+
+    #[test]
+    fn deserializes_character_layout() {
+        let json = r#"{
+            "id": "witness",
+            "name": "目擊者",
+            "role": "店員",
+            "bio": "緊張的店員。",
+            "layout": {
+                "kind": "sprite",
+                "assetId": "portrait.witness.standard",
+                "x": 0.72,
+                "y": 0.18,
+                "w": 0.16,
+                "h": 0.72,
+                "anchor": "bottomCenter"
+            },
+            "topics": []
+        }"#;
+        let parsed: CharacterJson = serde_json::from_str(json).unwrap();
+        let CharacterLayoutJson::Sprite { asset_id, .. } = parsed.layout.unwrap();
+        assert_eq!(asset_id, "portrait.witness.standard");
     }
 
     #[test]
