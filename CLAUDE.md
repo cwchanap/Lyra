@@ -79,11 +79,12 @@ Keep the ownership boundary intact:
   expression IDs, and audio IDs. Writers must not author filesystem paths.
 - Character IDs, expression IDs, and asset IDs become path or manifest keys, so
   keep slug validation in the compiler/config layer before generating paths.
-- When asked to generate or edit raster image assets, always use the `imagegen`
-  skill/tools at `${CODEX_HOME:-$HOME/.codex}/skills/.system/imagegen/SKILL.md`
-  if available. If those tools are unavailable, tell the user to run the image
-  request in the Codex app instead of substituting non-image placeholders or
-  another generation path.
+- When asked to generate or edit raster image assets, invoke the repo-local
+  `generating-lyra-image-assets` skill first. That SOP owns how Lyra agents use
+  the system `imagegen` skill/tools, save project-bound outputs, normalize
+  dimensions, and verify generated files. If the required `imagegen` tools are
+  unavailable, tell the user to run the image request in the Codex app instead
+  of substituting non-image placeholders or another generation path.
 
 ## Svelte 5
 
@@ -128,6 +129,11 @@ the repo contract. When writing or modifying scene content, invoke the relevant
 skill rather than free-forming the format. These skills own details such as
 Traditional Chinese dialogue style, full-width `場景：` tags, investigation
 hotspots, interrogation phases, and asset metadata.
+
+Image-asset generation instructions also live in `.claude/skills/` and are part
+of the repo contract. When generating or editing story backgrounds, portraits,
+evidence icons, starter packs, or missing asset files, invoke
+`generating-lyra-image-assets`.
 
 Relevant design specs:
 
