@@ -15,6 +15,11 @@ export type InvestigationLayoutApplyResult =
   | { ok: false; errors: CompileError[] };
 
 type LayoutTargetKind = "hotspot" | "character";
+const layoutSourceFile = Symbol("layoutSourceFile");
+
+type LayoutSourceMetadata = {
+  [layoutSourceFile]?: string;
+};
 
 export function parseInvestigationLayoutJson(
   source: string,
@@ -81,7 +86,7 @@ export function parseInvestigationLayoutJson(
         "Layout sidecar must include a sublocations object.",
       ),
     );
-    return errors.length > 0 ? { ok: false, errors } : unreachable();
+    return { ok: false, errors };
   }
 
   const sublocations: InvestigationLayoutSidecar["sublocations"] = {};
@@ -104,14 +109,21 @@ export function parseInvestigationLayoutJson(
 
     const hotspots: Record<string, RectLayout> = {};
     for (const [hotspotId, rawLayout] of Object.entries(hotspotsRoot)) {
-      const parsed = parseRectLayout(rawLayout, sourceFile, "hotspot");
+      const targetPath = `sublocations.${sublocationId}.hotspots.${hotspotId}`;
+      const parsed = parseRectLayout(
+        rawLayout,
+        sourceFile,
+        "hotspot",
+        targetPath,
+      );
       errors.push(...parsed.errors);
       if (parsed.value) hotspots[hotspotId] = parsed.value;
     }
 
     const characters: Record<string, SpriteLayout> = {};
     for (const [characterId, rawLayout] of Object.entries(charactersRoot)) {
-      const parsed = parseSpriteLayout(rawLayout, sourceFile);
+      const targetPath = `sublocations.${sublocationId}.characters.${characterId}`;
+      const parsed = parseSpriteLayout(rawLayout, sourceFile, targetPath);
       errors.push(...parsed.errors);
       if (parsed.value) characters[characterId] = parsed.value;
     }
@@ -120,28 +132,39 @@ export function parseInvestigationLayoutJson(
   }
 
   if (errors.length > 0) return { ok: false, errors };
+  const value = {
+    version: 1,
+    sceneId,
+    sublocations,
+  } satisfies InvestigationLayoutSidecar;
+  Object.defineProperty(value, layoutSourceFile, {
+    value: sourceFile,
+    enumerable: false,
+  });
   return {
     ok: true,
-    value: {
-      version: 1,
-      sceneId,
-      sublocations,
-    },
+    value,
   };
 }
 
 export function applyInvestigationLayout(
   scene: ASTInvestigationScene,
   layout: InvestigationLayoutSidecar,
+  sourceFile?: string,
 ): InvestigationLayoutApplyResult {
   const errors: CompileError[] = [];
+  const sidecarSourceFile =
+    sourceFile ??
+    (layout as InvestigationLayoutSidecar & LayoutSourceMetadata)[
+      layoutSourceFile
+    ] ??
+    scene.sourceFile;
   if (layout.sceneId !== scene.id) {
     errors.push(
       error(
-        scene.sourceFile,
+        sidecarSourceFile,
         "layoutSceneMismatch",
         `Layout sceneId "${layout.sceneId}" does not match scene "${scene.id}".`,
-        scene.line,
       ),
     );
   }
@@ -156,10 +179,9 @@ export function applyInvestigationLayout(
     if (!sublocation) {
       errors.push(
         error(
-          scene.sourceFile,
+          sidecarSourceFile,
           "layoutUnknownSublocation",
           `Layout references unknown sublocation "${sublocationId}".`,
-          scene.line,
         ),
       );
       continue;
@@ -172,10 +194,9 @@ export function applyInvestigationLayout(
       if (!hotspotIds.has(hotspotId)) {
         errors.push(
           error(
-            scene.sourceFile,
+            sidecarSourceFile,
             "layoutUnknownHotspot",
             `Layout references unknown hotspot "${hotspotId}" in sublocation "${sublocationId}".`,
-            sublocation.line,
           ),
         );
       }
@@ -188,10 +209,9 @@ export function applyInvestigationLayout(
       if (!characterIds.has(characterId)) {
         errors.push(
           error(
-            scene.sourceFile,
+            sidecarSourceFile,
             "layoutUnknownCharacter",
             `Layout references unknown character "${characterId}" in sublocation "${sublocationId}".`,
-            sublocation.line,
           ),
         );
       }
@@ -226,6 +246,7 @@ function parseRectLayout(
   rawLayout: unknown,
   sourceFile: string,
   targetKind: LayoutTargetKind,
+  targetPath: string,
 ): { value: RectLayout | null; errors: CompileError[] } {
   const layout = asRecord(rawLayout);
   if (!layout || layout.kind !== "rect") {
@@ -235,13 +256,13 @@ function parseRectLayout(
         error(
           sourceFile,
           "layoutInvalidRect",
-          `${targetKind} layout must use kind "rect".`,
+          `${targetPath} ${targetKind} layout must use kind "rect".`,
         ),
       ],
     };
   }
 
-  const numberErrors = validateRectNumbers(layout, sourceFile);
+  const numberErrors = validateRectNumbers(layout, sourceFile, targetPath);
   if (numberErrors.length > 0) {
     return { value: null, errors: numberErrors };
   }
@@ -253,7 +274,7 @@ function parseRectLayout(
     w: layout.w,
     h: layout.h,
   };
-  const geometryErrors = validateGeometry(rect, sourceFile);
+  const geometryErrors = validateGeometry(rect, sourceFile, targetPath);
   return {
     value: geometryErrors.length > 0 ? null : rect,
     errors: geometryErrors,
@@ -263,6 +284,7 @@ function parseRectLayout(
 function parseSpriteLayout(
   rawLayout: unknown,
   sourceFile: string,
+  targetPath: string,
 ): { value: SpriteLayout | null; errors: CompileError[] } {
   const layout = asRecord(rawLayout);
   if (!layout || layout.kind !== "sprite") {
@@ -272,7 +294,7 @@ function parseSpriteLayout(
         error(
           sourceFile,
           "layoutInvalidSprite",
-          'character layout must use kind "sprite".',
+          `${targetPath} character layout must use kind "sprite".`,
         ),
       ],
     };
@@ -286,7 +308,7 @@ function parseSpriteLayout(
       error(
         sourceFile,
         "layoutMissingAssetId",
-        "Sprite layout must include a non-empty assetId.",
+        `${targetPath}.assetId must be a non-empty string.`,
       ),
     );
   }
@@ -295,11 +317,11 @@ function parseSpriteLayout(
       error(
         sourceFile,
         "layoutInvalidAnchor",
-        'Sprite layout anchor must be "bottomCenter".',
+        `${targetPath}.anchor must be "bottomCenter".`,
       ),
     );
   }
-  errors.push(...validateRectNumbers(layout, sourceFile));
+  errors.push(...validateRectNumbers(layout, sourceFile, targetPath));
   if (errors.length > 0) return { value: null, errors };
 
   const sprite = {
@@ -311,7 +333,7 @@ function parseSpriteLayout(
     h: layout.h,
     anchor: "bottomCenter" as const,
   };
-  const geometryErrors = validateGeometry(sprite, sourceFile);
+  const geometryErrors = validateGeometry(sprite, sourceFile, targetPath);
   return {
     value: geometryErrors.length > 0 ? null : sprite,
     errors: geometryErrors,
@@ -321,6 +343,7 @@ function parseSpriteLayout(
 function validateRectNumbers(
   layout: Record<string, unknown>,
   sourceFile: string,
+  targetPath: string,
 ): CompileError[] {
   const errors: CompileError[] = [];
   for (const key of ["x", "y", "w", "h"] as const) {
@@ -329,7 +352,7 @@ function validateRectNumbers(
         error(
           sourceFile,
           "layoutInvalidNumber",
-          `Layout field "${key}" must be a finite number.`,
+          `${targetPath}.${key} must be a finite number.`,
         ),
       );
     }
@@ -340,6 +363,7 @@ function validateRectNumbers(
 function validateGeometry(
   layout: RectLayout | SpriteLayout,
   sourceFile: string,
+  targetPath: string,
 ): CompileError[] {
   const errors: CompileError[] = [];
   if (layout.w <= 0 || layout.h <= 0) {
@@ -347,7 +371,7 @@ function validateGeometry(
       error(
         sourceFile,
         "layoutInvalidSize",
-        "Layout width and height must be greater than zero.",
+        `${targetPath}.w and ${targetPath}.h must be greater than zero.`,
       ),
     );
   }
@@ -361,7 +385,7 @@ function validateGeometry(
       error(
         sourceFile,
         "layoutOutOfBounds",
-        "Layout rectangle must stay within normalized scene bounds.",
+        `${targetPath} must stay within normalized scene bounds.`,
       ),
     );
   }
@@ -382,8 +406,4 @@ function error(
   line = 1,
 ): CompileError {
   return { code, message, sourceFile, line };
-}
-
-function unreachable(): never {
-  throw new Error("Unreachable layout parse state.");
 }
