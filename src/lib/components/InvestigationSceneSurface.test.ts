@@ -53,6 +53,13 @@ function surfaceSource() {
   );
 }
 
+function cssRule(source: string, selector: string) {
+  const match = new RegExp(`${selector.replace(".", "\\.")}\\s*{([^}]*)}`).exec(
+    source,
+  );
+  return match?.[1] ?? "";
+}
+
 describe("InvestigationSceneSurface", () => {
   it("renders placed hotspots with normalized style variables", () => {
     render(InvestigationSceneSurface, {
@@ -85,6 +92,12 @@ describe("InvestigationSceneSurface", () => {
   it("does not offset character layout boxes with bottom-center transforms", () => {
     const source = surfaceSource();
     expect(source).not.toContain("translate(-50%, -100%)");
+  });
+
+  it("keeps the scene surface on the 16:9 background coordinate plane", () => {
+    const surfaceRule = cssRule(surfaceSource(), ".scene-surface");
+    expect(surfaceRule).toContain("aspect-ratio: 16 / 9");
+    expect(surfaceRule).not.toContain("min-height");
   });
 
   it("renders the resolved background image inside the scene surface", async () => {
