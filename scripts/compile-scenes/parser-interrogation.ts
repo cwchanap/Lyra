@@ -15,6 +15,7 @@ import { tokenize, type Token } from "./tokenizer";
 import {
   parseVisualAssetCue,
   rejectReservedAssetMetadata,
+  rejectUnknownAssetMetadata,
   VISUAL_ASSET_METADATA_KEYS,
 } from "./parser-assets";
 import {
@@ -1126,7 +1127,7 @@ function consumeDialogueUntilHeading(
           metadataLines[metadata.key] = metadata.line;
         }
       }
-      const bad = rejectReservedAssetMetadata(
+      const bad = rejectUnknownAssetMetadata(
         meta,
         VISUAL_ASSET_METADATA_KEYS,
         cur.sourceFile,

@@ -54,9 +54,25 @@ the implementation plan is revised first.
 8. Rain Bell back corridor, narrow L-shaped sightline clue.
 9. Rain Bell inner storage entrance, high shelves and dark sightline occlusion.
 
-The current asset pipeline attaches investigation-scene background cues to
-sub-locations, not investigation intros. The Somai office exterior intro remains
-story text for this pack; adding playable intro backgrounds is out of scope.
+The original scope of this pack limited background cues to sub-locations
+inside investigation scenes (and the equivalent structural blocks in
+linear/interrogation scenes); the Somai office exterior intro was expected
+to remain text-only. That limit was lifted in the follow-up commit
+`feat(assets): intro scene-tag backgrounds and side-aware portraits`, which
+extended the parsers (linear, investigation, interrogation) to accept
+`Background Prompt` / `BGM` / `BGS` metadata immediately after intro
+`[場景：...]` scene tags. As a result, the shipped starter pack also
+includes three intro plates that are not in the original nine-item list
+above:
+
+10. Somai detective office exterior, early-morning drizzle
+    (`investigation_scene_1` intro).
+11. Late-night police-station waiting area (`interrogation_scene_4` intro).
+12. KAGAMI evidence-summary review hearing room in daylight
+    (`interrogation_scene_10` intro).
+
+Future packs should treat intro-scene-tag backgrounds as a supported
+authoring surface, not as out-of-scope text.
 
 ### Portraits
 

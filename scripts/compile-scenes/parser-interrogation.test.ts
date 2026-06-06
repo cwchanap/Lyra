@@ -217,6 +217,24 @@ describe("parseInterrogationScene", () => {
     });
   });
 
+  it("rejects arbitrary unknown metadata after an intro scene tag", () => {
+    // Only Background Prompt / BGM / BGS are permitted on a scene tag.
+    // Anything else — typos, stray keys — must fail fast so authoring
+    // mistakes aren't silently dropped by parseVisualAssetCue.
+    const parsed = parseInterrogationScene(
+      VALID_SOURCE.replace(
+        "## Intro\n\n**相馬律**：先從若槻開始。",
+        "## Intro\n\n[場景：警署等待區，深夜。]\n- **BackgroundPromt:** typoed-key\n\n**相馬律**：先從若槻開始。",
+      ),
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error.code).toBe("assetMetadataUnknownKey");
+    expect(parsed.error.message).toContain("BackgroundPromt");
+  });
+
   it("parses phase background and audio metadata", () => {
     const parsed = parseInterrogationScene(
       VALID_SOURCE.replace(
