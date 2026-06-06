@@ -129,6 +129,9 @@ describe("DialogueBox", () => {
     expect(image).toHaveAttribute("data-placement", "left");
     expect(image).toHaveAttribute("data-layer", "behind-dialogue");
     expect(image).toHaveClass("left");
+    expect(image.style.getPropertyValue("--portrait-height")).toBe(
+      "min(1536px, 80vh)",
+    );
   });
 
   it("renders a sceneTag dialogue item", () => {

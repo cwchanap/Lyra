@@ -93,8 +93,8 @@ add one extra expression only where the selected scenes strongly need it:
 - 三宅母親: `strained`
 - 店長高瀨: `tired`
 
-Portrait prompts should come from `docs/stories_plan/characters.md` and must not
-introduce hidden-story details.
+Portrait prompts should come from `static/assets/config/characters.yaml` (the
+config the asset pipeline loads) and must not introduce hidden-story details.
 
 ### Evidence Icons
 
