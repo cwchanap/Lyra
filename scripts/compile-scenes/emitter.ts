@@ -56,12 +56,14 @@ export function emitInvestigationScene(
         reveals: h.reveals,
         inspectDialogue: emitDialogueItems(h.inspectDialogue),
         onReexamine: emitNullableDialogueItems(h.onReexamine),
+        layout: h.layout ?? null,
       })),
       characters: sub.characters.map((c) => ({
         id: c.id,
         name: c.name,
         role: c.role,
         bio: c.bio,
+        layout: c.layout ?? null,
         topics: c.topics.map((t) => ({
           id: t.id,
           label: t.label,

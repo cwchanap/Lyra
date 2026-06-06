@@ -80,8 +80,47 @@ describe("emitter", () => {
             bgs: { channel: "bgs", assetId: null },
           },
           transitionDialogue: [],
-          hotspots: [],
-          characters: [],
+          hotspots: [
+            {
+              id: "table",
+              label: "Table",
+              description: "A rain-wet table.",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              inspectDialogue: [],
+              onReexamine: null,
+              layout: {
+                kind: "rect",
+                x: 0.18,
+                y: 0.52,
+                w: 0.16,
+                h: 0.12,
+              },
+              sourceFile: "i.md",
+              line: 5,
+            },
+          ],
+          characters: [
+            {
+              id: "witness",
+              name: "Witness",
+              role: "Witness",
+              bio: "Waiting.",
+              topics: [],
+              layout: {
+                kind: "sprite",
+                assetId: "portrait.witness.standard",
+                x: 0.72,
+                y: 0.18,
+                w: 0.16,
+                h: 0.72,
+                anchor: "bottomCenter",
+              },
+              sourceFile: "i.md",
+              line: 20,
+            },
+          ],
           sourceFile: "i.md",
           line: 4,
         },
@@ -122,6 +161,22 @@ describe("emitter", () => {
     expect(json.sublocations[0]?.bgs).toEqual({
       channel: "bgs",
       assetId: null,
+    });
+    expect(json.sublocations[0]?.hotspots[0]?.layout).toEqual({
+      kind: "rect",
+      x: 0.18,
+      y: 0.52,
+      w: 0.16,
+      h: 0.12,
+    });
+    expect(json.sublocations[0]?.characters[0]?.layout).toEqual({
+      kind: "sprite",
+      assetId: "portrait.witness.standard",
+      x: 0.72,
+      y: 0.18,
+      w: 0.16,
+      h: 0.72,
+      anchor: "bottomCenter",
     });
     expect(json.evidenceManifest[0]?.imageAssetId).toBe("evidence_photo");
   });
