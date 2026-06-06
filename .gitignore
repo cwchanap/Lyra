@@ -5,6 +5,8 @@ node_modules/
 /dist
 /.svelte-kit
 /package
+apps/layout-editor/dist/
+apps/layout-editor/src-tauri/target/
 
 .env
 .env.*
