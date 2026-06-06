@@ -160,7 +160,7 @@ if (shouldRegisterPlaywrightSuite) {
       await page.getByRole("button", { name: "推進對話" }).click();
 
       const placedHotspot = page.getByRole("button", {
-        name: /調查：桌面|桌面/,
+        name: "調查：桌面",
       });
       await expect(placedHotspot).toBeVisible();
       await placedHotspot.click();
