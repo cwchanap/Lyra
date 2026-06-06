@@ -2,6 +2,9 @@
 
 ## Intro
 
+[場景：KAGAMI 外包資料審查辦公室，白日。玻璃窗口前放著一份限定調閱回函，檔案櫃排在後方。]
+- **Background Prompt:** KAGAMI contractor records review office in daylight before the records handoff, glass service window, file cabinets, limited-scope reply packet on the counter, bureaucratic restraint, no readable text.
+
 [相馬律與早坂茜走進 KAGAMI 的外包資料審查辦公室，黑瀨徹已在窗口前等他們。]
 
 **黑瀨徹**：我以現場刑警的身份，向承包商提了協力請求。

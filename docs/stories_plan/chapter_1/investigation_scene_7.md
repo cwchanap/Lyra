@@ -2,6 +2,9 @@
 
 ## Intro
 
+[場景：雨鐘咖啡館後場門口，深夜，雨勢轉大。門口燈光照著止滑墊，後巷一片濕黑。]
+- **Background Prompt:** Rain Bell cafe back door area at late rainy night before re-entering the back room, non-slip mat at the threshold, dark wet rear alley beyond, phone notification glow in the detective's hand, tense investigative mood, no readable text.
+
 [相馬律的手機在口袋裡震了一下。他低頭看螢幕，眉頭皺起。]
 
 **相馬律**：有一則匿名訊息。
