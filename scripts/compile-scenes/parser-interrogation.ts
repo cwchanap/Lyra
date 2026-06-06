@@ -1116,9 +1116,31 @@ function consumeDialogueUntilHeading(
     if (!next) break;
     if (next.kind === "heading") break;
     cur.next();
-    if (next.kind === "sceneTag")
-      out.push({ kind: "sceneTag", text: next.text });
-    else if (next.kind === "action")
+    if (next.kind === "sceneTag") {
+      const meta: Record<string, string> = {};
+      const metadataLines: Record<string, number> = {};
+      while (cur.peek()?.kind === "metadata") {
+        const metadata = cur.next()!;
+        if (metadata.kind === "metadata") {
+          meta[metadata.key] = metadata.value;
+          metadataLines[metadata.key] = metadata.line;
+        }
+      }
+      const bad = rejectReservedAssetMetadata(
+        meta,
+        VISUAL_ASSET_METADATA_KEYS,
+        cur.sourceFile,
+        next.line,
+        metadataLines,
+      );
+      if (bad) return { ok: false, error: bad };
+      out.push({
+        kind: "sceneTag",
+        text: next.text,
+        assetCue:
+          Object.keys(meta).length > 0 ? parseVisualAssetCue(meta) : null,
+      });
+    } else if (next.kind === "action")
       out.push({ kind: "action", text: next.text });
     else if (next.kind === "dialogue") {
       out.push({

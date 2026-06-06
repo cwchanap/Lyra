@@ -3,6 +3,7 @@
 ## Intro
 
 [場景：KAGAMI 證據摘要審查會，白日。長桌一側坐著相馬律與早坂茜，另一側是主理的神谷澪，黑瀨徹立在證物推車旁，旁聽席上坐著三宅母親，她膝上放著一只飯糰袋。]
+- **Background Prompt:** KAGAMI evidence-summary review hearing room in daylight before formal arguments, long table, evidence cart, sparse gallery seating, restrained legal tension, no prominent foreground characters, no readable text.
 
 [神谷澪把摘要報告攤在桌面正中，指尖壓在那行被標為主時間錨的紀錄上。]
 

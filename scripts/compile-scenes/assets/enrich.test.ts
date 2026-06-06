@@ -647,11 +647,11 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
   it("emits warnings for manifest entries whose expected files do not exist", () => {
     const cfg = fakeFileConfig();
     const scene: SceneRecord = {
-      chapterId: "chapter_1",
-      file: "scene_0.md",
+      chapterId: "chapter_missing_asset_warning_test",
+      file: "scene_missing_asset_warning_test.md",
       ast: {
         kind: "linearScene",
-        id: "scene_0",
+        id: "scene_missing_asset_warning_test",
         title: "Test",
         queue: [
           {
@@ -673,7 +673,8 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
           },
         ],
         assetRefs: [],
-        sourceFile: "chapter_1/scene_0.md",
+        sourceFile:
+          "chapter_missing_asset_warning_test/scene_missing_asset_warning_test.md",
         line: 1,
       },
     };

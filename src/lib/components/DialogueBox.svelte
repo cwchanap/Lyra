@@ -18,10 +18,29 @@
     disabled?: boolean;
   } = $props();
 
+  const rightSidePortraitCharacterIds = new Set([
+    "clerk",
+    "hayasaka_akane",
+    "miyake_mother",
+    "soma_ritsu",
+    "takase_manager",
+  ]);
+
   let portraitAsset = $state<ResolvedStoryAsset | null>(null);
   const portraitAssetId = $derived(
     current.kind === "line" ? (current.portrait?.assetId ?? null) : null,
   );
+  const portraitPlacement = $derived(
+    current.kind === "line"
+      ? placementForPortrait(current.portrait?.characterId)
+      : "left",
+  );
+
+  function placementForPortrait(characterId: string | null | undefined) {
+    return rightSidePortraitCharacterIds.has(characterId ?? "")
+      ? "right"
+      : "left";
+  }
 
   $effect(() => {
     let cancelled = false;
@@ -62,16 +81,22 @@
 
 <svelte:window onkeydown={handleKey} />
 
+{#if current.kind === "line" && portraitAsset}
+  <img
+    class="portrait"
+    src={portraitAsset.url}
+    alt=""
+    aria-hidden="true"
+    onerror={handlePortraitError}
+    data-placement={portraitPlacement}
+    data-layer="behind-dialogue"
+    class:left={portraitPlacement === "left"}
+    class:right={portraitPlacement === "right"}
+    style="--portrait-height: min(1536px, 80vh);"
+  />
+{/if}
+
 <div class="wrapper" class:line={current.kind === "line"}>
-  {#if current.kind === "line" && portraitAsset}
-    <img
-      class="portrait"
-      src={portraitAsset.url}
-      alt=""
-      aria-hidden="true"
-      onerror={handlePortraitError}
-    />
-  {/if}
   <button
     class="box"
     class:scene={current.kind === "sceneTag"}
@@ -107,11 +132,12 @@
 
 <style>
   .wrapper {
+    --dialogue-width: min(960px, calc(100vw - 56px));
     position: fixed;
     left: 50%;
     bottom: 28px;
     transform: translateX(-50%);
-    width: min(960px, calc(100vw - 56px));
+    width: var(--dialogue-width);
     z-index: 30;
   }
 
@@ -150,15 +176,25 @@
   }
 
   .portrait {
-    position: absolute;
-    left: 24px;
-    bottom: calc(100% - 8px);
-    height: min(320px, 42vh);
-    max-width: min(240px, 38vw);
+    position: fixed;
+    bottom: 0;
+    width: auto;
+    height: var(--portrait-height);
+    max-width: none;
     object-fit: contain;
     pointer-events: none;
     filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.58));
-    z-index: 1;
+    z-index: 20;
+  }
+
+  .portrait.left {
+    left: 0;
+    transform: translateX(-26%);
+  }
+
+  .portrait.right {
+    right: 0;
+    transform: translateX(26%);
   }
 
   .kind {

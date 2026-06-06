@@ -113,7 +113,12 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 
 ### Intro (H2)
 - **Heading:** `## Intro`.
-- **No metadata.**
+- **Metadata:** none on the `## Intro` heading itself.
+- **Scene-tag asset metadata:** when assets are enabled, any `[場景：...]`
+  tag inside the Intro may be followed immediately by `Background Prompt`
+  plus optional `BGM` / `BGS`, using the same visual metadata rules as
+  sub-locations. This attaches a backdrop to the intro moment without creating
+  a sub-location.
 - **Body:** linear dialogue. Plays on scene load.
 
 ### Outro (H2)

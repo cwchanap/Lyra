@@ -80,6 +80,16 @@ Read `writing-investigation-scene` for evidence and statement manifest rules. In
 
 Field labels are English. Reserved metadata values are English (`inquiry`, `testimony`, `true`, `false`, `locked`, `unlocked`). Player-facing field values and dialogue are Traditional Chinese. IDs are English slugs anchored with `{#id}`.
 
+### Intro (H2)
+- **Heading:** `## Intro`.
+- **Metadata:** none on the `## Intro` heading itself.
+- **Scene-tag asset metadata:** when assets are enabled, any `[場景：...]`
+  tag inside the Intro may be followed immediately by `Background Prompt`
+  plus optional `BGM` / `BGS`, using the same visual metadata rules as phases.
+  This attaches a backdrop to the intro moment before the first inquiry or
+  testimony phase.
+- **Body:** linear dialogue. Plays on scene load.
+
 ### Phase (H2)
 - **Heading:** `## Phase: <label> {#phase_id}`
 - **Required:** `Kind` (`inquiry` or `testimony`)

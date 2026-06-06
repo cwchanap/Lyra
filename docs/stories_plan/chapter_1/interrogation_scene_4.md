@@ -3,6 +3,7 @@
 ## Intro
 
 [場景：警署等待區，深夜。日光燈偏白，牆角一台自動販賣機嗡嗡作響，長椅上只坐著三宅一人。]
+- **Background Prompt:** Late-night Japanese police station waiting area under pale fluorescent lights, humming vending machine in the corner, long empty bench, rain-dark windows, tense quiet mood, no readable labels.
 
 [三宅蒼太手裡握著一罐飲料，盯著罐身上的字看了很久。]
 
