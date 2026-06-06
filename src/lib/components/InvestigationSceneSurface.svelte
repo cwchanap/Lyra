@@ -68,7 +68,7 @@
   });
 
   function percent(value: number) {
-    return `${value}%`;
+    return `${value * 100}%`;
   }
 
   function rectStyle(layout: HotspotLayout) {

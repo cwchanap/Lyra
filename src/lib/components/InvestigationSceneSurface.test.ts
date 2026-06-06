@@ -14,7 +14,7 @@ const sublocation = {
       label: "桌面",
       description: "濕掉的收據壓在杯底。",
       inspected: false,
-      layout: { kind: "rect", x: 10, y: 20, w: 30, h: 20 },
+      layout: { kind: "rect", x: 0.1, y: 0.2, w: 0.3, h: 0.2 },
     },
     {
       id: "cabinet",
@@ -34,10 +34,10 @@ const sublocation = {
       layout: {
         kind: "sprite",
         assetId: "portrait.witness.standard",
-        x: 62,
-        y: 88,
-        w: 18,
-        h: 44,
+        x: 0.7,
+        y: 0.1,
+        w: 0.18,
+        h: 0.8,
         anchor: "bottomCenter",
       },
     },
