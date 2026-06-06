@@ -305,7 +305,10 @@
 
   .scene-surface {
     position: relative;
-    min-height: clamp(340px, 54vh, 620px);
+    width: min(100%, calc((100vh - 220px) * 16 / 9));
+    max-width: 1280px;
+    aspect-ratio: 16 / 9;
+    margin: 0 auto;
     overflow: hidden;
     isolation: isolate;
     border-block: 1px solid var(--rule-strong);
@@ -660,10 +663,6 @@
   @media (max-width: 720px) {
     .surface-shell {
       padding-inline: 16px;
-    }
-
-    .scene-surface {
-      min-height: 460px;
     }
 
     .target-label,
