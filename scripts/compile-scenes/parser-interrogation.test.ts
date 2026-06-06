@@ -196,6 +196,27 @@ describe("parseInterrogationScene", () => {
     );
   });
 
+  it("parses intro scene tag background metadata", () => {
+    const parsed = parseInterrogationScene(
+      VALID_SOURCE.replace(
+        "## Intro\n\n**相馬律**：先從若槻開始。",
+        "## Intro\n\n[場景：警署等待區，深夜。]\n- **Background Prompt:** Late-night police waiting area.\n\n**相馬律**：先從若槻開始。",
+      ),
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.intro[0]).toMatchObject({
+      kind: "sceneTag",
+      text: "警署等待區，深夜。",
+      assetCue: {
+        backgroundPrompt: "Late-night police waiting area.",
+        backgroundAssetId: null,
+      },
+    });
+  });
+
   it("parses phase background and audio metadata", () => {
     const parsed = parseInterrogationScene(
       VALID_SOURCE.replace(

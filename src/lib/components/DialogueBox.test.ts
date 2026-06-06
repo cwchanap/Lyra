@@ -69,6 +69,68 @@ describe("DialogueBox", () => {
     });
   });
 
+  it.each([
+    ["clerk", "standard"],
+    ["hayasaka_akane", "standard"],
+    ["miyake_mother", "standard"],
+    ["soma_ritsu", "standard"],
+    ["takase_manager", "standard"],
+  ])(
+    "renders %s portraits on the right because they face left",
+    async (characterId, expression) => {
+      const { container } = renderDialogueBox({
+        kind: "line",
+        speaker: "測試",
+        text: "檢查站位。",
+        portrait: {
+          characterId,
+          expression,
+          assetId: `portrait.${characterId}.${expression}`,
+        },
+      });
+
+      await waitFor(() => {
+        expect(container.querySelector("img.portrait")).toHaveAttribute(
+          "src",
+          `/assets/portraits/${characterId}/${expression}.png`,
+        );
+      });
+
+      const image = container.querySelector("img.portrait") as HTMLImageElement;
+      expect(image).toHaveAttribute("data-placement", "right");
+      expect(image).toHaveAttribute("data-layer", "behind-dialogue");
+      expect(image).toHaveClass("right");
+      expect(image.style.getPropertyValue("--portrait-height")).toBe(
+        "min(1536px, 80vh)",
+      );
+    },
+  );
+
+  it("renders Katase on the left because her portrait faces right", async () => {
+    const { container } = renderDialogueBox({
+      kind: "line",
+      speaker: "片瀨",
+      text: "終電が……",
+      portrait: {
+        characterId: "katase",
+        expression: "standard",
+        assetId: "portrait.katase.standard",
+      },
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector("img.portrait")).toHaveAttribute(
+        "src",
+        "/assets/portraits/katase/standard.png",
+      );
+    });
+
+    const image = container.querySelector("img.portrait") as HTMLImageElement;
+    expect(image).toHaveAttribute("data-placement", "left");
+    expect(image).toHaveAttribute("data-layer", "behind-dialogue");
+    expect(image).toHaveClass("left");
+  });
+
   it("renders a sceneTag dialogue item", () => {
     renderDialogueBox({ kind: "sceneTag", text: "cafe" });
     expect(screen.getByText(/SCENE/)).toBeInTheDocument();

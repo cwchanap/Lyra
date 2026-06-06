@@ -3,6 +3,7 @@
 ## Intro
 
 [場景：相馬事務所外，清晨，細雨。]
+- **Background Prompt:** Exterior of a small Tokyo private detective office in early morning drizzle, narrow quiet street, second-floor window softly lit behind rain-specked glass, muted gray daylight, no readable signage.
 
 [清晨的雨打在窗上，細而均勻。相馬律拉開窗簾，光線落在一排排排好的文件上。他二十來歲，身形偏瘦，襯衫袖子捲到手肘，頭髮因為習慣性抬手梳理而略顯凌亂，身旁靠著一只磨損的舊皮製卷宗夾。他總有一種安靜的條理感，像是在用擺整齊的動作讓自己冷靜下來。]
 

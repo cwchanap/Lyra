@@ -86,6 +86,48 @@ describe("parseInvestigationScene", () => {
     expect(result.value.outro.unlock).toBe("auto");
   });
 
+  it("parses intro scene tag background metadata", () => {
+    const source = `
+# Scene 1: x
+
+## Intro
+
+[場景：相馬事務所外，清晨，細雨。]
+- **Background Prompt:** Rainy detective office exterior.
+
+**A**：hi
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Evidence Manifest
+
+## Statement Manifest
+
+## Outro
+
+**A**：done.
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.intro[0]).toMatchObject({
+      kind: "sceneTag",
+      text: "相馬事務所外，清晨，細雨。",
+      assetCue: {
+        backgroundPrompt: "Rainy detective office exterior.",
+        backgroundAssetId: null,
+      },
+    });
+  });
+
   it("parses sub-location background and audio metadata", () => {
     const source = `
 # Scene 1: x
