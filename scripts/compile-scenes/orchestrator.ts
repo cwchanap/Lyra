@@ -31,6 +31,10 @@ import { parseChapter } from "./parser-chapter";
 import { parseLinearScene } from "./parser-linear";
 import { parseInvestigationScene } from "./parser-investigation";
 import { parseInterrogationScene } from "./parser-interrogation";
+import {
+  applyInvestigationLayout,
+  parseInvestigationLayoutJson,
+} from "./layout";
 import { validate, type SceneRecord } from "./validator";
 import {
   emitChaptersIndex,
@@ -189,7 +193,43 @@ export function compile(opts: CompileOptions): CompileResult {
         if (!parsed.ok) {
           errors.push(parsed.error);
           failedParseFiles.add(sourceFileTag);
-        } else scenes.push({ chapterId: dirName, file, ast: parsed.value });
+        } else {
+          const layoutFile = file.replace(/\.md$/, ".layout.json");
+          const layoutPath = resolve(chapterDir, layoutFile);
+          const layoutSourceFileTag = `${dirName}/${layoutFile}`;
+          let ast = parsed.value;
+          if (existsSync(layoutPath)) {
+            try {
+              const layoutSource = readFileSync(layoutPath, "utf-8");
+              const layout = parseInvestigationLayoutJson(
+                layoutSource,
+                layoutSourceFileTag,
+              );
+              if (!layout.ok) {
+                errors.push(...layout.errors);
+              } else {
+                const applied = applyInvestigationLayout(
+                  ast,
+                  layout.value,
+                  layoutSourceFileTag,
+                );
+                if (!applied.ok) {
+                  errors.push(...applied.errors);
+                } else {
+                  ast = applied.value;
+                }
+              }
+            } catch (e) {
+              errors.push({
+                code: "layoutFileUnreadable",
+                message: `${layoutPath}: ${(e as Error).message}`,
+                sourceFile: layoutSourceFileTag,
+                line: 1,
+              });
+            }
+          }
+          scenes.push({ chapterId: dirName, file, ast });
+        }
       } else if (file.startsWith("interrogation_scene_")) {
         const parsed = parseInterrogationScene(source, sourceFileTag, sceneId);
         if (!parsed.ok) {

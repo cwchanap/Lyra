@@ -143,6 +143,15 @@ exports[`snapshot: valid fixture JSON output > matches the investigation scene s
         {
           "bio": "案發時在現場的證人。",
           "id": "witness",
+          "layout": {
+            "anchor": "bottomCenter",
+            "assetId": "portrait.witness.standard",
+            "h": 0.72,
+            "kind": "sprite",
+            "w": 0.16,
+            "x": 0.72,
+            "y": 0.18,
+          },
           "name": "證人",
           "role": "證人",
           "topics": [
@@ -217,6 +226,13 @@ exports[`snapshot: valid fixture JSON output > matches the investigation scene s
             },
           ],
           "label": "桌子",
+          "layout": {
+            "h": 0.12,
+            "kind": "rect",
+            "w": 0.16,
+            "x": 0.18,
+            "y": 0.52,
+          },
           "onReexamine": [
             {
               "expression": null,
@@ -256,6 +272,7 @@ exports[`snapshot: valid fixture JSON output > matches the investigation scene s
             },
           ],
           "label": "窗戶",
+          "layout": null,
           "onReexamine": null,
           "reveals": [],
           "status": "unlocked",
@@ -305,6 +322,13 @@ exports[`snapshot: valid fixture JSON output > matches the investigation scene s
             },
           ],
           "label": "櫥櫃",
+          "layout": {
+            "h": 0.2,
+            "kind": "rect",
+            "w": 0.14,
+            "x": 0.42,
+            "y": 0.35,
+          },
           "onReexamine": null,
           "reveals": [
             {
