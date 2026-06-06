@@ -189,12 +189,12 @@
 
   .portrait.left {
     left: 0;
-    transform: translateX(-26%);
+    transform: none;
   }
 
   .portrait.right {
     right: 0;
-    transform: translateX(26%);
+    transform: none;
   }
 
   .kind {

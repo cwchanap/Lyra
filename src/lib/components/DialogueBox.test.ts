@@ -2,6 +2,8 @@ import { render, screen } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import DialogueBox from "./DialogueBox.svelte";
 import type { DialogueItem, QueueToken } from "../state/types";
 
@@ -19,6 +21,13 @@ function renderDialogueBox(
     ...overrides,
   });
   return { onAdvance, ...result };
+}
+
+function dialogueBoxSource() {
+  return readFileSync(
+    join(process.cwd(), "src/lib/components/DialogueBox.svelte"),
+    "utf8",
+  );
 }
 
 describe("DialogueBox", () => {
@@ -105,6 +114,23 @@ describe("DialogueBox", () => {
       );
     },
   );
+
+  it("keeps side portraits inside the viewport instead of translating them offscreen", () => {
+    renderDialogueBox({
+      kind: "line",
+      speaker: "測試",
+      text: "檢查站位。",
+      portrait: {
+        characterId: "hayasaka_akane",
+        expression: "standard",
+        assetId: "portrait.hayasaka_akane.standard",
+      },
+    });
+
+    const source = dialogueBoxSource();
+    expect(source).toMatch(/\.portrait\.left\s*{[^}]*transform:\s*none;/s);
+    expect(source).toMatch(/\.portrait\.right\s*{[^}]*transform:\s*none;/s);
+  });
 
   it("renders Katase on the left because her portrait faces right", async () => {
     const { container } = renderDialogueBox({
