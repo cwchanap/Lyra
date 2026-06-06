@@ -66,12 +66,9 @@
         disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "explore"}
-      <SceneBackdrop
-        sceneTag={null}
-        backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
-      />
       <ExploreView
         scene={gameState.value.scene}
+        backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
         onInspect={inspectHotspot}
         onInterview={interviewTopic}
         onEnterSublocation={enterSublocation}

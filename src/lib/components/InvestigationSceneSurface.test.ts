@@ -1,5 +1,7 @@
-import { render, screen } from "@testing-library/svelte";
+import { render, screen, waitFor } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import InvestigationSceneSurface from "./InvestigationSceneSurface.svelte";
 import type { SublocationView } from "../state/types";
@@ -44,6 +46,13 @@ const sublocation = {
   ],
 } satisfies SublocationView;
 
+function surfaceSource() {
+  return readFileSync(
+    join(process.cwd(), "src/lib/components/InvestigationSceneSurface.svelte"),
+    "utf8",
+  );
+}
+
 describe("InvestigationSceneSurface", () => {
   it("renders placed hotspots with normalized style variables", () => {
     render(InvestigationSceneSurface, {
@@ -57,6 +66,43 @@ describe("InvestigationSceneSurface", () => {
     expect(button.style.getPropertyValue("--y")).toBe("20%");
     expect(button.style.getPropertyValue("--w")).toBe("30%");
     expect(button.style.getPropertyValue("--h")).toBe("20%");
+  });
+
+  it("renders placed characters with normalized top-left bounding boxes", () => {
+    render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    const button = screen.getByRole("button", { name: /詢問：目擊者/ });
+    expect(button.style.getPropertyValue("--x")).toBe("70%");
+    expect(button.style.getPropertyValue("--y")).toBe("10%");
+    expect(button.style.getPropertyValue("--w")).toBe("18%");
+    expect(button.style.getPropertyValue("--h")).toBe("80%");
+  });
+
+  it("does not offset character layout boxes with bottom-center transforms", () => {
+    const source = surfaceSource();
+    expect(source).not.toContain("translate(-50%, -100%)");
+  });
+
+  it("renders the resolved background image inside the scene surface", async () => {
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation,
+      backgroundAssetId: "background.chapter_1.scene_0.cafe",
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(".scene-surface img.background-image"),
+      ).toHaveAttribute(
+        "src",
+        "/assets/backgrounds/chapter_1/scene_0/cafe.png",
+      );
+    });
   });
 
   it("calls onInspect when clicking a placed hotspot", async () => {
