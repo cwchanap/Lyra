@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { SceneView } from "../state/types";
   import SublocationNav from "./SublocationNav.svelte";
-  import HotspotGrid from "./HotspotGrid.svelte";
-  import CharacterList from "./CharacterList.svelte";
+  import InvestigationSceneSurface from "./InvestigationSceneSurface.svelte";
 
   let {
     scene,
@@ -32,8 +31,12 @@
     onEnter={onEnterSublocation}
     {disabled}
   />
-  <HotspotGrid hotspots={currentSub.hotspots} {onInspect} {disabled} />
-  <CharacterList characters={currentSub.characters} {onInterview} {disabled} />
+  <InvestigationSceneSurface
+    sublocation={currentSub}
+    {onInspect}
+    {onInterview}
+    {disabled}
+  />
 {:else if inv}
   <p class="muted">尚未進入任何地點。</p>
 {/if}

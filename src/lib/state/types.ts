@@ -53,11 +53,30 @@ export type ChapterView = {
   total: number;
 };
 
+export type HotspotLayout = {
+  kind: "rect";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+export type CharacterLayout = {
+  kind: "sprite";
+  assetId: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  anchor: "bottomCenter";
+};
+
 export type HotspotView = {
   id: string;
   label: string;
   description: string;
   inspected: boolean;
+  layout: HotspotLayout | null;
 };
 export type TopicView = {
   id: string;
@@ -70,6 +89,7 @@ export type CharacterView = {
   role: string;
   bio: string;
   topics: TopicView[];
+  layout: CharacterLayout | null;
 };
 export type SublocationView = {
   id: string;
