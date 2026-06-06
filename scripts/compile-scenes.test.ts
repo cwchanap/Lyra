@@ -283,6 +283,70 @@ describe("compile parse failure handling", () => {
       rmSync(outRoot, { recursive: true, force: true });
     }
   });
+
+  it("reports invalid investigation layout sidecars and prevents output", () => {
+    const sourceRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-bad-layout-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-bad-layout-out-"),
+    );
+    try {
+      const chapterRoot = resolve(sourceRoot, "chapter_1");
+      mkdirSync(chapterRoot, { recursive: true });
+      writeFileSync(
+        resolve(chapterRoot, "chapter.md"),
+        "# Chapter 1: Bad Layout\n\n**Summary:** s\n\n## Scenes\n1. investigation_scene_1.md\n",
+      );
+      writeFileSync(
+        resolve(chapterRoot, "investigation_scene_1.md"),
+        readFileSync(
+          "scripts/__fixtures__/valid/chapter_1/investigation_scene_1.md",
+          "utf-8",
+        ),
+      );
+      writeFileSync(
+        resolve(chapterRoot, "investigation_scene_1.layout.json"),
+        JSON.stringify(
+          {
+            version: 1,
+            sceneId: "investigation_scene_1",
+            sublocations: {
+              main_hall: {
+                hotspots: {
+                  missing_table: {
+                    kind: "rect",
+                    x: 0.1,
+                    y: 0.2,
+                    w: 0.3,
+                    h: 0.4,
+                  },
+                },
+                characters: {},
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+
+      expect(result.ok).toBe(false);
+      expect(existsSync(resolve(outRoot, "chapters.json"))).toBe(false);
+      if (result.ok) return;
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          code: "layoutUnknownHotspot",
+          sourceFile: "chapter_1/investigation_scene_1.layout.json",
+        }),
+      );
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("asset enrichment: first visual cue audio validation", () => {
