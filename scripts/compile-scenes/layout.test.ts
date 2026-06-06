@@ -135,6 +135,9 @@ describe("parseInvestigationLayoutJson", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.errors.map((e) => e.code)).toContain("layoutInvalidNumber");
+    expect(
+      result.errors.find((e) => e.code === "layoutInvalidNumber")?.message,
+    ).toContain("sublocations.main_hall.hotspots.table.x");
   });
 
   it("rejects zero-size rectangles", () => {
@@ -212,6 +215,10 @@ describe("applyInvestigationLayout", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.errors.map((e) => e.code)).toContain("layoutUnknownHotspot");
+    const unknownHotspot = result.errors.find(
+      (e) => e.code === "layoutUnknownHotspot",
+    );
+    expect(unknownHotspot).toBeDefined();
+    expect(unknownHotspot?.sourceFile).toBe(sourceFile);
   });
 });
