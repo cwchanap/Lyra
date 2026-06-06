@@ -128,6 +128,116 @@ describe("parseInvestigationScene", () => {
     });
   });
 
+  it("rejects arbitrary unknown metadata after an intro scene tag", () => {
+    // Scene-tag-attached metadata must only allow the visual-asset keys
+    // (Background Prompt / BGM / BGS). Anything else — typos, stray keys —
+    // should fail fast so authoring mistakes aren't silently dropped.
+    const source = `
+# Scene 1: x
+
+## Intro
+
+[場景：相馬事務所外，清晨，細雨。]
+- **BackgroundPromt:** typoed key with missing space
+
+**A**：hi
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Evidence Manifest
+
+## Statement Manifest
+
+## Outro
+
+**A**：done.
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("assetMetadataUnknownKey");
+    expect(result.error.message).toContain("BackgroundPromt");
+  });
+
+  it("rejects arbitrary unknown metadata after a sub-location scene tag", () => {
+    // Inside a sub-location body, metadata lines are rejected unconditionally
+    // (sublocationStrayMetadata) regardless of position relative to a scene
+    // tag — the sub-location grammar does not support scene-tag-attached
+    // metadata at all. This guards against authoring mistakes like putting
+    // a Status/Unlock key after a [場景：...] tag instead of on the
+    // sub-location heading.
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+- **Unlock:** this-key-is-not-an-asset-cue
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Outro
+
+**A**：done.
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("sublocationStrayMetadata");
+    expect(result.error.message).toContain("Unlock");
+  });
+
+  it("rejects non-asset metadata after an intro scene tag (e.g. Status)", () => {
+    // Even non-typo keys that are valid elsewhere (Status, Reveals, Kind,
+    // etc.) must be rejected on a scene tag — only Background Prompt / BGM
+    // / BGS are permitted there.
+    const source = `
+# Scene 1: x
+
+## Intro
+
+[場景：相馬事務所外，清晨，細雨。]
+- **Status:** unlocked
+
+**A**：hi
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Evidence Manifest
+
+## Statement Manifest
+
+## Outro
+
+**A**：done.
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("assetMetadataUnknownKey");
+    expect(result.error.message).toContain("Status");
+  });
+
   it("parses sub-location background and audio metadata", () => {
     const source = `
 # Scene 1: x
