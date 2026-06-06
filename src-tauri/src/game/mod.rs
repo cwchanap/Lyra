@@ -1634,6 +1634,7 @@ impl GameEngine {
                                 label: h.label.clone(),
                                 description: h.description.clone(),
                                 inspected: inv.inspected_hotspots.contains(&h.id),
+                                layout: h.layout.clone(),
                             })
                             .collect(),
                         characters: s
@@ -1644,6 +1645,7 @@ impl GameEngine {
                                 name: c.name.clone(),
                                 role: c.role.clone(),
                                 bio: c.bio.clone(),
+                                layout: c.layout.clone(),
                                 topics: c
                                     .topics
                                     .iter()
@@ -2945,6 +2947,7 @@ mod tests {
                     status: LockStatus::Unlocked,
                     unlock: None,
                     reveals: vec![],
+                    layout: None,
                     inspect_dialogue: vec![
                         DialogueItem::SceneTag {
                             text: "desk_closeup".into(),
@@ -3007,6 +3010,7 @@ mod tests {
                     status: LockStatus::Unlocked,
                     unlock: None,
                     reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                    layout: None,
                     inspect_dialogue: vec![],
                     on_reexamine: None,
                 }],
@@ -3059,6 +3063,7 @@ mod tests {
                     name: "Witness".into(),
                     role: "Witness".into(),
                     bio: "Witness".into(),
+                    layout: None,
                     topics: vec![TopicJson {
                         id: "alibi".into(),
                         label: "Alibi".into(),
@@ -3772,6 +3777,7 @@ mod tests {
                     status: LockStatus::Unlocked,
                     unlock: None,
                     reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                    layout: None,
                     inspect_dialogue: vec![],
                     on_reexamine: None,
                 }],
