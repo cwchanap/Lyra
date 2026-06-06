@@ -39,6 +39,36 @@ export type EvidenceImageCue = {
   imageAssetId: string | null;
 };
 
+export type RectLayout = {
+  kind: "rect";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+export type SpriteLayout = {
+  kind: "sprite";
+  assetId: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  anchor: "bottomCenter";
+};
+
+export type InvestigationLayoutSidecar = {
+  version: 1;
+  sceneId: string;
+  sublocations: Record<
+    string,
+    {
+      hotspots: Record<string, RectLayout>;
+      characters: Record<string, SpriteLayout>;
+    }
+  >;
+};
+
 export type JSONVisualAssetCue = {
   backgroundAssetId: string | null;
   bgm: AudioCue | null;
@@ -164,6 +194,7 @@ export type ASTHotspot = Located<{
   reveals: RevealTarget[];
   inspectDialogue: DialogueItem[];
   onReexamine: DialogueItem[] | null;
+  layout?: RectLayout | null;
 }>;
 
 export type ASTCharacter = Located<{
@@ -172,6 +203,7 @@ export type ASTCharacter = Located<{
   role: string;
   bio: string;
   topics: ASTTopic[];
+  layout?: SpriteLayout | null;
 }>;
 
 export type ASTTopic = Located<{
@@ -319,6 +351,9 @@ export type JSONLinearScene = {
   queue: JSONDialogueItem[];
   assetRefs: AssetRef[];
 };
+
+export type JSONHotspotLayout = RectLayout;
+export type JSONCharacterLayout = SpriteLayout;
 
 export type JSONInvestigationScene = {
   type: "investigation";
