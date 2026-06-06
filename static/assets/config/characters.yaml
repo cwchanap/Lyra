@@ -78,7 +78,17 @@ characters:
 
   - id: miyake_sota
     displayNames: ["三宅蒼太"]
-    portraitMode: none
+    portraitMode: portrait
+    visualPrompt: >
+      Young Japanese cafe worker in his early twenties, slim build, slightly
+      hunched anxious posture, plain cafe staff shirt under a practical jacket,
+      tired eyes from family and work pressure, guarded but not foolish.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: nervous restrained expression, looking down slightly, words held back
+      strained:
+        prompt: tense quiet expression, shoulders lowered, trying not to panic
 
   - id: kamiya_mio
     displayNames: ["神谷澪"]
