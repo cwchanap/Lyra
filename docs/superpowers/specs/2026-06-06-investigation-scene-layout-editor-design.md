@@ -115,7 +115,7 @@ coordinates do not belong in Markdown.
 The editor uses compiled scene JSON as the source of truth, not Markdown:
 
 1. Run or trigger `bun run scenes:compile`.
-2. Load `src-tauri/resources/scenes/chapters.json`.
+2. Load `apps/game/src-tauri/resources/scenes/chapters.json`.
 3. Load the selected investigation scene JSON.
 4. Load the generated asset manifest and existing sidecar if present.
 5. Show one sublocation at a time over its resolved background asset.

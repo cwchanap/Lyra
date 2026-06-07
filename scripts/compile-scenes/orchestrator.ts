@@ -6,7 +6,7 @@
 //   2. Parse chapter.md per chapter.
 //   3. Parse each scene file (type inferred from filename prefix).
 //   4. Validate the full corpus.
-//   5. Emit JSON to src-tauri/resources/scenes/.
+//   5. Emit JSON to apps/game/src-tauri/resources/scenes/.
 //
 // Pure-ish: takes a sourceRoot + outputRoot. Test code passes fixture roots.
 // Production code uses the repo paths.

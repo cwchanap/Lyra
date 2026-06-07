@@ -4,11 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite dev --host 127.0.0.1",
+    "dev": "tauri dev",
+    "dev:frontend": "vite dev --host 127.0.0.1",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --all --check",
+    "rust:fmt:fix": "cargo fmt --manifest-path src-tauri/Cargo.toml --all",
+    "rust:lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

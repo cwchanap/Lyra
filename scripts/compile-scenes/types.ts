@@ -3,7 +3,7 @@
 //
 // Public contract for the scene-pipeline compiler. Two type families:
 //   - AST*  : intermediate representation built by the parsers.
-//   - JSON* : final shape written to src-tauri/resources/scenes/.
+//   - JSON* : final shape written to apps/game/src-tauri/resources/scenes/.
 //
 // The shape of JSON* matches the spec §3b 1:1. The Rust engine's serde
 // types in Plan B's schema.rs are a direct mirror.

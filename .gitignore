@@ -1,10 +1,15 @@
 node_modules/
 .worktrees/
+.turbo/
 
 /build
 /dist
 /.svelte-kit
 /package
+apps/game/build/
+apps/game/.svelte-kit/
+apps/game/src-tauri/gen/
+apps/game/src-tauri/target/
 apps/layout-editor/dist/
 apps/layout-editor/src-tauri/target/
 
@@ -18,10 +23,10 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-src-tauri/resources/scenes/*
-!src-tauri/resources/scenes/.gitkeep
-src-tauri/resources/assets/*
-!src-tauri/resources/assets/.gitkeep
+apps/game/src-tauri/resources/scenes/*
+!apps/game/src-tauri/resources/scenes/.gitkeep
+apps/game/src-tauri/resources/assets/*
+!apps/game/src-tauri/resources/assets/.gitkeep
 .claude/settings.local.json
 .devin/config.local.json
 .tmp-*

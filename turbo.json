@@ -1,0 +1,36 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["build/**", "dist/**", ".svelte-kit/**"]
+    },
+    "check": {
+      "dependsOn": ["^check"]
+    },
+    "test": {
+      "dependsOn": ["^test"]
+    },
+    "test:e2e": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "check:watch": {
+      "cache": false,
+      "persistent": true
+    },
+    "rust:fmt": {
+      "cache": false
+    },
+    "rust:fmt:fix": {
+      "cache": false
+    },
+    "rust:lint": {
+      "cache": false
+    }
+  }
+}

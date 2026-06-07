@@ -21,7 +21,7 @@
         .map((scene) => ({
           chapterId: chapter.id,
           file: scene.file,
-          path: `src-tauri/resources/scenes/${scene.file}`,
+          path: `apps/game/src-tauri/resources/scenes/${scene.file}`,
         })),
     ) ?? [],
   );

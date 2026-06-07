@@ -1,7 +1,7 @@
 // =============================================================================
 // scripts/compile-scenes/config-check.ts
 //
-// Asserts src-tauri/tauri.conf.json has the wiring spec §3a.0 / §3a.1 require:
+// Asserts apps/game/src-tauri/tauri.conf.json has the wiring spec §3a.0 / §3a.1 require:
 //   build.beforeDevCommand   === "bun run dev:tauri"
 //   build.beforeBuildCommand === "bun run build:tauri"
 //   bundle.resources         ⊇ ["resources/scenes/**/*"]
@@ -23,7 +23,7 @@ export type ConfigCheckResult =
 export function checkTauriConfig(
   repoRoot: string = process.cwd(),
 ): ConfigCheckResult {
-  const configPath = resolve(repoRoot, "src-tauri/tauri.conf.json");
+  const configPath = resolve(repoRoot, "apps/game/src-tauri/tauri.conf.json");
   let raw: string;
   try {
     raw = readFileSync(configPath, "utf-8");
