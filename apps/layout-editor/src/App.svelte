@@ -1,12 +1,17 @@
 <script lang="ts">
+  import EditorCanvas from "./lib/EditorCanvas.svelte";
+  import TargetList from "./lib/TargetList.svelte";
   import {
     editorState,
     loadChapters,
     loadInvestigationScene,
     saveLayout,
+    setCharacterLayout,
+    setHotspotLayout,
   } from "./lib/layout-store.svelte";
 
   let requestedChapters = false;
+  let currentSublocationId = $state<string | null>(null);
 
   const investigationScenes = $derived(
     editorState.chapters?.chapters.flatMap((chapter) =>
@@ -24,6 +29,23 @@
     if (requestedChapters) return;
     requestedChapters = true;
     void loadChapters();
+  });
+
+  $effect(() => {
+    const scene = editorState.scene;
+    if (!scene) {
+      currentSublocationId = null;
+      return;
+    }
+
+    const firstSublocationId = scene.sublocations[0]?.id ?? null;
+    const hasCurrentSublocation = scene.sublocations.some(
+      (sublocation) => sublocation.id === currentSublocationId,
+    );
+
+    if (!currentSublocationId || !hasCurrentSublocation) {
+      currentSublocationId = firstSublocationId;
+    }
   });
 </script>
 
@@ -50,6 +72,15 @@
         <p class="empty">No investigation scenes loaded.</p>
       {/each}
     </div>
+
+    {#if editorState.scene}
+      <TargetList
+        scene={editorState.scene}
+        {currentSublocationId}
+        onSelectSublocation={(sublocationId) =>
+          (currentSublocationId = sublocationId)}
+      />
+    {/if}
   </aside>
 
   <section class="detail-panel" aria-live="polite">
@@ -79,6 +110,16 @@
           <dd>{editorState.layoutPath}</dd>
         </div>
       </dl>
+
+      {#if editorState.layout && currentSublocationId}
+        <EditorCanvas
+          scene={editorState.scene}
+          layout={editorState.layout}
+          sublocationId={currentSublocationId}
+          onHotspotLayoutChange={setHotspotLayout}
+          onCharacterLayoutChange={setCharacterLayout}
+        />
+      {/if}
     {:else}
       <div class="placeholder">
         <p class="eyebrow">Scene</p>
