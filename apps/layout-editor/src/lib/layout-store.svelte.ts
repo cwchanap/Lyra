@@ -10,6 +10,11 @@ type ProjectFile = {
   contents: string;
 };
 
+type EditorCommandError = {
+  code: string;
+  message: string;
+};
+
 export const editorState = $state<{
   chapters: SceneIndex | null;
   scene: InvestigationSceneJson | null;
@@ -40,13 +45,15 @@ export async function loadChapters() {
 
 export async function loadInvestigationScene(scenePath: string) {
   editorState.error = null;
-  const layoutPath = layoutPathForScene(scenePath);
 
   try {
     const sceneFile = await invoke<ProjectFile>("read_project_file", {
       path: scenePath,
     });
     const scene = JSON.parse(sceneFile.contents) as InvestigationSceneJson;
+    const layoutPath = await invoke<string>("resolve_layout_path", {
+      scenePath,
+    });
     editorState.scene = scene;
     editorState.scenePath = scenePath;
     editorState.layoutPath = layoutPath;
@@ -58,12 +65,17 @@ export async function loadInvestigationScene(scenePath: string) {
       editorState.layout = JSON.parse(
         layoutFile.contents,
       ) as InvestigationLayoutSidecar;
-    } catch {
-      editorState.layout = {
-        version: 1,
-        sceneId: scene.id,
-        sublocations: {},
-      };
+    } catch (error) {
+      if (isEditorCommandError(error) && error.code === "notFound") {
+        editorState.layout = {
+          version: 1,
+          sceneId: scene.id,
+          sublocations: {},
+        };
+      } else {
+        editorState.layout = null;
+        editorState.error = normalizeError(error);
+      }
     }
   } catch (error) {
     editorState.error = normalizeError(error);
@@ -84,14 +96,20 @@ export async function saveLayout() {
   }
 }
 
-function layoutPathForScene(scenePath: string) {
-  return scenePath
-    .replace("src-tauri/resources/scenes/", "docs/stories_plan/")
-    .replace(/\.json$/, ".layout.json");
-}
-
 function normalizeError(error: unknown): string {
+  if (isEditorCommandError(error)) return error.message;
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   return "Editor command failed.";
+}
+
+function isEditorCommandError(error: unknown): error is EditorCommandError {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    "message" in error &&
+    typeof (error as Partial<EditorCommandError>).code === "string" &&
+    typeof (error as Partial<EditorCommandError>).message === "string"
+  );
 }

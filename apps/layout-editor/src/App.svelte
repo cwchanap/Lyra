@@ -59,7 +59,12 @@
           <p class="eyebrow">Scene</p>
           <h2>{editorState.scene.title}</h2>
         </div>
-        <button type="button" class="save-button" onclick={saveLayout}>
+        <button
+          type="button"
+          class="save-button"
+          disabled={!editorState.layout}
+          onclick={saveLayout}
+        >
           Save Layout
         </button>
       </header>
