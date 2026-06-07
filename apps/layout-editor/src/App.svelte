@@ -12,6 +12,7 @@
 
   let requestedChapters = false;
   let currentSublocationId = $state<string | null>(null);
+  let currentSublocationScenePath = $state<string | null>(null);
 
   const investigationScenes = $derived(
     editorState.chapters?.chapters.flatMap((chapter) =>
@@ -33,18 +34,22 @@
 
   $effect(() => {
     const scene = editorState.scene;
+    const scenePath = editorState.scenePath;
     if (!scene) {
       currentSublocationId = null;
+      currentSublocationScenePath = null;
       return;
     }
 
     const firstSublocationId = scene.sublocations[0]?.id ?? null;
+    const sceneChanged = scenePath !== currentSublocationScenePath;
     const hasCurrentSublocation = scene.sublocations.some(
       (sublocation) => sublocation.id === currentSublocationId,
     );
 
-    if (!currentSublocationId || !hasCurrentSublocation) {
+    if (sceneChanged || !currentSublocationId || !hasCurrentSublocation) {
       currentSublocationId = firstSublocationId;
+      currentSublocationScenePath = scenePath;
     }
   });
 </script>
