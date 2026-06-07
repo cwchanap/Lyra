@@ -47,6 +47,7 @@ async function main() {
         .watch(
           [
             ...SOURCE_ROOTS.map((root) => `${root}/chapter_*/*.md`),
+            ...SOURCE_ROOTS.map((root) => `${root}/chapter_*/*.layout.json`),
             `${ASSET_CONFIG_ROOT}/**/*.yaml`,
           ],
           {

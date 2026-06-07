@@ -3,6 +3,9 @@
 build
 coverage
 dist
+apps/layout-editor/dist
+apps/layout-editor/src-tauri/gen
+apps/layout-editor/src-tauri/target
 docs
 node_modules
 playwright-report
