@@ -7,18 +7,22 @@
   } from "$lib/assets/story-assets";
   import type { Inventory } from "../state/types";
 
+  type Placement = "viewport" | "scene";
+
   let {
     inventory,
     reexamineEnabled,
     onReexamineEvidence,
     onReexamineStatement,
     disabled = false,
+    placement = "viewport",
   }: {
     inventory: Inventory;
     reexamineEnabled: boolean;
     onReexamineEvidence: (id: string) => void;
     onReexamineStatement: (id: string) => void;
     disabled?: boolean;
+    placement?: Placement;
   } = $props();
 
   let open = $state(false);
@@ -59,7 +63,7 @@
   }
 </script>
 
-<aside class:open>
+<aside class:open class:scene={placement === "scene"}>
   <button
     class="toggle"
     type="button"
@@ -157,6 +161,14 @@
     z-index: 40;
   }
 
+  aside.scene {
+    position: absolute;
+    top: 18px;
+    right: 0;
+    width: min(360px, calc(100% - 36px));
+    z-index: 8;
+  }
+
   .toggle {
     pointer-events: auto;
     display: flex;
@@ -242,6 +254,10 @@
     max-height: calc(100vh - 130px);
     overflow-y: auto;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  }
+
+  aside.scene .panel {
+    max-height: calc(100% - 76px);
   }
 
   .panel-head {

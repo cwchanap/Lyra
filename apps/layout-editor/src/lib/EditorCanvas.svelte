@@ -1,13 +1,27 @@
 <script lang="ts">
   import type {
+    DialogueItem,
     InvestigationLayoutSidecar,
     InvestigationSceneJson,
+    RevealTarget,
     RectLayout,
     SpriteLayout,
   } from "./layout-types";
+  import { publicPathForEditorAsset } from "./editor-assets";
+  import {
+    alphaBoundsFromImageData,
+    cropVariablesForAlphaBounds,
+    moveLayout,
+    resizeLayoutFromHandle,
+    type ResizeHandle,
+  } from "./layout-geometry";
 
+  type SceneCharacter =
+    InvestigationSceneJson["sublocations"][number]["characters"][number];
+  type SceneHotspot =
+    InvestigationSceneJson["sublocations"][number]["hotspots"][number];
   type TargetKind = "hotspot" | "character";
-  type DragMode = "move" | "resize";
+  type DragMode = "move" | ResizeHandle;
   type DragState = {
     kind: TargetKind;
     id: string;
@@ -25,6 +39,16 @@
     w: 0.12,
     h: 0.1,
   };
+  const resizeHandles = [
+    "nw",
+    "n",
+    "ne",
+    "e",
+    "se",
+    "s",
+    "sw",
+    "w",
+  ] as const satisfies readonly ResizeHandle[];
 
   let {
     scene,
@@ -50,6 +74,8 @@
 
   let plateElement: HTMLDivElement | null = $state(null);
   let dragState = $state<DragState | null>(null);
+  let showBoxes = $state(true);
+  let cropStyles = $state<Record<string, string>>({});
 
   const currentSublocation = $derived(
     scene.sublocations.find((sublocation) => sublocation.id === sublocationId),
@@ -57,26 +83,43 @@
 
   const sublocationLayout = $derived(layout.sublocations[sublocationId]);
 
+  const evidenceImageById = $derived(
+    new Map(
+      scene.evidenceManifest.map((evidence) => [
+        evidence.id,
+        evidence.imageAssetId,
+      ]),
+    ),
+  );
+
+  const portraitAssetBySpeaker = $derived(collectPortraitAssets(scene));
+
   const hotspotTargets = $derived(
     currentSublocation?.hotspots.map((hotspot) => ({
       ...hotspot,
-      layout: sublocationLayout?.hotspots[hotspot.id] ?? defaultHotspotLayout,
+      imageAssetId: evidenceAssetIdForHotspot(hotspot),
+      layout:
+        sublocationLayout?.hotspots[hotspot.id] ??
+        hotspot.layout ??
+        defaultHotspotLayout,
     })) ?? [],
   );
 
   const characterTargets = $derived(
     currentSublocation?.characters.map((character) => ({
       ...character,
-      layout:
+      layout: normalizeCharacterLayout(
         sublocationLayout?.characters[character.id] ??
-        defaultCharacterLayout(character.id),
+          character.layout ??
+          defaultCharacterLayout(character),
+      ),
     })) ?? [],
   );
 
-  function defaultCharacterLayout(characterId: string): SpriteLayout {
+  function defaultCharacterLayout(character: SceneCharacter): SpriteLayout {
     return {
       kind: "sprite",
-      assetId: `portrait.${characterId}.standard`,
+      assetId: standeeAssetIdForCharacter(character),
       x: 0.66,
       y: 0.14,
       w: 0.18,
@@ -123,16 +166,8 @@
     const startLayout = dragState.startLayout;
     const nextLayout =
       dragState.mode === "move"
-        ? {
-            ...startLayout,
-            x: startLayout.x + dx,
-            y: startLayout.y + dy,
-          }
-        : {
-            ...startLayout,
-            w: startLayout.w + dx,
-            h: startLayout.h + dy,
-          };
+        ? moveLayout(startLayout, dx, dy)
+        : resizeLayoutFromHandle(startLayout, dragState.mode, dx, dy);
 
     commitLayout(dragState.kind, dragState.id, nextLayout);
   }
@@ -177,7 +212,7 @@
     const spriteLayout =
       targetLayout.kind === "sprite"
         ? targetLayout
-        : defaultCharacterLayout(id);
+        : defaultCharacterLayout(characterById(id));
     onCharacterLayoutChange(sublocationId, id, {
       ...spriteLayout,
       x: targetLayout.x,
@@ -199,6 +234,143 @@
   function toPercent(value: number): string {
     return `${value * 100}%`;
   }
+
+  function assetUrl(
+    assetId: string | null,
+    type: "background" | "portrait" | "standee" | "evidence",
+  ) {
+    return assetId ? publicPathForEditorAsset(assetId, type) : null;
+  }
+
+  function cropStyleForAsset(assetId: string): string {
+    return cropStyles[assetId] ?? "";
+  }
+
+  function loadCharacterCrop(assetId: string, event: Event) {
+    if (cropStyles[assetId]) return;
+
+    const image = event.currentTarget;
+    if (!(image instanceof HTMLImageElement)) return;
+    if (!image.naturalWidth || !image.naturalHeight) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return;
+
+    context.drawImage(image, 0, 0);
+    const imageData = context.getImageData(
+      0,
+      0,
+      image.naturalWidth,
+      image.naturalHeight,
+    );
+    const bounds = alphaBoundsFromImageData(
+      imageData.data,
+      image.naturalWidth,
+      image.naturalHeight,
+    );
+    if (!bounds) return;
+
+    cropStyles = {
+      ...cropStyles,
+      [assetId]: cropVariablesForAlphaBounds(
+        bounds,
+        image.naturalWidth,
+        image.naturalHeight,
+      ),
+    };
+  }
+
+  function characterAssetType(assetId: string): "portrait" | "standee" {
+    return assetId.startsWith("standee.") ? "standee" : "portrait";
+  }
+
+  function normalizeCharacterLayout(layout: SpriteLayout): SpriteLayout {
+    return {
+      ...layout,
+      assetId: portraitAssetIdToStandee(layout.assetId),
+    };
+  }
+
+  function standeeAssetIdForCharacter(character: SceneCharacter): string {
+    const dialoguePortrait = portraitAssetBySpeaker.get(character.name);
+    if (dialoguePortrait) return portraitAssetIdToStandee(dialoguePortrait);
+    return `standee.${character.id}.standard`;
+  }
+
+  function portraitAssetIdToStandee(assetId: string): string {
+    if (assetId.startsWith("standee.")) return assetId;
+    if (!assetId.startsWith("portrait.")) return assetId;
+
+    const [, characterId] = assetId.split(".");
+    return `standee.${characterId}.standard`;
+  }
+
+  function characterById(characterId: string): SceneCharacter {
+    return (
+      currentSublocation?.characters.find(
+        (character) => character.id === characterId,
+      ) ?? {
+        id: characterId,
+        name: characterId,
+        role: "",
+        bio: "",
+        layout: null,
+        topics: [],
+      }
+    );
+  }
+
+  function evidenceAssetIdForHotspot(hotspot: SceneHotspot): string | null {
+    for (const reveal of hotspot.reveals) {
+      if (isEvidenceReveal(reveal)) {
+        const assetId = evidenceImageById.get(reveal.id);
+        if (assetId) return assetId;
+      }
+    }
+    return null;
+  }
+
+  function isEvidenceReveal(
+    reveal: RevealTarget,
+  ): reveal is Extract<RevealTarget, { kind: "evidence" }> {
+    return reveal.kind === "evidence";
+  }
+
+  function collectPortraitAssets(
+    targetScene: InvestigationSceneJson,
+  ): Map<string, string> {
+    const portraits = new Map<string, string>();
+
+    collectDialoguePortraits(portraits, targetScene.intro);
+    for (const sublocation of targetScene.sublocations) {
+      collectDialoguePortraits(portraits, sublocation.transitionDialogue);
+      for (const hotspot of sublocation.hotspots) {
+        collectDialoguePortraits(portraits, hotspot.inspectDialogue);
+      }
+      for (const character of sublocation.characters) {
+        for (const topic of character.topics) {
+          collectDialoguePortraits(portraits, topic.topicDialogue);
+        }
+      }
+    }
+
+    return portraits;
+  }
+
+  function collectDialoguePortraits(
+    portraits: Map<string, string>,
+    dialogue: DialogueItem[],
+  ) {
+    for (const item of dialogue) {
+      if (item.kind === "line" && item.portrait?.assetId) {
+        portraits.set(item.speaker, item.portrait.assetId);
+      }
+    }
+  }
 </script>
 
 {#if currentSublocation}
@@ -208,18 +380,39 @@
         <p class="eyebrow">Canvas</p>
         <h3>{currentSublocation.label}</h3>
       </div>
-      <span>{currentSublocation.sceneTag}</span>
+      <div class="canvas-actions">
+        <button
+          type="button"
+          class="box-toggle"
+          aria-label="Toggle placement boxes"
+          aria-pressed={showBoxes}
+          onclick={() => (showBoxes = !showBoxes)}
+        >
+          Boxes
+        </button>
+        <span>{currentSublocation.sceneTag}</span>
+      </div>
     </div>
 
     <div
       class="plate"
       role="application"
       aria-label={`${currentSublocation.label} layout plate`}
+      class:hide-boxes={!showBoxes}
       bind:this={plateElement}
       onpointermove={handlePointerMove}
       onpointerup={handlePointerUp}
       onpointercancel={handlePointerUp}
     >
+      {#if assetUrl(currentSublocation.backgroundAssetId, "background")}
+        <img
+          class="scene-background"
+          src={assetUrl(currentSublocation.backgroundAssetId, "background")}
+          alt=""
+          aria-hidden="true"
+        />
+      {/if}
+
       {#each hotspotTargets as hotspot (hotspot.id)}
         <button
           type="button"
@@ -230,13 +423,23 @@
           onpointerdown={(event) =>
             startDrag("hotspot", hotspot.id, "move", hotspot.layout, event)}
         >
+          {#if assetUrl(hotspot.imageAssetId, "evidence")}
+            <img
+              class="hotspot-preview"
+              src={assetUrl(hotspot.imageAssetId, "evidence")}
+              alt=""
+              aria-hidden="true"
+            />
+          {/if}
           <span>{hotspot.label}</span>
-          <i
-            aria-hidden="true"
-            class="resize-handle"
-            onpointerdown={(event) =>
-              startDrag("hotspot", hotspot.id, "resize", hotspot.layout, event)}
-          ></i>
+          {#each resizeHandles as handle (handle)}
+            <i
+              aria-hidden="true"
+              class={`resize-handle ${handle}`}
+              onpointerdown={(event) =>
+                startDrag("hotspot", hotspot.id, handle, hotspot.layout, event)}
+            ></i>
+          {/each}
         </button>
       {/each}
 
@@ -256,19 +459,37 @@
               event,
             )}
         >
-          <span>{character.name}</span>
-          <i
-            aria-hidden="true"
-            class="resize-handle"
-            onpointerdown={(event) =>
-              startDrag(
-                "character",
-                character.id,
-                "resize",
-                character.layout,
-                event,
+          <div
+            class="character-preview-crop"
+            style={cropStyleForAsset(character.layout.assetId)}
+          >
+            <img
+              class="character-preview"
+              src={assetUrl(
+                character.layout.assetId,
+                characterAssetType(character.layout.assetId),
               )}
-          ></i>
+              alt=""
+              aria-hidden="true"
+              onload={(event) =>
+                loadCharacterCrop(character.layout.assetId, event)}
+            />
+          </div>
+          <span>{character.name}</span>
+          {#each resizeHandles as handle (handle)}
+            <i
+              aria-hidden="true"
+              class={`resize-handle ${handle}`}
+              onpointerdown={(event) =>
+                startDrag(
+                  "character",
+                  character.id,
+                  handle,
+                  character.layout,
+                  event,
+                )}
+            ></i>
+          {/each}
         </button>
       {/each}
     </div>
@@ -279,6 +500,7 @@
           <div class="target-name">
             <strong>{hotspot.label}</strong>
             <small>hotspot.{hotspot.id}</small>
+            <p>{hotspot.description}</p>
           </div>
           <div class="button-grid" aria-label={`${hotspot.label} controls`}>
             <button
@@ -467,6 +689,14 @@
     gap: 16px;
   }
 
+  .canvas-actions {
+    display: flex;
+    align-items: center;
+    justify-content: end;
+    gap: 12px;
+    min-width: 0;
+  }
+
   .eyebrow {
     margin: 0 0 6px;
     color: #5f6b64;
@@ -482,10 +712,28 @@
     letter-spacing: 0;
   }
 
-  .canvas-heading span {
+  .canvas-actions span {
     color: #60706b;
     font-size: 0.85rem;
     text-align: right;
+  }
+
+  .box-toggle {
+    flex: 0 0 auto;
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid #bfc7bf;
+    border-radius: 5px;
+    background: #ffffff;
+    color: #26302e;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .box-toggle[aria-pressed="true"] {
+    border-color: #57776a;
+    background: #edf4f0;
   }
 
   .plate {
@@ -503,8 +751,19 @@
     user-select: none;
   }
 
+  .scene-background {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+  }
+
   .target {
     position: absolute;
+    z-index: 2;
     min-width: 36px;
     min-height: 28px;
     padding: 0;
@@ -517,8 +776,49 @@
     text-align: left;
   }
 
+  .character-preview-crop {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .character-preview {
+    position: absolute;
+    top: calc(-100% * var(--crop-top, 0) / var(--crop-height, 1));
+    left: 50%;
+    width: auto;
+    max-width: none;
+    height: calc(100% / var(--crop-height, 1));
+    transform: translateX(-50%);
+    object-fit: contain;
+    pointer-events: none;
+  }
+
+  .character-preview-crop:not([style]) .character-preview,
+  .character-preview-crop[style=""] .character-preview {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    transform: none;
+  }
+
+  .hotspot-preview {
+    position: absolute;
+    inset: 4px;
+    z-index: 0;
+    width: calc(100% - 8px);
+    height: calc(100% - 8px);
+    object-fit: contain;
+    opacity: 0.9;
+    pointer-events: none;
+  }
+
   .target span {
     position: absolute;
+    z-index: 1;
     top: 4px;
     left: 5px;
     right: 18px;
@@ -546,15 +846,100 @@
     outline-offset: 1px;
   }
 
+  .hide-boxes .target {
+    border-color: transparent;
+    background: transparent;
+    outline: 0;
+    box-shadow: none;
+  }
+
+  .hide-boxes .target.character {
+    overflow: visible;
+  }
+
+  .hide-boxes .character-preview,
+  .hide-boxes .character-preview-crop {
+    border: 0;
+    outline: 0;
+    box-shadow: none;
+  }
+
+  .hide-boxes .target span,
+  .hide-boxes .resize-handle {
+    opacity: 0;
+    pointer-events: none;
+  }
+
   .resize-handle {
     position: absolute;
-    right: 0;
-    bottom: 0;
-    width: 16px;
-    height: 16px;
-    border-top: 2px solid rgb(255 255 255 / 72%);
-    border-left: 2px solid rgb(255 255 255 / 72%);
-    background: rgb(0 0 0 / 20%);
+    z-index: 2;
+    width: 10px;
+    height: 10px;
+    border: 1px solid rgb(255 255 255 / 82%);
+    border-radius: 2px;
+    background: rgb(38 48 46 / 82%);
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 32%);
+  }
+
+  .resize-handle.n,
+  .resize-handle.s {
+    left: 50%;
+    transform: translateX(-50%);
+    cursor: ns-resize;
+  }
+
+  .resize-handle.e,
+  .resize-handle.w {
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: ew-resize;
+  }
+
+  .resize-handle.n {
+    top: -6px;
+  }
+
+  .resize-handle.e {
+    right: -6px;
+  }
+
+  .resize-handle.s {
+    bottom: -6px;
+  }
+
+  .resize-handle.w {
+    left: -6px;
+  }
+
+  .resize-handle.nw,
+  .resize-handle.ne,
+  .resize-handle.sw,
+  .resize-handle.se {
+    width: 12px;
+    height: 12px;
+  }
+
+  .resize-handle.nw {
+    top: -7px;
+    left: -7px;
+    cursor: nwse-resize;
+  }
+
+  .resize-handle.ne {
+    top: -7px;
+    right: -7px;
+    cursor: nesw-resize;
+  }
+
+  .resize-handle.sw {
+    bottom: -7px;
+    left: -7px;
+    cursor: nesw-resize;
+  }
+
+  .resize-handle.se {
+    right: -7px;
+    bottom: -7px;
     cursor: nwse-resize;
   }
 
@@ -588,6 +973,13 @@
 
   .target-name small {
     color: #60706b;
+  }
+
+  .target-name p {
+    margin: 0;
+    color: #4f5756;
+    font-size: 0.78rem;
+    line-height: 1.35;
   }
 
   .button-grid {
@@ -629,7 +1021,11 @@
       grid-template-columns: 1fr;
     }
 
-    .canvas-heading span {
+    .canvas-actions {
+      justify-content: start;
+    }
+
+    .canvas-actions span {
       text-align: left;
     }
 

@@ -1,9 +1,15 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import {
+    imageStoryAssetTypeForId,
     placeholderForMissingStoryAsset,
     resolveStoryAsset,
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
+  import {
+    alphaBoundsFromImageData,
+    cropVariablesForAlphaBounds,
+  } from "$lib/assets/alpha-crop";
   import type {
     CharacterLayout,
     CharacterView,
@@ -19,17 +25,20 @@
     onInspect,
     onInterview,
     disabled = false,
+    hud,
   }: {
     sublocation: SublocationView;
     backgroundAssetId?: string | null;
     onInspect: (id: string) => void;
     onInterview: (characterId: string, topicId: string) => void;
     disabled?: boolean;
+    hud?: Snippet;
   } = $props();
 
   let activeCharacterId = $state<string | null>(null);
   let portraits = $state<Record<string, ResolvedStoryAsset | null>>({});
   let background = $state<ResolvedStoryAsset | null>(null);
+  let cropStyles = $state<Record<string, string>>({});
 
   let placedHotspots = $derived(
     sublocation.hotspots.filter(
@@ -60,7 +69,10 @@
 
     for (const character of placedCharacters) {
       const { id, layout } = character;
-      resolveStoryAsset(layout.assetId, "portrait").then((asset) => {
+      resolveStoryAsset(
+        layout.assetId,
+        imageStoryAssetTypeForId(layout.assetId),
+      ).then((asset) => {
         if (!cancelled) portraits = { ...portraits, [id]: asset };
       });
     }
@@ -93,6 +105,48 @@
 
   function spriteStyle(layout: CharacterLayout) {
     return `--x: ${percent(layout.x)}; --y: ${percent(layout.y)}; --w: ${percent(layout.w)}; --h: ${percent(layout.h)};`;
+  }
+
+  function cropStyleForAsset(assetId: string): string {
+    return cropStyles[assetId] ?? "";
+  }
+
+  function loadCharacterCrop(assetId: string, event: Event) {
+    if (cropStyles[assetId]) return;
+
+    const image = event.currentTarget;
+    if (!(image instanceof HTMLImageElement)) return;
+    if (!image.naturalWidth || !image.naturalHeight) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return;
+
+    context.drawImage(image, 0, 0);
+    const imageData = context.getImageData(
+      0,
+      0,
+      image.naturalWidth,
+      image.naturalHeight,
+    );
+    const bounds = alphaBoundsFromImageData(
+      imageData.data,
+      image.naturalWidth,
+      image.naturalHeight,
+    );
+    if (!bounds) return;
+
+    cropStyles = {
+      ...cropStyles,
+      [assetId]: cropVariablesForAlphaBounds(
+        bounds,
+        image.naturalWidth,
+        image.naturalHeight,
+      ),
+    };
   }
 
   function toggleCharacter(characterId: string) {
@@ -131,7 +185,7 @@
       ...portraits,
       [character.id]: placeholderForMissingStoryAsset(
         character.layout.assetId,
-        "portrait",
+        imageStoryAssetTypeForId(character.layout.assetId),
       ),
     };
   }
@@ -164,10 +218,12 @@
         {disabled}
         onclick={() => onInspect(hotspot.id)}
       >
-        <span class="hotspot-dot"></span>
-        <span class="target-label">{hotspot.label}</span>
+        <span class="hotspot-content">
+          <span class="hotspot-dot"></span>
+          <span class="target-label">{hotspot.label}</span>
+        </span>
         {#if hotspot.inspected}
-          <span class="status">已調查</span>
+          <span class="hotspot-check" aria-label="已調查">✓</span>
         {/if}
       </button>
     {/each}
@@ -184,12 +240,19 @@
         onclick={() => toggleCharacter(character.id)}
       >
         {#if portraits[character.id]}
-          <img
-            src={portraits[character.id]?.url}
-            alt=""
-            aria-hidden="true"
-            onerror={() => handlePortraitError(character)}
-          />
+          <div
+            class="character-preview-crop"
+            style={cropStyleForAsset(character.layout.assetId)}
+          >
+            <img
+              src={portraits[character.id]?.url}
+              alt=""
+              aria-hidden="true"
+              onload={(event) =>
+                loadCharacterCrop(character.layout.assetId, event)}
+              onerror={() => handlePortraitError(character)}
+            />
+          </div>
         {:else}
           <span class="portrait-loading">{character.name}</span>
         {/if}
@@ -232,6 +295,12 @@
             </button>
           {/each}
         </div>
+      </div>
+    {/if}
+
+    {#if hud}
+      <div class="scene-hud">
+        {@render hud()}
       </div>
     {/if}
   </div>
@@ -359,6 +428,13 @@
     letter-spacing: 0.12em;
   }
 
+  .scene-hud {
+    position: absolute;
+    inset: 0;
+    z-index: 9;
+    pointer-events: none;
+  }
+
   button {
     font: inherit;
   }
@@ -383,9 +459,9 @@
     min-width: 72px;
     min-height: 44px;
     padding: 8px;
-    border: 1px solid rgba(113, 209, 220, 0.58);
-    background: rgba(9, 19, 28, 0.42);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    border: 1px solid transparent;
+    background: transparent;
+    box-shadow: none;
     transition:
       border-color 0.18s,
       background 0.18s,
@@ -399,9 +475,26 @@
     transform: translateY(-1px);
   }
 
+  .hotspot-target:hover:not(:disabled) .hotspot-content,
+  .hotspot-target:focus-visible:not(:disabled) .hotspot-content {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
   .hotspot-target.inspected {
-    border-color: var(--rule-strong);
-    opacity: 0.74;
+    opacity: 1;
+  }
+
+  .hotspot-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    opacity: 0;
+    transform: translateY(2px);
+    transition:
+      opacity 0.18s,
+      transform 0.18s;
   }
 
   .hotspot-dot {
@@ -413,16 +506,28 @@
     box-shadow: 0 0 14px rgba(113, 209, 220, 0.72);
   }
 
-  .target-label,
-  .status {
+  .target-label {
     font-family: var(--serif-jp);
     font-size: 12px;
     letter-spacing: 0.08em;
     line-height: 1.2;
   }
 
-  .status {
-    color: var(--bone-faint);
+  .hotspot-check {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: grid;
+    width: 18px;
+    height: 18px;
+    place-items: center;
+    border: 1px solid var(--rule-strong);
+    border-radius: 999px;
+    background: rgba(10, 10, 16, 0.78);
+    color: var(--cyan);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1;
   }
 
   .character-target {
@@ -439,13 +544,39 @@
     background: transparent;
   }
 
-  .character-target img,
+  .character-preview-crop,
   .portrait-loading {
     width: 100%;
     height: 100%;
+    filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.48));
+  }
+
+  .character-preview-crop {
+    position: relative;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .character-preview-crop img {
+    position: absolute;
+    top: calc(-100% * var(--crop-top, 0) / var(--crop-height, 1));
+    left: 50%;
+    width: auto;
+    max-width: none;
+    height: calc(100% / var(--crop-height, 1));
+    transform: translateX(-50%);
     object-fit: contain;
     object-position: bottom center;
-    filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.48));
+    pointer-events: none;
+  }
+
+  .character-preview-crop:not([style]) img,
+  .character-preview-crop[style=""] img {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: none;
+    object-fit: contain;
   }
 
   .portrait-loading {
@@ -665,8 +796,7 @@
       padding-inline: 16px;
     }
 
-    .target-label,
-    .status {
+    .target-label {
       display: none;
     }
 

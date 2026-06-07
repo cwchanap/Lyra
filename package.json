@@ -9,9 +9,9 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "turbo run dev",
-    "dev:game": "turbo run dev --filter=@lyra/game",
-    "dev:editor": "turbo run dev --filter=@lyra/layout-editor",
+    "dev": "turbo run dev:frontend dev:tauri",
+    "dev:game": "turbo run dev:frontend dev:tauri --filter=@lyra/game",
+    "dev:editor": "turbo run dev:frontend dev:tauri --filter=@lyra/layout-editor",
     "build": "turbo run build",
     "preview": "turbo run preview --filter=@lyra/game",
     "check": "turbo run check",

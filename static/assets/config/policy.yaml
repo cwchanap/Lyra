@@ -24,6 +24,14 @@ types:
       Half-body visual novel character portrait, consistent face and outfit,
       neutral three-quarter stance, transparent background, crisp edges, no
       props unless specified, no text.
+  standee:
+    dimensions: [1024, 1536]
+    format: png
+    transparency: true
+    prompt: >
+      Full-body in-scene character standee for detective-game scene placement,
+      same face and outfit continuity as the dialogue portrait, standing pose,
+      transparent background, crisp full-body silhouette, no text.
   evidence:
     dimensions: [512, 512]
     format: png

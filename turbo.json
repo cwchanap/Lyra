@@ -15,7 +15,11 @@
       "dependsOn": ["build"],
       "cache": false
     },
-    "dev": {
+    "dev:frontend": {
+      "cache": false,
+      "persistent": true
+    },
+    "dev:tauri": {
       "cache": false,
       "persistent": true
     },

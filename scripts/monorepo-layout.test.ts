@@ -13,12 +13,12 @@ describe("monorepo layout", () => {
     expect(rootPackage.packageManager).toBe("bun@1.3.1");
     expect(rootPackage.workspaces).toEqual(["apps/*"]);
     expect(rootPackage.devDependencies.turbo).toBeDefined();
-    expect(rootPackage.scripts.dev).toBe("turbo run dev");
+    expect(rootPackage.scripts.dev).toBe("turbo run dev:frontend dev:tauri");
     expect(rootPackage.scripts["dev:game"]).toBe(
-      "turbo run dev --filter=@lyra/game",
+      "turbo run dev:frontend dev:tauri --filter=@lyra/game",
     );
     expect(rootPackage.scripts["dev:editor"]).toBe(
-      "turbo run dev --filter=@lyra/layout-editor",
+      "turbo run dev:frontend dev:tauri --filter=@lyra/layout-editor",
     );
     expect(rootPackage.scripts.tauri).toBeUndefined();
     expect(rootPackage.scripts["dev:tauri"]).toBeUndefined();
@@ -42,23 +42,48 @@ describe("monorepo layout", () => {
   it("keeps the game app as a Tauri package inside apps/game", () => {
     const gamePackage = readJson("apps/game/package.json");
     const editorPackage = readJson("apps/layout-editor/package.json");
+    const editorViteConfig = readFileSync(
+      resolve(process.cwd(), "apps/layout-editor/vite.config.ts"),
+      "utf8",
+    );
 
     expect(gamePackage.name).toBe("@lyra/game");
-    expect(gamePackage.scripts.dev).toBe("tauri dev");
+    expect(gamePackage.scripts.dev).toBe("bun run --cwd ../.. dev:game");
     expect(gamePackage.scripts["dev:frontend"]).toBe("vite dev");
+    expect(gamePackage.scripts["dev:tauri"]).toBe(
+      "bun run scenes:compile && tauri dev -c src-tauri/tauri.dev.conf.json",
+    );
     expect(gamePackage.scripts.tauri).toBe("tauri");
     expect(gamePackage.scripts["scenes:compile"]).toBeDefined();
     expect(
       existsSync(resolve(process.cwd(), "apps/game/src-tauri/Cargo.toml")),
     ).toBe(true);
     expect(
+      existsSync(
+        resolve(process.cwd(), "apps/game/src-tauri/tauri.dev.conf.json"),
+      ),
+    ).toBe(true);
+    expect(
       existsSync(resolve(process.cwd(), "apps/game/src/routes/+page.svelte")),
     ).toBe(true);
 
     expect(editorPackage.name).toBe("@lyra/layout-editor");
-    expect(editorPackage.scripts.dev).toBe("tauri dev");
+    expect(editorPackage.scripts.dev).toBe("bun run --cwd ../.. dev:editor");
     expect(editorPackage.scripts["dev:frontend"]).toBe(
       "vite dev --host 127.0.0.1",
     );
+    expect(editorPackage.scripts["dev:tauri"]).toBe(
+      "tauri dev -c src-tauri/tauri.dev.conf.json",
+    );
+    expect(editorPackage.scripts.test).toBe("vitest run");
+    expect(editorViteConfig).toContain('publicDir: "../../static"');
+    expect(
+      existsSync(
+        resolve(
+          process.cwd(),
+          "apps/layout-editor/src-tauri/tauri.dev.conf.json",
+        ),
+      ),
+    ).toBe(true);
   });
 });

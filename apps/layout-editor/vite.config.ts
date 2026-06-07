@@ -1,8 +1,15 @@
 import { svelte } from "@sveltejs/vite-plugin-svelte";
-import { defineConfig } from "vite";
+import { svelteTesting } from "@testing-library/svelte/vite";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [svelte(), svelteTesting()],
+  publicDir: "../../static",
+  test: {
+    include: ["src/**/*.test.ts"],
+    environment: "jsdom",
+    setupFiles: ["src/test-setup.ts"],
+  },
   clearScreen: false,
   server: {
     host: "127.0.0.1",

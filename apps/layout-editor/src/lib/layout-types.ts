@@ -14,28 +14,60 @@ export type InvestigationSceneJson = {
   type: "investigation";
   id: string;
   title: string;
+  intro: DialogueItem[];
   sublocations: Array<{
     id: string;
     label: string;
     sceneTag: string;
     backgroundAssetId: string | null;
+    transitionDialogue: DialogueItem[];
     hotspots: Array<{
       id: string;
       label: string;
       description: string;
+      reveals: RevealTarget[];
+      inspectDialogue: DialogueItem[];
+      layout: RectLayout | null;
     }>;
     characters: Array<{
       id: string;
       name: string;
       role: string;
       bio: string;
+      layout: SpriteLayout | null;
       topics: Array<{
         id: string;
         label: string;
+        topicDialogue: DialogueItem[];
       }>;
     }>;
   }>;
+  evidenceManifest: Array<{
+    id: string;
+    name: string;
+    description: string;
+    imageAssetId: string | null;
+  }>;
 };
+
+export type DialogueItem =
+  | { kind: "sceneTag"; text: string }
+  | { kind: "action"; text: string }
+  | {
+      kind: "line";
+      speaker: string;
+      text: string;
+      portrait?: {
+        assetId: string;
+      } | null;
+    };
+
+export type RevealTarget =
+  | { kind: "evidence"; id: string }
+  | { kind: "statement"; id: string }
+  | { kind: "topic"; characterId: string; topicId: string }
+  | { kind: "hotspot"; id: string }
+  | { kind: "sublocation"; id: string };
 
 export type RectLayout = {
   kind: "rect";

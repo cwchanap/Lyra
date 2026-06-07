@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "sceneId": "investigation_scene_1",
+  "sublocations": {
+    "office": {
+      "hotspots": {
+        "kagami_summary_hotspot": {
+          "kind": "rect",
+          "x": 0.308453,
+          "y": 0.614043,
+          "w": 0.12,
+          "h": 0.1
+        },
+        "canned_coffee": {
+          "kind": "rect",
+          "x": 0.554174,
+          "y": 0.642748,
+          "w": 0.058163,
+          "h": 0.159349
+        },
+        "broken_coffee_machine": {
+          "kind": "rect",
+          "x": 0.769369,
+          "y": 0.400647,
+          "w": 0.135162,
+          "h": 0.277265
+        },
+        "old_request_slips": {
+          "kind": "rect",
+          "x": 0.228469,
+          "y": 0.547616,
+          "w": 0.14065,
+          "h": 0.108547
+        }
+      },
+      "characters": {
+        "hayasaka": {
+          "kind": "sprite",
+          "assetId": "standee.hayasaka_akane.standard",
+          "x": 0.615563,
+          "y": 0.24,
+          "w": 0.172736,
+          "h": 0.76,
+          "anchor": "bottomCenter"
+        }
+      }
+    }
+  }
+}

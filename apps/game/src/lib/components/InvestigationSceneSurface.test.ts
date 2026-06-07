@@ -118,6 +118,64 @@ describe("InvestigationSceneSurface", () => {
     });
   });
 
+  it("renders standee assets for placed scene characters", async () => {
+    const standeeSublocation = {
+      ...sublocation,
+      characters: [
+        {
+          ...sublocation.characters[0],
+          layout: {
+            kind: "sprite",
+            assetId: "standee.witness.standard",
+            x: 0.7,
+            y: 0.1,
+            w: 0.18,
+            h: 0.8,
+            anchor: "bottomCenter",
+          },
+        },
+      ],
+    } satisfies SublocationView;
+
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation: standeeSublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(".character-target img")).toHaveAttribute(
+        "src",
+        "/assets/standees/witness/standard.png",
+      );
+    });
+  });
+
+  it("loads alpha crop variables for scene standees", () => {
+    const source = surfaceSource();
+    expect(source).toContain("loadCharacterCrop");
+    expect(source).toContain("cropVariablesForAlphaBounds");
+    expect(source).toContain("character-preview-crop");
+  });
+
+  it("only highlights placed hotspots on navigation and shows checked state separately", () => {
+    const source = surfaceSource();
+    expect(source).toContain(
+      ".hotspot-target:hover:not(:disabled) .hotspot-content",
+    );
+    expect(source).toContain(
+      ".hotspot-target:focus-visible:not(:disabled) .hotspot-content",
+    );
+    expect(source).toContain(".hotspot-check");
+    expect(source).not.toContain('<span class="status">已調查</span>');
+  });
+
+  it("renders a scene-local HUD slot for investigation controls", () => {
+    const source = surfaceSource();
+    expect(source).toContain('class="scene-hud"');
+    expect(source).toContain("{@render hud()}");
+  });
+
   it("calls onInspect when clicking a placed hotspot", async () => {
     const user = userEvent.setup();
     const onInspect = vi.fn();

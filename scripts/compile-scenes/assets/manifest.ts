@@ -11,7 +11,7 @@ import type { AssetConfig } from "./config";
 
 export type AssetManifestEntry = {
   assetId: string;
-  type: "background" | "portrait" | "evidence" | "audio";
+  type: "background" | "portrait" | "standee" | "evidence" | "audio";
   source: Record<string, string>;
   expectedPath: string;
   publicPath: string;
@@ -81,6 +81,10 @@ export function publicPath(
   if (type === "portrait") {
     const [, characterId, expression] = assetId.split(".");
     return `/assets/portraits/${characterId}/${expression}.png`;
+  }
+  if (type === "standee") {
+    const [, characterId, pose] = assetId.split(".");
+    return `/assets/standees/${characterId}/${pose}.png`;
   }
   if (type === "evidence") {
     return `/assets/evidence/${assetId.replace(/^evidence\./, "")}.png`;
