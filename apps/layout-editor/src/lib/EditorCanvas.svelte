@@ -284,6 +284,7 @@
             <button
               type="button"
               title="Move left"
+              aria-label={`Move hotspot ${hotspot.label} left`}
               onclick={() =>
                 nudge("hotspot", hotspot.id, hotspot.layout, { x: -0.01 })}
             >
@@ -292,6 +293,7 @@
             <button
               type="button"
               title="Move up"
+              aria-label={`Move hotspot ${hotspot.label} up`}
               onclick={() =>
                 nudge("hotspot", hotspot.id, hotspot.layout, { y: -0.01 })}
             >
@@ -300,6 +302,7 @@
             <button
               type="button"
               title="Move down"
+              aria-label={`Move hotspot ${hotspot.label} down`}
               onclick={() =>
                 nudge("hotspot", hotspot.id, hotspot.layout, { y: 0.01 })}
             >
@@ -308,6 +311,7 @@
             <button
               type="button"
               title="Move right"
+              aria-label={`Move hotspot ${hotspot.label} right`}
               onclick={() =>
                 nudge("hotspot", hotspot.id, hotspot.layout, { x: 0.01 })}
             >
@@ -316,6 +320,7 @@
             <button
               type="button"
               title="Narrow"
+              aria-label={`Narrow hotspot ${hotspot.label}`}
               onclick={() =>
                 nudge("hotspot", hotspot.id, hotspot.layout, { w: -0.01 })}
             >
@@ -324,6 +329,7 @@
             <button
               type="button"
               title="Widen"
+              aria-label={`Widen hotspot ${hotspot.label}`}
               onclick={() =>
                 nudge("hotspot", hotspot.id, hotspot.layout, { w: 0.01 })}
             >
@@ -332,6 +338,7 @@
             <button
               type="button"
               title="Shorter"
+              aria-label={`Shorten hotspot ${hotspot.label}`}
               onclick={() =>
                 nudge("hotspot", hotspot.id, hotspot.layout, { h: -0.01 })}
             >
@@ -340,6 +347,7 @@
             <button
               type="button"
               title="Taller"
+              aria-label={`Make hotspot ${hotspot.label} taller`}
               onclick={() =>
                 nudge("hotspot", hotspot.id, hotspot.layout, { h: 0.01 })}
             >
@@ -359,6 +367,7 @@
             <button
               type="button"
               title="Move left"
+              aria-label={`Move character ${character.name} left`}
               onclick={() =>
                 nudge("character", character.id, character.layout, {
                   x: -0.01,
@@ -369,6 +378,7 @@
             <button
               type="button"
               title="Move up"
+              aria-label={`Move character ${character.name} up`}
               onclick={() =>
                 nudge("character", character.id, character.layout, {
                   y: -0.01,
@@ -379,6 +389,7 @@
             <button
               type="button"
               title="Move down"
+              aria-label={`Move character ${character.name} down`}
               onclick={() =>
                 nudge("character", character.id, character.layout, { y: 0.01 })}
             >
@@ -387,6 +398,7 @@
             <button
               type="button"
               title="Move right"
+              aria-label={`Move character ${character.name} right`}
               onclick={() =>
                 nudge("character", character.id, character.layout, { x: 0.01 })}
             >
@@ -395,6 +407,7 @@
             <button
               type="button"
               title="Narrow"
+              aria-label={`Narrow character ${character.name}`}
               onclick={() =>
                 nudge("character", character.id, character.layout, {
                   w: -0.01,
@@ -405,6 +418,7 @@
             <button
               type="button"
               title="Widen"
+              aria-label={`Widen character ${character.name}`}
               onclick={() =>
                 nudge("character", character.id, character.layout, { w: 0.01 })}
             >
@@ -413,6 +427,7 @@
             <button
               type="button"
               title="Shorter"
+              aria-label={`Shorten character ${character.name}`}
               onclick={() =>
                 nudge("character", character.id, character.layout, {
                   h: -0.01,
@@ -423,6 +438,7 @@
             <button
               type="button"
               title="Taller"
+              aria-label={`Make character ${character.name} taller`}
               onclick={() =>
                 nudge("character", character.id, character.layout, { h: 0.01 })}
             >
@@ -607,6 +623,10 @@
     .canvas-heading,
     .control-row {
       display: grid;
+    }
+
+    .control-row {
+      grid-template-columns: 1fr;
     }
 
     .canvas-heading span {
