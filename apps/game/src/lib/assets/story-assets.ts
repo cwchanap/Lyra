@@ -1,4 +1,9 @@
-export type StoryAssetType = "background" | "portrait" | "evidence" | "audio";
+export type StoryAssetType =
+  | "background"
+  | "portrait"
+  | "standee"
+  | "evidence"
+  | "audio";
 
 export type ResolvedStoryAsset = {
   assetId: string;
@@ -19,6 +24,10 @@ export function publicPathForStoryAsset(
     const [, characterId, expression] = assetId.split(".");
     return `/assets/portraits/${characterId}/${expression}.png`;
   }
+  if (type === "standee") {
+    const [, characterId, pose] = assetId.split(".");
+    return `/assets/standees/${characterId}/${pose}.png`;
+  }
   if (type === "evidence") {
     return `/assets/evidence/${assetId.replace(/^evidence\./, "")}.png`;
   }
@@ -37,7 +46,9 @@ export function placeholderForStoryAsset(
       ? "101018"
       : type === "portrait"
         ? "181820"
-        : "202018";
+        : type === "standee"
+          ? "161f24"
+          : "202018";
   const label = type.toUpperCase();
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="100%" height="100%" fill="#${color}"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#d8d0bf" font-family="serif" font-size="28">${label} MISSING</text></svg>`;
   return {
@@ -66,6 +77,15 @@ export function resolveStoryAsset(
   const promise = resolveUncached(assetId, type);
   cache.set(key, promise);
   return promise;
+}
+
+export function imageStoryAssetTypeForId(
+  assetId: string,
+): Exclude<StoryAssetType, "audio"> {
+  if (assetId.startsWith("standee.")) return "standee";
+  if (assetId.startsWith("evidence.")) return "evidence";
+  if (assetId.startsWith("background.")) return "background";
+  return "portrait";
 }
 
 /**

@@ -6,15 +6,17 @@
     currentId,
     onEnter,
     disabled = false,
+    placement = "page",
   }: {
     sublocations: SublocationView[];
     currentId: string | null;
     onEnter: (id: string) => void;
     disabled?: boolean;
+    placement?: "page" | "scene";
   } = $props();
 </script>
 
-<nav class="nav" aria-label="地點導航">
+<nav class="nav" class:scene={placement === "scene"} aria-label="地點導航">
   <span class="eyebrow">地點 · LOCATIONS</span>
   <div class="chips">
     {#each sublocations as sub, i (sub.id)}
@@ -41,6 +43,19 @@
     gap: 16px;
     padding: 16px clamp(20px, 3vw, 40px);
     flex-wrap: wrap;
+    pointer-events: auto;
+  }
+
+  .nav.scene {
+    position: absolute;
+    left: 18px;
+    bottom: 18px;
+    z-index: 8;
+    max-width: min(760px, calc(100% - 36px));
+    padding: 10px 12px;
+    border: 1px solid var(--rule-strong);
+    background: rgba(20, 20, 31, 0.72);
+    backdrop-filter: blur(2px);
   }
 
   .eyebrow {
@@ -109,5 +124,14 @@
   .active-mark {
     color: var(--crimson);
     font-size: 11px;
+  }
+
+  @media (max-width: 720px) {
+    .nav.scene {
+      right: 12px;
+      bottom: 12px;
+      left: 12px;
+      max-width: none;
+    }
   }
 </style>

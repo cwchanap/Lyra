@@ -73,7 +73,20 @@
         onInterview={interviewTopic}
         onEnterSublocation={enterSublocation}
         disabled={gameState.inFlight}
-      />
+      >
+        {#snippet hud()}
+          {#if shouldShowInventoryPanel(gameState.value!.mode)}
+            <InventoryPanel
+              inventory={gameState.value!.inventory}
+              reexamineEnabled={canReexamineInventory(gameState.value!.mode)}
+              onReexamineEvidence={reexamineEvidence}
+              onReexamineStatement={reexamineStatement}
+              disabled={gameState.inFlight}
+              placement="scene"
+            />
+          {/if}
+        {/snippet}
+      </ExploreView>
     {:else if gameState.value.mode.type === "interrogation"}
       <SceneBackdrop
         sceneTag={null}
@@ -90,7 +103,7 @@
     {:else if gameState.value.mode.type === "gameComplete"}
       <GameComplete onReset={handleReset} disabled={gameState.inFlight} />
     {/if}
-    {#if shouldShowInventoryPanel(gameState.value.mode)}
+    {#if shouldShowInventoryPanel(gameState.value.mode) && gameState.value.mode.type !== "explore"}
       <InventoryPanel
         inventory={gameState.value.inventory}
         reexamineEnabled={canReexamineInventory(gameState.value.mode)}

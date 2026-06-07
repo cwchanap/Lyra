@@ -11,8 +11,17 @@ import { resolve } from "node:path";
 import YAML from "yaml";
 import type { CompileError } from "../types";
 
-export type AssetTypeName = "background" | "portrait" | "evidence" | "audio";
-export type ImageAssetTypeName = "background" | "portrait" | "evidence";
+export type AssetTypeName =
+  | "background"
+  | "portrait"
+  | "standee"
+  | "evidence"
+  | "audio";
+export type ImageAssetTypeName =
+  | "background"
+  | "portrait"
+  | "standee"
+  | "evidence";
 export type AudioChannel = "bgm" | "bgs";
 
 /** Policy for image asset types (background, portrait, evidence). */
@@ -35,6 +44,7 @@ export type AudioAssetPolicy = {
 export type AssetTypePolicies = {
   background: ImageAssetPolicy;
   portrait: ImageAssetPolicy;
+  standee: ImageAssetPolicy;
   evidence: ImageAssetPolicy;
   audio: AudioAssetPolicy;
 };
@@ -89,6 +99,12 @@ function defaultTypes(): AssetTypePolicies {
     },
     portrait: {
       dimensions: [768, 1024],
+      format: "png",
+      transparency: true,
+      prompt: "",
+    },
+    standee: {
+      dimensions: [1024, 1536],
       format: "png",
       transparency: true,
       prompt: "",
@@ -200,6 +216,7 @@ export function loadAssetConfig(configRoot: string): AssetConfigResult {
 const SUPPORTED_FORMATS: Record<AssetTypeName, string> = {
   background: "png",
   portrait: "png",
+  standee: "png",
   evidence: "png",
   audio: "ogg",
 };
@@ -212,8 +229,13 @@ function buildTypePolicies(
 ): AssetTypePolicies {
   const src = isRecord(raw) ? raw : {};
   const out = defaultTypes();
-  // Image types: background, portrait, evidence
-  for (const key of ["background", "portrait", "evidence"] as const) {
+  // Image types: background, portrait, standee, evidence
+  for (const key of [
+    "background",
+    "portrait",
+    "standee",
+    "evidence",
+  ] as const) {
     const value = asOptionalRecord(
       src[key],
       "policy.yaml",

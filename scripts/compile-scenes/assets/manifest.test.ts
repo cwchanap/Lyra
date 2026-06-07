@@ -6,13 +6,18 @@ import { expectedPath, publicPath } from "./manifest";
 // If you change either function, update both and keep these tests passing.
 const CROSS_CHECK_CASES: Array<{
   assetId: string;
-  type: "background" | "portrait" | "evidence" | "audio";
+  type: "background" | "portrait" | "standee" | "evidence" | "audio";
   expected: string;
 }> = [
   {
     assetId: "portrait.hayasaka_akane.concerned",
     type: "portrait",
     expected: "/assets/portraits/hayasaka_akane/concerned.png",
+  },
+  {
+    assetId: "standee.hayasaka_akane.standard",
+    type: "standee",
+    expected: "/assets/standees/hayasaka_akane/standard.png",
   },
   {
     assetId: "background.chapter_1.scene_0.tag_001",
@@ -43,6 +48,15 @@ describe("story asset manifest paths", () => {
     );
     expect(expectedPath("portrait.hayasaka_akane.concerned", "portrait")).toBe(
       "static/assets/portraits/hayasaka_akane/concerned.png",
+    );
+  });
+
+  it("maps standee asset IDs to typed static asset paths", () => {
+    expect(publicPath("standee.hayasaka_akane.standard", "standee")).toBe(
+      "/assets/standees/hayasaka_akane/standard.png",
+    );
+    expect(expectedPath("standee.hayasaka_akane.standard", "standee")).toBe(
+      "static/assets/standees/hayasaka_akane/standard.png",
     );
   });
 

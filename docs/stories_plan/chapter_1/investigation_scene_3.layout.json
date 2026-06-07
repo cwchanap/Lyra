@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "sceneId": "investigation_scene_3",
+  "sublocations": {
+    "front": {
+      "hotspots": {
+        "back_entrance": {
+          "kind": "rect",
+          "x": 0.457861,
+          "y": 0.737354,
+          "w": 0.12,
+          "h": 0.1
+        },
+        "doorlock_summary": {
+          "kind": "rect",
+          "x": 0.587723,
+          "y": 0.441695,
+          "w": 0.075123,
+          "h": 0.148939
+        },
+        "timecard": {
+          "kind": "rect",
+          "x": 0.680593,
+          "y": 0.465757,
+          "w": 0.071603,
+          "h": 0.127746
+        },
+        "cctv_playback": {
+          "kind": "rect",
+          "x": 0.42218,
+          "y": 0.11781,
+          "w": 0.12,
+          "h": 0.143201
+        },
+        "register": {
+          "kind": "rect",
+          "x": 0.787011,
+          "y": 0.55458,
+          "w": 0.078489,
+          "h": 0.1
+        },
+        "osmanthus_sign": {
+          "kind": "rect",
+          "x": 0.626241,
+          "y": 0.253472,
+          "w": 0.067049,
+          "h": 0.117701
+        },
+        "blue_umbrella": {
+          "kind": "rect",
+          "x": 0.20043,
+          "y": 0.547677,
+          "w": 0.107904,
+          "h": 0.357115
+        }
+      },
+      "characters": {
+        "katase": {
+          "kind": "sprite",
+          "assetId": "standee.katase.standard",
+          "x": 0,
+          "y": 0.221896,
+          "w": 0.191187,
+          "h": 0.777526,
+          "anchor": "bottomCenter"
+        },
+        "takase": {
+          "kind": "sprite",
+          "assetId": "standee.takase_manager.standard",
+          "x": 0.82,
+          "y": 0.228821,
+          "w": 0.18,
+          "h": 0.76,
+          "anchor": "bottomCenter"
+        }
+      }
+    }
+  }
+}

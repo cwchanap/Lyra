@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "bun run --cwd ../.. dev:game",
     "dev:frontend": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
@@ -14,7 +14,7 @@
     "tauri": "tauri",
     "scenes:compile": "bun run --cwd ../.. scripts/compile-scenes.ts",
     "scenes:watch": "bun run --cwd ../.. scripts/compile-scenes.ts --watch",
-    "dev:tauri": "bun run scenes:compile && bun run dev:frontend",
+    "dev:tauri": "bun run scenes:compile && tauri dev -c src-tauri/tauri.dev.conf.json",
     "build:tauri": "bun run scenes:compile && bun run build",
     "test": "vitest run",
     "test:watch": "vitest",

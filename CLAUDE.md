@@ -11,13 +11,14 @@ workspace with apps under `apps/*`; use the root scripts for orchestration and
 Tauri app dev loops, not browser-only dev as a primary workflow.
 
 - `bun run dev` - run both Tauri desktop apps through Turbo: the game and the
-  investigation layout editor.
-- `bun run dev:game` - run only the game Tauri app. Inside `apps/game`, Tauri
-  invokes `bun run dev:tauri`, which compiles scenes, starts Vite on port 1420,
-  and launches the Rust shell with HMR.
-- `bun run dev:editor` - run only the layout editor Tauri app. Inside
-  `apps/layout-editor`, Tauri invokes `bun run dev:frontend`, which starts the
-  editor Vite dev server on port 1430.
+  investigation layout editor. Turbo runs each app's `dev:frontend` and
+  `dev:tauri` tasks as separate persistent processes.
+- `bun run dev:game` - run only the game Tauri app. Turbo starts Vite on port
+  1420 and separately runs `dev:tauri`, which compiles scenes before launching
+  the Rust shell with HMR.
+- `bun run dev:editor` - run only the layout editor Tauri app. Turbo starts the
+  editor Vite dev server on port 1430 and separately launches its Rust shell
+  with HMR.
 - `bun run build:tauri` - produce game desktop bundles for all targets in
   `apps/game/src-tauri/tauri.conf.json`. Tauri runs `bun run build:tauri`
   inside `apps/game`, which compiles scenes before `vite build`.

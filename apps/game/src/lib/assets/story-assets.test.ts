@@ -16,6 +16,12 @@ describe("story asset resolver helpers", () => {
     ).toBe("/assets/portraits/hayasaka_akane/concerned.png");
   });
 
+  it("maps standee IDs to full-body scene portrait public paths", () => {
+    expect(publicPathForStoryAsset("standee.witness.standard", "standee")).toBe(
+      "/assets/standees/witness/standard.png",
+    );
+  });
+
   it("maps background IDs to nested public paths", () => {
     expect(
       publicPathForStoryAsset(
@@ -43,6 +49,7 @@ describe("story asset resolver helpers", () => {
     );
     expect(placeholderForStoryAsset("portrait").placeholder).toBe(true);
     expect(placeholderForStoryAsset("evidence").placeholder).toBe(true);
+    expect(placeholderForStoryAsset("standee").placeholder).toBe(true);
   });
 
   it("returns null for nullish asset IDs", async () => {

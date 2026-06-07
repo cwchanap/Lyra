@@ -85,6 +85,18 @@ describe("InventoryPanel", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("can render relative to an investigation scene instead of the viewport", () => {
+    const { container } = render(InventoryPanel, {
+      inventory,
+      reexamineEnabled: true,
+      onReexamineEvidence: vi.fn(),
+      onReexamineStatement: vi.fn(),
+      placement: "scene",
+    });
+
+    expect(container.querySelector("aside.scene")).toBeInTheDocument();
+  });
+
   it("does not apply evidence-row class when evidence has no image", async () => {
     const user = userEvent.setup();
 
