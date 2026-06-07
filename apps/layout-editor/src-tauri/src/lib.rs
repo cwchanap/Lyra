@@ -117,6 +117,13 @@ fn checked_project_path_from_root(root: &Path, path: &str) -> Result<PathBuf, Ed
 
 fn ensure_layout_sidecar_write_path(path: &str) -> Result<(), EditorError> {
     let requested = Path::new(path);
+    if requested
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(EditorError::new("pathEscape", "path escapes project root"));
+    }
+
     let in_story_root =
         requested.starts_with("docs/stories_plan") || requested.starts_with("static/stories_plan");
     let is_layout_sidecar = requested
@@ -359,6 +366,20 @@ mod tests {
         );
 
         assert_eq!(result.unwrap_err().code, "writePathNotAllowed");
+    }
+
+    #[test]
+    fn write_project_file_rejects_parent_escape_after_story_root() {
+        let root = temp_workspace_root();
+
+        let result = write_project_file_at_root(
+            &root,
+            "docs/stories_plan/../../outside.layout.json",
+            "{}\n".to_string(),
+        );
+
+        assert_eq!(result.unwrap_err().code, "pathEscape");
+        assert!(!root.join("outside.layout.json").exists());
     }
 
     #[cfg(unix)]
