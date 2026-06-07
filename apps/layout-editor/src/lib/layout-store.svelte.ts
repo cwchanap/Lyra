@@ -2,7 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   InvestigationLayoutSidecar,
   InvestigationSceneJson,
+  RectLayout,
   SceneIndex,
+  SpriteLayout,
 } from "./layout-types";
 
 type ProjectFile = {
@@ -94,6 +96,97 @@ export async function saveLayout() {
   } catch (error) {
     editorState.error = normalizeError(error);
   }
+}
+
+export function setHotspotLayout(
+  sublocationId: string,
+  hotspotId: string,
+  layout: RectLayout,
+) {
+  if (!editorState.layout) return;
+
+  const sublocation = editorState.layout.sublocations[sublocationId] ?? {
+    hotspots: {},
+    characters: {},
+  };
+
+  editorState.layout = {
+    ...editorState.layout,
+    sublocations: {
+      ...editorState.layout.sublocations,
+      [sublocationId]: {
+        hotspots: {
+          ...sublocation.hotspots,
+          [hotspotId]: clampRectLayout(layout),
+        },
+        characters: {
+          ...sublocation.characters,
+        },
+      },
+    },
+  };
+}
+
+export function setCharacterLayout(
+  sublocationId: string,
+  characterId: string,
+  layout: SpriteLayout,
+) {
+  if (!editorState.layout) return;
+
+  const sublocation = editorState.layout.sublocations[sublocationId] ?? {
+    hotspots: {},
+    characters: {},
+  };
+
+  editorState.layout = {
+    ...editorState.layout,
+    sublocations: {
+      ...editorState.layout.sublocations,
+      [sublocationId]: {
+        hotspots: {
+          ...sublocation.hotspots,
+        },
+        characters: {
+          ...sublocation.characters,
+          [characterId]: clampSpriteLayout(layout),
+        },
+      },
+    },
+  };
+}
+
+function clampRectLayout(layout: RectLayout): RectLayout {
+  return {
+    kind: "rect",
+    ...clampBox(layout),
+  };
+}
+
+function clampSpriteLayout(layout: SpriteLayout): SpriteLayout {
+  return {
+    kind: "sprite",
+    assetId: layout.assetId,
+    ...clampBox(layout),
+    anchor: "bottomCenter",
+  };
+}
+
+function clampBox(layout: RectLayout | SpriteLayout) {
+  const w = clamp(layout.w, 0.02, 1);
+  const h = clamp(layout.h, 0.02, 1);
+
+  return {
+    x: clamp(layout.x, 0, 1 - w),
+    y: clamp(layout.y, 0, 1 - h),
+    w,
+    h,
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(Math.max(value, min), max);
 }
 
 function normalizeError(error: unknown): string {
