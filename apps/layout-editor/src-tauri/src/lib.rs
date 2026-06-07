@@ -167,7 +167,8 @@ fn workspace_root() -> Result<PathBuf, EditorError> {
         )
     })?;
     loop {
-        if dir.join("docs/stories_plan").is_dir() && dir.join("src-tauri/resources/scenes").is_dir()
+        if dir.join("docs/stories_plan").is_dir()
+            && dir.join("apps/game/src-tauri/resources/scenes").is_dir()
         {
             return normalize_existing_root(&dir);
         }
@@ -267,11 +268,11 @@ fn write_regular_file(path: &Path, contents: String) -> Result<(), EditorError> 
 fn resolve_layout_path_at_root(root: &Path, scene_path: &str) -> Result<String, EditorError> {
     let scene_path = Path::new(scene_path);
     let relative_scene = scene_path
-        .strip_prefix("src-tauri/resources/scenes")
+        .strip_prefix("apps/game/src-tauri/resources/scenes")
         .map_err(|_| {
             EditorError::new(
                 "scenePathInvalid",
-                "scene path must be under src-tauri/resources/scenes",
+                "scene path must be under apps/game/src-tauri/resources/scenes",
             )
         })?;
     let mut source_scene = relative_scene.to_path_buf();
@@ -361,7 +362,7 @@ mod tests {
 
         let result = write_project_file_at_root(
             &root,
-            "src-tauri/resources/scenes/chapters.json",
+            "apps/game/src-tauri/resources/scenes/chapters.json",
             "{}\n".to_string(),
         );
 
@@ -432,7 +433,7 @@ mod tests {
 
         let result = resolve_layout_path_at_root(
             &root,
-            "src-tauri/resources/scenes/chapter_1/investigation_scene_1.json",
+            "apps/game/src-tauri/resources/scenes/chapter_1/investigation_scene_1.json",
         )
         .unwrap();
 
@@ -454,7 +455,7 @@ mod tests {
 
         let result = resolve_layout_path_at_root(
             &root,
-            "src-tauri/resources/scenes/chapter_2/investigation_scene_1.json",
+            "apps/game/src-tauri/resources/scenes/chapter_2/investigation_scene_1.json",
         )
         .unwrap();
 
@@ -474,7 +475,7 @@ mod tests {
                 .as_nanos()
         ));
         fs::create_dir_all(root.join("docs/stories_plan")).unwrap();
-        fs::create_dir_all(root.join("src-tauri/resources/scenes")).unwrap();
+        fs::create_dir_all(root.join("apps/game/src-tauri/resources/scenes")).unwrap();
         root
     }
 }

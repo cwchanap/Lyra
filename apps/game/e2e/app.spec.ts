@@ -46,6 +46,7 @@ async function installTauriMock(page: Page) {
               label: "桌子",
               description: "一張木桌，桌上有一杯咖啡。",
               inspected: false,
+              layout: null,
             },
           ],
           characters: [
@@ -54,6 +55,7 @@ async function installTauriMock(page: Page) {
               name: "證人",
               role: "證人",
               bio: "案發時在現場的證人。",
+              layout: null,
               topics: [
                 {
                   id: "timeline",
@@ -92,13 +94,22 @@ async function installTauriMock(page: Page) {
         queueRemaining: 0,
         sceneTag: "測試場景前廳，深夜。",
         queueToken: { sceneId: "scene_0", queueGen: 1, cursor: 0 },
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
       },
     };
     const exploreView = {
       chapter,
       inventory,
       scene,
-      mode: { type: "explore", sublocationId: "main_hall" },
+      mode: {
+        type: "explore",
+        sublocationId: "main_hall",
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+      },
     };
     const inspectedView = {
       chapter,
@@ -109,6 +120,7 @@ async function installTauriMock(page: Page) {
             name: "還熱的咖啡",
             description: "一杯仍微熱的咖啡。",
             details: "杯壁溫度約 50°C。",
+            imageAssetId: null,
             onReexamine: null,
             collectedInChapterId: "chapter_1",
             collectedInSceneId: "investigation_scene_1",
@@ -137,6 +149,9 @@ async function installTauriMock(page: Page) {
           queueGen: 2,
           cursor: 0,
         },
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
       },
     };
 
@@ -200,11 +215,17 @@ if (shouldRegisterPlaywrightSuite) {
       await page.getByRole("button", { name: /開始調查/ }).click();
     }
 
+    async function advanceDialogue(page: Page) {
+      const advanceButton = page.getByRole("button", { name: "推進對話" });
+      await expect(advanceButton).toBeEnabled();
+      await advanceButton.click();
+    }
+
     test("advances dialogue into investigation controls", async ({ page }) => {
       await startFromMenu(page);
       await expect(page.getByText("測試開始。")).toBeVisible();
 
-      await page.getByRole("button", { name: "推進對話" }).click();
+      await advanceDialogue(page);
 
       await expect(page.getByRole("button", { name: "主廳" })).toBeVisible();
       await expect(page.getByRole("button", { name: /桌子/ })).toBeVisible();
@@ -230,7 +251,7 @@ if (shouldRegisterPlaywrightSuite) {
 
     test("inspects a hotspot and shows inventory", async ({ page }) => {
       await startFromMenu(page);
-      await page.getByRole("button", { name: "推進對話" }).click();
+      await advanceDialogue(page);
       await page.getByRole("button", { name: /桌子/ }).click();
 
       await expect(page.getByText("還是熱的。")).toBeVisible();
@@ -240,7 +261,7 @@ if (shouldRegisterPlaywrightSuite) {
 
     test("surfaces command errors in the banner", async ({ page }) => {
       await startFromMenu(page);
-      await page.getByRole("button", { name: "推進對話" }).click();
+      await advanceDialogue(page);
       await page.evaluate(() => {
         (window as MockWindow).__LYRA_E2E_FAIL_NEXT_INSPECT__ = true;
       });

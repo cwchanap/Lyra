@@ -37,7 +37,7 @@ export async function loadChapters() {
   editorState.error = null;
   try {
     const file = await invoke<ProjectFile>("read_project_file", {
-      path: "src-tauri/resources/scenes/chapters.json",
+      path: "apps/game/src-tauri/resources/scenes/chapters.json",
     });
     editorState.chapters = JSON.parse(file.contents) as SceneIndex;
   } catch (error) {

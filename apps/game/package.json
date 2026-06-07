@@ -1,0 +1,31 @@
+{
+  "name": "@lyra/game",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "dev:frontend": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "sync": "svelte-kit sync",
+    "tauri": "tauri",
+    "scenes:compile": "bun run --cwd ../.. scripts/compile-scenes.ts",
+    "scenes:watch": "bun run --cwd ../.. scripts/compile-scenes.ts --watch",
+    "dev:tauri": "bun run scenes:compile && bun run dev:frontend",
+    "build:tauri": "bun run scenes:compile && bun run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --all --check",
+    "rust:fmt:fix": "cargo fmt --manifest-path src-tauri/Cargo.toml --all",
+    "rust:lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2"
+  }
+}

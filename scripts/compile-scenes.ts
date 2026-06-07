@@ -18,9 +18,15 @@ const SOURCE_ROOTS = [
   resolve(process.cwd(), "static/stories_plan"),
   resolve(process.cwd(), "docs/stories_plan"),
 ];
-const OUTPUT_ROOT = resolve(process.cwd(), "src-tauri/resources/scenes");
+const OUTPUT_ROOT = resolve(
+  process.cwd(),
+  "apps/game/src-tauri/resources/scenes",
+);
 const ASSET_CONFIG_ROOT = resolve(process.cwd(), "static/assets/config");
-const ASSET_OUTPUT_ROOT = resolve(process.cwd(), "src-tauri/resources/assets");
+const ASSET_OUTPUT_ROOT = resolve(
+  process.cwd(),
+  "apps/game/src-tauri/resources/assets",
+);
 
 const args = process.argv.slice(2);
 const isWatch = args.includes("--watch");

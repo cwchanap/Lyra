@@ -4,13 +4,19 @@ import svelte from "eslint-plugin-svelte";
 import { defineConfig } from "eslint/config";
 import globals from "globals";
 import ts from "typescript-eslint";
-import svelteConfig from "./svelte.config.js";
+import gameSvelteConfig from "./apps/game/svelte.config.js";
 
 export default defineConfig(
   {
     ignores: [
       ".worktrees/**",
+      ".turbo/**",
       ".svelte-kit/**",
+      "apps/game/.svelte-kit/**",
+      "apps/game/build/**",
+      "apps/game/src-tauri/gen/**",
+      "apps/game/src-tauri/resources/**",
+      "apps/game/src-tauri/target/**",
       "build/**",
       "coverage/**",
       "dist/**",
@@ -19,8 +25,6 @@ export default defineConfig(
       "apps/layout-editor/src-tauri/target/**",
       "node_modules/**",
       "playwright-report/**",
-      "src-tauri/resources/**",
-      "src-tauri/target/**",
       "test-results/**",
     ],
   },
@@ -58,7 +62,7 @@ export default defineConfig(
         projectService: true,
         extraFileExtensions: [".svelte"],
         parser: ts.parser,
-        svelteConfig,
+        svelteConfig: gameSvelteConfig,
       },
     },
   },

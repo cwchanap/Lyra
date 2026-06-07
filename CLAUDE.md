@@ -5,17 +5,23 @@ this repository.
 
 ## Commands
 
-Package manager is **bun** (see `bun.lock`). Use bun for frontend, scene
-compiler, and Tauri commands so local runs match `tauri.conf.json`.
+Package manager is **bun** (see `bun.lock`). The repo is a Turborepo
+workspace with apps under `apps/*`; use the root scripts for orchestration and
+`bun run --cwd apps/<app>` when targeting one app directly. Lyra supports the
+Tauri app dev loops, not browser-only dev as a primary workflow.
 
-- `bun run tauri dev` - full desktop app dev loop. Tauri runs
-  `bun run dev:tauri`, which compiles scenes and then starts Vite on port 1420
-  before launching the Rust shell with HMR. This is the primary dev command.
-- `bun run dev` - frontend only in a browser. Tauri APIs are unavailable here;
-  `invoke()` calls will fail unless mocked.
-- `bun run tauri build` - produce desktop bundles for all targets in
-  `tauri.conf.json`. Tauri runs `bun run build:tauri`, which compiles scenes
-  before `vite build`.
+- `bun run dev` - run both Tauri desktop apps through Turbo: the game and the
+  investigation layout editor.
+- `bun run dev:game` - run only the game Tauri app. Inside `apps/game`, Tauri
+  invokes `bun run dev:tauri`, which compiles scenes, starts Vite on port 1420,
+  and launches the Rust shell with HMR.
+- `bun run dev:editor` - run only the layout editor Tauri app. Inside
+  `apps/layout-editor`, Tauri invokes `bun run dev:frontend`, which starts the
+  editor Vite dev server on port 1430.
+- `bun run build:tauri` - produce game desktop bundles for all targets in
+  `apps/game/src-tauri/tauri.conf.json`. Tauri runs `bun run build:tauri`
+  inside `apps/game`, which compiles scenes before `vite build`.
+- `bun run editor:build` - produce the editor desktop app bundle.
 - `bun run scenes:compile` - one-shot compile. Merges scenes from both
   `static/stories_plan/` and `docs/stories_plan/` (a root that does not exist
   is skipped) plus `static/assets/config/` into Tauri resource JSON.
@@ -25,33 +31,37 @@ compiler, and Tauri commands so local runs match `tauri.conf.json`.
   (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
 - `bun run test` / `bun run test:watch` - Vitest unit tests for frontend logic
   and compile-script tests. Run a single file with
-  `bun run test src/lib/state/mode.test.ts` or a single case with
-  `bun run test -t "test name"`.
+  `bun run --cwd apps/game test src/lib/state/mode.test.ts` or a single case with
+  `bun run --cwd apps/game test -t "test name"`.
 - `bun run test:e2e` / `bun run test:e2e:ui` - Playwright e2e tests in `e2e/`
-  (config: `playwright.config.ts`). These spin up `bun run preview` on port
-  4173 and exercise the **built static SPA in a browser**. Tauri `invoke()`
-  calls do not work there, so e2e tests must cover only the pure-frontend
-  surface or explicit browser-safe mocks.
+  under `apps/game` (config: `apps/game/playwright.config.ts`). These spin up
+  `bun run preview` on port 4173 and exercise the **built static SPA in a
+  browser**. Tauri `invoke()` calls do not work there, so e2e tests must cover
+  only the pure-frontend surface or explicit browser-safe mocks.
 - `bun run lint:all` - ESLint, Prettier check, Rust format check, and Rust
   clippy with warnings denied.
 - Rust-side checks can be run through package scripts
   (`bun run rust:fmt`, `bun run rust:lint`) or directly with
-  `cd src-tauri && cargo check` / `cargo clippy` / `cargo test`. Rust unit
-  tests live alongside the code, with integration coverage under
-  `src-tauri/tests/`.
+  `cargo check --manifest-path apps/game/src-tauri/Cargo.toml` /
+  `cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml` /
+  `cargo test --manifest-path apps/game/src-tauri/Cargo.toml`. Rust unit tests
+  live alongside the code, with integration coverage under
+  `apps/game/src-tauri/tests/`.
 
 ## Architecture
 
-Two-process desktop app: a **SvelteKit SPA frontend** rendered inside a **Tauri 2 (Rust) shell**.
+Two-process game desktop app: a **SvelteKit SPA frontend** rendered inside a
+**Tauri 2 (Rust) shell**. The production game lives in `apps/game`; the
+developer-only investigation layout editor lives in `apps/layout-editor`.
 
-- **SPA mode is mandatory.** `src/routes/+layout.ts` sets `export const ssr = false;` and `svelte.config.js` uses `@sveltejs/adapter-static` with `fallback: "index.html"`. Tauri serves the static build — there is no Node server. Do not introduce `+page.server.ts`, `+server.ts`, hooks that assume a server, or any feature that requires SSR/endpoints.
-- **Frontend → Rust IPC** goes through `@tauri-apps/api`'s `invoke("command_name", { args })`. Rust commands are registered in `src-tauri/src/lib.rs` via `tauri::generate_handler![...]` and annotated with `#[tauri::command]`. Adding a new command requires both: define the `#[tauri::command] fn`, then add it to `generate_handler!`.
-  - **Arg naming:** Tauri converts JS arg keys to snake_case across the bridge, so the frontend passes `{ hotspotId }` and the Rust signature takes `hotspot_id: String`. Conversely, all serializable domain types in `src-tauri/src/game/schema.rs` use `#[serde(rename_all = "camelCase")]`, so Rust `last_feedback` becomes TS `lastFeedback`. New types must follow the same attribute or the frontend will see snake_case keys.
+- **SPA mode is mandatory.** `apps/game/src/routes/+layout.ts` sets `export const ssr = false;` and `apps/game/svelte.config.js` uses `@sveltejs/adapter-static` with `fallback: "index.html"`. Tauri serves the static build — there is no Node server. Do not introduce `+page.server.ts`, `+server.ts`, hooks that assume a server, or any feature that requires SSR/endpoints.
+- **Frontend → Rust IPC** goes through `@tauri-apps/api`'s `invoke("command_name", { args })`. Rust commands are registered in `apps/game/src-tauri/src/lib.rs` via `tauri::generate_handler![...]` and annotated with `#[tauri::command]`. Adding a new command requires both: define the `#[tauri::command] fn`, then add it to `generate_handler!`.
+  - **Arg naming:** Tauri converts JS arg keys to snake_case across the bridge, so the frontend passes `{ hotspotId }` and the Rust signature takes `hotspot_id: String`. Conversely, all serializable domain types in `apps/game/src-tauri/src/game/schema.rs` use `#[serde(rename_all = "camelCase")]`, so Rust `last_feedback` becomes TS `lastFeedback`. New types must follow the same attribute or the frontend will see snake_case keys.
   - **Shared state:** long-lived state lives in `AppState { engine: Mutex<Option<GameEngine>> }`, registered with `.manage(...)` in `lib.rs`. Commands that touch it take `state: tauri::State<'_, AppState>` and lock the mutex; map poison errors to a typed `GameError` (see `unavailable_error()`).
-  - **Error contract:** commands return `Result<T, GameError>` where `GameError { code, message }` is serializable. The frontend's `normalizeError` (`src/routes/+page.svelte`) reads `error.message`; new error paths should construct a typed error rather than `panic!` or stringly-typed errors.
-- **Entry points:** `src-tauri/src/main.rs` is a thin shim that calls `lyra_lib::run()` from `src-tauri/src/lib.rs` (the `_lib` suffix is required to avoid a Windows name collision per the Cargo.toml comment). Window config (size, title, CSP) lives in `src-tauri/tauri.conf.json`.
-- **Permissions** for Tauri APIs are allow-listed in `src-tauri/capabilities/default.json`. New plugins/APIs the frontend calls usually need a corresponding permission entry here or `invoke` will be rejected at runtime.
-- **Vite dev server** is pinned to port 1420 with `strictPort: true` (`vite.config.js`) because Tauri expects that exact port. `src-tauri/**` is excluded from the watcher so Rust changes don't trigger frontend reloads.
+  - **Error contract:** commands return `Result<T, GameError>` where `GameError { code, message }` is serializable. The frontend's `normalizeError` (`apps/game/src/routes/+page.svelte`) reads `error.message`; new error paths should construct a typed error rather than `panic!` or stringly-typed errors.
+- **Entry points:** `apps/game/src-tauri/src/main.rs` is a thin shim that calls `lyra_lib::run()` from `apps/game/src-tauri/src/lib.rs` (the `_lib` suffix is required to avoid a Windows name collision per the Cargo.toml comment). Window config (size, title, CSP) lives in `apps/game/src-tauri/tauri.conf.json`.
+- **Permissions** for Tauri APIs are allow-listed in `apps/game/src-tauri/capabilities/default.json`. New plugins/APIs the frontend calls usually need a corresponding permission entry here or `invoke` will be rejected at runtime.
+- **Vite dev server** is pinned to port 1420 with `strictPort: true` (`apps/game/vite.config.ts`) because Tauri expects that exact port. `src-tauri/**` is excluded from the watcher so Rust changes don't trigger frontend reloads.
 
 ## Scene Pipeline
 
@@ -63,15 +73,15 @@ Lyra's playable content is compiler-driven:
    must not appear in both roots.
 2. Asset policy/catalog YAML lives under `static/assets/config/`.
 3. `scripts/compile-scenes.ts` validates and emits runtime JSON under
-   `src-tauri/resources/scenes/` and asset manifests/reports under
-   `src-tauri/resources/assets/`.
+   `apps/game/src-tauri/resources/scenes/` and asset manifests/reports under
+   `apps/game/src-tauri/resources/assets/`.
 4. Rust loads scenes and asset manifests from `BaseDirectory::Resource`.
 5. Svelte renders the typed game/view state returned by Rust commands.
 
 Keep the ownership boundary intact:
 
-- Do not hand-edit generated JSON in `src-tauri/resources/scenes/` or
-  `src-tauri/resources/assets/`; regenerate it with `bun run scenes:compile`.
+- Do not hand-edit generated JSON in `apps/game/src-tauri/resources/scenes/` or
+  `apps/game/src-tauri/resources/assets/`; regenerate it with `bun run scenes:compile`.
 - Only `.gitkeep` files are tracked in those generated resource directories.
   Generated JSON may appear locally after compile/build and is intentionally
   ignored.
@@ -88,8 +98,9 @@ Keep the ownership boundary intact:
 
 ## Svelte 5
 
-Uses Svelte 5 runes (`$state`, `$props`, etc.) - see `src/routes/+page.svelte`
-and `src/lib/state/game-client.svelte.ts`. Use rune syntax and event
+Uses Svelte 5 runes (`$state`, `$props`, etc.) - see
+`apps/game/src/routes/+page.svelte` and
+`apps/game/src/lib/state/game-client.svelte.ts`. Use rune syntax and event
 attributes like `onsubmit={...}` rather than legacy `on:submit` /
 `export let` patterns.
 
@@ -152,10 +163,10 @@ broader checks before claiming cross-stack work is done.
   `src/lib/assets/story-assets.test.ts`, then `bun run scenes:compile`.
 - Frontend component/state changes: focused Vitest tests, then `bun run check`.
 - Rust engine/runtime changes: focused `cargo test` filters where useful, then
-  `cd src-tauri && cargo test`; use `bun run rust:lint` before finalizing Rust
-  logic changes.
-- Full desktop smoke test: `bun run tauri dev`. Use this when the change depends
-  on real Tauri IPC or resource loading.
+  `cargo test --manifest-path apps/game/src-tauri/Cargo.toml`; use
+  `bun run rust:lint` before finalizing Rust logic changes.
+- Full game desktop smoke test: `bun run dev:game`. Use this when the change
+  depends on real Tauri IPC or resource loading.
 
 ## Misc
 
