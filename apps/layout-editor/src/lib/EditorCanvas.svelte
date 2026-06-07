@@ -8,6 +8,7 @@
     SpriteLayout,
   } from "./layout-types";
   import { publicPathForEditorAsset } from "./editor-assets";
+  import { SvelteSet } from "svelte/reactivity";
   import {
     alphaBoundsFromImageData,
     cropVariablesForAlphaBounds,
@@ -29,7 +30,12 @@
     pointerId: number;
     startX: number;
     startY: number;
+    moved: boolean;
     startLayout: RectLayout | SpriteLayout;
+  };
+  type RevealedTarget = {
+    kind: TargetKind;
+    id: string;
   };
 
   const defaultHotspotLayout: RectLayout = {
@@ -49,6 +55,7 @@
     "sw",
     "w",
   ] as const satisfies readonly ResizeHandle[];
+  const clickDragThresholdPx = 3;
 
   let {
     scene,
@@ -75,6 +82,8 @@
   let plateElement: HTMLDivElement | null = $state(null);
   let dragState = $state<DragState | null>(null);
   let showBoxes = $state(true);
+  let revealedTarget = $state<RevealedTarget | null>(null);
+  let hiddenTargetKeys = $state<Set<string>>(new Set());
   let cropStyles = $state<Record<string, string>>({});
 
   const currentSublocation = $derived(
@@ -145,10 +154,11 @@
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
+      moved: false,
       startLayout: { ...targetLayout },
     };
 
-    plateElement?.setPointerCapture(event.pointerId);
+    plateElement?.setPointerCapture?.(event.pointerId);
   }
 
   function handlePointerMove(event: PointerEvent) {
@@ -160,37 +170,99 @@
       return;
     }
 
+    const currentDrag = dragState;
     const plateRect = plateElement.getBoundingClientRect();
-    const dx = (event.clientX - dragState.startX) / plateRect.width;
-    const dy = (event.clientY - dragState.startY) / plateRect.height;
-    const startLayout = dragState.startLayout;
-    const nextLayout =
-      dragState.mode === "move"
-        ? moveLayout(startLayout, dx, dy)
-        : resizeLayoutFromHandle(startLayout, dragState.mode, dx, dy);
+    const deltaX = event.clientX - currentDrag.startX;
+    const deltaY = event.clientY - currentDrag.startY;
+    const moved =
+      currentDrag.moved ||
+      Math.abs(deltaX) > clickDragThresholdPx ||
+      Math.abs(deltaY) > clickDragThresholdPx;
+    if (moved !== currentDrag.moved) {
+      dragState = { ...currentDrag, moved };
+      showTargetBox(currentDrag.kind, currentDrag.id);
+    }
 
-    commitLayout(dragState.kind, dragState.id, nextLayout);
+    const dx = deltaX / plateRect.width;
+    const dy = deltaY / plateRect.height;
+    const startLayout = currentDrag.startLayout;
+    const nextLayout =
+      currentDrag.mode === "move"
+        ? moveLayout(startLayout, dx, dy)
+        : resizeLayoutFromHandle(startLayout, currentDrag.mode, dx, dy);
+
+    commitLayout(currentDrag.kind, currentDrag.id, nextLayout);
   }
 
   function handlePointerUp(event: PointerEvent) {
-    if (!dragState || dragState.pointerId !== event.pointerId) return;
-    plateElement?.releasePointerCapture(event.pointerId);
+    const currentDrag = dragState;
+    if (!currentDrag || currentDrag.pointerId !== event.pointerId) return;
+    plateElement?.releasePointerCapture?.(event.pointerId);
+    if (!currentDrag.moved && currentDrag.mode === "move") {
+      toggleTargetBox(currentDrag.kind, currentDrag.id);
+    }
     dragState = null;
   }
 
-  function nudge(
-    kind: TargetKind,
-    id: string,
-    targetLayout: RectLayout | SpriteLayout,
-    delta: Partial<Pick<RectLayout, "x" | "y" | "w" | "h">>,
-  ) {
-    commitLayout(kind, id, {
-      ...targetLayout,
-      x: targetLayout.x + (delta.x ?? 0),
-      y: targetLayout.y + (delta.y ?? 0),
-      w: targetLayout.w + (delta.w ?? 0),
-      h: targetLayout.h + (delta.h ?? 0),
-    });
+  function handlePlatePointerDown() {
+    if (!showBoxes) revealedTarget = null;
+  }
+
+  function toggleBoxes() {
+    showBoxes = !showBoxes;
+    revealedTarget = null;
+    hiddenTargetKeys = new Set();
+  }
+
+  function isRevealedTarget(kind: TargetKind, id: string): boolean {
+    return (
+      !showBoxes && revealedTarget?.kind === kind && revealedTarget.id === id
+    );
+  }
+
+  function isHiddenTarget(kind: TargetKind, id: string): boolean {
+    return showBoxes && hiddenTargetKeys.has(targetKey(kind, id));
+  }
+
+  function toggleHiddenTarget(kind: TargetKind, id: string) {
+    const key = targetKey(kind, id);
+    const nextHiddenTargetKeys = new SvelteSet(hiddenTargetKeys);
+    if (nextHiddenTargetKeys.has(key)) {
+      nextHiddenTargetKeys.delete(key);
+    } else {
+      nextHiddenTargetKeys.add(key);
+    }
+    hiddenTargetKeys = nextHiddenTargetKeys;
+  }
+
+  function targetKey(kind: TargetKind, id: string): string {
+    return `${kind}:${id}`;
+  }
+
+  function toggleTargetBox(kind: TargetKind, id: string) {
+    if (showBoxes) {
+      toggleHiddenTarget(kind, id);
+      return;
+    }
+
+    revealedTarget = isRevealedTarget(kind, id) ? null : { kind, id };
+  }
+
+  function showTargetBox(kind: TargetKind, id: string) {
+    if (showBoxes) {
+      const key = targetKey(kind, id);
+      if (!hiddenTargetKeys.has(key)) return;
+      const nextHiddenTargetKeys = new SvelteSet(hiddenTargetKeys);
+      nextHiddenTargetKeys.delete(key);
+      hiddenTargetKeys = nextHiddenTargetKeys;
+      return;
+    }
+
+    revealedTarget = { kind, id };
+  }
+
+  function isTargetBoxVisible(kind: TargetKind, id: string): boolean {
+    return showBoxes ? !isHiddenTarget(kind, id) : isRevealedTarget(kind, id);
   }
 
   function commitLayout(
@@ -386,7 +458,7 @@
           class="box-toggle"
           aria-label="Toggle placement boxes"
           aria-pressed={showBoxes}
-          onclick={() => (showBoxes = !showBoxes)}
+          onclick={toggleBoxes}
         >
           Boxes
         </button>
@@ -400,6 +472,7 @@
       aria-label={`${currentSublocation.label} layout plate`}
       class:hide-boxes={!showBoxes}
       bind:this={plateElement}
+      onpointerdown={handlePlatePointerDown}
       onpointermove={handlePointerMove}
       onpointerup={handlePointerUp}
       onpointercancel={handlePointerUp}
@@ -419,6 +492,8 @@
           class="target hotspot"
           class:dragging={dragState?.kind === "hotspot" &&
             dragState.id === hotspot.id}
+          class:revealed={isRevealedTarget("hotspot", hotspot.id)}
+          class:hidden={isHiddenTarget("hotspot", hotspot.id)}
           style={layoutStyle(hotspot.layout)}
           onpointerdown={(event) =>
             startDrag("hotspot", hotspot.id, "move", hotspot.layout, event)}
@@ -449,6 +524,8 @@
           class="target character"
           class:dragging={dragState?.kind === "character" &&
             dragState.id === character.id}
+          class:revealed={isRevealedTarget("character", character.id)}
+          class:hidden={isHiddenTarget("character", character.id)}
           style={layoutStyle(character.layout)}
           onpointerdown={(event) =>
             startDrag(
@@ -496,178 +573,27 @@
 
     <div class="target-controls" aria-label="Target controls">
       {#each hotspotTargets as hotspot (hotspot.id)}
-        <div class="control-row">
-          <div class="target-name">
-            <strong>{hotspot.label}</strong>
-            <small>hotspot.{hotspot.id}</small>
-            <p>{hotspot.description}</p>
-          </div>
-          <div class="button-grid" aria-label={`${hotspot.label} controls`}>
-            <button
-              type="button"
-              title="Move left"
-              aria-label={`Move hotspot ${hotspot.label} left`}
-              onclick={() =>
-                nudge("hotspot", hotspot.id, hotspot.layout, { x: -0.01 })}
-            >
-              L
-            </button>
-            <button
-              type="button"
-              title="Move up"
-              aria-label={`Move hotspot ${hotspot.label} up`}
-              onclick={() =>
-                nudge("hotspot", hotspot.id, hotspot.layout, { y: -0.01 })}
-            >
-              U
-            </button>
-            <button
-              type="button"
-              title="Move down"
-              aria-label={`Move hotspot ${hotspot.label} down`}
-              onclick={() =>
-                nudge("hotspot", hotspot.id, hotspot.layout, { y: 0.01 })}
-            >
-              D
-            </button>
-            <button
-              type="button"
-              title="Move right"
-              aria-label={`Move hotspot ${hotspot.label} right`}
-              onclick={() =>
-                nudge("hotspot", hotspot.id, hotspot.layout, { x: 0.01 })}
-            >
-              R
-            </button>
-            <button
-              type="button"
-              title="Narrow"
-              aria-label={`Narrow hotspot ${hotspot.label}`}
-              onclick={() =>
-                nudge("hotspot", hotspot.id, hotspot.layout, { w: -0.01 })}
-            >
-              W-
-            </button>
-            <button
-              type="button"
-              title="Widen"
-              aria-label={`Widen hotspot ${hotspot.label}`}
-              onclick={() =>
-                nudge("hotspot", hotspot.id, hotspot.layout, { w: 0.01 })}
-            >
-              W+
-            </button>
-            <button
-              type="button"
-              title="Shorter"
-              aria-label={`Shorten hotspot ${hotspot.label}`}
-              onclick={() =>
-                nudge("hotspot", hotspot.id, hotspot.layout, { h: -0.01 })}
-            >
-              H-
-            </button>
-            <button
-              type="button"
-              title="Taller"
-              aria-label={`Make hotspot ${hotspot.label} taller`}
-              onclick={() =>
-                nudge("hotspot", hotspot.id, hotspot.layout, { h: 0.01 })}
-            >
-              H+
-            </button>
-          </div>
-        </div>
+        <button
+          class="box-state"
+          type="button"
+          aria-pressed={isTargetBoxVisible("hotspot", hotspot.id)}
+          title={hotspot.description || hotspot.label}
+          onclick={() => toggleTargetBox("hotspot", hotspot.id)}
+        >
+          {hotspot.label}
+        </button>
       {/each}
 
       {#each characterTargets as character (character.id)}
-        <div class="control-row">
-          <div class="target-name">
-            <strong>{character.name}</strong>
-            <small>character.{character.id}</small>
-          </div>
-          <div class="button-grid" aria-label={`${character.name} controls`}>
-            <button
-              type="button"
-              title="Move left"
-              aria-label={`Move character ${character.name} left`}
-              onclick={() =>
-                nudge("character", character.id, character.layout, {
-                  x: -0.01,
-                })}
-            >
-              L
-            </button>
-            <button
-              type="button"
-              title="Move up"
-              aria-label={`Move character ${character.name} up`}
-              onclick={() =>
-                nudge("character", character.id, character.layout, {
-                  y: -0.01,
-                })}
-            >
-              U
-            </button>
-            <button
-              type="button"
-              title="Move down"
-              aria-label={`Move character ${character.name} down`}
-              onclick={() =>
-                nudge("character", character.id, character.layout, { y: 0.01 })}
-            >
-              D
-            </button>
-            <button
-              type="button"
-              title="Move right"
-              aria-label={`Move character ${character.name} right`}
-              onclick={() =>
-                nudge("character", character.id, character.layout, { x: 0.01 })}
-            >
-              R
-            </button>
-            <button
-              type="button"
-              title="Narrow"
-              aria-label={`Narrow character ${character.name}`}
-              onclick={() =>
-                nudge("character", character.id, character.layout, {
-                  w: -0.01,
-                })}
-            >
-              W-
-            </button>
-            <button
-              type="button"
-              title="Widen"
-              aria-label={`Widen character ${character.name}`}
-              onclick={() =>
-                nudge("character", character.id, character.layout, { w: 0.01 })}
-            >
-              W+
-            </button>
-            <button
-              type="button"
-              title="Shorter"
-              aria-label={`Shorten character ${character.name}`}
-              onclick={() =>
-                nudge("character", character.id, character.layout, {
-                  h: -0.01,
-                })}
-            >
-              H-
-            </button>
-            <button
-              type="button"
-              title="Taller"
-              aria-label={`Make character ${character.name} taller`}
-              onclick={() =>
-                nudge("character", character.id, character.layout, { h: 0.01 })}
-            >
-              H+
-            </button>
-          </div>
-        </div>
+        <button
+          class="box-state"
+          type="button"
+          aria-pressed={isTargetBoxVisible("character", character.id)}
+          title={character.bio || character.role || character.name}
+          onclick={() => toggleTargetBox("character", character.id)}
+        >
+          {character.name}
+        </button>
       {/each}
     </div>
   </section>
@@ -853,21 +779,53 @@
     box-shadow: none;
   }
 
+  .target.hidden {
+    border-color: transparent;
+    background: transparent;
+    outline: 0;
+    box-shadow: none;
+  }
+
   .hide-boxes .target.character {
     overflow: visible;
   }
 
+  .target.hidden.character {
+    overflow: visible;
+  }
+
   .hide-boxes .character-preview,
-  .hide-boxes .character-preview-crop {
+  .hide-boxes .character-preview-crop,
+  .target.hidden .character-preview,
+  .target.hidden .character-preview-crop {
     border: 0;
     outline: 0;
     box-shadow: none;
   }
 
   .hide-boxes .target span,
-  .hide-boxes .resize-handle {
+  .hide-boxes .resize-handle,
+  .target.hidden span,
+  .target.hidden .resize-handle {
     opacity: 0;
     pointer-events: none;
+  }
+
+  .hide-boxes .target.revealed.hotspot {
+    border-color: #ffcb69;
+    background: rgb(255 203 105 / 18%);
+  }
+
+  .hide-boxes .target.revealed.character {
+    overflow: hidden;
+    border-color: #7fc7d9;
+    background: rgb(127 199 217 / 18%);
+  }
+
+  .hide-boxes .target.revealed span,
+  .hide-boxes .target.revealed .resize-handle {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .resize-handle {
@@ -945,53 +903,14 @@
 
   .target-controls {
     display: grid;
-    gap: 10px;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
   }
 
-  .control-row {
-    display: grid;
-    grid-template-columns: minmax(120px, 1fr) auto;
-    gap: 12px;
-    align-items: center;
-    padding: 10px;
-    border: 1px solid #e4ded3;
-    border-radius: 6px;
-    background: #ffffff;
-  }
-
-  .target-name {
-    display: grid;
-    gap: 3px;
+  .box-state {
     min-width: 0;
-  }
-
-  .target-name strong,
-  .target-name small {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .target-name small {
-    color: #60706b;
-  }
-
-  .target-name p {
-    margin: 0;
-    color: #4f5756;
-    font-size: 0.78rem;
-    line-height: 1.35;
-  }
-
-  .button-grid {
-    display: grid;
-    grid-template-columns: repeat(8, 34px);
-    gap: 5px;
-  }
-
-  .button-grid button {
-    width: 34px;
-    height: 30px;
-    padding: 0;
+    height: 34px;
+    padding: 0 10px;
     border: 1px solid #c9d0ca;
     border-radius: 5px;
     background: #f7faf8;
@@ -999,9 +918,17 @@
     cursor: pointer;
     font-size: 0.76rem;
     font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .button-grid button:hover {
+  .box-state:hover {
+    border-color: #57776a;
+    background: #edf4f0;
+  }
+
+  .box-state[aria-pressed="true"] {
     border-color: #57776a;
     background: #edf4f0;
   }
@@ -1012,13 +939,8 @@
   }
 
   @media (max-width: 900px) {
-    .canvas-heading,
-    .control-row {
+    .canvas-heading {
       display: grid;
-    }
-
-    .control-row {
-      grid-template-columns: 1fr;
     }
 
     .canvas-actions {
@@ -1029,8 +951,8 @@
       text-align: left;
     }
 
-    .button-grid {
-      grid-template-columns: repeat(4, 34px);
+    .target-controls {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 </style>
