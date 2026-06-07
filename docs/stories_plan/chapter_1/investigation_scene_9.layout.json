@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "sceneId": "investigation_scene_9",
+  "sublocations": {
+    "confront_kitami": {
+      "hotspots": {},
+      "characters": {
+        "kitami": {
+          "kind": "sprite",
+          "assetId": "standee.kitami.standard",
+          "x": 0.817156,
+          "y": 0.239417,
+          "w": 0.18,
+          "h": 0.76,
+          "anchor": "bottomCenter"
+        }
+      }
+    },
+    "contractor_desk": {
+      "hotspots": {
+        "to_confront": {
+          "kind": "rect",
+          "x": 0.56138,
+          "y": 0.398625,
+          "w": 0.12,
+          "h": 0.1
+        },
+        "material_kit": {
+          "kind": "rect",
+          "x": 0.478908,
+          "y": 0.556275,
+          "w": 0.12,
+          "h": 0.1
+        },
+        "access_list": {
+          "kind": "rect",
+          "x": 0.340882,
+          "y": 0.526869,
+          "w": 0.12,
+          "h": 0.1
+        },
+        "workorder": {
+          "kind": "rect",
+          "x": 0.444948,
+          "y": 0.433024,
+          "w": 0.12,
+          "h": 0.1
+        }
+      },
+      "characters": {}
+    }
+  }
+}

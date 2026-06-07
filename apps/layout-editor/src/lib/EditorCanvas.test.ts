@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import EditorCanvas from "./EditorCanvas.svelte";
@@ -82,6 +82,203 @@ const layout = {
 } satisfies InvestigationLayoutSidecar;
 
 describe("EditorCanvas", () => {
+  it("keeps a visible item box shown while dragging it", async () => {
+    const onHotspotLayoutChange = vi.fn();
+    const { container } = render(EditorCanvas, {
+      scene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange,
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const plate = container.querySelector(".plate") as HTMLElement;
+    const hotspot = container.querySelector(".target.hotspot") as HTMLElement;
+    vi.spyOn(plate, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 1000,
+      width: 1000,
+      height: 1000,
+      toJSON: () => {},
+    } as DOMRect);
+
+    await fireEvent.pointerDown(hotspot, {
+      pointerId: 1,
+      clientX: 100,
+      clientY: 100,
+    });
+    await fireEvent.pointerMove(plate, {
+      pointerId: 1,
+      clientX: 140,
+      clientY: 120,
+    });
+    await fireEvent.pointerUp(plate, {
+      pointerId: 1,
+      clientX: 140,
+      clientY: 120,
+    });
+
+    expect(onHotspotLayoutChange).toHaveBeenCalled();
+    expect(hotspot).not.toHaveClass("hidden");
+  });
+
+  it("keeps a revealed item box shown while dragging it with global boxes hidden", async () => {
+    const user = userEvent.setup();
+    const onHotspotLayoutChange = vi.fn();
+    const { container } = render(EditorCanvas, {
+      scene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange,
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const plate = container.querySelector(".plate") as HTMLElement;
+    const toggle = screen.getByRole("button", {
+      name: "Toggle placement boxes",
+    });
+    const hotspot = container.querySelector(".target.hotspot") as HTMLElement;
+    vi.spyOn(plate, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 1000,
+      width: 1000,
+      height: 1000,
+      toJSON: () => {},
+    } as DOMRect);
+
+    await user.click(toggle);
+    await user.click(hotspot);
+    expect(hotspot).toHaveClass("revealed");
+
+    await fireEvent.pointerDown(hotspot, {
+      pointerId: 1,
+      clientX: 100,
+      clientY: 100,
+    });
+    await fireEvent.pointerMove(plate, {
+      pointerId: 1,
+      clientX: 140,
+      clientY: 120,
+    });
+    await fireEvent.pointerUp(plate, {
+      pointerId: 1,
+      clientX: 140,
+      clientY: 120,
+    });
+
+    expect(onHotspotLayoutChange).toHaveBeenCalled();
+    expect(hotspot).toHaveClass("revealed");
+  });
+
+  it("shows an individually hidden item box when dragging it", async () => {
+    const user = userEvent.setup();
+    const onHotspotLayoutChange = vi.fn();
+    const { container } = render(EditorCanvas, {
+      scene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange,
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const plate = container.querySelector(".plate") as HTMLElement;
+    const hotspot = container.querySelector(".target.hotspot") as HTMLElement;
+    vi.spyOn(plate, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 1000,
+      width: 1000,
+      height: 1000,
+      toJSON: () => {},
+    } as DOMRect);
+
+    await user.click(hotspot);
+    expect(hotspot).toHaveClass("hidden");
+
+    await fireEvent.pointerDown(hotspot, {
+      pointerId: 1,
+      clientX: 100,
+      clientY: 100,
+    });
+    await fireEvent.pointerMove(plate, {
+      pointerId: 1,
+      clientX: 140,
+      clientY: 120,
+    });
+    await fireEvent.pointerUp(plate, {
+      pointerId: 1,
+      clientX: 140,
+      clientY: 120,
+    });
+
+    expect(onHotspotLayoutChange).toHaveBeenCalled();
+    expect(hotspot).not.toHaveClass("hidden");
+  });
+
+  it("reveals an untoggled portrait box when dragging it with global boxes hidden", async () => {
+    const user = userEvent.setup();
+    const onCharacterLayoutChange = vi.fn();
+    const { container } = render(EditorCanvas, {
+      scene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange,
+    });
+
+    const plate = container.querySelector(".plate") as HTMLElement;
+    const toggle = screen.getByRole("button", {
+      name: "Toggle placement boxes",
+    });
+    const character = container.querySelector(
+      ".target.character",
+    ) as HTMLElement;
+    vi.spyOn(plate, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 1000,
+      width: 1000,
+      height: 1000,
+      toJSON: () => {},
+    } as DOMRect);
+
+    await user.click(toggle);
+    expect(character).not.toHaveClass("revealed");
+
+    await fireEvent.pointerDown(character, {
+      pointerId: 1,
+      clientX: 100,
+      clientY: 100,
+    });
+    await fireEvent.pointerMove(plate, {
+      pointerId: 1,
+      clientX: 140,
+      clientY: 120,
+    });
+    await fireEvent.pointerUp(plate, {
+      pointerId: 1,
+      clientX: 140,
+      clientY: 120,
+    });
+
+    expect(onCharacterLayoutChange).toHaveBeenCalled();
+    expect(character).toHaveClass("revealed");
+  });
+
   it("toggles placement boxes without removing canvas targets", async () => {
     const user = userEvent.setup();
     const { container } = render(EditorCanvas, {
@@ -112,7 +309,88 @@ describe("EditorCanvas", () => {
     expect(container.querySelector(".target.character")).toBeInTheDocument();
   });
 
-  it("shows hotspot descriptions in the editor target controls", () => {
+  it("reveals only the clicked hidden item or portrait box until the canvas is clicked", async () => {
+    const user = userEvent.setup();
+    const { container } = render(EditorCanvas, {
+      scene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const plate = container.querySelector(".plate");
+    const toggle = screen.getByRole("button", {
+      name: "Toggle placement boxes",
+    });
+    const hotspot = container.querySelector(".target.hotspot");
+    const character = container.querySelector(".target.character");
+
+    await user.click(toggle);
+    expect(plate?.classList.contains("hide-boxes")).toBe(true);
+
+    await user.click(hotspot!);
+    expect(plate?.classList.contains("hide-boxes")).toBe(true);
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(hotspot).toHaveClass("revealed");
+    expect(character).not.toHaveClass("revealed");
+
+    await user.click(plate!);
+    expect(hotspot).not.toHaveClass("revealed");
+    expect(character).not.toHaveClass("revealed");
+
+    await user.click(character!);
+    expect(plate?.classList.contains("hide-boxes")).toBe(true);
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(character).toHaveClass("revealed");
+    expect(hotspot).not.toHaveClass("revealed");
+  });
+
+  it("toggles an individual item or portrait box while global boxes are visible", async () => {
+    const user = userEvent.setup();
+    const { container } = render(EditorCanvas, {
+      scene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const plate = container.querySelector(".plate");
+    const toggle = screen.getByRole("button", {
+      name: "Toggle placement boxes",
+    });
+    const hotspot = container.querySelector(".target.hotspot");
+    const character = container.querySelector(".target.character");
+
+    expect(plate?.classList.contains("hide-boxes")).toBe(false);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(hotspot!);
+    expect(plate?.classList.contains("hide-boxes")).toBe(false);
+    expect(hotspot).toHaveClass("hidden");
+    expect(character).not.toHaveClass("hidden");
+
+    await user.click(hotspot!);
+    expect(hotspot).not.toHaveClass("hidden");
+
+    await user.click(character!);
+    expect(character).toHaveClass("hidden");
+    expect(hotspot).not.toHaveClass("hidden");
+  });
+
+  it("replaces manual position controls with individual box toggles in a six-column grid", () => {
+    const source = editorCanvasSource;
+
+    expect(source).toContain("toggleTargetBox");
+    expect(source).toContain("repeat(6, minmax(0, 1fr))");
+    expect(source).not.toContain("Move hotspot");
+    expect(source).not.toContain("Move character");
+    expect(source).not.toContain("nudge(");
+    expect(source).not.toContain("control-row");
+  });
+
+  it("uses target names as box toggle button titles and moves descriptions into tooltips", () => {
     render(EditorCanvas, {
       scene,
       layout,
@@ -121,7 +399,15 @@ describe("EditorCanvas", () => {
       onCharacterLayoutChange: vi.fn(),
     });
 
-    expect(screen.getByText("A paper slip.")).toBeInTheDocument();
+    expect(screen.queryByText("A paper slip.")).not.toBeInTheDocument();
+    const targetControls = screen.getByLabelText("Target controls");
+
+    expect(
+      within(targetControls).getByRole("button", { name: "Desk" }),
+    ).toHaveAttribute("title", "A paper slip.");
+    expect(
+      within(targetControls).getByRole("button", { name: "Witness" }),
+    ).toHaveAttribute("title", "Saw something.");
   });
 
   it("renders edge and corner resize handles for each placement target", () => {

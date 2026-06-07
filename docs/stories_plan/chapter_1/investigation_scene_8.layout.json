@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "sceneId": "investigation_scene_8",
+  "sublocations": {
+    "fixed_panel": {
+      "hotspots": {
+        "ext_credential_event": {
+          "kind": "rect",
+          "x": 0.298449,
+          "y": 0.559935,
+          "w": 0.12,
+          "h": 0.1
+        },
+        "fixed_record": {
+          "kind": "rect",
+          "x": 0.47706,
+          "y": 0.566135,
+          "w": 0.12,
+          "h": 0.1
+        }
+      },
+      "characters": {
+        "kurose": {
+          "kind": "sprite",
+          "assetId": "standee.kurose.standard",
+          "x": 0.744574,
+          "y": 0.24,
+          "w": 0.18,
+          "h": 0.76,
+          "anchor": "bottomCenter"
+        }
+      }
+    },
+    "office_corner": {
+      "hotspots": {},
+      "characters": {
+        "takase": {
+          "kind": "sprite",
+          "assetId": "standee.takase_manager.standard",
+          "x": 0.643898,
+          "y": 0.238529,
+          "w": 0.18,
+          "h": 0.76,
+          "anchor": "bottomCenter"
+        }
+      }
+    }
+  }
+}

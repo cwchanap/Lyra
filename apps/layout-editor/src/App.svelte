@@ -9,21 +9,55 @@
     setCharacterLayout,
     setHotspotLayout,
   } from "./lib/layout-store.svelte";
+  import { readableChapterLabel, readableSceneLabel } from "./lib/scene-labels";
+
+  type InvestigationChapter = {
+    id: string;
+    label: string;
+    summary: string;
+    scenes: Array<{
+      file: string;
+      path: string;
+      label: string;
+      description: string;
+    }>;
+  };
 
   let requestedChapters = false;
   let currentSublocationId = $state<string | null>(null);
   let currentSublocationScenePath = $state<string | null>(null);
 
-  const investigationScenes = $derived(
-    editorState.chapters?.chapters.flatMap((chapter) =>
-      chapter.scenes
-        .filter((scene) => scene.type === "investigation")
-        .map((scene) => ({
-          chapterId: chapter.id,
-          file: scene.file,
-          path: `apps/game/src-tauri/resources/scenes/${scene.file}`,
-        })),
-    ) ?? [],
+  const investigationChapters = $derived(
+    editorState.chapters?.chapters
+      .map((chapter): InvestigationChapter => {
+        const chapterLabel = readableChapterLabel(chapter.id, chapter.title);
+        return {
+          id: chapter.id,
+          label: chapterLabel,
+          summary: chapter.summary,
+          scenes: chapter.scenes
+            .filter((scene) => scene.type === "investigation")
+            .map((scene) => ({
+              file: scene.file,
+              path: `apps/game/src-tauri/resources/scenes/${scene.file}`,
+              label: readableSceneLabel(scene.file),
+              description: `${chapterLabel} investigation layout`,
+            })),
+        };
+      })
+      .filter((chapter) => chapter.scenes.length > 0) ?? [],
+  );
+
+  const selectedSceneTargetSummary = $derived(
+    editorState.scene
+      ? `${editorState.scene.sublocations.reduce(
+          (count, sublocation) => count + sublocation.hotspots.length,
+          0,
+        )} items · ${editorState.scene.sublocations.reduce(
+          (count, sublocation) => count + sublocation.characters.length,
+          0,
+        )} people`
+      : "No scene selected",
   );
 
   $effect(() => {
@@ -64,28 +98,41 @@
     {/if}
 
     <div class="scene-list" aria-label="Investigation scenes">
-      {#each investigationScenes as scene (scene.path)}
-        <button
-          class:selected={scene.path === editorState.scenePath}
-          type="button"
-          onclick={() => loadInvestigationScene(scene.path)}
-        >
-          <span>{scene.chapterId}</span>
-          <strong>{scene.file}</strong>
-        </button>
+      {#each investigationChapters as chapter (chapter.id)}
+        <details open>
+          <summary>
+            <span>{chapter.id}</span>
+            <strong>{chapter.label}</strong>
+          </summary>
+          <div class="chapter-scenes">
+            {#each chapter.scenes as scene (scene.path)}
+              <div class="scene-entry">
+                <button
+                  class:selected={scene.path === editorState.scenePath}
+                  type="button"
+                  onclick={() => loadInvestigationScene(scene.path)}
+                >
+                  <strong>{scene.label}</strong>
+                  <small>{scene.description}</small>
+                </button>
+                {#if scene.path === editorState.scenePath && editorState.scene}
+                  <div class="scene-sublocations">
+                    <TargetList
+                      scene={editorState.scene}
+                      {currentSublocationId}
+                      onSelectSublocation={(sublocationId) =>
+                        (currentSublocationId = sublocationId)}
+                    />
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </details>
       {:else}
         <p class="empty">No investigation scenes loaded.</p>
       {/each}
     </div>
-
-    {#if editorState.scene}
-      <TargetList
-        scene={editorState.scene}
-        {currentSublocationId}
-        onSelectSublocation={(sublocationId) =>
-          (currentSublocationId = sublocationId)}
-      />
-    {/if}
   </aside>
 
   <section class="detail-panel" aria-live="polite">
@@ -111,8 +158,8 @@
           <dd>{editorState.scene.sublocations.length}</dd>
         </div>
         <div>
-          <dt>Layout file</dt>
-          <dd>{editorState.layoutPath}</dd>
+          <dt>Targets</dt>
+          <dd>{selectedSceneTargetSummary}</dd>
         </div>
       </dl>
 
@@ -233,6 +280,36 @@
     text-align: left;
   }
 
+  .scene-list details {
+    border: 1px solid #e4ded3;
+    border-radius: 6px;
+    background: #fffefb;
+  }
+
+  .scene-list summary {
+    display: grid;
+    gap: 4px;
+    padding: 10px 12px;
+    cursor: pointer;
+  }
+
+  .chapter-scenes {
+    display: grid;
+    gap: 8px;
+    padding: 0 10px 10px;
+  }
+
+  .scene-entry {
+    display: grid;
+    gap: 8px;
+  }
+
+  .scene-sublocations {
+    margin-left: 12px;
+    padding-left: 10px;
+    border-left: 2px solid #e4ded3;
+  }
+
   .scene-list button:hover,
   .scene-list button.selected,
   .save-button:hover {
@@ -240,7 +317,8 @@
     background: #edf4f0;
   }
 
-  .scene-list span {
+  .scene-list span,
+  .scene-list small {
     color: #60706b;
     font-size: 0.78rem;
   }
