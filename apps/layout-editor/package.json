@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bun run --cwd ../.. dev:editor",
     "dev:frontend": "vite dev --host 127.0.0.1",
-    "dev:tauri": "tauri dev -c src-tauri/tauri.dev.conf.json",
+    "dev:tauri": "bun run --cwd ../.. scenes:compile && tauri dev -c src-tauri/tauri.dev.conf.json",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
