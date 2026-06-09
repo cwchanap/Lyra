@@ -39,6 +39,28 @@ describe("monorepo layout", () => {
     ).toBe(true);
   });
 
+  it("defines every turbo-invoked task in turbo.json", () => {
+    const rootPackage = readJson("package.json");
+    const turboConfig = readJson("turbo.json");
+
+    const turboTaskRe = /turbo run ([\w:]+(?:\s+[\w:]+)*)/g;
+    const referencedTasks = new Set<string>();
+
+    for (const script of Object.values<string>(rootPackage.scripts)) {
+      let match: RegExpExecArray | null;
+      while ((match = turboTaskRe.exec(script)) !== null) {
+        for (const task of match[1].split(/\s+/)) {
+          referencedTasks.add(task);
+        }
+      }
+    }
+
+    const definedTasks = Object.keys(turboConfig.tasks);
+    for (const task of referencedTasks) {
+      expect(definedTasks).toContain(task);
+    }
+  });
+
   it("keeps the game app as a Tauri package inside apps/game", () => {
     const gamePackage = readJson("apps/game/package.json");
     const editorPackage = readJson("apps/layout-editor/package.json");

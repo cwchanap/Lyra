@@ -11,7 +11,15 @@
     "test": {
       "dependsOn": ["^test"]
     },
+    "preview": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
     "test:e2e": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "test:e2e:ui": {
       "dependsOn": ["build"],
       "cache": false
     },
