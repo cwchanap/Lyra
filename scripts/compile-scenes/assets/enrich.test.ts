@@ -33,6 +33,12 @@ function config(): AssetConfig {
         transparency: true,
         prompt: "portrait",
       },
+      standee: {
+        dimensions: [1024, 1536],
+        format: "png",
+        transparency: true,
+        prompt: "standee",
+      },
       evidence: {
         dimensions: [512, 512],
         format: "png",
@@ -535,6 +541,210 @@ describe("enrichScenesWithAssets", () => {
       imageAssetId: null,
     });
   });
+
+  it("adds standee refs from character sprite layouts in investigation scenes", () => {
+    const scenes: SceneRecord[] = [
+      {
+        chapterId: "chapter_1",
+        file: "investigation_scene_1.md",
+        ast: {
+          kind: "investigationScene",
+          id: "investigation_scene_1",
+          title: "調查",
+          intro: [
+            {
+              kind: "sceneTag",
+              text: "辦公室",
+              assetCue: {
+                backgroundPrompt: "Office interior.",
+                backgroundAssetId: null,
+                bgm: { channel: "bgm", assetId: "rain_mystery_low" },
+                bgs: { channel: "bgs", assetId: "street_rain" },
+              },
+            },
+          ],
+          sublocations: [
+            {
+              id: "office",
+              label: "辦公室",
+              assetCue: null,
+              transitionDialogue: [],
+              hotspots: [],
+              characters: [
+                {
+                  id: "hayasaka",
+                  name: "早坂茜",
+                  role: "助手",
+                  bio: "助手。",
+                  topics: [],
+                  layout: {
+                    kind: "sprite",
+                    assetId: "standee.hayasaka_akane.standard",
+                    x: 0,
+                    y: 0.18,
+                    w: 0.19,
+                    h: 0.82,
+                    anchor: "bottomCenter" as const,
+                  },
+                  sourceFile: "chapter_1/investigation_scene_1.md",
+                  line: 5,
+                },
+              ],
+            },
+          ],
+          evidenceManifest: [],
+          statementManifest: [],
+          outro: { unlock: "auto", dialogue: [] },
+          assetRefs: [],
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 1,
+        },
+      },
+    ];
+
+    const result = enrichScenesWithAssets({ scenes, config: config() });
+    expect(result.errors).toEqual([]);
+
+    const ast = result.scenes[0]?.ast;
+    expect(ast?.kind).toBe("investigationScene");
+    if (ast?.kind !== "investigationScene") return;
+
+    // Standee ref added to assetRefs
+    expect(ast.assetRefs).toContainEqual({
+      type: "standee",
+      assetId: "standee.hayasaka_akane.standard",
+    });
+
+    // Standee entry in manifest
+    const manifestIds = result.manifest.entries.map((e) => e.assetId);
+    expect(manifestIds).toContain("standee.hayasaka_akane.standard");
+
+    // Standee manifest entry has correct metadata
+    const standeeEntry = result.manifest.entries.find(
+      (e) => e.assetId === "standee.hayasaka_akane.standard",
+    );
+    expect(standeeEntry).toMatchObject({
+      type: "standee",
+      expectedPath: "static/assets/standees/hayasaka_akane/standard.png",
+      publicPath: "/assets/standees/hayasaka_akane/standard.png",
+    });
+  });
+
+  it("errors for malformed standee assetId in character layout", () => {
+    const scenes: SceneRecord[] = [
+      {
+        chapterId: "chapter_1",
+        file: "investigation_scene_1.md",
+        ast: {
+          kind: "investigationScene",
+          id: "investigation_scene_1",
+          title: "調查",
+          intro: [],
+          sublocations: [
+            {
+              id: "office",
+              label: "辦公室",
+              assetCue: null,
+              transitionDialogue: [],
+              hotspots: [],
+              characters: [
+                {
+                  id: "hayasaka",
+                  name: "早坂茜",
+                  role: "助手",
+                  bio: "助手。",
+                  topics: [],
+                  layout: {
+                    kind: "sprite",
+                    assetId: "standee.malformed",
+                    x: 0,
+                    y: 0.18,
+                    w: 0.19,
+                    h: 0.82,
+                    anchor: "bottomCenter" as const,
+                  },
+                  sourceFile: "chapter_1/investigation_scene_1.md",
+                  line: 5,
+                },
+              ],
+            },
+          ],
+          evidenceManifest: [],
+          statementManifest: [],
+          outro: { unlock: "auto", dialogue: [] },
+          assetRefs: [],
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 1,
+        },
+      },
+    ];
+
+    const result = enrichScenesWithAssets({ scenes, config: config() });
+    expect(result.errors.some((e) => e.code === "assetInvalidStandeeId")).toBe(
+      true,
+    );
+    expect(result.manifest.entries.map((e) => e.assetId)).not.toContain(
+      "standee.malformed",
+    );
+  });
+
+  it("ignores non-standee assetIds in character sprite layouts", () => {
+    const scenes: SceneRecord[] = [
+      {
+        chapterId: "chapter_1",
+        file: "investigation_scene_1.md",
+        ast: {
+          kind: "investigationScene",
+          id: "investigation_scene_1",
+          title: "調查",
+          intro: [],
+          sublocations: [
+            {
+              id: "office",
+              label: "辦公室",
+              assetCue: null,
+              transitionDialogue: [],
+              hotspots: [],
+              characters: [
+                {
+                  id: "hayasaka",
+                  name: "早坂茜",
+                  role: "助手",
+                  bio: "助手。",
+                  topics: [],
+                  layout: {
+                    kind: "sprite",
+                    assetId: "portrait.hayasaka_akane.standard",
+                    x: 0,
+                    y: 0.18,
+                    w: 0.19,
+                    h: 0.82,
+                    anchor: "bottomCenter" as const,
+                  },
+                  sourceFile: "chapter_1/investigation_scene_1.md",
+                  line: 5,
+                },
+              ],
+            },
+          ],
+          evidenceManifest: [],
+          statementManifest: [],
+          outro: { unlock: "auto", dialogue: [] },
+          assetRefs: [],
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 1,
+        },
+      },
+    ];
+
+    const result = enrichScenesWithAssets({ scenes, config: config() });
+    expect(result.errors).toEqual([]);
+    // No standee ref — portrait assetIds in sprite layouts are ignored
+    const standeeRefs = result.manifest.entries.filter(
+      (e) => e.type === "standee",
+    );
+    expect(standeeRefs).toEqual([]);
+  });
 });
 
 function linearScene(queue: DialogueItem[]): SceneRecord {
@@ -620,6 +830,12 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
           transparency: true,
           prompt: "portrait",
         },
+        standee: {
+          dimensions: [1024, 1536],
+          format: "png",
+          transparency: true,
+          prompt: "standee",
+        },
         evidence: {
           dimensions: [512, 512],
           format: "png",
@@ -704,6 +920,12 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
         },
         portrait: {
           dimensions: [768, 1024],
+          format: "png",
+          transparency: true,
+          prompt: "",
+        },
+        standee: {
+          dimensions: [1024, 1536],
           format: "png",
           transparency: true,
           prompt: "",

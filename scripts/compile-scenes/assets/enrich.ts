@@ -15,6 +15,7 @@ import {
   type AssetManifestEntry,
 } from "./manifest";
 import type {
+  ASTCharacter,
   ASTEvidence,
   ASTInterrogationPhase,
   ASTInterrogationScene,
@@ -148,14 +149,17 @@ function enrichInvestigationScene(
         inspectDialogue: enrichDialogue(hotspot.inspectDialogue, context),
         onReexamine: enrichNullableDialogue(hotspot.onReexamine, context),
       })),
-      characters: sub.characters.map((character) => ({
-        ...character,
-        topics: character.topics.map((topic) => ({
-          ...topic,
-          topicDialogue: enrichDialogue(topic.topicDialogue, context),
-          onReexamine: enrichNullableDialogue(topic.onReexamine, context),
-        })),
-      })),
+      characters: sub.characters.map((character) => {
+        enrichCharacterStandee(character, context);
+        return {
+          ...character,
+          topics: character.topics.map((topic) => ({
+            ...topic,
+            topicDialogue: enrichDialogue(topic.topicDialogue, context),
+            onReexamine: enrichNullableDialogue(topic.onReexamine, context),
+          })),
+        };
+      }),
     })),
     evidenceManifest: ast.evidenceManifest.map((evidence) =>
       enrichEvidence(evidence, context),
@@ -492,6 +496,48 @@ function stripEvidence(evidence: ASTEvidence): ASTEvidence {
     onCollect: stripDialogue(evidence.onCollect),
     onReexamine: stripNullableDialogue(evidence.onReexamine),
   };
+}
+
+/**
+ * Extract standee asset references from a character's sprite layout.
+ * Layout sidecars set `layout.assetId` (e.g. "standee.hayasaka_akane.standard")
+ * on investigation-scene characters. The enrichment pipeline must register
+ * these as manifest entries so that asset existence checks and the manifest
+ * report include standees.
+ */
+function enrichCharacterStandee(
+  character: ASTCharacter,
+  context: EnrichContext,
+): void {
+  if (!character.layout || character.layout.kind !== "sprite") return;
+  const assetId = character.layout.assetId;
+  if (!assetId.startsWith("standee.")) return;
+
+  const [, characterId, pose] = assetId.split(".");
+  if (!characterId || !pose) {
+    context.errors.push(
+      compileError(
+        character.sourceFile,
+        character.line,
+        "assetInvalidStandeeId",
+        `Standee assetId "${assetId}" must follow format standee.<characterId>.<pose>.`,
+      ),
+    );
+    return;
+  }
+
+  addRef(context.refs, { type: "standee", assetId });
+  putRequest(context.requests, {
+    assetId,
+    type: "standee",
+    source: {
+      chapterId: context.scene.chapterId,
+      sceneId: context.scene.ast.id,
+      characterId: character.id,
+    },
+    prompt: context.config.types.standee.prompt,
+    subjectPrompt: `${characterId} ${pose}`,
+  });
 }
 
 function enrichVisualCue(

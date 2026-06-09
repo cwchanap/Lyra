@@ -80,13 +80,16 @@ jobs:
       - name: Run compiler and workspace layout tests
         run: bun run test:scripts
 
+      - name: Run editor Vitest
+        run: bun run --cwd apps/layout-editor test
+
       - name: Run game Vitest with coverage
         run: bun run --cwd apps/game test -- --coverage.enabled
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: coverage/lcov.info
+          files: apps/game/coverage/lcov.info
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: frontend
