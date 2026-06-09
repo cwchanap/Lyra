@@ -12,6 +12,7 @@ import {
   editorState,
   setHotspotLayout,
   setCharacterLayout,
+  loadChapters,
   loadInvestigationScene,
 } from "./layout-store.svelte";
 
@@ -268,6 +269,78 @@ describe("layout-store", () => {
 
       expect(editorState.error).toBe("Access denied");
       expect(editorState.layout).toBeNull();
+    });
+
+    it("clears stale scene state when outer read fails", async () => {
+      // First, populate state with a successful load
+      const sceneJson = {
+        type: "investigation",
+        id: "scene_ok",
+        title: "OK Scene",
+        intro: [],
+        sublocations: [],
+        evidenceManifest: [],
+      };
+      mockInvoke
+        .mockResolvedValueOnce({
+          path: "scenes/scene_ok.json",
+          contents: JSON.stringify(sceneJson),
+        })
+        .mockResolvedValueOnce("layouts/scene_ok.layout.json")
+        .mockResolvedValueOnce({
+          path: "layouts/scene_ok.layout.json",
+          contents: JSON.stringify({
+            version: 1,
+            sceneId: "scene_ok",
+            sublocations: {},
+          }),
+        });
+
+      await loadInvestigationScene("scenes/scene_ok.json");
+      expect(editorState.scene?.id).toBe("scene_ok");
+      expect(editorState.layoutPath).toBe("layouts/scene_ok.layout.json");
+      expect(editorState.error).toBeNull();
+
+      // Now fail a subsequent load — stale state must be cleared
+      mockInvoke.mockRejectedValueOnce({
+        code: "notFound",
+        message: "Scene missing",
+      });
+
+      await loadInvestigationScene("scenes/missing.json");
+
+      expect(editorState.error).toBe("Scene missing");
+      expect(editorState.scene).toBeNull();
+      expect(editorState.scenePath).toBeNull();
+      expect(editorState.layout).toBeNull();
+      expect(editorState.layoutPath).toBeNull();
+    });
+  });
+
+  describe("loadChapters", () => {
+    it("clears stale chapters on read failure", async () => {
+      // First, populate with a successful load
+      mockInvoke.mockResolvedValueOnce({
+        path: "chapters.json",
+        contents: JSON.stringify({
+          chapters: [{ id: "ch1", title: "Chapter 1", scenes: [] }],
+        }),
+      });
+
+      await loadChapters();
+      expect(editorState.chapters).not.toBeNull();
+      expect(editorState.error).toBeNull();
+
+      // Now fail a refresh — stale chapters must be cleared
+      mockInvoke.mockRejectedValueOnce({
+        code: "notFound",
+        message: "File gone",
+      });
+
+      await loadChapters();
+
+      expect(editorState.error).toBe("File gone");
+      expect(editorState.chapters).toBeNull();
     });
   });
 });

@@ -42,6 +42,7 @@ export async function loadChapters() {
     });
     editorState.chapters = JSON.parse(file.contents) as SceneIndex;
   } catch (error) {
+    editorState.chapters = null;
     editorState.error = normalizeError(error);
   }
 }
@@ -81,6 +82,10 @@ export async function loadInvestigationScene(scenePath: string) {
       }
     }
   } catch (error) {
+    editorState.scene = null;
+    editorState.scenePath = null;
+    editorState.layout = null;
+    editorState.layoutPath = null;
     editorState.error = normalizeError(error);
   }
 }
