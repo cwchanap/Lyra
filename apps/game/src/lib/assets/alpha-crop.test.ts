@@ -44,4 +44,47 @@ describe("alpha crop helpers", () => {
       "--crop-left: 0.25; --crop-top: 0.08333333333333333; --crop-width: 0.5; --crop-height: 0.8333333333333334;",
     );
   });
+
+  it("returns null for a fully transparent image", () => {
+    const pixels = new Uint8ClampedArray(4 * 4 * 4);
+    expect(alphaBoundsFromImageData(pixels, 4, 4)).toBeNull();
+  });
+
+  it("finds bounds for a single non-transparent pixel", () => {
+    const pixels = new Uint8ClampedArray(4 * 3 * 4);
+    pixels[(1 * 3 + 2) * 4 + 3] = 128;
+
+    expect(alphaBoundsFromImageData(pixels, 3, 4)).toEqual({
+      left: 2,
+      top: 1,
+      right: 3,
+      bottom: 2,
+      width: 1,
+      height: 1,
+    });
+  });
+
+  it("treats low alpha values as visible", () => {
+    const pixels = new Uint8ClampedArray(4);
+    pixels[3] = 1;
+
+    expect(alphaBoundsFromImageData(pixels, 1, 1)).toEqual({
+      left: 0,
+      top: 0,
+      right: 1,
+      bottom: 1,
+      width: 1,
+      height: 1,
+    });
+  });
+
+  it("returns crop variables at full extent when bounds equal image dimensions", () => {
+    expect(
+      cropVariablesForAlphaBounds(
+        { left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100 },
+        100,
+        100,
+      ),
+    ).toBe("--crop-left: 0; --crop-top: 0; --crop-width: 1; --crop-height: 1;");
+  });
 });
