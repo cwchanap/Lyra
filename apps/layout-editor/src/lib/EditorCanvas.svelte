@@ -443,6 +443,13 @@
       }
     }
   }
+
+  function handleAssetError(assetId: string, type: string) {
+    console.warn(
+      `[EditorCanvas] Missing asset: ${assetId} (type: ${type}). ` +
+        `Check that the file exists in the public assets directory.`,
+    );
+  }
 </script>
 
 {#if currentSublocation}
@@ -483,6 +490,11 @@
           src={assetUrl(currentSublocation.backgroundAssetId, "background")}
           alt=""
           aria-hidden="true"
+          onerror={() =>
+            handleAssetError(
+              currentSublocation.backgroundAssetId ?? "",
+              "background",
+            )}
         />
       {/if}
 
@@ -504,6 +516,8 @@
               src={assetUrl(hotspot.imageAssetId, "evidence")}
               alt=""
               aria-hidden="true"
+              onerror={() =>
+                handleAssetError(hotspot.imageAssetId ?? "", "evidence")}
             />
           {/if}
           <span>{hotspot.label}</span>
@@ -550,6 +564,11 @@
               aria-hidden="true"
               onload={(event) =>
                 loadCharacterCrop(character.layout.assetId, event)}
+              onerror={() =>
+                handleAssetError(
+                  character.layout.assetId,
+                  characterAssetType(character.layout.assetId),
+                )}
             />
           </div>
           <span>{character.name}</span>
