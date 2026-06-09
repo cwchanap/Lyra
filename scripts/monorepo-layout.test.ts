@@ -95,7 +95,7 @@ describe("monorepo layout", () => {
       "vite dev --host 127.0.0.1",
     );
     expect(editorPackage.scripts["dev:tauri"]).toBe(
-      "tauri dev -c src-tauri/tauri.dev.conf.json",
+      "bun run --cwd ../.. scenes:compile && tauri dev -c src-tauri/tauri.dev.conf.json",
     );
     expect(editorPackage.scripts.test).toBe("vitest run");
     expect(editorViteConfig).toContain('publicDir: "../../static"');

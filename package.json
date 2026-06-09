@@ -16,7 +16,7 @@
     "preview": "turbo run preview --filter=@lyra/game",
     "check": "turbo run check",
     "check:watch": "turbo run check:watch --filter=@lyra/game",
-    "editor:build": "bun run --cwd apps/layout-editor tauri build --bundles app",
+    "editor:build": "bun run scenes:compile && bun run --cwd apps/layout-editor tauri build --bundles app",
     "editor:check": "turbo run check --filter=@lyra/layout-editor",
     "lint": "bun run --cwd apps/game sync && eslint .",
     "lint:fix": "bun run --cwd apps/game sync && eslint . --fix",
