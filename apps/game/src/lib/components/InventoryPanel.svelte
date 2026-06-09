@@ -30,19 +30,29 @@
 
   $effect(() => {
     let cancelled = false;
+    evidenceImages = {};
     const entries = inventory.evidence
       .map((e) => [e.id, e.imageAssetId] as const)
       .filter((entry): entry is [string, string] => !!entry[1]);
 
     for (const [id, imageAssetId] of entries) {
-      resolveStoryAsset(imageAssetId, "evidence").then((asset) => {
-        if (!cancelled) {
-          evidenceImages = {
-            ...evidenceImages,
-            [id]: asset ?? placeholderForStoryAsset("evidence"),
-          };
-        }
-      });
+      resolveStoryAsset(imageAssetId, "evidence")
+        .then((asset) => {
+          if (!cancelled) {
+            evidenceImages = {
+              ...evidenceImages,
+              [id]: asset ?? placeholderForStoryAsset("evidence"),
+            };
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            evidenceImages = {
+              ...evidenceImages,
+              [id]: placeholderForMissingStoryAsset(imageAssetId, "evidence"),
+            };
+          }
+        });
     }
 
     return () => {

@@ -72,9 +72,20 @@
       resolveStoryAsset(
         layout.assetId,
         imageStoryAssetTypeForId(layout.assetId),
-      ).then((asset) => {
-        if (!cancelled) portraits = { ...portraits, [id]: asset };
-      });
+      )
+        .then((asset) => {
+          if (!cancelled) portraits = { ...portraits, [id]: asset };
+        })
+        .catch(() => {
+          if (!cancelled)
+            portraits = {
+              ...portraits,
+              [id]: placeholderForMissingStoryAsset(
+                layout.assetId,
+                imageStoryAssetTypeForId(layout.assetId),
+              ),
+            };
+        });
     }
 
     return () => {
@@ -86,9 +97,17 @@
     let cancelled = false;
     background = null;
 
-    resolveStoryAsset(backgroundAssetId, "background").then((asset) => {
-      if (!cancelled) background = asset;
-    });
+    resolveStoryAsset(backgroundAssetId, "background")
+      .then((asset) => {
+        if (!cancelled) background = asset;
+      })
+      .catch(() => {
+        if (!cancelled)
+          background = placeholderForMissingStoryAsset(
+            backgroundAssetId ?? "background.unknown",
+            "background",
+          );
+      });
 
     return () => {
       cancelled = true;
