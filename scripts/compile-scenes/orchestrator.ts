@@ -60,7 +60,10 @@ export type CompileOptions = {
 
 export type AssetReport = {
   enabled: boolean;
-  requested: Record<"background" | "portrait" | "evidence" | "audio", number>;
+  requested: Record<
+    "background" | "portrait" | "standee" | "evidence" | "audio",
+    number
+  >;
   warnings: CompileError[];
 };
 
@@ -256,7 +259,13 @@ export function compile(opts: CompileOptions): CompileResult {
 
   let assetReport: AssetReport = {
     enabled: false,
-    requested: { background: 0, portrait: 0, evidence: 0, audio: 0 },
+    requested: {
+      background: 0,
+      portrait: 0,
+      standee: 0,
+      evidence: 0,
+      audio: 0,
+    },
     warnings: [],
   };
 
@@ -346,6 +355,7 @@ function makeAssetReport(
   const requested: AssetReport["requested"] = {
     background: 0,
     portrait: 0,
+    standee: 0,
     evidence: 0,
     audio: 0,
   };
