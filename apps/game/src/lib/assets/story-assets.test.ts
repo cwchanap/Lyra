@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  imageStoryAssetTypeForId,
+  placeholderForMissingStoryAsset,
   placeholderForStoryAsset,
   publicPathForStoryAsset,
   resolveStoryAsset,
@@ -95,5 +97,66 @@ describe("story asset resolver helpers", () => {
     expect(() => publicPathForStoryAsset("audio", "audio")).toThrow(
       /expected at least 3/,
     );
+  });
+
+  it("throws for malformed standee assetIds with too few segments", () => {
+    expect(() => publicPathForStoryAsset("standee-only", "standee")).toThrow(
+      /expected at least 3/,
+    );
+  });
+
+  it("maps imageStoryAssetTypeForId for standee prefix", () => {
+    expect(imageStoryAssetTypeForId("standee.witness.standard")).toBe(
+      "standee",
+    );
+  });
+
+  it("maps imageStoryAssetTypeForId for evidence prefix", () => {
+    expect(imageStoryAssetTypeForId("evidence.coffee_receipt")).toBe(
+      "evidence",
+    );
+  });
+
+  it("maps imageStoryAssetTypeForId for background prefix", () => {
+    expect(imageStoryAssetTypeForId("background.chapter_1.scene_0.rain")).toBe(
+      "background",
+    );
+  });
+
+  it("defaults imageStoryAssetTypeForId to portrait for unknown prefix", () => {
+    expect(imageStoryAssetTypeForId("portrait.hayasaka_akane.concerned")).toBe(
+      "portrait",
+    );
+    expect(imageStoryAssetTypeForId("something_unknown")).toBe("portrait");
+  });
+
+  it("placeholderForMissingStoryAsset preserves the original assetId", () => {
+    const result = placeholderForMissingStoryAsset(
+      "background.chapter_1.scene_0.cafe",
+      "background",
+    );
+    expect(result.assetId).toBe("background.chapter_1.scene_0.cafe");
+    expect(result.placeholder).toBe(true);
+    expect(result.url).toContain("data:image/svg+xml");
+  });
+
+  it("resolves portrait assets through the full pipeline", async () => {
+    await expect(
+      resolveStoryAsset("portrait.hayasaka_akane.concerned", "portrait"),
+    ).resolves.toMatchObject({
+      assetId: "portrait.hayasaka_akane.concerned",
+      url: "/assets/portraits/hayasaka_akane/concerned.png",
+      placeholder: false,
+    });
+  });
+
+  it("resolves evidence assets through the full pipeline", async () => {
+    await expect(
+      resolveStoryAsset("evidence.coffee_receipt", "evidence"),
+    ).resolves.toMatchObject({
+      assetId: "evidence.coffee_receipt",
+      url: "/assets/evidence/coffee_receipt.png",
+      placeholder: false,
+    });
   });
 });

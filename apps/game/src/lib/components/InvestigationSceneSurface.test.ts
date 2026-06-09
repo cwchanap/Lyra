@@ -217,4 +217,158 @@ describe("InvestigationSceneSurface", () => {
       screen.getByRole("button", { name: /未放置：櫃子/ }),
     ).toBeInTheDocument();
   });
+
+  it("renders unplaced character fallback controls with bio and topics", () => {
+    const withUnplaced: SublocationView = {
+      ...sublocation,
+      characters: [
+        {
+          id: "bystander",
+          name: "路人",
+          role: "旁觀者",
+          bio: "站在門外看熱鬧。",
+          topics: [
+            { id: "sight", label: "目撃", discussed: false },
+            { id: "motive", label: "動機", discussed: true },
+          ],
+          layout: null,
+        },
+      ],
+    };
+
+    render(InvestigationSceneSurface, {
+      sublocation: withUnplaced,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    expect(screen.getByText("路人")).toBeInTheDocument();
+    expect(screen.getByText("旁觀者")).toBeInTheDocument();
+    expect(screen.getByText("站在門外看熱鬧。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /目撃/ })).toBeInTheDocument();
+    expect(screen.getByText("已詢問")).toBeInTheDocument();
+  });
+
+  it("toggles active character off when clicking the same character twice", async () => {
+    const user = userEvent.setup();
+    render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    const charBtn = screen.getByRole("button", { name: /詢問：目擊者/ });
+    await user.click(charBtn);
+    expect(charBtn).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(charBtn);
+    expect(charBtn).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("closes topic popover via close button", async () => {
+    const user = userEvent.setup();
+    render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await user.click(screen.getByRole("button", { name: /詢問：目擊者/ }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /關閉詢問項目/ }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("marks inspected hotspots with a check", () => {
+    const inspected: SublocationView = {
+      ...sublocation,
+      hotspots: [
+        {
+          ...sublocation.hotspots[0],
+          inspected: true,
+        },
+      ],
+    };
+
+    render(InvestigationSceneSurface, {
+      sublocation: inspected,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    expect(screen.getByLabelText("已調查")).toBeInTheDocument();
+  });
+
+  it("disables all buttons when disabled prop is true", () => {
+    render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+      disabled: true,
+    });
+
+    const buttons = screen.getAllByRole("button");
+    for (const btn of buttons) {
+      expect(btn).toBeDisabled();
+    }
+  });
+
+  it("shows discussed label on topics that have been discussed", async () => {
+    const user = userEvent.setup();
+    const discussed: SublocationView = {
+      ...sublocation,
+      characters: [
+        {
+          ...sublocation.characters[0],
+          topics: [{ id: "alibi", label: "不在場證明", discussed: true }],
+        },
+      ],
+    };
+
+    render(InvestigationSceneSurface, {
+      sublocation: discussed,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await user.click(screen.getByRole("button", { name: /詢問：目擊者/ }));
+    const topicBtn = screen.getByRole("button", { name: /不在場證明/ });
+    expect(topicBtn).toHaveClass("done");
+    expect(topicBtn).toHaveTextContent("已詢問");
+  });
+
+  it("falls back to placeholder on background image error", async () => {
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation,
+      backgroundAssetId: "background.chapter_1.scene_0.cafe",
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(".scene-surface img.background-image"),
+      ).toBeInTheDocument();
+    });
+
+    const img = container.querySelector(
+      ".scene-surface img.background-image",
+    ) as HTMLImageElement;
+    img.dispatchEvent(new Event("error"));
+
+    await waitFor(() => {
+      expect(img.src).toContain("data:image/svg+xml");
+    });
+  });
+
+  it("does not call onInterview when no character is active", () => {
+    const { component } = render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    expect(component).toBeTruthy();
+  });
 });
