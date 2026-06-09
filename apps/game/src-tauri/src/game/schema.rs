@@ -72,6 +72,7 @@ impl VisualAssetCueJson {
 pub enum AssetTypeJson {
     Background,
     Portrait,
+    Standee,
     Evidence,
     Audio,
 }
@@ -775,6 +776,24 @@ mod tests {
         let parsed: AssetRefJson = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.asset_type, AssetTypeJson::Background);
         assert_eq!(parsed.asset_id, "background.chapter_1.scene_0.tag_001");
+    }
+
+    #[test]
+    fn deserializes_asset_ref_with_standee_type() {
+        let json = r#"{"type": "standee", "assetId": "standee.hayasaka_akane.standard"}"#;
+        let parsed: AssetRefJson = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.asset_type, AssetTypeJson::Standee);
+        assert_eq!(parsed.asset_id, "standee.hayasaka_akane.standard");
+    }
+
+    #[test]
+    fn serializes_standee_type_as_lowercase() {
+        let asset_ref = AssetRefJson {
+            asset_type: AssetTypeJson::Standee,
+            asset_id: "standee.kurose.standard".to_string(),
+        };
+        let json = serde_json::to_string(&asset_ref).unwrap();
+        assert!(json.contains(r#""type":"standee""#));
     }
 
     #[test]
