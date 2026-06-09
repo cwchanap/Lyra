@@ -92,7 +92,10 @@ export function resolveStoryAsset(
   const key = `${type}:${assetId}`;
   const cached = cache.get(key);
   if (cached) return cached;
-  const promise = resolveUncached(assetId, type);
+  const promise = resolveUncached(assetId, type).catch((error) => {
+    cache.delete(key);
+    throw error;
+  });
   cache.set(key, promise);
   return promise;
 }
