@@ -123,6 +123,16 @@ describe("EditorCanvas", () => {
     });
 
     expect(onHotspotLayoutChange).toHaveBeenCalled();
+    const lastCall = onHotspotLayoutChange.mock.calls.at(-1)!;
+    const [subId, hotId, newLayout] = lastCall;
+    expect(subId).toBe("office");
+    expect(hotId).toBe("desk");
+    // Default layout is x:0.4, y:0.4, w:0.12, h:0.1
+    // Moved by dx=40/1000=0.04, dy=20/1000=0.02
+    expect(newLayout.x).toBeCloseTo(0.44, 5);
+    expect(newLayout.y).toBeCloseTo(0.42, 5);
+    expect(newLayout.w).toBeCloseTo(0.12, 5);
+    expect(newLayout.h).toBeCloseTo(0.1, 5);
     expect(hotspot).not.toHaveClass("hidden");
   });
 
@@ -457,5 +467,111 @@ describe("EditorCanvas", () => {
     expect(editorCanvasSource).toContain("loadCharacterCrop");
     expect(editorCanvasSource).toContain("cropVariablesForAlphaBounds");
     expect(editorCanvasSource).toContain("character-preview-crop");
+  });
+
+  it("moves a character box and reports updated coordinates", async () => {
+    const onCharacterLayoutChange = vi.fn();
+    const { container } = render(EditorCanvas, {
+      scene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange,
+    });
+
+    const plate = container.querySelector(".plate") as HTMLElement;
+    const character = container.querySelector(
+      ".target.character",
+    ) as HTMLElement;
+    vi.spyOn(plate, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 1000,
+      width: 1000,
+      height: 1000,
+      toJSON: () => {},
+    } as DOMRect);
+
+    await fireEvent.pointerDown(character, {
+      pointerId: 1,
+      clientX: 200,
+      clientY: 200,
+    });
+    await fireEvent.pointerMove(plate, {
+      pointerId: 1,
+      clientX: 250,
+      clientY: 230,
+    });
+    await fireEvent.pointerUp(plate, {
+      pointerId: 1,
+      clientX: 250,
+      clientY: 230,
+    });
+
+    expect(onCharacterLayoutChange).toHaveBeenCalled();
+    const lastCall = onCharacterLayoutChange.mock.calls.at(-1)!;
+    const [, , newLayout] = lastCall;
+    // Default character layout is x:0.66, y:0.14, w:0.18, h:0.76
+    // Moved by dx=50/1000=0.05, dy=30/1000=0.03
+    expect(newLayout.x).toBeCloseTo(0.71, 5);
+    expect(newLayout.y).toBeCloseTo(0.17, 5);
+    expect(newLayout.w).toBeCloseTo(0.18, 5);
+    expect(newLayout.h).toBeCloseTo(0.76, 5);
+  });
+
+  it("resizes a hotspot from the se handle and reports clamped coordinates", async () => {
+    const onHotspotLayoutChange = vi.fn();
+    const { container } = render(EditorCanvas, {
+      scene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange,
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const plate = container.querySelector(".plate") as HTMLElement;
+    const seHandle = container.querySelector(
+      ".target.hotspot .resize-handle.se",
+    ) as HTMLElement;
+    vi.spyOn(plate, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 1000,
+      width: 1000,
+      height: 1000,
+      toJSON: () => {},
+    } as DOMRect);
+
+    await fireEvent.pointerDown(seHandle, {
+      pointerId: 1,
+      clientX: 100,
+      clientY: 100,
+    });
+    await fireEvent.pointerMove(plate, {
+      pointerId: 1,
+      clientX: 160,
+      clientY: 140,
+    });
+    await fireEvent.pointerUp(plate, {
+      pointerId: 1,
+      clientX: 160,
+      clientY: 140,
+    });
+
+    expect(onHotspotLayoutChange).toHaveBeenCalled();
+    const lastCall = onHotspotLayoutChange.mock.calls.at(-1)!;
+    const [, , newLayout] = lastCall;
+    // Default hotspot layout is x:0.4, y:0.4, w:0.12, h:0.1
+    // Resized se by dx=60/1000=0.06, dy=40/1000=0.04
+    expect(newLayout.x).toBeCloseTo(0.4, 5);
+    expect(newLayout.y).toBeCloseTo(0.4, 5);
+    expect(newLayout.w).toBeCloseTo(0.18, 5);
+    expect(newLayout.h).toBeCloseTo(0.14, 5);
   });
 });

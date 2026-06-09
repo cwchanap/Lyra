@@ -84,4 +84,16 @@ describe("story asset resolver helpers", () => {
     const result = await first;
     expect(result?.assetId).toBe("background.cache_test.hit");
   });
+
+  it("throws for malformed portrait assetIds with too few segments", () => {
+    expect(() => publicPathForStoryAsset("portrait-only", "portrait")).toThrow(
+      /expected at least 3/,
+    );
+  });
+
+  it("throws for malformed audio assetIds with too few segments", () => {
+    expect(() => publicPathForStoryAsset("audio", "audio")).toThrow(
+      /expected at least 3/,
+    );
+  });
 });

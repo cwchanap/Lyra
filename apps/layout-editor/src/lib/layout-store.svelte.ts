@@ -6,6 +6,7 @@ import type {
   SceneIndex,
   SpriteLayout,
 } from "./layout-types";
+import { clampRectLayout, clampSpriteLayout } from "./layout-geometry";
 
 type ProjectFile = {
   path: string;
@@ -154,39 +155,6 @@ export function setCharacterLayout(
       },
     },
   };
-}
-
-function clampRectLayout(layout: RectLayout): RectLayout {
-  return {
-    kind: "rect",
-    ...clampBox(layout),
-  };
-}
-
-function clampSpriteLayout(layout: SpriteLayout): SpriteLayout {
-  return {
-    kind: "sprite",
-    assetId: layout.assetId,
-    ...clampBox(layout),
-    anchor: "bottomCenter",
-  };
-}
-
-function clampBox(layout: RectLayout | SpriteLayout) {
-  const w = clamp(layout.w, 0.02, 1);
-  const h = clamp(layout.h, 0.02, 1);
-
-  return {
-    x: clamp(layout.x, 0, 1 - w),
-    y: clamp(layout.y, 0, 1 - h),
-    w,
-    h,
-  };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(Math.max(value, min), max);
 }
 
 function normalizeError(error: unknown): string {

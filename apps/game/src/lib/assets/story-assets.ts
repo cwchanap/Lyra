@@ -14,6 +14,24 @@ export type ResolvedStoryAsset = {
 
 const cache = new Map<string, Promise<ResolvedStoryAsset>>();
 
+/**
+ * Validates that an assetId has the expected number of dot-separated segments.
+ * Returns the segments or throws with a descriptive error for malformed IDs.
+ */
+function requireSegments(
+  assetId: string,
+  type: string,
+  expected: number,
+): string[] {
+  const segments = assetId.split(".");
+  if (segments.length < expected) {
+    throw new Error(
+      `Invalid ${type} assetId "${assetId}": expected at least ${expected} dot-separated segments, got ${segments.length}.`,
+    );
+  }
+  return segments;
+}
+
 export function publicPathForStoryAsset(
   assetId: string,
   type: StoryAssetType,
@@ -21,18 +39,18 @@ export function publicPathForStoryAsset(
   // KEEP IN SYNC with publicPath() in scripts/compile-scenes/assets/manifest.ts.
   // manifest.test.ts cross-checks both; update both together.
   if (type === "portrait") {
-    const [, characterId, expression] = assetId.split(".");
+    const [, characterId, expression] = requireSegments(assetId, "portrait", 3);
     return `/assets/portraits/${characterId}/${expression}.png`;
   }
   if (type === "standee") {
-    const [, characterId, pose] = assetId.split(".");
+    const [, characterId, pose] = requireSegments(assetId, "standee", 3);
     return `/assets/standees/${characterId}/${pose}.png`;
   }
   if (type === "evidence") {
     return `/assets/evidence/${assetId.replace(/^evidence\./, "")}.png`;
   }
   if (type === "audio") {
-    const [, channel, id] = assetId.split(".");
+    const [, channel, id] = requireSegments(assetId, "audio", 3);
     return `/assets/audio/${channel}/${id}.ogg`;
   }
   return `/assets/backgrounds/${assetId.replace(/^background\./, "").replaceAll(".", "/")}.png`;

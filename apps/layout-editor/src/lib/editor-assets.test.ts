@@ -22,4 +22,16 @@ describe("publicPathForEditorAsset", () => {
       publicPathForEditorAsset("standee.witness.standard", "standee"),
     ).toBe("/assets/standees/witness/standard.png");
   });
+
+  it("throws for malformed portrait assetIds with too few segments", () => {
+    expect(() => publicPathForEditorAsset("portrait-only", "portrait")).toThrow(
+      /expected at least 3/,
+    );
+  });
+
+  it("throws for malformed standee assetIds with too few segments", () => {
+    expect(() => publicPathForEditorAsset("standee", "standee")).toThrow(
+      /expected at least 3/,
+    );
+  });
 });
