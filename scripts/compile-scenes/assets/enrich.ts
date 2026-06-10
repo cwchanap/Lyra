@@ -527,6 +527,7 @@ function enrichCharacterStandee(
   }
 
   addRef(context.refs, { type: "standee", assetId });
+  const charConfig = context.config.characters.byId.get(characterId);
   putRequest(context.requests, {
     assetId,
     type: "standee",
@@ -535,8 +536,8 @@ function enrichCharacterStandee(
       sceneId: context.scene.ast.id,
       characterId: character.id,
     },
-    prompt: context.config.types.standee.prompt,
-    subjectPrompt: `${characterId} ${pose}`,
+    prompt: pose,
+    subjectPrompt: charConfig?.visualPrompt ?? "",
   });
 }
 

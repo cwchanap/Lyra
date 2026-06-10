@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.chanwaichan.lyra",
   "build": {
-    "beforeDevCommand": "bun run dev:tauri",
+    "beforeDevCommand": "bun run scenes:compile && bun run dev:frontend",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run build:tauri",
     "frontendDist": "../build"
