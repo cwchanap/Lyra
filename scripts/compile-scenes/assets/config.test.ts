@@ -62,6 +62,11 @@ types:
     format: png
     transparency: true
     prompt: evidence icon
+  standee:
+    dimensions: [1024, 1536]
+    format: png
+    transparency: true
+    prompt: full-body standee
   audio:
     format: ogg
     loop: true

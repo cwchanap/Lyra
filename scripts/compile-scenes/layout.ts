@@ -311,6 +311,24 @@ function parseSpriteLayout(
         `${targetPath}.assetId must be a non-empty string.`,
       ),
     );
+  } else if (assetId.startsWith("standee.")) {
+    const safeSlug = /^[a-z0-9_]+$/i;
+    const parts = assetId.split(".");
+    if (
+      parts.length !== 3 ||
+      !parts[1] ||
+      !parts[2] ||
+      !safeSlug.test(parts[1]) ||
+      !safeSlug.test(parts[2])
+    ) {
+      errors.push(
+        error(
+          sourceFile,
+          "layoutInvalidStandeeAssetId",
+          `${targetPath}.assetId "${assetId}" must follow format "standee.<characterId>.<pose>" with snake_case/alphanumeric segments.`,
+        ),
+      );
+    }
   }
   if (layout.anchor !== "bottomCenter") {
     errors.push(

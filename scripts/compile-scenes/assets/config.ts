@@ -341,7 +341,12 @@ function buildTypePolicies(
     }
   }
   if (enabled) {
-    for (const key of ["background", "portrait", "evidence"] as const) {
+    for (const key of [
+      "background",
+      "portrait",
+      "standee",
+      "evidence",
+    ] as const) {
       if (!out[key].prompt)
         errors.push(
           error(

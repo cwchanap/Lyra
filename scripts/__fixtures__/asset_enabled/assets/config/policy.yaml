@@ -18,6 +18,11 @@ types:
     format: png
     transparency: true
     prompt: Isolated evidence icon, readable silhouette, transparent background.
+  standee:
+    dimensions: [1024, 1536]
+    format: png
+    transparency: true
+    prompt: Full-body character standee, transparent background.
   audio:
     format: ogg
     loop: true
