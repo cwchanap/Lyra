@@ -118,11 +118,7 @@
     return `${value * 100}%`;
   }
 
-  function rectStyle(layout: HotspotLayout) {
-    return `--x: ${percent(layout.x)}; --y: ${percent(layout.y)}; --w: ${percent(layout.w)}; --h: ${percent(layout.h)};`;
-  }
-
-  function spriteStyle(layout: CharacterLayout) {
+  function layoutStyle(layout: { x: number; y: number; w: number; h: number }) {
     return `--x: ${percent(layout.x)}; --y: ${percent(layout.y)}; --w: ${percent(layout.w)}; --h: ${percent(layout.h)};`;
   }
 
@@ -233,7 +229,7 @@
         class:inspected={hotspot.inspected}
         type="button"
         aria-label={`調查：${hotspot.label}`}
-        style={rectStyle(hotspot.layout)}
+        style={layoutStyle(hotspot.layout)}
         {disabled}
         onclick={() => onInspect(hotspot.id)}
       >
@@ -254,7 +250,7 @@
         aria-label={`詢問：${character.name}`}
         aria-expanded={activeCharacterId === character.id}
         aria-haspopup="dialog"
-        style={spriteStyle(character.layout)}
+        style={layoutStyle(character.layout)}
         {disabled}
         onclick={() => toggleCharacter(character.id)}
       >
