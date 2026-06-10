@@ -89,19 +89,19 @@ describe("story asset resolver helpers", () => {
 
   it("throws for malformed portrait assetIds with too few segments", () => {
     expect(() => publicPathForStoryAsset("portrait-only", "portrait")).toThrow(
-      /expected at least 3/,
+      /expected exactly 3/,
     );
   });
 
   it("throws for malformed audio assetIds with too few segments", () => {
     expect(() => publicPathForStoryAsset("audio", "audio")).toThrow(
-      /expected at least 3/,
+      /expected exactly 3/,
     );
   });
 
   it("throws for malformed standee assetIds with too few segments", () => {
     expect(() => publicPathForStoryAsset("standee-only", "standee")).toThrow(
-      /expected at least 3/,
+      /expected exactly 3/,
     );
   });
 

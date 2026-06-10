@@ -152,12 +152,18 @@ if (shouldRegisterPlaywrightSuite) {
       await installTauriMock(page);
     });
 
+    async function advanceDialogue(page: Page) {
+      const advanceButton = page.getByRole("button", { name: "推進對話" });
+      await expect(advanceButton).toBeEnabled();
+      await advanceButton.click();
+    }
+
     test("clicks a placed investigation hotspot", async ({ page }) => {
       await page.goto("/");
       await page.getByRole("button", { name: /開始調查/ }).click();
 
       await expect(page.getByText("測試開始。")).toBeVisible();
-      await page.getByRole("button", { name: "推進對話" }).click();
+      await advanceDialogue(page);
 
       const placedHotspot = page.getByRole("button", {
         name: "調查：桌面",

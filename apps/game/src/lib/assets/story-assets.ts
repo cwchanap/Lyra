@@ -22,11 +22,16 @@ function requireSegments(
   assetId: string,
   type: string,
   expected: number,
+  exact = false,
 ): string[] {
   const segments = assetId.split(".");
-  if (segments.length < expected) {
+  const mismatch = exact
+    ? segments.length !== expected
+    : segments.length < expected;
+  if (mismatch) {
+    const qualifier = exact ? "exactly" : "at least";
     throw new Error(
-      `Invalid ${type} assetId "${assetId}": expected at least ${expected} dot-separated segments, got ${segments.length}.`,
+      `Invalid ${type} assetId "${assetId}": expected ${qualifier} ${expected} dot-separated segments, got ${segments.length}.`,
     );
   }
   return segments;
@@ -39,18 +44,23 @@ export function publicPathForStoryAsset(
   // KEEP IN SYNC with publicPath() in scripts/compile-scenes/assets/manifest.ts.
   // manifest.test.ts cross-checks both; update both together.
   if (type === "portrait") {
-    const [, characterId, expression] = requireSegments(assetId, "portrait", 3);
+    const [, characterId, expression] = requireSegments(
+      assetId,
+      "portrait",
+      3,
+      true,
+    );
     return `/assets/portraits/${characterId}/${expression}.png`;
   }
   if (type === "standee") {
-    const [, characterId, pose] = requireSegments(assetId, "standee", 3);
+    const [, characterId, pose] = requireSegments(assetId, "standee", 3, true);
     return `/assets/standees/${characterId}/${pose}.png`;
   }
   if (type === "evidence") {
     return `/assets/evidence/${assetId.replace(/^evidence\./, "")}.png`;
   }
   if (type === "audio") {
-    const [, channel, id] = requireSegments(assetId, "audio", 3);
+    const [, channel, id] = requireSegments(assetId, "audio", 3, true);
     return `/assets/audio/${channel}/${id}.ogg`;
   }
   return `/assets/backgrounds/${assetId.replace(/^background\./, "").replaceAll(".", "/")}.png`;

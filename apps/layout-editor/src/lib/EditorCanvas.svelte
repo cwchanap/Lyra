@@ -377,7 +377,9 @@
     if (assetId.startsWith("standee.")) return assetId;
     if (!assetId.startsWith("portrait.")) return assetId;
 
-    const [, characterId] = assetId.split(".");
+    const parts = assetId.split(".");
+    const characterId = parts[1];
+    if (!characterId) return assetId;
     return `standee.${characterId}.standard`;
   }
 

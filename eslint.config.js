@@ -5,6 +5,7 @@ import { defineConfig } from "eslint/config";
 import globals from "globals";
 import ts from "typescript-eslint";
 import gameSvelteConfig from "./apps/game/svelte.config.js";
+import editorSvelteConfig from "./apps/layout-editor/svelte.config.js";
 
 export default defineConfig(
   {
@@ -56,13 +57,32 @@ export default defineConfig(
     },
   },
   {
-    files: ["**/*.svelte", "**/*.svelte.js", "**/*.svelte.ts"],
+    files: [
+      "apps/game/**/*.svelte",
+      "apps/game/**/*.svelte.js",
+      "apps/game/**/*.svelte.ts",
+    ],
     languageOptions: {
       parserOptions: {
         projectService: true,
         extraFileExtensions: [".svelte"],
         parser: ts.parser,
         svelteConfig: gameSvelteConfig,
+      },
+    },
+  },
+  {
+    files: [
+      "apps/layout-editor/**/*.svelte",
+      "apps/layout-editor/**/*.svelte.js",
+      "apps/layout-editor/**/*.svelte.ts",
+    ],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        extraFileExtensions: [".svelte"],
+        parser: ts.parser,
+        svelteConfig: editorSvelteConfig,
       },
     },
   },

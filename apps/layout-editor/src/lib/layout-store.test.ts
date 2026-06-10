@@ -134,7 +134,7 @@ describe("layout-store", () => {
   });
 
   describe("setCharacterLayout", () => {
-    it("sets a character layout and clamps values", () => {
+    it("sets a character layout", () => {
       editorState.layout = {
         version: 1,
         sceneId: "scene_1",
@@ -157,6 +157,36 @@ describe("layout-store", () => {
 
       const stored = editorState.layout?.sublocations.office.characters.witness;
       expect(stored).toEqual(layout);
+    });
+
+    it("clamps out-of-range values when setting a character layout", () => {
+      editorState.layout = {
+        version: 1,
+        sceneId: "scene_1",
+        sublocations: {
+          office: { hotspots: {}, characters: {} },
+        },
+      };
+
+      const outOfRange: SpriteLayout = {
+        kind: "sprite",
+        assetId: "standee.witness.standard",
+        x: -0.5,
+        y: 1.5,
+        w: 0.0,
+        h: 2.0,
+        anchor: "bottomCenter",
+      };
+
+      setCharacterLayout("office", "witness", outOfRange);
+
+      const stored = editorState.layout?.sublocations.office.characters.witness;
+      expect(stored).not.toBeNull();
+      expect(stored!.x).toBeGreaterThanOrEqual(0);
+      expect(stored!.y).toBeGreaterThanOrEqual(0);
+      expect(stored!.w).toBeGreaterThanOrEqual(0.025);
+      expect(stored!.x + stored!.w).toBeLessThanOrEqual(1);
+      expect(stored!.y + stored!.h).toBeLessThanOrEqual(1);
     });
 
     it("preserves existing hotspots when setting a character", () => {

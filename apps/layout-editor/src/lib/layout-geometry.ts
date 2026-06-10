@@ -60,11 +60,17 @@ export function resizeLayoutFromHandle<T extends RectLayout | SpriteLayout>(
   };
 }
 
+export const DEFAULT_ASSET_WIDTH = 1024;
+export const DEFAULT_ASSET_HEIGHT = 1536;
+
 export function alphaBoundsFromImageData(
   data: Uint8ClampedArray,
   imageWidth: number,
   imageHeight: number,
 ): AlphaBounds | null {
+  const expected = imageWidth * imageHeight * 4;
+  if (data.length < expected) return null;
+
   let left = imageWidth;
   let top = imageHeight;
   let right = 0;
@@ -93,10 +99,11 @@ export function alphaBoundsFromImageData(
   };
 }
 
+/** Standard standee asset dimensions used as default crop variables. */
 export function cropVariablesForAlphaBounds(
   bounds: AlphaBounds,
-  imageWidth = 1024,
-  imageHeight = 1536,
+  imageWidth = DEFAULT_ASSET_WIDTH,
+  imageHeight = DEFAULT_ASSET_HEIGHT,
 ): string {
   return (
     [
@@ -161,6 +168,6 @@ export function clampSpriteLayout(layout: SpriteLayout): SpriteLayout {
     kind: "sprite",
     assetId: layout.assetId,
     ...clampLayoutBox(layout),
-    anchor: "bottomCenter",
+    anchor: layout.anchor,
   };
 }
