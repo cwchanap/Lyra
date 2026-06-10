@@ -22,6 +22,9 @@ function requireSegments(
   return segments;
 }
 
+// KEEP IN SYNC with publicPathForStoryAsset in
+// apps/game/src/lib/assets/story-assets.ts.
+// Changes to path construction here must be mirrored there.
 export function publicPathForEditorAsset(
   assetId: string,
   type: EditorAssetType,
