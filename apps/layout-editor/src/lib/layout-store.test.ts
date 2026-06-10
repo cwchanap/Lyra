@@ -182,6 +182,7 @@ describe("layout-store", () => {
 
       const stored = editorState.layout?.sublocations.office.characters.witness;
       expect(stored).not.toBeNull();
+      expect(stored!.anchor).toBe("bottomCenter");
       expect(stored!.x).toBeGreaterThanOrEqual(0);
       expect(stored!.y).toBeGreaterThanOrEqual(0);
       expect(stored!.w).toBeGreaterThanOrEqual(0.025);
