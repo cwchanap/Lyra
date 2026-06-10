@@ -628,6 +628,13 @@ describe("enrichScenesWithAssets", () => {
       expectedPath: "static/assets/standees/hayasaka_akane/standard.png",
       publicPath: "/assets/standees/hayasaka_akane/standard.png",
     });
+
+    // Standee entry uses character visualPrompt as subjectPrompt and pose as entryPrompt
+    expect(standeeEntry?.promptParts.subjectPrompt).toBe("attorney");
+    expect(standeeEntry?.promptParts.entryPrompt).toBe("standard");
+    // typePrompt comes from config, should NOT be duplicated in entryPrompt
+    expect(standeeEntry?.promptParts.typePrompt).toBe("standee");
+    expect(standeeEntry?.finalPrompt).toContain("attorney");
   });
 
   it("errors for malformed standee assetId in character layout", () => {
@@ -744,6 +751,67 @@ describe("enrichScenesWithAssets", () => {
       (e) => e.type === "standee",
     );
     expect(standeeRefs).toEqual([]);
+  });
+
+  it("uses empty subjectPrompt for standee when character is not in config", () => {
+    const scenes: SceneRecord[] = [
+      {
+        chapterId: "chapter_1",
+        file: "investigation_scene_1.md",
+        ast: {
+          kind: "investigationScene",
+          id: "investigation_scene_1",
+          title: "調查",
+          intro: [],
+          sublocations: [
+            {
+              id: "office",
+              label: "辦公室",
+              assetCue: null,
+              transitionDialogue: [],
+              hotspots: [],
+              characters: [
+                {
+                  id: "unknown_char",
+                  name: "謎の人物",
+                  role: "NPC",
+                  bio: "NPC。",
+                  topics: [],
+                  layout: {
+                    kind: "sprite",
+                    assetId: "standee.unknown_char.standard",
+                    x: 0,
+                    y: 0.18,
+                    w: 0.19,
+                    h: 0.82,
+                    anchor: "bottomCenter" as const,
+                  },
+                  sourceFile: "chapter_1/investigation_scene_1.md",
+                  line: 5,
+                },
+              ],
+            },
+          ],
+          evidenceManifest: [],
+          statementManifest: [],
+          outro: { unlock: "auto", dialogue: [] },
+          assetRefs: [],
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 1,
+        },
+      },
+    ];
+
+    const result = enrichScenesWithAssets({ scenes, config: config() });
+    expect(result.errors).toEqual([]);
+
+    const standeeEntry = result.manifest.entries.find(
+      (e) => e.assetId === "standee.unknown_char.standard",
+    );
+    expect(standeeEntry).toBeDefined();
+    // Character not in config → subjectPrompt falls back to empty string
+    expect(standeeEntry?.promptParts.subjectPrompt).toBe("");
+    expect(standeeEntry?.promptParts.entryPrompt).toBe("standard");
   });
 });
 
