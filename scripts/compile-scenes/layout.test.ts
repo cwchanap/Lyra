@@ -160,6 +160,38 @@ describe("parseInvestigationLayoutJson", () => {
     expect(result.errors.map((e) => e.code)).toContain("layoutInvalidSize");
   });
 
+  it("rejects sprite layout with non-bottomCenter anchor", () => {
+    const result = parseInvestigationLayoutJson(
+      validLayoutJson({
+        sublocations: {
+          main_hall: {
+            hotspots: {},
+            characters: {
+              witness: {
+                kind: "sprite",
+                assetId: "portrait.witness.standard",
+                x: 0.5,
+                y: 0.25,
+                w: 0.2,
+                h: 0.7,
+                anchor: "topLeft",
+              },
+            },
+          },
+        },
+      }),
+      sourceFile,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.map((e) => e.code)).toContain("layoutInvalidAnchor");
+    const anchorError = result.errors.find(
+      (e) => e.code === "layoutInvalidAnchor",
+    );
+    expect(anchorError?.message).toContain("bottomCenter");
+  });
+
   it("rejects sprite assetIds without recognized prefix", () => {
     const result = parseInvestigationLayoutJson(
       validLayoutJson({

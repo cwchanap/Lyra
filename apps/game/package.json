@@ -15,7 +15,7 @@
     "scenes:compile": "bun run --cwd ../.. scripts/compile-scenes.ts",
     "scenes:watch": "bun run --cwd ../.. scripts/compile-scenes.ts --watch",
     "dev:tauri": "bun run scenes:compile && tauri dev -c src-tauri/tauri.dev.conf.json",
-    "build:tauri": "bun run scenes:compile && bun run build",
+    "prepare:build": "bun run scenes:compile && bun run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",

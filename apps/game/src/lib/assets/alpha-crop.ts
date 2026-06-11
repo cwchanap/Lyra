@@ -43,10 +43,14 @@ export function alphaBoundsFromImageData(
   };
 }
 
+/** Standard standee asset dimensions used as default crop variables. */
+export const DEFAULT_ASSET_WIDTH = 1024;
+export const DEFAULT_ASSET_HEIGHT = 1536;
+
 export function cropVariablesForAlphaBounds(
   bounds: AlphaBounds,
-  imageWidth: number,
-  imageHeight: number,
+  imageWidth = DEFAULT_ASSET_WIDTH,
+  imageHeight = DEFAULT_ASSET_HEIGHT,
 ): string {
   return (
     [
