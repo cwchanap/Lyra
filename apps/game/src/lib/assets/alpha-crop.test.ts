@@ -78,6 +78,11 @@ describe("alpha crop helpers", () => {
     });
   });
 
+  it("returns null when data buffer is smaller than expected dimensions", () => {
+    const pixels = new Uint8ClampedArray(4); // only 1 pixel worth of data
+    expect(alphaBoundsFromImageData(pixels, 4, 4)).toBeNull();
+  });
+
   it("returns crop variables at full extent when bounds equal image dimensions", () => {
     expect(
       cropVariablesForAlphaBounds(

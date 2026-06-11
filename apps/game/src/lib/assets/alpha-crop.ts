@@ -12,6 +12,9 @@ export function alphaBoundsFromImageData(
   imageWidth: number,
   imageHeight: number,
 ): AlphaBounds | null {
+  const expected = imageWidth * imageHeight * 4;
+  if (data.length < expected) return null;
+
   let left = imageWidth;
   let top = imageHeight;
   let right = 0;

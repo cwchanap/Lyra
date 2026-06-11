@@ -7,6 +7,15 @@ describe("scene labels", () => {
       "Investigation Scene 3",
     );
     expect(readableSceneLabel("chapter_1/scene_8_5.json")).toBe("Scene 8.5");
+    expect(readableSceneLabel("chapter_1/interrogation_scene_2.json")).toBe(
+      "Interrogation Scene 2",
+    );
+  });
+
+  it("does not match prefixes without the required underscore", () => {
+    expect(readableSceneLabel("investigationscene_1.json")).toBe(
+      "Investigationscene 1",
+    );
   });
 
   it("formats chapter ids when a title is unavailable", () => {
