@@ -221,6 +221,68 @@ describe("parseInvestigationLayoutJson", () => {
       "layoutUnrecognizedAssetId",
     );
   });
+
+  it("rejects malformed portrait assetId with too few segments", () => {
+    const result = parseInvestigationLayoutJson(
+      validLayoutJson({
+        sublocations: {
+          main_hall: {
+            hotspots: {},
+            characters: {
+              witness: {
+                kind: "sprite",
+                assetId: "portrait.invalid",
+                x: 0.5,
+                y: 0.25,
+                w: 0.2,
+                h: 0.7,
+                anchor: "bottomCenter",
+              },
+            },
+          },
+        },
+      }),
+      sourceFile,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.map((e) => e.code)).toContain(
+      "layoutInvalidPortraitAssetId",
+    );
+    const err = result.errors.find(
+      (e) => e.code === "layoutInvalidPortraitAssetId",
+    );
+    expect(err?.message).toContain("portrait.<characterId>.<expression>");
+  });
+
+  it("accepts well-formed portrait assetId", () => {
+    const result = parseInvestigationLayoutJson(
+      validLayoutJson({
+        sublocations: {
+          main_hall: {
+            hotspots: {
+              table: { kind: "rect", x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+            },
+            characters: {
+              witness: {
+                kind: "sprite",
+                assetId: "portrait.hayasaka_akane.concerned",
+                x: 0.5,
+                y: 0.25,
+                w: 0.2,
+                h: 0.7,
+                anchor: "bottomCenter",
+              },
+            },
+          },
+        },
+      }),
+      sourceFile,
+    );
+
+    expect(result.ok).toBe(true);
+  });
 });
 
 describe("applyInvestigationLayout", () => {
