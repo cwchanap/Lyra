@@ -92,4 +92,20 @@ describe("story asset manifest paths", () => {
       expect(publicPath(assetId, type)).toBe(expected);
     }
   });
+
+  it("throws for malformed portrait assetIds with too few segments", () => {
+    expect(() => publicPath("portrait-only", "portrait")).toThrow(
+      /expected exactly 3/,
+    );
+  });
+
+  it("throws for malformed standee assetIds with too few segments", () => {
+    expect(() => publicPath("standee-only", "standee")).toThrow(
+      /expected exactly 3/,
+    );
+  });
+
+  it("throws for malformed audio assetIds with too few segments", () => {
+    expect(() => publicPath("audio", "audio")).toThrow(/expected exactly 3/);
+  });
 });

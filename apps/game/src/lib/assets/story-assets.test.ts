@@ -123,11 +123,16 @@ describe("story asset resolver helpers", () => {
     );
   });
 
-  it("defaults imageStoryAssetTypeForId to portrait for unknown prefix", () => {
+  it("maps imageStoryAssetTypeForId for portrait prefix", () => {
     expect(imageStoryAssetTypeForId("portrait.hayasaka_akane.concerned")).toBe(
       "portrait",
     );
-    expect(imageStoryAssetTypeForId("something_unknown")).toBe("portrait");
+  });
+
+  it("throws for imageStoryAssetTypeForId with unknown prefix", () => {
+    expect(() => imageStoryAssetTypeForId("something_unknown")).toThrow(
+      /Unknown image asset type prefix/,
+    );
   });
 
   it("placeholderForMissingStoryAsset preserves the original assetId", () => {
