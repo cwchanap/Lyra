@@ -113,10 +113,13 @@ export function resolveStoryAsset(
 export function imageStoryAssetTypeForId(
   assetId: string,
 ): Exclude<StoryAssetType, "audio"> {
+  if (assetId.startsWith("portrait.")) return "portrait";
   if (assetId.startsWith("standee.")) return "standee";
   if (assetId.startsWith("evidence.")) return "evidence";
   if (assetId.startsWith("background.")) return "background";
-  return "portrait";
+  throw new Error(
+    `Unknown image asset type prefix in "${assetId}": expected one of portrait, standee, evidence, background.`,
+  );
 }
 
 /**
