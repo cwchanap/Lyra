@@ -371,7 +371,13 @@
 
   function portraitAssetIdToStandee(assetId: string): string {
     if (assetId.startsWith("standee.")) return assetId;
-    if (!assetId.startsWith("portrait.")) return assetId;
+    if (!assetId.startsWith("portrait.")) {
+      console.warn(
+        `[EditorCanvas] Unrecognized asset ID format: "${assetId}". ` +
+          `Expected "portrait.<id>.<pose>" or "standee.<id>.<pose>".`,
+      );
+      return assetId;
+    }
 
     const parts = assetId.split(".");
     const characterId = parts[1];
@@ -380,18 +386,24 @@
   }
 
   function characterById(characterId: string): SceneCharacter {
-    return (
-      currentSublocation?.characters.find(
-        (character) => character.id === characterId,
-      ) ?? {
-        id: characterId,
-        name: characterId,
-        role: "",
-        bio: "",
-        layout: null,
-        topics: [],
-      }
+    const found = currentSublocation?.characters.find(
+      (character) => character.id === characterId,
     );
+    if (found) return found;
+
+    console.warn(
+      `[EditorCanvas] Character "${characterId}" not found in sublocation "${sublocationId}". ` +
+        `Scene and layout sidecar may be out of sync. Using fallback.`,
+    );
+
+    return {
+      id: characterId,
+      name: characterId,
+      role: "",
+      bio: "",
+      layout: null,
+      topics: [],
+    };
   }
 
   function evidenceAssetIdForHotspot(hotspot: SceneHotspot): string | null {

@@ -34,30 +34,40 @@ export const editorState = $state<{
   error: null,
 });
 
+let loadChaptersGeneration = 0;
+
 export async function loadChapters() {
+  const generation = ++loadChaptersGeneration;
   editorState.error = null;
   try {
     const file = await invoke<ProjectFile>("read_project_file", {
       path: "apps/game/src-tauri/resources/scenes/chapters.json",
     });
+    if (generation !== loadChaptersGeneration) return;
     editorState.chapters = JSON.parse(file.contents) as SceneIndex;
   } catch (error) {
+    if (generation !== loadChaptersGeneration) return;
     editorState.chapters = null;
     editorState.error = normalizeError(error);
   }
 }
 
+let loadSceneGeneration = 0;
+
 export async function loadInvestigationScene(scenePath: string) {
+  const generation = ++loadSceneGeneration;
   editorState.error = null;
 
   try {
     const sceneFile = await invoke<ProjectFile>("read_project_file", {
       path: scenePath,
     });
+    if (generation !== loadSceneGeneration) return;
     const scene = JSON.parse(sceneFile.contents) as InvestigationSceneJson;
     const layoutPath = await invoke<string>("resolve_layout_path", {
       scenePath,
     });
+    if (generation !== loadSceneGeneration) return;
     editorState.scene = scene;
     editorState.scenePath = scenePath;
     editorState.layoutPath = layoutPath;
@@ -66,10 +76,12 @@ export async function loadInvestigationScene(scenePath: string) {
       const layoutFile = await invoke<ProjectFile>("read_project_file", {
         path: layoutPath,
       });
+      if (generation !== loadSceneGeneration) return;
       editorState.layout = JSON.parse(
         layoutFile.contents,
       ) as InvestigationLayoutSidecar;
     } catch (error) {
+      if (generation !== loadSceneGeneration) return;
       if (isEditorCommandError(error) && error.code === "notFound") {
         editorState.layout = {
           version: 1,
@@ -82,6 +94,7 @@ export async function loadInvestigationScene(scenePath: string) {
       }
     }
   } catch (error) {
+    if (generation !== loadSceneGeneration) return;
     editorState.scene = null;
     editorState.scenePath = null;
     editorState.layout = null;

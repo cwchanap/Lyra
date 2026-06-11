@@ -20,8 +20,8 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   editor Vite dev server on port 1430 and separately launches its Rust shell
   with HMR.
 - `bun run build:tauri` - produce game desktop bundles for all targets in
-  `apps/game/src-tauri/tauri.conf.json`. Tauri runs `bun run build:tauri`
-  inside `apps/game`, which compiles scenes before `vite build`.
+  `apps/game/src-tauri/tauri.conf.json`. Tauri's `beforeBuildCommand` compiles
+  scenes then runs `vite build` before bundling.
 - `bun run editor:build` - produce the editor desktop app bundle.
 - `bun run scenes:compile` - one-shot compile. Merges scenes from both
   `static/stories_plan/` and `docs/stories_plan/` (a root that does not exist

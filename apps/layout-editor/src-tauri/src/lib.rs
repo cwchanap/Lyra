@@ -127,9 +127,10 @@ fn ensure_layout_sidecar_write_path(path: &str) -> Result<(), EditorError> {
     let in_story_root =
         requested.starts_with("docs/stories_plan") || requested.starts_with("static/stories_plan");
     let is_layout_sidecar = requested
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.ends_with(".layout.json"));
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .is_some_and(|stem| stem.ends_with(".layout"))
+        && requested.extension().and_then(|e| e.to_str()) == Some("json");
 
     if in_story_root && is_layout_sidecar {
         Ok(())
@@ -315,7 +316,6 @@ fn resolve_layout_path_at_root(root: &Path, scene_path: &str) -> Result<String, 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             resolve_layout_path,
             read_project_file,

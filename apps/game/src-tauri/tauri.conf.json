@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "bun run scenes:compile && bun run dev:frontend",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build:tauri",
+    "beforeBuildCommand": "bun run scenes:compile && bun run build",
     "frontendDist": "../build"
   },
   "app": {
