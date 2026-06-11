@@ -74,17 +74,14 @@
         imageStoryAssetTypeForId(layout.assetId),
       )
         .then((asset) => {
-          if (!cancelled) portraits = { ...portraits, [id]: asset };
+          if (!cancelled) portraits[id] = asset;
         })
         .catch(() => {
           if (!cancelled)
-            portraits = {
-              ...portraits,
-              [id]: placeholderForMissingStoryAsset(
-                layout.assetId,
-                imageStoryAssetTypeForId(layout.assetId),
-              ),
-            };
+            portraits[id] = placeholderForMissingStoryAsset(
+              layout.assetId,
+              imageStoryAssetTypeForId(layout.assetId),
+            );
         });
     }
 
@@ -196,13 +193,10 @@
     console.warn(
       `[InvestigationSceneSurface] Missing portrait asset: ${current.url} (assetId: ${current.assetId})`,
     );
-    portraits = {
-      ...portraits,
-      [character.id]: placeholderForMissingStoryAsset(
-        character.layout.assetId,
-        imageStoryAssetTypeForId(character.layout.assetId),
-      ),
-    };
+    portraits[character.id] = placeholderForMissingStoryAsset(
+      character.layout.assetId,
+      imageStoryAssetTypeForId(character.layout.assetId),
+    );
   }
 </script>
 
