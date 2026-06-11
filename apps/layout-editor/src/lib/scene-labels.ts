@@ -4,7 +4,7 @@ export function readableSceneLabel(file: string): string {
       .split("/")
       .at(-1)
       ?.replace(/\.json$/i, "") ?? file;
-  const sceneMatch = /^(investigation|interrogation)?_?scene_(.+)$/.exec(
+  const sceneMatch = /^(?:(investigation|interrogation)_)?scene_(.+)$/.exec(
     basename,
   );
   if (sceneMatch) {
