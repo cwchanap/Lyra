@@ -55,14 +55,26 @@ describe("publicPathForEditorAsset", () => {
 
   it("throws for malformed portrait assetIds with too few segments", () => {
     expect(() => publicPathForEditorAsset("portrait-only", "portrait")).toThrow(
-      /expected at least 3/,
+      /expected exactly 3/,
     );
   });
 
   it("throws for malformed standee assetIds with too few segments", () => {
     expect(() => publicPathForEditorAsset("standee", "standee")).toThrow(
-      /expected at least 3/,
+      /expected exactly 3/,
     );
+  });
+
+  it("throws for portrait assetIds with too many segments", () => {
+    expect(() =>
+      publicPathForEditorAsset("portrait.witness.standard.extra", "portrait"),
+    ).toThrow(/expected exactly 3/);
+  });
+
+  it("throws for standee assetIds with too many segments", () => {
+    expect(() =>
+      publicPathForEditorAsset("standee.witness.standard.extra", "standee"),
+    ).toThrow(/expected exactly 3/);
   });
 
   it("cross-check: produces identical paths to publicPathForStoryAsset for shared types", () => {

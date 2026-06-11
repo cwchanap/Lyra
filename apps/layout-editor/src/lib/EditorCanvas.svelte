@@ -83,7 +83,7 @@
   let dragState = $state<DragState | null>(null);
   let showBoxes = $state(true);
   let revealedTarget = $state<RevealedTarget | null>(null);
-  let hiddenTargetKeys = $state<Set<string>>(new Set());
+  let hiddenTargetKeys = new SvelteSet<string>();
   let cropStyles = $state<Record<string, string>>({});
 
   const currentSublocation = $derived(
@@ -211,7 +211,7 @@
   function toggleBoxes() {
     showBoxes = !showBoxes;
     revealedTarget = null;
-    hiddenTargetKeys = new Set();
+    hiddenTargetKeys = new SvelteSet();
   }
 
   function isRevealedTarget(kind: TargetKind, id: string): boolean {
@@ -226,13 +226,11 @@
 
   function toggleHiddenTarget(kind: TargetKind, id: string) {
     const key = targetKey(kind, id);
-    const nextHiddenTargetKeys = new SvelteSet(hiddenTargetKeys);
-    if (nextHiddenTargetKeys.has(key)) {
-      nextHiddenTargetKeys.delete(key);
+    if (hiddenTargetKeys.has(key)) {
+      hiddenTargetKeys.delete(key);
     } else {
-      nextHiddenTargetKeys.add(key);
+      hiddenTargetKeys.add(key);
     }
-    hiddenTargetKeys = nextHiddenTargetKeys;
   }
 
   function targetKey(kind: TargetKind, id: string): string {
@@ -252,9 +250,7 @@
     if (showBoxes) {
       const key = targetKey(kind, id);
       if (!hiddenTargetKeys.has(key)) return;
-      const nextHiddenTargetKeys = new SvelteSet(hiddenTargetKeys);
-      nextHiddenTargetKeys.delete(key);
-      hiddenTargetKeys = nextHiddenTargetKeys;
+      hiddenTargetKeys.delete(key);
       return;
     }
 

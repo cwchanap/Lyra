@@ -371,4 +371,65 @@ describe("InvestigationSceneSurface", () => {
 
     expect(component).toBeTruthy();
   });
+
+  it("resolves all placed character portraits without losing concurrent updates", async () => {
+    const multiCharSublocation = {
+      ...sublocation,
+      characters: [
+        {
+          id: "witness",
+          name: "目擊者",
+          role: "常客",
+          bio: "案發時坐在窗邊。",
+          topics: [{ id: "alibi", label: "不在場證明", discussed: false }],
+          layout: {
+            kind: "sprite" as const,
+            assetId: "portrait.witness.standard",
+            x: 0.7,
+            y: 0.1,
+            w: 0.18,
+            h: 0.8,
+            anchor: "bottomCenter" as const,
+          },
+        },
+        {
+          id: "suspect",
+          name: "嫌疑人",
+          role: "店員",
+          bio: "當晚值班。",
+          topics: [{ id: "shift", label: "班表", discussed: false }],
+          layout: {
+            kind: "sprite" as const,
+            assetId: "standee.suspect.standard",
+            x: 0.3,
+            y: 0.1,
+            w: 0.18,
+            h: 0.8,
+            anchor: "bottomCenter" as const,
+          },
+        },
+      ],
+    } satisfies SublocationView;
+
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation: multiCharSublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    // Both characters should render their portraits — no character lost
+    // due to concurrent promise resolution overwriting the shared state.
+    await waitFor(() => {
+      const images = container.querySelectorAll(".character-target img");
+      expect(images.length).toBe(2);
+      expect(images[0]).toHaveAttribute(
+        "src",
+        "/assets/portraits/witness/standard.png",
+      );
+      expect(images[1]).toHaveAttribute(
+        "src",
+        "/assets/standees/suspect/standard.png",
+      );
+    });
+  });
 });

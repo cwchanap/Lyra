@@ -7,16 +7,22 @@ export type EditorAssetType =
 /**
  * Validates that an assetId has the expected number of dot-separated segments.
  * Returns the segments or throws with a descriptive error for malformed IDs.
+ * When `exact` is true, the segment count must match exactly (not just at least).
  */
 function requireSegments(
   assetId: string,
   type: string,
   expected: number,
+  exact = false,
 ): string[] {
   const segments = assetId.split(".");
-  if (segments.length < expected) {
+  const mismatch = exact
+    ? segments.length !== expected
+    : segments.length < expected;
+  if (mismatch) {
+    const qualifier = exact ? "exactly" : "at least";
     throw new Error(
-      `Invalid ${type} assetId "${assetId}": expected at least ${expected} dot-separated segments, got ${segments.length}.`,
+      `Invalid ${type} assetId "${assetId}": expected ${qualifier} ${expected} dot-separated segments, got ${segments.length}.`,
     );
   }
   return segments;
@@ -30,12 +36,17 @@ export function publicPathForEditorAsset(
   type: EditorAssetType,
 ): string {
   if (type === "portrait") {
-    const [, characterId, expression] = requireSegments(assetId, "portrait", 3);
+    const [, characterId, expression] = requireSegments(
+      assetId,
+      "portrait",
+      3,
+      true,
+    );
     return `/assets/portraits/${characterId}/${expression}.png`;
   }
 
   if (type === "standee") {
-    const [, characterId, pose] = requireSegments(assetId, "standee", 3);
+    const [, characterId, pose] = requireSegments(assetId, "standee", 3, true);
     return `/assets/standees/${characterId}/${pose}.png`;
   }
 

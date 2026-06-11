@@ -20,6 +20,7 @@ export default defineConfig(
       "apps/game/src-tauri/target/**",
       "build/**",
       "coverage/**",
+      "apps/game/coverage/**",
       "dist/**",
       "apps/layout-editor/dist/**",
       "apps/layout-editor/src-tauri/gen/**",
