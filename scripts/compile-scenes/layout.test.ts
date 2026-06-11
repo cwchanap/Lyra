@@ -73,7 +73,7 @@ function validLayoutJson(overrides: Record<string, unknown> = {}) {
         characters: {
           witness: {
             kind: "sprite",
-            assetId: "witness_standard",
+            assetId: "portrait.witness.standard",
             x: 0.5,
             y: 0.25,
             w: 0.2,
@@ -106,7 +106,7 @@ describe("parseInvestigationLayoutJson", () => {
       result.value.sublocations.main_hall?.characters.witness,
     ).toStrictEqual({
       kind: "sprite",
-      assetId: "witness_standard",
+      assetId: "portrait.witness.standard",
       x: 0.5,
       y: 0.25,
       w: 0.2,
@@ -159,6 +159,36 @@ describe("parseInvestigationLayoutJson", () => {
     if (result.ok) return;
     expect(result.errors.map((e) => e.code)).toContain("layoutInvalidSize");
   });
+
+  it("rejects sprite assetIds without recognized prefix", () => {
+    const result = parseInvestigationLayoutJson(
+      validLayoutJson({
+        sublocations: {
+          main_hall: {
+            hotspots: {},
+            characters: {
+              witness: {
+                kind: "sprite",
+                assetId: "noprefix_here",
+                x: 0.5,
+                y: 0.25,
+                w: 0.2,
+                h: 0.7,
+                anchor: "bottomCenter",
+              },
+            },
+          },
+        },
+      }),
+      sourceFile,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.map((e) => e.code)).toContain(
+      "layoutUnrecognizedAssetId",
+    );
+  });
 });
 
 describe("applyInvestigationLayout", () => {
@@ -180,7 +210,7 @@ describe("applyInvestigationLayout", () => {
     });
     expect(sublocation.characters[0]?.layout).toStrictEqual({
       kind: "sprite",
-      assetId: "witness_standard",
+      assetId: "portrait.witness.standard",
       x: 0.5,
       y: 0.25,
       w: 0.2,

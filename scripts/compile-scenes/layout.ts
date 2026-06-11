@@ -329,6 +329,20 @@ function parseSpriteLayout(
         ),
       );
     }
+  } else {
+    // Only portrait, standee, evidence, and background prefixes are
+    // recognized by the renderer's imageStoryAssetTypeForId.  Unrecognized
+    // assetIds cause synchronous throws at runtime with no recovery path.
+    const recognized = ["portrait.", "evidence.", "background."] as const;
+    if (!recognized.some((prefix) => assetId.startsWith(prefix))) {
+      errors.push(
+        error(
+          sourceFile,
+          "layoutUnrecognizedAssetId",
+          `${targetPath}.assetId "${assetId}" must start with one of: portrait., standee., evidence., background.`,
+        ),
+      );
+    }
   }
   if (layout.anchor !== "bottomCenter") {
     errors.push(
