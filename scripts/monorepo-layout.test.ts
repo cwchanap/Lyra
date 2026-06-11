@@ -11,7 +11,7 @@ describe("monorepo layout", () => {
     const rootPackage = readJson("package.json");
 
     expect(rootPackage.packageManager).toBe("bun@1.3.1");
-    expect(rootPackage.workspaces).toEqual(["apps/*"]);
+    expect(rootPackage.workspaces).toEqual(["apps/*", "packages/*"]);
     expect(rootPackage.devDependencies.turbo).toBeDefined();
     expect(rootPackage.scripts.dev).toBe("turbo run dev:frontend dev:tauri");
     expect(rootPackage.scripts["dev:game"]).toBe(

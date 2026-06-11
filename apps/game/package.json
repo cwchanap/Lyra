@@ -25,6 +25,7 @@
     "rust:lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings"
   },
   "dependencies": {
+    "@lyra/asset-paths": "workspace:*",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2"
   }

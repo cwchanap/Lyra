@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { expectedPath, publicPath } from "./manifest";
+import { publicPathForAssetId, type AssetPathType } from "@lyra/asset-paths";
 
 // Cross-check: these test cases MUST produce the same output as
-// publicPathForStoryAsset() in src/lib/assets/story-assets.ts.
-// If you change either function, update both and keep these tests passing.
+// publicPathForStoryAsset() in apps/game/src/lib/assets/story-assets.ts
+// and publicPathForEditorAsset() in apps/layout-editor/src/lib/editor-assets.ts.
+// All three now delegate to publicPathForAssetId() from @lyra/asset-paths.
 const CROSS_CHECK_CASES: Array<{
   assetId: string;
-  type: "background" | "portrait" | "standee" | "evidence" | "audio";
+  type: AssetPathType;
   expected: string;
 }> = [
   {
@@ -90,6 +92,8 @@ describe("story asset manifest paths", () => {
   it("cross-check: publicPath matches publicPathForStoryAsset contract", () => {
     for (const { assetId, type, expected } of CROSS_CHECK_CASES) {
       expect(publicPath(assetId, type)).toBe(expected);
+      // Also verify the shared module directly
+      expect(publicPathForAssetId(assetId, type)).toBe(expected);
     }
   });
 
