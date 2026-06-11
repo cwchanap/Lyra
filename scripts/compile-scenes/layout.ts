@@ -329,11 +329,29 @@ function parseSpriteLayout(
         ),
       );
     }
+  } else if (assetId.startsWith("portrait.")) {
+    const safeSlug = /^[a-z0-9_]+$/i;
+    const parts = assetId.split(".");
+    if (
+      parts.length !== 3 ||
+      !parts[1] ||
+      !parts[2] ||
+      !safeSlug.test(parts[1]) ||
+      !safeSlug.test(parts[2])
+    ) {
+      errors.push(
+        error(
+          sourceFile,
+          "layoutInvalidPortraitAssetId",
+          `${targetPath}.assetId "${assetId}" must follow format "portrait.<characterId>.<expression>" with snake_case/alphanumeric segments.`,
+        ),
+      );
+    }
   } else {
     // Only portrait, standee, evidence, and background prefixes are
     // recognized by the renderer's imageStoryAssetTypeForId.  Unrecognized
     // assetIds cause synchronous throws at runtime with no recovery path.
-    const recognized = ["portrait.", "evidence.", "background."] as const;
+    const recognized = ["evidence.", "background."] as const;
     if (!recognized.some((prefix) => assetId.startsWith(prefix))) {
       errors.push(
         error(

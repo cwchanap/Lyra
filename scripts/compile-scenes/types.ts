@@ -12,7 +12,7 @@
 // ----- Shared atoms ----------------------------------------------------------
 
 export type AssetRef = {
-  type: "background" | "portrait" | "evidence" | "audio";
+  type: "background" | "portrait" | "standee" | "evidence" | "audio";
   assetId: string;
 };
 
