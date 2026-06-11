@@ -1,3 +1,5 @@
+import { publicPathForAssetId } from "@lyra/asset-paths";
+
 export type StoryAssetType =
   | "background"
   | "portrait"
@@ -14,56 +16,11 @@ export type ResolvedStoryAsset = {
 
 const cache = new Map<string, Promise<ResolvedStoryAsset>>();
 
-/**
- * Validates that an assetId has the expected number of dot-separated segments.
- * Returns the segments or throws with a descriptive error for malformed IDs.
- */
-function requireSegments(
-  assetId: string,
-  type: string,
-  expected: number,
-  exact = false,
-): string[] {
-  const segments = assetId.split(".");
-  const mismatch = exact
-    ? segments.length !== expected
-    : segments.length < expected;
-  if (mismatch) {
-    const qualifier = exact ? "exactly" : "at least";
-    throw new Error(
-      `Invalid ${type} assetId "${assetId}": expected ${qualifier} ${expected} dot-separated segments, got ${segments.length}.`,
-    );
-  }
-  return segments;
-}
-
 export function publicPathForStoryAsset(
   assetId: string,
   type: StoryAssetType,
 ): string {
-  // KEEP IN SYNC with publicPath() in scripts/compile-scenes/assets/manifest.ts.
-  // manifest.test.ts cross-checks both; update both together.
-  if (type === "portrait") {
-    const [, characterId, expression] = requireSegments(
-      assetId,
-      "portrait",
-      3,
-      true,
-    );
-    return `/assets/portraits/${characterId}/${expression}.png`;
-  }
-  if (type === "standee") {
-    const [, characterId, pose] = requireSegments(assetId, "standee", 3, true);
-    return `/assets/standees/${characterId}/${pose}.png`;
-  }
-  if (type === "evidence") {
-    return `/assets/evidence/${assetId.replace(/^evidence\./, "")}.png`;
-  }
-  if (type === "audio") {
-    const [, channel, id] = requireSegments(assetId, "audio", 3, true);
-    return `/assets/audio/${channel}/${id}.ogg`;
-  }
-  return `/assets/backgrounds/${assetId.replace(/^background\./, "").replaceAll(".", "/")}.png`;
+  return publicPathForAssetId(assetId, type);
 }
 
 export function placeholderForStoryAsset(
