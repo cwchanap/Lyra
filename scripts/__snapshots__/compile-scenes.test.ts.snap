@@ -419,3 +419,423 @@ exports[`snapshot: valid fixture JSON output > matches the linear scene snapshot
   "type": "linear",
 }
 `;
+
+exports[`snapshot: valid fixture JSON output matches the chapters.json snapshot 1`] = `
+{
+  "chapters": [
+    {
+      "id": "chapter_1",
+      "scenes": [
+        {
+          "file": "chapter_1/scene_0.json",
+          "type": "linear",
+        },
+        {
+          "file": "chapter_1/investigation_scene_1.json",
+          "type": "investigation",
+        },
+      ],
+      "summary": "一個用來驗證解析器與校驗器所有路徑的最小測試章節。",
+      "title": "測試章節",
+    },
+  ],
+}
+`;
+
+exports[`snapshot: valid fixture JSON output matches the linear scene snapshot 1`] = `
+{
+  "assetRefs": [],
+  "id": "scene_0",
+  "queue": [
+    {
+      "assetCue": {
+        "backgroundAssetId": null,
+        "bgm": null,
+        "bgs": null,
+      },
+      "kind": "sceneTag",
+      "text": "測試場景前廳，深夜。",
+    },
+    {
+      "kind": "action",
+      "text": "相馬律走進場景。",
+    },
+    {
+      "expression": null,
+      "kind": "line",
+      "portrait": null,
+      "speaker": "相馬律",
+      "text": "測試開始。",
+    },
+    {
+      "expression": null,
+      "kind": "line",
+      "portrait": null,
+      "speaker": "早坂茜",
+      "text": "好。",
+    },
+    {
+      "assetCue": {
+        "backgroundAssetId": null,
+        "bgm": null,
+        "bgs": null,
+      },
+      "kind": "sceneTag",
+      "text": "測試場景內室。",
+    },
+    {
+      "expression": null,
+      "kind": "line",
+      "portrait": null,
+      "speaker": "相馬律",
+      "text": "場景切換。",
+    },
+  ],
+  "title": "測試線性場景",
+  "type": "linear",
+}
+`;
+
+exports[`snapshot: valid fixture JSON output matches the investigation scene snapshot 1`] = `
+{
+  "assetRefs": [],
+  "evidenceManifest": [
+    {
+      "description": "一杯仍微熱的咖啡。",
+      "details": "杯壁溫度約 50°C，最近 10 分鐘內被沖泡。",
+      "id": "coffee",
+      "imageAssetId": null,
+      "name": "還熱的咖啡",
+      "onCollect": [
+        {
+          "expression": null,
+          "kind": "line",
+          "portrait": null,
+          "speaker": "相馬律",
+          "text": "證明有人在這裡。",
+        },
+      ],
+      "onReexamine": [
+        {
+          "expression": null,
+          "kind": "line",
+          "portrait": null,
+          "speaker": "相馬律",
+          "text": "時間不對。",
+        },
+      ],
+    },
+    {
+      "description": "櫥櫃內的金屬盒。",
+      "details": "盒身有刻字，但鎖未撬開。",
+      "id": "locked_box",
+      "imageAssetId": null,
+      "name": "上鎖的小盒",
+      "onCollect": [
+        {
+          "expression": null,
+          "kind": "line",
+          "portrait": null,
+          "speaker": "相馬律",
+          "text": "先帶走。",
+        },
+      ],
+      "onReexamine": null,
+    },
+  ],
+  "id": "investigation_scene_1",
+  "intro": [
+    {
+      "kind": "action",
+      "text": "相馬律與早坂茜進入測試現場。",
+    },
+    {
+      "expression": null,
+      "kind": "line",
+      "portrait": null,
+      "speaker": "相馬律",
+      "text": "開始調查。",
+    },
+  ],
+  "outro": {
+    "dialogue": [
+      {
+        "kind": "action",
+        "text": "相馬律走出測試現場。",
+      },
+      {
+        "expression": null,
+        "kind": "line",
+        "portrait": null,
+        "speaker": "相馬律",
+        "text": "測試完成。",
+      },
+    ],
+    "unlock": {
+      "left": {
+        "id": "cabinet",
+        "predicate": "hotspot_investigated",
+      },
+      "op": "and",
+      "right": {
+        "id": "witness_alibi",
+        "predicate": "statement_acquired",
+      },
+    },
+  },
+  "statementManifest": [
+    {
+      "content": "「案發時我在桌邊。」",
+      "id": "witness_alibi",
+      "onAcquire": [
+        {
+          "expression": null,
+          "kind": "line",
+          "portrait": null,
+          "speaker": "早坂茜",
+          "text": "他說在桌邊。",
+        },
+      ],
+      "onReexamine": [
+        {
+          "expression": null,
+          "kind": "line",
+          "portrait": null,
+          "speaker": "早坂茜",
+          "text": "他堅持是在桌邊。",
+        },
+      ],
+      "speaker": "證人",
+    },
+  ],
+  "sublocations": [
+    {
+      "backgroundAssetId": null,
+      "bgm": null,
+      "bgs": null,
+      "characters": [
+        {
+          "bio": "案發時在現場的證人。",
+          "id": "witness",
+          "layout": {
+            "anchor": "bottomCenter",
+            "assetId": "portrait.witness.standard",
+            "h": 0.72,
+            "kind": "sprite",
+            "w": 0.16,
+            "x": 0.72,
+            "y": 0.18,
+          },
+          "name": "證人",
+          "role": "證人",
+          "topics": [
+            {
+              "id": "timeline",
+              "label": "案發時間",
+              "onReexamine": [
+                {
+                  "expression": null,
+                  "kind": "line",
+                  "portrait": null,
+                  "speaker": "證人",
+                  "text": "和剛才一樣，我在桌邊。",
+                },
+              ],
+              "reveals": [
+                {
+                  "id": "witness_alibi",
+                  "kind": "statement",
+                },
+              ],
+              "status": "unlocked",
+              "topicDialogue": [
+                {
+                  "expression": null,
+                  "kind": "line",
+                  "portrait": null,
+                  "speaker": "證人",
+                  "text": "我那時候在桌邊。",
+                },
+              ],
+              "unlock": null,
+            },
+            {
+              "id": "motive",
+              "label": "動機",
+              "onReexamine": null,
+              "reveals": [],
+              "status": "locked",
+              "topicDialogue": [
+                {
+                  "expression": null,
+                  "kind": "line",
+                  "portrait": null,
+                  "speaker": "證人",
+                  "text": "我沒有動機。",
+                },
+              ],
+              "unlock": {
+                "id": "coffee",
+                "predicate": "evidence_collected",
+              },
+            },
+          ],
+        },
+      ],
+      "hotspots": [
+        {
+          "description": "一張木桌，桌上有一杯咖啡。",
+          "id": "table",
+          "inspectDialogue": [
+            {
+              "kind": "action",
+              "text": "相馬律靠近桌子。",
+            },
+            {
+              "expression": null,
+              "kind": "line",
+              "portrait": null,
+              "speaker": "相馬律",
+              "text": "還是熱的。",
+            },
+          ],
+          "label": "桌子",
+          "layout": {
+            "h": 0.12,
+            "kind": "rect",
+            "w": 0.16,
+            "x": 0.18,
+            "y": 0.52,
+          },
+          "onReexamine": [
+            {
+              "expression": null,
+              "kind": "line",
+              "portrait": null,
+              "speaker": "相馬律",
+              "text": "咖啡已經涼了。",
+            },
+          ],
+          "reveals": [
+            {
+              "id": "coffee",
+              "kind": "evidence",
+            },
+            {
+              "id": "back_room",
+              "kind": "sublocation",
+            },
+          ],
+          "status": "unlocked",
+          "unlock": null,
+        },
+        {
+          "description": "窗戶半開，外面正在下雨。",
+          "id": "window",
+          "inspectDialogue": [
+            {
+              "kind": "action",
+              "text": "相馬律看了一眼窗外。",
+            },
+            {
+              "expression": null,
+              "kind": "line",
+              "portrait": null,
+              "speaker": "相馬律",
+              "text": "雨還在下。",
+            },
+          ],
+          "label": "窗戶",
+          "layout": null,
+          "onReexamine": null,
+          "reveals": [],
+          "status": "unlocked",
+          "unlock": null,
+        },
+      ],
+      "id": "main_hall",
+      "label": "主廳",
+      "reveals": [],
+      "sceneTag": "測試主廳，明亮。",
+      "status": "unlocked",
+      "transitionDialogue": [
+        {
+          "kind": "action",
+          "text": "兩人環視主廳。",
+        },
+        {
+          "expression": null,
+          "kind": "line",
+          "portrait": null,
+          "speaker": "早坂茜",
+          "text": "先看看這裡。",
+        },
+      ],
+      "unlock": null,
+    },
+    {
+      "backgroundAssetId": null,
+      "bgm": null,
+      "bgs": null,
+      "characters": [],
+      "hotspots": [
+        {
+          "description": "一個上鎖的櫥櫃。",
+          "id": "cabinet",
+          "inspectDialogue": [
+            {
+              "kind": "action",
+              "text": "相馬律試了試櫥櫃。",
+            },
+            {
+              "expression": null,
+              "kind": "line",
+              "portrait": null,
+              "speaker": "相馬律",
+              "text": "鎖著的。",
+            },
+          ],
+          "label": "櫥櫃",
+          "layout": {
+            "h": 0.2,
+            "kind": "rect",
+            "w": 0.14,
+            "x": 0.42,
+            "y": 0.35,
+          },
+          "onReexamine": null,
+          "reveals": [
+            {
+              "id": "locked_box",
+              "kind": "evidence",
+            },
+          ],
+          "status": "unlocked",
+          "unlock": null,
+        },
+      ],
+      "id": "back_room",
+      "label": "後室",
+      "reveals": [],
+      "sceneTag": "測試後室，昏暗。",
+      "status": "locked",
+      "transitionDialogue": [
+        {
+          "kind": "action",
+          "text": "兩人推門進入後室。",
+        },
+        {
+          "expression": null,
+          "kind": "line",
+          "portrait": null,
+          "speaker": "早坂茜",
+          "text": "這裡比較冷。",
+        },
+      ],
+      "unlock": null,
+    },
+  ],
+  "title": "測試調查場景",
+  "type": "investigation",
+}
+`;

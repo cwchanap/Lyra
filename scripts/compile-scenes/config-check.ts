@@ -3,7 +3,7 @@
 //
 // Asserts apps/game/src-tauri/tauri.conf.json has the wiring spec §3a.0 / §3a.1 require:
 //   build.beforeDevCommand   === "bun run scenes:compile && bun run dev:frontend"
-//   build.beforeBuildCommand === "bun run build:tauri"
+//   build.beforeBuildCommand === "bun run scenes:compile && bun run build"
 //   bundle.resources         ⊇ ["resources/scenes/**/*"]
 //
 // Fails loud if any are missing or wrong.
@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const EXPECTED_BEFORE_DEV = "bun run scenes:compile && bun run dev:frontend";
-const EXPECTED_BEFORE_BUILD = "bun run build:tauri";
+const EXPECTED_BEFORE_BUILD = "bun run scenes:compile && bun run build";
 const REQUIRED_RESOURCE = "resources/scenes/**/*";
 
 export type ConfigCheckResult =
