@@ -77,6 +77,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Sync SvelteKit generated tsconfig
+        run: bun run --cwd apps/game sync
+
       - name: Run compiler and workspace layout tests
         run: bun run test:scripts
 
