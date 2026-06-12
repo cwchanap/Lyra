@@ -463,6 +463,92 @@ describe("EditorCanvas", () => {
     );
   });
 
+  it("resolves evidence sprite layout to evidence asset path", () => {
+    const evidenceSpriteScene = {
+      ...scene,
+      id: "investigation_scene_evidence_sprite",
+      sublocations: [
+        {
+          ...scene.sublocations[0],
+          characters: [
+            {
+              id: "witness",
+              name: "Witness",
+              role: "Witness",
+              bio: "Saw something.",
+              layout: {
+                kind: "sprite",
+                assetId: "evidence.knife",
+                x: 0.5,
+                y: 0.3,
+                w: 0.15,
+                h: 0.4,
+                anchor: "bottomCenter",
+              },
+              topics: [],
+            },
+          ],
+        },
+      ],
+    } satisfies InvestigationSceneJson;
+
+    const { container } = render(EditorCanvas, {
+      scene: evidenceSpriteScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    expect(container.querySelector(".character-preview")).toHaveAttribute(
+      "src",
+      "/assets/evidence/knife.png",
+    );
+  });
+
+  it("resolves background sprite layout to background asset path", () => {
+    const bgSpriteScene = {
+      ...scene,
+      id: "investigation_scene_bg_sprite",
+      sublocations: [
+        {
+          ...scene.sublocations[0],
+          characters: [
+            {
+              id: "witness",
+              name: "Witness",
+              role: "Witness",
+              bio: "Saw something.",
+              layout: {
+                kind: "sprite",
+                assetId: "background.chapter_1.crime_scene",
+                x: 0.5,
+                y: 0.3,
+                w: 0.3,
+                h: 0.5,
+                anchor: "bottomCenter",
+              },
+              topics: [],
+            },
+          ],
+        },
+      ],
+    } satisfies InvestigationSceneJson;
+
+    const { container } = render(EditorCanvas, {
+      scene: bgSpriteScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    expect(container.querySelector(".character-preview")).toHaveAttribute(
+      "src",
+      "/assets/backgrounds/chapter_1/crime_scene.png",
+    );
+  });
+
   it("loads alpha crop variables for character previews", () => {
     expect(editorCanvasSource).toContain("loadCharacterCrop");
     expect(editorCanvasSource).toContain("cropVariablesForAlphaBounds");
