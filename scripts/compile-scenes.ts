@@ -99,7 +99,7 @@ async function runOnce() {
   if (result.assetReport.enabled) {
     const r = result.assetReport.requested;
     console.log(
-      `[compile-scenes] Assets - backgrounds ${r.background}, portraits ${r.portrait}, evidence ${r.evidence}, audio ${r.audio}; warnings ${result.assetReport.warnings.length}.`,
+      `[compile-scenes] Assets - backgrounds ${r.background}, portraits ${r.portrait}, standees ${r.standee}, evidence ${r.evidence}, audio ${r.audio}; warnings ${result.assetReport.warnings.length}.`,
     );
   }
   if (result.assetReport.warnings.length > 0) {

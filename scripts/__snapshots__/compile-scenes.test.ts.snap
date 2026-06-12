@@ -442,60 +442,6 @@ exports[`snapshot: valid fixture JSON output matches the chapters.json snapshot 
 }
 `;
 
-exports[`snapshot: valid fixture JSON output matches the linear scene snapshot 1`] = `
-{
-  "assetRefs": [],
-  "id": "scene_0",
-  "queue": [
-    {
-      "assetCue": {
-        "backgroundAssetId": null,
-        "bgm": null,
-        "bgs": null,
-      },
-      "kind": "sceneTag",
-      "text": "測試場景前廳，深夜。",
-    },
-    {
-      "kind": "action",
-      "text": "相馬律走進場景。",
-    },
-    {
-      "expression": null,
-      "kind": "line",
-      "portrait": null,
-      "speaker": "相馬律",
-      "text": "測試開始。",
-    },
-    {
-      "expression": null,
-      "kind": "line",
-      "portrait": null,
-      "speaker": "早坂茜",
-      "text": "好。",
-    },
-    {
-      "assetCue": {
-        "backgroundAssetId": null,
-        "bgm": null,
-        "bgs": null,
-      },
-      "kind": "sceneTag",
-      "text": "測試場景內室。",
-    },
-    {
-      "expression": null,
-      "kind": "line",
-      "portrait": null,
-      "speaker": "相馬律",
-      "text": "場景切換。",
-    },
-  ],
-  "title": "測試線性場景",
-  "type": "linear",
-}
-`;
-
 exports[`snapshot: valid fixture JSON output matches the investigation scene snapshot 1`] = `
 {
   "assetRefs": [],
@@ -837,5 +783,59 @@ exports[`snapshot: valid fixture JSON output matches the investigation scene sna
   ],
   "title": "測試調查場景",
   "type": "investigation",
+}
+`;
+
+exports[`snapshot: valid fixture JSON output matches the linear scene snapshot 1`] = `
+{
+  "assetRefs": [],
+  "id": "scene_0",
+  "queue": [
+    {
+      "assetCue": {
+        "backgroundAssetId": null,
+        "bgm": null,
+        "bgs": null,
+      },
+      "kind": "sceneTag",
+      "text": "測試場景前廳，深夜。",
+    },
+    {
+      "kind": "action",
+      "text": "相馬律走進場景。",
+    },
+    {
+      "expression": null,
+      "kind": "line",
+      "portrait": null,
+      "speaker": "相馬律",
+      "text": "測試開始。",
+    },
+    {
+      "expression": null,
+      "kind": "line",
+      "portrait": null,
+      "speaker": "早坂茜",
+      "text": "好。",
+    },
+    {
+      "assetCue": {
+        "backgroundAssetId": null,
+        "bgm": null,
+        "bgs": null,
+      },
+      "kind": "sceneTag",
+      "text": "測試場景內室。",
+    },
+    {
+      "expression": null,
+      "kind": "line",
+      "portrait": null,
+      "speaker": "相馬律",
+      "text": "場景切換。",
+    },
+  ],
+  "title": "測試線性場景",
+  "type": "linear",
 }
 `;

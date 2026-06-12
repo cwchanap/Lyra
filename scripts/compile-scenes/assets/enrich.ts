@@ -150,7 +150,7 @@ function enrichInvestigationScene(
         onReexamine: enrichNullableDialogue(hotspot.onReexamine, context),
       })),
       characters: sub.characters.map((character) => {
-        enrichCharacterStandee(character, context);
+        enrichCharacterSpriteLayout(character, context);
         return {
           ...character,
           topics: character.topics.map((topic) => ({
@@ -499,46 +499,100 @@ function stripEvidence(evidence: ASTEvidence): ASTEvidence {
 }
 
 /**
- * Extract standee asset references from a character's sprite layout.
- * Layout sidecars set `layout.assetId` (e.g. "standee.hayasaka_akane.standard")
- * on investigation-scene characters. The enrichment pipeline must register
- * these as manifest entries so that asset existence checks and the manifest
- * report include standees.
+ * Extract asset references from a character's sprite layout.
+ * Layout sidecars set `layout.assetId` on investigation-scene characters.
+ * The layout parser accepts "standee.", "portrait.", "evidence.", and
+ * "background." prefixes. The enrichment pipeline must register all of
+ * them as manifest entries so that asset existence checks and the manifest
+ * report cover every rendered sprite asset.
  */
-function enrichCharacterStandee(
+function enrichCharacterSpriteLayout(
   character: ASTCharacter,
   context: EnrichContext,
 ): void {
   if (!character.layout || character.layout.kind !== "sprite") return;
   const assetId = character.layout.assetId;
-  if (!assetId.startsWith("standee.")) return;
 
-  const [, characterId, pose] = assetId.split(".");
-  if (!characterId || !pose) {
-    context.errors.push(
-      compileError(
-        character.sourceFile,
-        character.line,
-        "assetInvalidStandeeId",
-        `Standee assetId "${assetId}" must follow format standee.<characterId>.<pose>.`,
-      ),
-    );
-    return;
+  if (assetId.startsWith("standee.")) {
+    const [, characterId, pose] = assetId.split(".");
+    if (!characterId || !pose) {
+      context.errors.push(
+        compileError(
+          character.sourceFile,
+          character.line,
+          "assetInvalidStandeeId",
+          `Standee assetId "${assetId}" must follow format standee.<characterId>.<pose>.`,
+        ),
+      );
+      return;
+    }
+
+    addRef(context.refs, { type: "standee", assetId });
+    const charConfig = context.config.characters.byId.get(characterId);
+    putRequest(context.requests, {
+      assetId,
+      type: "standee",
+      source: {
+        chapterId: context.scene.chapterId,
+        sceneId: context.scene.ast.id,
+        characterId: character.id,
+      },
+      prompt: pose,
+      subjectPrompt: charConfig?.visualPrompt ?? "",
+    });
+  } else if (assetId.startsWith("portrait.")) {
+    const [, characterId, expression] = assetId.split(".");
+    if (!characterId || !expression) {
+      context.errors.push(
+        compileError(
+          character.sourceFile,
+          character.line,
+          "assetInvalidPortraitLayoutId",
+          `Portrait layout assetId "${assetId}" must follow format portrait.<characterId>.<expression>.`,
+        ),
+      );
+      return;
+    }
+
+    addRef(context.refs, { type: "portrait", assetId });
+    const charConfig = context.config.characters.byId.get(characterId);
+    putRequest(context.requests, {
+      assetId,
+      type: "portrait",
+      source: {
+        chapterId: context.scene.chapterId,
+        sceneId: context.scene.ast.id,
+        characterId: character.id,
+        expression,
+      },
+      prompt: expression,
+      subjectPrompt: charConfig?.visualPrompt ?? "",
+    });
+  } else if (assetId.startsWith("evidence.")) {
+    addRef(context.refs, { type: "evidence", assetId });
+    putRequest(context.requests, {
+      assetId,
+      type: "evidence",
+      source: {
+        chapterId: context.scene.chapterId,
+        sceneId: context.scene.ast.id,
+        characterId: character.id,
+      },
+      prompt: `evidence sprite for ${character.id}`,
+    });
+  } else if (assetId.startsWith("background.")) {
+    addRef(context.refs, { type: "background", assetId });
+    putRequest(context.requests, {
+      assetId,
+      type: "background",
+      source: {
+        chapterId: context.scene.chapterId,
+        sceneId: context.scene.ast.id,
+        characterId: character.id,
+      },
+      prompt: `background sprite for ${character.id}`,
+    });
   }
-
-  addRef(context.refs, { type: "standee", assetId });
-  const charConfig = context.config.characters.byId.get(characterId);
-  putRequest(context.requests, {
-    assetId,
-    type: "standee",
-    source: {
-      chapterId: context.scene.chapterId,
-      sceneId: context.scene.ast.id,
-      characterId: character.id,
-    },
-    prompt: pose,
-    subjectPrompt: charConfig?.visualPrompt ?? "",
-  });
 }
 
 function enrichVisualCue(
