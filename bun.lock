@@ -6,6 +6,7 @@
       "name": "lyra",
       "devDependencies": {
         "@eslint/js": "^10.0.1",
+        "@lyra/asset-paths": "workspace:*",
         "@playwright/test": "^1.60.0",
         "@sveltejs/adapter-static": "^3.0.6",
         "@sveltejs/kit": "^2.9.0",
