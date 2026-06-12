@@ -131,4 +131,54 @@ describe("InventoryPanel", () => {
       evidenceButton.querySelector("img.evidence-thumb"),
     ).not.toBeInTheDocument();
   });
+
+  it("does not warn when evidence image errors on an already-placeholder thumbnail", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const user = userEvent.setup();
+
+    const { container } = render(InventoryPanel, {
+      inventory,
+      reexamineEnabled: true,
+      onReexamineEvidence: vi.fn(),
+      onReexamineStatement: vi.fn(),
+    });
+
+    await user.click(screen.getByRole("button", { name: /EVIDENCE/ }));
+
+    await waitFor(() => {
+      expect(container.querySelector("img.evidence-thumb")).toBeInTheDocument();
+    });
+
+    const img = container.querySelector(
+      "img.evidence-thumb",
+    ) as HTMLImageElement;
+    img.dispatchEvent(new Event("error"));
+
+    await waitFor(() => {
+      expect(img.src).toContain("data:image/svg+xml");
+    });
+
+    warnSpy.mockClear();
+    img.dispatchEvent(new Event("error"));
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
+
+  it("calls onReexamineEvidence when a reexamine is triggered", async () => {
+    const user = userEvent.setup();
+    const onReexamineEvidence = vi.fn();
+
+    render(InventoryPanel, {
+      inventory,
+      reexamineEnabled: true,
+      onReexamineEvidence,
+      onReexamineStatement: vi.fn(),
+    });
+
+    await user.click(screen.getByRole("button", { name: /EVIDENCE/ }));
+    await user.click(screen.getByRole("button", { name: /咖啡收據/ }));
+
+    expect(onReexamineEvidence).toHaveBeenCalledWith("coffee_receipt");
+  });
 });
