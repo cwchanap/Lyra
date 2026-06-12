@@ -432,4 +432,354 @@ describe("InvestigationSceneSurface", () => {
       );
     });
   });
+
+  it("computes alpha crop CSS variables when portrait image loads", async () => {
+    const origCreateElement = document.createElement.bind(document);
+
+    const fakeImageData = {
+      data: new Uint8ClampedArray(4 * 4 * 4),
+      width: 4,
+      height: 4,
+    };
+    for (const [x, y] of [
+      [1, 1],
+      [2, 2],
+    ]) {
+      fakeImageData.data[(y * 4 + x) * 4 + 3] = 255;
+    }
+
+    const fakeContext = {
+      drawImage: vi.fn(),
+      getImageData: vi.fn(() => fakeImageData),
+    };
+    const fakeCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => fakeContext),
+    };
+
+    const createElementSpy = vi
+      .spyOn(document, "createElement")
+      .mockImplementation((tag: string) => {
+        if (tag === "canvas") return fakeCanvas as unknown as HTMLElement;
+        return origCreateElement(tag);
+      });
+
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(".character-target img"),
+      ).toBeInTheDocument();
+    });
+
+    const img = container.querySelector(
+      ".character-target img",
+    ) as HTMLImageElement;
+    Object.defineProperty(img, "naturalWidth", {
+      value: 4,
+      configurable: true,
+    });
+    Object.defineProperty(img, "naturalHeight", {
+      value: 4,
+      configurable: true,
+    });
+    fakeCanvas.width = 4;
+    fakeCanvas.height = 4;
+    img.dispatchEvent(new Event("load"));
+
+    await waitFor(() => {
+      const cropDiv = container.querySelector(".character-preview-crop");
+      expect(cropDiv?.getAttribute("style")).toContain("--crop-height:");
+    });
+
+    createElementSpy.mockRestore();
+  });
+
+  it("skips crop computation when canvas context is unavailable", async () => {
+    const origCreateElement = document.createElement.bind(document);
+
+    const fakeCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => null),
+    };
+
+    const createElementSpy = vi
+      .spyOn(document, "createElement")
+      .mockImplementation((tag: string) => {
+        if (tag === "canvas") return fakeCanvas as unknown as HTMLElement;
+        return origCreateElement(tag);
+      });
+
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(".character-target img"),
+      ).toBeInTheDocument();
+    });
+
+    const img = container.querySelector(
+      ".character-target img",
+    ) as HTMLImageElement;
+    Object.defineProperty(img, "naturalWidth", {
+      value: 4,
+      configurable: true,
+    });
+    Object.defineProperty(img, "naturalHeight", {
+      value: 4,
+      configurable: true,
+    });
+    fakeCanvas.width = 4;
+    fakeCanvas.height = 4;
+    img.dispatchEvent(new Event("load"));
+
+    await waitFor(() => {
+      expect(fakeCanvas.getContext).toHaveBeenCalledWith("2d", {
+        willReadFrequently: true,
+      });
+    });
+
+    const cropDiv = container.querySelector(".character-preview-crop");
+    expect(cropDiv?.getAttribute("style") ?? "").not.toContain(
+      "--crop-height:",
+    );
+
+    createElementSpy.mockRestore();
+  });
+
+  it("skips crop computation when alpha bounds are null", async () => {
+    const origCreateElement = document.createElement.bind(document);
+
+    const fakeImageData = {
+      data: new Uint8ClampedArray(4 * 4 * 4),
+      width: 4,
+      height: 4,
+    };
+
+    const fakeContext = {
+      drawImage: vi.fn(),
+      getImageData: vi.fn(() => fakeImageData),
+    };
+    const fakeCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => fakeContext),
+    };
+
+    const createElementSpy = vi
+      .spyOn(document, "createElement")
+      .mockImplementation((tag: string) => {
+        if (tag === "canvas") return fakeCanvas as unknown as HTMLElement;
+        return origCreateElement(tag);
+      });
+
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(".character-target img"),
+      ).toBeInTheDocument();
+    });
+
+    const img = container.querySelector(
+      ".character-target img",
+    ) as HTMLImageElement;
+    Object.defineProperty(img, "naturalWidth", {
+      value: 4,
+      configurable: true,
+    });
+    Object.defineProperty(img, "naturalHeight", {
+      value: 4,
+      configurable: true,
+    });
+    fakeCanvas.width = 4;
+    fakeCanvas.height = 4;
+    img.dispatchEvent(new Event("load"));
+
+    await waitFor(() => {
+      expect(fakeContext.getImageData).toHaveBeenCalled();
+    });
+
+    const cropDiv = container.querySelector(".character-preview-crop");
+    expect(cropDiv?.getAttribute("style") ?? "").not.toContain(
+      "--crop-height:",
+    );
+
+    createElementSpy.mockRestore();
+  });
+
+  it("does not re-compute crop when image loads a second time", async () => {
+    const origCreateElement = document.createElement.bind(document);
+
+    const fakeImageData = {
+      data: new Uint8ClampedArray(4 * 4 * 4),
+      width: 4,
+      height: 4,
+    };
+    fakeImageData.data[5 * 4 + 3] = 255;
+
+    const fakeContext = {
+      drawImage: vi.fn(),
+      getImageData: vi.fn(() => fakeImageData),
+    };
+    const fakeCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => fakeContext),
+    };
+
+    const createElementSpy = vi
+      .spyOn(document, "createElement")
+      .mockImplementation((tag: string) => {
+        if (tag === "canvas") return fakeCanvas as unknown as HTMLElement;
+        return origCreateElement(tag);
+      });
+
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(".character-target img"),
+      ).toBeInTheDocument();
+    });
+
+    const img = container.querySelector(
+      ".character-target img",
+    ) as HTMLImageElement;
+    Object.defineProperty(img, "naturalWidth", {
+      value: 4,
+      configurable: true,
+    });
+    Object.defineProperty(img, "naturalHeight", {
+      value: 4,
+      configurable: true,
+    });
+    fakeCanvas.width = 4;
+    fakeCanvas.height = 4;
+
+    img.dispatchEvent(new Event("load"));
+    await waitFor(() => {
+      const cropDiv = container.querySelector(".character-preview-crop");
+      expect(cropDiv?.getAttribute("style")).toContain("--crop-height:");
+    });
+
+    const callsBefore = fakeContext.getImageData.mock.calls.length;
+    img.dispatchEvent(new Event("load"));
+    expect(fakeContext.getImageData.mock.calls.length).toBe(callsBefore);
+
+    createElementSpy.mockRestore();
+  });
+
+  it("ignores load events from non-HTMLImageElement targets", async () => {
+    const createElementSpy = vi.spyOn(document, "createElement");
+
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(".character-target img"),
+      ).toBeInTheDocument();
+    });
+
+    const img = container.querySelector(
+      ".character-target img",
+    ) as HTMLImageElement;
+    Object.defineProperty(img, "naturalWidth", {
+      value: 0,
+      configurable: true,
+    });
+    Object.defineProperty(img, "naturalHeight", {
+      value: 0,
+      configurable: true,
+    });
+    img.dispatchEvent(new Event("load"));
+
+    expect(createElementSpy).not.toHaveBeenCalledWith("canvas");
+    createElementSpy.mockRestore();
+  });
+
+  it("does not re-placeholder background when background is already a placeholder", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation,
+      backgroundAssetId: "background.chapter_1.scene_0.cafe",
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector("img.background-image"),
+      ).toBeInTheDocument();
+    });
+
+    const img = container.querySelector(
+      "img.background-image",
+    ) as HTMLImageElement;
+    img.dispatchEvent(new Event("error"));
+
+    await waitFor(() => {
+      expect(img.src).toContain("data:image/svg+xml");
+    });
+
+    warnSpy.mockClear();
+    img.dispatchEvent(new Event("error"));
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
+
+  it("does not re-placeholder portrait when portrait is already a placeholder", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(".character-target img"),
+      ).toBeInTheDocument();
+    });
+
+    const img = container.querySelector(
+      ".character-target img",
+    ) as HTMLImageElement;
+    img.dispatchEvent(new Event("error"));
+
+    await waitFor(() => {
+      expect(img.src).toContain("data:image/svg+xml");
+    });
+
+    warnSpy.mockClear();
+    img.dispatchEvent(new Event("error"));
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
 });

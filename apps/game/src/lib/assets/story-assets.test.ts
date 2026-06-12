@@ -164,4 +164,13 @@ describe("story asset resolver helpers", () => {
       placeholder: false,
     });
   });
+
+  it("evicts cache and rethrows when resolution fails", async () => {
+    await expect(
+      resolveStoryAsset("portrait-only", "portrait"),
+    ).rejects.toThrow(/expected exactly 3/);
+
+    const second = resolveStoryAsset("portrait-only", "portrait");
+    await expect(second).rejects.toThrow(/expected exactly 3/);
+  });
 });
