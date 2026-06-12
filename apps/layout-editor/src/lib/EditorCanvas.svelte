@@ -352,8 +352,13 @@
     };
   }
 
-  function characterAssetType(assetId: string): "portrait" | "standee" {
-    return assetId.startsWith("standee.") ? "standee" : "portrait";
+  function characterAssetType(
+    assetId: string,
+  ): "portrait" | "standee" | "evidence" | "background" {
+    if (assetId.startsWith("standee.")) return "standee";
+    if (assetId.startsWith("evidence.")) return "evidence";
+    if (assetId.startsWith("background.")) return "background";
+    return "portrait";
   }
 
   function normalizeCharacterLayout(layout: SpriteLayout): SpriteLayout {
