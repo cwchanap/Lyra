@@ -695,6 +695,122 @@ describe("enrichScenesWithAssets", () => {
     );
   });
 
+  it("errors for standee assetId with extra dot-separated segments", () => {
+    const scenes: SceneRecord[] = [
+      {
+        chapterId: "chapter_1",
+        file: "investigation_scene_1.md",
+        ast: {
+          kind: "investigationScene",
+          id: "investigation_scene_1",
+          title: "調查",
+          intro: [],
+          sublocations: [
+            {
+              id: "office",
+              label: "辦公室",
+              assetCue: null,
+              transitionDialogue: [],
+              hotspots: [],
+              characters: [
+                {
+                  id: "hayasaka",
+                  name: "早坂茜",
+                  role: "助手",
+                  bio: "助手。",
+                  topics: [],
+                  layout: {
+                    kind: "sprite",
+                    assetId: "standee.hayasaka_akane.standard.extra",
+                    x: 0,
+                    y: 0.18,
+                    w: 0.19,
+                    h: 0.82,
+                    anchor: "bottomCenter" as const,
+                  },
+                  sourceFile: "chapter_1/investigation_scene_1.md",
+                  line: 5,
+                },
+              ],
+            },
+          ],
+          evidenceManifest: [],
+          statementManifest: [],
+          outro: { unlock: "auto", dialogue: [] },
+          assetRefs: [],
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 1,
+        },
+      },
+    ];
+
+    const result = enrichScenesWithAssets({ scenes, config: config() });
+    expect(result.errors.some((e) => e.code === "assetInvalidStandeeId")).toBe(
+      true,
+    );
+    expect(result.manifest.entries.map((e) => e.assetId)).not.toContain(
+      "standee.hayasaka_akane.standard.extra",
+    );
+  });
+
+  it("errors for portrait assetId with extra dot-separated segments", () => {
+    const scenes: SceneRecord[] = [
+      {
+        chapterId: "chapter_1",
+        file: "investigation_scene_1.md",
+        ast: {
+          kind: "investigationScene",
+          id: "investigation_scene_1",
+          title: "調查",
+          intro: [],
+          sublocations: [
+            {
+              id: "office",
+              label: "辦公室",
+              assetCue: null,
+              transitionDialogue: [],
+              hotspots: [],
+              characters: [
+                {
+                  id: "hayasaka",
+                  name: "早坂茜",
+                  role: "助手",
+                  bio: "助手。",
+                  topics: [],
+                  layout: {
+                    kind: "sprite",
+                    assetId: "portrait.hayasaka_akane.concerned.extra",
+                    x: 0,
+                    y: 0.18,
+                    w: 0.19,
+                    h: 0.82,
+                    anchor: "bottomCenter" as const,
+                  },
+                  sourceFile: "chapter_1/investigation_scene_1.md",
+                  line: 5,
+                },
+              ],
+            },
+          ],
+          evidenceManifest: [],
+          statementManifest: [],
+          outro: { unlock: "auto", dialogue: [] },
+          assetRefs: [],
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 1,
+        },
+      },
+    ];
+
+    const result = enrichScenesWithAssets({ scenes, config: config() });
+    expect(
+      result.errors.some((e) => e.code === "assetInvalidPortraitLayoutId"),
+    ).toBe(true);
+    expect(result.manifest.entries.map((e) => e.assetId)).not.toContain(
+      "portrait.hayasaka_akane.concerned.extra",
+    );
+  });
+
   it("registers portrait assetIds from character sprite layouts", () => {
     const scenes: SceneRecord[] = [
       {
