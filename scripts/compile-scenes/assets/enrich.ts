@@ -514,8 +514,8 @@ function enrichCharacterSpriteLayout(
   const assetId = character.layout.assetId;
 
   if (assetId.startsWith("standee.")) {
-    const [, characterId, pose] = assetId.split(".");
-    if (!characterId || !pose) {
+    const parts = assetId.split(".");
+    if (parts.length !== 3) {
       context.errors.push(
         compileError(
           character.sourceFile,
@@ -526,6 +526,7 @@ function enrichCharacterSpriteLayout(
       );
       return;
     }
+    const [, characterId, pose] = parts;
 
     addRef(context.refs, { type: "standee", assetId });
     const charConfig = context.config.characters.byId.get(characterId);
@@ -541,8 +542,8 @@ function enrichCharacterSpriteLayout(
       subjectPrompt: charConfig?.visualPrompt ?? "",
     });
   } else if (assetId.startsWith("portrait.")) {
-    const [, characterId, expression] = assetId.split(".");
-    if (!characterId || !expression) {
+    const parts = assetId.split(".");
+    if (parts.length !== 3) {
       context.errors.push(
         compileError(
           character.sourceFile,
@@ -553,6 +554,7 @@ function enrichCharacterSpriteLayout(
       );
       return;
     }
+    const [, characterId, expression] = parts;
 
     addRef(context.refs, { type: "portrait", assetId });
     const charConfig = context.config.characters.byId.get(characterId);

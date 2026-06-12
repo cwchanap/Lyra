@@ -7,7 +7,7 @@
 // =============================================================================
 
 import type { AssetConfig } from "./config";
-import { publicPathForAssetId, type AssetPathType } from "@lyra/asset-paths";
+import { publicPathForAssetId } from "@lyra/asset-paths";
 
 export type AssetManifestEntry = {
   assetId: string;
@@ -76,5 +76,5 @@ export function publicPath(
   assetId: string,
   type: AssetManifestEntry["type"],
 ): string {
-  return publicPathForAssetId(assetId, type as AssetPathType);
+  return publicPathForAssetId(assetId, type);
 }
