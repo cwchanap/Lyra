@@ -695,7 +695,7 @@ describe("enrichScenesWithAssets", () => {
     );
   });
 
-  it("ignores non-standee assetIds in character sprite layouts", () => {
+  it("registers portrait assetIds from character sprite layouts", () => {
     const scenes: SceneRecord[] = [
       {
         chapterId: "chapter_1",
@@ -746,11 +746,189 @@ describe("enrichScenesWithAssets", () => {
 
     const result = enrichScenesWithAssets({ scenes, config: config() });
     expect(result.errors).toEqual([]);
-    // No standee ref — portrait assetIds in sprite layouts are ignored
+    // Portrait assetIds in sprite layouts are registered as portrait manifest entries
+    const portraitRefs = result.manifest.entries.filter(
+      (e) => e.type === "portrait",
+    );
+    expect(portraitRefs).toHaveLength(1);
+    expect(portraitRefs[0].assetId).toBe("portrait.hayasaka_akane.standard");
+
+    // No standee ref — only portrait type should be registered
     const standeeRefs = result.manifest.entries.filter(
       (e) => e.type === "standee",
     );
     expect(standeeRefs).toEqual([]);
+  });
+
+  it("registers evidence assetIds from character sprite layouts", () => {
+    const scenes: SceneRecord[] = [
+      {
+        chapterId: "chapter_1",
+        file: "investigation_scene_1.md",
+        ast: {
+          kind: "investigationScene",
+          id: "investigation_scene_1",
+          title: "調查",
+          intro: [],
+          sublocations: [
+            {
+              id: "office",
+              label: "辦公室",
+              assetCue: null,
+              transitionDialogue: [],
+              hotspots: [],
+              characters: [
+                {
+                  id: "hayasaka",
+                  name: "早坂茜",
+                  role: "助手",
+                  bio: "助手。",
+                  topics: [],
+                  layout: {
+                    kind: "sprite",
+                    assetId: "evidence.knife",
+                    x: 0.4,
+                    y: 0.3,
+                    w: 0.2,
+                    h: 0.5,
+                    anchor: "bottomCenter" as const,
+                  },
+                  sourceFile: "chapter_1/investigation_scene_1.md",
+                  line: 5,
+                },
+              ],
+            },
+          ],
+          evidenceManifest: [],
+          statementManifest: [],
+          outro: { unlock: "auto", dialogue: [] },
+          assetRefs: [],
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 1,
+        },
+      },
+    ];
+
+    const result = enrichScenesWithAssets({ scenes, config: config() });
+    expect(result.errors).toEqual([]);
+    const evidenceRefs = result.manifest.entries.filter(
+      (e) => e.type === "evidence",
+    );
+    expect(evidenceRefs).toHaveLength(1);
+    expect(evidenceRefs[0].assetId).toBe("evidence.knife");
+  });
+
+  it("registers background assetIds from character sprite layouts", () => {
+    const scenes: SceneRecord[] = [
+      {
+        chapterId: "chapter_1",
+        file: "investigation_scene_1.md",
+        ast: {
+          kind: "investigationScene",
+          id: "investigation_scene_1",
+          title: "調查",
+          intro: [],
+          sublocations: [
+            {
+              id: "office",
+              label: "辦公室",
+              assetCue: null,
+              transitionDialogue: [],
+              hotspots: [],
+              characters: [
+                {
+                  id: "hayasaka",
+                  name: "早坂茜",
+                  role: "助手",
+                  bio: "助手。",
+                  topics: [],
+                  layout: {
+                    kind: "sprite",
+                    assetId: "background.chapter_1.crime_scene",
+                    x: 0,
+                    y: 0,
+                    w: 1,
+                    h: 1,
+                    anchor: "bottomCenter" as const,
+                  },
+                  sourceFile: "chapter_1/investigation_scene_1.md",
+                  line: 5,
+                },
+              ],
+            },
+          ],
+          evidenceManifest: [],
+          statementManifest: [],
+          outro: { unlock: "auto", dialogue: [] },
+          assetRefs: [],
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 1,
+        },
+      },
+    ];
+
+    const result = enrichScenesWithAssets({ scenes, config: config() });
+    expect(result.errors).toEqual([]);
+    const bgRefs = result.manifest.entries.filter(
+      (e) => e.type === "background",
+    );
+    expect(bgRefs).toHaveLength(1);
+    expect(bgRefs[0].assetId).toBe("background.chapter_1.crime_scene");
+  });
+
+  it("errors for malformed portrait assetId in character sprite layout", () => {
+    const scenes: SceneRecord[] = [
+      {
+        chapterId: "chapter_1",
+        file: "investigation_scene_1.md",
+        ast: {
+          kind: "investigationScene",
+          id: "investigation_scene_1",
+          title: "調查",
+          intro: [],
+          sublocations: [
+            {
+              id: "office",
+              label: "辦公室",
+              assetCue: null,
+              transitionDialogue: [],
+              hotspots: [],
+              characters: [
+                {
+                  id: "hayasaka",
+                  name: "早坂茜",
+                  role: "助手",
+                  bio: "助手。",
+                  topics: [],
+                  layout: {
+                    kind: "sprite",
+                    assetId: "portrait.malformed",
+                    x: 0,
+                    y: 0.18,
+                    w: 0.19,
+                    h: 0.82,
+                    anchor: "bottomCenter" as const,
+                  },
+                  sourceFile: "chapter_1/investigation_scene_1.md",
+                  line: 5,
+                },
+              ],
+            },
+          ],
+          evidenceManifest: [],
+          statementManifest: [],
+          outro: { unlock: "auto", dialogue: [] },
+          assetRefs: [],
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 1,
+        },
+      },
+    ];
+
+    const result = enrichScenesWithAssets({ scenes, config: config() });
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0].code).toBe("assetInvalidPortraitLayoutId");
+    expect(result.errors[0].message).toContain("portrait.malformed");
   });
 
   it("uses empty subjectPrompt for standee when character is not in config", () => {
