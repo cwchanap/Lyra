@@ -31,6 +31,8 @@
 
 ### Hotspot: 雨宮的匿名訊息 {#amemiya_message}
 - **Description:** 署名雨宮的匿名訊息，一句話，附一張低解析度的裁切圖。
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Smartphone displaying an anonymous Amemiya message as the source object, with the attached thumbnail present but not readable or resolved.
 - **Reveals:** [evidence:amemiya_message_thumb]
 
 [相馬律把手機舉到兩人之間。螢幕上一句話：「雨會替東京洗掉腳印。」]
@@ -53,6 +55,7 @@
 
 ### Hotspot: 止滑墊與半乾水痕 {#floor_water}
 - **Description:** 門檻內側的止滑墊，旁邊一灘半乾的水痕。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:floor_water_drying_map]
 
 [相馬律蹲下，把手機縮圖跟地上的止滑墊比對。]
@@ -65,6 +68,7 @@
 
 ### Hotspot: 傘套邊角 {#umbrella_sleeve}
 - **Description:** 牆角掛著的濕傘套，邊角還在滴水。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:wet_umbrella_sleeve]
 
 [相馬律伸手碰了碰傘套邊角，指尖沾濕。]
@@ -75,6 +79,8 @@
 
 ### Hotspot: 咖啡機最後出杯 {#last_cup}
 - **Description:** 吧台後的咖啡機與收銀出杯紀錄。
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Cafe coffee machine and register output-record area visible as source objects, without readable output timing or receipt text.
 - **Reveals:** [evidence:coffee_last_cup_record]
 
 [相馬律翻看收銀的出杯紀錄。早坂茜站在他身後一步遠的位置，目光落在紀錄上，沒有湊近。]
@@ -111,6 +117,7 @@
 
 ### Hotspot: 舊掛鐘 {#old_clock}
 - **Description:** 牆上一台停擺的舊掛鐘，指針卡在接近 22:59。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:old_clock_photo]
 
 [相馬律抬頭看那台停住的掛鐘。他微微吸了一口氣，嘴角繃了一下。]
@@ -121,6 +128,7 @@
 
 ### Hotspot: 死者手機掉落位置 {#phone_drop}
 - **Description:** 貨架旁的撞痕，旁邊是死者手機掉落的位置。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:victim_phone_notification]
 
 [相馬律看著地上的撞痕，再看手機落點。]
@@ -131,6 +139,7 @@
 
 ### Hotspot: 金屬咖啡豆罐 {#bean_can}
 - **Description:** 不鏽鋼備品罐／金屬咖啡豆罐，罐身有新的擦拭痕，罐口有一處小凹。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:murder_weapon_candidate]
 
 [相馬律戴上手套，拿起那只金屬罐。他沒有馬上翻看，而是先掂了掂重量，然後緩緩轉動罐身，像在確認每一面——對著燈看罐口時，手指停住了。]
@@ -141,6 +150,8 @@
 
 ### Hotspot: 法醫初步簡報 {#forensic_brief}
 - **Description:** 黑瀨手上一份法醫初步簡報的摘錄。
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Kurose holding or using a forensic brief excerpt as the source object, with report text and final range details unreadable.
 - **Reveals:** [evidence:forensic_prelim_range]
 
 [黑瀨徹把一頁簡報摘錄遞給相馬律，動作隨意但紙面朝上，沒有摺痕——不是不在意，是老手的那種不刻意的保護。]
@@ -153,6 +164,8 @@
 
 ### Hotspot: 三宅23:06站位 {#miyake_replay}
 - **Description:** 三宅在 23:06 的站位，可以站到那個點上回放他的視角。
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Marked standing point in the storage room used for a sightline replay, without showing the final replay card or readable overlay.
 - **Reveals:** [evidence:miyake_pov_replay]
 
 [相馬律走到三宅 23:06 站過的位置，按指示停住，轉頭環視一圈。他的重心慢慢從左腳移到右腳，像是身體先於意識感覺到這個角度的限制。]
