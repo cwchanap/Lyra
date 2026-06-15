@@ -29,6 +29,12 @@ describe("suggestEvidenceSource", () => {
         description: "A dim screen is still powered on.",
       }),
     ).toBe("implied");
+    expect(
+      suggestEvidenceSource({
+        label: "Playback panel",
+        description: "Counter playback source.",
+      }),
+    ).toBe("implied");
   });
 
   it("suggests hidden for record and system wording unless physical document wording is present", () => {
@@ -36,6 +42,12 @@ describe("suggestEvidenceSource", () => {
       suggestEvidenceSource({
         label: "三宅打卡紀錄",
         description: "系統查詢留下的資料。",
+      }),
+    ).toBe("hidden");
+    expect(
+      suggestEvidenceSource({
+        label: "System query",
+        description: "Record lookup from the staff system.",
       }),
     ).toBe("hidden");
     expect(
@@ -51,6 +63,12 @@ describe("suggestEvidenceSource", () => {
       suggestEvidenceSource({
         label: "雨傘盒",
         description: "玄關的傘架旁有一個盒子。",
+      }),
+    ).toBe("visible");
+    expect(
+      suggestEvidenceSource({
+        label: "Printed document",
+        description: "Physical document on the desk.",
       }),
     ).toBe("visible");
     expect(
