@@ -949,6 +949,12 @@
     background: rgb(255 203 105 / 18%);
   }
 
+  .hide-boxes .target.revealed.hotspot.missing-source {
+    border-color: #f07f5f;
+    background: rgb(240 127 95 / 22%);
+    box-shadow: inset 0 0 0 1px rgb(240 127 95 / 60%);
+  }
+
   .hide-boxes .target.revealed.character {
     overflow: hidden;
     border-color: #7fc7d9;

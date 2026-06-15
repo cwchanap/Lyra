@@ -212,6 +212,37 @@ describe("EditorCanvas", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("preserves missing source attention styling when revealed with boxes hidden", async () => {
+    const user = userEvent.setup();
+    const { container } = render(EditorCanvas, {
+      scene: sourceScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const toggle = screen.getByRole("button", {
+      name: "Toggle placement boxes",
+    });
+    const missing = container.querySelector(".target.hotspot.missing-source");
+
+    expect(missing).toBeInTheDocument();
+    await user.click(toggle);
+    await user.click(missing as HTMLElement);
+
+    expect(container.querySelector(".plate")).toHaveClass("hide-boxes");
+    expect(missing).toHaveClass("revealed");
+    expect(missing).toHaveClass("missing-source");
+    expect(
+      editorCanvasSource.indexOf(
+        ".hide-boxes .target.revealed.hotspot.missing-source",
+      ),
+    ).toBeGreaterThan(
+      editorCanvasSource.indexOf(".hide-boxes .target.revealed.hotspot"),
+    );
+  });
+
   it("uses evidence previews only for visible source hotspots", () => {
     const { container } = render(EditorCanvas, {
       scene: sourceScene,
