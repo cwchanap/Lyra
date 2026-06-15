@@ -24,10 +24,46 @@ export type EvidenceSourceAuditItem = {
 };
 
 const DEFAULT_SOURCE_ROOTS = ["docs/stories_plan", "static/stories_plan"];
-const IMPLIED_WORDS = ["監視器", "回放", "螢幕", "monitor", "screen"];
-const RECORD_WORDS = ["打卡", "紀錄", "資料", "系統", "查詢"];
-const PHYSICAL_WORDS = ["副本", "列印", "文件", "紙本", "表", "白板"];
-const VISIBLE_WORDS = ["副本", "列印", "文件", "傘", "盒", "白板"];
+const IMPLIED_WORDS = [
+  "監視器",
+  "回放",
+  "螢幕",
+  "monitor",
+  "playback",
+  "screen",
+];
+const RECORD_WORDS = [
+  "打卡",
+  "紀錄",
+  "資料",
+  "系統",
+  "查詢",
+  "query",
+  "record",
+  "system",
+];
+const PHYSICAL_WORDS = [
+  "副本",
+  "列印",
+  "文件",
+  "紙本",
+  "表",
+  "白板",
+  "document",
+  "object",
+  "physical",
+];
+const VISIBLE_WORDS = [
+  "副本",
+  "列印",
+  "文件",
+  "傘",
+  "盒",
+  "白板",
+  "document",
+  "object",
+  "physical",
+];
 
 export function suggestEvidenceSource(input: {
   label: string;
