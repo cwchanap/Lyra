@@ -516,6 +516,9 @@ describe("enrichScenesWithAssets", () => {
     expect(backgroundEntry?.promptParts.entryPrompt).toContain(
       "Do not show 三宅打卡紀錄",
     );
+    expect(backgroundEntry?.promptParts.entryPrompt).not.toContain(
+      "any visible evidence/source record",
+    );
   });
 
   it("errors when an evidence-revealing hotspot omits evidenceSource", () => {

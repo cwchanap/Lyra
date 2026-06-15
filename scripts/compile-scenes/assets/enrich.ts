@@ -719,7 +719,7 @@ function investigationSourceGuidance(
       ];
     }
     return [
-      `- hidden: ${hotspot.id}. Do not show ${evidenceNames.join(", ")} or any visible evidence/source record.`,
+      `- hidden: ${hotspot.id}. Do not show ${evidenceNames.join(", ")} or the source record for hotspot ${hotspot.id} in the background.`,
     ];
   });
   if (lines.length === 0) return undefined;
