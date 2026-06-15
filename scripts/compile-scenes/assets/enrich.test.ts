@@ -521,6 +521,30 @@ describe("enrichScenesWithAssets", () => {
     );
   });
 
+  it("falls back to label:description when sceneSourcePrompt is null", () => {
+    const scene = investigationSceneWithEvidenceSources();
+    if (scene.ast.kind !== "investigationScene") {
+      throw new Error("expected investigation scene fixture");
+    }
+    const cctv = scene.ast.sublocations[0]?.hotspots[0];
+    if (!cctv) throw new Error("expected cctv hotspot fixture");
+    cctv.sceneSourcePrompt = null;
+
+    const result = enrichScenesWithAssets({
+      scenes: [scene],
+      config: config(),
+    });
+    expect(result.errors).toEqual([]);
+    const backgroundEntry = result.manifest.entries.find(
+      (entry) =>
+        entry.assetId ===
+        "background.chapter_1.investigation_scene_1.security_room",
+    );
+    expect(backgroundEntry?.promptParts.entryPrompt).toContain(
+      "監視器回放: A wall of monitors showing old lobby footage.",
+    );
+  });
+
   it("errors when an evidence-revealing hotspot omits evidenceSource", () => {
     const scene = investigationSceneWithEvidenceSources();
     if (scene.ast.kind !== "investigationScene") {

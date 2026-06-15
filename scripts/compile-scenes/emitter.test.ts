@@ -88,6 +88,8 @@ describe("emitter", () => {
               status: "unlocked",
               unlock: null,
               reveals: [],
+              evidenceSource: null,
+              sceneSourcePrompt: null,
               inspectDialogue: [],
               onReexamine: null,
               layout: {
@@ -169,6 +171,8 @@ describe("emitter", () => {
       w: 0.16,
       h: 0.12,
     });
+    expect(json.sublocations[0]?.hotspots[0]?.evidenceSource).toBeNull();
+    expect(json.sublocations[0]?.hotspots[0]?.sceneSourcePrompt).toBeNull();
     expect(json.sublocations[0]?.characters[0]?.layout).toEqual({
       kind: "sprite",
       assetId: "portrait.witness.standard",
