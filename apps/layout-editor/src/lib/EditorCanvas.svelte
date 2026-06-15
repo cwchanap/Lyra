@@ -1,6 +1,7 @@
 <script lang="ts">
   import type {
     DialogueItem,
+    EvidenceSource,
     InvestigationLayoutSidecar,
     InvestigationSceneJson,
     RevealTarget,
@@ -37,6 +38,7 @@
     kind: TargetKind;
     id: string;
   };
+  type HotspotSourceState = EvidenceSource | "missing" | null;
 
   const defaultHotspotLayout: RectLayout = {
     kind: "rect",
@@ -107,6 +109,7 @@
     currentSublocation?.hotspots.map((hotspot) => ({
       ...hotspot,
       imageAssetId: evidenceAssetIdForHotspot(hotspot),
+      sourceState: sourceStateForHotspot(hotspot),
       layout:
         sublocationLayout?.hotspots[hotspot.id] ??
         hotspot.layout ??
@@ -421,6 +424,44 @@
     return null;
   }
 
+  function hasEvidenceReveal(hotspot: SceneHotspot): boolean {
+    return hotspot.reveals.some(isEvidenceReveal);
+  }
+
+  function sourceStateForHotspot(hotspot: SceneHotspot): HotspotSourceState {
+    if (!hasEvidenceReveal(hotspot)) return null;
+    return hotspot.evidenceSource ?? "missing";
+  }
+
+  function sourceLabel(sourceState: HotspotSourceState): string | null {
+    if (!sourceState) return null;
+    return sourceState === "missing" ? "missing source" : sourceState;
+  }
+
+  function sourceClass(sourceState: HotspotSourceState): string {
+    if (!sourceState) return "";
+    return sourceState === "missing"
+      ? "missing-source"
+      : `source-${sourceState}`;
+  }
+
+  function shouldShowEvidencePreview(hotspot: {
+    imageAssetId: string | null;
+    sourceState: HotspotSourceState;
+  }): boolean {
+    return hotspot.sourceState === "visible" && Boolean(hotspot.imageAssetId);
+  }
+
+  function hotspotControlTitle(hotspot: SceneHotspot): string {
+    const parts = [hotspot.description || hotspot.label];
+    const source = sourceLabel(sourceStateForHotspot(hotspot));
+    if (source) parts.push(`Source: ${source}`);
+    if (hotspot.sceneSourcePrompt) {
+      parts.push(`Prompt: ${hotspot.sceneSourcePrompt}`);
+    }
+    return parts.join("\n");
+  }
+
   function isEvidenceReveal(
     reveal: RevealTarget,
   ): reveal is Extract<RevealTarget, { kind: "evidence" }> {
@@ -516,7 +557,7 @@
       {#each hotspotTargets as hotspot (hotspot.id)}
         <button
           type="button"
-          class="target hotspot"
+          class={`target hotspot ${sourceClass(hotspot.sourceState)}`}
           class:dragging={dragState?.kind === "hotspot" &&
             dragState.id === hotspot.id}
           class:revealed={isRevealedTarget("hotspot", hotspot.id)}
@@ -525,7 +566,7 @@
           onpointerdown={(event) =>
             startDrag("hotspot", hotspot.id, "move", hotspot.layout, event)}
         >
-          {#if assetUrl(hotspot.imageAssetId, "evidence")}
+          {#if shouldShowEvidencePreview(hotspot) && assetUrl(hotspot.imageAssetId, "evidence")}
             <img
               class="hotspot-preview"
               src={assetUrl(hotspot.imageAssetId, "evidence")}
@@ -535,7 +576,13 @@
                 handleAssetError(hotspot.imageAssetId ?? "", "evidence")}
             />
           {/if}
-          <span>{hotspot.label}</span>
+          {#if hotspot.sourceState === "implied"}
+            <i class="source-marker" aria-hidden="true"></i>
+          {/if}
+          <span class="target-label">{hotspot.label}</span>
+          {#if sourceLabel(hotspot.sourceState)}
+            <span class="source-badge">{sourceLabel(hotspot.sourceState)}</span>
+          {/if}
           {#each resizeHandles as handle (handle)}
             <i
               aria-hidden="true"
@@ -586,7 +633,7 @@
                 )}
             />
           </div>
-          <span>{character.name}</span>
+          <span class="target-label">{character.name}</span>
           {#each resizeHandles as handle (handle)}
             <i
               aria-hidden="true"
@@ -611,7 +658,7 @@
           class="box-state"
           type="button"
           aria-pressed={isTargetBoxVisible("hotspot", hotspot.id)}
-          title={hotspot.description || hotspot.label}
+          title={hotspotControlTitle(hotspot)}
           onclick={() => toggleTargetBox("hotspot", hotspot.id)}
         >
           {hotspot.label}
@@ -776,7 +823,7 @@
     pointer-events: none;
   }
 
-  .target span {
+  .target-label {
     position: absolute;
     z-index: 1;
     top: 4px;
@@ -791,9 +838,57 @@
     white-space: nowrap;
   }
 
+  .source-badge {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    z-index: 1;
+    max-width: calc(100% - 8px);
+    padding: 2px 5px;
+    border: 1px solid rgb(255 255 255 / 48%);
+    border-radius: 4px;
+    background: rgb(38 48 46 / 82%);
+    color: #ffffff;
+    font-size: 0.62rem;
+    font-weight: 800;
+    line-height: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 2px rgb(0 0 0 / 56%);
+    white-space: nowrap;
+  }
+
+  .source-marker {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 0;
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgb(255 255 255 / 72%);
+    border-radius: 50%;
+    background: rgb(38 48 46 / 42%);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+
+  .source-marker::after {
+    position: absolute;
+    inset: 5px;
+    border-radius: 50%;
+    background: rgb(255 255 255 / 82%);
+    content: "";
+  }
+
   .hotspot {
     border-color: #ffcb69;
     background: rgb(255 203 105 / 18%);
+  }
+
+  .hotspot.missing-source {
+    border-color: #f07f5f;
+    background: rgb(240 127 95 / 22%);
+    box-shadow: inset 0 0 0 1px rgb(240 127 95 / 60%);
   }
 
   .character {
@@ -837,9 +932,13 @@
     box-shadow: none;
   }
 
-  .hide-boxes .target span,
+  .hide-boxes .target-label,
+  .hide-boxes .source-badge,
+  .hide-boxes .source-marker,
   .hide-boxes .resize-handle,
-  .target.hidden span,
+  .target.hidden .target-label,
+  .target.hidden .source-badge,
+  .target.hidden .source-marker,
   .target.hidden .resize-handle {
     opacity: 0;
     pointer-events: none;
@@ -856,7 +955,9 @@
     background: rgb(127 199 217 / 18%);
   }
 
-  .hide-boxes .target.revealed span,
+  .hide-boxes .target.revealed .target-label,
+  .hide-boxes .target.revealed .source-badge,
+  .hide-boxes .target.revealed .source-marker,
   .hide-boxes .target.revealed .resize-handle {
     opacity: 1;
     pointer-events: auto;

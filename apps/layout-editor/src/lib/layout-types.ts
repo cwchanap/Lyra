@@ -10,6 +10,8 @@ export type SceneIndex = {
   }>;
 };
 
+export type EvidenceSource = "visible" | "implied" | "hidden";
+
 export type InvestigationSceneJson = {
   type: "investigation";
   id: string;
@@ -25,6 +27,8 @@ export type InvestigationSceneJson = {
       id: string;
       label: string;
       description: string;
+      evidenceSource: EvidenceSource | null;
+      sceneSourcePrompt: string | null;
       reveals: RevealTarget[];
       inspectDialogue: DialogueItem[];
       layout: RectLayout | null;
