@@ -37,6 +37,7 @@ import type {
   ASTTopic,
   CompileError,
   DialogueItem,
+  EvidenceSource,
   RevealTarget,
   UnlockExpr,
 } from "./types";
@@ -422,6 +423,32 @@ function parseHotspot(
     ? parseRevealsList(meta.value.Reveals, cur.sourceFile, head.line)
     : { ok: true as const, value: [] as RevealTarget[] };
   if (!reveals.ok) return reveals;
+  const evidenceSource = parseEvidenceSource(
+    meta.value["Evidence Source"],
+    cur.sourceFile,
+    head.line,
+  );
+  if (!evidenceSource.ok) return evidenceSource;
+  const sceneSourcePrompt = meta.value["Scene Source Prompt"] ?? null;
+  if (sceneSourcePrompt && !evidenceSource.value) {
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "hotspotSceneSourcePromptWithoutSource",
+      `Hotspot ${id} declares Scene Source Prompt but does not declare Evidence Source.`,
+    );
+  }
+  const revealsEvidence = reveals.value.some(
+    (reveal) => reveal.kind === "evidence",
+  );
+  if (evidenceSource.value && !revealsEvidence) {
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "hotspotEvidenceSourceWithoutEvidenceReveal",
+      `Hotspot ${id} declares Evidence Source but does not reveal evidence.`,
+    );
+  }
 
   const inspectRes = consumeDialogueUntilHeading(cur, 3);
   if (!inspectRes.ok) return inspectRes;
@@ -439,6 +466,8 @@ function parseHotspot(
       status,
       unlock,
       reveals: reveals.value,
+      evidenceSource: evidenceSource.value,
+      sceneSourcePrompt,
       inspectDialogue,
       onReexamine,
       sourceFile: cur.sourceFile,
@@ -663,6 +692,25 @@ function parseOutro(
   if (!r.ok) return r;
   const dialogue = r.value;
   return { ok: true, value: { unlock, dialogue } };
+}
+
+function parseEvidenceSource(
+  raw: string | undefined,
+  sourceFile: string,
+  line: number,
+):
+  | { ok: true; value: EvidenceSource | null }
+  | { ok: false; error: CompileError } {
+  if (raw === undefined) return { ok: true, value: null };
+  if (raw === "visible" || raw === "implied" || raw === "hidden") {
+    return { ok: true, value: raw };
+  }
+  return fail(
+    sourceFile,
+    line,
+    "hotspotEvidenceSourceInvalid",
+    `Evidence Source must be visible, implied, or hidden; got "${raw}".`,
+  );
 }
 
 function consumeMetadata(

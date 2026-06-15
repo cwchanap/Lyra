@@ -27,6 +27,8 @@ export type AudioCue = {
   assetId: string | null;
 };
 
+export type EvidenceSource = "visible" | "implied" | "hidden";
+
 export type VisualAssetCue = {
   backgroundPrompt: string | null;
   backgroundAssetId: string | null;
@@ -192,6 +194,8 @@ export type ASTHotspot = Located<{
   status: "locked" | "unlocked";
   unlock: UnlockExpr | null;
   reveals: RevealTarget[];
+  evidenceSource: EvidenceSource | null;
+  sceneSourcePrompt: string | null;
   inspectDialogue: DialogueItem[];
   onReexamine: DialogueItem[] | null;
   layout?: RectLayout | null;
@@ -379,6 +383,8 @@ export type JSONInvestigationScene = {
       status: "locked" | "unlocked";
       unlock: UnlockExpr | null;
       reveals: RevealTarget[];
+      evidenceSource: EvidenceSource | null;
+      sceneSourcePrompt: string | null;
       inspectDialogue: JSONDialogueItem[];
       onReexamine: JSONDialogueItem[] | null;
       layout: JSONHotspotLayout | null;
