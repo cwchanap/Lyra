@@ -54,6 +54,8 @@ export function emitInvestigationScene(
         status: h.status,
         unlock: h.unlock,
         reveals: h.reveals,
+        evidenceSource: h.evidenceSource,
+        sceneSourcePrompt: h.sceneSourcePrompt,
         inspectDialogue: emitDialogueItems(h.inspectDialogue),
         onReexamine: emitNullableDialogueItems(h.onReexamine),
         layout: h.layout ?? null,

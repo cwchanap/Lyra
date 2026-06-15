@@ -370,6 +370,157 @@ describe("parseInvestigationScene", () => {
     expect(result.error.code).toBe("assetMetadataUnknownKey");
   });
 
+  it("parses Evidence Source and Scene Source Prompt on a hotspot revealing evidence", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: monitor {#monitor}
+- **Description:** a small security monitor.
+- **Reveals:** [evidence:cctv_screenshot]
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Small security monitor beside the register, powered on but not showing readable footage.
+
+**A**：observed.
+
+## Evidence Manifest
+
+### evidence:cctv_screenshot {#cctv_screenshot}
+- **Name:** CCTV
+- **Description:** A CCTV still.
+- **Details:** The still shows a movement route.
+- **Image Prompt:** Square CCTV still evidence icon, unreadable content.
+
+#### On Collect
+
+**A**：collected.
+
+## Outro
+
+**A**：done.
+`.trim();
+
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.sublocations[0]?.hotspots[0]).toMatchObject({
+      id: "monitor",
+      evidenceSource: "implied",
+      sceneSourcePrompt:
+        "Small security monitor beside the register, powered on but not showing readable footage.",
+    });
+  });
+
+  it("rejects an invalid Evidence Source value", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: monitor {#monitor}
+- **Description:** a small security monitor.
+- **Reveals:** [evidence:cctv_screenshot]
+- **Evidence Source:** screen
+
+**A**：observed.
+
+## Evidence Manifest
+
+### evidence:cctv_screenshot {#cctv_screenshot}
+- **Name:** CCTV
+- **Description:** A CCTV still.
+- **Details:** The still shows a movement route.
+
+#### On Collect
+
+**A**：collected.
+
+## Outro
+
+**A**：done.
+`.trim();
+
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("hotspotEvidenceSourceInvalid");
+    expect(result.error.message).toContain("visible, implied, or hidden");
+  });
+
+  it("rejects Scene Source Prompt without Evidence Source", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: monitor {#monitor}
+- **Description:** a small security monitor.
+- **Reveals:** [evidence:cctv_screenshot]
+- **Scene Source Prompt:** Small security monitor beside the register.
+
+**A**：observed.
+
+## Evidence Manifest
+
+### evidence:cctv_screenshot {#cctv_screenshot}
+- **Name:** CCTV
+- **Description:** A CCTV still.
+- **Details:** The still shows a movement route.
+
+#### On Collect
+
+**A**：collected.
+
+## Outro
+
+**A**：done.
+`.trim();
+
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("hotspotSceneSourcePromptWithoutSource");
+  });
+
+  it("rejects Evidence Source on hotspot without evidence reveal", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+### Hotspot: desk {#desk}
+- **Description:** a desk.
+- **Evidence Source:** visible
+
+**A**：observed.
+
+## Outro
+
+**A**：done.
+`.trim();
+
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe(
+      "hotspotEvidenceSourceWithoutEvidenceReveal",
+    );
+  });
+
   it("rejects reserved asset metadata on statement manifest entries", () => {
     const source = `
 # Scene 1: x
