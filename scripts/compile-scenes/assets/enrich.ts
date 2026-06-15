@@ -17,6 +17,7 @@ import {
 import type {
   ASTCharacter,
   ASTEvidence,
+  ASTHotspot,
   ASTInterrogationPhase,
   ASTInterrogationScene,
   ASTInvestigationScene,
@@ -131,36 +132,43 @@ function enrichInvestigationScene(
   ast: ASTInvestigationScene,
   context: EnrichContext,
 ): ASTInvestigationScene {
+  const evidenceNamesById = new Map(
+    ast.evidenceManifest.map((evidence) => [evidence.id, evidence.name]),
+  );
   return {
     ...ast,
     intro: enrichDialogue(ast.intro, context),
-    sublocations: ast.sublocations.map((sub) => ({
-      ...sub,
-      assetCue: enrichVisualCue(
-        sub.assetCue,
-        `${sub.id}`,
-        sub.sourceFile,
-        sub.line,
-        context,
-      ),
-      transitionDialogue: enrichDialogue(sub.transitionDialogue, context),
-      hotspots: sub.hotspots.map((hotspot) => ({
-        ...hotspot,
-        inspectDialogue: enrichDialogue(hotspot.inspectDialogue, context),
-        onReexamine: enrichNullableDialogue(hotspot.onReexamine, context),
-      })),
-      characters: sub.characters.map((character) => {
-        enrichCharacterSpriteLayout(character, context);
-        return {
-          ...character,
-          topics: character.topics.map((topic) => ({
-            ...topic,
-            topicDialogue: enrichDialogue(topic.topicDialogue, context),
-            onReexamine: enrichNullableDialogue(topic.onReexamine, context),
-          })),
-        };
-      }),
-    })),
+    sublocations: ast.sublocations.map((sub) => {
+      validateHotspotEvidenceSources(sub.hotspots, context);
+      return {
+        ...sub,
+        assetCue: enrichVisualCue(
+          sub.assetCue,
+          `${sub.id}`,
+          sub.sourceFile,
+          sub.line,
+          context,
+          investigationSourceGuidance(sub.hotspots, evidenceNamesById),
+        ),
+        transitionDialogue: enrichDialogue(sub.transitionDialogue, context),
+        hotspots: sub.hotspots.map((hotspot) => ({
+          ...hotspot,
+          inspectDialogue: enrichDialogue(hotspot.inspectDialogue, context),
+          onReexamine: enrichNullableDialogue(hotspot.onReexamine, context),
+        })),
+        characters: sub.characters.map((character) => {
+          enrichCharacterSpriteLayout(character, context);
+          return {
+            ...character,
+            topics: character.topics.map((topic) => ({
+              ...topic,
+              topicDialogue: enrichDialogue(topic.topicDialogue, context),
+              onReexamine: enrichNullableDialogue(topic.onReexamine, context),
+            })),
+          };
+        }),
+      };
+    }),
     evidenceManifest: ast.evidenceManifest.map((evidence) =>
       enrichEvidence(evidence, context),
     ),
@@ -603,6 +611,7 @@ function enrichVisualCue(
   sourceFile: string,
   line: number,
   context: EnrichContext,
+  promptSuffix?: string,
 ): VisualAssetCue | null {
   if (!cue) return null;
   const isFirst = !context.hadVisualCue;
@@ -656,7 +665,7 @@ function enrichVisualCue(
       sceneId: context.scene.ast.id,
       unitId,
     },
-    prompt: cue.backgroundPrompt,
+    prompt: [cue.backgroundPrompt, promptSuffix].filter(Boolean).join("\n\n"),
   });
 
   return {
@@ -665,6 +674,62 @@ function enrichVisualCue(
     bgm,
     bgs,
   };
+}
+
+function validateHotspotEvidenceSources(
+  hotspots: ASTHotspot[],
+  context: EnrichContext,
+): void {
+  for (const hotspot of hotspots) {
+    if (revealedEvidenceIds(hotspot).length === 0 || hotspot.evidenceSource) {
+      continue;
+    }
+    context.errors.push(
+      compileError(
+        hotspot.sourceFile,
+        hotspot.line,
+        "hotspotEvidenceSourceMissing",
+        `Hotspot "${hotspot.id}" reveals evidence and must declare Evidence Source when assets are enabled.`,
+      ),
+    );
+  }
+}
+
+function investigationSourceGuidance(
+  hotspots: ASTHotspot[],
+  evidenceNamesById: Map<string, string>,
+): string | undefined {
+  const lines = hotspots.flatMap((hotspot) => {
+    const evidenceNames = revealedEvidenceIds(hotspot).map(
+      (id) => evidenceNamesById.get(id) ?? id,
+    );
+    if (evidenceNames.length === 0 || !hotspot.evidenceSource) return [];
+    const sourcePrompt =
+      hotspot.sceneSourcePrompt ??
+      `${hotspot.label}: ${hotspot.description}`.trim();
+
+    if (hotspot.evidenceSource === "visible") {
+      return [
+        `- visible: ${hotspot.id}. Include the source object/area: ${sourcePrompt}.`,
+      ];
+    }
+    if (hotspot.evidenceSource === "implied") {
+      return [
+        `- implied: ${hotspot.id}. Include source/access point guidance: ${sourcePrompt}; do not show the collected evidence image or readable evidence content for ${evidenceNames.join(", ")}.`,
+      ];
+    }
+    return [
+      `- hidden: ${hotspot.id}. Do not show ${evidenceNames.join(", ")} or any visible evidence/source record.`,
+    ];
+  });
+  if (lines.length === 0) return undefined;
+  return ["Investigation source guidance:", ...lines].join("\n");
+}
+
+function revealedEvidenceIds(hotspot: ASTHotspot): string[] {
+  return hotspot.reveals
+    .filter((reveal) => reveal.kind === "evidence")
+    .map((reveal) => reveal.id);
 }
 
 function enrichAudioCue(
