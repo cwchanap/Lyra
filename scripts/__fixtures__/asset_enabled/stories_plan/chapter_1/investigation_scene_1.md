@@ -31,6 +31,7 @@
 ### Hotspot: 傘架 — 藍色透明傘 {#blue_umbrella_stand}
 - **Description:** 傘架最內側有一把透明傘，藍色傘柄，其他傘架都空著。
 - **Reveals:** [evidence:blue_umbrella]
+- **Evidence Source:** visible
 
 [相馬律抽出那把傘，翻過來看傘柄底部。]
 
@@ -47,6 +48,7 @@
 ### Hotspot: 破損傘套 {#torn_sleeve_spot}
 - **Description:** 傘架旁地上有一個撕破的透明傘套，邊緣帶泥。
 - **Reveals:** [evidence:torn_umbrella_sleeve]
+- **Evidence Source:** visible
 
 [相馬律蹲下，用手背輕觸傘套邊緣。]
 
@@ -61,6 +63,8 @@
 ### Hotspot: 入口監視器 {#entrance_monitor}
 - **Description:** 右上角的監視器，視角覆蓋正門入口到傘架區域。
 - **Reveals:** [evidence:entrance_cctv]
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Entrance security camera and small monitor source, visible but not showing a readable CCTV still.
 
 [相馬律仰頭看監視器，確認視角範圍。]
 
@@ -245,6 +249,8 @@
 ### Hotspot: 咖啡機 {#coffee_machine}
 - **Description:** 義式咖啡機，機身側面仍微溫。操作介面上有自動清潔啟動紀錄。
 - **Reveals:** [evidence:coffee_machine_log]
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Espresso machine interface/log source, visible but not showing the collected cleaning log image.
 
 [相馬律按了幾下介面，找到紀錄畫面。]
 
@@ -265,6 +271,7 @@
 ### Hotspot: 奶泡壺 {#milk_frother}
 - **Description:** 吧台旁的奶泡壺，壺身還有餘溫，壺口有乾燥中的奶泡殘跡。
 - **Reveals:** [evidence:frother_warmth]
+- **Evidence Source:** visible
 
 [相馬律把手放在壺身外側。]
 
@@ -277,6 +284,7 @@
 ### Hotspot: 員工打卡機 {#time_card_machine}
 - **Description:** 壁掛式員工打卡機，今日打卡紀錄列印在旁。
 - **Reveals:** [evidence:timecard_record]
+- **Evidence Source:** visible
 
 [相馬律看著打卡紙。]
 
@@ -301,6 +309,8 @@
 ### Hotspot: 倉庫智慧門鎖 {#smart_lock}
 - **Description:** 倉庫入口的 KAGAMI 智慧門鎖，深灰色面板，顯示最近進出紀錄。
 - **Reveals:** [evidence:kagami_door_log, sublocation:storeroom]
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Smart lock panel/log source on the storeroom door, visible but not showing the collected door log image.
 
 [相馬律靠近門鎖，用手指滑過操作面板。]
 
@@ -351,6 +361,7 @@
 ### Hotspot: 半杯金木犀拿鐵 {#half_latte_storeroom}
 - **Description:** 右側貨架角落的紙杯，裡面剩一半的咖啡，奶泡已完全攤平。
 - **Reveals:** [evidence:half_latte]
+- **Evidence Source:** visible
 
 [相馬律彎腰看了看紙杯，沒有碰它。]
 
@@ -365,6 +376,7 @@
 ### Hotspot: 增田圭遺體位置 {#victim_position}
 - **Description:** 倉庫深處，帆布覆蓋的位置，後腦朝上，倒在地面。
 - **Reveals:** [evidence:victim_smartwatch, statement:death_scene]
+- **Evidence Source:** visible
 
 [相馬律蹲下，在帆布邊緣確認屍體的倒下方向。]
 
@@ -389,6 +401,7 @@
 ### Hotspot: 黃銅桌鈴 {#brass_bell}
 - **Description:** 遺體旁邊地上，一個黃銅製老式桌鈴，底座沾有暗色污跡。
 - **Reveals:** [evidence:brass_bell]
+- **Evidence Source:** visible
 
 [相馬律蹲在桌鈴旁邊，仔細看，沒有碰。]
 
@@ -407,6 +420,7 @@
 ### Hotspot: 左側舊後門 {#back_door}
 - **Description:** 左側一扇舊式木門，被滾輪貨架半遮住，門縫邊緣貼著警示貼紙。
 - **Reveals:** [evidence:back_door_observation, statement:hayasaka_back_door]
+- **Evidence Source:** visible
 
 [相馬律瞄了左側一眼，然後繼續向右看貨架。]
 
@@ -435,6 +449,7 @@
 ### Hotspot: 滾輪貨架 {#wheeled_shelf}
 - **Description:** 半遮住左側後門的滾輪貨架，金屬材質，底部橡膠輪子。
 - **Reveals:** [evidence:shelf_mud]
+- **Evidence Source:** visible
 
 [相馬律蹲下，看貨架底部的輪子。]
 
@@ -451,6 +466,7 @@
 ### Hotspot: 被害者手機 {#victim_phone_spot}
 - **Description:** 遺體旁的地板，一支黑色智慧手機，螢幕面朝下。
 - **Reveals:** [evidence:victim_phone]
+- **Evidence Source:** visible
 
 [相馬律用鉛筆尖輕輕翻了翻手機，螢幕鎖定。]
 
@@ -469,6 +485,7 @@
 - **Status:** locked
 - **Unlock:** evidence:victim_phone collected
 - **Reveals:** [evidence:victim_usb]
+- **Evidence Source:** visible
 
 [相馬律在遺體附近再掃視一圈，在地板一角發現一個細小的黑色物體。]
 
