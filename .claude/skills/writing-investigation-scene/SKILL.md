@@ -81,7 +81,12 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 
 ### Hotspot (H3, inside a Sub-location)
 - **Required:** `Description`
-- **Optional:** `Status` (defaults to `unlocked`), `Unlock`, `Reveals` (list)
+- **Optional:** `Status` (defaults to `unlocked`), `Unlock`, `Reveals` (list), `Evidence Source`, `Scene Source Prompt`
+- **Required when assets are enabled and this Hotspot reveals evidence:** `Evidence Source`
+  - `visible` — the evidence source is visibly present in the scene as a source object.
+  - `implied` — the source object is visible, but the exact evidence image/content is only implied.
+  - `hidden` — the evidence source is not visually present before the player inspects or uncovers it.
+- **Scene Source Prompt:** one-line English production guidance for the in-scene source only. It is not a filesystem path and does not replace the evidence manifest's `Image Prompt`.
 - **Body:** inspect dialogue (plays on the player's **first** click on this hotspot, followed by `Reveals:` chain dialogue).
 - **Optional sub-block:** `#### On Reexamine` — H4 immediately under this Hotspot's body. Plays on every click **after** the first. No new reveals fire on reexamine. If `#### On Reexamine` is absent, subsequent clicks play an engine-provided fallback line (configured in the engine, not authored here).
 

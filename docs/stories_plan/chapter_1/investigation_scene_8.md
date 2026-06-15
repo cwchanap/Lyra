@@ -87,6 +87,8 @@
 
 ### Hotspot: 程序固定紀錄 {#fixed_record}
 - **Description:** 鑑識依程序固定後的正式紀錄，比手機截圖完整得多。
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Formal photographed and logged doorlock panel paperwork on the table as the source object, with no readable final record text.
 - **Reveals:** [evidence:local_sequence_record]
 
 [相馬律翻開那份正式紀錄表。]
@@ -105,6 +107,7 @@
 
 ### Hotspot: 外包憑證事件 {#ext_credential_event}
 - **Description:** 紀錄裡那條外包維護憑證的事件，排在三宅的員工憑證之前。
+- **Evidence Source:** hidden
 - **Reveals:** [evidence:external_maintenance_credential]
 
 [相馬律用筆尖點著紀錄表上的兩條事件。]

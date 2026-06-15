@@ -41,6 +41,8 @@
 
 ### Hotspot: 收銀台與第二杯訂單 {#register}
 - **Description:** 收銀台上留著當晚最後幾筆訂單的紀錄。
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Register and order-slip area behind the cafe counter, visible as the source of order records but with no readable receipt text.
 - **Reveals:** [evidence:two_coffee_order]
 
 [相馬律翻看訂單，指尖沿著紙邊慢慢滑過去，停在其中一筆。]
@@ -57,6 +59,8 @@
 
 ### Hotspot: 閉店監視器回放 {#cctv_playback}
 - **Description:** 收銀台旁的小螢幕還能調出閉店前的監視器畫面。
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Small counter security monitor near the register, powered on as a source object but not showing a readable CCTV still.
 - **Reveals:** [evidence:cctv_screenshot]
 
 [相馬律按下回放。畫面大約二三十秒。]
@@ -72,7 +76,8 @@
 **相馬律**：閉店本來就要進後場。靠近後場，不等於做了什麼。
 
 ### Hotspot: 三宅打卡紀錄 {#timecard}
-- **Description:** 收銀台後貼著當月的打卡表。
+- **Description:** 店長從收銀台後方保管的值班資料裡調出當月打卡紀錄。
+- **Evidence Source:** hidden
 - **Reveals:** [evidence:timecard_record]
 
 [相馬律找到當晚那一欄。]
@@ -83,6 +88,7 @@
 
 ### Hotspot: KAGAMI 門鎖摘要 {#doorlock_summary}
 - **Description:** 收銀台旁夾著一頁列印出來的門鎖系統摘要。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:doorlock_summary_timetable]
 
 [相馬律拿起那頁摘要，逐行看。]
@@ -180,6 +186,7 @@
 
 ### Hotspot: 閉店維護 SOP 白板 {#sop_whiteboard}
 - **Description:** 走廊牆上掛著一塊閉店維護流程的白板。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:closing_routine]
 
 [相馬律走近白板，一行行讀那些勾選。]
@@ -234,6 +241,7 @@
 
 ### Hotspot: 後場 L 型平面 {#l_floorplan}
 - **Description:** 牆邊貼著一張後場的平面示意圖。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:backroom_floorplan]
 
 [相馬律對照平面圖，把走過的路線在腦中走了一遍。]

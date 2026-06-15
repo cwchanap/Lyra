@@ -27,6 +27,8 @@ const scene = {
           id: "desk",
           label: "Desk",
           description: "A paper slip.",
+          evidenceSource: null,
+          sceneSourcePrompt: null,
           reveals: [],
           inspectDialogue: [],
           layout: null,
@@ -81,7 +83,229 @@ const layout = {
   sublocations: {},
 } satisfies InvestigationLayoutSidecar;
 
+const sourceScene = {
+  ...scene,
+  id: "investigation_scene_sources",
+  sublocations: [
+    {
+      ...scene.sublocations[0],
+      hotspots: [
+        {
+          id: "visible-slip",
+          label: "Visible slip",
+          description: "A slip in plain sight.",
+          evidenceSource: "visible",
+          sceneSourcePrompt: "Place the torn receipt on the desk.",
+          reveals: [{ kind: "evidence", id: "receipt" }],
+          inspectDialogue: [],
+          layout: null,
+        },
+        {
+          id: "implied-clock",
+          label: "Implied clock",
+          description: "The clock suggests a timeline clue.",
+          evidenceSource: "implied",
+          sceneSourcePrompt: "Clock hands imply the contradiction.",
+          reveals: [{ kind: "evidence", id: "clock" }],
+          inspectDialogue: [],
+          layout: null,
+        },
+        {
+          id: "hidden-safe",
+          label: "Hidden safe",
+          description: "The safe is behind the frame.",
+          evidenceSource: "hidden",
+          sceneSourcePrompt: null,
+          reveals: [{ kind: "evidence", id: "safe-note" }],
+          inspectDialogue: [],
+          layout: null,
+        },
+        {
+          id: "missing-source",
+          label: "Missing source",
+          description: "An evidence reveal without metadata.",
+          evidenceSource: null,
+          sceneSourcePrompt: null,
+          reveals: [{ kind: "evidence", id: "loose-thread" }],
+          inspectDialogue: [],
+          layout: null,
+        },
+        {
+          id: "ambient",
+          label: "Ambient",
+          description: "No evidence reveal.",
+          evidenceSource: null,
+          sceneSourcePrompt: null,
+          reveals: [{ kind: "topic", characterId: "witness", topicId: "rain" }],
+          inspectDialogue: [],
+          layout: null,
+        },
+      ],
+    },
+  ],
+  evidenceManifest: [
+    {
+      id: "receipt",
+      name: "Receipt",
+      description: "A torn receipt.",
+      imageAssetId: "evidence.receipt",
+    },
+    {
+      id: "clock",
+      name: "Clock",
+      description: "Stopped clock.",
+      imageAssetId: "evidence.clock",
+    },
+    {
+      id: "safe-note",
+      name: "Safe note",
+      description: "A note from the safe.",
+      imageAssetId: "evidence.safe_note",
+    },
+    {
+      id: "loose-thread",
+      name: "Loose thread",
+      description: "Thread clue.",
+      imageAssetId: "evidence.loose_thread",
+    },
+  ],
+} satisfies InvestigationSceneJson;
+
 describe("EditorCanvas", () => {
+  it("shows evidence source badges and highlights missing source metadata", () => {
+    const { container } = render(EditorCanvas, {
+      scene: sourceScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const visible = container.querySelector(".target.hotspot.source-visible");
+    const implied = container.querySelector(".target.hotspot.source-implied");
+    const hidden = container.querySelector(".target.hotspot.source-hidden");
+    const missing = container.querySelector(".target.hotspot.missing-source");
+    const ambient = Array.from(
+      container.querySelectorAll(".target.hotspot"),
+    ).find((target) => target.textContent?.includes("Ambient"));
+
+    expect(visible).toBeInTheDocument();
+    expect(implied).toBeInTheDocument();
+    expect(hidden).toBeInTheDocument();
+    expect(missing).toBeInTheDocument();
+    expect(ambient).toBeInTheDocument();
+    expect(within(visible as HTMLElement).getByText("visible")).toHaveClass(
+      "source-badge",
+    );
+    expect(within(implied as HTMLElement).getByText("implied")).toHaveClass(
+      "source-badge",
+    );
+    expect(within(hidden as HTMLElement).getByText("hidden")).toHaveClass(
+      "source-badge",
+    );
+    expect(
+      within(missing as HTMLElement).getByText("missing source"),
+    ).toHaveClass("source-badge");
+    expect(missing).toHaveClass("missing-source");
+    expect(
+      (ambient as HTMLElement).querySelector(".source-badge"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("preserves missing source attention styling when revealed with boxes hidden", async () => {
+    const user = userEvent.setup();
+    const { container } = render(EditorCanvas, {
+      scene: sourceScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const toggle = screen.getByRole("button", {
+      name: "Toggle placement boxes",
+    });
+    const missing = container.querySelector(".target.hotspot.missing-source");
+
+    expect(missing).toBeInTheDocument();
+    await user.click(toggle);
+    await user.click(missing as HTMLElement);
+
+    expect(container.querySelector(".plate")).toHaveClass("hide-boxes");
+    expect(missing).toHaveClass("revealed");
+    expect(missing).toHaveClass("missing-source");
+    expect(
+      editorCanvasSource.indexOf(
+        ".hide-boxes .target.revealed.hotspot.missing-source",
+      ),
+    ).toBeGreaterThan(
+      editorCanvasSource.indexOf(".hide-boxes .target.revealed.hotspot"),
+    );
+  });
+
+  it("uses evidence previews only for visible source hotspots", () => {
+    const { container } = render(EditorCanvas, {
+      scene: sourceScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const visible = container.querySelector(".target.hotspot.source-visible");
+    const implied = container.querySelector(".target.hotspot.source-implied");
+    const hidden = container.querySelector(".target.hotspot.source-hidden");
+    const missing = container.querySelector(".target.hotspot.missing-source");
+
+    expect(visible).toBeInTheDocument();
+    expect(implied).toBeInTheDocument();
+    expect(hidden).toBeInTheDocument();
+    expect(missing).toBeInTheDocument();
+    expect(
+      (visible as HTMLElement).querySelector(".hotspot-preview"),
+    ).toHaveAttribute("src", "/assets/evidence/receipt.png");
+    expect(
+      (implied as HTMLElement).querySelector(".hotspot-preview"),
+    ).not.toBeInTheDocument();
+    expect(
+      (implied as HTMLElement).querySelector(".source-marker"),
+    ).toBeInTheDocument();
+    expect(
+      (hidden as HTMLElement).querySelector(".hotspot-preview"),
+    ).not.toBeInTheDocument();
+    expect(
+      (hidden as HTMLElement).querySelector(".source-marker"),
+    ).not.toBeInTheDocument();
+    expect(
+      (missing as HTMLElement).querySelector(".hotspot-preview"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("includes evidence source metadata in hotspot control titles", () => {
+    render(EditorCanvas, {
+      scene: sourceScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const targetControls = screen.getByLabelText("Target controls");
+
+    expect(
+      within(targetControls).getByRole("button", { name: "Visible slip" }),
+    ).toHaveAttribute(
+      "title",
+      "A slip in plain sight.\nSource: visible\nPrompt: Place the torn receipt on the desk.",
+    );
+    expect(
+      within(targetControls).getByRole("button", { name: "Missing source" }),
+    ).toHaveAttribute(
+      "title",
+      "An evidence reveal without metadata.\nSource: missing source",
+    );
+  });
+
   it("keeps a visible item box shown while dragging it", async () => {
     const onHotspotLayoutChange = vi.fn();
     const { container } = render(EditorCanvas, {

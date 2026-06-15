@@ -25,6 +25,7 @@
     "format:check": "prettier . --check --ignore-unknown",
     "scenes:compile": "bun run --cwd apps/game scenes:compile",
     "scenes:watch": "bun run --cwd apps/game scenes:watch",
+    "evidence-sources:audit": "bun run scripts/compile-scenes/evidence-sources-audit.ts",
     "build:tauri": "bun run --cwd apps/game tauri build",
     "test": "bun run test:scripts && turbo run test",
     "test:scripts": "vitest run --config vitest.scripts.config.ts",

@@ -494,6 +494,57 @@ describe("enrichScenesWithAssets", () => {
     expect(result.manifest.entries).toEqual([]);
   });
 
+  it("adds investigation evidence source guidance to sublocation background prompts", () => {
+    const scenes: SceneRecord[] = [investigationSceneWithEvidenceSources()];
+    const result = enrichScenesWithAssets({ scenes, config: config() });
+
+    expect(result.errors).toEqual([]);
+    const backgroundEntry = result.manifest.entries.find(
+      (entry) =>
+        entry.assetId ===
+        "background.chapter_1.investigation_scene_1.security_room",
+    );
+
+    expect(backgroundEntry?.promptParts.entryPrompt).toContain(
+      "Investigation source guidance:",
+    );
+    expect(backgroundEntry?.promptParts.entryPrompt).toContain("cctv_playback");
+    expect(backgroundEntry?.promptParts.entryPrompt).toContain(
+      "do not show the collected evidence image or readable evidence content",
+    );
+    expect(backgroundEntry?.promptParts.entryPrompt).toContain("timecard");
+    expect(backgroundEntry?.promptParts.entryPrompt).toContain(
+      "Do not show 三宅打卡紀錄",
+    );
+    expect(backgroundEntry?.promptParts.entryPrompt).not.toContain(
+      "any visible evidence/source record",
+    );
+  });
+
+  it("errors when an evidence-revealing hotspot omits evidenceSource", () => {
+    const scene = investigationSceneWithEvidenceSources();
+    if (scene.ast.kind !== "investigationScene") {
+      throw new Error("expected investigation scene fixture");
+    }
+    const firstHotspot = scene.ast.sublocations[0]?.hotspots[0];
+    if (!firstHotspot) throw new Error("expected hotspot fixture");
+    firstHotspot.evidenceSource = null;
+
+    const result = enrichScenesWithAssets({
+      scenes: [scene],
+      config: config(),
+    });
+    const error = result.errors.find(
+      (item) => item.code === "hotspotEvidenceSourceMissing",
+    );
+
+    expect(error).toMatchObject({
+      sourceFile: "chapter_1/investigation_scene_1.md",
+      line: 30,
+    });
+    expect(error?.message).toContain("cctv_playback");
+  });
+
   it("returns empty manifest and asset refs when assets are disabled", () => {
     const disabled = { ...config(), enabled: false };
     const scenes = [
@@ -1151,6 +1202,104 @@ function investigationScene(input: {
           onReexamine: null,
           sourceFile: "chapter_1/investigation_scene_1.md",
           line: 12,
+        },
+      ],
+      statementManifest: [],
+      outro: { unlock: "auto", dialogue: [] },
+      assetRefs: [],
+      sourceFile: "chapter_1/investigation_scene_1.md",
+      line: 1,
+    },
+  };
+}
+
+function investigationSceneWithEvidenceSources(): SceneRecord {
+  return {
+    chapterId: "chapter_1",
+    file: "investigation_scene_1.md",
+    ast: {
+      kind: "investigationScene",
+      id: "investigation_scene_1",
+      title: "調查",
+      intro: [],
+      sublocations: [
+        {
+          id: "security_room",
+          label: "警衛室",
+          status: "unlocked",
+          unlock: null,
+          reveals: [],
+          sceneTag: "警衛室",
+          assetCue: {
+            backgroundPrompt: "Rain-soaked office security room.",
+            backgroundAssetId: null,
+            bgm: { channel: "bgm", assetId: "rain_mystery_low" },
+            bgs: { channel: "bgs", assetId: "street_rain" },
+          },
+          transitionDialogue: [],
+          hotspots: [
+            {
+              id: "cctv_playback",
+              label: "監視器回放",
+              description: "A wall of monitors showing old lobby footage.",
+              status: "unlocked",
+              unlock: null,
+              reveals: [{ kind: "evidence", id: "cctv_still" }],
+              evidenceSource: "implied",
+              sceneSourcePrompt: "A wall-mounted CCTV playback console.",
+              inspectDialogue: [],
+              onReexamine: null,
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 30,
+            },
+            {
+              id: "timecard",
+              label: "打卡機",
+              description: "Employee punch clock beside the staff door.",
+              status: "unlocked",
+              unlock: null,
+              reveals: [{ kind: "evidence", id: "timecard_record" }],
+              evidenceSource: "hidden",
+              sceneSourcePrompt: null,
+              inspectDialogue: [],
+              onReexamine: null,
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 42,
+            },
+          ],
+          characters: [],
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 20,
+        },
+      ],
+      evidenceManifest: [
+        {
+          id: "cctv_still",
+          name: "監視器截圖",
+          description: "Still image from security camera playback.",
+          details: "The timestamp places the suspect at the front desk.",
+          imageCue: {
+            imagePrompt: "CCTV still isolated as evidence.",
+            imageAssetId: null,
+          },
+          onCollect: [],
+          onReexamine: null,
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 60,
+        },
+        {
+          id: "timecard_record",
+          name: "三宅打卡紀錄",
+          description: "A printed employee timecard record.",
+          details: "The clock-in time contradicts the testimony.",
+          imageCue: {
+            imagePrompt: "Employee timecard record isolated as evidence.",
+            imageAssetId: null,
+          },
+          onCollect: [],
+          onReexamine: null,
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 70,
         },
       ],
       statementManifest: [],
