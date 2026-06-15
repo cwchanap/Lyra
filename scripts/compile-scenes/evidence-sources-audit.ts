@@ -185,7 +185,7 @@ function byChapterNumber(a: string, b: string): number {
   return aNumber - bNumber || a.localeCompare(b);
 }
 
-function printReport(items: EvidenceSourceAuditItem[]): void {
+export function printReport(items: EvidenceSourceAuditItem[]): void {
   if (items.length === 0) {
     console.log("No evidence-revealing hotspots found.");
     return;
@@ -193,15 +193,17 @@ function printReport(items: EvidenceSourceAuditItem[]): void {
 
   console.log(`Evidence source audit: ${items.length} hotspot(s)`);
   for (const item of items) {
-    const evidence = item.evidence
-      .map((entry) => `${entry.id} (${entry.name})`)
-      .join(", ");
     console.log(
       [
         `- ${item.sceneFile} ${item.sublocationId}/${item.hotspotId}`,
         `  label: ${item.hotspotLabel}`,
+        `  description: ${item.hotspotDescription}`,
         `  current: ${item.currentSource ?? "missing"}; suggested: ${item.suggestedSource}`,
-        `  evidence: ${evidence}`,
+        "  evidence:",
+        ...item.evidence.flatMap((entry) => [
+          `    - ${entry.id} (${entry.name})`,
+          `      imagePrompt: ${entry.imagePrompt ?? "missing"}`,
+        ]),
       ].join("\n"),
     );
     if (item.sceneSourcePrompt) {

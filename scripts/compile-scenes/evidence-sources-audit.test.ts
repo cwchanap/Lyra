@@ -1,9 +1,10 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   auditEvidenceSources,
+  printReport,
   suggestEvidenceSource,
 } from "./evidence-sources-audit";
 
@@ -199,5 +200,49 @@ describe("auditEvidenceSources", () => {
         },
       ],
     });
+  });
+});
+
+describe("printReport", () => {
+  it("prints hotspot descriptions and evidence image prompts", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    let output: string;
+
+    try {
+      printReport([
+        {
+          sceneFile: "chapter_1/investigation_scene_1.md",
+          sublocationId: "office",
+          hotspotId: "summary",
+          hotspotLabel: "KAGAMI summary",
+          hotspotDescription: "Printed file on the desk.",
+          currentSource: "visible",
+          sceneSourcePrompt: null,
+          backgroundPrompt: null,
+          suggestedSource: "visible",
+          evidence: [
+            {
+              id: "kagami_summary",
+              name: "KAGAMI Summary",
+              imagePrompt: "Square printed summary evidence icon.",
+            },
+            {
+              id: "missing_prompt",
+              name: "Missing Prompt",
+              imagePrompt: null,
+            },
+          ],
+        },
+      ]);
+      output = log.mock.calls.map((call) => call.join(" ")).join("\n");
+    } finally {
+      log.mockRestore();
+    }
+
+    expect(output).toContain("description: Printed file on the desk.");
+    expect(output).toContain(
+      "imagePrompt: Square printed summary evidence icon.",
+    );
+    expect(output).toContain("imagePrompt: missing");
   });
 });
