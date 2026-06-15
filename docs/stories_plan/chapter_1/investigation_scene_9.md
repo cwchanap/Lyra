@@ -33,6 +33,7 @@
 
 ### Hotspot: 臨時維護工單 {#workorder}
 - **Description:** 回函裡那晚的一張臨時維護工單，標著後場門鎖。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:temp_maintenance_workorder]
 
 [相馬律翻開那張工單，順著欄位看下去。]
@@ -45,6 +46,7 @@
 
 ### Hotspot: 外包維護權限名單 {#access_list}
 - **Description:** 一份外包維護人員的權限名單，列著當晚能動用憑證的人。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:kitami_external_access]
 
 [相馬律把工單上的憑證編號，逐一比對權限名單。]
@@ -67,6 +69,7 @@
 
 ### Hotspot: 資材包透明傘套 {#material_kit}
 - **Description:** 窗口附上的一份資材包清單，裡頭有一只透明傘套。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:contractor_umbrella_sleeve_match]
 
 [相馬律把資材包清單裡的傘套，跟手上後場那只濕傘套的尺寸對著看。]
@@ -103,6 +106,7 @@
 
 ### Hotspot: 增田未送出備忘 {#unsent_memo}
 - **Description:** 鑑識列印件裡，一則增田始終沒送出的備忘。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:masuda_unsent_memo]
 
 [相馬律拿起那頁列印件，唸出上面短短三行。]
@@ -119,6 +123,7 @@
 
 ### Hotspot: 增田檢舉草稿 {#whistleblower_draft}
 - **Description:** 監察信箱草稿匣裡，一份增田沒送出的檢舉草稿。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:masuda_whistleblower_draft]
 
 [相馬律翻開那份草稿，注意到結尾還空著。]
@@ -133,6 +138,7 @@
 
 ### Hotspot: 異常存取整理表 {#abnormal_access}
 - **Description:** 草稿附件裡那張沒完成的異常存取整理表。
+- **Evidence Source:** visible
 - **Reveals:** [evidence:kitami_data_theft_record]
 
 [相馬律順著表上的紀錄，一行行往下看。]
