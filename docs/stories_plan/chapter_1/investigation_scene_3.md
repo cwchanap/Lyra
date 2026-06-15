@@ -57,6 +57,8 @@
 
 ### Hotspot: 閉店監視器回放 {#cctv_playback}
 - **Description:** 收銀台旁的小螢幕還能調出閉店前的監視器畫面。
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Small counter security monitor near the register, powered on as a source object but not showing a readable CCTV still.
 - **Reveals:** [evidence:cctv_screenshot]
 
 [相馬律按下回放。畫面大約二三十秒。]
@@ -73,6 +75,7 @@
 
 ### Hotspot: 三宅打卡紀錄 {#timecard}
 - **Description:** 收銀台後貼著當月的打卡表。
+- **Evidence Source:** hidden
 - **Reveals:** [evidence:timecard_record]
 
 [相馬律找到當晚那一欄。]

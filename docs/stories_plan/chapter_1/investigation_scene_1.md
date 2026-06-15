@@ -51,6 +51,8 @@
 ### Hotspot: KAGAMI 摘要副本 {#kagami_summary_hotspot}
 - **Reveals:** [evidence:kagami_summary, topic:hayasaka@commission]
 - **Description:** 桌上攤著一份 KAGAMI 系統輸出的摘要副本，列著時間、門禁與鏡頭三項紀錄。
+- **Evidence Source:** visible
+- **Scene Source Prompt:** Printed KAGAMI case-summary document lying on the detective office desk, visible as a document prop but with no readable text.
 
 [相馬律低頭逐行看那份摘要，手指順著三欄紀錄滑下去。]
 
