@@ -211,6 +211,7 @@ exports[`snapshot: valid fixture JSON output > matches the investigation scene s
       "hotspots": [
         {
           "description": "一張木桌，桌上有一杯咖啡。",
+          "evidenceSource": null,
           "id": "table",
           "inspectDialogue": [
             {
@@ -252,11 +253,13 @@ exports[`snapshot: valid fixture JSON output > matches the investigation scene s
               "kind": "sublocation",
             },
           ],
+          "sceneSourcePrompt": null,
           "status": "unlocked",
           "unlock": null,
         },
         {
           "description": "窗戶半開，外面正在下雨。",
+          "evidenceSource": null,
           "id": "window",
           "inspectDialogue": [
             {
@@ -275,6 +278,7 @@ exports[`snapshot: valid fixture JSON output > matches the investigation scene s
           "layout": null,
           "onReexamine": null,
           "reveals": [],
+          "sceneSourcePrompt": null,
           "status": "unlocked",
           "unlock": null,
         },
@@ -307,6 +311,7 @@ exports[`snapshot: valid fixture JSON output > matches the investigation scene s
       "hotspots": [
         {
           "description": "一個上鎖的櫥櫃。",
+          "evidenceSource": null,
           "id": "cabinet",
           "inspectDialogue": [
             {
@@ -336,6 +341,7 @@ exports[`snapshot: valid fixture JSON output > matches the investigation scene s
               "kind": "evidence",
             },
           ],
+          "sceneSourcePrompt": null,
           "status": "unlocked",
           "unlock": null,
         },
