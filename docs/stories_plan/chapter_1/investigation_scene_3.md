@@ -76,7 +76,7 @@
 **相馬律**：閉店本來就要進後場。靠近後場，不等於做了什麼。
 
 ### Hotspot: 三宅打卡紀錄 {#timecard}
-- **Description:** 收銀台後貼著當月的打卡表。
+- **Description:** 店長從收銀台後方保管的值班資料裡調出當月打卡紀錄。
 - **Evidence Source:** hidden
 - **Reveals:** [evidence:timecard_record]
 
