@@ -577,7 +577,8 @@
             />
           {/if}
           {#if hotspot.sourceState === "implied"}
-            <i class="source-marker" aria-hidden="true"></i>
+            <i class="source-marker" aria-hidden="true" title="Implied source"
+            ></i>
           {/if}
           <span class="target-label">{hotspot.label}</span>
           {#if sourceLabel(hotspot.sourceState)}

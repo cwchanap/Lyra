@@ -10,6 +10,7 @@ export type SceneIndex = {
   }>;
 };
 
+// Keep in sync with scripts/compile-scenes/types.ts
 export type EvidenceSource = "visible" | "implied" | "hidden";
 
 export type InvestigationSceneJson = {

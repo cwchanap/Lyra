@@ -27,6 +27,7 @@ export type AudioCue = {
   assetId: string | null;
 };
 
+// Keep in sync with apps/layout-editor/src/lib/layout-types.ts
 export type EvidenceSource = "visible" | "implied" | "hidden";
 
 export type VisualAssetCue = {
