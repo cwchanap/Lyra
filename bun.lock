@@ -7,6 +7,7 @@
       "devDependencies": {
         "@eslint/js": "^10.0.1",
         "@lyra/asset-paths": "workspace:*",
+        "@lyra/scene-types": "workspace:*",
         "@playwright/test": "^1.60.0",
         "@sveltejs/adapter-static": "^3.0.6",
         "@sveltejs/kit": "^2.9.0",
@@ -54,6 +55,7 @@
       "dependencies": {
         "@lyra/asset-paths": "workspace:*",
         "@lyra/game": "workspace:*",
+        "@lyra/scene-types": "workspace:*",
         "@tauri-apps/api": "^2",
         "@tauri-apps/plugin-dialog": "^2",
         "svelte": "^5.0.0",
@@ -68,6 +70,10 @@
     },
     "packages/asset-paths": {
       "name": "@lyra/asset-paths",
+      "version": "0.1.0",
+    },
+    "packages/scene-types": {
+      "name": "@lyra/scene-types",
       "version": "0.1.0",
     },
   },
@@ -205,6 +211,8 @@
     "@lyra/game": ["@lyra/game@workspace:apps/game"],
 
     "@lyra/layout-editor": ["@lyra/layout-editor@workspace:apps/layout-editor"],
+
+    "@lyra/scene-types": ["@lyra/scene-types@workspace:packages/scene-types"],
 
     "@playwright/test": ["@playwright/test@1.60.0", "", { "dependencies": { "playwright": "1.60.0" }, "bin": { "playwright": "cli.js" } }, "sha512-O71yZIbAh/PxDMNGns37GHBIfrVkEVyn+AXyIa5dOTfb4/xNvRWV+Vv/NMbNCtODB/pO7vLlF2OTmMVLhmr7Ag=="],
 
