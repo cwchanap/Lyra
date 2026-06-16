@@ -24,14 +24,17 @@ export type EvidenceSourceAuditItem = {
 };
 
 /**
- * A chapter or scene the audit could not fully process. Surfaced as a
- * structured item (in addition to the stderr log) so the report and
+ * A source root, chapter, or scene the audit could not fully process. Surfaced
+ * as a structured item (in addition to the stderr log) so the report and
  * programmatic consumers can flag malformed metadata — e.g. an invalid
- * `Evidence Source` value — instead of silently skipping the scene.
+ * `Evidence Source` value — instead of silently skipping the scene. Note: an
+ * invalid `Evidence Source` surfaces here as a generic `sceneParseError`
+ * (the parser emits the precise `hotspotEvidenceSourceInvalid` code on stderr).
  */
 export type AuditProblem = {
   sceneFile: string;
   kind:
+    | "sourceRootUnreadable"
     | "chapterReadError"
     | "chapterParseError"
     | "sceneReadError"
@@ -63,6 +66,20 @@ const RECORD_WORDS = [
   "record",
   "system",
 ];
+// Heuristic keyword lists for suggestEvidenceSource(). The classifier is
+// advisory only (it feeds a human-reviewed `suggestedSource`), so noisy
+// matches create review work, not bugs.
+//
+// PHYSICAL_WORDS and VISIBLE_WORDS overlap on purpose: shared tokens
+// (副本/列印/文件/白板/document/object/physical) describe a printed copy or
+// physical object, which is *both* a record manifestation and a standalone
+// visible item. PHYSICAL_WORDS narrows a RECORD match toward "visible"
+// (a record with a physical printout is shown), while VISIBLE_WORDS is the
+// standalone-physical-object fallback. 表 lives only in PHYSICAL_WORDS so a
+// "打卡表" record is suggested visible (a physical printout); if the authored
+// intent is digital/hidden, the human reviewer overrides it. Precedence is
+// fixed by tests (see evidence-sources-audit.test.ts "precedence") — do not
+// reorder the branches without updating them.
 const PHYSICAL_WORDS = [
   "副本",
   "列印",
@@ -74,6 +91,9 @@ const PHYSICAL_WORDS = [
   "object",
   "physical",
 ];
+// VISIBLE_WORDS additionally owns 傘/盒 (objects with no record sense). The
+// shared tokens mirror PHYSICAL_WORDS so a standalone physical object is
+// suggested visible whether or not a record word is present.
 const VISIBLE_WORDS = [
   "副本",
   "列印",
@@ -117,13 +137,35 @@ export function auditEvidenceSources(
     const root = resolve(sourceRoot);
     if (!existsSync(root)) continue;
 
-    const chapterDirs = readdirSync(root)
-      .filter(
-        (entry) =>
-          /^chapter_\d+$/.test(entry) &&
-          statSync(resolve(root, entry)).isDirectory(),
-      )
-      .sort(byChapterNumber);
+    // The audit reports migration work; it must not abort on a single
+    // unreadable, missing, or malformed file. The directory walk itself
+    // (readdir + per-entry stat) can throw on EACCES / ELOOP (symlink) /
+    // TOCTOU ENOENT — guard it the same way the compiler orchestrator does
+    // (orchestrator.ts sourceRootUnreadable) so one bad root does not discard
+    // every problem/item already collected.
+    let chapterDirs: string[];
+    try {
+      chapterDirs = readdirSync(root)
+        .filter((entry) => {
+          if (!/^chapter_\d+$/.test(entry)) return false;
+          try {
+            return statSync(resolve(root, entry)).isDirectory();
+          } catch {
+            // Unreadable/symlinked entry: treat as not-a-chapter rather than
+            // aborting. The per-chapter loop guards its own reads below.
+            return false;
+          }
+        })
+        .sort(byChapterNumber);
+    } catch (err) {
+      recordProblem(
+        problems,
+        "sourceRootUnreadable",
+        sourceRoot,
+        toMessage(err),
+      );
+      continue;
+    }
 
     for (const chapterDirName of chapterDirs) {
       const chapterRoot = resolve(root, chapterDirName);
@@ -191,6 +233,12 @@ export function auditEvidenceSources(
 
         for (const sublocation of scene.value.sublocations) {
           for (const hotspot of sublocation.hotspots) {
+            // Intentional divergence from parser/enrich: those layers count
+            // *any* evidence-kind reveal as "reveals evidence" (and the
+            // validator rejects dangling ids), but this audit only counts
+            // manifest-resolved evidence so a dangling id does not crash the
+            // report. Unresolved ids are therefore silently dropped here;
+            // scenes:compile / the validator still catch them at build time.
             const revealedEvidence = hotspot.reveals
               .filter((reveal) => reveal.kind === "evidence")
               .map((reveal) => evidenceById.get(reveal.id))
@@ -281,10 +329,14 @@ export function printReport(result: EvidenceSourceAuditResult): void {
     }
   }
 
+  // Problems go to stderr so they are not buried when the stdout report is
+  // captured to a file/variable. recordProblem() already logs each one to
+  // stderr at detection time; this re-lists them for the human-readable
+  // summary.
   if (problems.length > 0) {
-    console.log(`Problems (${problems.length}):`);
+    console.error(`Problems (${problems.length}):`);
     for (const problem of problems) {
-      console.log(
+      console.error(
         `  - [${problem.kind}] ${problem.sceneFile}: ${problem.message}`,
       );
     }
@@ -293,7 +345,12 @@ export function printReport(result: EvidenceSourceAuditResult): void {
 
 if (import.meta.main) {
   const roots = process.argv.slice(2);
-  printReport(
-    auditEvidenceSources(roots.length > 0 ? roots : DEFAULT_SOURCE_ROOTS),
+  const result = auditEvidenceSources(
+    roots.length > 0 ? roots : DEFAULT_SOURCE_ROOTS,
   );
+  printReport(result);
+  // Match validate-docs-scenes.ts: a non-empty problems list means the audit
+  // could not fully process the corpus, so exit non-zero. (The audit is not
+  // yet wired into CI, but this keeps it trustworthy if/when it is.)
+  if (result.problems.length > 0) process.exitCode = 1;
 }

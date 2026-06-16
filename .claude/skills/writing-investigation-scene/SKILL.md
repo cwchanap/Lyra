@@ -87,6 +87,11 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
   - `implied` — the source object is visible, but the exact evidence image/content is only implied.
   - `hidden` — the evidence source is not visually present before the player inspects or uncovers it.
 - **Scene Source Prompt:** one-line English production guidance for the in-scene source only. It is not a filesystem path and does not replace the evidence manifest's `Image Prompt`.
+- **Compiler-enforced rules (compile errors regardless of asset state):**
+  - `Evidence Source` may only take `visible`, `implied`, or `hidden`. Any other value is a parse error (`hotspotEvidenceSourceInvalid`), even when assets are disabled.
+  - `Evidence Source` is only valid on a Hotspot that reveals evidence (its `Reveals:` includes at least one `[evidence:…]`). Putting it on a non-evidence hotspot is `hotspotEvidenceSourceWithoutEvidenceReveal`.
+  - `Scene Source Prompt` requires `Evidence Source`. A prompt with no source is `hotspotSceneSourcePromptWithoutSource`.
+  - Separately, `Evidence Source` becomes *required* (not just valid) when assets are enabled and the Hotspot reveals evidence — enforced by the asset enrichment layer.
 - **Body:** inspect dialogue (plays on the player's **first** click on this hotspot, followed by `Reveals:` chain dialogue).
 - **Optional sub-block:** `#### On Reexamine` — H4 immediately under this Hotspot's body. Plays on every click **after** the first. No new reveals fire on reexamine. If `#### On Reexamine` is absent, subsequent clicks play an engine-provided fallback line (configured in the engine, not authored here).
 
