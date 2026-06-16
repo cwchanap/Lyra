@@ -79,6 +79,54 @@ describe("suggestEvidenceSource", () => {
       }),
     ).toBe("needs-review");
   });
+
+  it("locks classifier precedence so a branch reorder is caught (regression guard)", () => {
+    // IMPLIED wins over physical/visible tokens: 螢幕 (implied) + 文件 (physical)
+    // → implied, because the IMPLIED branch is checked first.
+    expect(
+      suggestEvidenceSource({
+        label: "螢幕上的文件",
+        description: "Monitor screen showing a document.",
+      }),
+    ).toBe("implied");
+
+    // RECORD with a PHYSICAL token → visible (a record that has a physical
+    // printout/表 is shown). This is the "打卡表" case: 打卡 ∈ RECORD, 表 ∈ PHYSICAL.
+    expect(
+      suggestEvidenceSource({
+        label: "打卡表",
+        description: "張貼在牆上的打卡表。",
+      }),
+    ).toBe("visible");
+
+    // RECORD with a VISIBLE-only token but NO physical token → hidden, NOT
+    // visible. This proves the RECORD branch short-circuits before the
+    // standalone VISIBLE branch (系統 ∈ RECORD, 傘 ∈ VISIBLE-only).
+    expect(
+      suggestEvidenceSource({
+        label: "系統雨傘",
+        description: "Record of umbrellas in the system.",
+      }),
+    ).toBe("hidden");
+
+    // 白板 is a physical object in VISIBLE_WORDS and is NOT in RECORD_WORDS, so
+    // 白板 alone classifies as visible (there is no RECORD-wins-over-VISIBLE
+    // interaction for 白板).
+    expect(
+      suggestEvidenceSource({
+        label: "會議白板",
+        description: "白板上還留著字。",
+      }),
+    ).toBe("visible");
+
+    // Pure RECORD wording with no physical/visible token → hidden.
+    expect(
+      suggestEvidenceSource({
+        label: "打卡紀錄",
+        description: "系統查詢的資料。",
+      }),
+    ).toBe("hidden");
+  });
 });
 
 describe("auditEvidenceSources", () => {
@@ -477,7 +525,13 @@ describe("auditEvidenceSources", () => {
 describe("printReport", () => {
   it("prints hotspot descriptions, evidence image prompts, and a problems section", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    let output: string;
+    // Problems section is routed to stderr so it is not buried when stdout is
+    // captured; the hotspot report stays on stdout.
+    const errLog = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    let stdout: string;
+    let stderr: string;
 
     try {
       printReport({
@@ -514,20 +568,25 @@ describe("printReport", () => {
           },
         ],
       });
-      output = log.mock.calls.map((call) => call.join(" ")).join("\n");
+      stdout = log.mock.calls.map((call) => call.join(" ")).join("\n");
+      stderr = errLog.mock.calls.map((call) => call.join(" ")).join("\n");
     } finally {
       log.mockRestore();
+      errLog.mockRestore();
     }
 
-    expect(output).toContain("description: Printed file on the desk.");
-    expect(output).toContain(
+    // Hotspot report on stdout.
+    expect(stdout).toContain("description: Printed file on the desk.");
+    expect(stdout).toContain(
       "imagePrompt: Square printed summary evidence icon.",
     );
-    expect(output).toContain("imagePrompt: missing");
-    // Problems section is rendered with kind + scene + message.
-    expect(output).toContain("Problems (1):");
-    expect(output).toContain("[sceneParseError]");
-    expect(output).toContain("chapter_2/investigation_scene_1.md");
-    expect(output).toContain("bogus");
+    expect(stdout).toContain("imagePrompt: missing");
+    // Problems section is on stderr with kind + scene + message.
+    expect(stderr).toContain("Problems (1):");
+    expect(stderr).toContain("[sceneParseError]");
+    expect(stderr).toContain("chapter_2/investigation_scene_1.md");
+    expect(stderr).toContain("bogus");
+    // ...and NOT duplicated on stdout.
+    expect(stdout).not.toContain("Problems (1):");
   });
 });
