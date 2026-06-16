@@ -569,6 +569,27 @@ describe("enrichScenesWithAssets", () => {
     expect(error?.message).toContain("cctv_playback");
   });
 
+  it("does not raise hotspotEvidenceSourceMissing when assets are disabled", () => {
+    // Regression guard: the evidence-source validation must be gated behind the
+    // enabled flag. A source-less, evidence-revealing hotspot is legal when
+    // assets are off. Moving the validation before the guard would go undetected
+    // without this test.
+    const scene = investigationSceneWithEvidenceSources();
+    if (scene.ast.kind !== "investigationScene") {
+      throw new Error("expected investigation scene fixture");
+    }
+    const firstHotspot = scene.ast.sublocations[0]?.hotspots[0];
+    if (!firstHotspot) throw new Error("expected hotspot fixture");
+    firstHotspot.evidenceSource = null;
+
+    const result = enrichScenesWithAssets({
+      scenes: [scene],
+      config: { ...config(), enabled: false },
+    });
+
+    expect(result.errors).toEqual([]);
+  });
+
   it("returns empty manifest and asset refs when assets are disabled", () => {
     const disabled = { ...config(), enabled: false };
     const scenes = [

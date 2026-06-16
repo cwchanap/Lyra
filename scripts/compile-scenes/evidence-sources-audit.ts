@@ -113,7 +113,12 @@ export function auditEvidenceSources(
         chapterDirName,
       );
       if (!chapter.ok) {
-        throw new Error(chapter.error.message);
+        // The audit reports migration work; it must not abort on a single
+        // malformed scene. Surface the parse error and keep going.
+        console.error(
+          `[evidence-sources-audit] skipping ${chapterDirName}/chapter.md: ${chapter.error.message}`,
+        );
+        continue;
       }
 
       for (const file of chapter.value.sceneFiles) {
@@ -128,7 +133,10 @@ export function auditEvidenceSources(
           file.replace(/\.md$/, ""),
         );
         if (!scene.ok) {
-          throw new Error(scene.error.message);
+          console.error(
+            `[evidence-sources-audit] skipping ${sceneFile}: ${scene.error.message}`,
+          );
+          continue;
         }
 
         const evidenceById = new Map(
@@ -216,5 +224,8 @@ export function printReport(items: EvidenceSourceAuditItem[]): void {
 }
 
 if (import.meta.main) {
-  printReport(auditEvidenceSources());
+  const roots = process.argv.slice(2);
+  printReport(
+    auditEvidenceSources(roots.length > 0 ? roots : DEFAULT_SOURCE_ROOTS),
+  );
 }
