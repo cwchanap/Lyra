@@ -201,6 +201,105 @@ describe("auditEvidenceSources", () => {
       ],
     });
   });
+
+  it("skips a malformed chapter and continues auditing valid chapters", () => {
+    // Regression guard: the audit must not abort on a single parse error.
+    // A chapter with a malformed manifest is surfaced on stderr and skipped;
+    // sibling valid chapters are still reported.
+    const sourceRoot = mkdtempSync(join(tmpdir(), "lyra-evidence-audit-"));
+    tempRoots.push(sourceRoot);
+
+    // Malformed chapter: missing the required "# Chapter <N>: <title>" H1.
+    const brokenRoot = join(sourceRoot, "chapter_1");
+    mkdirSync(brokenRoot, { recursive: true });
+    writeFileSync(
+      join(brokenRoot, "chapter.md"),
+      ["**Summary:** broken.", "## Scenes", "1. investigation_scene_1.md"].join(
+        "\n",
+      ),
+    );
+
+    // Valid chapter alongside it.
+    const validRoot = join(sourceRoot, "chapter_2");
+    mkdirSync(validRoot, { recursive: true });
+    writeFileSync(
+      join(validRoot, "chapter.md"),
+      `
+# Chapter 2: fixture
+
+**Summary:** fixture chapter.
+
+## Scenes
+1. investigation_scene_1.md
+`.trim(),
+    );
+    writeFileSync(
+      join(validRoot, "investigation_scene_1.md"),
+      `
+# Scene 1: skip fixture
+
+## Intro
+
+**相馬律**：確認現場。
+
+## Sub-location: front_room {#front_room}
+- **Status:** unlocked
+- **Background Prompt:** Rainy Tokyo cafe front room at night.
+
+[場景：雨夜的咖啡館前廳。]
+
+### Hotspot: 閉店監視器回放 {#cctv_playback}
+- **Description:** 收銀台旁的小螢幕還能調出閉店前的監視器畫面。
+- **Reveals:** [evidence:cctv_screenshot]
+- **Evidence Source:** implied
+
+**相馬律**：影像還在。
+
+## Evidence Manifest
+
+### evidence:cctv_screenshot {#cctv_screenshot}
+- **Name:** 閉店監視器截圖
+- **Description:** 截圖。
+- **Details:** 截圖顯示有人經過。
+- **Image Prompt:** Square CCTV screenshot evidence icon.
+
+#### On Collect
+
+**相馬律**：取得截圖。
+
+## Statement Manifest
+
+## Outro
+
+**相馬律**：先整理證據。
+`.trim(),
+    );
+
+    const errorLog = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    let items: ReturnType<typeof auditEvidenceSources>;
+    let errorCalls: unknown[][];
+    try {
+      items = auditEvidenceSources([sourceRoot]);
+      errorCalls = errorLog.mock.calls;
+    } finally {
+      errorLog.mockRestore();
+    }
+
+    // The valid chapter's hotspot is reported despite the sibling parse error.
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      sceneFile: "chapter_2/investigation_scene_1.md",
+      hotspotId: "cctv_playback",
+    });
+    // The malformed chapter was surfaced on stderr, not swallowed silently.
+    expect(
+      errorCalls.some((call) =>
+        String(call[0]).includes("chapter_1/chapter.md"),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("printReport", () => {
