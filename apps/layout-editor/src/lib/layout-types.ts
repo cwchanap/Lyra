@@ -1,17 +1,19 @@
-export type SceneIndex = {
-  chapters: Array<{
-    id: string;
-    title: string;
-    summary: string;
-    scenes: Array<{
-      type: "linear" | "investigation" | "interrogation";
-      file: string;
-    }>;
-  }>;
-};
-
-// Keep in sync with scripts/compile-scenes/types.ts
-export type EvidenceSource = "visible" | "implied" | "hidden";
+// Shared scene-graph wire types live in @lyra/scene-types (single source of
+// truth across the layout editor and the compiler). The four atoms below are
+// also referenced by InvestigationSceneJson below, so they are imported for a
+// local binding and re-exported; SceneIndex and InvestigationLayoutSidecar are
+// pure re-exports. See packages/scene-types.
+import type {
+  EvidenceSource,
+  RectLayout,
+  RevealTarget,
+  SpriteLayout,
+} from "@lyra/scene-types";
+export type { EvidenceSource, RectLayout, RevealTarget, SpriteLayout };
+export type {
+  ChaptersIndex as SceneIndex,
+  InvestigationLayoutSidecar,
+} from "@lyra/scene-types";
 
 export type InvestigationSceneJson = {
   type: "investigation";
@@ -67,39 +69,7 @@ export type DialogueItem =
       } | null;
     };
 
-export type RevealTarget =
-  | { kind: "evidence"; id: string }
-  | { kind: "statement"; id: string }
-  | { kind: "topic"; characterId: string; topicId: string }
-  | { kind: "hotspot"; id: string }
-  | { kind: "sublocation"; id: string };
-
-export type RectLayout = {
-  kind: "rect";
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-};
-
-export type SpriteLayout = {
-  kind: "sprite";
-  assetId: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  anchor: "bottomCenter";
-};
-
-export type InvestigationLayoutSidecar = {
-  version: 1;
-  sceneId: string;
-  sublocations: Record<
-    string,
-    {
-      hotspots: Record<string, RectLayout>;
-      characters: Record<string, SpriteLayout>;
-    }
-  >;
-};
+// RevealTarget, RectLayout, SpriteLayout, and InvestigationLayoutSidecar are
+// re-exported from @lyra/scene-types (see top of file). DialogueItem stays
+// local: the editor's rendering view is intentionally narrower than the
+// compiler's (no assetCue, simplified portrait, no expression).

@@ -9,6 +9,23 @@
 // types in Plan B's schema.rs are a direct mirror.
 // =============================================================================
 
+// Shared scene-graph wire types live in @lyra/scene-types (single source of
+// truth across the compiler and the layout editor). The four atoms below are
+// also referenced by other declarations in this file, so they are imported
+// for a local binding and re-exported; JSONChaptersIndex and
+// InvestigationLayoutSidecar are pure re-exports. See packages/scene-types.
+import type {
+  EvidenceSource,
+  RectLayout,
+  RevealTarget,
+  SpriteLayout,
+} from "@lyra/scene-types";
+export type { EvidenceSource, RectLayout, RevealTarget, SpriteLayout };
+export type {
+  ChaptersIndex as JSONChaptersIndex,
+  InvestigationLayoutSidecar,
+} from "@lyra/scene-types";
+
 // ----- Shared atoms ----------------------------------------------------------
 
 export type AssetRef = {
@@ -27,9 +44,6 @@ export type AudioCue = {
   assetId: string | null;
 };
 
-// Keep in sync with apps/layout-editor/src/lib/layout-types.ts
-export type EvidenceSource = "visible" | "implied" | "hidden";
-
 export type VisualAssetCue = {
   backgroundPrompt: string | null;
   backgroundAssetId: string | null;
@@ -40,36 +54,6 @@ export type VisualAssetCue = {
 export type EvidenceImageCue = {
   imagePrompt: string | null;
   imageAssetId: string | null;
-};
-
-export type RectLayout = {
-  kind: "rect";
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-};
-
-export type SpriteLayout = {
-  kind: "sprite";
-  assetId: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  anchor: "bottomCenter";
-};
-
-export type InvestigationLayoutSidecar = {
-  version: 1;
-  sceneId: string;
-  sublocations: Record<
-    string,
-    {
-      hotspots: Record<string, RectLayout>;
-      characters: Record<string, SpriteLayout>;
-    }
-  >;
 };
 
 export type JSONVisualAssetCue = {
@@ -107,13 +91,6 @@ export type JSONDialogueItem =
       expression: string | null;
       portrait: PortraitRef | null;
     };
-
-export type RevealTarget =
-  | { kind: "evidence"; id: string }
-  | { kind: "statement"; id: string }
-  | { kind: "topic"; characterId: string; topicId: string }
-  | { kind: "hotspot"; id: string }
-  | { kind: "sublocation"; id: string };
 
 export type InventoryTarget =
   | { kind: "evidence"; id: string }
@@ -337,17 +314,7 @@ export type ASTInterrogationOutro = {
 
 // ----- JSON: emitter output (mirrors spec §3b) -------------------------------
 
-export type JSONChaptersIndex = {
-  chapters: Array<{
-    id: string;
-    title: string;
-    summary: string;
-    scenes: Array<{
-      type: "linear" | "investigation" | "interrogation";
-      file: string;
-    }>;
-  }>;
-};
+// JSONChaptersIndex is re-exported from @lyra/scene-types (see top of file).
 
 export type JSONLinearScene = {
   type: "linear";
