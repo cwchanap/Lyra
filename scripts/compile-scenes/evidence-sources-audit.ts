@@ -23,6 +23,27 @@ export type EvidenceSourceAuditItem = {
   }>;
 };
 
+/**
+ * A chapter or scene the audit could not fully process. Surfaced as a
+ * structured item (in addition to the stderr log) so the report and
+ * programmatic consumers can flag malformed metadata — e.g. an invalid
+ * `Evidence Source` value — instead of silently skipping the scene.
+ */
+export type AuditProblem = {
+  sceneFile: string;
+  kind:
+    | "chapterReadError"
+    | "chapterParseError"
+    | "sceneReadError"
+    | "sceneParseError";
+  message: string;
+};
+
+export type EvidenceSourceAuditResult = {
+  items: EvidenceSourceAuditItem[];
+  problems: AuditProblem[];
+};
+
 const DEFAULT_SOURCE_ROOTS = ["docs/stories_plan", "static/stories_plan"];
 const IMPLIED_WORDS = [
   "監視器",
@@ -88,8 +109,9 @@ export function suggestEvidenceSource(input: {
 
 export function auditEvidenceSources(
   sourceRoots: string[] = DEFAULT_SOURCE_ROOTS,
-): EvidenceSourceAuditItem[] {
+): EvidenceSourceAuditResult {
   const items: EvidenceSourceAuditItem[] = [];
+  const problems: AuditProblem[] = [];
 
   for (const sourceRoot of sourceRoots) {
     const root = resolve(sourceRoot);
@@ -105,18 +127,30 @@ export function auditEvidenceSources(
 
     for (const chapterDirName of chapterDirs) {
       const chapterRoot = resolve(root, chapterDirName);
+      const manifestRef = `${chapterDirName}/chapter.md`;
       const manifestPath = resolve(chapterRoot, "chapter.md");
-      const chapterSource = readFileSync(manifestPath, "utf-8");
-      const chapter = parseChapter(
-        chapterSource,
-        `${chapterDirName}/chapter.md`,
-        chapterDirName,
-      );
+      // The audit reports migration work; it must not abort on a single
+      // unreadable, missing, or malformed file. Surface read/parse errors as
+      // structured problems (and on stderr) and keep going.
+      let chapterSource: string;
+      try {
+        chapterSource = readFileSync(manifestPath, "utf-8");
+      } catch (err) {
+        recordProblem(
+          problems,
+          "chapterReadError",
+          manifestRef,
+          toMessage(err),
+        );
+        continue;
+      }
+      const chapter = parseChapter(chapterSource, manifestRef, chapterDirName);
       if (!chapter.ok) {
-        // The audit reports migration work; it must not abort on a single
-        // malformed scene. Surface the parse error and keep going.
-        console.error(
-          `[evidence-sources-audit] skipping ${chapterDirName}/chapter.md: ${chapter.error.message}`,
+        recordProblem(
+          problems,
+          "chapterParseError",
+          manifestRef,
+          chapter.error.message,
         );
         continue;
       }
@@ -126,15 +160,24 @@ export function auditEvidenceSources(
 
         const sceneFile = `${chapterDirName}/${file}`;
         const scenePath = resolve(chapterRoot, file);
-        const sceneSource = readFileSync(scenePath, "utf-8");
+        let sceneSource: string;
+        try {
+          sceneSource = readFileSync(scenePath, "utf-8");
+        } catch (err) {
+          recordProblem(problems, "sceneReadError", sceneFile, toMessage(err));
+          continue;
+        }
         const scene = parseInvestigationScene(
           sceneSource,
           sceneFile,
           file.replace(/\.md$/, ""),
         );
         if (!scene.ok) {
-          console.error(
-            `[evidence-sources-audit] skipping ${sceneFile}: ${scene.error.message}`,
+          recordProblem(
+            problems,
+            "sceneParseError",
+            sceneFile,
+            scene.error.message,
           );
           continue;
         }
@@ -180,7 +223,18 @@ export function auditEvidenceSources(
     }
   }
 
-  return items;
+  return { items, problems };
+}
+
+/** Log a skip reason to stderr and record it as a structured audit problem. */
+function recordProblem(
+  problems: AuditProblem[],
+  kind: AuditProblem["kind"],
+  sceneFile: string,
+  message: string,
+): void {
+  console.error(`[evidence-sources-audit] skipping ${sceneFile}: ${message}`);
+  problems.push({ sceneFile, kind, message });
 }
 
 function containsAny(text: string, words: string[]): boolean {
@@ -193,32 +247,46 @@ function byChapterNumber(a: string, b: string): number {
   return aNumber - bNumber || a.localeCompare(b);
 }
 
-export function printReport(items: EvidenceSourceAuditItem[]): void {
+/** Coerce a thrown value (fs errors are Error instances) into a string. */
+function toMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+export function printReport(result: EvidenceSourceAuditResult): void {
+  const { items, problems } = result;
   if (items.length === 0) {
     console.log("No evidence-revealing hotspots found.");
-    return;
+  } else {
+    console.log(`Evidence source audit: ${items.length} hotspot(s)`);
+    for (const item of items) {
+      console.log(
+        [
+          `- ${item.sceneFile} ${item.sublocationId}/${item.hotspotId}`,
+          `  label: ${item.hotspotLabel}`,
+          `  description: ${item.hotspotDescription}`,
+          `  current: ${item.currentSource ?? "missing"}; suggested: ${item.suggestedSource}`,
+          "  evidence:",
+          ...item.evidence.flatMap((entry) => [
+            `    - ${entry.id} (${entry.name})`,
+            `      imagePrompt: ${entry.imagePrompt ?? "missing"}`,
+          ]),
+        ].join("\n"),
+      );
+      if (item.sceneSourcePrompt) {
+        console.log(`  scene source prompt: ${item.sceneSourcePrompt}`);
+      }
+      if (item.backgroundPrompt) {
+        console.log(`  background prompt: ${item.backgroundPrompt}`);
+      }
+    }
   }
 
-  console.log(`Evidence source audit: ${items.length} hotspot(s)`);
-  for (const item of items) {
-    console.log(
-      [
-        `- ${item.sceneFile} ${item.sublocationId}/${item.hotspotId}`,
-        `  label: ${item.hotspotLabel}`,
-        `  description: ${item.hotspotDescription}`,
-        `  current: ${item.currentSource ?? "missing"}; suggested: ${item.suggestedSource}`,
-        "  evidence:",
-        ...item.evidence.flatMap((entry) => [
-          `    - ${entry.id} (${entry.name})`,
-          `      imagePrompt: ${entry.imagePrompt ?? "missing"}`,
-        ]),
-      ].join("\n"),
-    );
-    if (item.sceneSourcePrompt) {
-      console.log(`  scene source prompt: ${item.sceneSourcePrompt}`);
-    }
-    if (item.backgroundPrompt) {
-      console.log(`  background prompt: ${item.backgroundPrompt}`);
+  if (problems.length > 0) {
+    console.log(`Problems (${problems.length}):`);
+    for (const problem of problems) {
+      console.log(
+        `  - [${problem.kind}] ${problem.sceneFile}: ${problem.message}`,
+      );
     }
   }
 }
