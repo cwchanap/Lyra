@@ -545,6 +545,37 @@ describe("enrichScenesWithAssets", () => {
     );
   });
 
+  it("falls back to label:description when sceneSourcePrompt is empty or whitespace", () => {
+    // Defense-in-depth: the parser cannot produce an empty sceneSourcePrompt
+    // today (the metadata regex requires ≥1 char), but the field type is
+    // `string | null`. An empty/whitespace value must still fall back rather
+    // than emit empty source guidance.
+    for (const emptyValue of ["", "   "]) {
+      const scene = investigationSceneWithEvidenceSources();
+      if (scene.ast.kind !== "investigationScene") {
+        throw new Error("expected investigation scene fixture");
+      }
+      const cctv = scene.ast.sublocations[0]?.hotspots[0];
+      if (!cctv) throw new Error("expected cctv hotspot fixture");
+      cctv.sceneSourcePrompt = emptyValue;
+
+      const result = enrichScenesWithAssets({
+        scenes: [scene],
+        config: config(),
+      });
+      expect(result.errors).toEqual([]);
+      const backgroundEntry = result.manifest.entries.find(
+        (entry) =>
+          entry.assetId ===
+          "background.chapter_1.investigation_scene_1.security_room",
+      );
+      const prompt = backgroundEntry?.promptParts.entryPrompt ?? "";
+      expect(prompt).toContain(
+        "監視器回放: A wall of monitors showing old lobby footage.",
+      );
+    }
+  });
+
   it("errors when an evidence-revealing hotspot omits evidenceSource", () => {
     const scene = investigationSceneWithEvidenceSources();
     if (scene.ast.kind !== "investigationScene") {

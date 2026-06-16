@@ -704,9 +704,11 @@ function investigationSourceGuidance(
       (id) => evidenceNamesById.get(id) ?? id,
     );
     if (evidenceNames.length === 0 || !hotspot.evidenceSource) return [];
+    // Treat an empty/whitespace-only sceneSourcePrompt as missing so authors
+    // get the label:description fallback rather than empty source guidance.
+    const trimmedPrompt = (hotspot.sceneSourcePrompt ?? "").trim();
     const sourcePrompt =
-      hotspot.sceneSourcePrompt ??
-      `${hotspot.label}: ${hotspot.description}`.trim();
+      trimmedPrompt || `${hotspot.label}: ${hotspot.description}`.trim();
 
     if (hotspot.evidenceSource === "visible") {
       return [
