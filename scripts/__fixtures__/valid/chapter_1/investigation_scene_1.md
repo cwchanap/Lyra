@@ -77,6 +77,7 @@
 - **Name:** 還熱的咖啡
 - **Description:** 一杯仍微熱的咖啡。
 - **Details:** 杯壁溫度約 50°C，最近 10 分鐘內被沖泡。
+- **Source Sublocation:** main_hall
 
 #### On Collect
 
@@ -90,6 +91,7 @@
 - **Name:** 上鎖的小盒
 - **Description:** 櫥櫃內的金屬盒。
 - **Details:** 盒身有刻字，但鎖未撬開。
+- **Source Sublocation:** back_room
 
 #### On Collect
 
