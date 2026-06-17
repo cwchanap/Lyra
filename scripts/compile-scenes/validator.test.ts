@@ -345,6 +345,23 @@ describe("validator", () => {
       expect(errors[0]!.line).toBe(30);
     });
 
+    it("rejects evidence whose source sublocation field is omitted", () => {
+      const scene = mkSourceSublocationScene();
+      const evidence = mkSourceEvidence(
+        "badge",
+        "front",
+      ) as Partial<ASTEvidence>;
+      delete evidence.sourceSublocationId;
+      scene.evidenceManifest = [evidence as ASTEvidence];
+
+      const errors = validateSourceScene(scene);
+
+      expect(errors.map((e) => e.code)).toEqual([
+        "evidenceSourceSublocationMissing",
+      ]);
+      expect(errors[0]!.line).toBe(30);
+    });
+
     it("rejects evidence with unknown source sublocation", () => {
       const scene = mkSourceSublocationScene();
       scene.evidenceManifest = [mkSourceEvidence("badge", "basement")];
@@ -712,6 +729,7 @@ describe("validator", () => {
         name: "ev1",
         description: "d",
         details: "x",
+        sourceSublocationId: "room",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -762,6 +780,7 @@ describe("validator", () => {
         name: "ev1",
         description: "d",
         details: "x",
+        sourceSublocationId: "room",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -871,6 +890,7 @@ describe("validator", () => {
         name: "ev1",
         description: "d",
         details: "x",
+        sourceSublocationId: "room",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -953,6 +973,7 @@ describe("validator", () => {
         name: "ev1",
         description: "d",
         details: "x",
+        sourceSublocationId: "room",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -1114,6 +1135,7 @@ describe("validator", () => {
         name: "ev_entry",
         description: "d",
         details: "x",
+        sourceSublocationId: "room",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -1162,6 +1184,7 @@ describe("validator", () => {
         name: "ev_chain",
         description: "d",
         details: "x",
+        sourceSublocationId: "room_b",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -1580,6 +1603,7 @@ describe("validator", () => {
         name: "Phantom",
         description: "d",
         details: "x",
+        sourceSublocationId: "room",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -1652,6 +1676,7 @@ describe("validator", () => {
         name: "Real",
         description: "d",
         details: "x",
+        sourceSublocationId: "room",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",

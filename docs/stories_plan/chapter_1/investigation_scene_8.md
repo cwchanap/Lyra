@@ -160,6 +160,7 @@
 - **Name:** 本機順序程序固定紀錄
 - **Description:** 鑑識依程序固定的後場門鎖面板紀錄，含本機事件順序。
 - **Details:** 含門鎖設備 ID、機身編號、頁面版本號與當前畫面時間，底下是 Event-1841 至 1844 的本機順序，只有先後，沒有秒數。這是本機自己存的順序，不是 KAGAMI 的完整原始紀錄。
+- **Source Sublocation:** fixed_panel
 - **Image Prompt:** Formal doorlock panel sequence record with four ordered event blocks, device-photo strip, unreadable fields, isolated evidence icon.
 
 #### On Collect
@@ -172,6 +173,7 @@
 - **Name:** 維護模式說明
 - **Description:** 店方對這頁維護面板的使用認知說明。
 - **Details:** 店長只用這頁確認門有沒有卡住、維護模式有沒有關掉。這頁不能用來判斷幾點幾分有人進門，店方也不知道它有這個限制。
+- **Source Sublocation:** office_corner
 - **Image Prompt:** Plain maintenance-mode instruction note beside a small doorlock screen icon, check symbols implied but unreadable, isolated evidence icon.
 
 #### On Collect
@@ -184,6 +186,7 @@
 - **Name:** 外包維護憑證
 - **Description:** 本機順序裡那條排在員工憑證之前的外部維護憑證事件。
 - **Details:** Event-1842，外部維護憑證、後門開啟，排在三宅的員工憑證 Event-1843 之前。目前只知道有這麼一個外部憑證的事件，還沒對應到任何一個人。
+- **Source Sublocation:** fixed_panel
 - **Image Prompt:** External maintenance credential event card with keycard silhouette and ordered event row, all codes unreadable, isolated evidence icon.
 
 #### On Collect

@@ -507,6 +507,7 @@
 - **Name:** 藍色透明雨傘
 - **Description:** 入口傘架內側的藍色傘柄透明傘，無人認領。傘柄內側有舊貼紙被撕掉的刮痕。
 - **Details:** 傘柄材質為鋁合金，刮痕深度一致，像是從邊緣整片撕起的，非刀刮。
+- **Source Sublocation:** entrance
 - **Image Prompt:** Transparent umbrella with a blue handle and scratched inner label area, isolated evidence icon.
 
 #### On Collect
@@ -529,6 +530,7 @@
 - **Name:** 破損傘套
 - **Description:** 入口傘架旁地上的素面透明傘套，撕破，邊緣有泥水。
 - **Details:** 傘套塑膠厚度與店內備用傘套不同，非同一品牌。邊緣泥水待比對。
+- **Source Sublocation:** entrance
 - **Image Prompt:** Torn transparent umbrella sleeve with muddy edge, isolated evidence icon.
 
 #### On Collect
@@ -545,6 +547,7 @@
 - **Name:** 入口監視器畫面
 - **Description:** 入口監視器記錄的今日片段，KAGAMI 系統有整理匯入。
 - **Details:** 21:07，片桐悠真從正門離開，背對鏡頭，戴帽子。之後到警察到場前，沒有人從正門進入。
+- **Source Sublocation:** entrance
 - **Image Prompt:** Security camera footage thumbnail showing a rainy cafe entrance silhouette, isolated evidence icon without readable text.
 
 #### On Collect
@@ -565,6 +568,7 @@
 - **Name:** 咖啡機清潔啟動紀錄
 - **Description:** 吧台義式咖啡機的操作紀錄，本地儲存，非 KAGAMI 系統。
 - **Details:** 自動清潔模式啟動時間：21:13:29。手動按鍵啟動。
+- **Source Sublocation:** bar_area
 - **Image Prompt:** Espresso machine local operation log display showing a cleaning cycle, isolated evidence icon without readable text.
 
 #### On Collect
@@ -585,6 +589,7 @@
 - **Name:** 奶泡壺餘溫
 - **Description:** 吧台奶泡壺，壺身仍有餘溫，壺口有乾燥中的奶泡殘跡。
 - **Details:** 餘溫估計為最後使用後約 30 至 50 分鐘內，與最後一杯拿鐵的製作時間吻合。
+- **Source Sublocation:** bar_area
 - **Image Prompt:** Stainless milk frothing pitcher with dried foam residue and subtle warmth cue, isolated evidence icon.
 
 #### On Collect
@@ -601,6 +606,7 @@
 - **Name:** 員工打卡紀錄
 - **Description:** 獨立系統打卡機今日紀錄，非 KAGAMI 整合。
 - **Details:** 若槻蓮 18:00 打卡上班，無下班紀錄。橘美緒（店長）16:00 上班，22:00 打卡。片桐悠真無打卡紀錄，外包人員不使用員工卡。
+- **Source Sublocation:** bar_area
 - **Image Prompt:** Old wall-mounted time card record slip and punch clock, isolated evidence icon.
 
 #### On Collect
@@ -619,6 +625,7 @@
 - **Name:** KAGAMI 官方時間線摘要
 - **Description:** 黑瀨刑警轉交的 KAGAMI 系統整理報告，列出案發相關時間節點。
 - **Details:** 21:07 片桐離開正門；21:13:21 若槻進倉庫；21:14:18 增田心跳停止；21:14:52 若槻離開倉庫；21:20 橘美緒發現屍體。五個節點，環環相扣。
+- **Source Sublocation:** main_floor
 - **Image Prompt:** Official digital timeline report tablet with five connected event nodes, isolated evidence icon without readable text.
 
 #### On Collect
@@ -641,6 +648,7 @@
 - **Name:** KAGAMI 門鎖進出紀錄
 - **Description:** 倉庫智慧門鎖面板上的最近紀錄，雲端同步版本。
 - **Details:** 21:07:08 KTR-042（片桐）進，21:07:33 出。21:13:21 RJ-007（若槻）進，21:14:52 出。
+- **Source Sublocation:** staff_corridor
 - **Image Prompt:** Dark gray smart lock panel with access log interface, isolated evidence icon without readable text.
 
 #### On Collect
@@ -659,6 +667,7 @@
 - **Name:** 倉庫地板濕痕
 - **Description:** 倉庫入口往左方向，一灘半乾的不規則水痕。
 - **Details:** 水痕形狀不像雨水滲入或飲料潑灑，邊緣有輕微擦拭痕跡，像是被拖把擦過但沒擦乾淨。
+- **Source Sublocation:** storeroom
 - **Image Prompt:** Irregular half-dry water marks on storeroom floor with faint wipe streaks, isolated evidence icon.
 
 #### On Collect
@@ -681,6 +690,7 @@
 - **Name:** 增田圭智慧手錶紀錄
 - **Description:** 死者手腕上的智慧手錶，心跳監測功能本地紀錄。
 - **Details:** 心跳驟降至停止：21:14:18。本地紀錄，非雲端同步版本。手錶為個人用消費型裝置，非 KAGAMI 整合設備。
+- **Source Sublocation:** storeroom
 - **Image Prompt:** Black smartwatch evidence item with heart-rate graph motif, isolated on transparent background.
 
 #### On Collect
@@ -705,6 +715,7 @@
 - **Name:** 黃銅桌鈴
 - **Description:** 老式桌鈴，底座有暗色污跡，初步鑑識判定為兇器。
 - **Details:** 底座重量約 800 克，足以造成致命頭部外傷。污跡成分與被害者血型吻合（初步）。
+- **Source Sublocation:** storeroom
 - **Image Prompt:** Vintage brass desk bell with dark stain on base, isolated evidence icon.
 
 #### On Collect
@@ -723,6 +734,7 @@
 - **Name:** 舊後門觀察記錄
 - **Description:** 倉庫左側被滾輪貨架半遮住的舊式木門，門縫貼著警示貼紙。
 - **Details:** 警示貼紙標示「未接入智慧門鎖，勿作為進出通道」，表面看起來完整，但紙邊緣有輕微翹起，像是被碰過又壓平的。
+- **Source Sublocation:** storeroom
 - **Image Prompt:** Old wooden back door with warning sticker and lifted paper edge, isolated evidence icon without readable text.
 
 #### On Collect
@@ -741,6 +753,7 @@
 - **Name:** 滾輪貨架底部泥水
 - **Description:** 左側滾輪貨架底部輪子上的深色泥水，與倉庫地面泥土不同。
 - **Details:** 泥水顏色偏深，質地較黏，與後巷排水口附近地面特徵吻合（目視判斷，待鑑識比對）。
+- **Source Sublocation:** storeroom
 - **Image Prompt:** Metal wheeled shelf caster with black-gray alley mud, isolated evidence icon.
 
 #### On Collect
@@ -759,6 +772,7 @@
 - **Name:** 半杯金木犀拿鐵
 - **Description:** 倉庫右側貨架角落的紙杯，裝著大約半杯咖啡，奶泡已完全攤平。
 - **Details:** 奶泡攤平程度推算最後使用約 30 至 60 分鐘前。紙杯外側無濕氣，咖啡溫度接近室溫。
+- **Source Sublocation:** storeroom
 - **Image Prompt:** Half-finished osmanthus latte paper cup with flattened foam, isolated evidence icon without logo text.
 
 #### On Collect
@@ -781,6 +795,7 @@
 - **Name:** 被害者手機
 - **Description:** 增田圭的黑色智慧手機，螢幕鎖定，面朝下倒在遺體旁。
 - **Details:** 鎖屏通知顯示一封未讀郵件，寄件人為加密帳號，主旨「KTR-042 存取異常，請回覆」。手機解鎖申請中。
+- **Source Sublocation:** storeroom
 - **Image Prompt:** Black smartphone face-down with one urgent notification glow, isolated evidence icon without readable text.
 
 #### On Collect
@@ -801,6 +816,7 @@
 - **Name:** 被害者加密隨身碟
 - **Description:** 細小的黑色隨身碟，發現於遺體旁地板，非口袋內。
 - **Details:** 隨身碟設有加密，現場無法讀取。外殼有輕微磨損，像是長期隨身攜帶使用的。
+- **Source Sublocation:** storeroom
 - **Image Prompt:** Tiny black USB flash drive beside an evidence marker, isolated on transparent background.
 
 #### On Collect

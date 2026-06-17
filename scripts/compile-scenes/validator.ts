@@ -1827,7 +1827,7 @@ function validateInvestigationScene(
 
   const evidenceSourceSublocation = new Map<string, string>();
   for (const evidence of scene.evidenceManifest) {
-    if (evidence.sourceSublocationId === null) {
+    if (evidence.sourceSublocationId == null) {
       errors.push({
         code: "evidenceSourceSublocationMissing",
         message: `Evidence id "${evidence.id}" must declare a source sub-location.`,

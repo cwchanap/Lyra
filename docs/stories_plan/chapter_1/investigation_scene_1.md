@@ -84,6 +84,7 @@
 - **Name:** KAGAMI 摘要副本
 - **Description:** KAGAMI 系統輸出的官方摘要副本，列為三宅蒼太相關的正式紀錄。
 - **Details:** 摘要將三宅蒼太列為主要嫌疑人，附時間、門禁與鏡頭三項紀錄，字面上彼此相符。
+- **Source Sublocation:** office
 - **Image Prompt:** Official KAGAMI case-summary document printout in a folder, clean grid-like layout implied with unreadable marks, isolated evidence icon.
 
 #### On Collect
