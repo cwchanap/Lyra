@@ -91,6 +91,8 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
   - Use one Hotspot with multiple evidence reveals only when the evidence items share the same click target and the same `Evidence Source` treatment.
   - `Evidence Source` and `Scene Source Prompt` apply to the Hotspot as a whole, not to each individual evidence item.
   - If one evidence item should be `visible` and another should be `hidden` or `implied`, split them into separate Hotspots even if they are near each other in the same sub-location.
+- **Local evidence rule:** any evidence revealed by a Hotspot must declare the same `Source Sublocation` ID as the Hotspot's parent sub-location. Do not reveal evidence from another room, corridor, or sub-location.
+- **Invisible-document rule:** if the background lacks a physical document, terminal screen, board, or source object for the exact clue, do not invent a precise document Hotspot. Write the evidence as `hidden`, `implied`, or derived from a broader local trigger such as a counter record area, visible device, spatial sightline, or object cluster.
 - **Compiler-enforced rules (compile errors regardless of asset state):**
   - `Evidence Source` may only take `visible`, `implied`, or `hidden`. Any other value is a parse error (`hotspotEvidenceSourceInvalid`), even when assets are disabled.
   - `Evidence Source` is only valid on a Hotspot that reveals evidence (its `Reveals:` includes at least one `[evidence:…]`). Putting it on a non-evidence hotspot is `hotspotEvidenceSourceWithoutEvidenceReveal`.
@@ -112,7 +114,8 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 
 ### Evidence Manifest entry (H3 under `## Evidence Manifest`)
 - **Heading:** `### evidence:<id> {#id}`
-- **Required:** `Name`, `Description`, `Details`
+- **Required:** `Name`, `Description`, `Details`, `Source Sublocation`
+- **Source Sublocation:** the exact ID of the sub-location where this evidence is discovered, e.g. `front`, `corridor`, or `inner_entry`. Evidence may only be revealed by a Hotspot, Topic, or sub-location entry trigger in that same sub-location.
 - **Required when assets are enabled:** `Image Prompt` — English production prompt for the evidence icon. Do not include a path.
 - **Body:**
   - `#### On Collect` (required) — dialogue that plays when this evidence is first added to inventory.
@@ -224,6 +227,8 @@ The parser/validator checks the following — author with them in mind:
 
 - Every `Reveals:` target resolves to a declared ID in the same file.
 - Every `Unlock:` predicate references a declared ID in the same file.
+- Every investigation evidence item declares `Source Sublocation`.
+- Every evidence reveal happens from the evidence item's declared source sub-location.
 - No circular dependencies (A unlocks B, B unlocks A).
 - Every block with `Status: locked` is unlockable via at least one path (`Unlock:` on itself **or** inbound `Reveals` from another block).
 - The first `## Sub-location:` block in the file is `Status: unlocked`.
@@ -264,6 +269,9 @@ When asked to write an `investigation_scene_<N>.md`:
 | Locked block with BOTH `Unlock` and inbound `Reveals` | Pick one; remove the other |
 | First sub-location declared as `Status: locked` | Set to `unlocked` — the player must be able to enter |
 | Evidence Manifest entry without `#### On Collect` | Add it; even one short line is required |
+| Evidence Manifest entry without `Source Sublocation` | Add the exact sub-location ID where the evidence is discovered |
+| Evidence revealed from a different sub-location than its `Source Sublocation` | Move the reveal to a local trigger or change the evidence source to the actual local sub-location |
+| Hotspot names an exact document that is not visible in the background | Use a broader local trigger and mark the evidence `hidden`/`implied`, or make it derived from visible geometry/object placement |
 | Manifest entries placed inline under their producing hotspot/topic | Move to the dedicated `## Evidence Manifest` / `## Statement Manifest` sections near the file bottom |
 | Inline dialogue describes "present this evidence to the witness" | That belongs in the separate `interrogation_scene_<N>.md` format covered by `writing-interrogation-scene`; investigation scenes only collect, not confront |
 | Dialogue line >100 Chinese characters | Split per the base dialogue skill |
@@ -344,6 +352,7 @@ A reduced fragment exercising every block type in canonical order. Use as a stru
 - **Name:** 還溫的咖啡機
 - **Description:** 一台仍微熱的咖啡機。
 - **Details:** 機身溫度顯示在過去 15 分鐘內被使用過。
+- **Source Sublocation:** main_floor
 
 #### On Collect
 
@@ -361,6 +370,7 @@ A reduced fragment exercising every block type in canonical order. Use as a stru
 - **Name:** 半濕的地板水痕
 - **Description:** 倉庫地板上一灘剛擦過、仍微濕的水痕。
 - **Details:** 水痕邊緣與一般雨水滲入的形狀不一致。
+- **Source Sublocation:** storeroom
 
 #### On Collect
 
@@ -372,6 +382,7 @@ A reduced fragment exercising every block type in canonical order. Use as a stru
 - **Name:** 剛被推動過的貨架
 - **Description:** 滾輪貨架的輪痕在地上留下半圓形刮痕。
 - **Details:** 刮痕方向顯示貨架最近被往左推開了大約四十公分。
+- **Source Sublocation:** storeroom
 
 #### On Collect
 

@@ -11,19 +11,12 @@
           "w": 0.12,
           "h": 0.1
         },
-        "doorlock_summary": {
-          "kind": "rect",
-          "x": 0.729568,
-          "y": 0.502989,
-          "w": 0.075123,
-          "h": 0.148939
-        },
-        "timecard": {
+        "counter_admin_records": {
           "kind": "rect",
           "x": 0.587447,
           "y": 0.473502,
-          "w": 0.071603,
-          "h": 0.127746
+          "w": 0.217244,
+          "h": 0.178426
         },
         "cctv_playback": {
           "kind": "rect",
@@ -77,12 +70,12 @@
     },
     "inner_entry": {
       "hotspots": {
-        "l_floorplan": {
+        "storage_sightline": {
           "kind": "rect",
-          "x": 0.782935,
-          "y": 0.570036,
-          "w": 0.12,
-          "h": 0.1
+          "x": 0.574,
+          "y": 0.204,
+          "w": 0.23,
+          "h": 0.48
         },
         "inner_sensor_light": {
           "kind": "rect",
@@ -110,7 +103,7 @@
           "w": 0.144264,
           "h": 0.829968
         },
-        "sop_whiteboard": {
+        "wall_notice_board": {
           "kind": "rect",
           "x": 0.770736,
           "y": 0.59425,
