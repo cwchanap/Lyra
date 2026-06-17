@@ -87,6 +87,10 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
   - `implied` — the source object is visible, but the exact evidence image/content is only implied.
   - `hidden` — the evidence source is not visually present before the player inspects or uncovers it.
 - **Scene Source Prompt:** one-line English production guidance for the in-scene source only. It is not a filesystem path and does not replace the evidence manifest's `Image Prompt`.
+- **Multiple evidence correlation:** a single Hotspot may reveal multiple evidence items by listing multiple `[evidence:...]` targets in `Reveals`. This is the canonical way to say those evidence items come from the same player inspection.
+  - Use one Hotspot with multiple evidence reveals only when the evidence items share the same click target and the same `Evidence Source` treatment.
+  - `Evidence Source` and `Scene Source Prompt` apply to the Hotspot as a whole, not to each individual evidence item.
+  - If one evidence item should be `visible` and another should be `hidden` or `implied`, split them into separate Hotspots even if they are near each other in the same sub-location.
 - **Compiler-enforced rules (compile errors regardless of asset state):**
   - `Evidence Source` may only take `visible`, `implied`, or `hidden`. Any other value is a parse error (`hotspotEvidenceSourceInvalid`), even when assets are disabled.
   - `Evidence Source` is only valid on a Hotspot that reveals evidence (its `Reveals:` includes at least one `[evidence:…]`). Putting it on a non-evidence hotspot is `hotspotEvidenceSourceWithoutEvidenceReveal`.
@@ -192,6 +196,10 @@ When the player completes a trigger that has a `Reveals:` list, dialogue plays i
    - `evidence:<id>` → its `#### On Collect` block
    - `statement:<id>` → its `#### On Acquire` block
    - `topic:` / `hotspot:` / `sublocation:` → silent (the unlocked block's body plays only when the player engages it directly)
+
+For a Hotspot with multiple evidence reveals, the editor and runtime both treat
+that `Reveals` list as the evidence-to-hotspot correlation. Keep the order
+intentional; it controls the sequence of collection dialogue.
 
 ## Sub-location semantics
 

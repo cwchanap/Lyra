@@ -39,6 +39,11 @@
     id: string;
   };
   type HotspotSourceState = EvidenceSource | "missing" | null;
+  type EvidenceCorrelation = {
+    id: string;
+    name: string;
+    imageAssetId: string | null;
+  };
 
   const defaultHotspotLayout: RectLayout = {
     kind: "rect",
@@ -94,11 +99,14 @@
 
   const sublocationLayout = $derived(layout.sublocations[sublocationId]);
 
-  const evidenceImageById = $derived(
+  const evidenceById = $derived(
     new Map(
       scene.evidenceManifest.map((evidence) => [
         evidence.id,
-        evidence.imageAssetId,
+        {
+          name: evidence.name,
+          imageAssetId: evidence.imageAssetId,
+        },
       ]),
     ),
   );
@@ -108,7 +116,7 @@
   const hotspotTargets = $derived(
     currentSublocation?.hotspots.map((hotspot) => ({
       ...hotspot,
-      imageAssetId: evidenceAssetIdForHotspot(hotspot),
+      evidenceItems: evidenceItemsForHotspot(hotspot),
       sourceState: sourceStateForHotspot(hotspot),
       layout:
         sublocationLayout?.hotspots[hotspot.id] ??
@@ -414,14 +422,21 @@
     };
   }
 
-  function evidenceAssetIdForHotspot(hotspot: SceneHotspot): string | null {
+  function evidenceItemsForHotspot(
+    hotspot: SceneHotspot,
+  ): EvidenceCorrelation[] {
+    const items: EvidenceCorrelation[] = [];
     for (const reveal of hotspot.reveals) {
       if (isEvidenceReveal(reveal)) {
-        const assetId = evidenceImageById.get(reveal.id);
-        if (assetId) return assetId;
+        const evidence = evidenceById.get(reveal.id);
+        items.push({
+          id: reveal.id,
+          name: evidence?.name ?? reveal.id,
+          imageAssetId: evidence?.imageAssetId ?? null,
+        });
       }
     }
-    return null;
+    return items;
   }
 
   function hasEvidenceReveal(hotspot: SceneHotspot): boolean {
@@ -446,18 +461,46 @@
   }
 
   function shouldShowEvidencePreview(hotspot: {
-    imageAssetId: string | null;
+    evidenceItems: EvidenceCorrelation[];
     sourceState: HotspotSourceState;
   }): boolean {
-    return hotspot.sourceState === "visible" && Boolean(hotspot.imageAssetId);
+    return (
+      hotspot.sourceState === "visible" &&
+      hotspot.evidenceItems.some((item) => Boolean(item.imageAssetId))
+    );
   }
 
-  function hotspotControlTitle(hotspot: SceneHotspot): string {
+  function previewEvidenceItems(
+    evidenceItems: EvidenceCorrelation[],
+  ): EvidenceCorrelation[] {
+    return evidenceItems.filter((item) => Boolean(item.imageAssetId));
+  }
+
+  function evidenceCountLabel(evidenceItems: EvidenceCorrelation[]): string {
+    return evidenceItems.length === 1
+      ? "1 evidence"
+      : `${evidenceItems.length} evidence`;
+  }
+
+  function evidenceTitle(evidenceItems: EvidenceCorrelation[]): string {
+    return evidenceItems
+      .map((evidence) => `${evidence.name} (${evidence.id})`)
+      .join(", ");
+  }
+
+  function hotspotControlTitle(
+    hotspot: SceneHotspot & { evidenceItems?: EvidenceCorrelation[] },
+  ): string {
     const parts = [hotspot.description || hotspot.label];
     const source = sourceLabel(sourceStateForHotspot(hotspot));
     if (source) parts.push(`Source: ${source}`);
     if (hotspot.sceneSourcePrompt) {
       parts.push(`Prompt: ${hotspot.sceneSourcePrompt}`);
+    }
+    const evidenceItems =
+      hotspot.evidenceItems ?? evidenceItemsForHotspot(hotspot);
+    if (evidenceItems.length > 0) {
+      parts.push(`Evidence: ${evidenceTitle(evidenceItems)}`);
     }
     return parts.join("\n");
   }
@@ -566,21 +609,33 @@
           onpointerdown={(event) =>
             startDrag("hotspot", hotspot.id, "move", hotspot.layout, event)}
         >
-          {#if shouldShowEvidencePreview(hotspot) && assetUrl(hotspot.imageAssetId, "evidence")}
-            <img
-              class="hotspot-preview"
-              src={assetUrl(hotspot.imageAssetId, "evidence")}
-              alt=""
-              aria-hidden="true"
-              onerror={() =>
-                handleAssetError(hotspot.imageAssetId ?? "", "evidence")}
-            />
+          {#if shouldShowEvidencePreview(hotspot)}
+            <span class="hotspot-previews" aria-hidden="true">
+              {#each previewEvidenceItems(hotspot.evidenceItems) as evidence (evidence.id)}
+                {#if assetUrl(evidence.imageAssetId, "evidence")}
+                  <img
+                    class="hotspot-preview"
+                    src={assetUrl(evidence.imageAssetId, "evidence")}
+                    alt=""
+                    onerror={() =>
+                      handleAssetError(evidence.imageAssetId ?? "", "evidence")}
+                  />
+                {/if}
+              {/each}
+            </span>
           {/if}
           {#if hotspot.sourceState === "implied"}
             <i class="source-marker" aria-hidden="true" title="Implied source"
             ></i>
           {/if}
           <span class="target-label">{hotspot.label}</span>
+          {#if hotspot.evidenceItems.length > 0}
+            <span
+              class="evidence-chip"
+              title={evidenceTitle(hotspot.evidenceItems)}
+              >{evidenceCountLabel(hotspot.evidenceItems)}</span
+            >
+          {/if}
           {#if sourceLabel(hotspot.sourceState)}
             <span class="source-badge">{sourceLabel(hotspot.sourceState)}</span>
           {/if}
@@ -813,12 +868,21 @@
     transform: none;
   }
 
-  .hotspot-preview {
+  .hotspot-previews {
     position: absolute;
     inset: 4px;
     z-index: 0;
-    width: calc(100% - 8px);
-    height: calc(100% - 8px);
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 2px;
+    pointer-events: none;
+  }
+
+  .hotspot-preview {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
     object-fit: contain;
     opacity: 0.9;
     pointer-events: none;
@@ -844,11 +908,31 @@
     right: 4px;
     bottom: 4px;
     z-index: 1;
-    max-width: calc(100% - 8px);
+    max-width: calc(50% - 6px);
     padding: 2px 5px;
     border: 1px solid rgb(255 255 255 / 48%);
     border-radius: 4px;
     background: rgb(38 48 46 / 82%);
+    color: #ffffff;
+    font-size: 0.62rem;
+    font-weight: 800;
+    line-height: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 1px 2px rgb(0 0 0 / 56%);
+    white-space: nowrap;
+  }
+
+  .evidence-chip {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    z-index: 1;
+    max-width: calc(50% - 6px);
+    padding: 2px 5px;
+    border: 1px solid rgb(255 255 255 / 42%);
+    border-radius: 4px;
+    background: rgb(20 35 42 / 82%);
     color: #ffffff;
     font-size: 0.62rem;
     font-weight: 800;
@@ -934,10 +1018,12 @@
   }
 
   .hide-boxes .target-label,
+  .hide-boxes .evidence-chip,
   .hide-boxes .source-badge,
   .hide-boxes .source-marker,
   .hide-boxes .resize-handle,
   .target.hidden .target-label,
+  .target.hidden .evidence-chip,
   .target.hidden .source-badge,
   .target.hidden .source-marker,
   .target.hidden .resize-handle {
@@ -963,6 +1049,7 @@
   }
 
   .hide-boxes .target.revealed .target-label,
+  .hide-boxes .target.revealed .evidence-chip,
   .hide-boxes .target.revealed .source-badge,
   .hide-boxes .target.revealed .source-marker,
   .hide-boxes .target.revealed .resize-handle {
