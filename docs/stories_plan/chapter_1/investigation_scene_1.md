@@ -48,11 +48,10 @@
 
 **相馬律**：機器壞著，就先靠這個。便利店的，省一點。
 
-### Hotspot: KAGAMI 摘要副本 {#kagami_summary_hotspot}
+### Hotspot: 桌面卷宗夾 {#kagami_summary_hotspot}
 - **Reveals:** [evidence:kagami_summary, topic:hayasaka@commission]
-- **Description:** 桌上攤著一份 KAGAMI 系統輸出的摘要副本，列著時間、門禁與鏡頭三項紀錄。
-- **Evidence Source:** visible
-- **Scene Source Prompt:** Printed KAGAMI case-summary document lying on the detective office desk, visible as a document prop but with no readable text.
+- **Description:** 桌上的舊皮製卷宗夾裡，夾著早坂送來的案件資料。
+- **Evidence Source:** hidden
 
 [相馬律低頭逐行看那份摘要，手指順著三欄紀錄滑下去。]
 
