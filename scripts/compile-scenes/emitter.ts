@@ -83,6 +83,7 @@ export function emitInvestigationScene(
       description: e.description,
       details: e.details,
       imageAssetId: e.imageCue.imageAssetId,
+      sourceSublocationId: e.sourceSublocationId,
       onCollect: emitDialogueItems(e.onCollect),
       onReexamine: emitNullableDialogueItems(e.onReexamine),
     })),

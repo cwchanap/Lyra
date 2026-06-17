@@ -589,6 +589,43 @@ describe("parseInvestigationScene", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.evidenceManifest[0]?.imageCue.imagePrompt).toBeNull();
+    expect(result.value.evidenceManifest[0]?.sourceSublocationId).toBeNull();
+  });
+
+  it("parses Source Sublocation on evidence manifest entries", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: front {#front}
+- **Status:** unlocked
+
+[場景：front room]
+
+### Hotspot: thing {#thing}
+- **Description:** a thing
+
+**A**：observed.
+
+## Evidence Manifest
+
+### evidence:foo {#foo}
+- **Name:** Foo
+- **Description:** A foo.
+- **Details:** Detail.
+- **Source Sublocation:** front
+
+#### On Collect
+
+**A**：collected.
+
+## Outro
+
+**A**：done.
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.evidenceManifest[0]?.sourceSublocationId).toBe("front");
   });
 
   it("rejects an investigation scene with no H1 title", () => {
