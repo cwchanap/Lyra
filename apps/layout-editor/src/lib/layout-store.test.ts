@@ -432,6 +432,7 @@ describe("layout-store", () => {
             name: "Receipt",
             description: "Receipt clue.",
             imageAssetId: null,
+            sourceSublocationId: null,
           },
         ],
       };

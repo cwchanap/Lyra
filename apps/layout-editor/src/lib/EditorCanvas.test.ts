@@ -176,24 +176,28 @@ const sourceScene = {
       name: "Receipt",
       description: "A torn receipt.",
       imageAssetId: "evidence.receipt",
+      sourceSublocationId: null,
     },
     {
       id: "clock",
       name: "Clock",
       description: "Stopped clock.",
       imageAssetId: "evidence.clock",
+      sourceSublocationId: null,
     },
     {
       id: "safe-note",
       name: "Safe note",
       description: "A note from the safe.",
       imageAssetId: "evidence.safe_note",
+      sourceSublocationId: null,
     },
     {
       id: "loose-thread",
       name: "Loose thread",
       description: "Thread clue.",
       imageAssetId: "evidence.loose_thread",
+      sourceSublocationId: null,
     },
   ],
 } satisfies InvestigationSceneJson;
