@@ -13,9 +13,9 @@ const scene = {
   intro: [],
   sublocations: [
     {
-      id: "office",
-      label: "Office",
-      sceneTag: "Office",
+      id: "front",
+      label: "Front",
+      sceneTag: "Front",
       backgroundAssetId: null,
       transitionDialogue: [],
       hotspots: [
@@ -29,6 +29,26 @@ const scene = {
           inspectDialogue: [],
           layout: null,
         },
+        {
+          id: "window",
+          label: "Window",
+          description: "Window.",
+          evidenceSource: null,
+          sceneSourcePrompt: null,
+          reveals: [],
+          inspectDialogue: [],
+          layout: null,
+        },
+      ],
+      characters: [],
+    },
+    {
+      id: "corridor",
+      label: "Corridor",
+      sceneTag: "Corridor",
+      backgroundAssetId: null,
+      transitionDialogue: [],
+      hotspots: [
         {
           id: "terminal",
           label: "Terminal",
@@ -56,7 +76,7 @@ const scene = {
       name: "Access log",
       description: "Log clue.",
       imageAssetId: null,
-      sourceSublocationId: null,
+      sourceSublocationId: "corridor",
     },
   ],
 } satisfies InvestigationSceneJson;
@@ -77,6 +97,23 @@ describe("EvidenceAssignmentPanel", () => {
     );
     expect(screen.getByLabelText("Assign Receipt")).toHaveValue("desk");
     expect(screen.getByLabelText("Assign Access log")).toHaveValue("");
+  });
+
+  it("limits hotspot choices to the evidence source sublocation", () => {
+    render(EvidenceAssignmentPanel, {
+      scene,
+      disabled: false,
+      onAssignEvidence: vi.fn(),
+    });
+
+    const optionLabels = Array.from(
+      (screen.getByLabelText("Assign Access log") as HTMLSelectElement).options,
+      (option) => option.textContent,
+    );
+
+    expect(optionLabels).not.toContain("Front / Desk");
+    expect(optionLabels).not.toContain("Front / Window");
+    expect(optionLabels).toContain("Corridor / Terminal");
   });
 
   it("calls the assignment handler when a hotspot is selected", async () => {

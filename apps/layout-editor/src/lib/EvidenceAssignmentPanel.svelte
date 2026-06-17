@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     evidenceAssignmentsForScene,
+    hotspotOptionsForEvidence,
     type SceneEvidenceAssignment,
   } from "./evidence-assignment";
   import { publicPathForEditorAsset } from "./editor-assets";
@@ -15,15 +16,6 @@
   let { scene, disabled = false, onAssignEvidence }: Props = $props();
 
   const assignments = $derived(evidenceAssignmentsForScene(scene));
-  const hotspots = $derived(
-    scene.sublocations.flatMap((sublocation) =>
-      sublocation.hotspots.map((hotspot) => ({
-        id: hotspot.id,
-        label: hotspot.label,
-        sublocationLabel: sublocation.label,
-      })),
-    ),
-  );
 
   function selectedHotspotId(assignment: SceneEvidenceAssignment): string {
     return assignment.hotspots[0]?.id ?? "";
@@ -79,7 +71,7 @@
           onchange={(event) => handleAssignmentChange(event, assignment)}
         >
           <option value="">Unassigned</option>
-          {#each hotspots as hotspot (hotspot.id)}
+          {#each hotspotOptionsForEvidence(scene, assignment.evidence) as hotspot (hotspot.id)}
             <option value={hotspot.id}>
               {hotspot.sublocationLabel} / {hotspot.label}
             </option>
