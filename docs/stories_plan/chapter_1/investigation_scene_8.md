@@ -31,7 +31,9 @@
 
 ### Hotspot: 店長手機截圖 {#phone_screenshot}
 - **Description:** 店長當晚拍下的維護頁截圖，列著幾條事件紀錄。
-- **Reveals:** [sublocation:fixed_panel]
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Manager phone showing a maintenance page screenshot as the source object, with event rows visible but no readable final evidence text.
+- **Reveals:** [evidence:maintenance_mode_note, sublocation:fixed_panel]
 
 [相馬律接過手機，放大那張截圖。]
 
@@ -61,7 +63,6 @@
 
 #### Topic: 維護頁怎麼看 {#how_she_reads}
 - **Status:** unlocked
-- **Reveals:** [evidence:maintenance_mode_note]
 
 **相馬律**：店長，這頁面平常你都怎麼看？
 

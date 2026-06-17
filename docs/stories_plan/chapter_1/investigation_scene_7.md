@@ -56,6 +56,7 @@
 ### Hotspot: 止滑墊與半乾水痕 {#floor_water}
 - **Description:** 門檻內側的止滑墊，旁邊一灘半乾的水痕。
 - **Evidence Source:** visible
+- **Scene Source Prompt:** Non-slip mat and half-dry water trace at the back-door threshold as the visible source clue.
 - **Reveals:** [evidence:floor_water_drying_map]
 
 [相馬律蹲下，把手機縮圖跟地上的止滑墊比對。]
@@ -69,6 +70,7 @@
 ### Hotspot: 傘套邊角 {#umbrella_sleeve}
 - **Description:** 牆角掛著的濕傘套，邊角還在滴水。
 - **Evidence Source:** visible
+- **Scene Source Prompt:** Wet transparent umbrella sleeve hanging from the backroom wall hook as the visible source clue.
 - **Reveals:** [evidence:wet_umbrella_sleeve]
 
 [相馬律伸手碰了碰傘套邊角，指尖沾濕。]
@@ -118,6 +120,7 @@
 ### Hotspot: 舊掛鐘 {#old_clock}
 - **Description:** 牆上一台停擺的舊掛鐘，指針卡在接近 22:59。
 - **Evidence Source:** visible
+- **Scene Source Prompt:** Stopped old wall clock mounted in the inner storage room as the visible source object, with clock face readable only as a vague late-night position.
 - **Reveals:** [evidence:old_clock_photo]
 
 [相馬律抬頭看那台停住的掛鐘。他微微吸了一口氣，嘴角繃了一下。]
@@ -129,6 +132,7 @@
 ### Hotspot: 死者手機掉落位置 {#phone_drop}
 - **Description:** 貨架旁的撞痕，旁邊是死者手機掉落的位置。
 - **Evidence Source:** visible
+- **Scene Source Prompt:** Shelf impact mark and victim phone drop position on the storage-room floor as the visible source clue, with phone screen unreadable.
 - **Reveals:** [evidence:victim_phone_notification]
 
 [相馬律看著地上的撞痕，再看手機落點。]
@@ -140,6 +144,7 @@
 ### Hotspot: 金屬咖啡豆罐 {#bean_can}
 - **Description:** 不鏽鋼備品罐／金屬咖啡豆罐，罐身有新的擦拭痕，罐口有一處小凹。
 - **Evidence Source:** visible
+- **Scene Source Prompt:** Stainless steel cafe bean can on the storage-room shelf as the visible source object, with wipe marks and dent visible.
 - **Reveals:** [evidence:murder_weapon_candidate]
 
 [相馬律戴上手套，拿起那只金屬罐。他沒有馬上翻看，而是先掂了掂重量，然後緩緩轉動罐身，像在確認每一面——對著燈看罐口時，手指停住了。]

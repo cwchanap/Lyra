@@ -66,6 +66,7 @@
 ### Hotspot: 資材包透明傘套 {#material_kit}
 - **Description:** 窗口附上的一份資材包清單，裡頭有一只透明傘套。
 - **Evidence Source:** visible
+- **Scene Source Prompt:** Contractor material-kit list and transparent umbrella-sleeve entry in the reply packet as source documents, with text unreadable.
 - **Reveals:** [evidence:contractor_umbrella_sleeve_match]
 
 [相馬律把資材包清單裡的傘套，跟手上後場那只濕傘套的尺寸對著看。]
@@ -103,6 +104,7 @@
 ### Hotspot: 增田未送出備忘 {#unsent_memo}
 - **Description:** 鑑識列印件裡，一則增田始終沒送出的備忘。
 - **Evidence Source:** visible
+- **Scene Source Prompt:** Forensic printout of Masuda's unsent phone memo spread on the interview-room table, with the memo rows present but unreadable.
 - **Reveals:** [evidence:masuda_unsent_memo]
 
 [相馬律拿起那頁列印件，唸出上面短短三行。]

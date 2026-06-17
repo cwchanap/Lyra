@@ -89,6 +89,7 @@
 ### Hotspot: KAGAMI 門鎖摘要 {#doorlock_summary}
 - **Description:** 收銀台旁夾著一頁列印出來的門鎖系統摘要。
 - **Evidence Source:** visible
+- **Scene Source Prompt:** Printed doorlock summary sheet clipped beside the register as a source document, with table rows present but unreadable.
 - **Reveals:** [evidence:doorlock_summary_timetable]
 
 [相馬律拿起那頁摘要，逐行看。]
@@ -187,6 +188,7 @@
 ### Hotspot: 閉店維護 SOP 白板 {#sop_whiteboard}
 - **Description:** 走廊牆上掛著一塊閉店維護流程的白板。
 - **Evidence Source:** visible
+- **Scene Source Prompt:** Cafe closing-routine whiteboard on the corridor wall as the source object, with checklist marks visible but no readable text.
 - **Reveals:** [evidence:closing_routine]
 
 [相馬律走近白板，一行行讀那些勾選。]
@@ -242,6 +244,7 @@
 ### Hotspot: 後場 L 型平面 {#l_floorplan}
 - **Description:** 牆邊貼著一張後場的平面示意圖。
 - **Evidence Source:** visible
+- **Scene Source Prompt:** Simple backroom floor-plan sheet posted on the wall as the source object, with L-shaped geometry visible but labels unreadable.
 - **Reveals:** [evidence:backroom_floorplan]
 
 [相馬律對照平面圖，把走過的路線在腦中走了一遍。]
