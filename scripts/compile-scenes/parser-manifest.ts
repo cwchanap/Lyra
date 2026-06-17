@@ -88,6 +88,7 @@ function parseEvidenceEntry(
   const description = meta.value.Description;
   const details = meta.value.Details;
   const imagePrompt = meta.value["Image Prompt"] ?? null;
+  const sourceSublocationId = meta.value["Source Sublocation"] ?? null;
   if (!name || !description || !details)
     return fail(
       cur.sourceFile,
@@ -152,6 +153,7 @@ function parseEvidenceEntry(
         imagePrompt,
         imageAssetId: null,
       },
+      sourceSublocationId,
       onCollect,
       onReexamine,
       sourceFile: cur.sourceFile,

@@ -137,6 +137,7 @@ describe("emitter", () => {
             imagePrompt: "wet photo",
             imageAssetId: "evidence_photo",
           },
+          sourceSublocationId: "room",
           onCollect: [],
           onReexamine: null,
           sourceFile: "i.md",
@@ -183,6 +184,7 @@ describe("emitter", () => {
       anchor: "bottomCenter",
     });
     expect(json.evidenceManifest[0]?.imageAssetId).toBe("evidence_photo");
+    expect(json.evidenceManifest[0]?.sourceSublocationId).toBe("room");
   });
 
   it("emits interrogation scene JSON", () => {
@@ -232,6 +234,7 @@ describe("emitter", () => {
             imagePrompt: null,
             imageAssetId: "evidence_recording",
           },
+          sourceSublocationId: null,
           onCollect: [],
           onReexamine: null,
           sourceFile: "x",

@@ -54,6 +54,7 @@ export type InvestigationSceneJson = {
     name: string;
     description: string;
     imageAssetId: string | null;
+    sourceSublocationId: string | null;
   }>;
 };
 

@@ -204,6 +204,7 @@ export type ASTEvidence = Located<{
   description: string;
   details: string;
   imageCue: EvidenceImageCue;
+  sourceSublocationId: string | null;
   onCollect: DialogueItem[];
   onReexamine: DialogueItem[] | null;
 }>;
@@ -380,6 +381,7 @@ export type JSONInvestigationScene = {
     description: string;
     details: string;
     imageAssetId: string | null;
+    sourceSublocationId: string | null;
     onCollect: JSONDialogueItem[];
     onReexamine: JSONDialogueItem[] | null;
   }>;
