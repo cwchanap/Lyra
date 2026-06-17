@@ -1,7 +1,9 @@
 <script lang="ts">
   import EditorCanvas from "./lib/EditorCanvas.svelte";
+  import EvidenceAssignmentPanel from "./lib/EvidenceAssignmentPanel.svelte";
   import TargetList from "./lib/TargetList.svelte";
   import {
+    assignEvidenceToHotspot,
     editorState,
     loadChapters,
     loadInvestigationScene,
@@ -162,6 +164,12 @@
           <dd>{selectedSceneTargetSummary}</dd>
         </div>
       </dl>
+
+      <EvidenceAssignmentPanel
+        scene={editorState.scene}
+        disabled={!editorState.storyScenePath}
+        onAssignEvidence={assignEvidenceToHotspot}
+      />
 
       {#if editorState.layout && currentSublocationId}
         <EditorCanvas
