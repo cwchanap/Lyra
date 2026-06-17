@@ -270,7 +270,30 @@ describe("EditorCanvas", () => {
     );
   });
 
-  it("shows every correlated evidence preview for a visible multi-evidence hotspot", () => {
+  it("keeps evidence previews and counts out of hotspot boxes", () => {
+    const { container } = render(EditorCanvas, {
+      scene: sourceScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    expect(container.querySelector(".hotspot-preview")).not.toBeInTheDocument();
+    expect(container.querySelector(".evidence-chip")).not.toBeInTheDocument();
+    expect(
+      Array.from(container.querySelectorAll(".target.hotspot")).some((target) =>
+        target.textContent?.includes("Visible folder"),
+      ),
+    ).toBe(true);
+    expect(
+      Array.from(container.querySelectorAll(".target.hotspot")).some((target) =>
+        target.textContent?.includes("Implied terminal"),
+      ),
+    ).toBe(true);
+  });
+
+  it("opens a right-click evidence menu for a multi-evidence hotspot", async () => {
     const { container } = render(EditorCanvas, {
       scene: sourceScene,
       layout,
@@ -284,17 +307,22 @@ describe("EditorCanvas", () => {
     ).find((target) => target.textContent?.includes("Visible folder"));
 
     expect(folder).toBeInTheDocument();
-    expect(
-      Array.from((folder as HTMLElement).querySelectorAll(".hotspot-preview"))
-        .map((image) => image.getAttribute("src"))
-        .sort(),
-    ).toEqual(["/assets/evidence/clock.png", "/assets/evidence/receipt.png"]);
-    expect(within(folder as HTMLElement).getByText("2 evidence")).toHaveClass(
-      "evidence-chip",
-    );
+    await fireEvent.contextMenu(folder as HTMLElement, {
+      clientX: 240,
+      clientY: 160,
+    });
+
+    const menu = screen.getByRole("menu", {
+      name: "Evidence for Visible folder",
+    });
+    expect(within(menu).getByText("Receipt")).toBeInTheDocument();
+    expect(within(menu).getByText("receipt")).toBeInTheDocument();
+    expect(within(menu).getByText("Clock")).toBeInTheDocument();
+    expect(within(menu).getByText("clock")).toBeInTheDocument();
+    expect(within(menu).getByText("visible")).toBeInTheDocument();
   });
 
-  it("shows evidence correlation chips without collected previews for implied multi-evidence hotspots", () => {
+  it("replaces the right-click evidence menu when another hotspot is opened", async () => {
     const { container } = render(EditorCanvas, {
       scene: sourceScene,
       layout,
@@ -303,20 +331,40 @@ describe("EditorCanvas", () => {
       onCharacterLayoutChange: vi.fn(),
     });
 
+    const folder = Array.from(
+      container.querySelectorAll(".target.hotspot"),
+    ).find((target) => target.textContent?.includes("Visible folder"));
     const terminal = Array.from(
       container.querySelectorAll(".target.hotspot"),
     ).find((target) => target.textContent?.includes("Implied terminal"));
 
-    expect(terminal).toBeInTheDocument();
+    await fireEvent.contextMenu(folder as HTMLElement, {
+      clientX: 240,
+      clientY: 160,
+    });
     expect(
-      (terminal as HTMLElement).querySelector(".hotspot-preview"),
+      screen.getByRole("menu", { name: "Evidence for Visible folder" }),
+    ).toBeInTheDocument();
+
+    await fireEvent.contextMenu(terminal as HTMLElement, {
+      clientX: 300,
+      clientY: 200,
+    });
+
+    expect(
+      screen.queryByRole("menu", { name: "Evidence for Visible folder" }),
     ).not.toBeInTheDocument();
-    expect(within(terminal as HTMLElement).getByText("2 evidence")).toHaveClass(
-      "evidence-chip",
-    );
+    const menu = screen.getByRole("menu", {
+      name: "Evidence for Implied terminal",
+    });
+    expect(within(menu).getByText("Safe note")).toBeInTheDocument();
+    expect(within(menu).getByText("safe-note")).toBeInTheDocument();
+    expect(within(menu).getByText("Loose thread")).toBeInTheDocument();
+    expect(within(menu).getByText("loose-thread")).toBeInTheDocument();
+    expect(within(menu).getByText("implied")).toBeInTheDocument();
   });
 
-  it("uses evidence previews only for visible source hotspots", () => {
+  it("does not open a right-click evidence menu for hotspots without evidence", async () => {
     const { container } = render(EditorCanvas, {
       scene: sourceScene,
       layout,
@@ -325,33 +373,16 @@ describe("EditorCanvas", () => {
       onCharacterLayoutChange: vi.fn(),
     });
 
-    const visible = container.querySelector(".target.hotspot.source-visible");
-    const implied = container.querySelector(".target.hotspot.source-implied");
-    const hidden = container.querySelector(".target.hotspot.source-hidden");
-    const missing = container.querySelector(".target.hotspot.missing-source");
+    const ambient = Array.from(
+      container.querySelectorAll(".target.hotspot"),
+    ).find((target) => target.textContent?.includes("Ambient"));
 
-    expect(visible).toBeInTheDocument();
-    expect(implied).toBeInTheDocument();
-    expect(hidden).toBeInTheDocument();
-    expect(missing).toBeInTheDocument();
-    expect(
-      (visible as HTMLElement).querySelector(".hotspot-preview"),
-    ).toHaveAttribute("src", "/assets/evidence/receipt.png");
-    expect(
-      (implied as HTMLElement).querySelector(".hotspot-preview"),
-    ).not.toBeInTheDocument();
-    expect(
-      (implied as HTMLElement).querySelector(".source-marker"),
-    ).toBeInTheDocument();
-    expect(
-      (hidden as HTMLElement).querySelector(".hotspot-preview"),
-    ).not.toBeInTheDocument();
-    expect(
-      (hidden as HTMLElement).querySelector(".source-marker"),
-    ).not.toBeInTheDocument();
-    expect(
-      (missing as HTMLElement).querySelector(".hotspot-preview"),
-    ).not.toBeInTheDocument();
+    await fireEvent.contextMenu(ambient as HTMLElement, {
+      clientX: 240,
+      clientY: 160,
+    });
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("lists every correlated evidence item in hotspot control titles", () => {

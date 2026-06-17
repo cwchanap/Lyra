@@ -44,6 +44,14 @@
     name: string;
     imageAssetId: string | null;
   };
+  type EvidenceMenuState = {
+    hotspotLabel: string;
+    evidenceItems: EvidenceCorrelation[];
+    sourceState: HotspotSourceState;
+    sceneSourcePrompt: string | null;
+    x: number;
+    y: number;
+  };
 
   const defaultHotspotLayout: RectLayout = {
     kind: "rect",
@@ -90,6 +98,7 @@
   let dragState = $state<DragState | null>(null);
   let showBoxes = $state(true);
   let revealedTarget = $state<RevealedTarget | null>(null);
+  let evidenceMenu = $state<EvidenceMenuState | null>(null);
   let hiddenTargetKeys = new SvelteSet<string>();
   let cropStyles = $state<Record<string, string>>({});
 
@@ -155,8 +164,11 @@
     targetLayout: RectLayout | SpriteLayout,
     event: PointerEvent,
   ) {
+    if (event.button === 2) return;
+
     event.preventDefault();
     event.stopPropagation();
+    evidenceMenu = null;
 
     dragState = {
       kind,
@@ -216,12 +228,14 @@
   }
 
   function handlePlatePointerDown() {
+    evidenceMenu = null;
     if (!showBoxes) revealedTarget = null;
   }
 
   function toggleBoxes() {
     showBoxes = !showBoxes;
     revealedTarget = null;
+    evidenceMenu = null;
     hiddenTargetKeys = new SvelteSet();
   }
 
@@ -460,32 +474,40 @@
       : `source-${sourceState}`;
   }
 
-  function shouldShowEvidencePreview(hotspot: {
-    evidenceItems: EvidenceCorrelation[];
-    sourceState: HotspotSourceState;
-  }): boolean {
-    return (
-      hotspot.sourceState === "visible" &&
-      hotspot.evidenceItems.some((item) => Boolean(item.imageAssetId))
-    );
-  }
-
-  function previewEvidenceItems(
-    evidenceItems: EvidenceCorrelation[],
-  ): EvidenceCorrelation[] {
-    return evidenceItems.filter((item) => Boolean(item.imageAssetId));
-  }
-
-  function evidenceCountLabel(evidenceItems: EvidenceCorrelation[]): string {
-    return evidenceItems.length === 1
-      ? "1 evidence"
-      : `${evidenceItems.length} evidence`;
-  }
-
   function evidenceTitle(evidenceItems: EvidenceCorrelation[]): string {
     return evidenceItems
       .map((evidence) => `${evidence.name} (${evidence.id})`)
       .join(", ");
+  }
+
+  function openEvidenceMenu(
+    hotspot: SceneHotspot & {
+      evidenceItems: EvidenceCorrelation[];
+      sourceState: HotspotSourceState;
+    },
+    event: MouseEvent,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (hotspot.evidenceItems.length === 0) {
+      evidenceMenu = null;
+      return;
+    }
+
+    const plateRect = plateElement?.getBoundingClientRect();
+    evidenceMenu = {
+      hotspotLabel: hotspot.label,
+      evidenceItems: hotspot.evidenceItems,
+      sourceState: hotspot.sourceState,
+      sceneSourcePrompt: hotspot.sceneSourcePrompt,
+      x: plateRect ? Math.max(0, event.clientX - plateRect.left) : 0,
+      y: plateRect ? Math.max(0, event.clientY - plateRect.top) : 0,
+    };
+  }
+
+  function evidenceMenuStyle(menu: EvidenceMenuState): string {
+    return [`left: ${menu.x}px`, `top: ${menu.y}px`].join(";");
   }
 
   function hotspotControlTitle(
@@ -608,34 +630,13 @@
           style={layoutStyle(hotspot.layout)}
           onpointerdown={(event) =>
             startDrag("hotspot", hotspot.id, "move", hotspot.layout, event)}
+          oncontextmenu={(event) => openEvidenceMenu(hotspot, event)}
         >
-          {#if shouldShowEvidencePreview(hotspot)}
-            <span class="hotspot-previews" aria-hidden="true">
-              {#each previewEvidenceItems(hotspot.evidenceItems) as evidence (evidence.id)}
-                {#if assetUrl(evidence.imageAssetId, "evidence")}
-                  <img
-                    class="hotspot-preview"
-                    src={assetUrl(evidence.imageAssetId, "evidence")}
-                    alt=""
-                    onerror={() =>
-                      handleAssetError(evidence.imageAssetId ?? "", "evidence")}
-                  />
-                {/if}
-              {/each}
-            </span>
-          {/if}
           {#if hotspot.sourceState === "implied"}
             <i class="source-marker" aria-hidden="true" title="Implied source"
             ></i>
           {/if}
           <span class="target-label">{hotspot.label}</span>
-          {#if hotspot.evidenceItems.length > 0}
-            <span
-              class="evidence-chip"
-              title={evidenceTitle(hotspot.evidenceItems)}
-              >{evidenceCountLabel(hotspot.evidenceItems)}</span
-            >
-          {/if}
           {#if sourceLabel(hotspot.sourceState)}
             <span class="source-badge">{sourceLabel(hotspot.sourceState)}</span>
           {/if}
@@ -649,6 +650,33 @@
           {/each}
         </button>
       {/each}
+
+      {#if evidenceMenu}
+        <div
+          class="evidence-menu"
+          role="menu"
+          aria-label={`Evidence for ${evidenceMenu.hotspotLabel}`}
+          style={evidenceMenuStyle(evidenceMenu)}
+        >
+          <div class="evidence-menu-heading">
+            <strong>{evidenceMenu.hotspotLabel}</strong>
+            {#if sourceLabel(evidenceMenu.sourceState)}
+              <span>{sourceLabel(evidenceMenu.sourceState)}</span>
+            {/if}
+          </div>
+          {#if evidenceMenu.sceneSourcePrompt}
+            <p>{evidenceMenu.sceneSourcePrompt}</p>
+          {/if}
+          <ul>
+            {#each evidenceMenu.evidenceItems as evidence (evidence.id)}
+              <li role="menuitem">
+                <span>{evidence.name}</span>
+                <code>{evidence.id}</code>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
 
       {#each characterTargets as character (character.id)}
         <button
@@ -868,26 +896,6 @@
     transform: none;
   }
 
-  .hotspot-previews {
-    position: absolute;
-    inset: 4px;
-    z-index: 0;
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(0, 1fr);
-    gap: 2px;
-    pointer-events: none;
-  }
-
-  .hotspot-preview {
-    width: 100%;
-    min-width: 0;
-    height: 100%;
-    object-fit: contain;
-    opacity: 0.9;
-    pointer-events: none;
-  }
-
   .target-label {
     position: absolute;
     z-index: 1;
@@ -913,26 +921,6 @@
     border: 1px solid rgb(255 255 255 / 48%);
     border-radius: 4px;
     background: rgb(38 48 46 / 82%);
-    color: #ffffff;
-    font-size: 0.62rem;
-    font-weight: 800;
-    line-height: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-shadow: 0 1px 2px rgb(0 0 0 / 56%);
-    white-space: nowrap;
-  }
-
-  .evidence-chip {
-    position: absolute;
-    bottom: 4px;
-    left: 4px;
-    z-index: 1;
-    max-width: calc(50% - 6px);
-    padding: 2px 5px;
-    border: 1px solid rgb(255 255 255 / 42%);
-    border-radius: 4px;
-    background: rgb(20 35 42 / 82%);
     color: #ffffff;
     font-size: 0.62rem;
     font-weight: 800;
@@ -1018,12 +1006,10 @@
   }
 
   .hide-boxes .target-label,
-  .hide-boxes .evidence-chip,
   .hide-boxes .source-badge,
   .hide-boxes .source-marker,
   .hide-boxes .resize-handle,
   .target.hidden .target-label,
-  .target.hidden .evidence-chip,
   .target.hidden .source-badge,
   .target.hidden .source-marker,
   .target.hidden .resize-handle {
@@ -1049,12 +1035,94 @@
   }
 
   .hide-boxes .target.revealed .target-label,
-  .hide-boxes .target.revealed .evidence-chip,
   .hide-boxes .target.revealed .source-badge,
   .hide-boxes .target.revealed .source-marker,
   .hide-boxes .target.revealed .resize-handle {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  .evidence-menu {
+    position: absolute;
+    z-index: 6;
+    min-width: 190px;
+    max-width: min(280px, calc(100% - 16px));
+    padding: 10px;
+    border: 1px solid rgb(38 48 46 / 36%);
+    border-radius: 6px;
+    background: rgb(255 255 255 / 96%);
+    box-shadow: 0 10px 24px rgb(0 0 0 / 24%);
+    color: #26302e;
+    transform: translate(6px, 6px);
+  }
+
+  .evidence-menu-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    margin-bottom: 8px;
+  }
+
+  .evidence-menu-heading strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.82rem;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .evidence-menu-heading span {
+    flex: 0 0 auto;
+    padding: 2px 5px;
+    border: 1px solid #c9d0ca;
+    border-radius: 4px;
+    background: #edf4f0;
+    color: #43514d;
+    font-size: 0.62rem;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .evidence-menu p {
+    margin: 0 0 8px;
+    color: #5f6b64;
+    font-size: 0.72rem;
+    line-height: 1.3;
+  }
+
+  .evidence-menu ul {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .evidence-menu li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    min-height: 28px;
+    padding: 5px 7px;
+    border-radius: 4px;
+    background: #f4f7f5;
+    font-size: 0.76rem;
+  }
+
+  .evidence-menu li span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .evidence-menu code {
+    color: #60706b;
+    font-family: inherit;
+    font-size: 0.68rem;
   }
 
   .resize-handle {
