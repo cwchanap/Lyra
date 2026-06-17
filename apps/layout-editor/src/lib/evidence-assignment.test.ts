@@ -79,12 +79,14 @@ const scene = {
       name: "Receipt",
       description: "Receipt clue.",
       imageAssetId: "evidence.receipt",
+      sourceSublocationId: null,
     },
     {
       id: "memo",
       name: "Memo",
       description: "Memo clue.",
       imageAssetId: "evidence.memo",
+      sourceSublocationId: null,
     },
   ],
 } satisfies InvestigationSceneJson;

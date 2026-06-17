@@ -50,6 +50,7 @@ exports[`snapshot: valid fixture JSON output > matches the investigation scene s
           "text": "時間不對。",
         },
       ],
+      "sourceSublocationId": null,
     },
     {
       "description": "櫥櫃內的金屬盒。",
@@ -67,6 +68,7 @@ exports[`snapshot: valid fixture JSON output > matches the investigation scene s
         },
       ],
       "onReexamine": null,
+      "sourceSublocationId": null,
     },
   ],
   "id": "investigation_scene_1",
