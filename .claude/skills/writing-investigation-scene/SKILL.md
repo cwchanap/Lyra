@@ -300,6 +300,8 @@ A reduced fragment exercising every block type in canonical order. Use as a stru
 
 ### Hotspot: 黃銅桌鈴 {#counter_bell}
 - **Description:** 吧台上一個黃銅製桌鈴，看起來最近被用過。
+- **Evidence Source:** visible
+- **Scene Source Prompt:** Warm cafe coffee machine and brass counter bell as visible local source objects, no readable UI text.
 - **Reveals:** [evidence:cooling_coffee, topic:hayasaka@victim_background]
 
 [相馬律按了一下桌鈴，又把手背貼在咖啡機側面。]
@@ -334,6 +336,8 @@ A reduced fragment exercising every block type in canonical order. Use as a stru
 
 ### Hotspot: 滾輪貨架 {#wheeled_shelf}
 - **Description:** 一座滾輪貨架，半遮住左側舊門。
+- **Evidence Source:** visible
+- **Scene Source Prompt:** Wheeled storage shelf with fresh floor scuff marks as the visible local source object.
 - **Reveals:** [evidence:shelf_recently_moved]
 
 [相馬律推了一下貨架，輪子順滑地滾動。]
