@@ -75,32 +75,23 @@
 
 **相馬律**：閉店本來就要進後場。靠近後場，不等於做了什麼。
 
-### Hotspot: 三宅打卡紀錄 {#timecard}
-- **Description:** 店長從收銀台後方保管的值班資料裡調出當月打卡紀錄。
-- **Evidence Source:** hidden
-- **Reveals:** [evidence:timecard_record]
+### Hotspot: 吧台管理紀錄 {#counter_admin_records}
+- **Description:** 收銀台後方放著店長保管的值班資料與門鎖系統記錄入口。
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Counter administration area with register, POS terminal, clipped folders, and staff record binder visible as local source objects, no readable document text.
+- **Reveals:** [evidence:timecard_record, evidence:doorlock_summary_timetable]
 
-[相馬律找到當晚那一欄。]
+[店長打開收銀台後方的小抽屜，取出值班資料，又在旁邊的終端叫出門鎖摘要。]
 
-**相馬律**：三宅蒼太，當晚值班。
+**店長高瀨**：紙本值班表在這裡。門鎖那邊，只能看摘要。
 
-**店長高瀨**：那天是他關店。一個人收尾。
+[相馬律先找到當晚那一欄，再把目光移到終端上的事件時間。]
 
-### Hotspot: KAGAMI 門鎖摘要 {#doorlock_summary}
-- **Description:** 收銀台旁夾著一頁列印出來的門鎖系統摘要。
-- **Evidence Source:** visible
-- **Scene Source Prompt:** Printed doorlock summary sheet clipped beside the register as a source document, with table rows present but unreadable.
-- **Reveals:** [evidence:doorlock_summary_timetable]
-
-[相馬律拿起那頁摘要，逐行看。]
-
-**相馬律**：門鎖事件都排在這裡。
-
-[他看到其中一個時間點。]
+**相馬律**：三宅蒼太，當晚值班。一個人收尾。
 
 **相馬律**：二十三點零七分五十秒。
 
-[相馬律沒有多說，把那一行記了下來。]
+[相馬律沒有多說，把兩邊的紀錄一起記下來。]
 
 ### Hotspot: 後場入口 {#back_entrance}
 - **Description:** 前場盡頭有一道通往後場的門，半開著。
@@ -185,13 +176,13 @@
 
 **早坂茜**：要拿這些，不必走到最裡面。
 
-### Hotspot: 閉店維護 SOP 白板 {#sop_whiteboard}
-- **Description:** 走廊牆上掛著一塊閉店維護流程的白板。
+### Hotspot: 閉店維護告示板 {#wall_notice_board}
+- **Description:** 走廊牆上掛著一塊閉店維護流程告示板。
 - **Evidence Source:** visible
-- **Scene Source Prompt:** Cafe closing-routine whiteboard on the corridor wall as the source object, with checklist marks visible but no readable text.
+- **Scene Source Prompt:** Cafe closing-routine notice board on the corridor wall as the source object, with checklist marks visible but no readable text.
 - **Reveals:** [evidence:closing_routine]
 
-[相馬律走近白板，一行行讀那些勾選。]
+[相馬律走近告示板，一行行讀那些勾選。]
 
 **相馬律**：二十二點五十，閉店流程開始。二十二點五十二，維護模式開啟。
 
@@ -241,21 +232,21 @@
 
 **相馬律**：要走進去，燈才會亮。站在門口，這裡是暗的。
 
-### Hotspot: 後場 L 型平面 {#l_floorplan}
-- **Description:** 牆邊貼著一張後場的平面示意圖。
-- **Evidence Source:** visible
-- **Scene Source Prompt:** Simple backroom floor-plan sheet posted on the wall as the source object, with L-shaped geometry visible but labels unreadable.
+### Hotspot: 倉庫入口遮蔽視線 {#storage_sightline}
+- **Description:** 內側倉庫入口被轉角、半掩防火門與高貨架切成幾段視線。
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Inner storage entrance sightline blocked by high shelves, half-open fire door, and L-shaped corridor geometry, with no map or posted document.
 - **Reveals:** [evidence:backroom_floorplan]
 
-[相馬律對照平面圖，把走過的路線在腦中走了一遍。]
+[相馬律站在入口，把剛才走過的路線在腦中接起來。]
 
 **相馬律**：前場、走廊、內側倉庫。是個 L 型。
 
-[他看著那個轉角和高貨架的位置。]
+[他看著半掩的防火門、轉角和高貨架的位置。]
 
 **相馬律**：轉角、半掩的門、高貨架，一層一層擋著。
 
-[早坂茜站在他側後方，手搭在提包帶上，看著他盯著平面圖的側臉。]
+[早坂茜站在他側後方，手搭在提包帶上，看著他盯著倉庫入口。]
 
 **早坂茜**：你在想什麼？
 
@@ -309,21 +300,21 @@
 
 ### evidence:closing_routine {#closing_routine}
 - **Name:** 閉店維護 routine 紀錄
-- **Description:** 後場白板上的閉店維護流程：22:50 閉店開始、22:52 維護模式開啟，部分項目未完成。
+- **Description:** 後場告示板上的閉店維護流程：22:50 閉店開始、22:52 維護模式開啟，部分項目未完成。
 - **Details:** 維護紀錄冊未蓋章、維護模式未關，流程未走完即中斷。
 - **Source Sublocation:** corridor
-- **Image Prompt:** Cafe closing-routine whiteboard checklist with several unreadable tick marks and two blank lines, isolated evidence icon.
+- **Image Prompt:** Cafe closing-routine notice board checklist with several unreadable tick marks and two blank lines, isolated evidence icon.
 
 #### On Collect
 
 **相馬律**：流程停在一半。最後兩項沒做完。
 
 ### evidence:backroom_floorplan {#backroom_floorplan}
-- **Name:** 後場 L 型平面圖
-- **Description:** 後場的平面示意圖，呈 L 型，標出走廊轉角與內側倉庫的位置。
-- **Details:** 平面顯示走廊轉角、半掩防火門與高貨架造成多重視線遮蔽。
+- **Name:** 後場 L 型動線草圖
+- **Description:** 相馬依現場動線畫下的簡略草圖，標出前場、走廊轉角與內側倉庫的 L 型關係。
+- **Details:** 草圖依現場觀察整理，顯示走廊轉角、半掩防火門與高貨架造成多重視線遮蔽。
 - **Source Sublocation:** inner_entry
-- **Image Prompt:** Simple L-shaped backroom floor plan diagram with blocked sightline geometry, no readable labels, isolated evidence icon.
+- **Image Prompt:** Hand-drawn L-shaped backroom movement sketch derived from observed corridor and shelf sightlines, no readable labels, isolated evidence icon.
 
 #### On Collect
 
