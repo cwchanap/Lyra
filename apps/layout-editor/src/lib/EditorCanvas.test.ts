@@ -111,6 +111,33 @@ const sourceScene = {
           layout: null,
         },
         {
+          id: "visible-folder",
+          label: "Visible folder",
+          description: "A folder with two related source records.",
+          evidenceSource: "visible",
+          sceneSourcePrompt: "Place the open folder on the desk.",
+          reveals: [
+            { kind: "evidence", id: "receipt" },
+            { kind: "evidence", id: "clock" },
+          ],
+          inspectDialogue: [],
+          layout: null,
+        },
+        {
+          id: "implied-terminal",
+          label: "Implied terminal",
+          description: "A terminal gives access to two records.",
+          evidenceSource: "implied",
+          sceneSourcePrompt:
+            "Show a terminal access point without readable final records.",
+          reveals: [
+            { kind: "evidence", id: "safe-note" },
+            { kind: "evidence", id: "loose-thread" },
+          ],
+          inspectDialogue: [],
+          layout: null,
+        },
+        {
           id: "hidden-safe",
           label: "Hidden safe",
           description: "The safe is behind the frame.",
@@ -243,6 +270,52 @@ describe("EditorCanvas", () => {
     );
   });
 
+  it("shows every correlated evidence preview for a visible multi-evidence hotspot", () => {
+    const { container } = render(EditorCanvas, {
+      scene: sourceScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const folder = Array.from(
+      container.querySelectorAll(".target.hotspot"),
+    ).find((target) => target.textContent?.includes("Visible folder"));
+
+    expect(folder).toBeInTheDocument();
+    expect(
+      Array.from((folder as HTMLElement).querySelectorAll(".hotspot-preview"))
+        .map((image) => image.getAttribute("src"))
+        .sort(),
+    ).toEqual(["/assets/evidence/clock.png", "/assets/evidence/receipt.png"]);
+    expect(within(folder as HTMLElement).getByText("2 evidence")).toHaveClass(
+      "evidence-chip",
+    );
+  });
+
+  it("shows evidence correlation chips without collected previews for implied multi-evidence hotspots", () => {
+    const { container } = render(EditorCanvas, {
+      scene: sourceScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const terminal = Array.from(
+      container.querySelectorAll(".target.hotspot"),
+    ).find((target) => target.textContent?.includes("Implied terminal"));
+
+    expect(terminal).toBeInTheDocument();
+    expect(
+      (terminal as HTMLElement).querySelector(".hotspot-preview"),
+    ).not.toBeInTheDocument();
+    expect(within(terminal as HTMLElement).getByText("2 evidence")).toHaveClass(
+      "evidence-chip",
+    );
+  });
+
   it("uses evidence previews only for visible source hotspots", () => {
     const { container } = render(EditorCanvas, {
       scene: sourceScene,
@@ -281,6 +354,25 @@ describe("EditorCanvas", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("lists every correlated evidence item in hotspot control titles", () => {
+    render(EditorCanvas, {
+      scene: sourceScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const targetControls = screen.getByLabelText("Target controls");
+
+    expect(
+      within(targetControls).getByRole("button", { name: "Visible folder" }),
+    ).toHaveAttribute(
+      "title",
+      "A folder with two related source records.\nSource: visible\nPrompt: Place the open folder on the desk.\nEvidence: Receipt (receipt), Clock (clock)",
+    );
+  });
+
   it("includes evidence source metadata in hotspot control titles", () => {
     render(EditorCanvas, {
       scene: sourceScene,
@@ -296,13 +388,13 @@ describe("EditorCanvas", () => {
       within(targetControls).getByRole("button", { name: "Visible slip" }),
     ).toHaveAttribute(
       "title",
-      "A slip in plain sight.\nSource: visible\nPrompt: Place the torn receipt on the desk.",
+      "A slip in plain sight.\nSource: visible\nPrompt: Place the torn receipt on the desk.\nEvidence: Receipt (receipt)",
     );
     expect(
       within(targetControls).getByRole("button", { name: "Missing source" }),
     ).toHaveAttribute(
       "title",
-      "An evidence reveal without metadata.\nSource: missing source",
+      "An evidence reveal without metadata.\nSource: missing source\nEvidence: Loose thread (loose-thread)",
     );
   });
 

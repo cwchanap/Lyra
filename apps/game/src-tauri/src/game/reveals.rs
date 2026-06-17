@@ -172,6 +172,42 @@ mod tests {
     }
 
     #[test]
+    fn reveals_multiple_evidence_items_from_one_trigger() {
+        let mut scene =
+            empty_scene_with_evidence(vec![evidence_def("receipt"), evidence_def("cctv")]);
+        let mut inv = Inventory::default();
+        let queue = apply_reveals_and_build_queue(
+            &mut scene,
+            &mut inv,
+            vec![DialogueItem::Line {
+                speaker: "A".into(),
+                text: "trigger".into(),
+                portrait: None,
+            }],
+            &[
+                RevealTarget::Evidence {
+                    id: "receipt".into(),
+                },
+                RevealTarget::Evidence { id: "cctv".into() },
+            ],
+            "chapter_1",
+        );
+
+        assert!(inv.has_evidence("receipt"));
+        assert!(inv.has_evidence("cctv"));
+        assert_eq!(
+            queue
+                .iter()
+                .filter_map(|item| match item {
+                    DialogueItem::Line { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            vec!["trigger", "collected receipt", "collected cctv"]
+        );
+    }
+
+    #[test]
     fn double_reveal_of_same_evidence_does_not_double_append() {
         let mut scene = empty_scene_with_evidence(vec![evidence_def("coffee")]);
         let mut inv = Inventory::default();
