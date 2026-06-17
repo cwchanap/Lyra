@@ -14,6 +14,7 @@ import {
   setCharacterLayout,
   loadChapters,
   loadInvestigationScene,
+  assignEvidenceToHotspot,
 } from "./layout-store.svelte";
 
 const mockInvoke = vi.mocked(invoke);
@@ -24,6 +25,8 @@ function resetState() {
   editorState.layout = null;
   editorState.scenePath = null;
   editorState.layoutPath = null;
+  editorState.storyScenePath = null;
+  editorState.storySceneContents = null;
   editorState.error = null;
 }
 
@@ -237,6 +240,13 @@ describe("layout-store", () => {
           contents: JSON.stringify(sceneJson),
         })
         .mockResolvedValueOnce("layouts/scene_new.layout.json")
+        .mockResolvedValueOnce(
+          "docs/stories_plan/chapter_1/investigation_scene_1.md",
+        )
+        .mockResolvedValueOnce({
+          path: "docs/stories_plan/chapter_1/investigation_scene_1.md",
+          contents: "# Scene\n",
+        })
         .mockRejectedValueOnce({ code: "notFound", message: "Not found" });
 
       await loadInvestigationScene("scenes/scene_new.json");
@@ -279,6 +289,13 @@ describe("layout-store", () => {
           contents: JSON.stringify(sceneJson),
         })
         .mockResolvedValueOnce("layouts/scene_existing.layout.json")
+        .mockResolvedValueOnce(
+          "docs/stories_plan/chapter_1/investigation_scene_existing.md",
+        )
+        .mockResolvedValueOnce({
+          path: "docs/stories_plan/chapter_1/investigation_scene_existing.md",
+          contents: "# Scene\n",
+        })
         .mockResolvedValueOnce({
           path: "layouts/scene_existing.layout.json",
           contents: JSON.stringify(existingLayout),
@@ -318,6 +335,13 @@ describe("layout-store", () => {
           contents: JSON.stringify(sceneJson),
         })
         .mockResolvedValueOnce("layouts/scene_ok.layout.json")
+        .mockResolvedValueOnce(
+          "docs/stories_plan/chapter_1/investigation_scene_ok.md",
+        )
+        .mockResolvedValueOnce({
+          path: "docs/stories_plan/chapter_1/investigation_scene_ok.md",
+          contents: "# Scene\n",
+        })
         .mockResolvedValueOnce({
           path: "layouts/scene_ok.layout.json",
           contents: JSON.stringify({
@@ -345,6 +369,89 @@ describe("layout-store", () => {
       expect(editorState.scenePath).toBeNull();
       expect(editorState.layout).toBeNull();
       expect(editorState.layoutPath).toBeNull();
+      expect(editorState.storyScenePath).toBeNull();
+      expect(editorState.storySceneContents).toBeNull();
+    });
+  });
+
+  describe("assignEvidenceToHotspot", () => {
+    it("writes authored markdown and updates the in-memory scene reveals", async () => {
+      editorState.storyScenePath =
+        "docs/stories_plan/chapter_1/investigation_scene_1.md";
+      editorState.storySceneContents = `# Investigation
+
+## Sublocation: Office {#office}
+
+### Hotspot: Desk {#desk}
+- **Description:** Desk.
+- **Reveals:** [evidence:receipt]
+
+### Hotspot: Terminal {#terminal}
+- **Description:** Terminal.
+`;
+      editorState.scene = {
+        type: "investigation",
+        id: "investigation_scene_1",
+        title: "Test",
+        intro: [],
+        sublocations: [
+          {
+            id: "office",
+            label: "Office",
+            sceneTag: "Office",
+            backgroundAssetId: null,
+            transitionDialogue: [],
+            hotspots: [
+              {
+                id: "desk",
+                label: "Desk",
+                description: "Desk.",
+                evidenceSource: null,
+                sceneSourcePrompt: null,
+                reveals: [{ kind: "evidence", id: "receipt" }],
+                inspectDialogue: [],
+                layout: null,
+              },
+              {
+                id: "terminal",
+                label: "Terminal",
+                description: "Terminal.",
+                evidenceSource: null,
+                sceneSourcePrompt: null,
+                reveals: [],
+                inspectDialogue: [],
+                layout: null,
+              },
+            ],
+            characters: [],
+          },
+        ],
+        evidenceManifest: [
+          {
+            id: "receipt",
+            name: "Receipt",
+            description: "Receipt clue.",
+            imageAssetId: null,
+          },
+        ],
+      };
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      await assignEvidenceToHotspot("receipt", "terminal");
+
+      expect(mockInvoke).toHaveBeenCalledWith("write_story_scene_file", {
+        path: "docs/stories_plan/chapter_1/investigation_scene_1.md",
+        contents: expect.stringContaining(
+          "### Hotspot: Terminal {#terminal}\n- **Description:** Terminal.\n- **Reveals:** [evidence:receipt]",
+        ),
+      });
+      expect(editorState.storySceneContents).toContain(
+        "### Hotspot: Terminal {#terminal}\n- **Description:** Terminal.\n- **Reveals:** [evidence:receipt]",
+      );
+      expect(editorState.scene.sublocations[0].hotspots[0].reveals).toEqual([]);
+      expect(editorState.scene.sublocations[0].hotspots[1].reveals).toEqual([
+        { kind: "evidence", id: "receipt" },
+      ]);
     });
   });
 

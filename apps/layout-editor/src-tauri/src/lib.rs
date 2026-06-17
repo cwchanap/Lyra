@@ -61,9 +61,21 @@ fn write_project_file(path: String, contents: String) -> Result<(), EditorError>
 }
 
 #[tauri::command]
+fn write_story_scene_file(path: String, contents: String) -> Result<(), EditorError> {
+    let root = workspace_root()?;
+    write_story_scene_file_at_root(&root, &path, contents)
+}
+
+#[tauri::command]
 fn resolve_layout_path(scene_path: String) -> Result<String, EditorError> {
     let root = workspace_root()?;
     resolve_layout_path_at_root(&root, &scene_path)
+}
+
+#[tauri::command]
+fn resolve_story_scene_path(scene_path: String) -> Result<String, EditorError> {
+    let root = workspace_root()?;
+    resolve_story_scene_path_at_root(&root, &scene_path)
 }
 
 fn write_project_file_at_root(
@@ -72,6 +84,18 @@ fn write_project_file_at_root(
     contents: String,
 ) -> Result<(), EditorError> {
     ensure_layout_sidecar_write_path(path)?;
+    let path_buf = checked_project_path_from_root(root, path)?;
+    ensure_parent_dirs(root, &path_buf)?;
+    reject_symlink(&path_buf)?;
+    write_regular_file(&path_buf, contents)
+}
+
+fn write_story_scene_file_at_root(
+    root: &Path,
+    path: &str,
+    contents: String,
+) -> Result<(), EditorError> {
+    ensure_story_scene_write_path(path)?;
     let path_buf = checked_project_path_from_root(root, path)?;
     ensure_parent_dirs(root, &path_buf)?;
     reject_symlink(&path_buf)?;
@@ -138,6 +162,42 @@ fn ensure_layout_sidecar_write_path(path: &str) -> Result<(), EditorError> {
         Err(EditorError::new(
             "writePathNotAllowed",
             "layout editor can only write *.layout.json files under authored story roots",
+        ))
+    }
+}
+
+fn ensure_story_scene_write_path(path: &str) -> Result<(), EditorError> {
+    let requested = Path::new(path);
+    if requested
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return Err(EditorError::new("pathEscape", "path escapes project root"));
+    }
+
+    let components = requested.components().collect::<Vec<_>>();
+    let matches_story_scene_shape = match components.as_slice() {
+        [Component::Normal(root), Component::Normal(stories_plan), Component::Normal(chapter), Component::Normal(file)] =>
+        {
+            let root = root.to_string_lossy();
+            let stories_plan = stories_plan.to_string_lossy();
+            let chapter = chapter.to_string_lossy();
+            let file = file.to_string_lossy();
+            (root == "docs" || root == "static")
+                && stories_plan == "stories_plan"
+                && chapter.starts_with("chapter_")
+                && file.starts_with("investigation_scene_")
+                && file.ends_with(".md")
+        }
+        _ => false,
+    };
+
+    if matches_story_scene_shape {
+        Ok(())
+    } else {
+        Err(EditorError::new(
+            "writePathNotAllowed",
+            "layout editor can only write authored investigation scene markdown files",
         ))
     }
 }
@@ -267,6 +327,25 @@ fn write_regular_file(path: &Path, contents: String) -> Result<(), EditorError> 
 }
 
 fn resolve_layout_path_at_root(root: &Path, scene_path: &str) -> Result<String, EditorError> {
+    let source_path = resolve_story_scene_path_at_root(root, scene_path)?;
+
+    let mut layout_path = PathBuf::from(source_path);
+    layout_path.set_extension("layout.json");
+    layout_path
+        .to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| EditorError::new("pathInvalid", "layout path is not valid UTF-8"))
+}
+
+fn resolve_story_scene_path_at_root(root: &Path, scene_path: &str) -> Result<String, EditorError> {
+    let source_path = find_source_scene_path_at_root(root, scene_path)?;
+    source_path
+        .to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| EditorError::new("pathInvalid", "source scene path is not valid UTF-8"))
+}
+
+fn find_source_scene_path_at_root(root: &Path, scene_path: &str) -> Result<PathBuf, EditorError> {
     let scene_path = Path::new(scene_path);
     let relative_scene = scene_path
         .strip_prefix("apps/game/src-tauri/resources/scenes")
@@ -305,12 +384,7 @@ fn resolve_layout_path_at_root(root: &Path, scene_path: &str) -> Result<String, 
         }
     };
 
-    let mut layout_path = source_path.clone();
-    layout_path.set_extension("layout.json");
-    layout_path
-        .to_str()
-        .map(str::to_owned)
-        .ok_or_else(|| EditorError::new("pathInvalid", "layout path is not valid UTF-8"))
+    Ok(source_path.clone())
 }
 
 pub fn run() {
@@ -318,8 +392,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             resolve_layout_path,
+            resolve_story_scene_path,
             read_project_file,
-            write_project_file
+            write_project_file,
+            write_story_scene_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lyra Layout Editor");
@@ -367,6 +443,69 @@ mod tests {
         );
 
         assert_eq!(result.unwrap_err().code, "writePathNotAllowed");
+    }
+
+    #[test]
+    fn write_story_scene_file_allows_investigation_markdown() {
+        let root = temp_workspace_root();
+        let path = "docs/stories_plan/chapter_1/investigation_scene_1.md";
+
+        write_story_scene_file_at_root(&root, path, "# Scene\n".to_string()).unwrap();
+
+        assert_eq!(fs::read_to_string(root.join(path)).unwrap(), "# Scene\n");
+    }
+
+    #[test]
+    fn write_story_scene_file_rejects_layout_sidecar() {
+        let root = temp_workspace_root();
+
+        let result = write_story_scene_file_at_root(
+            &root,
+            "docs/stories_plan/chapter_1/investigation_scene_1.layout.json",
+            "{}\n".to_string(),
+        );
+
+        assert_eq!(result.unwrap_err().code, "writePathNotAllowed");
+    }
+
+    #[test]
+    fn write_story_scene_file_rejects_generated_json() {
+        let root = temp_workspace_root();
+
+        let result = write_story_scene_file_at_root(
+            &root,
+            "apps/game/src-tauri/resources/scenes/chapter_1/investigation_scene_1.json",
+            "{}\n".to_string(),
+        );
+
+        assert_eq!(result.unwrap_err().code, "writePathNotAllowed");
+    }
+
+    #[test]
+    fn write_story_scene_file_rejects_non_investigation_markdown() {
+        let root = temp_workspace_root();
+
+        let result = write_story_scene_file_at_root(
+            &root,
+            "docs/stories_plan/chapter_1/scene_1.md",
+            "# Scene\n".to_string(),
+        );
+
+        assert_eq!(result.unwrap_err().code, "writePathNotAllowed");
+    }
+
+    #[test]
+    fn write_story_scene_file_rejects_parent_escape_after_story_root() {
+        let root = temp_workspace_root();
+
+        let result = write_story_scene_file_at_root(
+            &root,
+            "docs/stories_plan/../../outside/investigation_scene_1.md",
+            "# Scene\n".to_string(),
+        );
+
+        assert_eq!(result.unwrap_err().code, "pathEscape");
+        assert!(!root.join("outside/investigation_scene_1.md").exists());
     }
 
     #[test]
@@ -444,6 +583,28 @@ mod tests {
     }
 
     #[test]
+    fn resolve_story_scene_path_uses_docs_source_owner() {
+        let root = temp_workspace_root();
+        fs::create_dir_all(root.join("docs/stories_plan/chapter_1")).unwrap();
+        fs::write(
+            root.join("docs/stories_plan/chapter_1/investigation_scene_1.md"),
+            "",
+        )
+        .unwrap();
+
+        let result = resolve_story_scene_path_at_root(
+            &root,
+            "apps/game/src-tauri/resources/scenes/chapter_1/investigation_scene_1.json",
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            "docs/stories_plan/chapter_1/investigation_scene_1.md"
+        );
+    }
+
+    #[test]
     fn resolve_layout_path_uses_static_source_owner() {
         let root = temp_workspace_root();
         fs::create_dir_all(root.join("static/stories_plan/chapter_2")).unwrap();
@@ -462,6 +623,28 @@ mod tests {
         assert_eq!(
             result,
             "static/stories_plan/chapter_2/investigation_scene_1.layout.json"
+        );
+    }
+
+    #[test]
+    fn resolve_story_scene_path_uses_static_source_owner() {
+        let root = temp_workspace_root();
+        fs::create_dir_all(root.join("static/stories_plan/chapter_2")).unwrap();
+        fs::write(
+            root.join("static/stories_plan/chapter_2/investigation_scene_1.md"),
+            "",
+        )
+        .unwrap();
+
+        let result = resolve_story_scene_path_at_root(
+            &root,
+            "apps/game/src-tauri/resources/scenes/chapter_2/investigation_scene_1.json",
+        )
+        .unwrap();
+
+        assert_eq!(
+            result,
+            "static/stories_plan/chapter_2/investigation_scene_1.md"
         );
     }
 

@@ -23,4 +23,9 @@ describe("layout editor app shell", () => {
       "{#if editorState.scene}\n      <TargetList",
     );
   });
+
+  it("mounts evidence hotspot assignment controls in the scene detail view", () => {
+    expect(appSource).toContain("EvidenceAssignmentPanel");
+    expect(appSource).toContain("assignEvidenceToHotspot");
+  });
 });

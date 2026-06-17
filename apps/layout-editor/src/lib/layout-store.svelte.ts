@@ -7,6 +7,10 @@ import type {
   SpriteLayout,
 } from "./layout-types";
 import { clampRectLayout, clampSpriteLayout } from "./layout-geometry";
+import {
+  moveEvidenceRevealInScene,
+  updateEvidenceAssignmentInMarkdown,
+} from "./evidence-assignment";
 
 type ProjectFile = {
   path: string;
@@ -24,6 +28,8 @@ export const editorState = $state<{
   layout: InvestigationLayoutSidecar | null;
   scenePath: string | null;
   layoutPath: string | null;
+  storyScenePath: string | null;
+  storySceneContents: string | null;
   error: string | null;
 }>({
   chapters: null,
@@ -31,6 +37,8 @@ export const editorState = $state<{
   layout: null,
   scenePath: null,
   layoutPath: null,
+  storyScenePath: null,
+  storySceneContents: null,
   error: null,
 });
 
@@ -68,9 +76,19 @@ export async function loadInvestigationScene(scenePath: string) {
       scenePath,
     });
     if (generation !== loadSceneGeneration) return;
+    const storyScenePath = await invoke<string>("resolve_story_scene_path", {
+      scenePath,
+    });
+    if (generation !== loadSceneGeneration) return;
+    const storySceneFile = await invoke<ProjectFile>("read_project_file", {
+      path: storyScenePath,
+    });
+    if (generation !== loadSceneGeneration) return;
     editorState.scene = scene;
     editorState.scenePath = scenePath;
     editorState.layoutPath = layoutPath;
+    editorState.storyScenePath = storyScenePath;
+    editorState.storySceneContents = storySceneFile.contents;
 
     try {
       const layoutFile = await invoke<ProjectFile>("read_project_file", {
@@ -99,6 +117,8 @@ export async function loadInvestigationScene(scenePath: string) {
     editorState.scenePath = null;
     editorState.layout = null;
     editorState.layoutPath = null;
+    editorState.storyScenePath = null;
+    editorState.storySceneContents = null;
     editorState.error = normalizeError(error);
   }
 }
@@ -112,6 +132,44 @@ export async function saveLayout() {
       path: editorState.layoutPath,
       contents: `${JSON.stringify(editorState.layout, null, 2)}\n`,
     });
+  } catch (error) {
+    editorState.error = normalizeError(error);
+  }
+}
+
+export async function assignEvidenceToHotspot(
+  evidenceId: string,
+  hotspotId: string | null,
+) {
+  if (
+    !editorState.scene ||
+    !editorState.storyScenePath ||
+    editorState.storySceneContents === null
+  ) {
+    return;
+  }
+
+  editorState.error = null;
+  try {
+    const result = updateEvidenceAssignmentInMarkdown(
+      editorState.storySceneContents,
+      {
+        evidenceId,
+        hotspotId,
+      },
+    );
+    if (!result.changed) return;
+
+    await invoke("write_story_scene_file", {
+      path: editorState.storyScenePath,
+      contents: result.contents,
+    });
+    editorState.storySceneContents = result.contents;
+    editorState.scene = moveEvidenceRevealInScene(
+      editorState.scene,
+      evidenceId,
+      hotspotId,
+    );
   } catch (error) {
     editorState.error = normalizeError(error);
   }
