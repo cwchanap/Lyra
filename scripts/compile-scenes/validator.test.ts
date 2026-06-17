@@ -72,11 +72,15 @@ const mkInvestigationScene = (
   ...overrides,
 });
 
-const mkEvidence = (id: string): ASTEvidence => ({
+const mkEvidence = (
+  id: string,
+  sourceSublocationId: string | null = "room",
+): ASTEvidence => ({
   id,
   name: id,
   description: id,
   details: id,
+  sourceSublocationId,
   onCollect: [],
   onReexamine: null,
   sourceFile: "interrogation_scene_1.md",
@@ -390,6 +394,19 @@ describe("validator", () => {
         "evidenceRevealOutsideSourceSublocation",
       ]);
       expect(errors[0]!.line).toBe(10);
+    });
+
+    it("rejects a sublocation entry source sublocation mismatch", () => {
+      const scene = mkSourceSublocationScene();
+      scene.evidenceManifest = [mkSourceEvidence("badge", "corridor")];
+      scene.sublocations[0]!.reveals = [{ kind: "evidence", id: "badge" }];
+
+      const errors = validateSourceScene(scene);
+
+      expect(errors.map((e) => e.code)).toEqual([
+        "evidenceRevealOutsideSourceSublocation",
+      ]);
+      expect(errors[0]!.line).toBe(2);
     });
 
     it("rejects a topic source sublocation mismatch", () => {
@@ -729,7 +746,7 @@ describe("validator", () => {
         name: "ev1",
         description: "d",
         details: "x",
-        sourceSublocationId: "room",
+        sourceSublocationId: "room_b",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -1518,6 +1535,7 @@ describe("validator", () => {
         name: "key",
         description: "d",
         details: "x",
+        sourceSublocationId: "room_a",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -1716,6 +1734,7 @@ describe("validator", () => {
         name: "Real",
         description: "d",
         details: "x",
+        sourceSublocationId: "room",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -1726,6 +1745,7 @@ describe("validator", () => {
         name: "Red Herring",
         description: "d",
         details: "x",
+        sourceSublocationId: "room",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -1771,6 +1791,7 @@ describe("validator", () => {
         name: "Real",
         description: "d",
         details: "x",
+        sourceSublocationId: "room",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -1781,6 +1802,7 @@ describe("validator", () => {
         name: "Red Herring",
         description: "d",
         details: "x",
+        sourceSublocationId: "room",
         onCollect: [],
         onReexamine: null,
         sourceFile: "i.md",
@@ -3785,7 +3807,7 @@ describe("validator", () => {
           line: 9,
         },
       ],
-      evidenceManifest: [mkEvidence("unentered_evidence")],
+      evidenceManifest: [mkEvidence("unentered_evidence", "locked_room")],
     });
     const later = mkInterrogationScene({
       phases: [
@@ -3881,7 +3903,7 @@ describe("validator", () => {
           line: 6,
         },
       ],
-      evidenceManifest: [mkEvidence("auto_entry_evidence")],
+      evidenceManifest: [mkEvidence("auto_entry_evidence", "empty_first")],
     });
     const later = mkInterrogationScene({
       phases: [
@@ -4685,7 +4707,7 @@ describe("validator", () => {
           line: 2,
         },
       ],
-      evidenceManifest: [mkEvidence("entry_only_evidence")],
+      evidenceManifest: [mkEvidence("entry_only_evidence", "entry_room")],
       outro: {
         unlock: { predicate: "hotspot_investigated", id: "h1" },
         dialogue: [],
