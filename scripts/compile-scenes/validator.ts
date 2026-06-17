@@ -1825,9 +1825,40 @@ function validateInvestigationScene(
     }
   }
 
+  const evidenceSourceSublocation = new Map<string, string>();
+  for (const evidence of scene.evidenceManifest) {
+    if (evidence.sourceSublocationId === null) {
+      errors.push({
+        code: "evidenceSourceSublocationMissing",
+        message: `Evidence id "${evidence.id}" must declare a source sub-location.`,
+        sourceFile: evidence.sourceFile,
+        line: evidence.line,
+      });
+    } else if (typeof evidence.sourceSublocationId === "string") {
+      if (!localSublocation.has(evidence.sourceSublocationId)) {
+        errors.push({
+          code: "evidenceSourceSublocationUnknown",
+          message: `Evidence id "${evidence.id}" source sub-location "${evidence.sourceSublocationId}" is not declared in this scene.`,
+          sourceFile: evidence.sourceFile,
+          line: evidence.line,
+        });
+      } else {
+        evidenceSourceSublocation.set(
+          evidence.id,
+          evidence.sourceSublocationId,
+        );
+      }
+    }
+  }
+
   const inboundReveals = new Map<string, { source: string; line: number }>();
 
-  const checkReveals = (source: string, line: number, list: RevealTarget[]) => {
+  const checkReveals = (
+    source: string,
+    sourceSublocationId: string,
+    line: number,
+    list: RevealTarget[],
+  ) => {
     for (const r of list) {
       const key = revealKey(r);
       switch (r.kind) {
@@ -1839,6 +1870,21 @@ function validateInvestigationScene(
               sourceFile: scene.sourceFile,
               line,
             });
+          } else {
+            const expectedSourceSublocation = evidenceSourceSublocation.get(
+              r.id,
+            );
+            if (
+              expectedSourceSublocation !== undefined &&
+              expectedSourceSublocation !== sourceSublocationId
+            ) {
+              errors.push({
+                code: "evidenceRevealOutsideSourceSublocation",
+                message: `Reveal target evidence:${r.id} belongs to source sub-location "${expectedSourceSublocation}" but is revealed from "${sourceSublocationId}".`,
+                sourceFile: scene.sourceFile,
+                line,
+              });
+            }
           }
           break;
         case "statement":
@@ -1884,12 +1930,12 @@ function validateInvestigationScene(
   };
 
   for (const sub of scene.sublocations) {
-    checkReveals(`sublocation:${sub.id}`, sub.line, sub.reveals);
+    checkReveals(`sublocation:${sub.id}`, sub.id, sub.line, sub.reveals);
     for (const h of sub.hotspots)
-      checkReveals(`hotspot:${h.id}`, h.line, h.reveals);
+      checkReveals(`hotspot:${h.id}`, sub.id, h.line, h.reveals);
     for (const c of sub.characters)
       for (const t of c.topics)
-        checkReveals(`topic:${c.id}@${t.id}`, t.line, t.reveals);
+        checkReveals(`topic:${c.id}@${t.id}`, sub.id, t.line, t.reveals);
   }
 
   // v1 restriction (spec §3d): all four predicate kinds must resolve scene-local.

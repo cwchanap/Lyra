@@ -284,6 +284,145 @@ describe("validator", () => {
     ).toBeDefined();
   });
 
+  describe("source sublocation validation", () => {
+    const validateSourceScene = (scene: ASTInvestigationScene) =>
+      validate({
+        chapters: [mkChapter(1, ["i.md"])],
+        scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+      });
+
+    const mkSourceSublocationScene = (): ASTInvestigationScene => {
+      const scene = mkInvestigationScene({ id: "i" });
+      const frontHotspot = scene.sublocations[0]!.hotspots[0]!;
+
+      scene.sublocations = [
+        {
+          ...scene.sublocations[0]!,
+          id: "front",
+          label: "Front",
+          sceneTag: "front",
+          hotspots: [{ ...frontHotspot, id: "front_clue", line: 10 }],
+          characters: [],
+          line: 2,
+        },
+        {
+          id: "corridor",
+          label: "Corridor",
+          status: "unlocked",
+          unlock: null,
+          reveals: [],
+          sceneTag: "corridor",
+          transitionDialogue: [],
+          hotspots: [{ ...frontHotspot, id: "corridor_clue", line: 20 }],
+          characters: [],
+          sourceFile: "i.md",
+          line: 12,
+        },
+      ];
+
+      return scene;
+    };
+
+    const mkSourceEvidence = (
+      id: string,
+      sourceSublocationId: string | null,
+    ): ASTEvidence => ({
+      ...mkEvidence(id),
+      sourceFile: "i.md",
+      line: 30,
+      sourceSublocationId,
+    });
+
+    it("rejects evidence without source sublocation", () => {
+      const scene = mkSourceSublocationScene();
+      scene.evidenceManifest = [mkSourceEvidence("badge", null)];
+
+      const errors = validateSourceScene(scene);
+
+      expect(errors.map((e) => e.code)).toEqual([
+        "evidenceSourceSublocationMissing",
+      ]);
+      expect(errors[0]!.line).toBe(30);
+    });
+
+    it("rejects evidence with unknown source sublocation", () => {
+      const scene = mkSourceSublocationScene();
+      scene.evidenceManifest = [mkSourceEvidence("badge", "basement")];
+      scene.sublocations[0]!.hotspots[0]!.reveals = [
+        { kind: "evidence", id: "badge" },
+      ];
+
+      const errors = validateSourceScene(scene);
+
+      expect(errors.map((e) => e.code)).toEqual([
+        "evidenceSourceSublocationUnknown",
+      ]);
+      expect(errors[0]!.line).toBe(30);
+    });
+
+    it("rejects a hotspot source sublocation mismatch", () => {
+      const scene = mkSourceSublocationScene();
+      scene.evidenceManifest = [mkSourceEvidence("badge", "corridor")];
+      scene.sublocations[0]!.hotspots[0]!.reveals = [
+        { kind: "evidence", id: "badge" },
+      ];
+
+      const errors = validateSourceScene(scene);
+
+      expect(errors.map((e) => e.code)).toEqual([
+        "evidenceRevealOutsideSourceSublocation",
+      ]);
+      expect(errors[0]!.line).toBe(10);
+    });
+
+    it("rejects a topic source sublocation mismatch", () => {
+      const scene = mkSourceSublocationScene();
+      scene.evidenceManifest = [mkSourceEvidence("badge", "corridor")];
+      scene.sublocations[0]!.characters = [
+        {
+          id: "witness",
+          name: "Witness",
+          role: "Resident",
+          bio: "Saw the corridor.",
+          topics: [
+            {
+              id: "badge",
+              label: "Badge",
+              status: "unlocked",
+              unlock: null,
+              reveals: [{ kind: "evidence", id: "badge" }],
+              topicDialogue: [],
+              onReexamine: null,
+              sourceFile: "i.md",
+              line: 40,
+            },
+          ],
+          sourceFile: "i.md",
+          line: 38,
+        },
+      ];
+
+      const errors = validateSourceScene(scene);
+
+      expect(errors.map((e) => e.code)).toEqual([
+        "evidenceRevealOutsideSourceSublocation",
+      ]);
+      expect(errors[0]!.line).toBe(40);
+    });
+
+    it("accepts a hotspot in the matching source sublocation", () => {
+      const scene = mkSourceSublocationScene();
+      scene.evidenceManifest = [mkSourceEvidence("badge", "corridor")];
+      scene.sublocations[1]!.hotspots[0]!.reveals = [
+        { kind: "evidence", id: "badge" },
+      ];
+
+      const errors = validateSourceScene(scene);
+
+      expect(errors).toEqual([]);
+    });
+  });
+
   it("rejects duplicate global evidence ids across chapters", () => {
     const scene1 = mkInvestigationScene({ id: "a" });
     scene1.evidenceManifest = [
