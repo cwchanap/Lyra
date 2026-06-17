@@ -22,6 +22,8 @@ export type SceneEvidenceAssignment = {
   hotspots: EvidenceHotspotSummary[];
 };
 
+type EvidenceManifestItem = InvestigationSceneJson["evidenceManifest"][number];
+
 const hotspotHeadingPattern = /^### Hotspot: .+ \{#([^}]+)\}$/;
 const revealsPattern = /^- \*\*Reveals:\*\* \[(.*)\]$/;
 
@@ -104,6 +106,27 @@ export function updateEvidenceAssignmentInMarkdown(
     contents: nextContents,
     changed: changed || nextContents !== contents,
   };
+}
+
+export function hotspotOptionsForEvidence(
+  scene: InvestigationSceneJson,
+  evidence: EvidenceManifestItem,
+): EvidenceHotspotSummary[] {
+  return scene.sublocations.flatMap((sublocation) => {
+    if (
+      evidence.sourceSublocationId &&
+      sublocation.id !== evidence.sourceSublocationId
+    ) {
+      return [];
+    }
+
+    return sublocation.hotspots.map((hotspot) => ({
+      id: hotspot.id,
+      label: hotspot.label,
+      sublocationId: sublocation.id,
+      sublocationLabel: sublocation.label,
+    }));
+  });
 }
 
 export function evidenceAssignmentsForScene(

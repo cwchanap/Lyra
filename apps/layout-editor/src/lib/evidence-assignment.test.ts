@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   evidenceAssignmentsForScene,
+  hotspotOptionsForEvidence,
   moveEvidenceRevealInScene,
   updateEvidenceAssignmentInMarkdown,
 } from "./evidence-assignment";
@@ -91,6 +92,64 @@ const scene = {
   ],
 } satisfies InvestigationSceneJson;
 
+const sourceSublocationScene = {
+  type: "investigation",
+  id: "investigation_scene_source_sublocations",
+  title: "Source sublocation test",
+  intro: [],
+  sublocations: [
+    {
+      id: "front",
+      label: "Front",
+      sceneTag: "Front",
+      backgroundAssetId: null,
+      transitionDialogue: [],
+      hotspots: [
+        {
+          id: "front-door",
+          label: "Front door",
+          description: "The front door.",
+          evidenceSource: null,
+          sceneSourcePrompt: null,
+          reveals: [],
+          inspectDialogue: [],
+          layout: null,
+        },
+      ],
+      characters: [],
+    },
+    {
+      id: "corridor",
+      label: "Corridor",
+      sceneTag: "Corridor",
+      backgroundAssetId: null,
+      transitionDialogue: [],
+      hotspots: [
+        {
+          id: "access-panel",
+          label: "Access panel",
+          description: "A maintenance panel.",
+          evidenceSource: "visible",
+          sceneSourcePrompt: null,
+          reveals: [{ kind: "evidence", id: "log" }],
+          inspectDialogue: [],
+          layout: null,
+        },
+      ],
+      characters: [],
+    },
+  ],
+  evidenceManifest: [
+    {
+      id: "log",
+      name: "Access log",
+      description: "A corridor access log.",
+      imageAssetId: null,
+      sourceSublocationId: "corridor",
+    },
+  ],
+} satisfies InvestigationSceneJson;
+
 describe("updateEvidenceAssignmentInMarkdown", () => {
   it("moves evidence to another hotspot while preserving non-evidence reveals", () => {
     const result = updateEvidenceAssignmentInMarkdown(markdown, {
@@ -137,6 +196,24 @@ describe("updateEvidenceAssignmentInMarkdown", () => {
         hotspotId: "missing",
       }),
     ).toThrow('Hotspot "missing" was not found');
+  });
+});
+
+describe("hotspotOptionsForEvidence", () => {
+  it("limits options to hotspots in the evidence source sublocation", () => {
+    expect(
+      hotspotOptionsForEvidence(
+        sourceSublocationScene,
+        sourceSublocationScene.evidenceManifest[0],
+      ),
+    ).toEqual([
+      {
+        id: "access-panel",
+        label: "Access panel",
+        sublocationId: "corridor",
+        sublocationLabel: "Corridor",
+      },
+    ]);
   });
 });
 
