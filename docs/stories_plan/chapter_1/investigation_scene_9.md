@@ -31,10 +31,11 @@
 
 **早坂茜**：夠了。我們要的就是這一段。
 
-### Hotspot: 臨時維護工單 {#workorder}
-- **Description:** 回函裡那晚的一張臨時維護工單，標著後場門鎖。
+### Hotspot: 臨時維護工單與權限名單 {#workorder}
+- **Description:** 回函裡那晚的臨時維護工單，與外包維護人員權限名單一起對照。
 - **Evidence Source:** visible
-- **Reveals:** [evidence:temp_maintenance_workorder]
+- **Scene Source Prompt:** Contractor reply packet on the desk with temporary maintenance work order and access permission list as source documents, no readable text.
+- **Reveals:** [evidence:temp_maintenance_workorder, evidence:kitami_external_access]
 
 [相馬律翻開那張工單，順著欄位看下去。]
 
@@ -43,11 +44,6 @@
 **相馬律**：工單底下對應一組外包維護憑證。
 
 **早坂茜**：先記著。工單對得上憑證，但還沒對上人。
-
-### Hotspot: 外包維護權限名單 {#access_list}
-- **Description:** 一份外包維護人員的權限名單，列著當晚能動用憑證的人。
-- **Evidence Source:** visible
-- **Reveals:** [evidence:kitami_external_access]
 
 [相馬律把工單上的憑證編號，逐一比對權限名單。]
 
@@ -121,10 +117,11 @@
 
 **早坂茜**：對。但光這則備忘，定不了北見。得跟工單、憑證、那個 K 一起看。
 
-### Hotspot: 增田檢舉草稿 {#whistleblower_draft}
-- **Description:** 監察信箱草稿匣裡，一份增田沒送出的檢舉草稿。
+### Hotspot: 增田檢舉草稿與附件 {#whistleblower_draft}
+- **Description:** 監察信箱草稿匣裡，增田沒送出的檢舉草稿與未完成的異常存取整理表。
 - **Evidence Source:** visible
-- **Reveals:** [evidence:masuda_whistleblower_draft]
+- **Scene Source Prompt:** Forensic printout packet with an unsent whistleblower draft and attached abnormal-access table spread on the interview-room table, no readable text.
+- **Reveals:** [evidence:masuda_whistleblower_draft, evidence:kitami_data_theft_record]
 
 [相馬律翻開那份草稿，注意到結尾還空著。]
 
@@ -135,11 +132,6 @@
 [相馬律往草稿後面翻，停在一張沒做完的表。]
 
 **相馬律**：後面還附了一張異常存取整理表，沒做完。
-
-### Hotspot: 異常存取整理表 {#abnormal_access}
-- **Description:** 草稿附件裡那張沒完成的異常存取整理表。
-- **Evidence Source:** visible
-- **Reveals:** [evidence:kitami_data_theft_record]
 
 [相馬律順著表上的紀錄，一行行往下看。]
 
