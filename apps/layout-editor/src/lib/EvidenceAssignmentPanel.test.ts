@@ -197,7 +197,12 @@ describe("EvidenceAssignmentPanel", () => {
       sublocationId: "corridor",
     });
 
-    expect(screen.getByText("Create standalone hotspot")).toBeInTheDocument();
+    expect(
+      screen.getByText("Corridor / Access log generated source"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Create standalone hotspot"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders no editable assignment select", () => {
