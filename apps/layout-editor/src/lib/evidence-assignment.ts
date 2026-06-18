@@ -10,6 +10,20 @@ export type EvidenceAssignmentResult = {
   changed: boolean;
 };
 
+export type EvidenceCarrierAssignment = {
+  evidenceId: string;
+  evidenceName: string;
+  sourceSublocationId: string;
+  carrier: EvidenceCarrier | null;
+};
+
+export type EvidenceCarrierAssignmentResult = {
+  contents: string;
+  changed: boolean;
+  createdStandaloneHotspotId: string | null;
+  removedStandaloneHotspotIds: string[];
+};
+
 export type EvidenceHotspotSummary = {
   id: string;
   label: string;
@@ -40,6 +54,9 @@ export type EvidenceCarrierOption = {
 type EvidenceManifestItem = InvestigationSceneJson["evidenceManifest"][number];
 
 const hotspotHeadingPattern = /^### Hotspot: .+ \{#([^}]+)\}$/;
+const sublocationHeadingPattern = /^## Sub-?location: .+ \{#([^}]+)\}$/;
+const characterHeadingPattern = /^### Character: .+ \{#([^}]+)\}$/;
+const topicHeadingPattern = /^#### Topic: .+ \{#([^}]+)\}$/;
 const revealsPattern = /^- \*\*Reveals:\*\* \[(.*)\]$/;
 
 type HotspotBlock = {
@@ -49,78 +66,228 @@ type HotspotBlock = {
   revealsLine: number | null;
 };
 
+type TopicBlock = {
+  characterId: string;
+  id: string;
+  start: number;
+  end: number;
+  revealsLine: number | null;
+};
+
+type SublocationBlock = {
+  id: string;
+  start: number;
+  end: number;
+};
+
+type RevealBlock = {
+  start: number;
+  end: number;
+  revealsLine: number | null;
+};
+
 export function updateEvidenceAssignmentInMarkdown(
   contents: string,
   assignment: EvidenceAssignment,
 ): EvidenceAssignmentResult {
+  const result = updateEvidenceCarrierInMarkdown(contents, {
+    evidenceId: assignment.evidenceId,
+    evidenceName: assignment.evidenceId,
+    sourceSublocationId: "",
+    carrier: assignment.hotspotId
+      ? { kind: "hotspot", sublocationId: "", hotspotId: assignment.hotspotId }
+      : null,
+  });
+  return { contents: result.contents, changed: result.changed };
+}
+
+export function updateEvidenceCarrierInMarkdown(
+  contents: string,
+  assignment: EvidenceCarrierAssignment,
+): EvidenceCarrierAssignmentResult {
   const hadFinalNewline = contents.endsWith("\n");
   const lines = contents.split("\n");
   if (hadFinalNewline) lines.pop();
 
-  const blocks = findHotspotBlocks(lines);
-  const targetBlock = assignment.hotspotId
-    ? blocks.find((block) => block.id === assignment.hotspotId)
-    : null;
-
-  if (assignment.hotspotId && !targetBlock) {
-    throw new Error(`Hotspot "${assignment.hotspotId}" was not found`);
-  }
-
   let changed = false;
   const revealToken = `evidence:${assignment.evidenceId}`;
+  const removedStandaloneHotspotIds: string[] = [];
 
-  for (const block of blocks) {
-    if (block.revealsLine === null) continue;
-    const line = lines[block.revealsLine];
-    const items = parseReveals(line);
+  const blocksWithReveals = [
+    ...findHotspotBlocks(lines),
+    ...findTopicBlocks(lines),
+  ]
+    .filter(
+      (block): block is (HotspotBlock | TopicBlock) & { revealsLine: number } =>
+        block.revealsLine !== null,
+    )
+    .sort((left, right) => right.revealsLine - left.revealsLine);
+
+  for (const block of blocksWithReveals) {
+    const items = parseReveals(lines[block.revealsLine]);
     if (!items.includes(revealToken)) continue;
 
     const nextItems = items.filter((item) => item !== revealToken);
     if (nextItems.length === 0) {
       lines.splice(block.revealsLine, 1);
-      return updateEvidenceAssignmentInMarkdown(
-        joinLines(lines, hadFinalNewline),
-        assignment,
-      );
+      changed = true;
+    } else {
+      lines[block.revealsLine] = formatReveals(nextItems);
+      changed = true;
     }
+  }
 
-    lines[block.revealsLine] = formatReveals(nextItems);
+  for (const block of findHotspotBlocks(lines).slice().reverse()) {
+    if (!isGeneratedStandaloneHotspotId(block.id)) continue;
+    if (hotspotHasEvidenceReveal(lines, block)) continue;
+    lines.splice(block.start, block.end - block.start);
+    removedStandaloneHotspotIds.push(block.id);
     changed = true;
   }
 
-  if (targetBlock) {
-    const refreshedBlocks = findHotspotBlocks(lines);
-    const refreshedTarget = refreshedBlocks.find(
-      (block) => block.id === assignment.hotspotId,
+  let createdStandaloneHotspotId: string | null = null;
+  if (assignment.carrier?.kind === "hotspot") {
+    changed =
+      addRevealToHotspot(lines, assignment.carrier.hotspotId, revealToken) ||
+      changed;
+  } else if (assignment.carrier?.kind === "topic") {
+    changed =
+      addRevealToTopic(
+        lines,
+        assignment.carrier.characterId,
+        assignment.carrier.topicId,
+        revealToken,
+      ) || changed;
+  } else if (assignment.carrier?.kind === "standalone_hotspot") {
+    createdStandaloneHotspotId = generatedStandaloneHotspotId(
+      assignment.evidenceId,
     );
-    if (!refreshedTarget) {
-      throw new Error(`Hotspot "${assignment.hotspotId}" was not found`);
-    }
-
-    if (refreshedTarget.revealsLine !== null) {
-      const items = parseReveals(lines[refreshedTarget.revealsLine]);
-      if (!items.includes(revealToken)) {
-        lines[refreshedTarget.revealsLine] = formatReveals([
-          ...items,
-          revealToken,
-        ]);
-        changed = true;
-      }
-    } else {
-      lines.splice(
-        findRevealInsertIndex(lines, refreshedTarget),
-        0,
-        formatReveals([revealToken]),
-      );
-      changed = true;
-    }
+    insertStandaloneHotspot(lines, {
+      sublocationId:
+        assignment.carrier.sublocationId || assignment.sourceSublocationId,
+      hotspotId: createdStandaloneHotspotId,
+      evidenceName: assignment.evidenceName,
+      revealToken,
+    });
+    changed = true;
   }
 
   const nextContents = joinLines(lines, hadFinalNewline);
   return {
     contents: nextContents,
     changed: changed || nextContents !== contents,
+    createdStandaloneHotspotId,
+    removedStandaloneHotspotIds: removedStandaloneHotspotIds.reverse(),
   };
+}
+
+function addRevealToHotspot(
+  lines: string[],
+  hotspotId: string,
+  revealToken: string,
+): boolean {
+  const targetBlock = findHotspotBlocks(lines).find(
+    (block) => block.id === hotspotId,
+  );
+  if (!targetBlock) {
+    throw new Error(`Hotspot "${hotspotId}" was not found`);
+  }
+  return addRevealToBlock(lines, targetBlock, revealToken);
+}
+
+function addRevealToTopic(
+  lines: string[],
+  characterId: string,
+  topicId: string,
+  revealToken: string,
+): boolean {
+  const targetBlock = findTopicBlocks(lines).find(
+    (block) => block.characterId === characterId && block.id === topicId,
+  );
+  if (!targetBlock) {
+    throw new Error(`Topic "${characterId}/${topicId}" was not found`);
+  }
+  return addRevealToBlock(lines, targetBlock, revealToken);
+}
+
+function addRevealToBlock(
+  lines: string[],
+  block: RevealBlock,
+  revealToken: string,
+): boolean {
+  if (block.revealsLine !== null) {
+    const items = parseReveals(lines[block.revealsLine]);
+    if (items.includes(revealToken)) return false;
+    lines[block.revealsLine] = formatReveals([...items, revealToken]);
+    return true;
+  }
+
+  lines.splice(
+    findRevealInsertIndex(lines, block),
+    0,
+    formatReveals([revealToken]),
+  );
+  return true;
+}
+
+function insertStandaloneHotspot(
+  lines: string[],
+  options: {
+    sublocationId: string;
+    hotspotId: string;
+    evidenceName: string;
+    revealToken: string;
+  },
+): void {
+  const sublocation = findSublocationBlocks(lines).find(
+    (block) => block.id === options.sublocationId,
+  );
+  if (!sublocation) {
+    throw new Error(`Sublocation "${options.sublocationId}" was not found`);
+  }
+
+  let insertIndex = sublocation.end;
+  for (
+    let cursor = sublocation.start + 1;
+    cursor < sublocation.end;
+    cursor += 1
+  ) {
+    if (characterHeadingPattern.test(lines[cursor])) {
+      insertIndex = cursor;
+      break;
+    }
+  }
+
+  const hotspotLines = [
+    `### Hotspot: ${options.evidenceName} {#${options.hotspotId}}`,
+    "- **Description:** 編輯器產生的隱藏證據來源。",
+    "- **Evidence Source:** hidden",
+    "- **Scene Source Prompt:** Hidden local evidence source generated by the layout editor; the collected evidence is not visibly readable in the background.",
+    formatReveals([options.revealToken]),
+  ];
+
+  if (insertIndex > 0 && lines[insertIndex - 1] !== "") {
+    hotspotLines.unshift("");
+  }
+  if (insertIndex < lines.length && lines[insertIndex] !== "") {
+    hotspotLines.push("");
+  }
+
+  lines.splice(insertIndex, 0, ...hotspotLines);
+}
+
+function isGeneratedStandaloneHotspotId(id: string): boolean {
+  return /^evidence_source_[a-z0-9_]+$/.test(id);
+}
+
+function hotspotHasEvidenceReveal(
+  lines: string[],
+  block: HotspotBlock,
+): boolean {
+  if (block.revealsLine === null) return false;
+  return parseReveals(lines[block.revealsLine]).some((item) =>
+    item.startsWith("evidence:"),
+  );
 }
 
 export function hotspotOptionsForEvidence(
@@ -283,6 +450,81 @@ function findHotspotBlocks(lines: string[]): HotspotBlock[] {
   return blocks;
 }
 
+function findTopicBlocks(lines: string[]): TopicBlock[] {
+  const blocks: TopicBlock[] = [];
+  let currentCharacterId: string | null = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const characterMatch = lines[index].match(characterHeadingPattern);
+    if (characterMatch) {
+      currentCharacterId = characterMatch[1];
+      continue;
+    }
+
+    if (lines[index].startsWith("## ")) {
+      currentCharacterId = null;
+    }
+
+    const headingMatch = lines[index].match(topicHeadingPattern);
+    if (!headingMatch || currentCharacterId === null) continue;
+
+    let end = lines.length;
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      if (
+        lines[cursor].startsWith("#### ") ||
+        lines[cursor].startsWith("### ") ||
+        lines[cursor].startsWith("## ")
+      ) {
+        end = cursor;
+        break;
+      }
+    }
+
+    let revealsLine: number | null = null;
+    for (let cursor = index + 1; cursor < end; cursor += 1) {
+      if (revealsPattern.test(lines[cursor])) {
+        revealsLine = cursor;
+        break;
+      }
+    }
+
+    blocks.push({
+      characterId: currentCharacterId,
+      id: headingMatch[1],
+      start: index,
+      end,
+      revealsLine,
+    });
+  }
+
+  return blocks;
+}
+
+function findSublocationBlocks(lines: string[]): SublocationBlock[] {
+  const blocks: SublocationBlock[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const headingMatch = lines[index].match(sublocationHeadingPattern);
+    if (!headingMatch) continue;
+
+    let end = lines.length;
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      if (lines[cursor].startsWith("## ")) {
+        end = cursor;
+        break;
+      }
+    }
+
+    blocks.push({
+      id: headingMatch[1],
+      start: index,
+      end,
+    });
+  }
+
+  return blocks;
+}
+
 function parseReveals(line: string): string[] {
   const match = line.match(revealsPattern);
   if (!match) return [];
@@ -296,7 +538,7 @@ function formatReveals(items: string[]): string {
   return `- **Reveals:** [${items.join(", ")}]`;
 }
 
-function findRevealInsertIndex(lines: string[], block: HotspotBlock): number {
+function findRevealInsertIndex(lines: string[], block: RevealBlock): number {
   let insertIndex = block.start + 1;
   for (let cursor = block.start + 1; cursor < block.end; cursor += 1) {
     if (!lines[cursor].startsWith("- **")) break;
