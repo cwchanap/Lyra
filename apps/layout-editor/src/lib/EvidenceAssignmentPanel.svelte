@@ -63,6 +63,19 @@
     return selectedTopicCarrier(assignment.evidence.id);
   }
 
+  function selectedStandaloneHotspot(
+    assignment: SceneEvidenceAssignment,
+  ): SceneEvidenceAssignment["hotspots"][number] | null {
+    const standaloneHotspotId = generatedStandaloneHotspotId(
+      assignment.evidence.id,
+    );
+    return (
+      assignment.hotspots.find(
+        (hotspot) => hotspot.id === standaloneHotspotId,
+      ) ?? null
+    );
+  }
+
   function selectedTopicCarrier(evidenceId: string): EvidenceCarrier | null {
     for (const sublocation of scene.sublocations) {
       for (const character of sublocation.characters) {
@@ -89,6 +102,12 @@
     carrier: EvidenceCarrier | null,
   ): string {
     if (!carrier) return "Unassigned";
+    if (carrier.kind === "standalone_hotspot") {
+      const standaloneHotspot = selectedStandaloneHotspot(assignment);
+      return standaloneHotspot
+        ? `${standaloneHotspot.sublocationLabel} / ${standaloneHotspot.label}`
+        : "Standalone evidence source";
+    }
     const selectedValue = carrierValue(carrier);
     return (
       carrierOptionsForEvidence(scene, assignment.evidence).find(
