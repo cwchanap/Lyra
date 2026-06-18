@@ -27,8 +27,8 @@ diagnostics for finding drift, not write targets.
 
 Before editing, produce this table:
 
-| Evidence ID | Evidence Name | Source Sublocation | Current Carrier | Proposed Carrier | Source Type | Action |
-|---|---|---|---|---|---|---|
+| Evidence ID | Evidence Name | Source Sublocation | Current Carrier | Proposed Carrier | Player Collection Affordance | Source Type | Action |
+|---|---|---|---|---|---|---|---|
 
 Use these `Action` values:
 
@@ -38,11 +38,38 @@ Use these `Action` values:
 - `merge into multi-evidence hotspot`
 - `split hotspot`
 - `remove invalid source metadata`
+- `layout sidecar drift`
 - `needs human story decision`
 
 Edit only rows with a justified action. For ambiguous story decisions, set
 `Action` to `needs human story decision` and leave the Markdown unchanged unless
 the fix is purely mechanical.
+
+## Player Collection Affordance Gate
+
+For every row, answer: what exactly does the player click, select, or inspect
+in this sub-location to collect the evidence?
+
+`keep` is allowed only when all are true:
+
+- The carrier is in the evidence item's `Source Sublocation`.
+- The player-facing carrier label names a concrete local object, area, person
+  topic, or action, not only the final evidence name.
+- The body dialogue explains why that interaction yields the evidence.
+- The `Evidence Source` treatment matches the background:
+  - `visible` only when the source object itself is visible in the scene.
+  - `implied` when a visible object/area yields derived evidence.
+  - `hidden` when the source is not visible until a local action/device lookup.
+- A multi-evidence hotspot uses one shared inspection/action, one shared source
+  sub-location, and one shared source treatment for every evidence item.
+- If the carrier is a hotspot that should be clickable in the scene image, the
+  sidecar has matching geometry or the row is marked `layout sidecar drift`.
+
+If a carrier label names the inventory item instead of the local click target,
+rename the carrier to the source/action while preserving the evidence ID and
+evidence name. For hidden sources, label the affordance as a concrete local
+action or device lookup, such as a phone lookup or admin terminal check, rather
+than a physical document that is not present in the background.
 
 ## Source Type Taxonomy
 
@@ -64,6 +91,9 @@ only.
 
 - Move reveals in Markdown only. Do not patch layout sidecars or compiled JSON
   to create semantic truth.
+- Layout sidecars may be patched only to add or correct geometry for a carrier
+  that already exists in authored Markdown. Mark this as `layout sidecar drift`
+  in the carrier table; never use a sidecar edit to invent evidence semantics.
 - Preserve same-source-sublocation: every evidence reveal must come from a
   hotspot, topic, or sub-location in that evidence item's `Source Sublocation`.
 - Put person-sourced evidence on the exact `#### Topic:` where the person gives
