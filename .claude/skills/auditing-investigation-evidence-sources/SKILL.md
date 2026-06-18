@@ -40,10 +40,15 @@ Use these `Action` values:
 - `remove invalid source metadata`
 - `needs human story decision`
 
-Edit only rows with a justified action. For ambiguous rows, state the ambiguity
-and choose the least invasive story-consistent fix.
+Edit only rows with a justified action. For ambiguous story decisions, set
+`Action` to `needs human story decision` and leave the Markdown unchanged unless
+the fix is purely mechanical.
 
 ## Source Type Taxonomy
+
+These are audit-table-only `Source Type` labels. Do not write them into
+Markdown. Markdown `Evidence Source` stays `visible`, `implied`, or `hidden`
+only.
 
 | Source Type | Use For |
 |---|---|
@@ -87,4 +92,7 @@ bun run evidence-sources:audit
 ```
 
 Then review the affected Markdown diff for story intent, same-sublocation
-placement, and accidental generated-resource edits.
+placement, and accidental generated-resource edits. Treat
+`bun run evidence-sources:audit` as mostly a hotspot metadata diagnostic.
+Topic and sub-location carrier choices still require the manual carrier table
+and Markdown diff review.
