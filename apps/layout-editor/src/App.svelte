@@ -167,6 +167,7 @@
 
       <EvidenceAssignmentPanel
         scene={editorState.scene}
+        sublocationId={currentSublocationId}
         disabled={!editorState.storyScenePath}
         onAssignEvidence={assignEvidenceToHotspot}
       />

@@ -9,13 +9,25 @@
 
   type Props = {
     scene: InvestigationSceneJson;
+    sublocationId?: string | null;
     disabled?: boolean;
     onAssignEvidence: (evidenceId: string, hotspotId: string | null) => void;
   };
 
-  let { scene, disabled = false, onAssignEvidence }: Props = $props();
+  let {
+    scene,
+    sublocationId = null,
+    disabled = false,
+    onAssignEvidence,
+  }: Props = $props();
 
-  const assignments = $derived(evidenceAssignmentsForScene(scene));
+  const assignments = $derived(
+    evidenceAssignmentsForScene(scene).filter(
+      (assignment) =>
+        !sublocationId ||
+        assignment.evidence.sourceSublocationId === sublocationId,
+    ),
+  );
 
   function selectedHotspotId(assignment: SceneEvidenceAssignment): string {
     return assignment.hotspots[0]?.id ?? "";
