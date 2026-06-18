@@ -153,20 +153,6 @@
 
 **黑瀨徹**：不是什麼複雜的東西。順手抄起來就能打人。
 
-### Hotspot: 法醫初步簡報 {#forensic_brief}
-- **Description:** 黑瀨手上一份法醫初步簡報的摘錄。
-- **Evidence Source:** implied
-- **Scene Source Prompt:** Kurose holding or using a forensic brief excerpt as the source object, with report text and final range details unreadable.
-- **Reveals:** [evidence:forensic_prelim_range]
-
-[黑瀨徹把一頁簡報摘錄遞給相馬律，動作隨意但紙面朝上，沒有摺痕——不是不在意，是老手的那種不刻意的保護。]
-
-**黑瀨徹**：法醫初步。後頭部鈍器傷。死亡時間給的是一段範圍。
-
-**相馬律**：範圍。不是某一分鐘。
-
-**黑瀨徹**：對。但那段範圍，跟 22:58 那個衝突點，不衝突。我只能給你這些。
-
 ### Hotspot: 三宅23:06站位 {#miyake_replay}
 - **Description:** 三宅在 23:06 的站位，可以站到那個點上回放他的視角。
 - **Evidence Source:** implied
@@ -207,6 +193,18 @@
 ### Character: 黑瀨徹 {#kurose}
 - **Role:** 現場刑警
 - **Bio:** 風塵僕僕的辦案刑警，看鞋印、水痕和門口，給的話不多。
+
+#### Topic: 法醫初步簡報 {#forensic_brief}
+- **Status:** unlocked
+- **Reveals:** [evidence:forensic_prelim_range]
+
+[黑瀨徹把一頁簡報摘錄遞給相馬律，動作隨意但紙面朝上。]
+
+**黑瀨徹**：法醫初步。後頭部鈍器傷。死亡時間給的是一段範圍。
+
+**相馬律**：範圍。不是某一分鐘。
+
+**黑瀨徹**：對。但那段範圍，跟 22:58 那個衝突點，不衝突。我只能給你這些。
 
 #### Topic: 聲音遮蔽 {#sound_masking}
 - **Status:** unlocked
