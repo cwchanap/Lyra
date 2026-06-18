@@ -69,7 +69,7 @@ const scene = {
       name: "Receipt",
       description: "Receipt clue.",
       imageAssetId: "evidence.receipt",
-      sourceSublocationId: null,
+      sourceSublocationId: "front",
     },
     {
       id: "log",
@@ -115,6 +115,28 @@ describe("EvidenceAssignmentPanel", () => {
     expect(optionLabels).not.toContain("Front / Desk");
     expect(optionLabels).not.toContain("Front / Window");
     expect(optionLabels).toContain("Corridor / Terminal");
+  });
+
+  it("lists only evidence sourced from the selected sublocation", () => {
+    const { rerender } = render(EvidenceAssignmentPanel, {
+      scene,
+      sublocationId: "front",
+      disabled: false,
+      onAssignEvidence: vi.fn(),
+    });
+
+    expect(screen.getByText("Receipt")).toBeInTheDocument();
+    expect(screen.queryByText("Access log")).not.toBeInTheDocument();
+
+    rerender({
+      scene,
+      sublocationId: "corridor",
+      disabled: false,
+      onAssignEvidence: vi.fn(),
+    });
+
+    expect(screen.queryByText("Receipt")).not.toBeInTheDocument();
+    expect(screen.getByText("Access log")).toBeInTheDocument();
   });
 
   it("calls the assignment handler when a hotspot is selected", async () => {
