@@ -137,13 +137,48 @@ export async function saveLayout() {
   }
 }
 
-export async function assignEvidenceToHotspot(
+let assignmentQueue: Promise<void> = Promise.resolve();
+
+export function assignEvidenceToHotspot(
   evidenceId: string,
   hotspotId: string | null,
-) {
+): Promise<void> {
   if (
     !editorState.scene ||
     !editorState.storyScenePath ||
+    editorState.storySceneContents === null
+  ) {
+    return Promise.resolve();
+  }
+
+  const requestedSceneId = editorState.scene.id;
+  const requestedStoryScenePath = editorState.storyScenePath;
+
+  assignmentQueue = assignmentQueue
+    .catch(() => {
+      // Errors are surfaced through editorState.error; keep later assignments moving.
+    })
+    .then(() =>
+      assignEvidenceToHotspotNow(
+        evidenceId,
+        hotspotId,
+        requestedSceneId,
+        requestedStoryScenePath,
+      ),
+    );
+
+  return assignmentQueue;
+}
+
+async function assignEvidenceToHotspotNow(
+  evidenceId: string,
+  hotspotId: string | null,
+  requestedSceneId: string,
+  requestedStoryScenePath: string,
+) {
+  if (
+    editorState.scene?.id !== requestedSceneId ||
+    editorState.storyScenePath !== requestedStoryScenePath ||
     editorState.storySceneContents === null
   ) {
     return;
