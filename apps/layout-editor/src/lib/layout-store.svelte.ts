@@ -8,9 +8,10 @@ import type {
 } from "./layout-types";
 import { clampRectLayout, clampSpriteLayout } from "./layout-geometry";
 import {
-  moveEvidenceRevealInScene,
-  updateEvidenceAssignmentInMarkdown,
+  moveEvidenceRevealToCarrierInScene,
+  updateEvidenceCarrierInMarkdown,
 } from "./evidence-assignment";
+import type { EvidenceCarrier } from "./evidence-assignment";
 
 type ProjectFile = {
   path: string;
@@ -143,6 +144,16 @@ export function assignEvidenceToHotspot(
   evidenceId: string,
   hotspotId: string | null,
 ): Promise<void> {
+  return assignEvidenceToCarrier(
+    evidenceId,
+    hotspotId ? { kind: "hotspot", sublocationId: "", hotspotId } : null,
+  );
+}
+
+export function assignEvidenceToCarrier(
+  evidenceId: string,
+  carrier: EvidenceCarrier | null,
+): Promise<void> {
   if (
     !editorState.scene ||
     !editorState.storyScenePath ||
@@ -159,9 +170,9 @@ export function assignEvidenceToHotspot(
       // Errors are surfaced through editorState.error; keep later assignments moving.
     })
     .then(() =>
-      assignEvidenceToHotspotNow(
+      assignEvidenceToCarrierNow(
         evidenceId,
-        hotspotId,
+        carrier,
         requestedSceneId,
         requestedStoryScenePath,
       ),
@@ -170,9 +181,9 @@ export function assignEvidenceToHotspot(
   return assignmentQueue;
 }
 
-async function assignEvidenceToHotspotNow(
+async function assignEvidenceToCarrierNow(
   evidenceId: string,
-  hotspotId: string | null,
+  carrier: EvidenceCarrier | null,
   requestedSceneId: string,
   requestedStoryScenePath: string,
 ) {
@@ -187,12 +198,23 @@ async function assignEvidenceToHotspotNow(
   const scene = editorState.scene;
   const storyScenePath = editorState.storyScenePath;
   const storySceneContents = editorState.storySceneContents;
+  const evidence = scene.evidenceManifest.find(
+    (item) => item.id === evidenceId,
+  );
+  if (!evidence) return;
+
+  const sourceSublocationId =
+    evidence.sourceSublocationId ??
+    fallbackSourceSublocationId(scene, evidenceId, carrier);
+  if (!sourceSublocationId) return;
 
   editorState.error = null;
   try {
-    const result = updateEvidenceAssignmentInMarkdown(storySceneContents, {
+    const result = updateEvidenceCarrierInMarkdown(storySceneContents, {
       evidenceId,
-      hotspotId,
+      evidenceName: evidence.name,
+      sourceSublocationId,
+      carrier,
     });
     if (!result.changed) return;
 
@@ -210,7 +232,12 @@ async function assignEvidenceToHotspotNow(
     }
 
     editorState.storySceneContents = result.contents;
-    editorState.scene = moveEvidenceRevealInScene(scene, evidenceId, hotspotId);
+    removeHotspotLayouts(result.removedStandaloneHotspotIds);
+    editorState.scene = moveEvidenceRevealToCarrierInScene(
+      scene,
+      evidenceId,
+      carrier,
+    );
   } catch (error) {
     if (
       editorState.scene !== scene ||
@@ -222,6 +249,63 @@ async function assignEvidenceToHotspotNow(
 
     editorState.error = normalizeError(error);
   }
+}
+
+function fallbackSourceSublocationId(
+  scene: InvestigationSceneJson,
+  evidenceId: string,
+  carrier: EvidenceCarrier | null,
+): string | null {
+  if (carrier?.sublocationId) return carrier.sublocationId;
+
+  if (carrier?.kind === "hotspot") {
+    const sublocation = scene.sublocations.find((item) =>
+      item.hotspots.some((hotspot) => hotspot.id === carrier.hotspotId),
+    );
+    if (sublocation) return sublocation.id;
+  } else if (carrier?.kind === "topic") {
+    const sublocation = scene.sublocations.find((item) =>
+      item.characters.some(
+        (character) =>
+          character.id === carrier.characterId &&
+          character.topics.some((topic) => topic.id === carrier.topicId),
+      ),
+    );
+    if (sublocation) return sublocation.id;
+  }
+
+  const currentSublocation = scene.sublocations.find((sublocation) =>
+    sublocation.hotspots.some((hotspot) =>
+      hotspot.reveals.some(
+        (reveal) => reveal.kind === "evidence" && reveal.id === evidenceId,
+      ),
+    ),
+  );
+  return currentSublocation?.id ?? scene.sublocations[0]?.id ?? null;
+}
+
+function removeHotspotLayouts(hotspotIds: string[]) {
+  if (!editorState.layout || hotspotIds.length === 0) return;
+  const ids = new Set(hotspotIds);
+
+  editorState.layout = {
+    ...editorState.layout,
+    sublocations: Object.fromEntries(
+      Object.entries(editorState.layout.sublocations).map(
+        ([sublocationId, sublocation]) => [
+          sublocationId,
+          {
+            hotspots: Object.fromEntries(
+              Object.entries(sublocation.hotspots).filter(
+                ([hotspotId]) => !ids.has(hotspotId),
+              ),
+            ),
+            characters: sublocation.characters,
+          },
+        ],
+      ),
+    ),
+  };
 }
 
 export function setHotspotLayout(

@@ -485,6 +485,66 @@ export function moveEvidenceRevealInScene(
   };
 }
 
+export function moveEvidenceRevealToCarrierInScene(
+  scene: InvestigationSceneJson,
+  evidenceId: string,
+  carrier: EvidenceCarrier | null,
+): InvestigationSceneJson {
+  return {
+    ...scene,
+    sublocations: scene.sublocations.map((sublocation) => ({
+      ...sublocation,
+      hotspots: sublocation.hotspots
+        .filter(
+          (hotspot) =>
+            !(
+              isGeneratedStandaloneHotspotId(hotspot.id) &&
+              hotspot.id === generatedStandaloneHotspotId(evidenceId)
+            ),
+        )
+        .map((hotspot) => ({
+          ...hotspot,
+          reveals: nextRevealsForCarrier(
+            hotspot.reveals,
+            evidenceId,
+            carrier?.kind === "hotspot" && carrier.hotspotId === hotspot.id,
+          ),
+        })),
+      characters: sublocation.characters.map((character) => ({
+        ...character,
+        topics: character.topics.map((topic) => {
+          const topicWithReveals = topic as typeof topic & {
+            reveals?: RevealTarget[];
+          };
+
+          return {
+            ...topic,
+            reveals: nextRevealsForCarrier(
+              topicWithReveals.reveals ?? [],
+              evidenceId,
+              carrier?.kind === "topic" &&
+                carrier.characterId === character.id &&
+                carrier.topicId === topic.id,
+            ),
+          };
+        }),
+      })),
+    })),
+  };
+}
+
+function nextRevealsForCarrier(
+  reveals: RevealTarget[],
+  evidenceId: string,
+  shouldCarryEvidence: boolean,
+): RevealTarget[] {
+  const next = reveals.filter(
+    (reveal) => !(reveal.kind === "evidence" && reveal.id === evidenceId),
+  );
+  if (shouldCarryEvidence) next.push({ kind: "evidence", id: evidenceId });
+  return next as RevealTarget[];
+}
+
 function findHotspotBlocks(lines: string[]): HotspotBlock[] {
   const blocks: HotspotBlock[] = [];
 
