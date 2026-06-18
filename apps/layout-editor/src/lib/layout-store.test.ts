@@ -553,6 +553,119 @@ describe("layout-store", () => {
       expect(editorState.scene?.id).toBe(sceneB.id);
       expect(editorState.scene?.sublocations).toEqual([]);
     });
+
+    it("serializes same-scene assignments so stale writes cannot win", async () => {
+      editorState.storyScenePath =
+        "docs/stories_plan/chapter_1/investigation_scene_1.md";
+      editorState.storySceneContents = `# Investigation
+
+## Sublocation: Office {#office}
+
+### Hotspot: Desk {#desk}
+- **Description:** Desk.
+
+### Hotspot: Terminal {#terminal}
+- **Description:** Terminal.
+`;
+      editorState.scene = {
+        type: "investigation",
+        id: "investigation_scene_1",
+        title: "Scene A",
+        intro: [],
+        sublocations: [
+          {
+            id: "office",
+            label: "Office",
+            sceneTag: "Office",
+            backgroundAssetId: null,
+            transitionDialogue: [],
+            hotspots: [
+              {
+                id: "desk",
+                label: "Desk",
+                description: "Desk.",
+                evidenceSource: null,
+                sceneSourcePrompt: null,
+                reveals: [],
+                inspectDialogue: [],
+                layout: null,
+              },
+              {
+                id: "terminal",
+                label: "Terminal",
+                description: "Terminal.",
+                evidenceSource: null,
+                sceneSourcePrompt: null,
+                reveals: [],
+                inspectDialogue: [],
+                layout: null,
+              },
+            ],
+            characters: [],
+          },
+        ],
+        evidenceManifest: [
+          {
+            id: "receipt",
+            name: "Receipt",
+            description: "Receipt clue.",
+            imageAssetId: null,
+            sourceSublocationId: null,
+          },
+        ],
+      };
+
+      const writes: Array<{
+        contents: string;
+        finish: () => void;
+      }> = [];
+      let persistedContents = editorState.storySceneContents;
+      mockInvoke.mockImplementation((command, args) => {
+        if (command !== "write_story_scene_file") {
+          throw new Error(`Unexpected command: ${command}`);
+        }
+
+        return new Promise((resolve) => {
+          writes.push({
+            contents: (args as { contents: string }).contents,
+            finish: () => {
+              persistedContents = (args as { contents: string }).contents;
+              resolve(undefined);
+            },
+          });
+        });
+      });
+
+      const firstAssignment = assignEvidenceToHotspot("receipt", "terminal");
+      const secondAssignment = assignEvidenceToHotspot("receipt", "desk");
+
+      await vi.waitFor(() => expect(writes.length).toBeGreaterThan(0));
+
+      if (writes.length === 2) {
+        writes[1].finish();
+        await secondAssignment;
+        writes[0].finish();
+      } else {
+        writes[0].finish();
+        await firstAssignment;
+        if (writes.length === 2) {
+          writes[1].finish();
+        }
+      }
+
+      await Promise.all([firstAssignment, secondAssignment]);
+
+      expect(persistedContents).toContain(
+        "### Hotspot: Desk {#desk}\n- **Description:** Desk.\n- **Reveals:** [evidence:receipt]",
+      );
+      expect(persistedContents).not.toContain(
+        "### Hotspot: Terminal {#terminal}\n- **Description:** Terminal.\n- **Reveals:** [evidence:receipt]",
+      );
+      expect(editorState.scene.sublocations[0].hotspots[0].reveals).toEqual([
+        { kind: "evidence", id: "receipt" },
+      ]);
+      expect(editorState.scene.sublocations[0].hotspots[1].reveals).toEqual([]);
+    });
   });
 
   describe("loadChapters", () => {
