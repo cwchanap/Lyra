@@ -109,6 +109,10 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 ### Topic (H4, inside a Character)
 - **Required:** `Status`
 - **Optional:** `Unlock`, `Reveals` (list)
+- **Person-sourced evidence:** if the evidence comes from what a person provides,
+  reveal it from the specific `#### Topic:` where that person gives the
+  information. Do not invent a standalone document hotspot unless the player
+  actually inspects a local physical source.
 - **Body:** topic dialogue (plays on the player's **first** selection of this topic, followed by `Reveals:` chain dialogue).
 - **Optional sub-block:** `##### On Reexamine` — H5 immediately under this Topic's body. Plays on every selection **after** the first. No new reveals fire on reexamine. If absent, the engine plays a fallback line on subsequent selections.
 
