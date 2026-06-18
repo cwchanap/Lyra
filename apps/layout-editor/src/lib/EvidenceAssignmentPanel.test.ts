@@ -124,62 +124,37 @@ function sceneWithGeneratedStandaloneLog(): InvestigationSceneJson {
 }
 
 describe("EvidenceAssignmentPanel", () => {
-  it("lists evidence with thumbnails and current hotspot assignments", () => {
-    const { container } = render(EvidenceAssignmentPanel, {
+  it("lists only evidence sourced from the selected sublocation with carrier labels", async () => {
+    const { container, rerender } = render(EvidenceAssignmentPanel, {
       scene,
-      disabled: false,
-      onAssignEvidence: vi.fn(),
+      sublocationId: "front",
     });
 
+    expect(
+      screen.getByRole("heading", { name: "Evidence Sources" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Receipt")).toBeInTheDocument();
-    expect(screen.getByText("Access log")).toBeInTheDocument();
+    expect(screen.getByText("receipt")).toBeInTheDocument();
+    expect(screen.queryByText("Access log")).not.toBeInTheDocument();
     expect(container.querySelector("img")).toHaveAttribute(
       "src",
       "/assets/evidence/receipt.png",
     );
     expect(screen.queryByAltText("Receipt")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Assign Receipt")).toHaveValue(
-      "hotspot:front:desk",
-    );
-    expect(screen.getByLabelText("Assign Access log")).toHaveValue("");
-  });
+    expect(screen.getByText("Front / Desk")).toBeInTheDocument();
 
-  it("limits hotspot choices to the evidence source sublocation", () => {
-    render(EvidenceAssignmentPanel, {
-      scene,
-      disabled: false,
-      onAssignEvidence: vi.fn(),
-    });
-
-    const optionLabels = Array.from(
-      (screen.getByLabelText("Assign Access log") as HTMLSelectElement).options,
-      (option) => option.textContent,
-    );
-
-    expect(optionLabels).not.toContain("Front / Desk");
-    expect(optionLabels).not.toContain("Front / Window");
-    expect(optionLabels).toContain("Corridor / Terminal");
-  });
-
-  it("renders hotspot, topic, and standalone carrier choices", () => {
-    render(EvidenceAssignmentPanel, {
+    await rerender({
       scene,
       sublocationId: "corridor",
-      disabled: false,
-      onAssignEvidence: vi.fn(),
     });
 
-    const labels = Array.from(
-      (screen.getByLabelText("Assign Access log") as HTMLSelectElement).options,
-      (option) => option.textContent,
-    );
-
-    expect(labels).toContain("Corridor / Terminal");
-    expect(labels).toContain("Corridor / 黑瀨徹 / 法醫初步簡報");
-    expect(labels).toContain("Create standalone hotspot");
+    expect(screen.queryByText("Receipt")).not.toBeInTheDocument();
+    expect(screen.getByText("Access log")).toBeInTheDocument();
+    expect(screen.getByText("log")).toBeInTheDocument();
+    expect(screen.getByText("Unassigned")).toBeInTheDocument();
   });
 
-  it("shows a current topic carrier assignment", () => {
+  it("shows a current topic carrier assignment label", () => {
     const topicAssignedScene: InvestigationSceneJson = {
       ...scene,
       sublocations: scene.sublocations.map((sublocation) =>
@@ -209,133 +184,53 @@ describe("EvidenceAssignmentPanel", () => {
     render(EvidenceAssignmentPanel, {
       scene: topicAssignedScene,
       sublocationId: "corridor",
-      disabled: false,
-      onAssignEvidence: vi.fn(),
     });
 
-    expect(screen.getByLabelText("Assign Access log")).toHaveValue(
-      "topic:corridor:kurose:forensic_brief",
-    );
+    expect(
+      screen.getByText("Corridor / 黑瀨徹 / 法醫初步簡報"),
+    ).toBeInTheDocument();
   });
 
-  it("shows a current generated standalone hotspot assignment as standalone", () => {
+  it("shows a current generated standalone hotspot assignment label", () => {
     render(EvidenceAssignmentPanel, {
       scene: sceneWithGeneratedStandaloneLog(),
       sublocationId: "corridor",
-      disabled: false,
-      onAssignEvidence: vi.fn(),
     });
 
-    expect(screen.getByLabelText("Assign Access log")).toHaveValue(
-      "standalone:corridor",
-    );
+    expect(screen.getByText("Create standalone hotspot")).toBeInTheDocument();
   });
 
-  it("does not list generated standalone hotspots as normal hotspot options", () => {
-    render(EvidenceAssignmentPanel, {
-      scene: sceneWithGeneratedStandaloneLog(),
-      sublocationId: "corridor",
-      disabled: false,
-      onAssignEvidence: vi.fn(),
-    });
-
-    const labels = Array.from(
-      (screen.getByLabelText("Assign Access log") as HTMLSelectElement).options,
-      (option) => option.textContent,
-    );
-
-    expect(labels).not.toContain("Corridor / Access log generated source");
-    expect(labels).toContain("Create standalone hotspot");
-  });
-
-  it("lists only evidence sourced from the selected sublocation", () => {
-    const { rerender } = render(EvidenceAssignmentPanel, {
-      scene,
-      sublocationId: "front",
-      disabled: false,
-      onAssignEvidence: vi.fn(),
-    });
-
-    expect(screen.getByText("Receipt")).toBeInTheDocument();
-    expect(screen.queryByText("Access log")).not.toBeInTheDocument();
-
-    rerender({
+  it("renders no editable assignment select", () => {
+    const { container } = render(EvidenceAssignmentPanel, {
       scene,
       sublocationId: "corridor",
-      disabled: false,
-      onAssignEvidence: vi.fn(),
     });
 
-    expect(screen.queryByText("Receipt")).not.toBeInTheDocument();
-    expect(screen.getByText("Access log")).toBeInTheDocument();
+    expect(container.querySelector("select")).toBeNull();
+    expect(screen.queryByLabelText(/^Assign /)).not.toBeInTheDocument();
   });
 
-  it("calls the assignment handler when a hotspot is selected", async () => {
+  it("does not call a legacy assignment handler on user change", async () => {
     const user = userEvent.setup();
     const onAssignEvidence = vi.fn();
-
-    render(EvidenceAssignmentPanel, {
-      scene,
-      disabled: false,
-      onAssignEvidence,
-    });
-
-    await user.selectOptions(screen.getByLabelText("Assign Access log"), [
-      "hotspot:corridor:terminal",
-    ]);
-
-    expect(onAssignEvidence).toHaveBeenCalledWith("log", {
-      kind: "hotspot",
-      sublocationId: "corridor",
-      hotspotId: "terminal",
-    });
-  });
-
-  it("passes a typed topic carrier to the assignment handler", async () => {
-    const user = userEvent.setup();
-    const onAssignEvidence = vi.fn();
-    render(EvidenceAssignmentPanel, {
+    const legacyProps = {
       scene,
       sublocationId: "corridor",
-      disabled: false,
       onAssignEvidence,
-    });
+    } as unknown as {
+      scene: InvestigationSceneJson;
+      sublocationId: string;
+    };
 
-    await user.selectOptions(screen.getByLabelText("Assign Access log"), [
-      "topic:corridor:kurose:forensic_brief",
-    ]);
+    const { container } = render(EvidenceAssignmentPanel, legacyProps);
 
-    expect(onAssignEvidence).toHaveBeenCalledWith("log", {
-      kind: "topic",
-      sublocationId: "corridor",
-      characterId: "kurose",
-      topicId: "forensic_brief",
-    });
+    const legacySelect = container.querySelector("select");
+    if (legacySelect) {
+      await user.selectOptions(legacySelect, ["hotspot:corridor:terminal"]);
+    } else {
+      await user.click(screen.getByText("Unassigned"));
+    }
+
+    expect(onAssignEvidence).not.toHaveBeenCalled();
   });
-
-  it.each(["unknown:corridor", "hotspot:corridor", "topic:corridor:kurose"])(
-    "passes null for invalid carrier value %s",
-    async (value) => {
-      const user = userEvent.setup();
-      const onAssignEvidence = vi.fn();
-      render(EvidenceAssignmentPanel, {
-        scene,
-        sublocationId: "corridor",
-        disabled: false,
-        onAssignEvidence,
-      });
-
-      const select = screen.getByLabelText(
-        "Assign Access log",
-      ) as HTMLSelectElement;
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = value;
-      select.append(option);
-
-      await user.selectOptions(select, [value]);
-
-      expect(onAssignEvidence).toHaveBeenCalledWith("log", null);
-    },
-  );
 });
