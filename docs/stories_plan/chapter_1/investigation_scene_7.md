@@ -80,12 +80,12 @@
 **黑瀨徹**：人進來，總會把外面的東西帶進來。
 
 ### Hotspot: 咖啡機最後出杯 {#last_cup}
-- **Description:** 吧台後的咖啡機與收銀出杯紀錄。
-- **Evidence Source:** implied
-- **Scene Source Prompt:** Cafe coffee machine and register output-record area visible as source objects, without readable output timing or receipt text.
+- **Description:** 相馬在後場門口調出的收銀出杯摘要，用來對照匿名訊息與現場時間。
+- **Evidence Source:** hidden
+- **Scene Source Prompt:** Hidden local phone lookup of the register output summary while standing at the back-door threshold; no coffee machine, register screen, or readable record appears in the background.
 - **Reveals:** [evidence:coffee_last_cup_record]
 
-[相馬律翻看收銀的出杯紀錄。早坂茜站在他身後一步遠的位置，目光落在紀錄上，沒有湊近。]
+[相馬律在手機上調出收銀出杯摘要。早坂茜站在他身後一步遠的位置，目光落在紀錄上，沒有湊近。]
 
 **相馬律**：最後一筆出杯。兩杯，間隔很短。
 
