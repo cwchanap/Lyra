@@ -3,7 +3,22 @@
   "sceneId": "investigation_scene_9",
   "sublocations": {
     "confront_kitami": {
-      "hotspots": {},
+      "hotspots": {
+        "unsent_memo": {
+          "kind": "rect",
+          "x": 0.318,
+          "y": 0.572,
+          "w": 0.15,
+          "h": 0.11
+        },
+        "whistleblower_draft": {
+          "kind": "rect",
+          "x": 0.475,
+          "y": 0.552,
+          "w": 0.22,
+          "h": 0.14
+        }
+      },
       "characters": {
         "kitami": {
           "kind": "sprite",
