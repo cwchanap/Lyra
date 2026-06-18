@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  carrierOptionsForEvidence,
   evidenceAssignmentsForScene,
+  generatedStandaloneHotspotId,
   hotspotOptionsForEvidence,
   moveEvidenceRevealInScene,
   updateEvidenceAssignmentInMarkdown,
@@ -92,6 +94,23 @@ const scene = {
   ],
 } satisfies InvestigationSceneJson;
 
+const kuroseCharacter = {
+  id: "kurose",
+  name: "黑瀨徹",
+  role: "刑警",
+  bio: "提供程序內可公開的資訊。",
+  layout: null,
+  topics: [
+    {
+      id: "forensic_brief",
+      label: "法醫初步簡報",
+      status: "unlocked",
+      reveals: [],
+      topicDialogue: [],
+    },
+  ],
+};
+
 const sourceSublocationScene = {
   type: "investigation",
   id: "investigation_scene_source_sublocations",
@@ -146,7 +165,7 @@ const sourceSublocationScene = {
           layout: null,
         },
       ],
-      characters: [],
+      characters: [kuroseCharacter],
     },
   ],
   evidenceManifest: [
@@ -233,6 +252,59 @@ describe("hotspotOptionsForEvidence", () => {
     );
 
     expect(options.map((option) => option.id)).not.toContain("plain-door");
+  });
+});
+
+describe("carrierOptionsForEvidence", () => {
+  it("lists evidence-capable hotspots, character topics, and standalone creation in the evidence source sublocation", () => {
+    expect(
+      carrierOptionsForEvidence(
+        sourceSublocationScene,
+        sourceSublocationScene.evidenceManifest[0],
+      ),
+    ).toEqual([
+      {
+        label: "Corridor / Access panel",
+        carrier: {
+          kind: "hotspot",
+          sublocationId: "corridor",
+          hotspotId: "access-panel",
+        },
+      },
+      {
+        label: "Corridor / 黑瀨徹 / 法醫初步簡報",
+        carrier: {
+          kind: "topic",
+          sublocationId: "corridor",
+          characterId: "kurose",
+          topicId: "forensic_brief",
+        },
+      },
+      {
+        label: "Create standalone hotspot",
+        carrier: {
+          kind: "standalone_hotspot",
+          sublocationId: "corridor",
+        },
+      },
+    ]);
+  });
+
+  it("does not list non-source sublocation targets", () => {
+    const labels = carrierOptionsForEvidence(
+      sourceSublocationScene,
+      sourceSublocationScene.evidenceManifest[0],
+    ).map((option) => option.label);
+
+    expect(labels).not.toContain("Front / Front door");
+  });
+});
+
+describe("generatedStandaloneHotspotId", () => {
+  it("uses the evidence_source id convention", () => {
+    expect(generatedStandaloneHotspotId("forensic_prelim_range")).toBe(
+      "evidence_source_forensic_prelim_range",
+    );
   });
 });
 
