@@ -2,6 +2,7 @@
   import {
     carrierOptionsForEvidence,
     evidenceAssignmentsForScene,
+    generatedStandaloneHotspotId,
     type EvidenceCarrier,
     type SceneEvidenceAssignment,
   } from "./evidence-assignment";
@@ -46,14 +47,20 @@
   function carrierFromValue(value: string): EvidenceCarrier | null {
     if (value === "") return null;
     const parts = value.split(":");
-    if (parts[0] === "hotspot") {
+    if (parts[0] === "hotspot" && parts.length === 3 && parts[1] && parts[2]) {
       return {
         kind: "hotspot",
         sublocationId: parts[1],
         hotspotId: parts[2],
       };
     }
-    if (parts[0] === "topic") {
+    if (
+      parts[0] === "topic" &&
+      parts.length === 4 &&
+      parts[1] &&
+      parts[2] &&
+      parts[3]
+    ) {
       return {
         kind: "topic",
         sublocationId: parts[1],
@@ -61,11 +68,29 @@
         topicId: parts[3],
       };
     }
-    return { kind: "standalone_hotspot", sublocationId: parts[1] };
+    if (parts[0] === "standalone" && parts.length === 2 && parts[1]) {
+      return { kind: "standalone_hotspot", sublocationId: parts[1] };
+    }
+    return null;
   }
 
   function selectedCarrierValue(assignment: SceneEvidenceAssignment): string {
-    const hotspot = assignment.hotspots[0];
+    const standaloneHotspotId = generatedStandaloneHotspotId(
+      assignment.evidence.id,
+    );
+    const standaloneHotspot = assignment.hotspots.find(
+      (hotspot) => hotspot.id === standaloneHotspotId,
+    );
+    if (standaloneHotspot) {
+      return carrierValue({
+        kind: "standalone_hotspot",
+        sublocationId: standaloneHotspot.sublocationId,
+      });
+    }
+
+    const hotspot = assignment.hotspots.find(
+      (candidate) => candidate.id !== standaloneHotspotId,
+    );
     if (hotspot) {
       return carrierValue({
         kind: "hotspot",

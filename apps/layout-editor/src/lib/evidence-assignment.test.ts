@@ -187,6 +187,16 @@ const sourceSublocationScene = {
           layout: null,
         },
         {
+          id: "evidence_source_log",
+          label: "Access log generated source",
+          description: "Generated hidden source.",
+          evidenceSource: "hidden",
+          sceneSourcePrompt: "Generated hidden source.",
+          reveals: [{ kind: "evidence", id: "log" }],
+          inspectDialogue: [],
+          layout: null,
+        },
+        {
           id: "plain-door",
           label: "Plain door",
           description: "A door without evidence-source metadata.",
@@ -433,6 +443,16 @@ describe("carrierOptionsForEvidence", () => {
     ).map((option) => option.label);
 
     expect(labels).not.toContain("Front / Front door");
+  });
+
+  it("does not list generated standalone hotspots as normal carrier targets", () => {
+    const labels = carrierOptionsForEvidence(
+      sourceSublocationScene,
+      sourceSublocationScene.evidenceManifest[0],
+    ).map((option) => option.label);
+
+    expect(labels).not.toContain("Corridor / Access log generated source");
+    expect(labels).toContain("Create standalone hotspot");
   });
 });
 

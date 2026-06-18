@@ -372,7 +372,11 @@ export function hotspotOptionsForEvidence(
     }
 
     return sublocation.hotspots
-      .filter((hotspot) => hotspot.evidenceSource !== null)
+      .filter(
+        (hotspot) =>
+          hotspot.evidenceSource !== null &&
+          !isGeneratedStandaloneHotspotId(hotspot.id),
+      )
       .map((hotspot) => ({
         id: hotspot.id,
         label: hotspot.label,
@@ -402,6 +406,7 @@ export function carrierOptionsForEvidence(
 
     for (const hotspot of sublocation.hotspots) {
       if (hotspot.evidenceSource === null) continue;
+      if (isGeneratedStandaloneHotspotId(hotspot.id)) continue;
       options.push({
         label: `${sublocation.label} / ${hotspot.label}`,
         carrier: {
