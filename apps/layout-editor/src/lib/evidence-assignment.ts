@@ -120,12 +120,14 @@ export function hotspotOptionsForEvidence(
       return [];
     }
 
-    return sublocation.hotspots.map((hotspot) => ({
-      id: hotspot.id,
-      label: hotspot.label,
-      sublocationId: sublocation.id,
-      sublocationLabel: sublocation.label,
-    }));
+    return sublocation.hotspots
+      .filter((hotspot) => hotspot.evidenceSource !== null)
+      .map((hotspot) => ({
+        id: hotspot.id,
+        label: hotspot.label,
+        sublocationId: sublocation.id,
+        sublocationLabel: sublocation.label,
+      }));
   });
 }
 
