@@ -90,15 +90,56 @@ export function updateEvidenceAssignmentInMarkdown(
   contents: string,
   assignment: EvidenceAssignment,
 ): EvidenceAssignmentResult {
-  const result = updateEvidenceCarrierInMarkdown(contents, {
-    evidenceId: assignment.evidenceId,
-    evidenceName: assignment.evidenceId,
-    sourceSublocationId: "",
-    carrier: assignment.hotspotId
-      ? { kind: "hotspot", sublocationId: "", hotspotId: assignment.hotspotId }
-      : null,
-  });
-  return { contents: result.contents, changed: result.changed };
+  const hadFinalNewline = contents.endsWith("\n");
+  const lines = contents.split("\n");
+  if (hadFinalNewline) lines.pop();
+
+  const blocks = findHotspotBlocks(lines);
+  const targetBlock = assignment.hotspotId
+    ? blocks.find((block) => block.id === assignment.hotspotId)
+    : null;
+
+  if (assignment.hotspotId && !targetBlock) {
+    throw new Error(`Hotspot "${assignment.hotspotId}" was not found`);
+  }
+
+  let changed = false;
+  const revealToken = `evidence:${assignment.evidenceId}`;
+
+  for (const block of blocks) {
+    if (block.revealsLine === null) continue;
+    const items = parseReveals(lines[block.revealsLine]);
+    if (!items.includes(revealToken)) continue;
+
+    const nextItems = items.filter((item) => item !== revealToken);
+    if (nextItems.length === 0) {
+      lines.splice(block.revealsLine, 1);
+      return updateEvidenceAssignmentInMarkdown(
+        joinLines(lines, hadFinalNewline),
+        assignment,
+      );
+    }
+
+    lines[block.revealsLine] = formatReveals(nextItems);
+    changed = true;
+  }
+
+  if (targetBlock) {
+    const refreshedTarget = findHotspotBlocks(lines).find(
+      (block) => block.id === assignment.hotspotId,
+    );
+    if (!refreshedTarget) {
+      throw new Error(`Hotspot "${assignment.hotspotId}" was not found`);
+    }
+
+    changed = addRevealToBlock(lines, refreshedTarget, revealToken) || changed;
+  }
+
+  const nextContents = joinLines(lines, hadFinalNewline);
+  return {
+    contents: nextContents,
+    changed: changed || nextContents !== contents,
+  };
 }
 
 export function updateEvidenceCarrierInMarkdown(
@@ -126,6 +167,13 @@ export function updateEvidenceCarrierInMarkdown(
   for (const block of blocksWithReveals) {
     const items = parseReveals(lines[block.revealsLine]);
     if (!items.includes(revealToken)) continue;
+    if (
+      assignment.carrier?.kind === "standalone_hotspot" &&
+      !isTopicBlock(block) &&
+      block.id === generatedStandaloneHotspotId(assignment.evidenceId)
+    ) {
+      continue;
+    }
 
     const nextItems = items.filter((item) => item !== revealToken);
     if (nextItems.length === 0) {
@@ -159,17 +207,20 @@ export function updateEvidenceCarrierInMarkdown(
         revealToken,
       ) || changed;
   } else if (assignment.carrier?.kind === "standalone_hotspot") {
-    createdStandaloneHotspotId = generatedStandaloneHotspotId(
+    const standaloneHotspotId = generatedStandaloneHotspotId(
       assignment.evidenceId,
     );
-    insertStandaloneHotspot(lines, {
-      sublocationId:
-        assignment.carrier.sublocationId || assignment.sourceSublocationId,
-      hotspotId: createdStandaloneHotspotId,
-      evidenceName: assignment.evidenceName,
-      revealToken,
-    });
-    changed = true;
+    if (!hotspotHasRevealToken(lines, standaloneHotspotId, revealToken)) {
+      createdStandaloneHotspotId = standaloneHotspotId;
+      insertStandaloneHotspot(lines, {
+        sublocationId:
+          assignment.carrier.sublocationId || assignment.sourceSublocationId,
+        hotspotId: createdStandaloneHotspotId,
+        evidenceName: assignment.evidenceName,
+        revealToken,
+      });
+      changed = true;
+    }
   }
 
   const nextContents = joinLines(lines, hadFinalNewline);
@@ -288,6 +339,24 @@ function hotspotHasEvidenceReveal(
   return parseReveals(lines[block.revealsLine]).some((item) =>
     item.startsWith("evidence:"),
   );
+}
+
+function hotspotHasRevealToken(
+  lines: string[],
+  hotspotId: string,
+  revealToken: string,
+): boolean {
+  const block = findHotspotBlocks(lines).find(
+    (hotspot) => hotspot.id === hotspotId,
+  );
+  if (block?.revealsLine === undefined || block.revealsLine === null) {
+    return false;
+  }
+  return parseReveals(lines[block.revealsLine]).includes(revealToken);
+}
+
+function isTopicBlock(block: HotspotBlock | TopicBlock): block is TopicBlock {
+  return "characterId" in block;
 }
 
 export function hotspotOptionsForEvidence(
