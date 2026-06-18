@@ -113,6 +113,10 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
   reveal it from the specific `#### Topic:` where that person gives the
   information. Do not invent a standalone document hotspot unless the player
   actually inspects a local physical source.
+- **Related audit workflow:** When re-auditing existing evidence-to-hotspot or
+  evidence-to-topic placement, use
+  `auditing-investigation-evidence-sources`; it owns Markdown-first carrier
+  cleanup and avoids editor/generated-JSON sync drift.
 - **Body:** topic dialogue (plays on the player's **first** selection of this topic, followed by `Reveals:` chain dialogue).
 - **Optional sub-block:** `##### On Reexamine` — H5 immediately under this Topic's body. Plays on every selection **after** the first. No new reveals fire on reexamine. If absent, the engine plays a fallback line on subsequent selections.
 
