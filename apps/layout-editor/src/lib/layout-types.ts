@@ -45,6 +45,7 @@ export type InvestigationSceneJson = {
       topics: Array<{
         id: string;
         label: string;
+        reveals: RevealTarget[];
         topicDialogue: DialogueItem[];
       }>;
     }>;
