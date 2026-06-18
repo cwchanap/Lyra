@@ -10,6 +10,7 @@
 import { resolve } from "node:path";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
 import { checkTauriConfig } from "./compile-scenes/config-check";
+import { withCompileLock } from "./compile-scenes/compile-lock";
 
 // Source trees compiled into the runtime, merged in a single pass. A root that
 // does not exist is skipped, so an empty static/ tree is fine while authored
@@ -79,12 +80,14 @@ async function main() {
 }
 
 async function runOnce() {
-  const result = compile({
-    sourceRoot: SOURCE_ROOTS,
-    outputRoot: OUTPUT_ROOT,
-    assetConfigRoot: ASSET_CONFIG_ROOT,
-    assetOutputRoot: ASSET_OUTPUT_ROOT,
-  });
+  const result = await withCompileLock(OUTPUT_ROOT, () =>
+    compile({
+      sourceRoot: SOURCE_ROOTS,
+      outputRoot: OUTPUT_ROOT,
+      assetConfigRoot: ASSET_CONFIG_ROOT,
+      assetOutputRoot: ASSET_OUTPUT_ROOT,
+    }),
+  );
   if (!result.ok) {
     console.error(
       "[compile-scenes] FAILED with " + result.errors.length + " error(s):",
