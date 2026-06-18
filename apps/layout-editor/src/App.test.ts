@@ -24,9 +24,11 @@ describe("layout editor app shell", () => {
     );
   });
 
-  it("mounts evidence carrier assignment controls in the scene detail view", () => {
+  it("mounts the read-only evidence panel in the scene detail view", () => {
     expect(appSource).toContain("EvidenceAssignmentPanel");
-    expect(appSource).toContain("assignEvidenceToCarrier");
+    expect(appSource).toContain("sublocationId={currentSublocationId}");
+    expect(appSource).not.toContain("onAssignEvidence");
+    expect(appSource).not.toContain("assignEvidenceToCarrier");
     expect(appSource).not.toContain("assignEvidenceToHotspot");
   });
 });

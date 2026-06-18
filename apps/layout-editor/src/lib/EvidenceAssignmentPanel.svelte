@@ -12,19 +12,9 @@
   type Props = {
     scene: InvestigationSceneJson;
     sublocationId?: string | null;
-    disabled?: boolean;
-    onAssignEvidence: (
-      evidenceId: string,
-      carrier: EvidenceCarrier | null,
-    ) => void;
   };
 
-  let {
-    scene,
-    sublocationId = null,
-    disabled = false,
-    onAssignEvidence,
-  }: Props = $props();
+  let { scene, sublocationId = null }: Props = $props();
 
   const assignments = $derived(
     evidenceAssignmentsForScene(scene).filter(
@@ -44,37 +34,9 @@
     return `standalone:${carrier.sublocationId}`;
   }
 
-  function carrierFromValue(value: string): EvidenceCarrier | null {
-    if (value === "") return null;
-    const parts = value.split(":");
-    if (parts[0] === "hotspot" && parts.length === 3 && parts[1] && parts[2]) {
-      return {
-        kind: "hotspot",
-        sublocationId: parts[1],
-        hotspotId: parts[2],
-      };
-    }
-    if (
-      parts[0] === "topic" &&
-      parts.length === 4 &&
-      parts[1] &&
-      parts[2] &&
-      parts[3]
-    ) {
-      return {
-        kind: "topic",
-        sublocationId: parts[1],
-        characterId: parts[2],
-        topicId: parts[3],
-      };
-    }
-    if (parts[0] === "standalone" && parts.length === 2 && parts[1]) {
-      return { kind: "standalone_hotspot", sublocationId: parts[1] };
-    }
-    return null;
-  }
-
-  function selectedCarrierValue(assignment: SceneEvidenceAssignment): string {
+  function selectedCarrier(
+    assignment: SceneEvidenceAssignment,
+  ): EvidenceCarrier | null {
     const standaloneHotspotId = generatedStandaloneHotspotId(
       assignment.evidence.id,
     );
@@ -82,26 +44,26 @@
       (hotspot) => hotspot.id === standaloneHotspotId,
     );
     if (standaloneHotspot) {
-      return carrierValue({
+      return {
         kind: "standalone_hotspot",
         sublocationId: standaloneHotspot.sublocationId,
-      });
+      };
     }
 
     const hotspot = assignment.hotspots.find(
       (candidate) => candidate.id !== standaloneHotspotId,
     );
     if (hotspot) {
-      return carrierValue({
+      return {
         kind: "hotspot",
         sublocationId: hotspot.sublocationId,
         hotspotId: hotspot.id,
-      });
+      };
     }
-    return selectedTopicCarrierValue(assignment.evidence.id);
+    return selectedTopicCarrier(assignment.evidence.id);
   }
 
-  function selectedTopicCarrierValue(evidenceId: string): string {
+  function selectedTopicCarrier(evidenceId: string): EvidenceCarrier | null {
     for (const sublocation of scene.sublocations) {
       for (const character of sublocation.characters) {
         const topic = character.topics.find((candidate) =>
@@ -110,29 +72,34 @@
           ),
         );
         if (topic) {
-          return carrierValue({
+          return {
             kind: "topic",
             sublocationId: sublocation.id,
             characterId: character.id,
             topicId: topic.id,
-          });
+          };
         }
       }
     }
-    return "";
+    return null;
+  }
+
+  function carrierLabelForAssignment(
+    assignment: SceneEvidenceAssignment,
+    carrier: EvidenceCarrier | null,
+  ): string {
+    if (!carrier) return "Unassigned";
+    const selectedValue = carrierValue(carrier);
+    return (
+      carrierOptionsForEvidence(scene, assignment.evidence).find(
+        (option) => carrierValue(option.carrier) === selectedValue,
+      )?.label ?? "Unassigned"
+    );
   }
 
   function evidenceAssetPath(assetId: string | null): string | null {
     if (!assetId) return null;
     return publicPathForEditorAsset(assetId, "evidence");
-  }
-
-  function handleAssignmentChange(
-    event: Event,
-    assignment: SceneEvidenceAssignment,
-  ) {
-    const value = (event.currentTarget as HTMLSelectElement).value;
-    onAssignEvidence(assignment.evidence.id, carrierFromValue(value));
   }
 </script>
 
@@ -140,13 +107,18 @@
   <div class="panel-header">
     <div>
       <p class="eyebrow">Evidence</p>
-      <h3>Hotspot Correlation</h3>
+      <h3>Evidence Sources</h3>
     </div>
     <strong>{assignments.length}</strong>
   </div>
 
   <div class="assignment-list">
     {#each assignments as assignment (assignment.evidence.id)}
+      {@const currentCarrier = selectedCarrier(assignment)}
+      {@const carrierLabel = carrierLabelForAssignment(
+        assignment,
+        currentCarrier,
+      )}
       <article class="assignment-row">
         <div class="thumb" aria-hidden="true">
           {#if evidenceAssetPath(assignment.evidence.imageAssetId)}
@@ -162,19 +134,13 @@
           <strong>{assignment.evidence.name}</strong>
           <small>{assignment.evidence.id}</small>
         </div>
-        <select
-          aria-label={`Assign ${assignment.evidence.name}`}
-          {disabled}
-          value={selectedCarrierValue(assignment)}
-          onchange={(event) => handleAssignmentChange(event, assignment)}
+        <span
+          class="carrier-badge"
+          class:unassigned={!currentCarrier}
+          aria-label={`Current source for ${assignment.evidence.name}`}
         >
-          <option value="">Unassigned</option>
-          {#each carrierOptionsForEvidence(scene, assignment.evidence) as option (carrierValue(option.carrier))}
-            <option value={carrierValue(option.carrier)}>
-              {option.label}
-            </option>
-          {/each}
-        </select>
+          {carrierLabel}
+        </span>
       </article>
     {/each}
   </div>
@@ -274,18 +240,23 @@
     font-size: 0.75rem;
   }
 
-  select {
+  .carrier-badge {
     min-width: 0;
-    min-height: 38px;
-    border: 1px solid #bfc7bf;
+    padding: 7px 10px;
+    overflow-wrap: anywhere;
+    border: 1px solid #bfcfc8;
     border-radius: 6px;
-    background: #ffffff;
+    background: #edf4f0;
     color: #26302e;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: center;
   }
 
-  select:disabled {
-    color: #8a9490;
-    background: #f1f3f2;
+  .carrier-badge.unassigned {
+    border-color: #d8dedb;
+    background: #f3f5f4;
+    color: #69746f;
   }
 
   @media (max-width: 900px) {
@@ -293,7 +264,7 @@
       grid-template-columns: 48px minmax(0, 1fr);
     }
 
-    select {
+    .carrier-badge {
       grid-column: 1 / -1;
     }
   }

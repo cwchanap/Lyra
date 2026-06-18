@@ -3,7 +3,6 @@
   import EvidenceAssignmentPanel from "./lib/EvidenceAssignmentPanel.svelte";
   import TargetList from "./lib/TargetList.svelte";
   import {
-    assignEvidenceToCarrier,
     editorState,
     loadChapters,
     loadInvestigationScene,
@@ -168,8 +167,6 @@
       <EvidenceAssignmentPanel
         scene={editorState.scene}
         sublocationId={currentSublocationId}
-        disabled={!editorState.storyScenePath}
-        onAssignEvidence={assignEvidenceToCarrier}
       />
 
       {#if editorState.layout && currentSublocationId}
