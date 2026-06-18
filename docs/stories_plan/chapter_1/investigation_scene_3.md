@@ -41,6 +41,9 @@
 
 ### Hotspot: 收銀台與第二杯訂單 {#register}
 - **Description:** 收銀台上留著當晚最後幾筆訂單的紀錄。
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Register and order-slip area behind the cafe counter as the local source of the second-cup order, with no readable receipt text.
+- **Reveals:** [evidence:two_coffee_order]
 
 [相馬律翻看訂單，指尖沿著紙邊慢慢滑過去，停在其中一筆。]
 
@@ -76,7 +79,7 @@
 - **Description:** 收銀台後方放著店長保管的值班資料與門鎖系統記錄入口。
 - **Evidence Source:** implied
 - **Scene Source Prompt:** Counter administration area with register, POS terminal, clipped folders, and staff record binder visible as local source objects, no readable document text.
-- **Reveals:** [evidence:timecard_record, evidence:doorlock_summary_timetable, evidence:two_coffee_order]
+- **Reveals:** [evidence:timecard_record, evidence:doorlock_summary_timetable]
 
 [店長打開收銀台後方的小抽屜，取出值班資料，又在旁邊的終端叫出門鎖摘要。]
 
