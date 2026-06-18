@@ -1,7 +1,8 @@
 <script lang="ts">
   import {
+    carrierOptionsForEvidence,
     evidenceAssignmentsForScene,
-    hotspotOptionsForEvidence,
+    type EvidenceCarrier,
     type SceneEvidenceAssignment,
   } from "./evidence-assignment";
   import { publicPathForEditorAsset } from "./editor-assets";
@@ -11,7 +12,10 @@
     scene: InvestigationSceneJson;
     sublocationId?: string | null;
     disabled?: boolean;
-    onAssignEvidence: (evidenceId: string, hotspotId: string | null) => void;
+    onAssignEvidence: (
+      evidenceId: string,
+      carrier: EvidenceCarrier | null,
+    ) => void;
   };
 
   let {
@@ -29,8 +33,68 @@
     ),
   );
 
-  function selectedHotspotId(assignment: SceneEvidenceAssignment): string {
-    return assignment.hotspots[0]?.id ?? "";
+  function carrierValue(carrier: EvidenceCarrier): string {
+    if (carrier.kind === "hotspot") {
+      return `hotspot:${carrier.sublocationId}:${carrier.hotspotId}`;
+    }
+    if (carrier.kind === "topic") {
+      return `topic:${carrier.sublocationId}:${carrier.characterId}:${carrier.topicId}`;
+    }
+    return `standalone:${carrier.sublocationId}`;
+  }
+
+  function carrierFromValue(value: string): EvidenceCarrier | null {
+    if (value === "") return null;
+    const parts = value.split(":");
+    if (parts[0] === "hotspot") {
+      return {
+        kind: "hotspot",
+        sublocationId: parts[1],
+        hotspotId: parts[2],
+      };
+    }
+    if (parts[0] === "topic") {
+      return {
+        kind: "topic",
+        sublocationId: parts[1],
+        characterId: parts[2],
+        topicId: parts[3],
+      };
+    }
+    return { kind: "standalone_hotspot", sublocationId: parts[1] };
+  }
+
+  function selectedCarrierValue(assignment: SceneEvidenceAssignment): string {
+    const hotspot = assignment.hotspots[0];
+    if (hotspot) {
+      return carrierValue({
+        kind: "hotspot",
+        sublocationId: hotspot.sublocationId,
+        hotspotId: hotspot.id,
+      });
+    }
+    return selectedTopicCarrierValue(assignment.evidence.id);
+  }
+
+  function selectedTopicCarrierValue(evidenceId: string): string {
+    for (const sublocation of scene.sublocations) {
+      for (const character of sublocation.characters) {
+        const topic = character.topics.find((candidate) =>
+          candidate.reveals.some(
+            (reveal) => reveal.kind === "evidence" && reveal.id === evidenceId,
+          ),
+        );
+        if (topic) {
+          return carrierValue({
+            kind: "topic",
+            sublocationId: sublocation.id,
+            characterId: character.id,
+            topicId: topic.id,
+          });
+        }
+      }
+    }
+    return "";
   }
 
   function evidenceAssetPath(assetId: string | null): string | null {
@@ -43,7 +107,7 @@
     assignment: SceneEvidenceAssignment,
   ) {
     const value = (event.currentTarget as HTMLSelectElement).value;
-    onAssignEvidence(assignment.evidence.id, value === "" ? null : value);
+    onAssignEvidence(assignment.evidence.id, carrierFromValue(value));
   }
 </script>
 
@@ -76,13 +140,13 @@
         <select
           aria-label={`Assign ${assignment.evidence.name}`}
           {disabled}
-          value={selectedHotspotId(assignment)}
+          value={selectedCarrierValue(assignment)}
           onchange={(event) => handleAssignmentChange(event, assignment)}
         >
           <option value="">Unassigned</option>
-          {#each hotspotOptionsForEvidence(scene, assignment.evidence) as hotspot (hotspot.id)}
-            <option value={hotspot.id}>
-              {hotspot.sublocationLabel} / {hotspot.label}
+          {#each carrierOptionsForEvidence(scene, assignment.evidence) as option (carrierValue(option.carrier))}
+            <option value={carrierValue(option.carrier)}>
+              {option.label}
             </option>
           {/each}
         </select>
