@@ -122,7 +122,7 @@
   }
 </script>
 
-<section class="assignment-panel" aria-label="Evidence assignments">
+<section class="assignment-panel" aria-label="Evidence sources">
   <div class="panel-header">
     <div>
       <p class="eyebrow">Evidence</p>
