@@ -60,7 +60,23 @@ const scene = {
           layout: null,
         },
       ],
-      characters: [],
+      characters: [
+        {
+          id: "kurose",
+          name: "黑瀨徹",
+          role: "Forensic consultant",
+          bio: "Consults on evidence timing.",
+          layout: null,
+          topics: [
+            {
+              id: "forensic_brief",
+              label: "法醫初步簡報",
+              reveals: [],
+              topicDialogue: [],
+            },
+          ],
+        },
+      ],
     },
   ],
   evidenceManifest: [
@@ -96,7 +112,9 @@ describe("EvidenceAssignmentPanel", () => {
       "/assets/evidence/receipt.png",
     );
     expect(screen.queryByAltText("Receipt")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Assign Receipt")).toHaveValue("desk");
+    expect(screen.getByLabelText("Assign Receipt")).toHaveValue(
+      "hotspot:front:desk",
+    );
     expect(screen.getByLabelText("Assign Access log")).toHaveValue("");
   });
 
@@ -115,6 +133,63 @@ describe("EvidenceAssignmentPanel", () => {
     expect(optionLabels).not.toContain("Front / Desk");
     expect(optionLabels).not.toContain("Front / Window");
     expect(optionLabels).toContain("Corridor / Terminal");
+  });
+
+  it("renders hotspot, topic, and standalone carrier choices", () => {
+    render(EvidenceAssignmentPanel, {
+      scene,
+      sublocationId: "corridor",
+      disabled: false,
+      onAssignEvidence: vi.fn(),
+    });
+
+    const labels = Array.from(
+      (screen.getByLabelText("Assign Access log") as HTMLSelectElement).options,
+      (option) => option.textContent,
+    );
+
+    expect(labels).toContain("Corridor / Terminal");
+    expect(labels).toContain("Corridor / 黑瀨徹 / 法醫初步簡報");
+    expect(labels).toContain("Create standalone hotspot");
+  });
+
+  it("shows a current topic carrier assignment", () => {
+    const topicAssignedScene: InvestigationSceneJson = {
+      ...scene,
+      sublocations: scene.sublocations.map((sublocation) =>
+        sublocation.id === "corridor"
+          ? {
+              ...sublocation,
+              characters: sublocation.characters.map((character) =>
+                character.id === "kurose"
+                  ? {
+                      ...character,
+                      topics: character.topics.map((topic) =>
+                        topic.id === "forensic_brief"
+                          ? {
+                              ...topic,
+                              reveals: [{ kind: "evidence", id: "log" }],
+                            }
+                          : topic,
+                      ),
+                    }
+                  : character,
+              ),
+            }
+          : sublocation,
+      ),
+    };
+
+    render(EvidenceAssignmentPanel, {
+      scene: topicAssignedScene,
+      sublocationId: "corridor",
+      disabled: false,
+      onAssignEvidence: vi.fn(),
+    });
+
+    expect(screen.getByLabelText("Assign Access log")).toHaveValue(
+      "topic:corridor:kurose:forensic_brief",
+    );
   });
 
   it("lists only evidence sourced from the selected sublocation", () => {
@@ -150,9 +225,35 @@ describe("EvidenceAssignmentPanel", () => {
     });
 
     await user.selectOptions(screen.getByLabelText("Assign Access log"), [
-      "terminal",
+      "hotspot:corridor:terminal",
     ]);
 
-    expect(onAssignEvidence).toHaveBeenCalledWith("log", "terminal");
+    expect(onAssignEvidence).toHaveBeenCalledWith("log", {
+      kind: "hotspot",
+      sublocationId: "corridor",
+      hotspotId: "terminal",
+    });
+  });
+
+  it("passes a typed topic carrier to the assignment handler", async () => {
+    const user = userEvent.setup();
+    const onAssignEvidence = vi.fn();
+    render(EvidenceAssignmentPanel, {
+      scene,
+      sublocationId: "corridor",
+      disabled: false,
+      onAssignEvidence,
+    });
+
+    await user.selectOptions(screen.getByLabelText("Assign Access log"), [
+      "topic:corridor:kurose:forensic_brief",
+    ]);
+
+    expect(onAssignEvidence).toHaveBeenCalledWith("log", {
+      kind: "topic",
+      sublocationId: "corridor",
+      characterId: "kurose",
+      topicId: "forensic_brief",
+    });
   });
 });

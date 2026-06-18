@@ -24,8 +24,9 @@ describe("layout editor app shell", () => {
     );
   });
 
-  it("mounts evidence hotspot assignment controls in the scene detail view", () => {
+  it("mounts evidence carrier assignment controls in the scene detail view", () => {
     expect(appSource).toContain("EvidenceAssignmentPanel");
-    expect(appSource).toContain("assignEvidenceToHotspot");
+    expect(appSource).toContain("assignEvidenceToCarrier");
+    expect(appSource).not.toContain("assignEvidenceToHotspot");
   });
 });
