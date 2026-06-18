@@ -53,7 +53,7 @@ const scene = {
           id: "terminal",
           label: "Terminal",
           description: "Terminal.",
-          evidenceSource: null,
+          evidenceSource: "implied",
           sceneSourcePrompt: null,
           reveals: [],
           inspectDialogue: [],
@@ -83,7 +83,7 @@ const scene = {
 
 describe("EvidenceAssignmentPanel", () => {
   it("lists evidence with thumbnails and current hotspot assignments", () => {
-    render(EvidenceAssignmentPanel, {
+    const { container } = render(EvidenceAssignmentPanel, {
       scene,
       disabled: false,
       onAssignEvidence: vi.fn(),
@@ -91,10 +91,11 @@ describe("EvidenceAssignmentPanel", () => {
 
     expect(screen.getByText("Receipt")).toBeInTheDocument();
     expect(screen.getByText("Access log")).toBeInTheDocument();
-    expect(screen.getByAltText("Receipt")).toHaveAttribute(
+    expect(container.querySelector("img")).toHaveAttribute(
       "src",
       "/assets/evidence/receipt.png",
     );
+    expect(screen.queryByAltText("Receipt")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Assign Receipt")).toHaveValue("desk");
     expect(screen.getByLabelText("Assign Access log")).toHaveValue("");
   });

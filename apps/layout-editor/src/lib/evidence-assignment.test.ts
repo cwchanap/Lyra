@@ -135,6 +135,16 @@ const sourceSublocationScene = {
           inspectDialogue: [],
           layout: null,
         },
+        {
+          id: "plain-door",
+          label: "Plain door",
+          description: "A door without evidence-source metadata.",
+          evidenceSource: null,
+          sceneSourcePrompt: null,
+          reveals: [],
+          inspectDialogue: [],
+          layout: null,
+        },
       ],
       characters: [],
     },
@@ -214,6 +224,15 @@ describe("hotspotOptionsForEvidence", () => {
         sublocationLabel: "Corridor",
       },
     ]);
+  });
+
+  it("omits hotspots that cannot safely reveal evidence", () => {
+    const options = hotspotOptionsForEvidence(
+      sourceSublocationScene,
+      sourceSublocationScene.evidenceManifest[0],
+    );
+
+    expect(options.map((option) => option.id)).not.toContain("plain-door");
   });
 });
 

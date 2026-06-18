@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import type { RectLayout, SpriteLayout } from "./layout-types";
+import type {
+  InvestigationSceneJson,
+  RectLayout,
+  SpriteLayout,
+} from "./layout-types";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -453,6 +457,101 @@ describe("layout-store", () => {
       expect(editorState.scene.sublocations[0].hotspots[1].reveals).toEqual([
         { kind: "evidence", id: "receipt" },
       ]);
+    });
+
+    it("does not apply stale assignment results after the scene changes", async () => {
+      editorState.storyScenePath =
+        "docs/stories_plan/chapter_1/investigation_scene_1.md";
+      editorState.storySceneContents = `# Investigation
+
+## Sublocation: Office {#office}
+
+### Hotspot: Desk {#desk}
+- **Description:** Desk.
+- **Reveals:** [evidence:receipt]
+
+### Hotspot: Terminal {#terminal}
+- **Description:** Terminal.
+`;
+      editorState.scene = {
+        type: "investigation",
+        id: "investigation_scene_1",
+        title: "Scene A",
+        intro: [],
+        sublocations: [
+          {
+            id: "office",
+            label: "Office",
+            sceneTag: "Office",
+            backgroundAssetId: null,
+            transitionDialogue: [],
+            hotspots: [
+              {
+                id: "desk",
+                label: "Desk",
+                description: "Desk.",
+                evidenceSource: null,
+                sceneSourcePrompt: null,
+                reveals: [{ kind: "evidence", id: "receipt" }],
+                inspectDialogue: [],
+                layout: null,
+              },
+              {
+                id: "terminal",
+                label: "Terminal",
+                description: "Terminal.",
+                evidenceSource: null,
+                sceneSourcePrompt: null,
+                reveals: [],
+                inspectDialogue: [],
+                layout: null,
+              },
+            ],
+            characters: [],
+          },
+        ],
+        evidenceManifest: [
+          {
+            id: "receipt",
+            name: "Receipt",
+            description: "Receipt clue.",
+            imageAssetId: null,
+            sourceSublocationId: null,
+          },
+        ],
+      };
+
+      let finishWrite!: () => void;
+      mockInvoke.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishWrite = () => resolve(undefined);
+        }),
+      );
+
+      const assignment = assignEvidenceToHotspot("receipt", "terminal");
+
+      const sceneB = {
+        type: "investigation",
+        id: "investigation_scene_2",
+        title: "Scene B",
+        intro: [],
+        sublocations: [],
+        evidenceManifest: [],
+      } satisfies InvestigationSceneJson;
+      editorState.storyScenePath =
+        "docs/stories_plan/chapter_1/investigation_scene_2.md";
+      editorState.storySceneContents = "# Scene B\n";
+      editorState.scene = sceneB;
+
+      finishWrite();
+      await assignment;
+
+      expect(editorState.storyScenePath).toBe(
+        "docs/stories_plan/chapter_1/investigation_scene_2.md",
+      );
+      expect(editorState.storySceneContents).toBe("# Scene B\n");
+      expect(editorState.scene?.id).toBe(sceneB.id);
+      expect(editorState.scene?.sublocations).toEqual([]);
     });
   });
 

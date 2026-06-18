@@ -47,14 +47,11 @@
   <div class="assignment-list">
     {#each assignments as assignment (assignment.evidence.id)}
       <article class="assignment-row">
-        <div
-          class="thumb"
-          aria-hidden={!evidenceAssetPath(assignment.evidence.imageAssetId)}
-        >
+        <div class="thumb" aria-hidden="true">
           {#if evidenceAssetPath(assignment.evidence.imageAssetId)}
             <img
               src={evidenceAssetPath(assignment.evidence.imageAssetId)}
-              alt={assignment.evidence.name}
+              alt=""
             />
           {:else}
             <span>{assignment.evidence.name.slice(0, 1)}</span>

@@ -149,28 +149,42 @@ export async function assignEvidenceToHotspot(
     return;
   }
 
+  const scene = editorState.scene;
+  const storyScenePath = editorState.storyScenePath;
+  const storySceneContents = editorState.storySceneContents;
+
   editorState.error = null;
   try {
-    const result = updateEvidenceAssignmentInMarkdown(
-      editorState.storySceneContents,
-      {
-        evidenceId,
-        hotspotId,
-      },
-    );
+    const result = updateEvidenceAssignmentInMarkdown(storySceneContents, {
+      evidenceId,
+      hotspotId,
+    });
     if (!result.changed) return;
 
     await invoke("write_story_scene_file", {
-      path: editorState.storyScenePath,
+      path: storyScenePath,
       contents: result.contents,
     });
+
+    if (
+      editorState.scene !== scene ||
+      editorState.storyScenePath !== storyScenePath ||
+      editorState.storySceneContents !== storySceneContents
+    ) {
+      return;
+    }
+
     editorState.storySceneContents = result.contents;
-    editorState.scene = moveEvidenceRevealInScene(
-      editorState.scene,
-      evidenceId,
-      hotspotId,
-    );
+    editorState.scene = moveEvidenceRevealInScene(scene, evidenceId, hotspotId);
   } catch (error) {
+    if (
+      editorState.scene !== scene ||
+      editorState.storyScenePath !== storyScenePath ||
+      editorState.storySceneContents !== storySceneContents
+    ) {
+      return;
+    }
+
     editorState.error = normalizeError(error);
   }
 }
