@@ -258,6 +258,30 @@ describe("updateEvidenceAssignmentInMarkdown", () => {
       }),
     ).toThrow('Hotspot "missing" was not found');
   });
+
+  it("preserves topic reveals for the same evidence while moving hotspot assignment", () => {
+    const markdownWithTopicReveal = `${markdown}
+### Character: Witness {#witness}
+- **Role:** Witness
+- **Bio:** Saw the rain.
+
+#### Topic: Rain receipt {#rain_receipt}
+- **Status:** unlocked
+- **Reveals:** [evidence:receipt]
+`;
+
+    const result = updateEvidenceAssignmentInMarkdown(markdownWithTopicReveal, {
+      evidenceId: "receipt",
+      hotspotId: "terminal",
+    });
+
+    expect(result.contents).toContain(
+      "### Hotspot: Terminal {#terminal}\n- **Description:** A locked terminal.\n- **Reveals:** [evidence:receipt]",
+    );
+    expect(result.contents).toContain(
+      "#### Topic: Rain receipt {#rain_receipt}\n- **Status:** unlocked\n- **Reveals:** [evidence:receipt]",
+    );
+  });
 });
 
 describe("updateEvidenceCarrierInMarkdown", () => {
@@ -322,6 +346,21 @@ describe("updateEvidenceCarrierInMarkdown", () => {
 
     expect(result.contents).toContain("### Hotspot: 後場入口 {#back_entrance}");
     expect(result.contents).toContain("- **Reveals:** [sublocation:corridor]");
+  });
+
+  it("preserves an existing standalone hotspot when assigning it again", () => {
+    const result = updateEvidenceCarrierInMarkdown(carrierMarkdown, {
+      evidenceId: "forensic_prelim_range",
+      evidenceName: "法醫初步死亡範圍",
+      sourceSublocationId: "inner",
+      carrier: { kind: "standalone_hotspot", sublocationId: "inner" },
+    });
+
+    expect(result.changed).toBe(false);
+    expect(result.createdStandaloneHotspotId).toBeNull();
+    expect(result.removedStandaloneHotspotIds).toEqual([]);
+    expect(result.contents).toBe(carrierMarkdown);
+    expect(result.contents).toContain("[黑瀨遞出簡報。]");
   });
 });
 
