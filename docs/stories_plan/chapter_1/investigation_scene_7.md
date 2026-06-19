@@ -151,8 +151,8 @@
 
 ### Hotspot: 三宅23:06站位 {#miyake_replay}
 - **Description:** 三宅在 23:06 的站位，可以站到那個點上回放他的視角。
-- **Evidence Source:** visible
-- **Scene Source Prompt:** Marked standing point in the storage room used for a sightline replay, without showing the final replay card or readable overlay.
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Unmarked floor standing position just inside the storage-room doorway used for a sightline replay, without showing the final replay card or readable overlay.
 - **Reveals:** [evidence:miyake_pov_replay]
 
 [相馬律走到三宅 23:06 站過的位置，按指示停住，轉頭環視一圈。他的重心慢慢從左腳移到右腳，像是身體先於意識感覺到這個角度的限制。]
