@@ -29,11 +29,11 @@
 
 **相馬律**：訊息剛到。我先看看現場對不對得上。
 
-### Hotspot: 雨宮的匿名訊息 {#amemiya_message}
-- **Description:** 署名雨宮的匿名訊息，一句話，附一張低解析度的裁切圖。
-- **Evidence Source:** implied
-- **Scene Source Prompt:** Smartphone displaying an anonymous Amemiya message as the source object, with the attached thumbnail present but not readable or resolved.
-- **Reveals:** [evidence:amemiya_message_thumb]
+### Hotspot: 止滑墊與半乾水痕 {#floor_water}
+- **Description:** 門檻內側的止滑墊，旁邊一灘半乾的水痕。
+- **Evidence Source:** visible
+- **Scene Source Prompt:** Non-slip mat and half-dry water trace at the back-door threshold as the visible source for comparing the anonymous message thumbnail and drying pattern.
+- **Reveals:** [evidence:amemiya_message_thumb, evidence:floor_water_drying_map]
 
 [相馬律把手機舉到兩人之間。螢幕上一句話：「雨會替東京洗掉腳印。」]
 
@@ -47,21 +47,15 @@
 
 **早坂茜**：時間點不對。這不是案發前的警告。
 
+[相馬律蹲下，把手機縮圖跟地上的止滑墊比對。]
+
+**相馬律**：縮圖裡就是這塊墊子。水痕的位置也對得上。
+
 **相馬律**：什麼意思？
 
 **早坂茜**：它是警方把儲藏入口的照片匯進摘要之後，才冒出來的。
 
 **相馬律**：所以對方看見的是資料的缺口，不是整件事的答案。
-
-### Hotspot: 止滑墊與半乾水痕 {#floor_water}
-- **Description:** 門檻內側的止滑墊，旁邊一灘半乾的水痕。
-- **Evidence Source:** visible
-- **Scene Source Prompt:** Non-slip mat and half-dry water trace at the back-door threshold as the visible source clue.
-- **Reveals:** [evidence:floor_water_drying_map]
-
-[相馬律蹲下，把手機縮圖跟地上的止滑墊比對。]
-
-**相馬律**：縮圖裡就是這塊墊子。水痕的位置也對得上。
 
 [黑瀨徹在旁邊看了一眼，雙手抱胸，整個人像釘在地上似的穩。]
 
@@ -79,22 +73,6 @@
 
 **黑瀨徹**：人進來，總會把外面的東西帶進來。
 
-### Hotspot: 手機收銀出杯摘要 {#last_cup}
-- **Description:** 相馬站在後場門口，用手機調出的收銀出杯摘要，用來對照匿名訊息與現場時間。
-- **Evidence Source:** hidden
-- **Scene Source Prompt:** Hidden local phone lookup of the register output summary while standing at the back-door threshold; no coffee machine, register screen, or readable record appears in the background.
-- **Reveals:** [evidence:coffee_last_cup_record]
-
-[相馬律在手機上調出收銀出杯摘要。早坂茜站在他身後一步遠的位置，目光落在紀錄上，沒有湊近。]
-
-**相馬律**：最後一筆出杯。兩杯，間隔很短。
-
-**相馬律**：這不能告訴我們他幾點死。
-
-**早坂茜**：但能告訴我們，那個人不是 23:08 之後才出現。
-
-**相馬律**：增田在等人。而且那個人，比摘要說的更早就到了。
-
 ### Hotspot: 半掩防火門 {#fire_door_7}
 - **Description:** 通往內側倉庫的防火門，此刻半掩著。
 - **Reveals:** [sublocation:inner]
@@ -104,6 +82,24 @@
 **相馬律**：裡面還沒看。
 
 **黑瀨徹**：感應燈在。進去吧。
+
+### Character: 黑瀨徹 {#kurose_back_door}
+- **Role:** 刑警
+- **Bio:** 負責固定現場與控制資訊流的刑警，語氣短而穩。
+
+#### Topic: 收銀出杯摘要 {#last_cup_record}
+- **Status:** unlocked
+- **Reveals:** [evidence:coffee_last_cup_record]
+
+[相馬律在手機上調出收銀出杯摘要，黑瀨徹站在門邊，只看一眼。]
+
+**相馬律**：最後一筆出杯。兩杯，間隔很短。
+
+**相馬律**：這不能告訴我們他幾點死。
+
+**早坂茜**：但能告訴我們，那個人不是 23:08 之後才出現。
+
+**相馬律**：增田在等人。而且那個人，比摘要說的更早就到了。
 
 ## Sub-location: 內側倉庫 {#inner}
 - **Status:** locked
@@ -155,7 +151,7 @@
 
 ### Hotspot: 三宅23:06站位 {#miyake_replay}
 - **Description:** 三宅在 23:06 的站位，可以站到那個點上回放他的視角。
-- **Evidence Source:** implied
+- **Evidence Source:** visible
 - **Scene Source Prompt:** Marked standing point in the storage room used for a sightline replay, without showing the final replay card or readable overlay.
 - **Reveals:** [evidence:miyake_pov_replay]
 

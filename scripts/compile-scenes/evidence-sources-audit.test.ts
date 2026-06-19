@@ -17,28 +17,28 @@ afterEach(() => {
 });
 
 describe("suggestEvidenceSource", () => {
-  it("suggests implied for monitor and playback wording", () => {
+  it("suggests visible for monitor and playback source wording", () => {
     expect(
       suggestEvidenceSource({
         label: "閉店監視器回放",
         description: "收銀台旁的小螢幕還能調出閉店前的畫面。",
       }),
-    ).toBe("implied");
+    ).toBe("visible");
     expect(
       suggestEvidenceSource({
         label: "back room monitor",
         description: "A dim screen is still powered on.",
       }),
-    ).toBe("implied");
+    ).toBe("visible");
     expect(
       suggestEvidenceSource({
         label: "Playback panel",
         description: "Counter playback source.",
       }),
-    ).toBe("implied");
+    ).toBe("visible");
   });
 
-  it("suggests hidden for record and system wording unless physical document wording is present", () => {
+  it("suggests hidden for system-only wording and visible when a local carrier is present", () => {
     expect(
       suggestEvidenceSource({
         label: "三宅打卡紀錄",
@@ -55,6 +55,12 @@ describe("suggestEvidenceSource", () => {
       suggestEvidenceSource({
         label: "KAGAMI 摘要副本",
         description: "列印文件放在桌面。",
+      }),
+    ).toBe("visible");
+    expect(
+      suggestEvidenceSource({
+        label: "承包商回函資料包",
+        description: "窗口推來的回函資料包。",
       }),
     ).toBe("visible");
   });
@@ -81,17 +87,17 @@ describe("suggestEvidenceSource", () => {
   });
 
   it("locks classifier precedence so a branch reorder is caught (regression guard)", () => {
-    // IMPLIED wins over physical/visible tokens: 螢幕 (implied) + 文件 (physical)
-    // → implied, because the IMPLIED branch is checked first.
+    // Visible carrier words win over record/system words: 螢幕 + 文件 should
+    // remain visible because the player has a concrete local click target.
     expect(
       suggestEvidenceSource({
         label: "螢幕上的文件",
         description: "Monitor screen showing a document.",
       }),
-    ).toBe("implied");
+    ).toBe("visible");
 
-    // RECORD with a PHYSICAL token → visible (a record that has a physical
-    // printout/表 is shown). This is the "打卡表" case: 打卡 ∈ RECORD, 表 ∈ PHYSICAL.
+    // RECORD with a visible carrier token → visible. This is the "打卡表"
+    // case: 打卡 ∈ RECORD, 表 ∈ VISIBLE_CARRIER.
     expect(
       suggestEvidenceSource({
         label: "打卡表",
@@ -99,19 +105,16 @@ describe("suggestEvidenceSource", () => {
       }),
     ).toBe("visible");
 
-    // RECORD with a VISIBLE-only token but NO physical token → hidden, NOT
-    // visible. This proves the RECORD branch short-circuits before the
-    // standalone VISIBLE branch (系統 ∈ RECORD, 傘 ∈ VISIBLE-only).
+    // Visible carrier tokens also win when record/system wording is present.
     expect(
       suggestEvidenceSource({
         label: "系統雨傘",
         description: "Record of umbrellas in the system.",
       }),
-    ).toBe("hidden");
+    ).toBe("visible");
 
-    // 白板 is a physical object in VISIBLE_WORDS and is NOT in RECORD_WORDS, so
-    // 白板 alone classifies as visible (there is no RECORD-wins-over-VISIBLE
-    // interaction for 白板).
+    // 白板 is a visible carrier and is NOT in RECORD_WORDS, so 白板 alone
+    // classifies as visible.
     expect(
       suggestEvidenceSource({
         label: "會議白板",
@@ -119,7 +122,7 @@ describe("suggestEvidenceSource", () => {
       }),
     ).toBe("visible");
 
-    // Pure RECORD wording with no physical/visible token → hidden.
+    // Pure RECORD wording with no visible carrier token → hidden.
     expect(
       suggestEvidenceSource({
         label: "打卡紀錄",
@@ -227,7 +230,7 @@ describe("auditEvidenceSources", () => {
       currentSource: "implied",
       sceneSourcePrompt: "Small security monitor beside the register.",
       backgroundPrompt: "Rainy Tokyo cafe front room at night.",
-      suggestedSource: "implied",
+      suggestedSource: "visible",
       evidence: [
         {
           id: "cctv_screenshot",

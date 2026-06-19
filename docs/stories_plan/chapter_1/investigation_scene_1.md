@@ -49,9 +49,10 @@
 **相馬律**：機器壞著，就先靠這個。便利店的，省一點。
 
 ### Hotspot: 桌面卷宗夾 {#kagami_summary_hotspot}
-- **Reveals:** [evidence:kagami_summary, topic:hayasaka@commission]
+- **Reveals:** [topic:hayasaka@commission, evidence:kagami_summary]
 - **Description:** 桌上的舊皮製卷宗夾裡，夾著早坂送來的案件資料。
-- **Evidence Source:** hidden
+- **Evidence Source:** visible
+- **Scene Source Prompt:** Old leather case folder on the detective office desk as the visible source object for the KAGAMI summary copy, with no readable KAGAMI pages or text visible in the background.
 
 [相馬律低頭逐行看那份摘要，手指順著三欄紀錄滑下去。]
 

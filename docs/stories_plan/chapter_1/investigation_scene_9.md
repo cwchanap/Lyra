@@ -31,11 +31,11 @@
 
 **早坂茜**：夠了。我們要的就是這一段。
 
-### Hotspot: 臨時維護工單與權限名單 {#workorder}
-- **Description:** 回函裡那晚的臨時維護工單，與外包維護人員權限名單一起對照。
+### Hotspot: 承包商回函資料包 {#workorder}
+- **Description:** 窗口推來的回函資料包，包含臨時維護工單、權限名單與資材包清單。
 - **Evidence Source:** visible
-- **Scene Source Prompt:** Contractor reply packet on the desk with temporary maintenance work order and access permission list as source documents, no readable text.
-- **Reveals:** [evidence:temp_maintenance_workorder, evidence:kitami_external_access]
+- **Scene Source Prompt:** Contractor reply packet folder on the service-window counter as the visible source document bundle, containing temporary maintenance work order, access permission list, and material-kit list; no readable text.
+- **Reveals:** [evidence:temp_maintenance_workorder, evidence:kitami_external_access, evidence:contractor_umbrella_sleeve_match]
 
 [相馬律翻開那張工單，順著欄位看下去。]
 
@@ -62,12 +62,6 @@
 [她把桌面上的紙頁往自己那側收攏了半寸，目光沒有離開那個名字。]
 
 **早坂茜**：別急著定罪，先把材料補齊。
-
-### Hotspot: 資材包透明傘套 {#material_kit}
-- **Description:** 窗口附上的一份資材包清單，裡頭有一只透明傘套。
-- **Evidence Source:** visible
-- **Scene Source Prompt:** Contractor material-kit list and transparent umbrella-sleeve entry in the reply packet as source documents, with text unreadable.
-- **Reveals:** [evidence:contractor_umbrella_sleeve_match]
 
 [相馬律把資材包清單裡的傘套，跟手上後場那只濕傘套的尺寸對著看。]
 

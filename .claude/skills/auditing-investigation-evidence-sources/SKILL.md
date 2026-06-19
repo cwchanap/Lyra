@@ -17,18 +17,21 @@ Before auditing, load:
 
 - The target `investigation_scene_<N>.md`.
 - Its `.layout.json` sidecar when present.
+- The actual raster background image for each audited sub-location when it
+  exists under `static/assets/backgrounds/...`.
 - The current compiled JSON when available, for comparison only.
 - `writing-investigation-scene`.
 
 Authored Markdown is the source of truth. Layout sidecars and compiled JSON are
-diagnostics for finding drift, not write targets.
+diagnostics for finding drift, not write targets. Raster backgrounds are
+required evidence for visual hotspot placement.
 
 ## Carrier Table
 
 Before editing, produce this table:
 
-| Evidence ID | Evidence Name | Source Sublocation | Current Carrier | Proposed Carrier | Player Collection Affordance | Source Type | Action |
-|---|---|---|---|---|---|---|---|
+| Evidence ID | Evidence Name | Source Sublocation | Current Carrier | Proposed Carrier | Player Collection Affordance | Visual Background Fit | Source Type | Action |
+|---|---|---|---|---|---|---|---|---|
 
 Use these `Action` values:
 
@@ -39,6 +42,7 @@ Use these `Action` values:
 - `split hotspot`
 - `remove invalid source metadata`
 - `layout sidecar drift`
+- `visual hotspot drift`
 - `needs human story decision`
 
 Edit only rows with a justified action. For ambiguous story decisions, set
@@ -57,19 +61,33 @@ in this sub-location to collect the evidence?
   topic, or action, not only the final evidence name.
 - The body dialogue explains why that interaction yields the evidence.
 - The `Evidence Source` treatment matches the background:
-  - `visible` only when the source object itself is visible in the scene.
-  - `implied` when a visible object/area yields derived evidence.
+  - `visible` when the player clicks a visible source object or visible source
+    area in the scene. Use `visible` even when the final evidence icon/text is
+    not readable or is produced after inspection, as long as the local click
+    target itself is visible.
+  - `implied` only for rare derived evidence where the player is using a local
+    spatial/action carrier rather than a clear visible source object or area.
+    Do not use `implied` merely because the collected evidence image differs
+    from the background prop.
   - `hidden` when the source is not visible until a local action/device lookup.
 - A multi-evidence hotspot uses one shared inspection/action, one shared source
   sub-location, and one shared source treatment for every evidence item.
-- If the carrier is a hotspot that should be clickable in the scene image, the
-  sidecar has matching geometry or the row is marked `layout sidecar drift`.
+- If the carrier is a hotspot that should be clickable in the scene image:
+  - the sidecar has matching geometry, or the row is marked
+    `layout sidecar drift`;
+  - the geometry sits on the visible source object/area in the actual raster
+    background, or the row is marked `visual hotspot drift`.
 
 If a carrier label names the inventory item instead of the local click target,
 rename the carrier to the source/action while preserving the evidence ID and
 evidence name. For hidden sources, label the affordance as a concrete local
 action or device lookup, such as a phone lookup or admin terminal check, rather
 than a physical document that is not present in the background.
+
+Never approve a hidden or implied source by placing its hotspot rectangle on
+unrelated background pixels. If the background has no defensible visual
+affordance, move the reveal to a visible proxy carrier, a person topic, or a
+sub-location entry reveal, or mark `needs human story decision`.
 
 ## Source Type Taxonomy
 
@@ -94,6 +112,10 @@ only.
 - Layout sidecars may be patched only to add or correct geometry for a carrier
   that already exists in authored Markdown. Mark this as `layout sidecar drift`
   in the carrier table; never use a sidecar edit to invent evidence semantics.
+- Raster visual drift may be fixed by moving a sidecar rectangle onto the
+  authored carrier's actual visible object/area. If no such visible object
+  exists, change the authored carrier instead of moving the rectangle to a
+  random nearby area.
 - Preserve same-source-sublocation: every evidence reveal must come from a
   hotspot, topic, or sub-location in that evidence item's `Source Sublocation`.
 - Put person-sourced evidence on the exact `#### Topic:` where the person gives

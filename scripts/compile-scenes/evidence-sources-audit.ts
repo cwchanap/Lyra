@@ -48,14 +48,6 @@ export type EvidenceSourceAuditResult = {
 };
 
 const DEFAULT_SOURCE_ROOTS = ["docs/stories_plan", "static/stories_plan"];
-const IMPLIED_WORDS = [
-  "監視器",
-  "回放",
-  "螢幕",
-  "monitor",
-  "playback",
-  "screen",
-];
 const RECORD_WORDS = [
   "打卡",
   "紀錄",
@@ -70,37 +62,46 @@ const RECORD_WORDS = [
 // advisory only (it feeds a human-reviewed `suggestedSource`), so noisy
 // matches create review work, not bugs.
 //
-// PHYSICAL_WORDS and VISIBLE_WORDS overlap on purpose: shared tokens
-// (副本/列印/文件/白板/document/object/physical) describe a printed copy or
-// physical object, which is *both* a record manifestation and a standalone
-// visible item. PHYSICAL_WORDS narrows a RECORD match toward "visible"
-// (a record with a physical printout is shown), while VISIBLE_WORDS is the
-// standalone-physical-object fallback. 表 lives only in PHYSICAL_WORDS so a
-// "打卡表" record is suggested visible (a physical printout); if the authored
-// intent is digital/hidden, the human reviewer overrides it. Precedence is
-// fixed by tests (see evidence-sources-audit.test.ts "precedence") — do not
-// reorder the branches without updating them.
-const PHYSICAL_WORDS = [
+// VISIBLE_CARRIER_WORDS means the local click target itself is visible in the
+// scene, even if the final evidence icon/text is not readable in the
+// background. These words intentionally take precedence over RECORD_WORDS so a
+// visible document packet, monitor, panel, folder, or spatial mark is suggested
+// `visible` instead of `hidden`.
+const VISIBLE_CARRIER_WORDS = [
   "副本",
   "列印",
   "文件",
   "紙本",
   "表",
+  "資料夾",
+  "資料包",
+  "卷宗",
+  "夾",
   "白板",
-  "document",
-  "object",
-  "physical",
-];
-// VISIBLE_WORDS additionally owns 傘/盒 (objects with no record sense). The
-// shared tokens mirror PHYSICAL_WORDS so a standalone physical object is
-// suggested visible whether or not a record word is present.
-const VISIBLE_WORDS = [
-  "副本",
-  "列印",
-  "文件",
+  "告示板",
+  "面板",
+  "螢幕",
+  "監視器",
+  "回放",
+  "pos",
+  "抽屜",
+  "墊",
+  "水痕",
+  "站位",
+  "視線",
+  "貨架",
+  "掛鐘",
+  "手機",
+  "罐",
   "傘",
+  "傘套",
   "盒",
-  "白板",
+  "monitor",
+  "playback",
+  "screen",
+  "panel",
+  "folder",
+  "packet",
   "document",
   "object",
   "physical",
@@ -112,16 +113,12 @@ export function suggestEvidenceSource(input: {
 }): EvidenceSourceSuggestion {
   const text = `${input.label} ${input.description}`.toLowerCase();
 
-  if (containsAny(text, IMPLIED_WORDS)) {
-    return "implied";
+  if (containsAny(text, VISIBLE_CARRIER_WORDS)) {
+    return "visible";
   }
 
   if (containsAny(text, RECORD_WORDS)) {
-    return containsAny(text, PHYSICAL_WORDS) ? "visible" : "hidden";
-  }
-
-  if (containsAny(text, VISIBLE_WORDS)) {
-    return "visible";
+    return "hidden";
   }
 
   return "needs-review";

@@ -83,9 +83,15 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 - **Required:** `Description`
 - **Optional:** `Status` (defaults to `unlocked`), `Unlock`, `Reveals` (list), `Evidence Source`, `Scene Source Prompt`
 - **Required when assets are enabled and this Hotspot reveals evidence:** `Evidence Source`
-  - `visible` — the evidence source is visibly present in the scene as a source object.
-  - `implied` — the source object is visible, but the exact evidence image/content is only implied.
-  - `hidden` — the evidence source is not visually present before the player inspects or uncovers it.
+  - `visible` — the player clicks a visible source object or visible source
+    area in the scene. Use this even when the final evidence icon/text is not
+    readable or is only produced after inspection, as long as the local click
+    target itself is visible.
+  - `implied` — reserve for rare derived evidence where the player is using a
+    local spatial/action carrier rather than a clear visible source object or
+    area. Prefer `visible` for ordinary evidence-bearing hotspots.
+  - `hidden` — the evidence source is not visually present before the player
+    inspects or uncovers it.
 - **Scene Source Prompt:** one-line English production guidance for the in-scene source only. It is not a filesystem path and does not replace the evidence manifest's `Image Prompt`.
 - **Multiple evidence correlation:** a single Hotspot may reveal multiple evidence items by listing multiple `[evidence:...]` targets in `Reveals`. This is the canonical way to say those evidence items come from the same player inspection.
   - Use one Hotspot with multiple evidence reveals only when the evidence items share the same click target and the same `Evidence Source` treatment.
