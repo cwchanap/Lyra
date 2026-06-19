@@ -18,7 +18,7 @@ describe("layout editor app shell", () => {
     expect(appSource).toContain(
       "scene.path === editorState.scenePath && editorState.scene",
     );
-    expect(appSource).toContain('class="scene-sublocations"');
+    expect(appSource).toContain("scene-sublocations");
     expect(appSource).not.toContain(
       "{#if editorState.scene}\n      <TargetList",
     );
@@ -34,11 +34,10 @@ describe("layout editor app shell", () => {
 
   it("shows a transient confirmation toast after saving the layout", () => {
     expect(appSource).toContain("handleSaveLayout");
-    expect(appSource).toContain('class="toast-viewport"');
-    expect(appSource).toContain('class="save-toast"');
+    expect(appSource).toContain("toast-viewport fixed");
+    expect(appSource).toContain("save-toast flex");
     expect(appSource).toContain('role="status"');
     expect(appSource).toContain("Layout saved");
-    expect(appSource).toContain("position: fixed");
-    expect(appSource).toContain("bottom: 24px");
+    expect(appSource).toContain("bottom-6");
   });
 });

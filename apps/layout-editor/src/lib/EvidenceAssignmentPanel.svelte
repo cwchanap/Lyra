@@ -122,26 +122,43 @@
   }
 </script>
 
-<section class="assignment-panel" aria-label="Evidence sources">
-  <div class="panel-header">
+<section
+  class="assignment-panel my-6 grid gap-3.5 rounded-lg border border-[#d6dce0] bg-[#f8fbfb] p-4"
+  aria-label="Evidence sources"
+>
+  <div class="panel-header flex items-end justify-between gap-4">
     <div>
-      <p class="eyebrow">Evidence</p>
-      <h3>Evidence Sources</h3>
+      <p
+        class="eyebrow m-0 mb-1.5 text-[0.72rem] font-bold tracking-normal text-[#5f6b64] uppercase"
+      >
+        Evidence
+      </p>
+      <h3 class="m-0 text-base leading-[1.2] tracking-normal">
+        Evidence Sources
+      </h3>
     </div>
-    <strong>{assignments.length}</strong>
+    <strong class="min-w-8 text-right text-[0.95rem] text-[#405751]"
+      >{assignments.length}</strong
+    >
   </div>
 
-  <div class="assignment-list">
+  <div class="assignment-list grid gap-2">
     {#each assignments as assignment (assignment.evidence.id)}
       {@const currentCarrier = selectedCarrier(assignment)}
       {@const carrierLabel = carrierLabelForAssignment(
         assignment,
         currentCarrier,
       )}
-      <article class="assignment-row">
-        <div class="thumb" aria-hidden="true">
+      <article
+        class="assignment-row grid min-w-0 grid-cols-[48px_minmax(130px,1fr)_minmax(180px,280px)] items-center gap-3 rounded-md border border-[#e0e6e8] bg-white p-2 max-[900px]:grid-cols-[48px_minmax(0,1fr)]"
+      >
+        <div
+          class="thumb grid h-12 w-12 place-items-center overflow-hidden rounded-md border border-[#d3d9dc] bg-[#eef2f2] font-extrabold text-[#405751]"
+          aria-hidden="true"
+        >
           {#if evidenceAssetPath(assignment.evidence.imageAssetId)}
             <img
+              class="h-full w-full object-cover"
               src={evidenceAssetPath(assignment.evidence.imageAssetId)}
               alt=""
             />
@@ -149,13 +166,20 @@
             <span>{assignment.evidence.name.slice(0, 1)}</span>
           {/if}
         </div>
-        <div class="evidence-copy">
-          <strong>{assignment.evidence.name}</strong>
-          <small>{assignment.evidence.id}</small>
+        <div class="evidence-copy grid min-w-0 gap-[3px]">
+          <strong class="min-w-0 break-words">{assignment.evidence.name}</strong
+          >
+          <small class="min-w-0 break-words text-xs text-[#60706b]"
+            >{assignment.evidence.id}</small
+          >
         </div>
         <span
-          class="carrier-badge"
-          class:unassigned={!currentCarrier}
+          class={[
+            "carrier-badge min-w-0 rounded-md border px-2.5 py-[7px] text-center text-[0.82rem] font-bold break-words max-[900px]:col-span-full",
+            currentCarrier
+              ? "border-[#bfcfc8] bg-[#edf4f0] text-[#26302e]"
+              : "unassigned border-[#d8dedb] bg-[#f3f5f4] text-[#69746f]",
+          ].join(" ")}
           aria-label={`Current source for ${assignment.evidence.name}`}
         >
           {carrierLabel}
@@ -164,127 +188,3 @@
     {/each}
   </div>
 </section>
-
-<style>
-  .assignment-panel {
-    display: grid;
-    gap: 14px;
-    margin: 24px 0;
-    padding: 16px;
-    border: 1px solid #d6dce0;
-    border-radius: 8px;
-    background: #f8fbfb;
-  }
-
-  .panel-header {
-    display: flex;
-    align-items: end;
-    justify-content: space-between;
-    gap: 16px;
-  }
-
-  .eyebrow {
-    margin: 0 0 6px;
-    color: #5f6b64;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
-  h3 {
-    margin: 0;
-    font-size: 1rem;
-    line-height: 1.2;
-    letter-spacing: 0;
-  }
-
-  .panel-header > strong {
-    min-width: 32px;
-    text-align: right;
-    color: #405751;
-    font-size: 0.95rem;
-  }
-
-  .assignment-list {
-    display: grid;
-    gap: 8px;
-  }
-
-  .assignment-row {
-    display: grid;
-    grid-template-columns: 48px minmax(130px, 1fr) minmax(180px, 280px);
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-    padding: 8px;
-    border: 1px solid #e0e6e8;
-    border-radius: 6px;
-    background: #ffffff;
-  }
-
-  .thumb {
-    display: grid;
-    place-items: center;
-    width: 48px;
-    height: 48px;
-    overflow: hidden;
-    border: 1px solid #d3d9dc;
-    border-radius: 6px;
-    background: #eef2f2;
-    color: #405751;
-    font-weight: 800;
-  }
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .evidence-copy {
-    display: grid;
-    gap: 3px;
-    min-width: 0;
-  }
-
-  .evidence-copy strong,
-  .evidence-copy small {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .evidence-copy small {
-    color: #60706b;
-    font-size: 0.75rem;
-  }
-
-  .carrier-badge {
-    min-width: 0;
-    padding: 7px 10px;
-    overflow-wrap: anywhere;
-    border: 1px solid #bfcfc8;
-    border-radius: 6px;
-    background: #edf4f0;
-    color: #26302e;
-    font-size: 0.82rem;
-    font-weight: 700;
-    text-align: center;
-  }
-
-  .carrier-badge.unassigned {
-    border-color: #d8dedb;
-    background: #f3f5f4;
-    color: #69746f;
-  }
-
-  @media (max-width: 900px) {
-    .assignment-row {
-      grid-template-columns: 48px minmax(0, 1fr);
-    }
-
-    .carrier-badge {
-      grid-column: 1 / -1;
-    }
-  }
-</style>
