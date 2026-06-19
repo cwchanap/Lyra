@@ -1,9 +1,10 @@
+import tailwindcss from "@tailwindcss/vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { svelteTesting } from "@testing-library/svelte/vite";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [svelte(), svelteTesting()],
+  plugins: [tailwindcss(), svelte(), svelteTesting()],
   publicDir: "../../static",
   test: {
     include: ["src/**/*.test.ts"],

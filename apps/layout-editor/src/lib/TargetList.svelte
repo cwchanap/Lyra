@@ -12,75 +12,30 @@
   } = $props();
 </script>
 
-<section class="target-list" aria-label="Sublocations">
-  <h2>Sublocations</h2>
-  <div class="sublocation-buttons">
+<section
+  class="target-list mt-6 grid gap-2.5 border-t border-[#e4ded3] pt-5"
+  aria-label="Sublocations"
+>
+  <h2 class="m-0 text-[0.78rem] tracking-normal text-[#60706b] uppercase">
+    Sublocations
+  </h2>
+  <div class="sublocation-buttons grid gap-2">
     {#each scene.sublocations as sublocation (sublocation.id)}
       <button
         type="button"
-        class:active={sublocation.id === currentSublocationId}
+        class={[
+          "grid min-h-10 w-full cursor-pointer gap-[3px] rounded-md border px-2.5 py-2 text-left text-[#26302e]",
+          sublocation.id === currentSublocationId
+            ? "active border-[#57776a] bg-[#edf4f0]"
+            : "border-[#c9d0ca] bg-white hover:border-[#57776a] hover:bg-[#edf4f0]",
+        ].join(" ")}
         onclick={() => onSelectSublocation(sublocation.id)}
       >
-        <span>{sublocation.label}</span>
-        <small>{sublocation.id}</small>
+        <span class="min-w-0 break-words font-bold">{sublocation.label}</span>
+        <small class="min-w-0 break-words text-[#60706b]"
+          >{sublocation.id}</small
+        >
       </button>
     {/each}
   </div>
 </section>
-
-<style>
-  .target-list {
-    display: grid;
-    gap: 10px;
-    margin-top: 24px;
-    padding-top: 20px;
-    border-top: 1px solid #e4ded3;
-  }
-
-  h2 {
-    margin: 0;
-    color: #60706b;
-    font-size: 0.78rem;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
-  .sublocation-buttons {
-    display: grid;
-    gap: 8px;
-  }
-
-  button {
-    display: grid;
-    gap: 3px;
-    width: 100%;
-    min-height: 40px;
-    padding: 8px 10px;
-    border: 1px solid #c9d0ca;
-    border-radius: 6px;
-    background: #ffffff;
-    color: #26302e;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  button:hover,
-  button.active {
-    border-color: #57776a;
-    background: #edf4f0;
-  }
-
-  span,
-  small {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
-
-  span {
-    font-weight: 700;
-  }
-
-  small {
-    color: #60706b;
-  }
-</style>

@@ -474,6 +474,103 @@
       : `source-${sourceState}`;
   }
 
+  function targetClass(
+    kind: TargetKind,
+    id: string,
+    sourceState: HotspotSourceState = null,
+  ): string {
+    const isVisible = isTargetBoxVisible(kind, id);
+    const isDragging = dragState?.kind === kind && dragState.id === id;
+    const classes = [
+      "target",
+      kind,
+      kind === "hotspot" ? sourceClass(sourceState) : "",
+      isDragging ? "dragging outline-2 outline-offset-1 outline-white" : "",
+      isRevealedTarget(kind, id) ? "revealed" : "",
+      isHiddenTarget(kind, id) ? "box-hidden" : "",
+      "absolute z-[2] min-h-7 min-w-9 cursor-move rounded border-2 p-0 text-left text-white",
+      kind === "hotspot"
+        ? hotspotVisualClass(sourceState, isVisible)
+        : characterVisualClass(isVisible),
+    ];
+    return classes.filter(Boolean).join(" ");
+  }
+
+  function hotspotVisualClass(
+    sourceState: HotspotSourceState,
+    isVisible: boolean,
+  ): string {
+    if (!isVisible) return "overflow-hidden border-transparent bg-transparent";
+    if (sourceState === "missing") {
+      return "overflow-hidden border-[#f07f5f] bg-[rgb(240_127_95_/_22%)] shadow-[inset_0_0_0_1px_rgb(240_127_95_/_60%)]";
+    }
+    return "overflow-hidden border-[#ffcb69] bg-[rgb(255_203_105_/_18%)]";
+  }
+
+  function characterVisualClass(isVisible: boolean): string {
+    if (!isVisible) return "overflow-visible border-transparent bg-transparent";
+    return "overflow-hidden border-[#7fc7d9] bg-[rgb(127_199_217_/_18%)]";
+  }
+
+  function targetOverlayClass(kind: TargetKind, id: string): string {
+    return isTargetBoxVisible(kind, id)
+      ? "opacity-100 pointer-events-auto"
+      : "opacity-0 pointer-events-none";
+  }
+
+  function targetLabelClass(kind: TargetKind, id: string): string {
+    return [
+      "target-label absolute top-1 left-[5px] right-[18px] z-[1] overflow-hidden text-ellipsis whitespace-nowrap text-[0.72rem] leading-[1.15] font-bold [text-shadow:0_1px_2px_rgb(0_0_0_/_60%)]",
+      targetOverlayClass(kind, id),
+    ].join(" ");
+  }
+
+  function sourceBadgeClass(kind: TargetKind, id: string): string {
+    return [
+      "source-badge absolute right-1 bottom-1 z-[1] max-w-[calc(50%-6px)] overflow-hidden text-ellipsis whitespace-nowrap rounded border border-white/50 bg-[#26302e]/80 px-[5px] py-0.5 text-[0.62rem] leading-none font-extrabold text-white [text-shadow:0_1px_2px_rgb(0_0_0_/_56%)]",
+      targetOverlayClass(kind, id),
+    ].join(" ");
+  }
+
+  function sourceMarkerClass(kind: TargetKind, id: string): string {
+    return [
+      "source-marker absolute top-1/2 left-1/2 z-0 h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70 bg-[#26302e]/40",
+      targetOverlayClass(kind, id),
+    ].join(" ");
+  }
+
+  function resizeHandleClass(
+    handle: ResizeHandle,
+    kind: TargetKind,
+    id: string,
+  ): string {
+    const positions: Record<ResizeHandle, string> = {
+      n: "top-[-6px] left-1/2 h-2.5 w-2.5 -translate-x-1/2 cursor-ns-resize",
+      e: "right-[-6px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 cursor-ew-resize",
+      s: "bottom-[-6px] left-1/2 h-2.5 w-2.5 -translate-x-1/2 cursor-ns-resize",
+      w: "left-[-6px] top-1/2 h-2.5 w-2.5 -translate-y-1/2 cursor-ew-resize",
+      nw: "top-[-7px] left-[-7px] h-3 w-3 cursor-nwse-resize",
+      ne: "top-[-7px] right-[-7px] h-3 w-3 cursor-nesw-resize",
+      sw: "bottom-[-7px] left-[-7px] h-3 w-3 cursor-nesw-resize",
+      se: "right-[-7px] bottom-[-7px] h-3 w-3 cursor-nwse-resize",
+    };
+
+    return [
+      "resize-handle",
+      handle,
+      "absolute z-[2] rounded-sm border border-white/80 bg-[rgb(38_48_46_/_82%)] shadow-[0_0_0_1px_rgb(0_0_0_/_32%)]",
+      positions[handle],
+      targetOverlayClass(kind, id),
+    ].join(" ");
+  }
+
+  function characterPreviewClass(assetId: string): string {
+    if (cropStyles[assetId]) {
+      return "character-preview absolute left-1/2 top-[calc(-100%*var(--crop-top,0)/var(--crop-height,1))] h-[calc(100%/var(--crop-height,1))] w-auto max-w-none -translate-x-1/2 object-contain pointer-events-none";
+    }
+    return "character-preview absolute inset-0 h-full w-full object-contain pointer-events-none";
+  }
+
   function evidenceTitle(evidenceItems: EvidenceCorrelation[]): string {
     return evidenceItems
       .map((evidence) => `${evidence.name} (${evidence.id})`)
@@ -574,31 +671,46 @@
 </script>
 
 {#if currentSublocation}
-  <section class="canvas-shell" aria-label="Layout canvas">
-    <div class="canvas-heading">
+  <section class="canvas-shell mt-7 grid gap-4" aria-label="Layout canvas">
+    <div
+      class="canvas-heading flex items-end justify-between gap-4 max-[900px]:grid"
+    >
       <div>
-        <p class="eyebrow">Canvas</p>
-        <h3>{currentSublocation.label}</h3>
+        <p
+          class="eyebrow m-0 mb-1.5 text-[0.78rem] font-bold tracking-normal text-[#5f6b64] uppercase"
+        >
+          Canvas
+        </p>
+        <h3 class="m-0 text-[1.1rem] tracking-normal">
+          {currentSublocation.label}
+        </h3>
       </div>
-      <div class="canvas-actions">
+      <div
+        class="canvas-actions flex min-w-0 items-center justify-end gap-3 max-[900px]:justify-start"
+      >
         <button
           type="button"
-          class="box-toggle"
+          class="box-toggle h-[30px] flex-none cursor-pointer rounded-[5px] border border-[#bfc7bf] bg-white px-2.5 text-[0.78rem] font-bold text-[#26302e] [aria-pressed=true]:border-[#57776a] [aria-pressed=true]:bg-[#edf4f0]"
           aria-label="Toggle placement boxes"
           aria-pressed={showBoxes}
           onclick={toggleBoxes}
         >
           Boxes
         </button>
-        <span>{currentSublocation.sceneTag}</span>
+        <span
+          class="text-right text-[0.85rem] text-[#60706b] max-[900px]:text-left"
+          >{currentSublocation.sceneTag}</span
+        >
       </div>
     </div>
 
     <div
-      class="plate"
+      class={[
+        "plate relative aspect-video w-full touch-none select-none overflow-hidden rounded-lg border border-[#bfc7bf] bg-[#25302e] [background-image:linear-gradient(90deg,rgb(255_255_255_/_7%)_1px,transparent_1px),linear-gradient(rgb(255_255_255_/_7%)_1px,transparent_1px)] [background-size:6.25%_11.111%]",
+        !showBoxes ? "hide-boxes" : "",
+      ].join(" ")}
       role="application"
       aria-label={`${currentSublocation.label} layout plate`}
-      class:hide-boxes={!showBoxes}
       bind:this={plateElement}
       onpointerdown={handlePlatePointerDown}
       onpointermove={handlePointerMove}
@@ -607,7 +719,7 @@
     >
       {#if assetUrl(currentSublocation.backgroundAssetId, "background")}
         <img
-          class="scene-background"
+          class="scene-background pointer-events-none absolute inset-0 z-0 h-full w-full object-cover"
           src={assetUrl(currentSublocation.backgroundAssetId, "background")}
           alt=""
           aria-hidden="true"
@@ -622,28 +734,34 @@
       {#each hotspotTargets as hotspot (hotspot.id)}
         <button
           type="button"
-          class={`target hotspot ${sourceClass(hotspot.sourceState)}`}
-          class:dragging={dragState?.kind === "hotspot" &&
-            dragState.id === hotspot.id}
-          class:revealed={isRevealedTarget("hotspot", hotspot.id)}
-          class:hidden={isHiddenTarget("hotspot", hotspot.id)}
+          class={targetClass("hotspot", hotspot.id, hotspot.sourceState)}
           style={layoutStyle(hotspot.layout)}
           onpointerdown={(event) =>
             startDrag("hotspot", hotspot.id, "move", hotspot.layout, event)}
           oncontextmenu={(event) => openEvidenceMenu(hotspot, event)}
         >
           {#if hotspot.sourceState === "implied"}
-            <i class="source-marker" aria-hidden="true" title="Implied source"
-            ></i>
+            <i
+              class={sourceMarkerClass("hotspot", hotspot.id)}
+              aria-hidden="true"
+              title="Implied source"
+            >
+              <span class="absolute inset-[5px] rounded-full bg-white/80"
+              ></span>
+            </i>
           {/if}
-          <span class="target-label">{hotspot.label}</span>
+          <span class={targetLabelClass("hotspot", hotspot.id)}
+            >{hotspot.label}</span
+          >
           {#if sourceLabel(hotspot.sourceState)}
-            <span class="source-badge">{sourceLabel(hotspot.sourceState)}</span>
+            <span class={sourceBadgeClass("hotspot", hotspot.id)}
+              >{sourceLabel(hotspot.sourceState)}</span
+            >
           {/if}
           {#each resizeHandles as handle (handle)}
             <i
               aria-hidden="true"
-              class={`resize-handle ${handle}`}
+              class={resizeHandleClass(handle, "hotspot", hotspot.id)}
               onpointerdown={(event) =>
                 startDrag("hotspot", hotspot.id, handle, hotspot.layout, event)}
             ></i>
@@ -653,25 +771,42 @@
 
       {#if evidenceMenu}
         <div
-          class="evidence-menu"
+          class="evidence-menu absolute z-[6] min-w-[190px] max-w-[min(280px,calc(100%-16px))] translate-x-1.5 translate-y-1.5 rounded-md border border-[#26302e]/35 bg-white/95 p-2.5 text-[#26302e] shadow-[0_10px_24px_rgb(0_0_0_/_24%)]"
           role="menu"
           aria-label={`Evidence for ${evidenceMenu.hotspotLabel}`}
           style={evidenceMenuStyle(evidenceMenu)}
         >
-          <div class="evidence-menu-heading">
-            <strong>{evidenceMenu.hotspotLabel}</strong>
+          <div
+            class="evidence-menu-heading mb-2 flex min-w-0 items-center justify-between gap-2"
+          >
+            <strong
+              class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.82rem] leading-[1.2]"
+              >{evidenceMenu.hotspotLabel}</strong
+            >
             {#if sourceLabel(evidenceMenu.sourceState)}
-              <span>{sourceLabel(evidenceMenu.sourceState)}</span>
+              <span
+                class="flex-none rounded border border-[#c9d0ca] bg-[#edf4f0] px-[5px] py-0.5 text-[0.62rem] leading-none font-extrabold text-[#43514d]"
+                >{sourceLabel(evidenceMenu.sourceState)}</span
+              >
             {/if}
           </div>
           {#if evidenceMenu.sceneSourcePrompt}
-            <p>{evidenceMenu.sceneSourcePrompt}</p>
+            <p class="m-0 mb-2 text-[0.72rem] leading-[1.3] text-[#5f6b64]">
+              {evidenceMenu.sceneSourcePrompt}
+            </p>
           {/if}
-          <ul>
+          <ul class="m-0 grid list-none gap-1 p-0">
             {#each evidenceMenu.evidenceItems as evidence (evidence.id)}
-              <li role="menuitem">
-                <span>{evidence.name}</span>
-                <code>{evidence.id}</code>
+              <li
+                class="grid min-h-7 grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5 rounded bg-[#f4f7f5] px-[7px] py-[5px] text-[0.76rem]"
+                role="menuitem"
+              >
+                <span class="overflow-hidden text-ellipsis whitespace-nowrap"
+                  >{evidence.name}</span
+                >
+                <code class="font-inherit text-[0.68rem] text-[#60706b]"
+                  >{evidence.id}</code
+                >
               </li>
             {/each}
           </ul>
@@ -681,11 +816,7 @@
       {#each characterTargets as character (character.id)}
         <button
           type="button"
-          class="target character"
-          class:dragging={dragState?.kind === "character" &&
-            dragState.id === character.id}
-          class:revealed={isRevealedTarget("character", character.id)}
-          class:hidden={isHiddenTarget("character", character.id)}
+          class={targetClass("character", character.id)}
           style={layoutStyle(character.layout)}
           onpointerdown={(event) =>
             startDrag(
@@ -697,11 +828,11 @@
             )}
         >
           <div
-            class="character-preview-crop"
+            class="character-preview-crop pointer-events-none absolute inset-0 z-0 overflow-hidden"
             style={cropStyleForAsset(character.layout.assetId)}
           >
             <img
-              class="character-preview"
+              class={characterPreviewClass(character.layout.assetId)}
               src={assetUrl(
                 character.layout.assetId,
                 characterAssetType(character.layout.assetId),
@@ -717,11 +848,13 @@
                 )}
             />
           </div>
-          <span class="target-label">{character.name}</span>
+          <span class={targetLabelClass("character", character.id)}
+            >{character.name}</span
+          >
           {#each resizeHandles as handle (handle)}
             <i
               aria-hidden="true"
-              class={`resize-handle ${handle}`}
+              class={resizeHandleClass(handle, "character", character.id)}
               onpointerdown={(event) =>
                 startDrag(
                   "character",
@@ -736,10 +869,13 @@
       {/each}
     </div>
 
-    <div class="target-controls" aria-label="Target controls">
+    <div
+      class="target-controls grid grid-cols-6 gap-2 max-[900px]:grid-cols-2"
+      aria-label="Target controls"
+    >
       {#each hotspotTargets as hotspot (hotspot.id)}
         <button
-          class="box-state"
+          class="box-state h-[34px] min-w-0 cursor-pointer truncate rounded-[5px] border border-[#c9d0ca] bg-[#f7faf8] px-2.5 text-[0.76rem] font-bold text-[#26302e] hover:border-[#57776a] hover:bg-[#edf4f0] [aria-pressed=true]:border-[#57776a] [aria-pressed=true]:bg-[#edf4f0]"
           type="button"
           aria-pressed={isTargetBoxVisible("hotspot", hotspot.id)}
           title={hotspotControlTitle(hotspot)}
@@ -751,7 +887,7 @@
 
       {#each characterTargets as character (character.id)}
         <button
-          class="box-state"
+          class="box-state h-[34px] min-w-0 cursor-pointer truncate rounded-[5px] border border-[#c9d0ca] bg-[#f7faf8] px-2.5 text-[0.76rem] font-bold text-[#26302e] hover:border-[#57776a] hover:bg-[#edf4f0] [aria-pressed=true]:border-[#57776a] [aria-pressed=true]:bg-[#edf4f0]"
           type="button"
           aria-pressed={isTargetBoxVisible("character", character.id)}
           title={character.bio || character.role || character.name}
@@ -763,493 +899,5 @@
     </div>
   </section>
 {:else}
-  <p class="empty">Select a sublocation.</p>
+  <p class="empty mt-6 mb-0 text-[#7d3c2f]">Select a sublocation.</p>
 {/if}
-
-<style>
-  .canvas-shell {
-    display: grid;
-    gap: 16px;
-    margin-top: 28px;
-  }
-
-  .canvas-heading {
-    display: flex;
-    align-items: end;
-    justify-content: space-between;
-    gap: 16px;
-  }
-
-  .canvas-actions {
-    display: flex;
-    align-items: center;
-    justify-content: end;
-    gap: 12px;
-    min-width: 0;
-  }
-
-  .eyebrow {
-    margin: 0 0 6px;
-    color: #5f6b64;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
-  h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    letter-spacing: 0;
-  }
-
-  .canvas-actions span {
-    color: #60706b;
-    font-size: 0.85rem;
-    text-align: right;
-  }
-
-  .box-toggle {
-    flex: 0 0 auto;
-    height: 30px;
-    padding: 0 10px;
-    border: 1px solid #bfc7bf;
-    border-radius: 5px;
-    background: #ffffff;
-    color: #26302e;
-    cursor: pointer;
-    font-size: 0.78rem;
-    font-weight: 700;
-  }
-
-  .box-toggle[aria-pressed="true"] {
-    border-color: #57776a;
-    background: #edf4f0;
-  }
-
-  .plate {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    overflow: hidden;
-    border: 1px solid #bfc7bf;
-    border-radius: 8px;
-    background:
-      linear-gradient(90deg, rgb(255 255 255 / 7%) 1px, transparent 1px),
-      linear-gradient(rgb(255 255 255 / 7%) 1px, transparent 1px), #25302e;
-    background-size: 6.25% 11.111%;
-    touch-action: none;
-    user-select: none;
-  }
-
-  .scene-background {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    pointer-events: none;
-  }
-
-  .target {
-    position: absolute;
-    z-index: 2;
-    min-width: 36px;
-    min-height: 28px;
-    padding: 0;
-    border: 2px solid;
-    border-radius: 4px;
-    background: rgb(255 255 255 / 14%);
-    color: #ffffff;
-    cursor: move;
-    overflow: hidden;
-    text-align: left;
-  }
-
-  .character-preview-crop {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    overflow: hidden;
-    pointer-events: none;
-  }
-
-  .character-preview {
-    position: absolute;
-    top: calc(-100% * var(--crop-top, 0) / var(--crop-height, 1));
-    left: 50%;
-    width: auto;
-    max-width: none;
-    height: calc(100% / var(--crop-height, 1));
-    transform: translateX(-50%);
-    object-fit: contain;
-    pointer-events: none;
-  }
-
-  .character-preview-crop:not([style]) .character-preview,
-  .character-preview-crop[style=""] .character-preview {
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    transform: none;
-  }
-
-  .target-label {
-    position: absolute;
-    z-index: 1;
-    top: 4px;
-    left: 5px;
-    right: 18px;
-    overflow: hidden;
-    font-size: 0.72rem;
-    font-weight: 700;
-    line-height: 1.15;
-    text-overflow: ellipsis;
-    text-shadow: 0 1px 2px rgb(0 0 0 / 60%);
-    white-space: nowrap;
-  }
-
-  .source-badge {
-    position: absolute;
-    right: 4px;
-    bottom: 4px;
-    z-index: 1;
-    max-width: calc(50% - 6px);
-    padding: 2px 5px;
-    border: 1px solid rgb(255 255 255 / 48%);
-    border-radius: 4px;
-    background: rgb(38 48 46 / 82%);
-    color: #ffffff;
-    font-size: 0.62rem;
-    font-weight: 800;
-    line-height: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-shadow: 0 1px 2px rgb(0 0 0 / 56%);
-    white-space: nowrap;
-  }
-
-  .source-marker {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    z-index: 0;
-    width: 18px;
-    height: 18px;
-    border: 2px solid rgb(255 255 255 / 72%);
-    border-radius: 50%;
-    background: rgb(38 48 46 / 42%);
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-  }
-
-  .source-marker::after {
-    position: absolute;
-    inset: 5px;
-    border-radius: 50%;
-    background: rgb(255 255 255 / 82%);
-    content: "";
-  }
-
-  .hotspot {
-    border-color: #ffcb69;
-    background: rgb(255 203 105 / 18%);
-  }
-
-  .hotspot.missing-source {
-    border-color: #f07f5f;
-    background: rgb(240 127 95 / 22%);
-    box-shadow: inset 0 0 0 1px rgb(240 127 95 / 60%);
-  }
-
-  .character {
-    border-color: #7fc7d9;
-    background: rgb(127 199 217 / 18%);
-  }
-
-  .dragging {
-    outline: 2px solid #ffffff;
-    outline-offset: 1px;
-  }
-
-  .hide-boxes .target {
-    border-color: transparent;
-    background: transparent;
-    outline: 0;
-    box-shadow: none;
-  }
-
-  .target.hidden {
-    border-color: transparent;
-    background: transparent;
-    outline: 0;
-    box-shadow: none;
-  }
-
-  .hide-boxes .target.character {
-    overflow: visible;
-  }
-
-  .target.hidden.character {
-    overflow: visible;
-  }
-
-  .hide-boxes .character-preview,
-  .hide-boxes .character-preview-crop,
-  .target.hidden .character-preview,
-  .target.hidden .character-preview-crop {
-    border: 0;
-    outline: 0;
-    box-shadow: none;
-  }
-
-  .hide-boxes .target-label,
-  .hide-boxes .source-badge,
-  .hide-boxes .source-marker,
-  .hide-boxes .resize-handle,
-  .target.hidden .target-label,
-  .target.hidden .source-badge,
-  .target.hidden .source-marker,
-  .target.hidden .resize-handle {
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .hide-boxes .target.revealed.hotspot {
-    border-color: #ffcb69;
-    background: rgb(255 203 105 / 18%);
-  }
-
-  .hide-boxes .target.revealed.hotspot.missing-source {
-    border-color: #f07f5f;
-    background: rgb(240 127 95 / 22%);
-    box-shadow: inset 0 0 0 1px rgb(240 127 95 / 60%);
-  }
-
-  .hide-boxes .target.revealed.character {
-    overflow: hidden;
-    border-color: #7fc7d9;
-    background: rgb(127 199 217 / 18%);
-  }
-
-  .hide-boxes .target.revealed .target-label,
-  .hide-boxes .target.revealed .source-badge,
-  .hide-boxes .target.revealed .source-marker,
-  .hide-boxes .target.revealed .resize-handle {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .evidence-menu {
-    position: absolute;
-    z-index: 6;
-    min-width: 190px;
-    max-width: min(280px, calc(100% - 16px));
-    padding: 10px;
-    border: 1px solid rgb(38 48 46 / 36%);
-    border-radius: 6px;
-    background: rgb(255 255 255 / 96%);
-    box-shadow: 0 10px 24px rgb(0 0 0 / 24%);
-    color: #26302e;
-    transform: translate(6px, 6px);
-  }
-
-  .evidence-menu-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    min-width: 0;
-    margin-bottom: 8px;
-  }
-
-  .evidence-menu-heading strong {
-    min-width: 0;
-    overflow: hidden;
-    font-size: 0.82rem;
-    line-height: 1.2;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .evidence-menu-heading span {
-    flex: 0 0 auto;
-    padding: 2px 5px;
-    border: 1px solid #c9d0ca;
-    border-radius: 4px;
-    background: #edf4f0;
-    color: #43514d;
-    font-size: 0.62rem;
-    font-weight: 800;
-    line-height: 1;
-  }
-
-  .evidence-menu p {
-    margin: 0 0 8px;
-    color: #5f6b64;
-    font-size: 0.72rem;
-    line-height: 1.3;
-  }
-
-  .evidence-menu ul {
-    display: grid;
-    gap: 4px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .evidence-menu li {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 10px;
-    min-height: 28px;
-    padding: 5px 7px;
-    border-radius: 4px;
-    background: #f4f7f5;
-    font-size: 0.76rem;
-  }
-
-  .evidence-menu li span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .evidence-menu code {
-    color: #60706b;
-    font-family: inherit;
-    font-size: 0.68rem;
-  }
-
-  .resize-handle {
-    position: absolute;
-    z-index: 2;
-    width: 10px;
-    height: 10px;
-    border: 1px solid rgb(255 255 255 / 82%);
-    border-radius: 2px;
-    background: rgb(38 48 46 / 82%);
-    box-shadow: 0 0 0 1px rgb(0 0 0 / 32%);
-  }
-
-  .resize-handle.n,
-  .resize-handle.s {
-    left: 50%;
-    transform: translateX(-50%);
-    cursor: ns-resize;
-  }
-
-  .resize-handle.e,
-  .resize-handle.w {
-    top: 50%;
-    transform: translateY(-50%);
-    cursor: ew-resize;
-  }
-
-  .resize-handle.n {
-    top: -6px;
-  }
-
-  .resize-handle.e {
-    right: -6px;
-  }
-
-  .resize-handle.s {
-    bottom: -6px;
-  }
-
-  .resize-handle.w {
-    left: -6px;
-  }
-
-  .resize-handle.nw,
-  .resize-handle.ne,
-  .resize-handle.sw,
-  .resize-handle.se {
-    width: 12px;
-    height: 12px;
-  }
-
-  .resize-handle.nw {
-    top: -7px;
-    left: -7px;
-    cursor: nwse-resize;
-  }
-
-  .resize-handle.ne {
-    top: -7px;
-    right: -7px;
-    cursor: nesw-resize;
-  }
-
-  .resize-handle.sw {
-    bottom: -7px;
-    left: -7px;
-    cursor: nesw-resize;
-  }
-
-  .resize-handle.se {
-    right: -7px;
-    bottom: -7px;
-    cursor: nwse-resize;
-  }
-
-  .target-controls {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .box-state {
-    min-width: 0;
-    height: 34px;
-    padding: 0 10px;
-    border: 1px solid #c9d0ca;
-    border-radius: 5px;
-    background: #f7faf8;
-    color: #26302e;
-    cursor: pointer;
-    font-size: 0.76rem;
-    font-weight: 700;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .box-state:hover {
-    border-color: #57776a;
-    background: #edf4f0;
-  }
-
-  .box-state[aria-pressed="true"] {
-    border-color: #57776a;
-    background: #edf4f0;
-  }
-
-  .empty {
-    margin: 24px 0 0;
-    color: #7d3c2f;
-  }
-
-  @media (max-width: 900px) {
-    .canvas-heading {
-      display: grid;
-    }
-
-    .canvas-actions {
-      justify-content: start;
-    }
-
-    .canvas-actions span {
-      text-align: left;
-    }
-
-    .target-controls {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-</style>

@@ -265,12 +265,9 @@ describe("EditorCanvas", () => {
     expect(container.querySelector(".plate")).toHaveClass("hide-boxes");
     expect(missing).toHaveClass("revealed");
     expect(missing).toHaveClass("missing-source");
-    expect(
-      editorCanvasSource.indexOf(
-        ".hide-boxes .target.revealed.hotspot.missing-source",
-      ),
-    ).toBeGreaterThan(
-      editorCanvasSource.indexOf(".hide-boxes .target.revealed.hotspot"),
+    expect((missing as HTMLElement).className).toContain("border-[#f07f5f]");
+    expect((missing as HTMLElement).className).toContain(
+      "shadow-[inset_0_0_0_1px_rgb(240_127_95_/_60%)]",
     );
   });
 
@@ -484,7 +481,7 @@ describe("EditorCanvas", () => {
     expect(newLayout.y).toBeCloseTo(0.42, 5);
     expect(newLayout.w).toBeCloseTo(0.12, 5);
     expect(newLayout.h).toBeCloseTo(0.1, 5);
-    expect(hotspot).not.toHaveClass("hidden");
+    expect(hotspot).not.toHaveClass("box-hidden");
   });
 
   it("keeps a revealed item box shown while dragging it with global boxes hidden", async () => {
@@ -565,7 +562,7 @@ describe("EditorCanvas", () => {
     } as DOMRect);
 
     await user.click(hotspot);
-    expect(hotspot).toHaveClass("hidden");
+    expect(hotspot).toHaveClass("box-hidden");
 
     await fireEvent.pointerDown(hotspot, {
       pointerId: 1,
@@ -584,7 +581,7 @@ describe("EditorCanvas", () => {
     });
 
     expect(onHotspotLayoutChange).toHaveBeenCalled();
-    expect(hotspot).not.toHaveClass("hidden");
+    expect(hotspot).not.toHaveClass("box-hidden");
   });
 
   it("reveals an untoggled portrait box when dragging it with global boxes hidden", async () => {
@@ -729,22 +726,22 @@ describe("EditorCanvas", () => {
 
     await user.click(hotspot!);
     expect(plate?.classList.contains("hide-boxes")).toBe(false);
-    expect(hotspot).toHaveClass("hidden");
-    expect(character).not.toHaveClass("hidden");
+    expect(hotspot).toHaveClass("box-hidden");
+    expect(character).not.toHaveClass("box-hidden");
 
     await user.click(hotspot!);
-    expect(hotspot).not.toHaveClass("hidden");
+    expect(hotspot).not.toHaveClass("box-hidden");
 
     await user.click(character!);
-    expect(character).toHaveClass("hidden");
-    expect(hotspot).not.toHaveClass("hidden");
+    expect(character).toHaveClass("box-hidden");
+    expect(hotspot).not.toHaveClass("box-hidden");
   });
 
   it("replaces manual position controls with individual box toggles in a six-column grid", () => {
     const source = editorCanvasSource;
 
     expect(source).toContain("toggleTargetBox");
-    expect(source).toContain("repeat(6, minmax(0, 1fr))");
+    expect(source).toContain("grid-cols-6");
     expect(source).not.toContain("Move hotspot");
     expect(source).not.toContain("Move character");
     expect(source).not.toContain("nudge(");
@@ -794,9 +791,25 @@ describe("EditorCanvas", () => {
     ).toBeInTheDocument();
   });
 
-  it("removes the character frame when placement boxes are hidden", () => {
-    expect(editorCanvasSource).toContain(".hide-boxes .target.character");
-    expect(editorCanvasSource).toContain(".hide-boxes .character-preview");
+  it("removes the character frame when placement boxes are hidden", async () => {
+    const user = userEvent.setup();
+    const { container } = render(EditorCanvas, {
+      scene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const toggle = screen.getByRole("button", {
+      name: "Toggle placement boxes",
+    });
+    await user.click(toggle);
+
+    const characterTarget = container.querySelector(".target.character");
+    expect(characterTarget).toHaveClass("border-transparent");
+    expect(characterTarget).toHaveClass("bg-transparent");
+    expect(characterTarget).toHaveClass("overflow-visible");
   });
 
   it("uses standard standees for default character placement", () => {

@@ -128,35 +128,63 @@
   }
 </script>
 
-<main class="app-shell">
-  <aside class="scene-panel" aria-labelledby="editor-title">
-    <p class="eyebrow">Developer Tool</p>
-    <h1 id="editor-title">Lyra Layout Editor</h1>
+<main
+  class="app-shell grid min-h-screen min-w-80 grid-cols-[minmax(280px,360px)_1fr] gap-6 bg-[#f4f1ec] p-8 font-sans text-[#1e2428] max-[800px]:grid-cols-1 max-[800px]:p-5"
+>
+  <aside
+    class="scene-panel rounded-lg border border-[#d7d2c8] bg-[#fffcf7] p-6 shadow-[0_16px_40px_rgb(39_35_29_/_10%)]"
+    aria-labelledby="editor-title"
+  >
+    <p
+      class="eyebrow m-0 mb-3 text-[0.78rem] font-bold tracking-normal text-[#5f6b64] uppercase"
+    >
+      Developer Tool
+    </p>
+    <h1 id="editor-title" class="m-0 text-3xl leading-[1.1] tracking-normal">
+      Lyra Layout Editor
+    </h1>
 
     {#if editorState.error}
-      <p class="error">{editorState.error}</p>
+      <p
+        class="error mt-[18px] mb-0 rounded-md border border-[#d9a99e] bg-[#fff4f1] p-3 text-[#7d3c2f]"
+      >
+        {editorState.error}
+      </p>
     {/if}
 
-    <div class="scene-list" aria-label="Investigation scenes">
+    <div class="scene-list mt-7 grid gap-2.5" aria-label="Investigation scenes">
       {#each investigationChapters as chapter (chapter.id)}
-        <details open>
-          <summary>
-            <span>{chapter.id}</span>
-            <strong>{chapter.label}</strong>
+        <details class="rounded-md border border-[#e4ded3] bg-[#fffefb]" open>
+          <summary class="grid cursor-pointer gap-1 px-3 py-2.5">
+            <span class="text-[0.78rem] text-[#60706b]">{chapter.id}</span>
+            <strong class="[overflow-wrap:anywhere] text-sm font-bold"
+              >{chapter.label}</strong
+            >
           </summary>
-          <div class="chapter-scenes">
+          <div class="chapter-scenes grid gap-2 px-2.5 pb-2.5">
             {#each chapter.scenes as scene (scene.path)}
-              <div class="scene-entry">
+              <div class="scene-entry grid gap-2">
                 <button
-                  class:selected={scene.path === editorState.scenePath}
+                  class={[
+                    "grid min-h-11 w-full cursor-pointer gap-1 rounded-md border px-3 py-2.5 text-left text-[#26302e]",
+                    scene.path === editorState.scenePath
+                      ? "selected border-[#57776a] bg-[#edf4f0]"
+                      : "border-[#bfc7bf] bg-white hover:border-[#57776a] hover:bg-[#edf4f0]",
+                  ].join(" ")}
                   type="button"
                   onclick={() => loadInvestigationScene(scene.path)}
                 >
-                  <strong>{scene.label}</strong>
-                  <small>{scene.description}</small>
+                  <strong class="break-words text-sm font-bold"
+                    >{scene.label}</strong
+                  >
+                  <small class="text-[0.78rem] text-[#60706b]"
+                    >{scene.description}</small
+                  >
                 </button>
                 {#if scene.path === editorState.scenePath && editorState.scene}
-                  <div class="scene-sublocations">
+                  <div
+                    class="scene-sublocations ml-3 border-l-2 border-[#e4ded3] pl-2.5"
+                  >
                     <TargetList
                       scene={editorState.scene}
                       {currentSublocationId}
@@ -170,22 +198,37 @@
           </div>
         </details>
       {:else}
-        <p class="empty">No investigation scenes loaded.</p>
+        <p class="empty m-0 text-[#7d3c2f]">No investigation scenes loaded.</p>
       {/each}
     </div>
   </aside>
 
-  <section class="detail-panel" aria-live="polite">
+  <section
+    class="detail-panel min-w-0 rounded-lg border border-[#d7d2c8] bg-[#fffcf7] p-8 shadow-[0_16px_40px_rgb(39_35_29_/_10%)]"
+    aria-live="polite"
+  >
     {#if editorState.scene}
-      <header class="detail-header">
+      <header
+        class="detail-header flex items-start justify-between gap-5 max-[800px]:grid"
+      >
         <div>
-          <p class="eyebrow">Scene</p>
-          <h2>{editorState.scene.title}</h2>
+          <p
+            class="eyebrow m-0 mb-3 text-[0.78rem] font-bold tracking-normal text-[#5f6b64] uppercase"
+          >
+            Scene
+          </p>
+          <h2
+            class="m-0 max-w-[28ch] text-[1.75rem] leading-[1.1] tracking-normal"
+          >
+            {editorState.scene.title}
+          </h2>
         </div>
-        <div class="save-control">
+        <div
+          class="save-control grid justify-items-end gap-2 max-[800px]:justify-items-stretch"
+        >
           <button
             type="button"
-            class="save-button"
+            class="save-button min-h-11 flex-none cursor-pointer rounded-md border border-[#bfc7bf] bg-white px-4 font-bold text-[#26302e] hover:border-[#57776a] hover:bg-[#edf4f0] disabled:cursor-not-allowed disabled:opacity-60 max-[800px]:w-full"
             disabled={!editorState.layout ||
               !editorState.layoutPath ||
               isSavingLayout}
@@ -196,14 +239,20 @@
         </div>
       </header>
 
-      <dl class="scene-meta">
-        <div>
-          <dt>Sublocations</dt>
-          <dd>{editorState.scene.sublocations.length}</dd>
+      <dl class="scene-meta mt-8 grid gap-3.5">
+        <div
+          class="grid grid-cols-[140px_minmax(0,1fr)] gap-4 border-t border-[#e4ded3] py-3.5 max-[800px]:grid-cols-1"
+        >
+          <dt class="font-bold text-[#60706b]">Sublocations</dt>
+          <dd class="m-0 min-w-0 break-words">
+            {editorState.scene.sublocations.length}
+          </dd>
         </div>
-        <div>
-          <dt>Targets</dt>
-          <dd>{selectedSceneTargetSummary}</dd>
+        <div
+          class="grid grid-cols-[140px_minmax(0,1fr)] gap-4 border-t border-[#e4ded3] py-3.5 max-[800px]:grid-cols-1"
+        >
+          <dt class="font-bold text-[#60706b]">Targets</dt>
+          <dd class="m-0 min-w-0 break-words">{selectedSceneTargetSummary}</dd>
         </div>
       </dl>
 
@@ -222,304 +271,33 @@
         />
       {/if}
     {:else}
-      <div class="placeholder">
-        <p class="eyebrow">Scene</p>
-        <p>Select an investigation scene.</p>
+      <div class="placeholder grid min-h-[280px] content-center text-[#7d3c2f]">
+        <p
+          class="eyebrow m-0 mb-3 text-[0.78rem] font-bold tracking-normal text-[#5f6b64] uppercase"
+        >
+          Scene
+        </p>
+        <p class="m-0 text-xl text-[#4f5756]">Select an investigation scene.</p>
       </div>
     {/if}
   </section>
 
   {#if saveToastMessage}
-    <div class="toast-viewport" aria-live="polite" aria-atomic="true">
-      <p class="save-toast" role="status">
-        <span class="toast-indicator" aria-hidden="true"></span>
+    <div
+      class="toast-viewport fixed inset-x-0 bottom-6 z-40 flex justify-center px-6 [box-sizing:border-box] pointer-events-none"
+      aria-live="polite"
+      aria-atomic="true"
+    >
+      <p
+        class="save-toast flex w-fit max-w-[min(420px,calc(100vw-48px))] items-center gap-2.5 rounded-lg border border-white/15 bg-[#1f2b26] px-4 py-3 text-sm font-bold text-[#f8fbf8] shadow-[0_18px_36px_rgb(22_18_12_/_24%)]"
+        role="status"
+      >
+        <span
+          class="toast-indicator h-2.5 w-2.5 flex-none rounded-full bg-[#83d58a] shadow-[0_0_0_4px_rgb(131_213_138_/_16%)]"
+          aria-hidden="true"
+        ></span>
         <span>{saveToastMessage}</span>
       </p>
     </div>
   {/if}
 </main>
-
-<style>
-  :global(body) {
-    margin: 0;
-    min-width: 320px;
-    min-height: 100vh;
-    font-family:
-      Inter,
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      BlinkMacSystemFont,
-      "Segoe UI",
-      sans-serif;
-    color: #1e2428;
-    background: #f4f1ec;
-  }
-
-  :global(button),
-  :global(input),
-  :global(select),
-  :global(textarea) {
-    font: inherit;
-  }
-
-  .app-shell {
-    min-height: 100vh;
-    display: grid;
-    grid-template-columns: minmax(280px, 360px) 1fr;
-    gap: 24px;
-    padding: 32px;
-    box-sizing: border-box;
-  }
-
-  .scene-panel,
-  .detail-panel {
-    border: 1px solid #d7d2c8;
-    border-radius: 8px;
-    background: #fffcf7;
-    box-shadow: 0 16px 40px rgb(39 35 29 / 10%);
-  }
-
-  .scene-panel {
-    padding: 24px;
-  }
-
-  .detail-panel {
-    min-width: 0;
-    padding: 32px;
-  }
-
-  .eyebrow {
-    margin: 0 0 12px;
-    color: #5f6b64;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
-  h1,
-  h2 {
-    margin: 0;
-    line-height: 1.1;
-    letter-spacing: 0;
-  }
-
-  h1 {
-    font-size: 2rem;
-  }
-
-  h2 {
-    max-width: 28ch;
-    font-size: 1.75rem;
-  }
-
-  .scene-list {
-    display: grid;
-    gap: 10px;
-    margin-top: 28px;
-  }
-
-  .scene-list button,
-  .save-button {
-    min-height: 44px;
-    border: 1px solid #bfc7bf;
-    border-radius: 6px;
-    background: #ffffff;
-    color: #26302e;
-    cursor: pointer;
-  }
-
-  .scene-list button {
-    display: grid;
-    gap: 4px;
-    width: 100%;
-    padding: 10px 12px;
-    text-align: left;
-  }
-
-  .scene-list details {
-    border: 1px solid #e4ded3;
-    border-radius: 6px;
-    background: #fffefb;
-  }
-
-  .scene-list summary {
-    display: grid;
-    gap: 4px;
-    padding: 10px 12px;
-    cursor: pointer;
-  }
-
-  .chapter-scenes {
-    display: grid;
-    gap: 8px;
-    padding: 0 10px 10px;
-  }
-
-  .scene-entry {
-    display: grid;
-    gap: 8px;
-  }
-
-  .scene-sublocations {
-    margin-left: 12px;
-    padding-left: 10px;
-    border-left: 2px solid #e4ded3;
-  }
-
-  .scene-list button:hover,
-  .scene-list button.selected,
-  .save-button:hover {
-    border-color: #57776a;
-    background: #edf4f0;
-  }
-
-  .scene-list span,
-  .scene-list small {
-    color: #60706b;
-    font-size: 0.78rem;
-  }
-
-  .scene-list strong {
-    overflow-wrap: anywhere;
-    font-size: 0.9rem;
-  }
-
-  .detail-header {
-    display: flex;
-    align-items: start;
-    justify-content: space-between;
-    gap: 20px;
-  }
-
-  .save-button {
-    flex: 0 0 auto;
-    padding: 0 16px;
-    font-weight: 700;
-  }
-
-  .save-control {
-    display: grid;
-    justify-items: end;
-    gap: 8px;
-  }
-
-  .save-toast {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: fit-content;
-    max-width: min(420px, calc(100vw - 48px));
-    margin: 0;
-    padding: 12px 16px;
-    border: 1px solid rgb(255 255 255 / 14%);
-    border-radius: 8px;
-    background: #1f2b26;
-    box-shadow: 0 18px 36px rgb(22 18 12 / 24%);
-    color: #f8fbf8;
-    font-size: 0.9rem;
-    font-weight: 700;
-  }
-
-  .toast-viewport {
-    position: fixed;
-    right: 0;
-    bottom: 24px;
-    left: 0;
-    z-index: 40;
-    display: flex;
-    justify-content: center;
-    padding: 0 24px;
-    box-sizing: border-box;
-    pointer-events: none;
-  }
-
-  .toast-indicator {
-    width: 10px;
-    height: 10px;
-    border-radius: 999px;
-    background: #83d58a;
-    box-shadow: 0 0 0 4px rgb(131 213 138 / 16%);
-    flex: 0 0 auto;
-  }
-
-  .scene-meta {
-    display: grid;
-    gap: 14px;
-    margin: 32px 0 0;
-  }
-
-  .scene-meta div {
-    display: grid;
-    grid-template-columns: 140px minmax(0, 1fr);
-    gap: 16px;
-    padding: 14px 0;
-    border-top: 1px solid #e4ded3;
-  }
-
-  dt {
-    color: #60706b;
-    font-weight: 700;
-  }
-
-  dd {
-    min-width: 0;
-    margin: 0;
-    overflow-wrap: anywhere;
-  }
-
-  .error,
-  .empty,
-  .placeholder {
-    color: #7d3c2f;
-  }
-
-  .error {
-    margin: 18px 0 0;
-    padding: 12px;
-    border: 1px solid #d9a99e;
-    border-radius: 6px;
-    background: #fff4f1;
-  }
-
-  .empty {
-    margin: 0;
-  }
-
-  .placeholder {
-    display: grid;
-    align-content: center;
-    min-height: 280px;
-  }
-
-  .placeholder p:last-child {
-    margin: 0;
-    color: #4f5756;
-    font-size: 1.2rem;
-  }
-
-  @media (max-width: 800px) {
-    .app-shell {
-      grid-template-columns: 1fr;
-      padding: 20px;
-    }
-
-    .detail-header,
-    .scene-meta div {
-      grid-template-columns: 1fr;
-    }
-
-    .detail-header {
-      display: grid;
-    }
-
-    .save-button {
-      width: 100%;
-    }
-
-    .save-control {
-      justify-items: stretch;
-    }
-  }
-</style>
