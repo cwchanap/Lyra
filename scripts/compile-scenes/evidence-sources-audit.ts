@@ -58,6 +58,14 @@ const RECORD_WORDS = [
   "record",
   "system",
 ];
+const SPATIAL_REPLAY_WORDS = [
+  "站位",
+  "動線",
+  "standing point",
+  "route replay",
+  "sightline replay",
+  "spatial replay",
+];
 // Heuristic keyword lists for suggestEvidenceSource(). The classifier is
 // advisory only (it feeds a human-reviewed `suggestedSource`), so noisy
 // matches create review work, not bugs.
@@ -112,6 +120,10 @@ export function suggestEvidenceSource(input: {
   description: string;
 }): EvidenceSourceSuggestion {
   const text = `${input.label} ${input.description}`.toLowerCase();
+
+  if (containsAny(text, SPATIAL_REPLAY_WORDS)) {
+    return "implied";
+  }
 
   if (containsAny(text, VISIBLE_CARRIER_WORDS)) {
     return "visible";

@@ -86,6 +86,27 @@ describe("suggestEvidenceSource", () => {
     ).toBe("needs-review");
   });
 
+  it("suggests implied for spatial replay carriers", () => {
+    expect(
+      suggestEvidenceSource({
+        label: "三宅23:06站位",
+        description: "站在該點重建後場視線 replay。",
+      }),
+    ).toBe("implied");
+    expect(
+      suggestEvidenceSource({
+        label: "店長23:20動線",
+        description: "重走巡查 route replay。",
+      }),
+    ).toBe("implied");
+    expect(
+      suggestEvidenceSource({
+        label: "standing point",
+        description: "Sightline replay from the storage-room floor.",
+      }),
+    ).toBe("implied");
+  });
+
   it("locks classifier precedence so a branch reorder is caught (regression guard)", () => {
     // Visible carrier words win over record/system words: 螢幕 + 文件 should
     // remain visible because the player has a concrete local click target.
