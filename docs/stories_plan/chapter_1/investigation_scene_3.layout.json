@@ -4,33 +4,12 @@
   "sublocations": {
     "front": {
       "hotspots": {
-        "back_entrance": {
-          "kind": "rect",
-          "x": 0.4952,
-          "y": 0.737354,
-          "w": 0.12,
-          "h": 0.1
-        },
         "counter_admin_records": {
           "kind": "rect",
           "x": 0.627166,
           "y": 0.407753,
           "w": 0.151489,
           "h": 0.18803
-        },
-        "cctv_playback": {
-          "kind": "rect",
-          "x": 0.647568,
-          "y": 0.087826,
-          "w": 0.12,
-          "h": 0.143201
-        },
-        "register": {
-          "kind": "rect",
-          "x": 0.817272,
-          "y": 0.344734,
-          "w": 0.140989,
-          "h": 0.175222
         },
         "osmanthus_sign": {
           "kind": "rect",
@@ -72,10 +51,10 @@
       "hotspots": {
         "storage_sightline": {
           "kind": "rect",
-          "x": 0.574,
-          "y": 0.204,
-          "w": 0.23,
-          "h": 0.48
+          "x": 0.36389,
+          "y": 0.229425,
+          "w": 0.190629,
+          "h": 0.542241
         },
         "inner_sensor_light": {
           "kind": "rect",
@@ -86,10 +65,10 @@
         },
         "tall_shelf": {
           "kind": "rect",
-          "x": 0.626968,
-          "y": 0.235311,
-          "w": 0.12,
-          "h": 0.1
+          "x": 0.643326,
+          "y": 0.020583,
+          "w": 0.342956,
+          "h": 0.339148
         }
       },
       "characters": {}
@@ -105,10 +84,10 @@
         },
         "wall_notice_board": {
           "kind": "rect",
-          "x": 0.642,
-          "y": 0.302,
-          "w": 0.06,
-          "h": 0.21
+          "x": 0.645323,
+          "y": 0.238808,
+          "w": 0.056814,
+          "h": 0.267744
         },
         "cake_cup_boxes": {
           "kind": "rect",

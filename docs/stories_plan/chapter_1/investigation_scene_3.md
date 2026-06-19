@@ -39,13 +39,13 @@
 
 [然後他繼續往下看，沒有多問。]
 
-### Hotspot: 收銀台與第二杯訂單 {#register}
-- **Description:** 收銀台上留著當晚最後幾筆訂單的紀錄。
-- **Evidence Source:** implied
-- **Scene Source Prompt:** Register and order-slip area behind the cafe counter as the local source of the second-cup order, with no readable receipt text.
-- **Reveals:** [evidence:two_coffee_order]
+### Hotspot: 收銀 POS 與吧台管理紀錄 {#counter_admin_records}
+- **Description:** 收銀台後方的 POS、抽屜和值班資料夾，是店長保管訂單、閉店回放與門鎖摘要的地方。
+- **Evidence Source:** visible
+- **Scene Source Prompt:** Visible cafe counter POS and administration area with register terminal, small storage drawer, clipped folders, and staff record binder as the local source for order, CCTV playback, timecard, and doorlock summary; no readable document text.
+- **Reveals:** [evidence:two_coffee_order, evidence:cctv_screenshot, evidence:timecard_record, evidence:doorlock_summary_timetable]
 
-[相馬律翻看訂單，指尖沿著紙邊慢慢滑過去，停在其中一筆。]
+[相馬律翻看 POS 旁的訂單，指尖沿著紙邊慢慢滑過去，停在其中一筆。]
 
 **相馬律**：增田點了兩杯。
 
@@ -57,29 +57,15 @@
 
 **店長高瀨**：店裡標杯習慣寫首字母，方便分。不是全名。
 
-### Hotspot: 閉店監視器回放 {#cctv_playback}
-- **Description:** 收銀台旁的小螢幕還能調出閉店前的監視器畫面。
-- **Evidence Source:** implied
-- **Scene Source Prompt:** Small counter security monitor near the register, powered on as a source object but not showing a readable CCTV still.
-- **Reveals:** [evidence:cctv_screenshot]
-
-[相馬律按下回放。畫面大約二三十秒。]
+[相馬律在 POS 旁的小螢幕調出閉店回放。畫面大約二三十秒。]
 
 **相馬律**：三宅補紙杯，去後場拿清潔用品，到倉庫門口拿了個紙箱。
-
-[畫面繼續走。]
 
 **相馬律**：回前場擦桌，再去後巷倒垃圾。
 
 **早坂茜**：來回後場好幾趟。
 
 **相馬律**：閉店本來就要進後場。靠近後場，不等於做了什麼。
-
-### Hotspot: 吧台管理紀錄 {#counter_admin_records}
-- **Description:** 收銀台後方放著店長保管的值班資料與門鎖系統記錄入口。
-- **Evidence Source:** implied
-- **Scene Source Prompt:** Counter administration area with register, POS terminal, clipped folders, and staff record binder visible as local source objects, no readable document text.
-- **Reveals:** [evidence:timecard_record, evidence:doorlock_summary_timetable]
 
 [店長打開收銀台後方的小抽屜，取出值班資料，又在旁邊的終端叫出門鎖摘要。]
 
@@ -93,19 +79,25 @@
 
 [相馬律沒有多說，把兩邊的紀錄一起記下來。]
 
-### Hotspot: 後場入口 {#back_entrance}
-- **Description:** 前場盡頭有一道通往後場的門，半開著。
-- **Reveals:** [sublocation:corridor]
-
-[相馬律走到後場入口，往裡看。是一條轉折的走廊。]
-
-**相馬律**：員工從這裡進後場。三宅進得來，很正常。
-
-**早坂茜**：進去看看。
-
 ### Character: 店長高瀨 {#takase}
 - **Role:** 店長
 - **Bio:** 雨鐘的店長，普通的開店人。認得增田是「門鎖資料那邊的人」，不懂工程細節。
+
+#### Topic: 帶我們進後場 {#lead_backroom}
+- **Status:** unlocked
+- **Reveals:** [sublocation:corridor]
+
+**相馬律**：店長，後場從哪裡進？
+
+**店長高瀨**：從吧台裡側繞過去。我帶你們。
+
+[高瀨放下抹布，從收銀台後方帶兩人往裡走。]
+
+**相馬律**：三宅平常也走這條路？
+
+**店長高瀨**：對，員工都從這裡進後場。
+
+**早坂茜**：那就進去看看。
 
 #### Topic: 後場舊掛鐘 {#old_clock}
 - **Status:** unlocked
@@ -234,7 +226,7 @@
 
 ### Hotspot: 倉庫入口遮蔽視線 {#storage_sightline}
 - **Description:** 內側倉庫入口被轉角、半掩防火門與高貨架切成幾段視線。
-- **Evidence Source:** implied
+- **Evidence Source:** visible
 - **Scene Source Prompt:** Inner storage entrance sightline blocked by high shelves, half-open fire door, and L-shaped corridor geometry, with no map or posted document.
 - **Reveals:** [evidence:backroom_floorplan]
 

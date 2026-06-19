@@ -4,19 +4,12 @@
   "sublocations": {
     "fixed_panel": {
       "hotspots": {
-        "ext_credential_event": {
-          "kind": "rect",
-          "x": 0.298449,
-          "y": 0.559935,
-          "w": 0.12,
-          "h": 0.1
-        },
         "fixed_record": {
           "kind": "rect",
-          "x": 0.47706,
-          "y": 0.566135,
-          "w": 0.12,
-          "h": 0.1
+          "x": 0.195,
+          "y": 0.676,
+          "w": 0.535,
+          "h": 0.276
         }
       },
       "characters": {
@@ -32,7 +25,15 @@
       }
     },
     "office_corner": {
-      "hotspots": {},
+      "hotspots": {
+        "phone_screenshot": {
+          "kind": "rect",
+          "x": 0.180289,
+          "y": 0.454928,
+          "w": 0.047758,
+          "h": 0.1
+        }
+      },
       "characters": {
         "takase": {
           "kind": "sprite",

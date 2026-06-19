@@ -31,4 +31,14 @@ describe("layout editor app shell", () => {
     expect(appSource).not.toContain("assignEvidenceToCarrier");
     expect(appSource).not.toContain("assignEvidenceToHotspot");
   });
+
+  it("shows a transient confirmation toast after saving the layout", () => {
+    expect(appSource).toContain("handleSaveLayout");
+    expect(appSource).toContain('class="toast-viewport"');
+    expect(appSource).toContain('class="save-toast"');
+    expect(appSource).toContain('role="status"');
+    expect(appSource).toContain("Layout saved");
+    expect(appSource).toContain("position: fixed");
+    expect(appSource).toContain("bottom: 24px");
+  });
 });

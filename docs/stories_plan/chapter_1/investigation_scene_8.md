@@ -85,11 +85,11 @@
 
 **黑瀨徹**：截圖我不收。要用，就讓鑑識把它固定下來。
 
-### Hotspot: 程序固定紀錄 {#fixed_record}
-- **Description:** 鑑識依程序固定後的正式紀錄，比手機截圖完整得多。
-- **Evidence Source:** implied
-- **Scene Source Prompt:** Formal photographed and logged doorlock panel paperwork on the table as the source object, with no readable final record text.
-- **Reveals:** [evidence:local_sequence_record]
+### Hotspot: 程序固定紀錄表 {#fixed_record}
+- **Description:** 桌上攤開的鑑識固定紀錄表，記著本機事件順序與外包憑證那一列。
+- **Evidence Source:** visible
+- **Scene Source Prompt:** Formal photographed and logged doorlock panel paperwork spread on the table as the visible source document bundle, including the local event sequence and external credential row, with no readable final text.
+- **Reveals:** [evidence:local_sequence_record, evidence:external_maintenance_credential]
 
 [相馬律翻開那份正式紀錄表。]
 
@@ -104,11 +104,6 @@
 [早坂茜把紀錄表抄進記事本。]
 
 **早坂茜**：記住，這是本機自己存的順序，不是 KAGAMI 的完整原始紀錄。
-
-### Hotspot: 外包憑證事件 {#ext_credential_event}
-- **Description:** 紀錄裡那條外包維護憑證的事件，排在三宅的員工憑證之前。
-- **Evidence Source:** hidden
-- **Reveals:** [evidence:external_maintenance_credential]
 
 [相馬律用筆尖點著紀錄表上的兩條事件。]
 

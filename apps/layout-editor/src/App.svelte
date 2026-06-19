@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import EditorCanvas from "./lib/EditorCanvas.svelte";
   import EvidenceAssignmentPanel from "./lib/EvidenceAssignmentPanel.svelte";
   import TargetList from "./lib/TargetList.svelte";
@@ -27,6 +28,9 @@
   let requestedChapters = false;
   let currentSublocationId = $state<string | null>(null);
   let currentSublocationScenePath = $state<string | null>(null);
+  let isSavingLayout = $state(false);
+  let saveToastMessage = $state<string | null>(null);
+  let saveToastTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const investigationChapters = $derived(
     editorState.chapters?.chapters
@@ -87,6 +91,41 @@
       currentSublocationScenePath = scenePath;
     }
   });
+
+  onDestroy(() => {
+    clearSaveToastTimeout();
+  });
+
+  function clearSaveToastTimeout() {
+    if (!saveToastTimeout) return;
+    clearTimeout(saveToastTimeout);
+    saveToastTimeout = null;
+  }
+
+  function showSaveToast() {
+    clearSaveToastTimeout();
+    saveToastMessage = "Layout saved";
+    saveToastTimeout = setTimeout(() => {
+      saveToastMessage = null;
+      saveToastTimeout = null;
+    }, 2500);
+  }
+
+  async function handleSaveLayout() {
+    if (isSavingLayout || !editorState.layout || !editorState.layoutPath)
+      return;
+
+    isSavingLayout = true;
+    saveToastMessage = null;
+    try {
+      await saveLayout();
+      if (!editorState.error) {
+        showSaveToast();
+      }
+    } finally {
+      isSavingLayout = false;
+    }
+  }
 </script>
 
 <main class="app-shell">
@@ -143,14 +182,18 @@
           <p class="eyebrow">Scene</p>
           <h2>{editorState.scene.title}</h2>
         </div>
-        <button
-          type="button"
-          class="save-button"
-          disabled={!editorState.layout}
-          onclick={saveLayout}
-        >
-          Save Layout
-        </button>
+        <div class="save-control">
+          <button
+            type="button"
+            class="save-button"
+            disabled={!editorState.layout ||
+              !editorState.layoutPath ||
+              isSavingLayout}
+            onclick={handleSaveLayout}
+          >
+            {isSavingLayout ? "Saving..." : "Save Layout"}
+          </button>
+        </div>
       </header>
 
       <dl class="scene-meta">
@@ -185,6 +228,15 @@
       </div>
     {/if}
   </section>
+
+  {#if saveToastMessage}
+    <div class="toast-viewport" aria-live="polite" aria-atomic="true">
+      <p class="save-toast" role="status">
+        <span class="toast-indicator" aria-hidden="true"></span>
+        <span>{saveToastMessage}</span>
+      </p>
+    </div>
+  {/if}
 </main>
 
 <style>
@@ -347,6 +399,51 @@
     font-weight: 700;
   }
 
+  .save-control {
+    display: grid;
+    justify-items: end;
+    gap: 8px;
+  }
+
+  .save-toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: fit-content;
+    max-width: min(420px, calc(100vw - 48px));
+    margin: 0;
+    padding: 12px 16px;
+    border: 1px solid rgb(255 255 255 / 14%);
+    border-radius: 8px;
+    background: #1f2b26;
+    box-shadow: 0 18px 36px rgb(22 18 12 / 24%);
+    color: #f8fbf8;
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+
+  .toast-viewport {
+    position: fixed;
+    right: 0;
+    bottom: 24px;
+    left: 0;
+    z-index: 40;
+    display: flex;
+    justify-content: center;
+    padding: 0 24px;
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+
+  .toast-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: #83d58a;
+    box-shadow: 0 0 0 4px rgb(131 213 138 / 16%);
+    flex: 0 0 auto;
+  }
+
   .scene-meta {
     display: grid;
     gap: 14px;
@@ -419,6 +516,10 @@
 
     .save-button {
       width: 100%;
+    }
+
+    .save-control {
+      justify-items: stretch;
     }
   }
 </style>
