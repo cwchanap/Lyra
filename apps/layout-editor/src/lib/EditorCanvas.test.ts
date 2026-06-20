@@ -386,6 +386,88 @@ describe("EditorCanvas", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
+  it("dismisses the right-click evidence menu on Escape", async () => {
+    const { container } = render(EditorCanvas, {
+      scene: sourceScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const folder = Array.from(
+      container.querySelectorAll(".target.hotspot"),
+    ).find((target) => target.textContent?.includes("Visible folder"));
+
+    await fireEvent.contextMenu(folder as HTMLElement, {
+      clientX: 240,
+      clientY: 160,
+    });
+    expect(
+      screen.getByRole("menu", { name: "Evidence for Visible folder" }),
+    ).toBeInTheDocument();
+
+    await fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("dismisses the right-click evidence menu on click outside the menu", async () => {
+    const { container } = render(EditorCanvas, {
+      scene: sourceScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const folder = Array.from(
+      container.querySelectorAll(".target.hotspot"),
+    ).find((target) => target.textContent?.includes("Visible folder"));
+
+    await fireEvent.contextMenu(folder as HTMLElement, {
+      clientX: 240,
+      clientY: 160,
+    });
+    expect(
+      screen.getByRole("menu", { name: "Evidence for Visible folder" }),
+    ).toBeInTheDocument();
+
+    // Click the placement-boxes toggle, which lives outside the plate/menu.
+    const toggle = screen.getByRole("button", {
+      name: "Toggle placement boxes",
+    });
+    await fireEvent.pointerDown(toggle);
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("keeps the right-click evidence menu open when clicking inside it", async () => {
+    const { container } = render(EditorCanvas, {
+      scene: sourceScene,
+      layout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange: vi.fn(),
+    });
+
+    const folder = Array.from(
+      container.querySelectorAll(".target.hotspot"),
+    ).find((target) => target.textContent?.includes("Visible folder"));
+
+    await fireEvent.contextMenu(folder as HTMLElement, {
+      clientX: 240,
+      clientY: 160,
+    });
+    const menu = screen.getByRole("menu", {
+      name: "Evidence for Visible folder",
+    });
+
+    await fireEvent.pointerDown(menu);
+
+    expect(menu).toBeInTheDocument();
+  });
+
   it("lists every correlated evidence item in hotspot control titles", () => {
     render(EditorCanvas, {
       scene: sourceScene,

@@ -304,7 +304,22 @@ function recordProblem(
 }
 
 function containsAny(text: string, words: string[]): boolean {
-  return words.some((word) => text.includes(word));
+  return words.some((word) => {
+    // ASCII (English) carrier words use word-boundary matching so a short
+    // token like "pos" does not match "position"/"expose" and "monitor" does
+    // not match "monitoring". This keeps advisory suggestions precise without
+    // dropping carrier nouns. CJK words have no word boundaries and stay
+    // substring-matched.
+    const isAscii = ![...word].some((ch) => (ch.codePointAt(0) ?? 0) > 0x7f);
+    if (isAscii) {
+      return new RegExp(`\\b${escapeRegExp(word)}\\b`).test(text);
+    }
+    return text.includes(word);
+  });
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function byChapterNumber(a: string, b: string): number {

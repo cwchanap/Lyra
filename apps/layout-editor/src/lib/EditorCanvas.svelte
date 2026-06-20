@@ -99,6 +99,7 @@
   let showBoxes = $state(true);
   let revealedTarget = $state<RevealedTarget | null>(null);
   let evidenceMenu = $state<EvidenceMenuState | null>(null);
+  let menuElement: HTMLDivElement | null = $state(null);
   let hiddenTargetKeys = new SvelteSet<string>();
   let cropStyles = $state<Record<string, string>>({});
 
@@ -607,6 +608,27 @@
     return [`left: ${menu.x}px`, `top: ${menu.y}px`].join(";");
   }
 
+  // Escape closes the open evidence menu. Bound at the window level so the key
+  // works regardless of focus, and only acts when a menu is open.
+  function handleWindowKeyDown(event: KeyboardEvent) {
+    if (event.key === "Escape" && evidenceMenu) {
+      event.preventDefault();
+      evidenceMenu = null;
+    }
+  }
+
+  // Click-outside dismissal: a pointerdown that lands anywhere outside the
+  // menu element closes it. The plate's own `handlePlatePointerDown` already
+  // closes on in-plate clicks; this extends coverage to the rest of the page
+  // (heading, side panels, etc.). Clicks inside the menu call
+  // `stopPropagation` on the menu element so they neither close the menu nor
+  // bubble to this handler.
+  function handleWindowPointerDown(event: PointerEvent) {
+    if (!evidenceMenu) return;
+    if (menuElement?.contains(event.target as Node)) return;
+    evidenceMenu = null;
+  }
+
   function hotspotControlTitle(
     hotspot: SceneHotspot & { evidenceItems?: EvidenceCorrelation[] },
   ): string {
@@ -669,6 +691,11 @@
     );
   }
 </script>
+
+<svelte:window
+  onkeydown={handleWindowKeyDown}
+  onpointerdown={handleWindowPointerDown}
+/>
 
 {#if currentSublocation}
   <section class="canvas-shell mt-7 grid gap-4" aria-label="Layout canvas">
@@ -773,8 +800,11 @@
         <div
           class="evidence-menu absolute z-[6] min-w-[190px] max-w-[min(280px,calc(100%-16px))] translate-x-1.5 translate-y-1.5 rounded-md border border-[#26302e]/35 bg-white/95 p-2.5 text-[#26302e] shadow-[0_10px_24px_rgb(0_0_0_/_24%)]"
           role="menu"
+          tabindex="-1"
           aria-label={`Evidence for ${evidenceMenu.hotspotLabel}`}
           style={evidenceMenuStyle(evidenceMenu)}
+          bind:this={menuElement}
+          onpointerdown={(event) => event.stopPropagation()}
         >
           <div
             class="evidence-menu-heading mb-2 flex min-w-0 items-center justify-between gap-2"
