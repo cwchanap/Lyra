@@ -317,28 +317,50 @@ fn find_source_scene_path_at_root(root: &Path, scene_path: &str) -> Result<PathB
     let mut source_scene = relative_scene.to_path_buf();
     source_scene.set_extension("md");
 
-    let matches = ["docs/stories_plan", "static/stories_plan"]
+    // Probe both authored source roots. Keep the full candidate list (for the
+    // not-found diagnostic) separate from the subset that exists on disk (for
+    // the ambiguous diagnostic) so each error names exactly what was tried.
+    let candidates: Vec<PathBuf> = ["docs/stories_plan", "static/stories_plan"]
         .into_iter()
         .map(Path::new)
         .map(|source_root| source_root.join(&source_scene))
+        .collect();
+    let matches: Vec<PathBuf> = candidates
+        .iter()
         .filter(|candidate| root.join(candidate).is_file())
-        .collect::<Vec<_>>();
+        .cloned()
+        .collect();
 
-    let source_path = match matches.as_slice() {
-        [path] => path,
-        [] => {
+    let source_path = match matches.len() {
+        1 => &matches[0],
+        0 => {
+            let probed = candidates
+                .iter()
+                .map(|candidate| candidate.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
             return Err(EditorError::new(
                 "sourceSceneNotFound",
                 format!(
-                    "failed to find authored source for {}",
-                    scene_path.display()
+                    "failed to find authored source for {}; probed: {}",
+                    scene_path.display(),
+                    probed
                 ),
             ));
         }
         _ => {
+            let found = matches
+                .iter()
+                .map(|candidate| candidate.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
             return Err(EditorError::new(
                 "sourceSceneAmbiguous",
-                format!("multiple authored sources match {}", scene_path.display()),
+                format!(
+                    "multiple authored sources match {}: {}",
+                    scene_path.display(),
+                    found
+                ),
             ));
         }
     };
@@ -557,6 +579,62 @@ mod tests {
 
         let err = result.unwrap_err();
         assert_eq!(err.code, "scenePathInvalid");
+    }
+
+    #[test]
+    fn resolve_story_scene_path_not_found_lists_probed_candidates() {
+        let root = temp_workspace_root();
+        // No markdown planted in either source root.
+
+        let err = resolve_story_scene_path_at_root(
+            &root,
+            "apps/game/src-tauri/resources/scenes/chapter_1/investigation_scene_1.json",
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, "sourceSceneNotFound");
+        // The diagnostic names both probed roots so the author sees where it
+        // looked, not just the resource path it started from.
+        assert!(err
+            .message
+            .contains("docs/stories_plan/chapter_1/investigation_scene_1.md"));
+        assert!(err
+            .message
+            .contains("static/stories_plan/chapter_1/investigation_scene_1.md"));
+    }
+
+    #[test]
+    fn resolve_story_scene_path_ambiguous_lists_matched_sources() {
+        let root = temp_workspace_root();
+        // temp_workspace_root pre-creates docs/stories_plan; create the chapter
+        // subdirs (and the static root) before writing the scene files.
+        fs::create_dir_all(root.join("docs/stories_plan/chapter_1")).unwrap();
+        fs::create_dir_all(root.join("static/stories_plan/chapter_1")).unwrap();
+        // Plant the same scene under both source roots.
+        fs::write(
+            root.join("docs/stories_plan/chapter_1/investigation_scene_1.md"),
+            "",
+        )
+        .unwrap();
+        fs::write(
+            root.join("static/stories_plan/chapter_1/investigation_scene_1.md"),
+            "",
+        )
+        .unwrap();
+
+        let err = resolve_story_scene_path_at_root(
+            &root,
+            "apps/game/src-tauri/resources/scenes/chapter_1/investigation_scene_1.json",
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, "sourceSceneAmbiguous");
+        assert!(err
+            .message
+            .contains("docs/stories_plan/chapter_1/investigation_scene_1.md"));
+        assert!(err
+            .message
+            .contains("static/stories_plan/chapter_1/investigation_scene_1.md"));
     }
 
     fn temp_workspace_root() -> PathBuf {

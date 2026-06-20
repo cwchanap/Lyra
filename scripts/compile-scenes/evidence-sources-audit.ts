@@ -35,6 +35,7 @@ export type AuditProblem = {
   sceneFile: string;
   kind:
     | "sourceRootUnreadable"
+    | "chapterEntryUnreadable"
     | "chapterReadError"
     | "chapterParseError"
     | "sceneReadError"
@@ -156,25 +157,14 @@ export function auditEvidenceSources(
     if (!existsSync(root)) continue;
 
     // The audit reports migration work; it must not abort on a single
-    // unreadable, missing, or malformed file. The directory walk itself
-    // (readdir + per-entry stat) can throw on EACCES / ELOOP (symlink) /
-    // TOCTOU ENOENT — guard it the same way the compiler orchestrator does
-    // (orchestrator.ts sourceRootUnreadable) so one bad root does not discard
-    // every problem/item already collected.
-    let chapterDirs: string[];
+    // unreadable, missing, or malformed file. The directory listing itself
+    // (readdir) can throw on EACCES / ELOOP (symlink) / TOCTOU ENOENT — guard
+    // it the same way the compiler orchestrator does (orchestrator.ts
+    // sourceRootUnreadable) so one bad root does not discard every
+    // problem/item already collected.
+    let entries: string[];
     try {
-      chapterDirs = readdirSync(root)
-        .filter((entry) => {
-          if (!/^chapter_\d+$/.test(entry)) return false;
-          try {
-            return statSync(resolve(root, entry)).isDirectory();
-          } catch {
-            // Unreadable/symlinked entry: treat as not-a-chapter rather than
-            // aborting. The per-chapter loop guards its own reads below.
-            return false;
-          }
-        })
-        .sort(byChapterNumber);
+      entries = readdirSync(root);
     } catch (err) {
       recordProblem(
         problems,
@@ -183,6 +173,32 @@ export function auditEvidenceSources(
         toMessage(err),
       );
       continue;
+    }
+
+    const chapterCandidates = entries
+      .filter((entry) => /^chapter_\d+$/.test(entry))
+      .sort(byChapterNumber);
+
+    // Stat each chapter_<N> candidate separately so an un-stattable dir
+    // (EACCES / ELOOP / a broken symlink) is surfaced as a structured
+    // problem instead of silently dropped. The previous inline filter
+    // swallowed statSync failures, which let the CI gate pass green while
+    // skipping an entire chapter's evidence hotspots. Entries that stat fine
+    // but are regular files still fall through as "not a chapter" silently.
+    const chapterDirs: string[] = [];
+    for (const entry of chapterCandidates) {
+      try {
+        if (statSync(resolve(root, entry)).isDirectory()) {
+          chapterDirs.push(entry);
+        }
+      } catch (err) {
+        recordProblem(
+          problems,
+          "chapterEntryUnreadable",
+          `${sourceRoot}/${entry}`,
+          toMessage(err),
+        );
+      }
     }
 
     for (const chapterDirName of chapterDirs) {

@@ -219,6 +219,98 @@ describe("withCompileLock", () => {
       rmSync(lockDir, { recursive: true, force: true });
     }
   });
+
+  it("warns once while waiting on a lock held by a live process", async () => {
+    const sandbox = mkdtempSync(resolve(tmpdir(), "lyra-compile-lock-wait-"));
+    const outputRoot = resolve(sandbox, "out");
+    mkdirSync(outputRoot, { recursive: true });
+    const lockDir = `${outputRoot}.compile.lock`;
+
+    // Plant a fresh lock owned by THIS live process: PID alive + recent mtime
+    // => isStaleLock returns false, so acquireLock must wait in its poll loop
+    // rather than reaping.
+    mkdirSync(lockDir);
+    writeFileSync(
+      resolve(lockDir, "owner.json"),
+      `${JSON.stringify({
+        pid: process.pid,
+        createdAt: new Date().toISOString(),
+      })}\n`,
+    );
+
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    // Release the planted lock shortly after the first poll so the test ends.
+    // The warned-once flag means only one "waiting" line regardless of how
+    // many polls elapse before the release.
+    const releaseTimer = setTimeout(
+      () => rmSync(lockDir, { recursive: true, force: true }),
+      60,
+    );
+
+    try {
+      const result = await withCompileLock(outputRoot, async () => "ok");
+      expect(result).toBe("ok");
+
+      const waiting = warnSpy.mock.calls
+        .map((call) => String(call[0]))
+        .filter((msg) => /waiting on compile lock/.test(msg));
+      expect(waiting).toHaveLength(1);
+      expect(waiting[0]).toContain(`pid ${process.pid}`);
+    } finally {
+      clearTimeout(releaseTimer);
+      warnSpy.mockRestore();
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  });
+
+  it("best-effort releases the lock and exits on SIGINT while holding it", async () => {
+    const sandbox = mkdtempSync(resolve(tmpdir(), "lyra-compile-lock-sigint-"));
+    const outputRoot = resolve(sandbox, "out");
+    mkdirSync(outputRoot, { recursive: true });
+    const lockDir = `${outputRoot}.compile.lock`;
+
+    // process.exit would terminate vitest; stub it to a no-op that records the
+    // call. We are verifying the cleanup wiring (release + exit code +
+    // listener hygiene), not the OS termination itself.
+    const exitSpy = vi.spyOn(process, "exit");
+    exitSpy.mockImplementation((() => undefined) as never);
+
+    const handlersBefore = process.listenerCount("SIGINT");
+
+    try {
+      const result = await withCompileLock(outputRoot, async () => {
+        // Our SIGINT handler is registered while we hold the lock.
+        expect(process.listenerCount("SIGINT")).toBeGreaterThan(handlersBefore);
+
+        // Invoke the handler directly (not process.emit) so we don't trip
+        // vitest's own signal handlers. It schedules async release + exit;
+        // wait for both to settle.
+        const listeners = process.listeners("SIGINT");
+        const handler = listeners[listeners.length - 1] as (
+          signal: NodeJS.Signals,
+        ) => void;
+        handler("SIGINT");
+        await vi.waitFor(() => {
+          expect(existsSync(lockDir)).toBe(false);
+          expect(exitSpy).toHaveBeenCalledWith(130);
+        });
+        return "completed";
+      });
+
+      // With exit stubbed (no termination), the callback resolves normally;
+      // the signal handler already removed the lock, and the finally's
+      // release is a no-op on the now-missing dir.
+      expect(result).toBe("completed");
+      // Listener removed after the critical section — no leak across
+      // watch-mode recompiles.
+      expect(process.listenerCount("SIGINT")).toBe(handlersBefore);
+    } finally {
+      exitSpy.mockRestore();
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("isStaleLock", () => {

@@ -18,9 +18,27 @@ export async function withCompileLock<T>(
 ): Promise<T> {
   const lockDir = `${outputRoot}.compile.lock`;
   const owner = await acquireLock(lockDir);
+
+  // Best-effort cleanup on Ctrl-C / kill while we hold the lock. Node does NOT
+  // run `finally` blocks on signal termination by default, so without this a
+  // Ctrl-C'd compile leaves the lock directory on disk and the next compile
+  // blocks for up to STALE_LOCK_MS (5 min) until the dead-PID staleness check
+  // reaps it. We release, then exit with the conventional 128 + signum code.
+  // Listeners are removed in the finally below so watch mode (which re-enters
+  // this on every recompile) does not leak handlers.
+  const onSignal = (signal: NodeJS.Signals): void => {
+    void releaseLock(lockDir, owner).finally(() => {
+      process.exit(signal === "SIGINT" ? 130 : 143);
+    });
+  };
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+
   try {
     return await callback();
   } finally {
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
     await releaseLock(lockDir, owner);
   }
 }
@@ -28,6 +46,7 @@ export async function withCompileLock<T>(
 async function acquireLock(lockDir: string): Promise<LockOwner> {
   await mkdir(dirname(lockDir), { recursive: true });
 
+  let warnedWaiting = false;
   for (;;) {
     try {
       await mkdir(lockDir);
@@ -42,6 +61,18 @@ async function acquireLock(lockDir: string): Promise<LockOwner> {
         // delaying our own acquisition.
         await reapStaleLock(lockDir);
         continue;
+      }
+      // The poll loop is otherwise silent, which is indistinguishable from a
+      // hang during a long wait. Warn once (per acquire) so the operator knows
+      // a compile is queued behind another holder, then keep polling quietly.
+      if (!warnedWaiting) {
+        const holderPid = await readOwnerPid(lockDir);
+        console.warn(
+          `[compile-scenes] waiting on compile lock held by ${
+            holderPid !== null ? `pid ${holderPid}` : "an unknown process"
+          }...`,
+        );
+        warnedWaiting = true;
       }
       await sleep(LOCK_POLL_MS);
       continue;
@@ -86,7 +117,7 @@ async function reapStaleLock(lockDir: string): Promise<void> {
     if (isErrorCode(err, "ENOENT")) return;
     throw err;
   }
-  await rm(reapDir, { recursive: true, force: true });
+  await rmQuiet(reapDir);
 }
 
 // Only remove the lock if we still own it. If a long-running compile exceeded
@@ -97,7 +128,11 @@ async function reapStaleLock(lockDir: string): Promise<void> {
 async function releaseLock(lockDir: string, owner: LockOwner): Promise<void> {
   const current = await readOwner(lockDir);
   if (current !== null && ownersMatch(current, owner)) {
-    await rm(lockDir, { recursive: true, force: true });
+    // rmQuiet: a removal failure here (EPERM/EBUSY on Windows when something
+    // holds the dir open) must not mask the real compile result propagating
+    // out of withCompileLock's finally. Warn and move on; the stale-lock
+    // reaper cleans the orphan once the holder's PID is gone.
+    await rmQuiet(lockDir);
   }
 }
 
@@ -133,11 +168,16 @@ async function readOwner(lockDir: string): Promise<LockOwner | null> {
     if (typeof owner.pid === "number" && typeof owner.createdAt === "string") {
       return { pid: owner.pid, createdAt: owner.createdAt };
     }
-    // Malformed owner.json: return null so callers fall through to the mtime
-    // check rather than treating the lock as fresh.
+    // Well-formed JSON but the owner fields are missing or the wrong type
+    // (e.g. a partial write). Return null so callers fall through to the
+    // mtime check rather than treating the lock as fresh. Genuinely malformed
+    // JSON (a parse throw) and a missing file (ENOENT) are both handled by
+    // the catch below, which also returns null.
     return null;
-  } catch (err) {
-    if (isErrorCode(err, "ENOENT")) return null;
+  } catch {
+    // ENOENT (no owner.json yet) or a SyntaxError (truncated/garbage JSON):
+    // treat as "no usable owner" so staleness falls back to mtime. Any other
+    // read error is lumped in rather than aborting the release/reap path.
     return null;
   }
 }
@@ -168,6 +208,23 @@ function isProcessAlive(pid: number): boolean {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+// rm({force:true}) suppresses ENOENT but not EPERM/EBUSY (real on Windows when
+// something holds the directory open). A removal failure in the release or
+// reap path must not propagate out of withCompileLock's finally and mask the
+// real compile result/error, so we warn and swallow. The orphaned dir is
+// harmless: the stale-lock reaper cleans it once the holder's PID is gone.
+async function rmQuiet(target: string): Promise<void> {
+  try {
+    await rm(target, { recursive: true, force: true });
+  } catch (err) {
+    console.warn(
+      `[compile-scenes] failed to remove ${target}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
 }
 
 function isErrorCode(err: unknown, code: string): boolean {

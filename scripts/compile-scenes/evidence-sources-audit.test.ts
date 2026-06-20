@@ -176,6 +176,50 @@ describe("suggestEvidenceSource", () => {
       }),
     ).toBe("hidden");
   });
+
+  it("keeps precedence stable on mixed CJK+ASCII input (regression guard)", () => {
+    // Bilingual descriptions are common in this corpus. The classifier
+    // lowercases the whole concatenated text before matching, so a CJK
+    // visible-carrier token and an ASCII record token in the same string must
+    // still resolve by the documented branch order
+    // (spatial > visible > record > needs-review).
+
+    // Visible carrier (CJK 螢幕) wins over a record word (ASCII "record").
+    expect(
+      suggestEvidenceSource({
+        label: "螢幕 record",
+        description: "Monitor screen showing a record.",
+      }),
+    ).toBe("visible");
+
+    // Spatial replay (ASCII "route replay") wins over a visible carrier
+    // (CJK 回放), even when both appear.
+    expect(
+      suggestEvidenceSource({
+        label: "route replay 回放",
+        description: "重建巡查動線。",
+      }),
+    ).toBe("implied");
+
+    // ASCII-only record wording with a CJK record token → hidden.
+    expect(
+      suggestEvidenceSource({
+        label: "打卡 system record",
+        description: "系統留下的資料。",
+      }),
+    ).toBe("hidden");
+
+    // The ASCII token "pos" is a complete word even when glued to CJK
+    // characters (\b sits on the CJK/ASCII boundary), so it still classifies
+    // visible — guards against a regression that only matched purely-ASCII
+    // surrounding text.
+    expect(
+      suggestEvidenceSource({
+        label: "吧台角落pos",
+        description: "暗處有一點不自然。",
+      }),
+    ).toBe("visible");
+  });
 });
 
 describe("auditEvidenceSources", () => {
