@@ -361,32 +361,56 @@ export function printReport(result: EvidenceSourceAuditResult): void {
   }
 }
 
+/**
+ * Evidence-revealing hotspots that have not declared an `Evidence Source`.
+ * These are the merge-blocking regressions: the asset pipeline cannot decide
+ * where the evidence icon/text originates without an authored tag.
+ *
+ * The classifier's `suggestedSource` is intentionally NOT included here — it
+ * is advisory and noisy by design; only a missing authored tag fails the
+ * build.
+ */
+export function findUntaggedHotspots(
+  result: EvidenceSourceAuditResult,
+): EvidenceSourceAuditItem[] {
+  return result.items.filter((item) => item.currentSource === null);
+}
+
+/**
+ * Whether the CI gate should fail the build for `result`.
+ *
+ * Two independent failure conditions, both merge-blocking:
+ * 1. `problems` is non-empty — the audit could not fully process the corpus
+ *    (mirrors `validate-docs-scenes.ts`). The human-readable problem list is
+ *    printed by `printReport`; this only decides the exit code.
+ * 2. Any evidence-revealing hotspot is missing an `Evidence Source` tag —
+ *    see `findUntaggedHotspots`.
+ */
+export function auditGateShouldFail(
+  result: EvidenceSourceAuditResult,
+): boolean {
+  return result.problems.length > 0 || findUntaggedHotspots(result).length > 0;
+}
+
+/** Prints the untagged-hotspot failure detail to stderr. No-op when clean. */
+function reportUntaggedHotspots(untagged: EvidenceSourceAuditItem[]): void {
+  if (untagged.length === 0) return;
+  console.error(
+    `Evidence source audit: ${untagged.length} hotspot(s) missing an Evidence Source tag:`,
+  );
+  for (const item of untagged) {
+    console.error(
+      `  - ${item.sceneFile} ${item.sublocationId}/${item.hotspotId}`,
+    );
+  }
+}
+
 if (import.meta.main) {
   const roots = process.argv.slice(2);
   const result = auditEvidenceSources(
     roots.length > 0 ? roots : DEFAULT_SOURCE_ROOTS,
   );
   printReport(result);
-  // Match validate-docs-scenes.ts: a non-empty problems list means the audit
-  // could not fully process the corpus, so exit non-zero.
-  if (result.problems.length > 0) process.exitCode = 1;
-
-  // CI regression gate: every evidence-revealing hotspot must declare an
-  // `Evidence Source`. A missing tag means the asset pipeline cannot decide
-  // where the evidence icon/text originates, so it is a build-blocking
-  // regression rather than advisory review work. (The classifier's
-  // `suggestedSource` is intentionally NOT gated here — it is advisory and
-  // noisy by design; only a missing authored tag fails the build.)
-  const untagged = result.items.filter((item) => item.currentSource === null);
-  if (untagged.length > 0) {
-    console.error(
-      `Evidence source audit: ${untagged.length} hotspot(s) missing an Evidence Source tag:`,
-    );
-    for (const item of untagged) {
-      console.error(
-        `  - ${item.sceneFile} ${item.sublocationId}/${item.hotspotId}`,
-      );
-    }
-    process.exitCode = 1;
-  }
+  reportUntaggedHotspots(findUntaggedHotspots(result));
+  if (auditGateShouldFail(result)) process.exitCode = 1;
 }

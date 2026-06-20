@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, rmSync, utimesSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -65,6 +73,53 @@ describe("withCompileLock", () => {
     } finally {
       rmSync(outputRoot, { recursive: true, force: true });
       rmSync(`${outputRoot}.compile.lock`, { recursive: true, force: true });
+    }
+  });
+
+  it("reaps a stale lock (dead PID + old mtime) and acquires cleanly", async () => {
+    // End-to-end coverage for the stale-reap path through acquireLock:
+    // mkdir throws EEXIST → isStaleLock returns true → rm → retry mkdir →
+    // write owner.json → callback runs → finally rm. isStaleLock is unit-
+    // tested below, but this is the only test that exercises the full
+    // detect-stale → reap → re-acquire → release flow in withCompileLock.
+    const outputRoot = mkdtempSync(
+      resolve(tmpdir(), "lyra-compile-lock-stale-"),
+    );
+    const lockDir = `${outputRoot}.compile.lock`;
+
+    // Plant a stale lock: directory exists (forces EEXIST on mkdir), owner
+    // PID is guaranteed dead, and mtime is ancient so both liveness and
+    // mtime checks agree the lock is stale.
+    mkdirSync(lockDir);
+    writeFileSync(
+      resolve(lockDir, "owner.json"),
+      `${JSON.stringify({
+        pid: 999999999,
+        createdAt: new Date(0).toISOString(),
+      })}\n`,
+    );
+    utimesSync(lockDir, 1, 1);
+
+    let observedOwnerPid: unknown = null;
+
+    try {
+      const result = await withCompileLock(outputRoot, async () => {
+        // Inside the critical section the lock must have been reaped and
+        // re-acquired by THIS process: owner.json should now reference us,
+        // not the dead PID we planted. If the stale lock were merely reused
+        // (no reap + rewrite), this would still be 999999999.
+        const raw = readFileSync(resolve(lockDir, "owner.json"), "utf8");
+        observedOwnerPid = (JSON.parse(raw) as { pid?: unknown }).pid;
+        return "reaped-and-acquired";
+      });
+
+      expect(result).toBe("reaped-and-acquired");
+      expect(observedOwnerPid).toBe(process.pid);
+      // The lock dir is cleaned up after the callback resolves.
+      expect(existsSync(lockDir)).toBe(false);
+    } finally {
+      rmSync(outputRoot, { recursive: true, force: true });
+      rmSync(lockDir, { recursive: true, force: true });
     }
   });
 

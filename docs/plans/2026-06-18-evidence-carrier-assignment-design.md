@@ -1,5 +1,27 @@
 # Evidence Carrier Assignment Design
 
+> **Revision (2026-06-19):** The editor write-back described below was
+> **retracted** by commit `1d66409` (`fix(editor): remove layout editor
+> evidence write-back and harden read-side path guards`). The layout editor
+> no longer patches authored Markdown or in-memory scene JSON for evidence
+> assignments. Specifically, the **Markdown Patch Rules** and
+> **Validation And Sync** write-back sections (Markdown writes, serialized
+> assignment queue, in-memory JSON patching, generated-standalone creation
+> and auto-deletion) are **not shipped**.
+>
+> What **did** ship and remains accurate:
+> - The typed `EvidenceCarrier` model (hotspot / topic / standalone_hotspot).
+> - Carrier **discovery** (`carrierOptionsForEvidence`,
+>   `evidenceAssignmentsForScene`, `generatedStandaloneHotspotId`) used by the
+>   **read-only** Evidence Sources panel (`EvidenceAssignmentPanel.svelte`).
+> - The `evidence_source_<evidence_id>` ID convention for *detecting*
+>   existing generated standalone hotspots (for label display only).
+>
+> The source of truth remains authored Markdown; generated JSON is a compiled
+> view. The sections below are preserved as the original design rationale. If
+> write-back is reintroduced, treat the retracted sections as a starting point
+> rather than a description of current behavior.
+
 ## Problem
 
 The layout editor still treats evidence as if it always belongs to a physical

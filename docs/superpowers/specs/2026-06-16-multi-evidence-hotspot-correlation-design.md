@@ -4,6 +4,24 @@
 **Status:** Approved design
 **Related spec:** `docs/superpowers/specs/2026-06-14-evidence-source-asset-workflow-design.md`
 
+> **Revision (2026-06-19):** The "Editor Behavior" section originally specified
+> that `visible` evidence-source hotspots should render collected evidence
+> thumbnails in a "compact preview stack or grid" on the hotspot box. That was
+> **superseded during implementation**: rendering previews inside the canvas
+> hotspot boxes cluttered the layout and competed with the background art. The
+> shipped behavior deliberately keeps thumbnails out of the boxes
+> (`EditorCanvas.test.ts`: "keeps evidence previews and counts out of hotspot
+> boxes" asserts the absence of `.hotspot-preview` / `.evidence-chip`). Instead,
+> multi-evidence correlation is exposed through:
+> - a **right-click context menu** on each hotspot (`oncontextmenu` →
+>   `openEvidenceMenu`, `role="menu"`) listing the correlated evidence; and
+> - **source-state badges** and `title` tooltips on the hotspot box
+>   (`hotspotControlTitle`) so a reviewer can see the count/source without
+>   implying the collected images belong in the background.
+>
+> The core decision below — derive correlation from the `Reveals` list, do not
+> add a second field — is unchanged and still accurate.
+
 ## Goal
 
 Make the layout editor show the full evidence correlation for investigation
@@ -25,18 +43,23 @@ compiler validation, runtime collection, and editor review.
 
 ## Editor Behavior
 
-The layout editor should derive a hotspot's correlated evidence from every
+The layout editor derives a hotspot's correlated evidence from every
 `evidence:` target in its `Reveals` list.
 
-For `visible` evidence-source hotspots, the editor should show all available
-collected evidence thumbnails in a compact preview stack or grid. It should not
-collapse the preview to the first evidence image.
+For `visible` evidence-source hotspots, the editor does **not** render
+collected evidence thumbnails inside the canvas hotspot box (this was the
+original "preview stack or grid" idea, superseded — see the revision note
+above). Previews and counts are intentionally kept out of the boxes so the
+background art and placement rectangles stay legible. Instead the full
+correlated evidence list is available through the hotspot's right-click
+context menu.
 
-For `implied`, `hidden`, and missing-source evidence hotspots, the editor should
-not render collected evidence thumbnails, but it should still expose the
-correlation through count/name chips and the hotspot control title. This lets a
-reviewer see which evidence items are tied to the placement rectangle without
-implying those collected images should be visible in the background.
+For `implied`, `hidden`, and missing-source evidence hotspots, the editor
+likewise does not render collected evidence thumbnails. It exposes the
+correlation through source-state badges and the hotspot control `title`
+tooltip (`hotspotControlTitle`). This lets a reviewer see which evidence
+items are tied to the placement rectangle without implying those collected
+images should be visible in the background.
 
 ## Writer Guidance
 

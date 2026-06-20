@@ -77,14 +77,13 @@ export function carrierOptionsForEvidence(
         });
       }
     }
-
-    options.push({
-      label: "Create standalone hotspot",
-      carrier: {
-        kind: "standalone_hotspot",
-        sublocationId: sublocation.id,
-      },
-    });
+    // NOTE: a "Create standalone hotspot" option used to be emitted here for
+    // the editor's assignment write-back. That write-back was retracted (the
+    // Evidence Sources panel is now read-only), so there is no longer a code
+    // path that creates a standalone hotspot from the panel. Generated
+    // standalone hotspots are still *detected* for label display via
+    // `generatedStandaloneHotspotId` in EvidenceAssignmentPanel.svelte; only
+    // the create-option was dead and is intentionally omitted.
   }
 
   return options;

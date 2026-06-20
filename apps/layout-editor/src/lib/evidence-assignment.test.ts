@@ -170,7 +170,9 @@ const sourceSublocationScene = {
 } satisfies InvestigationSceneJson;
 
 describe("carrierOptionsForEvidence", () => {
-  it("lists evidence-capable hotspots, character topics, and standalone creation in the evidence source sublocation", () => {
+  it("lists evidence-capable hotspots and character topics in the evidence source sublocation", () => {
+    // The panel is read-only, so no "Create standalone hotspot" option is
+    // emitted — only existing carriers that can be labeled.
     expect(
       carrierOptionsForEvidence(
         sourceSublocationScene,
@@ -194,13 +196,6 @@ describe("carrierOptionsForEvidence", () => {
           topicId: "forensic_brief",
         },
       },
-      {
-        label: "Create standalone hotspot",
-        carrier: {
-          kind: "standalone_hotspot",
-          sublocationId: "corridor",
-        },
-      },
     ]);
   });
 
@@ -213,14 +208,15 @@ describe("carrierOptionsForEvidence", () => {
     expect(labels).not.toContain("Front / Front door");
   });
 
-  it("does not list generated standalone hotspots as normal carrier targets", () => {
+  it("does not list generated standalone hotspots as normal carrier targets and emits no create option", () => {
     const labels = carrierOptionsForEvidence(
       sourceSublocationScene,
       sourceSublocationScene.evidenceManifest[0],
     ).map((option) => option.label);
 
     expect(labels).not.toContain("Corridor / Access log generated source");
-    expect(labels).toContain("Create standalone hotspot");
+    // The read-only panel offers no standalone creation affordance.
+    expect(labels).not.toContain("Create standalone hotspot");
   });
 });
 

@@ -1,5 +1,28 @@
 # Evidence Carrier Assignment Implementation Plan
 
+> **Revision (2026-06-19):** Most of this plan was **retracted** by commit
+> `1d66409` (`fix(editor): remove layout editor evidence write-back and
+> harden read-side path guards`). The layout editor no longer writes carrier
+> assignments back to Markdown or patches in-memory scene JSON. Tasks that
+> mutate authored content — the Markdown patcher, the serialized assignment
+> queue in `layout-store.svelte.ts`, the `write_story_scene_file` Tauri
+> command, generated-standalone creation/deletion, and in-memory JSON
+> patching — describe behavior that is **not shipped** and were removed along
+> with their tests (~1700 lines deleted).
+>
+> What **did** ship and matches the tasks below:
+> - **Task 1** (typed carrier discovery: `carrierOptionsForEvidence`,
+>   `evidenceAssignmentsForScene`, `generatedStandaloneHotspotId`) — still
+>   present, now powering the **read-only** Evidence Sources panel.
+> - The `evidence_source_<evidence_id>` ID convention is retained for
+>   *detecting* existing generated standalone hotspots (label display).
+> - `carrierOptionsForEvidence` no longer emits a "Create standalone hotspot"
+>   option (dead in the read-only panel; removed 2026-06-19).
+>
+> Do not execute the write-back tasks as written. If assignment write-back is
+> reintroduced, re-derive the patcher/queue design against the current
+> read-only carrier model rather than resurrecting the deleted code verbatim.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let the layout editor assign evidence to physical hotspots, character topics, or generated standalone hidden hotspots while keeping authored Markdown and editor state synchronized.
