@@ -3,6 +3,12 @@ import { dirname, resolve } from "node:path";
 
 const LOCK_POLL_MS = 25;
 const STALE_LOCK_MS = 5 * 60 * 1000;
+// Hard cap on lock age regardless of recorded PID liveness. If the OS
+// recycles a dead holder's PID for an unrelated long-lived process, the
+// PID-alive check alone would treat the lock as fresh forever and never
+// reach the mtime fallback. This cap reaps such locks. No legitimate single
+// compile should hold the lock this long; 30 min is generous for dev tooling.
+const MAX_LOCK_MS = 30 * 60 * 1000;
 
 export async function withCompileLock<T>(
   outputRoot: string,
@@ -63,21 +69,28 @@ async function acquireLock(lockDir: string): Promise<void> {
 }
 
 export async function isStaleLock(lockDir: string): Promise<boolean> {
-  // Prefer PID liveness: a holder that is still running is never stale,
-  // even if the lock directory's mtime is old (mtimes do not refresh while
-  // a long compile runs).
-  const ownerPid = await readOwnerPid(lockDir);
-  if (ownerPid !== null && isProcessAlive(ownerPid)) {
-    return false;
-  }
-
+  let mtimeMs: number;
   try {
     const info = await stat(lockDir);
-    return Date.now() - info.mtimeMs > STALE_LOCK_MS;
+    mtimeMs = info.mtimeMs;
   } catch (err) {
     if (isErrorCode(err, "ENOENT")) return false;
     throw err;
   }
+
+  const ageMs = Date.now() - mtimeMs;
+
+  // Prefer PID liveness: a holder that is still running is never stale based
+  // on mtime alone (mtimes do not refresh while a long compile runs). But
+  // guard against PID reuse: if the lock is older than MAX_LOCK_MS, the
+  // recorded PID was likely recycled for an unrelated process, so reap it
+  // rather than waiting forever.
+  const ownerPid = await readOwnerPid(lockDir);
+  if (ownerPid !== null && isProcessAlive(ownerPid)) {
+    return ageMs > MAX_LOCK_MS;
+  }
+
+  return ageMs > STALE_LOCK_MS;
 }
 
 async function readOwnerPid(lockDir: string): Promise<number | null> {
@@ -94,14 +107,11 @@ async function readOwnerPid(lockDir: string): Promise<number | null> {
 }
 
 function isProcessAlive(pid: number): boolean {
-  // Known limitation: PID reuse. If the original holder exits and the OS
-  // later recycles `pid` for an unrelated process, this check reports the
-  // lock as alive and we wait until the mtime fallback (STALE_LOCK_MS, 5
-  // min) reaps it. This is acceptable for a dev-tooling compile lock: PID
-  // recycling within a single `scenes:compile`/`scenes:watch` session is
-  // rare, and the worst case is a delayed (not lost) compile. We do NOT
-  // narrow the check to the holder's command line or start time because
-  // that would add platform-specific fragility for negligible benefit.
+  // PID reuse is handled by the MAX_LOCK_MS hard cap in isStaleLock: even if
+  // the OS recycles `pid` for an unrelated long-lived process, the lock is
+  // reaped once it exceeds the cap. We do NOT narrow the check to the
+  // holder's command line or start time because that would add
+  // platform-specific fragility for negligible benefit.
   try {
     process.kill(pid, 0);
     return true;
