@@ -3,6 +3,7 @@ import {
   carrierOptionsForEvidence,
   evidenceAssignmentsForScene,
   generatedStandaloneHotspotId,
+  isGeneratedStandaloneHotspotId,
 } from "./evidence-assignment";
 import type { InvestigationSceneJson } from "./layout-types";
 
@@ -225,6 +226,25 @@ describe("generatedStandaloneHotspotId", () => {
     expect(generatedStandaloneHotspotId("forensic_prelim_range")).toBe(
       "evidence_source_forensic_prelim_range",
     );
+  });
+
+  it("generator output satisfies the detector (prefix contract cannot drift)", () => {
+    // If someone changes the prefix in the generator but not the detector (or
+    // vice versa) this round-trip breaks. Locks the single-constant contract.
+    for (const evidenceId of ["log", "forensic_prelim_range", "new_record"]) {
+      expect(
+        isGeneratedStandaloneHotspotId(
+          generatedStandaloneHotspotId(evidenceId),
+        ),
+      ).toBe(true);
+    }
+
+    // Non-generated hotspot ids and degenerate forms are not mistaken for
+    // standalone sources.
+    expect(isGeneratedStandaloneHotspotId("desk")).toBe(false);
+    expect(isGeneratedStandaloneHotspotId("evidence_source_")).toBe(false);
+    expect(isGeneratedStandaloneHotspotId("x_evidence_source_log")).toBe(false);
+    expect(isGeneratedStandaloneHotspotId("EVIDENCE_source_log")).toBe(false);
   });
 });
 

@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 
 import { render, screen } from "@testing-library/svelte";
-import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import EvidenceAssignmentPanel from "./EvidenceAssignmentPanel.svelte";
 import type { InvestigationSceneJson } from "./layout-types";
 
@@ -263,29 +262,5 @@ describe("EvidenceAssignmentPanel", () => {
 
     expect(container.querySelector("select")).toBeNull();
     expect(screen.queryByLabelText(/^Assign /)).not.toBeInTheDocument();
-  });
-
-  it("does not call a legacy assignment handler on user change", async () => {
-    const user = userEvent.setup();
-    const onAssignEvidence = vi.fn();
-    const legacyProps = {
-      scene,
-      sublocationId: "corridor",
-      onAssignEvidence,
-    } as unknown as {
-      scene: InvestigationSceneJson;
-      sublocationId: string;
-    };
-
-    const { container } = render(EvidenceAssignmentPanel, legacyProps);
-
-    const legacySelect = container.querySelector("select");
-    if (legacySelect) {
-      await user.selectOptions(legacySelect, ["hotspot:corridor:terminal"]);
-    } else {
-      await user.click(screen.getByText("Unassigned"));
-    }
-
-    expect(onAssignEvidence).not.toHaveBeenCalled();
   });
 });

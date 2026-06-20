@@ -29,12 +29,26 @@ export type EvidenceCarrierOption = {
 
 type EvidenceManifestItem = InvestigationSceneJson["evidenceManifest"][number];
 
-function isGeneratedStandaloneHotspotId(id: string): boolean {
-  return /^evidence_source_[a-z0-9_]+$/.test(id);
+// ID convention for editor-generated standalone evidence-source hotspots.
+// Hoisted to a single constant so the generator and the detector below share
+// one source of truth and cannot drift apart. The prefix is a fixed literal;
+// escaping it when building the regex keeps the contract safe even if a future
+// prefix ever contains a regex metacharacter.
+const STANDALONE_HOTSPOT_ID_PREFIX = "evidence_source_";
+const STANDALONE_HOTSPOT_ID_RE = new RegExp(
+  `^${escapeRegExp(STANDALONE_HOTSPOT_ID_PREFIX)}[a-z0-9_]+$`,
+);
+
+export function isGeneratedStandaloneHotspotId(id: string): boolean {
+  return STANDALONE_HOTSPOT_ID_RE.test(id);
 }
 
 export function generatedStandaloneHotspotId(evidenceId: string): string {
-  return `evidence_source_${evidenceId}`;
+  return `${STANDALONE_HOTSPOT_ID_PREFIX}${evidenceId}`;
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function carrierOptionsForEvidence(
