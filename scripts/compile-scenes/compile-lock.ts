@@ -1,5 +1,7 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+
+type LockOwner = { pid: number; createdAt: string };
 
 const LOCK_POLL_MS = 25;
 const STALE_LOCK_MS = 5 * 60 * 1000;
@@ -15,15 +17,15 @@ export async function withCompileLock<T>(
   callback: () => T | Promise<T>,
 ): Promise<T> {
   const lockDir = `${outputRoot}.compile.lock`;
-  await acquireLock(lockDir);
+  const owner = await acquireLock(lockDir);
   try {
     return await callback();
   } finally {
-    await rm(lockDir, { recursive: true, force: true });
+    await releaseLock(lockDir, owner);
   }
 }
 
-async function acquireLock(lockDir: string): Promise<void> {
+async function acquireLock(lockDir: string): Promise<LockOwner> {
   await mkdir(dirname(lockDir), { recursive: true });
 
   for (;;) {
@@ -33,12 +35,12 @@ async function acquireLock(lockDir: string): Promise<void> {
       if (!isErrorCode(err, "EEXIST")) throw err;
       // Someone else holds the lock. Reap it if stale, otherwise wait.
       if (await isStaleLock(lockDir)) {
-        // We just removed a stale lock, so the directory is free now.
-        // Retry mkdir immediately rather than sleeping: sleeping would widen
-        // the window in which another process can reacquire the lock before
-        // us, needlessly delaying our own acquisition (and, on a narrow race,
-        // letting a fresh holder's lock be deleted by a third reaper).
-        await rm(lockDir, { recursive: true, force: true });
+        // reapStaleLock atomically claims the stale lock via rename, so if it
+        // succeeds the directory is free now and we retry mkdir immediately
+        // rather than sleeping. Sleeping would widen the window in which
+        // another process can reacquire the lock before us, needlessly
+        // delaying our own acquisition.
+        await reapStaleLock(lockDir);
         continue;
       }
       await sleep(LOCK_POLL_MS);
@@ -48,23 +50,54 @@ async function acquireLock(lockDir: string): Promise<void> {
     // We created the directory; now persist the owner metadata. If the write
     // fails, roll back the directory so we don't leave an orphaned lock that
     // looks real to every subsequent acquirer.
+    const owner: LockOwner = {
+      pid: process.pid,
+      createdAt: new Date().toISOString(),
+    };
     try {
       await writeFile(
         resolve(lockDir, "owner.json"),
-        `${JSON.stringify(
-          {
-            pid: process.pid,
-            createdAt: new Date().toISOString(),
-          },
-          null,
-          2,
-        )}\n`,
+        `${JSON.stringify(owner, null, 2)}\n`,
       );
-      return;
+      return owner;
     } catch (err) {
       await rm(lockDir, { recursive: true, force: true });
       throw err;
     }
+  }
+}
+
+// Atomically claim a stale lock by renaming it to a private directory, then
+// remove our private copy. Only one process can win the rename; any competitor
+// (or the original holder's cleanup) sees ENOENT and simply retries mkdir.
+// This closes the check-then-delete TOCTOU window that a plain `rm(lockDir)`
+// opened: between our staleness check and removal, a third process could have
+// reaped the stale lock and acquired a fresh one, and our rm would have
+// destroyed that fresh holder's lock.
+async function reapStaleLock(lockDir: string): Promise<void> {
+  const reapDir = `${lockDir}.reaping.${process.pid}.${Date.now()}.${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+  try {
+    await rename(lockDir, reapDir);
+  } catch (err) {
+    // Another reaper already claimed it, or the holder cleaned up. Either way
+    // the lock directory is gone from our perspective; fall through and retry.
+    if (isErrorCode(err, "ENOENT")) return;
+    throw err;
+  }
+  await rm(reapDir, { recursive: true, force: true });
+}
+
+// Only remove the lock if we still own it. If a long-running compile exceeded
+// MAX_LOCK_MS and another process reaped + reacquired our lock while our
+// callback was still running, the on-disk owner no longer matches our token.
+// Deleting the directory in that case would destroy the new holder's lock, so
+// we leave it alone and exit without removing anything.
+async function releaseLock(lockDir: string, owner: LockOwner): Promise<void> {
+  const current = await readOwner(lockDir);
+  if (current !== null && ownersMatch(current, owner)) {
+    await rm(lockDir, { recursive: true, force: true });
   }
 }
 
@@ -93,17 +126,29 @@ export async function isStaleLock(lockDir: string): Promise<boolean> {
   return ageMs > STALE_LOCK_MS;
 }
 
-async function readOwnerPid(lockDir: string): Promise<number | null> {
+async function readOwner(lockDir: string): Promise<LockOwner | null> {
   try {
     const raw = await readFile(resolve(lockDir, "owner.json"), "utf8");
-    const owner = JSON.parse(raw) as { pid?: unknown };
-    return typeof owner.pid === "number" ? owner.pid : null;
+    const owner = JSON.parse(raw) as { pid?: unknown; createdAt?: unknown };
+    if (typeof owner.pid === "number" && typeof owner.createdAt === "string") {
+      return { pid: owner.pid, createdAt: owner.createdAt };
+    }
+    // Malformed owner.json: return null so callers fall through to the mtime
+    // check rather than treating the lock as fresh.
+    return null;
   } catch (err) {
     if (isErrorCode(err, "ENOENT")) return null;
-    // Malformed owner.json: fall through to the mtime check rather than
-    // treating the lock as fresh.
     return null;
   }
+}
+
+async function readOwnerPid(lockDir: string): Promise<number | null> {
+  const owner = await readOwner(lockDir);
+  return owner === null ? null : owner.pid;
+}
+
+function ownersMatch(a: LockOwner, b: LockOwner): boolean {
+  return a.pid === b.pid && a.createdAt === b.createdAt;
 }
 
 function isProcessAlive(pid: number): boolean {

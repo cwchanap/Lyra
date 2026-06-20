@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -120,6 +121,73 @@ describe("withCompileLock", () => {
     } finally {
       rmSync(outputRoot, { recursive: true, force: true });
       rmSync(lockDir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves the lock in place when its on-disk owner changed before release", async () => {
+    // Simulates a long-running compile whose own lock was reaped (e.g. it
+    // exceeded MAX_LOCK_MS) and reacquired by another process while our
+    // callback was still running: owner.json on disk now references a
+    // different token. Our release path must NOT remove the directory, or it
+    // would destroy the new holder's lock.
+    const outputRoot = mkdtempSync(
+      resolve(tmpdir(), "lyra-compile-lock-release-"),
+    );
+    const lockDir = `${outputRoot}.compile.lock`;
+
+    try {
+      await withCompileLock(outputRoot, async () => {
+        writeFileSync(
+          resolve(lockDir, "owner.json"),
+          `${JSON.stringify({
+            pid: 999999999,
+            createdAt: new Date().toISOString(),
+          })}\n`,
+        );
+      });
+
+      expect(existsSync(lockDir)).toBe(true);
+      expect(existsSync(resolve(lockDir, "owner.json"))).toBe(true);
+    } finally {
+      rmSync(outputRoot, { recursive: true, force: true });
+      rmSync(lockDir, { recursive: true, force: true });
+    }
+  });
+
+  it("cleans up reaping artifacts when reaping a stale lock", async () => {
+    // The rename-based reaper moves the stale lock into a private
+    // `<lockDir>.reaping.*` directory and then removes it. Assert no such
+    // artifact lingers in the lock's parent directory after a successful
+    // acquire→release cycle that had to reap.
+    const sandbox = mkdtempSync(
+      resolve(tmpdir(), "lyra-compile-lock-sandbox-"),
+    );
+    const outputRoot = resolve(sandbox, "out");
+    mkdirSync(outputRoot, { recursive: true });
+    const lockDir = `${outputRoot}.compile.lock`;
+
+    mkdirSync(lockDir);
+    writeFileSync(
+      resolve(lockDir, "owner.json"),
+      `${JSON.stringify({
+        pid: 999999999,
+        createdAt: new Date(0).toISOString(),
+      })}\n`,
+    );
+    utimesSync(lockDir, 1, 1);
+
+    try {
+      const result = await withCompileLock(outputRoot, async () => "ok");
+      expect(result).toBe("ok");
+
+      const leftovers = readdirSync(sandbox).filter((name) =>
+        name.includes(".reaping."),
+      );
+      expect(leftovers).toEqual([]);
+      // Normal release after a successful reap still removes the lock dir.
+      expect(existsSync(lockDir)).toBe(false);
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
     }
   });
 
