@@ -155,6 +155,27 @@ describe("suggestEvidenceSource", () => {
       }),
     ).toBe("hidden");
   });
+
+  it("uses word boundaries for English carrier words so substrings do not over-match", () => {
+    // "pos" must not match "position": a description that only mentions a
+    // position (no visible carrier, record, or spatial-replay token) should
+    // stay needs-review rather than be suggested visible.
+    expect(
+      suggestEvidenceSource({
+        label: "Late-night position",
+        description: "A vague position on the clock face.",
+      }),
+    ).toBe("needs-review");
+
+    // "monitor" must not match "monitoring": "monitoring system" is a system
+    // record (hidden), not a visible monitor.
+    expect(
+      suggestEvidenceSource({
+        label: "Monitoring system",
+        description: "The staff monitoring system logs entries.",
+      }),
+    ).toBe("hidden");
+  });
 });
 
 describe("auditEvidenceSources", () => {
