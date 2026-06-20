@@ -66,12 +66,6 @@ fn resolve_layout_path(scene_path: String) -> Result<String, EditorError> {
     resolve_layout_path_at_root(&root, &scene_path)
 }
 
-#[tauri::command]
-fn resolve_story_scene_path(scene_path: String) -> Result<String, EditorError> {
-    let root = workspace_root()?;
-    resolve_story_scene_path_at_root(&root, &scene_path)
-}
-
 fn write_project_file_at_root(
     root: &Path,
     path: &str,
@@ -357,7 +351,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             resolve_layout_path,
-            resolve_story_scene_path,
             read_project_file,
             write_project_file
         ])
