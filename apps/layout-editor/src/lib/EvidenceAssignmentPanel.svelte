@@ -3,6 +3,7 @@
     carrierOptionsForEvidence,
     evidenceAssignmentsForScene,
     generatedStandaloneHotspotId,
+    hotspotCarrierLabel,
     type EvidenceCarrier,
     type SceneEvidenceAssignment,
   } from "./evidence-assignment";
@@ -107,6 +108,17 @@
       return standaloneHotspot
         ? `${standaloneHotspot.sublocationLabel} / ${standaloneHotspot.label}`
         : "Standalone evidence source";
+    }
+    if (carrier.kind === "hotspot") {
+      // Look up the hotspot directly so we still label carriers that lack
+      // evidenceSource metadata (the audit-flagged case).
+      // carrierOptionsForEvidence filters those out, which would hide the
+      // actual carrier behind "Unassigned" and leave the user unable to see
+      // what to tag.
+      return (
+        hotspotCarrierLabel(scene, carrier.sublocationId, carrier.hotspotId) ??
+        "Unassigned"
+      );
     }
     const selectedValue = carrierValue(carrier);
     return (

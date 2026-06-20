@@ -164,7 +164,25 @@ describe("isStaleLock", () => {
     rmSync(lockDir, { recursive: true, force: true });
   });
 
-  it("treats a lock held by a live PID as fresh regardless of mtime", async () => {
+  it("treats a lock held by a live PID as fresh when newer than the hard cap", async () => {
+    await writeFile(
+      resolve(lockDir, "owner.json"),
+      `${JSON.stringify({
+        pid: process.pid,
+        createdAt: new Date().toISOString(),
+      })}\n`,
+    );
+    // Recent mtime: PID is alive and lock is under the cap, so fresh.
+    const recent = Math.floor(Date.now() / 1000) - 60;
+    utimesSync(lockDir, recent, recent);
+
+    expect(await isStaleLock(lockDir)).toBe(false);
+  });
+
+  it("reaps a lock whose recorded PID is alive but exceeds the hard cap (PID reuse)", async () => {
+    // PID reuse scenario: the recorded PID belongs to THIS process (alive),
+    // but the lock is ancient — well beyond MAX_LOCK_MS. The PID-alive check
+    // alone would treat it as fresh forever; the hard cap must reap it.
     await writeFile(
       resolve(lockDir, "owner.json"),
       `${JSON.stringify({
@@ -172,11 +190,9 @@ describe("isStaleLock", () => {
         createdAt: new Date(0).toISOString(),
       })}\n`,
     );
-    // Force the directory mtime far into the past so the mtime-only check
-    // would incorrectly consider this lock stale.
     utimesSync(lockDir, 1, 1);
 
-    expect(await isStaleLock(lockDir)).toBe(false);
+    expect(await isStaleLock(lockDir)).toBe(true);
   });
 
   it("still treats a lock with a dead PID and stale mtime as stale", async () => {

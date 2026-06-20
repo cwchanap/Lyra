@@ -191,6 +191,56 @@ describe("EvidenceAssignmentPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("labels a hotspot carrier even when it lacks Evidence Source metadata", () => {
+    // Audit-flagged case: a hotspot reveals evidence but has
+    // evidenceSource: null. The panel must still show the actual carrier
+    // label (e.g. "Front / Safe") rather than "Unassigned", so the user
+    // can see which hotspot to tag. The untagged hotspot is the SOLE carrier
+    // here — if desk also revealed receipt, selectedCarrier() would pick desk
+    // first (it has evidenceSource: "visible") and the test would pass without
+    // exercising the fix.
+    const untaggedCarrierScene: InvestigationSceneJson = {
+      ...scene,
+      sublocations: scene.sublocations.map((sublocation) =>
+        sublocation.id === "front"
+          ? {
+              ...sublocation,
+              hotspots: [
+                {
+                  id: "desk",
+                  label: "Desk",
+                  description: "Desk.",
+                  evidenceSource: "visible",
+                  sceneSourcePrompt: null,
+                  reveals: [],
+                  inspectDialogue: [],
+                  layout: null,
+                },
+                {
+                  id: "safe",
+                  label: "Safe",
+                  description: "A locked safe.",
+                  evidenceSource: null,
+                  sceneSourcePrompt: null,
+                  reveals: [{ kind: "evidence", id: "receipt" }],
+                  inspectDialogue: [],
+                  layout: null,
+                },
+              ],
+            }
+          : sublocation,
+      ),
+    };
+
+    render(EvidenceAssignmentPanel, {
+      scene: untaggedCarrierScene,
+      sublocationId: "front",
+    });
+
+    expect(screen.getByText("Front / Safe")).toBeInTheDocument();
+    expect(screen.queryByText("Unassigned")).not.toBeInTheDocument();
+  });
+
   it("shows a current generated standalone hotspot assignment label", () => {
     render(EvidenceAssignmentPanel, {
       scene: sceneWithGeneratedStandaloneLog(),

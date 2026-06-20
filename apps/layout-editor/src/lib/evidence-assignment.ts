@@ -89,6 +89,30 @@ export function carrierOptionsForEvidence(
   return options;
 }
 
+/**
+ * Look up a hotspot carrier label directly from the scene, bypassing the
+ * `evidenceSource` filter in {@link carrierOptionsForEvidence}. This is used
+ * to label the *current* assignment even when the hotspot lacks Evidence
+ * Source metadata (the audit-flagged case): `carrierOptionsForEvidence`
+ * filters such hotspots out, which would otherwise hide the actual carrier
+ * behind "Unassigned" and leave the user unable to see what to tag.
+ */
+export function hotspotCarrierLabel(
+  scene: InvestigationSceneJson,
+  sublocationId: string,
+  hotspotId: string,
+): string | null {
+  for (const sublocation of scene.sublocations) {
+    if (sublocation.id !== sublocationId) continue;
+    for (const hotspot of sublocation.hotspots) {
+      if (hotspot.id === hotspotId) {
+        return `${sublocation.label} / ${hotspot.label}`;
+      }
+    }
+  }
+  return null;
+}
+
 export function evidenceAssignmentsForScene(
   scene: InvestigationSceneJson,
 ): SceneEvidenceAssignment[] {
