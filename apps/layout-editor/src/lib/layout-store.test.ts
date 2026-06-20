@@ -24,8 +24,6 @@ function resetState() {
   editorState.layout = null;
   editorState.scenePath = null;
   editorState.layoutPath = null;
-  editorState.storyScenePath = null;
-  editorState.storySceneContents = null;
   editorState.error = null;
 }
 
@@ -239,13 +237,6 @@ describe("layout-store", () => {
           contents: JSON.stringify(sceneJson),
         })
         .mockResolvedValueOnce("layouts/scene_new.layout.json")
-        .mockResolvedValueOnce(
-          "docs/stories_plan/chapter_1/investigation_scene_1.md",
-        )
-        .mockResolvedValueOnce({
-          path: "docs/stories_plan/chapter_1/investigation_scene_1.md",
-          contents: "# Scene\n",
-        })
         .mockRejectedValueOnce({ code: "notFound", message: "Not found" });
 
       await loadInvestigationScene("scenes/scene_new.json");
@@ -288,13 +279,6 @@ describe("layout-store", () => {
           contents: JSON.stringify(sceneJson),
         })
         .mockResolvedValueOnce("layouts/scene_existing.layout.json")
-        .mockResolvedValueOnce(
-          "docs/stories_plan/chapter_1/investigation_scene_existing.md",
-        )
-        .mockResolvedValueOnce({
-          path: "docs/stories_plan/chapter_1/investigation_scene_existing.md",
-          contents: "# Scene\n",
-        })
         .mockResolvedValueOnce({
           path: "layouts/scene_existing.layout.json",
           contents: JSON.stringify(existingLayout),
@@ -334,13 +318,6 @@ describe("layout-store", () => {
           contents: JSON.stringify(sceneJson),
         })
         .mockResolvedValueOnce("layouts/scene_ok.layout.json")
-        .mockResolvedValueOnce(
-          "docs/stories_plan/chapter_1/investigation_scene_ok.md",
-        )
-        .mockResolvedValueOnce({
-          path: "docs/stories_plan/chapter_1/investigation_scene_ok.md",
-          contents: "# Scene\n",
-        })
         .mockResolvedValueOnce({
           path: "layouts/scene_ok.layout.json",
           contents: JSON.stringify({
@@ -368,8 +345,6 @@ describe("layout-store", () => {
       expect(editorState.scenePath).toBeNull();
       expect(editorState.layout).toBeNull();
       expect(editorState.layoutPath).toBeNull();
-      expect(editorState.storyScenePath).toBeNull();
-      expect(editorState.storySceneContents).toBeNull();
     });
   });
 
