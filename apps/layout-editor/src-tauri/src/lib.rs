@@ -61,12 +61,6 @@ fn write_project_file(path: String, contents: String) -> Result<(), EditorError>
 }
 
 #[tauri::command]
-fn write_story_scene_file(path: String, contents: String) -> Result<(), EditorError> {
-    let root = workspace_root()?;
-    write_story_scene_file_at_root(&root, &path, contents)
-}
-
-#[tauri::command]
 fn resolve_layout_path(scene_path: String) -> Result<String, EditorError> {
     let root = workspace_root()?;
     resolve_layout_path_at_root(&root, &scene_path)
@@ -84,18 +78,6 @@ fn write_project_file_at_root(
     contents: String,
 ) -> Result<(), EditorError> {
     ensure_layout_sidecar_write_path(path)?;
-    let path_buf = checked_project_path_from_root(root, path)?;
-    ensure_parent_dirs(root, &path_buf)?;
-    reject_symlink(&path_buf)?;
-    write_regular_file(&path_buf, contents)
-}
-
-fn write_story_scene_file_at_root(
-    root: &Path,
-    path: &str,
-    contents: String,
-) -> Result<(), EditorError> {
-    ensure_story_scene_write_path(path)?;
     let path_buf = checked_project_path_from_root(root, path)?;
     ensure_parent_dirs(root, &path_buf)?;
     reject_symlink(&path_buf)?;
@@ -162,42 +144,6 @@ fn ensure_layout_sidecar_write_path(path: &str) -> Result<(), EditorError> {
         Err(EditorError::new(
             "writePathNotAllowed",
             "layout editor can only write *.layout.json files under authored story roots",
-        ))
-    }
-}
-
-fn ensure_story_scene_write_path(path: &str) -> Result<(), EditorError> {
-    let requested = Path::new(path);
-    if requested
-        .components()
-        .any(|component| matches!(component, Component::ParentDir))
-    {
-        return Err(EditorError::new("pathEscape", "path escapes project root"));
-    }
-
-    let components = requested.components().collect::<Vec<_>>();
-    let matches_story_scene_shape = match components.as_slice() {
-        [Component::Normal(root), Component::Normal(stories_plan), Component::Normal(chapter), Component::Normal(file)] =>
-        {
-            let root = root.to_string_lossy();
-            let stories_plan = stories_plan.to_string_lossy();
-            let chapter = chapter.to_string_lossy();
-            let file = file.to_string_lossy();
-            (root == "docs" || root == "static")
-                && stories_plan == "stories_plan"
-                && chapter.starts_with("chapter_")
-                && file.starts_with("investigation_scene_")
-                && file.ends_with(".md")
-        }
-        _ => false,
-    };
-
-    if matches_story_scene_shape {
-        Ok(())
-    } else {
-        Err(EditorError::new(
-            "writePathNotAllowed",
-            "layout editor can only write authored investigation scene markdown files",
         ))
     }
 }
@@ -346,6 +292,25 @@ fn resolve_story_scene_path_at_root(root: &Path, scene_path: &str) -> Result<Str
 }
 
 fn find_source_scene_path_at_root(root: &Path, scene_path: &str) -> Result<PathBuf, EditorError> {
+    // Defense-in-depth: legitimate scene resource paths are flat
+    // `chapter_<N>/<scene>.json` paths under the resources root, so they never
+    // need `..` or absolute components. Reject any such component up front so a
+    // crafted scene_path cannot traverse out of the authored source roots after
+    // the strip_prefix + join below (e.g. reach a markdown file outside
+    // docs/static stories_plan). The write side is already guarded by
+    // checked_project_path_from_root; mirror that protection on the read side.
+    for component in Path::new(scene_path).components() {
+        match component {
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(EditorError::new(
+                    "scenePathInvalid",
+                    "scene path must not contain parent-directory or absolute components",
+                ));
+            }
+            _ => {}
+        }
+    }
+
     let scene_path = Path::new(scene_path);
     let relative_scene = scene_path
         .strip_prefix("apps/game/src-tauri/resources/scenes")
@@ -394,8 +359,7 @@ pub fn run() {
             resolve_layout_path,
             resolve_story_scene_path,
             read_project_file,
-            write_project_file,
-            write_story_scene_file
+            write_project_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lyra Layout Editor");
@@ -443,69 +407,6 @@ mod tests {
         );
 
         assert_eq!(result.unwrap_err().code, "writePathNotAllowed");
-    }
-
-    #[test]
-    fn write_story_scene_file_allows_investigation_markdown() {
-        let root = temp_workspace_root();
-        let path = "docs/stories_plan/chapter_1/investigation_scene_1.md";
-
-        write_story_scene_file_at_root(&root, path, "# Scene\n".to_string()).unwrap();
-
-        assert_eq!(fs::read_to_string(root.join(path)).unwrap(), "# Scene\n");
-    }
-
-    #[test]
-    fn write_story_scene_file_rejects_layout_sidecar() {
-        let root = temp_workspace_root();
-
-        let result = write_story_scene_file_at_root(
-            &root,
-            "docs/stories_plan/chapter_1/investigation_scene_1.layout.json",
-            "{}\n".to_string(),
-        );
-
-        assert_eq!(result.unwrap_err().code, "writePathNotAllowed");
-    }
-
-    #[test]
-    fn write_story_scene_file_rejects_generated_json() {
-        let root = temp_workspace_root();
-
-        let result = write_story_scene_file_at_root(
-            &root,
-            "apps/game/src-tauri/resources/scenes/chapter_1/investigation_scene_1.json",
-            "{}\n".to_string(),
-        );
-
-        assert_eq!(result.unwrap_err().code, "writePathNotAllowed");
-    }
-
-    #[test]
-    fn write_story_scene_file_rejects_non_investigation_markdown() {
-        let root = temp_workspace_root();
-
-        let result = write_story_scene_file_at_root(
-            &root,
-            "docs/stories_plan/chapter_1/scene_1.md",
-            "# Scene\n".to_string(),
-        );
-
-        assert_eq!(result.unwrap_err().code, "writePathNotAllowed");
-    }
-
-    #[test]
-    fn write_story_scene_file_rejects_parent_escape_after_story_root() {
-        let root = temp_workspace_root();
-
-        let result = write_story_scene_file_at_root(
-            &root,
-            "docs/stories_plan/../../outside/investigation_scene_1.md",
-            "# Scene\n".to_string(),
-        );
-
-        assert_eq!(result.unwrap_err().code, "pathEscape");
-        assert!(!root.join("outside/investigation_scene_1.md").exists());
     }
 
     #[test]
@@ -646,6 +547,23 @@ mod tests {
             result,
             "static/stories_plan/chapter_2/investigation_scene_1.md"
         );
+    }
+
+    #[test]
+    fn resolve_story_scene_path_rejects_parent_escape() {
+        let root = temp_workspace_root();
+        // Plant a markdown file outside the authored source roots that a
+        // naive strip_prefix + join would reach via `..` traversal.
+        fs::create_dir_all(root.join("outside")).unwrap();
+        fs::write(root.join("outside/investigation_scene_1.md"), "").unwrap();
+
+        let result = resolve_story_scene_path_at_root(
+            &root,
+            "apps/game/src-tauri/resources/scenes/../../../../../../outside/investigation_scene_1.json",
+        );
+
+        let err = result.unwrap_err();
+        assert_eq!(err.code, "scenePathInvalid");
     }
 
     fn temp_workspace_root() -> PathBuf {

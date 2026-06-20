@@ -97,8 +97,8 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-function sleep(_ms: number): Promise<void> {
-  return new Promise((resolveSleep) => setTimeout(resolveSleep));
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 }
 
 function isErrorCode(err: unknown, code: string): boolean {
