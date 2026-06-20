@@ -70,6 +70,15 @@ const SPATIAL_REPLAY_WORDS = [
 // advisory only (it feeds a human-reviewed `suggestedSource`), so noisy
 // matches create review work, not bugs.
 //
+// Branch precedence in suggestEvidenceSource() is load-bearing because the
+// lists overlap (e.g. "站位" appears in both SPATIAL_REPLAY_WORDS and
+// VISIBLE_CARRIER_WORDS). The check order must be:
+//   1. SPATIAL_REPLAY_WORDS -> implied   (a replay/positioning mark is its
+//      own evidence source, even if the word also names a visible carrier)
+//   2. VISIBLE_CARRIER_WORDS -> visible  (the local click target is in-scene)
+//   3. RECORD_WORDS -> hidden            (evidence lives in an off-screen log)
+// Reordering these flips the suggestion for every overlapping term.
+//
 // VISIBLE_CARRIER_WORDS means the local click target itself is visible in the
 // scene, even if the final evidence icon/text is not readable in the
 // background. These words intentionally take precedence over RECORD_WORDS so a

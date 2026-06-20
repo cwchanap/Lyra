@@ -39,7 +39,12 @@ describe("withCompileLock", () => {
         return "first";
       });
 
-      await sleep(5);
+      // Wait until `first` has actually acquired the lock (signaled by
+      // `first:start`, which runs inside the critical section) before starting
+      // `second`. A fixed-time head-start is not deterministic across CI hosts:
+      // mkdir+writeFile latency varies, so without this guard `second` could
+      // win the acquire race and invert the event order.
+      await vi.waitFor(() => expect(events).toContain("first:start"));
 
       const second = withCompileLock(outputRoot, async () => {
         events.push("second:start");
@@ -140,6 +145,6 @@ describe("isStaleLock", () => {
   });
 });
 
-function sleep(_ms: number): Promise<void> {
-  return new Promise((resolveSleep) => setTimeout(resolveSleep));
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 }
