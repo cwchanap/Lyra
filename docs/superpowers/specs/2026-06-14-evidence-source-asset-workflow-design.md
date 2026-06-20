@@ -185,12 +185,27 @@ Each report item includes:
 
 The first version should use conservative heuristics:
 
-- labels or descriptions containing `監視器`, `回放`, `螢幕`, `monitor`, or
-  `screen` suggest `implied`;
+<!-- Revision note (2026-06-19): the classifier was refined so monitor/screen
+     carriers (`監視器`, `回放`, `螢幕`, `monitor`, `screen`) now suggest
+     `visible`, not `implied` — the local click target is in-scene even when
+     the final evidence icon/text is not readable in the background. Only
+     spatial-replay wording (`站位`, `動線`, `spatial replay`, etc.) suggests
+     `implied`, and it takes precedence over the visible-carrier list. The
+     bullet below reflects the implemented behavior in
+     `scripts/compile-scenes/evidence-sources-audit.ts`. -->
+
+- labels or descriptions containing spatial-replay wording (`站位`, `動線`,
+  `standing point`, `route replay`, `sightline replay`, `spatial replay`)
+  suggest `implied`; this check runs first and takes precedence over the
+  visible-carrier list below;
+- labels or descriptions containing a visible carrier (`副本`, `列印`, `文件`,
+  `紙本`, `表`, `資料夾`, `資料包`, `卷宗`, `夾`, `白板`, `告示板`, `面板`,
+  `螢幕`, `監視器`, `回放`, `pos`, `抽屜`, `墊`, `水痕`, `站位`, `視線`,
+  `貨架`, `掛鐘`, `手機`, `罐`, `傘`, `傘套`, `盒`, `monitor`, `playback`,
+  `screen`, `panel`, `folder`, `packet`, `document`, `object`, `physical`)
+  suggest `visible`;
 - labels or descriptions containing `打卡`, `紀錄`, `資料`, `系統`, or `查詢`
   suggest `hidden` unless the wording clearly describes a physical document;
-- labels or descriptions containing `副本`, `列印`, `文件`, `傘`, `盒`, or `白板`
-  suggest `visible`;
 - ambiguous cases report `needs-review`.
 
 The audit command is allowed to have a later `--write` mode, but automatic

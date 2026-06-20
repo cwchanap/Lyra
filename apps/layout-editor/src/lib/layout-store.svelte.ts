@@ -24,8 +24,6 @@ export const editorState = $state<{
   layout: InvestigationLayoutSidecar | null;
   scenePath: string | null;
   layoutPath: string | null;
-  storyScenePath: string | null;
-  storySceneContents: string | null;
   error: string | null;
 }>({
   chapters: null,
@@ -33,8 +31,6 @@ export const editorState = $state<{
   layout: null,
   scenePath: null,
   layoutPath: null,
-  storyScenePath: null,
-  storySceneContents: null,
   error: null,
 });
 
@@ -72,19 +68,9 @@ export async function loadInvestigationScene(scenePath: string) {
       scenePath,
     });
     if (generation !== loadSceneGeneration) return;
-    const storyScenePath = await invoke<string>("resolve_story_scene_path", {
-      scenePath,
-    });
-    if (generation !== loadSceneGeneration) return;
-    const storySceneFile = await invoke<ProjectFile>("read_project_file", {
-      path: storyScenePath,
-    });
-    if (generation !== loadSceneGeneration) return;
     editorState.scene = scene;
     editorState.scenePath = scenePath;
     editorState.layoutPath = layoutPath;
-    editorState.storyScenePath = storyScenePath;
-    editorState.storySceneContents = storySceneFile.contents;
 
     try {
       const layoutFile = await invoke<ProjectFile>("read_project_file", {
@@ -113,8 +99,6 @@ export async function loadInvestigationScene(scenePath: string) {
     editorState.scenePath = null;
     editorState.layout = null;
     editorState.layoutPath = null;
-    editorState.storyScenePath = null;
-    editorState.storySceneContents = null;
     editorState.error = normalizeError(error);
   }
 }
