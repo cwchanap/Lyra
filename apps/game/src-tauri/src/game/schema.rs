@@ -562,6 +562,15 @@ pub struct EvidenceJson {
     pub image_asset_id: Option<String>,
     pub on_collect: Vec<DialogueItem>,
     pub on_reexamine: Option<Vec<DialogueItem>>,
+    // NOTE: the compiler emitter also writes `sourceSublocationId` on each
+    // evidence item (see scripts/compile-scenes/emitter.ts). It is
+    // intentionally NOT declared here: it is a layout-editor filter key used
+    // to scope the read-only Evidence Sources panel to a sublocation, and the
+    // Rust runtime never needs it (evidence is revealed by hotspot/topic
+    // `reveals` targets, not by its source sublocation). Serde ignores
+    // unknown fields by default, so the key is silently dropped on load.
+    // Add `#[serde(default)] source_sublocation_id: Option<String>` here only
+    // if a future runtime feature needs the source sublocation.
 }
 
 #[derive(Debug, Clone, Deserialize)]

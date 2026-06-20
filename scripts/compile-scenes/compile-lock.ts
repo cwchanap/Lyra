@@ -94,6 +94,14 @@ async function readOwnerPid(lockDir: string): Promise<number | null> {
 }
 
 function isProcessAlive(pid: number): boolean {
+  // Known limitation: PID reuse. If the original holder exits and the OS
+  // later recycles `pid` for an unrelated process, this check reports the
+  // lock as alive and we wait until the mtime fallback (STALE_LOCK_MS, 5
+  // min) reaps it. This is acceptable for a dev-tooling compile lock: PID
+  // recycling within a single `scenes:compile`/`scenes:watch` session is
+  // rare, and the worst case is a delayed (not lost) compile. We do NOT
+  // narrow the check to the holder's command line or start time because
+  // that would add platform-specific fragility for negligible benefit.
   try {
     process.kill(pid, 0);
     return true;

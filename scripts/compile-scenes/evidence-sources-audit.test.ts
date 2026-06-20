@@ -4,8 +4,12 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   auditEvidenceSources,
+  auditGateShouldFail,
+  findUntaggedHotspots,
   printReport,
   suggestEvidenceSource,
+  type EvidenceSourceAuditItem,
+  type EvidenceSourceAuditResult,
 } from "./evidence-sources-audit";
 
 const tempRoots: string[] = [];
@@ -612,5 +616,149 @@ describe("printReport", () => {
     expect(stderr).toContain("bogus");
     // ...and NOT duplicated on stdout.
     expect(stdout).not.toContain("Problems (1):");
+  });
+});
+
+// Minimal item factory for gate tests. Only the fields the gate reads
+// (currentSource, sceneFile, sublocationId, hotspotId) need to be filled;
+// the rest mirrors the type with placeholders.
+function auditItem(
+  overrides: Partial<EvidenceSourceAuditItem>,
+): EvidenceSourceAuditItem {
+  return {
+    sceneFile: "chapter_1/investigation_scene_1.md",
+    sublocationId: "front_room",
+    hotspotId: "hotspot",
+    hotspotLabel: "label",
+    hotspotDescription: "description",
+    currentSource: "visible",
+    sceneSourcePrompt: null,
+    backgroundPrompt: null,
+    suggestedSource: "visible",
+    evidence: [],
+    ...overrides,
+  };
+}
+
+function auditResult(
+  overrides: Partial<EvidenceSourceAuditResult> = {},
+): EvidenceSourceAuditResult {
+  return { items: [], problems: [], ...overrides };
+}
+
+describe("findUntaggedHotspots", () => {
+  it("returns only hotspots whose currentSource is null", () => {
+    const result = auditResult({
+      items: [
+        auditItem({ hotspotId: "tagged_visible", currentSource: "visible" }),
+        auditItem({ hotspotId: "untagged", currentSource: null }),
+        auditItem({ hotspotId: "tagged_hidden", currentSource: "hidden" }),
+        auditItem({ hotspotId: "also_untagged", currentSource: null }),
+      ],
+    });
+
+    expect(findUntaggedHotspots(result).map((item) => item.hotspotId)).toEqual([
+      "untagged",
+      "also_untagged",
+    ]);
+  });
+
+  it("ignores suggestedSource — advisory suggestions must not gate the build", () => {
+    // A hotspot with no authored tag but a confident classifier suggestion
+    // is still a build failure: the gate keys off currentSource, not
+    // suggestedSource.
+    const result = auditResult({
+      items: [
+        auditItem({
+          hotspotId: "needs_tag",
+          currentSource: null,
+          suggestedSource: "visible",
+        }),
+      ],
+    });
+
+    expect(findUntaggedHotspots(result)).toHaveLength(1);
+  });
+
+  it("returns an empty array when every hotspot has a tag", () => {
+    const result = auditResult({
+      items: [
+        auditItem({ currentSource: "visible" }),
+        auditItem({ currentSource: "hidden" }),
+        auditItem({ currentSource: "implied" }),
+      ],
+    });
+
+    expect(findUntaggedHotspots(result)).toEqual([]);
+  });
+
+  it("returns an empty array when there are no items", () => {
+    expect(findUntaggedHotspots(auditResult())).toEqual([]);
+  });
+});
+
+describe("auditGateShouldFail", () => {
+  it("passes a clean result with no problems and no untagged hotspots", () => {
+    expect(
+      auditGateShouldFail(
+        auditResult({
+          items: [auditItem({ currentSource: "visible" })],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("fails when any hotspot is missing an Evidence Source tag", () => {
+    expect(
+      auditGateShouldFail(
+        auditResult({
+          items: [
+            auditItem({ hotspotId: "ok", currentSource: "visible" }),
+            auditItem({ hotspotId: "missing", currentSource: null }),
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("fails when problems is non-empty even if every hotspot is tagged", () => {
+    // Mirrors validate-docs-scenes.ts: a non-empty problems list means the
+    // audit could not fully process the corpus, so the build fails even
+    // though the visible hotspots are all tagged.
+    expect(
+      auditGateShouldFail(
+        auditResult({
+          items: [auditItem({ currentSource: "visible" })],
+          problems: [
+            {
+              sceneFile: "chapter_1/chapter.md",
+              kind: "chapterParseError",
+              message: "boom",
+            },
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("fails when both problems and untagged hotspots are present", () => {
+    expect(
+      auditGateShouldFail(
+        auditResult({
+          items: [auditItem({ currentSource: null })],
+          problems: [
+            {
+              sceneFile: "chapter_1/chapter.md",
+              kind: "sceneReadError",
+              message: "missing",
+            },
+          ],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("passes an empty result (no items, no problems)", () => {
+    expect(auditGateShouldFail(auditResult())).toBe(false);
   });
 });
