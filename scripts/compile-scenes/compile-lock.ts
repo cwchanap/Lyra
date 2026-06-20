@@ -27,7 +27,13 @@ async function acquireLock(lockDir: string): Promise<void> {
       if (!isErrorCode(err, "EEXIST")) throw err;
       // Someone else holds the lock. Reap it if stale, otherwise wait.
       if (await isStaleLock(lockDir)) {
+        // We just removed a stale lock, so the directory is free now.
+        // Retry mkdir immediately rather than sleeping: sleeping would widen
+        // the window in which another process can reacquire the lock before
+        // us, needlessly delaying our own acquisition (and, on a narrow race,
+        // letting a fresh holder's lock be deleted by a third reaper).
         await rm(lockDir, { recursive: true, force: true });
+        continue;
       }
       await sleep(LOCK_POLL_MS);
       continue;

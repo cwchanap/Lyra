@@ -25,6 +25,9 @@ jobs:
       - name: Compile scenes
         run: bun run scenes:compile
 
+      - name: Evidence source audit
+        run: bun run evidence-sources:audit
+
       - name: Type-check (svelte-check)
         run: bun run check
 

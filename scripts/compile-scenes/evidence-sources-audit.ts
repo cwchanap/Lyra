@@ -368,7 +368,25 @@ if (import.meta.main) {
   );
   printReport(result);
   // Match validate-docs-scenes.ts: a non-empty problems list means the audit
-  // could not fully process the corpus, so exit non-zero. (The audit is not
-  // yet wired into CI, but this keeps it trustworthy if/when it is.)
+  // could not fully process the corpus, so exit non-zero.
   if (result.problems.length > 0) process.exitCode = 1;
+
+  // CI regression gate: every evidence-revealing hotspot must declare an
+  // `Evidence Source`. A missing tag means the asset pipeline cannot decide
+  // where the evidence icon/text originates, so it is a build-blocking
+  // regression rather than advisory review work. (The classifier's
+  // `suggestedSource` is intentionally NOT gated here — it is advisory and
+  // noisy by design; only a missing authored tag fails the build.)
+  const untagged = result.items.filter((item) => item.currentSource === null);
+  if (untagged.length > 0) {
+    console.error(
+      `Evidence source audit: ${untagged.length} hotspot(s) missing an Evidence Source tag:`,
+    );
+    for (const item of untagged) {
+      console.error(
+        `  - ${item.sceneFile} ${item.sublocationId}/${item.hotspotId}`,
+      );
+    }
+    process.exitCode = 1;
+  }
 }

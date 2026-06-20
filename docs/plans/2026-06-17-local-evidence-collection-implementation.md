@@ -335,6 +335,19 @@ Update Scene 3 as follows:
 Preserve story meaning: the player learns the L-shaped layout from the inner-entry
 geometry, not from a literal wall map.
 
+> **Follow-up outcome (audit-driven restructure):** During evidence-source audit and
+> the June 18 carrier-assignment work, Scene 3 was further consolidated. Instead of
+> keeping `front/cctv_playback` and `front/register` as separate hotspots, all four
+> front-counter evidence items (`two_coffee_order`, `cctv_screenshot`,
+> `timecard_record`, `doorlock_summary_timetable`) were folded into the single
+> `front/counter_admin_records` hotspot, which now carries `Evidence Source: visible`
+> and a unified `Scene Source Prompt` covering the POS, drawer, and admin folders.
+> `corridor/wall_notice_board` (reveals `closing_routine`) and
+> `inner_entry/storage_sightline` (reveals `backroom_floorplan`) match the plan as
+> written. The multi-evidence hotspot is intentional: the dialogue has the 店長 open
+> staff records, CCTV playback, and the doorlock summary at the same counter station,
+> so a single visible carrier is more believable than three separate click targets.
+
 **Step 3: Update layout sidecar ids**
 
 Modify `docs/stories_plan/chapter_1/investigation_scene_3.layout.json` so renamed
