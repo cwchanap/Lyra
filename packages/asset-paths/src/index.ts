@@ -8,7 +8,7 @@
 // ("/assets/portraits/hayasaka_akane/concerned.png").
 //
 // Consumers:
-//   - scripts/compile-scenes/assets/manifest.ts  (build-time manifest)
+//   - packages/scripts/compile-scenes/assets/manifest.ts  (build-time manifest)
 //   - apps/game/src/lib/assets/story-assets.ts   (runtime resolver)
 //   - apps/layout-editor/src/lib/editor-assets.ts (editor preview)
 // =============================================================================

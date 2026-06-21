@@ -1,0 +1,21 @@
+{
+  "name": "@lyra/scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile-scenes": "bun run compile-scenes.ts",
+    "evidence-sources:audit": "bun run compile-scenes/evidence-sources-audit.ts",
+    "validate-docs-scenes": "bun run validate-docs-scenes.ts"
+  },
+  "dependencies": {
+    "@lyra/asset-paths": "workspace:*",
+    "@lyra/scene-types": "workspace:*",
+    "chokidar": "^5.0.0",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14",
+    "vitest": "^4.1.6"
+  }
+}
