@@ -88,7 +88,8 @@ export function planGeneration(input: {
         {
           code: "audioGenerateMissingApiKey",
           path: "ELEVENLABS_API_KEY",
-          message: "ELEVENLABS_API_KEY is required for audio generation.",
+          message:
+            "ELEVENLABS_API_KEY is required for audio generation. Set it in packages/scripts/.env or export it as an environment variable.",
         },
       ],
       toGenerate: [],
@@ -105,6 +106,9 @@ export async function runGenerateCommand(args: string[]): Promise<number> {
     return 2;
   }
 
+  // .env lives in packages/scripts/ (the package root), one level above
+  // this audio/ module directory.
+  loadDotEnv(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
   const apiKey = process.env.ELEVENLABS_API_KEY ?? "";
   const result = planGeneration({
     repoRoot: DEFAULT_REPO_ROOT,
@@ -260,4 +264,42 @@ function formatDiagnostic(diagnostic: SoundPlanDiagnostic): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Loads KEY=VALUE pairs from a `.env` file at `dir/.env` into
+ * `process.env`. Existing environment variables take precedence — this only
+ * fills in values that are not already set, so explicit `KEY=val bun run`
+ * invocations and CI environment variables still win.
+ *
+ * Skips blank lines and `#` comments. Strips surrounding single/double
+ * quotes from values.
+ */
+export function loadDotEnv(dir: string): void {
+  const envPath = resolve(dir, ".env");
+  if (!existsSync(envPath)) return;
+  let text: string;
+  try {
+    text = readFileSync(envPath, "utf-8");
+  } catch {
+    return;
+  }
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line === "" || line.startsWith("#")) continue;
+    const eqIndex = line.indexOf("=");
+    if (eqIndex <= 0) continue;
+    const key = line.slice(0, eqIndex).trim();
+    if (key === "") continue;
+    if (process.env[key] !== undefined) continue;
+    let value = line.slice(eqIndex + 1).trim();
+    // Strip surrounding quotes if present.
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
 }
