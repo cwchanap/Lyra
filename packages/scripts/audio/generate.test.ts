@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { planGeneration } from "./generate";
+import { loadDotEnv, planGeneration } from "./generate";
 import type { SoundPlanChannel, SoundPlanStatus } from "./types";
 
 const tempRoots: string[] = [];
@@ -250,3 +250,60 @@ function writeFile(repoRoot: string, path: string, text: string): void {
   mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, text);
 }
+
+describe("loadDotEnv", () => {
+  it("loads keys from .env into process.env", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "lyra-dotenv-"));
+    tempRoots.push(repoRoot);
+    writeFileSync(
+      join(repoRoot, ".env"),
+      "TEST_DOTENV_KEY=hello\n# comment\nBLANK=\n",
+    );
+
+    const before = process.env["TEST_DOTENV_KEY"];
+    delete process.env["TEST_DOTENV_KEY"];
+    delete process.env["BLANK"];
+    loadDotEnv(repoRoot);
+    expect(process.env["TEST_DOTENV_KEY"]).toBe("hello");
+    expect(process.env["BLANK"]).toBe("");
+
+    // Restore.
+    if (before !== undefined) process.env["TEST_DOTENV_KEY"] = before;
+    else delete process.env["TEST_DOTENV_KEY"];
+    delete process.env["BLANK"];
+  });
+
+  it("does not override existing environment variables", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "lyra-dotenv-"));
+    tempRoots.push(repoRoot);
+    writeFileSync(join(repoRoot, ".env"), "TEST_DOTENV_OVERRIDE=fromfile\n");
+
+    process.env["TEST_DOTENV_OVERRIDE"] = "fromenv";
+    loadDotEnv(repoRoot);
+    expect(process.env["TEST_DOTENV_OVERRIDE"]).toBe("fromenv");
+    delete process.env["TEST_DOTENV_OVERRIDE"];
+  });
+
+  it("strips surrounding quotes", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "lyra-dotenv-"));
+    tempRoots.push(repoRoot);
+    writeFileSync(
+      join(repoRoot, ".env"),
+      "TEST_DOTENV_QUOTED=\"quoted value\"\nTEST_DOTENV_SINGLE='single'\n",
+    );
+
+    delete process.env["TEST_DOTENV_QUOTED"];
+    delete process.env["TEST_DOTENV_SINGLE"];
+    loadDotEnv(repoRoot);
+    expect(process.env["TEST_DOTENV_QUOTED"]).toBe("quoted value");
+    expect(process.env["TEST_DOTENV_SINGLE"]).toBe("single");
+    delete process.env["TEST_DOTENV_QUOTED"];
+    delete process.env["TEST_DOTENV_SINGLE"];
+  });
+
+  it("is a no-op when .env does not exist", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "lyra-dotenv-"));
+    tempRoots.push(repoRoot);
+    loadDotEnv(repoRoot); // should not throw
+  });
+});

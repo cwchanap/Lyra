@@ -37,8 +37,13 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   catalog entries without network access.
 - `bun run audio:generate <plan.yaml> --dry-run [--only <id>] [--force]` - list
   approved audio that would be generated without network access or an API key.
-- `ELEVENLABS_API_KEY=... bun run audio:generate <plan.yaml> [--only <id>] [--force]`
-  - generate approved audio through ElevenLabs.
+- `bun run audio:generate <plan.yaml> [--only <id>] [--force]` - generate
+  approved audio through ElevenLabs. Requires `ELEVENLABS_API_KEY`, read from
+  `packages/scripts/.env` (see `packages/scripts/.env.example`) or from the
+  environment:
+  - `ELEVENLABS_API_KEY=... bun run audio:generate <plan.yaml>`, or
+  - put `ELEVENLABS_API_KEY=...` in `packages/scripts/.env` (gitignored) and
+    run the command directly.
 - `bun run check` / `bun run check:watch` - type-check Svelte + TS
   (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
 - `bun run test` / `bun run test:watch` - Vitest unit tests for frontend logic
