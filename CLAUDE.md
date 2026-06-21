@@ -6,7 +6,8 @@ this repository.
 ## Commands
 
 Package manager is **bun** (see `bun.lock`). The repo is a Turborepo
-workspace with apps under `apps/*`; use the root scripts for orchestration and
+workspace with apps under `apps/*` and shared libraries under `packages/*` (see
+"Shared packages" below); use the root scripts for orchestration and
 `bun run --cwd apps/<app>` when targeting one app directly. Lyra supports the
 Tauri app dev loops, not browser-only dev as a primary workflow.
 
@@ -28,6 +29,13 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   is skipped) plus `static/assets/config/` into Tauri resource JSON.
 - `bun run scenes:watch` - watch authored scene Markdown and asset YAML while
   iterating on story content.
+- `bun run evidence-sources:audit` - audit investigation-scene evidence
+  carriers (evidence ↔ hotspot/topic wiring) for drift; pairs with the
+  `auditing-investigation-evidence-sources` skill.
+- `bun run audio:validate <plan.yaml>` / `audio:apply <plan.yaml> [--check]` /
+  `audio:generate` - ElevenLabs voice-line tooling: validate a sound plan,
+  merge approved entries into the audio catalog and write audio cues into scene
+  Markdown (`--check` to verify only), then generate the clips.
 - `bun run check` / `bun run check:watch` - type-check Svelte + TS
   (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
 - `bun run test` / `bun run test:watch` - Vitest unit tests for frontend logic
@@ -63,6 +71,27 @@ developer-only investigation layout editor lives in `apps/layout-editor`.
 - **Entry points:** `apps/game/src-tauri/src/main.rs` is a thin shim that calls `lyra_lib::run()` from `apps/game/src-tauri/src/lib.rs` (the `_lib` suffix is required to avoid a Windows name collision per the Cargo.toml comment). Window config (size, title, CSP) lives in `apps/game/src-tauri/tauri.conf.json`.
 - **Permissions** for Tauri APIs are allow-listed in `apps/game/src-tauri/capabilities/default.json`. New plugins/APIs the frontend calls usually need a corresponding permission entry here or `invoke` will be rejected at runtime.
 - **Vite dev server** is pinned to port 1420 with `strictPort: true` (`apps/game/vite.config.ts`) because Tauri expects that exact port. `src-tauri/**` is excluded from the watcher so Rust changes don't trigger frontend reloads.
+
+## Shared packages (`packages/*`)
+
+Three workspace libraries are the single source of truth shared across the
+compiler, game runtime, and editor. Keep this logic here rather than
+duplicating it on either side — that is what prevents silent drift in the
+emitted JSON/wire contract:
+
+- `@lyra/asset-paths` - converts typed `assetId`s (e.g.
+  `portrait.hayasaka_akane.concerned`) to public URL paths. Consumed by the
+  build-time manifest (`packages/scripts/compile-scenes/assets/manifest.ts`),
+  the runtime resolver (`apps/game/src/lib/assets/story-assets.ts`), and the
+  editor preview (`apps/layout-editor/src/lib/editor-assets.ts`).
+- `@lyra/scene-types` - the scene-graph wire types emitted as JSON and read by
+  both the compiler and the editor. Add a new `EvidenceSource` variant or
+  layout shape here, not on one side. `DialogueItem` is deliberately NOT shared
+  (the editor keeps a narrower rendering view).
+- `@lyra/scripts` - the compile-scenes pipeline plus audio tooling (formerly the
+  root `scripts/` directory). The root `scenes:*`, `audio:*`, and
+  `evidence-sources:audit` scripts delegate here via
+  `bun run --cwd packages/scripts <task>`.
 
 ## Scene Pipeline
 
