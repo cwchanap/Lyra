@@ -2,7 +2,7 @@
 // packages/scene-types/src/index.ts
 //
 // Single source of truth for the scene-graph wire types shared between the
-// compile pipeline (scripts/compile-scenes) and the layout editor
+// compile pipeline (packages/scripts/compile-scenes) and the layout editor
 // (apps/layout-editor). Every type here is a value-type that is byte-identical
 // on both sides and part of the emitted JSON contract — sharing it prevents
 // silent drift (e.g. a fourth EvidenceSource variant compiling cleanly on one
@@ -14,7 +14,7 @@
 //     the compiler's full AST/JSON DialogueItem. Merging would couple them.
 //
 // Consumers re-export these under their own preferred names where helpful:
-//   - scripts/compile-scenes/types.ts        → ChaptersIndex as JSONChaptersIndex
+//   - packages/scripts/compile-scenes/types.ts        → ChaptersIndex as JSONChaptersIndex
 //   - apps/layout-editor/src/lib/layout-types.ts → ChaptersIndex as SceneIndex
 // =============================================================================
 

@@ -8,7 +8,7 @@ import {
 } from "./story-assets";
 
 // Cross-check: these test cases MUST produce the same output as publicPath()
-// in scripts/compile-scenes/assets/manifest.ts. If you change either function,
+// in packages/scripts/compile-scenes/assets/manifest.ts. If you change either function,
 // update both and keep both test suites passing.
 
 describe("story asset resolver helpers", () => {

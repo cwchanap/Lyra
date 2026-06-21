@@ -563,7 +563,7 @@ pub struct EvidenceJson {
     pub on_collect: Vec<DialogueItem>,
     pub on_reexamine: Option<Vec<DialogueItem>>,
     // NOTE: the compiler emitter also writes `sourceSublocationId` on each
-    // evidence item (see scripts/compile-scenes/emitter.ts). It is
+    // evidence item (see packages/scripts/compile-scenes/emitter.ts). It is
     // intentionally NOT declared here: it is a layout-editor filter key used
     // to scope the read-only Evidence Sources panel to a sublocation, and the
     // Rust runtime never needs it (evidence is revealed by hotspot/topic

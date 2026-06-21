@@ -14,5 +14,5 @@
     "noEmit": true,
     "types": ["bun-types"]
   },
-  "include": ["scripts/**/*.ts", "packages/asset-paths/src/**/*.ts"]
+  "include": ["packages/scripts/**/*.ts", "packages/asset-paths/src/**/*.ts"]
 }

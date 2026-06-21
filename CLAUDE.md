@@ -73,7 +73,7 @@ Lyra's playable content is compiler-driven:
    pass; a root that does not exist is skipped, and the same `chapter_<N>`
    must not appear in both roots.
 2. Asset policy/catalog YAML lives under `static/assets/config/`.
-3. `scripts/compile-scenes.ts` validates and emits runtime JSON under
+3. `packages/scripts/compile-scenes.ts` validates and emits runtime JSON under
    `apps/game/src-tauri/resources/scenes/` and asset manifests/reports under
    `apps/game/src-tauri/resources/assets/`.
 4. Rust loads scenes and asset manifests from `BaseDirectory::Resource`.
@@ -118,7 +118,7 @@ roots now feed the compiler:
   lists, so planning docs are ignored even when they sit beside authored scenes.
 - **Authored playable content** lives in `<root>/chapter_<N>/`, where `<root>`
   is either `static/stories_plan/` or `docs/stories_plan/` — the compiler
-  merges both (`scripts/compile-scenes.ts` passes them as a `sourceRoot` list;
+  merges both (`packages/scripts/compile-scenes.ts` passes them as a `sourceRoot` list;
   `compile()` skips a missing root and rejects a `chapter_<N>` that appears in
   both). A given chapter must live in exactly one root. Files in a chapter dir:
   - `chapter.md` - the chapter manifest (title, summary, ordered scene list).
@@ -131,7 +131,7 @@ roots now feed the compiler:
     inquiry and testimony cross-examination scenes. Authored via
     `writing-interrogation-scene`.
 
-Compiler unit tests use fixtures under `scripts/__fixtures__/` (e.g.
+Compiler unit tests use fixtures under `packages/scripts/__fixtures__/` (e.g.
 `valid/`, `valid_interrogation/`, `asset_enabled/`, and `invalid/<case>/` with
 matching `expected-error.txt`), not the live `static/stories_plan/` or
 `docs/stories_plan/` trees.
@@ -159,8 +159,8 @@ Choose the smallest verification set that covers the change, then run the
 broader checks before claiming cross-stack work is done.
 
 - Scene authoring or compiler changes: `bun run scenes:compile` and focused
-  Vitest files under `scripts/compile-scenes*.test.ts`.
-- Asset pipeline changes: focused tests under `scripts/compile-scenes/assets/`,
+  Vitest files under `packages/scripts/`.
+- Asset pipeline changes: focused tests under `packages/scripts/compile-scenes/assets/`,
   `src/lib/assets/story-assets.test.ts`, then `bun run scenes:compile`.
 - Frontend component/state changes: focused Vitest tests, then `bun run check`.
 - Rust engine/runtime changes: focused `cargo test` filters where useful, then
