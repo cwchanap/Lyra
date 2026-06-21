@@ -4,6 +4,7 @@
 
 [場景：雨鐘咖啡館後場門口，深夜，雨勢轉大。門口燈光照著止滑墊，後巷一片濕黑。]
 - **Background Prompt:** Rain Bell cafe back door area at late rainy night before re-entering the back room, non-slip mat at the threshold, dark wet rear alley beyond, phone notification glow in the detective's hand, tense investigative mood, no readable text.
+- **BGS:** bgs_cafe_closed_night
 
 [相馬律的手機在口袋裡震了一下。他低頭看螢幕，眉頭皺起。]
 
@@ -22,6 +23,7 @@
 ## Sub-location: 後場門口 {#back_door}
 - **Status:** unlocked
 - **Background Prompt:** Rain Bell cafe back door at rainy night, non-slip mat, half-dry water trace on floor, wet umbrella sleeve on wall, dark rear alley beyond.
+- **BGS:** bgs_cafe_closed_night
 
 [場景：雨鐘咖啡館後場門口，深夜，雨夜。止滑墊鋪在門檻內側，地上有半乾的水痕，牆角掛著一只濕傘套，門外是後巷入口。]
 

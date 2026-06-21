@@ -4,6 +4,7 @@
 
 [場景：雨鐘咖啡館後場，夜晚。店長辦公角落亮著暖燈，牆邊維護螢幕待機。]
 - **Background Prompt:** Rain Bell cafe backroom at night near the manager office corner, warm practical lamp, maintenance screen idle on the wall, stacked boxes and account books, quiet procedural tension, no readable UI text.
+- **BGS:** bgs_cafe_backroom_office
 
 [相馬律與早坂茜回到雨鐘咖啡館後場，店長高瀨在角落等他們。]
 
@@ -22,6 +23,7 @@
 ## Sub-location: 店長辦公角落 {#office_corner}
 - **Status:** unlocked
 - **Background Prompt:** Cafe manager office corner near the backroom, small maintenance screen on wall, stacked boxes and account books, warm practical light, no readable UI text.
+- **BGS:** bgs_cafe_backroom_office
 
 [場景：店長辦公角落，後場門鎖維護頁顯示在牆邊一台小螢幕上，旁邊堆著紙箱與帳本，燈光偏暖。]
 
@@ -78,6 +80,7 @@
 ## Sub-location: 保全鏈固定 {#fixed_panel}
 - **Status:** locked
 - **Background Prompt:** Same maintenance panel being formally photographed and logged, detective paperwork on table, plain evidence-chain setup, hard practical light, no readable text.
+- **BGS:** bgs_cafe_backroom_office
 
 [場景：同一面板，鑑識重新拍攝固定，黑瀨徹站在一旁監督，桌上攤著一份正式紀錄表。]
 
