@@ -64,6 +64,32 @@ describe("audio generation planning", () => {
     );
   });
 
+  it("does not require an API key when all eligible outputs already exist", () => {
+    const repoRoot = createRepoRoot();
+    const planPath = writePlan(repoRoot, [
+      soundEntry({
+        id: "rain_street_light",
+        channel: "bgs",
+        status: "approved",
+      }),
+    ]);
+    writeFile(
+      repoRoot,
+      "static/assets/audio/bgs/rain_street_light.ogg",
+      "already generated",
+    );
+
+    const result = planGeneration({
+      repoRoot,
+      planPath,
+      dryRun: false,
+      force: false,
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.toGenerate).toEqual([]);
+  });
+
   it("skips existing outputs unless forced", () => {
     const repoRoot = createRepoRoot();
     const planPath = writePlan(repoRoot, [
