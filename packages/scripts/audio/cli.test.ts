@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 describe("audio cli", () => {
-  it("routes generate to the Task 8 stub without exiting the process", async () => {
+  it("routes generate to the command parser without exiting the process", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     try {
@@ -27,7 +27,7 @@ describe("audio cli", () => {
 
       expect(code).toBe(2);
       expect(errorSpy).toHaveBeenCalledWith(
-        "[audio] audio:generate is not implemented until Task 8.",
+        "[audioCliMissingArg] Usage: audio:generate <plan.yaml> [--dry-run] [--only <id>] [--force]",
       );
     } finally {
       errorSpy.mockRestore();
