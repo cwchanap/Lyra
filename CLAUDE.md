@@ -32,10 +32,11 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
 - `bun run evidence-sources:audit` - audit investigation-scene evidence
   carriers (evidence ↔ hotspot/topic wiring) for drift; pairs with the
   `auditing-investigation-evidence-sources` skill.
-- `bun run audio:validate <plan.yaml>` / `audio:apply <plan.yaml> [--check]` /
-  `audio:generate` - ElevenLabs voice-line tooling: validate a sound plan,
-  merge approved entries into the audio catalog and write audio cues into scene
-  Markdown (`--check` to verify only), then generate the clips.
+- `bun run audio:validate <plan.yaml>` - validate a durable sound plan.
+- `bun run audio:apply <plan.yaml> [--check]` - apply approved BGM/BGS cues and
+  catalog entries without network access.
+- `ELEVENLABS_API_KEY=... bun run audio:generate <plan.yaml> [--dry-run] [--only <id>] [--force]`
+  - explicitly generate approved audio through ElevenLabs.
 - `bun run check` / `bun run check:watch` - type-check Svelte + TS
   (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
 - `bun run test` / `bun run test:watch` - Vitest unit tests for frontend logic
@@ -117,6 +118,11 @@ Keep the ownership boundary intact:
   ignored.
 - Writers author semantic intent only: dialogue, scene tags, prompts, speaker
   expression IDs, and audio IDs. Writers must not author filesystem paths.
+- Durable sound plans live under `docs/audio_plans/`; apply them through the
+  audio tooling rather than hand-editing generated resources.
+- `static/assets/config/audio.yaml` is the source catalog for `bgm`, `bgs`, and
+  `sfx` channels. Authored scenes and sound plans reference semantic audio IDs,
+  not generated filesystem paths.
 - Character IDs, expression IDs, and asset IDs become path or manifest keys, so
   keep slug validation in the compiler/config layer before generating paths.
 - When asked to generate or edit raster image assets, invoke the repo-local
