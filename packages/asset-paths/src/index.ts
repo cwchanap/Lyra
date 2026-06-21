@@ -44,6 +44,25 @@ export function requireSegments(
   return segments;
 }
 
+const SUPPORTED_AUDIO_CHANNELS = ["bgm", "bgs", "sfx"] as const;
+type AudioChannel = (typeof SUPPORTED_AUDIO_CHANNELS)[number];
+const AUDIO_CHANNELS = new Set<string>(SUPPORTED_AUDIO_CHANNELS);
+const AUDIO_CHANNEL_LABEL = formatList(SUPPORTED_AUDIO_CHANNELS);
+
+function requireAudioChannel(channel: string, assetId: string): AudioChannel {
+  if (!AUDIO_CHANNELS.has(channel)) {
+    throw new Error(
+      `Invalid audio assetId "${assetId}": expected channel ${AUDIO_CHANNEL_LABEL}, got "${channel}".`,
+    );
+  }
+  return channel as AudioChannel;
+}
+
+function formatList(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")}, or ${items[items.length - 1] ?? ""}`;
+}
+
 /**
  * Maps a typed assetId to its public URL path.
  *
@@ -75,8 +94,15 @@ export function publicPathForAssetId(
     return `/assets/evidence/${assetId.replace(/^evidence\./, "")}.png`;
   }
   if (type === "audio") {
-    const [, channel, id] = requireSegments(assetId, "audio", 3, true);
-    return `/assets/audio/${channel}/${id}.ogg`;
+    const segments = requireSegments(assetId, "audio", 3, true);
+    const channel = segments[1];
+    const id = segments[2];
+    if (channel === undefined || id === undefined) {
+      throw new Error(
+        `Invalid audio assetId "${assetId}": expected exactly 3 dot-separated segments, got ${segments.length}.`,
+      );
+    }
+    return `/assets/audio/${requireAudioChannel(channel, assetId)}/${id}.ogg`;
   }
   return `/assets/backgrounds/${assetId.replace(/^background\./, "").replaceAll(".", "/")}.png`;
 }

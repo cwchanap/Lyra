@@ -379,6 +379,7 @@ describe("asset enrichment: first visual cue audio validation", () => {
     audio: {
       bgm: new Map([["rain", { id: "rain", prompt: "rain", loop: true }]]),
       bgs: new Map([["wind", { id: "wind", prompt: "wind", loop: true }]]),
+      sfx: new Map(),
     },
   };
 

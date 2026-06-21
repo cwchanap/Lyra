@@ -61,6 +61,7 @@ function config(): AssetConfig {
       bgs: new Map([
         ["street_rain", { id: "street_rain", prompt: "rain", loop: true }],
       ]),
+      sfx: new Map(),
     },
   };
 }
@@ -1443,6 +1444,7 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
           ],
         ]),
         bgs: new Map(),
+        sfx: new Map(),
       },
     };
   }
@@ -1526,7 +1528,7 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
         audio: { format: "ogg", loop: true, prompt: "" },
       },
       characters: { byId: new Map(), byDisplayName: new Map() },
-      audio: { bgm: new Map(), bgs: new Map() },
+      audio: { bgm: new Map(), bgs: new Map(), sfx: new Map() },
     };
     const scene: SceneRecord = {
       chapterId: "chapter_1",

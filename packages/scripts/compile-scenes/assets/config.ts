@@ -22,7 +22,9 @@ export type ImageAssetTypeName =
   | "portrait"
   | "standee"
   | "evidence";
-export type AudioChannel = "bgm" | "bgs";
+const AUDIO_CHANNELS = ["bgm", "bgs", "sfx"] as const;
+export type AudioChannel = (typeof AUDIO_CHANNELS)[number];
+const AUDIO_CHANNEL_SET = new Set<string>(AUDIO_CHANNELS);
 
 /** Policy for image asset types (background, portrait, evidence). */
 export type ImageAssetPolicy = {
@@ -80,6 +82,7 @@ export type AssetConfig = {
   audio: {
     bgm: Map<string, AudioConfigEntry>;
     bgs: Map<string, AudioConfigEntry>;
+    sfx: Map<string, AudioConfigEntry>;
   };
 };
 
@@ -125,7 +128,7 @@ function emptyAssetConfig(): AssetConfig {
     globalStylePrompt: "",
     types: defaultTypes(),
     characters: { byId: new Map(), byDisplayName: new Map() },
-    audio: { bgm: new Map(), bgs: new Map() },
+    audio: { bgm: new Map(), bgs: new Map(), sfx: new Map() },
   };
 }
 
@@ -168,6 +171,7 @@ export function loadAssetConfig(configRoot: string): AssetConfigResult {
     readOptionalYaml(resolve(configRoot, "audio.yaml"), errors) ?? {
       bgm: {},
       bgs: {},
+      sfx: {},
     },
     "audio.yaml",
     "assetAudioFileMalformed",
@@ -517,9 +521,21 @@ function buildCharacters(
 }
 
 function buildAudio(raw: Record<string, unknown>, errors: CompileError[]) {
+  for (const channel of Object.keys(raw)) {
+    if (!AUDIO_CHANNEL_SET.has(channel)) {
+      errors.push(
+        error(
+          "audio.yaml",
+          "assetAudioChannelUnsupported",
+          `Unsupported audio channel "${channel}" in audio.yaml. Expected one of ${AUDIO_CHANNELS.join(", ")}.`,
+        ),
+      );
+    }
+  }
   return {
     bgm: buildAudioMap(raw.bgm, "bgm", errors),
     bgs: buildAudioMap(raw.bgs, "bgs", errors),
+    sfx: buildAudioMap(raw.sfx, "sfx", errors),
   };
 }
 

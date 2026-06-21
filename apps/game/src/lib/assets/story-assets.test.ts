@@ -45,6 +45,12 @@ describe("story asset resolver helpers", () => {
     );
   });
 
+  it("maps SFX audio IDs to channel-specific ogg paths", () => {
+    expect(
+      publicPathForStoryAsset("audio.sfx.plastic_bag_crinkle", "audio"),
+    ).toBe("/assets/audio/sfx/plastic_bag_crinkle.ogg");
+  });
+
   it("provides placeholders by image type", () => {
     expect(placeholderForStoryAsset("background").url).toContain(
       "data:image/svg+xml",
@@ -97,6 +103,12 @@ describe("story asset resolver helpers", () => {
     expect(() => publicPathForStoryAsset("audio", "audio")).toThrow(
       /expected exactly 3/,
     );
+  });
+
+  it("throws for audio assetIds with unsupported channels", () => {
+    expect(() =>
+      publicPathForStoryAsset("audio.voice.line_001", "audio"),
+    ).toThrow(/expected channel bgm, bgs, or sfx, got "voice"/);
   });
 
   it("throws for malformed standee assetIds with too few segments", () => {
