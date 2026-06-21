@@ -44,6 +44,12 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   - `ELEVENLABS_API_KEY=... bun run audio:generate <plan.yaml>`, or
   - put `ELEVENLABS_API_KEY=...` in `packages/scripts/.env` (gitignored) and
     run the command directly.
+  - BGM generation is credit-heavy; keep loopable BGM plans around 30-60
+    seconds unless the user explicitly approves longer music.
+  - If ElevenLabs returns `402 Payment Required` or a payment-method-required
+    error, treat it as insufficient remaining credit or billing/API access for
+    the current account. Do not retry with `--force`; ask the user to top up,
+    enable API billing, or upgrade before generating that entry.
 - `bun run check` / `bun run check:watch` - type-check Svelte + TS
   (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
 - `bun run test` / `bun run test:watch` - Vitest unit tests for frontend logic
