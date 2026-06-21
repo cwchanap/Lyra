@@ -19,7 +19,10 @@ not edit scene markdown directly.
 
 For one chapter, read:
 
-- `docs/stories_plan/chapter_<N>/chapter.md`
+- Locate the chapter under exactly one authored story root:
+  `docs/stories_plan/chapter_<N>/` or
+  `static/stories_plan/chapter_<N>/`
+- that root's `chapter.md` manifest
 - every scene file listed in that manifest
 - `static/assets/config/audio.yaml`
 - existing files under `static/assets/audio/**`
