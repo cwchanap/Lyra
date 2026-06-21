@@ -6,7 +6,10 @@
   "scripts": {
     "compile-scenes": "bun run compile-scenes.ts",
     "evidence-sources:audit": "bun run compile-scenes/evidence-sources-audit.ts",
-    "validate-docs-scenes": "bun run validate-docs-scenes.ts"
+    "validate-docs-scenes": "bun run validate-docs-scenes.ts",
+    "audio:validate": "bun run audio/cli.ts validate",
+    "audio:apply": "bun run audio/cli.ts apply",
+    "audio:generate": "bun run audio/cli.ts generate"
   },
   "dependencies": {
     "@lyra/asset-paths": "workspace:*",
