@@ -26,7 +26,7 @@ entries:
     channel: bgm
     status: approved
     loop: true
-    intendedDurationSeconds: 180
+    intendedDurationSeconds: 45
     prompt: >-
       Sparse restrained procedural tension for a Japanese evidence-review
       hearing the defense is losing, low sustained strings, occasional muted
@@ -43,7 +43,7 @@ entries:
     channel: bgm
     status: approved
     loop: true
-    intendedDurationSeconds: 180
+    intendedDurationSeconds: 45
     prompt: >-
       Restrained procedural tension that slowly resolves into earned relief
       for a Japanese evidence-review hearing the defense wins, low sustained
@@ -61,7 +61,7 @@ entries:
     channel: bgm
     status: approved
     loop: true
-    intendedDurationSeconds: 150
+    intendedDurationSeconds: 45
     prompt: >-
       Bittersweet unresolved chapter-close theme, gentle solo piano over soft
       rain-night pad, a single low string swell, quiet hope mixed with an

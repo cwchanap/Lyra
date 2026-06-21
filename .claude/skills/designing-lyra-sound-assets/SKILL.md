@@ -26,6 +26,7 @@ writes, prose edits, or applying approved plans.
 | "Generate/apply now" | No `audio:generate`; apply only after explicit approval. |
 | "Add SFX cues" | Keep SFX in `entries` / `rejected`; never in `cues`. |
 | "Reuse existing" | Read catalog/files and record `catalogSnapshot`. |
+| "Long BGM track" | Default to 45s; keep BGM 30-60s unless explicitly approved. |
 
 ## Inputs
 
@@ -88,6 +89,9 @@ rejected:
 - `visualUnit` must identify an existing scene tag or visual unit.
 - BGM is sparse major-beat music; BGS is acoustic environment; SFX is only for
   emphasized, repeated, or player-feedback actions.
+- BGM should be a short loopable track: default 45 seconds, normally 30-60
+  seconds. Do not plan multi-minute BGM unless the user explicitly approves the
+  credit cost.
 - Stage directions are evidence, not automatic sound requests.
 - Prefer reuse; reject incidental footsteps, prop handling, clothing rustle,
   rain already covered by BGS, and similar texture.
@@ -96,7 +100,8 @@ rejected:
 
 Stop if you would return chat-only bullets, use dotted IDs, omit required keys,
 mark vague approval as `approved`, add SFX under `cues`, invent evidence, call
-ElevenLabs, or run `audio:generate`.
+ElevenLabs, run `audio:generate`, or set BGM above 60 seconds without explicit
+approval.
 
 ## Verification
 
