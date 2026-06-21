@@ -50,9 +50,25 @@ export function planGeneration(input: {
   const diagnostics = validateSoundPlan(parsed.value);
   if (diagnostics.length > 0) return { diagnostics, toGenerate: [] };
 
+  if (
+    input.only !== undefined &&
+    !parsed.value.entries.some((entry) => entry.id === input.only)
+  ) {
+    return {
+      diagnostics: [
+        {
+          code: "audioGenerateOnlyNotFound",
+          path: "--only",
+          message: `No sound plan entry has id "${input.only}" for --only.`,
+        },
+      ],
+      toGenerate: [],
+    };
+  }
+
   const toGenerate: GenerationTarget[] = [];
   for (const entry of parsed.value.entries) {
-    if (input.only && entry.id !== input.only) continue;
+    if (input.only !== undefined && entry.id !== input.only) continue;
     if (entry.status !== "approved" && entry.status !== "generated") continue;
 
     const outputPath = generatedOutputPath(entry);

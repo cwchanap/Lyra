@@ -169,6 +169,34 @@ describe("audio generation planning", () => {
       "static/assets/audio/bgs/second_rain.ogg",
     ]);
   });
+
+  it("reports an unknown --only target before API key enforcement", () => {
+    const repoRoot = createRepoRoot();
+    const planPath = writePlan(repoRoot, [
+      soundEntry({
+        id: "rain_street_light",
+        channel: "bgs",
+        status: "approved",
+      }),
+    ]);
+
+    const result = planGeneration({
+      repoRoot,
+      planPath,
+      dryRun: false,
+      force: false,
+      only: "typo",
+    });
+
+    expect(result.toGenerate).toEqual([]);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "audioGenerateOnlyNotFound",
+        path: "--only",
+        message: expect.stringContaining("typo"),
+      }),
+    ]);
+  });
 });
 
 function createRepoRoot(): string {
