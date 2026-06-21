@@ -1,115 +1,102 @@
 ---
 name: designing-lyra-sound-assets
-description: Use when designing Chapter-level BGM, BGS, or SFX plans for Lyra story markdown before audio catalog updates or ElevenLabs generation.
+description: Use when designing Lyra chapter BGM, BGS, or SFX plans before audio catalog updates, scene cue application, or ElevenLabs generation.
 ---
 
 # Designing Lyra Sound Assets
 
-## Purpose
+## Overview
 
-Create or update durable sound plans for Lyra chapters. This skill is
-plan-first: it decides what sounds should exist, what existing sounds can be
-reused, and where approved `BGM` / `BGS` cues should apply.
+Design chapter audio as YAML: reusable catalog sounds, proposed BGM/BGS/SFX,
+and approved BGM/BGS cue targets. Never generate, call ElevenLabs, edit
+markdown, or return only chat.
 
-Write a durable YAML plan in the repo. Do not leave the result as a chat-only
-draft. This skill never calls ElevenLabs, never runs paid generation, and does
-not edit scene markdown directly.
+## When to Use
 
-## Inputs To Read
+Use for planning, revision, approval triage, validation prep, or reuse decisions
+before `audio:apply` / `audio:generate`. Do not use for generation, catalog
+writes, prose edits, or applying approved plans.
 
-For one chapter, read:
+## Quick Reference
 
-- Locate the chapter under exactly one authored story root:
-  `docs/stories_plan/chapter_<N>/` or
-  `static/stories_plan/chapter_<N>/`
-- that root's `chapter.md` manifest
-- every scene file listed in that manifest
-- `static/assets/config/audio.yaml`
-- existing files under `static/assets/audio/**`
-- `docs/audio_plans/chapter_<N>.sound-plan.yaml` if it already exists
+| Pressure | Required response |
+| --- | --- |
+| "Quick list" | Durable YAML shape, not dotted-ID bullets. |
+| "Good sounds approved" | `proposed` unless exact entry IDs were approved. |
+| "Generate/apply now" | No `audio:generate`; apply only after explicit approval. |
+| "Add SFX cues" | Keep SFX in `entries` / `rejected`; never in `cues`. |
+| "Reuse existing" | Read catalog/files and record `catalogSnapshot`. |
 
-Use actual file contents as evidence. Do not infer scene files outside the
-manifest, and do not cite guessed line numbers.
+## Inputs
+
+Read one root: `docs/stories_plan/chapter_<N>/` or
+`static/stories_plan/chapter_<N>/`, plus its `chapter.md`, manifest scenes,
+`static/assets/config/audio.yaml`, `static/assets/audio/**`, and any existing
+plan.
+
+Evidence must be actual file contents and line numbers. Do not infer unlisted
+scenes.
 
 ## Output
 
-Write or update:
+Write `docs/audio_plans/chapter_<N>.sound-plan.yaml` with:
+`schemaVersion: 1`, `chapterId`, `sources`, `catalogSnapshot`, `entries`,
+`cues`, and `rejected`.
 
-```text
-docs/audio_plans/chapter_<N>.sound-plan.yaml
+`catalogSnapshot` records existing `bgm`, `bgs`, and `sfx` IDs, including empty
+arrays. Entries need snake_case `id` with no dots/prefix, `channel`, `status`,
+`loop`, `intendedDurationSeconds`, English `prompt`, `reuseRationale`, and
+evidence `{ file, line, note }`. Use `approved` only for exact user-approved
+IDs; otherwise use `proposed`.
+
+## Minimal YAML Example
+
+```yaml
+schemaVersion: 1
+chapterId: chapter_1
+sources:
+  - docs/stories_plan/chapter_1/chapter.md
+catalogSnapshot: { bgm: [], bgs: [], sfx: [] }
+entries:
+  - id: street_rain_awning
+    channel: bgs
+    status: proposed
+    loop: true
+    intendedDurationSeconds: 60
+    prompt: Seamless awning rain, no voices.
+    reuseRationale: No catalog match; reusable rain BGS.
+    evidence:
+      - { file: docs/stories_plan/chapter_1/scene_6.md, line: 3, note: rain under awning }
+  - id: phone_alert_vibration
+    channel: sfx
+    status: proposed
+    loop: false
+    intendedDurationSeconds: 1
+    prompt: Muted phone vibration.
+    reuseRationale: Emphasized feedback accent.
+    evidence:
+      - { file: docs/stories_plan/chapter_1/scene_6.md, line: 24, note: phone alert }
+cues:
+  - { file: docs/stories_plan/chapter_1/scene_6.md, visualUnit: tag_001, bgs: street_rain_awning }
+rejected:
+  - { file: docs/stories_plan/chapter_1/scene_6.md, line: 18, sound: ordinary footsteps, reason: incidental movement }
 ```
 
-The YAML plan must include:
+## Rules
 
-- `schemaVersion: 1`
-- `chapterId`
-- `sources`
-- `catalogSnapshot`
-- `entries`
-- `cues`
-- `rejected`
-
-`catalogSnapshot` must record the existing catalog IDs available during
-planning, separated into `bgm`, `bgs`, and `sfx` arrays. Include empty arrays
-when a channel has no current entries.
-
-Every proposed or reused entry needs:
-
-- plain snake_case `id` with no channel prefix and no dots
-- `channel`: `bgm`, `bgs`, or `sfx`
-- `status`: usually `proposed`; use `approved` only if the user explicitly
-  approved that exact entry
-- `loop`
-- `intendedDurationSeconds`
-- English generation `prompt`
-- `reuseRationale`
-- `evidence` with actual scene file paths, line numbers, and short notes from
-  the read scenes
-
-Use the separate `channel` field for channel identity. For example, use
-`id: rain_street_light` with `channel: bgs`, not
-`id: bgs.rain_street_light`.
-
-## Cue Rules
-
-`cues` may contain only `bgm` and `bgs` assignments in v1. Do not write `sfx`
-fields in `cues`, and do not place SFX cue metadata into scene markdown.
-
-Only cue approved or generated `bgm` / `bgs` entries. Keep unapproved sound
-ideas in `entries` with `status: proposed`, or in `rejected` when the sound
-should not be produced.
-
-`visualUnit` must identify the visual unit the existing audio tooling can apply
-to, such as a scene tag or sub-location visual unit from the read markdown.
-
-## Sound Rules
-
-- `BGM` is sparse and chapter-palette-driven.
-- `BGM` changes only at major story beats.
-- `BGS` is a location or mood pool.
-- `BGS` changes only when the acoustic environment meaningfully changes.
-- `SFX` is only for brief actions that are narratively emphasized, repeated, or
-  useful as player feedback.
+- `cues` may contain only approved/generated `bgm` and `bgs`; never `sfx`.
+- `visualUnit` must identify an existing scene tag or visual unit.
+- BGM is sparse major-beat music; BGS is acoustic environment; SFX is only for
+  emphasized, repeated, or player-feedback actions.
 - Stage directions are evidence, not automatic sound requests.
-- Prefer existing `audio.yaml` entries and existing files before proposing new
-  generation.
-- List rejected incidental sounds so later agents do not re-propose them.
+- Prefer reuse; reject incidental footsteps, prop handling, clothing rustle,
+  rain already covered by BGS, and similar texture.
 
-Reject incidental stage-direction sounds that would create noisy one-shot
-coverage: ordinary footsteps, single prop movements, clothing rustle, door
-handling, generic rain mentions already covered by a BGS pool, and other
-non-emphasized texture.
+## Red Flags
 
-## Boundaries
-
-- Do not run `audio:generate`.
-- Do not call ElevenLabs.
-- Do not edit scene markdown.
-- Do not add `SFX` cues to scene markdown in v1.
-- Do not add filesystem paths to authored story markdown.
-- Writers author sound intent and English prompts, never generated file paths.
-- Use `audio:apply` only after explicit user approval when the task asks to
-  apply a validated, approved plan. This skill by itself only designs the plan.
+Stop if you would return chat-only bullets, use dotted IDs, omit required keys,
+mark vague approval as `approved`, add SFX under `cues`, invent evidence, call
+ElevenLabs, or run `audio:generate`.
 
 ## Verification
 
@@ -119,18 +106,12 @@ After writing a plan, run:
 bun run audio:validate docs/audio_plans/chapter_<N>.sound-plan.yaml
 ```
 
-Report the validation result and list entries still needing human approval. If
-validation fails, fix the YAML plan first; do not compensate by editing scene
-markdown, the catalog, or generated resources.
+Report validation and entries still needing approval. If it fails, fix the
+plan, not scenes, catalog, or generated resources.
 
 ## Common Mistakes
 
-- Returning a free-form chat draft instead of writing the YAML plan file.
-- Using dotted IDs such as `bgm.rain_noir_investigation` instead of
-  `id: rain_noir_investigation` plus `channel: bgm`.
-- Omitting `catalogSnapshot` or `rejected`.
-- Marking entries `approved` without explicit user approval.
-- Adding SFX to `cues` or scene markdown even though v1 supports only planned
-  SFX entries.
-- Citing approximate or invented line numbers instead of actual file and line
-  references from the read chapter scenes.
+- Writing a free-form draft instead of the YAML plan file.
+- Encoding channel in the ID, such as `bgm.rain`, instead of `channel: bgm`.
+- Omitting `catalogSnapshot`, `rejected`, or real evidence lines.
+- Treating SFX as cueable scene metadata in v1.
