@@ -80,6 +80,15 @@ describe("story asset manifest paths", () => {
     );
   });
 
+  it("maps SFX asset IDs to static audio paths", () => {
+    expect(publicPath("audio.sfx.plastic_bag_crinkle", "audio")).toBe(
+      "/assets/audio/sfx/plastic_bag_crinkle.ogg",
+    );
+    expect(expectedPath("audio.sfx.plastic_bag_crinkle", "audio")).toBe(
+      "static/assets/audio/sfx/plastic_bag_crinkle.ogg",
+    );
+  });
+
   it("maps evidence asset IDs to evidence paths", () => {
     expect(publicPath("evidence.coffee_receipt", "evidence")).toBe(
       "/assets/evidence/coffee_receipt.png",
@@ -111,5 +120,11 @@ describe("story asset manifest paths", () => {
 
   it("throws for malformed audio assetIds with too few segments", () => {
     expect(() => publicPath("audio", "audio")).toThrow(/expected exactly 3/);
+  });
+
+  it("throws for audio assetIds with unsupported channels", () => {
+    expect(() => publicPath("audio.voice.line_001", "audio")).toThrow(
+      /expected channel bgm, bgs, or sfx, got "voice"/,
+    );
   });
 });

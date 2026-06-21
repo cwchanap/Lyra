@@ -34,6 +34,7 @@ describe("loadAssetConfig", () => {
         if (!result.ok) return;
         expect(result.value.enabled).toBe(false);
         expect(result.value.characters.byId.size).toBe(0);
+        expect(result.value.audio.sfx.size).toBe(0);
       },
     );
   });
@@ -92,6 +93,10 @@ bgs:
   indoor_rain_window:
     prompt: rain against windows
     loop: true
+sfx:
+  plastic_bag_crinkle:
+    prompt: short plastic bag crinkle
+    loop: false
 `,
       },
       (root) => {
@@ -104,6 +109,65 @@ bgs:
         );
         expect(result.value.audio.bgm.has("rain_mystery_low")).toBe(true);
         expect(result.value.audio.bgs.has("indoor_rain_window")).toBe(true);
+        expect(result.value.audio.sfx.has("plastic_bag_crinkle")).toBe(true);
+        expect(result.value.audio.sfx.get("plastic_bag_crinkle")?.loop).toBe(
+          false,
+        );
+      },
+    );
+  });
+
+  it("loads enabled policy when audio catalog omits SFX entries", () => {
+    withConfig(
+      {
+        "policy.yaml": `
+assets:
+  enabled: true
+globalStyle:
+  prompt: noir rain visual novel
+types:
+  background:
+    format: png
+    prompt: wide background
+  portrait:
+    format: png
+    prompt: transparent portrait
+  evidence:
+    format: png
+    prompt: evidence icon
+  standee:
+    format: png
+    prompt: full-body standee
+  audio:
+    format: ogg
+    loop: true
+`,
+        "characters.yaml": `
+characters:
+  - id: hayasaka_akane
+    displayNames: ["早坂茜"]
+    portraitMode: portrait
+    visualPrompt: attorney in dark suit
+    expressions:
+      standard:
+        prompt: neutral
+`,
+        "audio.yaml": `
+bgm:
+  rain_mystery_low:
+    prompt: soft tension
+    loop: true
+bgs:
+  indoor_rain_window:
+    prompt: rain against windows
+    loop: true
+`,
+      },
+      (root) => {
+        const result = loadAssetConfig(root);
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.audio.sfx.size).toBe(0);
       },
     );
   });
@@ -218,6 +282,28 @@ characters:
         if (result.ok) return;
         expect(
           result.errors.some((e) => e.code === "assetAudioEntryMalformed"),
+        ).toBe(true);
+      },
+    );
+  });
+
+  it("rejects unsupported audio channels", () => {
+    withConfig(
+      {
+        "policy.yaml": "assets:\n  enabled: false\n",
+        "characters.yaml": "characters: []\n",
+        "audio.yaml": "bgm: {}\nbgs: {}\nvoice: {}\n",
+      },
+      (root) => {
+        const result = loadAssetConfig(root);
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(
+          result.errors.some(
+            (e) =>
+              e.code === "assetAudioChannelUnsupported" &&
+              e.message.includes("voice"),
+          ),
         ).toBe(true);
       },
     );
