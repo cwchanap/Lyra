@@ -35,8 +35,10 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
 - `bun run audio:validate <plan.yaml>` - validate a durable sound plan.
 - `bun run audio:apply <plan.yaml> [--check]` - apply approved BGM/BGS cues and
   catalog entries without network access.
-- `ELEVENLABS_API_KEY=... bun run audio:generate <plan.yaml> [--dry-run] [--only <id>] [--force]`
-  - explicitly generate approved audio through ElevenLabs.
+- `bun run audio:generate <plan.yaml> --dry-run [--only <id>] [--force]` - list
+  approved audio that would be generated without network access or an API key.
+- `ELEVENLABS_API_KEY=... bun run audio:generate <plan.yaml> [--only <id>] [--force]`
+  - generate approved audio through ElevenLabs.
 - `bun run check` / `bun run check:watch` - type-check Svelte + TS
   (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
 - `bun run test` / `bun run test:watch` - Vitest unit tests for frontend logic
@@ -75,10 +77,11 @@ developer-only investigation layout editor lives in `apps/layout-editor`.
 
 ## Shared packages (`packages/*`)
 
-Three workspace libraries are the single source of truth shared across the
-compiler, game runtime, and editor. Keep this logic here rather than
-duplicating it on either side — that is what prevents silent drift in the
-emitted JSON/wire contract:
+The workspace packages are the source of truth for their respective surfaces:
+shared runtime/editor contracts live in `@lyra/asset-paths` and
+`@lyra/scene-types`, while compiler and audio tooling lives in `@lyra/scripts`.
+Keep this logic in packages rather than duplicating it in app-specific code —
+that is what prevents silent drift in the emitted JSON/wire contract:
 
 - `@lyra/asset-paths` - converts typed `assetId`s (e.g.
   `portrait.hayasaka_akane.concerned`) to public URL paths. Consumed by the
