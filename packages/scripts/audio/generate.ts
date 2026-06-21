@@ -50,19 +50,6 @@ export function planGeneration(input: {
   const diagnostics = validateSoundPlan(parsed.value);
   if (diagnostics.length > 0) return { diagnostics, toGenerate: [] };
 
-  if (!input.dryRun && (input.apiKey ?? "").trim() === "") {
-    return {
-      diagnostics: [
-        {
-          code: "audioGenerateMissingApiKey",
-          path: "ELEVENLABS_API_KEY",
-          message: "ELEVENLABS_API_KEY is required for audio generation.",
-        },
-      ],
-      toGenerate: [],
-    };
-  }
-
   const toGenerate: GenerationTarget[] = [];
   for (const entry of parsed.value.entries) {
     if (input.only && entry.id !== input.only) continue;
@@ -73,6 +60,23 @@ export function planGeneration(input: {
       continue;
     }
     toGenerate.push({ entry, outputPath });
+  }
+
+  if (
+    !input.dryRun &&
+    toGenerate.length > 0 &&
+    (input.apiKey ?? "").trim() === ""
+  ) {
+    return {
+      diagnostics: [
+        {
+          code: "audioGenerateMissingApiKey",
+          path: "ELEVENLABS_API_KEY",
+          message: "ELEVENLABS_API_KEY is required for audio generation.",
+        },
+      ],
+      toGenerate: [],
+    };
   }
 
   return { diagnostics: [], toGenerate };
