@@ -4,6 +4,8 @@
 
 [場景：KAGAMI 證據摘要審查會，白日。長桌一側坐著相馬律與早坂茜，另一側是主理的神谷澪，黑瀨徹立在證物推車旁，旁聽席上坐著三宅母親，她膝上放著一只飯糰袋。]
 - **Background Prompt:** KAGAMI evidence-summary review hearing room in daylight before formal arguments, long table, evidence cart, sparse gallery seating, restrained legal tension, no prominent foreground characters, no readable text.
+- **BGM:** bgm_review_board_victory
+- **BGS:** bgs_review_board_room
 
 [神谷澪把摘要報告攤在桌面正中，指尖壓在那行被標為主時間錨的紀錄上。]
 
@@ -26,6 +28,8 @@
 - **Required:** true
 - **Status:** unlocked
 - **Background Prompt:** KAGAMI evidence-summary review hearing room in daylight, long table with case-summary report and collected records, restrained legal tension, no readable text.
+- **BGM:** bgm_review_board_victory
+- **BGS:** bgs_review_board_room
 
 [場景：KAGAMI 證據摘要審查會，白日，長桌上攤著摘要報告與幾份從現場帶回的紀錄。]
 
@@ -76,6 +80,8 @@
 - **Status:** locked
 - **Unlock:** phase:p1 completed
 - **Background Prompt:** Review hearing table with time-related cafe evidence, forensic preliminary sheet and small record cards arranged under cold daylight, no readable document text.
+- **BGM:** bgm_review_board_victory
+- **BGS:** bgs_review_board_room
 
 [場景：KAGAMI 證據摘要審查會，白日，桌面換上現場帶回的時間相關紀錄與鑑識初判。]
 
@@ -128,6 +134,8 @@
 - **Status:** locked
 - **Unlock:** phase:p2 completed
 - **Background Prompt:** Review hearing table covered with an L-shaped backroom floor plan and floor-drying record cards, officials across the table, quiet pressure, no readable labels.
+- **BGM:** bgm_review_board_victory
+- **BGS:** bgs_review_board_room
 
 [場景：KAGAMI 證據摘要審查會，白日，桌上鋪開後場 L 型平面圖與地面乾燥分布的紀錄。]
 
@@ -178,6 +186,8 @@
 - **Status:** locked
 - **Unlock:** phase:p3 completed
 - **Background Prompt:** KAGAMI review hearing room with a limited-record authorization form centered before the presiding official, formal stamp pad, no readable text.
+- **BGM:** bgm_review_board_victory
+- **BGS:** bgs_review_board_room
 
 [場景：KAGAMI 證據摘要審查會，白日，神谷澪面前擺著原始門鎖紀錄的調閱授權單。]
 
@@ -217,6 +227,8 @@
 - **Status:** locked
 - **Unlock:** phase:gate completed
 - **Background Prompt:** Hearing table with approved doorlock excerpt beside a printed summary timetable, two parallel record stacks, precise procedural mood, no readable rows.
+- **BGM:** bgm_review_board_victory
+- **BGS:** bgs_review_board_room
 
 [場景：KAGAMI 證據摘要審查會，白日，桌面中央攤著剛核准的限定片段與門鎖摘要時刻表。]
 
@@ -271,6 +283,8 @@
 - **Status:** locked
 - **Unlock:** phase:p4 completed
 - **Background Prompt:** Final review hearing table with work order, credential card, memo, draft, and umbrella-sleeve comparison arranged as an evidence chain, no readable text.
+- **BGM:** bgm_review_board_victory
+- **BGS:** bgs_review_board_room
 
 [場景：KAGAMI 證據摘要審查會，白日，桌面攤開工單、憑證、備忘、草稿與傘套比對，匯成一條完整的鏈。]
 

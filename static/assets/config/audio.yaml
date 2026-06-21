@@ -1,2 +1,120 @@
-bgm: {}
-bgs: {}
+bgm:
+  bgm_chapter_close:
+    prompt:
+      Bittersweet unresolved chapter-close theme, gentle solo piano over soft
+      rain-night pad, a single low string swell, quiet hope mixed with an
+      unanswered question, no triumphant resolution, ends on a suspended note.
+    loop: true
+  bgm_review_board_loss:
+    prompt: Sparse restrained procedural tension for a Japanese evidence-review
+      hearing the defense is losing, low sustained strings, occasional muted
+      piano pulse, cold institutional air, no melody climax, no percussion, ends
+      open, unresolved, and quietly defeated.
+    loop: true
+  bgm_review_board_victory:
+    prompt:
+      Restrained procedural tension that slowly resolves into earned relief
+      for a Japanese evidence-review hearing the defense wins, low sustained
+      strings, muted piano pulse building to a single quiet resolved chord, cold
+      institutional air giving way to a warmer sustained note, no triumphant
+      swell, ends settled but somber.
+    loop: true
+bgs:
+  bgs_cafe_afternoon_after_rain:
+    prompt: Rain Bell cafe interior in afternoon after rain, half-reset tables,
+      quiet counter, soft daylight through wet windows, faint latte and coffee
+      aroma air, no voices, no music.
+    loop: true
+  bgs_cafe_backroom_corridor:
+    prompt: Narrow L-shaped cafe back corridor, fluorescent tube hum with one
+      flickering tube at the far end, footsteps echoing between close walls,
+      stacked cardboard and cleaning supplies, no rain, no voices.
+    loop: true
+  bgs_cafe_backroom_office:
+    prompt: Cafe manager office corner at night, warm practical lamp, idle
+      maintenance screen, stacked boxes and account books, faint electrical
+      standby hum, no voices, no music.
+    loop: true
+  bgs_cafe_closed_night:
+    prompt: Closed Tokyo cafe front room at rainy night, rain striking the glass
+      door louder than the interior, faint coffee-ground residue air, idle
+      dishwasher vent, no voices, no music.
+    loop: true
+  bgs_contractor_office_day:
+    prompt:
+      KAGAMI contractor records office in daylight, glass service partition,
+      file-cabinet resonance, bureaucratic restraint, faint air-conditioning, no
+      voices, no music.
+    loop: true
+  bgs_detective_office_night:
+    prompt:
+      Small private detective office at night, single desk lamp, laptop fan
+      hum, faint distant street traffic through a rainy window, city streetlight
+      glow, no voices, no music.
+    loop: true
+  bgs_detective_office_rain:
+    prompt:
+      Small Tokyo private detective office at early morning drizzle, fine even
+      rain tapping a window, distant traffic hush, faint paper shuffle, no
+      voices, no music.
+    loop: true
+  bgs_institutional_corridor:
+    prompt: Cold Japanese institutional corridor, pale fluorescent hum, faint
+      damp-shoe echo on hard floor, distant muffled official voices, no music,
+      no rain inside.
+    loop: true
+  bgs_interview_room_fluorescent:
+    prompt: Small white Japanese interview room under exposed fluorescent tubes,
+      hard reflective walls, faint paper-slide on table, tense flat quiet, no
+      voices, no music.
+    loop: true
+  bgs_law_office_quiet:
+    prompt: Quiet Japanese law office interior after rain, still air, faint city
+      dampness outside, occasional soft paper movement, no rain sound, no
+      voices, no music.
+    loop: true
+  bgs_police_station_late_night:
+    prompt: Late-night Japanese police station interior, pale fluorescent wash,
+      vending-machine compressor hum from the corner, faint rain on dark
+      windows, empty bench, no voices, no music.
+    loop: true
+  bgs_review_board_room:
+    prompt:
+      Quiet Japanese review-board hearing room, cold air-conditioning wash,
+      occasional paper-page turn, tense procedural silence, faint fluorescent
+      floor, no voices, no music.
+    loop: true
+  bgs_shopping_street_rain_dusk:
+    prompt: Kichijoji shopping street at rainy dusk under a convenience-store
+      awning, steady awning-edge drip, passing umbrella footsteps on wet
+      pavement, muted storefront hum, distant traffic, a few distant commuter
+      voices, no music.
+    loop: true
+  bgs_shopping_street_rain_night:
+    prompt:
+      Kichijoji shopping street under an awning late at night while rain still
+      falls, steady awning-edge drip louder in the empty street, rare distant
+      footsteps, no commuter chatter, muted closed storefronts, hollower and
+      colder than dusk, no voices up close, no music.
+    loop: true
+sfx:
+  sfx_anonymous_message_buzz:
+    prompt:
+      Single muted phone vibration buzz in a pocket, two short pulses, dry and
+      discreet, no ringtone, no music.
+    loop: false
+  sfx_coffee_machine_backflush:
+    prompt:
+      Espresso machine backflush purge, short pressurized hiss and gurgle into
+      the drip tray, mechanical release, no voices, no music.
+    loop: false
+  sfx_rice_ball_bag_crinkle:
+    prompt:
+      Small plastic rice-ball bag being gripped and crinkled, tight repeated
+      crinkles, intimate close perspective, no voices, no music.
+    loop: false
+  sfx_usb_insert_chime:
+    prompt:
+      USB drive inserted into a laptop, dry connector click followed by a soft
+      OS chime, quiet room, no voices, no music.
+    loop: false

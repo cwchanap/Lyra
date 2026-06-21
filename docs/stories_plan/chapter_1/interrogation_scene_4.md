@@ -4,6 +4,7 @@
 
 [場景：警署等待區，深夜。日光燈偏白，牆角一台自動販賣機嗡嗡作響，長椅上只坐著三宅一人。]
 - **Background Prompt:** Late-night Japanese police station waiting area under pale fluorescent lights, humming vending machine in the corner, long empty bench, rain-dark windows, tense quiet mood, no readable labels.
+- **BGS:** bgs_police_station_late_night
 
 [三宅蒼太手裡握著一罐飲料，盯著罐身上的字看了很久。]
 
@@ -36,6 +37,7 @@
 - **Required:** true
 - **Status:** unlocked
 - **Background Prompt:** Late-night Japanese police interrogation room, small table under hard lamps, rain-dark window, vending-machine glow from waiting area implied, tense but quiet.
+- **BGS:** bgs_police_station_late_night
 
 [場景：警署詢問室，深夜。室內只有一張桌子與兩盞燈，氣氛壓抑，窗外仍在下雨。]
 
@@ -91,6 +93,7 @@
 - **Status:** locked
 - **Unlock:** phase:ask_miyake completed
 - **Background Prompt:** Police interrogation room at night with case records spread across the table, white lamp glare, rain streaks on dark glass, controlled pressure.
+- **BGS:** bgs_police_station_late_night
 
 [場景：警署詢問室，深夜。雨聲透過窗縫滲進來，桌上攤著幾份從現場帶回的紀錄。]
 

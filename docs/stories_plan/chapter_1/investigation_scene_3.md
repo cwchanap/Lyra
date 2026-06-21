@@ -4,6 +4,7 @@
 
 [場景：雨鐘咖啡館外，雨夜，閉店後。玻璃門前的路燈映著濕地面，店內只剩半盞燈。]
 - **Background Prompt:** Exterior of Rain Bell cafe at rainy night after closing, wet glass door, dim interior light visible through the window, umbrellas being closed at the entrance, reflective pavement, serious detective mystery mood, no readable signage.
+- **BGS:** bgs_cafe_closed_night
 
 [雨夜。相馬律與早坂茜在「雨鐘」門口收傘，玻璃門上還貼著閉店的牌子。]
 
@@ -18,6 +19,7 @@
 ## Sub-location: 雨鐘前場 {#front}
 - **Status:** unlocked
 - **Background Prompt:** Rain Bell cafe front room at rainy night after closing, dim half-light, counter, register, umbrella stand with blue transparent umbrella, wet glass door, no readable signage.
+- **BGS:** bgs_cafe_closed_night
 
 [場景：吉祥寺咖啡館「雨鐘」前場，雨夜，閉店後。]
 
@@ -143,6 +145,7 @@
 ## Sub-location: 後場走廊 {#corridor}
 - **Status:** locked
 - **Background Prompt:** Narrow Rain Bell back corridor, L-shaped turn, stacked paper cups and cake boxes, cleaning rack, half-open fire door, fluorescent hum, sightline blocked.
+- **BGS:** bgs_cafe_backroom_corridor
 
 [場景：雨鐘後場 L 型走廊，狹窄，紙箱與清潔用品堆疊。]
 

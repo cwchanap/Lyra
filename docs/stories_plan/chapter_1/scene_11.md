@@ -2,6 +2,8 @@
 
 [場景：吉祥寺雨鐘咖啡館，午後。雨剛停，窗外天色微亮。店內桌椅已收拾過半，吧台後靜悄悄的，空氣裡還留著淡淡咖啡香。]
 - **Background Prompt:** Rain Bell cafe after the rain in the afternoon, half-reset tables, quiet counter, soft daylight through wet windows, gentle aftermath, no readable signage.
+- **BGM:** bgm_chapter_close
+- **BGS:** bgs_cafe_afternoon_after_rain
 
 **旁白**：案子結了。
 
@@ -67,6 +69,8 @@
 
 [場景：雨鐘咖啡館，午後，店內空鏡。人聲漸遠，只剩光線落在木桌上。]
 - **Background Prompt:** Empty Rain Bell cafe interior in afternoon light, a latte cup on a wooden table, old wall clock resting on the counter, quiet unresolved stillness.
+- **BGM:** bgm_chapter_close
+- **BGS:** bgs_cafe_afternoon_after_rain
 
 **旁白**：他們陸續離開了。
 
@@ -86,6 +90,8 @@
 
 [場景：相馬事務所，夜晚。窗外街燈昏黃，桌上只有一盞檯燈和一台筆電。]
 - **Background Prompt:** Small private detective office at night, desk lamp glow, laptop and sealed USB drive on worn desk, city streetlight outside rainy window, no readable screen text.
+- **BGM:** bgm_chapter_close
+- **BGS:** bgs_detective_office_night
 
 **旁白**：那天深夜，相馬回到事務所。
 
@@ -123,6 +129,8 @@
 
 [場景：相馬事務所，同一夜稍晚。桌上多了幾份警方移交的清單。]
 - **Background Prompt:** Same detective office later at night, extra police transfer lists spread beside the laptop, phone on desk, dim practical lamp, no readable paperwork.
+- **BGM:** bgm_chapter_close
+- **BGS:** bgs_detective_office_night
 
 **旁白**：掛上電話前，他們又核對了一件事。
 
@@ -144,6 +152,7 @@
 
 [場景：雨鐘咖啡館外，深夜。雨已經停了，街面仍泛著水光，店招的燈滅了。]
 - **Background Prompt:** Exterior of Rain Bell cafe late at night after rain, dark storefront, wet street reflections, umbrella stand near the door holding a blue transparent umbrella, no readable sign.
+- **BGM:** bgm_chapter_close
 
 **旁白**：相馬走出事務所時，雨早就停了。
 

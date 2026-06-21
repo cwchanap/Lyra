@@ -4,6 +4,7 @@
 
 [場景：KAGAMI 外包資料審查辦公室，白日。玻璃窗口前放著一份限定調閱回函，檔案櫃排在後方。]
 - **Background Prompt:** KAGAMI contractor records review office in daylight before the records handoff, glass service window, file cabinets, limited-scope reply packet on the counter, bureaucratic restraint, no readable text.
+- **BGS:** bgs_contractor_office_day
 
 [相馬律與早坂茜走進 KAGAMI 的外包資料審查辦公室，黑瀨徹已在窗口前等他們。]
 
@@ -22,6 +23,7 @@
 ## Sub-location: 承包商資料窗口 {#contractor_desk}
 - **Status:** unlocked
 - **Background Prompt:** KAGAMI contractor records office service window in daylight, glass partition, file cabinets, limited-scope reply packet on desk, bureaucratic restraint, no readable text.
+- **BGS:** bgs_contractor_office_day
 
 [場景：KAGAMI 外包資料審查辦公室／承包商聯絡窗口，白日，玻璃隔板後一排檔案櫃，桌上攤著一份限定範圍的調閱回函。]
 
@@ -86,6 +88,7 @@
 ## Sub-location: 質問北見 {#confront_kitami}
 - **Status:** locked
 - **Background Prompt:** Small white interview room under exposed fluorescent tubes, forensic printouts spread on table, plain walls, restrained office pressure, no readable document text.
+- **BGS:** bgs_interview_room_fluorescent
 
 [場景：訪談室，白日，日光燈管把一切照得毫無死角。窄小的房間，四面白牆，桌上攤開一批死者手機鑑識的列印件。北見修一坐在對面，手裡攥著一張摺痕很深的名片。四十出頭，身形中等偏軟，穿著樣板式的商務便裝——那種設計上就是為了不讓人記住的款式。一副金屬框眼鏡，鏡架滑下來一點，他每隔幾秒就用中指推回去。一張在職場上習慣被忽略的人的臉。]
 

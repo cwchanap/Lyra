@@ -29,6 +29,7 @@
 
 [場景：警署會面室外的走廊，日光燈下，空氣安靜。牆上的螢幕還亮著那份摘要。]
 - **Background Prompt:** Quiet Japanese police meeting-room corridor under pale fluorescent light, wall monitor showing an unreadable case-summary layout, empty bench, tense still air.
+- **BGS:** bgs_institutional_corridor
 
 [螢幕上仍寫著一行：主要嫌疑人：三宅蒼太。]
 

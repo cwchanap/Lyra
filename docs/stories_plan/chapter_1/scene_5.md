@@ -2,6 +2,8 @@
 
 [場景：吉祥寺地方分署審查會場，上午，雨後陰天。長桌前坐著審查人員，旁聽席只有寥寥幾人，空氣冷而安靜，桌上擺著一份厚厚的整合摘要。日光燈管把所有人的臉照得偏白，會場裡瀰漫著紙張與冷氣混合的氣味。這裡的安靜不是肅穆，而是所有人都在等著開口的那種沉默——翻一頁紙都顯得太響。]
 - **Background Prompt:** Local Japanese review-board hearing room on a cloudy morning after rain, long table, sparse gallery seats, thick case-summary folder, cold fluorescent light, no readable text.
+- **BGM:** bgm_review_board_loss
+- **BGS:** bgs_review_board_room
 
 **旁白**：審查會場比想像中安靜。
 
@@ -45,6 +47,8 @@
 
 [場景：審查會場，同一時間。相馬起身辯護，神谷端坐不動，旁聽席靜得能聽見雨滴從屋簷落下。]
 - **Background Prompt:** Same review-board room from the defense side, one chair pushed back, officials seated across the long table, tense procedural silence, rainy window light.
+- **BGM:** bgm_review_board_loss
+- **BGS:** bgs_review_board_room
 
 **相馬律**：三宅很孝順。
 
@@ -124,6 +128,8 @@
 
 [場景：審查會場外的走廊，會後。日光燈泛白，地面還留著訪客鞋底帶進的水痕，幾名警員在角落例行問話。]
 - **Background Prompt:** Institutional hallway outside a hearing room after the session, pale fluorescent lights, damp shoe marks on floor, distant officers in routine conversation, no readable signs.
+- **BGM:** none
+- **BGS:** bgs_institutional_corridor
 
 **旁白**：走出會場，相馬律覺得喉嚨發乾。
 
