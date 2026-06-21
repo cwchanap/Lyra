@@ -27,6 +27,7 @@ apps/game/src-tauri/resources/scenes/*
 !apps/game/src-tauri/resources/scenes/.gitkeep
 apps/game/src-tauri/resources/assets/*
 !apps/game/src-tauri/resources/assets/.gitkeep
+packages/scripts/.audio-cache/
 .claude/settings.local.json
 .devin/config.local.json
 .tmp-*
