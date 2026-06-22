@@ -1,3 +1,6 @@
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { enrichScenesWithAssets } from "./enrich";
 import { emitLinearScene } from "../emitter";
@@ -1494,6 +1497,108 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
     expect(paths.some((p) => p.includes("assets/backgrounds"))).toBe(true);
     expect(paths.some((p) => p.includes("assets/audio"))).toBe(true);
     expect(paths.some((p) => p.includes("assets/portraits"))).toBe(true);
+  });
+
+  it("resolves expectedPath against repoRoot so files present on disk are not false-positive missing", () => {
+    // Regression: after the --cwd packages/scripts migration, existsSync ran
+    // against cwd (packages/scripts), not the repo root, so every asset file
+    // was reported missing even when it existed. enrichScenesWithAssets must
+    // resolve expectedPath against an explicit repoRoot.
+    const repoRoot = mkdtempSync(join(tmpdir(), "lyra-enrich-reporoot-"));
+    // Create a real audio file at <repoRoot>/static/assets/audio/bgm/<id>.ogg
+    const bgmId = "bgm_real_file_xyz";
+    const bgmRelPath = `static/assets/audio/bgm/${bgmId}.ogg`;
+    mkdirSync(join(repoRoot, "static/assets/audio/bgm"), { recursive: true });
+    writeFileSync(
+      join(repoRoot, bgmRelPath),
+      Buffer.from([0x4f, 0x67, 0x67, 0x53]),
+    );
+
+    const cfg: AssetConfig = {
+      enabled: true,
+      globalStylePrompt: "test style",
+      types: {
+        background: {
+          dimensions: [1920, 1080],
+          format: "png",
+          transparency: false,
+          prompt: "wide bg",
+        },
+        portrait: {
+          dimensions: [768, 1024],
+          format: "png",
+          transparency: true,
+          prompt: "portrait",
+        },
+        standee: {
+          dimensions: [1024, 1536],
+          format: "png",
+          transparency: true,
+          prompt: "standee",
+        },
+        evidence: {
+          dimensions: [512, 512],
+          format: "png",
+          transparency: true,
+          prompt: "evidence",
+        },
+        audio: { format: "ogg", loop: true, prompt: "" },
+      },
+      characters: { byId: new Map(), byDisplayName: new Map() },
+      audio: {
+        bgm: new Map([[bgmId, { id: bgmId, prompt: "music", loop: true }]]),
+        bgs: new Map(),
+        sfx: new Map(),
+      },
+    };
+
+    const scene: SceneRecord = {
+      chapterId: "chapter_repo_root_test",
+      file: "scene_repo_root_test.md",
+      ast: {
+        kind: "linearScene",
+        id: "scene_repo_root_test",
+        title: "Test",
+        queue: [
+          {
+            kind: "sceneTag",
+            text: "Street",
+            assetCue: {
+              backgroundPrompt: "city",
+              backgroundAssetId: null,
+              bgm: { channel: "bgm", assetId: bgmId },
+              bgs: { channel: "bgs", assetId: null },
+            },
+          },
+        ],
+        assetRefs: [],
+        sourceFile: "chapter_repo_root_test/scene_repo_root_test.md",
+        line: 1,
+      },
+    };
+
+    // Without repoRoot, the file is reported missing (cwd-relative lookup fails).
+    const withoutRepoRoot = enrichScenesWithAssets({
+      scenes: [scene],
+      config: cfg,
+    });
+    expect(
+      withoutRepoRoot.warnings.some(
+        (w) =>
+          w.code === "assetFileMissing" && w.sourceFile.includes(bgmRelPath),
+      ),
+    ).toBe(true);
+
+    // With repoRoot pointing at the real file, no false-positive warning.
+    const withRepoRoot = enrichScenesWithAssets({
+      scenes: [scene],
+      config: cfg,
+      repoRoot,
+    });
+    const bgmWarnings = withRepoRoot.warnings.filter((w) =>
+      w.sourceFile.includes(bgmRelPath),
+    );
+    expect(bgmWarnings).toEqual([]);
   });
 
   it("emits no warnings when disabled config produces empty manifest", () => {

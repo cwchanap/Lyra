@@ -2,11 +2,16 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  formatAudioCatalogYaml,
   mergeApprovedEntriesIntoCatalog,
   parseAudioCatalogText,
   serializeAudioCatalog,
 } from "./audio-catalog";
 import { applyAudioCuesToMarkdown } from "./apply";
+import {
+  loadCorpusForPlan,
+  validateSoundPlanAgainstCorpus,
+} from "./corpus-validation";
 import { parseSoundPlanText, validateSoundPlan } from "./sound-plan";
 import type { SoundPlan, SoundPlanCue, SoundPlanDiagnostic } from "./types";
 
@@ -60,7 +65,7 @@ export async function runAudioCli(
     return runValidateCommand(commandArgs, context);
   }
   if (command === "apply") {
-    return runApplyCommand(commandArgs, context);
+    return await runApplyCommand(commandArgs, context);
   }
   if (command === "generate") {
     const { runGenerateCommand } = await import("./generate");
@@ -82,11 +87,17 @@ function runValidateCommand(args: string[], context: CliContext): number {
   if (!plan) return 2;
   const diagnostics = validateSoundPlan(plan);
   if (exitWithDiagnostics(diagnostics, context)) return 2;
+  // Corpus-aware checks (#4): first-visual-unit BGM+BGS and cue-vs-manifest.
+  const corpusDiagnostics = runCorpusValidation(plan, context);
+  if (exitWithDiagnostics(corpusDiagnostics, context)) return 2;
   context.stdout(`[audio] ${parsedArgs.value.planPath} OK`);
   return 0;
 }
 
-function runApplyCommand(args: string[], context: CliContext): number {
+async function runApplyCommand(
+  args: string[],
+  context: CliContext,
+): Promise<number> {
   const parsedArgs = parsePlanArgs(
     args,
     "Usage: audio:apply <plan.yaml> [--check]",
@@ -102,6 +113,14 @@ function runApplyCommand(args: string[], context: CliContext): number {
   if (!plan) return 2;
   const diagnostics = validateSoundPlan(plan);
   if (exitWithDiagnostics(diagnostics, context)) return 2;
+  // Structural path safety (no absolute / traversal / outside story roots)
+  // runs before corpus-aware checks — a malformed cue path is wrong regardless
+  // of what the chapter manifest says.
+  const cueFileDiagnostics = validateCueFilePaths(plan.cues, context.repoRoot);
+  if (exitWithDiagnostics(cueFileDiagnostics, context)) return 2;
+  // Corpus-aware checks (#4): first-visual-unit BGM+BGS and cue-vs-manifest.
+  const corpusDiagnostics = runCorpusValidation(plan, context);
+  if (exitWithDiagnostics(corpusDiagnostics, context)) return 2;
 
   const catalogPath = resolve(context.repoRoot, AUDIO_CATALOG_PATH);
   const catalogText = readTextFile(catalogPath, "audio catalog", context);
@@ -118,10 +137,9 @@ function runApplyCommand(args: string[], context: CliContext): number {
   );
   if (exitWithDiagnostics(merged.diagnostics, context)) return 2;
 
-  const cueFileDiagnostics = validateCueFilePaths(plan.cues, context.repoRoot);
-  if (exitWithDiagnostics(cueFileDiagnostics, context)) return 2;
-
-  const nextCatalogText = serializeAudioCatalog(merged.catalog);
+  const nextCatalogText = await formatAudioCatalogYaml(
+    serializeAudioCatalog(merged.catalog),
+  );
   const changedPaths: string[] = [];
   const changedPathSet = new Set<string>();
   if (nextCatalogText !== catalogText) {
@@ -242,6 +260,24 @@ function loadPlan(
     return undefined;
   }
   return parsed.value;
+}
+
+/**
+ * Load the chapter corpus for `plan` and run the spec-required corpus-aware
+ * checks (#4): the first visual unit must explicitly set both BGM and BGS,
+ * and every cue must target a scene file listed in the chapter manifest.
+ * Returns an empty array when the corpus is unavailable for reasons outside
+ * the plan's control (e.g. missing chapter directory) AND that missing state
+ * already produced its own diagnostic — but in practice load failures surface
+ * here so validate/apply can block on them.
+ */
+function runCorpusValidation(
+  plan: SoundPlan,
+  context: CliContext,
+): SoundPlanDiagnostic[] {
+  const corpus = loadCorpusForPlan(plan, { repoRoot: context.repoRoot });
+  if (!corpus.ok) return corpus.diagnostics;
+  return validateSoundPlanAgainstCorpus(plan, corpus.data);
 }
 
 function validateCueFilePaths(

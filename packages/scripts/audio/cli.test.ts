@@ -112,6 +112,7 @@ describe("audio cli", () => {
 
   it("does not write the catalog when later cue application fails", async () => {
     const repoRoot = createRepoRoot();
+    writeChapterManifest(repoRoot);
     writeScene(
       repoRoot,
       "docs/stories_plan/chapter_1/scene_0.md",
@@ -122,7 +123,9 @@ describe("audio cli", () => {
     const planPath = writePlan(
       repoRoot,
       "unknown-unit.sound-plan.yaml",
-      planWithCue("docs/stories_plan/chapter_1/scene_0.md", "tag_999"),
+      // First cue (tag_001) is #4a-compliant; second cue (tag_999) targets an
+      // unknown visual unit so apply fails at the cue-application phase.
+      planWithExtraCue("docs/stories_plan/chapter_1/scene_0.md"),
     );
     const stderr: string[] = [];
 
@@ -141,6 +144,7 @@ describe("audio cli", () => {
 
   it("reports drift paths in check mode without writing", async () => {
     const repoRoot = createRepoRoot();
+    writeChapterManifest(repoRoot);
     const scenePath = "docs/stories_plan/chapter_1/scene_0.md";
     writeScene(repoRoot, scenePath, sceneSource());
     const catalogPath = join(repoRoot, "static/assets/config/audio.yaml");
@@ -195,6 +199,23 @@ function writeScene(repoRoot: string, file: string, text: string): void {
   writeFileSync(path, text);
 }
 
+/**
+ * Writes a minimal chapter.md manifest listing `scene_0.md` so corpus
+ * validation (#4) has a manifest to check cues against.
+ */
+function writeChapterManifest(repoRoot: string): void {
+  writeScene(
+    repoRoot,
+    "docs/stories_plan/chapter_1/chapter.md",
+    [
+      "# Chapter 1: Test",
+      "**Summary:** A test chapter.",
+      "## Scenes",
+      "1. scene_0.md",
+    ].join("\n") + "\n",
+  );
+}
+
 function minimalPlan(): string {
   return `schemaVersion: 1
 chapterId: chapter_1
@@ -233,9 +254,31 @@ entries:
 cues:
   - file: ${file}
     visualUnit: ${visualUnit}
+    bgm: none
     bgs: rain_street_light
 rejected: []
 `;
+}
+
+/**
+ * A plan whose first cue (#4a-compliant: both BGM and BGS explicit) coexists
+ * with an extra cue targeting an unknown visual unit, so callers can exercise
+ * failure paths that run after corpus validation passes.
+ */
+function planWithExtraCue(
+  file: string,
+  firstUnit = "tag_001",
+  extraUnit = "tag_999",
+): string {
+  const base = planWithCue(file, firstUnit);
+  const extraCue = `  - file: ${file}
+    visualUnit: ${extraUnit}
+    bgm: none
+    bgs: rain_street_light`;
+  return base.replace(
+    /cues:\n([\s\S]*?)rejected: \[\]\n/,
+    `cues:\n$1${extraCue}\nrejected: []\n`,
+  );
 }
 
 function planWithCueFiles(files: string[]): string {

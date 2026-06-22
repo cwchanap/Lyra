@@ -87,6 +87,7 @@ async function runOnce() {
       outputRoot: OUTPUT_ROOT,
       assetConfigRoot: ASSET_CONFIG_ROOT,
       assetOutputRoot: ASSET_OUTPUT_ROOT,
+      repoRoot: REPO_ROOT,
     }),
   );
   if (!result.ok) {

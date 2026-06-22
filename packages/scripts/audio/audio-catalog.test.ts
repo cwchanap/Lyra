@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatAudioCatalogYaml,
   mergeApprovedEntriesIntoCatalog,
   parseAudioCatalogText,
   serializeAudioCatalog,
@@ -160,6 +161,38 @@ describe("audio catalog", () => {
       text.indexOf("zeta_theme"),
     );
     expect(text.indexOf("door_chime")).toBeLessThan(text.indexOf("window_tap"));
+  });
+
+  it("formatAudioCatalogYaml produces output that Prettier considers already-formatted (no drift)", async () => {
+    // Regression: serializeAudioCatalog emits plain scalars that Prettier
+    // reformats to block scalars, so audio:apply --check always exited 2.
+    // The formatted output must be a fixed point of Prettier.
+    const { format } = await import("prettier");
+    const catalog: import("./audio-catalog").AudioCatalog = {
+      bgm: {
+        long_theme: {
+          prompt:
+            "A fairly long prompt that Prettier would otherwise fold differently because it exceeds the configured print width threshold for yaml files and contains enough words to wrap onto multiple lines.",
+          loop: true,
+        },
+      },
+      bgs: {
+        cafe_pad: { prompt: "Short.", loop: true },
+      },
+      sfx: {},
+    };
+    const formatted = await formatAudioCatalogYaml(
+      serializeAudioCatalog(catalog),
+    );
+    // Idempotence: running Prettier again must not change the text.
+    const reformatted = await format(formatted, { parser: "yaml" });
+    expect(reformatted).toBe(formatted);
+    // Must parse back to the same catalog (formatting must not lose data).
+    const reparsed = parseAudioCatalogText(formatted, "audio.yaml");
+    expect(reparsed.ok).toBe(true);
+    if (!reparsed.ok) return;
+    expect(reparsed.value.bgm.long_theme).toEqual(catalog.bgm.long_theme);
+    expect(reparsed.value.bgs.cafe_pad).toEqual(catalog.bgs.cafe_pad);
   });
 
   it("merges approved entries into channel maps", () => {
