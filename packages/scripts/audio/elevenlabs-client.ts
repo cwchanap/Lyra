@@ -1,5 +1,26 @@
 import type { SoundPlanChannel } from "./types";
 
+/**
+ * Thrown when ElevenLabs returns `402 Payment Required` (or an equivalent
+ * payment-method-required error). Kept as a typed error class — distinct from
+ * the generic generation failure — so the generate command can surface
+ * actionable top-up guidance, return a distinct exit code, and (per the
+ * CLAUDE.md contract) steer the user away from a wasteful `--force` retry.
+ */
+export class PaymentRequiredError extends Error {
+  readonly status = 402;
+  constructor(
+    public readonly channel: SoundPlanChannel,
+    public readonly id: string,
+    public readonly statusText: string,
+  ) {
+    super(
+      `ElevenLabs ${channel} generation failed for ${id}: 402 ${statusText}`,
+    );
+    this.name = "PaymentRequiredError";
+  }
+}
+
 export type ElevenLabsGenerateRequest = {
   id: string;
   channel: SoundPlanChannel;
@@ -59,6 +80,16 @@ export function createElevenLabsClient(input: {
         body: JSON.stringify(body),
       });
       if (!response.ok) {
+        // 402 is a billing/credit problem, not a transient or input error.
+        // Surface it as a typed error so the caller can give actionable
+        // guidance and avoid a credit-burning --force retry (CLAUDE.md).
+        if (response.status === 402) {
+          throw new PaymentRequiredError(
+            request.channel,
+            request.id,
+            response.statusText,
+          );
+        }
         throw new Error(
           `ElevenLabs ${request.channel} generation failed for ${request.id}: ${response.status} ${response.statusText}`,
         );

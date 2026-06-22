@@ -49,7 +49,13 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   - If ElevenLabs returns `402 Payment Required` or a payment-method-required
     error, treat it as insufficient remaining credit or billing/API access for
     the current account. Do not retry with `--force`; ask the user to top up,
-    enable API billing, or upgrade before generating that entry.
+    enable API billing, or upgrade before generating that entry. (`audio:generate`
+    detects this and exits with code 3 — distinct from the generic failure
+    code 1 and the usage/diagnostic code 2 — printing the top-up guidance.)
+  - `audio:generate` shells out to `ffmpeg` (with the `libvorbis` encoder) to
+    transcode ElevenLabs MP3 to the `.ogg` files the runtime expects. A local
+    `ffmpeg` build with `libvorbis` is therefore a runtime prerequisite;
+    without it, generation fails at the transcoding step.
 - `bun run check` / `bun run check:watch` - type-check Svelte + TS
   (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
 - `bun run test` / `bun run test:watch` - Vitest unit tests for frontend logic
