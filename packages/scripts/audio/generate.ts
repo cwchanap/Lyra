@@ -3,7 +3,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { writeGeneratedAudioFile } from "./audio-files";
-import { createElevenLabsClient } from "./elevenlabs-client";
+import {
+  createElevenLabsClient,
+  endpointForChannel,
+} from "./elevenlabs-client";
+import { applyGenerationMetadataToPlan } from "./plan-writeback";
 import { parseSoundPlanText, validateSoundPlan } from "./sound-plan";
 import type { SoundPlanDiagnostic, SoundPlanEntry } from "./types";
 
@@ -132,6 +136,7 @@ export async function runGenerateCommand(args: string[]): Promise<number> {
   }
 
   const client = createElevenLabsClient({ apiKey });
+  const planFullPath = resolve(DEFAULT_REPO_ROOT, parsed.value.planPath);
   for (const target of result.toGenerate) {
     try {
       const providerBytes = await client.generate({
@@ -147,11 +152,27 @@ export async function runGenerateCommand(args: string[]): Promise<number> {
         id: target.entry.id,
         providerBytes,
       });
-      const hash = createHash("sha256")
-        .update(Buffer.from(providerBytes))
+      // Per-entry metadata write-back (spec L280-291): persist provider,
+      // endpoint, prompt hash, timestamp, output path, and forced flag so the
+      // plan is the audit trail. Written after each entry so a mid-batch
+      // failure still records completed entries.
+      const promptHash = createHash("sha256")
+        .update(target.entry.prompt)
         .digest("hex")
         .slice(0, 12);
-      console.log(`[audio] wrote ${target.outputPath} (${hash})`);
+      applyGenerationMetadataToPlan(planFullPath, {
+        entryId: target.entry.id,
+        provider: "elevenlabs",
+        endpoint: endpointForChannel(target.entry.channel),
+        promptHash,
+        generatedAt: new Date().toISOString(),
+        outputPath: target.outputPath,
+        forced: parsed.value.force,
+        normalizationNotes: "converted from mp3 to ogg via ffmpeg libvorbis",
+      });
+      console.log(
+        `[audio] wrote ${target.outputPath} (prompt ${promptHash}) and updated plan`,
+      );
     } catch (error) {
       console.error(
         `[audio] failed to generate ${target.entry.channel}/${target.entry.id}: ${errorMessage(error)}`,

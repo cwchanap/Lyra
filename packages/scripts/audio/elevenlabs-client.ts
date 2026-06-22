@@ -13,6 +13,17 @@ export type ElevenLabsClient = {
   generate(request: ElevenLabsGenerateRequest): Promise<Uint8Array>;
 };
 
+/**
+ * The ElevenLabs endpoint URL used for a given channel. Exposed so the
+ * generation step can record it in plan metadata (spec L284: "endpoint or
+ * model when known") without changing the client's byte-only return type.
+ */
+export function endpointForChannel(channel: SoundPlanChannel): string {
+  return channel === "bgm"
+    ? "https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128"
+    : "https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128";
+}
+
 export function createElevenLabsClient(input: {
   apiKey: string;
   fetch?: typeof fetch;
@@ -21,10 +32,7 @@ export function createElevenLabsClient(input: {
 
   return {
     async generate(request) {
-      const endpoint =
-        request.channel === "bgm"
-          ? "https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128"
-          : "https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128";
+      const endpoint = endpointForChannel(request.channel);
       const body =
         request.channel === "bgm"
           ? {

@@ -56,6 +56,13 @@ export type CompileOptions = {
   outputRoot: string;
   assetConfigRoot?: string;
   assetOutputRoot?: string;
+  /**
+   * Repository root that asset manifest `expectedPath` values are relative
+   * to. Required for the asset-existence check to work regardless of the
+   * invocation cwd (e.g. `--cwd packages/scripts`). Falls back to
+   * `process.cwd()` when omitted for backward compatibility.
+   */
+  repoRoot?: string;
 };
 
 export type AssetReport = {
@@ -275,6 +282,7 @@ export function compile(opts: CompileOptions): CompileResult {
     const enriched = enrichScenesWithAssets({
       scenes,
       config: assetConfig.value,
+      ...(opts.repoRoot === undefined ? {} : { repoRoot: opts.repoRoot }),
     });
     scenes.splice(0, scenes.length, ...enriched.scenes);
     errors.push(...enriched.errors);

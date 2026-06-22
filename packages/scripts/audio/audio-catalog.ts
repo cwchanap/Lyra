@@ -1,6 +1,5 @@
 import YAML from "yaml";
 import type { SoundPlanDiagnostic, SoundPlanEntry } from "./types";
-
 const CHANNELS = ["bgm", "bgs", "sfx"] as const;
 const CHANNEL_SET = new Set<string>(CHANNELS);
 const ID_RE = /^[a-z0-9_]+$/;
@@ -94,6 +93,22 @@ export function serializeAudioCatalog(catalog: AudioCatalog): string {
     bgs: sortCatalogMap(catalog.bgs),
     sfx: sortCatalogMap(catalog.sfx),
   });
+}
+
+/**
+ * Normalize serialized catalog YAML through Prettier so the output matches the
+ * canonical on-disk form. This matters because `serializeAudioCatalog` emits
+ * plain scalars that Prettier reformats to block scalars; without this step,
+ * `audio:apply --check` always reports drift (exit 2) even when the catalog
+ * content is correct, because the textual representation differs.
+ *
+ * The returned text is a fixed point of Prettier — running Prettier again
+ * produces identical output — so `--check` only reports drift when the merged
+ * catalog content genuinely differs from what is on disk.
+ */
+export async function formatAudioCatalogYaml(text: string): Promise<string> {
+  const { format } = await import("prettier");
+  return format(text, { parser: "yaml" });
 }
 
 export function mergeApprovedEntriesIntoCatalog(

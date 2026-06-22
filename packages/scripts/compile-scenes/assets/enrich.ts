@@ -8,6 +8,7 @@
 // =============================================================================
 
 import { existsSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import type { AssetConfig, AudioChannel } from "./config";
 import {
   buildAssetManifest,
@@ -48,6 +49,13 @@ export type AssetEnrichmentResult = {
 export function enrichScenesWithAssets(input: {
   scenes: SceneRecord[];
   config: AssetConfig;
+  /**
+   * Repository root that manifest `expectedPath` values are relative to.
+   * When omitted, paths are checked relative to `process.cwd()`. The
+   * compile-scenes entry point passes an explicit repoRoot so the existence
+   * check works regardless of the invocation cwd (e.g. `--cwd packages/scripts`).
+   */
+  repoRoot?: string;
 }): AssetEnrichmentResult {
   if (!input.config.enabled) {
     return {
@@ -68,7 +76,7 @@ export function enrichScenesWithAssets(input: {
     entries: [...requests.values()],
     config: input.config,
   });
-  const warnings = checkAssetExistence(manifest.entries);
+  const warnings = checkAssetExistence(manifest.entries, input.repoRoot);
 
   return {
     scenes,
@@ -851,11 +859,25 @@ function compileError(
  * Check whether each manifest entry's expected file exists on disk.
  * Returns warnings (not errors) for missing files — assets may be generated
  * after compilation, so missing files don't block the pipeline.
+ *
+ * `expectedPath` is repo-root-relative (e.g. `static/assets/audio/.../x.ogg`).
+ * When `repoRoot` is provided, the path is resolved against it so the check
+ * is independent of `process.cwd()` (the `--cwd packages/scripts` migration
+ * changed the invocation cwd without updating this lookup, which produced
+ * false-positive `assetFileMissing` warnings for every asset). Absolute
+ * `expectedPath` values are used as-is.
  */
-function checkAssetExistence(entries: AssetManifestEntry[]): CompileError[] {
+function checkAssetExistence(
+  entries: AssetManifestEntry[],
+  repoRoot?: string,
+): CompileError[] {
   const warnings: CompileError[] = [];
   for (const entry of entries) {
-    if (!existsSync(entry.expectedPath)) {
+    const fullPath =
+      repoRoot && !isAbsolute(entry.expectedPath)
+        ? resolve(repoRoot, entry.expectedPath)
+        : entry.expectedPath;
+    if (!existsSync(fullPath)) {
       warnings.push({
         sourceFile: entry.expectedPath,
         line: 1,

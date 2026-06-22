@@ -39,6 +39,10 @@ entries:
     evidence:
       - { file: docs/stories_plan/chapter_1/scene_5.md, line: 3, note: 審查會場，空氣冷而安靜，翻一頁紙都太響 }
       - { file: docs/stories_plan/chapter_1/scene_5.md, line: 123, note: 神谷宣布本輪審查暫停，摘要維持原判 }
+    normalizationNotes: >-
+      BGM generation deferred to a follow-up batch. Entry is approved and the
+      catalog references it, but the .ogg has not been generated yet (BGM is
+      credit-heavy; BGS/SFX shipped first per the sound-design SOP).
   - id: bgm_review_board_victory
     channel: bgm
     status: approved
@@ -57,6 +61,10 @@ entries:
     evidence:
       - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, line: 5, note: KAGAMI 證據摘要審查會，長桌、證物推車、旁聽席 }
       - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, line: 342, note: 神谷撤回三宅主嫌方向，指認北見成立 }
+    normalizationNotes: >-
+      BGM generation deferred to a follow-up batch. Entry is approved and the
+      catalog references it, but the .ogg has not been generated yet (BGM is
+      credit-heavy; BGS/SFX shipped first per the sound-design SOP).
   - id: bgm_chapter_close
     channel: bgm
     status: approved
@@ -73,6 +81,10 @@ entries:
     evidence:
       - { file: docs/stories_plan/chapter_1/scene_11.md, line: 3, note: 雨剛停，店內靜悄悄，淡淡咖啡香 }
       - { file: docs/stories_plan/chapter_1/scene_11.md, line: 145, note: 雨鐘外深夜，店招燈滅，藍傘仍無主人 }
+    normalizationNotes: >-
+      BGM generation deferred to a follow-up batch. Entry is approved and the
+      catalog references it, but the .ogg has not been generated yet (BGM is
+      credit-heavy; BGS/SFX shipped first per the sound-design SOP).
 
   # ---- BGS: acoustic environments ----
   - id: bgs_detective_office_rain
@@ -353,7 +365,11 @@ entries:
     evidence:
       - { file: docs/stories_plan/chapter_1/scene_11.md, line: 96, note: 相馬把隨身碟插上筆電，螢幕跳出一行目錄 }
 cues:
-  # scene_0 — KAGAMI summary (tag_001 stays silent: authored BGM/BGS none)
+  # scene_0 — KAGAMI summary. tag_001 is the corpus-first visual unit; it must
+  # explicitly set both BGM and BGS (spec L251-252). The scene authors silence,
+  # so both channels are "none".
+  - { file: docs/stories_plan/chapter_1/scene_0.md, visualUnit: tag_001, bgm: none, bgs: none }
+  # scene_0 — tag_002 inherits BGM silence; BGS introduces the corridor hum.
   - { file: docs/stories_plan/chapter_1/scene_0.md, visualUnit: tag_002, bgs: bgs_institutional_corridor }
   # investigation_scene_1 — detective office, morning drizzle
   - { file: docs/stories_plan/chapter_1/investigation_scene_1.md, visualUnit: tag_001, bgs: bgs_detective_office_rain }
