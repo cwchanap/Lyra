@@ -1,8 +1,13 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { loadDotEnv, planGeneration } from "./generate";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  loadDotEnv,
+  PAYMENT_REQUIRED_EXIT_CODE,
+  planGeneration,
+  runGenerateCommand,
+} from "./generate";
 import type { SoundPlanChannel, SoundPlanStatus } from "./types";
 
 const tempRoots: string[] = [];
@@ -196,6 +201,91 @@ describe("audio generation planning", () => {
         message: expect.stringContaining("typo"),
       }),
     ]);
+  });
+});
+
+describe("runGenerateCommand 402 handling", () => {
+  const origKey = process.env["ELEVENLABS_API_KEY"];
+  const fetchMock = vi.fn();
+
+  afterEach(() => {
+    if (origKey === undefined) delete process.env["ELEVENLABS_API_KEY"];
+    else process.env["ELEVENLABS_API_KEY"] = origKey;
+    fetchMock.mockReset();
+    vi.unstubAllGlobals();
+  });
+
+  it("returns the payment-required exit code and top-up guidance on 402", async () => {
+    process.env["ELEVENLABS_API_KEY"] = "test-key";
+    // Stub the global fetch the ElevenLabs client falls back to when no
+    // fetch is injected.
+    fetchMock.mockResolvedValue(
+      new Response("payment required", {
+        status: 402,
+        statusText: "Payment Required",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock as unknown as typeof globalThis.fetch);
+
+    const repoRoot = createRepoRoot();
+    const planPath = writePlan(repoRoot, [
+      soundEntry({
+        id: "rain_street_light",
+        channel: "bgs",
+        status: "approved",
+      }),
+    ]);
+    const stderr: string[] = [];
+    const stdout: string[] = [];
+
+    const code = await runGenerateCommand([planPath], {
+      repoRoot,
+      cwd: repoRoot,
+      stdout: (m) => stdout.push(m),
+      stderr: (m) => stderr.push(m),
+    });
+
+    expect(code).toBe(PAYMENT_REQUIRED_EXIT_CODE);
+    // The provider call must have been attempted (otherwise the 402 path is
+    // not what produced this exit code).
+    expect(fetchMock).toHaveBeenCalled();
+    expect(stderr.some((m) => /402 Payment Required/.test(m))).toBe(true);
+    expect(stderr.some((m) => /Do not retry with --force/.test(m))).toBe(true);
+    // No successful-write line should have been logged.
+    expect(stdout).toEqual([]);
+  });
+
+  it("returns the generic failure exit code on a non-402 provider error", async () => {
+    process.env["ELEVENLABS_API_KEY"] = "test-key";
+    fetchMock.mockResolvedValue(
+      new Response("rate limited", {
+        status: 429,
+        statusText: "Too Many Requests",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock as unknown as typeof globalThis.fetch);
+
+    const repoRoot = createRepoRoot();
+    const planPath = writePlan(repoRoot, [
+      soundEntry({
+        id: "rain_street_light",
+        channel: "bgs",
+        status: "approved",
+      }),
+    ]);
+    const stderr: string[] = [];
+
+    const code = await runGenerateCommand([planPath], {
+      repoRoot,
+      cwd: repoRoot,
+      stderr: (m) => stderr.push(m),
+    });
+
+    // A 429 is NOT a billing failure — it must not use the payment-required
+    // exit code, and it must not print the do-not-retry-with-force guidance.
+    expect(code).not.toBe(PAYMENT_REQUIRED_EXIT_CODE);
+    expect(code).toBe(1);
+    expect(stderr.some((m) => /Do not retry with --force/.test(m))).toBe(false);
   });
 });
 

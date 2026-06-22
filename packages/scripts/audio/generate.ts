@@ -6,6 +6,7 @@ import { writeGeneratedAudioFile } from "./audio-files";
 import {
   createElevenLabsClient,
   endpointForChannel,
+  PaymentRequiredError,
 } from "./elevenlabs-client";
 import { applyGenerationMetadataToPlan } from "./plan-writeback";
 import { parseSoundPlanText, validateSoundPlan } from "./sound-plan";
@@ -17,6 +18,21 @@ const DEFAULT_REPO_ROOT = resolve(
 );
 const USAGE =
   "Usage: audio:generate <plan.yaml> [--dry-run] [--only <id>] [--force]";
+
+/**
+ * Exit code returned when ElevenLabs signals a billing/credit problem (402).
+ * Distinct from the generic failure code (1) and the usage/diagnostic code (2)
+ * so CI and scripts can branch on "needs top-up, do not retry" without parsing
+ * stderr.
+ */
+export const PAYMENT_REQUIRED_EXIT_CODE = 3;
+
+export type GenerateCliOptions = {
+  repoRoot?: string;
+  cwd?: string;
+  stdout?: (message: string) => void;
+  stderr?: (message: string) => void;
+};
 
 export type GenerationTarget = {
   entry: SoundPlanEntry;
@@ -103,19 +119,27 @@ export function planGeneration(input: {
   return { diagnostics: [], toGenerate };
 }
 
-export async function runGenerateCommand(args: string[]): Promise<number> {
+export async function runGenerateCommand(
+  args: string[],
+  options: GenerateCliOptions = {},
+): Promise<number> {
+  const repoRoot = options.repoRoot ?? DEFAULT_REPO_ROOT;
+  const stdout = options.stdout ?? console.log;
+  const stderr = options.stderr ?? console.error;
+
   const parsed = parseGenerateArgs(args);
   if (!parsed.ok) {
-    printDiagnostics(parsed.diagnostics);
+    printDiagnostics(parsed.diagnostics, stderr);
     return 2;
   }
 
-  // .env lives in packages/scripts/ (the package root), one level above
-  // this audio/ module directory.
-  loadDotEnv(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
+  // .env lives in packages/scripts/ (the package root). Resolve relative to
+  // the active repo root so the command is testable with a temp dir: in tests
+  // <tempRoot>/packages/scripts/.env does not exist and loadDotEnv is a no-op.
+  loadDotEnv(resolve(repoRoot, "packages/scripts"));
   const apiKey = process.env.ELEVENLABS_API_KEY ?? "";
   const result = planGeneration({
-    repoRoot: DEFAULT_REPO_ROOT,
+    repoRoot,
     planPath: parsed.value.planPath,
     dryRun: parsed.value.dryRun,
     force: parsed.value.force,
@@ -124,19 +148,19 @@ export async function runGenerateCommand(args: string[]): Promise<number> {
   });
 
   if (result.diagnostics.length > 0) {
-    printDiagnostics(result.diagnostics);
+    printDiagnostics(result.diagnostics, stderr);
     return 2;
   }
 
   if (parsed.value.dryRun) {
     for (const target of result.toGenerate) {
-      console.log(`[audio] would generate ${target.outputPath}`);
+      stdout(`[audio] would generate ${target.outputPath}`);
     }
     return 0;
   }
 
   const client = createElevenLabsClient({ apiKey });
-  const planFullPath = resolve(DEFAULT_REPO_ROOT, parsed.value.planPath);
+  const planFullPath = resolve(repoRoot, parsed.value.planPath);
   for (const target of result.toGenerate) {
     try {
       const providerBytes = await client.generate({
@@ -147,7 +171,7 @@ export async function runGenerateCommand(args: string[]): Promise<number> {
         intendedDurationSeconds: target.entry.intendedDurationSeconds,
       });
       await writeGeneratedAudioFile({
-        repoRoot: DEFAULT_REPO_ROOT,
+        repoRoot,
         channel: target.entry.channel,
         id: target.entry.id,
         providerBytes,
@@ -170,11 +194,26 @@ export async function runGenerateCommand(args: string[]): Promise<number> {
         forced: parsed.value.force,
         normalizationNotes: "converted from mp3 to ogg via ffmpeg libvorbis",
       });
-      console.log(
+      stdout(
         `[audio] wrote ${target.outputPath} (prompt ${promptHash}) and updated plan`,
       );
     } catch (error) {
-      console.error(
+      // 402 is a billing/credit problem, not a transient or input error.
+      // Surface actionable guidance and a distinct exit code, and (per the
+      // CLAUDE.md contract) steer away from a credit-burning --force retry.
+      if (error instanceof PaymentRequiredError) {
+        stderr(
+          `[audio] ${error.channel}/${error.id}: ElevenLabs returned 402 Payment Required.`,
+        );
+        stderr(
+          "[audio] This usually means insufficient remaining credit or billing/API access for the current account.",
+        );
+        stderr(
+          "[audio] Do not retry with --force. Top up your ElevenLabs credit, enable API billing, or upgrade the account, then re-run.",
+        );
+        return PAYMENT_REQUIRED_EXIT_CODE;
+      }
+      stderr(
         `[audio] failed to generate ${target.entry.channel}/${target.entry.id}: ${errorMessage(error)}`,
       );
       return 1;
@@ -270,9 +309,12 @@ function generatedOutputPath(entry: SoundPlanEntry): string {
   return `static/assets/audio/${entry.channel}/${entry.id}.ogg`;
 }
 
-function printDiagnostics(diagnostics: SoundPlanDiagnostic[]): void {
+function printDiagnostics(
+  diagnostics: SoundPlanDiagnostic[],
+  stderr: (message: string) => void = console.error,
+): void {
   for (const diagnostic of diagnostics) {
-    console.error(formatDiagnostic(diagnostic));
+    stderr(formatDiagnostic(diagnostic));
   }
 }
 

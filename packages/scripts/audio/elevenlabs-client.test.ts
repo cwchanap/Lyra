@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { createElevenLabsClient } from "./elevenlabs-client";
+import {
+  createElevenLabsClient,
+  PaymentRequiredError,
+} from "./elevenlabs-client";
 import type { ElevenLabsGenerateRequest } from "./elevenlabs-client";
 
 type FetchCall = {
@@ -96,6 +99,38 @@ describe("ElevenLabs client", () => {
     await expect(client.generate(request)).rejects.toThrow(
       /bgs.*rain_street_light.*429.*Too Many Requests/,
     );
+  });
+
+  it("throws a typed PaymentRequiredError on 402 so callers can branch on billing failures", async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response("payment required", {
+          status: 402,
+          statusText: "Payment Required",
+        }),
+    ) as unknown as typeof globalThis.fetch;
+    const client = createElevenLabsClient({ apiKey: "test-key", fetch });
+    const request: ElevenLabsGenerateRequest = {
+      id: "rain_street_light",
+      channel: "bgs",
+      prompt: "Steady light Tokyo street rain.",
+      loop: true,
+      intendedDurationSeconds: 30,
+    };
+
+    await expect(client.generate(request)).rejects.toBeInstanceOf(
+      PaymentRequiredError,
+    );
+    try {
+      await client.generate(request);
+    } catch (error) {
+      expect(error).toBeInstanceOf(PaymentRequiredError);
+      const typed = error as PaymentRequiredError;
+      expect(typed.channel).toBe("bgs");
+      expect(typed.id).toBe("rain_street_light");
+      expect(typed.status).toBe(402);
+      expect(typed.message).toMatch(/402 Payment Required/);
+    }
   });
 });
 

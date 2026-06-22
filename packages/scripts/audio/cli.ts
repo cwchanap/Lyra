@@ -69,7 +69,12 @@ export async function runAudioCli(
   }
   if (command === "generate") {
     const { runGenerateCommand } = await import("./generate");
-    return runGenerateCommand(commandArgs);
+    return runGenerateCommand(commandArgs, {
+      repoRoot: context.repoRoot,
+      cwd: context.cwd,
+      stdout: context.stdout,
+      stderr: context.stderr,
+    });
   }
 
   context.stderr("Usage: audio/cli.ts <validate|apply|generate> ...");
