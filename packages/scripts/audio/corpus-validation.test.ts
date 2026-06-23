@@ -141,6 +141,88 @@ describe("validateSoundPlanAgainstCorpus — cue file vs chapter manifest (#4b)"
   });
 });
 
+describe("validateSoundPlanAgainstCorpus — cue visualUnit vs scene visual units (#4c)", () => {
+  it("reports a diagnostic when a cue targets a visual unit not present in the scene", () => {
+    // Regression: a typo like `tag_999` used to pass audio:validate because the
+    // cue loop only checked the file path against the manifest, not the
+    // visualUnit against the scene's indexed units. The failure was deferred
+    // to audio:apply, defeating validate as the review gate for durable plans.
+    const data = twoSceneCorpus();
+    const plan = minimalPlan({
+      cues: [
+        {
+          file: "docs/stories_plan/chapter_1/scene_0.md",
+          visualUnit: "tag_001",
+          bgm: "none",
+          bgs: "none",
+        },
+        {
+          file: "docs/stories_plan/chapter_1/scene_0.md",
+          visualUnit: "tag_999",
+          bgm: "none",
+          bgs: "none",
+        },
+      ],
+    });
+    const diags = validateSoundPlanAgainstCorpus(plan, data);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]?.code).toBe("soundPlanCueVisualUnitNotFound");
+    expect(diags[0]?.path).toBe("cues[1].visualUnit");
+    expect(diags[0]?.message).toContain("tag_999");
+    expect(diags[0]?.message).toContain("tag_001");
+  });
+
+  it("accepts a cue whose visualUnit matches an indexed unit in the scene", () => {
+    const data = twoSceneCorpus();
+    // Include the #4a first-visual-unit cue (tag_001 with both BGM+BGS) so the
+    // only thing under test is whether tag_002 is recognized as a valid unit.
+    const plan = minimalPlan({
+      cues: [
+        {
+          file: "docs/stories_plan/chapter_1/scene_0.md",
+          visualUnit: "tag_001",
+          bgm: "none",
+          bgs: "none",
+        },
+        {
+          file: "docs/stories_plan/chapter_1/scene_0.md",
+          visualUnit: "tag_002",
+          bgm: "none",
+          bgs: "none",
+        },
+      ],
+    });
+    const diags = validateSoundPlanAgainstCorpus(plan, data);
+    expect(diags).toEqual([]);
+  });
+
+  it("does not run the visual-unit check when the cue file is not in the manifest", () => {
+    // A file-not-in-manifest cue already gets soundPlanCueFileNotInManifest;
+    // it must not also get a visualUnit diagnostic (the scene source is not
+    // available for a non-manifest file).
+    const data = twoSceneCorpus();
+    const plan = minimalPlan({
+      cues: [
+        {
+          file: "docs/stories_plan/chapter_1/scene_0.md",
+          visualUnit: "tag_001",
+          bgm: "none",
+          bgs: "none",
+        },
+        {
+          file: "docs/stories_plan/chapter_1/ghost_scene.md",
+          visualUnit: "tag_999",
+          bgm: "none",
+          bgs: "none",
+        },
+      ],
+    });
+    const diags = validateSoundPlanAgainstCorpus(plan, data);
+    expect(diags).toHaveLength(1);
+    expect(diags[0]?.code).toBe("soundPlanCueFileNotInManifest");
+  });
+});
+
 describe("validateSoundPlanAgainstCorpus — first visual unit BGM+BGS (#4a)", () => {
   it("reports a diagnostic when the corpus-first visual unit has no cue at all", () => {
     const data = twoSceneCorpus();

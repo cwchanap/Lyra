@@ -110,7 +110,12 @@ describe("audio cli", () => {
     );
   });
 
-  it("does not write the catalog when later cue application fails", async () => {
+  it("does not write the catalog when corpus validation catches a bad visual unit", async () => {
+    // The unknown-visual-unit failure used to surface at cue-application time
+    // (audioApplyUnknownVisualUnit), after the catalog had been read and
+    // merged. Corpus validation now catches it earlier
+    // (soundPlanCueVisualUnitNotFound), before the catalog is touched, so the
+    // catalog-on-failure guarantee still holds — and holds earlier.
     const repoRoot = createRepoRoot();
     writeChapterManifest(repoRoot);
     writeScene(
@@ -124,7 +129,7 @@ describe("audio cli", () => {
       repoRoot,
       "unknown-unit.sound-plan.yaml",
       // First cue (tag_001) is #4a-compliant; second cue (tag_999) targets an
-      // unknown visual unit so apply fails at the cue-application phase.
+      // unknown visual unit so corpus validation fails before cue application.
       planWithExtraCue("docs/stories_plan/chapter_1/scene_0.md"),
     );
     const stderr: string[] = [];
@@ -137,7 +142,7 @@ describe("audio cli", () => {
 
     expect(code).toBe(2);
     expect(stderr).toContainEqual(
-      expect.stringContaining("[audioApplyUnknownVisualUnit]"),
+      expect.stringContaining("[soundPlanCueVisualUnitNotFound]"),
     );
     expect(readFileSync(catalogPath, "utf-8")).toBe(originalCatalog);
   });
@@ -173,6 +178,39 @@ describe("audio cli", () => {
     expect(readFileSync(join(repoRoot, scenePath), "utf-8")).toBe(
       originalScene,
     );
+  });
+
+  it("merges cues whose file paths are equivalent but spelled differently", async () => {
+    // Regression: groupCuesByFile used the raw cue.file as the map key, so
+    // `docs/stories_plan/chapter_1/scene_0.md` and
+    // `./docs/stories_plan/chapter_1/scene_0.md` formed two groups. Both
+    // resolved to the same fullPath, the original file was read twice, each
+    // group applied independently, and the second write clobbered the first —
+    // silently dropping the first group's cues. After normalization the two
+    // collapse into one group and both cues land in the same write.
+    const repoRoot = createRepoRoot();
+    writeChapterManifest(repoRoot);
+    const scenePath = "docs/stories_plan/chapter_1/scene_0.md";
+    writeScene(repoRoot, scenePath, twoUnitSceneSource());
+    const planPath = writePlan(
+      repoRoot,
+      "dual-spelling.sound-plan.yaml",
+      planWithTwoCueSpellings(),
+    );
+    const stderr: string[] = [];
+
+    const code = await runAudioCli(["apply", planPath], {
+      repoRoot,
+      cwd: repoRoot,
+      stderr: (message) => stderr.push(message),
+    });
+
+    expect(code).toBe(0);
+    const applied = readFileSync(join(repoRoot, scenePath), "utf-8");
+    // tag_001 gets bgs_alpha (from the non-prefixed spelling);
+    // tag_002 gets bgs_beta (from the ./-prefixed spelling). Both must survive.
+    expect(applied).toContain("- **BGS:** bgs_alpha");
+    expect(applied).toContain("- **BGS:** bgs_beta");
   });
 });
 
@@ -304,5 +342,70 @@ function sceneSource(): string {
 - **Background Prompt:** Rain street.
 
 **相馬律**：走吧。
+`;
+}
+
+/** A scene with two visual units (tag_001, tag_002) for multi-cue apply tests. */
+function twoUnitSceneSource(): string {
+  return `# Scene 0
+
+[場景：街道，雨。]
+- **Background Prompt:** Rain street.
+
+**相馬律**：走吧。
+
+[場景：店內，暖光。]
+- **Background Prompt:** Shop interior.
+
+**相馬律**：進來吧。
+`;
+}
+
+/**
+ * A plan with two cues targeting the same scene file via two equivalent path
+ * spellings (one bare, one `./`-prefixed), each setting a distinct BGS on a
+ * distinct visual unit. Both entries are approved so apply proceeds to write.
+ */
+function planWithTwoCueSpellings(): string {
+  return `schemaVersion: 1
+chapterId: chapter_1
+sources:
+  - docs/stories_plan/chapter_1/scene_0.md
+catalogSnapshot:
+  bgm: []
+  bgs: []
+  sfx: []
+entries:
+  - id: bgs_alpha
+    channel: bgs
+    status: approved
+    loop: true
+    intendedDurationSeconds: 30
+    prompt: Alpha bed.
+    reuseRationale: Alpha pool.
+    evidence:
+      - file: docs/stories_plan/chapter_1/scene_0.md
+        line: 3
+        note: alpha scene
+  - id: bgs_beta
+    channel: bgs
+    status: approved
+    loop: true
+    intendedDurationSeconds: 30
+    prompt: Beta bed.
+    reuseRationale: Beta pool.
+    evidence:
+      - file: docs/stories_plan/chapter_1/scene_0.md
+        line: 8
+        note: beta scene
+cues:
+  - file: docs/stories_plan/chapter_1/scene_0.md
+    visualUnit: tag_001
+    bgm: none
+    bgs: bgs_alpha
+  - file: ./docs/stories_plan/chapter_1/scene_0.md
+    visualUnit: tag_002
+    bgs: bgs_beta
+rejected: []
 `;
 }
