@@ -33,8 +33,21 @@ export type SoundPlanEntry = {
 export type SoundPlanCue = {
   file: string;
   visualUnit: string;
-  bgm?: string | "none";
-  bgs?: string | "none";
+  /**
+   * BGM entry ID from the sound plan, or the literal `"none"` for explicit
+   * silence. The `"none"` sentinel is validated in `validateSoundPlan`
+   * (sound-plan.ts); all other values must reference an approved entry.
+   */
+  bgm?: string;
+  /** Same semantics as {@link bgm} but for the BGS channel. */
+  bgs?: string;
+  /**
+   * Parsed from YAML so the validator can emit a precise
+   * `soundPlanSfxCueUnsupported` diagnostic, but unconditionally rejected —
+   * SFX cues are not supported in scene markdown in v1. Kept on the type
+   * (rather than `never`) so the parser can accept the field without producing
+   * a generic "unknown field" error.
+   */
   sfx?: string;
 };
 

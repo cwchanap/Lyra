@@ -191,9 +191,12 @@ function parseChannelMap(
       valid = false;
     }
     if (!valid) continue;
+    // `valid` is true only when the typeof guards above established that
+    // value.prompt is a string and value.loop is a boolean. TS cannot track
+    // the flag back to those guards, so assert the narrowed types here.
     out[id] = {
-      prompt: value.prompt,
-      loop: value.loop,
+      prompt: value.prompt as string,
+      loop: value.loop as boolean,
     };
   }
   return out;

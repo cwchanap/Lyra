@@ -25,11 +25,12 @@ describe("ElevenLabs client", () => {
 
     expect(audio).toHaveLength(4);
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toContain("/v1/music");
-    expect(calls[0].url).toContain("output_format=mp3_44100_128");
-    expect(headerValue(calls[0].init, "xi-api-key")).toBe("test-key");
-    expect(headerValue(calls[0].init, "Content-Type")).toBe("application/json");
-    expect(jsonBody(calls[0].init)).toEqual({
+    const call = calls[0]!;
+    expect(call.url).toContain("/v1/music");
+    expect(call.url).toContain("output_format=mp3_44100_128");
+    expect(headerValue(call.init, "xi-api-key")).toBe("test-key");
+    expect(headerValue(call.init, "Content-Type")).toBe("application/json");
+    expect(jsonBody(call.init)).toEqual({
       prompt: "Low tension rainy Tokyo strings.",
       music_length_ms: 42400,
       force_instrumental: true,
@@ -48,8 +49,9 @@ describe("ElevenLabs client", () => {
       intendedDurationSeconds: 30,
     });
 
-    expect(calls[0].url).toContain("/v1/sound-generation");
-    expect(jsonBody(calls[0].init)).toEqual({
+    const call = calls[0]!;
+    expect(call.url).toContain("/v1/sound-generation");
+    expect(jsonBody(call.init)).toEqual({
       text: "Steady light Tokyo street rain.",
       loop: true,
       duration_seconds: 30,
@@ -70,8 +72,9 @@ describe("ElevenLabs client", () => {
       intendedDurationSeconds: 2.5,
     });
 
-    expect(calls[0].url).toContain("/v1/sound-generation");
-    expect(jsonBody(calls[0].init)).toMatchObject({
+    const sfxCall = calls[0]!;
+    expect(sfxCall.url).toContain("/v1/sound-generation");
+    expect(jsonBody(sfxCall.init)).toMatchObject({
       text: "Short door chime in a quiet office.",
       loop: false,
       duration_seconds: 2.5,
@@ -131,6 +134,106 @@ describe("ElevenLabs client", () => {
       expect(typed.status).toBe(402);
       expect(typed.message).toMatch(/402 Payment Required/);
     }
+  });
+
+  it("classifies 401 + quota_exceeded body as a payment failure (ElevenLabs documents quota as 401)", async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: "quota_exceeded" }), {
+          status: 401,
+          statusText: "Unauthorized",
+        }),
+    ) as unknown as typeof globalThis.fetch;
+    const client = createElevenLabsClient({ apiKey: "test-key", fetch });
+
+    await expect(
+      client.generate({
+        id: "rain_street_light",
+        channel: "bgs",
+        prompt: "Steady light Tokyo street rain.",
+        loop: true,
+        intendedDurationSeconds: 30,
+      }),
+    ).rejects.toBeInstanceOf(PaymentRequiredError);
+    try {
+      await client.generate({
+        id: "rain_street_light",
+        channel: "bgs",
+        prompt: "Steady light Tokyo street rain.",
+        loop: true,
+        intendedDurationSeconds: 30,
+      });
+    } catch (error) {
+      const typed = error as PaymentRequiredError;
+      expect(typed.status).toBe(401);
+      expect(typed.detail).toMatch(/quota_exceeded/);
+    }
+  });
+
+  it("classifies payment-method-required bodies as payment failures regardless of status", async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ detail: "needs_payment: add a payment method" }),
+          { status: 400, statusText: "Bad Request" },
+        ),
+    ) as unknown as typeof globalThis.fetch;
+    const client = createElevenLabsClient({ apiKey: "test-key", fetch });
+
+    await expect(
+      client.generate({
+        id: "rain_street_light",
+        channel: "bgs",
+        prompt: "Steady light Tokyo street rain.",
+        loop: true,
+        intendedDurationSeconds: 30,
+      }),
+    ).rejects.toBeInstanceOf(PaymentRequiredError);
+  });
+
+  it("does NOT classify a plain invalid_api_key 401 as a payment failure", async () => {
+    // A wrong API key is 401 too, but the remedy is "fix the key," not
+    // "top up credits." Misclassifying it would suppress the real diagnostic
+    // and print misleading top-up guidance.
+    const fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: "invalid_api_key" }), {
+          status: 401,
+          statusText: "Unauthorized",
+        }),
+    ) as unknown as typeof globalThis.fetch;
+    const client = createElevenLabsClient({ apiKey: "bad-key", fetch });
+
+    await expect(
+      client.generate({
+        id: "rain_street_light",
+        channel: "bgs",
+        prompt: "Steady light Tokyo street rain.",
+        loop: true,
+        intendedDurationSeconds: 30,
+      }),
+    ).rejects.not.toBeInstanceOf(PaymentRequiredError);
+  });
+
+  it("includes the response body in the generic failure message", async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response("internal: boom", {
+          status: 500,
+          statusText: "Internal Server Error",
+        }),
+    ) as unknown as typeof globalThis.fetch;
+    const client = createElevenLabsClient({ apiKey: "test-key", fetch });
+
+    await expect(
+      client.generate({
+        id: "rain_street_light",
+        channel: "bgs",
+        prompt: "Steady light Tokyo street rain.",
+        loop: true,
+        intendedDurationSeconds: 30,
+      }),
+    ).rejects.toThrow(/internal: boom/);
   });
 });
 

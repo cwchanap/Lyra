@@ -233,6 +233,10 @@ function enrichInterrogationPhase(
     entryDialogue: enrichDialogue(phase.entryDialogue, context),
   };
   if (phase.kind === "inquiry") {
+    // `common` is built from `...phase` (a union); spreading it before
+    // re-setting the discriminator leaves TS unable to see the result is a
+    // valid inquiry variant. The runtime structure is correct (spread +
+    // override), so assert the narrowed variant.
     return {
       ...common,
       kind: "inquiry",
@@ -241,7 +245,7 @@ function enrichInterrogationPhase(
         answerDialogue: enrichDialogue(question.answerDialogue, context),
         onReask: enrichNullableDialogue(question.onReask, context),
       })),
-    };
+    } as ASTInterrogationPhase;
   }
   return {
     ...common,
@@ -461,7 +465,7 @@ function stripPhase(phase: ASTInterrogationPhase): ASTInterrogationPhase {
         answerDialogue: stripDialogue(q.answerDialogue),
         onReask: stripNullableDialogue(q.onReask),
       })),
-    };
+    } as ASTInterrogationPhase;
   }
   return {
     ...common,
@@ -542,7 +546,7 @@ function enrichCharacterSpriteLayout(
       );
       return;
     }
-    const [, characterId, pose] = parts;
+    const [, characterId, pose] = parts as [string, string, string];
 
     addRef(context.refs, { type: "standee", assetId });
     const charConfig = context.config.characters.byId.get(characterId);
@@ -570,7 +574,7 @@ function enrichCharacterSpriteLayout(
       );
       return;
     }
-    const [, characterId, expression] = parts;
+    const [, characterId, expression] = parts as [string, string, string];
 
     addRef(context.refs, { type: "portrait", assetId });
     const charConfig = context.config.characters.byId.get(characterId);
