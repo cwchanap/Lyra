@@ -425,4 +425,45 @@ describe("loadCorpusForPlan — disk loader", () => {
       result.diagnostics.some((d) => d.message.includes("scene_1.md")),
     ).toBe(true);
   });
+
+  it("surfaces a diagnostic for a missing scene file instead of silently skipping it", () => {
+    // The chapter manifest lists scene_0.md (present) and scene_1.md (absent).
+    // Previously the missing file was silently `continue`-d, so #4a could move
+    // on to a later scene and cues targeting the missing file passed #4b
+    // manifest validation while skipping #4c visual-unit validation — the
+    // command reported OK for a plan that scenes:compile/audio:apply would
+    // reject. Symmetric with the unreadable-scene test above.
+    const repoRoot = mkdtempSync(join(tmpdir(), "lyra-corpus-missing-scene-"));
+    const dir = join(repoRoot, "docs/stories_plan/chapter_1");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "chapter.md"),
+      [
+        "# Chapter 1: Test",
+        "**Summary:** A test chapter.",
+        "## Scenes",
+        "1. scene_0.md",
+        "2. scene_1.md",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "scene_0.md"),
+      ["[場景：開場。]", "- **Background Prompt:** Opening."].join("\n"),
+    );
+    // scene_1.md is deliberately NOT created.
+
+    const result = loadCorpusForPlan(minimalPlan(), {
+      repoRoot,
+      sourceRoots: ["docs/stories_plan"],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.diagnostics.some((d) => d.code === "soundPlanSceneMissing"),
+    ).toBe(true);
+    expect(
+      result.diagnostics.some((d) => d.message.includes("scene_1.md")),
+    ).toBe(true);
+  });
 });
