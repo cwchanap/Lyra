@@ -119,7 +119,22 @@ export function loadCorpusForPlan(
   const sceneDiagnostics: SoundPlanDiagnostic[] = [];
   for (const file of parsed.value.sceneFiles) {
     const fullPath = resolve(chapterDir, file);
-    if (!existsSync(fullPath)) continue; // compile-scenes pipeline catches this.
+    if (!existsSync(fullPath)) {
+      // Surface missing manifest scenes rather than silently degrading the
+      // corpus-aware checks. The audio:validate and audio:apply commands do
+      // not run the compile-scenes pipeline, so "the compile pipeline reports
+      // them" does not hold on this path — a missing first-visual-unit scene
+      // would silently weaken #4a (findFirstVisualUnit moves on to a later
+      // scene) and cues targeting it would skip #4c visual-unit validation
+      // while the command still reported OK. Symmetric with the unreadable
+      // case below.
+      sceneDiagnostics.push({
+        code: "soundPlanSceneMissing",
+        path: `chapter.${file}`,
+        message: `Scene "${file}" is listed in the chapter manifest but was not found at ${fullPath}.`,
+      });
+      continue;
+    }
     try {
       sceneSources.set(file, readFileSync(fullPath, "utf-8"));
     } catch (error) {
@@ -192,8 +207,8 @@ export function validateSoundPlanAgainstCorpus(
     // only fails at apply time (audioApplyUnknownVisualUnit), defeating
     // `audio:validate` as the review gate for durable sound plans. The scene
     // source is guaranteed to be present here because loadCorpusForPlan
-    // surfaces unreadable manifest scenes as their own diagnostic, and the
-    // file-not-in-manifest branch above already continued.
+    // surfaces both missing and unreadable manifest scenes as their own
+    // diagnostic, and the file-not-in-manifest branch above already continued.
     const source = data.sceneSources.get(name);
     if (source === undefined) continue;
     let unitIds = visualUnitIdsByFile.get(name);
