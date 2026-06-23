@@ -161,6 +161,10 @@ export function validateSoundPlanAgainstCorpus(
 ): SoundPlanDiagnostic[] {
   const diagnostics: SoundPlanDiagnostic[] = [];
   const manifestSet = new Set(data.chapterSceneFiles);
+  // Lazily-indexed visual-unit IDs per scene basename, so the definition of
+  // "visual unit" matches the apply step (indexVisualUnitsFromMarkdown) without
+  // re-indexing the same scene for every cue that targets it.
+  const visualUnitIdsByFile = new Map<string, Set<string>>();
 
   // (#4b) Every cue must target a scene file listed in the chapter manifest,
   // AND the cue path must resolve into this plan's own chapter directory.
@@ -179,6 +183,31 @@ export function validateSoundPlanAgainstCorpus(
         code: "soundPlanCueFileNotInManifest",
         path: `cues[${index}].file`,
         message: `Cue targets "${cue.file}" which is not a scene in chapter "${data.chapterRoot}". Expected a file under ${data.chapterRoot}/ listed in the chapter manifest.`,
+      });
+      continue;
+    }
+
+    // (#4c) The cue's visualUnit must exist in the target scene's indexed
+    // visual units. Without this, a typo like `tag_999` passes validate and
+    // only fails at apply time (audioApplyUnknownVisualUnit), defeating
+    // `audio:validate` as the review gate for durable sound plans. The scene
+    // source is guaranteed to be present here because loadCorpusForPlan
+    // surfaces unreadable manifest scenes as their own diagnostic, and the
+    // file-not-in-manifest branch above already continued.
+    const source = data.sceneSources.get(name);
+    if (source === undefined) continue;
+    let unitIds = visualUnitIdsByFile.get(name);
+    if (unitIds === undefined) {
+      const units = indexVisualUnitsFromMarkdown(name, source);
+      unitIds = new Set(units.map((unit) => unit.id));
+      visualUnitIdsByFile.set(name, unitIds);
+    }
+    if (!unitIds.has(cue.visualUnit)) {
+      const known = [...unitIds].join(", ");
+      diagnostics.push({
+        code: "soundPlanCueVisualUnitNotFound",
+        path: `cues[${index}].visualUnit`,
+        message: `Cue targets visual unit "${cue.visualUnit}" which is not present in "${name}". Known visual units: ${known.length > 0 ? known : "(none)"}.`,
       });
     }
   }
@@ -261,7 +290,7 @@ function hasOwn(obj: object, key: string): boolean {
  * authority that rejects traversal; this helper only makes two paths
  * comparable across OS path separators.
  */
-function normalizeRelativePath(p: string): string {
+export function normalizeRelativePath(p: string): string {
   return p.replace(/\\/g, "/").replace(/^\.\//, "");
 }
 

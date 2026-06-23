@@ -10,6 +10,7 @@ import {
 import { applyAudioCuesToMarkdown } from "./apply";
 import {
   loadCorpusForPlan,
+  normalizeRelativePath,
   validateSoundPlanAgainstCorpus,
 } from "./corpus-validation";
 import { DIAGNOSTIC_EXIT_CODE, SUCCESS_EXIT_CODE } from "./exit-codes";
@@ -343,9 +344,22 @@ function validateCueFilePaths(
 }
 
 function groupCuesByFile(cues: SoundPlanCue[]): Map<string, SoundPlanCue[]> {
+  // Normalize the file path before grouping so equivalent spellings
+  // (`docs/stories_plan/chapter_1/scene_0.md` and
+  // `./docs/stories_plan/chapter_1/scene_0.md`) collapse into one group.
+  // Without this, runApplyCommand resolves both to the same fullPath, reads
+  // the original file twice, applies each group independently, and the second
+  // write clobbers the first — silently dropping the first group's cues. The
+  // cue's `file` field is normalized too so applyAudioCuesToMarkdown's
+  // `cue.file === file` filter still matches the (normalized) group key.
   const cuesByFile = new Map<string, SoundPlanCue[]>();
   for (const cue of cues) {
-    cuesByFile.set(cue.file, [...(cuesByFile.get(cue.file) ?? []), cue]);
+    const normalizedFile = normalizeRelativePath(cue.file);
+    const normalizedCue: SoundPlanCue = { ...cue, file: normalizedFile };
+    cuesByFile.set(normalizedFile, [
+      ...(cuesByFile.get(normalizedFile) ?? []),
+      normalizedCue,
+    ]);
   }
   return cuesByFile;
 }
