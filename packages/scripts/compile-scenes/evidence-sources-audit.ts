@@ -438,13 +438,22 @@ function reportUntaggedHotspots(untagged: EvidenceSourceAuditItem[]): void {
   }
 }
 
+/**
+ * Resolves audit source roots against REPO_ROOT so the CLI sees the same tree
+ * regardless of cwd. The root `package.json` invokes this script via
+ * `bun run --cwd packages/scripts ...`, so resolving relative roots against
+ * process.cwd() would point at `packages/scripts/docs/stories_plan` and the
+ * audit would silently scan nothing. Absolute roots pass through
+ * path.resolve unchanged; the relative defaults (e.g. `docs/stories_plan`)
+ * are anchored to the repo just like the no-arg path.
+ */
+export function resolveAuditRoots(roots: string[]): string[] {
+  const sourceRoots = roots.length > 0 ? roots : DEFAULT_SOURCE_ROOTS;
+  return sourceRoots.map((root) => resolve(REPO_ROOT, root));
+}
+
 if (import.meta.main) {
-  const roots = process.argv.slice(2);
-  const result = auditEvidenceSources(
-    roots.length > 0
-      ? roots
-      : DEFAULT_SOURCE_ROOTS.map((root) => resolve(REPO_ROOT, root)),
-  );
+  const result = auditEvidenceSources(resolveAuditRoots(process.argv.slice(2)));
   printReport(result);
   reportUntaggedHotspots(findUntaggedHotspots(result));
   if (auditGateShouldFail(result)) process.exitCode = 1;

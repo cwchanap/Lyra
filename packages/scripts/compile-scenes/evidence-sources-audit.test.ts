@@ -1,12 +1,14 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   auditEvidenceSources,
   auditGateShouldFail,
   findUntaggedHotspots,
   printReport,
+  resolveAuditRoots,
   suggestEvidenceSource,
   type EvidenceSourceAuditItem,
   type EvidenceSourceAuditResult,
@@ -681,6 +683,56 @@ describe("printReport", () => {
     expect(stderr).toContain("bogus");
     // ...and NOT duplicated on stdout.
     expect(stdout).not.toContain("Problems (1):");
+  });
+});
+
+describe("resolveAuditRoots", () => {
+  // The source file and this test file are siblings in compile-scenes/, so
+  // the same ../../.. anchor the source uses for REPO_ROOT lands on the repo
+  // root here too. Recomputing it keeps the assertion independent of the
+  // process cwd (which is `packages/scripts` under the root script).
+  const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+
+  it("anchors relative roots to REPO_ROOT regardless of cwd (regression guard)", () => {
+    // The root `package.json` runs this module via
+    // `bun run --cwd packages/scripts evidence-sources:audit <roots>`, so the
+    // module's process.cwd() is packages/scripts, not the repo root. Under the
+    // old code an explicit relative root was resolved against cwd, landing on
+    // packages/scripts/docs/stories_plan (non-existent); auditEvidenceSources
+    // then skipped it silently and the CI gate passed green. Resolution must
+    // stay anchored to REPO_ROOT and be independent of cwd.
+    const originalCwd = process.cwd();
+    const fromRepoRoot = resolveAuditRoots(["docs/stories_plan"])[0];
+    try {
+      process.chdir(resolve(repoRoot, "packages/scripts"));
+      const fromScriptsCwd = resolveAuditRoots(["docs/stories_plan"])[0];
+      // Same answer from either cwd, and it points at the repo's docs tree.
+      expect(fromScriptsCwd).toBe(fromRepoRoot);
+      expect(fromScriptsCwd).toBe(resolve(repoRoot, "docs/stories_plan"));
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  it("passes absolute roots through unchanged", () => {
+    const abs = resolve(repoRoot, "static/stories_plan");
+    expect(resolveAuditRoots([abs])).toEqual([abs]);
+  });
+
+  it("resolves each supplied root independently", () => {
+    expect(
+      resolveAuditRoots(["docs/stories_plan", "static/stories_plan"]),
+    ).toEqual([
+      resolve(repoRoot, "docs/stories_plan"),
+      resolve(repoRoot, "static/stories_plan"),
+    ]);
+  });
+
+  it("falls back to the default roots when none are supplied", () => {
+    expect(resolveAuditRoots([])).toEqual([
+      resolve(repoRoot, "docs/stories_plan"),
+      resolve(repoRoot, "static/stories_plan"),
+    ]);
   });
 });
 
