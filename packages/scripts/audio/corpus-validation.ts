@@ -15,7 +15,7 @@
 // =============================================================================
 
 import { existsSync, readFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { basename, relative, resolve } from "node:path";
 import { parseChapter } from "../compile-scenes/parser-chapter";
 import { indexVisualUnitsFromMarkdown } from "./visual-units";
 import type { SoundPlan, SoundPlanCue, SoundPlanDiagnostic } from "./types";
@@ -30,6 +30,12 @@ export const DEFAULT_SOURCE_ROOTS = [
 ] as const;
 
 export type CorpusData = {
+  /**
+   * Repo-root-relative path to the resolved chapter directory, using forward
+   * slashes (e.g. `docs/stories_plan/chapter_1`). Used to reject cue files
+   * that point at a different chapter or a different source root.
+   */
+  chapterRoot: string;
   /** Ordered scene-file basenames from the chapter manifest (e.g. `scene_0.md`). */
   chapterSceneFiles: string[];
   /** Scene-file basename → markdown source for every readable scene. */
@@ -138,6 +144,7 @@ export function loadCorpusForPlan(
   return {
     ok: true,
     data: {
+      chapterRoot: normalizeRelativePath(relative(input.repoRoot, chapterDir)),
       chapterSceneFiles: parsed.value.sceneFiles,
       sceneSources,
     },
@@ -155,14 +162,23 @@ export function validateSoundPlanAgainstCorpus(
   const diagnostics: SoundPlanDiagnostic[] = [];
   const manifestSet = new Set(data.chapterSceneFiles);
 
-  // (#4b) Every cue must target a scene file listed in the chapter manifest.
+  // (#4b) Every cue must target a scene file listed in the chapter manifest,
+  // AND the cue path must resolve into this plan's own chapter directory.
+  // Comparing only the basename would let a typo like
+  // `docs/stories_plan/chapter_2/scene_0.md` slip through whenever chapter_1's
+  // manifest also lists `scene_0.md`, and `audio:apply` would then mutate the
+  // wrong chapter's scene file while reporting OK.
   for (const [index, cue] of plan.cues.entries()) {
     const name = basename(cue.file);
-    if (!manifestSet.has(name)) {
+    const expectedPath = `${data.chapterRoot}/${name}`;
+    if (
+      !manifestSet.has(name) ||
+      normalizeRelativePath(cue.file) !== expectedPath
+    ) {
       diagnostics.push({
         code: "soundPlanCueFileNotInManifest",
         path: `cues[${index}].file`,
-        message: `Cue targets "${cue.file}" which is not listed in the chapter manifest.`,
+        message: `Cue targets "${cue.file}" which is not a scene in chapter "${data.chapterRoot}". Expected a file under ${data.chapterRoot}/ listed in the chapter manifest.`,
       });
     }
   }
@@ -173,7 +189,9 @@ export function validateSoundPlanAgainstCorpus(
   if (firstUnit) {
     const cueIndex = plan.cues.findIndex(
       (c) =>
-        basename(c.file) === firstUnit.file && c.visualUnit === firstUnit.id,
+        normalizeRelativePath(c.file) ===
+          `${data.chapterRoot}/${firstUnit.file}` &&
+        c.visualUnit === firstUnit.id,
     );
     if (cueIndex === -1) {
       diagnostics.push({
@@ -235,6 +253,16 @@ function findChapterDir(
 
 function hasOwn(obj: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+/**
+ * Normalize a repo-relative path for comparison: forward slashes only, no
+ * leading `./`. Keeps `..` untouched — `validateCueFilePaths` in cli.ts is the
+ * authority that rejects traversal; this helper only makes two paths
+ * comparable across OS path separators.
+ */
+function normalizeRelativePath(p: string): string {
+  return p.replace(/\\/g, "/").replace(/^\.\//, "");
 }
 
 function errorMessage(error: unknown): string {

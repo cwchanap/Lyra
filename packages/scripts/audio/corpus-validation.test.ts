@@ -38,6 +38,7 @@ function twoSceneCorpus(): CorpusData {
     "\n",
   );
   return {
+    chapterRoot: "docs/stories_plan/chapter_1",
     chapterSceneFiles: ["scene_0.md", "scene_1.md"],
     sceneSources: new Map([
       ["scene_0.md", scene0],
@@ -47,7 +48,7 @@ function twoSceneCorpus(): CorpusData {
 }
 
 describe("validateSoundPlanAgainstCorpus — cue file vs chapter manifest (#4b)", () => {
-  it("reports nothing when every cue file basename is in the chapter manifest", () => {
+  it("reports nothing when every cue file resolves into the plan's chapter root", () => {
     const data = twoSceneCorpus();
     const plan = minimalPlan({
       cues: [
@@ -58,7 +59,7 @@ describe("validateSoundPlanAgainstCorpus — cue file vs chapter manifest (#4b)"
           bgs: "none",
         },
         {
-          file: "static/stories_plan/chapter_1/scene_1.md",
+          file: "docs/stories_plan/chapter_1/scene_1.md",
           visualUnit: "tag_001",
           bgm: "none",
           bgs: "none",
@@ -90,6 +91,53 @@ describe("validateSoundPlanAgainstCorpus — cue file vs chapter manifest (#4b)"
     expect(diags).toHaveLength(1);
     expect(diags[0]?.code).toBe("soundPlanCueFileNotInManifest");
     expect(diags[0]?.message).toContain("ghost_scene.md");
+  });
+
+  it("rejects a cross-chapter cue whose basename is in this chapter's manifest", () => {
+    // Regression: a chapter_1 plan that accidentally points at chapter_2's
+    // scene_0.md used to pass because only the basename was compared. apply
+    // would then write BGM/BGS metadata into chapter_2's file while reporting
+    // OK. The basename matches the manifest, so the path-prefix check is the
+    // only thing that catches it.
+    const data = twoSceneCorpus();
+    const plan = minimalPlan({
+      cues: [
+        {
+          file: "docs/stories_plan/chapter_2/scene_0.md",
+          visualUnit: "tag_001",
+          bgm: "none",
+          bgs: "none",
+        },
+      ],
+    });
+    const diags = validateSoundPlanAgainstCorpus(plan, data);
+    const notInManifest = diags.filter(
+      (d) => d.code === "soundPlanCueFileNotInManifest",
+    );
+    expect(notInManifest).toHaveLength(1);
+    expect(notInManifest[0]?.message).toContain("chapter_2/scene_0.md");
+  });
+
+  it("rejects a cross-root cue whose basename is in this chapter's manifest", () => {
+    // chapter_1 lives under docs/stories_plan in this corpus; a cue pointing
+    // at static/stories_plan/chapter_1/scene_0.md must be rejected even though
+    // the basename matches, because the chapter is not actually rooted there.
+    const data = twoSceneCorpus();
+    const plan = minimalPlan({
+      cues: [
+        {
+          file: "static/stories_plan/chapter_1/scene_0.md",
+          visualUnit: "tag_001",
+          bgm: "none",
+          bgs: "none",
+        },
+      ],
+    });
+    const diags = validateSoundPlanAgainstCorpus(plan, data);
+    const notInManifest = diags.filter(
+      (d) => d.code === "soundPlanCueFileNotInManifest",
+    );
+    expect(notInManifest).toHaveLength(1);
   });
 });
 
