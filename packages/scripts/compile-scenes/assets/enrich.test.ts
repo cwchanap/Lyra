@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { enrichScenesWithAssets } from "./enrich";
 import { emitLinearScene } from "../emitter";
 import type { AssetConfig } from "./config";
-import type { DialogueItem } from "../types";
+import type { ASTInterrogationPhase, DialogueItem } from "../types";
 import type { SceneRecord } from "../validator";
 
 function config(): AssetConfig {
@@ -133,6 +133,7 @@ describe("enrichScenesWithAssets", () => {
                 imagePrompt: "Cafe receipt isolated on transparent background.",
                 imageAssetId: null,
               },
+              sourceSublocationId: null,
               onCollect: [],
               onReexamine: null,
               sourceFile: "chapter_1/investigation_scene_1.md",
@@ -698,6 +699,12 @@ describe("enrichScenesWithAssets", () => {
             {
               id: "office",
               label: "辦公室",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              sceneTag: "tag",
+              sourceFile: "investigation_scene_1.md",
+              line: 1,
               assetCue: null,
               transitionDialogue: [],
               hotspots: [],
@@ -782,6 +789,12 @@ describe("enrichScenesWithAssets", () => {
             {
               id: "office",
               label: "辦公室",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              sceneTag: "tag",
+              sourceFile: "investigation_scene_1.md",
+              line: 1,
               assetCue: null,
               transitionDialogue: [],
               hotspots: [],
@@ -840,6 +853,12 @@ describe("enrichScenesWithAssets", () => {
             {
               id: "office",
               label: "辦公室",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              sceneTag: "tag",
+              sourceFile: "investigation_scene_1.md",
+              line: 1,
               assetCue: null,
               transitionDialogue: [],
               hotspots: [],
@@ -898,6 +917,12 @@ describe("enrichScenesWithAssets", () => {
             {
               id: "office",
               label: "辦公室",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              sceneTag: "tag",
+              sourceFile: "investigation_scene_1.md",
+              line: 1,
               assetCue: null,
               transitionDialogue: [],
               hotspots: [],
@@ -956,6 +981,12 @@ describe("enrichScenesWithAssets", () => {
             {
               id: "office",
               label: "辦公室",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              sceneTag: "tag",
+              sourceFile: "investigation_scene_1.md",
+              line: 1,
               assetCue: null,
               transitionDialogue: [],
               hotspots: [],
@@ -998,7 +1029,7 @@ describe("enrichScenesWithAssets", () => {
       (e) => e.type === "portrait",
     );
     expect(portraitRefs).toHaveLength(1);
-    expect(portraitRefs[0].assetId).toBe("portrait.hayasaka_akane.standard");
+    expect(portraitRefs[0]!.assetId).toBe("portrait.hayasaka_akane.standard");
 
     // No standee ref — only portrait type should be registered
     const standeeRefs = result.manifest.entries.filter(
@@ -1021,6 +1052,12 @@ describe("enrichScenesWithAssets", () => {
             {
               id: "office",
               label: "辦公室",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              sceneTag: "tag",
+              sourceFile: "investigation_scene_1.md",
+              line: 1,
               assetCue: null,
               transitionDialogue: [],
               hotspots: [],
@@ -1062,7 +1099,7 @@ describe("enrichScenesWithAssets", () => {
       (e) => e.type === "evidence",
     );
     expect(evidenceRefs).toHaveLength(1);
-    expect(evidenceRefs[0].assetId).toBe("evidence.knife");
+    expect(evidenceRefs[0]!.assetId).toBe("evidence.knife");
   });
 
   it("registers background assetIds from character sprite layouts", () => {
@@ -1079,6 +1116,12 @@ describe("enrichScenesWithAssets", () => {
             {
               id: "office",
               label: "辦公室",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              sceneTag: "tag",
+              sourceFile: "investigation_scene_1.md",
+              line: 1,
               assetCue: null,
               transitionDialogue: [],
               hotspots: [],
@@ -1120,7 +1163,7 @@ describe("enrichScenesWithAssets", () => {
       (e) => e.type === "background",
     );
     expect(bgRefs).toHaveLength(1);
-    expect(bgRefs[0].assetId).toBe("background.chapter_1.crime_scene");
+    expect(bgRefs[0]!.assetId).toBe("background.chapter_1.crime_scene");
   });
 
   it("errors for malformed portrait assetId in character sprite layout", () => {
@@ -1137,6 +1180,12 @@ describe("enrichScenesWithAssets", () => {
             {
               id: "office",
               label: "辦公室",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              sceneTag: "tag",
+              sourceFile: "investigation_scene_1.md",
+              line: 1,
               assetCue: null,
               transitionDialogue: [],
               hotspots: [],
@@ -1174,8 +1223,8 @@ describe("enrichScenesWithAssets", () => {
 
     const result = enrichScenesWithAssets({ scenes, config: config() });
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0].code).toBe("assetInvalidPortraitLayoutId");
-    expect(result.errors[0].message).toContain("portrait.malformed");
+    expect(result.errors[0]!.code).toBe("assetInvalidPortraitLayoutId");
+    expect(result.errors[0]!.message).toContain("portrait.malformed");
   });
 
   it("uses empty subjectPrompt for standee when character is not in config", () => {
@@ -1192,6 +1241,12 @@ describe("enrichScenesWithAssets", () => {
             {
               id: "office",
               label: "辦公室",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              sceneTag: "tag",
+              sourceFile: "investigation_scene_1.md",
+              line: 1,
               assetCue: null,
               transitionDialogue: [],
               hotspots: [],
@@ -1278,6 +1333,7 @@ function investigationScene(input: {
             imagePrompt: input.imagePrompt,
             imageAssetId: null,
           },
+          sourceSublocationId: null,
           onCollect: [],
           onReexamine: null,
           sourceFile: "chapter_1/investigation_scene_1.md",
@@ -1362,6 +1418,7 @@ function investigationSceneWithEvidenceSources(): SceneRecord {
             imagePrompt: "CCTV still isolated as evidence.",
             imageAssetId: null,
           },
+          sourceSublocationId: null,
           onCollect: [],
           onReexamine: null,
           sourceFile: "chapter_1/investigation_scene_1.md",
@@ -1376,6 +1433,7 @@ function investigationSceneWithEvidenceSources(): SceneRecord {
             imagePrompt: "Employee timecard record isolated as evidence.",
             imageAssetId: null,
           },
+          sourceSublocationId: null,
           onCollect: [],
           onReexamine: null,
           sourceFile: "chapter_1/investigation_scene_1.md",
@@ -1878,7 +1936,7 @@ function interrogationScene(phaseKind: "inquiry" | "testimony"): SceneRecord {
                 line: 30,
               },
             ],
-          },
+          } as ASTInterrogationPhase,
         ],
         evidenceManifest: [
           {
@@ -1890,6 +1948,7 @@ function interrogationScene(phaseKind: "inquiry" | "testimony"): SceneRecord {
               imagePrompt: "Blood-stained knife on transparent background.",
               imageAssetId: null,
             },
+            sourceSublocationId: null,
             onCollect: [],
             onReexamine: null,
             sourceFile: "chapter_1/interrogation_scene_2.md",
@@ -1986,7 +2045,7 @@ function interrogationScene(phaseKind: "inquiry" | "testimony"): SceneRecord {
               line: 60,
             },
           ],
-        },
+        } as ASTInterrogationPhase,
       ],
       evidenceManifest: [],
       statementManifest: [],

@@ -145,7 +145,7 @@ export function compile(opts: CompileOptions): CompileResult {
         {
           code: "noChaptersFound",
           message: `No chapter_<N> directories found under: ${sourceRoots.join(", ")}`,
-          sourceFile: sourceRoots[0],
+          sourceFile: sourceRoots[0] ?? "",
           line: 0,
         },
       ],
@@ -258,7 +258,9 @@ export function compile(opts: CompileOptions): CompileResult {
   }
 
   const assetConfig = loadAssetConfig(
-    opts.assetConfigRoot ?? resolve(sourceRoots[0], "../assets/config"),
+    // sourceRoots is contractually non-empty at this point (chapters were
+    // discovered above); fall back to the first root for asset config path.
+    opts.assetConfigRoot ?? resolve(sourceRoots[0] ?? ".", "../assets/config"),
   );
   if (!assetConfig.ok) {
     errors.push(...assetConfig.errors);

@@ -12,6 +12,7 @@ import {
   loadCorpusForPlan,
   validateSoundPlanAgainstCorpus,
 } from "./corpus-validation";
+import { DIAGNOSTIC_EXIT_CODE, SUCCESS_EXIT_CODE } from "./exit-codes";
 import { parseSoundPlanText, validateSoundPlan } from "./sound-plan";
 import type { SoundPlan, SoundPlanCue, SoundPlanDiagnostic } from "./types";
 
@@ -78,25 +79,26 @@ export async function runAudioCli(
   }
 
   context.stderr("Usage: audio/cli.ts <validate|apply|generate> ...");
-  return 2;
+  return DIAGNOSTIC_EXIT_CODE;
 }
 
 function runValidateCommand(args: string[], context: CliContext): number {
   const parsedArgs = parsePlanArgs(args, "Usage: audio:validate <plan.yaml>");
   if (!parsedArgs.ok) {
     exitWithDiagnostics(parsedArgs.diagnostics, context);
-    return 2;
+    return DIAGNOSTIC_EXIT_CODE;
   }
 
   const plan = loadPlan(parsedArgs.value.planPath, context);
-  if (!plan) return 2;
+  if (!plan) return DIAGNOSTIC_EXIT_CODE;
   const diagnostics = validateSoundPlan(plan);
-  if (exitWithDiagnostics(diagnostics, context)) return 2;
+  if (exitWithDiagnostics(diagnostics, context)) return DIAGNOSTIC_EXIT_CODE;
   // Corpus-aware checks (#4): first-visual-unit BGM+BGS and cue-vs-manifest.
   const corpusDiagnostics = runCorpusValidation(plan, context);
-  if (exitWithDiagnostics(corpusDiagnostics, context)) return 2;
+  if (exitWithDiagnostics(corpusDiagnostics, context))
+    return DIAGNOSTIC_EXIT_CODE;
   context.stdout(`[audio] ${parsedArgs.value.planPath} OK`);
-  return 0;
+  return SUCCESS_EXIT_CODE;
 }
 
 async function runApplyCommand(
@@ -110,37 +112,40 @@ async function runApplyCommand(
   );
   if (!parsedArgs.ok) {
     exitWithDiagnostics(parsedArgs.diagnostics, context);
-    return 2;
+    return DIAGNOSTIC_EXIT_CODE;
   }
 
   const check = parsedArgs.value.flags.has("--check");
   const plan = loadPlan(parsedArgs.value.planPath, context);
-  if (!plan) return 2;
+  if (!plan) return DIAGNOSTIC_EXIT_CODE;
   const diagnostics = validateSoundPlan(plan);
-  if (exitWithDiagnostics(diagnostics, context)) return 2;
+  if (exitWithDiagnostics(diagnostics, context)) return DIAGNOSTIC_EXIT_CODE;
   // Structural path safety (no absolute / traversal / outside story roots)
   // runs before corpus-aware checks — a malformed cue path is wrong regardless
   // of what the chapter manifest says.
   const cueFileDiagnostics = validateCueFilePaths(plan.cues, context.repoRoot);
-  if (exitWithDiagnostics(cueFileDiagnostics, context)) return 2;
+  if (exitWithDiagnostics(cueFileDiagnostics, context))
+    return DIAGNOSTIC_EXIT_CODE;
   // Corpus-aware checks (#4): first-visual-unit BGM+BGS and cue-vs-manifest.
   const corpusDiagnostics = runCorpusValidation(plan, context);
-  if (exitWithDiagnostics(corpusDiagnostics, context)) return 2;
+  if (exitWithDiagnostics(corpusDiagnostics, context))
+    return DIAGNOSTIC_EXIT_CODE;
 
   const catalogPath = resolve(context.repoRoot, AUDIO_CATALOG_PATH);
   const catalogText = readTextFile(catalogPath, "audio catalog", context);
-  if (catalogText === undefined) return 2;
+  if (catalogText === undefined) return DIAGNOSTIC_EXIT_CODE;
 
   const parsedCatalog = parseAudioCatalogText(catalogText, catalogPath);
   if (!parsedCatalog.ok) {
     exitWithDiagnostics(parsedCatalog.diagnostics, context);
-    return 2;
+    return DIAGNOSTIC_EXIT_CODE;
   }
   const merged = mergeApprovedEntriesIntoCatalog(
     parsedCatalog.value,
     plan.entries,
   );
-  if (exitWithDiagnostics(merged.diagnostics, context)) return 2;
+  if (exitWithDiagnostics(merged.diagnostics, context))
+    return DIAGNOSTIC_EXIT_CODE;
 
   const nextCatalogText = await formatAudioCatalogYaml(
     serializeAudioCatalog(merged.catalog),
@@ -156,9 +161,10 @@ async function runApplyCommand(
   for (const [file, cues] of cuesByFile) {
     const fullPath = resolve(context.repoRoot, file);
     const source = readTextFile(fullPath, file, context);
-    if (source === undefined) return 2;
+    if (source === undefined) return DIAGNOSTIC_EXIT_CODE;
     const result = applyAudioCuesToMarkdown(file, source, cues);
-    if (exitWithDiagnostics(result.diagnostics, context)) return 2;
+    if (exitWithDiagnostics(result.diagnostics, context))
+      return DIAGNOSTIC_EXIT_CODE;
     if (result.changed) pushChangedPath(file, changedPaths, changedPathSet);
     fileUpdates.push({
       file,
@@ -173,14 +179,14 @@ async function runApplyCommand(
     for (const path of changedPaths) {
       context.stderr(`[audio] changed: ${path}`);
     }
-    return 2;
+    return DIAGNOSTIC_EXIT_CODE;
   }
 
   if (!check && nextCatalogText !== catalogText) {
     if (
       !writeTextFile(catalogPath, "audio catalog", nextCatalogText, context)
     ) {
-      return 2;
+      return DIAGNOSTIC_EXIT_CODE;
     }
   }
   if (!check) {
@@ -189,13 +195,13 @@ async function runApplyCommand(
       if (
         !writeTextFile(update.fullPath, update.file, update.source, context)
       ) {
-        return 2;
+        return DIAGNOSTIC_EXIT_CODE;
       }
     }
   }
 
   context.stdout(check ? "[audio] apply check OK" : "[audio] apply OK");
-  return 0;
+  return SUCCESS_EXIT_CODE;
 }
 
 function parsePlanArgs(
@@ -383,12 +389,12 @@ function writeTextFile(
 function exitWithDiagnostics(
   diagnostics: Array<SoundPlanDiagnostic | CliDiagnostic>,
   context: CliContext,
-): 2 | undefined {
+): typeof DIAGNOSTIC_EXIT_CODE | undefined {
   if (diagnostics.length === 0) return undefined;
   for (const diagnostic of diagnostics) {
     context.stderr(formatDiagnostic(diagnostic));
   }
-  return 2;
+  return DIAGNOSTIC_EXIT_CODE;
 }
 
 function formatDiagnostic(

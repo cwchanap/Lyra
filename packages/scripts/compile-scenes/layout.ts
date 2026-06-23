@@ -267,12 +267,14 @@ function parseRectLayout(
     return { value: null, errors: numberErrors };
   }
 
+  // validateRectNumbers above returned no errors, so x/y/w/h are finite
+  // numbers — assert the narrowed type TS cannot track through that guard.
   const rect = {
     kind: "rect" as const,
-    x: layout.x,
-    y: layout.y,
-    w: layout.w,
-    h: layout.h,
+    x: layout.x as number,
+    y: layout.y as number,
+    w: layout.w as number,
+    h: layout.h as number,
   };
   const geometryErrors = validateGeometry(rect, sourceFile, targetPath);
   return {
@@ -374,13 +376,15 @@ function parseSpriteLayout(
   errors.push(...validateRectNumbers(layout, sourceFile, targetPath));
   if (errors.length > 0) return { value: null, errors };
 
+  // validateRectNumbers above returned no errors, so x/y/w/h are finite
+  // numbers — assert the narrowed type TS cannot track through that guard.
   const sprite = {
     kind: "sprite" as const,
     assetId,
-    x: layout.x,
-    y: layout.y,
-    w: layout.w,
-    h: layout.h,
+    x: layout.x as number,
+    y: layout.y as number,
+    w: layout.w as number,
+    h: layout.h as number,
     anchor: "bottomCenter" as const,
   };
   const geometryErrors = validateGeometry(sprite, sourceFile, targetPath);

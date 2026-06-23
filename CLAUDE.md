@@ -58,6 +58,10 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
     without it, generation fails at the transcoding step.
 - `bun run check` / `bun run check:watch` - type-check Svelte + TS
   (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
+- `bun run check:scripts` - type-check `packages/scripts` (compiler + audio
+  tooling) under strict flags (`exactOptionalPropertyTypes`,
+  `noUncheckedIndexedAccess`) via `tsconfig.scripts.json`. Enforced in CI.
+  Run after changing compiler/audio logic.
 - `bun run test` / `bun run test:watch` - Vitest unit tests for frontend logic
   and compile-script tests. Run a single file with
   `bun run --cwd apps/game test src/lib/state/mode.test.ts` or a single case with
@@ -214,9 +218,10 @@ Choose the smallest verification set that covers the change, then run the
 broader checks before claiming cross-stack work is done.
 
 - Scene authoring or compiler changes: `bun run scenes:compile` and focused
-  Vitest files under `packages/scripts/`.
+  Vitest files under `packages/scripts/`, then `bun run check:scripts`.
 - Asset pipeline changes: focused tests under `packages/scripts/compile-scenes/assets/`,
-  `src/lib/assets/story-assets.test.ts`, then `bun run scenes:compile`.
+  `src/lib/assets/story-assets.test.ts`, then `bun run scenes:compile`,
+  then `bun run check:scripts`.
 - Frontend component/state changes: focused Vitest tests, then `bun run check`.
 - Rust engine/runtime changes: focused `cargo test` filters where useful, then
   `cargo test --manifest-path apps/game/src-tauri/Cargo.toml`; use

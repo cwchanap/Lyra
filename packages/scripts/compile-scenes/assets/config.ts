@@ -28,16 +28,16 @@ const AUDIO_CHANNEL_SET = new Set<string>(AUDIO_CHANNELS);
 
 /** Policy for image asset types (background, portrait, evidence). */
 export type ImageAssetPolicy = {
-  dimensions?: [number, number];
+  dimensions?: [number, number] | undefined;
   format: string;
-  transparency?: boolean;
+  transparency?: boolean | undefined;
   prompt: string;
 };
 
 /** Policy for audio asset types. No dimensions/transparency; has loop. */
 export type AudioAssetPolicy = {
   format: string;
-  loop?: boolean;
+  loop?: boolean | undefined;
   prompt: string;
 };
 
@@ -179,9 +179,14 @@ export function loadAssetConfig(configRoot: string): AssetConfigResult {
   );
   if (errors.length > 0) return { ok: false, errors };
 
-  const enabled = policy?.assets?.enabled === true;
+  // Narrow policy sub-objects through isRecord rather than optional-chaining
+  // on `Record<string, unknown>` (which leaves the accessed property as
+  // `{}`/unknown and trips TS2339 under strict indexing).
+  const policyAssets = policy?.assets;
+  const enabled = isRecord(policyAssets) && policyAssets.enabled === true;
+  const policyGlobalStyle = policy?.globalStyle;
   const globalStylePrompt = textWithWarn(
-    policy?.globalStyle?.prompt,
+    isRecord(policyGlobalStyle) ? policyGlobalStyle.prompt : undefined,
     "globalStyle.prompt",
     "policy.yaml",
     warnings,

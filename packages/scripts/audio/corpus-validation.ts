@@ -110,14 +110,29 @@ export function loadCorpusForPlan(
   }
 
   const sceneSources = new Map<string, string>();
+  const sceneDiagnostics: SoundPlanDiagnostic[] = [];
   for (const file of parsed.value.sceneFiles) {
     const fullPath = resolve(chapterDir, file);
     if (!existsSync(fullPath)) continue; // compile-scenes pipeline catches this.
     try {
       sceneSources.set(file, readFileSync(fullPath, "utf-8"));
-    } catch {
-      // Skip unreadable scene files; the compile pipeline reports them.
+    } catch (error) {
+      // Surface unreadable scenes rather than silently degrading the
+      // corpus-aware checks. The audio:validate and audio:apply commands do
+      // not run the compile-scenes pipeline, so the previous justification
+      // ("the compile pipeline reports them") did not hold on this path — an
+      // unreadable first-visual-unit scene would silently weaken #4a while
+      // the command still reported OK.
+      sceneDiagnostics.push({
+        code: "soundPlanSceneUnreadable",
+        path: `chapter.${file}`,
+        message: `Failed to read scene "${file}": ${errorMessage(error)}`,
+      });
     }
+  }
+
+  if (sceneDiagnostics.length > 0) {
+    return { ok: false, diagnostics: sceneDiagnostics };
   }
 
   return {

@@ -3,8 +3,8 @@ export type VisualUnitIndex = {
   file: string;
   line: number;
   metadataInsertLine: number;
-  existingBgm?: string;
-  existingBgs?: string;
+  existingBgm?: string | undefined;
+  existingBgs?: string | undefined;
 };
 
 const SCENE_TAG_RE = /^\[場景：/;
@@ -16,8 +16,8 @@ const VISUAL_METADATA_KEYS = new Set(["Background Prompt", "BGM", "BGS"]);
 
 type MetadataScan = {
   insertLine: number;
-  bgm?: string;
-  bgs?: string;
+  bgm?: string | undefined;
+  bgs?: string | undefined;
 };
 
 export function indexVisualUnitsFromMarkdown(

@@ -31,6 +31,9 @@ jobs:
       - name: Type-check (svelte-check)
         run: bun run check
 
+      - name: Type-check scripts (tsc)
+        run: bun run check:scripts
+
       - name: Build frontend
         run: bun run build
 

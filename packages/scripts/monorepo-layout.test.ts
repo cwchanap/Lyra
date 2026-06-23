@@ -70,7 +70,7 @@ describe("monorepo layout", () => {
     for (const script of Object.values<string>(rootPackage.scripts)) {
       let match: RegExpExecArray | null;
       while ((match = turboTaskRe.exec(script)) !== null) {
-        for (const task of match[1].split(/\s+/)) {
+        for (const task of match[1]!.split(/\s+/)) {
           referencedTasks.add(task);
         }
       }

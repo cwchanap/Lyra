@@ -68,7 +68,7 @@ describe("compile (end-to-end against valid fixture)", () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].code).toBe("noChaptersFound");
+      expect(result.errors[0]!.code).toBe("noChaptersFound");
     } finally {
       rmSync(emptyDir, { recursive: true, force: true });
       rmSync(outRoot, { recursive: true, force: true });
@@ -369,6 +369,12 @@ describe("asset enrichment: first visual cue audio validation", () => {
       },
       evidence: {
         dimensions: [512, 512],
+        format: "png",
+        transparency: true,
+        prompt: "",
+      },
+      standee: {
+        dimensions: [1024, 1024],
         format: "png",
         transparency: true,
         prompt: "",

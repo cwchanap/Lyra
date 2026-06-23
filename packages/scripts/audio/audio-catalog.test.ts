@@ -292,7 +292,7 @@ describe("audio catalog", () => {
     if (!parsed.ok) return;
 
     const result = mergeApprovedEntriesIntoCatalog(parsed.value, [approvedBgs]);
-    result.catalog.bgs.station_ambience.prompt = "Mutated prompt.";
+    result.catalog.bgs.station_ambience!.prompt = "Mutated prompt.";
 
     expect(parsed.value.bgs.station_ambience).toEqual({
       prompt: "Existing station ambience.",

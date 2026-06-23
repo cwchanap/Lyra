@@ -253,4 +253,46 @@ describe("loadCorpusForPlan — disk loader", () => {
       ),
     ).toBe(true);
   });
+
+  it("surfaces a diagnostic for an unreadable scene file instead of silently skipping it", () => {
+    // The chapter manifest lists scene_0.md (readable) and scene_1.md. We make
+    // scene_1.md a directory: existsSync passes, but readFileSync throws
+    // (EISDIR) — a deterministic, permission-independent stand-in for any
+    // unreadable-scene condition (EACCES, encoding error, ...). Previously
+    // this was swallowed and the #4a first-visual-unit check ran on degraded
+    // data while reporting OK.
+    const repoRoot = mkdtempSync(join(tmpdir(), "lyra-corpus-unreadable-"));
+    const dir = join(repoRoot, "docs/stories_plan/chapter_1");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "chapter.md"),
+      [
+        "# Chapter 1: Test",
+        "**Summary:** A test chapter.",
+        "## Scenes",
+        "1. scene_0.md",
+        "2. scene_1.md",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(dir, "scene_0.md"),
+      ["[場景：開場。]", "- **Background Prompt:** Opening."].join("\n"),
+    );
+    // scene_1.md is a directory — exists, but cannot be read as a file.
+    mkdirSync(join(dir, "scene_1.md"));
+
+    const result = loadCorpusForPlan(minimalPlan(), {
+      repoRoot,
+      sourceRoots: ["docs/stories_plan"],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.diagnostics.some((d) => d.code === "soundPlanSceneUnreadable"),
+    ).toBe(true);
+    expect(
+      result.diagnostics.some((d) => d.message.includes("scene_1.md")),
+    ).toBe(true);
+  });
 });

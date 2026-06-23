@@ -31,6 +31,8 @@ function minimalScene(): ASTInvestigationScene {
             status: "unlocked",
             unlock: null,
             reveals: [],
+            evidenceSource: null,
+            sceneSourcePrompt: null,
             inspectDialogue: [],
             onReexamine: null,
             sourceFile: "investigation_scene_1.md",
@@ -294,7 +296,7 @@ describe("applyInvestigationLayout", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const sublocation = result.value.sublocations[0];
+    const sublocation = result.value.sublocations[0]!;
     expect(sublocation.hotspots[0]?.layout).toStrictEqual({
       kind: "rect",
       x: 0.1,
