@@ -39,6 +39,16 @@ class FakeAudio implements AudioElementLike {
 
 const preferences = DEFAULT_AUDIO_PREFERENCES;
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
 describe("GameplayAudioController", () => {
   let created: FakeAudio[];
   let warn: (message: string) => void;
@@ -94,6 +104,41 @@ describe("GameplayAudioController", () => {
     expect(created[0]?.play).toHaveBeenCalledTimes(1);
   });
 
+  it("does not warn when a replaced loop rejects stale playback", async () => {
+    const firstPlay = deferred();
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        if (created.length === 0) {
+          element.play = vi.fn(() => firstPlay.promise);
+        }
+        created.push(element);
+        return element;
+      },
+      logger: { warn },
+    });
+
+    const staleUpdate = audio.updateLoopChannels(
+      { bgm: { channel: "bgm", assetId: "audio.bgm.review" }, bgs: null },
+      preferences,
+    );
+    await audio.updateLoopChannels(
+      { bgm: { channel: "bgm", assetId: "audio.bgm.tense" }, bgs: null },
+      preferences,
+    );
+    firstPlay.reject(new Error("AbortError: interrupted"));
+    await staleUpdate;
+
+    expect(warn).not.toHaveBeenCalled();
+    expect(created).toHaveLength(2);
+    expect(created[0]?.pause).toHaveBeenCalledTimes(1);
+    await audio.updateLoopChannels(
+      { bgm: { channel: "bgm", assetId: "audio.bgm.tense" }, bgs: null },
+      preferences,
+    );
+    expect(created).toHaveLength(2);
+  });
+
   it("stops on explicit none", async () => {
     const audio = controller();
     await audio.updateLoopChannels(
@@ -132,6 +177,31 @@ describe("GameplayAudioController", () => {
     expect(created[0]?.volume).toBe(preferences.sfxVolume);
   });
 
+  it("cleans up SFX listeners after playback ends", async () => {
+    const audio = controller();
+    await audio.playSfx("audio.sfx.sfx_usb_insert_chime", preferences);
+    const sfx = created[0];
+
+    expect(sfx?.listeners.get("ended")?.size).toBe(1);
+    expect(sfx?.listeners.get("error")?.size).toBe(1);
+    sfx?.emit("ended");
+    expect(sfx?.listeners.get("ended")?.size ?? 0).toBe(0);
+    expect(sfx?.listeners.get("error")?.size ?? 0).toBe(0);
+  });
+
+  it("disposes active SFX", async () => {
+    const audio = controller();
+    await audio.playSfx("audio.sfx.sfx_usb_insert_chime", preferences);
+    const sfx = created[0];
+
+    audio.dispose();
+
+    expect(sfx?.pause).toHaveBeenCalledTimes(1);
+    expect(sfx?.currentTime).toBe(0);
+    expect(sfx?.listeners.get("ended")?.size ?? 0).toBe(0);
+    expect(sfx?.listeners.get("error")?.size ?? 0).toBe(0);
+  });
+
   it("suppresses SFX while muted", async () => {
     const audio = controller();
     await audio.playSfx("audio.sfx.sfx_usb_insert_chime", {
@@ -139,6 +209,28 @@ describe("GameplayAudioController", () => {
       muted: true,
     });
     expect(created).toHaveLength(0);
+  });
+
+  it("logs SFX media errors only once when play also rejects", async () => {
+    const play = deferred();
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        element.play = vi.fn(() => play.promise);
+        created.push(element);
+        return element;
+      },
+      logger: { warn },
+    });
+
+    const sfx = audio.playSfx("audio.sfx.sfx_usb_insert_chime", preferences);
+    created[0]?.emit("error");
+    play.reject(new Error("blocked"));
+    await sfx;
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(created[0]?.listeners.get("ended")?.size ?? 0).toBe(0);
+    expect(created[0]?.listeners.get("error")?.size ?? 0).toBe(0);
   });
 
   it("logs and silences rejected playback", async () => {
@@ -159,6 +251,9 @@ describe("GameplayAudioController", () => {
     );
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("audio.bgm.review"),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Error: blocked"),
     );
     expect(created[0]?.pause).toHaveBeenCalled();
   });
