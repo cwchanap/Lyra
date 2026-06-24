@@ -29,6 +29,13 @@ type LoopState = {
   onError: () => void;
 };
 
+type SfxState = {
+  audio: AudioElementLike;
+  cleanup: () => void;
+  onEnded: () => void;
+  onError: () => void;
+};
+
 export type LoopChannelInput = {
   bgm: AudioCue | null;
   bgs: AudioCue | null;
@@ -53,11 +60,38 @@ function channelVolume(
   return preferences.sfxVolume;
 }
 
+function playbackFailureDetail(url: string, error: unknown): string {
+  return `${url}; ${normalizePlaybackError(error)}`;
+}
+
+function normalizePlaybackError(error: unknown): string {
+  if (error instanceof Error) {
+    return formatErrorNameMessage(error.name, error.message);
+  }
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const record = error as { message?: unknown; name?: unknown };
+    if (typeof record.name === "string" || typeof record.message === "string") {
+      return formatErrorNameMessage(record.name, record.message);
+    }
+  }
+  return String(error);
+}
+
+function formatErrorNameMessage(name: unknown, message: unknown): string {
+  const normalizedName =
+    typeof name === "string" && name.length > 0 ? name : "Error";
+  return typeof message === "string" && message.length > 0
+    ? `${normalizedName}: ${message}`
+    : normalizedName;
+}
+
 export class GameplayAudioController {
   private loops: Record<LoopChannel, LoopState | null> = {
     bgm: null,
     bgs: null,
   };
+  private readonly activeSfx = new Set<SfxState>();
   private readonly audioFactory: AudioFactory;
   private readonly logger: LoggerLike;
 
@@ -103,20 +137,45 @@ export class GameplayAudioController {
     audio.preload = "auto";
     audio.muted = preferences.muted;
     audio.volume = channelVolume("sfx", preferences);
-    const onError = () => this.warn(assetId, url);
+    let cleaned = false;
+    let warned = false;
+    const warnOnce = (detail: string) => {
+      if (warned) return;
+      warned = true;
+      this.warn(assetId, detail);
+    };
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      audio.removeEventListener?.("ended", state.onEnded);
+      audio.removeEventListener?.("error", state.onError);
+      this.activeSfx.delete(state);
+    };
+    const onEnded = () => cleanup();
+    const onError = () => {
+      warnOnce(url);
+      cleanup();
+    };
+    const state = { audio, cleanup, onEnded, onError };
     audio.addEventListener?.("error", onError);
+    audio.addEventListener?.("ended", onEnded);
+    this.activeSfx.add(state);
     try {
       await audio.play();
-    } catch {
-      this.warn(assetId, url);
+    } catch (error) {
+      if (!cleaned) warnOnce(playbackFailureDetail(url, error));
       audio.pause();
       audio.currentTime = 0;
+      cleanup();
     }
   }
 
   dispose(): void {
     this.stopLoop("bgm");
     this.stopLoop("bgs");
+    for (const sfx of Array.from(this.activeSfx)) {
+      this.stopSfx(sfx);
+    }
   }
 
   private async updateLoopChannel(
@@ -155,8 +214,14 @@ export class GameplayAudioController {
     }
 
     const audio = this.audioFactory(url);
+    let warned = false;
+    const warnOnce = (detail: string) => {
+      if (warned) return;
+      warned = true;
+      this.warn(assetId, detail);
+    };
     const onError = () => {
-      this.warn(assetId, url);
+      warnOnce(url);
       if (this.loops[channel]?.audio === audio) this.stopLoop(channel);
     };
     audio.loop = true;
@@ -168,8 +233,9 @@ export class GameplayAudioController {
 
     try {
       await audio.play();
-    } catch {
-      this.warn(assetId, url);
+    } catch (error) {
+      if (this.loops[channel]?.audio !== audio) return;
+      warnOnce(playbackFailureDetail(url, error));
       if (this.loops[channel]?.audio === audio) this.stopLoop(channel);
     }
   }
@@ -181,6 +247,12 @@ export class GameplayAudioController {
     loop.audio.pause();
     loop.audio.currentTime = 0;
     this.loops[channel] = null;
+  }
+
+  private stopSfx(sfx: SfxState): void {
+    sfx.cleanup();
+    sfx.audio.pause();
+    sfx.audio.currentTime = 0;
   }
 
   private warn(assetId: string, detail: string): void {
