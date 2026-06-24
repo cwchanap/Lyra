@@ -1,6 +1,11 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import {
+    audioPreferences,
+    updateAudioPreferences,
+  } from "$lib/audio/gameplay-audio-runtime.svelte";
   import type { GameStateView } from "../state/types";
+  import AudioSettings from "./AudioSettings.svelte";
   import GameAtmosphere from "./GameAtmosphere.svelte";
 
   let {
@@ -36,6 +41,12 @@
       </div>
       <p class="summary">{gameState.chapter.summary}</p>
     </div>
+    <div class="audio-controls">
+      <AudioSettings
+        preferences={audioPreferences}
+        onUpdate={updateAudioPreferences}
+      />
+    </div>
     <button type="button" onclick={onReset} {disabled}>
       <span class="x">✕</span>
       <span>結束<br /><span class="en">CLOSE&nbsp;CASE</span></span>
@@ -63,6 +74,7 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 32px;
     padding: 22px clamp(20px, 3vw, 40px) 18px;
   }
@@ -71,7 +83,16 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    flex: 1 1 360px;
     max-width: 720px;
+    min-width: 0;
+  }
+
+  .audio-controls {
+    flex: 0 1 360px;
+    display: flex;
+    justify-content: center;
+    min-width: min(100%, 320px);
   }
 
   .case-marker {
