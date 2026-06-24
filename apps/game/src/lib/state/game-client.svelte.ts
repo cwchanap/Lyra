@@ -1,4 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import { playGameplaySfxEvent } from "$lib/audio/gameplay-audio-runtime.svelte";
+import {
+  inferGameplaySfxEvents,
+  type GameplayCommandName,
+} from "$lib/audio/sfx-events";
 import type { GameError, GameStateView, QueueToken } from "./types";
 
 const isTauri =
@@ -73,7 +78,7 @@ async function runCommand<T>(
 }
 
 async function dispatchGameCommand(
-  command: string,
+  command: GameplayCommandName,
   args?: Record<string, unknown>,
   loading = false,
 ) {
@@ -81,8 +86,14 @@ async function dispatchGameCommand(
   gameState.inFlight = true;
   if (loading) gameState.loading = true;
   try {
+    const previous = gameState.value;
     const v = await runCommand<GameStateView>(command, args);
-    if (v) gameState.value = v;
+    if (v) {
+      gameState.value = v;
+      for (const event of inferGameplaySfxEvents(previous, v, command)) {
+        playGameplaySfxEvent(event);
+      }
+    }
   } finally {
     if (loading) gameState.loading = false;
     gameState.inFlight = false;
