@@ -36,36 +36,45 @@
   </button>
 
   <div class="sliders">
-    <label>
-      <span>BGM</span>
-      <input
-        type="range"
-        min="0"
-        max="100"
-        value={percent(preferences.bgmVolume)}
-        oninput={(event) => updateChannel("bgmVolume", event)}
-      />
-    </label>
-    <label>
-      <span>BGS</span>
-      <input
-        type="range"
-        min="0"
-        max="100"
-        value={percent(preferences.bgsVolume)}
-        oninput={(event) => updateChannel("bgsVolume", event)}
-      />
-    </label>
-    <label>
-      <span>SFX</span>
-      <input
-        type="range"
-        min="0"
-        max="100"
-        value={percent(preferences.sfxVolume)}
-        oninput={(event) => updateChannel("sfxVolume", event)}
-      />
-    </label>
+    <div class="channel">
+      <label>
+        <span>BGM</span>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={percent(preferences.bgmVolume)}
+          oninput={(event) => updateChannel("bgmVolume", event)}
+        />
+      </label>
+      <span class="value">{percent(preferences.bgmVolume)}</span>
+    </div>
+    <div class="channel">
+      <label>
+        <span>BGS</span>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={percent(preferences.bgsVolume)}
+          oninput={(event) => updateChannel("bgsVolume", event)}
+        />
+      </label>
+      <span class="value">{percent(preferences.bgsVolume)}</span>
+    </div>
+    <div class="channel">
+      <label>
+        <span>SFX</span>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={percent(preferences.sfxVolume)}
+          oninput={(event) => updateChannel("sfxVolume", event)}
+        />
+      </label>
+      <span class="value">{percent(preferences.sfxVolume)}</span>
+    </div>
   </div>
 </section>
 
@@ -129,11 +138,20 @@
     min-width: 0;
   }
 
+  .channel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 3ch;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
   label {
     display: grid;
     grid-template-columns: 34px minmax(0, 1fr);
     align-items: center;
     gap: 8px;
+    min-width: 0;
     color: var(--bone-dim);
     font-family: var(--impact);
     font-size: 10px;
@@ -143,5 +161,13 @@
   input {
     width: 100%;
     accent-color: var(--cyan);
+  }
+
+  .value {
+    color: var(--cyan);
+    font-family: var(--impact);
+    font-size: 10px;
+    line-height: 1;
+    text-align: right;
   }
 </style>

@@ -21,6 +21,9 @@ describe("AudioSettings", () => {
     expect(screen.getByLabelText("BGM")).toHaveValue("55");
     expect(screen.getByLabelText("BGS")).toHaveValue("45");
     expect(screen.getByLabelText("SFX")).toHaveValue("70");
+    expect(screen.getByText("55")).toBeInTheDocument();
+    expect(screen.getByText("45")).toBeInTheDocument();
+    expect(screen.getByText("70")).toBeInTheDocument();
   });
 
   it("updates mute", async () => {
