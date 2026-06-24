@@ -71,10 +71,12 @@
 
 <style>
   .audio-settings {
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: 14px;
-    min-width: min(100%, 320px);
+    width: 100%;
+    min-width: 0;
     padding: 8px 10px;
     border: 1px solid var(--rule-strong);
     background: color-mix(in srgb, var(--cell) 64%, transparent);
@@ -124,12 +126,12 @@
     flex: 1 1 auto;
     display: grid;
     gap: 5px;
-    min-width: 170px;
+    min-width: 0;
   }
 
   label {
     display: grid;
-    grid-template-columns: 34px minmax(94px, 1fr);
+    grid-template-columns: 34px minmax(0, 1fr);
     align-items: center;
     gap: 8px;
     color: var(--bone-dim);
@@ -141,12 +143,5 @@
   input {
     width: 100%;
     accent-color: var(--cyan);
-  }
-
-  @media (max-width: 720px) {
-    .audio-settings {
-      flex: 1 1 100%;
-      order: 3;
-    }
   }
 </style>
