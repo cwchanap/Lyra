@@ -92,7 +92,7 @@
     flex: 0 1 360px;
     display: flex;
     justify-content: center;
-    min-width: min(100%, 320px);
+    min-width: 0;
   }
 
   .case-marker {
@@ -218,5 +218,13 @@
   main {
     position: relative;
     z-index: 2;
+  }
+
+  @media (max-width: 720px) {
+    .audio-controls {
+      order: 3;
+      flex: 1 1 100%;
+      width: 100%;
+    }
   }
 </style>
