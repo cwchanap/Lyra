@@ -53,6 +53,7 @@ describe("SFX event mapping", () => {
   });
 
   it("leaves generic events silent unless they have a meaningful match", () => {
+    expect(assetIdForGameplaySfxEvent("ui:new-game")).toBeNull();
     expect(
       assetIdForGameplaySfxEvent("investigation:hotspot-inspected"),
     ).toBeNull();
@@ -83,7 +84,7 @@ describe("inferGameplaySfxEvents", () => {
     ]);
   });
 
-  it("dispatches the USB hook when entering the chapter 1 office-night scene tag", () => {
+  it("dispatches the USB hook on the exact chapter 1 insert action beat", () => {
     const previous = state({
       scene: { kind: "linear", id: "scene_11", title: "", index: 0, total: 1 },
     });
@@ -91,7 +92,10 @@ describe("inferGameplaySfxEvents", () => {
       scene: { kind: "linear", id: "scene_11", title: "", index: 0, total: 1 },
       mode: {
         type: "dialogue",
-        current: { kind: "sceneTag", text: "相馬事務所，夜晚。" },
+        current: {
+          kind: "action",
+          text: "他把隨身碟插上筆電。螢幕跳出一行目錄。",
+        },
         queueRemaining: 0,
         sceneTag: "相馬事務所，夜晚。",
         backgroundAssetId: "background.chapter_1.scene_11.office_night",
@@ -103,6 +107,209 @@ describe("inferGameplaySfxEvents", () => {
     expect(inferGameplaySfxEvents(previous, next, "advance_dialogue")).toEqual([
       "story:usb-insert",
     ]);
+  });
+
+  it("does not replay the USB hook on later dialogue under the sticky office-night scene tag", () => {
+    const previous = state({
+      scene: { kind: "linear", id: "scene_11", title: "", index: 0, total: 1 },
+      mode: {
+        type: "dialogue",
+        current: {
+          kind: "action",
+          text: "他把隨身碟插上筆電。螢幕跳出一行目錄。",
+        },
+        queueRemaining: 4,
+        sceneTag: "相馬事務所，夜晚。",
+        backgroundAssetId: "background.chapter_1.scene_11.office_night",
+        bgm: null,
+        bgs: null,
+        queueToken: { sceneId: "scene_11", queueGen: 2, cursor: 4 },
+      },
+    });
+    const next = state({
+      scene: { kind: "linear", id: "scene_11", title: "", index: 0, total: 1 },
+      mode: {
+        type: "dialogue",
+        current: { kind: "line", speaker: "旁白", text: "裡頭只有一個檔案。" },
+        queueRemaining: 3,
+        sceneTag: "相馬事務所，夜晚。",
+        backgroundAssetId: "background.chapter_1.scene_11.office_night",
+        bgm: null,
+        bgs: null,
+        queueToken: { sceneId: "scene_11", queueGen: 2, cursor: 5 },
+      },
+    });
+    expect(inferGameplaySfxEvents(previous, next, "advance_dialogue")).toEqual(
+      [],
+    );
+  });
+
+  it("dispatches the rice-ball hook on the exact chapter 1 outro action beat", () => {
+    const previous = state({
+      scene: {
+        kind: "interrogation",
+        id: "interrogation_scene_10",
+        title: "",
+        index: 0,
+        total: 1,
+        currentPhaseId: null,
+        visiblePhases: [],
+      },
+      mode: {
+        type: "dialogue",
+        current: {
+          kind: "line",
+          speaker: "神谷澪",
+          text: "北見修一，指認成立。",
+        },
+        queueRemaining: 4,
+        sceneTag: null,
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+        queueToken: {
+          sceneId: "interrogation_scene_10",
+          queueGen: 5,
+          cursor: 12,
+        },
+      },
+    });
+    const next = state({
+      scene: {
+        kind: "interrogation",
+        id: "interrogation_scene_10",
+        title: "",
+        index: 0,
+        total: 1,
+        currentPhaseId: null,
+        visiblePhases: [],
+      },
+      mode: {
+        type: "dialogue",
+        current: {
+          kind: "action",
+          text: "旁聽席上，三宅母親把膝上那只飯糰袋輕輕抱緊了一下，沒有出聲。",
+        },
+        queueRemaining: 3,
+        sceneTag: null,
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+        queueToken: {
+          sceneId: "interrogation_scene_10",
+          queueGen: 5,
+          cursor: 13,
+        },
+      },
+    });
+    expect(inferGameplaySfxEvents(previous, next, "advance_dialogue")).toEqual([
+      "story:rice-ball-bag",
+    ]);
+  });
+
+  it("dispatches the coffee backflush hook on the exact chapter 1 dialogue beat", () => {
+    const previous = state({
+      scene: {
+        kind: "investigation",
+        id: "investigation_scene_7",
+        title: "",
+        index: 0,
+        total: 1,
+        currentSublocationId: "inner",
+        visibleSublocations: [],
+      },
+      mode: {
+        type: "dialogue",
+        current: {
+          kind: "action",
+          text: "相馬律問起店長那晚有沒有聽見聲響。",
+        },
+        queueRemaining: 2,
+        sceneTag: null,
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+        queueToken: {
+          sceneId: "investigation_scene_7",
+          queueGen: 3,
+          cursor: 20,
+        },
+      },
+    });
+    const next = state({
+      scene: {
+        kind: "investigation",
+        id: "investigation_scene_7",
+        title: "",
+        index: 0,
+        total: 1,
+        currentSublocationId: "inner",
+        visibleSublocations: [],
+      },
+      mode: {
+        type: "dialogue",
+        current: {
+          kind: "line",
+          speaker: "黑瀨徹",
+          text: "店長說，他聽到一聲悶響。但那台機器 backflush 的時候，也常那樣。",
+        },
+        queueRemaining: 1,
+        sceneTag: null,
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+        queueToken: {
+          sceneId: "investigation_scene_7",
+          queueGen: 3,
+          cursor: 21,
+        },
+      },
+    });
+    expect(inferGameplaySfxEvents(previous, next, "advance_dialogue")).toEqual([
+      "story:coffee-backflush",
+    ]);
+  });
+
+  it("does not replay the coffee backflush hook for repeated inner exploration state", () => {
+    const previous = state({
+      scene: {
+        kind: "investigation",
+        id: "investigation_scene_7",
+        title: "",
+        index: 0,
+        total: 1,
+        currentSublocationId: "inner",
+        visibleSublocations: [],
+      },
+      mode: {
+        type: "explore",
+        sublocationId: "inner",
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+      },
+    });
+    const next = state({
+      scene: {
+        kind: "investigation",
+        id: "investigation_scene_7",
+        title: "",
+        index: 0,
+        total: 1,
+        currentSublocationId: "inner",
+        visibleSublocations: [],
+      },
+      mode: {
+        type: "explore",
+        sublocationId: "inner",
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+      },
+    });
+    expect(inferGameplaySfxEvents(previous, next, "advance_dialogue")).toEqual(
+      [],
+    );
   });
 
   it("dispatches acquired-evidence only when inventory grows", () => {
