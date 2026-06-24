@@ -34,7 +34,6 @@ export type GameplayCommandName =
   | "present_testimony_item";
 
 const SFX_ASSETS: Partial<Record<GameplaySfxEvent, string>> = {
-  "ui:new-game": "audio.sfx.sfx_usb_insert_chime",
   "story:anonymous-message": "audio.sfx.sfx_anonymous_message_buzz",
   "story:rice-ball-bag": "audio.sfx.sfx_rice_ball_bag_crinkle",
   "story:coffee-backflush": "audio.sfx.sfx_coffee_machine_backflush",
@@ -126,11 +125,10 @@ function enteredChapterOneUsbBeat(
   if (next.chapter.id !== "chapter_1") return false;
   if (next.scene.kind !== "linear" || next.scene.id !== "scene_11")
     return false;
-  if (next.mode.type !== "dialogue") return false;
-  if (!next.mode.sceneTag?.includes("相馬事務所，夜晚")) return false;
-  return (
-    previous?.mode.type !== "dialogue" ||
-    previous.mode.queueToken.cursor !== next.mode.queueToken.cursor
+  return enteredDialogueBeat(
+    previous,
+    next,
+    (kind, text) => kind === "action" && text.includes("隨身碟插上筆電"),
   );
 }
 
@@ -140,9 +138,13 @@ function enteredChapterOneRiceBallBeat(
 ): boolean {
   return (
     next.chapter.id === "chapter_1" &&
+    next.scene.kind === "interrogation" &&
     next.scene.id === "interrogation_scene_10" &&
-    next.mode.type === "interrogation" &&
-    previous?.scene.id !== next.scene.id
+    enteredDialogueBeat(
+      previous,
+      next,
+      (kind, text) => kind === "action" && text.includes("飯糰袋"),
+    )
   );
 }
 
@@ -154,8 +156,28 @@ function enteredChapterOneCoffeeBackflushBeat(
     next.chapter.id === "chapter_1" &&
     next.scene.kind === "investigation" &&
     next.scene.id === "investigation_scene_7" &&
-    next.mode.type === "explore" &&
-    next.mode.sublocationId === "inner"
+    enteredDialogueBeat(
+      previous,
+      next,
+      (kind, text) =>
+        kind === "line" && text.includes("那台機器 backflush 的時候"),
+    )
+  );
+}
+
+function enteredDialogueBeat(
+  previous: GameStateView | null,
+  next: GameStateView,
+  matches: (kind: string, text: string) => boolean,
+): boolean {
+  if (next.mode.type !== "dialogue") return false;
+  if (!matches(next.mode.current.kind, next.mode.current.text)) return false;
+  if (previous?.mode.type !== "dialogue") return true;
+
+  return (
+    previous.mode.queueToken.sceneId !== next.mode.queueToken.sceneId ||
+    previous.mode.queueToken.queueGen !== next.mode.queueToken.queueGen ||
+    previous.mode.queueToken.cursor !== next.mode.queueToken.cursor
   );
 }
 
