@@ -24,6 +24,7 @@
   import InventoryPanel from "$lib/components/InventoryPanel.svelte";
   import ErrorBanner from "$lib/components/ErrorBanner.svelte";
   import GameComplete from "$lib/components/GameComplete.svelte";
+  import GameplayAudio from "$lib/components/GameplayAudio.svelte";
   import InterrogationView from "$lib/components/InterrogationView.svelte";
   import MainMenu from "$lib/components/MainMenu.svelte";
 
@@ -46,6 +47,7 @@
 </script>
 
 {#if gameState.value}
+  <GameplayAudio mode={gameState.value.mode} />
   <GameShell
     gameState={gameState.value}
     onReset={handleReset}
