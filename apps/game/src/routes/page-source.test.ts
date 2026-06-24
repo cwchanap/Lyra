@@ -33,3 +33,14 @@ describe("ExploreView HUD placement", () => {
     expect(source).not.toContain("<SublocationNav\n    sublocations=");
   });
 });
+
+describe("+page gameplay audio wiring", () => {
+  it("mounts GameplayAudio whenever a game state exists", () => {
+    const source = pageSource();
+
+    expect(source).toContain(
+      'import GameplayAudio from "$lib/components/GameplayAudio.svelte";',
+    );
+    expect(source).toContain("<GameplayAudio mode={gameState.value.mode} />");
+  });
+});
