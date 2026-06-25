@@ -20,6 +20,18 @@ export type GameplaySfxEvent =
   | "story:coffee-backflush"
   | "story:usb-insert";
 
+// Reserved (intentionally unmapped) events for v1: "ui:action-unavailable",
+// "interrogation:wrong-present", and "interrogation:successful-contradiction"
+// are part of the spec's first-pass event families but have no Chapter 1 SFX
+// asset. The design spec explicitly permits an event to resolve to NO SOUND,
+// and Chapter 1 maps only four materially meaningful SFX. These remain in the
+// union as reserved types: "action-unavailable" needs UI-level dispatch (an
+// unavailable-action signal that the current disabled-prop gating does not
+// produce), and the two interrogation outcomes need Rust contradiction-result
+// signals that are not yet wired. Do NOT emit them from
+// inferGameplaySfxEvents until they map to a real asset — emitting unmapped
+// events would only imply functionality that produces silence.
+
 export type GameplayCommandName =
   | "start_game"
   | "reset_game"
@@ -123,6 +135,14 @@ function enteredChapterOneUsbBeat(
   previous: GameStateView | null,
   next: GameStateView,
 ): boolean {
+  // v1 story-beat SFX couple to specific authored Chapter 1 dialogue lines by
+  // substring (see also enteredChapterOneRiceBallBeat /
+  // enteredChapterOneCoffeeBackflushBeat). This is intentional for the four
+  // materially meaningful Chapter 1 SFX but fragile: if a writer edits one of
+  // these lines, the cue silently stops firing. Each predicate is gated by
+  // chapter id + scene id + dialogue kind to narrow the blast radius. A
+  // compiler-validated tag is the future-proof path; for v1 the substring
+  // match is an accepted, documented trade-off.
   if (next.chapter.id !== "chapter_1") return false;
   if (next.scene.kind !== "linear" || next.scene.id !== "scene_11")
     return false;

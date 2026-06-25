@@ -5,11 +5,13 @@ import type { Mode } from "$lib/state/types";
 const mocks = vi.hoisted(() => ({
   syncGameplayAudioMode: vi.fn(),
   disposeGameplayAudio: vi.fn(),
+  retryLockedGameplayAudio: vi.fn(),
 }));
 
 vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
   syncGameplayAudioMode: mocks.syncGameplayAudioMode,
   disposeGameplayAudio: mocks.disposeGameplayAudio,
+  retryLockedGameplayAudio: mocks.retryLockedGameplayAudio,
 }));
 
 import GameplayAudio from "./GameplayAudio.svelte";
@@ -27,6 +29,7 @@ describe("GameplayAudio", () => {
     cleanup();
     mocks.syncGameplayAudioMode.mockClear();
     mocks.disposeGameplayAudio.mockClear();
+    mocks.retryLockedGameplayAudio.mockClear();
   });
 
   it("syncs the initial mode to the audio runtime on mount", () => {
@@ -47,5 +50,18 @@ describe("GameplayAudio", () => {
     await rerender({ mode: gameComplete });
 
     expect(mocks.syncGameplayAudioMode).toHaveBeenCalledWith(gameComplete);
+  });
+
+  it("retries locked audio on the first player gesture", async () => {
+    render(GameplayAudio, { mode: exploreMode });
+    expect(mocks.retryLockedGameplayAudio).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new Event("pointerdown"));
+
+    expect(mocks.retryLockedGameplayAudio).toHaveBeenCalledTimes(1);
+
+    // The listener arms once per mount: a second gesture does not retry again.
+    window.dispatchEvent(new Event("pointerdown"));
+    expect(mocks.retryLockedGameplayAudio).toHaveBeenCalledTimes(1);
   });
 });

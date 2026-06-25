@@ -227,6 +227,8 @@ export class GameplayAudioController {
   private readonly logger: LoggerLike;
   private readonly sfxBackend: SfxBackend | null;
   private disposed = false;
+  private playbackLocked = false;
+  private lastDesiredInput: LoopChannelInput = { bgm: null, bgs: null };
 
   constructor(options: GameplayAudioControllerOptions = {}) {
     this.audioFactory = options.audioFactory ?? defaultAudioFactory;
@@ -241,6 +243,7 @@ export class GameplayAudioController {
     input: LoopChannelInput,
     preferences: AudioPreferences,
   ): Promise<void> {
+    this.lastDesiredInput = { bgm: input.bgm, bgs: input.bgs };
     await Promise.all([
       this.updateLoopChannel("bgm", input.bgm, preferences),
       this.updateLoopChannel("bgs", input.bgs, preferences),
@@ -254,6 +257,18 @@ export class GameplayAudioController {
       loop.audio.muted = preferences.muted;
       loop.audio.volume = channelVolume(channel, preferences);
     }
+  }
+
+  /**
+   * Re-attempts the desired loop channels after a browser autoplay lock
+   * clears (typically on the first user gesture). No-op if playback was never
+   * locked. Per the gameplay-audio design spec: autoplay rejection records a
+   * locked state and retries after the next player gesture.
+   */
+  unlock(preferences: AudioPreferences): void {
+    if (!this.playbackLocked) return;
+    this.playbackLocked = false;
+    void this.updateLoopChannels(this.lastDesiredInput, preferences);
   }
 
   preloadSfx(assetId: string | null): void {
@@ -451,8 +466,17 @@ export class GameplayAudioController {
     const playActiveLoop = async () => {
       try {
         await audio.play();
+        // Any successful loop playback clears an autoplay lock: once media is
+        // actually playing the session is unlocked and earlier rejections no
+        // longer need a gesture-driven retry.
+        this.playbackLocked = false;
       } catch (error) {
         if (this.loops[channel]?.audio !== audio) return;
+        // Autoplay-policy rejection (e.g. NotAllowedError/AbortError before the
+        // first user gesture) is recoverable. Record a locked state so a later
+        // gesture can re-sync the desired loops via unlock(); the loop itself
+        // is still stopped so it does not sit in a half-started state.
+        this.playbackLocked = true;
         warnOnce(playbackFailureDetail(url, error));
         if (this.loops[channel]?.audio === audio) this.stopLoop(channel);
       }
