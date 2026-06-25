@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_AUDIO_PREFERENCES } from "./audio-preferences";
 import {
   GameplayAudioController,
@@ -152,6 +152,21 @@ describe("GameplayAudioController", () => {
 
     expect(bgs.currentTime).toBe(0);
     expect(bgs.play).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores time updates while the loop is still well away from the boundary", async () => {
+    const audio = controller();
+    await audio.updateLoopChannels(
+      { bgm: null, bgs: { channel: "bgs", assetId: "audio.bgs.rain" } },
+      preferences,
+    );
+    const bgs = created[0]!;
+
+    bgs.currentTime = 5;
+    bgs.emit("timeupdate");
+
+    expect(bgs.currentTime).toBe(5);
+    expect(bgs.play).toHaveBeenCalledTimes(1);
   });
 
   it("keeps unchanged loops without restarting", async () => {
@@ -496,5 +511,395 @@ describe("GameplayAudioController", () => {
     );
     audio.dispose();
     expect(created[0]?.pause).toHaveBeenCalled();
+  });
+
+  it("warns and stops a loop when the media element fires an error", async () => {
+    const audio = controller();
+    await audio.updateLoopChannels(
+      { bgm: { channel: "bgm", assetId: "audio.bgm.review" }, bgs: null },
+      preferences,
+    );
+    const bgm = created[0]!;
+
+    bgm.emit("error");
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("/assets/audio/bgm/review.ogg"),
+    );
+    expect(bgm.pause).toHaveBeenCalled();
+  });
+
+  it("skips loop restart scheduling for non-finite durations", async () => {
+    vi.useFakeTimers();
+    try {
+      const audio = controller();
+      await audio.updateLoopChannels(
+        { bgm: null, bgs: { channel: "bgs", assetId: "audio.bgs.rain" } },
+        preferences,
+      );
+      const bgs = created[0]!;
+      bgs.duration = Number.NaN;
+
+      bgs.emit("loadedmetadata");
+      vi.advanceTimersByTime(60_000);
+
+      expect(bgs.currentTime).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("skips loop restart scheduling for clips shorter than the restart margin", async () => {
+    vi.useFakeTimers();
+    try {
+      const audio = controller();
+      await audio.updateLoopChannels(
+        { bgm: null, bgs: { channel: "bgs", assetId: "audio.bgs.rain" } },
+        preferences,
+      );
+      const bgs = created[0]!;
+      bgs.duration = 0.2;
+
+      bgs.emit("loadedmetadata");
+      vi.advanceTimersByTime(60_000);
+
+      expect(bgs.currentTime).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    [
+      "a string",
+      "media dropped the connection",
+      "media dropped the connection",
+    ],
+    [
+      "an Error-like object",
+      { name: "NotSupported", message: "nope" },
+      "NotSupported: nope",
+    ],
+    ["an unrecognized shape", 42, "42"],
+  ])(
+    "normalizes loop playback rejections that are %s",
+    async (_label, rejection, expected) => {
+      const audio = new GameplayAudioController({
+        audioFactory: (url) => {
+          const element = new FakeAudio(url);
+          element.play = vi.fn(() => Promise.reject(rejection));
+          created.push(element);
+          return element;
+        },
+        logger: { warn },
+      });
+      await audio.updateLoopChannels(
+        { bgm: { channel: "bgm", assetId: "audio.bgm.review" }, bgs: null },
+        preferences,
+      );
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(expected));
+    },
+  );
+
+  it("warns when a loop asset id is malformed", async () => {
+    const audio = controller();
+    await audio.updateLoopChannels(
+      { bgm: { channel: "bgm", assetId: "audio.muzak.review" }, bgs: null },
+      preferences,
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("audio.muzak.review"),
+    );
+    expect(created).toHaveLength(0);
+  });
+
+  it("warns when an SFX asset id is malformed during preload", () => {
+    const audio = controller();
+    audio.preloadSfx("audio.muzak.tick");
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("audio.muzak.tick"),
+    );
+    expect(created).toHaveLength(0);
+  });
+
+  it("warns when an SFX asset id is malformed during play", () => {
+    const audio = controller();
+    audio.playSfx("audio.muzak.tick", preferences);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("audio.muzak.tick"),
+    );
+    expect(created).toHaveLength(0);
+  });
+
+  it("ignores a null SFX preload request", () => {
+    const audio = controller();
+    audio.preloadSfx(null);
+    expect(warn).not.toHaveBeenCalled();
+    expect(created).toHaveLength(0);
+  });
+
+  it("destroys an SFX and warns when its play() throws synchronously", async () => {
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        element.play = vi.fn(() => {
+          throw new Error("sync blocked");
+        });
+        created.push(element);
+        return element;
+      },
+      logger: { warn },
+    });
+    audio.playSfx("audio.sfx.sfx_usb_insert_chime", preferences);
+    const sfx = created[0]!;
+    await Promise.resolve();
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("sync blocked"));
+    expect(sfx.pause).toHaveBeenCalledTimes(1);
+    expect(sfx.listeners.get("error")?.size ?? 0).toBe(0);
+  });
+
+  it("uses the default HTMLAudioElement factory when none is supplied", () => {
+    const audio = new GameplayAudioController({
+      logger: { warn },
+      sfxBackend: null,
+    });
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+class FakeBufferSourceNode {
+  buffer: unknown = null;
+  onended: (() => void) | null = null;
+  connect = vi.fn();
+  start = vi.fn();
+  stop = vi.fn();
+}
+
+class FakeGainNode {
+  gain = { value: 1 };
+  connect = vi.fn();
+}
+
+class FakeAudioContext {
+  state: AudioContextState = "running";
+  latencyHint?: string;
+  decodeAudioData = vi.fn(async (_data: ArrayBuffer) => ({ length: 1 }));
+  resume = vi.fn(async () => {
+    this.state = "running";
+  });
+  close = vi.fn(async () => undefined);
+  destination = { id: "destination" };
+  createBufferSource = vi.fn(() => new FakeBufferSourceNode());
+  createGain = vi.fn(() => new FakeGainNode());
+
+  constructor(options?: { latencyHint?: string }) {
+    this.latencyHint = options?.latencyHint;
+    instances.push(this);
+  }
+}
+
+const instances: FakeAudioContext[] = [];
+
+function okResponse(data = new ArrayBuffer(8)): Response {
+  return new Response(data, { status: 200 });
+}
+
+describe("GameplayAudioController default SFX backend", () => {
+  let warn: (message: string) => void;
+  let fetchMock: ReturnType<typeof vi.fn>;
+  let created: FakeAudio[];
+
+  beforeEach(() => {
+    warn = vi.fn();
+    fetchMock = vi.fn();
+    created = [];
+    instances.length = 0;
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function controller() {
+    return new GameplayAudioController({ logger: { warn } });
+  }
+
+  async function flush() {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  it("builds an interactive-latency AudioContext eagerly", () => {
+    controller();
+    expect(instances).toHaveLength(1);
+    expect(instances[0]?.latencyHint).toBe("interactive");
+  });
+
+  it("preloads a buffer and plays it through the low-latency graph", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const audio = controller();
+    const ctx = instances[0]!;
+
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    await flush();
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      "/assets/audio/sfx/sfx_dialogue_proceed_tick.ogg",
+    );
+    expect(ctx.decodeAudioData).toHaveBeenCalledTimes(1);
+
+    audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
+    const source = ctx.createBufferSource.mock.results[0]?.value;
+    const gain = ctx.createGain.mock.results[0]?.value;
+    expect(source.buffer).toBeDefined();
+    expect(gain.gain.value).toBe(preferences.sfxVolume);
+    expect(source.connect).toHaveBeenCalledExactlyOnceWith(gain);
+    expect(gain.connect).toHaveBeenCalledExactlyOnceWith(ctx.destination);
+    expect(source.start).toHaveBeenCalledExactlyOnceWith(0);
+  });
+
+  it("starts preloading and falls back when the buffer is not ready", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const audio = controller();
+    const ctx = instances[0]!;
+
+    audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
+    expect(ctx.createBufferSource).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await flush();
+    expect(ctx.decodeAudioData).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns once when the SFX fetch is not ok and never plays the buffer", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 404 }));
+    const audio = controller();
+    const ctx = instances[0]!;
+
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    await flush();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("HTTP 404"));
+
+    audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
+    expect(ctx.createBufferSource).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns once when audio decoding fails", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const audio = controller();
+    const ctx = instances[0]!;
+    ctx.decodeAudioData.mockRejectedValueOnce(new Error("decode failed"));
+
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    await flush();
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("decode failed"));
+    audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
+    expect(ctx.createBufferSource).not.toHaveBeenCalled();
+  });
+
+  it("resumes a suspended AudioContext before starting playback", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const audio = controller();
+    const ctx = instances[0]!;
+    ctx.state = "suspended";
+
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    await flush();
+    audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
+
+    expect(ctx.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns when resuming a suspended context rejects", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const audio = controller();
+    const ctx = instances[0]!;
+    ctx.state = "suspended";
+    ctx.resume.mockRejectedValueOnce(new Error("blocked"));
+
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    await flush();
+    audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
+    await flush();
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("blocked"));
+  });
+
+  it("warns and skips playback when starting the buffer source throws", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const audio = controller();
+    const ctx = instances[0]!;
+    ctx.createBufferSource.mockImplementationOnce(() => {
+      throw new Error("graph broken");
+    });
+
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    await flush();
+    audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
+
+    expect(ctx.createBufferSource).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("graph broken"));
+  });
+
+  it("stops active sources and closes the context on dispose", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const audio = controller();
+    const ctx = instances[0]!;
+
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    await flush();
+    audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
+    const source = ctx.createBufferSource.mock.results[0]?.value;
+
+    audio.dispose();
+
+    expect(source.stop).toHaveBeenCalledTimes(1);
+    expect(ctx.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns when closing the SFX context rejects", async () => {
+    fetchMock.mockResolvedValue(okResponse());
+    const audio = controller();
+    const ctx = instances[0]!;
+    ctx.close.mockRejectedValueOnce(new Error("closing blocked"));
+
+    audio.dispose();
+    await flush();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("closing blocked"),
+    );
+  });
+
+  it("falls back to webkitAudioContext when AudioContext is absent", () => {
+    vi.stubGlobal("AudioContext", undefined);
+    vi.stubGlobal("webkitAudioContext", FakeAudioContext);
+    fetchMock.mockResolvedValue(okResponse());
+
+    controller();
+    expect(instances).toHaveLength(1);
+  });
+
+  it("produces no low-latency backend when neither context nor fetch exist", () => {
+    vi.stubGlobal("AudioContext", undefined);
+    vi.stubGlobal("fetch", undefined);
+
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        created.push(element);
+        return element;
+      },
+      logger: { warn },
+    });
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+
+    expect(instances).toHaveLength(0);
+    expect(created).toHaveLength(1);
   });
 });

@@ -204,4 +204,89 @@ describe("DialogueBox", () => {
     expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
     expect(onAdvance).not.toHaveBeenCalled();
   });
+
+  it("advances dialogue when Space is pressed on the window", () => {
+    const { onAdvance } = renderDialogueBox({ kind: "action", text: "hello" });
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+
+    expect(onAdvance).toHaveBeenCalledWith(token);
+  });
+
+  it("advances dialogue when Enter is pressed on the window", () => {
+    const { onAdvance } = renderDialogueBox({ kind: "action", text: "hello" });
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+
+    expect(onAdvance).toHaveBeenCalledWith(token);
+  });
+
+  it("plays advance feedback before advancing from the keyboard", () => {
+    const order: string[] = [];
+    const onAdvanceFeedback = () => order.push("feedback");
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { onAdvanceFeedback },
+    );
+    onAdvance.mockImplementation(() => order.push("advance"));
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+
+    expect(onAdvance).toHaveBeenCalledWith(token);
+    expect(order).toEqual(["feedback", "advance"]);
+  });
+
+  it("does not advance from the keyboard while disabled", () => {
+    const onAdvance = vi.fn();
+    renderDialogueBox({ kind: "action", text: "hello" }, { disabled: true });
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("ignores repeated key holds", () => {
+    const onAdvance = vi.fn();
+    renderDialogueBox({ kind: "action", text: "hello" });
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true, repeat: true }),
+    );
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("ignores keys that are not Space or Enter", () => {
+    const onAdvance = vi.fn();
+    renderDialogueBox({ kind: "action", text: "hello" });
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+    );
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("does not advance from the keyboard while another element is focused", () => {
+    const onAdvance = vi.fn();
+    renderDialogueBox({ kind: "action", text: "hello" });
+
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+    input.remove();
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
 });

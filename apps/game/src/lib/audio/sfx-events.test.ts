@@ -373,6 +373,101 @@ describe("inferGameplaySfxEvents", () => {
     ]);
   });
 
+  it("dispatches acquired-statement only when the statement inventory grows", () => {
+    const previous = state();
+    const next = state({
+      inventory: {
+        evidence: [],
+        statements: [
+          {
+            id: "stmt_1",
+            speaker: "黑瀨徹",
+            content: "我那天晚上在店裡。",
+            onReexamine: null,
+            acquiredInChapterId: "chapter_1",
+            acquiredInSceneId: "investigation_scene_7",
+          },
+        ],
+      },
+    });
+    expect(inferGameplaySfxEvents(previous, next, "interview_topic")).toEqual([
+      "investigation:topic-discussed",
+      "investigation:statement-acquired",
+    ]);
+  });
+
+  it("dispatches phase-entered when the interrogation phase changes", () => {
+    const interrogation = (phaseId: string) =>
+      state({
+        scene: {
+          kind: "interrogation",
+          id: "interrogation_scene_1",
+          title: "",
+          index: 0,
+          total: 1,
+          currentPhaseId: phaseId,
+          visiblePhases: [],
+        },
+        mode: {
+          type: "interrogation",
+          phaseId,
+          backgroundAssetId: null,
+          bgm: null,
+          bgs: null,
+        },
+      });
+    expect(
+      inferGameplaySfxEvents(
+        interrogation("inquiry"),
+        interrogation("testimony"),
+        "answer_interrogation_question",
+      ),
+    ).toEqual([
+      "interrogation:question-answered",
+      "interrogation:phase-entered",
+    ]);
+  });
+
+  it("dispatches testimony-pressed for the press command", () => {
+    expect(
+      inferGameplaySfxEvents(state(), state(), "press_testimony_statement"),
+    ).toEqual(["interrogation:testimony-pressed"]);
+  });
+
+  it("emits a ui:new-game event on start_game", () => {
+    const neutral = state({
+      scene: {
+        kind: "investigation",
+        id: "investigation_scene_1",
+        title: "",
+        index: 0,
+        total: 1,
+        currentSublocationId: "main",
+        visibleSublocations: [],
+      },
+    });
+    expect(inferGameplaySfxEvents(null, neutral, "start_game")).toEqual([
+      "ui:new-game",
+    ]);
+  });
+
+  it("emits a ui:reset event on reset_game", () => {
+    const neutral = state({
+      scene: {
+        kind: "investigation",
+        id: "investigation_scene_1",
+        title: "",
+        index: 0,
+        total: 1,
+        currentSublocationId: "main",
+        visibleSublocations: [],
+      },
+    });
+    expect(inferGameplaySfxEvents(null, neutral, "reset_game")).toEqual([
+      "ui:reset",
+    ]);
+  });
+
   it("does not dispatch success SFX without a next state", () => {
     expect(inferGameplaySfxEvents(state(), null, "inspect_hotspot")).toEqual(
       [],
