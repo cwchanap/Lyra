@@ -45,4 +45,32 @@ describe("AudioSettings", () => {
     });
     expect(onUpdate).toHaveBeenCalledWith({ bgsVolume: 0.25 });
   });
+
+  it("updates the BGM and SFX channel volumes", async () => {
+    const onUpdate = vi.fn();
+
+    render(AudioSettings, { preferences, onUpdate });
+
+    await fireEvent.input(screen.getByLabelText("BGM"), {
+      target: { value: "80" },
+    });
+    await fireEvent.input(screen.getByLabelText("SFX"), {
+      target: { value: "10" },
+    });
+
+    expect(onUpdate).toHaveBeenCalledWith({ bgmVolume: 0.8 });
+    expect(onUpdate).toHaveBeenCalledWith({ sfxVolume: 0.1 });
+  });
+
+  it("toggles the mute label and aria state when muted", () => {
+    render(AudioSettings, {
+      preferences: { ...preferences, muted: true },
+      onUpdate: vi.fn(),
+    });
+
+    const button = screen.getByRole("button", { name: /靜音/ });
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toHaveAttribute("aria-label", "音訊取消靜音");
+    expect(screen.getByText("OFF")).toBeInTheDocument();
+  });
 });

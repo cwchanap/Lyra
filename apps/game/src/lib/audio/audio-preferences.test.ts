@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   AUDIO_PREFERENCES_STORAGE_KEY,
   DEFAULT_AUDIO_PREFERENCES,
+  browserStorage,
   loadAudioPreferences,
   normalizeAudioPreferences,
   saveAudioPreferences,
@@ -78,5 +79,71 @@ describe("audio preferences", () => {
       bgsVolume: 0.2,
       sfxVolume: 0,
     });
+  });
+
+  it("returns false when persisting throws", () => {
+    const failing: Pick<Storage, "getItem" | "setItem"> = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error("quota denied");
+      },
+    };
+    expect(saveAudioPreferences(DEFAULT_AUDIO_PREFERENCES, failing)).toBe(
+      false,
+    );
+  });
+});
+
+describe("browserStorage", () => {
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("exposes window.localStorage in a browser-like environment", () => {
+    expect(browserStorage()).toBe(window.localStorage);
+  });
+
+  it("loads preferences through the default browser storage", () => {
+    window.localStorage.setItem(
+      AUDIO_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({
+        muted: true,
+        bgmVolume: 0.3,
+        bgsVolume: 0.4,
+        sfxVolume: 0.5,
+      }),
+    );
+    expect(loadAudioPreferences()).toEqual({
+      muted: true,
+      bgmVolume: 0.3,
+      bgsVolume: 0.4,
+      sfxVolume: 0.5,
+    });
+  });
+
+  it("persists preferences through the default browser storage", () => {
+    expect(saveAudioPreferences(DEFAULT_AUDIO_PREFERENCES)).toBe(true);
+    expect(
+      JSON.parse(
+        window.localStorage.getItem(AUDIO_PREFERENCES_STORAGE_KEY) ?? "{}",
+      ),
+    ).toEqual(DEFAULT_AUDIO_PREFERENCES);
+  });
+
+  it("returns null when localStorage access throws", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(window, "localStorage");
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get() {
+        throw new Error("SecurityError");
+      },
+    });
+    try {
+      expect(browserStorage()).toBeNull();
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(window, "localStorage", descriptor);
+      }
+    }
   });
 });
