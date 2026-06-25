@@ -16,8 +16,29 @@ export const audioPreferences = $state<AudioPreferences>(
   loadAudioPreferences(),
 );
 
-const controller = new GameplayAudioController();
-controller.preloadSfx(assetIdForGameplaySfxEvent("ui:menu-confirm"));
+// The controller is a process-lifetime singleton, but it must be recreatable
+// after disposeGameplayAudio(): dispose() closes the SFX AudioContext
+// permanently, so a controller that has been torn down can never serve audio
+// again. Svelte HMR (dev) and any future "return to main menu" flow unmount
+// and remount GameplayAudio.svelte, firing onDestroy. Without recreation, all
+// audio in the rest of that session would be silent. We track disposal here
+// and lazily spin up a fresh controller on the next use.
+function createController(): GameplayAudioController {
+  const next = new GameplayAudioController();
+  next.preloadSfx(assetIdForGameplaySfxEvent("ui:menu-confirm"));
+  return next;
+}
+
+let controller = createController();
+let disposed = false;
+
+function activeController(): GameplayAudioController {
+  if (disposed) {
+    controller = createController();
+    disposed = false;
+  }
+  return controller;
+}
 
 export function updateAudioPreferences(patch: Partial<AudioPreferences>): void {
   const next = normalizeAudioPreferences({ ...audioPreferences, ...patch });
@@ -26,19 +47,20 @@ export function updateAudioPreferences(patch: Partial<AudioPreferences>): void {
   audioPreferences.bgsVolume = next.bgsVolume;
   audioPreferences.sfxVolume = next.sfxVolume;
   saveAudioPreferences(next);
-  controller.applyPreferences(next);
+  activeController().applyPreferences(next);
 }
 
 export function syncGameplayAudioMode(mode: Mode): void {
+  const active = activeController();
   if (mode.type === "gameComplete") {
     // Stop the gameplay mix without disposing the singleton: the player can
     // start a new game in the same session, and dispose() would close the SFX
     // AudioContext permanently (leaving all later SFX silent). True teardown
     // belongs to disposeGameplayAudio().
-    controller.stopLoopChannels();
+    active.stopLoopChannels();
     return;
   }
-  void controller.updateLoopChannels(
+  void active.updateLoopChannels(
     {
       bgm: mode.bgm ?? null,
       bgs: mode.bgs ?? null,
@@ -50,11 +72,24 @@ export function syncGameplayAudioMode(mode: Mode): void {
 export function playGameplaySfxEvent(event: GameplaySfxEvent): void {
   const assetId = assetIdForGameplaySfxEvent(event);
   if (!assetId) return;
-  void controller.playSfx(assetId, audioPreferences);
+  void activeController().playSfx(assetId, audioPreferences);
+}
+
+/**
+ * Re-attempts the desired BGM/BGS loops after a browser autoplay lock clears
+ * (typically on the first user gesture). No-op if playback was never locked
+ * or if the singleton has been explicitly disposed. See GameplayAudio design
+ * spec: "autoplay rejection records a locked state and retries after the next
+ * player gesture."
+ */
+export function retryLockedGameplayAudio(): void {
+  if (disposed) return;
+  controller.unlock(audioPreferences);
 }
 
 export function disposeGameplayAudio(): void {
   controller.dispose();
+  disposed = true;
 }
 
 export function resetAudioPreferences(): void {

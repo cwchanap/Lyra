@@ -3,6 +3,7 @@ import { DEFAULT_AUDIO_PREFERENCES } from "./audio-preferences";
 import {
   GameplayAudioController,
   type AudioElementLike,
+  type LoopChannelInput,
   type SfxBackend,
 } from "./audio-controller";
 
@@ -511,6 +512,60 @@ describe("GameplayAudioController", () => {
     );
     audio.dispose();
     expect(created[0]?.pause).toHaveBeenCalled();
+  });
+
+  it("retries the desired loop after an autoplay lock clears via unlock()", async () => {
+    const warnFn = vi.fn<(message: string) => void>();
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        // First loop attempt is rejected by the browser autoplay policy.
+        if (created.length === 0) {
+          element.play = vi.fn(() =>
+            Promise.reject(new Error("NotAllowedError: autoplay blocked")),
+          );
+        }
+        created.push(element);
+        return element;
+      },
+      logger: { warn: warnFn },
+    });
+    const input: LoopChannelInput = {
+      bgm: { channel: "bgm", assetId: "audio.bgm.review" },
+      bgs: null,
+    };
+
+    await audio.updateLoopChannels(input, preferences);
+
+    // The rejected loop was warned about and stopped, and the lock recorded.
+    expect(warnFn).toHaveBeenCalledWith(
+      expect.stringContaining("NotAllowedError"),
+    );
+    expect(created[0]?.pause).toHaveBeenCalled();
+
+    // Retry after the first user gesture: unlock re-attempts the desired loop
+    // by spinning up a fresh media element that this time plays successfully.
+    audio.unlock(preferences);
+    await Promise.resolve();
+
+    expect(created).toHaveLength(2);
+    expect(created[1]?.play).toHaveBeenCalledTimes(1);
+    expect(created[1]?.volume).toBe(preferences.bgmVolume);
+  });
+
+  it("unlock() is a no-op when playback was never locked", async () => {
+    const audio = controller();
+    await audio.updateLoopChannels(
+      { bgm: { channel: "bgm", assetId: "audio.bgm.review" }, bgs: null },
+      preferences,
+    );
+    const activeBefore = created.length;
+
+    audio.unlock(preferences);
+    await Promise.resolve();
+
+    // No new loop is created when nothing was locked.
+    expect(created).toHaveLength(activeBefore);
   });
 
   it("warns and stops a loop when the media element fires an error", async () => {

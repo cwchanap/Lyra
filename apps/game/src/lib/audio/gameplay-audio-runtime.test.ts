@@ -15,6 +15,7 @@ type ControllerSpy = {
   updateLoopChannels: ReturnType<typeof vi.fn>;
   stopLoopChannels: ReturnType<typeof vi.fn>;
   playSfx: ReturnType<typeof vi.fn>;
+  unlock: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
 };
 
@@ -26,6 +27,7 @@ const mocks = vi.hoisted(() => {
     updateLoopChannels = vi.fn(async () => undefined);
     stopLoopChannels = vi.fn();
     playSfx = vi.fn();
+    unlock = vi.fn();
     dispose = vi.fn();
     constructor() {
       instances.push(this as unknown as ControllerSpy);
@@ -187,6 +189,49 @@ describe("gameplay audio runtime", () => {
     const runtime = await loadRuntime();
     runtime.disposeGameplayAudio();
     expect(controller().dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("recreates the controller after disposal so audio stays usable across remounts", async () => {
+    // Svelte HMR (dev) and any future return-to-menu flow unmount/remount
+    // GameplayAudio.svelte, firing onDestroy. The controller singleton must
+    // come back to life on the next use rather than staying silently dead.
+    mocks.assetIdForGameplaySfxEvent.mockReturnValue("audio.sfx.tick");
+    const runtime = await loadRuntime();
+    const first = controller();
+    runtime.disposeGameplayAudio();
+
+    runtime.syncGameplayAudioMode(exploreMode);
+
+    expect(mocks.instances).toHaveLength(2);
+    const second = controller();
+    expect(second).not.toBe(first);
+    expect(second.preloadSfx).toHaveBeenCalledExactlyOnceWith("audio.sfx.tick");
+    expect(second.updateLoopChannels).toHaveBeenCalledExactlyOnceWith(
+      {
+        bgm: exploreMode.bgm,
+        bgs: exploreMode.bgs,
+      },
+      expect.objectContaining({ muted: false }),
+    );
+  });
+
+  it("retries locked audio playback through the controller", async () => {
+    const runtime = await loadRuntime();
+    runtime.retryLockedGameplayAudio();
+    expect(controller().unlock).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ muted: false }),
+    );
+  });
+
+  it("does not retry locked audio after explicit disposal", async () => {
+    const runtime = await loadRuntime();
+    const first = controller();
+    runtime.disposeGameplayAudio();
+    first.unlock.mockClear();
+
+    runtime.retryLockedGameplayAudio();
+
+    expect(first.unlock).not.toHaveBeenCalled();
   });
 
   it("resets preferences back to the defaults", async () => {
