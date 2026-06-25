@@ -31,7 +31,11 @@ export function updateAudioPreferences(patch: Partial<AudioPreferences>): void {
 
 export function syncGameplayAudioMode(mode: Mode): void {
   if (mode.type === "gameComplete") {
-    controller.dispose();
+    // Stop the gameplay mix without disposing the singleton: the player can
+    // start a new game in the same session, and dispose() would close the SFX
+    // AudioContext permanently (leaving all later SFX silent). True teardown
+    // belongs to disposeGameplayAudio().
+    controller.stopLoopChannels();
     return;
   }
   void controller.updateLoopChannels(

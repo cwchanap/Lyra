@@ -225,23 +225,44 @@ export async function runGenerateCommand(
     // strand the entry with the plan still saying "approved".
     let outputWritten = false;
     try {
+      // Compute the prompt hash up front: it both invalidates the provider
+      // cache (below) and is written back as provenance after a successful
+      // generation. The cache is keyed only by channel/id on disk, so without
+      // comparing the stored plan promptHash we'd silently reuse an MP3 whose
+      // prompt a writer has since edited.
+      const promptHash = createHash("sha256")
+        .update(target.entry.prompt)
+        .digest("hex")
+        .slice(0, 12);
       const cachedProviderPath = resolve(
         repoRoot,
         audioCacheRelativePath(target.entry.channel, target.entry.id),
       );
-      const providerBytes =
-        !parsed.value.force && existsSync(cachedProviderPath)
-          ? readFileSync(cachedProviderPath)
-          : await client.generate({
-              id: target.entry.id,
-              channel: target.entry.channel,
-              prompt: target.entry.prompt,
-              loop: target.entry.loop,
-              intendedDurationSeconds: target.entry.intendedDurationSeconds,
-            });
-      if (!parsed.value.force && existsSync(cachedProviderPath)) {
+      const storedPromptHash = target.entry.promptHash;
+      const cacheIsStale =
+        storedPromptHash !== undefined && storedPromptHash !== promptHash;
+      const cacheHit =
+        !parsed.value.force && existsSync(cachedProviderPath) && !cacheIsStale;
+      const providerBytes = cacheHit
+        ? readFileSync(cachedProviderPath)
+        : await client.generate({
+            id: target.entry.id,
+            channel: target.entry.channel,
+            prompt: target.entry.prompt,
+            loop: target.entry.loop,
+            intendedDurationSeconds: target.entry.intendedDurationSeconds,
+          });
+      if (cacheHit) {
         stdout(
           `[audio] reusing cached mp3 ${audioCacheRelativePath(target.entry.channel, target.entry.id)}`,
+        );
+      } else if (
+        !parsed.value.force &&
+        existsSync(cachedProviderPath) &&
+        cacheIsStale
+      ) {
+        stdout(
+          `[audio] prompt changed (${storedPromptHash} -> ${promptHash}); regenerating ${audioCacheRelativePath(target.entry.channel, target.entry.id)}`,
         );
       }
       // Build the write args conditionally so we don't pass `convert: undefined`
@@ -265,10 +286,6 @@ export async function runGenerateCommand(
       // endpoint, prompt hash, timestamp, output path, and forced flag so the
       // plan is the audit trail. Written after each entry so a mid-batch
       // failure still records completed entries.
-      const promptHash = createHash("sha256")
-        .update(target.entry.prompt)
-        .digest("hex")
-        .slice(0, 12);
       applyGenerationMetadataToPlan(planFullPath, {
         entryId: target.entry.id,
         provider: "elevenlabs",

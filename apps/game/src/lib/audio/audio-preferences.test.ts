@@ -81,6 +81,32 @@ describe("audio preferences", () => {
     });
   });
 
+  it("returns a fresh copy of the defaults (never the shared reference) on every fallback path", () => {
+    // $state() proxies write through to their target. If any fallback branch
+    // returned DEFAULT_AUDIO_PREFERENCES by reference, mutating the loaded
+    // preferences would corrupt the module-level canonical defaults.
+    const noStorage = loadAudioPreferences(null);
+    const emptyStorage = loadAudioPreferences(new MemoryStorage());
+    const throwing: Pick<Storage, "getItem" | "setItem"> = {
+      getItem: () => {
+        throw new Error("boom");
+      },
+      setItem: () => {},
+    };
+    const errored = loadAudioPreferences(throwing);
+
+    for (const loaded of [noStorage, emptyStorage, errored]) {
+      expect(loaded).toEqual(DEFAULT_AUDIO_PREFERENCES);
+      expect(loaded).not.toBe(DEFAULT_AUDIO_PREFERENCES);
+    }
+
+    // Mutating any of them must leave the canonical defaults untouched.
+    noStorage.muted = true;
+    noStorage.bgmVolume = 0;
+    expect(DEFAULT_AUDIO_PREFERENCES.muted).toBe(false);
+    expect(DEFAULT_AUDIO_PREFERENCES.bgmVolume).toBe(0.55);
+  });
+
   it("returns false when persisting throws", () => {
     const failing: Pick<Storage, "getItem" | "setItem"> = {
       getItem: () => null,

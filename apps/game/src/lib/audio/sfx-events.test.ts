@@ -474,20 +474,29 @@ describe("inferGameplaySfxEvents", () => {
     );
   });
 
-  it("accepts all command names used by the state client", () => {
-    const names: GameplayCommandName[] = [
-      "start_game",
-      "reset_game",
-      "advance_dialogue",
-      "inspect_hotspot",
-      "interview_topic",
-      "enter_sublocation",
-      "reexamine_evidence",
-      "reexamine_statement",
-      "answer_interrogation_question",
-      "press_testimony_statement",
-      "present_testimony_item",
-    ];
+  it("covers every GameplayCommandName the state client can dispatch", () => {
+    // Compile-time exhaustiveness: a Record<GameplayCommandName, ...> object
+    // literal errors if a command is added to the union (missing key) or
+    // removed (excess property), so this stays in lockstep with the source of
+    // truth rather than silently passing a trivial contains() check.
+    const exhaustive: Record<GameplayCommandName, true> = {
+      start_game: true,
+      reset_game: true,
+      advance_dialogue: true,
+      inspect_hotspot: true,
+      interview_topic: true,
+      enter_sublocation: true,
+      reexamine_evidence: true,
+      reexamine_statement: true,
+      answer_interrogation_question: true,
+      press_testimony_statement: true,
+      present_testimony_item: true,
+    };
+    const names = Object.keys(exhaustive) as GameplayCommandName[];
+
+    // Every union member is listed exactly once.
+    expect(new Set(names).size).toBe(names.length);
     expect(names).toContain("present_testimony_item");
+    expect(names).toHaveLength(11);
   });
 });
