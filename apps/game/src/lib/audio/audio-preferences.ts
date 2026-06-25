@@ -56,13 +56,17 @@ export function browserStorage(): StorageLike | null {
 export function loadAudioPreferences(
   storage: StorageLike | null = browserStorage(),
 ): AudioPreferences {
-  if (!storage) return DEFAULT_AUDIO_PREFERENCES;
+  // Always hand back a fresh object. Callers wrap the result in a Svelte 5
+  // $state() proxy, whose writes propagate to the underlying target. Returning
+  // the shared DEFAULT_AUDIO_PREFERENCES here would let updateAudioPreferences
+  // mutate the module-level canonical defaults (e.g. breaking resetAudioPreferences).
+  if (!storage) return { ...DEFAULT_AUDIO_PREFERENCES };
   try {
     const text = storage.getItem(AUDIO_PREFERENCES_STORAGE_KEY);
-    if (!text) return DEFAULT_AUDIO_PREFERENCES;
+    if (!text) return { ...DEFAULT_AUDIO_PREFERENCES };
     return normalizeAudioPreferences(JSON.parse(text));
   } catch {
-    return DEFAULT_AUDIO_PREFERENCES;
+    return { ...DEFAULT_AUDIO_PREFERENCES };
   }
 }
 

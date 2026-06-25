@@ -13,6 +13,7 @@ type ControllerSpy = {
   preloadSfx: ReturnType<typeof vi.fn>;
   applyPreferences: ReturnType<typeof vi.fn>;
   updateLoopChannels: ReturnType<typeof vi.fn>;
+  stopLoopChannels: ReturnType<typeof vi.fn>;
   playSfx: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
 };
@@ -23,6 +24,7 @@ const mocks = vi.hoisted(() => {
     preloadSfx = vi.fn();
     applyPreferences = vi.fn();
     updateLoopChannels = vi.fn(async () => undefined);
+    stopLoopChannels = vi.fn();
     playSfx = vi.fn();
     dispose = vi.fn();
     constructor() {
@@ -124,11 +126,32 @@ describe("gameplay audio runtime", () => {
     expect(runtime.audioPreferences.bgmVolume).toBe(0.2);
   });
 
-  it("disposes the controller when a game-complete mode arrives", async () => {
+  it("stops loop channels without disposing when a game-complete mode arrives", async () => {
     const runtime = await loadRuntime();
     runtime.syncGameplayAudioMode({ type: "gameComplete" });
-    expect(controller().dispose).toHaveBeenCalledTimes(1);
+    expect(controller().stopLoopChannels).toHaveBeenCalledTimes(1);
+    // The singleton must stay alive so SFX works for a subsequent new game in
+    // the same session; dispose() would close the AudioContext permanently.
+    expect(controller().dispose).not.toHaveBeenCalled();
     expect(controller().updateLoopChannels).not.toHaveBeenCalled();
+  });
+
+  it("resumes loop syncing on the mode after game-complete (replay stays audible)", async () => {
+    const runtime = await loadRuntime();
+    runtime.syncGameplayAudioMode({ type: "gameComplete" });
+    controller().stopLoopChannels.mockClear();
+    controller().dispose.mockClear();
+
+    runtime.syncGameplayAudioMode(exploreMode);
+    expect(controller().updateLoopChannels).toHaveBeenCalledExactlyOnceWith(
+      {
+        bgm: exploreMode.bgm,
+        bgs: exploreMode.bgs,
+      },
+      expect.objectContaining({ muted: false }),
+    );
+    // Controller was not torn down between game-complete and replay.
+    expect(controller().dispose).not.toHaveBeenCalled();
   });
 
   it("syncs loop channels from the current mode cues", async () => {

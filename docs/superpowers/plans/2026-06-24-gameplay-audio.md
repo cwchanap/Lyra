@@ -1,5 +1,16 @@
 # Gameplay Audio Implementation Plan
 
+> **Status: Implemented.** This plan was executed and the feature shipped. The
+> code blocks below are the *original design sketches* captured at planning
+> time; **the shipped source is the source of truth** and has evolved past
+> several sketches here (notably the `GameplayAudioController` gained a
+> WebAudio `sfxBackend` abstraction, `dispose()` became idempotent and gained a
+> `stopLoopChannels()` helper, `SFX_ASSETS`/`inferGameplaySfxEvents` were
+> refined, and the Chapter-1 beat predicates now use a shared
+> `enteredDialogueBeat(previous, next)` transition guard). Treat anything below
+> as historical design; verify against the files under
+> `apps/game/src/lib/audio/` and `packages/scripts/audio/` before relying on it.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add chapter-general gameplay audio playback for BGM, BGS, and coarse SFX, with persisted channel volume controls and Chapter 1 as the acceptance rollout.
@@ -543,6 +554,13 @@ export class GameplayAudioController {
     }
   }
 
+  // > **Superseded — see `apps/game/src/lib/audio/audio-controller.ts`.**
+  // > The shipped controller routes SFX through a low-latency WebAudio
+  // > `sfxBackend` first (falling back to an `HTMLAudioElement` pool), tracks
+  // > play attempts with a generation counter via `restartSfx`/
+  // > `handleSfxPlaybackFailure`, and makes `dispose()` idempotent. The sketch
+  // > below (one-off `Audio` element per SFX, non-idempotent dispose) is kept
+  // > only as the original design rationale.
   async playSfx(
     assetId: string | null,
     preferences: AudioPreferences,
@@ -572,7 +590,17 @@ export class GameplayAudioController {
     }
   }
 
+  // Shipped: idempotent (guards on a `disposed` flag so repeated teardown —
+  // e.g. Svelte `onDestroy` firing twice — doesn't re-close the AudioContext),
+  // and also stops active SFX and disposes the `sfxBackend`. A separate
+  // `stopLoopChannels()` stops only BGM/BGS and is used for transient silence
+  // (e.g. `gameComplete`) so the singleton stays usable for replay.
   dispose(): void {
+    this.stopLoop("bgm");
+    this.stopLoop("bgs");
+  }
+
+  stopLoopChannels(): void {
     this.stopLoop("bgm");
     this.stopLoop("bgs");
   }
@@ -861,7 +889,7 @@ export type GameplayCommandName =
   | "present_testimony_item";
 
 const SFX_ASSETS: Partial<Record<GameplaySfxEvent, string>> = {
-  "ui:new-game": "audio.sfx.sfx_usb_insert_chime",
+  "ui:menu-confirm": "audio.sfx.sfx_dialogue_proceed_tick",
   "story:anonymous-message": "audio.sfx.sfx_anonymous_message_buzz",
   "story:rice-ball-bag": "audio.sfx.sfx_rice_ball_bag_crinkle",
   "story:coffee-backflush": "audio.sfx.sfx_coffee_machine_backflush",
@@ -884,11 +912,16 @@ export function inferGameplaySfxEvents(
   const events: GameplaySfxEvent[] = [];
   if (command === "start_game") events.push("ui:new-game");
   if (command === "reset_game") events.push("ui:reset");
-  if (command === "inspect_hotspot") events.push("investigation:hotspot-inspected");
-  if (command === "interview_topic") events.push("investigation:topic-discussed");
-  if (command === "enter_sublocation") events.push("investigation:sublocation-entered");
-  if (command === "answer_interrogation_question") events.push("interrogation:question-answered");
-  if (command === "press_testimony_statement") events.push("interrogation:testimony-pressed");
+  if (command === "inspect_hotspot")
+    events.push("investigation:hotspot-inspected");
+  if (command === "interview_topic")
+    events.push("investigation:topic-discussed");
+  if (command === "enter_sublocation")
+    events.push("investigation:sublocation-entered");
+  if (command === "answer_interrogation_question")
+    events.push("interrogation:question-answered");
+  if (command === "press_testimony_statement")
+    events.push("interrogation:testimony-pressed");
 
   if (inventoryEvidenceCount(next) > inventoryEvidenceCount(previous)) {
     events.push("investigation:evidence-acquired");
@@ -946,10 +979,13 @@ function enteredChapterOneUsbBeat(
   next: GameStateView,
 ): boolean {
   if (next.chapter.id !== "chapter_1") return false;
-  if (next.scene.kind !== "linear" || next.scene.id !== "scene_11") return false;
-  if (next.mode.type !== "dialogue") return false;
-  if (!next.mode.sceneTag?.includes("相馬事務所，夜晚")) return false;
-  return previous?.mode.type !== "dialogue" || previous.mode.queueToken.cursor !== next.mode.queueToken.cursor;
+  if (next.scene.kind !== "linear" || next.scene.id !== "scene_11")
+    return false;
+  return enteredDialogueBeat(
+    previous,
+    next,
+    (kind, text) => kind === "action" && text.includes("隨身碟插上筆電"),
+  );
 }
 
 function enteredChapterOneRiceBallBeat(
@@ -958,9 +994,13 @@ function enteredChapterOneRiceBallBeat(
 ): boolean {
   return (
     next.chapter.id === "chapter_1" &&
+    next.scene.kind === "interrogation" &&
     next.scene.id === "interrogation_scene_10" &&
-    next.mode.type === "interrogation" &&
-    previous?.scene.id !== next.scene.id
+    enteredDialogueBeat(
+      previous,
+      next,
+      (kind, text) => kind === "action" && text.includes("飯糰袋"),
+    )
   );
 }
 
@@ -972,8 +1012,31 @@ function enteredChapterOneCoffeeBackflushBeat(
     next.chapter.id === "chapter_1" &&
     next.scene.kind === "investigation" &&
     next.scene.id === "investigation_scene_7" &&
-    next.mode.type === "explore" &&
-    next.mode.sublocationId === "inner"
+    enteredDialogueBeat(
+      previous,
+      next,
+      (kind, text) =>
+        kind === "line" && text.includes("那台機器 backflush 的時候"),
+    )
+  );
+}
+
+// Shared transition guard for dialogue-anchored story beats: fires only on the
+// actual cursor/queue advance onto the matching line, not on every re-derive of
+// the same state (e.g. repeated explore/inner in investigation_scene_7).
+function enteredDialogueBeat(
+  previous: GameStateView | null,
+  next: GameStateView,
+  matches: (kind: string, text: string) => boolean,
+): boolean {
+  if (next.mode.type !== "dialogue") return false;
+  if (!matches(next.mode.current.kind, next.mode.current.text)) return false;
+  if (previous?.mode.type !== "dialogue") return true;
+
+  return (
+    previous.mode.queueToken.sceneId !== next.mode.queueToken.sceneId ||
+    previous.mode.queueToken.queueGen !== next.mode.queueToken.queueGen ||
+    previous.mode.queueToken.cursor !== next.mode.queueToken.cursor
   );
 }
 

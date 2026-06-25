@@ -226,6 +226,7 @@ export class GameplayAudioController {
   private readonly audioFactory: AudioFactory;
   private readonly logger: LoggerLike;
   private readonly sfxBackend: SfxBackend | null;
+  private disposed = false;
 
   constructor(options: GameplayAudioControllerOptions = {}) {
     this.audioFactory = options.audioFactory ?? defaultAudioFactory;
@@ -352,12 +353,29 @@ export class GameplayAudioController {
   }
 
   dispose(): void {
+    // Idempotent: lifecycle cleanup (e.g. Svelte onDestroy) can fire more than
+    // once. Without this guard, sfxBackend.dispose() closes the same
+    // AudioContext again, logging a spurious "Failed to close SFX context"
+    // warning on every repeat. Once disposed, the controller is single-use.
+    if (this.disposed) return;
+    this.disposed = true;
     this.stopLoop("bgm");
     this.stopLoop("bgs");
     for (const sfx of Array.from(this.sfxByAsset.values())) {
       this.stopSfx(sfx);
     }
     this.sfxBackend?.dispose?.();
+  }
+
+  /**
+   * Stops both loop channels but leaves the SFX backend alive. Use this for
+   * transient "silence the gameplay mix" transitions (e.g. gameComplete) where
+   * the controller singleton must keep serving SFX for later replay. Reserve
+   * dispose() for true teardown.
+   */
+  stopLoopChannels(): void {
+    this.stopLoop("bgm");
+    this.stopLoop("bgs");
   }
 
   private async updateLoopChannel(

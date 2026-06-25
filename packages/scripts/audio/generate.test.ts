@@ -575,6 +575,56 @@ describe("runGenerateCommand happy path", () => {
     );
   });
 
+  it("regenerates instead of reusing the cache when the stored promptHash no longer matches", async () => {
+    process.env["ELEVENLABS_API_KEY"] = "test-key";
+    const freshProviderBytes = new Uint8Array([42, 43, 44, 45]);
+    fetchMock.mockResolvedValue(
+      new Response(freshProviderBytes, { status: 200, statusText: "OK" }),
+    );
+    vi.stubGlobal("fetch", fetchMock as unknown as typeof globalThis.fetch);
+
+    const repoRoot = createRepoRoot();
+    // The plan records a promptHash from a previous run that does NOT match the
+    // current prompt -> the on-disk cache MP3 is stale and must be ignored.
+    const planPath = writePlan(repoRoot, [
+      soundEntry({
+        id: "rain_street_light",
+        channel: "bgs",
+        status: "approved",
+        promptHash: "000000000000",
+      }),
+    ]);
+    const staleCacheBytes = new Uint8Array([5, 6, 7, 8]);
+    writeFile(
+      repoRoot,
+      "packages/scripts/.audio-cache/bgs/rain_street_light.mp3",
+      Buffer.from(staleCacheBytes),
+    );
+
+    const fakeConvert: AudioConverter = async ({ inputPath, outputPath }) => {
+      // The converter must receive the freshly fetched bytes, not the stale cache.
+      expect(readFileSync(inputPath)).toEqual(Buffer.from(freshProviderBytes));
+      writeFileSync(outputPath, new Uint8Array([9, 8, 7, 6]));
+    };
+
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const code = await runGenerateCommand([planPath], {
+      repoRoot,
+      cwd: repoRoot,
+      stdout: (m) => stdout.push(m),
+      stderr: (m) => stderr.push(m),
+      convert: fakeConvert,
+    });
+
+    expect(code).toBe(0);
+    expect(stderr).toEqual([]);
+    // A provider request was made instead of reusing the stale bytes.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(stdout.some((m) => /prompt changed/.test(m))).toBe(true);
+    expect(stdout.some((m) => /reusing cached mp3/.test(m))).toBe(false);
+  });
+
   it("prunes stale cache entries after a successful full run", async () => {
     process.env["ELEVENLABS_API_KEY"] = "test-key";
     const providerBytes = new Uint8Array([1, 2, 3, 4]);
@@ -654,19 +704,29 @@ function soundEntry(input: {
   id: string;
   channel: SoundPlanChannel;
   status: SoundPlanStatus;
+  prompt?: string;
+  promptHash?: string;
 }): string {
+  const promptLine =
+    input.prompt === undefined
+      ? '    prompt: "Steady light Tokyo street rain."'
+      : `    prompt: ${JSON.stringify(input.prompt)}`;
+  const hashLine =
+    input.promptHash === undefined
+      ? ""
+      : `    promptHash: ${JSON.stringify(input.promptHash)}\n`;
   return `  - id: ${input.id}
     channel: ${input.channel}
     status: ${input.status}
     loop: true
     intendedDurationSeconds: 30
-    prompt: "Steady light Tokyo street rain."
+${promptLine}
     reuseRationale: "Exterior rain pool."
     evidence:
       - file: docs/stories_plan/chapter_1/scene_0.md
         line: 3
         note: "rainy street"
-`;
+${hashLine}`;
 }
 
 function writeFile(

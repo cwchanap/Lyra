@@ -90,8 +90,16 @@ async function dispatchGameCommand(
     const v = await runCommand<GameStateView>(command, args);
     if (v) {
       gameState.value = v;
-      for (const event of inferGameplaySfxEvents(previous, v, command)) {
-        playGameplaySfxEvent(event);
+      // Audio is a non-essential side effect of a successful game-state update:
+      // the new state is already committed. An unexpected throw from SFX
+      // inference/playback must not propagate to the caller and break the game
+      // flow, so isolate it from the dispatch path.
+      try {
+        for (const event of inferGameplaySfxEvents(previous, v, command)) {
+          playGameplaySfxEvent(event);
+        }
+      } catch (audioError) {
+        console.warn("[GameplayAudio] SFX dispatch failed", audioError);
       }
     }
   } finally {

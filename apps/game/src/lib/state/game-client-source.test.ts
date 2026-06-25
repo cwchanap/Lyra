@@ -132,6 +132,31 @@ describe("game client audio events", () => {
     expect(mocks.playGameplaySfxEvent).toHaveBeenCalledExactlyOnceWith(event);
   });
 
+  it("commits the new state and does not rethrow when SFX playback throws", async () => {
+    const previous = state("previous");
+    const next = state("next");
+    const event: GameplaySfxEvent = "story:usb-insert";
+    const client = await loadGameClient(previous);
+
+    mocks.invoke.mockResolvedValueOnce(next);
+    mocks.inferGameplaySfxEvents.mockReturnValueOnce([event]);
+    mocks.playGameplaySfxEvent.mockImplementationOnce(() => {
+      throw new Error("audio backend exploded");
+    });
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    // SFX is a non-essential side effect: the error must be swallowed so the
+    // game-state update (already committed) is not rolled back into the caller.
+    await expect(client.inspectHotspot("receipt")).resolves.toBeUndefined();
+
+    expect(client.gameState.value?.scene.id).toBe(next.scene.id);
+    expect(mocks.playGameplaySfxEvent).toHaveBeenCalledExactlyOnceWith(event);
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
   it("does not infer or play SFX when a command rejects through runCommand", async () => {
     const previous = state("previous");
     const client = await loadGameClient(previous);
