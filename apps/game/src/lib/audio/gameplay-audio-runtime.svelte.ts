@@ -17,6 +17,7 @@ export const audioPreferences = $state<AudioPreferences>(
 );
 
 const controller = new GameplayAudioController();
+controller.preloadSfx(assetIdForGameplaySfxEvent("ui:menu-confirm"));
 
 export function updateAudioPreferences(patch: Partial<AudioPreferences>): void {
   const next = normalizeAudioPreferences({ ...audioPreferences, ...patch });

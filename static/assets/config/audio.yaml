@@ -108,6 +108,11 @@ sfx:
       Espresso machine backflush purge, short pressurized hiss and gurgle into
       the drip tray, mechanical release, no voices, no music.
     loop: false
+  sfx_dialogue_proceed_tick:
+    prompt:
+      Very short dialogue-advance UI tick derived from the USB insert click,
+      under half a second, dry and unobtrusive, no voices, no music.
+    loop: false
   sfx_rice_ball_bag_crinkle:
     prompt:
       Small plastic rice-ball bag being gripped and crinkled, tight repeated

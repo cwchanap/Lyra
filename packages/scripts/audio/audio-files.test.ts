@@ -9,10 +9,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   audioCacheRelativePath,
   audioOutputRelativePath,
+  convertWithFfmpeg,
   pruneAudioCache,
   writeGeneratedAudioFile,
 } from "./audio-files";
@@ -21,6 +22,8 @@ import type { AudioConvertInput } from "./audio-files";
 const tempRoots: string[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   for (const root of tempRoots.splice(0)) {
     rmSync(root, { recursive: true, force: true });
   }
@@ -142,6 +145,35 @@ describe("generated audio files", () => {
       f.endsWith(".tmp"),
     );
     expect(leftovers).toEqual([]);
+  });
+});
+
+describe("convertWithFfmpeg", () => {
+  it("forces an OGG container for .ogg.tmp staging outputs", async () => {
+    const spawn = vi.fn((_args: string[]) => ({
+      exited: Promise.resolve(0),
+      stderr: new Response("").body,
+    }));
+    vi.stubGlobal("Bun", { spawn });
+
+    await convertWithFfmpeg({
+      inputPath: "/tmp/input.mp3",
+      outputPath: "/tmp/output.ogg.tmp",
+    });
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0]?.[0]).toEqual([
+      "ffmpeg",
+      "-y",
+      "-i",
+      "/tmp/input.mp3",
+      "-vn",
+      "-c:a",
+      "libvorbis",
+      "-f",
+      "ogg",
+      "/tmp/output.ogg.tmp",
+    ]);
   });
 });
 

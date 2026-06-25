@@ -10,11 +10,13 @@
     current,
     queueToken,
     onAdvance,
+    onAdvanceFeedback,
     disabled = false,
   }: {
     current: DialogueItem;
     queueToken: QueueToken;
     onAdvance: (t: QueueToken) => void;
+    onAdvanceFeedback?: () => void;
     disabled?: boolean;
   } = $props();
 
@@ -66,16 +68,18 @@
   }
 
   function handleClick() {
+    onAdvanceFeedback?.();
     if (disabled) return;
     onAdvance(queueToken);
   }
   function handleKey(e: KeyboardEvent) {
-    if (disabled) return;
     if (e.repeat) return;
     if (e.key !== " " && e.key !== "Enter") return;
     const active = document.activeElement;
     if (active && active !== document.body) return;
     e.preventDefault();
+    onAdvanceFeedback?.();
+    if (disabled) return;
     onAdvance(queueToken);
   }
 </script>
@@ -106,7 +110,7 @@
     onclick={handleClick}
     type="button"
     aria-label="推進對話"
-    {disabled}
+    aria-disabled={disabled}
   >
     {#if current.kind === "sceneTag"}
       <span class="kind">場 · SCENE</span>
@@ -166,12 +170,12 @@
       background 0.2s;
   }
 
-  .box:hover:not(:disabled) {
+  .box:hover:not([aria-disabled="true"]) {
     border-color: var(--crimson);
     background: rgba(29, 29, 43, 0.96);
   }
 
-  .box:disabled {
+  .box[aria-disabled="true"] {
     cursor: wait;
     opacity: 0.7;
   }

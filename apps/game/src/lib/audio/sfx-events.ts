@@ -34,6 +34,7 @@ export type GameplayCommandName =
   | "present_testimony_item";
 
 const SFX_ASSETS: Partial<Record<GameplaySfxEvent, string>> = {
+  "ui:menu-confirm": "audio.sfx.sfx_dialogue_proceed_tick",
   "story:anonymous-message": "audio.sfx.sfx_anonymous_message_buzz",
   "story:rice-ball-bag": "audio.sfx.sfx_rice_ball_bag_crinkle",
   "story:coffee-backflush": "audio.sfx.sfx_coffee_machine_backflush",

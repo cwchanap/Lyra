@@ -154,6 +154,8 @@ export async function convertWithFfmpeg(
       "-vn",
       "-c:a",
       "libvorbis",
+      "-f",
+      "ogg",
       input.outputPath,
     ],
     {
