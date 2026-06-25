@@ -54,6 +54,9 @@ describe("SFX event mapping", () => {
 
   it("leaves generic events silent unless they have a meaningful match", () => {
     expect(assetIdForGameplaySfxEvent("ui:new-game")).toBeNull();
+    expect(assetIdForGameplaySfxEvent("ui:menu-confirm")).toBe(
+      "audio.sfx.sfx_dialogue_proceed_tick",
+    );
     expect(
       assetIdForGameplaySfxEvent("investigation:hotspot-inspected"),
     ).toBeNull();
@@ -64,6 +67,39 @@ describe("SFX event mapping", () => {
 });
 
 describe("inferGameplaySfxEvents", () => {
+  it("does not dispatch generic dialogue feedback after ordinary dialogue advances", () => {
+    const previous = state({
+      scene: { kind: "linear", id: "scene_2", title: "", index: 0, total: 1 },
+      mode: {
+        type: "dialogue",
+        current: { kind: "line", speaker: "相馬律", text: "先確認時間。" },
+        queueRemaining: 2,
+        sceneTag: null,
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+        queueToken: { sceneId: "scene_2", queueGen: 1, cursor: 4 },
+      },
+    });
+    const next = state({
+      scene: { kind: "linear", id: "scene_2", title: "", index: 0, total: 1 },
+      mode: {
+        type: "dialogue",
+        current: { kind: "line", speaker: "早坂朱音", text: "好。" },
+        queueRemaining: 1,
+        sceneTag: null,
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+        queueToken: { sceneId: "scene_2", queueGen: 1, cursor: 5 },
+      },
+    });
+
+    expect(inferGameplaySfxEvents(previous, next, "advance_dialogue")).toEqual(
+      [],
+    );
+  });
+
   it("dispatches the anonymous-message hook when entering chapter 1 investigation scene 7", () => {
     const previous = state({
       scene: { kind: "linear", id: "scene_6", title: "", index: 0, total: 1 },

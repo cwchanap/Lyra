@@ -24,50 +24,74 @@ entries:
   # ---- BGM: sparse major-beat music ----
   - id: bgm_review_board_loss
     channel: bgm
-    status: approved
+    status: generated
     loop: true
     intendedDurationSeconds: 45
     prompt: >-
       Sparse restrained procedural tension for a Japanese evidence-review
       hearing the defense is losing, low sustained strings, occasional muted
-      piano pulse, cold institutional air, no melody climax, no percussion,
-      ends open, unresolved, and quietly defeated.
+      piano pulse, cold institutional air, no melody climax, no percussion, ends
+      open, unresolved, and quietly defeated.
     reuseRationale: >-
-      Catalog is empty. Serves only the first-round hearing loss in scene_5;
-      the final-round victory in scene_10 has its own BGM so the emotional
-      arc does not blur.
+      Catalog is empty. Serves only the first-round hearing loss in scene_5; the
+      final-round victory in scene_10 has its own BGM so the emotional arc does
+      not blur.
     evidence:
-      - { file: docs/stories_plan/chapter_1/scene_5.md, line: 3, note: 審查會場，空氣冷而安靜，翻一頁紙都太響 }
-      - { file: docs/stories_plan/chapter_1/scene_5.md, line: 123, note: 神谷宣布本輪審查暫停，摘要維持原判 }
+      - {
+          file: docs/stories_plan/chapter_1/scene_5.md,
+          line: 3,
+          note: 審查會場，空氣冷而安靜，翻一頁紙都太響
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_5.md,
+          line: 123,
+          note: 神谷宣布本輪審查暫停，摘要維持原判
+        }
     normalizationNotes: >-
-      BGM generation deferred to a follow-up batch. Entry is approved and the
-      catalog references it, but the .ogg has not been generated yet (BGM is
-      credit-heavy; BGS/SFX shipped first per the sound-design SOP).
+      converted from mp3 to ogg via ffmpeg libvorbis
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128
+    promptHash: e05578e99d03
+    generatedAt: 2026-06-24T19:52:04.591Z
+    outputPath: static/assets/audio/bgm/bgm_review_board_loss.ogg
+    forced: false
   - id: bgm_review_board_victory
     channel: bgm
-    status: approved
+    status: generated
     loop: true
     intendedDurationSeconds: 45
     prompt: >-
-      Restrained procedural tension that slowly resolves into earned relief
-      for a Japanese evidence-review hearing the defense wins, low sustained
-      strings, muted piano pulse building to a single quiet resolved chord,
-      cold institutional air giving way to a warmer sustained note, no
-      triumphant swell, ends settled but somber.
+      Restrained procedural tension that slowly resolves into earned relief for
+      a Japanese evidence-review hearing the defense wins, low sustained
+      strings, muted piano pulse building to a single quiet resolved chord, cold
+      institutional air giving way to a warmer sustained note, no triumphant
+      swell, ends settled but somber.
     reuseRationale: >-
       Catalog is empty. Serves only the final-round hearing in scene_10 where
-      Kitami is identified and Miyake is cleared; distinct from the scene_5
-      loss BGM so the victory lands.
+      Kitami is identified and Miyake is cleared; distinct from the scene_5 loss
+      BGM so the victory lands.
     evidence:
-      - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, line: 5, note: KAGAMI 證據摘要審查會，長桌、證物推車、旁聽席 }
-      - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, line: 342, note: 神谷撤回三宅主嫌方向，指認北見成立 }
+      - {
+          file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
+          line: 5,
+          note: KAGAMI 證據摘要審查會，長桌、證物推車、旁聽席
+        }
+      - {
+          file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
+          line: 342,
+          note: 神谷撤回三宅主嫌方向，指認北見成立
+        }
     normalizationNotes: >-
-      BGM generation deferred to a follow-up batch. Entry is approved and the
-      catalog references it, but the .ogg has not been generated yet (BGM is
-      credit-heavy; BGS/SFX shipped first per the sound-design SOP).
+      converted from mp3 to ogg via ffmpeg libvorbis
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128
+    promptHash: e56f9215b0a7
+    generatedAt: 2026-06-24T19:52:26.217Z
+    outputPath: static/assets/audio/bgm/bgm_review_board_victory.ogg
+    forced: false
   - id: bgm_chapter_close
     channel: bgm
-    status: approved
+    status: generated
     loop: true
     intendedDurationSeconds: 45
     prompt: >-
@@ -76,15 +100,26 @@ entries:
       unanswered question, no triumphant resolution, ends on a suspended note.
     reuseRationale: >-
       Catalog is empty. Serves the post-case wind-down and the unexplained
-      blue-umbrella hook; no other chapter-1 beat carries this emotional
-      shape.
+      blue-umbrella hook; no other chapter-1 beat carries this emotional shape.
     evidence:
-      - { file: docs/stories_plan/chapter_1/scene_11.md, line: 3, note: 雨剛停，店內靜悄悄，淡淡咖啡香 }
-      - { file: docs/stories_plan/chapter_1/scene_11.md, line: 145, note: 雨鐘外深夜，店招燈滅，藍傘仍無主人 }
+      - {
+          file: docs/stories_plan/chapter_1/scene_11.md,
+          line: 3,
+          note: 雨剛停，店內靜悄悄，淡淡咖啡香
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_11.md,
+          line: 145,
+          note: 雨鐘外深夜，店招燈滅，藍傘仍無主人
+        }
     normalizationNotes: >-
-      BGM generation deferred to a follow-up batch. Entry is approved and the
-      catalog references it, but the .ogg has not been generated yet (BGM is
-      credit-heavy; BGS/SFX shipped first per the sound-design SOP).
+      converted from mp3 to ogg via ffmpeg libvorbis
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128
+    promptHash: 90e33510b6f4
+    generatedAt: 2026-06-24T19:52:47.298Z
+    outputPath: static/assets/audio/bgm/bgm_chapter_close.ogg
+    forced: false
 
   # ---- BGS: acoustic environments ----
   - id: bgs_detective_office_rain
@@ -93,15 +128,23 @@ entries:
     loop: true
     intendedDurationSeconds: 60
     prompt: >-
-      Small Tokyo private detective office at early morning drizzle, fine
-      even rain tapping a window, distant traffic hush, faint paper shuffle,
-      no voices, no music.
+      Small Tokyo private detective office at early morning drizzle, fine even
+      rain tapping a window, distant traffic hush, faint paper shuffle, no
+      voices, no music.
     reuseRationale: >-
-      Catalog is empty. Distinct from the quiet law office (no rain inside)
-      and the night office (streetlight hum, no rain).
+      Catalog is empty. Distinct from the quiet law office (no rain inside) and
+      the night office (streetlight hum, no rain).
     evidence:
-      - { file: docs/stories_plan/chapter_1/investigation_scene_1.md, line: 5, note: 相馬事務所外，清晨，細雨 }
-      - { file: docs/stories_plan/chapter_1/investigation_scene_1.md, line: 8, note: 清晨的雨打在窗上，細而均勻 }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_1.md,
+          line: 5,
+          note: 相馬事務所外，清晨，細雨
+        }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_1.md,
+          line: 8,
+          note: 清晨的雨打在窗上，細而均勻
+        }
   - id: bgs_law_office_quiet
     channel: bgs
     status: approved
@@ -112,10 +155,14 @@ entries:
       dampness outside, occasional soft paper movement, no rain sound, no
       voices, no music.
     reuseRationale: >-
-      Catalog is empty. Post-rain interior with no rain acoustics, so it
-      cannot reuse the detective-office rain BGS.
+      Catalog is empty. Post-rain interior with no rain acoustics, so it cannot
+      reuse the detective-office rain BGS.
     evidence:
-      - { file: docs/stories_plan/chapter_1/scene_2.md, line: 3, note: 早坂律師事務所，上午，雨後，室內安靜 }
+      - {
+          file: docs/stories_plan/chapter_1/scene_2.md,
+          line: 3,
+          note: 早坂律師事務所，上午，雨後，室內安靜
+        }
   - id: bgs_institutional_corridor
     channel: bgs
     status: approved
@@ -123,33 +170,57 @@ entries:
     intendedDurationSeconds: 60
     prompt: >-
       Cold Japanese institutional corridor, pale fluorescent hum, faint
-      damp-shoe echo on hard floor, distant muffled official voices, no
-      music, no rain inside.
+      damp-shoe echo on hard floor, distant muffled official voices, no music,
+      no rain inside.
     reuseRationale: >-
-      Catalog is empty. Reusable across the police corridor, review-board
-      entry hallway, and post-hearing corridor; all share fluorescent
-      institutional air.
+      Catalog is empty. Reusable across the police corridor, review-board entry
+      hallway, and post-hearing corridor; all share fluorescent institutional
+      air.
     evidence:
-      - { file: docs/stories_plan/chapter_1/scene_0.md, line: 30, note: 警署會面室外的走廊，日光燈下，空氣安靜 }
-      - { file: docs/stories_plan/chapter_1/scene_2.md, line: 54, note: 審查會入口，狹長走道，金屬門盡頭 }
-      - { file: docs/stories_plan/chapter_1/scene_2.md, line: 99, note: 審查會外走廊，長窗濕街，盡頭未開的門 }
-      - { file: docs/stories_plan/chapter_1/scene_5.md, line: 125, note: 審查會場外走廊，日光燈泛白，鞋底水痕 }
+      - {
+          file: docs/stories_plan/chapter_1/scene_0.md,
+          line: 30,
+          note: 警署會面室外的走廊，日光燈下，空氣安靜
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_2.md,
+          line: 54,
+          note: 審查會入口，狹長走道，金屬門盡頭
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_2.md,
+          line: 99,
+          note: 審查會外走廊，長窗濕街，盡頭未開的門
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_5.md,
+          line: 125,
+          note: 審查會場外走廊，日光燈泛白，鞋底水痕
+        }
   - id: bgs_cafe_closed_night
     channel: bgs
     status: approved
     loop: true
     intendedDurationSeconds: 90
     prompt: >-
-      Closed Tokyo cafe front room at rainy night, rain striking the glass
-      door louder than the interior, faint coffee-ground residue air, idle
-      dishwasher vent, no voices, no music.
+      Closed Tokyo cafe front room at rainy night, rain striking the glass door
+      louder than the interior, faint coffee-ground residue air, idle dishwasher
+      vent, no voices, no music.
     reuseRationale: >-
-      Catalog is empty. Rain-on-glass is the dominant texture; distinct from
-      the back corridor (fluorescent, no rain) and the afternoon cafe
-      (post-rain calm).
+      Catalog is empty. Rain-on-glass is the dominant texture; distinct from the
+      back corridor (fluorescent, no rain) and the afternoon cafe (post-rain
+      calm).
     evidence:
-      - { file: docs/stories_plan/chapter_1/investigation_scene_3.md, line: 5, note: 雨鐘咖啡館外，雨夜，閉店後，玻璃門路燈映濕地 }
-      - { file: docs/stories_plan/chapter_1/investigation_scene_3.md, line: 26, note: 雨打門面比店裡所有聲音都大，洗杯機排氣，雨打後巷鐵門 }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_3.md,
+          line: 5,
+          note: 雨鐘咖啡館外，雨夜，閉店後，玻璃門路燈映濕地
+        }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_3.md,
+          line: 26,
+          note: 雨打門面比店裡所有聲音都大，洗杯機排氣，雨打後巷鐵門
+        }
   - id: bgs_cafe_backroom_corridor
     channel: bgs
     status: approved
@@ -160,25 +231,37 @@ entries:
       flickering tube at the far end, footsteps echoing between close walls,
       stacked cardboard and cleaning supplies, no rain, no voices.
     reuseRationale: >-
-      Catalog is empty. Fluorescent-echo corridor distinct from the warm
-      manager office corner and the inner storage room.
+      Catalog is empty. Fluorescent-echo corridor distinct from the warm manager
+      office corner and the inner storage room.
     evidence:
-      - { file: docs/stories_plan/chapter_1/investigation_scene_3.md, line: 149, note: 腳步聲在窄牆間彈回，日光燈管嗡嗡作響，盡頭一盞閃了一下 }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_3.md,
+          line: 149,
+          note: 腳步聲在窄牆間彈回，日光燈管嗡嗡作響，盡頭一盞閃了一下
+        }
   - id: bgs_cafe_backroom_office
     channel: bgs
     status: approved
     loop: true
     intendedDurationSeconds: 60
     prompt: >-
-      Cafe manager office corner at night, warm practical lamp, idle
-      maintenance screen, stacked boxes and account books, faint electrical
-      standby hum, no voices, no music.
+      Cafe manager office corner at night, warm practical lamp, idle maintenance
+      screen, stacked boxes and account books, faint electrical standby hum, no
+      voices, no music.
     reuseRationale: >-
-      Catalog is empty. Warm-lamp ambience distinct from the fluorescent
-      back corridor and the cold inner storage room.
+      Catalog is empty. Warm-lamp ambience distinct from the fluorescent back
+      corridor and the cold inner storage room.
     evidence:
-      - { file: docs/stories_plan/chapter_1/investigation_scene_8.md, line: 5, note: 後場夜晚，店長辦公角落亮著暖燈，維護螢幕待機 }
-      - { file: docs/stories_plan/chapter_1/investigation_scene_8.md, line: 26, note: 店長辦公角落，維護頁小螢幕，紙箱帳本，燈光偏暖 }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_8.md,
+          line: 5,
+          note: 後場夜晚，店長辦公角落亮著暖燈，維護螢幕待機
+        }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_8.md,
+          line: 26,
+          note: 店長辦公角落，維護頁小螢幕，紙箱帳本，燈光偏暖
+        }
   - id: bgs_police_station_late_night
     channel: bgs
     status: approved
@@ -189,12 +272,20 @@ entries:
       vending-machine compressor hum from the corner, faint rain on dark
       windows, empty bench, no voices, no music.
     reuseRationale: >-
-      Catalog is empty. Vending-machine hum is the distinctive texture;
-      reusable for the waiting area and the small interrogation room (same
-      station ambient, rain seeping through window seams).
+      Catalog is empty. Vending-machine hum is the distinctive texture; reusable
+      for the waiting area and the small interrogation room (same station
+      ambient, rain seeping through window seams).
     evidence:
-      - { file: docs/stories_plan/chapter_1/interrogation_scene_4.md, line: 5, note: 警署等待區深夜，日光燈偏白，販賣機嗡嗡作響 }
-      - { file: docs/stories_plan/chapter_1/interrogation_scene_4.md, line: 95, note: 警署詢問室深夜，雨聲透過窗縫滲進來 }
+      - {
+          file: docs/stories_plan/chapter_1/interrogation_scene_4.md,
+          line: 5,
+          note: 警署等待區深夜，日光燈偏白，販賣機嗡嗡作響
+        }
+      - {
+          file: docs/stories_plan/chapter_1/interrogation_scene_4.md,
+          line: 95,
+          note: 警署詢問室深夜，雨聲透過窗縫滲進來
+        }
   - id: bgs_review_board_room
     channel: bgs
     status: approved
@@ -208,42 +299,69 @@ entries:
       Catalog is empty. Reusable for both the first-round and final hearings;
       paper-turn and AC wash are the shared texture.
     evidence:
-      - { file: docs/stories_plan/chapter_1/scene_5.md, line: 3, note: 審查會場，紙張與冷氣混合氣味，翻一頁紙都太響 }
-      - { file: docs/stories_plan/chapter_1/scene_5.md, line: 8, note: 沒有怒吼拍桌，只有紙張翻動的聲音 }
-      - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, line: 5, note: KAGAMI 證據摘要審查會，長桌、證物推車、旁聽席 }
+      - {
+          file: docs/stories_plan/chapter_1/scene_5.md,
+          line: 3,
+          note: 審查會場，紙張與冷氣混合氣味，翻一頁紙都太響
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_5.md,
+          line: 8,
+          note: 沒有怒吼拍桌，只有紙張翻動的聲音
+        }
+      - {
+          file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
+          line: 5,
+          note: KAGAMI 證據摘要審查會，長桌、證物推車、旁聽席
+        }
   - id: bgs_shopping_street_rain_dusk
     channel: bgs
     status: approved
     loop: true
     intendedDurationSeconds: 75
     prompt: >-
-      Kichijoji shopping street at rainy dusk under a convenience-store
-      awning, steady awning-edge drip, passing umbrella footsteps on wet
-      pavement, muted storefront hum, distant traffic, a few distant
-      commuter voices, no music.
+      Kichijoji shopping street at rainy dusk under a convenience-store awning,
+      steady awning-edge drip, passing umbrella footsteps on wet pavement, muted
+      storefront hum, distant traffic, a few distant commuter voices, no music.
     reuseRationale: >-
       Catalog is empty. Dusk awning with ambient street life and passing
-      commuters; the scene_8_5 late-night reprise is colder and emptier, so
-      it gets its own BGS.
+      commuters; the scene_8_5 late-night reprise is colder and emptier, so it
+      gets its own BGS.
     evidence:
-      - { file: docs/stories_plan/chapter_1/scene_6.md, line: 3, note: 商店街傍晚雨，屋簷邊雨水一條線落下，行人撐傘走過 }
-      - { file: docs/stories_plan/chapter_1/scene_6.md, line: 81, note: 便利店門口傍晚雨漸小，片瀨趕末班車路過 }
+      - {
+          file: docs/stories_plan/chapter_1/scene_6.md,
+          line: 3,
+          note: 商店街傍晚雨，屋簷邊雨水一條線落下，行人撐傘走過
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_6.md,
+          line: 81,
+          note: 便利店門口傍晚雨漸小，片瀨趕末班車路過
+        }
   - id: bgs_shopping_street_rain_night
     channel: bgs
     status: approved
     loop: true
     intendedDurationSeconds: 75
     prompt: >-
-      Kichijoji shopping street under an awning late at night while rain
-      still falls, steady awning-edge drip louder in the empty street, rare
-      distant footsteps, no commuter chatter, muted closed storefronts,
-      hollower and colder than dusk, no voices up close, no music.
+      Kichijoji shopping street under an awning late at night while rain still
+      falls, steady awning-edge drip louder in the empty street, rare distant
+      footsteps, no commuter chatter, muted closed storefronts, hollower and
+      colder than dusk, no voices up close, no music.
     reuseRationale: >-
-      Catalog is empty. Late-night awning reprise is emptier and colder than
-      the dusk version; split so the post-hearing regroup feels isolated.
+      Catalog is empty. Late-night awning reprise is emptier and colder than the
+      dusk version; split so the post-hearing regroup feels isolated.
     evidence:
-      - { file: docs/stories_plan/chapter_1/scene_8_5.md, line: 3, note: 商店街屋簷下深夜，雨仍未停，雨聲蓋過遠處人聲 }
-      - { file: docs/stories_plan/chapter_1/scene_8_5.md, line: 60, note: 相馬收起資料夾，雨水順著屋簷滴下 }
+      - {
+          file: docs/stories_plan/chapter_1/scene_8_5.md,
+          line: 3,
+          note: 商店街屋簷下深夜，雨仍未停，雨聲蓋過遠處人聲
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_8_5.md,
+          line: 60,
+          note: 相馬收起資料夾，雨水順著屋簷滴下
+        }
   - id: bgs_contractor_office_day
     channel: bgs
     status: approved
@@ -251,73 +369,127 @@ entries:
     intendedDurationSeconds: 60
     prompt: >-
       KAGAMI contractor records office in daylight, glass service partition,
-      file-cabinet resonance, bureaucratic restraint, faint air-conditioning,
-      no voices, no music.
+      file-cabinet resonance, bureaucratic restraint, faint air-conditioning, no
+      voices, no music.
     reuseRationale: >-
-      Catalog is empty. Glass-partition office distinct from the white
-      interview room next door.
+      Catalog is empty. Glass-partition office distinct from the white interview
+      room next door.
     evidence:
-      - { file: docs/stories_plan/chapter_1/investigation_scene_9.md, line: 5, note: KAGAMI 外包資料審查辦公室，玻璃窗口，檔案櫃 }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_9.md,
+          line: 5,
+          note: KAGAMI 外包資料審查辦公室，玻璃窗口，檔案櫃
+        }
   - id: bgs_interview_room_fluorescent
     channel: bgs
     status: approved
     loop: true
     intendedDurationSeconds: 60
     prompt: >-
-      Small white Japanese interview room under exposed fluorescent tubes,
-      hard reflective walls, faint paper-slide on table, tense flat quiet,
-      no voices, no music.
+      Small white Japanese interview room under exposed fluorescent tubes, hard
+      reflective walls, faint paper-slide on table, tense flat quiet, no voices,
+      no music.
     reuseRationale: >-
-      Catalog is empty. Exposed-fluorescent white room distinct from the
-      glass contractor office and the police interrogation room.
+      Catalog is empty. Exposed-fluorescent white room distinct from the glass
+      contractor office and the police interrogation room.
     evidence:
-      - { file: docs/stories_plan/chapter_1/investigation_scene_9.md, line: 90, note: 訪談室白日，日光燈管照得毫無死角，四面白牆 }
-      - { file: docs/stories_plan/chapter_1/investigation_scene_9.md, line: 92, note: 紙張滑過桌面的聲音在安靜房間裡格外清晰 }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_9.md,
+          line: 90,
+          note: 訪談室白日，日光燈管照得毫無死角，四面白牆
+        }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_9.md,
+          line: 92,
+          note: 紙張滑過桌面的聲音在安靜房間裡格外清晰
+        }
   - id: bgs_cafe_afternoon_after_rain
     channel: bgs
     status: approved
     loop: true
     intendedDurationSeconds: 75
     prompt: >-
-      Rain Bell cafe interior in afternoon after rain, half-reset tables,
-      quiet counter, soft daylight through wet windows, faint latte and
-      coffee aroma air, no voices, no music.
+      Rain Bell cafe interior in afternoon after rain, half-reset tables, quiet
+      counter, soft daylight through wet windows, faint latte and coffee aroma
+      air, no voices, no music.
     reuseRationale: >-
       Catalog is empty. Post-rain calm distinct from the rainy closed-night
       cafe; carries the chapter wind-down.
     evidence:
-      - { file: docs/stories_plan/chapter_1/scene_11.md, line: 3, note: 雨鐘午後，雨剛停，店內靜悄悄，淡淡咖啡香 }
-      - { file: docs/stories_plan/chapter_1/scene_11.md, line: 68, note: 雨鐘店內空鏡，人聲漸遠，光線落在木桌上 }
+      - {
+          file: docs/stories_plan/chapter_1/scene_11.md,
+          line: 3,
+          note: 雨鐘午後，雨剛停，店內靜悄悄，淡淡咖啡香
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_11.md,
+          line: 68,
+          note: 雨鐘店內空鏡，人聲漸遠，光線落在木桌上
+        }
   - id: bgs_detective_office_night
     channel: bgs
     status: approved
     loop: true
     intendedDurationSeconds: 60
     prompt: >-
-      Small private detective office at night, single desk lamp, laptop fan
-      hum, faint distant street traffic through a rainy window, city
-      streetlight glow, no voices, no music.
+      Small private detective office at night, single desk lamp, laptop fan hum,
+      faint distant street traffic through a rainy window, city streetlight
+      glow, no voices, no music.
     reuseRationale: >-
-      Catalog is empty. Night streetlight-and-laptop ambience distinct from
-      the morning drizzle office.
+      Catalog is empty. Night streetlight-and-laptop ambience distinct from the
+      morning drizzle office.
     evidence:
-      - { file: docs/stories_plan/chapter_1/scene_11.md, line: 87, note: 相馬事務所夜晚，街燈昏黃，檯燈與筆電 }
-      - { file: docs/stories_plan/chapter_1/scene_11.md, line: 124, note: 事務所同一夜稍晚，警方移交清單，昏黃燈光 }
+      - {
+          file: docs/stories_plan/chapter_1/scene_11.md,
+          line: 87,
+          note: 相馬事務所夜晚，街燈昏黃，檯燈與筆電
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_11.md,
+          line: 124,
+          note: 事務所同一夜稍晚，警方移交清單，昏黃燈光
+        }
 
   # ---- SFX: emphasized, repeated, or player-feedback actions ----
+  - id: sfx_dialogue_proceed_tick
+    channel: sfx
+    status: generated
+    loop: false
+    intendedDurationSeconds: 0.35
+    durationSeconds: 0.35
+    prompt: >-
+      Very short dialogue-advance UI tick derived from the USB insert click,
+      under half a second, dry and unobtrusive, no voices, no music.
+    reuseRationale: >-
+      Player-feedback SFX for fast dialogue progression. Derived locally from
+      the generated USB insert click so normal dialogue confirmation is short
+      and does not reuse the full two-second story chime.
+    evidence:
+      - {
+          file: docs/superpowers/specs/2026-06-24-gameplay-audio-design.md,
+          line: 31,
+          note: Use a hybrid SFX model with a small UI feedback layer
+        }
+    provider: local-ffmpeg
+    outputPath: static/assets/audio/sfx/sfx_dialogue_proceed_tick.ogg
+    normalizationNotes: derived from sfx_usb_insert_chime first 0.35s with short fade-out
   - id: sfx_anonymous_message_buzz
     channel: sfx
     status: approved
     loop: false
     intendedDurationSeconds: 2
     prompt: >-
-      Single muted phone vibration buzz in a pocket, two short pulses, dry
-      and discreet, no ringtone, no music.
+      Single muted phone vibration buzz in a pocket, two short pulses, dry and
+      discreet, no ringtone, no music.
     reuseRationale: >-
       Catalog is empty. Emphasized plot trigger for the anonymous Amemiya
       message arrival; not a generic notification.
     evidence:
-      - { file: docs/stories_plan/chapter_1/investigation_scene_7.md, line: 8, note: 相馬手機在口袋裡震了一下，匿名訊息到達 }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_7.md,
+          line: 8,
+          note: 相馬手機在口袋裡震了一下，匿名訊息到達
+        }
   - id: sfx_rice_ball_bag_crinkle
     channel: sfx
     status: approved
@@ -327,113 +499,396 @@ entries:
       Small plastic rice-ball bag being gripped and crinkled, tight repeated
       crinkles, intimate close perspective, no voices, no music.
     reuseRationale: >-
-      Catalog is empty. Recurring emotional motif tied to the mother across
-      the cold open, the commission, both hearings, and the final review;
-      repeated emphasis warrants a dedicated SFX.
+      Catalog is empty. Recurring emotional motif tied to the mother across the
+      cold open, the commission, both hearings, and the final review; repeated
+      emphasis warrants a dedicated SFX.
     evidence:
-      - { file: docs/stories_plan/chapter_1/scene_0.md, line: 39, note: 塑膠袋被攥得發出輕響，皺成一團 }
+      - {
+          file: docs/stories_plan/chapter_1/scene_0.md,
+          line: 39,
+          note: 塑膠袋被攥得發出輕響，皺成一團
+        }
       - { file: docs/stories_plan/chapter_1/scene_2.md, line: 8, note: 母親把飯糰袋放到桌上 }
       - { file: docs/stories_plan/chapter_1/scene_5.md, line: 16, note: 三宅母親緊抱飯糰袋 }
-      - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, line: 346, note: 母親把飯糰袋輕輕抱緊，沒有出聲 }
+      - {
+          file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
+          line: 346,
+          note: 母親把飯糰袋輕輕抱緊，沒有出聲
+        }
   - id: sfx_coffee_machine_backflush
     channel: sfx
     status: approved
     loop: false
     intendedDurationSeconds: 3
     prompt: >-
-      Espresso machine backflush purge, short pressurized hiss and gurgle
-      into the drip tray, mechanical release, no voices, no music.
+      Espresso machine backflush purge, short pressurized hiss and gurgle into
+      the drip tray, mechanical release, no voices, no music.
     reuseRationale: >-
       Catalog is empty. Plot-relevant sound-masking element (the backflush
       covers the fatal thud); emphasized in both the cafe survey and the
       forensic discussion.
     evidence:
-      - { file: docs/stories_plan/chapter_1/investigation_scene_3.md, line: 26, note: 洗杯機偶爾排一口氣 }
-      - { file: docs/stories_plan/chapter_1/investigation_scene_7.md, line: 210, note: 那台機器 backflush 的時候也常那樣 }
-      - { file: docs/stories_plan/chapter_1/investigation_scene_7.md, line: 212, note: 悶響被蓋過去了 }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_3.md,
+          line: 26,
+          note: 洗杯機偶爾排一口氣
+        }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_7.md,
+          line: 210,
+          note: 那台機器 backflush 的時候也常那樣
+        }
+      - {
+          file: docs/stories_plan/chapter_1/investigation_scene_7.md,
+          line: 212,
+          note: 悶響被蓋過去了
+        }
   - id: sfx_usb_insert_chime
     channel: sfx
     status: approved
     loop: false
     intendedDurationSeconds: 2
     prompt: >-
-      USB drive inserted into a laptop, dry connector click followed by a
-      soft OS chime, quiet room, no voices, no music.
+      USB drive inserted into a laptop, dry connector click followed by a soft
+      OS chime, quiet room, no voices, no music.
     reuseRationale: >-
       Catalog is empty. Emphasized chapter-hook beat opening the encrypted
       ZW_A16.lock cliffhanger; not incidental prop handling.
     evidence:
-      - { file: docs/stories_plan/chapter_1/scene_11.md, line: 96, note: 相馬把隨身碟插上筆電，螢幕跳出一行目錄 }
+      - {
+          file: docs/stories_plan/chapter_1/scene_11.md,
+          line: 96,
+          note: 相馬把隨身碟插上筆電，螢幕跳出一行目錄
+        }
 cues:
   # scene_0 — KAGAMI summary. tag_001 is the corpus-first visual unit; it must
   # explicitly set both BGM and BGS (spec L251-252). The scene authors silence,
   # so both channels are "none".
-  - { file: docs/stories_plan/chapter_1/scene_0.md, visualUnit: tag_001, bgm: none, bgs: none }
+  - {
+      file: docs/stories_plan/chapter_1/scene_0.md,
+      visualUnit: tag_001,
+      bgm: none,
+      bgs: none
+    }
   # scene_0 — tag_002 inherits BGM silence; BGS introduces the corridor hum.
-  - { file: docs/stories_plan/chapter_1/scene_0.md, visualUnit: tag_002, bgs: bgs_institutional_corridor }
+  - {
+      file: docs/stories_plan/chapter_1/scene_0.md,
+      visualUnit: tag_002,
+      bgs: bgs_institutional_corridor
+    }
   # investigation_scene_1 — detective office, morning drizzle
-  - { file: docs/stories_plan/chapter_1/investigation_scene_1.md, visualUnit: tag_001, bgs: bgs_detective_office_rain }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_1.md, visualUnit: office, bgs: bgs_detective_office_rain }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_1.md,
+      visualUnit: tag_001,
+      bgs: bgs_detective_office_rain
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_1.md,
+      visualUnit: office,
+      bgs: bgs_detective_office_rain
+    }
   # scene_2 — law office + review-board corridors
-  - { file: docs/stories_plan/chapter_1/scene_2.md, visualUnit: tag_001, bgs: bgs_law_office_quiet }
-  - { file: docs/stories_plan/chapter_1/scene_2.md, visualUnit: tag_002, bgs: bgs_institutional_corridor }
-  - { file: docs/stories_plan/chapter_1/scene_2.md, visualUnit: tag_003, bgs: bgs_institutional_corridor }
+  - {
+      file: docs/stories_plan/chapter_1/scene_2.md,
+      visualUnit: tag_001,
+      bgs: bgs_law_office_quiet
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_2.md,
+      visualUnit: tag_002,
+      bgs: bgs_institutional_corridor
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_2.md,
+      visualUnit: tag_003,
+      bgs: bgs_institutional_corridor
+    }
   # investigation_scene_3 — rain bell cafe, closed night
-  - { file: docs/stories_plan/chapter_1/investigation_scene_3.md, visualUnit: tag_001, bgs: bgs_cafe_closed_night }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_3.md, visualUnit: front, bgs: bgs_cafe_closed_night }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_3.md, visualUnit: corridor, bgs: bgs_cafe_backroom_corridor }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_3.md,
+      visualUnit: tag_001,
+      bgs: bgs_cafe_closed_night
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_3.md,
+      visualUnit: front,
+      bgs: bgs_cafe_closed_night
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_3.md,
+      visualUnit: corridor,
+      bgs: bgs_cafe_backroom_corridor
+    }
   # interrogation_scene_4 — police station, late night
-  - { file: docs/stories_plan/chapter_1/interrogation_scene_4.md, visualUnit: tag_001, bgs: bgs_police_station_late_night }
-  - { file: docs/stories_plan/chapter_1/interrogation_scene_4.md, visualUnit: ask_miyake, bgs: bgs_police_station_late_night }
-  - { file: docs/stories_plan/chapter_1/interrogation_scene_4.md, visualUnit: press_miyake, bgs: bgs_police_station_late_night }
+  - {
+      file: docs/stories_plan/chapter_1/interrogation_scene_4.md,
+      visualUnit: tag_001,
+      bgs: bgs_police_station_late_night
+    }
+  - {
+      file: docs/stories_plan/chapter_1/interrogation_scene_4.md,
+      visualUnit: ask_miyake,
+      bgs: bgs_police_station_late_night
+    }
+  - {
+      file: docs/stories_plan/chapter_1/interrogation_scene_4.md,
+      visualUnit: press_miyake,
+      bgs: bgs_police_station_late_night
+    }
   # scene_5 — first-round hearing (loss)
-  - { file: docs/stories_plan/chapter_1/scene_5.md, visualUnit: tag_001, bgm: bgm_review_board_loss, bgs: bgs_review_board_room }
-  - { file: docs/stories_plan/chapter_1/scene_5.md, visualUnit: tag_002, bgm: bgm_review_board_loss, bgs: bgs_review_board_room }
-  - { file: docs/stories_plan/chapter_1/scene_5.md, visualUnit: tag_003, bgm: none, bgs: bgs_institutional_corridor }
+  - {
+      file: docs/stories_plan/chapter_1/scene_5.md,
+      visualUnit: tag_001,
+      bgm: bgm_review_board_loss,
+      bgs: bgs_review_board_room
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_5.md,
+      visualUnit: tag_002,
+      bgm: bgm_review_board_loss,
+      bgs: bgs_review_board_room
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_5.md,
+      visualUnit: tag_003,
+      bgm: none,
+      bgs: bgs_institutional_corridor
+    }
   # scene_6 — shopping street, rainy dusk
-  - { file: docs/stories_plan/chapter_1/scene_6.md, visualUnit: tag_001, bgs: bgs_shopping_street_rain_dusk }
-  - { file: docs/stories_plan/chapter_1/scene_6.md, visualUnit: tag_002, bgs: bgs_shopping_street_rain_dusk }
-  - { file: docs/stories_plan/chapter_1/scene_6.md, visualUnit: tag_003, bgs: bgs_shopping_street_rain_dusk }
-  - { file: docs/stories_plan/chapter_1/scene_6.md, visualUnit: tag_004, bgs: bgs_shopping_street_rain_dusk }
+  - {
+      file: docs/stories_plan/chapter_1/scene_6.md,
+      visualUnit: tag_001,
+      bgs: bgs_shopping_street_rain_dusk
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_6.md,
+      visualUnit: tag_002,
+      bgs: bgs_shopping_street_rain_dusk
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_6.md,
+      visualUnit: tag_003,
+      bgs: bgs_shopping_street_rain_dusk
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_6.md,
+      visualUnit: tag_004,
+      bgs: bgs_shopping_street_rain_dusk
+    }
   # investigation_scene_7 — rain bell back door + inner storage
-  - { file: docs/stories_plan/chapter_1/investigation_scene_7.md, visualUnit: tag_001, bgs: bgs_cafe_closed_night }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_7.md, visualUnit: back_door, bgs: bgs_cafe_closed_night }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_7.md,
+      visualUnit: tag_001,
+      bgs: bgs_cafe_closed_night
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_7.md,
+      visualUnit: back_door,
+      bgs: bgs_cafe_closed_night
+    }
   # investigation_scene_8 — cafe backroom office corner
-  - { file: docs/stories_plan/chapter_1/investigation_scene_8.md, visualUnit: tag_001, bgs: bgs_cafe_backroom_office }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_8.md, visualUnit: office_corner, bgs: bgs_cafe_backroom_office }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_8.md, visualUnit: fixed_panel, bgs: bgs_cafe_backroom_office }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_8.md,
+      visualUnit: tag_001,
+      bgs: bgs_cafe_backroom_office
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_8.md,
+      visualUnit: office_corner,
+      bgs: bgs_cafe_backroom_office
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_8.md,
+      visualUnit: fixed_panel,
+      bgs: bgs_cafe_backroom_office
+    }
   # scene_8_5 — shopping street awning, late night
-  - { file: docs/stories_plan/chapter_1/scene_8_5.md, visualUnit: tag_001, bgs: bgs_shopping_street_rain_night }
+  - {
+      file: docs/stories_plan/chapter_1/scene_8_5.md,
+      visualUnit: tag_001,
+      bgs: bgs_shopping_street_rain_night
+    }
   # investigation_scene_9 — contractor office + interview room
-  - { file: docs/stories_plan/chapter_1/investigation_scene_9.md, visualUnit: tag_001, bgs: bgs_contractor_office_day }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_9.md, visualUnit: contractor_desk, bgs: bgs_contractor_office_day }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_9.md, visualUnit: confront_kitami, bgs: bgs_interview_room_fluorescent }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_9.md,
+      visualUnit: tag_001,
+      bgs: bgs_contractor_office_day
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_9.md,
+      visualUnit: contractor_desk,
+      bgs: bgs_contractor_office_day
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_9.md,
+      visualUnit: confront_kitami,
+      bgs: bgs_interview_room_fluorescent
+    }
   # interrogation_scene_10 — final hearing (victory)
-  - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, visualUnit: tag_001, bgm: bgm_review_board_victory, bgs: bgs_review_board_room }
-  - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, visualUnit: p1, bgm: bgm_review_board_victory, bgs: bgs_review_board_room }
-  - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, visualUnit: p2, bgm: bgm_review_board_victory, bgs: bgs_review_board_room }
-  - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, visualUnit: p3, bgm: bgm_review_board_victory, bgs: bgs_review_board_room }
-  - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, visualUnit: gate, bgm: bgm_review_board_victory, bgs: bgs_review_board_room }
-  - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, visualUnit: p4, bgm: bgm_review_board_victory, bgs: bgs_review_board_room }
-  - { file: docs/stories_plan/chapter_1/interrogation_scene_10.md, visualUnit: p5, bgm: bgm_review_board_victory, bgs: bgs_review_board_room }
+  - {
+      file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
+      visualUnit: tag_001,
+      bgm: bgm_review_board_victory,
+      bgs: bgs_review_board_room
+    }
+  - {
+      file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
+      visualUnit: p1,
+      bgm: bgm_review_board_victory,
+      bgs: bgs_review_board_room
+    }
+  - {
+      file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
+      visualUnit: p2,
+      bgm: bgm_review_board_victory,
+      bgs: bgs_review_board_room
+    }
+  - {
+      file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
+      visualUnit: p3,
+      bgm: bgm_review_board_victory,
+      bgs: bgs_review_board_room
+    }
+  - {
+      file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
+      visualUnit: gate,
+      bgm: bgm_review_board_victory,
+      bgs: bgs_review_board_room
+    }
+  - {
+      file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
+      visualUnit: p4,
+      bgm: bgm_review_board_victory,
+      bgs: bgs_review_board_room
+    }
+  - {
+      file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
+      visualUnit: p5,
+      bgm: bgm_review_board_victory,
+      bgs: bgs_review_board_room
+    }
   # scene_11 — chapter close
-  - { file: docs/stories_plan/chapter_1/scene_11.md, visualUnit: tag_001, bgm: bgm_chapter_close, bgs: bgs_cafe_afternoon_after_rain }
-  - { file: docs/stories_plan/chapter_1/scene_11.md, visualUnit: tag_002, bgm: bgm_chapter_close, bgs: bgs_cafe_afternoon_after_rain }
-  - { file: docs/stories_plan/chapter_1/scene_11.md, visualUnit: tag_003, bgm: bgm_chapter_close, bgs: bgs_detective_office_night }
-  - { file: docs/stories_plan/chapter_1/scene_11.md, visualUnit: tag_004, bgm: bgm_chapter_close, bgs: bgs_detective_office_night }
-  - { file: docs/stories_plan/chapter_1/scene_11.md, visualUnit: tag_005, bgm: bgm_chapter_close }
+  - {
+      file: docs/stories_plan/chapter_1/scene_11.md,
+      visualUnit: tag_001,
+      bgm: bgm_chapter_close,
+      bgs: bgs_cafe_afternoon_after_rain
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_11.md,
+      visualUnit: tag_002,
+      bgm: bgm_chapter_close,
+      bgs: bgs_cafe_afternoon_after_rain
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_11.md,
+      visualUnit: tag_003,
+      bgm: bgm_chapter_close,
+      bgs: bgs_detective_office_night
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_11.md,
+      visualUnit: tag_004,
+      bgm: bgm_chapter_close,
+      bgs: bgs_detective_office_night
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_11.md,
+      visualUnit: tag_005,
+      bgm: bgm_chapter_close
+    }
 rejected:
-  - { file: docs/stories_plan/chapter_1/investigation_scene_3.md, line: 26, sound: 收銀抽屜硬幣盤輕響, reason: incidental prop handling, covered by cafe BGS texture }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_3.md, line: 149, sound: 腳步聲在窄牆間彈回, reason: incidental movement, covered by backroom corridor BGS }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_3.md, line: 223, sound: 感應燈延遲亮起, reason: incidental environmental transition, not an emphasized action }
-  - { file: docs/stories_plan/chapter_1/scene_2.md, line: 128, sound: 走廊盡頭門輕響, reason: incidental scene transition, not a repeated or emphasized action }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_7.md, line: 110, sound: 感應燈延遲亮起, reason: incidental environmental transition, not an emphasized action }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_7.md, line: 124, sound: 舊掛鐘撞停, reason: clock is already stopped; no in-scene audible event to generate }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_7.md, line: 65, sound: 濕傘套滴水, reason: rain texture covered by back-door BGS, not emphasized }
-  - { file: docs/stories_plan/chapter_1/scene_6.md, line: 3, sound: 屋簷邊雨水一條線落下, reason: rain texture covered by shopping-street BGS }
-  - { file: docs/stories_plan/chapter_1/scene_5.md, line: 8, sound: 紙張翻動聲音, reason: texture covered by review-board BGS, not an emphasized action }
-  - { file: docs/stories_plan/chapter_1/investigation_scene_9.md, line: 92, sound: 紙張滑過桌面, reason: texture covered by interview-room BGS, not an emphasized action }
-  - { file: docs/stories_plan/chapter_1/scene_11.md, line: 42, sound: 咖啡機低鳴奶泡浮起, reason: incidental machine texture, covered by afternoon cafe BGS }
-  - { file: docs/stories_plan/chapter_1/scene_11.md, line: 108, sound: 早坂來電手機亮起, reason: incidental communication transition, not a plot-emphasized action }
-  - { file: docs/stories_plan/chapter_1/scene_0.md, line: 5, sound: KAGAMI 摘要介面 BGM, reason: authored BGM:none; respect explicit silence }
-  - { file: docs/stories_plan/chapter_1/scene_0.md, line: 6, sound: KAGAMI 摘要介面 BGS, reason: authored BGS:none; respect explicit silence }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_3.md,
+      line: 26,
+      sound: 收銀抽屜硬幣盤輕響,
+      reason: incidental prop handling,
+      covered by cafe BGS texture
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_3.md,
+      line: 149,
+      sound: 腳步聲在窄牆間彈回,
+      reason: incidental movement,
+      covered by backroom corridor BGS
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_3.md,
+      line: 223,
+      sound: 感應燈延遲亮起,
+      reason: incidental environmental transition,
+      not an emphasized action
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_2.md,
+      line: 128,
+      sound: 走廊盡頭門輕響,
+      reason: incidental scene transition,
+      not a repeated or emphasized action
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_7.md,
+      line: 110,
+      sound: 感應燈延遲亮起,
+      reason: incidental environmental transition,
+      not an emphasized action
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_7.md,
+      line: 124,
+      sound: 舊掛鐘撞停,
+      reason: clock is already stopped; no in-scene audible event to generate
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_7.md,
+      line: 65,
+      sound: 濕傘套滴水,
+      reason: rain texture covered by back-door BGS,
+      not emphasized
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_6.md,
+      line: 3,
+      sound: 屋簷邊雨水一條線落下,
+      reason: rain texture covered by shopping-street BGS
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_5.md,
+      line: 8,
+      sound: 紙張翻動聲音,
+      reason: texture covered by review-board BGS,
+      not an emphasized action
+    }
+  - {
+      file: docs/stories_plan/chapter_1/investigation_scene_9.md,
+      line: 92,
+      sound: 紙張滑過桌面,
+      reason: texture covered by interview-room BGS,
+      not an emphasized action
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_11.md,
+      line: 42,
+      sound: 咖啡機低鳴奶泡浮起,
+      reason: incidental machine texture,
+      covered by afternoon cafe BGS
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_11.md,
+      line: 108,
+      sound: 早坂來電手機亮起,
+      reason: incidental communication transition,
+      not a plot-emphasized action
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_0.md,
+      line: 5,
+      sound: KAGAMI 摘要介面 BGM,
+      reason: authored BGM:none; respect explicit silence
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_0.md,
+      line: 6,
+      sound: KAGAMI 摘要介面 BGS,
+      reason: authored BGS:none; respect explicit silence
+    }

@@ -82,6 +82,32 @@ afterEach(() => {
 });
 
 describe("game client audio events", () => {
+  it("does not play dialogue-click feedback from command dispatch", async () => {
+    const previous = state("previous");
+    const next = state("next");
+    const client = await loadGameClient(previous);
+    let resolveInvoke!: (value: GameStateView) => void;
+
+    mocks.invoke.mockReturnValueOnce(
+      new Promise<GameStateView>((resolve) => {
+        resolveInvoke = resolve;
+      }),
+    );
+    mocks.inferGameplaySfxEvents.mockReturnValueOnce([]);
+
+    const command = client.advanceDialogue({
+      sceneId: "scene_previous",
+      queueGen: 1,
+      cursor: 0,
+    });
+
+    expect(mocks.playGameplaySfxEvent).not.toHaveBeenCalled();
+    expect(mocks.inferGameplaySfxEvents).not.toHaveBeenCalled();
+
+    resolveInvoke(next);
+    await command;
+  });
+
   it("plays inferred SFX once after a successful command", async () => {
     const previous = state("previous");
     const next = state("next");

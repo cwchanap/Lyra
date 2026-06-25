@@ -27,6 +27,7 @@
   import GameplayAudio from "$lib/components/GameplayAudio.svelte";
   import InterrogationView from "$lib/components/InterrogationView.svelte";
   import MainMenu from "$lib/components/MainMenu.svelte";
+  import { playGameplaySfxEvent } from "$lib/audio/gameplay-audio-runtime.svelte";
 
   async function handleExit() {
     try {
@@ -65,6 +66,7 @@
         current={gameState.value.mode.current}
         queueToken={gameState.value.mode.queueToken}
         onAdvance={advanceDialogue}
+        onAdvanceFeedback={() => playGameplaySfxEvent("ui:menu-confirm")}
         disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "explore"}

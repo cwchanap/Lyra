@@ -7,10 +7,13 @@ type LoopChannel = "bgm" | "bgs";
 export type AudioElementLike = {
   src: string;
   currentTime: number;
+  duration: number;
   loop: boolean;
   muted: boolean;
+  paused: boolean;
   preload: string;
   volume: number;
+  load?: () => void;
   play: () => Promise<void> | void;
   pause: () => void;
   addEventListener?: (type: string, listener: () => void) => void;
@@ -19,6 +22,12 @@ export type AudioElementLike = {
 
 export type AudioFactory = (url: string) => AudioElementLike;
 
+export type SfxBackend = {
+  dispose?: () => void;
+  play: (url: string, volume: number) => boolean;
+  preload: (url: string) => void;
+};
+
 type LoggerLike = {
   warn: (message: string) => void;
 };
@@ -26,14 +35,20 @@ type LoggerLike = {
 type LoopState = {
   assetId: string;
   audio: AudioElementLike;
+  onEnded: () => void;
   onError: () => void;
+  onLoadedMetadata: () => void;
+  onTimeUpdate: () => void;
+  restartTimer: ReturnType<typeof setTimeout> | null;
 };
 
 type SfxState = {
   audio: AudioElementLike;
-  cleanup: () => void;
+  destroy: () => void;
+  generation: number;
   onEnded: () => void;
   onError: () => void;
+  warnOnce: (detail: string) => void;
 };
 
 export type LoopChannelInput = {
@@ -44,11 +59,126 @@ export type LoopChannelInput = {
 export type GameplayAudioControllerOptions = {
   audioFactory?: AudioFactory;
   logger?: LoggerLike;
+  sfxBackend?: SfxBackend | null;
 };
+
+const LOOP_RESTART_MARGIN_SECONDS = 0.5;
 
 function defaultAudioFactory(url: string): AudioElementLike {
   const audio = new Audio(url);
   return audio;
+}
+
+function defaultSfxBackend(logger: LoggerLike): SfxBackend | null {
+  if (typeof window === "undefined") return null;
+  const audioWindow = window as Window &
+    typeof globalThis & { webkitAudioContext?: typeof AudioContext };
+  const AudioContextCtor =
+    audioWindow.AudioContext ?? audioWindow.webkitAudioContext;
+  if (!AudioContextCtor || typeof fetch !== "function") return null;
+
+  const context = new AudioContextCtor({ latencyHint: "interactive" });
+  const buffers = new Map<
+    string,
+    {
+      active: AudioBufferSourceNode | null;
+      buffer: AudioBuffer | null;
+      failed: boolean;
+      loading: Promise<void> | null;
+      warned: boolean;
+    }
+  >();
+
+  const warnOnce = (url: string, detail: string) => {
+    const entry = buffers.get(url);
+    if (entry?.warned) return;
+    if (entry) entry.warned = true;
+    logger.warn(
+      `[GameplayAudio] Low-latency SFX unavailable: ${url} (${detail})`,
+    );
+  };
+  const entryFor = (url: string) => {
+    let entry = buffers.get(url);
+    if (!entry) {
+      entry = {
+        active: null,
+        buffer: null,
+        failed: false,
+        loading: null,
+        warned: false,
+      };
+      buffers.set(url, entry);
+    }
+    return entry;
+  };
+  const preload = (url: string) => {
+    const entry = entryFor(url);
+    if (entry.buffer || entry.loading || entry.failed) return;
+    entry.loading = fetch(url)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.arrayBuffer();
+      })
+      .then((data) => context.decodeAudioData(data))
+      .then((buffer) => {
+        entry.buffer = buffer;
+      })
+      .catch((error) => {
+        entry.failed = true;
+        warnOnce(url, normalizePlaybackError(error));
+      })
+      .finally(() => {
+        entry.loading = null;
+      });
+  };
+
+  return {
+    dispose: () => {
+      for (const entry of buffers.values()) {
+        entry.active?.stop();
+        entry.active = null;
+      }
+      buffers.clear();
+      void context.close().catch((error) => {
+        logger.warn(
+          `[GameplayAudio] Failed to close SFX context (${normalizePlaybackError(error)})`,
+        );
+      });
+    },
+    play: (url, volume) => {
+      const entry = entryFor(url);
+      if (!entry.buffer) {
+        preload(url);
+        return false;
+      }
+      try {
+        entry.active?.stop();
+        const source = context.createBufferSource();
+        const gain = context.createGain();
+        source.buffer = entry.buffer;
+        gain.gain.value = volume;
+        source.connect(gain);
+        gain.connect(context.destination);
+        source.onended = () => {
+          if (entry.active === source) entry.active = null;
+        };
+        if (context.state === "suspended") {
+          void context.resume().catch((error) => {
+            warnOnce(url, normalizePlaybackError(error));
+          });
+        }
+        source.start(0);
+        entry.active = source;
+        return true;
+      } catch (error) {
+        warnOnce(url, normalizePlaybackError(error));
+        return false;
+      }
+    },
+    preload,
+  };
 }
 
 function channelVolume(
@@ -92,12 +222,18 @@ export class GameplayAudioController {
     bgs: null,
   };
   private readonly activeSfx = new Set<SfxState>();
+  private readonly sfxByAsset = new Map<string, SfxState>();
   private readonly audioFactory: AudioFactory;
   private readonly logger: LoggerLike;
+  private readonly sfxBackend: SfxBackend | null;
 
   constructor(options: GameplayAudioControllerOptions = {}) {
     this.audioFactory = options.audioFactory ?? defaultAudioFactory;
     this.logger = options.logger ?? console;
+    this.sfxBackend =
+      options.sfxBackend === undefined
+        ? defaultSfxBackend(this.logger)
+        : options.sfxBackend;
   }
 
   async updateLoopChannels(
@@ -119,10 +255,21 @@ export class GameplayAudioController {
     }
   }
 
-  async playSfx(
-    assetId: string | null,
-    preferences: AudioPreferences,
-  ): Promise<void> {
+  preloadSfx(assetId: string | null): void {
+    if (!assetId) return;
+    let url: string;
+    try {
+      url = publicPathForStoryAsset(assetId, "audio");
+    } catch (error) {
+      this.warn(assetId, String(error));
+      return;
+    }
+    this.sfxBackend?.preload(url);
+    if (this.sfxBackend) return;
+    this.getOrCreateSfx(assetId);
+  }
+
+  playSfx(assetId: string | null, preferences: AudioPreferences): void {
     if (!assetId || preferences.muted) return;
     let url: string;
     try {
@@ -132,50 +279,85 @@ export class GameplayAudioController {
       return;
     }
 
+    if (this.sfxBackend?.play(url, channelVolume("sfx", preferences))) {
+      return;
+    }
+
+    const sfx = this.getOrCreateSfx(assetId, url);
+    if (!sfx) return;
+    this.restartSfx(sfx, url, preferences, this.activeSfx.has(sfx));
+  }
+
+  private getOrCreateSfx(
+    assetId: string,
+    resolvedUrl?: string,
+  ): SfxState | null {
+    const existing = this.sfxByAsset.get(assetId);
+    if (existing) return existing;
+
+    let url: string;
+    try {
+      url = resolvedUrl ?? publicPathForStoryAsset(assetId, "audio");
+    } catch (error) {
+      this.warn(assetId, String(error));
+      return null;
+    }
     const audio = this.audioFactory(url);
-    audio.loop = false;
-    audio.preload = "auto";
-    audio.muted = preferences.muted;
-    audio.volume = channelVolume("sfx", preferences);
-    let cleaned = false;
+    let destroyed = false;
     let warned = false;
+    const state: SfxState = {
+      audio,
+      destroy: () => undefined,
+      generation: 0,
+      onEnded: () => undefined,
+      onError: () => undefined,
+      warnOnce: () => undefined,
+    };
     const warnOnce = (detail: string) => {
       if (warned) return;
       warned = true;
       this.warn(assetId, detail);
     };
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
+    const destroy = () => {
+      if (destroyed) return;
+      destroyed = true;
       audio.removeEventListener?.("ended", state.onEnded);
       audio.removeEventListener?.("error", state.onError);
       this.activeSfx.delete(state);
-    };
-    const onEnded = () => cleanup();
-    const onError = () => {
-      warnOnce(url);
-      cleanup();
-    };
-    const state = { audio, cleanup, onEnded, onError };
-    audio.addEventListener?.("error", onError);
-    audio.addEventListener?.("ended", onEnded);
-    this.activeSfx.add(state);
-    try {
-      await audio.play();
-    } catch (error) {
-      if (!cleaned) warnOnce(playbackFailureDetail(url, error));
+      if (this.sfxByAsset.get(assetId) === state) {
+        this.sfxByAsset.delete(assetId);
+      }
       audio.pause();
       audio.currentTime = 0;
-      cleanup();
-    }
+    };
+    const onEnded = () => {
+      this.activeSfx.delete(state);
+      audio.currentTime = 0;
+    };
+    const onError = () => {
+      warnOnce(url);
+      destroy();
+    };
+    state.destroy = destroy;
+    state.onEnded = onEnded;
+    state.onError = onError;
+    state.warnOnce = warnOnce;
+    audio.loop = false;
+    audio.preload = "auto";
+    audio.addEventListener?.("error", onError);
+    audio.addEventListener?.("ended", onEnded);
+    audio.load?.();
+    this.sfxByAsset.set(assetId, state);
+    return state;
   }
 
   dispose(): void {
     this.stopLoop("bgm");
     this.stopLoop("bgs");
-    for (const sfx of Array.from(this.activeSfx)) {
+    for (const sfx of Array.from(this.sfxByAsset.values())) {
       this.stopSfx(sfx);
     }
+    this.sfxBackend?.dispose?.();
   }
 
   private async updateLoopChannel(
@@ -214,45 +396,134 @@ export class GameplayAudioController {
     }
 
     const audio = this.audioFactory(url);
+    const loop: LoopState = {
+      assetId,
+      audio,
+      onEnded: () => {},
+      onError: () => {},
+      onLoadedMetadata: () => {},
+      onTimeUpdate: () => {},
+      restartTimer: null,
+    };
     let warned = false;
     const warnOnce = (detail: string) => {
       if (warned) return;
       warned = true;
       this.warn(assetId, detail);
     };
-    const onError = () => {
+    const clearRestartTimer = () => {
+      if (loop.restartTimer === null) return;
+      clearTimeout(loop.restartTimer);
+      loop.restartTimer = null;
+    };
+    const scheduleLoopRestart = () => {
+      clearRestartTimer();
+      if (this.loops[channel]?.audio !== audio) return;
+      if (!Number.isFinite(audio.duration)) return;
+      if (audio.duration <= LOOP_RESTART_MARGIN_SECONDS) return;
+      const restartInSeconds = Math.max(
+        0,
+        audio.duration - audio.currentTime - LOOP_RESTART_MARGIN_SECONDS,
+      );
+      loop.restartTimer = setTimeout(
+        restartActiveLoop,
+        restartInSeconds * 1000,
+      );
+    };
+    const playActiveLoop = async () => {
+      try {
+        await audio.play();
+      } catch (error) {
+        if (this.loops[channel]?.audio !== audio) return;
+        warnOnce(playbackFailureDetail(url, error));
+        if (this.loops[channel]?.audio === audio) this.stopLoop(channel);
+      }
+    };
+    const restartActiveLoop = () => {
+      if (this.loops[channel]?.audio !== audio) return;
+      clearRestartTimer();
+      audio.currentTime = 0;
+      scheduleLoopRestart();
+      if (audio.paused) void playActiveLoop();
+    };
+    loop.onEnded = () => restartActiveLoop();
+    loop.onError = () => {
       warnOnce(url);
       if (this.loops[channel]?.audio === audio) this.stopLoop(channel);
     };
-    audio.loop = true;
+    loop.onLoadedMetadata = () => scheduleLoopRestart();
+    loop.onTimeUpdate = () => {
+      if (!Number.isFinite(audio.duration)) return;
+      if (audio.duration <= LOOP_RESTART_MARGIN_SECONDS) return;
+      if (audio.currentTime < audio.duration - LOOP_RESTART_MARGIN_SECONDS)
+        return;
+      restartActiveLoop();
+    };
+    audio.loop = false;
     audio.preload = "auto";
     audio.muted = preferences.muted;
     audio.volume = channelVolume(channel, preferences);
-    audio.addEventListener?.("error", onError);
-    this.loops[channel] = { assetId, audio, onError };
+    audio.addEventListener?.("error", loop.onError);
+    audio.addEventListener?.("ended", loop.onEnded);
+    audio.addEventListener?.("loadedmetadata", loop.onLoadedMetadata);
+    audio.addEventListener?.("timeupdate", loop.onTimeUpdate);
+    this.loops[channel] = loop;
+    audio.load?.();
+    scheduleLoopRestart();
 
-    try {
-      await audio.play();
-    } catch (error) {
-      if (this.loops[channel]?.audio !== audio) return;
-      warnOnce(playbackFailureDetail(url, error));
-      if (this.loops[channel]?.audio === audio) this.stopLoop(channel);
-    }
+    await playActiveLoop();
   }
 
   private stopLoop(channel: LoopChannel): void {
     const loop = this.loops[channel];
     if (!loop) return;
+    if (loop.restartTimer !== null) clearTimeout(loop.restartTimer);
     loop.audio.removeEventListener?.("error", loop.onError);
+    loop.audio.removeEventListener?.("ended", loop.onEnded);
+    loop.audio.removeEventListener?.("loadedmetadata", loop.onLoadedMetadata);
+    loop.audio.removeEventListener?.("timeupdate", loop.onTimeUpdate);
     loop.audio.pause();
     loop.audio.currentTime = 0;
     this.loops[channel] = null;
   }
 
   private stopSfx(sfx: SfxState): void {
-    sfx.cleanup();
-    sfx.audio.pause();
+    sfx.destroy();
+  }
+
+  private restartSfx(
+    sfx: SfxState,
+    url: string,
+    preferences: AudioPreferences,
+    cutActivePlayback: boolean,
+  ): void {
+    const generation = ++sfx.generation;
+    sfx.audio.muted = preferences.muted;
+    sfx.audio.volume = channelVolume("sfx", preferences);
+    if (cutActivePlayback) sfx.audio.pause();
     sfx.audio.currentTime = 0;
+    this.activeSfx.add(sfx);
+    try {
+      const playResult = sfx.audio.play();
+      if (playResult) {
+        void Promise.resolve(playResult).catch((error) => {
+          this.handleSfxPlaybackFailure(sfx, url, generation, error);
+        });
+      }
+    } catch (error) {
+      this.handleSfxPlaybackFailure(sfx, url, generation, error);
+    }
+  }
+
+  private handleSfxPlaybackFailure(
+    sfx: SfxState,
+    url: string,
+    generation: number,
+    error: unknown,
+  ): void {
+    if (sfx.generation !== generation || !this.activeSfx.has(sfx)) return;
+    sfx.warnOnce(playbackFailureDetail(url, error));
+    sfx.destroy();
   }
 
   private warn(assetId: string, detail: string): void {

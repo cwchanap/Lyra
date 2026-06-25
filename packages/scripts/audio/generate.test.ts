@@ -523,6 +523,58 @@ describe("runGenerateCommand happy path", () => {
     expect(leftovers).toEqual([]);
   });
 
+  it("reuses cached provider mp3 bytes without another provider request", async () => {
+    process.env["ELEVENLABS_API_KEY"] = "test-key";
+    const repoRoot = createRepoRoot();
+    const planPath = writePlan(repoRoot, [
+      soundEntry({
+        id: "rain_street_light",
+        channel: "bgs",
+        status: "approved",
+      }),
+    ]);
+    const cachedProviderBytes = new Uint8Array([5, 6, 7, 8]);
+    writeFile(
+      repoRoot,
+      "packages/scripts/.audio-cache/bgs/rain_street_light.mp3",
+      Buffer.from(cachedProviderBytes),
+    );
+
+    const fakeConvert: AudioConverter = async ({ inputPath, outputPath }) => {
+      expect(readFileSync(inputPath)).toEqual(Buffer.from(cachedProviderBytes));
+      writeFileSync(outputPath, new Uint8Array([9, 8, 7, 6]));
+    };
+
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const code = await runGenerateCommand([planPath], {
+      repoRoot,
+      cwd: repoRoot,
+      stdout: (m) => stdout.push(m),
+      stderr: (m) => stderr.push(m),
+      convert: fakeConvert,
+    });
+
+    expect(code).toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(stderr).toEqual([]);
+    expect(stdout.some((m) => /reusing cached mp3/.test(m))).toBe(true);
+    expect(
+      readFileSync(
+        join(repoRoot, "static/assets/audio/bgs/rain_street_light.ogg"),
+      ),
+    ).toEqual(Buffer.from([9, 8, 7, 6]));
+
+    const updated = YAML.parse(readFileSync(planPath, "utf-8")) as {
+      entries: Array<{ id: string; status: string; outputPath?: string }>;
+    };
+    const entry = updated.entries.find((e) => e.id === "rain_street_light");
+    expect(entry?.status).toBe("generated");
+    expect(entry?.outputPath).toBe(
+      "static/assets/audio/bgs/rain_street_light.ogg",
+    );
+  });
+
   it("prunes stale cache entries after a successful full run", async () => {
     process.env["ELEVENLABS_API_KEY"] = "test-key";
     const providerBytes = new Uint8Array([1, 2, 3, 4]);
@@ -617,7 +669,11 @@ function soundEntry(input: {
 `;
 }
 
-function writeFile(repoRoot: string, path: string, text: string): void {
+function writeFile(
+  repoRoot: string,
+  path: string,
+  text: string | NodeJS.ArrayBufferView,
+): void {
   const fullPath = join(repoRoot, path);
   mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, text);

@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  audioCacheRelativePath,
   audioOutputRelativePath,
   pruneAudioCache,
   writeGeneratedAudioFile,
@@ -224,13 +225,25 @@ export async function runGenerateCommand(
     // strand the entry with the plan still saying "approved".
     let outputWritten = false;
     try {
-      const providerBytes = await client.generate({
-        id: target.entry.id,
-        channel: target.entry.channel,
-        prompt: target.entry.prompt,
-        loop: target.entry.loop,
-        intendedDurationSeconds: target.entry.intendedDurationSeconds,
-      });
+      const cachedProviderPath = resolve(
+        repoRoot,
+        audioCacheRelativePath(target.entry.channel, target.entry.id),
+      );
+      const providerBytes =
+        !parsed.value.force && existsSync(cachedProviderPath)
+          ? readFileSync(cachedProviderPath)
+          : await client.generate({
+              id: target.entry.id,
+              channel: target.entry.channel,
+              prompt: target.entry.prompt,
+              loop: target.entry.loop,
+              intendedDurationSeconds: target.entry.intendedDurationSeconds,
+            });
+      if (!parsed.value.force && existsSync(cachedProviderPath)) {
+        stdout(
+          `[audio] reusing cached mp3 ${audioCacheRelativePath(target.entry.channel, target.entry.id)}`,
+        );
+      }
       // Build the write args conditionally so we don't pass `convert: undefined`
       // to an exactOptionalPropertyTypes-strict `convert?` parameter.
       const writeArgs: {

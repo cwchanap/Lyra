@@ -11,7 +11,7 @@ const token: QueueToken = { sceneId: "s1", queueGen: 1, cursor: 0 };
 
 function renderDialogueBox(
   current: DialogueItem,
-  overrides?: { disabled?: boolean },
+  overrides?: { disabled?: boolean; onAdvanceFeedback?: () => void },
 ) {
   const onAdvance = vi.fn();
   const result = render(DialogueBox, {
@@ -176,13 +176,32 @@ describe("DialogueBox", () => {
     expect(onAdvance).toHaveBeenCalledWith(token);
   });
 
-  it("does not call onAdvance when disabled", async () => {
+  it("plays advance feedback before dispatching advance on click", async () => {
     const user = userEvent.setup();
+    const calls: string[] = [];
+    const onAdvanceFeedback = vi.fn(() => calls.push("feedback"));
     const { onAdvance } = renderDialogueBox(
       { kind: "action", text: "hello" },
-      { disabled: true },
+      { onAdvanceFeedback },
+    );
+    onAdvance.mockImplementationOnce(() => calls.push("advance"));
+
+    await user.click(screen.getByRole("button"));
+
+    expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
+    expect(onAdvance).toHaveBeenCalledWith(token);
+    expect(calls).toEqual(["feedback", "advance"]);
+  });
+
+  it("plays advance feedback even when command dispatch is disabled", async () => {
+    const user = userEvent.setup();
+    const onAdvanceFeedback = vi.fn();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { disabled: true, onAdvanceFeedback },
     );
     await user.click(screen.getByRole("button"));
+    expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
     expect(onAdvance).not.toHaveBeenCalled();
   });
 });
