@@ -787,8 +787,18 @@ describe("GameplayAudioController default SFX backend", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  it("builds an interactive-latency AudioContext eagerly", () => {
-    controller();
+  it("constructs the AudioContext lazily on first SFX use", () => {
+    // The AudioContext must NOT be built at controller/backend construction:
+    // defaultSfxBackend() runs through the gameplay-audio-runtime singleton at
+    // module load (before any user gesture), and constructing an AudioContext
+    // before the first gesture leaves it suspended and logs an autoplay-policy
+    // warning in WebKit/WKWebView (Tauri's macOS engine). Creation is deferred
+    // to the first SFX preload/play, which is gesture-adjacent.
+    fetchMock.mockResolvedValue(okResponse());
+    const audio = controller();
+    expect(instances).toHaveLength(0);
+
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
     expect(instances).toHaveLength(1);
     expect(instances[0]?.latencyHint).toBe("interactive");
   });
@@ -796,9 +806,9 @@ describe("GameplayAudioController default SFX backend", () => {
   it("preloads a buffer and plays it through the low-latency graph", async () => {
     fetchMock.mockResolvedValue(okResponse());
     const audio = controller();
-    const ctx = instances[0]!;
 
     audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    const ctx = instances[0]!;
     await flush();
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
       "/assets/audio/sfx/sfx_dialogue_proceed_tick.ogg",
@@ -818,9 +828,9 @@ describe("GameplayAudioController default SFX backend", () => {
   it("starts preloading and falls back when the buffer is not ready", async () => {
     fetchMock.mockResolvedValue(okResponse());
     const audio = controller();
-    const ctx = instances[0]!;
 
     audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
+    const ctx = instances[0]!;
     expect(ctx.createBufferSource).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await flush();
@@ -830,9 +840,9 @@ describe("GameplayAudioController default SFX backend", () => {
   it("warns once when the SFX fetch is not ok and never plays the buffer", async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 404 }));
     const audio = controller();
-    const ctx = instances[0]!;
 
     audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    const ctx = instances[0]!;
     await flush();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("HTTP 404"));
@@ -845,10 +855,13 @@ describe("GameplayAudioController default SFX backend", () => {
   it("warns once when audio decoding fails", async () => {
     fetchMock.mockResolvedValue(okResponse());
     const audio = controller();
-    const ctx = instances[0]!;
-    ctx.decodeAudioData.mockRejectedValueOnce(new Error("decode failed"));
 
     audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    // decodeAudioData runs asynchronously after the fetch resolves, so the
+    // rejection can be armed after preloadSfx creates the context but before
+    // the microtask chain reaches decode.
+    const ctx = instances[0]!;
+    ctx.decodeAudioData.mockRejectedValueOnce(new Error("decode failed"));
     await flush();
 
     expect(warn).toHaveBeenCalledTimes(1);
@@ -860,10 +873,10 @@ describe("GameplayAudioController default SFX backend", () => {
   it("resumes a suspended AudioContext before starting playback", async () => {
     fetchMock.mockResolvedValue(okResponse());
     const audio = controller();
-    const ctx = instances[0]!;
-    ctx.state = "suspended";
 
     audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    const ctx = instances[0]!;
+    ctx.state = "suspended";
     await flush();
     audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
 
@@ -873,11 +886,11 @@ describe("GameplayAudioController default SFX backend", () => {
   it("warns when resuming a suspended context rejects", async () => {
     fetchMock.mockResolvedValue(okResponse());
     const audio = controller();
+
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
     const ctx = instances[0]!;
     ctx.state = "suspended";
     ctx.resume.mockRejectedValueOnce(new Error("blocked"));
-
-    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
     await flush();
     audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
     await flush();
@@ -888,13 +901,13 @@ describe("GameplayAudioController default SFX backend", () => {
   it("warns and skips playback when starting the buffer source throws", async () => {
     fetchMock.mockResolvedValue(okResponse());
     const audio = controller();
+
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    await flush();
     const ctx = instances[0]!;
     ctx.createBufferSource.mockImplementationOnce(() => {
       throw new Error("graph broken");
     });
-
-    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
-    await flush();
     audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
 
     expect(ctx.createBufferSource).toHaveBeenCalledTimes(1);
@@ -904,11 +917,11 @@ describe("GameplayAudioController default SFX backend", () => {
   it("stops active sources and closes the context on dispose", async () => {
     fetchMock.mockResolvedValue(okResponse());
     const audio = controller();
-    const ctx = instances[0]!;
 
     audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
     await flush();
     audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
+    const ctx = instances[0]!;
     const source = ctx.createBufferSource.mock.results[0]?.value;
 
     audio.dispose();
@@ -920,6 +933,10 @@ describe("GameplayAudioController default SFX backend", () => {
   it("warns when closing the SFX context rejects", async () => {
     fetchMock.mockResolvedValue(okResponse());
     const audio = controller();
+
+    // The context is created lazily, so prime it with a preload before dispose
+    // has anything to close.
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
     const ctx = instances[0]!;
     ctx.close.mockRejectedValueOnce(new Error("closing blocked"));
 
@@ -936,17 +953,21 @@ describe("GameplayAudioController default SFX backend", () => {
     vi.stubGlobal("webkitAudioContext", FakeAudioContext);
     fetchMock.mockResolvedValue(okResponse());
 
-    controller();
+    const audio = controller();
+    // The context is created lazily on first SFX use, not at construction.
+    expect(instances).toHaveLength(0);
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
     expect(instances).toHaveLength(1);
   });
 
   it("falls back to media SFX when the AudioContext constructor throws", () => {
-    // Regression guard for the fail-silent contract: an edge-case WebView
-    // may expose an AudioContext constructor that throws on construction
-    // (disabled by policy, unsupported codec path, etc.). defaultSfxBackend
-    // runs at module load through the gameplay-audio-runtime singleton, so
-    // an uncaught throw would crash the SPA at startup. Construction must be
-    // absorbed as "no low-latency backend" + a warning, never propagated.
+    // Regression guard for the fail-silent contract: an edge-case WebView may
+    // expose an AudioContext constructor that throws on construction (disabled
+    // by policy, unsupported codec path, etc.). Because the context is built
+    // lazily on first SFX use, that throw happens during the first preload/play
+    // rather than at module load, and must be absorbed as "no low-latency
+    // backend" + a one-shot warning — never propagated — so gameplay proceeds
+    // with media-element SFX.
     class ThrowingAudioContext {
       constructor() {
         throw new Error("AudioContext disabled in this WebView");
@@ -964,14 +985,21 @@ describe("GameplayAudioController default SFX backend", () => {
       logger: { warn },
     });
 
-    // Construction did not throw; the failure was absorbed as a warning.
+    // Construction itself does not throw or warn: the context is deferred.
+    expect(warn).not.toHaveBeenCalled();
+
+    // The first preload triggers the (failing) context construction, absorbed
+    // as a one-shot warning. The controller still sees a low-latency backend
+    // object, so preload does not yet spin up a media element.
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("AudioContext construction failed"),
     );
-
-    // No low-latency backend exists, so SFX preload creates a media element.
-    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
     expect(instances).toHaveLength(0);
+
+    // The first play finds no usable context, so the backend reports failure
+    // and the controller falls back to a media element.
+    audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
     expect(created).toHaveLength(1);
   });
 

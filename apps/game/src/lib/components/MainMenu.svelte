@@ -1,5 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import {
+    audioPreferences,
+    updateAudioPreferences,
+  } from "$lib/audio/gameplay-audio-runtime.svelte";
+  import AudioSettings from "./AudioSettings.svelte";
 
   type Props = {
     onNewGame: () => void;
@@ -414,16 +419,24 @@
     </nav>
 
     <footer class="footer">
-      <div class="narration">
-        ▸ 序章·東京。<b>雨</b
-        >把這座城市的影子洗得更深了——而某個人，正在這場雨裡，<em>決定</em
-        >你會先看見哪一塊真相。
+      <div class="footer-row">
+        <div class="narration">
+          ▸ 序章·東京。<b>雨</b
+          >把這座城市的影子洗得更深了——而某個人，正在這場雨裡，<em>決定</em
+          >你會先看見哪一塊真相。
+        </div>
+        <div class="footer-center">— Episode Zero · Continue? —</div>
+        <div class="keys">
+          <span><kbd>↑</kbd><kbd>↓</kbd>選擇</span>
+          <span><kbd>↵</kbd>確定</span>
+          <span><kbd>esc</kbd>返回</span>
+        </div>
       </div>
-      <div class="footer-center">— Episode Zero · Continue? —</div>
-      <div class="keys">
-        <span><kbd>↑</kbd><kbd>↓</kbd>選擇</span>
-        <span><kbd>↵</kbd>確定</span>
-        <span><kbd>esc</kbd>返回</span>
+      <div class="footer-audio">
+        <AudioSettings
+          preferences={audioPreferences}
+          onUpdate={updateAudioPreferences}
+        />
       </div>
     </footer>
   </main>
@@ -1023,12 +1036,24 @@
   .footer {
     grid-column: 1 / -1;
     grid-row: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px 0 0;
+    border-top: 1px solid var(--rule);
+  }
+  .footer-row {
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 24px;
-    padding: 16px 0 0;
-    border-top: 1px solid var(--rule);
+  }
+  .footer-audio {
+    display: flex;
+    justify-content: center;
+  }
+  .footer-audio > :global(.audio-settings) {
+    max-width: 560px;
   }
   .narration {
     color: var(--bone);
