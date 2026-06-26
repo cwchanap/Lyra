@@ -7,6 +7,7 @@ import {
   STORY_BEAT_SFX_TRIGGERS,
   assetIdForGameplaySfxEvent,
   inferGameplaySfxEvents,
+  mappedGameplaySfxAssetIds,
   type GameplayCommandName,
 } from "./sfx-events";
 
@@ -90,6 +91,22 @@ describe("SFX event mapping", () => {
     expect(
       assetIdForGameplaySfxEvent("interrogation:question-answered"),
     ).toBeNull();
+  });
+
+  it("lists every asset id that maps to a real SFX asset", () => {
+    // The list drives first-gesture preloading (preloadKnownGameplaySfx), so it
+    // must contain exactly the mapped asset ids and no nulls/duplicates.
+    const ids = mappedGameplaySfxAssetIds();
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "audio.sfx.sfx_dialogue_proceed_tick",
+        "audio.sfx.sfx_anonymous_message_buzz",
+        "audio.sfx.sfx_rice_ball_bag_crinkle",
+        "audio.sfx.sfx_coffee_machine_backflush",
+        "audio.sfx.sfx_usb_insert_chime",
+      ]),
+    );
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
 

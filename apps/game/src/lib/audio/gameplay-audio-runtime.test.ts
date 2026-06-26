@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => {
       (value: AudioPreferences): AudioPreferences => value,
     ),
     assetIdForGameplaySfxEvent: vi.fn((): string | null => null),
+    mappedGameplaySfxAssetIds: vi.fn((): string[] => []),
   };
 });
 
@@ -58,6 +59,7 @@ vi.mock("./audio-preferences", () => ({
 
 vi.mock("./sfx-events", () => ({
   assetIdForGameplaySfxEvent: mocks.assetIdForGameplaySfxEvent,
+  mappedGameplaySfxAssetIds: mocks.mappedGameplaySfxAssetIds,
 }));
 
 type RuntimeModule = typeof import("./gameplay-audio-runtime.svelte");
@@ -92,6 +94,8 @@ describe("gameplay audio runtime", () => {
     mocks.normalizeAudioPreferences.mockClear();
     mocks.assetIdForGameplaySfxEvent.mockReturnValue(null);
     mocks.assetIdForGameplaySfxEvent.mockClear();
+    mocks.mappedGameplaySfxAssetIds.mockReturnValue([]);
+    mocks.mappedGameplaySfxAssetIds.mockClear();
   });
 
   it("constructs the controller eagerly but defers SFX preload past module init", async () => {
@@ -185,6 +189,28 @@ describe("gameplay audio runtime", () => {
     const runtime = await loadRuntime();
     runtime.playGameplaySfxEvent("ui:new-game");
     expect(controller().playSfx).not.toHaveBeenCalled();
+  });
+
+  it("preloads every mapped SFX asset to warm the decode cache", async () => {
+    const runtime = await loadRuntime();
+    const assetIds = [
+      "audio.sfx.sfx_dialogue_proceed_tick",
+      "audio.sfx.sfx_usb_insert_chime",
+    ];
+    mocks.mappedGameplaySfxAssetIds.mockReturnValue(assetIds);
+
+    runtime.preloadKnownGameplaySfx();
+
+    expect(controller().preloadSfx).toHaveBeenCalledTimes(assetIds.length);
+    for (const id of assetIds) {
+      expect(controller().preloadSfx).toHaveBeenCalledWith(id);
+    }
+  });
+
+  it("preloads nothing when no SFX assets are mapped", async () => {
+    const runtime = await loadRuntime();
+    runtime.preloadKnownGameplaySfx();
+    expect(controller().preloadSfx).not.toHaveBeenCalled();
   });
 
   it("disposes the controller through the explicit teardown", async () => {

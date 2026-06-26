@@ -59,6 +59,15 @@ export function assetIdForGameplaySfxEvent(
   return SFX_ASSETS[event] ?? null;
 }
 
+// All asset IDs that currently map to a real SFX asset. Used to warm the
+// low-latency WebAudio decode cache on the first user gesture (see
+// preloadKnownGameplaySfx in gameplay-audio-runtime) so the first occurrence
+// of any mapped SFX hits the buffer cache instead of falling back to the
+// higher-latency HTMLAudioElement path while the decode races.
+export function mappedGameplaySfxAssetIds(): string[] {
+  return Object.values(SFX_ASSETS);
+}
+
 // v1 story-beat SFX couple to specific authored Chapter 1 dialogue lines by
 // substring. This is intentional for the materially meaningful Chapter 1 SFX
 // but fragile: if a writer edits one of these lines, the cue silently stops
