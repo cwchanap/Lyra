@@ -77,23 +77,36 @@ function defaultSfxBackend(logger: LoggerLike): SfxBackend | null {
     audioWindow.AudioContext ?? audioWindow.webkitAudioContext;
   if (!AudioContextCtor || typeof fetch !== "function") return null;
 
-  // Constructing the AudioContext can throw in edge-case WebView runtimes
-  // even when the constructor is present (e.g. disabled by policy or a
-  // half-supported codec path). This runs at module load via the
-  // gameplay-audio-runtime singleton, so an uncaught throw here would crash
-  // the SPA at startup. Per the gameplay-audio design spec ("Audio must
-  // never block gameplay"; "absorb browser audio failures as silence plus
-  // warnings"), treat a construction failure as "no low-latency backend"
-  // and fall back to media-element SFX rather than propagating the error.
-  let context: AudioContext;
-  try {
-    context = new AudioContextCtor({ latencyHint: "interactive" });
-  } catch (error) {
-    logger.warn(
-      `[GameplayAudio] WebAudio SFX unavailable: AudioContext construction failed (${normalizePlaybackError(error)})`,
-    );
-    return null;
-  }
+  // The AudioContext is constructed lazily on the first SFX preload/play
+  // rather than at backend creation: defaultSfxBackend() runs through the
+  // gameplay-audio-runtime singleton at module load, before any user gesture.
+  // Constructing an AudioContext before the first gesture leaves it suspended
+  // and logs an autoplay-policy warning in WebKit/WKWebView (Tauri's macOS
+  // engine). Deferring creation to the first real SFX use keeps it
+  // gesture-adjacent. Per the design spec ("Audio must never block gameplay";
+  // "absorb browser audio failures as silence plus warnings"), a construction
+  // failure is still absorbed as "no low-latency backend" plus a one-shot
+  // warning, never propagated.
+  let context: AudioContext | null = null;
+  let contextFailed = false;
+  let constructionWarned = false;
+  const ensureContext = (): AudioContext | null => {
+    if (context) return context;
+    if (contextFailed) return null;
+    try {
+      context = new AudioContextCtor({ latencyHint: "interactive" });
+      return context;
+    } catch (error) {
+      contextFailed = true;
+      if (!constructionWarned) {
+        constructionWarned = true;
+        logger.warn(
+          `[GameplayAudio] WebAudio SFX unavailable: AudioContext construction failed (${normalizePlaybackError(error)})`,
+        );
+      }
+      return null;
+    }
+  };
   const buffers = new Map<
     string,
     {
@@ -127,7 +140,7 @@ function defaultSfxBackend(logger: LoggerLike): SfxBackend | null {
     }
     return entry;
   };
-  const preload = (url: string) => {
+  const decodeOnce = (ctx: AudioContext, url: string) => {
     const entry = entryFor(url);
     if (entry.buffer || entry.loading || entry.failed) return;
     entry.loading = fetch(url)
@@ -137,7 +150,7 @@ function defaultSfxBackend(logger: LoggerLike): SfxBackend | null {
         }
         return response.arrayBuffer();
       })
-      .then((data) => context.decodeAudioData(data))
+      .then((data) => ctx.decodeAudioData(data))
       .then((buffer) => {
         entry.buffer = buffer;
       })
@@ -149,6 +162,11 @@ function defaultSfxBackend(logger: LoggerLike): SfxBackend | null {
         entry.loading = null;
       });
   };
+  const preload = (url: string) => {
+    const ctx = ensureContext();
+    if (!ctx) return;
+    decodeOnce(ctx, url);
+  };
 
   return {
     dispose: () => {
@@ -157,31 +175,39 @@ function defaultSfxBackend(logger: LoggerLike): SfxBackend | null {
         entry.active = null;
       }
       buffers.clear();
-      void context.close().catch((error) => {
-        logger.warn(
-          `[GameplayAudio] Failed to close SFX context (${normalizePlaybackError(error)})`,
-        );
-      });
+      // Only close a context that was actually created; dispose() may run
+      // before any SFX ever primed the backend (e.g. a short session that
+      // never played SFX), and calling close() on a never-built context is
+      // impossible.
+      if (context) {
+        void context.close().catch((error) => {
+          logger.warn(
+            `[GameplayAudio] Failed to close SFX context (${normalizePlaybackError(error)})`,
+          );
+        });
+      }
     },
     play: (url, volume) => {
+      const ctx = ensureContext();
+      if (!ctx) return false;
       const entry = entryFor(url);
       if (!entry.buffer) {
-        preload(url);
+        decodeOnce(ctx, url);
         return false;
       }
       try {
         entry.active?.stop();
-        const source = context.createBufferSource();
-        const gain = context.createGain();
+        const source = ctx.createBufferSource();
+        const gain = ctx.createGain();
         source.buffer = entry.buffer;
         gain.gain.value = volume;
         source.connect(gain);
-        gain.connect(context.destination);
+        gain.connect(ctx.destination);
         source.onended = () => {
           if (entry.active === source) entry.active = null;
         };
-        if (context.state === "suspended") {
-          void context.resume().catch((error) => {
+        if (ctx.state === "suspended") {
+          void ctx.resume().catch((error) => {
             warnOnce(url, normalizePlaybackError(error));
           });
         }

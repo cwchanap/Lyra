@@ -23,10 +23,15 @@ export const audioPreferences = $state<AudioPreferences>(
 // and remount GameplayAudio.svelte, firing onDestroy. Without recreation, all
 // audio in the rest of that session would be silent. We track disposal here
 // and lazily spin up a fresh controller on the next use.
+//
+// The controller is constructed WITHOUT preloading SFX: preloading would
+// construct the WebAudio AudioContext immediately (decodeAudioData needs a
+// context), and building it at module load — before the first user gesture —
+// leaves it suspended and logs an autoplay-policy warning in WebKit/WKWebView
+// (Tauri's macOS engine). The AudioContext is instead created lazily on the
+// first real SFX preload/play inside the controller, which is gesture-adjacent.
 function createController(): GameplayAudioController {
-  const next = new GameplayAudioController();
-  next.preloadSfx(assetIdForGameplaySfxEvent("ui:menu-confirm"));
-  return next;
+  return new GameplayAudioController();
 }
 
 let controller = createController();

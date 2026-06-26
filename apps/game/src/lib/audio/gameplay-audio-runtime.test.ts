@@ -94,15 +94,17 @@ describe("gameplay audio runtime", () => {
     mocks.assetIdForGameplaySfxEvent.mockClear();
   });
 
-  it("preloads the menu-confirm SFX eagerly on module init", async () => {
+  it("constructs the controller eagerly but defers SFX preload past module init", async () => {
+    // The controller singleton must exist as soon as the runtime module loads
+    // (so BGM/BGS/SFX are immediately dispatchable), but it must NOT preload
+    // SFX at module load: preload constructs the AudioContext, and building an
+    // AudioContext before the first user gesture leaves it suspended and logs
+    // an autoplay-policy warning in WebKit/WKWebView (Tauri's macOS engine).
+    // The AudioContext is created lazily on the first real SFX preload/play.
     mocks.assetIdForGameplaySfxEvent.mockReturnValue("audio.sfx.tick");
     await loadRuntime();
-    expect(mocks.assetIdForGameplaySfxEvent).toHaveBeenCalledWith(
-      "ui:menu-confirm",
-    );
-    expect(controller().preloadSfx).toHaveBeenCalledExactlyOnceWith(
-      "audio.sfx.tick",
-    );
+    expect(mocks.instances).toHaveLength(1);
+    expect(controller().preloadSfx).not.toHaveBeenCalled();
   });
 
   it("normalizes, persists, and applies preference patches", async () => {
@@ -205,7 +207,10 @@ describe("gameplay audio runtime", () => {
     expect(mocks.instances).toHaveLength(2);
     const second = controller();
     expect(second).not.toBe(first);
-    expect(second.preloadSfx).toHaveBeenCalledExactlyOnceWith("audio.sfx.tick");
+    // The recreated controller does not preload at construction (the
+    // AudioContext is built lazily on first real SFX use), so only the
+    // loop sync primes it for the new mode.
+    expect(second.preloadSfx).not.toHaveBeenCalled();
     expect(second.updateLoopChannels).toHaveBeenCalledExactlyOnceWith(
       {
         bgm: exploreMode.bgm,
