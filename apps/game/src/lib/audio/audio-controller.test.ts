@@ -940,6 +940,41 @@ describe("GameplayAudioController default SFX backend", () => {
     expect(instances).toHaveLength(1);
   });
 
+  it("falls back to media SFX when the AudioContext constructor throws", () => {
+    // Regression guard for the fail-silent contract: an edge-case WebView
+    // may expose an AudioContext constructor that throws on construction
+    // (disabled by policy, unsupported codec path, etc.). defaultSfxBackend
+    // runs at module load through the gameplay-audio-runtime singleton, so
+    // an uncaught throw would crash the SPA at startup. Construction must be
+    // absorbed as "no low-latency backend" + a warning, never propagated.
+    class ThrowingAudioContext {
+      constructor() {
+        throw new Error("AudioContext disabled in this WebView");
+      }
+    }
+    vi.stubGlobal("AudioContext", ThrowingAudioContext);
+    fetchMock.mockResolvedValue(okResponse());
+
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        created.push(element);
+        return element;
+      },
+      logger: { warn },
+    });
+
+    // Construction did not throw; the failure was absorbed as a warning.
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("AudioContext construction failed"),
+    );
+
+    // No low-latency backend exists, so SFX preload creates a media element.
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    expect(instances).toHaveLength(0);
+    expect(created).toHaveLength(1);
+  });
+
   it("produces no low-latency backend when neither context nor fetch exist", () => {
     vi.stubGlobal("AudioContext", undefined);
     vi.stubGlobal("fetch", undefined);
