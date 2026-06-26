@@ -34,6 +34,73 @@ function readAuthoredScene(chapterId: string, sceneFile: string): string {
   );
 }
 
+// The runtime story-beat matcher (enteredStoryBeatSfx) does NOT couple to any
+// occurrence of the substring in the authored Markdown: it gates on chapter id
+// + scene kind + scene id AND requires the substring to appear in a dialogue
+// beat whose kind matches the trigger's dialogueKind ("action" or "line"). A
+// naive `content.includes(substring)` guard goes green even when the only match
+// is a scene-setup tag or a differently-shaped line — e.g. "飯糰袋" appears both
+// in interrogation_scene_10.md's scene-setup tag (line 5, a [場景：…] scene tag,
+// never an action beat) and in the real action beat (line 360); deleting the
+// action beat would silently kill the cue while the old guard stayed green.
+//
+// This helper mirrors the compiler tokenizer's beat classification
+// (packages/scripts/compile-scenes/tokenizer.ts): action beats are [bracketed]
+// blocks that are NOT scene tags (multi-line blocks are accumulated and
+// newlines normalized), and line beats are **speaker**[expr]：text lines. The
+// guard then asserts the substring lands on at least one beat of the trigger's
+// kind, so removing the real beat fails CI.
+const SCENE_TAG_PREFIX = "場景：";
+const BRACKETED_RE = /^\[(.+?)\]\s*$/;
+const DIALOGUE_RE = /^\*\*([^*]+)\*\*(?:\[([a-z][a-z0-9_]*)\])?：(.+?)\s*$/;
+
+function beatsOfKind(
+  content: string,
+  dialogueKind: "action" | "line",
+): string[] {
+  const lines = content.split(/\r?\n/);
+  const beats: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = (lines[i] ?? "").trim();
+    if (trimmed.length === 0) continue;
+
+    // Multi-line bracketed block: starts with "[" but does not close on this
+    // line — accumulate until the closing "]" (tokenizer.ts:106-135).
+    if (trimmed.startsWith("[") && !trimmed.endsWith("]")) {
+      let accumulated = trimmed;
+      while (i + 1 < lines.length && !accumulated.includes("]")) {
+        i++;
+        const nextTrimmed = (lines[i] ?? "").trim();
+        if (nextTrimmed.length === 0) continue;
+        accumulated += "\n" + nextTrimmed;
+      }
+      const multiMatch = /^\[(.+?)\]\s*$/s.exec(accumulated);
+      if (multiMatch) {
+        const inner = (multiMatch[1] ?? "").replace(/\n/g, " ");
+        if (dialogueKind === "action" && !inner.startsWith(SCENE_TAG_PREFIX)) {
+          beats.push(inner);
+        }
+      }
+      continue;
+    }
+
+    const bracketed = BRACKETED_RE.exec(trimmed);
+    if (bracketed) {
+      const inner = bracketed[1] ?? "";
+      if (dialogueKind === "action" && !inner.startsWith(SCENE_TAG_PREFIX)) {
+        beats.push(inner);
+      }
+      continue;
+    }
+
+    const dialogue = DIALOGUE_RE.exec(trimmed);
+    if (dialogue && dialogueKind === "line") {
+      beats.push(dialogue[3] ?? "");
+    }
+  }
+  return beats;
+}
+
 function state(overrides: Partial<GameStateView> = {}): GameStateView {
   return {
     chapter: {
@@ -559,21 +626,67 @@ describe("story-beat SFX substring coupling (authored-content drift guard)", () 
   // exactly the substrings the runtime matchers use: if a developer changes
   // a matcher substring, this guard reads the new value against the authored
   // Markdown and fails if the authored line drifted out of sync.
+  // The runtime matcher gates on chapter id + scene kind + scene id AND the
+  // substring appearing in a beat of the trigger's dialogueKind. The guard
+  // checks exactly that shape: the substring must land on at least one beat of
+  // the matching kind (an action bracket beat, or a **speaker**：line beat), so
+  // a scene-setup tag or an unrelated line cannot keep the guard green after
+  // the real beat is edited away.
   it.each(
     STORY_BEAT_SFX_TRIGGERS.map((trigger) => ({
       chapterId: trigger.chapterId,
       sceneFile: `${trigger.sceneId}.md`,
       substring: trigger.substring,
+      dialogueKind: trigger.dialogueKind,
       event: trigger.event,
     })),
   )(
-    "authored $chapterId/$sceneFile still contains the substring the $event matcher couples to",
-    ({ chapterId, sceneFile, substring, event }) => {
+    "authored $chapterId/$sceneFile still carries $substring on a $dialogueKind beat the $event matcher couples to",
+    ({ chapterId, sceneFile, substring, dialogueKind, event }) => {
       const content = readAuthoredScene(chapterId, sceneFile);
+      const beats = beatsOfKind(content, dialogueKind);
+      const matched = beats.some((text) => text.includes(substring));
       expect(
-        content.includes(substring),
-        `expected authored ${chapterId}/${sceneFile} to contain "${substring}" — the substring the ${event} matcher couples to in STORY_BEAT_SFX_TRIGGERS; if this line was rewritten, update the trigger substring`,
+        matched,
+        `expected authored ${chapterId}/${sceneFile} to carry "${substring}" on a ${dialogueKind} beat — the shape the ${event} matcher couples to in STORY_BEAT_SFX_TRIGGERS; a scene-setup tag or differently-shaped line no longer counts. If the coupled beat was rewritten, update the trigger substring`,
       ).toBe(true);
     },
   );
+
+  // Regression guard for the guard itself: the previous content.includes()
+  // check stayed green when the only occurrence of the substring was a
+  // scene-setup tag (e.g. "飯糰袋" in interrogation_scene_10.md's [場景：…]
+  // line) rather than the action beat the runtime matcher couples to. Verify
+  // beatsOfKind excludes scene tags and only matches the dialogue kind, so the
+  // failure mode (deleting the real beat while the tag remains) would now fail
+  // CI instead of silently shipping a dead cue.
+  it("beatsOfKind excludes scene-setup tags and only matches the dialogue kind", () => {
+    const sceneTagOnly = [
+      "# Scene",
+      "",
+      "[場景：旁聽席上，三宅母親膝上放著飯糰袋。]",
+      "**相馬律**：開始吧。",
+    ].join("\n");
+    expect(beatsOfKind(sceneTagOnly, "action")).toEqual([]);
+    expect(
+      beatsOfKind(sceneTagOnly, "action").some((t) => t.includes("飯糰袋")),
+    ).toBe(false);
+
+    const withActionBeat = [
+      "# Scene",
+      "",
+      "[場景：旁聽席上，三宅母親膝上放著飯糰袋。]",
+      "[旁聽席上，三宅母親把膝上那只飯糰袋輕輕抱緊了一下。]",
+    ].join("\n");
+    expect(
+      beatsOfKind(withActionBeat, "action").some((t) => t.includes("飯糰袋")),
+    ).toBe(true);
+
+    // A line beat must not be misread as an action beat, and vice versa.
+    const lineBeat = "**黑瀨徹**：那台機器 backflush 的時候，也常那樣。";
+    expect(beatsOfKind(lineBeat, "line")).toEqual([
+      "那台機器 backflush 的時候，也常那樣。",
+    ]);
+    expect(beatsOfKind(lineBeat, "action")).toEqual([]);
+  });
 });

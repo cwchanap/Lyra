@@ -15,6 +15,9 @@ class FakeAudio implements AudioElementLike {
   preload = "";
   volume = 1;
   paused = true;
+  // Mirrors HTMLMediaElement.error; tests set this before emitting "error" to
+  // assert the MediaError code is folded into the warn detail.
+  error: { code: number } | null = null;
   listeners = new Map<string, Set<() => void>>();
   load = vi.fn();
   play = vi.fn(async () => {
@@ -448,6 +451,67 @@ describe("GameplayAudioController", () => {
     expect(backend.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it("dispose() is idempotent across repeated teardowns", () => {
+    // Lifecycle cleanup (Svelte onDestroy) can fire more than once. The
+    // disposed guard must prevent a second dispose from re-closing the SFX
+    // backend (which would log a spurious "Failed to close" warning). Use a
+    // mock backend so the guard's effect — backend.dispose exactly once and no
+    // double-close warning — is directly observable.
+    const backend = sfxBackend();
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => new FakeAudio(url),
+      logger: { warn },
+      sfxBackend: backend,
+    });
+
+    audio.dispose();
+    audio.dispose();
+
+    expect(backend.dispose).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("stopLoopChannels silences loops but keeps the SFX backend alive", async () => {
+    // stopLoopChannels is the gameComplete transition: it must stop the
+    // gameplay mix WITHOUT tearing down the SFX backend, so SFX keeps serving
+    // for a later new game in the same session. A regression that routed this
+    // through dispose() would close the AudioContext permanently.
+    const backend = sfxBackend();
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        created.push(element);
+        return element;
+      },
+      logger: { warn },
+      sfxBackend: backend,
+    });
+    await audio.updateLoopChannels(
+      {
+        bgm: { channel: "bgm", assetId: "audio.bgm.review" },
+        bgs: { channel: "bgs", assetId: "audio.bgs.rain" },
+      },
+      preferences,
+    );
+    const bgm = created[0]!;
+    const bgs = created[1]!;
+
+    audio.stopLoopChannels();
+
+    // Both loops are silenced...
+    expect(bgm.pause).toHaveBeenCalledTimes(1);
+    expect(bgs.pause).toHaveBeenCalledTimes(1);
+    expect(bgm.currentTime).toBe(0);
+    expect(bgs.currentTime).toBe(0);
+    // ...but the SFX backend is NOT torn down, and SFX still plays.
+    expect(backend.dispose).not.toHaveBeenCalled();
+    audio.playSfx("audio.sfx.sfx_usb_insert_chime", preferences);
+    expect(backend.play).toHaveBeenCalledExactlyOnceWith(
+      "/assets/audio/sfx/sfx_usb_insert_chime.ogg",
+      preferences.sfxVolume,
+    );
+  });
+
   it("suppresses SFX while muted", async () => {
     const audio = controller();
     await audio.playSfx("audio.sfx.sfx_usb_insert_chime", {
@@ -582,6 +646,34 @@ describe("GameplayAudioController", () => {
       expect.stringContaining("/assets/audio/bgm/review.ogg"),
     );
     expect(bgm.pause).toHaveBeenCalled();
+  });
+
+  it("folds the MediaError code into the loop error warning", async () => {
+    // A bare-URL warning collapses 404 / corrupt-.ogg / unsupported-codec into
+    // one identical message. The HTMLMediaElement carries a MediaError code at
+    // event time that must be preserved so the failure mode is diagnosable.
+    const audio = controller();
+    await audio.updateLoopChannels(
+      { bgm: { channel: "bgm", assetId: "audio.bgm.review" }, bgs: null },
+      preferences,
+    );
+    const bgm = created[0]!;
+    bgm.error = { code: 4 };
+
+    bgm.emit("error");
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("media error 4"));
+  });
+
+  it("folds the MediaError code into the SFX error warning", async () => {
+    const audio = controller();
+    await audio.playSfx("audio.sfx.sfx_usb_insert_chime", preferences);
+    const sfx = created[0]!;
+    sfx.error = { code: 2 };
+
+    sfx.emit("error");
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("media error 2"));
   });
 
   it("skips loop restart scheduling for non-finite durations", async () => {
@@ -928,6 +1020,22 @@ describe("GameplayAudioController default SFX backend", () => {
 
     expect(source.stop).toHaveBeenCalledTimes(1);
     expect(ctx.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("dispose() is idempotent and does not close the context twice", async () => {
+    // Repeated teardown (e.g. Svelte onDestroy firing more than once) must not
+    // close the AudioContext again — the second close() would reject and log a
+    // spurious "Failed to close SFX context" warning.
+    fetchMock.mockResolvedValue(okResponse());
+    const audio = controller();
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    const ctx = instances[0]!;
+
+    audio.dispose();
+    audio.dispose();
+
+    expect(ctx.close).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("warns when closing the SFX context rejects", async () => {
