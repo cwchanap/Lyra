@@ -94,12 +94,31 @@ async function dispatchGameCommand(
       // the new state is already committed. An unexpected throw from SFX
       // inference/playback must not propagate to the caller and break the game
       // flow, so isolate it from the dispatch path.
+      //
+      // Inference and playback are isolated separately: inference is pure logic
+      // over the Rust GameStateView, so a throw there signals a contract bug
+      // (e.g. a field shape changed on the Rust side — note inferGameplaySfxEvents
+      // reads next.inventory.evidence.length with only `state?` guarded, not
+      // `inventory`). Absorbing inference into the same catch as playback would
+      // hide that drift behind a generic playback warning that is effectively
+      // invisible in a packaged WKWebView build. Log inference failures
+      // distinctly with the command so the drift is diagnosable.
+      let events: ReturnType<typeof inferGameplaySfxEvents>;
       try {
-        for (const event of inferGameplaySfxEvents(previous, v, command)) {
+        events = inferGameplaySfxEvents(previous, v, command);
+      } catch (inferenceError) {
+        console.warn(
+          `[GameplayAudio] SFX inference failed for ${command}`,
+          inferenceError,
+        );
+        events = [];
+      }
+      for (const event of events) {
+        try {
           playGameplaySfxEvent(event);
+        } catch (playbackError) {
+          console.warn("[GameplayAudio] SFX playback failed", playbackError);
         }
-      } catch (audioError) {
-        console.warn("[GameplayAudio] SFX dispatch failed", audioError);
       }
     }
   } finally {

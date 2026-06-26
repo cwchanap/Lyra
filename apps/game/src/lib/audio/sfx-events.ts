@@ -20,17 +20,31 @@ export type GameplaySfxEvent =
   | "story:coffee-backflush"
   | "story:usb-insert";
 
-// Reserved (intentionally unmapped) events for v1: "ui:action-unavailable",
-// "interrogation:wrong-present", and "interrogation:successful-contradiction"
-// are part of the spec's first-pass event families but have no Chapter 1 SFX
-// asset. The design spec explicitly permits an event to resolve to NO SOUND,
-// and Chapter 1 maps only four materially meaningful SFX. These remain in the
-// union as reserved types: "action-unavailable" needs UI-level dispatch (an
-// unavailable-action signal that the current disabled-prop gating does not
-// produce), and the two interrogation outcomes need Rust contradiction-result
-// signals that are not yet wired. Do NOT emit them from
-// inferGameplaySfxEvents until they map to a real asset — emitting unmapped
-// events would only imply functionality that produces silence.
+// Mapping policy for v1. SFX_ASSETS below has FIVE entries, partitioned as:
+//   - four Chapter 1 story-beat SFX (anonymous-message, rice-ball-bag,
+//     coffee-backflush, usb-insert) that couple a cue to a specific authored
+//     dialogue line (see STORY_BEAT_SFX_TRIGGERS); plus
+//   - one generic UI tick (ui:menu-confirm) reused across confirm actions.
+//
+// Every other event in the GameplaySfxEvent union currently resolves to NO
+// SOUND, but for two different reasons — keep them straight:
+//   1. "No dispatch path yet." Events like ui:new-game / ui:reset /
+//      investigation:* / interrogation:phase-entered / question-answered /
+//      testimony-pressed ARE emitted by inferGameplaySfxEvents, but they have
+//      no Chapter 1 asset so assetIdForGameplaySfxEvent returns null and
+//      playGameplaySfxEvent short-circuits. These are intentionally silent
+//      generic feedback for v1.
+//   2. "Emitted would imply functionality that does not exist." The three
+//      reserved events — "ui:action-unavailable", "interrogation:wrong-present",
+//      and "interrogation:successful-contradiction" — are part of the spec's
+//      first-pass event families but have no Chapter 1 SFX asset AND their
+//      dispatch signals are not yet wired ("action-unavailable" needs a
+//      UI-level unavailable-action signal the current disabled-prop gating
+//      does not produce; the two interrogation outcomes need Rust
+//      contradiction-result signals). Do NOT emit them from
+//      inferGameplaySfxEvents until they map to a real asset — emitting
+//      unmapped events would only imply functionality that produces silence.
+// The design spec explicitly permits an event to resolve to NO SOUND.
 
 export type GameplayCommandName =
   | "start_game"

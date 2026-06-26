@@ -13,11 +13,19 @@ export type AudioElementLike = {
   paused: boolean;
   preload: string;
   volume: number;
+  // `error` mirrors HTMLMediaElement.error; read at event time to fold the
+  // MediaError code into the absorb-as-warning detail (see onError handlers).
+  error?: { code: number } | null;
   load?: () => void;
   play: () => Promise<void> | void;
   pause: () => void;
-  addEventListener?: (type: string, listener: () => void) => void;
-  removeEventListener?: (type: string, listener: () => void) => void;
+  // Required, not optional: every real producer (HTMLAudioElement, the test
+  // FakeAudio) implements EventTarget, and the controller's absorb-as-warning
+  // contract depends on error/ended/timeupdate/loadedmetadata actually being
+  // wired. Making these optional let a backend compile cleanly while silently
+  // dropping every handler — the opposite of the contract.
+  addEventListener: (type: string, listener: () => void) => void;
+  removeEventListener: (type: string, listener: () => void) => void;
 };
 
 export type AudioFactory = (url: string) => AudioElementLike;
@@ -236,6 +244,16 @@ function playbackFailureDetail(url: string, error: unknown): string {
   return `${url}; ${normalizePlaybackError(error)}`;
 }
 
+// HTMLMediaElement error events carry a MediaError on `audio.error` whose code
+// distinguishes 404/network/decode/unsupported-codec failures. The WebAudio
+// path folds its failure reason into the warn detail; do the same here instead
+// of collapsing every media failure into a bare URL (the design spec wants "a
+// concise warning with the asset ID and URL" plus the failure reason).
+function mediaErrorDetail(audio: AudioElementLike, url: string): string {
+  const code = audio.error?.code;
+  return typeof code === "number" ? `${url} (media error ${code})` : url;
+}
+
 function normalizePlaybackError(error: unknown): string {
   if (error instanceof Error) {
     return formatErrorNameMessage(error.name, error.message);
@@ -379,8 +397,8 @@ export class GameplayAudioController {
     const destroy = () => {
       if (destroyed) return;
       destroyed = true;
-      audio.removeEventListener?.("ended", state.onEnded);
-      audio.removeEventListener?.("error", state.onError);
+      audio.removeEventListener("ended", state.onEnded);
+      audio.removeEventListener("error", state.onError);
       this.activeSfx.delete(state);
       if (this.sfxByAsset.get(assetId) === state) {
         this.sfxByAsset.delete(assetId);
@@ -393,7 +411,7 @@ export class GameplayAudioController {
       audio.currentTime = 0;
     };
     const onError = () => {
-      warnOnce(url);
+      warnOnce(mediaErrorDetail(audio, url));
       destroy();
     };
     state.destroy = destroy;
@@ -402,8 +420,8 @@ export class GameplayAudioController {
     state.warnOnce = warnOnce;
     audio.loop = false;
     audio.preload = "auto";
-    audio.addEventListener?.("error", onError);
-    audio.addEventListener?.("ended", onEnded);
+    audio.addEventListener("error", onError);
+    audio.addEventListener("ended", onEnded);
     audio.load?.();
     this.sfxByAsset.set(assetId, state);
     return state;
@@ -532,7 +550,7 @@ export class GameplayAudioController {
     };
     loop.onEnded = () => restartActiveLoop();
     loop.onError = () => {
-      warnOnce(url);
+      warnOnce(mediaErrorDetail(audio, url));
       if (this.loops[channel]?.audio === audio) this.stopLoop(channel);
     };
     loop.onLoadedMetadata = () => scheduleLoopRestart();
@@ -547,10 +565,10 @@ export class GameplayAudioController {
     audio.preload = "auto";
     audio.muted = preferences.muted;
     audio.volume = channelVolume(channel, preferences);
-    audio.addEventListener?.("error", loop.onError);
-    audio.addEventListener?.("ended", loop.onEnded);
-    audio.addEventListener?.("loadedmetadata", loop.onLoadedMetadata);
-    audio.addEventListener?.("timeupdate", loop.onTimeUpdate);
+    audio.addEventListener("error", loop.onError);
+    audio.addEventListener("ended", loop.onEnded);
+    audio.addEventListener("loadedmetadata", loop.onLoadedMetadata);
+    audio.addEventListener("timeupdate", loop.onTimeUpdate);
     this.loops[channel] = loop;
     audio.load?.();
     scheduleLoopRestart();
@@ -562,10 +580,10 @@ export class GameplayAudioController {
     const loop = this.loops[channel];
     if (!loop) return;
     if (loop.restartTimer !== null) clearTimeout(loop.restartTimer);
-    loop.audio.removeEventListener?.("error", loop.onError);
-    loop.audio.removeEventListener?.("ended", loop.onEnded);
-    loop.audio.removeEventListener?.("loadedmetadata", loop.onLoadedMetadata);
-    loop.audio.removeEventListener?.("timeupdate", loop.onTimeUpdate);
+    loop.audio.removeEventListener("error", loop.onError);
+    loop.audio.removeEventListener("ended", loop.onEnded);
+    loop.audio.removeEventListener("loadedmetadata", loop.onLoadedMetadata);
+    loop.audio.removeEventListener("timeupdate", loop.onTimeUpdate);
     loop.audio.pause();
     loop.audio.currentTime = 0;
     this.loops[channel] = null;

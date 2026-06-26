@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUDIO_PREFERENCES_STORAGE_KEY,
   DEFAULT_AUDIO_PREFERENCES,
@@ -19,6 +19,10 @@ class MemoryStorage implements Pick<Storage, "getItem" | "setItem"> {
 }
 
 describe("audio preferences", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("returns defaults when storage is unavailable", () => {
     expect(loadAudioPreferences(null)).toEqual(DEFAULT_AUDIO_PREFERENCES);
   });
@@ -59,9 +63,18 @@ describe("audio preferences", () => {
   });
 
   it("falls back to defaults for invalid stored JSON", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const storage = new MemoryStorage();
     storage.setItem(AUDIO_PREFERENCES_STORAGE_KEY, "{bad json");
     expect(loadAudioPreferences(storage)).toEqual(DEFAULT_AUDIO_PREFERENCES);
+    // Corrupt stored prefs must surface a warning rather than silently
+    // reverting to defaults.
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("[GameplayAudio]"),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("could not be read"),
+    );
   });
 
   it("saves normalized preferences", () => {
@@ -85,6 +98,9 @@ describe("audio preferences", () => {
     // $state() proxies write through to their target. If any fallback branch
     // returned DEFAULT_AUDIO_PREFERENCES by reference, mutating the loaded
     // preferences would corrupt the module-level canonical defaults.
+    // The throwing-getItem path now logs a read-failure warning; silence it
+    // here so it does not clutter this unrelated fallback-reference test.
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     const noStorage = loadAudioPreferences(null);
     const emptyStorage = loadAudioPreferences(new MemoryStorage());
     const throwing: Pick<Storage, "getItem" | "setItem"> = {
@@ -108,6 +124,7 @@ describe("audio preferences", () => {
   });
 
   it("returns false when persisting throws", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const failing: Pick<Storage, "getItem" | "setItem"> = {
       getItem: () => null,
       setItem: () => {
@@ -116,6 +133,14 @@ describe("audio preferences", () => {
     };
     expect(saveAudioPreferences(DEFAULT_AUDIO_PREFERENCES, failing)).toBe(
       false,
+    );
+    // Persistence failure must surface a warning rather than silently dropping
+    // the player's preference change.
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("[GameplayAudio]"),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("could not be saved"),
     );
   });
 });
@@ -157,6 +182,7 @@ describe("browserStorage", () => {
   });
 
   it("returns null when localStorage access throws", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const descriptor = Object.getOwnPropertyDescriptor(window, "localStorage");
     Object.defineProperty(window, "localStorage", {
       configurable: true,
@@ -166,6 +192,14 @@ describe("browserStorage", () => {
     });
     try {
       expect(browserStorage()).toBeNull();
+      // Safari private-mode SecurityError must surface a warning rather than
+      // silently disabling preference persistence for the whole session.
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("[GameplayAudio]"),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("localStorage unavailable"),
+      );
     } finally {
       if (descriptor) {
         Object.defineProperty(window, "localStorage", descriptor);
