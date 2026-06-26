@@ -95,6 +95,14 @@ rejected:
 - Stage directions are evidence, not automatic sound requests.
 - Prefer reuse; reject incidental footsteps, prop handling, clothing rustle,
   rain already covered by BGS, and similar texture.
+- Hand-derived SFX (e.g. a short UI tick sliced from a longer generated SFX via
+  `ffmpeg`) may use `provider: local-ffmpeg` with `outputPath` and
+  `normalizationNotes` describing the derivation. These entries are outside the
+  `audio:generate` ElevenLabs tooling by design: the source asset is generated
+  through the normal pipeline, then the derived clip is produced locally. Keep
+  such derivations one-off and documented in the plan; if the pattern recurs for
+  more than one SFX family, escalate to a shared tooling step rather than
+  hand-deriving each clip.
 
 ## Red Flags
 

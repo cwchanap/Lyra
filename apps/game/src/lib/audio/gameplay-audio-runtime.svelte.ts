@@ -9,6 +9,7 @@ import {
 import { GameplayAudioController } from "./audio-controller";
 import {
   assetIdForGameplaySfxEvent,
+  mappedGameplaySfxAssetIds,
   type GameplaySfxEvent,
 } from "./sfx-events";
 
@@ -78,6 +79,25 @@ export function playGameplaySfxEvent(event: GameplaySfxEvent): void {
   const assetId = assetIdForGameplaySfxEvent(event);
   if (!assetId) return;
   void activeController().playSfx(assetId, audioPreferences);
+}
+
+/**
+ * Warms the low-latency WebAudio decode cache for every mapped SFX asset.
+ * Intended to run on the first user gesture (see GameplayAudio.svelte's
+ * handleUnlockGesture): the gesture clears the browser autoplay lock, and
+ * preloading starts the fetch+decode so the first real `playSfx` for any
+ * mapped SFX hits the buffer cache instead of falling back to the
+ * higher-latency HTMLAudioElement path while the decode races. No-op for
+ * assets that fail to load (the backend marks them failed and `playSfx`
+ * falls back per-asset). Safe to call before any gesture: `preloadSfx`
+ * constructs the AudioContext lazily on first use, which is gesture-adjacent
+ * when invoked from the gesture handler.
+ */
+export function preloadKnownGameplaySfx(): void {
+  const controller = activeController();
+  for (const assetId of mappedGameplaySfxAssetIds()) {
+    controller.preloadSfx(assetId);
+  }
 }
 
 /**

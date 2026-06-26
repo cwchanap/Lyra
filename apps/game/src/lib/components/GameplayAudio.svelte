@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import {
     disposeGameplayAudio,
+    preloadKnownGameplaySfx,
     retryLockedGameplayAudio,
     syncGameplayAudioMode,
   } from "$lib/audio/gameplay-audio-runtime.svelte";
@@ -24,6 +25,12 @@
     for (const event of unlockEvents) {
       window.removeEventListener(event, handleUnlockGesture);
     }
+    // Warm the low-latency WebAudio decode cache for every mapped SFX on the
+    // first gesture. The gesture clears the autoplay lock and is the earliest
+    // gesture-adjacent moment to construct the AudioContext; preloading here
+    // starts fetch+decode so the first real SFX play hits the buffer cache
+    // instead of falling back to HTMLAudioElement while the decode races.
+    preloadKnownGameplaySfx();
     retryLockedGameplayAudio();
   }
 
