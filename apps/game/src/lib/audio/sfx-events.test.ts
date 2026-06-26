@@ -1,10 +1,37 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { GameStateView } from "$lib/state/types";
 import {
+  STORY_BEAT_SFX_TRIGGERS,
   assetIdForGameplaySfxEvent,
   inferGameplaySfxEvents,
   type GameplayCommandName,
 } from "./sfx-events";
+
+// Authored-content source roots, mirroring the compiler's source-root merge
+// (see packages/scripts/compile-scenes.ts): a chapter may live in either
+// static/stories_plan or docs/stories_plan, and a missing root is skipped.
+const REPO_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../../../",
+);
+const AUTHORED_ROOTS = ["static/stories_plan", "docs/stories_plan"];
+
+function readAuthoredScene(chapterId: string, sceneFile: string): string {
+  for (const root of AUTHORED_ROOTS) {
+    const candidate = path.join(REPO_ROOT, root, chapterId, sceneFile);
+    try {
+      return readFileSync(candidate, "utf8");
+    } catch {
+      // Not in this root; try the next source root.
+    }
+  }
+  throw new Error(
+    `Authored scene not found in any source root: ${chapterId}/${sceneFile}`,
+  );
+}
 
 function state(overrides: Partial<GameStateView> = {}): GameStateView {
   return {
@@ -499,4 +526,37 @@ describe("inferGameplaySfxEvents", () => {
     expect(names).toContain("present_testimony_item");
     expect(names).toHaveLength(11);
   });
+});
+
+describe("story-beat SFX substring coupling (authored-content drift guard)", () => {
+  // The Chapter 1 story-beat SFX matchers (enteredStoryBeatSfx, driven by
+  // STORY_BEAT_SFX_TRIGGERS) intentionally couple a cue to a specific
+  // authored dialogue substring. That coupling is an accepted v1 trade-off
+  // documented in sfx-events.ts, but it is fragile: if a writer edits one of
+  // these lines, the cue silently stops firing at runtime. This guard reads
+  // the authored Markdown and fails CI if a coupled substring disappears, so
+  // the drift surfaces at build time instead of silently breaking the
+  // shipped SFX.
+  //
+  // The cases are derived from STORY_BEAT_SFX_TRIGGERS so the test checks
+  // exactly the substrings the runtime matchers use: if a developer changes
+  // a matcher substring, this guard reads the new value against the authored
+  // Markdown and fails if the authored line drifted out of sync.
+  it.each(
+    STORY_BEAT_SFX_TRIGGERS.map((trigger) => ({
+      chapterId: trigger.chapterId,
+      sceneFile: `${trigger.sceneId}.md`,
+      substring: trigger.substring,
+      event: trigger.event,
+    })),
+  )(
+    "authored $chapterId/$sceneFile still contains the substring the $event matcher couples to",
+    ({ chapterId, sceneFile, substring, event }) => {
+      const content = readAuthoredScene(chapterId, sceneFile);
+      expect(
+        content.includes(substring),
+        `expected authored ${chapterId}/${sceneFile} to contain "${substring}" — the substring the ${event} matcher couples to in STORY_BEAT_SFX_TRIGGERS; if this line was rewritten, update the trigger substring`,
+      ).toBe(true);
+    },
+  );
 });

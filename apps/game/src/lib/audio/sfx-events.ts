@@ -1,4 +1,4 @@
-import type { GameStateView } from "$lib/state/types";
+import type { GameStateView, SceneView } from "$lib/state/types";
 
 export type GameplaySfxEvent =
   | "ui:new-game"
@@ -59,6 +59,50 @@ export function assetIdForGameplaySfxEvent(
   return SFX_ASSETS[event] ?? null;
 }
 
+// v1 story-beat SFX couple to specific authored Chapter 1 dialogue lines by
+// substring. This is intentional for the materially meaningful Chapter 1 SFX
+// but fragile: if a writer edits one of these lines, the cue silently stops
+// firing. This table is the single source of truth shared by the runtime
+// matcher (enteredStoryBeatSfx) and the authored-content drift guard in
+// sfx-events.test.ts, so a substring change here is checked against the
+// authored Markdown in CI. A compiler-validated tag is the future-proof
+// path; for v1 the substring match is an accepted, documented trade-off.
+export type StoryBeatSfxTrigger = {
+  event: GameplaySfxEvent;
+  chapterId: string;
+  sceneKind: SceneView["kind"];
+  sceneId: string;
+  dialogueKind: "action" | "line";
+  substring: string;
+};
+
+export const STORY_BEAT_SFX_TRIGGERS: readonly StoryBeatSfxTrigger[] = [
+  {
+    event: "story:usb-insert",
+    chapterId: "chapter_1",
+    sceneKind: "linear",
+    sceneId: "scene_11",
+    dialogueKind: "action",
+    substring: "隨身碟插上筆電",
+  },
+  {
+    event: "story:rice-ball-bag",
+    chapterId: "chapter_1",
+    sceneKind: "interrogation",
+    sceneId: "interrogation_scene_10",
+    dialogueKind: "action",
+    substring: "飯糰袋",
+  },
+  {
+    event: "story:coffee-backflush",
+    chapterId: "chapter_1",
+    sceneKind: "investigation",
+    sceneId: "investigation_scene_7",
+    dialogueKind: "line",
+    substring: "那台機器 backflush 的時候",
+  },
+];
+
 export function inferGameplaySfxEvents(
   previous: GameStateView | null,
   next: GameStateView | null,
@@ -90,12 +134,10 @@ export function inferGameplaySfxEvents(
   if (enteredChapterOneAnonymousMessage(previous, next)) {
     events.push("story:anonymous-message");
   }
-  if (enteredChapterOneUsbBeat(previous, next)) events.push("story:usb-insert");
-  if (enteredChapterOneRiceBallBeat(previous, next)) {
-    events.push("story:rice-ball-bag");
-  }
-  if (enteredChapterOneCoffeeBackflushBeat(previous, next)) {
-    events.push("story:coffee-backflush");
+  for (const trigger of STORY_BEAT_SFX_TRIGGERS) {
+    if (enteredStoryBeatSfx(previous, next, trigger)) {
+      events.push(trigger.event);
+    }
   }
 
   return dedupe(events);
@@ -131,58 +173,21 @@ function enteredChapterOneAnonymousMessage(
   );
 }
 
-function enteredChapterOneUsbBeat(
+function enteredStoryBeatSfx(
   previous: GameStateView | null,
   next: GameStateView,
+  trigger: StoryBeatSfxTrigger,
 ): boolean {
-  // v1 story-beat SFX couple to specific authored Chapter 1 dialogue lines by
-  // substring (see also enteredChapterOneRiceBallBeat /
-  // enteredChapterOneCoffeeBackflushBeat). This is intentional for the four
-  // materially meaningful Chapter 1 SFX but fragile: if a writer edits one of
-  // these lines, the cue silently stops firing. Each predicate is gated by
-  // chapter id + scene id + dialogue kind to narrow the blast radius. A
-  // compiler-validated tag is the future-proof path; for v1 the substring
-  // match is an accepted, documented trade-off.
-  if (next.chapter.id !== "chapter_1") return false;
-  if (next.scene.kind !== "linear" || next.scene.id !== "scene_11")
-    return false;
+  // Gated by chapter id + scene kind + scene id + dialogue kind to narrow the
+  // blast radius of the substring match (see STORY_BEAT_SFX_TRIGGERS).
+  if (next.chapter.id !== trigger.chapterId) return false;
+  if (next.scene.kind !== trigger.sceneKind) return false;
+  if (next.scene.id !== trigger.sceneId) return false;
   return enteredDialogueBeat(
     previous,
     next,
-    (kind, text) => kind === "action" && text.includes("隨身碟插上筆電"),
-  );
-}
-
-function enteredChapterOneRiceBallBeat(
-  previous: GameStateView | null,
-  next: GameStateView,
-): boolean {
-  return (
-    next.chapter.id === "chapter_1" &&
-    next.scene.kind === "interrogation" &&
-    next.scene.id === "interrogation_scene_10" &&
-    enteredDialogueBeat(
-      previous,
-      next,
-      (kind, text) => kind === "action" && text.includes("飯糰袋"),
-    )
-  );
-}
-
-function enteredChapterOneCoffeeBackflushBeat(
-  previous: GameStateView | null,
-  next: GameStateView,
-): boolean {
-  return (
-    next.chapter.id === "chapter_1" &&
-    next.scene.kind === "investigation" &&
-    next.scene.id === "investigation_scene_7" &&
-    enteredDialogueBeat(
-      previous,
-      next,
-      (kind, text) =>
-        kind === "line" && text.includes("那台機器 backflush 的時候"),
-    )
+    (kind, text) =>
+      kind === trigger.dialogueKind && text.includes(trigger.substring),
   );
 }
 

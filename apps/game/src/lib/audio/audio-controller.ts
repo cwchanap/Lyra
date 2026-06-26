@@ -77,7 +77,23 @@ function defaultSfxBackend(logger: LoggerLike): SfxBackend | null {
     audioWindow.AudioContext ?? audioWindow.webkitAudioContext;
   if (!AudioContextCtor || typeof fetch !== "function") return null;
 
-  const context = new AudioContextCtor({ latencyHint: "interactive" });
+  // Constructing the AudioContext can throw in edge-case WebView runtimes
+  // even when the constructor is present (e.g. disabled by policy or a
+  // half-supported codec path). This runs at module load via the
+  // gameplay-audio-runtime singleton, so an uncaught throw here would crash
+  // the SPA at startup. Per the gameplay-audio design spec ("Audio must
+  // never block gameplay"; "absorb browser audio failures as silence plus
+  // warnings"), treat a construction failure as "no low-latency backend"
+  // and fall back to media-element SFX rather than propagating the error.
+  let context: AudioContext;
+  try {
+    context = new AudioContextCtor({ latencyHint: "interactive" });
+  } catch (error) {
+    logger.warn(
+      `[GameplayAudio] WebAudio SFX unavailable: AudioContext construction failed (${normalizePlaybackError(error)})`,
+    );
+    return null;
+  }
   const buffers = new Map<
     string,
     {
