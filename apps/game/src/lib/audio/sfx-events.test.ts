@@ -25,8 +25,18 @@ function readAuthoredScene(chapterId: string, sceneFile: string): string {
     const candidate = path.join(REPO_ROOT, root, chapterId, sceneFile);
     try {
       return readFileSync(candidate, "utf8");
-    } catch {
-      // Not in this root; try the next source root.
+    } catch (err) {
+      // Only skip a root when the file is genuinely missing (ENOENT); surface
+      // permission (EACCES) or other I/O errors instead of misreporting them
+      // as "not found" and falling through to the next root.
+      if (
+        err instanceof Error &&
+        "code" in err &&
+        (err as { code: unknown }).code === "ENOENT"
+      ) {
+        continue;
+      }
+      throw err;
     }
   }
   throw new Error(

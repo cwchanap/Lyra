@@ -1150,5 +1150,12 @@
       top: 24vh;
       font-size: 60vw;
     }
+    /* Stack the footer's narration/center/keys row vertically at the mobile
+       breakpoint so the three-column grid cannot overflow and clip the audio
+       controls. Desktop keeps the auto 1fr auto three-column setup above. */
+    .footer-row {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
   }
 </style>
