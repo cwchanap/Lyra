@@ -14,11 +14,13 @@
     onReset,
     disabled = false,
     children,
+    menu,
   }: {
     gameState: GameStateView;
     onReset: () => void;
     disabled?: boolean;
     children: Snippet;
+    menu?: Snippet;
   } = $props();
 
   let showChapterHud = $derived(gameState.mode.type !== "explore");
@@ -102,16 +104,6 @@
         </div>
         <p class="summary">{gameState.chapter.summary}</p>
       </div>
-      <div class="audio-controls">
-        <AudioSettings
-          preferences={audioPreferences}
-          onUpdate={updateAudioPreferences}
-        />
-      </div>
-      <button type="button" onclick={onReset} {disabled}>
-        <span class="x">✕</span>
-        <span>結束<br /><span class="en">CLOSE&nbsp;CASE</span></span>
-      </button>
     </header>
 
     <div class="rule"></div>
@@ -156,6 +148,12 @@
           </button>
         </div>
 
+        {#if menu}
+          <div class="game-menu-extra">
+            {@render menu()}
+          </div>
+        {/if}
+
         <AudioSettings
           preferences={audioPreferences}
           onUpdate={updateAudioPreferences}
@@ -190,13 +188,6 @@
     gap: 10px;
     flex: 1 1 360px;
     max-width: 720px;
-    min-width: 0;
-  }
-
-  .audio-controls {
-    flex: 0 1 360px;
-    display: flex;
-    justify-content: center;
     min-width: 0;
   }
 
@@ -258,52 +249,6 @@
     font-size: 13px;
     line-height: 1.55;
     max-width: 56ch;
-  }
-
-  header > button {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px 9px;
-    background: transparent;
-    color: var(--bone-dim);
-    border: 1px solid var(--rule-strong);
-    cursor: pointer;
-    font: inherit;
-    font-size: 12px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    line-height: 1.2;
-    text-align: left;
-    transition:
-      color 0.18s,
-      border-color 0.18s,
-      background 0.18s;
-  }
-
-  header > button:hover:not(:disabled) {
-    color: var(--crimson);
-    border-color: var(--crimson);
-    background: var(--crimson-soft);
-  }
-
-  header > button:disabled {
-    opacity: 0.55;
-    cursor: wait;
-  }
-
-  header > button .x {
-    font-family: var(--display-jp);
-    font-size: 16px;
-    line-height: 1;
-  }
-
-  header > button .en {
-    font-family: var(--impact);
-    font-size: 9px;
-    letter-spacing: 0.24em;
-    color: var(--bone-faint);
   }
 
   .rule {
@@ -431,13 +376,11 @@
     color: var(--bone-faint);
   }
 
-  @media (max-width: 720px) {
-    .audio-controls {
-      order: 3;
-      flex: 1 1 100%;
-      width: 100%;
-    }
+  .game-menu-extra {
+    min-width: 0;
+  }
 
+  @media (max-width: 720px) {
     .game-menu-scrim {
       padding: 18px;
       align-items: end;

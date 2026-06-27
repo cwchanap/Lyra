@@ -242,6 +242,10 @@ if (shouldRegisterPlaywrightSuite) {
       await startFromMenu(page);
       await advanceDialogue(page);
 
+      await expect(page.getByRole("button", { name: /EVIDENCE/ })).toHaveCount(
+        0,
+      );
+
       await page.keyboard.press("Escape");
 
       const gameMenu = page.getByRole("dialog", { name: "遊戲選單" });
@@ -249,6 +253,9 @@ if (shouldRegisterPlaywrightSuite) {
       await expect(
         gameMenu.getByRole("button", { name: /繼續調查/ }),
       ).toBeFocused();
+      await expect(
+        gameMenu.getByRole("button", { name: /EVIDENCE/ }),
+      ).toBeVisible();
 
       await gameMenu.getByRole("button", { name: /繼續調查/ }).click();
 
@@ -277,8 +284,15 @@ if (shouldRegisterPlaywrightSuite) {
       await page.getByRole("button", { name: /桌子/ }).click();
 
       await expect(page.getByText("還是熱的。")).toBeVisible();
-      await page.getByRole("button", { name: /物證/ }).click();
-      await expect(page.getByText("還熱的咖啡")).toBeVisible();
+      await expect(page.getByRole("button", { name: /EVIDENCE/ })).toHaveCount(
+        0,
+      );
+
+      await page.keyboard.press("Escape");
+      const gameMenu = page.getByRole("dialog", { name: "遊戲選單" });
+      await gameMenu.getByRole("button", { name: /物證/ }).click();
+
+      await expect(gameMenu.getByText("還熱的咖啡")).toBeVisible();
     });
 
     test("surfaces command errors in the banner", async ({ page }) => {
