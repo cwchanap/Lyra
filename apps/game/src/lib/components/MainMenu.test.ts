@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -42,5 +42,23 @@ describe("MainMenu", () => {
     expect(mocks.updateAudioPreferences).toHaveBeenCalledWith({
       muted: true,
     });
+  });
+
+  it("does not hijack arrow keys while adjusting an audio slider", async () => {
+    // ArrowUp/ArrowDown on a focused range input must adjust the slider natively
+    // and must NOT bubble to the menu's window keydown handler, which otherwise
+    // preventDefault()s and moves focus to a menu card — locking keyboard users
+    // out of adjusting BGM/BGS/SFX with the standard range-control keys.
+    render(MainMenu, { onNewGame: vi.fn(), onExit: vi.fn() });
+
+    const slider = screen.getByLabelText("BGM");
+    slider.focus();
+    expect(document.activeElement).toBe(slider);
+
+    await fireEvent.keyDown(slider, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(slider);
+
+    await fireEvent.keyDown(slider, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(slider);
   });
 });

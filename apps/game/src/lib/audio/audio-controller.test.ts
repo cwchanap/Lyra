@@ -81,6 +81,7 @@ describe("GameplayAudioController", () => {
       dispose: vi.fn(),
       play: vi.fn(() => true),
       preload: vi.fn(),
+      setActiveGain: vi.fn(),
       ...overrides,
     };
   }
@@ -250,6 +251,62 @@ describe("GameplayAudioController", () => {
     });
     expect(created[0]?.muted).toBe(true);
     expect(created[0]?.volume).toBe(0.1);
+  });
+
+  it("mutes and rescales an SFX one-shot already in flight", async () => {
+    // Without applyPreferences reaching active SFX, a clip already playing
+    // keeps its original gain until it ends — so muting mid-SFX leaves the
+    // active clip audible and dragging the SFX slider doesn't rescale it. The
+    // HTMLAudio fallback path must update muted/volume on the active element.
+    const audio = controller();
+    await audio.playSfx("audio.sfx.sfx_usb_insert_chime", preferences);
+    const sfx = created[0]!;
+    expect(sfx.volume).toBe(preferences.sfxVolume);
+    expect(sfx.muted).toBe(false);
+
+    audio.applyPreferences({
+      muted: true,
+      bgmVolume: preferences.bgmVolume,
+      bgsVolume: preferences.bgsVolume,
+      sfxVolume: 0.4,
+    });
+
+    expect(sfx.muted).toBe(true);
+    // Volume is updated too so unmuting resumes at the new SFX level, not the
+    // stale one captured when the clip started.
+    expect(sfx.volume).toBe(0.4);
+  });
+
+  it("updates the SFX backend's active gains when preferences change", async () => {
+    // The low-latency WebAudio path bakes a single gain value in per play(); a
+    // mute/volume change must be pushed to in-flight sources via setActiveGain,
+    // using 0 when muted and the per-channel SFX volume otherwise.
+    const backend = sfxBackend();
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        created.push(element);
+        return element;
+      },
+      logger: { warn },
+      sfxBackend: backend,
+    });
+
+    audio.applyPreferences({
+      muted: true,
+      bgmVolume: preferences.bgmVolume,
+      bgsVolume: preferences.bgsVolume,
+      sfxVolume: 0.6,
+    });
+    expect(backend.setActiveGain).toHaveBeenCalledExactlyOnceWith(0);
+
+    audio.applyPreferences({
+      muted: false,
+      bgmVolume: preferences.bgmVolume,
+      bgsVolume: preferences.bgsVolume,
+      sfxVolume: 0.6,
+    });
+    expect(backend.setActiveGain).toHaveBeenNthCalledWith(2, 0.6);
   });
 
   it("plays SFX as a non-looping one-shot", async () => {
@@ -1020,6 +1077,38 @@ describe("GameplayAudioController default SFX backend", () => {
 
     expect(source.stop).toHaveBeenCalledTimes(1);
     expect(ctx.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("rescales the active gain node when SFX preferences change mid-playback", async () => {
+    // A source already started via the WebAudio graph keeps its baked gain
+    // value for the clip's lifetime. applyPreferences() must push the new
+    // effective gain (0 when muted, otherwise the SFX volume) to in-flight
+    // sources so the mute/volume control covers the full mix.
+    fetchMock.mockResolvedValue(okResponse());
+    const audio = controller();
+
+    audio.preloadSfx("audio.sfx.sfx_dialogue_proceed_tick");
+    await flush();
+    audio.playSfx("audio.sfx.sfx_dialogue_proceed_tick", preferences);
+    const ctx = instances[0]!;
+    const gain = ctx.createGain.mock.results[0]?.value;
+    expect(gain.gain.value).toBe(preferences.sfxVolume);
+
+    audio.applyPreferences({
+      muted: true,
+      bgmVolume: preferences.bgmVolume,
+      bgsVolume: preferences.bgsVolume,
+      sfxVolume: 0.2,
+    });
+    expect(gain.gain.value).toBe(0);
+
+    audio.applyPreferences({
+      muted: false,
+      bgmVolume: preferences.bgmVolume,
+      bgsVolume: preferences.bgsVolume,
+      sfxVolume: 0.2,
+    });
+    expect(gain.gain.value).toBe(0.2);
   });
 
   it("dispose() is idempotent and does not close the context twice", async () => {

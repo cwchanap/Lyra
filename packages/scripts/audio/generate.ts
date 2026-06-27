@@ -55,6 +55,17 @@ export type GenerationTarget = {
   outputPath: string;
 };
 
+// Hand-derived SFX authored with `provider: local-ffmpeg` are produced outside
+// the ElevenLabs tooling (see the designing-lyra-sound-assets skill): the
+// source clip is generated through the normal pipeline, then the derived cut is
+// made locally via ffmpeg. audio:generate must never send these to ElevenLabs —
+// doing so would bill for and overwrite a locally-derived asset.
+const LOCAL_FFMPEG_PROVIDER = "local-ffmpeg";
+
+function isLocalFfmpegEntry(entry: SoundPlanEntry): boolean {
+  return entry.provider === LOCAL_FFMPEG_PROVIDER;
+}
+
 // A writer editing a prompt in the plan leaves entry.prompt changed while
 // entry.promptHash — written back as provenance after a prior generation — goes
 // stale. This mirrors the hash the execution path computes (see runGenerateCommand)
@@ -129,10 +140,11 @@ export function planGeneration(input: {
     };
   }
 
-  // An id that exists but is proposed/rejected would otherwise pass the
-  // existence check above, get filtered by status in the loop below, leave
-  // nothing to generate, and exit 0 with no output — a silent-success trap.
-  // Surface it explicitly so the user knows the command did nothing.
+  // An id that exists but is proposed/rejected (or locally-derived) would
+  // otherwise pass the existence check above, get filtered by status/provider
+  // in the loop below, leave nothing to generate, and exit 0 with no output — a
+  // silent-success trap. Surface it explicitly so the user knows the command
+  // did nothing and why.
   if (input.only !== undefined) {
     const onlyEntry = parsed.value.entries.find(
       (entry) => entry.id === input.only,
@@ -154,12 +166,32 @@ export function planGeneration(input: {
         allEntries: [],
       };
     }
+    // local-ffmpeg entries are skipped by the loop below (they are produced
+    // outside this tool). Without this diagnostic, --only targeting one would
+    // no-op silently even with --force.
+    if (onlyEntry && isLocalFfmpegEntry(onlyEntry)) {
+      return {
+        diagnostics: [
+          {
+            code: "audioGenerateOnlyLocalFfmpeg",
+            path: "--only",
+            message: `Entry "${input.only}" uses provider "${LOCAL_FFMPEG_PROVIDER}" and is produced outside audio:generate. Re-derive it locally from its source clip (see normalizationNotes).`,
+          },
+        ],
+        toGenerate: [],
+        allEntries: [],
+      };
+    }
   }
 
   const toGenerate: GenerationTarget[] = [];
   for (const entry of parsed.value.entries) {
     if (input.only !== undefined && entry.id !== input.only) continue;
     if (entry.status !== "approved" && entry.status !== "generated") continue;
+    // local-ffmpeg entries are derived locally (see the designing-lyra-sound-
+    // assets skill) and must never reach ElevenLabs — even with --force, which
+    // would otherwise bill for and overwrite a hand-derived clip.
+    if (isLocalFfmpegEntry(entry)) continue;
 
     const outputPath = generatedOutputPath(entry);
     // The execution path detects a stale provider .mp3 cache by comparing the

@@ -120,6 +120,22 @@
       cards[focusIndex].focus();
     };
     const onKey = (e: KeyboardEvent) => {
+      // When focus is on an interactive form control (the footer's audio
+      // sliders, a future input, a contenteditable, etc.), let the control
+      // handle ArrowUp/ArrowDown natively instead of hijacking them for card
+      // navigation. Without this guard, focusing a BGM/BGS/SFX range input and
+      // pressing an arrow key would preventDefault() and jump focus to a menu
+      // card, so the slider value could not be adjusted with the keyboard.
+      const target = e.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "SELECT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
       if (e.key === "ArrowDown") {
         e.preventDefault();
         focusCard(focusIndex + 1);
