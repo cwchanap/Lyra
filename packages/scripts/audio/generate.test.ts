@@ -7,6 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -140,6 +141,72 @@ describe("audio generation planning", () => {
     expect(forced.toGenerate.map((target) => target.entry.id)).toEqual([
       "rain_street_light",
     ]);
+  });
+
+  it("regenerates an existing output when the stored promptHash no longer matches the prompt", () => {
+    // The skip-on-exists gate must not hide a prompt edit: when a writer
+    // changes a plan prompt but the .ogg from a prior generation is still on
+    // disk, the entry's recorded promptHash goes stale. planGeneration must
+    // detect the drift and queue a regeneration even though the .ogg exists
+    // and without --force — otherwise the stale prompt's audio ships silently.
+    const repoRoot = createRepoRoot();
+    const planPath = writePlan(repoRoot, [
+      soundEntry({
+        id: "rain_street_light",
+        channel: "bgs",
+        status: "approved",
+        // A recorded provenance hash that does NOT match the default prompt.
+        promptHash: "000000000000",
+      }),
+    ]);
+    writeFile(
+      repoRoot,
+      "static/assets/audio/bgs/rain_street_light.ogg",
+      "already generated",
+    );
+
+    const result = planGeneration({
+      repoRoot,
+      planPath,
+      dryRun: true,
+      force: false,
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.toGenerate.map((target) => target.entry.id)).toEqual([
+      "rain_street_light",
+    ]);
+  });
+
+  it("still skips an existing output when the promptHash matches the current prompt", () => {
+    // Drift detection must not over-fire: when the recorded promptHash matches
+    // the current prompt, an existing .ogg is trusted and skipped as before.
+    const matchingPrompt = "Steady light Tokyo street rain.";
+    const repoRoot = createRepoRoot();
+    const planPath = writePlan(repoRoot, [
+      soundEntry({
+        id: "rain_street_light",
+        channel: "bgs",
+        status: "approved",
+        prompt: matchingPrompt,
+        promptHash: hashPrompt(matchingPrompt),
+      }),
+    ]);
+    writeFile(
+      repoRoot,
+      "static/assets/audio/bgs/rain_street_light.ogg",
+      "already generated",
+    );
+
+    const result = planGeneration({
+      repoRoot,
+      planPath,
+      dryRun: true,
+      force: false,
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.toGenerate).toEqual([]);
   });
 
   it("plans only approved and generated entries", () => {
@@ -737,6 +804,12 @@ function writeFile(
   const fullPath = join(repoRoot, path);
   mkdirSync(dirname(fullPath), { recursive: true });
   writeFileSync(fullPath, text);
+}
+
+// Mirrors generate.ts's prompt-hash derivation so the "matching hash" test
+// case is built from the same algorithm the gate compares against.
+function hashPrompt(prompt: string): string {
+  return createHash("sha256").update(prompt).digest("hex").slice(0, 12);
 }
 
 describe("loadDotEnv", () => {
