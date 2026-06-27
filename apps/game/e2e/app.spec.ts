@@ -14,6 +14,10 @@ type MockWindow = Window & {
 
 const shouldRegisterPlaywrightSuite = !("Bun" in globalThis);
 
+function reportTestFailure(testName: string, error: unknown): never {
+  throw new Error(`${testName} failed`, { cause: error });
+}
+
 async function installTauriMock(page: Page) {
   await page.addInitScript(() => {
     const win = window as MockWindow;
@@ -239,28 +243,34 @@ if (shouldRegisterPlaywrightSuite) {
     test("opens the game menu with Escape during investigation", async ({
       page,
     }) => {
-      await startFromMenu(page);
-      await advanceDialogue(page);
+      const testName = "opens the game menu with Escape during investigation";
 
-      await expect(page.getByRole("button", { name: /EVIDENCE/ })).toHaveCount(
-        0,
-      );
+      try {
+        await startFromMenu(page);
+        await advanceDialogue(page);
 
-      await page.keyboard.press("Escape");
+        await expect(
+          page.getByRole("button", { name: /EVIDENCE/ }),
+        ).toHaveCount(0);
 
-      const gameMenu = page.getByRole("dialog", { name: "遊戲選單" });
-      await expect(gameMenu).toBeVisible();
-      await expect(
-        gameMenu.getByRole("button", { name: /繼續調查/ }),
-      ).toBeFocused();
-      await expect(
-        gameMenu.getByRole("button", { name: /EVIDENCE/ }),
-      ).toBeVisible();
+        await page.keyboard.press("Escape");
 
-      await gameMenu.getByRole("button", { name: /繼續調查/ }).click();
+        const gameMenu = page.getByRole("dialog", { name: "遊戲選單" });
+        await expect(gameMenu).toBeVisible();
+        await expect(
+          gameMenu.getByRole("button", { name: /繼續調查/ }),
+        ).toBeFocused();
+        await expect(
+          gameMenu.getByRole("button", { name: /EVIDENCE/ }),
+        ).toBeVisible();
 
-      await expect(gameMenu).toBeHidden();
-      await expect(page.getByRole("button", { name: /桌子/ })).toBeVisible();
+        await gameMenu.getByRole("button", { name: /繼續調查/ }).click();
+
+        await expect(gameMenu).toBeHidden();
+        await expect(page.getByRole("button", { name: /桌子/ })).toBeVisible();
+      } catch (error) {
+        reportTestFailure(testName, error);
+      }
     });
 
     test("keeps right-side portraits inside the viewport", async ({ page }) => {

@@ -1,10 +1,13 @@
 import { render, screen, waitFor } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import InventoryPanel from "./InventoryPanel.svelte";
 import type { Inventory } from "../state/types";
+
+const testDir = dirname(fileURLToPath(import.meta.url));
 
 const inventory: Inventory = {
   evidence: [
@@ -32,10 +35,7 @@ const inventory: Inventory = {
 };
 
 function source() {
-  return readFileSync(
-    join(process.cwd(), "src/lib/components/InventoryPanel.svelte"),
-    "utf8",
-  );
+  return readFileSync(join(testDir, "InventoryPanel.svelte"), "utf8");
 }
 
 function cssRule(componentSource: string, selector: string) {

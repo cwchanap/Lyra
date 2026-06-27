@@ -26,6 +26,17 @@
   let showChapterHud = $derived(gameState.mode.type !== "explore");
   let gameMenuOpen = $state(false);
   let resumeButton: HTMLButtonElement | undefined = $state();
+  let gameMenuPanel: HTMLDivElement | undefined = $state();
+  let previouslyFocusedElement: HTMLElement | null = null;
+
+  const focusableSelector = [
+    "button:not(:disabled)",
+    "[href]",
+    "input:not(:disabled)",
+    "select:not(:disabled)",
+    "textarea:not(:disabled)",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(",");
 
   async function reassertFullscreenIfActive() {
     try {
@@ -42,6 +53,9 @@
 
   async function openGameMenu() {
     if (!gameMenuOpen) {
+      const activeElement = document.activeElement;
+      previouslyFocusedElement =
+        activeElement instanceof HTMLElement ? activeElement : null;
       gameMenuOpen = true;
       await tick();
       resumeButton?.focus();
@@ -49,12 +63,57 @@
   }
 
   function closeGameMenu() {
+    if (!gameMenuOpen) {
+      return;
+    }
+
     gameMenuOpen = false;
+    const elementToRestore = previouslyFocusedElement;
+    previouslyFocusedElement = null;
+
+    void tick().then(() => {
+      if (elementToRestore?.isConnected) {
+        elementToRestore.focus();
+      }
+    });
   }
 
   function handleMenuReset() {
-    gameMenuOpen = false;
+    closeGameMenu();
     onReset();
+  }
+
+  function handleGameMenuKeydown(event: KeyboardEvent) {
+    if (event.key !== "Tab" || !gameMenuPanel) {
+      return;
+    }
+
+    const focusableElements = Array.from(
+      gameMenuPanel.querySelectorAll<HTMLElement>(focusableSelector),
+    ).filter((element) => {
+      const style = getComputedStyle(element);
+      return style.display !== "none" && style.visibility !== "hidden";
+    });
+
+    if (focusableElements.length === 0) {
+      event.preventDefault();
+      gameMenuPanel.focus();
+      return;
+    }
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements.at(-1);
+
+    if (event.shiftKey && document.activeElement === firstElement) {
+      event.preventDefault();
+      lastElement?.focus();
+      return;
+    }
+
+    if (!event.shiftKey && document.activeElement === lastElement) {
+      event.preventDefault();
+      firstElement.focus();
+    }
   }
 
   onMount(() => {
@@ -119,8 +178,10 @@
       role="dialog"
       aria-modal="true"
       aria-label="遊戲選單"
+      tabindex="-1"
+      onkeydown={handleGameMenuKeydown}
     >
-      <div class="game-menu-panel">
+      <div class="game-menu-panel" bind:this={gameMenuPanel} tabindex="-1">
         <div class="game-menu-heading">
           <span class="case-marker">
             <span class="diamond"></span>
