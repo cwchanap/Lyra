@@ -11,11 +11,19 @@ const mocks = vi.hoisted(() => ({
     sfxVolume: 0.5,
   },
   updateAudioPreferences: vi.fn(),
+  currentWindow: {
+    isFullscreen: vi.fn(),
+    setFullscreen: vi.fn(),
+  },
 }));
 
 vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
   audioPreferences: mocks.audioPreferences,
   updateAudioPreferences: mocks.updateAudioPreferences,
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => mocks.currentWindow,
 }));
 
 import GameShellHarness from "./GameShellHarness.svelte";
@@ -50,6 +58,8 @@ describe("GameShell", () => {
   afterEach(() => {
     cleanup();
     mocks.updateAudioPreferences.mockClear();
+    mocks.currentWindow.isFullscreen.mockReset();
+    mocks.currentWindow.setFullscreen.mockReset();
   });
 
   it("renders the chapter header and scoped children", () => {
@@ -101,5 +111,62 @@ describe("GameShell", () => {
     await user.click(screen.getByRole("button", { name: /結束/ }));
 
     expect(onReset).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the game menu and consumes Escape during investigation exploration", async () => {
+    const onReset = vi.fn();
+    render(GameShellHarness, {
+      gameState: state({
+        type: "explore",
+        sublocationId: "main",
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+      }),
+      onReset,
+    });
+
+    const escape = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+
+    const propagated = window.dispatchEvent(escape);
+
+    expect(propagated).toBe(false);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(
+      await screen.findByRole("dialog", { name: "遊戲選單" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /繼續調查/ })).toBeVisible();
+    expect(onReset).not.toHaveBeenCalled();
+  });
+
+  it("reasserts Tauri fullscreen when Escape opens the game menu from fullscreen", async () => {
+    mocks.currentWindow.isFullscreen.mockResolvedValue(true);
+    mocks.currentWindow.setFullscreen.mockResolvedValue(undefined);
+    render(GameShellHarness, {
+      gameState: state({
+        type: "explore",
+        sublocationId: "main",
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+      }),
+      onReset: vi.fn(),
+    });
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(mocks.currentWindow.setFullscreen).toHaveBeenCalledWith(true);
+    });
   });
 });

@@ -195,6 +195,8 @@ async function installTauriMock(page: Page) {
             },
           };
         }
+        if (command === "plugin:window|is_fullscreen") return false;
+        if (command === "plugin:window|set_fullscreen") return null;
         return exploreView;
       },
       transformCallback: () => 0,
@@ -232,6 +234,26 @@ if (shouldRegisterPlaywrightSuite) {
       await expect(
         page.getByRole("button", { name: /案發時間/ }),
       ).toBeVisible();
+    });
+
+    test("opens the game menu with Escape during investigation", async ({
+      page,
+    }) => {
+      await startFromMenu(page);
+      await advanceDialogue(page);
+
+      await page.keyboard.press("Escape");
+
+      const gameMenu = page.getByRole("dialog", { name: "遊戲選單" });
+      await expect(gameMenu).toBeVisible();
+      await expect(
+        gameMenu.getByRole("button", { name: /繼續調查/ }),
+      ).toBeFocused();
+
+      await gameMenu.getByRole("button", { name: /繼續調查/ }).click();
+
+      await expect(gameMenu).toBeHidden();
+      await expect(page.getByRole("button", { name: /桌子/ })).toBeVisible();
     });
 
     test("keeps right-side portraits inside the viewport", async ({ page }) => {
