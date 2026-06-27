@@ -55,6 +55,21 @@ export type GenerationTarget = {
   outputPath: string;
 };
 
+// A writer editing a prompt in the plan leaves entry.prompt changed while
+// entry.promptHash — written back as provenance after a prior generation — goes
+// stale. This mirrors the hash the execution path computes (see runGenerateCommand)
+// so the planning skip-gate can detect drift even when the final .ogg already
+// exists. Returns false when no provenance is recorded: only a recorded hash can
+// be checked for drift.
+function planPromptHashDrifted(entry: SoundPlanEntry): boolean {
+  if (entry.promptHash === undefined) return false;
+  const current = createHash("sha256")
+    .update(entry.prompt)
+    .digest("hex")
+    .slice(0, 12);
+  return entry.promptHash !== current;
+}
+
 export function planGeneration(input: {
   repoRoot: string;
   planPath: string;
@@ -147,7 +162,21 @@ export function planGeneration(input: {
     if (entry.status !== "approved" && entry.status !== "generated") continue;
 
     const outputPath = generatedOutputPath(entry);
-    if (!input.force && existsSync(resolve(input.repoRoot, outputPath))) {
+    // The execution path detects a stale provider .mp3 cache by comparing the
+    // plan's stored promptHash to the current prompt's hash — but that check
+    // only runs for entries that reach it. The skip-gate below previously
+    // checked only the final .ogg's existence, so a writer editing a prompt
+    // was invisible whenever the .ogg already existed: the entry was dropped
+    // here before the promptHash comparison ever ran, defeating the "detect
+    // prompt changes" intent and silently shipping audio for a stale prompt.
+    // Detect drift here too so `--dry-run` surfaces the stale output and a real
+    // run regenerates it, completing the intent without requiring --force. Only
+    // entries with a recorded promptHash (a prior generation's provenance) can
+    // be checked; a provenance-less entry with an existing .ogg is trusted as
+    // before (--force remains the explicit override).
+    const outputExists = existsSync(resolve(input.repoRoot, outputPath));
+    const promptDrifted = planPromptHashDrifted(entry);
+    if (!input.force && outputExists && !promptDrifted) {
       continue;
     }
     toGenerate.push({ entry, outputPath });

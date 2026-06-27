@@ -22,8 +22,11 @@ export type GameplaySfxEvent =
 
 // Mapping policy for v1. SFX_ASSETS below has FIVE entries, partitioned as:
 //   - four Chapter 1 story-beat SFX (anonymous-message, rice-ball-bag,
-//     coffee-backflush, usb-insert) that couple a cue to a specific authored
-//     dialogue line (see STORY_BEAT_SFX_TRIGGERS); plus
+//     coffee-backflush, usb-insert). Three of these (rice-ball-bag,
+//     coffee-backflush, usb-insert) couple a cue to a specific authored
+//     dialogue line via STORY_BEAT_SFX_TRIGGERS; anonymous-message instead
+//     couples by scene id (enteredChapterOneAnonymousMessage), since its cue
+//     marks entering a scene rather than a specific line; plus
 //   - one generic UI tick (ui:menu-confirm) reused across confirm actions.
 //
 // Every other event in the GameplaySfxEvent union currently resolves to NO
