@@ -601,7 +601,7 @@ export class GameplayAudioController {
         return;
       restartActiveLoop();
     };
-    audio.loop = false;
+    audio.loop = true;
     audio.preload = "auto";
     audio.muted = preferences.muted;
     audio.volume = channelVolume(channel, preferences);

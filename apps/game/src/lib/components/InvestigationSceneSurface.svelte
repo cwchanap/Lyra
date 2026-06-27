@@ -647,25 +647,39 @@
 
   .character-name {
     position: absolute;
-    left: 50%;
-    bottom: -28px;
-    transform: translateX(-50%);
-    padding: 4px 8px;
-    max-width: 140px;
-    background: rgba(10, 10, 16, 0.74);
-    border: 1px solid var(--rule);
+    top: 10px;
+    right: 10px;
+    z-index: 2;
+    transform: translateY(-2px);
+    max-width: min(220px, calc(100% - 20px));
+    padding: 6px 10px 5px;
+    overflow: hidden;
+    background: rgba(10, 10, 16, 0.82);
+    border: 1px solid transparent;
     color: var(--bone);
     font-family: var(--serif-jp);
-    font-size: 12px;
+    font-size: 18px;
     letter-spacing: 0.08em;
+    opacity: 0;
+    pointer-events: none;
+    text-overflow: ellipsis;
     white-space: nowrap;
+    transition:
+      border-color 0.18s,
+      background 0.18s,
+      color 0.18s,
+      opacity 0.18s,
+      transform 0.18s;
   }
 
   .character-target:hover:not(:disabled) .character-name,
   .character-target:focus-visible:not(:disabled) .character-name,
   .character-target[aria-expanded="true"] .character-name {
     border-color: var(--crimson);
+    background: rgba(32, 12, 19, 0.84);
     color: var(--bone);
+    opacity: 1;
+    transform: translateY(0);
   }
 
   button:disabled {

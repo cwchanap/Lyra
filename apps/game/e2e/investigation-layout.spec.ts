@@ -204,13 +204,19 @@ if (shouldRegisterPlaywrightSuite) {
         name: "詢問：目擊者",
       });
       const highlight = placedCharacter.locator(".character-highlight");
+      const name = placedCharacter.locator(".character-name");
 
       await expect(placedCharacter).toBeVisible();
       await expect(highlight).toHaveCSS("opacity", "0");
+      await expect(name).toHaveCSS("opacity", "0");
+      await expect(name).toHaveCSS("top", "10px");
+      await expect(name).toHaveCSS("right", "10px");
+      await expect(name).toHaveCSS("font-size", "18px");
 
       await placedCharacter.hover();
 
       await expect(highlight).toHaveCSS("opacity", "1");
+      await expect(name).toHaveCSS("opacity", "1");
     });
   });
 }

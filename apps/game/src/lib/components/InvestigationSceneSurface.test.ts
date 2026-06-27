@@ -242,6 +242,30 @@ describe("InvestigationSceneSurface", () => {
     );
   });
 
+  it("renders placed character names as hover overlays", () => {
+    const source = surfaceSource();
+    const nameRule = cssRule(source, ".character-name");
+
+    expect(nameRule).toContain("top: 10px");
+    expect(nameRule).toContain("right: 10px");
+    expect(nameRule).toContain("z-index: 2");
+    expect(nameRule).toContain("font-size: 18px");
+    expect(nameRule).toContain("opacity: 0");
+    expect(nameRule).toContain("transform: translateY(-2px)");
+    expect(nameRule).not.toContain("left: 50%");
+    expect(nameRule).not.toContain("bottom: 10px");
+    expect(nameRule).not.toContain("bottom: -28px");
+    expect(source).toContain(
+      ".character-target:hover:not(:disabled) .character-name",
+    );
+    expect(source).toContain(
+      ".character-target:focus-visible:not(:disabled) .character-name",
+    );
+    expect(source).toContain(
+      '.character-target[aria-expanded="true"] .character-name',
+    );
+  });
+
   it("renders a scene-local HUD slot for investigation controls", () => {
     const source = surfaceSource();
     expect(source).toContain('class="scene-hud"');
