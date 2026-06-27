@@ -7,22 +7,18 @@
   } from "$lib/assets/story-assets";
   import type { Inventory } from "../state/types";
 
-  type Placement = "viewport" | "scene" | "menu";
-
   let {
     inventory,
     reexamineEnabled,
     onReexamineEvidence,
     onReexamineStatement,
     disabled = false,
-    placement = "viewport",
   }: {
     inventory: Inventory;
     reexamineEnabled: boolean;
     onReexamineEvidence: (id: string) => void;
     onReexamineStatement: (id: string) => void;
     disabled?: boolean;
-    placement?: Placement;
   } = $props();
 
   let open = $state(false);
@@ -73,11 +69,7 @@
   }
 </script>
 
-<aside
-  class:open
-  class:scene={placement === "scene"}
-  class:menu={placement === "menu"}
->
+<aside class:open>
   <button
     class="toggle"
     type="button"
@@ -166,24 +158,6 @@
 
 <style>
   aside {
-    position: fixed;
-    top: 80px;
-    right: 0;
-    width: 360px;
-    max-width: calc(100vw - 24px);
-    pointer-events: none;
-    z-index: 40;
-  }
-
-  aside.scene {
-    position: fixed;
-    top: 22px;
-    right: 0;
-    width: min(360px, calc(100vw - 24px));
-    z-index: 41;
-  }
-
-  aside.menu {
     position: static;
     width: 100%;
     max-width: none;
@@ -196,13 +170,12 @@
     display: flex;
     align-items: stretch;
     gap: 0;
+    width: 100%;
+    margin: 0;
     padding: 0;
-    margin-right: 0;
-    margin-left: auto;
     background: var(--char);
     color: var(--bone);
     border: 1px solid var(--rule-strong);
-    border-right: none;
     cursor: pointer;
     font: inherit;
     transition:
@@ -246,12 +219,6 @@
     text-transform: uppercase;
   }
 
-  aside.menu .toggle {
-    width: 100%;
-    margin: 0;
-    border: 1px solid var(--rule-strong);
-  }
-
   .t-counts {
     display: flex;
     flex-direction: column;
@@ -273,25 +240,13 @@
 
   .panel {
     pointer-events: auto;
-    margin-top: 8px;
-    margin-right: 12px;
+    margin: 8px 0 0;
     padding: 14px 14px 18px;
     background: var(--char);
     border: 1px solid var(--rule-strong);
     border-left: 2px solid var(--crimson);
-    max-height: calc(100vh - 130px);
-    overflow-y: auto;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-  }
-
-  aside.scene .panel {
-    max-height: calc(100vh - 96px);
-  }
-
-  aside.menu .panel {
-    margin: 8px 0 0;
     max-height: min(42vh, 360px);
-    box-shadow: none;
+    overflow-y: auto;
   }
 
   .panel-head {

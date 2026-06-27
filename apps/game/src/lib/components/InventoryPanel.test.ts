@@ -101,53 +101,29 @@ describe("InventoryPanel", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("can render relative to an investigation scene instead of the viewport", () => {
+  it("renders inline inside the Escape game menu", () => {
     const { container } = render(InventoryPanel, {
       inventory,
       reexamineEnabled: true,
       onReexamineEvidence: vi.fn(),
       onReexamineStatement: vi.fn(),
-      placement: "scene",
     });
 
-    expect(container.querySelector("aside.scene")).toBeInTheDocument();
+    expect(container.querySelector("aside")).toBeInTheDocument();
+    expect(container.querySelector("aside.scene")).not.toBeInTheDocument();
   });
 
-  it("can render inline inside the Escape game menu", () => {
-    const { container } = render(InventoryPanel, {
-      inventory,
-      reexamineEnabled: true,
-      onReexamineEvidence: vi.fn(),
-      onReexamineStatement: vi.fn(),
-      placement: "menu",
-    });
-
-    expect(container.querySelector("aside.menu")).toBeInTheDocument();
-  });
-
-  it("keeps the scene evidence HUD fixed when the panel opens", () => {
+  it("keeps evidence inline instead of fixed to the viewport", () => {
     const componentSource = source();
-    const asideRule = cssRule(componentSource, "aside.scene");
-    const scenePanelRule = cssRule(componentSource, "aside.scene .panel");
+    const asideRule = cssRule(componentSource, "aside");
+    const toggleRule = cssRule(componentSource, ".toggle");
+    const panelRule = cssRule(componentSource, ".panel");
 
-    expect(asideRule).toContain("position: fixed");
-    expect(asideRule).toContain("top: 22px");
-    expect(asideRule).toContain("right: 0");
-    expect(asideRule).toContain("width: min(360px, calc(100vw - 24px))");
-    expect(scenePanelRule).toContain("max-height: calc(100vh - 96px)");
-  });
-
-  it("keeps menu evidence inline instead of fixed to the viewport", () => {
-    const componentSource = source();
-    const menuAsideRule = cssRule(componentSource, "aside.menu");
-    const menuToggleRule = cssRule(componentSource, "aside.menu .toggle");
-    const menuPanelRule = cssRule(componentSource, "aside.menu .panel");
-
-    expect(menuAsideRule).toContain("position: static");
-    expect(menuAsideRule).toContain("width: 100%");
-    expect(menuAsideRule).toContain("max-width: none");
-    expect(menuToggleRule).toContain("width: 100%");
-    expect(menuPanelRule).toContain("max-height: min(42vh, 360px)");
+    expect(asideRule).toContain("position: static");
+    expect(asideRule).toContain("width: 100%");
+    expect(asideRule).toContain("max-width: none");
+    expect(toggleRule).toContain("width: 100%");
+    expect(panelRule).toContain("max-height: min(42vh, 360px)");
   });
 
   it("does not apply evidence-row class when evidence has no image", async () => {

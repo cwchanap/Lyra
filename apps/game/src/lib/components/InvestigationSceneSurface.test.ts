@@ -5,10 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import InvestigationSceneSurface from "./InvestigationSceneSurface.svelte";
 import type { SublocationView } from "../state/types";
-
-function reportAsyncTestFailure(testName: string, error: unknown): never {
-  throw new Error(`${testName} failed`, { cause: error });
-}
+import { reportAsyncTestFailure } from "$lib/test-utils";
 
 const sublocation = {
   id: "coffee_shop",

@@ -8,10 +8,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GameStateView } from "$lib/state/types";
-
-function reportAsyncTestFailure(testName: string, error: unknown): never {
-  throw new Error(`${testName} failed`, { cause: error });
-}
+import { reportAsyncTestFailure } from "$lib/test-utils";
 
 const mocks = vi.hoisted(() => ({
   audioPreferences: {
