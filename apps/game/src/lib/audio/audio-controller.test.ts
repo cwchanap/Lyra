@@ -122,6 +122,27 @@ describe("GameplayAudioController", () => {
     expect(bgs.play).toHaveBeenCalledTimes(1);
   });
 
+  it("enables native seamless looping on loop channels (regression: audible loop click)", async () => {
+    // Regression guard for 7e54845: loop channels must set the media element's
+    // native `loop` flag so the element rewinds at the decode layer without an
+    // audible gap. Reverting to loop=false falls back to timer-only restarts
+    // and reintroduces a click at the loop point. This is the primary anti-seam
+    // mechanism; the scheduled-restart path is defense-in-depth only.
+    const audio = controller();
+    await audio.updateLoopChannels(
+      {
+        bgm: { channel: "bgm", assetId: "audio.bgm.review" },
+        bgs: { channel: "bgs", assetId: "audio.bgs.rain" },
+      },
+      preferences,
+    );
+
+    expect(created.length).toBe(2);
+    for (const loopAudio of created) {
+      expect(loopAudio.loop).toBe(true);
+    }
+  });
+
   it("schedules loop restarts ahead of the media boundary", async () => {
     vi.useFakeTimers();
     try {

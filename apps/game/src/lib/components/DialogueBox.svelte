@@ -84,6 +84,14 @@
   }
 </script>
 
+<!--
+  This window-level keydown handler advances dialogue on Space/Enter ONLY.
+  Escape is deliberately NOT handled here: it is reserved by GameShell's
+  capture-phase handler as the sole entry point for opening the game menu,
+  which calls stopImmediatePropagation() so Escape never reaches this handler
+  while the menu is open. Do NOT add Escape handling here — it would race the
+  menu toggle and reintroduce the conflict. See GameShell.svelte onMount.
+-->
 <svelte:window onkeydown={handleKey} />
 
 {#if current.kind === "line" && portraitAsset}

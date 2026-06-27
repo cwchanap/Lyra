@@ -868,6 +868,7 @@
   }
 
   @media (max-width: 720px) {
+    /* lyra-mobile-breakpoint — see tokens.css. */
     .surface-shell {
       padding: 0;
     }

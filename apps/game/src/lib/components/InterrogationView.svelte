@@ -524,6 +524,7 @@
   }
 
   @media (max-width: 720px) {
+    /* lyra-mobile-breakpoint — see tokens.css. */
     .phase {
       grid-template-columns: 1fr;
     }
