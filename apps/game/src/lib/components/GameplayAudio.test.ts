@@ -70,4 +70,20 @@ describe("GameplayAudio", () => {
     expect(mocks.retryLockedGameplayAudio).toHaveBeenCalledTimes(1);
     expect(mocks.preloadKnownGameplaySfx).toHaveBeenCalledTimes(1);
   });
+
+  it("retries locked audio and preloads SFX on the first keydown gesture", () => {
+    render(GameplayAudio, { mode: exploreMode });
+    expect(mocks.retryLockedGameplayAudio).not.toHaveBeenCalled();
+    expect(mocks.preloadKnownGameplaySfx).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new Event("keydown"));
+
+    expect(mocks.retryLockedGameplayAudio).toHaveBeenCalledTimes(1);
+    expect(mocks.preloadKnownGameplaySfx).toHaveBeenCalledTimes(1);
+
+    // The listener arms once per mount: a second gesture does not retry again.
+    window.dispatchEvent(new Event("keydown"));
+    expect(mocks.retryLockedGameplayAudio).toHaveBeenCalledTimes(1);
+    expect(mocks.preloadKnownGameplaySfx).toHaveBeenCalledTimes(1);
+  });
 });

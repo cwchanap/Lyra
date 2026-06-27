@@ -147,6 +147,10 @@ describe("audio preferences", () => {
 
 describe("browserStorage", () => {
   afterEach(() => {
+    // Match the "audio preferences" suite: restore spies/mocks (e.g. the
+    // console.warn spy installed by the localStorage-throws test) so they
+    // cannot leak into later tests in this file.
+    vi.restoreAllMocks();
     window.localStorage.clear();
   });
 
