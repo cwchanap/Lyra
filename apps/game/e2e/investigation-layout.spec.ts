@@ -48,7 +48,24 @@ async function installTauriMock(page: Page) {
               layout: { kind: "rect", x: 0.1, y: 0.2, w: 0.3, h: 0.2 },
             },
           ],
-          characters: [],
+          characters: [
+            {
+              id: "witness",
+              name: "目擊者",
+              role: "常客",
+              bio: "案發時坐在窗邊。",
+              topics: [{ id: "alibi", label: "不在場證明", discussed: false }],
+              layout: {
+                kind: "sprite",
+                assetId: "portrait.witness.standard",
+                x: 0.65,
+                y: 0.12,
+                w: 0.18,
+                h: 0.76,
+                anchor: "bottomCenter",
+              },
+            },
+          ],
         },
       ],
     };
@@ -172,6 +189,28 @@ if (shouldRegisterPlaywrightSuite) {
       await placedHotspot.click();
 
       await expect(page.getByText("還是熱的。")).toBeVisible();
+    });
+
+    test("highlights a placed investigation character on hover", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await page.getByRole("button", { name: /開始調查/ }).click();
+
+      await expect(page.getByText("測試開始。")).toBeVisible();
+      await advanceDialogue(page);
+
+      const placedCharacter = page.getByRole("button", {
+        name: "詢問：目擊者",
+      });
+      const highlight = placedCharacter.locator(".character-highlight");
+
+      await expect(placedCharacter).toBeVisible();
+      await expect(highlight).toHaveCSS("opacity", "0");
+
+      await placedCharacter.hover();
+
+      await expect(highlight).toHaveCSS("opacity", "1");
     });
   });
 }

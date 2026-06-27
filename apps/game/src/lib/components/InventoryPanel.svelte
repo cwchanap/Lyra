@@ -172,11 +172,11 @@
   }
 
   aside.scene {
-    position: absolute;
-    top: 18px;
+    position: fixed;
+    top: 22px;
     right: 0;
-    width: min(360px, calc(100% - 36px));
-    z-index: 8;
+    width: min(360px, calc(100vw - 24px));
+    z-index: 41;
   }
 
   .toggle {
@@ -267,7 +267,7 @@
   }
 
   aside.scene .panel {
-    max-height: calc(100% - 76px);
+    max-height: calc(100vh - 96px);
   }
 
   .panel-head {

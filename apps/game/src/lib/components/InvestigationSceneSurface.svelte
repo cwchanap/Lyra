@@ -201,73 +201,76 @@
 </script>
 
 <section class="surface-shell" aria-label={`${sublocation.label}調查場景`}>
-  <div class="scene-surface">
-    {#if background}
-      <img
-        class="background-image"
-        src={background.url}
-        alt=""
-        aria-hidden="true"
-        onerror={handleBackgroundError}
-      />
-    {/if}
+  {#if background}
+    <img
+      class="background-image"
+      src={background.url}
+      alt=""
+      aria-hidden="true"
+      onerror={handleBackgroundError}
+    />
+  {/if}
 
+  <div class="scene-surface">
     <div class="scene-label">
       <span class="eyebrow">INVESTIGATION</span>
       <strong>{sublocation.label}</strong>
     </div>
 
-    {#each placedHotspots as hotspot (hotspot.id)}
-      <button
-        class="hotspot-target"
-        class:inspected={hotspot.inspected}
-        type="button"
-        aria-label={`調查：${hotspot.label}`}
-        style={layoutStyle(hotspot.layout)}
-        {disabled}
-        onclick={() => onInspect(hotspot.id)}
-      >
-        <span class="hotspot-content">
-          <span class="hotspot-dot"></span>
-          <span class="target-label">{hotspot.label}</span>
-        </span>
-        {#if hotspot.inspected}
-          <span class="hotspot-check" aria-label="已調查">✓</span>
-        {/if}
-      </button>
-    {/each}
+    <div class="scene-coordinate-plane">
+      {#each placedHotspots as hotspot (hotspot.id)}
+        <button
+          class="hotspot-target"
+          class:inspected={hotspot.inspected}
+          type="button"
+          aria-label={`調查：${hotspot.label}`}
+          style={layoutStyle(hotspot.layout)}
+          {disabled}
+          onclick={() => onInspect(hotspot.id)}
+        >
+          <span class="hotspot-content">
+            <span class="hotspot-dot"></span>
+            <span class="target-label">{hotspot.label}</span>
+          </span>
+          {#if hotspot.inspected}
+            <span class="hotspot-check" aria-label="已調查">✓</span>
+          {/if}
+        </button>
+      {/each}
 
-    {#each placedCharacters as character (character.id)}
-      <button
-        class="character-target"
-        type="button"
-        aria-label={`詢問：${character.name}`}
-        aria-expanded={activeCharacterId === character.id}
-        aria-haspopup="dialog"
-        style={layoutStyle(character.layout)}
-        {disabled}
-        onclick={() => toggleCharacter(character.id)}
-      >
-        {#if portraits[character.id]}
-          <div
-            class="character-preview-crop"
-            style={cropStyleForAsset(character.layout.assetId)}
-          >
-            <img
-              src={portraits[character.id]?.url}
-              alt=""
-              aria-hidden="true"
-              onload={(event) =>
-                loadCharacterCrop(character.layout.assetId, event)}
-              onerror={() => handlePortraitError(character)}
-            />
-          </div>
-        {:else}
-          <span class="portrait-loading">{character.name}</span>
-        {/if}
-        <span class="character-name">{character.name}</span>
-      </button>
-    {/each}
+      {#each placedCharacters as character (character.id)}
+        <button
+          class="character-target"
+          type="button"
+          aria-label={`詢問：${character.name}`}
+          aria-expanded={activeCharacterId === character.id}
+          aria-haspopup="dialog"
+          style={layoutStyle(character.layout)}
+          {disabled}
+          onclick={() => toggleCharacter(character.id)}
+        >
+          <span class="character-highlight"></span>
+          {#if portraits[character.id]}
+            <div
+              class="character-preview-crop"
+              style={cropStyleForAsset(character.layout.assetId)}
+            >
+              <img
+                src={portraits[character.id]?.url}
+                alt=""
+                aria-hidden="true"
+                onload={(event) =>
+                  loadCharacterCrop(character.layout.assetId, event)}
+                onerror={() => handlePortraitError(character)}
+              />
+            </div>
+          {:else}
+            <span class="portrait-loading">{character.name}</span>
+          {/if}
+          <span class="character-name">{character.name}</span>
+        </button>
+      {/each}
+    </div>
 
     {#if activeCharacter}
       <div
@@ -378,31 +381,44 @@
 
 <style>
   .surface-shell {
-    padding: 8px clamp(20px, 3vw, 40px) 140px;
+    padding: 0;
+    height: 0;
+    min-height: 0;
   }
 
   .scene-surface {
-    position: relative;
-    width: min(100%, calc((100vh - 220px) * 16 / 9));
-    max-width: 1280px;
-    aspect-ratio: 16 / 9;
-    margin: 0 auto;
+    --investigation-hud-top: 22px;
+    --investigation-hud-inline: clamp(20px, 3vw, 40px);
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    width: 100vw;
+    max-width: none;
+    height: 100vh;
+    margin: 0;
     overflow: hidden;
     isolation: isolate;
-    border-block: 1px solid var(--rule-strong);
-    background:
-      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-      rgba(20, 20, 31, 0.58);
-    background-size: 32px 32px;
+    pointer-events: none;
+  }
+
+  .scene-coordinate-plane {
+    --scene-cover-width: max(100vw, 177.77777778vh);
+    --scene-cover-height: max(100vh, 56.25vw);
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--scene-cover-width);
+    height: var(--scene-cover-height);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
   }
 
   .background-image {
-    position: absolute;
+    position: fixed;
     inset: 0;
-    z-index: 0;
-    width: 100%;
-    height: 100%;
+    z-index: -1;
+    width: 100vw;
+    height: 100vh;
     object-fit: cover;
     opacity: 0.62;
     pointer-events: none;
@@ -410,8 +426,8 @@
 
   .scene-label {
     position: absolute;
-    left: 18px;
-    top: 16px;
+    left: var(--investigation-hud-inline);
+    top: var(--investigation-hud-top);
     z-index: 5;
     display: flex;
     flex-direction: column;
@@ -438,7 +454,7 @@
   }
 
   .scene-hud {
-    position: absolute;
+    position: fixed;
     inset: 0;
     z-index: 9;
     pointer-events: none;
@@ -453,6 +469,7 @@
     position: absolute;
     color: var(--bone);
     cursor: pointer;
+    pointer-events: auto;
   }
 
   .hotspot-target {
@@ -553,8 +570,36 @@
     background: transparent;
   }
 
+  .character-highlight {
+    position: absolute;
+    inset: -6px;
+    z-index: 0;
+    border: 1px solid transparent;
+    background: transparent;
+    box-shadow: none;
+    opacity: 0;
+    transform: translateY(2px);
+    transition:
+      border-color 0.18s,
+      background 0.18s,
+      opacity 0.18s,
+      transform 0.18s;
+    pointer-events: none;
+  }
+
+  .character-target:hover:not(:disabled) .character-highlight,
+  .character-target:focus-visible:not(:disabled) .character-highlight,
+  .character-target[aria-expanded="true"] .character-highlight {
+    border-color: var(--crimson);
+    background: var(--crimson-soft);
+    opacity: 1;
+    transform: translateY(0);
+  }
+
   .character-preview-crop,
   .portrait-loading {
+    position: relative;
+    z-index: 1;
     width: 100%;
     height: 100%;
     filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.48));
@@ -639,6 +684,7 @@
     background: rgba(20, 20, 31, 0.92);
     color: var(--bone);
     box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
+    pointer-events: auto;
   }
 
   .topic-heading,
@@ -753,10 +799,17 @@
   }
 
   .fallback-controls {
+    position: fixed;
+    left: clamp(20px, 3vw, 40px);
+    right: clamp(20px, 3vw, 40px);
+    bottom: 16px;
+    z-index: 10;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 16px;
-    margin-top: 16px;
+    max-height: min(36vh, 280px);
+    overflow-y: auto;
+    pointer-events: auto;
   }
 
   .fallback-section {
@@ -802,11 +855,18 @@
 
   @media (max-width: 720px) {
     .surface-shell {
-      padding-inline: 16px;
+      padding: 0;
     }
 
     .target-label {
       display: none;
+    }
+
+    .fallback-controls {
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      grid-template-columns: 1fr;
     }
 
     .fallback-witness {

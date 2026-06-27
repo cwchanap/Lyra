@@ -19,41 +19,45 @@
     disabled?: boolean;
     children: Snippet;
   } = $props();
+
+  let showChapterHud = $derived(gameState.mode.type !== "explore");
 </script>
 
 <div class="shell">
   <GameAtmosphere intensity={0.55} />
 
-  <header>
-    <div class="left">
-      <span class="case-marker">
-        <span class="diamond"></span>
-        FILE&nbsp;{String(gameState.chapter.index + 1).padStart(
-          2,
-          "0",
-        )}&nbsp;/&nbsp;{String(gameState.chapter.total).padStart(2, "0")}
-      </span>
-      <div class="title-row">
-        <p class="eyebrow">
-          第&nbsp;{gameState.chapter.index + 1}&nbsp;章&nbsp;·&nbsp;CHAPTER
-        </p>
-        <h1>{gameState.chapter.title}</h1>
+  {#if showChapterHud}
+    <header>
+      <div class="left">
+        <span class="case-marker">
+          <span class="diamond"></span>
+          FILE&nbsp;{String(gameState.chapter.index + 1).padStart(
+            2,
+            "0",
+          )}&nbsp;/&nbsp;{String(gameState.chapter.total).padStart(2, "0")}
+        </span>
+        <div class="title-row">
+          <p class="eyebrow">
+            第&nbsp;{gameState.chapter.index + 1}&nbsp;章&nbsp;·&nbsp;CHAPTER
+          </p>
+          <h1>{gameState.chapter.title}</h1>
+        </div>
+        <p class="summary">{gameState.chapter.summary}</p>
       </div>
-      <p class="summary">{gameState.chapter.summary}</p>
-    </div>
-    <div class="audio-controls">
-      <AudioSettings
-        preferences={audioPreferences}
-        onUpdate={updateAudioPreferences}
-      />
-    </div>
-    <button type="button" onclick={onReset} {disabled}>
-      <span class="x">✕</span>
-      <span>結束<br /><span class="en">CLOSE&nbsp;CASE</span></span>
-    </button>
-  </header>
+      <div class="audio-controls">
+        <AudioSettings
+          preferences={audioPreferences}
+          onUpdate={updateAudioPreferences}
+        />
+      </div>
+      <button type="button" onclick={onReset} {disabled}>
+        <span class="x">✕</span>
+        <span>結束<br /><span class="en">CLOSE&nbsp;CASE</span></span>
+      </button>
+    </header>
 
-  <div class="rule"></div>
+    <div class="rule"></div>
+  {/if}
 
   <main>
     {@render children()}
