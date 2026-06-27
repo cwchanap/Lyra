@@ -1,4 +1,23 @@
 :root {
+  /* ------------------------------------------------------------------ */
+  /* Mobile layout breakpoint (source of truth)                         */
+  /*                                                                    */
+  /*   Mobile-compaction @media queries across the game shell use a     */
+  /*   single canonical viewport width of 720px. It is documented here   */
+  /*   rather than exposed as a CSS custom property because the CSS     */
+  /*   spec forbids var() inside @media conditions (media features are   */
+  /*   resolved at parse time against the viewport; custom properties   */
+  /*   resolve at computed-value time). Each consumer writes the literal */
+  /*   `@media (max-width: 720px)` and references this token by name in  */
+  /*   a comment so the four sites stay in sync:                        */
+  /*     - GameShell.svelte (game-menu scrim compaction)                */
+  /*     - SublocationNav.svelte (scene nav reflow)                     */
+  /*     - InvestigationSceneSurface.svelte (fallback controls stack)   */
+  /*     - InterrogationView.svelte (interrogation layout reflow)       */
+  /*   Change all four together.                                        */
+  /* ------------------------------------------------------------------ */
+  --lyra-mobile-breakpoint: 720px; /* informational only; not usable in @media */
+
   --bg-deep: #07070d;
   --bg-violet: #160820;
   --bg-blood: #1a0510;

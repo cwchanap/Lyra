@@ -601,6 +601,13 @@ export class GameplayAudioController {
         return;
       restartActiveLoop();
     };
+    // Native seamless looping is the primary anti-seam mechanism: with
+    // `loop=true` the media element rewinds at the decode layer without an
+    // audible gap. The scheduled-restart path below (loadedmetadata/timeupdate
+    // timers + onEnded) is defense-in-depth for engines where native looping
+    // still seamed at the boundary. Both must stay: setting loop=false here
+    // regresses to timer-only looping and reintroduces a click at the loop
+    // point (the 7e54845 regression).
     audio.loop = true;
     audio.preload = "auto";
     audio.muted = preferences.muted;

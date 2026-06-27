@@ -127,6 +127,7 @@
   }
 
   @media (max-width: 720px) {
+    /* lyra-mobile-breakpoint — see tokens.css. */
     .nav.scene {
       right: 12px;
       left: 12px;

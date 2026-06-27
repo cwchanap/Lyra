@@ -221,6 +221,65 @@ describe("GameShell", () => {
     }
   });
 
+  it("skips focus restoration when the source element was removed while the menu was open", async () => {
+    const testName =
+      "skips focus restoration when the source element was removed while the menu was open";
+
+    // Exercises the `isConnected` guard in closeGameMenu(): if the element that
+    // was focused when the menu opened is detached before close, the guard must
+    // skip calling focus() on a detached node rather than leaving focus in an
+    // inconsistent state.
+    let trigger: HTMLButtonElement | null = null;
+    try {
+      render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+
+      trigger = document.createElement("button");
+      trigger.textContent = "outside trigger";
+      document.body.appendChild(trigger);
+      trigger.focus();
+      expect(document.activeElement).toBe(trigger);
+
+      // Spy on focus() so we can assert the guard does NOT invoke it once the
+      // node is detached. (jsdom exposes `focus` as a getter-only property, so
+      // direct assignment throws; vi.spyOn redefines it as configurable.)
+      const focusSpy = vi.spyOn(trigger, "focus");
+
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await screen.findByRole("dialog", { name: "遊戲選單" });
+
+      // Detach the source element while the menu is open.
+      document.body.removeChild(trigger);
+      expect(trigger.isConnected).toBe(false);
+
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await vi.waitFor(() => {
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      });
+
+      // The guard skipped focus(); restoring it would call the spy and fail
+      // this assertion.
+      expect(focusSpy).not.toHaveBeenCalled();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    } finally {
+      if (trigger?.isConnected) {
+        document.body.removeChild(trigger);
+      }
+    }
+  });
+
   it("renders menu slot content only inside the Escape menu", async () => {
     const testName = "renders menu slot content only inside the Escape menu";
 

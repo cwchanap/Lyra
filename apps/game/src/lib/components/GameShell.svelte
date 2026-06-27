@@ -121,6 +121,12 @@
     // the game menu. capture:true + stopImmediatePropagation ensures Escape
     // never reaches dialogue/investigation controls behind the overlay, so
     // they can't intercept it before the menu toggles.
+    //
+    // Coexistence note: DialogueBox also registers a window keydown, but only
+    // for Space/Enter (not Escape). capture + stopImmediatePropagation keeps
+    // the contract one-directional — Escape is owned here, advance keys stay
+    // owned by DialogueBox. If DialogueBox ever needs Escape, route it through
+    // a shared coordinator instead of a second window listener.
     const handleKeydown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") {
         return;
@@ -452,6 +458,8 @@
   }
 
   @media (max-width: 720px) {
+    /* lyra-mobile-breakpoint — see tokens.css; keep in sync with the other
+       three 720px compaction sites. */
     .game-menu-scrim {
       padding: 18px;
       align-items: end;
