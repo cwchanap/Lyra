@@ -100,7 +100,7 @@ describe("GameplayAudioController", () => {
       "/assets/audio/bgm/review.ogg",
       "/assets/audio/bgs/rain.ogg",
     ]);
-    expect(created.every((a) => a.loop)).toBe(false);
+    expect(created.every((a) => a.loop)).toBe(true);
     expect(created[0]?.volume).toBe(preferences.bgmVolume);
     expect(created[1]?.volume).toBe(preferences.bgsVolume);
     expect(created[0]?.play).toHaveBeenCalledTimes(1);
