@@ -13,6 +13,10 @@ type MockWindow = Window & {
 
 const shouldRegisterPlaywrightSuite = !("Bun" in globalThis);
 
+function reportTestFailure(testName: string, error: unknown): never {
+  throw new Error(`${testName} failed`, { cause: error });
+}
+
 async function installTauriMock(page: Page) {
   await page.addInitScript(() => {
     const win = window as MockWindow;
@@ -194,29 +198,35 @@ if (shouldRegisterPlaywrightSuite) {
     test("highlights a placed investigation character on hover", async ({
       page,
     }) => {
-      await page.goto("/");
-      await page.getByRole("button", { name: /開始調查/ }).click();
+      const testName = "highlights a placed investigation character on hover";
 
-      await expect(page.getByText("測試開始。")).toBeVisible();
-      await advanceDialogue(page);
+      try {
+        await page.goto("/");
+        await page.getByRole("button", { name: /開始調查/ }).click();
 
-      const placedCharacter = page.getByRole("button", {
-        name: "詢問：目擊者",
-      });
-      const highlight = placedCharacter.locator(".character-highlight");
-      const name = placedCharacter.locator(".character-name");
+        await expect(page.getByText("測試開始。")).toBeVisible();
+        await advanceDialogue(page);
 
-      await expect(placedCharacter).toBeVisible();
-      await expect(highlight).toHaveCSS("opacity", "0");
-      await expect(name).toHaveCSS("opacity", "0");
-      await expect(name).toHaveCSS("top", "10px");
-      await expect(name).toHaveCSS("right", "10px");
-      await expect(name).toHaveCSS("font-size", "18px");
+        const placedCharacter = page.getByRole("button", {
+          name: "詢問：目擊者",
+        });
+        const highlight = placedCharacter.locator(".character-highlight");
+        const name = placedCharacter.locator(".character-name");
 
-      await placedCharacter.hover();
+        await expect(placedCharacter).toBeVisible();
+        await expect(highlight).toHaveCSS("opacity", "0");
+        await expect(name).toHaveCSS("opacity", "0");
+        await expect(name).toHaveCSS("top", "10px");
+        await expect(name).toHaveCSS("right", "10px");
+        await expect(name).toHaveCSS("font-size", "18px");
 
-      await expect(highlight).toHaveCSS("opacity", "1");
-      await expect(name).toHaveCSS("opacity", "1");
+        await placedCharacter.hover();
+
+        await expect(highlight).toHaveCSS("opacity", "1");
+        await expect(name).toHaveCSS("opacity", "1");
+      } catch (error) {
+        reportTestFailure(testName, error);
+      }
     });
   });
 }

@@ -6,6 +6,10 @@ import { describe, expect, it, vi } from "vitest";
 import InvestigationSceneSurface from "./InvestigationSceneSurface.svelte";
 import type { SublocationView } from "../state/types";
 
+function reportAsyncTestFailure(testName: string, error: unknown): never {
+  throw new Error(`${testName} failed`, { cause: error });
+}
+
 const sublocation = {
   id: "coffee_shop",
   label: "喫茶店",
@@ -144,24 +148,31 @@ describe("InvestigationSceneSurface", () => {
   });
 
   it("renders the resolved background image as a viewport backdrop outside the coordinate plane", async () => {
-    const { container } = render(InvestigationSceneSurface, {
-      sublocation,
-      backgroundAssetId: "background.chapter_1.scene_0.cafe",
-      onInspect: vi.fn(),
-      onInterview: vi.fn(),
-    });
+    const testName =
+      "renders the resolved background image as a viewport backdrop outside the coordinate plane";
 
-    await waitFor(() => {
+    try {
+      const { container } = render(InvestigationSceneSurface, {
+        sublocation,
+        backgroundAssetId: "background.chapter_1.scene_0.cafe",
+        onInspect: vi.fn(),
+        onInterview: vi.fn(),
+      });
+
+      await waitFor(() => {
+        expect(
+          container.querySelector(".surface-shell > img.background-image"),
+        ).toHaveAttribute(
+          "src",
+          "/assets/backgrounds/chapter_1/scene_0/cafe.png",
+        );
+      });
       expect(
-        container.querySelector(".surface-shell > img.background-image"),
-      ).toHaveAttribute(
-        "src",
-        "/assets/backgrounds/chapter_1/scene_0/cafe.png",
-      );
-    });
-    expect(
-      container.querySelector(".scene-surface img.background-image"),
-    ).not.toBeInTheDocument();
+        container.querySelector(".scene-surface img.background-image"),
+      ).not.toBeInTheDocument();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
   });
 
   it("matches story scenes by fixing investigation backgrounds to the viewport", () => {
