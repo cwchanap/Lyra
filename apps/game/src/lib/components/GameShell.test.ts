@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GameStateView } from "$lib/state/types";
@@ -71,13 +71,16 @@ describe("GameShell", () => {
     expect(screen.getByText("scoped child")).toBeInTheDocument();
   });
 
-  it("renders the AudioSettings panel bound to runtime preferences", () => {
+  it("keeps duplicated utility controls out of the chapter HUD", () => {
     render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
 
+    expect(screen.getByText("雨夜的第一份證詞")).toBeInTheDocument();
     expect(
-      screen.getByRole("region", { name: "音訊設定" }),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("BGM")).toBeInTheDocument();
+      screen.queryByRole("region", { name: "音訊設定" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /結束/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("hides chapter chrome during investigation exploration", () => {
@@ -103,12 +106,20 @@ describe("GameShell", () => {
     expect(screen.getByText("scoped child")).toBeInTheDocument();
   });
 
-  it("invokes onReset when the close-case button is clicked", async () => {
+  it("renders close-case and audio controls inside the game menu", async () => {
     const user = userEvent.setup();
     const onReset = vi.fn();
     render(GameShellHarness, { gameState: state(), onReset });
 
-    await user.click(screen.getByRole("button", { name: /結束/ }));
+    await user.keyboard("{Escape}");
+    const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+
+    expect(
+      screen.getByRole("region", { name: "音訊設定" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("BGM")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: /結束案件/ }));
 
     expect(onReset).toHaveBeenCalledTimes(1);
   });
@@ -141,6 +152,27 @@ describe("GameShell", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /繼續調查/ })).toBeVisible();
     expect(onReset).not.toHaveBeenCalled();
+  });
+
+  it("renders menu slot content only inside the Escape menu", async () => {
+    render(GameShellHarness, {
+      gameState: state(),
+      onReset: vi.fn(),
+      menuContent: "menu inventory slot",
+    });
+
+    expect(screen.queryByText("menu inventory slot")).not.toBeInTheDocument();
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+    expect(within(dialog).getByText("menu inventory slot")).toBeInTheDocument();
   });
 
   it("reasserts Tauri fullscreen when Escape opens the game menu from fullscreen", async () => {

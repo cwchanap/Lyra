@@ -7,7 +7,7 @@
   } from "$lib/assets/story-assets";
   import type { Inventory } from "../state/types";
 
-  type Placement = "viewport" | "scene";
+  type Placement = "viewport" | "scene" | "menu";
 
   let {
     inventory,
@@ -73,7 +73,11 @@
   }
 </script>
 
-<aside class:open class:scene={placement === "scene"}>
+<aside
+  class:open
+  class:scene={placement === "scene"}
+  class:menu={placement === "menu"}
+>
   <button
     class="toggle"
     type="button"
@@ -179,6 +183,14 @@
     z-index: 41;
   }
 
+  aside.menu {
+    position: static;
+    width: 100%;
+    max-width: none;
+    pointer-events: auto;
+    z-index: auto;
+  }
+
   .toggle {
     pointer-events: auto;
     display: flex;
@@ -234,6 +246,12 @@
     text-transform: uppercase;
   }
 
+  aside.menu .toggle {
+    width: 100%;
+    margin: 0;
+    border: 1px solid var(--rule-strong);
+  }
+
   .t-counts {
     display: flex;
     flex-direction: column;
@@ -268,6 +286,12 @@
 
   aside.scene .panel {
     max-height: calc(100vh - 96px);
+  }
+
+  aside.menu .panel {
+    margin: 8px 0 0;
+    max-height: min(42vh, 360px);
+    box-shadow: none;
   }
 
   .panel-head {

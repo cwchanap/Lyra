@@ -7,12 +7,13 @@ function pageSource() {
 }
 
 describe("+page inventory placement", () => {
-  it("renders explore inventory inside the investigation scene HUD slot", () => {
+  it("renders inventory inside the GameShell menu slot instead of scene HUDs", () => {
     const source = pageSource();
 
-    expect(source).toContain("{#snippet hud()}");
-    expect(source).toContain('placement="scene"');
-    expect(source).toContain('gameState.value.mode.type !== "explore"');
+    expect(source).toContain("{#snippet menu()}");
+    expect(source).toContain('placement="menu"');
+    expect(source).not.toContain('placement="scene"');
+    expect(source).not.toContain('gameState.value.mode.type !== "explore"');
   });
 });
 
