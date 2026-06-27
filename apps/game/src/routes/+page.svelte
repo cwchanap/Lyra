@@ -62,7 +62,6 @@
           onReexamineEvidence={reexamineEvidence}
           onReexamineStatement={reexamineStatement}
           disabled={gameState.inFlight}
-          placement="menu"
         />
       {/if}
     {/snippet}

@@ -117,6 +117,10 @@
   }
 
   onMount(() => {
+    // Global capture-phase Escape handler — the sole entry point for opening
+    // the game menu. capture:true + stopImmediatePropagation ensures Escape
+    // never reaches dialogue/investigation controls behind the overlay, so
+    // they can't intercept it before the menu toggles.
     const handleKeydown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") {
         return;
@@ -146,7 +150,7 @@
   <GameAtmosphere intensity={0.55} />
 
   {#if showChapterHud}
-    <header>
+    <header inert={gameMenuOpen}>
       <div class="left">
         <span class="case-marker">
           <span class="diamond"></span>
@@ -168,7 +172,7 @@
     <div class="rule"></div>
   {/if}
 
-  <main>
+  <main inert={gameMenuOpen} aria-hidden={gameMenuOpen}>
     {@render children()}
   </main>
 
@@ -179,9 +183,15 @@
       aria-modal="true"
       aria-label="遊戲選單"
       tabindex="-1"
+      onclick={closeGameMenu}
       onkeydown={handleGameMenuKeydown}
     >
-      <div class="game-menu-panel" bind:this={gameMenuPanel} tabindex="-1">
+      <div
+        class="game-menu-panel"
+        bind:this={gameMenuPanel}
+        tabindex="-1"
+        onclick={(e) => e.stopPropagation()}
+      >
         <div class="game-menu-heading">
           <span class="case-marker">
             <span class="diamond"></span>

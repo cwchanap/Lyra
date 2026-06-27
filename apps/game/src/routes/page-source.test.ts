@@ -11,7 +11,7 @@ describe("+page inventory placement", () => {
     const source = pageSource();
 
     expect(source).toContain("{#snippet menu()}");
-    expect(source).toContain('placement="menu"');
+    expect(source).toContain("<InventoryPanel");
     expect(source).not.toContain('placement="scene"');
     expect(source).not.toContain('gameState.value.mode.type !== "explore"');
   });
