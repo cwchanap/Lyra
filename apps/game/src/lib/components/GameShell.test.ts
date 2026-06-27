@@ -20,7 +20,18 @@ vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
 
 import GameShellHarness from "./GameShellHarness.svelte";
 
-function state(): GameStateView {
+function state(
+  mode: GameStateView["mode"] = {
+    type: "dialogue",
+    current: { kind: "action", text: "幕開" },
+    queueRemaining: 0,
+    sceneTag: null,
+    queueToken: { sceneId: "scene_1", queueGen: 1, cursor: 0 },
+    backgroundAssetId: null,
+    bgm: null,
+    bgs: null,
+  },
+): GameStateView {
   return {
     chapter: {
       id: "chapter_1",
@@ -30,13 +41,7 @@ function state(): GameStateView {
       total: 3,
     },
     scene: { kind: "linear", id: "scene_1", title: "", index: 0, total: 1 },
-    mode: {
-      type: "explore",
-      sublocationId: "main",
-      backgroundAssetId: null,
-      bgm: null,
-      bgs: null,
-    },
+    mode,
     inventory: { evidence: [], statements: [] },
   };
 }
@@ -63,6 +68,29 @@ describe("GameShell", () => {
       screen.getByRole("region", { name: "音訊設定" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("BGM")).toBeInTheDocument();
+  });
+
+  it("hides chapter chrome during investigation exploration", () => {
+    render(GameShellHarness, {
+      gameState: state({
+        type: "explore",
+        sublocationId: "main",
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+      }),
+      onReset: vi.fn(),
+    });
+
+    expect(screen.queryByText("雨夜的第一份證詞")).not.toBeInTheDocument();
+    expect(screen.queryByText("案件摘要")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("FILE", { exact: false }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "音訊設定" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("scoped child")).toBeInTheDocument();
   });
 
   it("invokes onReset when the close-case button is clicked", async () => {

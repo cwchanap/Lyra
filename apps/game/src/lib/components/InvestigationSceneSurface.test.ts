@@ -94,13 +94,56 @@ describe("InvestigationSceneSurface", () => {
     expect(source).not.toContain("translate(-50%, -100%)");
   });
 
-  it("keeps the scene surface on the 16:9 background coordinate plane", () => {
+  it("renders investigation controls on a viewport overlay instead of an inner scene panel", () => {
     const surfaceRule = cssRule(surfaceSource(), ".scene-surface");
-    expect(surfaceRule).toContain("aspect-ratio: 16 / 9");
-    expect(surfaceRule).not.toContain("min-height");
+    expect(surfaceRule).toContain("position: fixed");
+    expect(surfaceRule).toContain("inset: 0");
+    expect(surfaceRule).toContain("width: 100vw");
+    expect(surfaceRule).toContain("height: 100vh");
+    expect(surfaceRule).toContain("max-width: none");
+    expect(surfaceRule).not.toContain("aspect-ratio");
+    expect(surfaceRule).not.toContain("border-block");
   });
 
-  it("renders the resolved background image inside the scene surface", async () => {
+  it("maps placed evidence to the same cover-fitted 16:9 plane as the layout editor", () => {
+    const source = surfaceSource();
+    const planeRule = cssRule(source, ".scene-coordinate-plane");
+
+    expect(source).toContain('class="scene-coordinate-plane"');
+    expect(planeRule).toContain(
+      "--scene-cover-width: max(100vw, 177.77777778vh)",
+    );
+    expect(planeRule).toContain("--scene-cover-height: max(100vh, 56.25vw)");
+    expect(planeRule).toContain("left: 50%");
+    expect(planeRule).toContain("top: 50%");
+    expect(planeRule).toContain("width: var(--scene-cover-width)");
+    expect(planeRule).toContain("height: var(--scene-cover-height)");
+    expect(planeRule).toContain("transform: translate(-50%, -50%)");
+  });
+
+  it("uses the hidden chapter HUD area for the investigation HUD", () => {
+    const source = surfaceSource();
+    const surfaceRule = cssRule(source, ".scene-surface");
+    const labelRule = cssRule(source, ".scene-label");
+    const hudRule = cssRule(source, ".scene-hud");
+
+    expect(surfaceRule).toContain("--investigation-hud-top: 22px");
+    expect(surfaceRule).not.toContain("--investigation-top-safe");
+    expect(labelRule).toContain("top: var(--investigation-hud-top)");
+    expect(hudRule).toContain("position: fixed");
+    expect(hudRule).toContain("inset: 0");
+  });
+
+  it("keeps investigation overlays out of document flow so the scene does not scroll", () => {
+    const shellRule = cssRule(surfaceSource(), ".surface-shell");
+    const fallbackRule = cssRule(surfaceSource(), ".fallback-controls");
+    expect(shellRule).toContain("padding: 0");
+    expect(shellRule).toContain("height: 0");
+    expect(fallbackRule).toContain("position: fixed");
+    expect(fallbackRule).not.toContain("margin-top");
+  });
+
+  it("renders the resolved background image as a viewport backdrop outside the coordinate plane", async () => {
     const { container } = render(InvestigationSceneSurface, {
       sublocation,
       backgroundAssetId: "background.chapter_1.scene_0.cafe",
@@ -110,12 +153,23 @@ describe("InvestigationSceneSurface", () => {
 
     await waitFor(() => {
       expect(
-        container.querySelector(".scene-surface img.background-image"),
+        container.querySelector(".surface-shell > img.background-image"),
       ).toHaveAttribute(
         "src",
         "/assets/backgrounds/chapter_1/scene_0/cafe.png",
       );
     });
+    expect(
+      container.querySelector(".scene-surface img.background-image"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("matches story scenes by fixing investigation backgrounds to the viewport", () => {
+    const backgroundRule = cssRule(surfaceSource(), ".background-image");
+    expect(backgroundRule).toContain("position: fixed");
+    expect(backgroundRule).toContain("z-index: -1");
+    expect(backgroundRule).toContain("width: 100vw");
+    expect(backgroundRule).toContain("height: 100vh");
   });
 
   it("renders standee assets for placed scene characters", async () => {
@@ -168,6 +222,24 @@ describe("InvestigationSceneSurface", () => {
     );
     expect(source).toContain(".hotspot-check");
     expect(source).not.toContain('<span class="status">已調查</span>');
+  });
+
+  it("highlights placed characters on hover and keyboard focus", () => {
+    const source = surfaceSource();
+    const highlightRule = cssRule(source, ".character-highlight");
+
+    expect(source).toContain('<span class="character-highlight"></span>');
+    expect(highlightRule).toContain("border: 1px solid transparent");
+    expect(highlightRule).toContain("opacity: 0");
+    expect(source).toContain(
+      ".character-target:hover:not(:disabled) .character-highlight",
+    );
+    expect(source).toContain(
+      ".character-target:focus-visible:not(:disabled) .character-highlight",
+    );
+    expect(source).toContain(
+      '.character-target[aria-expanded="true"] .character-highlight',
+    );
   });
 
   it("renders a scene-local HUD slot for investigation controls", () => {
@@ -348,12 +420,12 @@ describe("InvestigationSceneSurface", () => {
 
     await waitFor(() => {
       expect(
-        container.querySelector(".scene-surface img.background-image"),
+        container.querySelector(".surface-shell > img.background-image"),
       ).toBeInTheDocument();
     });
 
     const img = container.querySelector(
-      ".scene-surface img.background-image",
+      ".surface-shell > img.background-image",
     ) as HTMLImageElement;
     img.dispatchEvent(new Event("error"));
 

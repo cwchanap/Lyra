@@ -1,5 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import InventoryPanel from "./InventoryPanel.svelte";
 import type { Inventory } from "../state/types";
@@ -28,6 +30,20 @@ const inventory: Inventory = {
     },
   ],
 };
+
+function source() {
+  return readFileSync(
+    join(process.cwd(), "src/lib/components/InventoryPanel.svelte"),
+    "utf8",
+  );
+}
+
+function cssRule(componentSource: string, selector: string) {
+  const match = new RegExp(
+    `${selector.replaceAll(".", "\\.")}\\s*{([^}]*)}`,
+  ).exec(componentSource);
+  return match?.[1] ?? "";
+}
 
 describe("InventoryPanel", () => {
   afterEach(() => {
@@ -95,6 +111,18 @@ describe("InventoryPanel", () => {
     });
 
     expect(container.querySelector("aside.scene")).toBeInTheDocument();
+  });
+
+  it("keeps the scene evidence HUD fixed when the panel opens", () => {
+    const componentSource = source();
+    const asideRule = cssRule(componentSource, "aside.scene");
+    const scenePanelRule = cssRule(componentSource, "aside.scene .panel");
+
+    expect(asideRule).toContain("position: fixed");
+    expect(asideRule).toContain("top: 22px");
+    expect(asideRule).toContain("right: 0");
+    expect(asideRule).toContain("width: min(360px, calc(100vw - 24px))");
+    expect(scenePanelRule).toContain("max-height: calc(100vh - 96px)");
   });
 
   it("does not apply evidence-row class when evidence has no image", async () => {

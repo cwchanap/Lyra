@@ -47,11 +47,11 @@
   }
 
   .nav.scene {
-    position: absolute;
-    left: 18px;
-    bottom: 18px;
+    position: fixed;
+    left: clamp(20px, 3vw, 40px);
+    top: 76px;
     z-index: 8;
-    max-width: min(760px, calc(100% - 36px));
+    max-width: min(760px, calc(100vw - 40px));
     padding: 10px 12px;
     border: 1px solid var(--rule-strong);
     background: rgba(20, 20, 31, 0.72);
@@ -129,8 +129,8 @@
   @media (max-width: 720px) {
     .nav.scene {
       right: 12px;
-      bottom: 12px;
       left: 12px;
+      top: 72px;
       max-width: none;
     }
   }
