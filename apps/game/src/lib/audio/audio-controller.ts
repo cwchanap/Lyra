@@ -34,6 +34,16 @@ export type SfxBackend = {
   dispose?: () => void;
   play: (url: string, volume: number) => boolean;
   preload: (url: string) => void;
+  /**
+   * Update the gain of currently-active source nodes. Called when audio
+   * preferences change mid-playback so a mute toggle or SFX-volume drag is
+   * reflected by sources already started via {@link play} (which otherwise
+   * keep their original gain for the clip's lifetime). `gain` is the effective
+   * SFX gain to apply to all in-flight sources: 0 when muted, otherwise the
+   * per-channel SFX volume. Sources started after this call use the gain passed
+   * to {@link play}, so this only needs to cover the already-audible ones.
+   */
+  setActiveGain?: (gain: number) => void;
 };
 
 type LoggerLike = {
@@ -125,6 +135,13 @@ function defaultSfxBackend(logger: LoggerLike): SfxBackend | null {
       warned: boolean;
     }
   >();
+  // Every currently-audible source's gain node, across all URLs. play() adds to
+  // this set and the source's onended removes from it; dispose() clears it. It
+  // lets setActiveGain() rescale (or silence, on mute) sources already in
+  // flight, since each play() otherwise bakes a single gain value in for the
+  // clip's lifetime and applyPreferences() on the controller would not reach
+  // them.
+  const activeGains = new Set<GainNode>();
 
   const warnOnce = (url: string, detail: string) => {
     const entry = buffers.get(url);
@@ -183,6 +200,7 @@ function defaultSfxBackend(logger: LoggerLike): SfxBackend | null {
         entry.active = null;
       }
       buffers.clear();
+      activeGains.clear();
       // Only close a context that was actually created; dispose() may run
       // before any SFX ever primed the backend (e.g. a short session that
       // never played SFX), and calling close() on a never-built context is
@@ -211,8 +229,10 @@ function defaultSfxBackend(logger: LoggerLike): SfxBackend | null {
         gain.gain.value = volume;
         source.connect(gain);
         gain.connect(ctx.destination);
+        activeGains.add(gain);
         source.onended = () => {
           if (entry.active === source) entry.active = null;
+          activeGains.delete(gain);
         };
         if (ctx.state === "suspended") {
           void ctx.resume().catch((error) => {
@@ -228,6 +248,11 @@ function defaultSfxBackend(logger: LoggerLike): SfxBackend | null {
       }
     },
     preload,
+    setActiveGain: (gainValue: number) => {
+      for (const gain of activeGains) {
+        gain.gain.value = gainValue;
+      }
+    },
   };
 }
 
@@ -316,6 +341,21 @@ export class GameplayAudioController {
       if (!loop) continue;
       loop.audio.muted = preferences.muted;
       loop.audio.volume = channelVolume(channel, preferences);
+    }
+    // SFX one-shots honor the new prefs on their next playSfx() already, but a
+    // clip already in flight keeps its original gain until it ends. Without
+    // this, muting mid-SFX leaves the active clip audible until it finishes and
+    // dragging the SFX slider doesn't rescale the currently-playing one. Apply
+    // the effective gain (0 when muted, otherwise the per-channel SFX volume)
+    // to the low-latency backend's active sources and to the HTMLAudio fallback
+    // elements in activeSfx so the mute/volume control covers the full mix.
+    const effectiveSfxGain = preferences.muted
+      ? 0
+      : channelVolume("sfx", preferences);
+    this.sfxBackend?.setActiveGain?.(effectiveSfxGain);
+    for (const sfx of this.activeSfx) {
+      sfx.audio.muted = preferences.muted;
+      sfx.audio.volume = channelVolume("sfx", preferences);
     }
   }
 

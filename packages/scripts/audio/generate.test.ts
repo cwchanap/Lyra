@@ -312,6 +312,96 @@ describe("audio generation planning", () => {
       }),
     ]);
   });
+
+  it("excludes provider: local-ffmpeg entries from generation targets", () => {
+    // local-ffmpeg entries are hand-derived from a generated source clip via
+    // ffmpeg and are outside the ElevenLabs tooling by design (see the
+    // designing-lyra-sound-assets skill). They must never be queued for
+    // generation even when approved/generated and even with a missing output.
+    const repoRoot = createRepoRoot();
+    const planPath = writePlan(repoRoot, [
+      soundEntry({
+        id: "sfx_dialogue_proceed_tick",
+        channel: "sfx",
+        status: "generated",
+        provider: "local-ffmpeg",
+      }),
+      soundEntry({
+        id: "sfx_generated_elevenlabs",
+        channel: "sfx",
+        status: "generated",
+      }),
+    ]);
+
+    const result = planGeneration({
+      repoRoot,
+      planPath,
+      dryRun: true,
+      force: false,
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.toGenerate.map((target) => target.entry.id)).toEqual([
+      "sfx_generated_elevenlabs",
+    ]);
+  });
+
+  it("still excludes local-ffmpeg entries under --force", () => {
+    // --force must not override the local-ffmpeg guard: the tool literally
+    // cannot generate these, and forcing would bill ElevenLabs and overwrite a
+    // hand-derived clip.
+    const repoRoot = createRepoRoot();
+    const planPath = writePlan(repoRoot, [
+      soundEntry({
+        id: "sfx_dialogue_proceed_tick",
+        channel: "sfx",
+        status: "generated",
+        provider: "local-ffmpeg",
+      }),
+    ]);
+
+    const result = planGeneration({
+      repoRoot,
+      planPath,
+      dryRun: true,
+      force: true,
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.toGenerate).toEqual([]);
+  });
+
+  it("diagnoses --only targeting a local-ffmpeg entry instead of silently no-op'ing", () => {
+    // Mirrors the silent-success-trap guard for non-approved entries: --only on
+    // a local-ffmpeg id would otherwise be skipped by the loop and exit 0 with
+    // no output, hiding that the command did nothing.
+    const repoRoot = createRepoRoot();
+    const planPath = writePlan(repoRoot, [
+      soundEntry({
+        id: "sfx_dialogue_proceed_tick",
+        channel: "sfx",
+        status: "generated",
+        provider: "local-ffmpeg",
+      }),
+    ]);
+
+    const result = planGeneration({
+      repoRoot,
+      planPath,
+      dryRun: true,
+      force: true,
+      only: "sfx_dialogue_proceed_tick",
+    });
+
+    expect(result.toGenerate).toEqual([]);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "audioGenerateOnlyLocalFfmpeg",
+        path: "--only",
+        message: expect.stringContaining("sfx_dialogue_proceed_tick"),
+      }),
+    ]);
+  });
 });
 
 describe("runGenerateCommand 402 handling", () => {
@@ -773,6 +863,7 @@ function soundEntry(input: {
   status: SoundPlanStatus;
   prompt?: string;
   promptHash?: string;
+  provider?: string;
 }): string {
   const promptLine =
     input.prompt === undefined
@@ -782,6 +873,10 @@ function soundEntry(input: {
     input.promptHash === undefined
       ? ""
       : `    promptHash: ${JSON.stringify(input.promptHash)}\n`;
+  const providerLine =
+    input.provider === undefined
+      ? ""
+      : `    provider: ${JSON.stringify(input.provider)}\n`;
   return `  - id: ${input.id}
     channel: ${input.channel}
     status: ${input.status}
@@ -793,7 +888,7 @@ ${promptLine}
       - file: docs/stories_plan/chapter_1/scene_0.md
         line: 3
         note: "rainy street"
-${hashLine}`;
+${hashLine}${providerLine}`;
 }
 
 function writeFile(
