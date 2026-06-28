@@ -54,6 +54,15 @@ impl GameError {
             format!("Character '{id}' does not exist."),
         )
     }
+    pub fn unknown_chapter(id: &str) -> Self {
+        Self::new("unknownChapter", format!("Chapter '{id}' does not exist."))
+    }
+    pub fn unknown_scene(chapter_id: &str, scene_id: &str) -> Self {
+        Self::new(
+            "unknownScene",
+            format!("Scene '{scene_id}' does not exist in chapter '{chapter_id}'."),
+        )
+    }
     pub fn unknown_topic(c: &str, t: &str) -> Self {
         Self::new("unknownTopic", format!("Topic '{c}@{t}' does not exist."))
     }
