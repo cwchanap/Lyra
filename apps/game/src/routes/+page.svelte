@@ -38,6 +38,15 @@
     }
   }
 
+  // Hoisted so the dossier expand/collapse survives the Escape menu
+  // close/reopen. The panel mounts only while the menu is open; this state
+  // lives on the page (which does not unmount on menu toggle), and
+  // bind:open keeps the panel in sync with it.
+  let inventoryPanelOpen = $state(false);
+  // Bound to GameShell so dossier reexamine can close the Escape menu
+  // programmatically (see handleReexamine*).
+  let gameMenuOpen = $state(false);
+
   async function handleReset() {
     await resetGame();
     if (gameState.error) {
@@ -46,11 +55,21 @@
     gameState.error = null;
   }
 
-  // Hoisted so the dossier expand/collapse survives the Escape menu
-  // close/reopen. The panel mounts only while the menu is open; this state
-  // lives on the page (which does not unmount on menu toggle), and
-  // bind:open keeps the panel in sync with it.
-  let inventoryPanelOpen = $state(false);
+  // Reexamine from the dossier (inside the Escape menu) installs a dialogue
+  // queue and flips the mode to dialogue. If the menu stayed mounted, its
+  // scrim (z-index 40) would hide the dialogue (z-index 30, in <main inert>)
+  // until the player manually resumed. Close the menu once the command
+  // resolves so the mode→dialogue change and the menu close batch into one
+  // render — no flash — and on error the menu still closes so the ErrorBanner
+  // (rendered in <main>) is visible instead of trapped behind the scrim.
+  async function handleReexamineEvidence(evidenceId: string) {
+    await reexamineEvidence(evidenceId);
+    gameMenuOpen = false;
+  }
+  async function handleReexamineStatement(statementId: string) {
+    await reexamineStatement(statementId);
+    gameMenuOpen = false;
+  }
 </script>
 
 {#if gameState.value}
@@ -59,14 +78,15 @@
     gameState={gameState.value}
     onReset={handleReset}
     disabled={gameState.inFlight}
+    bind:open={gameMenuOpen}
   >
     {#snippet menu()}
       {#if shouldShowInventoryPanel(gameState.value!.mode)}
         <InventoryPanel
           inventory={gameState.value!.inventory}
           reexamineEnabled={canReexamineInventory(gameState.value!.mode)}
-          onReexamineEvidence={reexamineEvidence}
-          onReexamineStatement={reexamineStatement}
+          onReexamineEvidence={handleReexamineEvidence}
+          onReexamineStatement={handleReexamineStatement}
           disabled={gameState.inFlight}
           bind:open={inventoryPanelOpen}
         />

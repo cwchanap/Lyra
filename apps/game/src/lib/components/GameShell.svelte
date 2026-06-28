@@ -14,18 +14,23 @@
     gameState,
     onReset,
     disabled = false,
+    open = $bindable(false),
     children,
     menu,
   }: {
     gameState: GameStateView;
     onReset: () => void;
     disabled?: boolean;
+    // Bound by +page.svelte so menu-triggered transitions (dossier reexamine)
+    // can close the menu programmatically — otherwise the reexamine dialogue
+    // renders behind this modal scrim. Self-manages via the fallback when no
+    // parent binds (tests/standalone renders), preserving prior behavior.
+    open?: boolean;
     children: Snippet;
     menu?: Snippet;
   } = $props();
 
   let showChapterHud = $derived(gameState.mode.type !== "explore");
-  let gameMenuOpen = $state(false);
   let resumeButton: HTMLButtonElement | undefined = $state();
   let gameMenuPanel: HTMLDivElement | undefined = $state();
   let previouslyFocusedElement: HTMLElement | null = null;
@@ -73,22 +78,22 @@
   }
 
   async function openGameMenu() {
-    if (!gameMenuOpen) {
+    if (!open) {
       const activeElement = document.activeElement;
       previouslyFocusedElement =
         activeElement instanceof HTMLElement ? activeElement : null;
-      gameMenuOpen = true;
+      open = true;
       await tick();
       resumeButton?.focus();
     }
   }
 
   function closeGameMenu() {
-    if (!gameMenuOpen) {
+    if (!open) {
       return;
     }
 
-    gameMenuOpen = false;
+    open = false;
     const elementToRestore = previouslyFocusedElement;
     previouslyFocusedElement = null;
 
@@ -164,7 +169,7 @@
       event.stopPropagation();
       event.stopImmediatePropagation();
 
-      if (gameMenuOpen) {
+      if (open) {
         closeGameMenu();
         return;
       }
@@ -188,7 +193,7 @@
   <GameAtmosphere intensity={0.55} />
 
   {#if showChapterHud}
-    <header inert={gameMenuOpen}>
+    <header inert={open}>
       <div class="left">
         <span class="case-marker">
           <span class="diamond"></span>
@@ -210,11 +215,11 @@
     <div class="rule"></div>
   {/if}
 
-  <main inert={gameMenuOpen}>
+  <main inert={open}>
     {@render children()}
   </main>
 
-  {#if gameMenuOpen}
+  {#if open}
     <div
       class="game-menu-scrim"
       role="dialog"

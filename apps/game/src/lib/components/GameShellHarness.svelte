@@ -6,12 +6,16 @@
     gameState,
     onReset,
     disabled = false,
+    open = $bindable(false),
     menuContent = null,
     menuExtraButtonLabel = null,
   }: {
     gameState: GameStateView;
     onReset: () => void;
     disabled?: boolean;
+    // Forwarded as a bindable so tests can drive the external close path
+    // (production: +page.svelte closes the menu on dossier reexamine).
+    open?: boolean;
     menuContent?: string | null;
     // When set, renders a focusable <button> inside the menu slot. Mirrors
     // production's <InventoryPanel>, whose toggle/evidence buttons are
@@ -22,7 +26,7 @@
   } = $props();
 </script>
 
-<GameShell {gameState} {onReset} {disabled}>
+<GameShell {gameState} {onReset} {disabled} bind:open>
   {#snippet menu()}
     {#if menuContent}
       <p>{menuContent}</p>
