@@ -404,7 +404,13 @@
     --investigation-hud-inline: clamp(20px, 3vw, 40px);
     position: fixed;
     inset: 0;
-    z-index: 1;
+    /* Above .fallback-controls so the topic-popover dialog (positioned at
+       the viewport bottom-right) is not covered by the unplaced-hotspot/
+       witness fallback panel when both are visible. The surface itself is
+       pointer-events: none, so fallback controls remain clickable; only the
+       placed hotspots/characters (pointer-events: auto, positioned on the
+       scene plane) and the topic-popover capture clicks. */
+    z-index: 11;
     width: 100vw;
     max-width: none;
     height: 100vh;
