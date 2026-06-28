@@ -23,16 +23,19 @@
 
 <section class="audio-settings" aria-label="音訊設定">
   <button
-    class:active={preferences.muted}
+    class:enabled={!preferences.muted}
+    class:muted={preferences.muted}
     type="button"
-    aria-label={preferences.muted ? "音訊取消靜音" : "音訊靜音"}
+    aria-label={preferences.muted
+      ? "目前已靜音，按下可開啟聲音"
+      : "目前聲音開啟，按下可靜音"}
     aria-pressed={preferences.muted}
     onclick={() => onUpdate({ muted: !preferences.muted })}
   >
     <span class="icon" aria-hidden="true"
-      >{preferences.muted ? "OFF" : "ON"}</span
+      >{preferences.muted ? "MUTED" : "ON"}</span
     >
-    <span>{preferences.muted ? "靜音" : "音訊"}</span>
+    <span>{preferences.muted ? "已靜音" : "聲音開啟"}</span>
   </button>
 
   <div class="sliders">
@@ -118,7 +121,13 @@
     background: color-mix(in srgb, var(--cyan) 12%, transparent);
   }
 
-  button.active {
+  button.enabled {
+    color: var(--cyan);
+    border-color: var(--cyan);
+    background: color-mix(in srgb, var(--cyan) 10%, transparent);
+  }
+
+  button.muted {
     color: var(--crimson);
     border-color: var(--crimson);
     background: var(--crimson-soft);

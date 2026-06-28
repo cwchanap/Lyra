@@ -17,7 +17,11 @@ describe("AudioSettings", () => {
       onUpdate: vi.fn(),
     });
 
-    expect(screen.getByRole("button", { name: /音訊/ })).toBeInTheDocument();
+    const toggle = screen.getByRole("button", {
+      name: "目前聲音開啟，按下可靜音",
+    });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("聲音開啟")).toBeInTheDocument();
     expect(screen.getByLabelText("BGM")).toHaveValue("55");
     expect(screen.getByLabelText("BGS")).toHaveValue("45");
     expect(screen.getByLabelText("SFX")).toHaveValue("70");
@@ -31,7 +35,11 @@ describe("AudioSettings", () => {
 
     render(AudioSettings, { preferences, onUpdate });
 
-    await fireEvent.click(screen.getByRole("button", { name: /音訊/ }));
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: "目前聲音開啟，按下可靜音",
+      }),
+    );
     expect(onUpdate).toHaveBeenCalledWith({ muted: true });
   });
 
@@ -68,9 +76,11 @@ describe("AudioSettings", () => {
       onUpdate: vi.fn(),
     });
 
-    const button = screen.getByRole("button", { name: /靜音/ });
+    const button = screen.getByRole("button", {
+      name: "目前已靜音，按下可開啟聲音",
+    });
     expect(button).toHaveAttribute("aria-pressed", "true");
-    expect(button).toHaveAttribute("aria-label", "音訊取消靜音");
-    expect(screen.getByText("OFF")).toBeInTheDocument();
+    expect(screen.getByText("MUTED")).toBeInTheDocument();
+    expect(screen.getByText("已靜音")).toBeInTheDocument();
   });
 });

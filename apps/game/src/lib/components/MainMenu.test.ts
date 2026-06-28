@@ -36,7 +36,9 @@ describe("MainMenu", () => {
   it("routes a mute toggle through the runtime preference updater", async () => {
     render(MainMenu, { onNewGame: vi.fn(), onExit: vi.fn() });
 
-    const toggle = screen.getByRole("button", { name: /音訊/ });
+    const toggle = screen.getByRole("button", {
+      name: "目前聲音開啟，按下可靜音",
+    });
     toggle.click();
 
     expect(mocks.updateAudioPreferences).toHaveBeenCalledWith({
