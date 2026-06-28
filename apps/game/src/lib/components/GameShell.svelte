@@ -178,7 +178,7 @@
     <div class="rule"></div>
   {/if}
 
-  <main inert={gameMenuOpen} aria-hidden={gameMenuOpen}>
+  <main inert={gameMenuOpen}>
     {@render children()}
   </main>
 
@@ -187,23 +187,27 @@
       class="game-menu-scrim"
       role="dialog"
       aria-modal="true"
-      aria-label="遊戲選單"
+      aria-labelledby="game-menu-title"
       tabindex="-1"
-      onclick={closeGameMenu}
+      onclick={(event) => {
+        // Backdrop-dismiss: only close when the click lands on the scrim
+        // itself (currentTarget), not when it bubbles up from inside the
+        // panel. This replaces the panel-level stopPropagation so the panel
+        // needs no click handler (and thus no ARIA role/keyboard handler
+        // pairing that svelte-check would otherwise flag).
+        if (event.target === event.currentTarget) {
+          closeGameMenu();
+        }
+      }}
       onkeydown={handleGameMenuKeydown}
     >
-      <div
-        class="game-menu-panel"
-        bind:this={gameMenuPanel}
-        tabindex="-1"
-        onclick={(e) => e.stopPropagation()}
-      >
+      <div class="game-menu-panel" bind:this={gameMenuPanel} tabindex="-1">
         <div class="game-menu-heading">
           <span class="case-marker">
             <span class="diamond"></span>
             CASE&nbsp;MENU
           </span>
-          <h2>遊戲選單</h2>
+          <h2 id="game-menu-title">遊戲選單</h2>
           <p>
             FILE&nbsp;{String(gameState.chapter.index + 1).padStart(2, "0")}
           </p>

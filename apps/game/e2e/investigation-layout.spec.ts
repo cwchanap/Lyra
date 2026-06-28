@@ -13,6 +13,10 @@ type MockWindow = Window & {
 
 const shouldRegisterPlaywrightSuite = !("Bun" in globalThis);
 
+// Intentionally duplicated from $lib/test-utils.ts (reportAsyncTestFailure):
+// Playwright e2e specs run against the built static SPA and cannot import
+// the app's $lib tree. Keep this byte-for-byte in sync with the lib helper;
+// do NOT "DRY" it by importing across the boundary.
 function reportTestFailure(testName: string, error: unknown): never {
   throw new Error(`${testName} failed`, { cause: error });
 }
