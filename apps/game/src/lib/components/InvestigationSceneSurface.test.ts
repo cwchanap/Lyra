@@ -146,22 +146,31 @@ describe("InvestigationSceneSurface", () => {
   });
 
   it("layers the topic popover above the fallback controls panel", () => {
-    // The topic-popover (inside .scene-surface) and .fallback-controls are
-    // both anchored to the viewport bottom. .scene-surface has isolation:
-    // isolate, so its z-index must exceed .fallback-controls' z-index or the
-    // popover is trapped behind the fallback panel when both are visible.
+    // The topic-popover and .fallback-controls are both anchored to the
+    // viewport bottom. The popover is rendered as a sibling of .scene-surface
+    // (which has isolation: isolate) so its z-index participates in the root
+    // stacking context and must exceed .fallback-controls' z-index. The
+    // scene-surface itself stays below the fallback panel so placed
+    // hotspot/character targets (pointer-events: auto) never cover fallback
+    // buttons in the overlap region.
     const source = surfaceSource();
-    const surfaceRule = cssRule(source, ".scene-surface");
+    const popoverRule = cssRule(source, ".topic-popover");
     const fallbackRule = cssRule(source, ".fallback-controls");
-    const surfaceZ = parseInt(
-      surfaceRule.match(/z-index:\s*(\d+)/)?.[1] ?? "0",
+    const surfaceRule = cssRule(source, ".scene-surface");
+    const popoverZ = parseInt(
+      popoverRule.match(/z-index:\s*(\d+)/)?.[1] ?? "0",
       10,
     );
     const fallbackZ = parseInt(
       fallbackRule.match(/z-index:\s*(\d+)/)?.[1] ?? "0",
       10,
     );
-    expect(surfaceZ).toBeGreaterThan(fallbackZ);
+    const surfaceZ = parseInt(
+      surfaceRule.match(/z-index:\s*(\d+)/)?.[1] ?? "0",
+      10,
+    );
+    expect(popoverZ).toBeGreaterThan(fallbackZ);
+    expect(surfaceZ).toBeLessThan(fallbackZ);
   });
 
   it("renders the resolved background image as a viewport backdrop outside the coordinate plane", async () => {
@@ -453,6 +462,45 @@ describe("InvestigationSceneSurface", () => {
       expect(escapeClaimed()).toBe(true);
 
       await user.click(charBtn);
+      expect(escapeClaimed()).toBe(false);
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("releases the Escape claim when the active character disappears on sublocation change", async () => {
+    const testName =
+      "releases the Escape claim when the active character disappears on sublocation change";
+
+    // When the player switches sublocations while a topic popover is open,
+    // activeCharacterId stays non-null but activeCharacter becomes null
+    // (the character isn't placed in the new sublocation). The Escape claim
+    // must release so the next Escape opens the game menu instead of being
+    // silently consumed by closeTopics() with no popover visible.
+    try {
+      const user = userEvent.setup();
+      const { rerender } = render(InvestigationSceneSurface, {
+        sublocation,
+        onInspect: vi.fn(),
+        onInterview: vi.fn(),
+      });
+
+      await user.click(screen.getByRole("button", { name: /詢問：目擊者/ }));
+      expect(escapeClaimed()).toBe(true);
+
+      const sublocationWithoutWitness: SublocationView = {
+        ...sublocation,
+        id: "back_alley",
+        label: "後巷",
+        sceneTag: "雨夜後巷",
+        characters: [],
+      };
+      rerender({
+        sublocation: sublocationWithoutWitness,
+        onInspect: vi.fn(),
+        onInterview: vi.fn(),
+      });
+
       expect(escapeClaimed()).toBe(false);
     } catch (error) {
       reportAsyncTestFailure(testName, error);
