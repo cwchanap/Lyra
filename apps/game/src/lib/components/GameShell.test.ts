@@ -6,7 +6,7 @@ import {
   within,
 } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GameStateView } from "$lib/state/types";
 import { reportAsyncTestFailure } from "$lib/test-utils";
 import {
@@ -80,6 +80,14 @@ describe("GameShell", () => {
     mocks.currentWindow.isFullscreen.mockReset();
     mocks.currentWindow.setFullscreen.mockReset();
     resetEscapeCoordinator();
+  });
+
+  // Default the fullscreen probe to "not fullscreen" so the fire-and-forget
+  // reassert in `reassertFullscreenIfActive` no-ops silently for tests that
+  // don't care about fullscreen. Tests that DO (the success/rejection pins)
+  // override this with their own `mockResolvedValue(true)`.
+  beforeEach(() => {
+    mocks.currentWindow.isFullscreen.mockResolvedValue(false);
   });
 
   it("renders the chapter header and scoped children", () => {
@@ -343,6 +351,49 @@ describe("GameShell", () => {
     }
   });
 
+  it("marks the chapter header and main content inert while the game menu is open", async () => {
+    const testName =
+      "marks the chapter header and main content inert while the game menu is open";
+
+    // The focus-trap test exercises the JS Tab interceptor
+    // (`handleGameMenuKeydown`), not the `inert` attribute. `inert` is what
+    // actually blocks mouse clicks and non-Tab focus moves into background
+    // content in real browsers, so a regression that dropped `inert` from
+    // <header>/<main> would pass the trap test silently. Pin the state
+    // directly: Svelte 5 sets the `inert` IDL property (which real browsers
+    // reflect to the attribute and act on), so assert on the property —
+    // jsdom does not reflect `inert` property→attribute, hence
+    // `hasAttribute` would false-negative here.
+    try {
+      render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+
+      const header = screen.getByText("雨夜的第一份證詞").closest("header");
+      const main = screen.getByText("scoped child").closest("main");
+      if (!header || !main) {
+        throw new Error("harness header/main not found");
+      }
+
+      expect(header.inert).toBe(false);
+      expect(main.inert).toBe(false);
+
+      window.dispatchEvent(escapeKeydown());
+      await screen.findByRole("dialog", { name: "遊戲選單" });
+
+      expect(header.inert).toBe(true);
+      expect(main.inert).toBe(true);
+
+      window.dispatchEvent(escapeKeydown());
+      await vi.waitFor(() => {
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      });
+
+      expect(header.inert).toBe(false);
+      expect(main.inert).toBe(false);
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
   it("reasserts Tauri fullscreen when Escape opens the game menu from fullscreen", async () => {
     const testName =
       "reasserts Tauri fullscreen when Escape opens the game menu from fullscreen";
@@ -374,6 +425,62 @@ describe("GameShell", () => {
       });
     } catch (error) {
       reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("still opens the game menu and logs a diagnostic when Tauri fullscreen reassertion rejects", async () => {
+    const testName =
+      "still opens the game menu and logs a diagnostic when Tauri fullscreen reassertion rejects";
+
+    // The reassert is fire-and-forget (`void reassertFullscreenIfActive()`
+    // followed by `void openGameMenu()`), so a real IPC failure (permission
+    // revoked, window race) must not block the menu from opening. This pins
+    // both halves of the contract: the menu opens despite the rejection, and
+    // the failure is surfaced via console.warn so the silent no-op is
+    // visible in production Tauri. A refactor that awaited the reassert, or
+    // swallowed the error without logging, would fail this test.
+    let warnSpy: ReturnType<typeof vi.spyOn> | undefined;
+    try {
+      mocks.currentWindow.isFullscreen.mockResolvedValue(true);
+      mocks.currentWindow.setFullscreen.mockRejectedValue(
+        new Error("permission revoked"),
+      );
+      warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      render(GameShellHarness, {
+        gameState: state({
+          type: "explore",
+          sublocationId: "main",
+          backgroundAssetId: null,
+          bgm: null,
+          bgs: null,
+        }),
+        onReset: vi.fn(),
+      });
+
+      window.dispatchEvent(escapeKeydown());
+
+      // The reassert was attempted and rejected...
+      await vi.waitFor(() => {
+        expect(mocks.currentWindow.setFullscreen).toHaveBeenCalledWith(true);
+      });
+
+      // ...yet the menu still opened.
+      expect(
+        await screen.findByRole("dialog", { name: "遊戲選單" }),
+      ).toBeInTheDocument();
+
+      // ...and the rejection was logged with the prefixed diagnostic.
+      await vi.waitFor(() => {
+        expect(warnSpy).toHaveBeenCalledWith(
+          "[GameShell] fullscreen reassert failed:",
+          expect.any(Error),
+        );
+      });
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    } finally {
+      warnSpy?.mockRestore();
     }
   });
 

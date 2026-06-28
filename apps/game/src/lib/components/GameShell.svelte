@@ -40,15 +40,35 @@
   ].join(",");
 
   async function reassertFullscreenIfActive() {
+    // Distinguish "no Tauri runtime" (silent) from real IPC failures
+    // (logged). In browser/preview/test environments the Tauri module may
+    // be absent (import fails) OR present but uninitialized
+    // (`getCurrentWindow()` throws because the runtime bridge is missing) —
+    // both are the expected no-runtime case and must stay silent. In
+    // production Tauri the import and `getCurrentWindow()` always succeed,
+    // so a failure in `isFullscreen()`/`setFullscreen()` is a real error
+    // (permission revoked, window race) and must leave a diagnostic —
+    // otherwise the menu opens but fullscreen reassertion silently no-ops
+    // and the regression is invisible.
+    let windowApi;
     try {
-      const { getCurrentWindow } = await import("@tauri-apps/api/window");
-      const currentWindow = getCurrentWindow();
+      windowApi = await import("@tauri-apps/api/window");
+    } catch {
+      return;
+    }
+    let currentWindow;
+    try {
+      currentWindow = windowApi.getCurrentWindow();
+    } catch {
+      return;
+    }
+    try {
       const wasFullscreen = await currentWindow.isFullscreen();
       if (wasFullscreen === true) {
         await currentWindow.setFullscreen(true);
       }
-    } catch {
-      // Browser tests and preview builds do not have Tauri window IPC.
+    } catch (error) {
+      console.warn("[GameShell] fullscreen reassert failed:", error);
     }
   }
 
