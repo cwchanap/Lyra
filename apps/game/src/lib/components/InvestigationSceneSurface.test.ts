@@ -145,6 +145,25 @@ describe("InvestigationSceneSurface", () => {
     expect(fallbackRule).not.toContain("margin-top");
   });
 
+  it("layers the topic popover above the fallback controls panel", () => {
+    // The topic-popover (inside .scene-surface) and .fallback-controls are
+    // both anchored to the viewport bottom. .scene-surface has isolation:
+    // isolate, so its z-index must exceed .fallback-controls' z-index or the
+    // popover is trapped behind the fallback panel when both are visible.
+    const source = surfaceSource();
+    const surfaceRule = cssRule(source, ".scene-surface");
+    const fallbackRule = cssRule(source, ".fallback-controls");
+    const surfaceZ = parseInt(
+      surfaceRule.match(/z-index:\s*(\d+)/)?.[1] ?? "0",
+      10,
+    );
+    const fallbackZ = parseInt(
+      fallbackRule.match(/z-index:\s*(\d+)/)?.[1] ?? "0",
+      10,
+    );
+    expect(surfaceZ).toBeGreaterThan(fallbackZ);
+  });
+
   it("renders the resolved background image as a viewport backdrop outside the coordinate plane", async () => {
     const testName =
       "renders the resolved background image as a viewport backdrop outside the coordinate plane";
