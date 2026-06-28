@@ -45,6 +45,12 @@
     }
     gameState.error = null;
   }
+
+  // Hoisted so the dossier expand/collapse survives the Escape menu
+  // close/reopen. The panel mounts only while the menu is open; this state
+  // lives on the page (which does not unmount on menu toggle), and
+  // bind:open keeps the panel in sync with it.
+  let inventoryPanelOpen = $state(false);
 </script>
 
 {#if gameState.value}
@@ -62,6 +68,7 @@
           onReexamineEvidence={reexamineEvidence}
           onReexamineStatement={reexamineStatement}
           disabled={gameState.inFlight}
+          bind:open={inventoryPanelOpen}
         />
       {/if}
     {/snippet}

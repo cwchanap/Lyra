@@ -15,6 +15,15 @@ describe("+page inventory placement", () => {
     expect(source).not.toContain('placement="scene"');
     expect(source).not.toContain('gameState.value.mode.type !== "explore"');
   });
+
+  it("binds the inventory panel open state to the page so it survives menu close/reopen", () => {
+    const source = pageSource();
+
+    // The expand/collapse state is hoisted to the page via bind:open so the
+    // dossier does not reset every time the Escape menu closes and reopens.
+    expect(source).toContain("let inventoryPanelOpen = $state(false)");
+    expect(source).toContain("bind:open={inventoryPanelOpen}");
+  });
 });
 
 describe("ExploreView HUD placement", () => {
