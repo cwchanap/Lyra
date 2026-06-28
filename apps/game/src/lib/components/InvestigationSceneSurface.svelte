@@ -176,11 +176,18 @@
   // down. Keying on `activeCharacter` (not `activeCharacterId`) ensures the
   // claim also releases when the sublocation changes and the previously
   // active character is no longer placed, even though `activeCharacterId`
-  // itself stays non-null. See $lib/state/escape-coordinator for the
-  // routing contract.
+  // itself stays non-null. The cleanup also clears `activeCharacterId` so
+  // that if the same character reappears later (e.g. the player navigates
+  // back to the original sublocation) the popover does not reopen without
+  // an explicit click. See $lib/state/escape-coordinator for the routing
+  // contract.
   $effect(() => {
     if (!activeCharacter) return;
-    return claimEscape(closeTopics);
+    const release = claimEscape(closeTopics);
+    return () => {
+      release();
+      activeCharacterId = null;
+    };
   });
 
   function interviewActive(topic: TopicView) {
