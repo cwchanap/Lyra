@@ -512,6 +512,84 @@ describe("InvestigationSceneSurface", () => {
     }
   });
 
+  it("switches the topic popover to a different placed character on click without needing a second click", async () => {
+    const testName =
+      "switches the topic popover to a different placed character on click without needing a second click";
+
+    // When the topic popover is open for character A and the player clicks
+    // placed character B, the $effect cleanup for A's Escape claim must not
+    // clobber the fresh `activeCharacterId = "B"` the click just set. If it
+    // does, `activeCharacter` becomes null on the subsequent effect run and
+    // B's popover never opens until the player clicks B again. The cleanup
+    // should release the Escape claim but leave a fresh selection intact.
+    try {
+      const multiCharSublocation = {
+        ...sublocation,
+        characters: [
+          {
+            id: "witness",
+            name: "目擊者",
+            role: "常客",
+            bio: "案發時坐在窗邊。",
+            topics: [{ id: "alibi", label: "不在場證明", discussed: false }],
+            layout: {
+              kind: "sprite" as const,
+              assetId: "portrait.witness.standard",
+              x: 0.7,
+              y: 0.1,
+              w: 0.18,
+              h: 0.8,
+              anchor: "bottomCenter" as const,
+            },
+          },
+          {
+            id: "suspect",
+            name: "嫌疑人",
+            role: "店員",
+            bio: "當晚值班。",
+            topics: [{ id: "shift", label: "班表", discussed: false }],
+            layout: {
+              kind: "sprite" as const,
+              assetId: "standee.suspect.standard",
+              x: 0.3,
+              y: 0.1,
+              w: 0.18,
+              h: 0.8,
+              anchor: "bottomCenter" as const,
+            },
+          },
+        ],
+      } satisfies SublocationView;
+
+      const user = userEvent.setup();
+      render(InvestigationSceneSurface, {
+        sublocation: multiCharSublocation,
+        onInspect: vi.fn(),
+        onInterview: vi.fn(),
+      });
+
+      const witnessBtn = screen.getByRole("button", { name: /詢問：目擊者/ });
+      const suspectBtn = screen.getByRole("button", { name: /詢問：嫌疑人/ });
+
+      await user.click(witnessBtn);
+      expect(screen.getByRole("dialog")).toHaveTextContent("不在場證明");
+      expect(escapeClaimed()).toBe(true);
+
+      // Clicking the second placed character should switch the popover to it
+      // in a single click — the dialog stays open, now showing the suspect's
+      // topic, and the Escape claim remains held.
+      await user.click(suspectBtn);
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByRole("dialog")).toHaveTextContent("班表");
+      expect(screen.queryByRole("button", { name: /不在場證明/ })).toBeNull();
+      expect(escapeClaimed()).toBe(true);
+      expect(witnessBtn).toHaveAttribute("aria-expanded", "false");
+      expect(suspectBtn).toHaveAttribute("aria-expanded", "true");
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
   it("marks inspected hotspots with a check", () => {
     const inspected: SublocationView = {
       ...sublocation,

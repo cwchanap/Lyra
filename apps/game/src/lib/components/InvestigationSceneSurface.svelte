@@ -176,17 +176,34 @@
   // down. Keying on `activeCharacter` (not `activeCharacterId`) ensures the
   // claim also releases when the sublocation changes and the previously
   // active character is no longer placed, even though `activeCharacterId`
-  // itself stays non-null. The cleanup also clears `activeCharacterId` so
-  // that if the same character reappears later (e.g. the player navigates
-  // back to the original sublocation) the popover does not reopen without
-  // an explicit click. See $lib/state/escape-coordinator for the routing
-  // contract.
+  // itself stays non-null.
+  //
+  // The cleanup MUST NOT clear `activeCharacterId`. Svelte 5 defers state
+  // writes from event handlers until the effect flush, and the cleanup runs
+  // against the pre-flush snapshot — so when the player clicks a different
+  // placed character, `toggleCharacter`'s fresh `activeCharacterId = "<new>"`
+  // write is still queued and the cleanup reads the stale previous id.
+  // Clearing there would clobber that fresh selection and the new
+  // character's popover would never open until the player clicks it again.
+  // Instead, the stale-id clear happens in the body, which runs after queued
+  // writes are applied, and only when `activeCharacter` is genuinely null
+  // (the character disappeared from the current sublocation) — so a
+  // witness→suspect switch (where `activeCharacter` stays non-null) is
+  // untouched, while a sublocation change that drops the active character
+  // still clears the id so the popover does not reopen without an explicit
+  // click if the player navigates back. See $lib/state/escape-coordinator
+  // for the routing contract.
   $effect(() => {
-    if (!activeCharacter) return;
+    const current = activeCharacter;
+    if (!current) {
+      if (activeCharacterId !== null) {
+        activeCharacterId = null;
+      }
+      return;
+    }
     const release = claimEscape(closeTopics);
     return () => {
       release();
-      activeCharacterId = null;
     };
   });
 
