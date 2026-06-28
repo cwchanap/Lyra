@@ -13,15 +13,22 @@
     onReexamineEvidence,
     onReexamineStatement,
     disabled = false,
+    open = $bindable(false),
   }: {
     inventory: Inventory;
     reexamineEnabled: boolean;
     onReexamineEvidence: (id: string) => void;
     onReexamineStatement: (id: string) => void;
     disabled?: boolean;
+    // Bound by +page.svelte so the expand/collapse state survives the Escape
+    // menu close/reopen. The panel lives inside the menu snippet, which
+    // mounts only while the menu is open; hoisting `open` to the page (which
+    // does not unmount on menu toggle) preserves it across reopen. When no
+    // parent binds `open`, the $bindable fallback makes the panel self-manage
+    // its state, so standalone renders (tests) behave exactly as before.
+    open?: boolean;
   } = $props();
 
-  let open = $state(false);
   let evidenceImages = $state<Record<string, ResolvedStoryAsset>>({});
 
   $effect(() => {

@@ -163,6 +163,8 @@ async function installTauriMock(page: Page) {
         if (command === "inspect_hotspot") {
           return inspectedView;
         }
+        if (command === "plugin:window|is_fullscreen") return false;
+        if (command === "plugin:window|set_fullscreen") return null;
         return exploreView;
       },
       transformCallback: () => 0,
@@ -228,6 +230,40 @@ if (shouldRegisterPlaywrightSuite) {
 
         await expect(highlight).toHaveCSS("opacity", "1");
         await expect(name).toHaveCSS("opacity", "1");
+      } catch (error) {
+        reportTestFailure(testName, error);
+      }
+    });
+
+    test("Escape closes the topic popover before opening the game menu", async ({
+      page,
+    }) => {
+      const testName =
+        "Escape closes the topic popover before opening the game menu";
+
+      // Pins the escape-coordinator contract end-to-end: with the topic
+      // popover open, the first Escape closes the popover (one layer) and
+      // must NOT open the game menu; the second Escape opens the menu once
+      // the popover's claim is released. Both dialogs are role="dialog", so
+      // they are distinguished by accessible name.
+      try {
+        await page.goto("/");
+        await page.getByRole("button", { name: /開始調查/ }).click();
+
+        await expect(page.getByText("測試開始。")).toBeVisible();
+        await advanceDialogue(page);
+
+        await page.getByRole("button", { name: "詢問：目擊者" }).click();
+        const popover = page.getByRole("dialog", { name: "目擊者詢問項目" });
+        await expect(popover).toBeVisible();
+
+        await page.keyboard.press("Escape");
+        await expect(popover).toBeHidden();
+        const gameMenu = page.getByRole("dialog", { name: "遊戲選單" });
+        await expect(gameMenu).toHaveCount(0);
+
+        await page.keyboard.press("Escape");
+        await expect(gameMenu).toBeVisible();
       } catch (error) {
         reportTestFailure(testName, error);
       }

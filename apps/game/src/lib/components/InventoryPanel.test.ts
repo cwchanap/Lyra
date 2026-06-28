@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import InventoryPanel from "./InventoryPanel.svelte";
 import type { Inventory } from "../state/types";
+import { cssRule } from "$lib/test-utils";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 
@@ -36,13 +37,6 @@ const inventory: Inventory = {
 
 function source() {
   return readFileSync(join(testDir, "InventoryPanel.svelte"), "utf8");
-}
-
-function cssRule(componentSource: string, selector: string) {
-  const match = new RegExp(
-    `${selector.replaceAll(".", "\\.")}\\s*{([^}]*)}`,
-  ).exec(componentSource);
-  return match?.[1] ?? "";
 }
 
 describe("InventoryPanel", () => {
@@ -111,6 +105,25 @@ describe("InventoryPanel", () => {
 
     expect(container.querySelector("aside")).toBeInTheDocument();
     expect(container.querySelector("aside.scene")).not.toBeInTheDocument();
+  });
+
+  it("respects a bound open prop to start expanded", () => {
+    // The `open` prop is $bindable: when a parent passes a value, the panel
+    // honors it on mount instead of defaulting to collapsed. This is the
+    // controlled half of the contract that lets +page.svelte preserve the
+    // expand/collapse state across Escape menu close/reopen.
+    render(InventoryPanel, {
+      inventory,
+      reexamineEnabled: true,
+      onReexamineEvidence: vi.fn(),
+      onReexamineStatement: vi.fn(),
+      open: true,
+    });
+
+    expect(
+      screen.getByRole("region", { name: "物證清單" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /收合/ })).toBeInTheDocument();
   });
 
   it("keeps evidence inline instead of fixed to the viewport", () => {

@@ -2,10 +2,14 @@ import { render, screen, waitFor } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import InvestigationSceneSurface from "./InvestigationSceneSurface.svelte";
 import type { SublocationView } from "../state/types";
-import { reportAsyncTestFailure } from "$lib/test-utils";
+import { cssRule, reportAsyncTestFailure } from "$lib/test-utils";
+import {
+  escapeClaimed,
+  resetEscapeCoordinator,
+} from "$lib/state/escape-coordinator";
 
 const sublocation = {
   id: "coffee_shop",
@@ -54,14 +58,11 @@ function surfaceSource() {
   );
 }
 
-function cssRule(source: string, selector: string) {
-  const match = new RegExp(`${selector.replace(".", "\\.")}\\s*{([^}]*)}`).exec(
-    source,
-  );
-  return match?.[1] ?? "";
-}
-
 describe("InvestigationSceneSurface", () => {
+  afterEach(() => {
+    resetEscapeCoordinator();
+  });
+
   it("renders placed hotspots with normalized style variables", () => {
     render(InvestigationSceneSurface, {
       sublocation,
@@ -382,6 +383,61 @@ describe("InvestigationSceneSurface", () => {
 
     await user.click(screen.getByRole("button", { name: /關閉詢問項目/ }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("claims Escape while the topic popover is open and releases when it closes", async () => {
+    const testName =
+      "claims Escape while the topic popover is open and releases when it closes";
+
+    // The popover registers an Escape claim with the escape-coordinator while
+    // open so GameShell closes it (one layer) before opening the game menu,
+    // and releases the claim when the popover closes by any path. This pins
+    // the claim lifecycle independent of GameShell, which the e2e exercises
+    // end-to-end.
+    try {
+      const user = userEvent.setup();
+      render(InvestigationSceneSurface, {
+        sublocation,
+        onInspect: vi.fn(),
+        onInterview: vi.fn(),
+      });
+
+      expect(escapeClaimed()).toBe(false);
+
+      await user.click(screen.getByRole("button", { name: /詢問：目擊者/ }));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(escapeClaimed()).toBe(true);
+
+      // Closing via the × button releases the claim.
+      await user.click(screen.getByRole("button", { name: /關閉詢問項目/ }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(escapeClaimed()).toBe(false);
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("releases the Escape claim when the popover toggles off by re-clicking the character", async () => {
+    const testName =
+      "releases the Escape claim when the popover toggles off by re-clicking the character";
+
+    try {
+      const user = userEvent.setup();
+      render(InvestigationSceneSurface, {
+        sublocation,
+        onInspect: vi.fn(),
+        onInterview: vi.fn(),
+      });
+
+      const charBtn = screen.getByRole("button", { name: /詢問：目擊者/ });
+      await user.click(charBtn);
+      expect(escapeClaimed()).toBe(true);
+
+      await user.click(charBtn);
+      expect(escapeClaimed()).toBe(false);
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
   });
 
   it("marks inspected hotspots with a check", () => {

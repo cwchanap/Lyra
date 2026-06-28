@@ -18,6 +18,7 @@
     SublocationView,
     TopicView,
   } from "../state/types";
+  import { claimEscape } from "$lib/state/escape-coordinator";
 
   let {
     sublocation,
@@ -164,6 +165,18 @@
   function toggleCharacter(characterId: string) {
     activeCharacterId = activeCharacterId === characterId ? null : characterId;
   }
+
+  // Claim Escape while the topic popover is open so GameShell closes the
+  // popover (one layer) instead of opening the game menu on the first
+  // Escape. The claim is released automatically when the popover closes for
+  // any reason — the × button, re-clicking the character, a topic interview
+  // navigating away, or this component unmounting — because the $effect
+  // cleanup runs whenever `activeCharacterId` becomes null or the component
+  // tears down. See $lib/state/escape-coordinator for the routing contract.
+  $effect(() => {
+    if (activeCharacterId === null) return;
+    return claimEscape(closeTopics);
+  });
 
   function interviewActive(topic: TopicView) {
     if (!activeCharacter) return;

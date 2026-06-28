@@ -9,6 +9,10 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GameStateView } from "$lib/state/types";
 import { reportAsyncTestFailure } from "$lib/test-utils";
+import {
+  claimEscape,
+  resetEscapeCoordinator,
+} from "$lib/state/escape-coordinator";
 
 const mocks = vi.hoisted(() => ({
   audioPreferences: {
@@ -75,6 +79,7 @@ describe("GameShell", () => {
     mocks.updateAudioPreferences.mockClear();
     mocks.currentWindow.isFullscreen.mockReset();
     mocks.currentWindow.setFullscreen.mockReset();
+    resetEscapeCoordinator();
   });
 
   it("renders the chapter header and scoped children", () => {
@@ -464,6 +469,69 @@ describe("GameShell", () => {
       await vi.waitFor(() => {
         expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
       });
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("closes a nested overlay's Escape claim instead of opening the menu", async () => {
+    const testName =
+      "closes a nested overlay's Escape claim instead of opening the menu";
+
+    // GameShell's Escape handler must defer to the escape-coordinator: when a
+    // nested overlay (production: the investigation topic popover) has
+    // claimed Escape, the first Escape closes that overlay and must NOT open
+    // the game menu. The next Escape opens the menu once the claim is gone.
+    // This pins the "close one layer per Escape" contract.
+    try {
+      render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+
+      const nestedCloser = vi.fn();
+      const releaseNested = claimEscape(nestedCloser);
+
+      window.dispatchEvent(escapeKeydown());
+
+      expect(nestedCloser).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => {
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      });
+
+      releaseNested();
+
+      window.dispatchEvent(escapeKeydown());
+      await screen.findByRole("dialog", { name: "遊戲選單" });
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("still closes the menu first when an overlay claim lingers behind it", async () => {
+    const testName =
+      "still closes the menu first when an overlay claim lingers behind it";
+
+    // The menu is the topmost layer: Escape while the menu is open must
+    // close the menu, not route to an overlay claim sitting behind it. This
+    // pins that the `gameMenuOpen` branch is evaluated before the
+    // escape-coordinator, so a stale claim can never trap the player out of
+    // closing the menu.
+    try {
+      render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+
+      // Open the menu first, while no claim is active.
+      window.dispatchEvent(escapeKeydown());
+      await screen.findByRole("dialog", { name: "遊戲選單" });
+
+      // Simulate a popover whose claim lingers behind the now-open menu.
+      const behindCloser = vi.fn();
+      claimEscape(behindCloser);
+
+      window.dispatchEvent(escapeKeydown());
+      await vi.waitFor(() => {
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      });
+
+      // The menu closed; the lingering claim was NOT invoked on this Escape.
+      expect(behindCloser).not.toHaveBeenCalled();
     } catch (error) {
       reportAsyncTestFailure(testName, error);
     }

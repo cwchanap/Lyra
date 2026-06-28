@@ -6,6 +6,7 @@
     updateAudioPreferences,
   } from "$lib/audio/gameplay-audio-runtime.svelte";
   import type { GameStateView } from "../state/types";
+  import { closeTopmostEscapeClaim } from "$lib/state/escape-coordinator";
   import AudioSettings from "./AudioSettings.svelte";
   import GameAtmosphere from "./GameAtmosphere.svelte";
 
@@ -117,16 +118,23 @@
   }
 
   onMount(() => {
-    // Global capture-phase Escape handler — the sole entry point for opening
-    // the game menu. capture:true + stopImmediatePropagation ensures Escape
-    // never reaches dialogue/investigation controls behind the overlay, so
-    // they can't intercept it before the menu toggles.
+    // Global capture-phase Escape listener — the sole entry point for Escape.
+    // capture:true + stopImmediatePropagation ensures Escape never reaches
+    // dialogue/investigation controls behind the overlay, so they can't
+    // intercept it before the menu toggles.
     //
     // Coexistence note: DialogueBox also registers a window keydown, but only
     // for Space/Enter (not Escape). capture + stopImmediatePropagation keeps
     // the contract one-directional — Escape is owned here, advance keys stay
-    // owned by DialogueBox. If DialogueBox ever needs Escape, route it through
-    // a shared coordinator instead of a second window listener.
+    // owned by DialogueBox.
+    //
+    // Priority: the menu is always closed first (it is the topmost layer).
+    // Then, if a nested overlay (e.g. the investigation topic popover) has
+    // claimed Escape via the escape-coordinator, one Escape closes that
+    // overlay instead of opening the menu — "close one layer per Escape."
+    // Only when no overlay claims Escape does the menu open. Overlays claim
+    // Escape through $lib/state/escape-coordinator; see InvestigationSceneSurface
+    // for the popover usage.
     const handleKeydown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") {
         return;
@@ -138,6 +146,10 @@
 
       if (gameMenuOpen) {
         closeGameMenu();
+        return;
+      }
+
+      if (closeTopmostEscapeClaim()) {
         return;
       }
 
