@@ -131,6 +131,44 @@ impl GameEngine {
         scene_navigation_index_from_chapters(&resources_dir, &chapters)
     }
 
+    pub fn jump_to_scene(
+        &mut self,
+        chapter_id: &str,
+        scene_id: &str,
+    ) -> Result<GameStateView, GameError> {
+        let chapter_idx = self
+            .chapters
+            .iter()
+            .position(|chapter| chapter.id == chapter_id)
+            .ok_or_else(|| GameError::unknown_chapter(chapter_id))?;
+        let scene_idx =
+            find_scene_index_by_id(&self.resources_dir, &self.chapters[chapter_idx], scene_id)?
+                .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
+
+        let scene_ref = self.chapters[chapter_idx]
+            .scenes
+            .get(scene_idx)
+            .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?
+            .clone();
+        let queue_gen = self.next_queue_gen;
+        let new_scene = load_scene_runtime(&self.resources_dir, &scene_ref, queue_gen)?;
+        let snapshot = self.snapshot();
+
+        self.current_chapter_idx = chapter_idx;
+        self.current_scene_idx = scene_idx;
+        self.scene = new_scene;
+        self.last_visual_cue = LastVisualCue::default();
+        self.inventory = Inventory::default();
+        self.next_queue_gen = queue_gen + 1;
+
+        if let Err(err) = self.prime_initial_queue() {
+            self.restore_snapshot(snapshot);
+            return Err(err);
+        }
+
+        Ok(self.view())
+    }
+
     fn prime_initial_queue(&mut self) -> Result<(), GameError> {
         let mut intro_queue = None;
         let mut needs_interrogation_advance = false;
@@ -1793,14 +1831,7 @@ fn scene_navigation_index_from_chapters(
         for (scene_index, scene_ref) in chapter.scenes.iter().enumerate() {
             let json = loader::load_scene(resources_dir, &scene_ref.file)?;
             let actual_type = scene_json_type(&json);
-            if scene_ref.scene_type != actual_type {
-                return Err(GameError::scene_validation_failed(format!(
-                    "{}: chapter manifest declares {} but scene JSON contains {}",
-                    scene_ref.file,
-                    scene_type_label(scene_ref.scene_type),
-                    scene_type_label(actual_type),
-                )));
-            }
+            validate_manifest_scene_type(&scene_ref.file, scene_ref.scene_type, actual_type)?;
             let (id, title) = scene_json_identity(&json);
             scenes.push(SceneNavigationScene {
                 id: id.to_string(),
@@ -1823,6 +1854,22 @@ fn scene_navigation_index_from_chapters(
     })
 }
 
+fn find_scene_index_by_id(
+    resources_dir: &std::path::Path,
+    chapter: &ChapterManifest,
+    scene_id: &str,
+) -> Result<Option<usize>, GameError> {
+    for (idx, scene_ref) in chapter.scenes.iter().enumerate() {
+        let json = loader::load_scene(resources_dir, &scene_ref.file)?;
+        let actual_type = scene_json_type(&json);
+        validate_manifest_scene_type(&scene_ref.file, scene_ref.scene_type, actual_type)?;
+        if scene_json_identity(&json).0 == scene_id {
+            return Ok(Some(idx));
+        }
+    }
+    Ok(None)
+}
+
 fn load_scene_runtime(
     resources_dir: &std::path::Path,
     scene_ref: &SceneRef,
@@ -1830,14 +1877,7 @@ fn load_scene_runtime(
 ) -> Result<SceneRuntime, GameError> {
     let json = loader::load_scene(resources_dir, &scene_ref.file)?;
     let actual_type = scene_json_type(&json);
-    if scene_ref.scene_type != actual_type {
-        return Err(GameError::scene_validation_failed(format!(
-            "{}: chapter manifest declares {} but scene JSON contains {}",
-            scene_ref.file,
-            scene_type_label(scene_ref.scene_type),
-            scene_type_label(actual_type),
-        )));
-    }
+    validate_manifest_scene_type(&scene_ref.file, scene_ref.scene_type, actual_type)?;
     Ok(match json {
         SceneJson::Linear(j) => SceneRuntime::Linear(LinearSceneState::from_json(j, queue_gen)),
         SceneJson::Investigation(j) => {
@@ -1847,6 +1887,22 @@ fn load_scene_runtime(
             SceneRuntime::Interrogation(Box::new(InterrogationSceneState::from_json(j, queue_gen)))
         }
     })
+}
+
+fn validate_manifest_scene_type(
+    scene_file: &str,
+    declared_type: SceneType,
+    actual_type: SceneType,
+) -> Result<(), GameError> {
+    if declared_type != actual_type {
+        return Err(GameError::scene_validation_failed(format!(
+            "{}: chapter manifest declares {} but scene JSON contains {}",
+            scene_file,
+            scene_type_label(declared_type),
+            scene_type_label(actual_type),
+        )));
+    }
+    Ok(())
 }
 
 fn scene_json_identity(json: &SceneJson) -> (&str, &str) {
@@ -1964,6 +2020,250 @@ mod tests {
             ModeView::Dialogue { queue_token, .. } => queue_token.clone(),
             other => panic!("expected dialogue mode, got {other:?}"),
         }
+    }
+
+    fn scene_jump_fixture_resources() -> PathBuf {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d =
+            std::env::temp_dir().join(format!("lyra-scene-jump-test-{}-{}", std::process::id(), n));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+            "chapters": [{
+                "id": "chapter_1",
+                "title": "Chapter One",
+                "summary": "First",
+                "scenes": [
+                    { "type": "linear", "file": "chapter_1/scene_0.json" },
+                    { "type": "investigation", "file": "chapter_1/investigation_scene_1.json" },
+                    { "type": "interrogation", "file": "chapter_1/interrogation_scene_2.json" }
+                ]
+            }]
+        }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{
+            "type": "linear",
+            "id": "scene_0",
+            "title": "Opening",
+            "queue": [
+                { "kind": "sceneTag", "text": "opening", "assetCue": { "backgroundAssetId": "background.opening" } },
+                { "kind": "line", "speaker": "A", "text": "linear start" }
+            ]
+        }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("investigation_scene_1.json"),
+            r#"{
+            "type": "investigation",
+            "id": "investigation_scene_1",
+            "title": "Investigation",
+            "intro": [{ "kind": "line", "speaker": "B", "text": "investigation intro" }],
+            "sublocations": [{
+                "id": "room",
+                "label": "Room",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "room",
+                "backgroundAssetId": "background.room",
+                "transitionDialogue": [],
+                "hotspots": [{
+                    "id": "never",
+                    "label": "Never",
+                    "description": "Never",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "inspectDialogue": [],
+                    "onReexamine": null
+                }],
+                "characters": []
+            }],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": { "predicate": "hotspot_investigated", "id": "never" }, "dialogue": [] }
+        }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("interrogation_scene_2.json"),
+            r#"{
+            "type": "interrogation",
+            "id": "interrogation_scene_2",
+            "title": "Interrogation",
+            "intro": [],
+            "phases": [{
+                "kind": "testimony",
+                "id": "phase_1",
+                "label": "證言",
+                "subject": { "id": "witness", "name": "Witness", "role": "Witness", "bio": "Quiet." },
+                "required": true,
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "interrogation room",
+                "backgroundAssetId": "background.interrogation",
+                "entryDialogue": [],
+                "statements": [],
+                "results": []
+            }],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": "auto", "dialogue": [] }
+        }"#,
+        )
+        .unwrap();
+        d
+    }
+
+    #[test]
+    fn jump_to_scene_starts_linear_scene_fresh() {
+        let d = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let view = engine
+            .jump_to_scene("chapter_1", "scene_0")
+            .expect("jump to linear scene");
+
+        assert_eq!(view.chapter.id, "chapter_1");
+        match view.scene {
+            SceneView::Linear {
+                id, index, total, ..
+            } => {
+                assert_eq!(id, "scene_0");
+                assert_eq!(index, 0);
+                assert_eq!(total, 3);
+            }
+            other => panic!("expected linear scene, got {other:?}"),
+        }
+        match view.mode {
+            ModeView::Dialogue {
+                current,
+                scene_tag,
+                background_asset_id,
+                ..
+            } => {
+                assert_eq!(scene_tag.as_deref(), Some("opening"));
+                assert_eq!(background_asset_id.as_deref(), Some("background.opening"));
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "linear start")
+                );
+            }
+            other => panic!("expected dialogue mode, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn jump_to_scene_starts_investigation_scene_fresh_and_resets_inventory() {
+        let d = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "old".into(),
+            name: "Old".into(),
+            description: "Old".into(),
+            details: "Old".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "scene_0".into(),
+        });
+
+        let view = engine
+            .jump_to_scene("chapter_1", "investigation_scene_1")
+            .expect("jump to investigation scene");
+
+        assert!(view.inventory.evidence.is_empty());
+        match view.scene {
+            SceneView::Investigation {
+                id, index, total, ..
+            } => {
+                assert_eq!(id, "investigation_scene_1");
+                assert_eq!(index, 1);
+                assert_eq!(total, 3);
+            }
+            other => panic!("expected investigation scene, got {other:?}"),
+        }
+        match view.mode {
+            ModeView::Dialogue { current, .. } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "B" && text == "investigation intro")
+                );
+            }
+            other => panic!("expected investigation intro dialogue, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn jump_to_scene_starts_interrogation_scene_fresh() {
+        let d = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+
+        let view = engine
+            .jump_to_scene("chapter_1", "interrogation_scene_2")
+            .expect("jump to interrogation scene");
+
+        match view.scene {
+            SceneView::Interrogation {
+                id,
+                index,
+                total,
+                current_phase_id,
+                ..
+            } => {
+                assert_eq!(id, "interrogation_scene_2");
+                assert_eq!(index, 2);
+                assert_eq!(total, 3);
+                assert_eq!(current_phase_id.as_deref(), Some("phase_1"));
+            }
+            other => panic!("expected interrogation scene, got {other:?}"),
+        }
+        match view.mode {
+            ModeView::Interrogation {
+                phase_id,
+                background_asset_id,
+                ..
+            } => {
+                assert_eq!(phase_id, "phase_1");
+                assert_eq!(
+                    background_asset_id.as_deref(),
+                    Some("background.interrogation")
+                );
+            }
+            other => panic!("expected interrogation mode, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn jump_to_scene_returns_typed_errors_for_unknown_ids() {
+        let d = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+
+        let err = engine
+            .jump_to_scene("chapter_missing", "scene_0")
+            .unwrap_err();
+        assert_eq!(err.code, "unknownChapter");
+
+        let err = engine
+            .jump_to_scene("chapter_1", "scene_missing")
+            .unwrap_err();
+        assert_eq!(err.code, "unknownScene");
+
+        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
