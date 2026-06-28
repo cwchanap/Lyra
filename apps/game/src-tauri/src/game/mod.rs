@@ -141,17 +141,14 @@ impl GameEngine {
             .iter()
             .position(|chapter| chapter.id == chapter_id)
             .ok_or_else(|| GameError::unknown_chapter(chapter_id))?;
-        let scene_idx =
-            find_scene_index_by_id(&self.resources_dir, &self.chapters[chapter_idx], scene_id)?
-                .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
-
-        let scene_ref = self.chapters[chapter_idx]
-            .scenes
-            .get(scene_idx)
-            .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?
-            .clone();
         let queue_gen = self.next_queue_gen;
-        let new_scene = load_scene_runtime(&self.resources_dir, &scene_ref, queue_gen)?;
+        let (scene_idx, new_scene) = find_scene_runtime_by_id(
+            &self.resources_dir,
+            &self.chapters[chapter_idx],
+            scene_id,
+            queue_gen,
+        )?
+        .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
         let snapshot = self.snapshot();
 
         self.current_chapter_idx = chapter_idx;
@@ -1829,9 +1826,8 @@ fn scene_navigation_index_from_chapters(
     for (chapter_index, chapter) in chapters.iter().enumerate() {
         let mut scenes = Vec::with_capacity(chapter.scenes.len());
         for (scene_index, scene_ref) in chapter.scenes.iter().enumerate() {
-            let json = loader::load_scene(resources_dir, &scene_ref.file)?;
+            let json = load_scene_json_for_ref(resources_dir, scene_ref)?;
             let actual_type = scene_json_type(&json);
-            validate_manifest_scene_type(&scene_ref.file, scene_ref.scene_type, actual_type)?;
             let (id, title) = scene_json_identity(&json);
             scenes.push(SceneNavigationScene {
                 id: id.to_string(),
@@ -1854,17 +1850,16 @@ fn scene_navigation_index_from_chapters(
     })
 }
 
-fn find_scene_index_by_id(
+fn find_scene_runtime_by_id(
     resources_dir: &std::path::Path,
     chapter: &ChapterManifest,
     scene_id: &str,
-) -> Result<Option<usize>, GameError> {
+    queue_gen: u64,
+) -> Result<Option<(usize, SceneRuntime)>, GameError> {
     for (idx, scene_ref) in chapter.scenes.iter().enumerate() {
-        let json = loader::load_scene(resources_dir, &scene_ref.file)?;
-        let actual_type = scene_json_type(&json);
-        validate_manifest_scene_type(&scene_ref.file, scene_ref.scene_type, actual_type)?;
+        let json = load_scene_json_for_ref(resources_dir, scene_ref)?;
         if scene_json_identity(&json).0 == scene_id {
-            return Ok(Some(idx));
+            return Ok(Some((idx, scene_runtime_from_json(json, queue_gen))));
         }
     }
     Ok(None)
@@ -1875,10 +1870,22 @@ fn load_scene_runtime(
     scene_ref: &SceneRef,
     queue_gen: u64,
 ) -> Result<SceneRuntime, GameError> {
+    let json = load_scene_json_for_ref(resources_dir, scene_ref)?;
+    Ok(scene_runtime_from_json(json, queue_gen))
+}
+
+fn load_scene_json_for_ref(
+    resources_dir: &std::path::Path,
+    scene_ref: &SceneRef,
+) -> Result<SceneJson, GameError> {
     let json = loader::load_scene(resources_dir, &scene_ref.file)?;
     let actual_type = scene_json_type(&json);
     validate_manifest_scene_type(&scene_ref.file, scene_ref.scene_type, actual_type)?;
-    Ok(match json {
+    Ok(json)
+}
+
+fn scene_runtime_from_json(json: SceneJson, queue_gen: u64) -> SceneRuntime {
+    match json {
         SceneJson::Linear(j) => SceneRuntime::Linear(LinearSceneState::from_json(j, queue_gen)),
         SceneJson::Investigation(j) => {
             SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(j, queue_gen)))
@@ -1886,7 +1893,7 @@ fn load_scene_runtime(
         SceneJson::Interrogation(j) => {
             SceneRuntime::Interrogation(Box::new(InterrogationSceneState::from_json(j, queue_gen)))
         }
-    })
+    }
 }
 
 fn validate_manifest_scene_type(
@@ -2262,6 +2269,28 @@ mod tests {
             .jump_to_scene("chapter_1", "scene_missing")
             .unwrap_err();
         assert_eq!(err.code, "unknownScene");
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_lookup_returns_loaded_runtime_for_matching_scene() {
+        let d = scene_jump_fixture_resources();
+        let chapters = load_chapter_manifests(&d).unwrap();
+
+        let (index, runtime) =
+            find_scene_runtime_by_id(&d, &chapters[0], "investigation_scene_1", 42)
+                .expect("scene lookup succeeds")
+                .expect("matching scene exists");
+
+        assert_eq!(index, 1);
+        match runtime {
+            SceneRuntime::Investigation(scene) => {
+                assert_eq!(scene.def.id, "investigation_scene_1");
+                assert_eq!(scene.intro_queue_gen, 42);
+            }
+            other => panic!("expected investigation runtime, got {other:?}"),
+        }
 
         let _ = std::fs::remove_dir_all(d);
     }
