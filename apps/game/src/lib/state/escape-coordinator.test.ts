@@ -80,6 +80,25 @@ describe("escape-coordinator", () => {
     expect(closeTopmostEscapeClaim()).toBe(false); // stack drained
   });
 
+  it("releases only the owning claim when the same closer is registered multiple times", () => {
+    // Two simultaneous claims sharing the same closer reference must each
+    // release their own entry, not the other's. Releasing in FIFO order
+    // (first registered, first released) must remove the first entry and
+    // leave the second intact — lastIndexOf(closer) would instead remove
+    // the wrong (last) entry, leaving a stale claim behind.
+    const closer = vi.fn();
+    const releaseA = claimEscape(closer);
+    const releaseB = claimEscape(closer);
+
+    expect(escapeClaimed()).toBe(true);
+
+    releaseA();
+    expect(escapeClaimed()).toBe(true); // releaseB's claim still holds
+
+    releaseB();
+    expect(escapeClaimed()).toBe(false);
+  });
+
   it("a closer that does not self-release keeps consuming Escape", () => {
     // Documents the caller contract: a buggy closer that never releases its
     // claim leaves the stack non-empty, so Escape keeps routing to it. This

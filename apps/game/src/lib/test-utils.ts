@@ -22,14 +22,16 @@ export function reportAsyncTestFailure(
  * Unlike a naive `{([^}]*)}` regex, this balances brace depth so a rule
  * using native CSS nesting (e.g. `.foo { color: red; &:hover { ... } }`)
  * returns its full declaration block instead of truncating at the first
- * nested `}`. Only `.` is regex-escaped in the selector (class selectors);
- * the first match wins, matching the previous per-file helpers. A selector
- * that is a substring of another selector followed by `{` would still
- * false-match the same way the old helpers did, so prefer the most specific
- * selector available (e.g. `.scene-surface` over `surface`).
+ * nested `}`. The entire selector is regex-escaped before constructing the
+ * RegExp, so selectors containing metacharacters like `[data-state]` or
+ * `:is(.a,.b)` are matched literally; the first match wins, matching the
+ * previous per-file helpers. A selector that is a substring of another
+ * selector followed by `{` would still false-match the same way the old
+ * helpers did, so prefer the most specific selector available (e.g.
+ * `.scene-surface` over `surface`).
  */
 export function cssRule(source: string, selector: string): string {
-  const escapedSelector = selector.replaceAll(".", "\\.");
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const startMatch = new RegExp(`${escapedSelector}\\s*\\{`).exec(source);
   if (!startMatch || startMatch.index === undefined) return "";
   const openIndex = startMatch.index + startMatch[0].length;

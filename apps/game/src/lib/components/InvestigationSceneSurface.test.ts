@@ -501,7 +501,12 @@ describe("InvestigationSceneSurface", () => {
         onInterview: vi.fn(),
       });
 
-      expect(escapeClaimed()).toBe(false);
+      // rerender is synchronous but the $effect cleanup that releases the
+      // Escape claim runs on a microtask; wait for it to drain before
+      // asserting.
+      await waitFor(() => {
+        expect(escapeClaimed()).toBe(false);
+      });
     } catch (error) {
       reportAsyncTestFailure(testName, error);
     }

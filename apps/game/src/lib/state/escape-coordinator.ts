@@ -23,20 +23,27 @@
  */
 type Closer = () => void;
 
-let stack: Closer[] = [];
+interface ClaimEntry {
+  closer: Closer;
+}
+
+let stack: ClaimEntry[] = [];
 
 /**
  * Register an overlay's close handler. Returns a release function that
  * removes this specific claim. Registering the same closer twice is
- * allowed; release removes the most recent matching registration.
+ * allowed; each registration gets its own unique entry, so a release
+ * only ever removes its own entry — not another registration that
+ * happens to share the same closer function reference.
  */
 export function claimEscape(closer: Closer): () => void {
-  stack.push(closer);
+  const entry: ClaimEntry = { closer };
+  stack.push(entry);
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    const idx = stack.lastIndexOf(closer);
+    const idx = stack.indexOf(entry);
     if (idx !== -1) stack.splice(idx, 1);
   };
 }
@@ -57,7 +64,7 @@ export function escapeClaimed(): boolean {
 export function closeTopmostEscapeClaim(): boolean {
   const top = stack[stack.length - 1];
   if (!top) return false;
-  top();
+  top.closer();
   return true;
 }
 
