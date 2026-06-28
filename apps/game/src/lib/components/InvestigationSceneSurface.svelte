@@ -170,11 +170,16 @@
   // popover (one layer) instead of opening the game menu on the first
   // Escape. The claim is released automatically when the popover closes for
   // any reason — the × button, re-clicking the character, a topic interview
-  // navigating away, or this component unmounting — because the $effect
-  // cleanup runs whenever `activeCharacterId` becomes null or the component
-  // tears down. See $lib/state/escape-coordinator for the routing contract.
+  // navigating away, the active character disappearing from the current
+  // sublocation, or this component unmounting — because the $effect cleanup
+  // runs whenever `activeCharacter` becomes null or the component tears
+  // down. Keying on `activeCharacter` (not `activeCharacterId`) ensures the
+  // claim also releases when the sublocation changes and the previously
+  // active character is no longer placed, even though `activeCharacterId`
+  // itself stays non-null. See $lib/state/escape-coordinator for the
+  // routing contract.
   $effect(() => {
-    if (activeCharacterId === null) return;
+    if (!activeCharacter) return;
     return claimEscape(closeTopics);
   });
 
@@ -285,50 +290,50 @@
       {/each}
     </div>
 
-    {#if activeCharacter}
-      <div
-        class="topic-popover"
-        role="dialog"
-        aria-label={`${activeCharacter.name}詢問項目`}
-      >
-        <div class="topic-heading">
-          <div>
-            <strong>{activeCharacter.name}</strong>
-            <span>{activeCharacter.role}</span>
-          </div>
-          <button
-            class="close-topics"
-            type="button"
-            aria-label="關閉詢問項目"
-            onclick={closeTopics}
-          >
-            ×
-          </button>
-        </div>
-        <div class="topic-actions">
-          {#each activeCharacter.topics as topic (topic.id)}
-            <button
-              class:done={topic.discussed}
-              type="button"
-              {disabled}
-              onclick={() => interviewActive(topic)}
-            >
-              <span>{topic.label}</span>
-              {#if topic.discussed}
-                <small>已詢問</small>
-              {/if}
-            </button>
-          {/each}
-        </div>
-      </div>
-    {/if}
-
     {#if hud}
       <div class="scene-hud">
         {@render hud()}
       </div>
     {/if}
   </div>
+
+  {#if activeCharacter}
+    <div
+      class="topic-popover"
+      role="dialog"
+      aria-label={`${activeCharacter.name}詢問項目`}
+    >
+      <div class="topic-heading">
+        <div>
+          <strong>{activeCharacter.name}</strong>
+          <span>{activeCharacter.role}</span>
+        </div>
+        <button
+          class="close-topics"
+          type="button"
+          aria-label="關閉詢問項目"
+          onclick={closeTopics}
+        >
+          ×
+        </button>
+      </div>
+      <div class="topic-actions">
+        {#each activeCharacter.topics as topic (topic.id)}
+          <button
+            class:done={topic.discussed}
+            type="button"
+            {disabled}
+            onclick={() => interviewActive(topic)}
+          >
+            <span>{topic.label}</span>
+            {#if topic.discussed}
+              <small>已詢問</small>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   {#if unplacedHotspots.length > 0 || unplacedCharacters.length > 0}
     <div class="fallback-controls">
@@ -404,13 +409,12 @@
     --investigation-hud-inline: clamp(20px, 3vw, 40px);
     position: fixed;
     inset: 0;
-    /* Above .fallback-controls so the topic-popover dialog (positioned at
-       the viewport bottom-right) is not covered by the unplaced-hotspot/
-       witness fallback panel when both are visible. The surface itself is
-       pointer-events: none, so fallback controls remain clickable; only the
-       placed hotspots/characters (pointer-events: auto, positioned on the
-       scene plane) and the topic-popover capture clicks. */
-    z-index: 11;
+    /* Below .fallback-controls so placed hotspot/character targets
+       (pointer-events: auto) never cover the fallback panel in the overlap
+       region. The topic-popover is rendered as a sibling (not a child of
+       this isolation: isolate surface) with its own higher z-index, so it
+       alone sits above the fallback panel. */
+    z-index: 1;
     width: 100vw;
     max-width: none;
     height: 100vh;
@@ -707,10 +711,14 @@
   }
 
   .topic-popover {
-    position: absolute;
+    position: fixed;
     right: 18px;
     bottom: 18px;
-    z-index: 6;
+    /* Above .fallback-controls so the popover stays accessible when both
+       are visible. Rendered as a sibling of .scene-surface (which has
+       isolation: isolate and a lower z-index), so this z-index participates
+       in the root stacking context directly. */
+    z-index: 11;
     width: min(320px, calc(100% - 36px));
     padding: 12px;
     border: 1px solid var(--rule-strong);
