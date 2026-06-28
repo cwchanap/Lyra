@@ -3603,16 +3603,23 @@ mod tests {
         assert_eq!(index.chapters[0].scenes[0].scene_type, SceneType::Linear);
         assert_eq!(index.chapters[0].scenes[0].index, 0);
         assert_eq!(index.chapters[0].scenes[1].id, "investigation_scene_1");
+        assert_eq!(index.chapters[0].scenes[1].title, "Investigation");
         assert_eq!(
             index.chapters[0].scenes[1].scene_type,
             SceneType::Investigation
         );
+        assert_eq!(index.chapters[0].scenes[1].index, 1);
         assert_eq!(index.chapters[1].id, "chapter_2");
+        assert_eq!(index.chapters[1].title, "Chapter Two");
+        assert_eq!(index.chapters[1].index, 1);
+        assert_eq!(index.chapters[1].scenes.len(), 1);
         assert_eq!(index.chapters[1].scenes[0].id, "interrogation_scene_0");
+        assert_eq!(index.chapters[1].scenes[0].title, "Interrogation");
         assert_eq!(
             index.chapters[1].scenes[0].scene_type,
             SceneType::Interrogation
         );
+        assert_eq!(index.chapters[1].scenes[0].index, 0);
 
         let _ = fs::remove_dir_all(d);
     }
