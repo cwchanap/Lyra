@@ -351,6 +351,44 @@ describe("GameShell", () => {
     }
   });
 
+  it("closes the menu when the bound open prop is driven false externally (dossier reexamine path)", async () => {
+    const testName =
+      "closes the menu when the bound open prop is driven false externally (dossier reexamine path)";
+
+    // +page.svelte binds open to a local $state and sets it false after
+    // dossier reexamine resolves, closing the menu so the installed dialogue
+    // (z-index 30, in <main>) isn't hidden behind the scrim (z-index 40).
+    // This test pins the parent→child half of that contract.
+    try {
+      const { rerender } = render(GameShellHarness, {
+        gameState: state(),
+        onReset: vi.fn(),
+        open: true,
+      });
+
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+      const main = screen.getByText("scoped child").closest("main")!;
+      expect(main.inert).toBe(true);
+      expect(dialog).toBeInTheDocument();
+
+      // Simulate +page.svelte setting gameMenuOpen=false after reexamine
+      // resolves. The `inert` attribute on <main> must revert and the
+      // scrim must unmount — otherwise the reexamine dialogue is invisible.
+      rerender({
+        gameState: state(),
+        onReset: vi.fn(),
+        open: false,
+      });
+
+      await vi.waitFor(() => {
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      });
+      expect(main.inert).toBe(false);
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
   it("marks the chapter header and main content inert while the game menu is open", async () => {
     const testName =
       "marks the chapter header and main content inert while the game menu is open";
