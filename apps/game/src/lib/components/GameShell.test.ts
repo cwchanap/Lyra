@@ -61,6 +61,14 @@ function state(
   };
 }
 
+function escapeKeydown(): KeyboardEvent {
+  return new KeyboardEvent("keydown", {
+    key: "Escape",
+    bubbles: true,
+    cancelable: true,
+  });
+}
+
 describe("GameShell", () => {
   afterEach(() => {
     cleanup();
@@ -177,37 +185,58 @@ describe("GameShell", () => {
     }
   });
 
-  it("traps focus inside the game menu and restores focus on close", async () => {
+  it("traps focus inside the game menu, including menu-slot focusables, and restores focus on close", async () => {
     const testName =
-      "traps focus inside the game menu and restores focus on close";
+      "traps focus inside the game menu, including menu-slot focusables, and restores focus on close";
 
     try {
       document.body.tabIndex = -1;
       document.body.focus();
 
-      render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+      render(GameShellHarness, {
+        gameState: state(),
+        onReset: vi.fn(),
+        // Mirror production's <InventoryPanel>: a focusable control rendered
+        // via the menu slot. The default harness slot is a non-focusable <p>,
+        // so without this knob the trap never exercises a slot-provided
+        // focusable and a regression that dropped it from the Tab cycle would
+        // pass silently.
+        menuExtraButtonLabel: "extra slot focusable",
+      });
 
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Escape",
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
+      window.dispatchEvent(escapeKeydown());
 
       const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
       const resume = within(dialog).getByRole("button", {
         name: /繼續調查/,
       });
+      const extra = within(dialog).getByRole("button", {
+        name: "extra slot focusable",
+      });
       const sfx = screen.getByLabelText("SFX");
 
       expect(resume).toHaveFocus();
 
-      await fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
-      expect(sfx).toHaveFocus();
+      // The trap handler only intercepts Tab at the first/last boundary; for
+      // middle focusables it relies on the browser's native Tab focus move.
+      // userEvent.tab() performs that real traversal, so this exercises the
+      // full integration: every focusable in the panel — including the
+      // menu-slot control (production: <InventoryPanel>) — must be reachable
+      // by Tab, and focus must never escape the dialog.
+      const user = userEvent.setup();
+      let sawSlotFocusable = false;
+      let wrappedToFirst = false;
+      for (let i = 0; i < 12 && !wrappedToFirst; i++) {
+        await user.tab();
+        if (document.activeElement === extra) sawSlotFocusable = true;
+        if (document.activeElement === resume && i > 0) wrappedToFirst = true;
+      }
+      expect(sawSlotFocusable).toBe(true);
+      expect(wrappedToFirst).toBe(true);
 
-      await fireEvent.keyDown(dialog, { key: "Tab" });
-      expect(resume).toHaveFocus();
+      // Reverse boundary: shift+Tab from the first focusable wraps to last.
+      await user.tab({ shift: true });
+      expect(sfx).toHaveFocus();
 
       await fireEvent.click(resume);
       await vi.waitFor(() => {
@@ -337,6 +366,103 @@ describe("GameShell", () => {
 
       await vi.waitFor(() => {
         expect(mocks.currentWindow.setFullscreen).toHaveBeenCalledWith(true);
+      });
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("recovers from a rapid Escape\u2192Escape during the open microtask", async () => {
+    const testName =
+      "recovers from a rapid Escape\u2192Escape during the open microtask";
+
+    // The first Escape opens the menu (sets gameMenuOpen=true, then awaits
+    // tick() before focusing the resume button). The second Escape is
+    // dispatched synchronously before that tick() resolves, taking the close
+    // path while the open is still pending. The menu must settle closed and
+    // remain consistent \u2014 not half-open, and the open's deferred focus()
+    // must not target a node that has just been unmounted.
+    try {
+      render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+
+      window.dispatchEvent(escapeKeydown());
+      window.dispatchEvent(escapeKeydown());
+
+      await vi.waitFor(() => {
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      });
+
+      // State stays usable: a fresh Escape reopens the menu.
+      window.dispatchEvent(escapeKeydown());
+      await screen.findByRole("dialog", { name: "遊戲選單" });
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("opens the game menu with Escape during interrogation", async () => {
+    const testName = "opens the game menu with Escape during interrogation";
+
+    // The global Escape handler is mode-agnostic, but interrogation coexists
+    // with its own keyboard surface (InterrogationView). This pins the
+    // contract so a future mode-specific Escape branch can't silently drop
+    // the menu from interrogation.
+    try {
+      const onReset = vi.fn();
+      render(GameShellHarness, {
+        gameState: state({
+          type: "interrogation",
+          phaseId: "cross_examination",
+          backgroundAssetId: null,
+          bgm: null,
+          bgs: null,
+        }),
+        onReset,
+      });
+
+      const escape = escapeKeydown();
+      const propagated = window.dispatchEvent(escape);
+
+      expect(propagated).toBe(false);
+      expect(escape.defaultPrevented).toBe(true);
+      expect(
+        await screen.findByRole("dialog", { name: "遊戲選單" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /繼續調查/ })).toBeVisible();
+      expect(onReset).not.toHaveBeenCalled();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("dismisses on a scrim click but stays open when a click lands inside the panel", async () => {
+    const testName =
+      "dismisses on a scrim click but stays open when a click lands inside the panel";
+
+    // Backdrop-dismiss is gated on event.target === event.currentTarget on
+    // the scrim, replacing the panel's old stopPropagation. Assert both
+    // directions so a regression that re-introduced a bubbling close (or one
+    // that stopped dismissing entirely) is caught.
+    try {
+      const user = userEvent.setup();
+      render(GameShellHarness, {
+        gameState: state(),
+        onReset: vi.fn(),
+        menuContent: "click target paragraph",
+      });
+
+      await user.keyboard("{Escape}");
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+
+      // A click inside the panel (non-interactive slot content) must NOT
+      // bubble-close via the scrim handler.
+      await user.click(screen.getByText("click target paragraph"));
+      expect(dialog).toBeInTheDocument();
+
+      // A click on the scrim itself (target === currentTarget) dismisses.
+      await user.click(dialog);
+      await vi.waitFor(() => {
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
       });
     } catch (error) {
       reportAsyncTestFailure(testName, error);

@@ -7,11 +7,18 @@
     onReset,
     disabled = false,
     menuContent = null,
+    menuExtraButtonLabel = null,
   }: {
     gameState: GameStateView;
     onReset: () => void;
     disabled?: boolean;
     menuContent?: string | null;
+    // When set, renders a focusable <button> inside the menu slot. Mirrors
+    // production's <InventoryPanel>, whose toggle/evidence buttons are
+    // focusable controls the focus trap must include in its Tab cycle. The
+    // default <p> slot content is non-focusable, so without this knob the
+    // focus-trap test never exercises a focusable slot element.
+    menuExtraButtonLabel?: string | null;
   } = $props();
 </script>
 
@@ -19,6 +26,11 @@
   {#snippet menu()}
     {#if menuContent}
       <p>{menuContent}</p>
+    {/if}
+    {#if menuExtraButtonLabel}
+      <button type="button" class="harness-extra-menu-button">
+        {menuExtraButtonLabel}
+      </button>
     {/if}
   {/snippet}
 
