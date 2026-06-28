@@ -1,5 +1,7 @@
 // src-tauri/src/game/view.rs
-use crate::game::schema::{AudioChannelJson, CharacterLayoutJson, DialogueItem, HotspotLayoutJson};
+use crate::game::schema::{
+    AudioChannelJson, CharacterLayoutJson, DialogueItem, HotspotLayoutJson, SceneType,
+};
 use crate::game::state::Inventory;
 use serde::{Deserialize, Serialize};
 
@@ -97,6 +99,31 @@ pub enum SceneView {
         current_phase_id: Option<String>,
         visible_phases: Vec<InterrogationPhaseView>,
     },
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneNavigationIndex {
+    pub chapters: Vec<SceneNavigationChapter>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneNavigationChapter {
+    pub id: String,
+    pub title: String,
+    pub index: usize,
+    pub scenes: Vec<SceneNavigationScene>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneNavigationScene {
+    pub id: String,
+    pub title: String,
+    #[serde(rename = "type")]
+    pub scene_type: SceneType,
+    pub index: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

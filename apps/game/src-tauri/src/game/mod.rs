@@ -27,7 +27,8 @@ use state::{ChapterManifest, Inventory, SceneRef};
 use std::path::PathBuf;
 use view::{
     AudioCueView, ChapterView, CharacterView, HotspotView, InquiryQuestionView,
-    InterrogationPhaseKindView, InterrogationPhaseView, SceneView, SubjectView, SublocationView,
+    InterrogationPhaseKindView, InterrogationPhaseView, SceneNavigationChapter,
+    SceneNavigationIndex, SceneNavigationScene, SceneView, SubjectView, SublocationView,
     TestimonyStatementView, TopicView,
 };
 
@@ -101,31 +102,7 @@ fn audio_cue_view(cue: &schema::AudioCueJson) -> AudioCueView {
 
 impl GameEngine {
     pub fn new_started(resources_dir: PathBuf) -> Result<Self, GameError> {
-        let index = loader::load_chapters_index(&resources_dir)?;
-
-        let chapters: Vec<ChapterManifest> = index
-            .chapters
-            .into_iter()
-            .map(|c| ChapterManifest {
-                id: c.id,
-                title: c.title,
-                summary: c.summary,
-                scenes: c
-                    .scenes
-                    .into_iter()
-                    .map(|s| SceneRef {
-                        scene_type: s.scene_type,
-                        file: s.file,
-                    })
-                    .collect(),
-            })
-            .collect();
-
-        if chapters.is_empty() {
-            return Err(GameError::chapter_load_failed(
-                "chapters.json has no chapters.".into(),
-            ));
-        }
+        let chapters = load_chapter_manifests(&resources_dir)?;
 
         let first_scene_ref = chapters[0]
             .scenes
@@ -145,6 +122,13 @@ impl GameEngine {
         };
         engine.prime_initial_queue()?;
         Ok(engine)
+    }
+
+    pub fn scene_navigation_index(
+        resources_dir: PathBuf,
+    ) -> Result<SceneNavigationIndex, GameError> {
+        let chapters = load_chapter_manifests(&resources_dir)?;
+        scene_navigation_index_from_chapters(&resources_dir, &chapters)
     }
 
     fn prime_initial_queue(&mut self) -> Result<(), GameError> {
@@ -1767,6 +1751,78 @@ fn inventory_target_matches(target: &InventoryTarget, item_kind: &str, item_id: 
     }
 }
 
+fn load_chapter_manifests(
+    resources_dir: &std::path::Path,
+) -> Result<Vec<ChapterManifest>, GameError> {
+    let index = loader::load_chapters_index(resources_dir)?;
+    let chapters: Vec<ChapterManifest> = index
+        .chapters
+        .into_iter()
+        .map(|c| ChapterManifest {
+            id: c.id,
+            title: c.title,
+            summary: c.summary,
+            scenes: c
+                .scenes
+                .into_iter()
+                .map(|s| SceneRef {
+                    scene_type: s.scene_type,
+                    file: s.file,
+                })
+                .collect(),
+        })
+        .collect();
+
+    if chapters.is_empty() {
+        return Err(GameError::chapter_load_failed(
+            "chapters.json has no chapters.".into(),
+        ));
+    }
+
+    Ok(chapters)
+}
+
+fn scene_navigation_index_from_chapters(
+    resources_dir: &std::path::Path,
+    chapters: &[ChapterManifest],
+) -> Result<SceneNavigationIndex, GameError> {
+    let mut chapter_views = Vec::with_capacity(chapters.len());
+
+    for (chapter_index, chapter) in chapters.iter().enumerate() {
+        let mut scenes = Vec::with_capacity(chapter.scenes.len());
+        for (scene_index, scene_ref) in chapter.scenes.iter().enumerate() {
+            let json = loader::load_scene(resources_dir, &scene_ref.file)?;
+            let actual_type = scene_json_type(&json);
+            if scene_ref.scene_type != actual_type {
+                return Err(GameError::scene_validation_failed(format!(
+                    "{}: chapter manifest declares {} but scene JSON contains {}",
+                    scene_ref.file,
+                    scene_type_label(scene_ref.scene_type),
+                    scene_type_label(actual_type),
+                )));
+            }
+            let (id, title) = scene_json_identity(&json);
+            scenes.push(SceneNavigationScene {
+                id: id.to_string(),
+                title: title.to_string(),
+                scene_type: actual_type,
+                index: scene_index,
+            });
+        }
+
+        chapter_views.push(SceneNavigationChapter {
+            id: chapter.id.clone(),
+            title: chapter.title.clone(),
+            index: chapter_index,
+            scenes,
+        });
+    }
+
+    Ok(SceneNavigationIndex {
+        chapters: chapter_views,
+    })
+}
+
 fn load_scene_runtime(
     resources_dir: &std::path::Path,
     scene_ref: &SceneRef,
@@ -1791,6 +1847,14 @@ fn load_scene_runtime(
             SceneRuntime::Interrogation(Box::new(InterrogationSceneState::from_json(j, queue_gen)))
         }
     })
+}
+
+fn scene_json_identity(json: &SceneJson) -> (&str, &str) {
+    match json {
+        SceneJson::Linear(scene) => (&scene.id, &scene.title),
+        SceneJson::Investigation(scene) => (&scene.id, &scene.title),
+        SceneJson::Interrogation(scene) => (&scene.id, &scene.title),
+    }
 }
 
 fn scene_json_type(json: &SceneJson) -> SceneType {
@@ -3421,6 +3485,180 @@ mod tests {
         assert_eq!(err.code, "sceneValidationFailed");
         assert!(err.message.contains("declares interrogation"));
         assert!(err.message.contains("contains linear"));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_navigation_index_lists_compiled_chapters_and_scenes() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-index-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        let chapter_2 = d.join("chapter_2");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::create_dir_all(&chapter_2).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [
+                    {
+                        "id": "chapter_1",
+                        "title": "Chapter One",
+                        "summary": "First",
+                        "scenes": [
+                            { "type": "linear", "file": "chapter_1/scene_0.json" },
+                            { "type": "investigation", "file": "chapter_1/investigation_scene_1.json" }
+                        ]
+                    },
+                    {
+                        "id": "chapter_2",
+                        "title": "Chapter Two",
+                        "summary": "Second",
+                        "scenes": [
+                            { "type": "interrogation", "file": "chapter_2/interrogation_scene_0.json" }
+                        ]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Opening",
+                "queue": [{ "kind": "line", "speaker": "A", "text": "start" }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("investigation_scene_1.json"),
+            r#"{
+                "type": "investigation",
+                "id": "investigation_scene_1",
+                "title": "Investigation",
+                "intro": [],
+                "sublocations": [{
+                    "id": "room",
+                    "label": "Room",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "room",
+                    "transitionDialogue": [],
+                    "hotspots": [],
+                    "characters": []
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_2.join("interrogation_scene_0.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_0",
+                "title": "Interrogation",
+                "intro": [],
+                "phases": [{
+                    "kind": "testimony",
+                    "id": "phase_1",
+                    "label": "證言",
+                    "subject": { "id": "witness", "name": "Witness", "role": "Witness", "bio": "Quiet." },
+                    "required": true,
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "room",
+                    "entryDialogue": [],
+                    "statements": [],
+                    "results": []
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let index = GameEngine::scene_navigation_index(d.clone()).unwrap();
+
+        assert_eq!(index.chapters.len(), 2);
+        assert_eq!(index.chapters[0].id, "chapter_1");
+        assert_eq!(index.chapters[0].title, "Chapter One");
+        assert_eq!(index.chapters[0].index, 0);
+        assert_eq!(index.chapters[0].scenes.len(), 2);
+        assert_eq!(index.chapters[0].scenes[0].id, "scene_0");
+        assert_eq!(index.chapters[0].scenes[0].title, "Opening");
+        assert_eq!(index.chapters[0].scenes[0].scene_type, SceneType::Linear);
+        assert_eq!(index.chapters[0].scenes[0].index, 0);
+        assert_eq!(index.chapters[0].scenes[1].id, "investigation_scene_1");
+        assert_eq!(
+            index.chapters[0].scenes[1].scene_type,
+            SceneType::Investigation
+        );
+        assert_eq!(index.chapters[1].id, "chapter_2");
+        assert_eq!(index.chapters[1].scenes[0].id, "interrogation_scene_0");
+        assert_eq!(
+            index.chapters[1].scenes[0].scene_type,
+            SceneType::Interrogation
+        );
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_navigation_index_rejects_manifest_type_mismatch() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-index-mismatch-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [{ "type": "interrogation", "file": "chapter_1/scene_0.json" }]
+                }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Opening",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let err = GameEngine::scene_navigation_index(d.clone()).unwrap_err();
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert!(err.message.contains("declares interrogation"));
+        assert!(err.message.contains("contains linear"));
+
         let _ = fs::remove_dir_all(d);
     }
 
