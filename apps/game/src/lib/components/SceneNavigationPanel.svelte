@@ -80,7 +80,7 @@
   {:else if !index || index.chapters.length === 0}
     <p class="empty">沒有可用場景。</p>
   {:else}
-    <div class="chapter-accordion" aria-label="章節列表">
+    <div class="chapter-accordion" role="list" aria-label="章節列表">
       {#each index.chapters as chapter (chapter.id)}
         {@const isExpanded = expandedChapterId === chapter.id}
         <section class="chapter-group">

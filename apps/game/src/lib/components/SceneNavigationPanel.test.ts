@@ -76,6 +76,11 @@ describe("SceneNavigationPanel", () => {
       onSelect: vi.fn(),
     });
 
+    // The chapter accordion exposes list semantics (role="list") so screen
+    // readers announce the chapter grouping as a list, matching the
+    // scene-list <ul> below it.
+    expect(screen.getByRole("list", { name: "章節列表" })).toBeInTheDocument();
+
     expect(
       screen.getByRole("button", { name: /雨夜的第一份證詞/ }),
     ).toHaveAttribute("aria-expanded", "true");

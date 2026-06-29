@@ -168,7 +168,20 @@ export function returnToMainMenu() {
 }
 
 export async function listScenes(): Promise<SceneNavigationIndex | null> {
-  return await runCommand<SceneNavigationIndex>("list_scenes");
+  // Read-only scene-index query. Routed through a local try/catch (not
+  // runCommand) deliberately: runCommand clears and writes gameState.error,
+  // which is the shared surface for game-command failures rendered by the
+  // global ErrorBanner. The SceneNavigationPanel owns its own error/retry
+  // surface (sceneNavigationError), so routing a list_scenes failure through
+  // gameState.error would (a) double-report the same failure via ErrorBanner
+  // + panel, and (b) wipe a pre-existing game-command error on every call.
+  try {
+    return isTauri
+      ? await invoke<SceneNavigationIndex>("list_scenes")
+      : await httpInvoke<SceneNavigationIndex>("list_scenes");
+  } catch {
+    return null;
+  }
 }
 
 export async function jumpToScene(chapterId: string, sceneId: string) {

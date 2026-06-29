@@ -63,6 +63,14 @@ impl GameError {
             format!("Scene '{scene_id}' does not exist in chapter '{chapter_id}'."),
         )
     }
+    pub fn duplicate_scene_target(chapter_id: &str, scene_id: &str) -> Self {
+        Self::new(
+            "duplicateSceneTarget",
+            format!(
+                "Scene '{scene_id}' appears more than once in chapter '{chapter_id}' — navigation targets must be unambiguous."
+            ),
+        )
+    }
     pub fn unknown_topic(c: &str, t: &str) -> Self {
         Self::new("unknownTopic", format!("Topic '{c}@{t}' does not exist."))
     }

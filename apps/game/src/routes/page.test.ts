@@ -306,3 +306,71 @@ describe("+page scene jump closes the escape menu", () => {
     expect(gameState.value?.scene.id).toBe("scene_2");
   });
 });
+
+describe("+page scene navigation retries after return to title", () => {
+  beforeEach(() => {
+    mocks.fetch.mockReset();
+    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.currentWindow.isFullscreen.mockResolvedValue(false);
+    seedGameState();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    cleanup();
+    gameState.value = null;
+    gameState.error = null;
+    gameState.loading = false;
+    gameState.inFlight = false;
+  });
+
+  it("re-attempts the index load on a fresh game after a prior failure", async () => {
+    // Regression guard: a failed scene-index load sets latches
+    // (sceneNavigationError / sceneNavigationRequested) that suppress the
+    // auto-load $effect. Closing the case (the real return-to-title path)
+    // must clear those latches so a subsequent game session re-attempts the
+    // load instead of inheriting the stale failure. Asserted by counting
+    // list_scenes fetch calls across the session boundary.
+    let listScenesCallCount = 0;
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const path = String(url).replace("http://127.0.0.1:1421/", "");
+      if (path === "list_scenes") {
+        listScenesCallCount += 1;
+        if (listScenesCallCount === 1) {
+          return {
+            ok: false,
+            status: 500,
+            text: () => Promise.resolve("index unavailable"),
+          } as unknown as Response;
+        }
+        return jsonResponse(sceneNavigationIndex);
+      }
+      return jsonResponse({});
+    });
+
+    const user = userEvent.setup();
+    render(Page);
+
+    // First load fires and fails.
+    await waitFor(() => {
+      expect(listScenesCallCount).toBe(1);
+    });
+
+    // Close the case through the real UI path — handleCloseCase resets the
+    // scene-nav latches synchronously before returning to the title.
+    await user.keyboard("{Escape}");
+    const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(dialog).getByRole("button", { name: /結束案件/ }));
+    await waitFor(() => {
+      expect(screen.getByRole("main", { name: "主選單" })).toBeInTheDocument();
+    });
+
+    // Start a fresh game. Without the latch reset, the stale
+    // error/requested latches would keep the load $effect from re-firing.
+    seedGameState();
+
+    await waitFor(() => {
+      expect(listScenesCallCount).toBe(2);
+    });
+  });
+});
