@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AUDIO_PREFERENCES_STORAGE_KEY,
   DEFAULT_AUDIO_PREFERENCES,
@@ -8,13 +8,16 @@ import {
   saveAudioPreferences,
 } from "./audio-preferences";
 
-class MemoryStorage implements Pick<Storage, "getItem" | "setItem"> {
+class MemoryStorage implements Pick<Storage, "getItem" | "setItem" | "clear"> {
   values = new Map<string, string>();
   getItem(key: string) {
     return this.values.get(key) ?? null;
   }
   setItem(key: string, value: string) {
     this.values.set(key, value);
+  }
+  clear() {
+    this.values.clear();
   }
 }
 
@@ -146,12 +149,33 @@ describe("audio preferences", () => {
 });
 
 describe("browserStorage", () => {
+  let originalLocalStorageDescriptor: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
+      window,
+      "localStorage",
+    );
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: new MemoryStorage(),
+    });
+  });
+
   afterEach(() => {
     // Match the "audio preferences" suite: restore spies/mocks (e.g. the
     // console.warn spy installed by the localStorage-throws test) so they
     // cannot leak into later tests in this file.
     vi.restoreAllMocks();
-    window.localStorage.clear();
+    if (originalLocalStorageDescriptor) {
+      Object.defineProperty(
+        window,
+        "localStorage",
+        originalLocalStorageDescriptor,
+      );
+    } else {
+      Reflect.deleteProperty(window, "localStorage");
+    }
   });
 
   it("exposes window.localStorage in a browser-like environment", () => {
