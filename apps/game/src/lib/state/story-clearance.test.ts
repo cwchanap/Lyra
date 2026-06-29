@@ -65,6 +65,27 @@ describe("story clearance entitlement", () => {
     );
   });
 
+  it("warns at most once when loading fails", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const failing: Pick<Storage, "getItem" | "setItem"> = {
+      getItem: () => {
+        throw new Error("read denied");
+      },
+      setItem: () => undefined,
+    };
+
+    expect(loadStoryClearedOnce(failing)).toBe(false);
+    expect(loadStoryClearedOnce(failing)).toBe(false);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("[StoryClearance]"),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("could not be read"),
+    );
+  });
+
   it("returns null when localStorage access throws", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const descriptor = Object.getOwnPropertyDescriptor(window, "localStorage");

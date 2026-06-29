@@ -3,6 +3,7 @@ export const STORY_CLEARED_STORAGE_KEY = "lyra.storyClearedOnce.v1";
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
 
 let storageUnavailableWarned = false;
+let loadFailureWarned = false;
 let saveFailureWarned = false;
 
 function describeError(error: unknown): string {
@@ -32,9 +33,12 @@ export function loadStoryClearedOnce(
   try {
     return storage.getItem(STORY_CLEARED_STORAGE_KEY) === "true";
   } catch (error) {
-    console.warn(
-      `[StoryClearance] stored story-clearance flag could not be read (${describeError(error)}); scene navigation remains locked`,
-    );
+    if (!loadFailureWarned) {
+      loadFailureWarned = true;
+      console.warn(
+        `[StoryClearance] stored story-clearance flag could not be read (${describeError(error)}); scene navigation remains locked`,
+      );
+    }
     return false;
   }
 }
