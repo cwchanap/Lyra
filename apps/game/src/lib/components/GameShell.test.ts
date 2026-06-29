@@ -134,28 +134,86 @@ describe("GameShell", () => {
     expect(screen.getByText("scoped child")).toBeInTheDocument();
   });
 
-  it("renders close-case and audio controls inside the game menu", async () => {
-    const testName =
-      "renders close-case and audio controls inside the game menu";
+  it("renders evidence and sound behind separate menu buttons", async () => {
+    const testName = "renders evidence and sound behind separate menu buttons";
 
     try {
       const user = userEvent.setup();
       const onReset = vi.fn();
-      render(GameShellHarness, { gameState: state(), onReset });
+      render(GameShellHarness, {
+        gameState: state(),
+        onReset,
+        menuContent: "menu inventory slot",
+      });
 
       await user.keyboard("{Escape}");
       const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
 
       expect(
-        screen.getByRole("region", { name: "音訊設定" }),
+        within(dialog).getByRole("button", { name: /物證檔案/ }),
       ).toBeInTheDocument();
-      expect(screen.getByLabelText("BGM")).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("button", { name: /音訊設定/ }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "音訊設定" })).toBeNull();
+      expect(screen.queryByText("menu inventory slot")).toBeNull();
+
+      await user.click(
+        within(dialog).getByRole("button", { name: /物證檔案/ }),
+      );
+      expect(
+        within(dialog).getByText("menu inventory slot"),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("region", { name: "音訊設定" })).toBeNull();
+
+      await user.click(
+        within(dialog).getByRole("button", { name: /音訊設定/ }),
+      );
+      expect(
+        within(dialog).getByRole("region", { name: "音訊設定" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("menu inventory slot")).toBeNull();
 
       await user.click(
         within(dialog).getByRole("button", { name: /結束案件/ }),
       );
 
       expect(onReset).toHaveBeenCalledTimes(1);
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("renders scene select only when scene menu content is provided", async () => {
+    const testName =
+      "renders scene select only when scene menu content is provided";
+
+    try {
+      const user = userEvent.setup();
+      const { rerender } = render(GameShellHarness, {
+        gameState: state(),
+        onReset: vi.fn(),
+      });
+
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("button", { name: /場景跳轉/ })).toBeNull();
+
+      await user.keyboard("{Escape}");
+      await rerender({
+        gameState: state(),
+        onReset: vi.fn(),
+        sceneMenuEnabled: true,
+        sceneMenuContent: "scene selector slot",
+      });
+      await user.keyboard("{Escape}");
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+      await user.click(
+        within(dialog).getByRole("button", { name: /場景跳轉/ }),
+      );
+
+      expect(
+        within(dialog).getByText("scene selector slot"),
+      ).toBeInTheDocument();
     } catch (error) {
       reportAsyncTestFailure(testName, error);
     }
@@ -215,6 +273,8 @@ describe("GameShell", () => {
         // focusable and a regression that dropped it from the Tab cycle would
         // pass silently.
         menuExtraButtonLabel: "extra slot focusable",
+        sceneMenuEnabled: true,
+        sceneMenuContent: "scene slot focusable",
       });
 
       window.dispatchEvent(escapeKeydown());
@@ -223,12 +283,16 @@ describe("GameShell", () => {
       const resume = within(dialog).getByRole("button", {
         name: /繼續調查/,
       });
+      expect(resume).toHaveFocus();
+
+      const user = userEvent.setup();
+      await user.click(
+        within(dialog).getByRole("button", { name: /物證檔案/ }),
+      );
+      resume.focus();
       const extra = within(dialog).getByRole("button", {
         name: "extra slot focusable",
       });
-      const sfx = screen.getByLabelText("SFX");
-
-      expect(resume).toHaveFocus();
 
       // The trap handler only intercepts Tab at the first/last boundary; for
       // middle focusables it relies on the browser's native Tab focus move.
@@ -236,7 +300,6 @@ describe("GameShell", () => {
       // full integration: every focusable in the panel — including the
       // menu-slot control (production: <InventoryPanel>) — must be reachable
       // by Tab, and focus must never escape the dialog.
-      const user = userEvent.setup();
       let sawSlotFocusable = false;
       let wrappedToFirst = false;
       for (let i = 0; i < 12 && !wrappedToFirst; i++) {
@@ -248,6 +311,11 @@ describe("GameShell", () => {
       expect(wrappedToFirst).toBe(true);
 
       // Reverse boundary: shift+Tab from the first focusable wraps to last.
+      await user.click(
+        within(dialog).getByRole("button", { name: /音訊設定/ }),
+      );
+      resume.focus();
+      const sfx = within(dialog).getByLabelText("SFX");
       await user.tab({ shift: true });
       expect(sfx).toHaveFocus();
 
@@ -322,10 +390,12 @@ describe("GameShell", () => {
     }
   });
 
-  it("renders menu slot content only inside the Escape menu", async () => {
-    const testName = "renders menu slot content only inside the Escape menu";
+  it("renders menu slot content only inside the evidence submenu", async () => {
+    const testName =
+      "renders menu slot content only inside the evidence submenu";
 
     try {
+      const user = userEvent.setup();
       render(GameShellHarness, {
         gameState: state(),
         onReset: vi.fn(),
@@ -343,6 +413,11 @@ describe("GameShell", () => {
       );
 
       const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+      expect(screen.queryByText("menu inventory slot")).not.toBeInTheDocument();
+
+      await user.click(
+        within(dialog).getByRole("button", { name: /物證檔案/ }),
+      );
       expect(
         within(dialog).getByText("menu inventory slot"),
       ).toBeInTheDocument();
@@ -603,6 +678,10 @@ describe("GameShell", () => {
 
       await user.keyboard("{Escape}");
       const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+
+      await user.click(
+        within(dialog).getByRole("button", { name: /物證檔案/ }),
+      );
 
       // A click inside the panel (non-interactive slot content) must NOT
       // bubble-close via the scrim handler.

@@ -15,8 +15,10 @@
     onReset,
     disabled = false,
     open = $bindable(false),
+    sceneMenuEnabled = false,
     children,
     menu,
+    sceneMenu,
   }: {
     gameState: GameStateView;
     onReset: () => void;
@@ -26,13 +28,18 @@
     // renders behind this modal scrim. Self-manages via the fallback when no
     // parent binds (tests/standalone renders), preserving prior behavior.
     open?: boolean;
+    sceneMenuEnabled?: boolean;
     children: Snippet;
     menu?: Snippet;
+    sceneMenu?: Snippet;
   } = $props();
+
+  type MenuPanel = "scene" | "evidence" | "sound" | null;
 
   let showChapterHud = $derived(gameState.mode.type !== "explore");
   let resumeButton: HTMLButtonElement | undefined = $state();
   let gameMenuPanel: HTMLDivElement | undefined = $state();
+  let activeMenuPanel = $state<MenuPanel>(null);
   let previouslyFocusedElement: HTMLElement | null = null;
 
   const focusableSelector = [
@@ -82,6 +89,7 @@
       const activeElement = document.activeElement;
       previouslyFocusedElement =
         activeElement instanceof HTMLElement ? activeElement : null;
+      activeMenuPanel = null;
       open = true;
       await tick();
       resumeButton?.focus();
@@ -93,6 +101,7 @@
       return;
     }
 
+    activeMenuPanel = null;
     open = false;
     const elementToRestore = previouslyFocusedElement;
     previouslyFocusedElement = null;
@@ -107,6 +116,10 @@
   function handleMenuReset() {
     closeGameMenu();
     onReset();
+  }
+
+  function toggleMenuPanel(panel: Exclude<MenuPanel, null>) {
+    activeMenuPanel = activeMenuPanel === panel ? null : panel;
   }
 
   function handleGameMenuKeydown(event: KeyboardEvent) {
@@ -187,6 +200,12 @@
       window.removeEventListener("keydown", handleKeydown, { capture: true });
     };
   });
+
+  $effect(() => {
+    if (!open && activeMenuPanel !== null) {
+      activeMenuPanel = null;
+    }
+  });
 </script>
 
 <div class="shell">
@@ -260,22 +279,57 @@
             <span>繼續調查</span>
             <span class="en">RESUME</span>
           </button>
+          {#if sceneMenuEnabled && sceneMenu}
+            <button
+              type="button"
+              class:active={activeMenuPanel === "scene"}
+              aria-expanded={activeMenuPanel === "scene"}
+              onclick={() => toggleMenuPanel("scene")}
+            >
+              <span>場景跳轉</span>
+              <span class="en">SCENE&nbsp;SELECT</span>
+            </button>
+          {/if}
+          {#if menu}
+            <button
+              type="button"
+              class:active={activeMenuPanel === "evidence"}
+              aria-expanded={activeMenuPanel === "evidence"}
+              onclick={() => toggleMenuPanel("evidence")}
+            >
+              <span>物證檔案</span>
+              <span class="en">EVIDENCE</span>
+            </button>
+          {/if}
+          <button
+            type="button"
+            class:active={activeMenuPanel === "sound"}
+            aria-expanded={activeMenuPanel === "sound"}
+            onclick={() => toggleMenuPanel("sound")}
+          >
+            <span>音訊設定</span>
+            <span class="en">SOUND</span>
+          </button>
           <button type="button" onclick={handleMenuReset} {disabled}>
             <span>結束案件</span>
             <span class="en">CLOSE&nbsp;CASE</span>
           </button>
         </div>
 
-        {#if menu}
+        {#if activeMenuPanel}
           <div class="game-menu-extra">
-            {@render menu()}
+            {#if activeMenuPanel === "scene" && sceneMenuEnabled && sceneMenu}
+              {@render sceneMenu()}
+            {:else if activeMenuPanel === "evidence" && menu}
+              {@render menu()}
+            {:else if activeMenuPanel === "sound"}
+              <AudioSettings
+                preferences={audioPreferences}
+                onUpdate={updateAudioPreferences}
+              />
+            {/if}
           </div>
         {/if}
-
-        <AudioSettings
-          preferences={audioPreferences}
-          onUpdate={updateAudioPreferences}
-        />
       </div>
     </div>
   {/if}
@@ -474,6 +528,7 @@
   }
 
   .game-menu-actions button.primary,
+  .game-menu-actions button.active,
   .game-menu-actions button:hover:not(:disabled),
   .game-menu-actions button:focus-visible {
     border-color: var(--crimson);
