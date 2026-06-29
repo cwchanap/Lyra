@@ -283,6 +283,18 @@
         bind:this={gameMenuPanel}
         tabindex="-1"
       >
+        {#if activeMenuPanel !== null}
+          <button
+            bind:this={submenuBackButton}
+            type="button"
+            class="submenu-back-button"
+            onclick={closeMenuPanel}
+          >
+            <span>返回選單</span>
+            <span class="en">BACK</span>
+          </button>
+        {/if}
+
         <div class="game-menu-heading">
           <span class="case-marker">
             <span class="diamond"></span>
@@ -326,15 +338,6 @@
           </div>
         {:else}
           <div class="game-submenu">
-            <button
-              bind:this={submenuBackButton}
-              type="button"
-              class="submenu-back-button"
-              onclick={closeMenuPanel}
-            >
-              <span>返回選單</span>
-              <span class="en">BACK</span>
-            </button>
             <div class="game-menu-extra">
               {#if activeMenuPanel === "scene" && sceneMenuEnabled && sceneMenu}
                 {@render sceneMenu()}
@@ -480,11 +483,15 @@
   }
 
   .game-menu-panel {
-    display: flex;
-    flex-direction: column;
+    box-sizing: border-box;
+    position: relative;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 22px;
-    width: min(420px, 100%);
+    width: min(560px, calc(100vw - 48px));
+    height: min(620px, calc(100dvh - 48px));
     padding: 24px;
+    overflow: hidden;
     border: 1px solid var(--rule-strong);
     background: rgba(8, 8, 14, 0.94);
     box-shadow:
@@ -492,14 +499,14 @@
       inset 0 0 0 1px rgba(236, 228, 207, 0.05);
   }
 
-  .game-menu-panel.submenu {
-    width: min(560px, 100%);
-  }
-
   .game-menu-heading {
     display: flex;
     flex-direction: column;
     gap: 10px;
+  }
+
+  .game-menu-panel.submenu .game-menu-heading {
+    padding-right: 128px;
   }
 
   .game-menu-heading h2,
@@ -525,12 +532,15 @@
 
   .game-menu-actions {
     display: grid;
+    align-content: start;
     gap: 10px;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .game-submenu {
     display: grid;
-    gap: 14px;
+    min-height: 0;
   }
 
   .game-menu-actions button,
@@ -554,6 +564,18 @@
       background 0.18s,
       border-color 0.18s,
       color 0.18s;
+  }
+
+  .submenu-back-button {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    z-index: 1;
+    width: auto;
+    min-width: 108px;
+    min-height: 36px;
+    padding: 8px 10px;
+    font-size: 12px;
   }
 
   .game-menu-actions button.primary,
@@ -582,6 +604,8 @@
 
   .game-menu-extra {
     min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   @media (max-width: 720px) {
@@ -593,7 +617,14 @@
     }
 
     .game-menu-panel {
+      width: min(560px, calc(100vw - 36px));
+      height: min(620px, calc(100dvh - 36px));
       padding: 20px;
+    }
+
+    .submenu-back-button {
+      top: 14px;
+      right: 14px;
     }
   }
 </style>

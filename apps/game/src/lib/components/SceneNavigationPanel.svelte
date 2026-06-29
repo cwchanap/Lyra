@@ -15,35 +15,33 @@
     onSelect: (chapterId: string, sceneId: string) => void;
   } = $props();
 
-  let selectedChapterId = $state<string | null>(null);
-
-  let selectedChapter = $derived(
-    index?.chapters.find((chapter) => chapter.id === selectedChapterId) ??
-      index?.chapters.find((chapter) => chapter.id === current.chapter.id) ??
-      index?.chapters[0] ??
-      null,
-  );
+  let expandedChapterId = $state<string | null>(null);
+  let hasAutoExpandedChapter = false;
 
   $effect(() => {
     const chapters = index?.chapters ?? [];
     const currentChapterId =
       current.mode.type === "gameComplete" ? null : current.chapter.id;
-    let nextChapterId = selectedChapterId;
+    let nextChapterId = expandedChapterId;
 
     if (chapters.length === 0) {
       nextChapterId = null;
-    } else if (
-      !nextChapterId ||
-      !chapters.some((chapter) => chapter.id === nextChapterId)
-    ) {
+      hasAutoExpandedChapter = false;
+    } else if (!hasAutoExpandedChapter) {
       nextChapterId =
         chapters.find((chapter) => chapter.id === currentChapterId)?.id ??
         chapters[0]?.id ??
         null;
+      hasAutoExpandedChapter = true;
+    } else if (
+      nextChapterId &&
+      !chapters.some((chapter) => chapter.id === nextChapterId)
+    ) {
+      nextChapterId = null;
     }
 
-    if (selectedChapterId !== nextChapterId) {
-      selectedChapterId = nextChapterId;
+    if (expandedChapterId !== nextChapterId) {
+      expandedChapterId = nextChapterId;
     }
   });
 
@@ -51,6 +49,10 @@
     if (type === "investigation") return "調查";
     if (type === "interrogation") return "詰問";
     return "對話";
+  }
+
+  function toggleChapter(chapterId: string) {
+    expandedChapterId = expandedChapterId === chapterId ? null : chapterId;
   }
 </script>
 
@@ -60,47 +62,61 @@
   {:else if !index || index.chapters.length === 0}
     <p class="empty">沒有可用場景。</p>
   {:else}
-    <div class="chapter-tabs" role="list" aria-label="章節列表">
+    <div class="chapter-accordion" aria-label="章節列表">
       {#each index.chapters as chapter (chapter.id)}
-        <button
-          type="button"
-          class:selected={selectedChapter?.id === chapter.id}
-          aria-pressed={selectedChapter?.id === chapter.id}
-          onclick={() => (selectedChapterId = chapter.id)}
-        >
-          <span>{String(chapter.index + 1).padStart(2, "0")}</span>
-          <strong>{chapter.title}</strong>
-        </button>
+        {@const isExpanded = expandedChapterId === chapter.id}
+        <section class="chapter-group">
+          <button
+            type="button"
+            class:expanded={isExpanded}
+            aria-expanded={isExpanded}
+            aria-controls={`scene-list-${chapter.id}`}
+            onclick={() => toggleChapter(chapter.id)}
+          >
+            <span class="chapter-number"
+              >{String(chapter.index + 1).padStart(2, "0")}</span
+            >
+            <strong>{chapter.title}</strong>
+            <span class="chapter-state" aria-hidden="true"
+              >{isExpanded ? "-" : "+"}</span
+            >
+          </button>
+
+          {#if isExpanded}
+            <ul
+              id={`scene-list-${chapter.id}`}
+              class="scene-list"
+              aria-label={`${chapter.title} 場景列表`}
+            >
+              {#each chapter.scenes as scene (scene.id)}
+                {@const isCurrent =
+                  chapter.id === current.chapter.id &&
+                  scene.id === current.scene.id}
+                <li>
+                  <button
+                    type="button"
+                    {disabled}
+                    aria-current={isCurrent ? "true" : undefined}
+                    onclick={() => onSelect(chapter.id, scene.id)}
+                  >
+                    <span class="num"
+                      >{String(scene.index + 1).padStart(2, "0")}</span
+                    >
+                    <span class="copy">
+                      <strong>{scene.title}</strong>
+                      <small>{sceneTypeLabel(scene.type)} · {scene.id}</small>
+                    </span>
+                    {#if isCurrent}
+                      <span class="current" aria-hidden="true">NOW</span>
+                    {/if}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </section>
       {/each}
     </div>
-
-    {#if selectedChapter}
-      <ul class="scene-list" aria-label="場景列表">
-        {#each selectedChapter.scenes as scene (scene.id)}
-          {@const isCurrent =
-            selectedChapter.id === current.chapter.id &&
-            scene.id === current.scene.id}
-          <li>
-            <button
-              type="button"
-              {disabled}
-              aria-current={isCurrent ? "true" : undefined}
-              onclick={() => onSelect(selectedChapter.id, scene.id)}
-            >
-              <span class="num">{String(scene.index + 1).padStart(2, "0")}</span
-              >
-              <span class="copy">
-                <strong>{scene.title}</strong>
-                <small>{sceneTypeLabel(scene.type)} · {scene.id}</small>
-              </span>
-              {#if isCurrent}
-                <span class="current">目前</span>
-              {/if}
-            </button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
   {/if}
 </section>
 
@@ -108,14 +124,24 @@
   .scene-navigation-panel {
     display: grid;
     gap: 12px;
+    min-height: 0;
   }
 
-  .chapter-tabs {
+  .chapter-accordion {
+    display: grid;
+    gap: 8px;
+    min-height: 0;
+    max-height: 100%;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+
+  .chapter-group {
     display: grid;
     gap: 8px;
   }
 
-  .chapter-tabs button,
+  .chapter-group > button,
   .scene-list button {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -132,24 +158,25 @@
     cursor: pointer;
   }
 
-  .chapter-tabs button.selected,
-  .chapter-tabs button:hover,
+  .chapter-group > button.expanded,
+  .chapter-group > button:hover,
   .scene-list button:hover:not(:disabled),
   .scene-list button[aria-current="true"] {
     border-color: var(--crimson);
     background: var(--crimson-soft);
   }
 
-  .chapter-tabs span,
+  .chapter-number,
   .num,
-  .current {
+  .current,
+  .chapter-state {
     font-family: var(--impact);
     font-size: 10px;
     letter-spacing: 0.18em;
     color: var(--cyan);
   }
 
-  .chapter-tabs strong,
+  .chapter-group > button strong,
   .copy strong {
     overflow-wrap: anywhere;
     font-family: var(--serif-jp);
@@ -160,10 +187,8 @@
   .scene-list {
     display: grid;
     gap: 8px;
-    max-height: min(38vh, 320px);
     margin: 0;
     padding: 0;
-    overflow-y: auto;
     list-style: none;
   }
 
