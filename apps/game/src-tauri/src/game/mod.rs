@@ -12,7 +12,7 @@ pub mod unlock;
 pub mod view;
 
 pub use error::GameError;
-pub use view::{GameStateView, ModeView, QueueToken};
+pub use view::{GameStateView, ModeView, QueueToken, SceneNavigationIndex};
 
 use scenes::interrogation::{
     phase_id, phase_required, InterrogationSceneAndInventoryCtx, InterrogationSceneState,
@@ -28,8 +28,8 @@ use std::path::PathBuf;
 use view::{
     AudioCueView, ChapterView, CharacterView, HotspotView, InquiryQuestionView,
     InterrogationPhaseKindView, InterrogationPhaseView, SceneNavigationChapter,
-    SceneNavigationIndex, SceneNavigationScene, SceneView, SubjectView, SublocationView,
-    TestimonyStatementView, TopicView,
+    SceneNavigationScene, SceneView, SubjectView, SublocationView, TestimonyStatementView,
+    TopicView,
 };
 
 pub struct GameEngine {

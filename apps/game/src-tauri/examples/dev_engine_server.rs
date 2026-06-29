@@ -13,7 +13,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use lyra_lib::game::{GameEngine, GameError, GameStateView, QueueToken};
+use lyra_lib::game::{GameEngine, GameError, GameStateView, QueueToken, SceneNavigationIndex};
 use serde::Deserialize;
 
 const ADDR: &str = "127.0.0.1:1421";
@@ -179,6 +179,21 @@ fn dispatch(state: &ServerState, command: &str, body: &[u8]) -> Result<String, G
             serialize(view)
         }
         "get_state" => with_engine(state, |e| Ok(e.view())),
+        "list_scenes" => {
+            let index: SceneNavigationIndex = GameEngine::scene_navigation_index(resources_dir())?;
+            serialize_value(index)
+        }
+        "jump_to_scene" => {
+            #[derive(Deserialize)]
+            struct Args {
+                #[serde(rename = "chapterId")]
+                chapter_id: String,
+                #[serde(rename = "sceneId")]
+                scene_id: String,
+            }
+            let args: Args = parse_body(body)?;
+            with_engine(state, |e| e.jump_to_scene(&args.chapter_id, &args.scene_id))
+        }
         "advance_dialogue" => {
             #[derive(Deserialize)]
             struct Args {
@@ -288,8 +303,12 @@ where
     serialize(view)
 }
 
-fn serialize(v: GameStateView) -> Result<String, GameError> {
+fn serialize_value<T: serde::Serialize>(v: T) -> Result<String, GameError> {
     serde_json::to_string(&v).map_err(|e| GameError::parse_failure(format!("serialize view: {e}")))
+}
+
+fn serialize(v: GameStateView) -> Result<String, GameError> {
+    serialize_value(v)
 }
 
 fn parse_body<T: for<'de> Deserialize<'de>>(body: &[u8]) -> Result<T, GameError> {
@@ -327,5 +346,26 @@ mod tests {
             let err = dispatch(&state, command, body.as_bytes()).unwrap_err();
             assert_eq!(err.code, "gameNotStarted");
         }
+    }
+
+    #[test]
+    fn scene_navigation_commands_dispatch_camel_case_args() {
+        let state = empty_state();
+
+        match dispatch(&state, "list_scenes", b"{}") {
+            Ok(json) => {
+                let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+                assert!(value.get("chapters").and_then(|v| v.as_array()).is_some());
+            }
+            Err(err) => assert_ne!(err.code, "unknownCommand"),
+        }
+
+        let err = dispatch(
+            &state,
+            "jump_to_scene",
+            br#"{"chapterId":"chapter_1","sceneId":"scene_0"}"#,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, "gameNotStarted");
     }
 }
