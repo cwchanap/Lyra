@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use tauri::path::BaseDirectory;
 use tauri::Manager;
 
-use game::{GameEngine, GameError, GameStateView, QueueToken};
+use game::{GameEngine, GameError, GameStateView, QueueToken, SceneNavigationIndex};
 
 struct AppState {
     engine: Mutex<Option<GameEngine>>,
@@ -49,6 +49,26 @@ fn get_state(state: tauri::State<'_, AppState>) -> Result<GameStateView, GameErr
         .as_ref()
         .map(|e| e.view())
         .ok_or_else(GameError::game_not_started)
+}
+
+#[tauri::command]
+fn list_scenes(app: tauri::AppHandle) -> Result<SceneNavigationIndex, GameError> {
+    let resources_dir = app
+        .path()
+        .resolve("resources/scenes", BaseDirectory::Resource)
+        .map_err(|e| GameError::scene_load_failed(format!("cannot resolve resources dir: {e}")))?;
+    GameEngine::scene_navigation_index(resources_dir)
+}
+
+#[tauri::command]
+fn jump_to_scene(
+    state: tauri::State<'_, AppState>,
+    chapter_id: String,
+    scene_id: String,
+) -> Result<GameStateView, GameError> {
+    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
+    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    engine.jump_to_scene(&chapter_id, &scene_id)
 }
 
 #[tauri::command]
@@ -155,6 +175,8 @@ pub fn run() {
             start_game,
             reset_game,
             get_state,
+            list_scenes,
+            jump_to_scene,
             advance_dialogue,
             inspect_hotspot,
             interview_topic,
