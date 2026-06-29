@@ -2274,6 +2274,145 @@ mod tests {
     }
 
     #[test]
+    fn jump_to_scene_restores_previous_state_when_priming_fails() {
+        // Covers the `if let Err(err) = self.prime_initial_queue()` restore
+        // branch in jump_to_scene. The jump target (scene_1) has an empty
+        // linear queue, so prime_initial_queue calls advance_scene to load
+        // scene_2. scene_2's manifest declares "linear" but its file is
+        // investigation-typed, so load_scene_runtime rejects with
+        // sceneValidationFailed. jump_to_scene must restore the snapshot
+        // (still on scene_0) and propagate the error.
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-jump-restore-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+            "chapters": [{
+                "id": "chapter_1",
+                "title": "Chapter One",
+                "summary": "First",
+                "scenes": [
+                    { "type": "linear", "file": "chapter_1/scene_0.json" },
+                    { "type": "linear", "file": "chapter_1/scene_1.json" },
+                    { "type": "linear", "file": "chapter_1/scene_2.json" }
+                ]
+            }]
+        }"#,
+        )
+        .unwrap();
+        // Startup scene: non-empty queue so new_started primes successfully.
+        // Two lines so a single advance_dialogue stays within scene_0 (and
+        // does not cascade into advance_scene → scene_1 → scene_2).
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{
+            "type": "linear",
+            "id": "scene_0",
+            "title": "Opening",
+            "queue": [
+                { "kind": "line", "speaker": "A", "text": "start" },
+                { "kind": "line", "speaker": "A", "text": "second" }
+            ]
+        }"#,
+        )
+        .unwrap();
+        // Jump target: empty queue → prime_initial_queue calls advance_scene.
+        fs::write(
+            chapter_1.join("scene_1.json"),
+            r#"{
+            "type": "linear",
+            "id": "scene_1",
+            "title": "Empty",
+            "queue": []
+        }"#,
+        )
+        .unwrap();
+        // Next scene after the jump target: declared linear but file is
+        // investigation-typed → load_scene_runtime rejects with
+        // sceneValidationFailed during advance_scene.
+        fs::write(
+            chapter_1.join("scene_2.json"),
+            r#"{
+            "type": "investigation",
+            "id": "scene_2",
+            "title": "Mismatched",
+            "intro": [],
+            "sublocations": [{
+                "id": "room",
+                "label": "Room",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "room",
+                "transitionDialogue": [],
+                "hotspots": [],
+                "characters": []
+            }],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": "auto", "dialogue": [] }
+        }"#,
+        )
+        .unwrap();
+
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        // Sanity: engine started on scene_0.
+        let before = engine.view();
+        let before_scene_id = match &before.scene {
+            SceneView::Linear { id, .. } => id.clone(),
+            other => panic!("expected linear scene at startup, got {other:?}"),
+        };
+        assert_eq!(before_scene_id, "scene_0");
+
+        let err = engine
+            .jump_to_scene("chapter_1", "scene_1")
+            .expect_err("jump should fail during priming");
+        assert_eq!(err.code, "sceneValidationFailed");
+
+        // Snapshot restored: the engine is still on scene_0 with the
+        // original queue generation sequence intact.
+        let after = engine.view();
+        let after_scene_id = match &after.scene {
+            SceneView::Linear { id, .. } => id.clone(),
+            other => panic!("expected linear scene after restore, got {other:?}"),
+        };
+        assert_eq!(after_scene_id, "scene_0");
+        assert_eq!(after.chapter.id, "chapter_1");
+
+        // The engine remains usable: advancing dialogue on the restored
+        // scene still works.
+        let token = match &after.mode {
+            ModeView::Dialogue { queue_token, .. } => queue_token.clone(),
+            other => panic!("expected Dialogue mode after restore, got {other:?}"),
+        };
+        let advanced = engine.advance_dialogue(token).unwrap();
+        match advanced.mode {
+            ModeView::Dialogue { current, .. } => {
+                // Advancing past the first line ("start") lands on the
+                // second line ("second") — proving the restored queue cursor
+                // and queue generation are intact and the engine is usable.
+                assert!(
+                    matches!(&current, DialogueItem::Line { text, .. } if text == "second"),
+                    "expected second line after advance, got {current:?}"
+                );
+            }
+            other => panic!("expected Dialogue mode after advance, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
     fn scene_lookup_returns_loaded_runtime_for_matching_scene() {
         let d = scene_jump_fixture_resources();
         let chapters = load_chapter_manifests(&d).unwrap();
