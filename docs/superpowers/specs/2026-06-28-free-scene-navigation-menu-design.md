@@ -2,6 +2,14 @@
 
 **Date:** 2026-06-28
 **Status:** Approved design; implementation plan to follow
+**Revisions (2026-06-28, post-implementation review):**
+- Escape inside an open submenu steps back to the root menu first; a second
+  Escape closes the whole menu. (Replaces the original "one Escape closes the
+  menu from anywhere" rule in Accessibility And Focus.)
+- `Close Case` returns to the title screen (`returnToMainMenu`) instead of
+  resetting to chapter 1. (Replaces "keep current behavior" in Menu UI.)
+- Sound controls are removed from the title-screen `MainMenu` and live only
+  behind the Escape-menu `Sound` submenu. (Adds to scope; see Menu UI.)
 **Related specs:**
 - `docs/superpowers/specs/2026-05-13-scene-pipeline-design.md`
 - `docs/superpowers/specs/2026-05-19-interrogation-scene-design.md`
@@ -193,9 +201,14 @@ The Escape menu becomes a compact command list plus one open submenu at a time:
 `AudioSettings`. `Scene Select` renders the navigation index.
 
 Only one submenu should be open at a time. Opening a different submenu closes
-the previous one. The Resume and Close Case buttons keep their current
-behavior. Closing the whole Escape menu should preserve page-level evidence
-panel expansion state, matching the current `InventoryPanel` behavior.
+the previous one. `Resume` keeps its current behavior. `Close Case` returns to
+the title screen (`returnToMainMenu`) rather than resetting to chapter 1.
+Closing the whole Escape menu should preserve page-level evidence panel
+expansion state, matching the current `InventoryPanel` behavior.
+
+Sound controls live only behind the Escape-menu `Sound` submenu. The
+title-screen `MainMenu` no longer renders `AudioSettings`; players adjust
+BGM/BGS/SFX volume from the in-game Escape menu.
 
 ### Scene Select Layout
 
@@ -247,7 +260,8 @@ Keep the existing `GameShell` dialog contract:
 
 Submenu buttons and controls must participate in the same focus trap. The
 submenu should not install a second global Escape handler. Pressing Escape
-while the menu is open closes the menu as it does today.
+while a submenu is open steps back to the root menu first; pressing Escape
+again (or when no submenu is open) closes the whole menu.
 
 ## Testing
 
@@ -284,11 +298,18 @@ while the menu is open closes the menu as it does today.
 
 - `GameShell` renders Evidence and Sound as separate submenus.
 - `AudioSettings` is no longer always visible in the main menu body.
+- `AudioSettings` is no longer rendered on the title-screen `MainMenu`.
 - `InventoryPanel` is no longer always visible in the main menu body.
 - Scene Select appears in dev mode or with the cleared flag.
 - Scene Select is hidden in production without the cleared flag.
 - Focus trap includes controls inside whichever submenu is open.
-- Successful scene selection closes the Escape menu.
+- Escape inside a submenu steps back to the root menu; Escape at the root
+  closes the whole menu.
+- Successful scene selection closes the Escape menu (behavioral page test,
+  not only a source-string pin).
+- Reaching `gameComplete` persists the cleared-once flag and reveals Scene
+  Select on a subsequent production render (behavioral page test, not only a
+  source-string pin).
 
 ## Verification
 
