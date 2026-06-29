@@ -9,6 +9,8 @@
     open = $bindable(false),
     menuContent = null,
     menuExtraButtonLabel = null,
+    sceneMenuEnabled = false,
+    sceneMenuContent = null,
   }: {
     gameState: GameStateView;
     onReset: () => void;
@@ -23,10 +25,20 @@
     // default <p> slot content is non-focusable, so without this knob the
     // focus-trap test never exercises a focusable slot element.
     menuExtraButtonLabel?: string | null;
+    sceneMenuEnabled?: boolean;
+    sceneMenuContent?: string | null;
   } = $props();
 </script>
 
-<GameShell {gameState} {onReset} {disabled} bind:open>
+<GameShell {gameState} {onReset} {disabled} {sceneMenuEnabled} bind:open>
+  {#snippet sceneMenu()}
+    {#if sceneMenuContent}
+      <button type="button" class="harness-scene-menu-button">
+        {sceneMenuContent}
+      </button>
+    {/if}
+  {/snippet}
+
   {#snippet menu()}
     {#if menuContent}
       <p>{menuContent}</p>
