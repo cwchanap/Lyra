@@ -54,3 +54,29 @@ describe("+page gameplay audio wiring", () => {
     expect(source).toContain("<GameplayAudio mode={gameState.value.mode} />");
   });
 });
+
+describe("+page scene navigation wiring", () => {
+  it("passes scene navigation through the GameShell sceneMenu snippet", () => {
+    const source = pageSource();
+
+    expect(source).toContain("{#snippet sceneMenu()}");
+    expect(source).toContain("<SceneNavigationPanel");
+    expect(source).toContain("sceneMenuEnabled={sceneNavigationEnabled}");
+    expect(source).toContain("sceneNavigationEnabled");
+    expect(source).toContain("handleJumpToScene");
+  });
+
+  it("marks story cleared when gameComplete is observed", () => {
+    const source = pageSource();
+
+    expect(source).toContain("saveStoryClearedOnce()");
+    expect(source).toContain('gameState.value?.mode.type === "gameComplete"');
+  });
+
+  it("closes the menu after scene jump resolves", () => {
+    const source = pageSource();
+
+    expect(source).toContain("await jumpToScene(chapterId, sceneId)");
+    expect(source).toContain("gameMenuOpen = false");
+  });
+});
