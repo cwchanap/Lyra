@@ -145,6 +145,20 @@ export type SceneView =
       visiblePhases: InterrogationPhaseView[];
     };
 
+export type SceneNavigationIndex = {
+  chapters: Array<{
+    id: string;
+    title: string;
+    index: number;
+    scenes: Array<{
+      id: string;
+      title: string;
+      type: "linear" | "investigation" | "interrogation";
+      index: number;
+    }>;
+  }>;
+};
+
 export type EvidenceRecord = {
   id: string;
   name: string;

@@ -4,7 +4,12 @@ import {
   inferGameplaySfxEvents,
   type GameplayCommandName,
 } from "$lib/audio/sfx-events";
-import type { GameError, GameStateView, QueueToken } from "./types";
+import type {
+  GameError,
+  GameStateView,
+  QueueToken,
+  SceneNavigationIndex,
+} from "./types";
 
 const isTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -127,12 +132,40 @@ async function dispatchGameCommand(
   }
 }
 
+async function dispatchStateCommand(
+  command: string,
+  args?: Record<string, unknown>,
+  loading = false,
+) {
+  if (gameState.inFlight) return null;
+  gameState.inFlight = true;
+  if (loading) gameState.loading = true;
+  try {
+    const v = await runCommand<GameStateView>(command, args);
+    if (v) {
+      gameState.value = v;
+    }
+    return v;
+  } finally {
+    if (loading) gameState.loading = false;
+    gameState.inFlight = false;
+  }
+}
+
 export async function startGame() {
   await dispatchGameCommand("start_game", undefined, true);
 }
 
 export async function resetGame() {
   await dispatchGameCommand("reset_game", undefined, true);
+}
+
+export async function listScenes(): Promise<SceneNavigationIndex | null> {
+  return await runCommand<SceneNavigationIndex>("list_scenes");
+}
+
+export async function jumpToScene(chapterId: string, sceneId: string) {
+  await dispatchStateCommand("jump_to_scene", { chapterId, sceneId }, true);
 }
 
 export async function advanceDialogue(expected: QueueToken) {
