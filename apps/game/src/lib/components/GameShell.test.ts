@@ -250,6 +250,39 @@ describe("GameShell", () => {
     }
   });
 
+  it("returns from a submenu to the main game menu on Escape", async () => {
+    const testName = "returns from a submenu to the main game menu on Escape";
+
+    try {
+      const user = userEvent.setup();
+      render(GameShellHarness, {
+        gameState: state(),
+        onReset: vi.fn(),
+        menuContent: "menu inventory slot",
+      });
+
+      await user.keyboard("{Escape}");
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+      await user.click(
+        within(dialog).getByRole("button", { name: /物證檔案/ }),
+      );
+
+      expect(
+        await screen.findByRole("dialog", { name: "物證檔案" }),
+      ).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+
+      expect(
+        await screen.findByRole("dialog", { name: "遊戲選單" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("menu inventory slot")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /繼續調查/ })).toBeVisible();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
   it("opens the game menu and consumes Escape during investigation exploration", async () => {
     const testName =
       "opens the game menu and consumes Escape during investigation exploration";

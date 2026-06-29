@@ -186,7 +186,9 @@
     // the contract one-directional — Escape is owned here, advance keys stay
     // owned by DialogueBox.
     //
-    // Priority: the menu is always closed first (it is the topmost layer).
+    // Priority: submenu screens step back to the root menu before the menu
+    // closes, because the submenu is the topmost layer. The root menu itself
+    // still closes before consulting any background overlay claim.
     // Then, if a nested overlay (e.g. the investigation topic popover) has
     // claimed Escape via the escape-coordinator, one Escape closes that
     // overlay instead of opening the menu — "close one layer per Escape."
@@ -203,6 +205,10 @@
       event.stopImmediatePropagation();
 
       if (open) {
+        if (activeMenuPanel !== null) {
+          closeMenuPanel();
+          return;
+        }
         closeGameMenu();
         return;
       }
