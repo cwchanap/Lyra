@@ -355,8 +355,31 @@ mod tests {
         match dispatch(&state, "list_scenes", b"{}") {
             Ok(json) => {
                 let value: serde_json::Value = serde_json::from_str(&json).unwrap();
-                assert!(value.get("chapters").and_then(|v| v.as_array()).is_some());
+                let chapters = value
+                    .get("chapters")
+                    .and_then(|v| v.as_array())
+                    .expect("list_scenes response has a chapters array");
+                // Exercise the response contract past the top-level key: a
+                // chapter must carry at least one scene with an id so the
+                // nested payload shape is actually validated.
+                let first_scene = chapters
+                    .first()
+                    .and_then(|c| c.get("scenes"))
+                    .and_then(|s| s.as_array())
+                    .and_then(|s| s.first())
+                    .and_then(|s| s.get("id"))
+                    .and_then(|s| s.as_str());
+                assert!(
+                    first_scene.is_some(),
+                    "list_scenes chapters must expose at least one scene with an id"
+                );
             }
+            // CI's unit-tests-rust job does not run `scenes:compile`, and
+            // resources/scenes/chapters.json is gitignored, so list_scenes
+            // legitimately fails there with a chapter-load error. The
+            // dispatch contract we actually want to assert here is that the
+            // command is recognized (not unknownCommand) — resource absence
+            // is environmental, not a dispatch regression.
             Err(err) => assert_ne!(err.code, "unknownCommand"),
         }
 

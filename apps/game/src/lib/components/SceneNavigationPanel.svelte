@@ -5,14 +5,18 @@
     index,
     current,
     loading = false,
+    error = false,
     disabled = false,
     onSelect,
+    onRetry,
   }: {
     index: SceneNavigationIndex | null;
     current: GameStateView;
     loading?: boolean;
+    error?: boolean;
     disabled?: boolean;
     onSelect: (chapterId: string, sceneId: string) => void;
+    onRetry?: () => void;
   } = $props();
 
   let expandedChapterId = $state<string | null>(null);
@@ -59,6 +63,20 @@
 <section class="scene-navigation-panel" aria-label="場景跳轉">
   {#if loading}
     <p class="empty">場景索引載入中...</p>
+  {:else if error}
+    <div class="load-error">
+      <p class="empty">場景索引載入失敗。</p>
+      {#if onRetry}
+        <button
+          type="button"
+          class="retry"
+          {disabled}
+          onclick={() => onRetry()}
+        >
+          重試
+        </button>
+      {/if}
+    </div>
   {:else if !index || index.chapters.length === 0}
     <p class="empty">沒有可用場景。</p>
   {:else}
@@ -207,6 +225,36 @@
   }
 
   button:disabled {
+    opacity: 0.55;
+    cursor: wait;
+  }
+
+  .load-error {
+    display: grid;
+    gap: 10px;
+    justify-content: start;
+  }
+
+  .retry {
+    justify-self: start;
+    min-height: 36px;
+    padding: 6px 14px;
+    border: 1px solid var(--crimson);
+    background: var(--crimson-soft);
+    color: var(--bone);
+    font: inherit;
+    font-family: var(--impact);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    cursor: pointer;
+  }
+
+  .retry:hover:not(:disabled) {
+    background: var(--crimson);
+    color: var(--bone);
+  }
+
+  .retry:disabled {
     opacity: 0.55;
     cursor: wait;
   }
