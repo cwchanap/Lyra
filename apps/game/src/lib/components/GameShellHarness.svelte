@@ -30,7 +30,13 @@
   } = $props();
 </script>
 
-<GameShell {gameState} {onReset} {disabled} {sceneMenuEnabled} bind:open>
+<GameShell
+  {gameState}
+  onCloseCase={onReset}
+  {disabled}
+  {sceneMenuEnabled}
+  bind:open
+>
   {#snippet sceneMenu()}
     {#if sceneMenuContent}
       <button type="button" class="harness-scene-menu-button">

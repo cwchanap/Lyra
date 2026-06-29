@@ -160,6 +160,13 @@ export async function resetGame() {
   await dispatchGameCommand("reset_game", undefined, true);
 }
 
+export function returnToMainMenu() {
+  if (gameState.inFlight) return;
+  gameState.value = null;
+  gameState.error = null;
+  gameState.loading = false;
+}
+
 export async function listScenes(): Promise<SceneNavigationIndex | null> {
   return await runCommand<SceneNavigationIndex>("list_scenes");
 }

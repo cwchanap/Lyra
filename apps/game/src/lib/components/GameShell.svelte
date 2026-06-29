@@ -12,7 +12,7 @@
 
   let {
     gameState,
-    onReset,
+    onCloseCase,
     disabled = false,
     open = $bindable(false),
     sceneMenuEnabled = false,
@@ -21,7 +21,7 @@
     sceneMenu,
   }: {
     gameState: GameStateView;
-    onReset: () => void;
+    onCloseCase: () => void;
     disabled?: boolean;
     // Bound by +page.svelte so menu-triggered transitions (dossier reexamine)
     // can close the menu programmatically — otherwise the reexamine dialogue
@@ -120,9 +120,9 @@
     });
   }
 
-  function handleMenuReset() {
+  function handleCloseCase() {
     closeGameMenu();
-    onReset();
+    onCloseCase();
   }
 
   function menuPanelTitle(panel: MenuPanel) {
@@ -331,7 +331,7 @@
               <span>音訊設定</span>
               <span class="en">SOUND</span>
             </button>
-            <button type="button" onclick={handleMenuReset} {disabled}>
+            <button type="button" onclick={handleCloseCase} {disabled}>
               <span>結束案件</span>
               <span class="en">CLOSE&nbsp;CASE</span>
             </button>

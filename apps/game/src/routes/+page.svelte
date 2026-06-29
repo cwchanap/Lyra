@@ -3,6 +3,7 @@
     gameState,
     startGame,
     resetGame,
+    returnToMainMenu,
     advanceDialogue,
     inspectHotspot,
     interviewTopic,
@@ -99,6 +100,10 @@
     gameState.error = null;
   }
 
+  function handleCloseCase() {
+    returnToMainMenu();
+  }
+
   // Reexamine from the dossier (inside the Escape menu) installs a dialogue
   // queue and flips the mode to dialogue. If the menu stayed mounted, its
   // scrim (z-index 40) would hide the dialogue (z-index 30, in <main inert>)
@@ -125,7 +130,7 @@
   <GameplayAudio mode={gameState.value.mode} />
   <GameShell
     gameState={gameState.value}
-    onReset={handleReset}
+    onCloseCase={handleCloseCase}
     disabled={gameState.inFlight}
     sceneMenuEnabled={sceneNavigationEnabled}
     bind:open={gameMenuOpen}
