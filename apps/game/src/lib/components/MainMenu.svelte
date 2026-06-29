@@ -1,10 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import {
-    audioPreferences,
-    updateAudioPreferences,
-  } from "$lib/audio/gameplay-audio-runtime.svelte";
-  import AudioSettings from "./AudioSettings.svelte";
 
   type Props = {
     onNewGame: () => void;
@@ -120,12 +115,10 @@
       cards[focusIndex].focus();
     };
     const onKey = (e: KeyboardEvent) => {
-      // When focus is on an interactive form control (the footer's audio
-      // sliders, a future input, a contenteditable, etc.), let the control
+      // When focus is on an interactive form control (future input,
+      // contenteditable, etc.), let the control
       // handle ArrowUp/ArrowDown natively instead of hijacking them for card
-      // navigation. Without this guard, focusing a BGM/BGS/SFX range input and
-      // pressing an arrow key would preventDefault() and jump focus to a menu
-      // card, so the slider value could not be adjusted with the keyboard.
+      // navigation.
       const target = e.target;
       if (
         target instanceof HTMLElement &&
@@ -447,12 +440,6 @@
           <span><kbd>↵</kbd>確定</span>
           <span><kbd>esc</kbd>返回</span>
         </div>
-      </div>
-      <div class="footer-audio">
-        <AudioSettings
-          preferences={audioPreferences}
-          onUpdate={updateAudioPreferences}
-        />
       </div>
     </footer>
   </main>
@@ -1064,13 +1051,6 @@
     align-items: center;
     gap: 24px;
   }
-  .footer-audio {
-    display: flex;
-    justify-content: center;
-  }
-  .footer-audio > :global(.audio-settings) {
-    max-width: 560px;
-  }
   .narration {
     color: var(--bone);
     padding: 8px 0 8px 18px;
@@ -1151,8 +1131,8 @@
       font-size: 60vw;
     }
     /* Stack the footer's narration/center/keys row vertically at the mobile
-       breakpoint so the three-column grid cannot overflow and clip the audio
-       controls. Desktop keeps the auto 1fr auto three-column setup above. */
+       breakpoint so the three-column grid cannot overflow. Desktop keeps the
+       auto 1fr auto three-column setup above. */
     .footer-row {
       grid-template-columns: 1fr;
       gap: 12px;

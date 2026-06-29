@@ -1,66 +1,21 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, render, screen } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
-const mocks = vi.hoisted(() => ({
-  audioPreferences: {
-    muted: false,
-    bgmVolume: 0.5,
-    bgsVolume: 0.5,
-    sfxVolume: 0.5,
-  },
-  updateAudioPreferences: vi.fn(),
-}));
-
-vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
-  audioPreferences: mocks.audioPreferences,
-  updateAudioPreferences: mocks.updateAudioPreferences,
-}));
 
 import MainMenu from "./MainMenu.svelte";
 
 describe("MainMenu", () => {
   afterEach(() => {
     cleanup();
-    mocks.updateAudioPreferences.mockClear();
   });
 
-  it("renders the audio settings panel bound to runtime preferences", () => {
+  it("does not render sound volume controls on the start screen", () => {
     render(MainMenu, { onNewGame: vi.fn(), onExit: vi.fn() });
 
     expect(
-      screen.getByRole("region", { name: "音訊設定" }),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("BGM")).toBeInTheDocument();
-  });
-
-  it("routes a mute toggle through the runtime preference updater", async () => {
-    render(MainMenu, { onNewGame: vi.fn(), onExit: vi.fn() });
-
-    const toggle = screen.getByRole("button", {
-      name: "目前聲音開啟，按下可靜音",
-    });
-    toggle.click();
-
-    expect(mocks.updateAudioPreferences).toHaveBeenCalledWith({
-      muted: true,
-    });
-  });
-
-  it("does not hijack arrow keys while adjusting an audio slider", async () => {
-    // ArrowUp/ArrowDown on a focused range input must adjust the slider natively
-    // and must NOT bubble to the menu's window keydown handler, which otherwise
-    // preventDefault()s and moves focus to a menu card — locking keyboard users
-    // out of adjusting BGM/BGS/SFX with the standard range-control keys.
-    render(MainMenu, { onNewGame: vi.fn(), onExit: vi.fn() });
-
-    const slider = screen.getByLabelText("BGM");
-    slider.focus();
-    expect(document.activeElement).toBe(slider);
-
-    await fireEvent.keyDown(slider, { key: "ArrowDown" });
-    expect(document.activeElement).toBe(slider);
-
-    await fireEvent.keyDown(slider, { key: "ArrowUp" });
-    expect(document.activeElement).toBe(slider);
+      screen.queryByRole("region", { name: "音訊設定" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("BGM")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("BGS")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("SFX")).not.toBeInTheDocument();
   });
 });

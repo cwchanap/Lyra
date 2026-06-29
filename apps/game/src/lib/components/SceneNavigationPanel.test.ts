@@ -68,7 +68,7 @@ function currentState(): GameStateView {
 describe("SceneNavigationPanel", () => {
   afterEach(cleanup);
 
-  it("lists scenes for the current chapter and marks the current scene", () => {
+  it("expands the current chapter and marks the current scene", () => {
     render(SceneNavigationPanel, {
       index,
       current: currentState(),
@@ -78,15 +78,16 @@ describe("SceneNavigationPanel", () => {
 
     expect(
       screen.getByRole("button", { name: /雨夜的第一份證詞/ }),
-    ).toHaveAttribute("aria-pressed", "true");
+    ).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: /序章/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /咖啡館調查/ })).toHaveAttribute(
       "aria-current",
       "true",
     );
+    expect(screen.queryByRole("button", { name: /詢問/ })).toBeNull();
   });
 
-  it("switches chapters and emits selected chapter and scene ids", async () => {
+  it("expands chapters one at a time and emits selected chapter and scene ids", async () => {
     const onSelect = vi.fn();
     const user = userEvent.setup();
     render(SceneNavigationPanel, {
@@ -97,13 +98,41 @@ describe("SceneNavigationPanel", () => {
     });
 
     await user.click(screen.getByRole("button", { name: /第二份證詞/ }));
-    const sceneList = screen.getByRole("list", { name: "場景列表" });
+    expect(screen.getByRole("button", { name: /第二份證詞/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: /雨夜的第一份證詞/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /咖啡館調查/ })).toBeNull();
+
+    const sceneList = screen.getByRole("list", { name: "第二份證詞 場景列表" });
     await user.click(within(sceneList).getByRole("button", { name: /詢問/ }));
 
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(
       "chapter_2",
       "interrogation_scene_0",
     );
+  });
+
+  it("collapses an expanded chapter", async () => {
+    const user = userEvent.setup();
+    render(SceneNavigationPanel, {
+      index,
+      current: currentState(),
+      disabled: false,
+      onSelect: vi.fn(),
+    });
+
+    const currentChapter = screen.getByRole("button", {
+      name: /雨夜的第一份證詞/,
+    });
+    await user.click(currentChapter);
+
+    expect(currentChapter).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /序章/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /咖啡館調查/ })).toBeNull();
   });
 
   it("shows loading and empty states", async () => {
