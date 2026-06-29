@@ -1822,15 +1822,36 @@ fn scene_navigation_index_from_chapters(
     chapters: &[ChapterManifest],
 ) -> Result<SceneNavigationIndex, GameError> {
     let mut chapter_views = Vec::with_capacity(chapters.len());
+    let mut seen_chapter_ids = std::collections::HashSet::new();
 
     for (chapter_index, chapter) in chapters.iter().enumerate() {
+        // jump_to_scene resolves chapters/scenes by id (first match wins),
+        // so duplicate ids would silently target the wrong entry. Reject
+        // ambiguous ids here — the free-navigation menu cannot render until
+        // the index builds cleanly, which gates every jump_to_scene call.
+        if !seen_chapter_ids.insert(chapter.id.as_str()) {
+            return Err(GameError::chapter_load_failed(format!(
+                "duplicate chapter id \"{}\" — chapter ids must be unique for scene navigation.",
+                chapter.id
+            )));
+        }
+
         let mut scenes = Vec::with_capacity(chapter.scenes.len());
+        let mut seen_scene_ids: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         for (scene_index, scene_ref) in chapter.scenes.iter().enumerate() {
             let json = load_scene_json_for_ref(resources_dir, scene_ref)?;
             let actual_type = scene_json_type(&json);
             let (id, title) = scene_json_identity(&json);
+            let id = id.to_string();
+            if !seen_scene_ids.insert(id.clone()) {
+                return Err(GameError::chapter_load_failed(format!(
+                    "duplicate scene id \"{}\" in chapter \"{}\" — scene ids must be unique within a chapter for scene navigation.",
+                    id, chapter.id
+                )));
+            }
             scenes.push(SceneNavigationScene {
-                id: id.to_string(),
+                id,
                 title: title.to_string(),
                 scene_type: actual_type,
                 index: scene_index,
@@ -4133,6 +4154,103 @@ mod tests {
         assert_eq!(err.code, "sceneValidationFailed");
         assert!(err.message.contains("declares interrogation"));
         assert!(err.message.contains("contains linear"));
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_navigation_index_rejects_duplicate_scene_id_within_chapter() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-index-dup-scene-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_a.json" },
+                        { "type": "linear", "file": "chapter_1/scene_b.json" }
+                    ]
+                }]
+            }"#,
+        )
+        .unwrap();
+        // Both scenes share the same id — jump_to_scene resolves by first
+        // match, so this would silently target the wrong scene. The index
+        // build must reject it before navigation is possible.
+        fs::write(
+            chapter_1.join("scene_a.json"),
+            r#"{ "type": "linear", "id": "dup", "title": "A", "queue": [] }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("scene_b.json"),
+            r#"{ "type": "linear", "id": "dup", "title": "B", "queue": [] }"#,
+        )
+        .unwrap();
+
+        let err = GameEngine::scene_navigation_index(d.clone()).unwrap_err();
+        assert_eq!(err.code, "chapterLoadFailed");
+        assert!(err.message.contains("duplicate scene id \"dup\""));
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_navigation_index_rejects_duplicate_chapter_id() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-index-dup-chapter-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dup = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dup).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [
+                    {
+                        "id": "chapter_1",
+                        "title": "First",
+                        "summary": "First",
+                        "scenes": [{ "type": "linear", "file": "chapter_1/scene_0.json" }]
+                    },
+                    {
+                        "id": "chapter_1",
+                        "title": "Second",
+                        "summary": "Second",
+                        "scenes": [{ "type": "linear", "file": "chapter_1/scene_0.json" }]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dup.join("scene_0.json"),
+            r#"{ "type": "linear", "id": "scene_0", "title": "S", "queue": [] }"#,
+        )
+        .unwrap();
+
+        let err = GameEngine::scene_navigation_index(d.clone()).unwrap_err();
+        assert_eq!(err.code, "chapterLoadFailed");
+        assert!(err.message.contains("duplicate chapter id \"chapter_1\""));
 
         let _ = fs::remove_dir_all(d);
     }

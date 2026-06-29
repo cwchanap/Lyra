@@ -117,6 +117,13 @@ describe("+page close case flow", () => {
     expect(
       screen.queryByRole("dialog", { name: "遊戲選單" }),
     ).not.toBeInTheDocument();
-    expect(mocks.invoke).not.toHaveBeenCalledWith("reset_game", undefined);
+    // "Close case" must return to the main menu, never invoke reset_game
+    // under any argument shape. Assert against the raw call list so a
+    // regression (missing/different second arg) is still caught —
+    // `not.toHaveBeenCalledWith("reset_game", undefined)` would pass even if
+    // reset_game were called with other args.
+    expect(
+      mocks.invoke.mock.calls.every((call) => call[0] !== "reset_game"),
+    ).toBe(true);
   });
 });

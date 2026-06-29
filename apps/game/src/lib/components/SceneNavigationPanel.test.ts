@@ -155,6 +155,27 @@ describe("SceneNavigationPanel", () => {
     expect(screen.getByText("沒有可用場景。")).toBeInTheDocument();
   });
 
+  it("surfaces a load failure with a retry button that invokes onRetry", async () => {
+    const onRetry = vi.fn();
+    const user = userEvent.setup();
+    render(SceneNavigationPanel, {
+      index: null,
+      current: currentState(),
+      loading: false,
+      error: true,
+      disabled: false,
+      onSelect: vi.fn(),
+      onRetry,
+    });
+
+    expect(screen.getByText("場景索引載入失敗。")).toBeInTheDocument();
+    // The empty-state fallback must NOT win when an error is present.
+    expect(screen.queryByText("沒有可用場景。")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "重試" }));
+    expect(onRetry).toHaveBeenCalledExactlyOnceWith();
+  });
+
   it("falls back to the first chapter when the current chapter is not in the index", () => {
     // Covers the gameComplete branch (currentChapterId = null) and the
     // `chapters.find(...)?.id ?? chapters[0]?.id` fallback: when no chapter

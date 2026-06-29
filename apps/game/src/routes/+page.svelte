@@ -59,6 +59,7 @@
   let sceneNavigationIndex = $state<SceneNavigationIndex | null>(null);
   let sceneNavigationLoading = $state(false);
   let sceneNavigationRequested = $state(false);
+  let sceneNavigationError = $state(false);
   let sceneNavigationEnabled = $derived(
     import.meta.env.DEV || storyClearedOnce,
   );
@@ -76,8 +77,11 @@
       gameState.value &&
       !sceneNavigationIndex &&
       !sceneNavigationLoading &&
-      !sceneNavigationRequested
+      !sceneNavigationRequested &&
+      !sceneNavigationError
     ) {
+      // Set the latch synchronously before any async work so a rapid second
+      // $effect run (e.g. gameState.value changing) can't re-trigger the load.
       sceneNavigationRequested = true;
       void loadSceneNavigationIndex();
     }
@@ -88,8 +92,20 @@
     const index = await listScenes();
     if (index) {
       sceneNavigationIndex = index;
+      sceneNavigationError = false;
+    } else {
+      // listScenes returns null on failure (runCommand routes the error to
+      // gameState.error). Do NOT clear sceneNavigationRequested and let the
+      // $effect auto-retry — that would loop on a persistent failure. Instead
+      // surface the failure and let the user explicitly retry via the panel.
+      sceneNavigationError = true;
     }
     sceneNavigationLoading = false;
+  }
+
+  function retrySceneNavigation() {
+    sceneNavigationError = false;
+    sceneNavigationRequested = false;
   }
 
   async function handleReset() {
@@ -140,8 +156,10 @@
         index={sceneNavigationIndex}
         current={gameState.value!}
         loading={sceneNavigationLoading}
+        error={sceneNavigationError}
         disabled={gameState.inFlight}
         onSelect={handleJumpToScene}
+        onRetry={retrySceneNavigation}
       />
     {/snippet}
 

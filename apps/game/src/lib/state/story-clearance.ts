@@ -60,3 +60,15 @@ export function saveStoryClearedOnce(
     return false;
   }
 }
+
+/**
+ * Reset the module-scoped warn-once latches. Intended only for tests so each
+ * case can exercise the warning paths independently without being affected by
+ * prior executions (the warn-once flags persist for the lifetime of the
+ * module instance). Has no effect in production.
+ */
+export function __resetStoryClearanceWarningLatches(): void {
+  storageUnavailableWarned = false;
+  loadFailureWarned = false;
+  saveFailureWarned = false;
+}

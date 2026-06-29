@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   STORY_CLEARED_STORAGE_KEY,
+  __resetStoryClearanceWarningLatches,
   browserStoryClearanceStorage,
   loadStoryClearedOnce,
   saveStoryClearedOnce,
@@ -22,6 +23,12 @@ describe("story clearance entitlement", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     window.localStorage?.clear?.();
+    // The warn-once latches (storageUnavailableWarned/loadFailureWarned/
+    // saveFailureWarned) live on the module instance and would otherwise
+    // persist across tests in this describe, making the warn-path assertions
+    // order-dependent. Reset them so each case exercises the warning paths
+    // independently.
+    __resetStoryClearanceWarningLatches();
   });
 
   it("defaults to false when storage is unavailable or empty", () => {
