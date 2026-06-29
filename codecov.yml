@@ -1,0 +1,7 @@
+# lib.rs is purely Tauri command registration + IPC glue (path resolution,
+# mutex/State extraction). Its business logic lives in GameEngine methods
+# (covered by mod.rs unit tests) and its dispatch/arg handling is covered by
+# the dev_engine_server example. The Tauri-runtime glue itself cannot be
+# exercised without a full Tauri test harness, so exclude it from coverage.
+ignore:
+  - "apps/game/src-tauri/src/lib.rs"

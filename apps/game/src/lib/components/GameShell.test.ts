@@ -837,4 +837,123 @@ describe("GameShell", () => {
       reportAsyncTestFailure(testName, error);
     }
   });
+
+  it("resets the active submenu when the bound open prop is driven false externally", async () => {
+    const testName =
+      "resets the active submenu when the bound open prop is driven false externally";
+
+    // The $effect that clears `activeMenuPanel` when `open` becomes false
+    // is only reachable when a submenu is active at the moment the parent
+    // closes the menu externally (production: +page.svelte sets gameMenuOpen
+    // false after a dossier reexamine). Without a submenu active, the
+    // effect's `activeMenuPanel !== null` guard short-circuits. Pin the
+    // submenu-active path so a regression that left the submenu state
+    // dangling after an external close is caught.
+    try {
+      const { rerender } = render(GameShellHarness, {
+        gameState: state(),
+        onReset: vi.fn(),
+        open: true,
+        menuContent: "menu inventory slot",
+      });
+
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+      const user = userEvent.setup();
+      await user.click(
+        within(dialog).getByRole("button", { name: /物證檔案/ }),
+      );
+      expect(
+        await screen.findByRole("dialog", { name: "物證檔案" }),
+      ).toBeInTheDocument();
+
+      // Parent drives open=false while the evidence submenu is active.
+      rerender({
+        gameState: state(),
+        onReset: vi.fn(),
+        open: false,
+        menuContent: "menu inventory slot",
+      });
+
+      await vi.waitFor(() => {
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      });
+
+      // Reopen via Escape — the menu must land on the root actions, not the
+      // stale evidence submenu. If the $effect failed to clear
+      // activeMenuPanel, reopening would show the submenu back button and
+      // hide the root actions.
+      window.dispatchEvent(escapeKeydown());
+      const reopened = await screen.findByRole("dialog", { name: "遊戲選單" });
+      expect(
+        within(reopened).getByRole("button", { name: /繼續調查/ }),
+      ).toBeInTheDocument();
+      expect(
+        within(reopened).queryByRole("button", { name: /返回選單/ }),
+      ).toBeNull();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("disables the close-case button when the disabled prop is set", async () => {
+    const testName =
+      "disables the close-case button when the disabled prop is set";
+
+    // The close-case button binds `{disabled}`. The default harness passes
+    // disabled=false, so the disabled branch is never exercised. Pin it so a
+    // regression that dropped the binding (or inverted it) is caught.
+    try {
+      render(GameShellHarness, {
+        gameState: state(),
+        onReset: vi.fn(),
+        disabled: true,
+      });
+
+      window.dispatchEvent(escapeKeydown());
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+      const closeCase = within(dialog).getByRole("button", {
+        name: /結束案件/,
+      });
+      expect(closeCase).toBeDisabled();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("renders an empty scene submenu when sceneMenuEnabled is set without sceneMenuContent", async () => {
+    const testName =
+      "renders an empty scene submenu when sceneMenuEnabled is set without sceneMenuContent";
+
+    // The harness sceneMenu snippet guards its content on `{#if
+    // sceneMenuContent}`. The truthy branch is covered by the scene-select
+    // test; pin the falsy branch so the snippet renders an empty submenu
+    // rather than throwing or leaking the back button's slot target.
+    try {
+      const user = userEvent.setup();
+      render(GameShellHarness, {
+        gameState: state(),
+        onReset: vi.fn(),
+        sceneMenuEnabled: true,
+      });
+
+      await user.keyboard("{Escape}");
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+      await user.click(
+        within(dialog).getByRole("button", { name: /場景跳轉/ }),
+      );
+
+      expect(
+        await screen.findByRole("dialog", { name: "場景跳轉" }),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("button", { name: /返回選單/ }),
+      ).toBeInTheDocument();
+      // No harness scene-menu button rendered (sceneMenuContent is null).
+      expect(
+        within(dialog).queryByRole("button", { name: /scene/ }),
+      ).toBeNull();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
 });

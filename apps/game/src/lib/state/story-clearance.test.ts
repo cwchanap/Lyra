@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   STORY_CLEARED_STORAGE_KEY,
   browserStoryClearanceStorage,
@@ -109,5 +109,56 @@ describe("story clearance entitlement", () => {
         Object.defineProperty(window, "localStorage", descriptor);
       }
     }
+  });
+});
+
+// `describeError` has two branches that the warn-once tests above don't
+// reach: a non-Error thrown value (String() fallback) and an Error whose
+// `name` is empty (message fallback). The module-level warn-once flags
+// persist across tests in a single module instance, so isolate these in a
+// fresh module via vi.resetModules() to re-arm the flags and actually hit
+// the describeError call sites.
+describe("story clearance describeError branches", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("describes a non-Error thrown value via String()", async () => {
+    const { saveStoryClearedOnce } = await import("./story-clearance");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const failing: Pick<Storage, "getItem" | "setItem"> = {
+      getItem: () => null,
+      setItem: () => {
+        throw "quota string";
+      },
+    };
+
+    expect(saveStoryClearedOnce(failing)).toBe(false);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("could not be saved"),
+    );
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("quota string"));
+  });
+
+  it("falls back to error.message when error.name is empty", async () => {
+    const { loadStoryClearedOnce } = await import("./story-clearance");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const err = new Error("read denied");
+    Object.defineProperty(err, "name", { value: "" });
+    const failing: Pick<Storage, "getItem" | "setItem"> = {
+      getItem: () => {
+        throw err;
+      },
+      setItem: () => undefined,
+    };
+
+    expect(loadStoryClearedOnce(failing)).toBe(false);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("could not be read"),
+    );
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("read denied"));
   });
 });

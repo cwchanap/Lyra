@@ -154,4 +154,89 @@ describe("SceneNavigationPanel", () => {
     });
     expect(screen.getByText("沒有可用場景。")).toBeInTheDocument();
   });
+
+  it("falls back to the first chapter when the current chapter is not in the index", () => {
+    // Covers the gameComplete branch (currentChapterId = null) and the
+    // `chapters.find(...)?.id ?? chapters[0]?.id` fallback: when no chapter
+    // matches the current chapter id, the first chapter auto-expands.
+    const gameCompleteState: GameStateView = {
+      chapter: {
+        id: "chapter_1",
+        title: "雨夜的第一份證詞",
+        summary: "案件摘要",
+        index: 0,
+        total: 2,
+      },
+      scene: {
+        kind: "linear",
+        id: "scene_0",
+        title: "序章",
+        index: 0,
+        total: 1,
+      },
+      mode: { type: "gameComplete" },
+      inventory: { evidence: [], statements: [] },
+    };
+
+    render(SceneNavigationPanel, {
+      index,
+      current: gameCompleteState,
+      disabled: false,
+      onSelect: vi.fn(),
+    });
+
+    // gameComplete → currentChapterId is null → no match → falls back to
+    // chapters[0] (chapter_1), which auto-expands.
+    expect(
+      screen.getByRole("button", { name: /雨夜的第一份證詞/ }),
+    ).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.queryByRole("button", { name: /第二份證詞/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("collapses the expanded chapter when it disappears from a reloaded index", async () => {
+    // Covers the stale-expanded-chapter branch: after auto-expanding
+    // chapter_2, a rerender with an index that no longer contains chapter_2
+    // must reset expandedChapterId to null (no chapter expanded).
+    const { rerender } = render(SceneNavigationPanel, {
+      index,
+      current: currentState(),
+      disabled: false,
+      onSelect: vi.fn(),
+    });
+
+    // Expand chapter_2 explicitly.
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /第二份證詞/ }));
+    expect(screen.getByRole("button", { name: /第二份證詞/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+
+    // Reload the index with only chapter_1 — chapter_2 is gone, so the
+    // effect must clear the expanded chapter.
+    await rerender({
+      index: {
+        chapters: [
+          {
+            id: "chapter_1",
+            title: "雨夜的第一份證詞",
+            index: 0,
+            scenes: [
+              { id: "scene_0", title: "序章", type: "linear", index: 0 },
+            ],
+          },
+        ],
+      },
+      current: currentState(),
+      disabled: false,
+      onSelect: vi.fn(),
+    });
+
+    expect(
+      screen.getByRole("button", { name: /雨夜的第一份證詞/ }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /第二份證詞/ })).toBeNull();
+  });
 });

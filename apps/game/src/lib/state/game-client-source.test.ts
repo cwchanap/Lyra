@@ -320,4 +320,47 @@ describe("game client scene navigation commands", () => {
     expect(client.gameState.error).toBe("Scene missing.");
     expect(mocks.inferGameplaySfxEvents).not.toHaveBeenCalled();
   });
+
+  it("suppresses scene jumps while another command is in flight", async () => {
+    // Covers the `if (gameState.inFlight) return null;` guard in
+    // dispatchStateCommand. With inFlight already true, jumpToScene must
+    // short-circuit without invoking the backend or touching state.
+    const previous = state("previous");
+    const client = await loadGameClient(previous);
+    client.gameState.inFlight = true;
+    const capturedPrevious = client.gameState.value;
+
+    await client.jumpToScene("chapter_1", "scene_0");
+
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(client.gameState.value).toBe(capturedPrevious);
+    expect(client.gameState.inFlight).toBe(true);
+  });
+
+  it("returnToMainMenu no-ops while a command is in flight", async () => {
+    // Covers the `if (gameState.inFlight) return;` guard in
+    // returnToMainMenu. With inFlight true, the state must not be cleared
+    // (an in-flight command may still commit a fresh view).
+    const previous = state("previous");
+    const client = await loadGameClient(previous);
+    client.gameState.inFlight = true;
+    const capturedPrevious = client.gameState.value;
+
+    client.returnToMainMenu();
+
+    expect(client.gameState.value).toBe(capturedPrevious);
+    expect(client.gameState.inFlight).toBe(true);
+  });
+
+  it("returnToMainMenu clears state when no command is in flight", async () => {
+    const previous = state("previous");
+    const client = await loadGameClient(previous);
+
+    client.returnToMainMenu();
+
+    expect(client.gameState.value).toBeNull();
+    expect(client.gameState.error).toBeNull();
+    expect(client.gameState.loading).toBe(false);
+    expect(client.gameState.inFlight).toBe(false);
+  });
 });
