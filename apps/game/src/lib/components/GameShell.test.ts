@@ -134,8 +134,8 @@ describe("GameShell", () => {
     expect(screen.getByText("scoped child")).toBeInTheDocument();
   });
 
-  it("renders evidence and sound behind separate menu buttons", async () => {
-    const testName = "renders evidence and sound behind separate menu buttons";
+  it("opens evidence and sound as separate submenu screens", async () => {
+    const testName = "opens evidence and sound as separate submenu screens";
 
     try {
       const user = userEvent.setup();
@@ -164,7 +164,23 @@ describe("GameShell", () => {
       expect(
         within(dialog).getByText("menu inventory slot"),
       ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("button", { name: /返回選單/ }),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).queryByRole("button", { name: /繼續調查/ }),
+      ).toBeNull();
+      expect(
+        within(dialog).queryByRole("button", { name: /音訊設定/ }),
+      ).toBeNull();
       expect(screen.queryByRole("region", { name: "音訊設定" })).toBeNull();
+
+      await user.click(
+        within(dialog).getByRole("button", { name: /返回選單/ }),
+      );
+      expect(
+        within(dialog).getByRole("button", { name: /繼續調查/ }),
+      ).toBeInTheDocument();
 
       await user.click(
         within(dialog).getByRole("button", { name: /音訊設定/ }),
@@ -172,8 +188,17 @@ describe("GameShell", () => {
       expect(
         within(dialog).getByRole("region", { name: "音訊設定" }),
       ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("button", { name: /返回選單/ }),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).queryByRole("button", { name: /物證檔案/ }),
+      ).toBeNull();
       expect(screen.queryByText("menu inventory slot")).toBeNull();
 
+      await user.click(
+        within(dialog).getByRole("button", { name: /返回選單/ }),
+      );
       await user.click(
         within(dialog).getByRole("button", { name: /結束案件/ }),
       );
@@ -214,6 +239,12 @@ describe("GameShell", () => {
       expect(
         within(dialog).getByText("scene selector slot"),
       ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("button", { name: /返回選單/ }),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).queryByRole("button", { name: /繼續調查/ }),
+      ).toBeNull();
     } catch (error) {
       reportAsyncTestFailure(testName, error);
     }
@@ -289,7 +320,10 @@ describe("GameShell", () => {
       await user.click(
         within(dialog).getByRole("button", { name: /物證檔案/ }),
       );
-      resume.focus();
+      const backFromEvidence = within(dialog).getByRole("button", {
+        name: /返回選單/,
+      });
+      expect(backFromEvidence).toHaveFocus();
       const extra = within(dialog).getByRole("button", {
         name: "extra slot focusable",
       });
@@ -305,21 +339,31 @@ describe("GameShell", () => {
       for (let i = 0; i < 12 && !wrappedToFirst; i++) {
         await user.tab();
         if (document.activeElement === extra) sawSlotFocusable = true;
-        if (document.activeElement === resume && i > 0) wrappedToFirst = true;
+        if (document.activeElement === backFromEvidence && i > 0) {
+          wrappedToFirst = true;
+        }
       }
       expect(sawSlotFocusable).toBe(true);
       expect(wrappedToFirst).toBe(true);
 
       // Reverse boundary: shift+Tab from the first focusable wraps to last.
+      await fireEvent.click(backFromEvidence);
       await user.click(
         within(dialog).getByRole("button", { name: /音訊設定/ }),
       );
-      resume.focus();
+      const backFromSound = within(dialog).getByRole("button", {
+        name: /返回選單/,
+      });
+      backFromSound.focus();
       const sfx = within(dialog).getByLabelText("SFX");
       await user.tab({ shift: true });
       expect(sfx).toHaveFocus();
 
-      await fireEvent.click(resume);
+      await fireEvent.click(backFromSound);
+      const currentResume = within(dialog).getByRole("button", {
+        name: /繼續調查/,
+      });
+      await fireEvent.click(currentResume);
       await vi.waitFor(() => {
         expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
       });

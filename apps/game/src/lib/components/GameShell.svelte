@@ -38,8 +38,15 @@
 
   let showChapterHud = $derived(gameState.mode.type !== "explore");
   let resumeButton: HTMLButtonElement | undefined = $state();
+  let submenuBackButton: HTMLButtonElement | undefined = $state();
   let gameMenuPanel: HTMLDivElement | undefined = $state();
   let activeMenuPanel = $state<MenuPanel>(null);
+  let menuTitle = $derived(menuPanelTitle(activeMenuPanel));
+  let menuContext = $derived(
+    activeMenuPanel === null
+      ? `FILE\u00a0${String(gameState.chapter.index + 1).padStart(2, "0")}`
+      : "SUB\u00a0MENU",
+  );
   let previouslyFocusedElement: HTMLElement | null = null;
 
   const focusableSelector = [
@@ -118,8 +125,21 @@
     onReset();
   }
 
-  function toggleMenuPanel(panel: Exclude<MenuPanel, null>) {
-    activeMenuPanel = activeMenuPanel === panel ? null : panel;
+  function menuPanelTitle(panel: MenuPanel) {
+    if (panel === "scene") return "場景跳轉";
+    if (panel === "evidence") return "物證檔案";
+    if (panel === "sound") return "音訊設定";
+    return "遊戲選單";
+  }
+
+  function openMenuPanel(panel: Exclude<MenuPanel, null>) {
+    activeMenuPanel = panel;
+    void tick().then(() => submenuBackButton?.focus());
+  }
+
+  function closeMenuPanel() {
+    activeMenuPanel = null;
+    void tick().then(() => resumeButton?.focus());
   }
 
   function handleGameMenuKeydown(event: KeyboardEvent) {
@@ -257,77 +277,76 @@
       }}
       onkeydown={handleGameMenuKeydown}
     >
-      <div class="game-menu-panel" bind:this={gameMenuPanel} tabindex="-1">
+      <div
+        class="game-menu-panel"
+        class:submenu={activeMenuPanel !== null}
+        bind:this={gameMenuPanel}
+        tabindex="-1"
+      >
         <div class="game-menu-heading">
           <span class="case-marker">
             <span class="diamond"></span>
             CASE&nbsp;MENU
           </span>
-          <h2 id="game-menu-title">遊戲選單</h2>
-          <p>
-            FILE&nbsp;{String(gameState.chapter.index + 1).padStart(2, "0")}
-          </p>
+          <h2 id="game-menu-title">{menuTitle}</h2>
+          <p>{menuContext}</p>
         </div>
 
-        <div class="game-menu-actions">
-          <button
-            bind:this={resumeButton}
-            type="button"
-            class="primary"
-            onclick={closeGameMenu}
-          >
-            <span>繼續調查</span>
-            <span class="en">RESUME</span>
-          </button>
-          {#if sceneMenuEnabled && sceneMenu}
+        {#if activeMenuPanel === null}
+          <div class="game-menu-actions">
             <button
+              bind:this={resumeButton}
               type="button"
-              class:active={activeMenuPanel === "scene"}
-              aria-expanded={activeMenuPanel === "scene"}
-              onclick={() => toggleMenuPanel("scene")}
+              class="primary"
+              onclick={closeGameMenu}
             >
-              <span>場景跳轉</span>
-              <span class="en">SCENE&nbsp;SELECT</span>
+              <span>繼續調查</span>
+              <span class="en">RESUME</span>
             </button>
-          {/if}
-          {#if menu}
-            <button
-              type="button"
-              class:active={activeMenuPanel === "evidence"}
-              aria-expanded={activeMenuPanel === "evidence"}
-              onclick={() => toggleMenuPanel("evidence")}
-            >
-              <span>物證檔案</span>
-              <span class="en">EVIDENCE</span>
-            </button>
-          {/if}
-          <button
-            type="button"
-            class:active={activeMenuPanel === "sound"}
-            aria-expanded={activeMenuPanel === "sound"}
-            onclick={() => toggleMenuPanel("sound")}
-          >
-            <span>音訊設定</span>
-            <span class="en">SOUND</span>
-          </button>
-          <button type="button" onclick={handleMenuReset} {disabled}>
-            <span>結束案件</span>
-            <span class="en">CLOSE&nbsp;CASE</span>
-          </button>
-        </div>
-
-        {#if activeMenuPanel}
-          <div class="game-menu-extra">
-            {#if activeMenuPanel === "scene" && sceneMenuEnabled && sceneMenu}
-              {@render sceneMenu()}
-            {:else if activeMenuPanel === "evidence" && menu}
-              {@render menu()}
-            {:else if activeMenuPanel === "sound"}
-              <AudioSettings
-                preferences={audioPreferences}
-                onUpdate={updateAudioPreferences}
-              />
+            {#if sceneMenuEnabled && sceneMenu}
+              <button type="button" onclick={() => openMenuPanel("scene")}>
+                <span>場景跳轉</span>
+                <span class="en">SCENE&nbsp;SELECT</span>
+              </button>
             {/if}
+            {#if menu}
+              <button type="button" onclick={() => openMenuPanel("evidence")}>
+                <span>物證檔案</span>
+                <span class="en">EVIDENCE</span>
+              </button>
+            {/if}
+            <button type="button" onclick={() => openMenuPanel("sound")}>
+              <span>音訊設定</span>
+              <span class="en">SOUND</span>
+            </button>
+            <button type="button" onclick={handleMenuReset} {disabled}>
+              <span>結束案件</span>
+              <span class="en">CLOSE&nbsp;CASE</span>
+            </button>
+          </div>
+        {:else}
+          <div class="game-submenu">
+            <button
+              bind:this={submenuBackButton}
+              type="button"
+              class="submenu-back-button"
+              onclick={closeMenuPanel}
+            >
+              <span>返回選單</span>
+              <span class="en">BACK</span>
+            </button>
+            <div class="game-menu-extra">
+              {#if activeMenuPanel === "scene" && sceneMenuEnabled && sceneMenu}
+                {@render sceneMenu()}
+              {:else if activeMenuPanel === "evidence" && menu}
+                {@render menu()}
+              {:else if activeMenuPanel === "sound"}
+                <AudioSettings
+                  preferences={audioPreferences}
+                  onUpdate={updateAudioPreferences}
+                />
+              {/if}
+            </div>
           </div>
         {/if}
       </div>
@@ -473,6 +492,10 @@
       inset 0 0 0 1px rgba(236, 228, 207, 0.05);
   }
 
+  .game-menu-panel.submenu {
+    width: min(560px, 100%);
+  }
+
   .game-menu-heading {
     display: flex;
     flex-direction: column;
@@ -505,7 +528,13 @@
     gap: 10px;
   }
 
-  .game-menu-actions button {
+  .game-submenu {
+    display: grid;
+    gap: 14px;
+  }
+
+  .game-menu-actions button,
+  .submenu-back-button {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -528,9 +557,10 @@
   }
 
   .game-menu-actions button.primary,
-  .game-menu-actions button.active,
   .game-menu-actions button:hover:not(:disabled),
-  .game-menu-actions button:focus-visible {
+  .game-menu-actions button:focus-visible,
+  .submenu-back-button:hover,
+  .submenu-back-button:focus-visible {
     border-color: var(--crimson);
     background: var(--crimson-soft);
     color: var(--bone);
@@ -541,7 +571,8 @@
     cursor: wait;
   }
 
-  .game-menu-actions .en {
+  .game-menu-actions .en,
+  .submenu-back-button .en {
     flex: 0 0 auto;
     font-family: var(--impact);
     font-size: 10px;
