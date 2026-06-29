@@ -257,3 +257,67 @@ describe("game client audio events", () => {
     expect(mocks.inferGameplaySfxEvents).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("game client scene navigation commands", () => {
+  it("requests the scene navigation index without SFX inference", async () => {
+    const client = await loadGameClient(state("previous"));
+    const index = {
+      chapters: [
+        {
+          id: "chapter_1",
+          title: "Chapter 1",
+          index: 0,
+          scenes: [
+            {
+              id: "scene_0",
+              title: "Opening",
+              type: "linear" as const,
+              index: 0,
+            },
+          ],
+        },
+      ],
+    };
+    mocks.invoke.mockResolvedValueOnce(index);
+
+    await expect(client.listScenes()).resolves.toEqual(index);
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "list_scenes",
+      undefined,
+    );
+    expect(mocks.inferGameplaySfxEvents).not.toHaveBeenCalled();
+  });
+
+  it("jumps to a scene without SFX inference", async () => {
+    const previous = state("previous");
+    const next = state("jumped");
+    const client = await loadGameClient(previous);
+    mocks.invoke.mockResolvedValueOnce(next);
+
+    await client.jumpToScene("chapter_1", "scene_0");
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("jump_to_scene", {
+      chapterId: "chapter_1",
+      sceneId: "scene_0",
+    });
+    expect(client.gameState.value).toEqual(next);
+    expect(mocks.inferGameplaySfxEvents).not.toHaveBeenCalled();
+  });
+
+  it("does not mutate state when scene jump fails", async () => {
+    const previous = state("previous");
+    const client = await loadGameClient(previous);
+    const capturedPrevious = client.gameState.value;
+    mocks.invoke.mockRejectedValueOnce({
+      code: "unknownScene",
+      message: "Scene missing.",
+    });
+
+    await client.jumpToScene("chapter_1", "missing");
+
+    expect(client.gameState.value).toBe(capturedPrevious);
+    expect(client.gameState.error).toBe("Scene missing.");
+    expect(mocks.inferGameplaySfxEvents).not.toHaveBeenCalled();
+  });
+});
