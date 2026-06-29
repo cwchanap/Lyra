@@ -72,6 +72,18 @@
   });
 
   $effect(() => {
+    // Returning to the title clears any stale scene-nav failure latch so a
+    // fresh game session re-attempts the index load instead of inheriting the
+    // previous session's error. The cached index (if any) is kept — scene
+    // data is static across sessions, so a successful prior load need not be
+    // re-fetched.
+    if (gameState.value === null) {
+      sceneNavigationError = false;
+      sceneNavigationRequested = false;
+    }
+  });
+
+  $effect(() => {
     if (
       sceneNavigationEnabled &&
       gameState.value &&
@@ -94,10 +106,11 @@
       sceneNavigationIndex = index;
       sceneNavigationError = false;
     } else {
-      // listScenes returns null on failure (runCommand routes the error to
-      // gameState.error). Do NOT clear sceneNavigationRequested and let the
-      // $effect auto-retry — that would loop on a persistent failure. Instead
-      // surface the failure and let the user explicitly retry via the panel.
+      // listScenes returns null on failure and owns its own error surface
+      // (it does NOT populate gameState.error). Do NOT clear
+      // sceneNavigationRequested and let the $effect auto-retry — that would
+      // loop on a persistent failure. Instead surface the failure via the
+      // panel's own error state and let the user explicitly retry.
       sceneNavigationError = true;
     }
     sceneNavigationLoading = false;
@@ -117,6 +130,12 @@
   }
 
   function handleCloseCase() {
+    // Reset the scene-nav latches synchronously so a failed index load in
+    // this session does not suppress the auto-load in the next. (The
+    // return-to-title $effect is a defensive backstop for any other path
+    // that nulls gameState.value; this is the deterministic primary reset.)
+    sceneNavigationError = false;
+    sceneNavigationRequested = false;
     returnToMainMenu();
   }
 

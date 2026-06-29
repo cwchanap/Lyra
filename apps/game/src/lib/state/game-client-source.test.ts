@@ -282,10 +282,24 @@ describe("game client scene navigation commands", () => {
 
     await expect(client.listScenes()).resolves.toEqual(index);
 
-    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
-      "list_scenes",
-      undefined,
-    );
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("list_scenes");
+    expect(mocks.inferGameplaySfxEvents).not.toHaveBeenCalled();
+  });
+
+  it("returns null on failure without clearing or writing gameState.error", async () => {
+    // listScenes owns its own error surface (the SceneNavigationPanel's
+    // error/retry UI) and must NOT route through runCommand, which would
+    // write gameState.error (double-reporting via the global ErrorBanner) and
+    // clobber a pre-existing game-command error on every call.
+    const client = await loadGameClient(state("previous"));
+    client.gameState.error = "prior game error";
+    mocks.invoke.mockRejectedValueOnce({ code: "boom", message: "index down" });
+
+    await expect(client.listScenes()).resolves.toBeNull();
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("list_scenes");
+    // The pre-existing game error must survive a scene-index query failure.
+    expect(client.gameState.error).toBe("prior game error");
     expect(mocks.inferGameplaySfxEvents).not.toHaveBeenCalled();
   });
 

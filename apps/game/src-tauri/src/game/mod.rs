@@ -1877,13 +1877,25 @@ fn find_scene_runtime_by_id(
     scene_id: &str,
     queue_gen: u64,
 ) -> Result<Option<(usize, SceneRuntime)>, GameError> {
+    // Defense-in-depth: the navigation index build rejects duplicate scene
+    // ids per chapter, but resolve the jump target unambiguously here too so a
+    // jump never silently lands on the "first" of two same-id scenes (e.g. if
+    // resource files drift after the index was built, or this helper is reused
+    // outside the gated navigation flow). Scan the whole chapter; if more than
+    // one scene file carries the requested id, surface a typed error rather
+    // than picking one arbitrarily. The extra JSON loads are negligible for an
+    // infrequent, user-driven jump.
+    let mut found: Option<(usize, SceneJson)> = None;
     for (idx, scene_ref) in chapter.scenes.iter().enumerate() {
         let json = load_scene_json_for_ref(resources_dir, scene_ref)?;
         if scene_json_identity(&json).0 == scene_id {
-            return Ok(Some((idx, scene_runtime_from_json(json, queue_gen))));
+            if found.is_some() {
+                return Err(GameError::duplicate_scene_target(&chapter.id, scene_id));
+            }
+            found = Some((idx, json));
         }
     }
-    Ok(None)
+    Ok(found.map(|(idx, json)| (idx, scene_runtime_from_json(json, queue_gen))))
 }
 
 fn load_scene_runtime(
@@ -2451,6 +2463,99 @@ mod tests {
             }
             other => panic!("expected investigation runtime, got {other:?}"),
         }
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_lookup_rejects_duplicate_scene_ids_as_ambiguous() {
+        // Defense-in-depth for review comment #7: the navigation index build
+        // rejects duplicate scene ids per chapter, but find_scene_runtime_by_id
+        // must also resolve targets unambiguously so a jump never silently
+        // lands on the "first" of two same-id scenes. Build a chapter with two
+        // files carrying the same id and assert both the helper and
+        // jump_to_scene surface a typed duplicateSceneTarget error.
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-jump-dup-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+            "chapters": [{
+                "id": "chapter_1",
+                "title": "Chapter One",
+                "summary": "First",
+                "scenes": [
+                    { "type": "linear", "file": "chapter_1/scene_0.json" },
+                    { "type": "linear", "file": "chapter_1/dup_a.json" },
+                    { "type": "linear", "file": "chapter_1/dup_b.json" }
+                ]
+            }]
+        }"#,
+        )
+        .unwrap();
+        // Startup scene: non-empty queue so new_started primes successfully.
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{
+            "type": "linear",
+            "id": "scene_0",
+            "title": "Opening",
+            "queue": [{ "kind": "line", "speaker": "A", "text": "start" }]
+        }"#,
+        )
+        .unwrap();
+        // Two scenes sharing id "dup_scene" — the ambiguity this test guards.
+        fs::write(
+            chapter_1.join("dup_a.json"),
+            r#"{
+            "type": "linear",
+            "id": "dup_scene",
+            "title": "First dup",
+            "queue": [{ "kind": "line", "speaker": "A", "text": "a" }]
+        }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("dup_b.json"),
+            r#"{
+            "type": "linear",
+            "id": "dup_scene",
+            "title": "Second dup",
+            "queue": [{ "kind": "line", "speaker": "A", "text": "b" }]
+        }"#,
+        )
+        .unwrap();
+
+        let chapters = load_chapter_manifests(&d).unwrap();
+
+        // The helper itself rejects the ambiguous target.
+        let err = find_scene_runtime_by_id(&d, &chapters[0], "dup_scene", 1)
+            .expect_err("duplicate ids must be rejected");
+        assert_eq!(err.code, "duplicateSceneTarget");
+
+        // And jump_to_scene propagates the same typed error.
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let err = engine
+            .jump_to_scene("chapter_1", "dup_scene")
+            .expect_err("jump to ambiguous scene must fail");
+        assert_eq!(err.code, "duplicateSceneTarget");
+        // The engine is untouched (no snapshot/restore needed since the
+        // ambiguity is detected before any state mutation).
+        let after_scene_id = match &engine.view().scene {
+            SceneView::Linear { id, .. } => id.clone(),
+            other => panic!("expected linear scene, got {other:?}"),
+        };
+        assert_eq!(after_scene_id, "scene_0");
 
         let _ = std::fs::remove_dir_all(d);
     }
