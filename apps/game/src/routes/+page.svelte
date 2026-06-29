@@ -12,14 +12,22 @@
     answerInterrogationQuestion,
     pressTestimonyStatement,
     presentTestimonyItem,
+    listScenes,
+    jumpToScene,
   } from "$lib/state/game-client.svelte";
   import {
     canReexamineInventory,
     shouldShowInventoryPanel,
   } from "$lib/state/mode";
+  import {
+    loadStoryClearedOnce,
+    saveStoryClearedOnce,
+  } from "$lib/state/story-clearance";
+  import type { SceneNavigationIndex } from "$lib/state/types";
   import DialogueBox from "$lib/components/DialogueBox.svelte";
   import ExploreView from "$lib/components/ExploreView.svelte";
   import SceneBackdrop from "$lib/components/SceneBackdrop.svelte";
+  import SceneNavigationPanel from "$lib/components/SceneNavigationPanel.svelte";
   import GameShell from "$lib/components/GameShell.svelte";
   import InventoryPanel from "$lib/components/InventoryPanel.svelte";
   import ErrorBanner from "$lib/components/ErrorBanner.svelte";
@@ -46,6 +54,42 @@
   // Bound to GameShell so dossier reexamine can close the Escape menu
   // programmatically (see handleReexamine*).
   let gameMenuOpen = $state(false);
+  let storyClearedOnce = $state(loadStoryClearedOnce());
+  let sceneNavigationIndex = $state<SceneNavigationIndex | null>(null);
+  let sceneNavigationLoading = $state(false);
+  let sceneNavigationRequested = $state(false);
+  let sceneNavigationEnabled = $derived(
+    import.meta.env.DEV || storyClearedOnce,
+  );
+
+  $effect(() => {
+    if (gameState.value?.mode.type === "gameComplete" && !storyClearedOnce) {
+      storyClearedOnce = true;
+      saveStoryClearedOnce();
+    }
+  });
+
+  $effect(() => {
+    if (
+      sceneNavigationEnabled &&
+      gameState.value &&
+      !sceneNavigationIndex &&
+      !sceneNavigationLoading &&
+      !sceneNavigationRequested
+    ) {
+      sceneNavigationRequested = true;
+      void loadSceneNavigationIndex();
+    }
+  });
+
+  async function loadSceneNavigationIndex() {
+    sceneNavigationLoading = true;
+    const index = await listScenes();
+    if (index) {
+      sceneNavigationIndex = index;
+    }
+    sceneNavigationLoading = false;
+  }
 
   async function handleReset() {
     await resetGame();
@@ -70,6 +114,11 @@
     await reexamineStatement(statementId);
     gameMenuOpen = false;
   }
+
+  async function handleJumpToScene(chapterId: string, sceneId: string) {
+    await jumpToScene(chapterId, sceneId);
+    gameMenuOpen = false;
+  }
 </script>
 
 {#if gameState.value}
@@ -78,8 +127,19 @@
     gameState={gameState.value}
     onReset={handleReset}
     disabled={gameState.inFlight}
+    sceneMenuEnabled={sceneNavigationEnabled}
     bind:open={gameMenuOpen}
   >
+    {#snippet sceneMenu()}
+      <SceneNavigationPanel
+        index={sceneNavigationIndex}
+        current={gameState.value!}
+        loading={sceneNavigationLoading}
+        disabled={gameState.inFlight}
+        onSelect={handleJumpToScene}
+      />
+    {/snippet}
+
     {#snippet menu()}
       {#if shouldShowInventoryPanel(gameState.value!.mode)}
         <InventoryPanel
