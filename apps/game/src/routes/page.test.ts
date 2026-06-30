@@ -373,6 +373,66 @@ describe("+page scene navigation retries after return to title", () => {
       expect(listScenesCallCount).toBe(2);
     });
   });
+
+  it("ignores stale scene-index failures that resolve after closing the case", async () => {
+    // Race regression: if the user closes the case while the initial
+    // list_scenes request is still pending, a later failure resolves and
+    // re-sets sceneNavigationError AFTER the close-case / title-reset path
+    // already cleared the latches. The title-screen reset effect only
+    // reruns on gameState.value changes, so the stale error outlives the
+    // reset and suppresses the next session's auto-load. The load must
+    // detect it was superseded and drop the stale result.
+    let resolveFirstLoad!: (resp: Response) => void;
+    const firstLoad = new Promise<Response>((resolve) => {
+      resolveFirstLoad = resolve;
+    });
+    let listScenesCallCount = 0;
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const path = String(url).replace("http://127.0.0.1:1421/", "");
+      if (path === "list_scenes") {
+        listScenesCallCount += 1;
+        if (listScenesCallCount === 1) return firstLoad;
+        return jsonResponse(sceneNavigationIndex);
+      }
+      return jsonResponse({});
+    });
+
+    const user = userEvent.setup();
+    render(Page);
+
+    // First load fires and is pending.
+    await waitFor(() => {
+      expect(listScenesCallCount).toBe(1);
+    });
+
+    // Close the case while the first load is still in flight.
+    await user.keyboard("{Escape}");
+    const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(dialog).getByRole("button", { name: /結束案件/ }));
+    await waitFor(() => {
+      expect(screen.getByRole("main", { name: "主選單" })).toBeInTheDocument();
+    });
+
+    // The stale first load now resolves with failure AFTER the close-case
+    // path cleared the latches. Without the generation guard, this would
+    // re-set sceneNavigationError = true and suppress the next session's
+    // auto-load.
+    resolveFirstLoad({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve("index unavailable"),
+    } as unknown as Response);
+    // Yield a microtask so the stale resolution is processed.
+    await Promise.resolve();
+
+    // Start a fresh game. The auto-load $effect must re-fire despite the
+    // stale failure having resolved after the reset.
+    seedGameState();
+
+    await waitFor(() => {
+      expect(listScenesCallCount).toBe(2);
+    });
+  });
 });
 
 describe("+page scene navigation eligibility gate (production)", () => {

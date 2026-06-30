@@ -108,6 +108,7 @@
             >
               {#each chapter.scenes as scene (scene.id)}
                 {@const isCurrent =
+                  current.mode.type !== "gameComplete" &&
                   chapter.id === current.chapter.id &&
                   scene.id === current.scene.id}
                 <li>
