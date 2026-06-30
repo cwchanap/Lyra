@@ -158,12 +158,11 @@ impl GameEngine {
         self.inventory = Inventory::default();
         self.next_queue_gen = queue_gen + 1;
 
-        if let Err(err) = self.prime_initial_queue() {
-            self.restore_snapshot(snapshot);
-            return Err(err);
-        }
-
-        Ok(self.view())
+        let result = (|| -> Result<GameStateView, GameError> {
+            self.prime_initial_queue()?;
+            Ok(self.view())
+        })();
+        self.restore_on_error(snapshot, result)
     }
 
     fn prime_initial_queue(&mut self) -> Result<(), GameError> {
