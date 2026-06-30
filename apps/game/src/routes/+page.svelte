@@ -204,6 +204,7 @@
     onCloseCase={handleCloseCase}
     disabled={gameState.inFlight}
     sceneMenuEnabled={sceneNavigationEnabled}
+    evidenceMenuEnabled={shouldShowInventoryPanel(gameState.value.mode)}
     onOpenEvidence={() => {
       inventoryPanelOpen = true;
     }}

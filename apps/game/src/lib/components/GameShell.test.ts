@@ -1064,4 +1064,46 @@ describe("GameShell", () => {
       reportAsyncTestFailure(testName, error);
     }
   });
+
+  it("hides the evidence entry when evidenceMenuEnabled is false even if the menu snippet is provided", async () => {
+    const testName =
+      "hides the evidence entry when evidenceMenuEnabled is false even if the menu snippet is provided";
+
+    // The `menu` snippet is always defined in production's +page.svelte, but
+    // its body guards <InventoryPanel> on shouldShowInventoryPanel(mode)
+    // (false for gameComplete). Without the evidenceMenuEnabled gate the
+    // 物證檔案 button would render in every mode and open an empty submenu
+    // after completion. Pin that the flag — not snippet presence — controls
+    // button visibility, so a regression that dropped the gate is caught.
+    try {
+      const user = userEvent.setup();
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        // Snippet content IS provided, mirroring production where the snippet
+        // is always passed; the gate must still hide the button.
+        menuContent: "menu inventory slot",
+        evidenceMenuEnabled: false,
+      });
+
+      await user.keyboard("{Escape}");
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+
+      expect(
+        within(dialog).queryByRole("button", { name: /物證檔案/ }),
+      ).toBeNull();
+      // Sibling entries remain available.
+      expect(
+        within(dialog).getByRole("button", { name: /繼續調查/ }),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByRole("button", { name: /音訊設定/ }),
+      ).toBeInTheDocument();
+      // The menu slot content must not render either, since the evidence
+      // submenu cannot be reached.
+      expect(screen.queryByText("menu inventory slot")).toBeNull();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
 });
