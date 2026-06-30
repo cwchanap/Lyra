@@ -104,6 +104,7 @@
       previouslyFocusedElement =
         activeElement instanceof HTMLElement ? activeElement : null;
       activeMenuPanel = null;
+      lastOpenedSubmenu = null;
       open = true;
       await tick();
       resumeButton?.focus();

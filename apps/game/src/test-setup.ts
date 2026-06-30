@@ -1,14 +1,13 @@
 import "@testing-library/jest-dom/vitest";
 
-// Under Vitest, neither the jsdom nor happy-dom environment exposes a working
-// `window.localStorage` — the environment's global-transfer drops it
-// (sessionStorage survives, localStorage does not). Several behaviors persist
-// to localStorage (story clearance `lyra.storyClearedOnce.v1`, audio
-// preferences), and the production code (`browserStoryClearanceStorage`)
-// guards against this, but the behavioral tests assert against the persisted
-// value, so they need a working Storage. Provide a minimal in-memory shim
-// scoped to the test environment. Tests reset it via
-// `window.localStorage.clear()` in their beforeEach/afterEach.
+// Several behaviors persist to localStorage (story clearance
+// `lyra.storyClearedOnce.v1`, audio preferences), and the behavioral tests
+// assert against the persisted value, so they need a working Storage.
+// jsdom 29.1.1 exposes a native `window.localStorage`, so the shim below is
+// not installed in the current environment; it remains as a fallback for any
+// future environment (e.g. happy-dom) that lacks a working localStorage.
+// Tests reset it via `window.localStorage.clear()` in their
+// beforeEach/afterEach.
 if (typeof window !== "undefined" && !window.localStorage) {
   const store = new Map<string, string>();
   const localStorageShim: Storage = {

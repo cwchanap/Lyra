@@ -117,8 +117,15 @@
   }
 
   function retrySceneNavigation() {
+    // Drive the load directly rather than relying on the auto-load $effect.
+    // Setting only the error/requested latches and letting the $effect re-fire
+    // would render one frame with error=false, loading=false, index=null —
+    // landing in the "no scenes" empty state before loading flips true.
+    // loadSceneNavigationIndex sets loading=true synchronously as its first
+    // statement, so calling it here avoids that flicker.
     sceneNavigationError = false;
-    sceneNavigationRequested = false;
+    sceneNavigationRequested = true;
+    void loadSceneNavigationIndex();
   }
 
   async function handleReset() {
