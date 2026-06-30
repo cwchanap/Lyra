@@ -245,6 +245,53 @@ describe("SceneNavigationPanel", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("allows replaying the final scene from gameComplete mode", async () => {
+    // After clearing the game, the player opens Scene Select from the
+    // gameComplete screen. The final scene's chapter/scene ids are still
+    // retained on GameStateView, so without a mode gate the isCurrent
+    // comparison marks the final scene aria-disabled and short-circuits the
+    // click handler — a cleared player cannot replay the ending. Gate the
+    // comparison on mode.type !== "gameComplete" so every scene is
+    // selectable.
+    const onSelect = vi.fn();
+    const user = userEvent.setup();
+    const gameCompleteState: GameStateView = {
+      chapter: {
+        id: "chapter_1",
+        title: "雨夜的第一份證詞",
+        summary: "案件摘要",
+        index: 0,
+        total: 2,
+      },
+      scene: {
+        kind: "linear",
+        id: "scene_0",
+        title: "序章",
+        index: 0,
+        total: 1,
+      },
+      mode: { type: "gameComplete" },
+      inventory: { evidence: [], statements: [] },
+    };
+
+    render(SceneNavigationPanel, {
+      index,
+      current: gameCompleteState,
+      disabled: false,
+      onSelect,
+    });
+
+    // chapter_1 auto-expands (falls back to chapters[0]). The final scene
+    // (scene_0, matching current.scene.id) must NOT be aria-disabled or
+    // aria-current — the player should be able to replay it.
+    const finalSceneButton = screen.getByRole("button", { name: /序章/ });
+    expect(finalSceneButton).not.toHaveAttribute("aria-disabled", "true");
+    expect(finalSceneButton).not.toHaveAttribute("aria-current", "true");
+
+    await user.click(finalSceneButton);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith("chapter_1", "scene_0");
+  });
+
   it("collapses the expanded chapter when it disappears from a reloaded index", async () => {
     // Covers the stale-expanded-chapter branch: after auto-expanding
     // chapter_2, a rerender with an index that no longer contains chapter_2

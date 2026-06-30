@@ -37,6 +37,7 @@
   import InterrogationView from "$lib/components/InterrogationView.svelte";
   import MainMenu from "$lib/components/MainMenu.svelte";
   import { playGameplaySfxEvent } from "$lib/audio/gameplay-audio-runtime.svelte";
+  import { untrack } from "svelte";
 
   async function handleExit() {
     try {
@@ -60,6 +61,15 @@
   let sceneNavigationLoading = $state(false);
   let sceneNavigationRequested = $state(false);
   let sceneNavigationError = $state(false);
+  // Monotonic generation counter for scene-nav loads. Captured at the start
+  // of each loadSceneNavigationIndex call and checked after the await: if a
+  // close-case / retry bumped the gen while this load was in flight, the
+  // result is stale and must NOT touch the latches — otherwise a late
+  // failure from a closed session could re-set sceneNavigationError after
+  // handleCloseCase already cleared it, and the title-screen reset effect
+  // (which only reruns on gameState.value changes) wouldn't fire again to
+  // clear it, leaving the next session's Scene Select stuck.
+  let sceneNavigationLoadGen = $state(0);
   let sceneNavigationEnabled = $derived(
     import.meta.env.DEV || storyClearedOnce,
   );
@@ -100,8 +110,20 @@
   });
 
   async function loadSceneNavigationIndex() {
+    // untrack: this function is called synchronously from the auto-load
+    // $effect. Reading sceneNavigationLoadGen here without untrack would
+    // register it as an effect dependency, and since handleCloseCase /
+    // retrySceneNavigation bump the gen, the auto-load effect would re-fire
+    // on every bump — an update loop. The gen is only used as a stale-load
+    // guard, not as a reactive input.
+    const gen = untrack(() => sceneNavigationLoadGen);
     sceneNavigationLoading = true;
     const index = await listScenes();
+    // If a close-case / retry bumped the gen while this load was in
+    // flight, drop the result — the superseding path owns the latches now.
+    // Applying a stale failure here would re-set sceneNavigationError
+    // after the reset already cleared it.
+    if (gen !== sceneNavigationLoadGen) return;
     if (index) {
       sceneNavigationIndex = index;
       sceneNavigationError = false;
@@ -125,6 +147,9 @@
     // statement, so calling it here avoids that flicker.
     sceneNavigationError = false;
     sceneNavigationRequested = true;
+    // Supersede any in-flight load so its stale result doesn't clobber the
+    // retry's outcome.
+    sceneNavigationLoadGen += 1;
     void loadSceneNavigationIndex();
   }
 
@@ -143,6 +168,10 @@
     // that nulls gameState.value; this is the deterministic primary reset.)
     sceneNavigationError = false;
     sceneNavigationRequested = false;
+    sceneNavigationLoading = false;
+    // Invalidate any in-flight load so a late failure from this session
+    // cannot re-set the error latch after the reset.
+    sceneNavigationLoadGen += 1;
     returnToMainMenu();
   }
 
