@@ -115,7 +115,18 @@
                     type="button"
                     {disabled}
                     aria-current={isCurrent ? "true" : undefined}
-                    onclick={() => onSelect(chapter.id, scene.id)}
+                    aria-disabled={isCurrent || undefined}
+                    title={isCurrent ? "目前場景" : undefined}
+                    onclick={() => {
+                      // Jumping to the *current* scene is a destructive no-op:
+                      // jump_to_scene unconditionally resets inventory and
+                      // scene progress, so selecting "where you already are"
+                      // would silently wipe the run. Short-circuit it. The
+                      // button stays focusable with aria-disabled so assistive
+                      // tech still locates the current scene.
+                      if (isCurrent) return;
+                      onSelect(chapter.id, scene.id);
+                    }}
                   >
                     <span class="num"
                       >{String(scene.index + 1).padStart(2, "0")}</span

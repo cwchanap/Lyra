@@ -41,6 +41,13 @@
   let submenuBackButton: HTMLButtonElement | undefined = $state();
   let gameMenuPanel: HTMLDivElement | undefined = $state();
   let activeMenuPanel = $state<MenuPanel>(null);
+  // The submenu that was opened from the root menu, so step-back (Escape or
+  // BACK) can re-find and refocus the originating control rather than Resume.
+  // We store the panel id (not the element) because the root-menu buttons are
+  // destroyed/recreated when the submenu view toggles, so an element ref would
+  // go stale. Mirrors the WAI-ARIA expectation that dismissing a sub-layer
+  // returns focus to its trigger.
+  let lastOpenedSubmenu: Exclude<MenuPanel, null> | null = null;
   let menuTitle = $derived(menuPanelTitle(activeMenuPanel));
   let menuContext = $derived(
     activeMenuPanel === null
@@ -133,13 +140,31 @@
   }
 
   function openMenuPanel(panel: Exclude<MenuPanel, null>) {
+    lastOpenedSubmenu = panel;
     activeMenuPanel = panel;
     void tick().then(() => submenuBackButton?.focus());
   }
 
   function closeMenuPanel() {
+    const target = lastOpenedSubmenu;
     activeMenuPanel = null;
-    void tick().then(() => resumeButton?.focus());
+    lastOpenedSubmenu = null;
+    // Return focus to the control that opened the submenu (not Resume) so
+    // keyboard/SR users land back where they were. The root-menu buttons are
+    // recreated when the submenu view closes, so re-find the trigger via its
+    // data-opens marker after the re-render. Fall back to Resume if it's gone.
+    void tick().then(() => {
+      const openerButton = target
+        ? gameMenuPanel?.querySelector<HTMLButtonElement>(
+            `button[data-opens="${target}"]`,
+          )
+        : undefined;
+      if (openerButton) {
+        openerButton.focus();
+      } else {
+        resumeButton?.focus();
+      }
+    });
   }
 
   function handleGameMenuKeydown(event: KeyboardEvent) {
@@ -322,18 +347,30 @@
               <span class="en">RESUME</span>
             </button>
             {#if sceneMenuEnabled && sceneMenu}
-              <button type="button" onclick={() => openMenuPanel("scene")}>
+              <button
+                type="button"
+                data-opens="scene"
+                onclick={() => openMenuPanel("scene")}
+              >
                 <span>場景跳轉</span>
                 <span class="en">SCENE&nbsp;SELECT</span>
               </button>
             {/if}
             {#if menu}
-              <button type="button" onclick={() => openMenuPanel("evidence")}>
+              <button
+                type="button"
+                data-opens="evidence"
+                onclick={() => openMenuPanel("evidence")}
+              >
                 <span>物證檔案</span>
                 <span class="en">EVIDENCE</span>
               </button>
             {/if}
-            <button type="button" onclick={() => openMenuPanel("sound")}>
+            <button
+              type="button"
+              data-opens="sound"
+              onclick={() => openMenuPanel("sound")}
+            >
               <span>音訊設定</span>
               <span class="en">SOUND</span>
             </button>

@@ -4,7 +4,7 @@
 
   let {
     gameState,
-    onReset,
+    onCloseCase,
     disabled = false,
     open = $bindable(false),
     menuContent = null,
@@ -13,7 +13,7 @@
     sceneMenuContent = null,
   }: {
     gameState: GameStateView;
-    onReset: () => void;
+    onCloseCase: () => void;
     disabled?: boolean;
     // Forwarded as a bindable so tests can drive the external close path
     // (production: +page.svelte closes the menu on dossier reexamine).
@@ -30,13 +30,7 @@
   } = $props();
 </script>
 
-<GameShell
-  {gameState}
-  onCloseCase={onReset}
-  {disabled}
-  {sceneMenuEnabled}
-  bind:open
->
+<GameShell {gameState} {onCloseCase} {disabled} {sceneMenuEnabled} bind:open>
   {#snippet sceneMenu()}
     {#if sceneMenuContent}
       <button type="button" class="harness-scene-menu-button">
