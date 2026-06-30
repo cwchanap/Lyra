@@ -306,7 +306,12 @@ if (shouldRegisterPlaywrightSuite) {
       const gameMenu = page.getByRole("dialog", { name: "遊戲選單" });
       await gameMenu.getByRole("button", { name: /物證/ }).click();
 
-      await expect(gameMenu.getByText("還熱的咖啡")).toBeVisible();
+      // Opening the evidence submenu changes the dialog's accessible name
+      // from "遊戲選單" to "物證檔案" (the heading rebinds via aria-labelledby),
+      // so re-query the dialog under its submenu name before asserting on the
+      // dossier contents.
+      const evidenceMenu = page.getByRole("dialog", { name: "物證檔案" });
+      await expect(evidenceMenu.getByText("還熱的咖啡")).toBeVisible();
     });
 
     test("surfaces command errors in the banner", async ({ page }) => {
