@@ -10,6 +10,7 @@
     menuContent = null,
     menuExtraButtonLabel = null,
     sceneMenuEnabled = false,
+    evidenceMenuEnabled = true,
     sceneMenuContent = null,
     onOpenEvidence,
   }: {
@@ -27,6 +28,7 @@
     // focus-trap test never exercises a focusable slot element.
     menuExtraButtonLabel?: string | null;
     sceneMenuEnabled?: boolean;
+    evidenceMenuEnabled?: boolean;
     sceneMenuContent?: string | null;
     onOpenEvidence?: () => void;
   } = $props();
@@ -37,6 +39,7 @@
   {onCloseCase}
   {disabled}
   {sceneMenuEnabled}
+  {evidenceMenuEnabled}
   {onOpenEvidence}
   bind:open
 >

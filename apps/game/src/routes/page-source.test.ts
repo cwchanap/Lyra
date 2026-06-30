@@ -80,3 +80,19 @@ describe("+page scene navigation wiring", () => {
     expect(source).toContain("gameMenuOpen = false");
   });
 });
+
+describe("+page evidence menu gating", () => {
+  it("gates the evidence menu entry on shouldShowInventoryPanel so it hides after gameComplete", () => {
+    const source = pageSource();
+
+    // The menu snippet is always passed to GameShell, but its body guards
+    // <InventoryPanel> on shouldShowInventoryPanel(mode) (false for
+    // gameComplete). The Evidence button must therefore be gated by an
+    // explicit evidenceMenuEnabled flag wired to the same helper, otherwise
+    // it would render in every mode and open an empty submenu after
+    // completion.
+    expect(source).toContain(
+      "evidenceMenuEnabled={shouldShowInventoryPanel(gameState.value.mode)}",
+    );
+  });
+});

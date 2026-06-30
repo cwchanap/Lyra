@@ -16,6 +16,7 @@
     disabled = false,
     open = $bindable(false),
     sceneMenuEnabled = false,
+    evidenceMenuEnabled = true,
     onOpenEvidence,
     children,
     menu,
@@ -30,6 +31,13 @@
     // parent binds (tests/standalone renders), preserving prior behavior.
     open?: boolean;
     sceneMenuEnabled?: boolean;
+    // Gates the Evidence root-menu entry and its submenu. The `menu` snippet
+    // is always passed from +page.svelte, but its body guards InventoryPanel
+    // on shouldShowInventoryPanel(mode) (false for gameComplete). Without this
+    // flag the button would show in every mode and open an empty submenu after
+    // completion. Mirrors the sceneMenuEnabled/sceneMenu split so the button
+    // availability is decoupled from snippet presence.
+    evidenceMenuEnabled?: boolean;
     // Fired when the evidence submenu opens so the parent can expand the
     // InventoryPanel by default. The panel lives in the menu snippet and
     // starts collapsed; without this, opening the evidence submenu screen
@@ -366,7 +374,7 @@
                 <span class="en">SCENE&nbsp;SELECT</span>
               </button>
             {/if}
-            {#if menu}
+            {#if evidenceMenuEnabled && menu}
               <button
                 type="button"
                 data-opens="evidence"
@@ -394,7 +402,7 @@
             <div class="game-menu-extra">
               {#if activeMenuPanel === "scene" && sceneMenuEnabled && sceneMenu}
                 {@render sceneMenu()}
-              {:else if activeMenuPanel === "evidence" && menu}
+              {:else if activeMenuPanel === "evidence" && evidenceMenuEnabled && menu}
                 {@render menu()}
               {:else if activeMenuPanel === "sound"}
                 <AudioSettings
