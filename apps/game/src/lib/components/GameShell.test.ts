@@ -91,7 +91,7 @@ describe("GameShell", () => {
   });
 
   it("renders the chapter header and scoped children", () => {
-    render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+    render(GameShellHarness, { gameState: state(), onCloseCase: vi.fn() });
 
     expect(screen.getByText("雨夜的第一份證詞")).toBeInTheDocument();
     expect(screen.getByText("案件摘要")).toBeInTheDocument();
@@ -100,7 +100,7 @@ describe("GameShell", () => {
   });
 
   it("keeps duplicated utility controls out of the chapter HUD", () => {
-    render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+    render(GameShellHarness, { gameState: state(), onCloseCase: vi.fn() });
 
     expect(screen.getByText("雨夜的第一份證詞")).toBeInTheDocument();
     expect(
@@ -120,7 +120,7 @@ describe("GameShell", () => {
         bgm: null,
         bgs: null,
       }),
-      onReset: vi.fn(),
+      onCloseCase: vi.fn(),
     });
 
     expect(screen.queryByText("雨夜的第一份證詞")).not.toBeInTheDocument();
@@ -139,10 +139,10 @@ describe("GameShell", () => {
 
     try {
       const user = userEvent.setup();
-      const onReset = vi.fn();
+      const onCloseCase = vi.fn();
       render(GameShellHarness, {
         gameState: state(),
-        onReset,
+        onCloseCase,
         menuContent: "menu inventory slot",
       });
 
@@ -203,7 +203,7 @@ describe("GameShell", () => {
         within(dialog).getByRole("button", { name: /結束案件/ }),
       );
 
-      expect(onReset).toHaveBeenCalledTimes(1);
+      expect(onCloseCase).toHaveBeenCalledTimes(1);
     } catch (error) {
       reportAsyncTestFailure(testName, error);
     }
@@ -217,7 +217,7 @@ describe("GameShell", () => {
       const user = userEvent.setup();
       const { rerender } = render(GameShellHarness, {
         gameState: state(),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
       });
 
       await user.keyboard("{Escape}");
@@ -226,7 +226,7 @@ describe("GameShell", () => {
       await user.keyboard("{Escape}");
       await rerender({
         gameState: state(),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
         sceneMenuEnabled: true,
         sceneMenuContent: "scene selector slot",
       });
@@ -257,7 +257,7 @@ describe("GameShell", () => {
       const user = userEvent.setup();
       render(GameShellHarness, {
         gameState: state(),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
         menuContent: "menu inventory slot",
       });
 
@@ -278,6 +278,48 @@ describe("GameShell", () => {
       ).toBeInTheDocument();
       expect(screen.queryByText("menu inventory slot")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: /繼續調查/ })).toBeVisible();
+      // Step-back must return focus to the control that opened the submenu
+      // (物證檔案), not Resume — so keyboard/SR users land back on their
+      // originating action.
+      const evidenceEntry = screen.getByRole("button", { name: /物證檔案/ });
+      expect(evidenceEntry).toHaveFocus();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("returns focus to the originating submenu button on BACK click", async () => {
+    const testName =
+      "returns focus to the originating submenu button on BACK click";
+
+    try {
+      const user = userEvent.setup();
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        menuContent: "menu inventory slot",
+      });
+
+      await user.keyboard("{Escape}");
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+      await user.click(
+        within(dialog).getByRole("button", { name: /物證檔案/ }),
+      );
+
+      // Submenu open: BACK button is the first focusable.
+      const backButton = await screen.findByRole("button", {
+        name: /返回選單/,
+      });
+      expect(backButton).toHaveFocus();
+
+      // Clicking BACK steps back to the root menu and must focus the
+      // originating 物證檔案 button, not Resume.
+      await user.click(backButton);
+
+      expect(
+        await screen.findByRole("dialog", { name: "遊戲選單" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /物證檔案/ })).toHaveFocus();
     } catch (error) {
       reportAsyncTestFailure(testName, error);
     }
@@ -288,7 +330,7 @@ describe("GameShell", () => {
       "opens the game menu and consumes Escape during investigation exploration";
 
     try {
-      const onReset = vi.fn();
+      const onCloseCase = vi.fn();
       render(GameShellHarness, {
         gameState: state({
           type: "explore",
@@ -297,7 +339,7 @@ describe("GameShell", () => {
           bgm: null,
           bgs: null,
         }),
-        onReset,
+        onCloseCase,
       });
 
       const escape = new KeyboardEvent("keydown", {
@@ -314,7 +356,7 @@ describe("GameShell", () => {
         await screen.findByRole("dialog", { name: "遊戲選單" }),
       ).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /繼續調查/ })).toBeVisible();
-      expect(onReset).not.toHaveBeenCalled();
+      expect(onCloseCase).not.toHaveBeenCalled();
     } catch (error) {
       reportAsyncTestFailure(testName, error);
     }
@@ -330,7 +372,7 @@ describe("GameShell", () => {
 
       render(GameShellHarness, {
         gameState: state(),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
         // Mirror production's <InventoryPanel>: a focusable control rendered
         // via the menu slot. The default harness slot is a non-focusable <p>,
         // so without this knob the trap never exercises a slot-provided
@@ -418,7 +460,7 @@ describe("GameShell", () => {
     // inconsistent state.
     let trigger: HTMLButtonElement | null = null;
     try {
-      render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+      render(GameShellHarness, { gameState: state(), onCloseCase: vi.fn() });
 
       trigger = document.createElement("button");
       trigger.textContent = "outside trigger";
@@ -475,7 +517,7 @@ describe("GameShell", () => {
       const user = userEvent.setup();
       render(GameShellHarness, {
         gameState: state(),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
         menuContent: "menu inventory slot",
       });
 
@@ -514,7 +556,7 @@ describe("GameShell", () => {
     try {
       const { rerender } = render(GameShellHarness, {
         gameState: state(),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
         open: true,
       });
 
@@ -528,7 +570,7 @@ describe("GameShell", () => {
       // scrim must unmount — otherwise the reexamine dialogue is invisible.
       rerender({
         gameState: state(),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
         open: false,
       });
 
@@ -555,7 +597,7 @@ describe("GameShell", () => {
     // jsdom does not reflect `inert` property→attribute, hence
     // `hasAttribute` would false-negative here.
     try {
-      render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+      render(GameShellHarness, { gameState: state(), onCloseCase: vi.fn() });
 
       const header = screen.getByText("雨夜的第一份證詞").closest("header");
       const main = screen.getByText("scoped child").closest("main");
@@ -599,7 +641,7 @@ describe("GameShell", () => {
           bgm: null,
           bgs: null,
         }),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
       });
 
       window.dispatchEvent(
@@ -645,7 +687,7 @@ describe("GameShell", () => {
           bgm: null,
           bgs: null,
         }),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
       });
 
       window.dispatchEvent(escapeKeydown());
@@ -685,7 +727,7 @@ describe("GameShell", () => {
     // remain consistent \u2014 not half-open, and the open's deferred focus()
     // must not target a node that has just been unmounted.
     try {
-      render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+      render(GameShellHarness, { gameState: state(), onCloseCase: vi.fn() });
 
       window.dispatchEvent(escapeKeydown());
       window.dispatchEvent(escapeKeydown());
@@ -710,7 +752,7 @@ describe("GameShell", () => {
     // contract so a future mode-specific Escape branch can't silently drop
     // the menu from interrogation.
     try {
-      const onReset = vi.fn();
+      const onCloseCase = vi.fn();
       render(GameShellHarness, {
         gameState: state({
           type: "interrogation",
@@ -719,7 +761,7 @@ describe("GameShell", () => {
           bgm: null,
           bgs: null,
         }),
-        onReset,
+        onCloseCase,
       });
 
       const escape = escapeKeydown();
@@ -731,7 +773,7 @@ describe("GameShell", () => {
         await screen.findByRole("dialog", { name: "遊戲選單" }),
       ).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /繼續調查/ })).toBeVisible();
-      expect(onReset).not.toHaveBeenCalled();
+      expect(onCloseCase).not.toHaveBeenCalled();
     } catch (error) {
       reportAsyncTestFailure(testName, error);
     }
@@ -749,7 +791,7 @@ describe("GameShell", () => {
       const user = userEvent.setup();
       render(GameShellHarness, {
         gameState: state(),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
         menuContent: "click target paragraph",
       });
 
@@ -785,7 +827,7 @@ describe("GameShell", () => {
     // the game menu. The next Escape opens the menu once the claim is gone.
     // This pins the "close one layer per Escape" contract.
     try {
-      render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+      render(GameShellHarness, { gameState: state(), onCloseCase: vi.fn() });
 
       const nestedCloser = vi.fn();
       const releaseNested = claimEscape(nestedCloser);
@@ -816,7 +858,7 @@ describe("GameShell", () => {
     // escape-coordinator, so a stale claim can never trap the player out of
     // closing the menu.
     try {
-      render(GameShellHarness, { gameState: state(), onReset: vi.fn() });
+      render(GameShellHarness, { gameState: state(), onCloseCase: vi.fn() });
 
       // Open the menu first, while no claim is active.
       window.dispatchEvent(escapeKeydown());
@@ -852,7 +894,7 @@ describe("GameShell", () => {
     try {
       const { rerender } = render(GameShellHarness, {
         gameState: state(),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
         open: true,
         menuContent: "menu inventory slot",
       });
@@ -869,7 +911,7 @@ describe("GameShell", () => {
       // Parent drives open=false while the evidence submenu is active.
       rerender({
         gameState: state(),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
         open: false,
         menuContent: "menu inventory slot",
       });
@@ -905,7 +947,7 @@ describe("GameShell", () => {
     try {
       render(GameShellHarness, {
         gameState: state(),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
         disabled: true,
       });
 
@@ -932,7 +974,7 @@ describe("GameShell", () => {
       const user = userEvent.setup();
       render(GameShellHarness, {
         gameState: state(),
-        onReset: vi.fn(),
+        onCloseCase: vi.fn(),
         sceneMenuEnabled: true,
       });
 

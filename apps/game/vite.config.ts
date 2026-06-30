@@ -11,6 +11,14 @@ export default defineConfig(async () => ({
   test: {
     include: ["src/**/*.test.ts"],
     environment: "jsdom",
+    // jsdom defaults to about:blank. Give it a real origin so window.location
+    // resolves sensibly. NOTE: under Vitest, neither jsdom nor happy-dom
+    // exposes a working window.localStorage (Vitest's environment
+    // global-transfer drops it; sessionStorage survives). The localStorage
+    // shim in src/test-setup.ts is therefore load-bearing in either env.
+    environmentOptions: {
+      jsdom: { url: "http://localhost:1420" },
+    },
     setupFiles: ["src/test-setup.ts"],
     coverage: {
       provider: "v8",

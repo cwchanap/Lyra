@@ -221,6 +221,30 @@ describe("SceneNavigationPanel", () => {
     ).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("disables the current scene so selecting it cannot wipe in-progress state", async () => {
+    // jump_to_scene unconditionally resets inventory / scene progress, so
+    // selecting the scene the player is already on is a destructive no-op.
+    // The current-scene button must short-circuit onSelect (and announce as
+    // disabled) to prevent the silent wipe.
+    const onSelect = vi.fn();
+    const user = userEvent.setup();
+    render(SceneNavigationPanel, {
+      index,
+      current: currentState(),
+      disabled: false,
+      onSelect,
+    });
+
+    const currentSceneButton = screen.getByRole("button", {
+      name: /咖啡館調查/,
+    });
+    expect(currentSceneButton).toHaveAttribute("aria-current", "true");
+    expect(currentSceneButton).toHaveAttribute("aria-disabled", "true");
+
+    await user.click(currentSceneButton);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("collapses the expanded chapter when it disappears from a reloaded index", async () => {
     // Covers the stale-expanded-chapter branch: after auto-expanding
     // chapter_2, a rerender with an index that no longer contains chapter_2

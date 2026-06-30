@@ -217,6 +217,12 @@ selected chapter. The default selected chapter should be the current chapter
 when possible. If the current state is game complete, default to the first
 chapter.
 
+> Implementation note: chapters are rendered as a single-open **accordion**
+> (`aria-expanded` on each chapter toggle, one chapter expanded at a time),
+> not the `chapter-tabs` / `aria-pressed` sketch in the original plan doc.
+> The accordion satisfies the layout requirement above and reads better with
+> long chapter titles; it is the authoritative pattern.
+
 For each scene, show:
 
 - scene order number
@@ -229,6 +235,11 @@ after the command resolves whether it succeeds or fails. This mirrors the
 existing dossier reexamine behavior: success reveals the new scene immediately,
 and failure exposes the page-level `ErrorBanner` instead of trapping the error
 behind the modal scrim.
+
+The current scene is non-interactive (`aria-disabled` + `aria-current="true"`,
+`onSelect` short-circuits). `jumpToScene` unconditionally resets inventory and
+scene progress, so allowing the player to "jump" to the scene they are already
+on would silently wipe the in-progress run.
 
 ## Error Handling
 
@@ -262,6 +273,11 @@ Submenu buttons and controls must participate in the same focus trap. The
 submenu should not install a second global Escape handler. Pressing Escape
 while a submenu is open steps back to the root menu first; pressing Escape
 again (or when no submenu is open) closes the whole menu.
+
+Stepping back from a submenu (Escape or the submenu's BACK button) returns
+focus to the root-menu control that opened it (e.g. 場景跳轉 / 物證檔案 /
+音訊設定), not to Resume — so keyboard and screen-reader users land back on
+the action they just invoked.
 
 ## Testing
 

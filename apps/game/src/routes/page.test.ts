@@ -374,3 +374,60 @@ describe("+page scene navigation retries after return to title", () => {
     });
   });
 });
+
+describe("+page scene navigation eligibility gate (production)", () => {
+  // sceneNavigationEnabled = `import.meta.env.DEV || storyClearedOnce`.
+  // Vitest defaults import.meta.env.DEV to true, so the production branch
+  // (DEV=false, gated on cleared-once) is never exercised by the rest of the
+  // suite. These tests flip DEV=false so a regression that dropped or
+  // inverted the cleared-once gate fails here instead of slipping through.
+  beforeEach(() => {
+    mocks.fetch.mockReset();
+    stubFetchForSceneNavigation();
+    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.currentWindow.isFullscreen.mockResolvedValue(false);
+    __resetStoryClearanceWarningLatches();
+    window.localStorage.clear();
+    seedGameState();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    cleanup();
+    gameState.value = null;
+    gameState.error = null;
+    gameState.loading = false;
+    gameState.inFlight = false;
+    window.localStorage.clear();
+    __resetStoryClearanceWarningLatches();
+  });
+
+  it("hides the scene-select entry when DEV=false and the story is not cleared", async () => {
+    vi.stubEnv("DEV", false);
+    const user = userEvent.setup();
+    render(Page);
+
+    await user.keyboard("{Escape}");
+    const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+
+    expect(
+      within(dialog).queryByRole("button", { name: /場景跳轉/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the scene-select entry when DEV=false but the story has been cleared", async () => {
+    vi.stubEnv("DEV", false);
+    window.localStorage.setItem(STORY_CLEARED_STORAGE_KEY, "true");
+
+    const user = userEvent.setup();
+    render(Page);
+
+    await user.keyboard("{Escape}");
+    const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+
+    expect(
+      await within(dialog).findByRole("button", { name: /場景跳轉/ }),
+    ).toBeInTheDocument();
+  });
+});
