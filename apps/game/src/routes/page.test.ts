@@ -417,13 +417,27 @@ describe("+page scene navigation retries after return to title", () => {
     // path cleared the latches. Without the generation guard, this would
     // re-set sceneNavigationError = true and suppress the next session's
     // auto-load.
+    let firstLoadTextConsumed = false;
     resolveFirstLoad({
       ok: false,
       status: 500,
-      text: () => Promise.resolve("index unavailable"),
+      text: () => {
+        firstLoadTextConsumed = true;
+        return Promise.resolve("index unavailable");
+      },
     } as unknown as Response);
-    // Yield a microtask so the stale resolution is processed.
-    await Promise.resolve();
+    // Wait for the stale failure to fully settle before starting the next
+    // session. The stale path is `await fetch` → `await r.text()` → throw →
+    // listScenes catch → gen guard; a single `await Promise.resolve()` only
+    // advances the fetch promise, so the gen check could still be pending
+    // when seedGameState() runs and the test would pass without exercising
+    // the guard. Poll until r.text() has been consumed, then flush the
+    // remaining microtasks (text() resolve, throw/catch, gen check) via a
+    // macrotask so the stale load has fully returned.
+    await waitFor(() => {
+      expect(firstLoadTextConsumed).toBe(true);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     // Start a fresh game. The auto-load $effect must re-fire despite the
     // stale failure having resolved after the reset.

@@ -8,7 +8,21 @@ import "@testing-library/jest-dom/vitest";
 // future environment (e.g. happy-dom) that lacks a working localStorage.
 // Tests reset it via `window.localStorage.clear()` in their
 // beforeEach/afterEach.
-if (typeof window !== "undefined" && !window.localStorage) {
+// Probe the native localStorage defensively: accessing `window.localStorage`
+// can throw in some environments (e.g. cookies disabled → SecurityError), and
+// an uncaught throw here would abort test setup before the shim below can be
+// installed. Treat any access failure as "storage unavailable" so the fallback
+// still installs.
+let nativeLocalStorage: Storage | null = null;
+if (typeof window !== "undefined") {
+  try {
+    nativeLocalStorage = window.localStorage;
+  } catch {
+    nativeLocalStorage = null;
+  }
+}
+
+if (typeof window !== "undefined" && !nativeLocalStorage) {
   const store = new Map<string, string>();
   const localStorageShim: Storage = {
     get length() {
