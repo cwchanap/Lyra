@@ -11,6 +11,7 @@
     menuExtraButtonLabel = null,
     sceneMenuEnabled = false,
     sceneMenuContent = null,
+    onOpenEvidence,
   }: {
     gameState: GameStateView;
     onCloseCase: () => void;
@@ -27,10 +28,18 @@
     menuExtraButtonLabel?: string | null;
     sceneMenuEnabled?: boolean;
     sceneMenuContent?: string | null;
+    onOpenEvidence?: () => void;
   } = $props();
 </script>
 
-<GameShell {gameState} {onCloseCase} {disabled} {sceneMenuEnabled} bind:open>
+<GameShell
+  {gameState}
+  {onCloseCase}
+  {disabled}
+  {sceneMenuEnabled}
+  {onOpenEvidence}
+  bind:open
+>
   {#snippet sceneMenu()}
     {#if sceneMenuContent}
       <button type="button" class="harness-scene-menu-button">

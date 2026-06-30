@@ -545,6 +545,72 @@ describe("GameShell", () => {
     }
   });
 
+  it("fires onOpenEvidence when the evidence submenu opens", async () => {
+    const testName = "fires onOpenEvidence when the evidence submenu opens";
+
+    // Production's +page.svelte wires onOpenEvidence to expand the
+    // InventoryPanel by default, so opening the evidence submenu shows the
+    // dossier contents rather than a collapsed toggle inside a screen
+    // already titled 物證檔案. Pin the callback contract so a regression
+    // that dropped the hook (or fired it for a different panel) is caught.
+    try {
+      const user = userEvent.setup();
+      const onOpenEvidence = vi.fn();
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        menuContent: "menu inventory slot",
+        onOpenEvidence,
+      });
+
+      await user.keyboard("{Escape}");
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+      expect(onOpenEvidence).not.toHaveBeenCalled();
+
+      await user.click(
+        within(dialog).getByRole("button", { name: /物證檔案/ }),
+      );
+      expect(onOpenEvidence).toHaveBeenCalledTimes(1);
+
+      // Step back to the root menu and reopen evidence — the callback must
+      // fire again on each open, not just the first.
+      await user.click(
+        within(dialog).getByRole("button", { name: /返回選單/ }),
+      );
+      await user.click(
+        within(dialog).getByRole("button", { name: /物證檔案/ }),
+      );
+      expect(onOpenEvidence).toHaveBeenCalledTimes(2);
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
+  it("does not fire onOpenEvidence when other submenus open", async () => {
+    const testName = "does not fire onOpenEvidence when other submenus open";
+
+    try {
+      const user = userEvent.setup();
+      const onOpenEvidence = vi.fn();
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        menuContent: "menu inventory slot",
+        onOpenEvidence,
+      });
+
+      await user.keyboard("{Escape}");
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+
+      await user.click(
+        within(dialog).getByRole("button", { name: /音訊設定/ }),
+      );
+      expect(onOpenEvidence).not.toHaveBeenCalled();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
   it("closes the menu when the bound open prop is driven false externally (dossier reexamine path)", async () => {
     const testName =
       "closes the menu when the bound open prop is driven false externally (dossier reexamine path)";

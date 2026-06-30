@@ -204,6 +204,9 @@
     onCloseCase={handleCloseCase}
     disabled={gameState.inFlight}
     sceneMenuEnabled={sceneNavigationEnabled}
+    onOpenEvidence={() => {
+      inventoryPanelOpen = true;
+    }}
     bind:open={gameMenuOpen}
   >
     {#snippet sceneMenu()}

@@ -16,6 +16,7 @@
     disabled = false,
     open = $bindable(false),
     sceneMenuEnabled = false,
+    onOpenEvidence,
     children,
     menu,
     sceneMenu,
@@ -29,6 +30,11 @@
     // parent binds (tests/standalone renders), preserving prior behavior.
     open?: boolean;
     sceneMenuEnabled?: boolean;
+    // Fired when the evidence submenu opens so the parent can expand the
+    // InventoryPanel by default. The panel lives in the menu snippet and
+    // starts collapsed; without this, opening the evidence submenu screen
+    // shows only the panel's own toggle rather than the dossier contents.
+    onOpenEvidence?: () => void;
     children: Snippet;
     menu?: Snippet;
     sceneMenu?: Snippet;
@@ -143,6 +149,9 @@
   function openMenuPanel(panel: Exclude<MenuPanel, null>) {
     lastOpenedSubmenu = panel;
     activeMenuPanel = panel;
+    if (panel === "evidence") {
+      onOpenEvidence?.();
+    }
     void tick().then(() => submenuBackButton?.focus());
   }
 
