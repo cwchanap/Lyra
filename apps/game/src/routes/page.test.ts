@@ -76,6 +76,7 @@ function currentState(): GameStateView {
       bgs: null,
     },
     inventory: { evidence: [], statements: [] },
+    dialogueHistory: [],
   };
 }
 
@@ -98,6 +99,7 @@ function gameCompleteState(): GameStateView {
     scene: { kind: "linear", id: "scene_1", title: "序章", index: 0, total: 1 },
     mode: { type: "gameComplete" },
     inventory: { evidence: [], statements: [] },
+    dialogueHistory: [],
   };
 }
 
@@ -128,6 +130,7 @@ function jumpedState(): GameStateView {
       bgs: null,
     },
     inventory: { evidence: [], statements: [] },
+    dialogueHistory: [],
   };
 }
 

@@ -51,6 +51,7 @@ function state(id: string): GameStateView {
       bgs: null,
     },
     inventory: { evidence: [], statements: [] },
+    dialogueHistory: [],
   };
 }
 

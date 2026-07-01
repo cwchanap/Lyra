@@ -62,6 +62,7 @@ function state(
     scene: { kind: "linear", id: "scene_1", title: "", index: 0, total: 1 },
     mode,
     inventory: { evidence: [], statements: [] },
+    dialogueHistory: [],
   };
 }
 
