@@ -62,7 +62,7 @@
   bind:this={panel}
   class="history-panel"
   role="dialog"
-  aria-modal="false"
+  aria-modal="true"
   aria-labelledby="dialogue-history-title"
   tabindex="-1"
   onkeydown={handleKeydown}
@@ -187,6 +187,7 @@
     font-family: var(--impact);
     font-size: 11px;
     letter-spacing: 0.18em;
+    overflow-wrap: anywhere;
     color: var(--cyan);
   }
 
@@ -199,6 +200,7 @@
     font-family: var(--serif-jp);
     font-size: 15px;
     line-height: 1.65;
+    overflow-wrap: anywhere;
     color: var(--bone);
   }
 

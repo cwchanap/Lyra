@@ -23,6 +23,12 @@ const history: DialogueHistoryEntry[] = [
 ];
 
 describe("DialogueHistoryPanel", () => {
+  it("uses modal dialog semantics while focus is trapped", () => {
+    render(DialogueHistoryPanel, { history, onClose: vi.fn() });
+
+    expect(screen.getByRole("dialog")).toHaveAttribute("aria-modal", "true");
+  });
+
   it("renders spoken lines and narration in play order", () => {
     render(DialogueHistoryPanel, { history, onClose: vi.fn() });
 
