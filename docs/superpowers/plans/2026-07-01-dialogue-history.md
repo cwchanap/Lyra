@@ -172,7 +172,7 @@ Add these tests in the same module:
 
         let view = engine.view();
         assert_eq!(view.dialogue_history.len(), 50);
-        assert_eq!(history_labels(&view).first().unwrap(), "narration: action 5");
+        assert_eq!(history_labels(&view).first().unwrap(), "A: line 6");
         assert_eq!(history_labels(&view).last().unwrap(), "B: next scene");
 
         let _ = std::fs::remove_dir_all(d);
