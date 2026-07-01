@@ -131,10 +131,10 @@ characters:
     displayNames: ["承包商主管"]
     portraitMode: portrait
     visualPrompt: >
-      Middle-aged Japanese male contractor records supervisor in a plain gray
-      business shirt and understated tie, short neat hair, middle management
-      posture, controlled bureaucratic distance, neutral office expression,
-      practical and cautious.
+      Middle-aged Japanese male supervisor of contractor records in a plain
+      gray business shirt and understated tie, short neat hair, middle
+      management posture, controlled bureaucratic distance, neutral office
+      expression, practical and cautious.
     referenceAssetId: null
     expressions:
       standard:
