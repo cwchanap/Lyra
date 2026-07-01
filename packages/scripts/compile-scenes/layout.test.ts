@@ -360,14 +360,28 @@ function rect(x: number, y: number, w: number, h: number): RectLayout {
 
 function layoutWithHotspots(
   hotspots: Record<string, RectLayout>,
-  options: { sublocation?: string } = {},
+  options: {
+    sublocation?: string;
+    intentionalOverlaps?: ReadonlyArray<{
+      hotspots: readonly [string, string];
+    }>;
+  } = {},
 ): InvestigationLayoutSidecar {
   const sublocation = options.sublocation ?? "main_hall";
+  const entry: InvestigationLayoutSidecar["sublocations"][string] = {
+    hotspots,
+    characters: {},
+  };
+  if (options.intentionalOverlaps && options.intentionalOverlaps.length > 0) {
+    entry.intentionalOverlaps = options.intentionalOverlaps.map((p) => ({
+      hotspots: [p.hotspots[0], p.hotspots[1]],
+    }));
+  }
   return {
     version: 1,
     sceneId: "investigation_scene_1",
     sublocations: {
-      [sublocation]: { hotspots, characters: {} },
+      [sublocation]: entry,
     },
   };
 }
@@ -455,5 +469,139 @@ describe("detectLayoutOverlaps", () => {
     const layout = layoutWithHotspots({});
 
     expect(detectLayoutOverlaps(layout, sourceFile)).toEqual([]);
+  });
+
+  it("suppresses a warning for a pair listed in intentionalOverlaps", () => {
+    const layout = layoutWithHotspots(
+      {
+        a: rect(0.1, 0.1, 0.4, 0.4),
+        b: rect(0.2, 0.2, 0.4, 0.4),
+      },
+      { intentionalOverlaps: [{ hotspots: ["a", "b"] }] },
+    );
+
+    expect(detectLayoutOverlaps(layout, sourceFile)).toEqual([]);
+  });
+
+  it("treats intentionalOverlaps pair order as unordered", () => {
+    const layout = layoutWithHotspots(
+      {
+        a: rect(0.1, 0.1, 0.4, 0.4),
+        b: rect(0.2, 0.2, 0.4, 0.4),
+      },
+      { intentionalOverlaps: [{ hotspots: ["b", "a"] }] },
+    );
+
+    expect(detectLayoutOverlaps(layout, sourceFile)).toEqual([]);
+  });
+
+  it("suppresses only the listed pair, not other overlapping pairs", () => {
+    const layout = layoutWithHotspots(
+      {
+        a: rect(0.1, 0.1, 0.4, 0.4),
+        b: rect(0.2, 0.2, 0.4, 0.4),
+        c: rect(0.3, 0.3, 0.4, 0.4),
+      },
+      { intentionalOverlaps: [{ hotspots: ["a", "b"] }] },
+    );
+
+    const warnings = detectLayoutOverlaps(layout, sourceFile);
+
+    // a↔b suppressed; a↔c and b↔c still warn.
+    expect(warnings).toHaveLength(2);
+    expect(warnings.every((w) => w.code === "layoutHotspotOverlap")).toBe(true);
+    const messages = warnings.map((w) => w.message).sort();
+    expect(messages[0]).toContain("a");
+    expect(messages[0]).toContain("c");
+    expect(messages[1]).toContain("b");
+    expect(messages[1]).toContain("c");
+  });
+});
+
+describe("parseInvestigationLayoutJson intentionalOverlaps", () => {
+  function parse(raw: string) {
+    return parseInvestigationLayoutJson(raw, sourceFile);
+  }
+
+  function overlappingLayoutJson(intentionalOverlaps: unknown): string {
+    return JSON.stringify({
+      version: 1,
+      sceneId: "investigation_scene_1",
+      sublocations: {
+        main_hall: {
+          hotspots: {
+            a: { kind: "rect", x: 0.1, y: 0.1, w: 0.4, h: 0.4 },
+            b: { kind: "rect", x: 0.2, y: 0.2, w: 0.4, h: 0.4 },
+          },
+          characters: {},
+          intentionalOverlaps,
+        },
+      },
+    });
+  }
+
+  it("parses a valid intentionalOverlaps list and suppresses the warning", () => {
+    const result = parse(overlappingLayoutJson([{ hotspots: ["a", "b"] }]));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(detectLayoutOverlaps(result.value, sourceFile)).toEqual([]);
+  });
+
+  it("errors when intentionalOverlaps is not an array", () => {
+    const result = parse(overlappingLayoutJson("nope"));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.errors.some((e) => e.code === "layoutInvalidIntentionalOverlaps"),
+    ).toBe(true);
+  });
+
+  it("errors on a malformed pair entry", () => {
+    const result = parse(overlappingLayoutJson([{ hotspots: ["a"] }]));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.errors.some((e) => e.code === "layoutInvalidIntentionalOverlaps"),
+    ).toBe(true);
+  });
+
+  it("errors when an opt-out references an unknown hotspot", () => {
+    const result = parse(overlappingLayoutJson([{ hotspots: ["a", "ghost"] }]));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.errors.some(
+        (e) => e.code === "layoutUnknownIntentionalOverlapHotspot",
+      ),
+    ).toBe(true);
+  });
+
+  it("errors on a self-pair", () => {
+    const result = parse(overlappingLayoutJson([{ hotspots: ["a", "a"] }]));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.errors.some((e) => e.code === "layoutInvalidIntentionalOverlaps"),
+    ).toBe(true);
+  });
+
+  it("errors on a duplicate pair", () => {
+    const result = parse(
+      overlappingLayoutJson([
+        { hotspots: ["a", "b"] },
+        { hotspots: ["b", "a"] },
+      ]),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(
+      result.errors.some((e) => e.code === "layoutDuplicateIntentionalOverlap"),
+    ).toBe(true);
   });
 });

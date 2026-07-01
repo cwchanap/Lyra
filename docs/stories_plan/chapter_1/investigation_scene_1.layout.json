@@ -43,7 +43,11 @@
           "h": 0.94,
           "anchor": "bottomCenter"
         }
-      }
+      },
+      "intentionalOverlaps": [
+        { "hotspots": ["kagami_summary_hotspot", "old_request_slips"] },
+        { "hotspots": ["canned_coffee", "old_request_slips"] }
+      ]
     }
   }
 }

@@ -55,6 +55,17 @@ export type RevealTarget =
   | { kind: "hotspot"; id: string }
   | { kind: "sublocation"; id: string };
 
+/**
+ * A pair of hotspot IDs within one sublocation whose rect overlap the author
+ * has declared intentional (e.g. a deliberately layered/nested target). The
+ * compiler's `layoutHotspotOverlap` warning is suppressed for listed pairs so
+ * the warning keeps signal for unintentional overlaps. Both IDs must exist in
+ * the same sublocation's `hotspots`; the pair is unordered.
+ */
+export type IntentionalHotspotOverlap = {
+  hotspots: readonly [string, string];
+};
+
 /** Author-checked-in layout sidecar for an investigation scene. */
 export type InvestigationLayoutSidecar = {
   version: 1;
@@ -64,6 +75,7 @@ export type InvestigationLayoutSidecar = {
     {
       hotspots: Record<string, RectLayout>;
       characters: Record<string, SpriteLayout>;
+      intentionalOverlaps?: ReadonlyArray<IntentionalHotspotOverlap>;
     }
   >;
 };

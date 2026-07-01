@@ -1,6 +1,7 @@
 import type {
   ASTInvestigationScene,
   CompileError,
+  IntentionalHotspotOverlap,
   InvestigationLayoutSidecar,
   RectLayout,
   SpriteLayout,
@@ -128,7 +129,19 @@ export function parseInvestigationLayoutJson(
       if (parsed.value) characters[characterId] = parsed.value;
     }
 
-    sublocations[sublocationId] = { hotspots, characters };
+    const intentionalOverlaps = parseIntentionalOverlaps(
+      sublocation.intentionalOverlaps,
+      hotspots,
+      sourceFile,
+      sublocationId,
+      errors,
+    );
+
+    sublocations[sublocationId] = {
+      hotspots,
+      characters,
+      ...(intentionalOverlaps.length > 0 ? { intentionalOverlaps } : {}),
+    };
   }
 
   if (errors.length > 0) return { ok: false, errors };
@@ -465,6 +478,12 @@ function asRecord(value: unknown): Record<string, unknown> | null {
  * build. Hotspots in different sublocations are never on screen together, so
  * only pairs within a single sublocation are compared. Edge-adjacency
  * (touching but non-overlapping) is allowed.
+ *
+ * Pairs listed in a sublocation's `intentionalOverlaps` are skipped, so the
+ * warning keeps signal for unintentional overlaps. The opt-out is itself
+ * validated during parsing (see `parseIntentionalOverlaps`): a typo'd hotspot
+ * ID in an opt-out would otherwise silently disable the check, so unknown IDs
+ * are surfaced as errors instead.
  */
 export function detectLayoutOverlaps(
   layout: InvestigationLayoutSidecar,
@@ -474,6 +493,7 @@ export function detectLayoutOverlaps(
   for (const [sublocationId, sublocation] of Object.entries(
     layout.sublocations,
   )) {
+    const optOut = buildIntentionalOverlapSet(sublocation.intentionalOverlaps);
     const entries = Object.entries(sublocation.hotspots);
     for (let i = 0; i < entries.length; i++) {
       const a = entries[i];
@@ -481,6 +501,7 @@ export function detectLayoutOverlaps(
       for (let k = i + 1; k < entries.length; k++) {
         const b = entries[k];
         if (!b) continue;
+        if (isIntentionalOverlap(optOut, a[0], b[0])) continue;
         if (rectsOverlap(a[1], b[1])) {
           warnings.push(
             error(
@@ -494,6 +515,117 @@ export function detectLayoutOverlaps(
     }
   }
   return warnings;
+}
+
+/**
+ * Parse and validate a sublocation's `intentionalOverlaps` opt-out list.
+ *
+ * Each entry must be `{ hotspots: [idA, idB] }` with two distinct, non-empty
+ * string IDs that both exist in the sublocation's parsed `hotspots`. Unknown
+ * IDs, duplicate pairs, and malformed entries are pushed as compile errors so
+ * a typo cannot silently disable the overlap check. Returns the cleaned list.
+ */
+function parseIntentionalOverlaps(
+  raw: unknown,
+  hotspots: Record<string, RectLayout>,
+  sourceFile: string,
+  sublocationId: string,
+  errors: CompileError[],
+): IntentionalHotspotOverlap[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    errors.push(
+      error(
+        sourceFile,
+        "layoutInvalidIntentionalOverlaps",
+        `Layout sublocation "${sublocationId}" intentionalOverlaps must be an array of { hotspots: [idA, idB] } entries.`,
+      ),
+    );
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const result: IntentionalHotspotOverlap[] = [];
+  for (const entry of raw) {
+    const record = asRecord(entry);
+    const pair = record?.hotspots;
+    if (
+      !Array.isArray(pair) ||
+      pair.length !== 2 ||
+      typeof pair[0] !== "string" ||
+      typeof pair[1] !== "string" ||
+      pair[0].length === 0 ||
+      pair[1].length === 0
+    ) {
+      errors.push(
+        error(
+          sourceFile,
+          "layoutInvalidIntentionalOverlaps",
+          `Layout sublocation "${sublocationId}" intentionalOverlaps entries must be { hotspots: [idA, idB] } with two non-empty string IDs.`,
+        ),
+      );
+      continue;
+    }
+    const [a, b] = pair as [string, string];
+    if (a === b) {
+      errors.push(
+        error(
+          sourceFile,
+          "layoutInvalidIntentionalOverlaps",
+          `Layout sublocation "${sublocationId}" intentionalOverlaps pair "${a}" references the same hotspot twice; remove the self-pair.`,
+        ),
+      );
+      continue;
+    }
+    for (const id of [a, b]) {
+      if (!(id in hotspots)) {
+        errors.push(
+          error(
+            sourceFile,
+            "layoutUnknownIntentionalOverlapHotspot",
+            `Layout sublocation "${sublocationId}" intentionalOverlaps references unknown hotspot "${id}".`,
+          ),
+        );
+      }
+    }
+    const key = pairKey(a, b);
+    if (seen.has(key)) {
+      errors.push(
+        error(
+          sourceFile,
+          "layoutDuplicateIntentionalOverlap",
+          `Layout sublocation "${sublocationId}" intentionalOverlaps lists pair "${a}"/"${b}" more than once.`,
+        ),
+      );
+      continue;
+    }
+    seen.add(key);
+    result.push({ hotspots: [a, b] });
+  }
+  return result;
+}
+
+function buildIntentionalOverlapSet(
+  overlaps: ReadonlyArray<IntentionalHotspotOverlap> | undefined,
+): Set<string> {
+  const set = new Set<string>();
+  if (!overlaps) return set;
+  for (const { hotspots } of overlaps) {
+    set.add(pairKey(hotspots[0], hotspots[1]));
+  }
+  return set;
+}
+
+function isIntentionalOverlap(
+  optOut: Set<string>,
+  a: string,
+  b: string,
+): boolean {
+  return optOut.has(pairKey(a, b));
+}
+
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}\0${b}` : `${b}\0${a}`;
 }
 
 function rectsOverlap(a: RectLayout, b: RectLayout): boolean {

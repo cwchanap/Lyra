@@ -23,6 +23,7 @@ import type {
 export type { EvidenceSource, RectLayout, RevealTarget, SpriteLayout };
 export type {
   ChaptersIndex as JSONChaptersIndex,
+  IntentionalHotspotOverlap,
   InvestigationLayoutSidecar,
 } from "@lyra/scene-types";
 
