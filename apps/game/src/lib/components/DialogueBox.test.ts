@@ -69,6 +69,19 @@ function isInert(element: HTMLElement) {
   );
 }
 
+function dispatchWindowKeydown(init: KeyboardEventInit) {
+  const event = new KeyboardEvent("keydown", {
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+  if (init.isComposing) {
+    Object.defineProperty(event, "isComposing", { value: true });
+  }
+  window.dispatchEvent(event);
+  return event;
+}
+
 describe("DialogueBox", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -344,6 +357,26 @@ describe("DialogueBox", () => {
     expect(
       screen.queryByRole("dialog", { name: "對話紀錄" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not toggle dialogue history or prevent defaults for modified L shortcuts", async () => {
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
+    const events = [
+      dispatchWindowKeydown({ key: "l", metaKey: true }),
+      dispatchWindowKeydown({ key: "l", ctrlKey: true }),
+      dispatchWindowKeydown({ key: "l", altKey: true }),
+      dispatchWindowKeydown({ key: "L", shiftKey: true }),
+      dispatchWindowKeydown({ key: "l", isComposing: true }),
+    ];
+    await Promise.resolve();
+
+    expect(
+      screen.queryByRole("dialog", { name: "對話紀錄" }),
+    ).not.toBeInTheDocument();
+    for (const event of events) {
+      expect(event.defaultPrevented).toBe(false);
+    }
   });
 
   it("does not toggle dialogue history with L while the history close button is focused", async () => {
