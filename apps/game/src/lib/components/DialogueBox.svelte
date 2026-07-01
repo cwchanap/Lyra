@@ -85,6 +85,7 @@
   }
 
   function handleClick() {
+    if (historyOpen) return;
     dispatchAdvance();
   }
 
@@ -199,6 +200,20 @@
 {/if}
 
 <div class="wrapper" class:line={current.kind === "line"}>
+  <button
+    bind:this={logButton}
+    class="log-button"
+    type="button"
+    aria-label="開啟對話紀錄"
+    aria-pressed={historyOpen}
+    onclick={(event) => {
+      event.stopPropagation();
+      toggleHistory();
+    }}
+  >
+    LOG
+  </button>
+
   <div
     class="box"
     class:scene={current.kind === "sceneTag"}
@@ -211,20 +226,6 @@
     aria-label="推進對話"
     aria-disabled={disabled}
   >
-    <button
-      bind:this={logButton}
-      class="log-button"
-      type="button"
-      aria-label="開啟對話紀錄"
-      aria-pressed={historyOpen}
-      onclick={(event) => {
-        event.stopPropagation();
-        toggleHistory();
-      }}
-    >
-      LOG
-    </button>
-
     {#if current.kind === "sceneTag"}
       <span class="kind">場 · SCENE</span>
       <p class="text-scene">（場景切換）</p>
@@ -260,7 +261,6 @@
   }
 
   .box {
-    position: relative;
     width: 100%;
     box-sizing: border-box;
     padding: 22px 104px 24px 28px;

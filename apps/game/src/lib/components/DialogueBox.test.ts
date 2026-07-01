@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -236,6 +236,36 @@ describe("DialogueBox", () => {
     await user.click(screen.getByRole("button", { name: "推進對話" }));
     expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
     expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("does not advance when the advance control is clicked while dialogue history is open", async () => {
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    await user.click(screen.getByRole("button", { name: "推進對話" }));
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("advances exactly once from Space or Enter when the advance control is focused", async () => {
+    const { onAdvance } = renderDialogueBox({
+      kind: "action",
+      text: "hello",
+    });
+    const advanceControl = screen.getByRole("button", { name: "推進對話" });
+
+    advanceControl.focus();
+    await fireEvent.keyDown(advanceControl, { key: " " });
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+    expect(onAdvance).toHaveBeenLastCalledWith(token);
+
+    await fireEvent.keyDown(advanceControl, { key: "Enter" });
+    expect(onAdvance).toHaveBeenCalledTimes(2);
+    expect(onAdvance).toHaveBeenLastCalledWith(token);
   });
 
   it("opens dialogue history from the LOG button", async () => {
