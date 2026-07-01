@@ -33,6 +33,7 @@ import { parseInvestigationScene } from "./parser-investigation";
 import { parseInterrogationScene } from "./parser-interrogation";
 import {
   applyInvestigationLayout,
+  detectLayoutOverlaps,
   parseInvestigationLayoutJson,
 } from "./layout";
 import { validate, type SceneRecord } from "./validator";
@@ -80,6 +81,12 @@ export type CompileResult =
       chaptersCompiled: number;
       scenesCompiled: number;
       assetReport: AssetReport;
+      /**
+       * Non-blocking warnings that do not fail the build. Currently carries
+       * layout geometry warnings (e.g. overlapping hotspot rects); printed
+       * by the CLI but never change the exit code.
+       */
+      warnings: CompileError[];
     }
   | { ok: false; errors: CompileError[] };
 
@@ -87,6 +94,7 @@ export function compile(opts: CompileOptions): CompileResult {
   const chapters: ASTChapter[] = [];
   const scenes: SceneRecord[] = [];
   const errors: CompileError[] = [];
+  const warnings: CompileError[] = [];
   const skippedReservedFiles = new Set<string>();
   const failedParseFiles = new Set<string>();
 
@@ -227,6 +235,9 @@ export function compile(opts: CompileOptions): CompileResult {
                   errors.push(...applied.errors);
                 } else {
                   ast = applied.value;
+                  warnings.push(
+                    ...detectLayoutOverlaps(layout.value, layoutSourceFileTag),
+                  );
                 }
               }
             } catch (e) {
@@ -355,6 +366,7 @@ export function compile(opts: CompileOptions): CompileResult {
     chaptersCompiled: chapters.length,
     scenesCompiled: scenes.length,
     assetReport,
+    warnings,
   };
 }
 
