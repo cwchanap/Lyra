@@ -99,6 +99,21 @@
     dispatchAdvance();
   }
 
+  function handleLogButtonKeydown(e: KeyboardEvent) {
+    if (e.repeat) return;
+    if (e.key !== " " && e.key !== "Enter") return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (historyOpen) return;
+    dispatchAdvance();
+  }
+
+  function handleLogButtonClick(e: MouseEvent) {
+    e.stopPropagation();
+    if (e.detail === 0) return;
+    toggleHistory();
+  }
+
   function openHistory() {
     historyOpen = true;
   }
@@ -211,10 +226,8 @@
     type="button"
     aria-label="開啟對話紀錄"
     aria-pressed={historyOpen}
-    onclick={(event) => {
-      event.stopPropagation();
-      toggleHistory();
-    }}
+    onclick={handleLogButtonClick}
+    onkeydown={handleLogButtonKeydown}
   >
     LOG
   </button>
