@@ -62,6 +62,7 @@ function currentState(): GameStateView {
       bgs: null,
     },
     inventory: { evidence: [], statements: [] },
+    dialogueHistory: [],
   };
 }
 
@@ -202,6 +203,7 @@ describe("SceneNavigationPanel", () => {
       },
       mode: { type: "gameComplete" },
       inventory: { evidence: [], statements: [] },
+      dialogueHistory: [],
     };
 
     render(SceneNavigationPanel, {
@@ -272,6 +274,7 @@ describe("SceneNavigationPanel", () => {
       },
       mode: { type: "gameComplete" },
       inventory: { evidence: [], statements: [] },
+      dialogueHistory: [],
     };
 
     render(SceneNavigationPanel, {

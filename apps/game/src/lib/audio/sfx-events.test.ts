@@ -137,6 +137,7 @@ function state(overrides: Partial<GameStateView> = {}): GameStateView {
       bgs: null,
     },
     inventory: { evidence: [], statements: [] },
+    dialogueHistory: [],
     ...overrides,
   };
 }
