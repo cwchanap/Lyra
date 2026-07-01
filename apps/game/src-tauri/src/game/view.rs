@@ -12,6 +12,29 @@ pub struct GameStateView {
     pub chapter: ChapterView,
     pub scene: SceneView,
     pub inventory: Inventory,
+    pub dialogue_history: Vec<DialogueHistoryEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum DialogueHistoryEntry {
+    Line {
+        id: u64,
+        speaker: String,
+        text: String,
+        chapter_title: String,
+        scene_title: String,
+    },
+    Action {
+        id: u64,
+        text: String,
+        chapter_title: String,
+        scene_title: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
