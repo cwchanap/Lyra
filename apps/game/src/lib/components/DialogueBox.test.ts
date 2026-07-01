@@ -1,24 +1,56 @@
-import { render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  claimEscape,
+  closeTopmostEscapeClaim,
+  resetEscapeCoordinator,
+} from "$lib/state/escape-coordinator";
 import DialogueBox from "./DialogueBox.svelte";
-import type { DialogueItem, QueueToken } from "../state/types";
+import type {
+  DialogueHistoryEntry,
+  DialogueItem,
+  QueueToken,
+} from "../state/types";
 
 const token: QueueToken = { sceneId: "s1", queueGen: 1, cursor: 0 };
+const history: DialogueHistoryEntry[] = [
+  {
+    id: 1,
+    kind: "line",
+    speaker: "若月",
+    text: "你好。",
+    chapterTitle: "Chapter",
+    sceneTitle: "Scene",
+  },
+  {
+    id: 2,
+    kind: "action",
+    text: "雨聲壓過車流。",
+    chapterTitle: "Chapter",
+    sceneTitle: "Scene",
+  },
+];
 
 function renderDialogueBox(
   current: DialogueItem,
-  overrides?: { disabled?: boolean; onAdvanceFeedback?: () => void },
+  overrides?: {
+    disabled?: boolean;
+    onAdvanceFeedback?: () => void;
+    history?: DialogueHistoryEntry[];
+  },
 ) {
   const onAdvance = vi.fn();
   const result = render(DialogueBox, {
     current,
     queueToken: token,
     onAdvance,
-    ...overrides,
+    history: overrides?.history ?? [],
+    disabled: overrides?.disabled,
+    onAdvanceFeedback: overrides?.onAdvanceFeedback,
   });
   return { onAdvance, ...result };
 }
@@ -30,9 +62,30 @@ function dialogueBoxSource() {
   );
 }
 
+function isInert(element: HTMLElement) {
+  return Boolean(
+    (element as HTMLElement & { inert?: boolean }).inert ||
+    element.hasAttribute("inert"),
+  );
+}
+
+function dispatchWindowKeydown(init: KeyboardEventInit) {
+  const event = new KeyboardEvent("keydown", {
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+  if (init.isComposing) {
+    Object.defineProperty(event, "isComposing", { value: true });
+  }
+  window.dispatchEvent(event);
+  return event;
+}
+
 describe("DialogueBox", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    resetEscapeCoordinator();
   });
 
   it("renders an action dialogue item", () => {
@@ -172,7 +225,7 @@ describe("DialogueBox", () => {
       kind: "action",
       text: "hello",
     });
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("button", { name: "推進對話" }));
     expect(onAdvance).toHaveBeenCalledWith(token);
   });
 
@@ -186,7 +239,7 @@ describe("DialogueBox", () => {
     );
     onAdvance.mockImplementationOnce(() => calls.push("advance"));
 
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("button", { name: "推進對話" }));
 
     expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
     expect(onAdvance).toHaveBeenCalledWith(token);
@@ -200,9 +253,218 @@ describe("DialogueBox", () => {
       { kind: "action", text: "hello" },
       { disabled: true, onAdvanceFeedback },
     );
-    await user.click(screen.getByRole("button"));
+    await user.click(screen.getByRole("button", { name: "推進對話" }));
     expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
     expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("does not advance when the advance control is clicked while dialogue history is open", async () => {
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    await user.click(screen.getByRole("button", { name: "推進對話" }));
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("advances exactly once from Space or Enter when the advance control is focused", async () => {
+    const { onAdvance } = renderDialogueBox({
+      kind: "action",
+      text: "hello",
+    });
+    const advanceControl = screen.getByRole("button", { name: "推進對話" });
+
+    advanceControl.focus();
+    await fireEvent.keyDown(advanceControl, { key: " " });
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+    expect(onAdvance).toHaveBeenLastCalledWith(token);
+
+    await fireEvent.keyDown(advanceControl, { key: "Enter" });
+    expect(onAdvance).toHaveBeenCalledTimes(2);
+    expect(onAdvance).toHaveBeenLastCalledWith(token);
+  });
+
+  it("opens dialogue history from the LOG button", async () => {
+    const user = userEvent.setup();
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+
+    expect(
+      screen.getByRole("dialog", { name: "對話紀錄" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("你好。")).toBeInTheDocument();
+    expect(screen.getByText("雨聲壓過車流。")).toBeInTheDocument();
+  });
+
+  it("advances from the focused LOG button with Space or Enter without opening history", async () => {
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+
+    const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
+    logButton.focus();
+    await user.keyboard("{Enter}");
+
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+    expect(onAdvance).toHaveBeenLastCalledWith(token);
+    expect(
+      screen.queryByRole("dialog", { name: "對話紀錄" }),
+    ).not.toBeInTheDocument();
+
+    await user.keyboard(" ");
+
+    expect(onAdvance).toHaveBeenCalledTimes(2);
+    expect(onAdvance).toHaveBeenLastCalledWith(token);
+    expect(
+      screen.queryByRole("dialog", { name: "對話紀錄" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("toggles dialogue history with L when focus is not inside a control", async () => {
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "L", bubbles: true }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
+    screen.getByRole("button", { name: "關閉對話紀錄" }).blur();
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "l", bubbles: true }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("does not toggle dialogue history with L while another control is focused", async () => {
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "l", bubbles: true }),
+    );
+    await Promise.resolve();
+    input.remove();
+
+    expect(
+      screen.queryByRole("dialog", { name: "對話紀錄" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not toggle dialogue history or prevent defaults for modified L shortcuts", async () => {
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
+    const events = [
+      dispatchWindowKeydown({ key: "l", metaKey: true }),
+      dispatchWindowKeydown({ key: "l", ctrlKey: true }),
+      dispatchWindowKeydown({ key: "l", altKey: true }),
+      dispatchWindowKeydown({ key: "L", shiftKey: true }),
+      dispatchWindowKeydown({ key: "l", isComposing: true }),
+    ];
+    await Promise.resolve();
+
+    expect(
+      screen.queryByRole("dialog", { name: "對話紀錄" }),
+    ).not.toBeInTheDocument();
+    for (const event of events) {
+      expect(event.defaultPrevented).toBe(false);
+    }
+  });
+
+  it("closes dialogue history with L while the history close button is focused", async () => {
+    const user = userEvent.setup();
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
+    await waitFor(() => {
+      expect(closeButton).toHaveFocus();
+    });
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "l", bubbles: true }),
+    );
+    await Promise.resolve();
+
+    expect(
+      screen.queryByRole("dialog", { name: "對話紀錄" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not advance with Space or Enter while dialogue history is open", async () => {
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("registers an Escape claim while history is open and restores focus to the LOG button", async () => {
+    const user = userEvent.setup();
+    const { container } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+    const wrapper = container.querySelector(".wrapper") as HTMLElement;
+
+    const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
+    await user.click(logButton);
+
+    expect(isInert(wrapper)).toBe(true);
+    expect(closeTopmostEscapeClaim()).toBe(true);
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
+      expect(isInert(wrapper)).toBe(false);
+      expect(logButton).toHaveFocus();
+    });
+  });
+
+  it("does not release another overlay claim when dialogue history closes", async () => {
+    const user = userEvent.setup();
+    const behindCloser = vi.fn();
+    claimEscape(behindCloser);
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    await user.click(screen.getByRole("button", { name: "關閉對話紀錄" }));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
+    });
+
+    expect(closeTopmostEscapeClaim()).toBe(true);
+    expect(behindCloser).toHaveBeenCalledTimes(1);
   });
 
   it("advances dialogue when Space is pressed on the window", () => {

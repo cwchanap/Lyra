@@ -6,18 +6,18 @@
       "hotspots": {
         "fixed_record": {
           "kind": "rect",
-          "x": 0.195,
-          "y": 0.676,
-          "w": 0.535,
-          "h": 0.276
+          "x": 0.121101,
+          "y": 0.505173,
+          "w": 0.305888,
+          "h": 0.207101
         }
       },
       "characters": {
         "kurose": {
           "kind": "sprite",
-          "assetId": "standee.kurose.standard",
-          "x": 0.744574,
-          "y": 0.24,
+          "assetId": "standee.kurose_toru.standard",
+          "x": 0.549837,
+          "y": 0.189762,
           "w": 0.18,
           "h": 0.76,
           "anchor": "bottomCenter"

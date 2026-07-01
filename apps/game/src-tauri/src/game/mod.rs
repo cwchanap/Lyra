@@ -12,7 +12,7 @@ pub mod unlock;
 pub mod view;
 
 pub use error::GameError;
-pub use view::{GameStateView, ModeView, QueueToken, SceneNavigationIndex};
+pub use view::{DialogueHistoryEntry, GameStateView, ModeView, QueueToken, SceneNavigationIndex};
 
 use scenes::interrogation::{
     phase_id, phase_required, InterrogationSceneAndInventoryCtx, InterrogationSceneState,
@@ -41,6 +41,9 @@ pub struct GameEngine {
     last_visual_cue: LastVisualCue,
     inventory: Inventory,
     next_queue_gen: u64,
+    dialogue_history: Vec<DialogueHistoryEntry>,
+    next_dialogue_history_id: u64,
+    last_recorded_dialogue_token: Option<QueueToken>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -58,10 +61,14 @@ struct GameSnapshot {
     last_visual_cue: LastVisualCue,
     inventory: Inventory,
     next_queue_gen: u64,
+    dialogue_history: Vec<DialogueHistoryEntry>,
+    next_dialogue_history_id: u64,
+    last_recorded_dialogue_token: Option<QueueToken>,
 }
 
 const REEXAMINE_FALLBACK_TEXT: &str = "（沒有新發現。）";
 const WRONG_PRESENT_FALLBACK_TEXT: &str = "（這個提示還不足以推翻證詞。）";
+const DIALOGUE_HISTORY_LIMIT: usize = 50;
 
 impl LastVisualCue {
     fn set_scene_tag(&mut self, text: String, asset_cue: Option<schema::VisualAssetCueJson>) {
@@ -119,8 +126,12 @@ impl GameEngine {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
+            dialogue_history: vec![],
+            next_dialogue_history_id: 1,
+            last_recorded_dialogue_token: None,
         };
         engine.prime_initial_queue()?;
+        engine.record_current_dialogue_history();
         Ok(engine)
     }
 
@@ -157,10 +168,13 @@ impl GameEngine {
         self.last_visual_cue = LastVisualCue::default();
         self.inventory = Inventory::default();
         self.next_queue_gen = queue_gen + 1;
+        self.dialogue_history = vec![];
+        self.next_dialogue_history_id = 1;
+        self.last_recorded_dialogue_token = None;
 
         let result = (|| -> Result<GameStateView, GameError> {
             self.prime_initial_queue()?;
-            Ok(self.view())
+            Ok(self.view_with_history())
         })();
         self.restore_on_error(snapshot, result)
     }
@@ -227,6 +241,83 @@ impl GameEngine {
             chapter: self.chapter_view(),
             scene: self.scene_view(),
             inventory: self.inventory.clone(),
+            dialogue_history: self.dialogue_history.clone(),
+        }
+    }
+
+    fn view_with_history(&mut self) -> GameStateView {
+        self.record_current_dialogue_history();
+        self.view()
+    }
+
+    fn record_current_dialogue_history(&mut self) {
+        let Some(token) = self.current_queue_token() else {
+            return;
+        };
+        if self.last_recorded_dialogue_token.as_ref() == Some(&token) {
+            return;
+        }
+        let Some(item) = self.current_dialogue_item() else {
+            return;
+        };
+
+        let id = self.next_dialogue_history_id;
+        let chapter_title = self.chapters[self.current_chapter_idx.min(self.chapters.len() - 1)]
+            .title
+            .clone();
+        let scene_title = self.current_scene_title();
+        let entry = match item {
+            DialogueItem::Line {
+                speaker,
+                text,
+                portrait: _,
+            } => DialogueHistoryEntry::Line {
+                id,
+                speaker,
+                text,
+                chapter_title,
+                scene_title,
+            },
+            DialogueItem::Action { text } => DialogueHistoryEntry::Action {
+                id,
+                text,
+                chapter_title,
+                scene_title,
+            },
+            DialogueItem::SceneTag { .. } => return,
+        };
+
+        self.next_dialogue_history_id += 1;
+        self.last_recorded_dialogue_token = Some(token);
+        self.dialogue_history.push(entry);
+        let overflow = self
+            .dialogue_history
+            .len()
+            .saturating_sub(DIALOGUE_HISTORY_LIMIT);
+        if overflow > 0 {
+            self.dialogue_history.drain(0..overflow);
+        }
+    }
+
+    fn current_dialogue_item(&self) -> Option<DialogueItem> {
+        match &self.scene {
+            SceneRuntime::Linear(s) => s.current().cloned(),
+            SceneRuntime::Investigation(inv) => inv
+                .pending_queue
+                .as_ref()
+                .and_then(|q| q.items.get(q.cursor).cloned()),
+            SceneRuntime::Interrogation(scene) => scene
+                .pending_queue
+                .as_ref()
+                .and_then(|q| q.items.get(q.cursor).cloned()),
+        }
+    }
+
+    fn current_scene_title(&self) -> String {
+        match &self.scene {
+            SceneRuntime::Linear(s) => s.title.clone(),
+            SceneRuntime::Investigation(inv) => inv.title().to_string(),
+            SceneRuntime::Interrogation(scene) => scene.title().to_string(),
         }
     }
 
@@ -290,7 +381,7 @@ impl GameEngine {
             self.restore_snapshot(snapshot);
             return Err(err);
         }
-        Ok(self.view())
+        Ok(self.view_with_history())
     }
 
     fn peek_just_consumed(&self) -> Option<DialogueItem> {
@@ -717,6 +808,9 @@ impl GameEngine {
             last_visual_cue: self.last_visual_cue.clone(),
             inventory: self.inventory.clone(),
             next_queue_gen: self.next_queue_gen,
+            dialogue_history: self.dialogue_history.clone(),
+            next_dialogue_history_id: self.next_dialogue_history_id,
+            last_recorded_dialogue_token: self.last_recorded_dialogue_token.clone(),
         }
     }
 
@@ -727,6 +821,9 @@ impl GameEngine {
         self.last_visual_cue = snapshot.last_visual_cue;
         self.inventory = snapshot.inventory;
         self.next_queue_gen = snapshot.next_queue_gen;
+        self.dialogue_history = snapshot.dialogue_history;
+        self.next_dialogue_history_id = snapshot.next_dialogue_history_id;
+        self.last_recorded_dialogue_token = snapshot.last_recorded_dialogue_token;
     }
 
     fn restore_on_error<T>(
@@ -865,7 +962,7 @@ impl GameEngine {
                 let queue_gen = self.alloc_queue_gen();
                 self.install_investigation_queue(queue_items, queue_gen)?;
             }
-            Ok(self.view())
+            Ok(self.view_with_history())
         })();
         self.restore_on_error(snapshot, result)
     }
@@ -961,7 +1058,7 @@ impl GameEngine {
                 let queue_gen = self.alloc_queue_gen();
                 self.install_investigation_queue(queue_items, queue_gen)?;
             }
-            Ok(self.view())
+            Ok(self.view_with_history())
         })();
         self.restore_on_error(snapshot, result)
     }
@@ -1049,7 +1146,7 @@ impl GameEngine {
                 self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
                 self.install_investigation_queue(queue_items, queue_gen)?;
             }
-            Ok(self.view())
+            Ok(self.view_with_history())
         })();
         self.restore_on_error(snapshot, result)
     }
@@ -1098,7 +1195,7 @@ impl GameEngine {
         let result = (|| -> Result<GameStateView, GameError> {
             let queue_gen = self.alloc_queue_gen();
             self.install_scene_queue(queue_items, queue_gen)?;
-            Ok(self.view())
+            Ok(self.view_with_history())
         })();
         self.restore_on_error(snapshot, result)
     }
@@ -1147,7 +1244,7 @@ impl GameEngine {
         let result = (|| -> Result<GameStateView, GameError> {
             let queue_gen = self.alloc_queue_gen();
             self.install_scene_queue(queue_items, queue_gen)?;
-            Ok(self.view())
+            Ok(self.view_with_history())
         })();
         self.restore_on_error(snapshot, result)
     }
@@ -1254,7 +1351,7 @@ impl GameEngine {
                 let queue_gen = self.alloc_queue_gen();
                 self.install_scene_queue(queue_items, queue_gen)?;
             }
-            Ok(self.view())
+            Ok(self.view_with_history())
         })();
         self.restore_on_error(snapshot, result)
     }
@@ -1341,7 +1438,7 @@ impl GameEngine {
             };
             let queue_gen = self.alloc_queue_gen();
             self.install_scene_queue(items, queue_gen)?;
-            Ok(self.view())
+            Ok(self.view_with_history())
         })();
         self.restore_on_error(snapshot, result)
     }
@@ -1485,7 +1582,7 @@ impl GameEngine {
                 let queue_gen = self.alloc_queue_gen();
                 self.install_scene_queue(queue_items, queue_gen)?;
             }
-            Ok(self.view())
+            Ok(self.view_with_history())
         })();
         self.restore_on_error(snapshot, result_view)
     }
@@ -1999,6 +2096,7 @@ mod tests {
         TopicJson, UnlockExpr, VisualAssetCueJson,
     };
     use crate::game::state::{EvidenceRecord, StatementRecord};
+    use crate::game::view::DialogueHistoryEntry;
 
     fn investigation_scene_with_intro(
         id: &str,
@@ -2051,6 +2149,9 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: intro_queue_gen + 1,
+            dialogue_history: vec![],
+            next_dialogue_history_id: 1,
+            last_recorded_dialogue_token: None,
         }
     }
 
@@ -2059,6 +2160,86 @@ mod tests {
             ModeView::Dialogue { queue_token, .. } => queue_token.clone(),
             other => panic!("expected dialogue mode, got {other:?}"),
         }
+    }
+
+    fn history_labels(view: &GameStateView) -> Vec<String> {
+        view.dialogue_history
+            .iter()
+            .map(|entry| match entry {
+                DialogueHistoryEntry::Line { speaker, text, .. } => {
+                    format!("{speaker}: {text}")
+                }
+                DialogueHistoryEntry::Action { text, .. } => format!("narration: {text}"),
+            })
+            .collect()
+    }
+
+    fn dialogue_history_fixture_resources(line_count: usize) -> PathBuf {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-dialogue-history-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_0.json" },
+                        { "type": "linear", "file": "chapter_1/scene_1.json" }
+                    ]
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let mut queue_items = Vec::new();
+        queue_items.push(
+            r#"{ "kind": "sceneTag", "text": "opening", "assetCue": { "backgroundAssetId": "background.opening" } }"#.to_string(),
+        );
+        for i in 0..line_count {
+            if i % 2 == 0 {
+                queue_items.push(format!(
+                    r#"{{ "kind": "line", "speaker": "A", "text": "line {i}" }}"#
+                ));
+            } else {
+                queue_items.push(format!(r#"{{ "kind": "action", "text": "action {i}" }}"#));
+            }
+        }
+        fs::write(
+            chapter_dir.join("scene_0.json"),
+            format!(
+                r#"{{
+                    "type": "linear",
+                    "id": "scene_0",
+                    "title": "Opening",
+                    "queue": [{}]
+                }}"#,
+                queue_items.join(",")
+            ),
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("scene_1.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_1",
+                "title": "Next",
+                "queue": [{ "kind": "line", "speaker": "B", "text": "next scene" }]
+            }"#,
+        )
+        .unwrap();
+        d
     }
 
     fn scene_jump_fixture_resources() -> PathBuf {
@@ -2163,6 +2344,91 @@ mod tests {
         )
         .unwrap();
         d
+    }
+
+    #[test]
+    fn dialogue_history_records_initial_visible_item_and_skips_scene_tags() {
+        let d = dialogue_history_fixture_resources(2);
+        let engine = GameEngine::new_started(d.clone()).unwrap();
+        let view = engine.view();
+
+        assert_eq!(history_labels(&view), vec!["A: line 0"]);
+        assert_eq!(view.dialogue_history.len(), 1);
+        match &view.dialogue_history[0] {
+            DialogueHistoryEntry::Line {
+                id,
+                speaker,
+                text,
+                chapter_title,
+                scene_title,
+            } => {
+                assert_eq!(*id, 1);
+                assert_eq!(speaker, "A");
+                assert_eq!(text, "line 0");
+                assert_eq!(chapter_title, "Chapter One");
+                assert_eq!(scene_title, "Opening");
+            }
+            other => panic!("expected line history entry, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn dialogue_history_records_action_and_line_items_and_keeps_newest_fifty() {
+        let d = dialogue_history_fixture_resources(55);
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+
+        while matches!(engine.view().mode, ModeView::Dialogue { .. }) {
+            let token = token_from(&engine.view());
+            engine.advance_dialogue(token).unwrap();
+            if matches!(engine.view().mode, ModeView::GameComplete) {
+                break;
+            }
+        }
+
+        let view = engine.view();
+        assert_eq!(view.dialogue_history.len(), 50);
+        assert_eq!(history_labels(&view).first().unwrap(), "A: line 6");
+        assert_eq!(history_labels(&view).last().unwrap(), "B: next scene");
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn dialogue_history_ignores_stale_queue_tokens() {
+        let d = dialogue_history_fixture_resources(3);
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let stale = token_from(&engine.view());
+
+        let after_first = engine.advance_dialogue(stale.clone()).unwrap();
+        assert_eq!(
+            history_labels(&after_first),
+            vec!["A: line 0", "narration: action 1"]
+        );
+
+        let after_stale = engine.advance_dialogue(stale).unwrap();
+        assert_eq!(
+            history_labels(&after_stale),
+            vec!["A: line 0", "narration: action 1"]
+        );
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn dialogue_history_resets_on_scene_jump() {
+        let d = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        assert_eq!(history_labels(&engine.view()), vec!["A: linear start"]);
+
+        let view = engine
+            .jump_to_scene("chapter_1", "investigation_scene_1")
+            .unwrap();
+
+        assert_eq!(history_labels(&view), vec!["B: investigation intro"]);
+
+        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
@@ -2677,6 +2943,9 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
+            dialogue_history: vec![],
+            next_dialogue_history_id: 1,
+            last_recorded_dialogue_token: None,
         };
 
         engine.prime_initial_queue().unwrap();
@@ -3050,6 +3319,9 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: intro_queue_gen + 1,
+            dialogue_history: vec![],
+            next_dialogue_history_id: 1,
+            last_recorded_dialogue_token: None,
         }
     }
 
@@ -3086,6 +3358,9 @@ mod tests {
             },
             inventory,
             next_queue_gen: 7,
+            dialogue_history: vec![],
+            next_dialogue_history_id: 1,
+            last_recorded_dialogue_token: None,
         }
     }
 
@@ -3904,6 +4179,9 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
+            dialogue_history: vec![],
+            next_dialogue_history_id: 1,
+            last_recorded_dialogue_token: None,
         };
         engine.prime_initial_queue().unwrap();
 
@@ -3970,6 +4248,9 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
+            dialogue_history: vec![],
+            next_dialogue_history_id: 1,
+            last_recorded_dialogue_token: None,
         };
         // prime_initial_queue: no leading tags, cursor at 0 (first Line)
         engine.prime_initial_queue().unwrap();
@@ -4408,11 +4689,13 @@ mod tests {
 
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
         let before = engine.view();
+        assert_eq!(history_labels(&before), vec!["A: before"]);
         let token = token_from(&before);
         let err = engine.advance_dialogue(token).unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
 
         let after = engine.view();
+        assert_eq!(history_labels(&after), vec!["A: before"]);
         match after.mode {
             ModeView::Dialogue { current, .. } => {
                 assert!(
@@ -4631,6 +4914,9 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
+            dialogue_history: vec![],
+            next_dialogue_history_id: 1,
+            last_recorded_dialogue_token: None,
         };
         engine.prime_initial_queue().unwrap();
         let token = token_from(&engine.view());
@@ -4761,6 +5047,9 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
+            dialogue_history: vec![],
+            next_dialogue_history_id: 1,
+            last_recorded_dialogue_token: None,
         };
         engine.prime_initial_queue().unwrap();
         let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();
@@ -4944,6 +5233,9 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
+            dialogue_history: vec![],
+            next_dialogue_history_id: 1,
+            last_recorded_dialogue_token: None,
         };
         engine.prime_initial_queue().unwrap();
 
