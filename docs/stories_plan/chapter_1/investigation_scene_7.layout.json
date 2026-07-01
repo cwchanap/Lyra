@@ -50,7 +50,11 @@
           "h": 0.76,
           "anchor": "bottomCenter"
         }
-      }
+      },
+      "intentionalOverlaps": [
+        { "hotspots": ["takase_replay", "miyake_replay"] },
+        { "hotspots": ["takase_replay", "bean_can"] }
+      ]
     },
     "back_door": {
       "hotspots": {
@@ -86,7 +90,10 @@
           "h": 0.76,
           "anchor": "bottomCenter"
         }
-      }
+      },
+      "intentionalOverlaps": [
+        { "hotspots": ["fire_door_7", "floor_water"] }
+      ]
     }
   }
 }

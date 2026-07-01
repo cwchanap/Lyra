@@ -245,6 +245,18 @@ impl GameEngine {
         }
     }
 
+    /// Build the post-command view while recording the currently focused
+    /// dialogue item into `dialogue_history`.
+    ///
+    /// Dialogue history is captured opportunistically: there is no single
+    /// recording hook, so every `#[tauri::command]` path that advances or
+    /// changes the focused dialogue item MUST return `Ok(self.view_with_history())`
+    /// rather than `Ok(self.view())`. `record_current_dialogue_history` is
+    /// idempotent (it dedups by queue token), so calling this on a path that
+    /// does not advance is harmless — but skipping it on a path that *does*
+    /// advance silently drops the line from the history log. When adding a
+    /// new command that can change `current_dialogue_item`, route its return
+    /// through this method and add coverage in the dialogue-history tests.
     fn view_with_history(&mut self) -> GameStateView {
         self.record_current_dialogue_history();
         self.view()
