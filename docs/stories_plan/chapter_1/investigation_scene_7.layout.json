@@ -43,7 +43,7 @@
       "characters": {
         "kurose": {
           "kind": "sprite",
-          "assetId": "standee.kurose.standard",
+          "assetId": "standee.kurose_toru.standard",
           "x": 0.659543,
           "y": 0.200539,
           "w": 0.18,
@@ -79,7 +79,7 @@
       "characters": {
         "kurose_back_door": {
           "kind": "sprite",
-          "assetId": "standee.kurose.standard",
+          "assetId": "standee.kurose_toru.standard",
           "x": 0.02,
           "y": 0.2,
           "w": 0.18,

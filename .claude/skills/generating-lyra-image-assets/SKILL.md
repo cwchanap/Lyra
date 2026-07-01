@@ -55,6 +55,9 @@ with `bun run scenes:compile`.
    - for backgrounds: no foreground dialogue characters and leave lower-area
      composition usable for the dialogue UI; explicitly request a wide 16:9
      composition
+   - for investigation/explore backgrounds that will host full-body standees:
+     include visible floor or ground at the standee placement area and avoid
+     foreground desks, tables, counters, or props blocking the lower body/feet
    - for portraits: explicitly request a vertical 3:4 character portrait
    - for evidence: explicitly request a square 1:1 object-focused icon
    - for portraits/evidence: transparent output workflow from `imagegen`

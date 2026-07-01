@@ -92,16 +92,50 @@ characters:
 
   - id: kamiya_mio
     displayNames: ["神谷澪"]
-    portraitMode: none
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese female prosecutor in her early thirties, dark tailored jacket,
+      hair tied back with exacting neatness, composed institutional posture,
+      calm precise gaze, restrained pressure without villain exaggeration.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: cool precise expression, calm procedural confidence
 
   - id: kurose_toru
     displayNames: ["黑瀨徹"]
-    portraitMode: none
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese police detective nearly fifty, broad sturdy build, weathered
+      face with deep eye-corner wrinkles from night shifts, rumpled field coat
+      as if slept in a car, muddy worn dress shoes, large steady hands, blunt
+      practical presence.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: tired watchful expression, blunt field-investigator focus
 
   - id: kitami_shuichi
     displayNames: ["北見修一"]
-    portraitMode: none
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese man in his early forties, medium soft build, forgettable generic
+      business-casual outfit, metal-frame glasses slipping slightly, anxious
+      overlooked office-worker face, shoulders drawn inward.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: guarded anxious expression, trying to stay forgettable
 
   - id: contractor_supervisor
     displayNames: ["承包商主管"]
-    portraitMode: none
+    portraitMode: portrait
+    visualPrompt: >
+      Middle-aged Japanese male contractor records supervisor in a plain gray
+      business shirt and understated tie, short neat hair, middle management
+      posture, controlled bureaucratic distance, neutral office expression,
+      practical and cautious.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: neutral guarded expression, procedural reluctance
