@@ -453,6 +453,61 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+/**
+ * Detect hotspot rects that share interior area within the same sublocation.
+ *
+ * Returns one non-blocking warning per overlapping pair. This is a warning
+ * rather than a hard error because overlaps are occasionally intentional
+ * (e.g. a deliberate layered/nested target); but in the common case each
+ * hotspot is a distinct click target rendered as a same-z-index sibling, so
+ * the later-painted hotspot silently wins every click in the shared region.
+ * Surfacing these lets authors notice silent misclicks without blocking the
+ * build. Hotspots in different sublocations are never on screen together, so
+ * only pairs within a single sublocation are compared. Edge-adjacency
+ * (touching but non-overlapping) is allowed.
+ */
+export function detectLayoutOverlaps(
+  layout: InvestigationLayoutSidecar,
+  sourceFile: string,
+): CompileError[] {
+  const warnings: CompileError[] = [];
+  for (const [sublocationId, sublocation] of Object.entries(
+    layout.sublocations,
+  )) {
+    const entries = Object.entries(sublocation.hotspots);
+    for (let i = 0; i < entries.length; i++) {
+      const a = entries[i];
+      if (!a) continue;
+      for (let k = i + 1; k < entries.length; k++) {
+        const b = entries[k];
+        if (!b) continue;
+        if (rectsOverlap(a[1], b[1])) {
+          warnings.push(
+            error(
+              sourceFile,
+              "layoutHotspotOverlap",
+              `Hotspot rects overlap in sublocation "${sublocationId}": "${a[0]}" and "${b[0]}" share clickable area. Separate the rects, or nest deliberately; the later-defined hotspot silently wins clicks in the shared region.`,
+            ),
+          );
+        }
+      }
+    }
+  }
+  return warnings;
+}
+
+function rectsOverlap(a: RectLayout, b: RectLayout): boolean {
+  // Strict interior overlap with a small epsilon so edge-adjacent rects
+  // (touching but sharing no interior pixels) are not flagged. The epsilon
+  // absorbs floating-point accumulation from authored decimal coordinates
+  // (e.g. 0.1 + 0.2 === 0.30000000000000004 in JS); real overlaps in this
+  // domain are orders of magnitude larger, so they remain detected.
+  const EPSILON = 1e-9;
+  const overlapX = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const overlapY = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  return overlapX > EPSILON && overlapY > EPSILON;
+}
+
 function error(
   sourceFile: string,
   code: string,

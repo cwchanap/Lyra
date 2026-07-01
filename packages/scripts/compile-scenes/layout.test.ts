@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   applyInvestigationLayout,
+  detectLayoutOverlaps,
   parseInvestigationLayoutJson,
 } from "./layout";
-import type { ASTInvestigationScene } from "./types";
+import type {
+  ASTInvestigationScene,
+  InvestigationLayoutSidecar,
+  RectLayout,
+} from "./types";
 
 const sourceFile = "chapter_1/investigation_scene_1.layout.json";
 
@@ -346,5 +351,109 @@ describe("applyInvestigationLayout", () => {
     );
     expect(unknownHotspot).toBeDefined();
     expect(unknownHotspot?.sourceFile).toBe(sourceFile);
+  });
+});
+
+function rect(x: number, y: number, w: number, h: number): RectLayout {
+  return { kind: "rect", x, y, w, h };
+}
+
+function layoutWithHotspots(
+  hotspots: Record<string, RectLayout>,
+  options: { sublocation?: string } = {},
+): InvestigationLayoutSidecar {
+  const sublocation = options.sublocation ?? "main_hall";
+  return {
+    version: 1,
+    sceneId: "investigation_scene_1",
+    sublocations: {
+      [sublocation]: { hotspots, characters: {} },
+    },
+  };
+}
+
+describe("detectLayoutOverlaps", () => {
+  it("returns no warnings when hotspots in a sublocation do not overlap", () => {
+    const layout = layoutWithHotspots({
+      a: rect(0.1, 0.1, 0.2, 0.2),
+      b: rect(0.5, 0.5, 0.2, 0.2),
+    });
+
+    expect(detectLayoutOverlaps(layout, sourceFile)).toEqual([]);
+  });
+
+  it("warns once per overlapping hotspot pair within a sublocation", () => {
+    const layout = layoutWithHotspots({
+      kagami: rect(0.245916, 0.289239, 0.220529, 0.201036),
+      slips: rect(0.336339, 0.273903, 0.286957, 0.182609),
+    });
+
+    const warnings = detectLayoutOverlaps(layout, sourceFile);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.code).toBe("layoutHotspotOverlap");
+    expect(warnings[0]?.sourceFile).toBe(sourceFile);
+    expect(warnings[0]?.message).toContain("main_hall");
+    expect(warnings[0]?.message).toContain("kagami");
+    expect(warnings[0]?.message).toContain("slips");
+  });
+
+  it("does not warn when two rects only share an edge (adjacency is allowed)", () => {
+    const layout = layoutWithHotspots({
+      left: rect(0.1, 0.1, 0.2, 0.2),
+      // left.x + left.w === 0.3 === right.x → touching, no shared interior.
+      right: rect(0.3, 0.1, 0.2, 0.2),
+    });
+
+    expect(detectLayoutOverlaps(layout, sourceFile)).toEqual([]);
+  });
+
+  it("warns when one rect is fully nested inside another", () => {
+    const layout = layoutWithHotspots({
+      outer: rect(0.1, 0.1, 0.6, 0.6),
+      inner: rect(0.2, 0.2, 0.1, 0.1),
+    });
+
+    const warnings = detectLayoutOverlaps(layout, sourceFile);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.code).toBe("layoutHotspotOverlap");
+  });
+
+  it("does not compare hotspots across different sublocations", () => {
+    // Same coordinates, but in different sublocations (distinct travel
+    // destinations that are never on screen together) → no overlap.
+    const layout: InvestigationLayoutSidecar = {
+      version: 1,
+      sceneId: "investigation_scene_1",
+      sublocations: {
+        office: {
+          hotspots: { desk: rect(0.2, 0.2, 0.3, 0.3) },
+          characters: {},
+        },
+        lobby: {
+          hotspots: { door: rect(0.2, 0.2, 0.3, 0.3) },
+          characters: {},
+        },
+      },
+    };
+
+    expect(detectLayoutOverlaps(layout, sourceFile)).toEqual([]);
+  });
+
+  it("reports each overlapping pair independently for three mutually overlapping rects", () => {
+    const layout = layoutWithHotspots({
+      a: rect(0.1, 0.1, 0.4, 0.4),
+      b: rect(0.2, 0.2, 0.4, 0.4),
+      c: rect(0.3, 0.3, 0.4, 0.4),
+    });
+
+    // C(3, 2) = 3 distinct overlapping pairs.
+    expect(detectLayoutOverlaps(layout, sourceFile)).toHaveLength(3);
+  });
+
+  it("returns no warnings for an empty sublocation", () => {
+    const layout = layoutWithHotspots({});
+
+    expect(detectLayoutOverlaps(layout, sourceFile)).toEqual([]);
   });
 });

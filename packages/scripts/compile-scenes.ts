@@ -115,4 +115,12 @@ async function runOnce() {
       console.warn(`  - [${w.code}] ${w.message}`);
     }
   }
+  if (result.warnings.length > 0) {
+    console.warn(
+      `[compile-scenes] Layout warnings (${result.warnings.length}):`,
+    );
+    for (const w of result.warnings) {
+      console.warn(`  - [${w.code}] ${w.message}`);
+    }
+  }
 }
