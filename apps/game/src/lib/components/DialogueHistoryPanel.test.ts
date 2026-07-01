@@ -88,4 +88,23 @@ describe("DialogueHistoryPanel", () => {
     await user.keyboard("{Shift>}{Tab}{/Shift}");
     expect(closeButton).toHaveFocus();
   });
+
+  it("does not trap Tab when focus rests on the panel container itself", () => {
+    render(DialogueHistoryPanel, { history, onClose: vi.fn() });
+
+    const panel = screen.getByRole("dialog");
+    panel.focus();
+    expect(panel).toHaveFocus();
+
+    const event = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    panel.dispatchEvent(event);
+
+    // Focus is neither the first nor last focusable element, so the trap
+    // leaves the default Tab traversal untouched.
+    expect(event.defaultPrevented).toBe(false);
+  });
 });

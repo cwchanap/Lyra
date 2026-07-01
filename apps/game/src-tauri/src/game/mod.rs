@@ -3688,6 +3688,108 @@ mod tests {
     }
 
     #[test]
+    fn reexamine_evidence_records_reexamine_dialogue_in_history() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-reexamine-evidence-history-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        // The reexamine queue does not exhaust (it holds a real Line), so the
+        // next scene is never loaded and a valid file is not required.
+        fs::write(
+            chapter_dir.join("interrogation_scene_2.json"),
+            r#"{
+                "type": "linear",
+                "id": "interrogation_scene_2",
+                "title": "Next",
+                "queue": [{ "kind": "line", "speaker": "Z", "text": "next" }]
+            }"#,
+        )
+        .unwrap();
+
+        let inventory = Inventory {
+            evidence: vec![EvidenceRecord {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                image_asset_id: None,
+                on_reexamine: Some(vec![DialogueItem::Line {
+                    speaker: "Detective".into(),
+                    text: "reexamining note".into(),
+                    portrait: None,
+                }]),
+                collected_in_chapter_id: "chapter_1".into(),
+                collected_in_scene_id: "interrogation_scene_1".into(),
+            }],
+            statements: vec![],
+        };
+        let mut engine = completed_interrogation_engine_with_bad_next_scene(d.clone(), inventory);
+
+        let view = engine.reexamine_evidence("note").unwrap();
+
+        assert_eq!(history_labels(&view), vec!["Detective: reexamining note"]);
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn reexamine_statement_records_reexamine_dialogue_in_history() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-reexamine-statement-history-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_2.json"),
+            r#"{
+                "type": "linear",
+                "id": "interrogation_scene_2",
+                "title": "Next",
+                "queue": [{ "kind": "line", "speaker": "Z", "text": "next" }]
+            }"#,
+        )
+        .unwrap();
+
+        let inventory = Inventory {
+            evidence: vec![],
+            statements: vec![StatementRecord {
+                id: "alibi".into(),
+                speaker: "Witness".into(),
+                content: "Alibi".into(),
+                on_reexamine: Some(vec![DialogueItem::Line {
+                    speaker: "Detective".into(),
+                    text: "reexamining alibi".into(),
+                    portrait: None,
+                }]),
+                acquired_in_chapter_id: "chapter_1".into(),
+                acquired_in_scene_id: "interrogation_scene_1".into(),
+            }],
+        };
+        let mut engine = completed_interrogation_engine_with_bad_next_scene(d.clone(), inventory);
+
+        let view = engine.reexamine_statement("alibi").unwrap();
+
+        assert_eq!(history_labels(&view), vec!["Detective: reexamining alibi"]);
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
     fn present_testimony_item_rejects_non_interrogation_before_missing_inventory() {
         let scene = investigation_scene_with_intro("investigation_scene_1", vec![]);
         let mut engine = empty_engine_with_scene(scene, 1);
