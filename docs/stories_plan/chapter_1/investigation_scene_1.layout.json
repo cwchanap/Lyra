@@ -38,9 +38,9 @@
           "kind": "sprite",
           "assetId": "standee.hayasaka_akane.standard",
           "x": 0,
-          "y": 0.115365,
-          "w": 0.234242,
-          "h": 0.849813,
+          "y": 0.045,
+          "w": 0.31,
+          "h": 0.94,
           "anchor": "bottomCenter"
         }
       }
