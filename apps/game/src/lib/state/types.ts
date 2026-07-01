@@ -27,6 +27,23 @@ export type DialogueItem =
       portrait?: PortraitRef | null;
     };
 
+export type DialogueHistoryEntry =
+  | {
+      id: number;
+      kind: "line";
+      speaker: string;
+      text: string;
+      chapterTitle: string;
+      sceneTitle: string;
+    }
+  | {
+      id: number;
+      kind: "action";
+      text: string;
+      chapterTitle: string;
+      sceneTitle: string;
+    };
+
 export type QueueToken = {
   sceneId: string;
   queueGen: number;
@@ -187,6 +204,7 @@ export type GameStateView = {
   chapter: ChapterView;
   scene: SceneView;
   inventory: Inventory;
+  dialogueHistory: DialogueHistoryEntry[];
 };
 
 export type GameError = {
