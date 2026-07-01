@@ -799,7 +799,7 @@ mod tests {
     fn serializes_standee_type_as_lowercase() {
         let asset_ref = AssetRefJson {
             asset_type: AssetTypeJson::Standee,
-            asset_id: "standee.kurose.standard".to_string(),
+            asset_id: "standee.kurose_toru.standard".to_string(),
         };
         let json = serde_json::to_string(&asset_ref).unwrap();
         assert!(json.contains(r#""type":"standee""#));
