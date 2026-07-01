@@ -1,22 +1,31 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import {
     placeholderForMissingStoryAsset,
     resolveStoryAsset,
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
-  import type { DialogueItem, QueueToken } from "../state/types";
+  import { claimEscape } from "$lib/state/escape-coordinator";
+  import DialogueHistoryPanel from "./DialogueHistoryPanel.svelte";
+  import type {
+    DialogueHistoryEntry,
+    DialogueItem,
+    QueueToken,
+  } from "../state/types";
 
   let {
     current,
     queueToken,
     onAdvance,
     onAdvanceFeedback,
+    history = [],
     disabled = false,
   }: {
     current: DialogueItem;
     queueToken: QueueToken;
     onAdvance: (t: QueueToken) => void;
     onAdvanceFeedback?: () => void;
+    history?: DialogueHistoryEntry[];
     disabled?: boolean;
   } = $props();
 
@@ -30,6 +39,8 @@
   ]);
 
   let portraitAsset = $state<ResolvedStoryAsset | null>(null);
+  let historyOpen = $state(false);
+  let logButton: HTMLButtonElement | undefined = $state();
   const portraitAssetId = $derived(
     current.kind === "line" ? (current.portrait?.assetId ?? null) : null,
   );
@@ -67,20 +78,98 @@
     );
   }
 
-  function handleClick() {
+  function dispatchAdvance() {
     onAdvanceFeedback?.();
     if (disabled) return;
     onAdvance(queueToken);
   }
-  function handleKey(e: KeyboardEvent) {
+
+  function handleClick() {
+    dispatchAdvance();
+  }
+
+  function handleBoxKeydown(e: KeyboardEvent) {
+    if (e.target !== e.currentTarget) return;
     if (e.repeat) return;
     if (e.key !== " " && e.key !== "Enter") return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (historyOpen) return;
+    dispatchAdvance();
+  }
+
+  function openHistory() {
+    historyOpen = true;
+  }
+
+  async function closeHistory() {
+    if (!historyOpen) return;
+    historyOpen = false;
+    await tick();
+    logButton?.focus();
+  }
+
+  function toggleHistory() {
+    if (historyOpen) {
+      void closeHistory();
+      return;
+    }
+    openHistory();
+  }
+
+  const interactiveFocusSelector = [
+    "button",
+    "a[href]",
+    "input",
+    "select",
+    "textarea",
+    '[role="button"]',
+    '[tabindex]:not([tabindex="-1"])',
+    '[contenteditable="true"]',
+  ].join(",");
+
+  function isShortcutBlockedByFocusedControl() {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || active === document.body) {
+      return false;
+    }
+    if (
+      active === logButton ||
+      active.closest(".box") ||
+      active.closest(".history-panel")
+    ) {
+      return false;
+    }
+    return Boolean(active.closest(interactiveFocusSelector));
+  }
+
+  $effect(() => {
+    if (!historyOpen) return;
+    const release = claimEscape(closeHistory);
+    return () => {
+      release();
+    };
+  });
+
+  function handleKey(e: KeyboardEvent) {
+    if (e.repeat) return;
+
+    if (e.key === "l" || e.key === "L") {
+      if (isShortcutBlockedByFocusedControl()) return;
+      e.preventDefault();
+      toggleHistory();
+      return;
+    }
+
+    if (e.key !== " " && e.key !== "Enter") return;
+    if (historyOpen) {
+      e.preventDefault();
+      return;
+    }
     const active = document.activeElement;
     if (active && active !== document.body) return;
     e.preventDefault();
-    onAdvanceFeedback?.();
-    if (disabled) return;
-    onAdvance(queueToken);
+    dispatchAdvance();
   }
 </script>
 
@@ -109,17 +198,37 @@
   />
 {/if}
 
+{#if historyOpen}
+  <DialogueHistoryPanel {history} onClose={closeHistory} />
+{/if}
+
 <div class="wrapper" class:line={current.kind === "line"}>
-  <button
+  <div
     class="box"
     class:scene={current.kind === "sceneTag"}
     class:action={current.kind === "action"}
     class:line={current.kind === "line"}
+    role="button"
+    tabindex="0"
     onclick={handleClick}
-    type="button"
+    onkeydown={handleBoxKeydown}
     aria-label="推進對話"
     aria-disabled={disabled}
   >
+    <button
+      bind:this={logButton}
+      class="log-button"
+      type="button"
+      aria-label="開啟對話紀錄"
+      aria-pressed={historyOpen}
+      onclick={(event) => {
+        event.stopPropagation();
+        toggleHistory();
+      }}
+    >
+      LOG
+    </button>
+
     {#if current.kind === "sceneTag"}
       <span class="kind">場 · SCENE</span>
       <p class="text-scene">（場景切換）</p>
@@ -140,7 +249,7 @@
       <span class="key">Space</span>
       <span class="arrow">▶</span>
     </div>
-  </button>
+  </div>
 </div>
 
 <style>
@@ -155,8 +264,10 @@
   }
 
   .box {
+    position: relative;
     width: 100%;
-    padding: 22px 28px 24px;
+    box-sizing: border-box;
+    padding: 22px 104px 24px 28px;
     background: rgba(20, 20, 31, 0.94);
     color: var(--bone);
     border: 1px solid var(--rule-strong);
@@ -178,14 +289,41 @@
       background 0.2s;
   }
 
-  .box:hover:not([aria-disabled="true"]) {
+  .box:hover:not([aria-disabled="true"]),
+  .box:focus-visible {
     border-color: var(--crimson);
     background: rgba(29, 29, 43, 0.96);
+    outline: none;
   }
 
   .box[aria-disabled="true"] {
     cursor: wait;
     opacity: 0.7;
+  }
+
+  .log-button {
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    z-index: 1;
+    min-width: 52px;
+    min-height: 32px;
+    padding: 7px 10px 6px;
+    border: 1px solid var(--rule-strong);
+    background: rgba(236, 228, 207, 0.04);
+    color: var(--bone);
+    cursor: pointer;
+    font-family: var(--impact);
+    font-size: 10px;
+    letter-spacing: 0.22em;
+  }
+
+  .log-button:hover,
+  .log-button:focus-visible,
+  .log-button[aria-pressed="true"] {
+    border-color: var(--crimson);
+    background: var(--crimson-soft);
+    outline: none;
   }
 
   .portrait {

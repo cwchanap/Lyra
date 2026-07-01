@@ -248,6 +248,7 @@
         queueToken={gameState.value.mode.queueToken}
         onAdvance={advanceDialogue}
         onAdvanceFeedback={() => playGameplaySfxEvent("ui:menu-confirm")}
+        history={gameState.value.dialogueHistory}
         disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "explore"}
