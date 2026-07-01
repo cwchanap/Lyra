@@ -140,6 +140,10 @@
     return Boolean(active.closest(interactiveFocusSelector));
   }
 
+  function isModifiedHistoryShortcut(e: KeyboardEvent) {
+    return e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.isComposing;
+  }
+
   $effect(() => {
     if (!historyOpen) return;
     const release = claimEscape(closeHistory);
@@ -152,6 +156,7 @@
     if (e.repeat) return;
 
     if (e.key === "l" || e.key === "L") {
+      if (isModifiedHistoryShortcut(e)) return;
       if (isShortcutBlockedByFocusedControl()) return;
       e.preventDefault();
       toggleHistory();
