@@ -172,6 +172,11 @@
 
     if (e.key === "l" || e.key === "L") {
       if (isModifiedHistoryShortcut(e)) return;
+      if (historyOpen) {
+        e.preventDefault();
+        toggleHistory();
+        return;
+      }
       if (isShortcutBlockedByFocusedControl()) return;
       e.preventDefault();
       toggleHistory();

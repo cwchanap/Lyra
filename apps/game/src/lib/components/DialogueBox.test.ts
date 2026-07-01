@@ -389,7 +389,7 @@ describe("DialogueBox", () => {
     }
   });
 
-  it("does not toggle dialogue history with L while the history close button is focused", async () => {
+  it("closes dialogue history with L while the history close button is focused", async () => {
     const user = userEvent.setup();
     renderDialogueBox({ kind: "action", text: "hello" }, { history });
 
@@ -405,8 +405,8 @@ describe("DialogueBox", () => {
     await Promise.resolve();
 
     expect(
-      screen.getByRole("dialog", { name: "對話紀錄" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("dialog", { name: "對話紀錄" }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not advance with Space or Enter while dialogue history is open", async () => {
