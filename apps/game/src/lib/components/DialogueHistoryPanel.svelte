@@ -109,7 +109,7 @@
     bottom: 170px;
     z-index: 35;
     width: min(900px, calc(100vw - 56px));
-    max-height: min(460px, calc(100dvh - 220px));
+    height: min(460px, calc(100dvh - 220px));
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     gap: 18px;
@@ -117,7 +117,7 @@
     overflow: hidden;
     transform: translateX(-50%);
     border: 1px solid var(--rule-strong);
-    background: rgba(8, 8, 14, 0.96);
+    background: rgba(8, 8, 14, 0.99);
     color: var(--bone);
     box-shadow: 0 22px 70px rgba(0, 0, 0, 0.52);
   }
@@ -212,7 +212,7 @@
     .history-panel {
       bottom: 150px;
       width: min(900px, calc(100vw - 36px));
-      max-height: min(440px, calc(100dvh - 190px));
+      height: min(440px, calc(100dvh - 190px));
       padding: 18px;
     }
   }

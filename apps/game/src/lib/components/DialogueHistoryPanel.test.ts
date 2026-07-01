@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import DialogueHistoryPanel from "./DialogueHistoryPanel.svelte";
 import type { DialogueHistoryEntry } from "../state/types";
 
@@ -21,6 +23,13 @@ const history: DialogueHistoryEntry[] = [
     sceneTitle: "Opening",
   },
 ];
+
+function dialogueHistoryPanelSource() {
+  return readFileSync(
+    join(process.cwd(), "src/lib/components/DialogueHistoryPanel.svelte"),
+    "utf8",
+  );
+}
 
 describe("DialogueHistoryPanel", () => {
   it("uses modal dialog semantics while focus is trapped", () => {
@@ -44,6 +53,15 @@ describe("DialogueHistoryPanel", () => {
     render(DialogueHistoryPanel, { history: [], onClose: vi.fn() });
 
     expect(screen.getByText("尚無對話紀錄")).toBeInTheDocument();
+  });
+
+  it("uses a fixed responsive panel height with a high-opacity backdrop", () => {
+    const source = dialogueHistoryPanelSource();
+
+    expect(source).toContain("height: min(460px, calc(100dvh - 220px));");
+    expect(source).toContain("height: min(440px, calc(100dvh - 190px));");
+    expect(source).not.toContain("max-height:");
+    expect(source).toContain("background: rgba(8, 8, 14, 0.99);");
   });
 
   it("calls onClose from the close button", async () => {

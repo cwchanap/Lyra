@@ -301,20 +301,30 @@ describe("DialogueBox", () => {
     expect(screen.getByText("雨聲壓過車流。")).toBeInTheDocument();
   });
 
-  it("opens dialogue history from the LOG button keyboard activation without advancing", async () => {
+  it("advances from the focused LOG button with Space or Enter without opening history", async () => {
     const user = userEvent.setup();
     const { onAdvance } = renderDialogueBox(
       { kind: "action", text: "hello" },
       { history },
     );
 
-    screen.getByRole("button", { name: "開啟對話紀錄" }).focus();
+    const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
+    logButton.focus();
     await user.keyboard("{Enter}");
 
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+    expect(onAdvance).toHaveBeenLastCalledWith(token);
     expect(
-      screen.getByRole("dialog", { name: "對話紀錄" }),
-    ).toBeInTheDocument();
-    expect(onAdvance).not.toHaveBeenCalled();
+      screen.queryByRole("dialog", { name: "對話紀錄" }),
+    ).not.toBeInTheDocument();
+
+    await user.keyboard(" ");
+
+    expect(onAdvance).toHaveBeenCalledTimes(2);
+    expect(onAdvance).toHaveBeenLastCalledWith(token);
+    expect(
+      screen.queryByRole("dialog", { name: "對話紀錄" }),
+    ).not.toBeInTheDocument();
   });
 
   it("toggles dialogue history with L when focus is not inside a control", async () => {
