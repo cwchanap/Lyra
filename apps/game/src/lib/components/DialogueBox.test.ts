@@ -62,6 +62,13 @@ function dialogueBoxSource() {
   );
 }
 
+function isInert(element: HTMLElement) {
+  return Boolean(
+    (element as HTMLElement & { inert?: boolean }).inert ||
+    element.hasAttribute("inert"),
+  );
+}
+
 describe("DialogueBox", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -379,16 +386,22 @@ describe("DialogueBox", () => {
 
   it("registers an Escape claim while history is open and restores focus to the LOG button", async () => {
     const user = userEvent.setup();
-    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+    const { container } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+    const wrapper = container.querySelector(".wrapper") as HTMLElement;
 
     const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
     await user.click(logButton);
 
+    expect(isInert(wrapper)).toBe(true);
     expect(closeTopmostEscapeClaim()).toBe(true);
     await waitFor(() => {
       expect(
         screen.queryByRole("dialog", { name: "對話紀錄" }),
       ).not.toBeInTheDocument();
+      expect(isInert(wrapper)).toBe(false);
       expect(logButton).toHaveFocus();
     });
   });

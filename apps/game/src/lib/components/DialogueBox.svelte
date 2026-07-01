@@ -199,7 +199,7 @@
   <DialogueHistoryPanel {history} onClose={closeHistory} />
 {/if}
 
-<div class="wrapper" class:line={current.kind === "line"}>
+<div class="wrapper" class:line={current.kind === "line"} inert={historyOpen}>
   <button
     bind:this={logButton}
     class="log-button"
