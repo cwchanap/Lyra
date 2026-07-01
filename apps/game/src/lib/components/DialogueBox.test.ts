@@ -551,4 +551,142 @@ describe("DialogueBox", () => {
 
     expect(onAdvance).not.toHaveBeenCalled();
   });
+
+  it("uses the default empty history when no history prop is passed", () => {
+    const onAdvance = vi.fn();
+    render(DialogueBox, {
+      current: { kind: "action", text: "hello" },
+      queueToken: token,
+      onAdvance,
+    });
+
+    // The LOG button still renders; opening history shows the empty state.
+    expect(
+      screen.getByRole("button", { name: "開啟對話紀錄" }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens dialogue history with L while the LOG button is focused", async () => {
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
+    const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
+    logButton.focus();
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "l", bubbles: true }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("does not toggle history from a keyboard-activated click on the LOG button", async () => {
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+
+    const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
+    logButton.focus();
+    // A keyboard-activated click carries detail 0 and must not toggle history.
+    fireEvent.click(logButton, { detail: 0 });
+
+    expect(
+      screen.queryByRole("dialog", { name: "對話紀錄" }),
+    ).not.toBeInTheDocument();
+    // The LOG button keydown handler still advances dialogue on Space/Enter.
+    await user.keyboard("{Enter}");
+    expect(onAdvance).toHaveBeenCalledWith(token);
+  });
+
+  it("does not advance when a non-Space/Enter key is pressed on the focused advance control", () => {
+    const { onAdvance } = renderDialogueBox({ kind: "action", text: "hello" });
+    const advanceControl = screen.getByRole("button", { name: "推進對話" });
+
+    advanceControl.focus();
+    fireEvent.keyDown(advanceControl, { key: "ArrowRight" });
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("does not advance when a held Space repeats on the focused advance control", () => {
+    const { onAdvance } = renderDialogueBox({ kind: "action", text: "hello" });
+    const advanceControl = screen.getByRole("button", { name: "推進對話" });
+
+    advanceControl.focus();
+    fireEvent.keyDown(advanceControl, { key: " ", repeat: true });
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("does not advance when keydown bubbles from a child of the advance control", () => {
+    const { onAdvance, container } = renderDialogueBox({
+      kind: "action",
+      text: "hello",
+    });
+    const advanceControl = screen.getByRole("button", { name: "推進對話" });
+    advanceControl.focus();
+    const text = container.querySelector(".text-action") as HTMLElement;
+
+    fireEvent.keyDown(text, { key: " ", bubbles: true });
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("does not advance when a non-Space/Enter key is pressed on the focused LOG button", () => {
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+    const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
+
+    logButton.focus();
+    fireEvent.keyDown(logButton, { key: "ArrowRight" });
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("does not advance when a held Space repeats on the focused LOG button", () => {
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+    const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
+
+    logButton.focus();
+    fireEvent.keyDown(logButton, { key: " ", repeat: true });
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("does not advance from the advance control keydown while history is open", async () => {
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    const advanceControl = screen.getByRole("button", { name: "推進對話" });
+    fireEvent.keyDown(advanceControl, { key: " " });
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("does not advance from the LOG button keydown while history is open", async () => {
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
+    fireEvent.keyDown(logButton, { key: " " });
+
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
 });
