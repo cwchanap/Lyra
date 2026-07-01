@@ -133,11 +133,7 @@
     if (!(active instanceof HTMLElement) || active === document.body) {
       return false;
     }
-    if (
-      active === logButton ||
-      active.closest(".box") ||
-      active.closest(".history-panel")
-    ) {
+    if (active === logButton || active.closest(".box")) {
       return false;
     }
     return Boolean(active.closest(interactiveFocusSelector));

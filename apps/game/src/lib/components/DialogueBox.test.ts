@@ -279,6 +279,7 @@ describe("DialogueBox", () => {
         screen.getByRole("dialog", { name: "對話紀錄" }),
       ).toBeInTheDocument();
     });
+    screen.getByRole("button", { name: "關閉對話紀錄" }).blur();
 
     window.dispatchEvent(
       new KeyboardEvent("keydown", { key: "l", bubbles: true }),
@@ -306,6 +307,26 @@ describe("DialogueBox", () => {
     expect(
       screen.queryByRole("dialog", { name: "對話紀錄" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("does not toggle dialogue history with L while the history close button is focused", async () => {
+    const user = userEvent.setup();
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
+    await waitFor(() => {
+      expect(closeButton).toHaveFocus();
+    });
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "l", bubbles: true }),
+    );
+    await Promise.resolve();
+
+    expect(
+      screen.getByRole("dialog", { name: "對話紀錄" }),
+    ).toBeInTheDocument();
   });
 
   it("does not advance with Space or Enter while dialogue history is open", async () => {
