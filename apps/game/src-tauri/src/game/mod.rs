@@ -2381,7 +2381,7 @@ mod tests {
 
         while matches!(engine.view().mode, ModeView::Dialogue { .. }) {
             let token = token_from(&engine.view());
-            let _ = engine.advance_dialogue(token);
+            engine.advance_dialogue(token).unwrap();
             if matches!(engine.view().mode, ModeView::GameComplete) {
                 break;
             }
