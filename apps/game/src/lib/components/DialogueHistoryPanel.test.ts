@@ -77,19 +77,38 @@ describe("DialogueHistoryPanel", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("traps Tab focus between panel controls", async () => {
+  it("traps Tab focus between panel controls and the scrollable list", async () => {
     const user = userEvent.setup();
     render(DialogueHistoryPanel, { history, onClose: vi.fn() });
 
     const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
+    const list = screen.getByRole("list", { name: "對話紀錄列表" });
+
+    // onMount focuses the close button, so the first forward Tab moves into
+    // the scrollable list — keyboard-only users can now reach it and scroll
+    // older entries with arrow/PageUp/PageDown keys.
+    await user.tab();
+    expect(list).toHaveFocus();
+
+    // Tabbing forward from the last focusable element (the list) wraps back
+    // to the first (the close button).
     await user.tab();
     expect(closeButton).toHaveFocus();
 
-    await user.tab();
-    expect(closeButton).toHaveFocus();
+    // Shift+Tab from the close button wraps back to the list.
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(list).toHaveFocus();
 
+    // Shift+Tab from the list wraps back to the close button.
     await user.keyboard("{Shift>}{Tab}{/Shift}");
     expect(closeButton).toHaveFocus();
+  });
+
+  it("exposes the scrollable history list with a keyboard-reachable tabindex", () => {
+    render(DialogueHistoryPanel, { history, onClose: vi.fn() });
+
+    const list = screen.getByRole("list", { name: "對話紀錄列表" });
+    expect(list).toHaveAttribute("tabindex", "0");
   });
 
   it("does not trap Tab when focus rests on the panel container itself", () => {
