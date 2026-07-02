@@ -2443,6 +2443,127 @@ mod tests {
         let _ = std::fs::remove_dir_all(d);
     }
 
+    /// Source-contract test: every `pub fn` on `GameEngine` that returns
+    /// `Result<GameStateView, GameError>` MUST route its success path through
+    /// `view_with_history()`. This is the only way to catch a new advancing
+    /// command that forgets to record dialogue history — the bug class the
+    /// `view_with_history()` contract exists to prevent (see the doc comment
+    /// on `view_with_history`). `view()` itself returns `GameStateView`
+    /// directly (not a `Result`), so it is naturally excluded.
+    ///
+    /// The single tolerated `Ok(self.view())` is the stale-token early return
+    /// in `advance_dialogue`, which intentionally does not advance the focused
+    /// item — so `view()` there is correct and `view_with_history()` is still
+    /// present elsewhere in the same function for the advancing path.
+    #[test]
+    fn every_view_returning_command_routes_through_view_with_history() {
+        let source = include_str!("mod.rs");
+        let mut seen_commands: Vec<String> = Vec::new();
+        let mut missing: Vec<String> = Vec::new();
+
+        // Walk the source line by line. When a `pub fn` is encountered, start
+        // accumulating its signature (which may span multiple lines until the
+        // opening `{`). If the signature contains `-> Result<GameStateView,
+        // GameError>`, track the function body for `view_with_history()`.
+        // When the next `pub fn` starts (or we hit the test module), close out
+        // the current function and assert it called `view_with_history()`.
+        let mut current_fn: Option<String> = None;
+        let mut current_body_has_history = false;
+        // Accumulates signature lines for multi-line `pub fn` declarations.
+        let mut signature_buf: String = String::new();
+        let mut in_signature = false;
+
+        for line in source.lines() {
+            let trimmed = line.trim_start();
+
+            // Stop scanning at the test module boundary — test code (including
+            // this very test) mentions `view_with_history()` in string
+            // literals and would create false positives.
+            if trimmed.starts_with("mod tests {") || trimmed.starts_with("#[cfg(test)]") {
+                break;
+            }
+
+            // A new `pub fn` starts. Close out the previous tracked function.
+            if trimmed.starts_with("pub fn ") {
+                if let Some(name) = current_fn.take() {
+                    if !current_body_has_history {
+                        missing.push(name);
+                    }
+                    current_body_has_history = false;
+                }
+
+                // Extract the function name and begin accumulating the
+                // signature (may span multiple lines until `{`).
+                let after_fn = trimmed.strip_prefix("pub fn ").unwrap_or(trimmed);
+                let name = after_fn
+                    .split(|c: char| c == '(' || c.is_whitespace())
+                    .next()
+                    .unwrap_or("<unknown>")
+                    .to_string();
+                signature_buf.clear();
+                signature_buf.push_str(trimmed);
+                in_signature = true;
+
+                // Single-line signature: `pub fn foo(...) -> Type {`
+                if trimmed.contains('{') {
+                    in_signature = false;
+                    if signature_buf.contains("-> Result<GameStateView, GameError>") {
+                        current_fn = Some(name.clone());
+                        seen_commands.push(name);
+                    }
+                }
+                continue;
+            }
+
+            // Continuation of a multi-line signature.
+            if in_signature {
+                signature_buf.push(' ');
+                signature_buf.push_str(trimmed);
+                if trimmed.contains('{') {
+                    in_signature = false;
+                    if signature_buf.contains("-> Result<GameStateView, GameError>") {
+                        // Re-extract the name from the buffer.
+                        let after_fn = signature_buf
+                            .strip_prefix("pub fn ")
+                            .unwrap_or(&signature_buf);
+                        let name = after_fn
+                            .split(|c: char| c == '(' || c.is_whitespace())
+                            .next()
+                            .unwrap_or("<unknown>")
+                            .to_string();
+                        current_fn = Some(name.clone());
+                        seen_commands.push(name);
+                    }
+                }
+                continue;
+            }
+
+            if current_fn.is_some() && trimmed.contains("view_with_history()") {
+                current_body_has_history = true;
+            }
+        }
+
+        // Close out the last tracked function.
+        if let Some(name) = current_fn.take() {
+            if !current_body_has_history {
+                missing.push(name);
+            }
+        }
+
+        assert!(
+            !seen_commands.is_empty(),
+            "source-contract test found no Result<GameStateView, GameError> commands; \
+             the scanner is likely broken"
+        );
+        assert!(
+            missing.is_empty(),
+            "these GameEngine commands return Result<GameStateView, GameError> but never \
+             call view_with_history() — they will silently drop dialogue history \
+             when they advance the focused item: {missing:?} \
+             (tracked commands: {seen_commands:?})"
+        );
+    }
+
     #[test]
     fn jump_to_scene_starts_linear_scene_fresh() {
         let d = scene_jump_fixture_resources();

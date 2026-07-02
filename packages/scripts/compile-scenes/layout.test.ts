@@ -397,9 +397,11 @@ describe("detectLayoutOverlaps", () => {
   });
 
   it("warns once per overlapping hotspot pair within a sublocation", () => {
+    // Near-identical rects: overlap is ~95% of the smaller rect → above the
+    // 80% threshold.
     const layout = layoutWithHotspots({
-      kagami: rect(0.245916, 0.289239, 0.220529, 0.201036),
-      slips: rect(0.336339, 0.273903, 0.286957, 0.182609),
+      kagami: rect(0.25, 0.29, 0.22, 0.2),
+      slips: rect(0.26, 0.29, 0.22, 0.2),
     });
 
     const warnings = detectLayoutOverlaps(layout, sourceFile);
@@ -410,6 +412,16 @@ describe("detectLayoutOverlaps", () => {
     expect(warnings[0]?.message).toContain("main_hall");
     expect(warnings[0]?.message).toContain("kagami");
     expect(warnings[0]?.message).toContain("slips");
+  });
+
+  it("does not warn when overlap is below the 80% threshold", () => {
+    // Partial corner overlap: ~49% of the smaller rect → below threshold.
+    const layout = layoutWithHotspots({
+      kagami: rect(0.245916, 0.289239, 0.220529, 0.201036),
+      slips: rect(0.336339, 0.273903, 0.286957, 0.182609),
+    });
+
+    expect(detectLayoutOverlaps(layout, sourceFile)).toEqual([]);
   });
 
   it("does not warn when two rects only share an edge (adjacency is allowed)", () => {
@@ -455,10 +467,12 @@ describe("detectLayoutOverlaps", () => {
   });
 
   it("reports each overlapping pair independently for three mutually overlapping rects", () => {
+    // Near-identical rects offset by 0.01: each pair overlaps ~90-95% of the
+    // smaller rect → all above the 80% threshold.
     const layout = layoutWithHotspots({
       a: rect(0.1, 0.1, 0.4, 0.4),
-      b: rect(0.2, 0.2, 0.4, 0.4),
-      c: rect(0.3, 0.3, 0.4, 0.4),
+      b: rect(0.11, 0.11, 0.4, 0.4),
+      c: rect(0.12, 0.12, 0.4, 0.4),
     });
 
     // C(3, 2) = 3 distinct overlapping pairs.
@@ -474,8 +488,9 @@ describe("detectLayoutOverlaps", () => {
   it("suppresses a warning for a pair listed in intentionalOverlaps", () => {
     const layout = layoutWithHotspots(
       {
+        // Near-identical rects: ~95% overlap → would warn without opt-out.
         a: rect(0.1, 0.1, 0.4, 0.4),
-        b: rect(0.2, 0.2, 0.4, 0.4),
+        b: rect(0.11, 0.11, 0.4, 0.4),
       },
       { intentionalOverlaps: [{ hotspots: ["a", "b"] }] },
     );
@@ -487,7 +502,7 @@ describe("detectLayoutOverlaps", () => {
     const layout = layoutWithHotspots(
       {
         a: rect(0.1, 0.1, 0.4, 0.4),
-        b: rect(0.2, 0.2, 0.4, 0.4),
+        b: rect(0.11, 0.11, 0.4, 0.4),
       },
       { intentionalOverlaps: [{ hotspots: ["b", "a"] }] },
     );
@@ -498,9 +513,11 @@ describe("detectLayoutOverlaps", () => {
   it("suppresses only the listed pair, not other overlapping pairs", () => {
     const layout = layoutWithHotspots(
       {
+        // Near-identical rects: each pair overlaps >80% → all would warn
+        // without opt-out.
         a: rect(0.1, 0.1, 0.4, 0.4),
-        b: rect(0.2, 0.2, 0.4, 0.4),
-        c: rect(0.3, 0.3, 0.4, 0.4),
+        b: rect(0.11, 0.11, 0.4, 0.4),
+        c: rect(0.12, 0.12, 0.4, 0.4),
       },
       { intentionalOverlaps: [{ hotspots: ["a", "b"] }] },
     );

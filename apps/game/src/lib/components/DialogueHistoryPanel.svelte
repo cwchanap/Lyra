@@ -62,7 +62,7 @@
   bind:this={panel}
   class="history-panel"
   role="dialog"
-  aria-modal="true"
+  aria-modal="false"
   aria-labelledby="dialogue-history-title"
   tabindex="-1"
   onkeydown={handleKeydown}
