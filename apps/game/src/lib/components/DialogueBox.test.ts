@@ -301,7 +301,7 @@ describe("DialogueBox", () => {
     expect(screen.getByText("雨聲壓過車流。")).toBeInTheDocument();
   });
 
-  it("advances from the focused LOG button with Space or Enter without opening history", async () => {
+  it("toggles history from the focused LOG button with Space or Enter without advancing", async () => {
     const user = userEvent.setup();
     const { onAdvance } = renderDialogueBox(
       { kind: "action", text: "hello" },
@@ -312,19 +312,29 @@ describe("DialogueBox", () => {
     logButton.focus();
     await user.keyboard("{Enter}");
 
-    expect(onAdvance).toHaveBeenCalledTimes(1);
-    expect(onAdvance).toHaveBeenLastCalledWith(token);
-    expect(
-      screen.queryByRole("dialog", { name: "對話紀錄" }),
-    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
+    // Keyboard activation of the LOG button opens history, never advances.
+    expect(onAdvance).not.toHaveBeenCalled();
 
+    // Space also opens history. The Escape claim is driven by GameShell in
+    // production; here we close it via the coordinator directly to refocus LOG.
+    expect(closeTopmostEscapeClaim()).toBe(true);
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
+    });
     await user.keyboard(" ");
-
-    expect(onAdvance).toHaveBeenCalledTimes(2);
-    expect(onAdvance).toHaveBeenLastCalledWith(token);
-    expect(
-      screen.queryByRole("dialog", { name: "對話紀錄" }),
-    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
+    expect(onAdvance).not.toHaveBeenCalled();
   });
 
   it("toggles dialogue history with L when focus is not inside a control", async () => {
@@ -582,7 +592,7 @@ describe("DialogueBox", () => {
     });
   });
 
-  it("does not toggle history from a keyboard-activated click on the LOG button", async () => {
+  it("toggles history when the LOG button is keyboard-activated", async () => {
     const user = userEvent.setup();
     const { onAdvance } = renderDialogueBox(
       { kind: "action", text: "hello" },
@@ -591,15 +601,21 @@ describe("DialogueBox", () => {
 
     const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
     logButton.focus();
-    // A keyboard-activated click carries detail 0 and must not toggle history.
+    // A keyboard-activated click carries detail 0 and must not toggle history;
+    // the LOG button keydown handler is what toggles history on Space/Enter.
     fireEvent.click(logButton, { detail: 0 });
-
     expect(
       screen.queryByRole("dialog", { name: "對話紀錄" }),
     ).not.toBeInTheDocument();
-    // The LOG button keydown handler still advances dialogue on Space/Enter.
+
     await user.keyboard("{Enter}");
-    expect(onAdvance).toHaveBeenCalledWith(token);
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
+    // Keyboard activation of the LOG button toggles history, never advances.
+    expect(onAdvance).not.toHaveBeenCalled();
   });
 
   it("does not advance when a non-Space/Enter key is pressed on the focused advance control", () => {

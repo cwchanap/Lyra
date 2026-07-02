@@ -104,8 +104,7 @@
     if (e.key !== " " && e.key !== "Enter") return;
     e.preventDefault();
     e.stopPropagation();
-    if (historyOpen) return;
-    dispatchAdvance();
+    toggleHistory();
   }
 
   function handleLogButtonClick(e: MouseEvent) {
