@@ -86,7 +86,8 @@
   {#if history.length === 0}
     <p class="empty">尚無對話紀錄</p>
   {:else}
-    <ol class="history-list">
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <ol class="history-list" tabindex="0" aria-label="對話紀錄列表" role="list">
       {#each history as entry (entry.id)}
         <li>
           {#if entry.kind === "line"}
@@ -174,6 +175,11 @@
     display: grid;
     align-content: end;
     gap: 12px;
+  }
+
+  .history-list:focus-visible {
+    outline: 1px solid var(--crimson);
+    outline-offset: 2px;
   }
 
   li {
