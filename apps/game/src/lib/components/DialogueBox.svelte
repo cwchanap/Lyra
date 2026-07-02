@@ -99,17 +99,15 @@
     dispatchAdvance();
   }
 
-  function handleLogButtonKeydown(e: KeyboardEvent) {
-    if (e.repeat) return;
-    if (e.key !== " " && e.key !== "Enter") return;
-    e.preventDefault();
-    e.stopPropagation();
-    toggleHistory();
-  }
-
+  // The LOG button is a native <button>, so Space/Enter activation is delivered
+  // as a synthesized click (with detail 0). AT click activation (e.g. VoiceOver
+  // VO+Space, programmatic .click()) also produces detail 0. Treat the click
+  // handler as the single activation path so all of these reach toggleHistory;
+  // do NOT gate on e.detail === 0, which would drop AT activation. The
+  // window-level handleKey returns early when the LOG button is focused, so
+  // Space/Enter never advances dialogue from here.
   function handleLogButtonClick(e: MouseEvent) {
     e.stopPropagation();
-    if (e.detail === 0) return;
     toggleHistory();
   }
 
@@ -248,7 +246,6 @@
     aria-label="開啟對話紀錄"
     aria-pressed={historyOpen}
     onclick={handleLogButtonClick}
-    onkeydown={handleLogButtonKeydown}
   >
     LOG
   </button>
