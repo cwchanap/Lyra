@@ -117,16 +117,25 @@
     historyOpen = true;
   }
 
-  async function closeHistory() {
+  // Held while history is open so closeHistory can release the escape claim
+  // synchronously rather than waiting for the $effect cleanup flush. The
+  // $effect below still claims/releases for unmount safety; release() is
+  // idempotent so the double-release on close is harmless.
+  let releaseEscapeClaim: (() => void) | null = null;
+
+  function closeHistory() {
     if (!historyOpen) return;
     historyOpen = false;
-    await tick();
-    logButton?.focus();
+    // Release synchronously so the escape coordinator's "close one layer per
+    // Escape" contract holds even before Svelte flushes the effect cleanup.
+    releaseEscapeClaim?.();
+    releaseEscapeClaim = null;
+    void tick().then(() => logButton?.focus());
   }
 
   function toggleHistory() {
     if (historyOpen) {
-      void closeHistory();
+      closeHistory();
       return;
     }
     openHistory();
@@ -160,9 +169,10 @@
 
   $effect(() => {
     if (!historyOpen) return;
-    const release = claimEscape(closeHistory);
+    releaseEscapeClaim = claimEscape(closeHistory);
     return () => {
-      release();
+      releaseEscapeClaim?.();
+      releaseEscapeClaim = null;
     };
   });
 
@@ -184,6 +194,13 @@
 
     if (e.key !== " " && e.key !== "Enter") return;
     if (historyOpen) {
+      // Don't swallow Space/Enter when focus is inside the history panel —
+      // let native button activation (the close button) proceed. Only
+      // preventDefault elsewhere to stop page scroll / dialogue advance.
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active.closest(".history-panel")) {
+        return;
+      }
       e.preventDefault();
       return;
     }

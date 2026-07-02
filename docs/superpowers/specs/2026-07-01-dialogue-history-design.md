@@ -199,10 +199,14 @@ Rust tests:
 
 Frontend tests:
 
-- `DialogueBox` renders the `LOG` button when history is present;
+- `DialogueBox` always renders the `LOG` button while dialogue is active;
+  with empty history the panel shows its unavailable state (see "Empty
+  history" above);
 - clicking `LOG` opens a panel with line and action entries;
 - `L` toggles the panel while dialogue is active;
-- Space/Enter do not advance dialogue while the panel is open;
+- Space/Enter do not advance dialogue while the panel is open, but Space/Enter
+  on the panel's close button must still activate it (the window guard must not
+  swallow native button activation inside the panel);
 - Escape closes the log before the game menu opens;
 - focus returns to the `LOG` button after closing.
 
