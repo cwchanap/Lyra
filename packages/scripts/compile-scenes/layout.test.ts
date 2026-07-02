@@ -424,6 +424,36 @@ describe("detectLayoutOverlaps", () => {
     expect(detectLayoutOverlaps(layout, sourceFile)).toEqual([]);
   });
 
+  it("treats the 80% threshold as inclusive and fires exactly at the boundary", () => {
+    // Two equal rects offset along x. overlapRatio = (w - dx) / w when both
+    // rects share the full y-extent, so dx = w * (1 - ratio) hits an exact
+    // target ratio. w = 0.2 here.
+    //
+    //   dx = 0.0402 -> ratio = 0.799  (just below -> no warn)
+    //   dx = 0.04    -> ratio = 0.8   (exactly at threshold -> warn, `>=`)
+    //   dx = 0.0398  -> ratio = 0.801 (just above -> warn)
+    const w = 0.2;
+    const cases: Array<{ dx: number; ratio: number; warns: boolean }> = [
+      { dx: 0.0402, ratio: 0.799, warns: false },
+      { dx: 0.04, ratio: 0.8, warns: true },
+      { dx: 0.0398, ratio: 0.801, warns: true },
+    ];
+    for (const { dx, ratio, warns } of cases) {
+      const layout = layoutWithHotspots({
+        a: rect(0.1, 0.1, w, w),
+        b: rect(0.1 + dx, 0.1, w, w),
+      });
+      const warnings = detectLayoutOverlaps(layout, sourceFile);
+      if (warns) {
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]?.code).toBe("layoutHotspotOverlap");
+        expect(warnings[0]?.message).toContain(`${Math.round(ratio * 100)}%`);
+      } else {
+        expect(warnings).toEqual([]);
+      }
+    }
+  });
+
   it("does not warn when two rects only share an edge (adjacency is allowed)", () => {
     const layout = layoutWithHotspots({
       left: rect(0.1, 0.1, 0.2, 0.2),

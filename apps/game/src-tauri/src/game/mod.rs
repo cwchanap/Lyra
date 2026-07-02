@@ -274,7 +274,13 @@ impl GameEngine {
         };
 
         let id = self.next_dialogue_history_id;
-        let chapter_title = self.chapters[self.current_chapter_idx.min(self.chapters.len() - 1)]
+        // Indexing with a clamp silently masks an out-of-range chapter index
+        // and panics (usize underflow) when `chapters` is empty. Both states
+        // are engine invariants — surface them with a clear expect instead.
+        let chapter_title = self
+            .chapters
+            .get(self.current_chapter_idx)
+            .expect("current_chapter_idx must reference a loaded chapter when recording dialogue history")
             .title
             .clone();
         let scene_title = self.current_scene_title();
@@ -2451,24 +2457,39 @@ mod tests {
     /// on `view_with_history`). `view()` itself returns `GameStateView`
     /// directly (not a `Result`), so it is naturally excluded.
     ///
-    /// The single tolerated `Ok(self.view())` is the stale-token early return
-    /// in `advance_dialogue`, which intentionally does not advance the focused
-    /// item — so `view()` there is correct and `view_with_history()` is still
-    /// present elsewhere in the same function for the advancing path.
+    /// The scan enforces two invariants per tracked function:
+    /// 1. `view_with_history()` appears at least once in the body, AND
+    /// 2. no `Ok(self.view())` appears in the body — because a command whose
+    ///    main advancing branch returns `Ok(self.view())` would silently drop
+    ///    dialogue history even if `view_with_history()` happens to appear on
+    ///    a side branch or in a comment. The single tolerated `Ok(self.view())`
+    ///    is the stale-token early return in `advance_dialogue`, which
+    ///    intentionally does not advance the focused item — so `view()` there
+    ///    is correct and `view_with_history()` is still present elsewhere in
+    ///    the same function for the advancing path. That exception is
+    ///    allow-listed by function name below; new exceptions require explicit
+    ///    review and a matching entry.
     #[test]
     fn every_view_returning_command_routes_through_view_with_history() {
         let source = include_str!("mod.rs");
+        // Functions allow-listed for an `Ok(self.view())` return. Each entry
+        // must have a documented reason in the doc comment above.
+        let allowed_bare_view: &[&str] = &["advance_dialogue"];
+
         let mut seen_commands: Vec<String> = Vec::new();
         let mut missing: Vec<String> = Vec::new();
+        let mut bare_view: Vec<String> = Vec::new();
 
         // Walk the source line by line. When a `pub fn` is encountered, start
         // accumulating its signature (which may span multiple lines until the
         // opening `{`). If the signature contains `-> Result<GameStateView,
-        // GameError>`, track the function body for `view_with_history()`.
-        // When the next `pub fn` starts (or we hit the test module), close out
-        // the current function and assert it called `view_with_history()`.
+        // GameError>`, track the function body for `view_with_history()` and
+        // `Ok(self.view())`. When the next `pub fn` starts (or we hit the test
+        // module), close out the current function and assert it called
+        // `view_with_history()` and did not return `Ok(self.view())`.
         let mut current_fn: Option<String> = None;
         let mut current_body_has_history = false;
+        let mut current_body_has_bare_view = false;
         // Accumulates signature lines for multi-line `pub fn` declarations.
         let mut signature_buf: String = String::new();
         let mut in_signature = false;
@@ -2477,8 +2498,9 @@ mod tests {
             let trimmed = line.trim_start();
 
             // Stop scanning at the test module boundary — test code (including
-            // this very test) mentions `view_with_history()` in string
-            // literals and would create false positives.
+            // this very test) mentions `view_with_history()` and
+            // `Ok(self.view())` in string literals and would create false
+            // positives.
             if trimmed.starts_with("mod tests {") || trimmed.starts_with("#[cfg(test)]") {
                 break;
             }
@@ -2487,9 +2509,13 @@ mod tests {
             if trimmed.starts_with("pub fn ") {
                 if let Some(name) = current_fn.take() {
                     if !current_body_has_history {
-                        missing.push(name);
+                        missing.push(name.clone());
+                    }
+                    if current_body_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
+                        bare_view.push(name);
                     }
                     current_body_has_history = false;
+                    current_body_has_bare_view = false;
                 }
 
                 // Extract the function name and begin accumulating the
@@ -2538,15 +2564,23 @@ mod tests {
                 continue;
             }
 
-            if current_fn.is_some() && trimmed.contains("view_with_history()") {
-                current_body_has_history = true;
+            if current_fn.is_some() {
+                if trimmed.contains("view_with_history()") {
+                    current_body_has_history = true;
+                }
+                if trimmed.contains("Ok(self.view())") {
+                    current_body_has_bare_view = true;
+                }
             }
         }
 
         // Close out the last tracked function.
         if let Some(name) = current_fn.take() {
             if !current_body_has_history {
-                missing.push(name);
+                missing.push(name.clone());
+            }
+            if current_body_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
+                bare_view.push(name);
             }
         }
 
@@ -2560,6 +2594,16 @@ mod tests {
             "these GameEngine commands return Result<GameStateView, GameError> but never \
              call view_with_history() — they will silently drop dialogue history \
              when they advance the focused item: {missing:?} \
+             (tracked commands: {seen_commands:?})"
+        );
+        assert!(
+            bare_view.is_empty(),
+            "these GameEngine commands return Result<GameStateView, GameError> and contain \
+             `Ok(self.view())` — a bare view return on an advancing path silently drops \
+             dialogue history. Route the success path through `view_with_history()` instead. \
+             If this is a documented non-advancing early return (e.g. a stale-token guard), \
+             add the function name to `allowed_bare_view` in this test with a justification \
+             in the doc comment. Offending functions: {bare_view:?} \
              (tracked commands: {seen_commands:?})"
         );
     }
