@@ -591,6 +591,12 @@ function parseIntentionalOverlaps(
         );
       }
     }
+    // An unknown-ID pair is invalid; skip it rather than letting it fall
+    // through into `result` (where it would be discarded by the parse
+    // failure anyway, but a continue keeps the cleaned output honest).
+    if (!(a in hotspots) || !(b in hotspots)) {
+      continue;
+    }
     const key = pairKey(a, b);
     if (seen.has(key)) {
       errors.push(
