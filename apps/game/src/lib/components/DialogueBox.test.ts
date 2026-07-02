@@ -627,7 +627,7 @@ describe("DialogueBox", () => {
     });
   });
 
-  it("toggles history when the LOG button is keyboard-activated", async () => {
+  it("toggles history when the LOG button is activated, including AT click (detail 0)", async () => {
     const user = userEvent.setup();
     const { onAdvance } = renderDialogueBox(
       { kind: "action", text: "hello" },
@@ -635,14 +635,23 @@ describe("DialogueBox", () => {
     );
 
     const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
-    logButton.focus();
-    // A keyboard-activated click carries detail 0 and must not toggle history;
-    // the LOG button keydown handler is what toggles history on Space/Enter.
+    // AT click activation (VoiceOver VO+Space, programmatic .click()) carries
+    // detail 0 and must toggle history — gating on detail would drop it.
     fireEvent.click(logButton, { detail: 0 });
-    expect(
-      screen.queryByRole("dialog", { name: "對話紀錄" }),
-    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
+    // Close via the escape coordinator so LOG refocuses for the next step.
+    expect(closeTopmostEscapeClaim()).toBe(true);
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
+    });
 
+    logButton.focus();
     await user.keyboard("{Enter}");
     await waitFor(() => {
       expect(
