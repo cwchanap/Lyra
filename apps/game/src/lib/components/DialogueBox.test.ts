@@ -437,6 +437,41 @@ describe("DialogueBox", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
+  it("closes dialogue history when Space or Enter is pressed on the focused close button", async () => {
+    const user = userEvent.setup();
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
+    await waitFor(() => {
+      expect(closeButton).toHaveFocus();
+    });
+
+    // Enter on the focused close button must activate it (not be swallowed by
+    // the window-level guard that prevents dialogue advancement).
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
+    });
+
+    // Reopen and verify Space also activates the close button.
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
+    screen.getByRole("button", { name: "關閉對話紀錄" }).focus();
+    await user.keyboard(" ");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it("registers an Escape claim while history is open and restores focus to the LOG button", async () => {
     const user = userEvent.setup();
     const { container } = renderDialogueBox(
