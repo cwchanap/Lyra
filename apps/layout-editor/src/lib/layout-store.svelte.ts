@@ -134,12 +134,10 @@ export function setHotspotLayout(
     sublocations: {
       ...editorState.layout.sublocations,
       [sublocationId]: {
+        ...sublocation,
         hotspots: {
           ...sublocation.hotspots,
           [hotspotId]: clampRectLayout(layout),
-        },
-        characters: {
-          ...sublocation.characters,
         },
       },
     },
@@ -163,9 +161,7 @@ export function setCharacterLayout(
     sublocations: {
       ...editorState.layout.sublocations,
       [sublocationId]: {
-        hotspots: {
-          ...sublocation.hotspots,
-        },
+        ...sublocation,
         characters: {
           ...sublocation.characters,
           [characterId]: clampSpriteLayout(layout),

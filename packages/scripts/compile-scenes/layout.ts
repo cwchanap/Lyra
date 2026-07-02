@@ -469,15 +469,17 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 /**
  * Detect hotspot rects that share interior area within the same sublocation.
  *
- * Returns one non-blocking warning per overlapping pair. This is a warning
- * rather than a hard error because overlaps are occasionally intentional
- * (e.g. a deliberate layered/nested target); but in the common case each
- * hotspot is a distinct click target rendered as a same-z-index sibling, so
- * the later-painted hotspot silently wins every click in the shared region.
- * Surfacing these lets authors notice silent misclicks without blocking the
- * build. Hotspots in different sublocations are never on screen together, so
- * only pairs within a single sublocation are compared. Edge-adjacency
- * (touching but non-overlapping) is allowed.
+ * Returns one non-blocking warning per pair whose overlap covers at least 80%
+ * of the smaller rect's area. This is a warning rather than a hard error
+ * because overlaps are occasionally intentional (e.g. a deliberate
+ * layered/nested target); but when one hotspot nearly entirely covers
+ * another, the later-painted hotspot silently wins every click in the shared
+ * region — that is the case worth surfacing. Minor corner overlaps (below the
+ * 80% threshold) are visually obvious and rarely cause silent misclicks, so
+ * they are suppressed to keep the warning's signal-to-noise ratio high.
+ * Hotspots in different sublocations are never on screen together, so only
+ * pairs within a single sublocation are compared. Edge-adjacency (touching
+ * but non-overlapping) is allowed.
  *
  * Pairs listed in a sublocation's `intentionalOverlaps` are skipped, so the
  * warning keeps signal for unintentional overlaps. The opt-out is itself
@@ -502,12 +504,13 @@ export function detectLayoutOverlaps(
         const b = entries[k];
         if (!b) continue;
         if (isIntentionalOverlap(optOut, a[0], b[0])) continue;
-        if (rectsOverlap(a[1], b[1])) {
+        const ratio = overlapRatio(a[1], b[1]);
+        if (ratio >= OVERLAP_WARN_THRESHOLD) {
           warnings.push(
             error(
               sourceFile,
               "layoutHotspotOverlap",
-              `Hotspot rects overlap in sublocation "${sublocationId}": "${a[0]}" and "${b[0]}" share clickable area. Separate the rects, or nest deliberately; the later-defined hotspot silently wins clicks in the shared region.`,
+              `Hotspot rects overlap in sublocation "${sublocationId}": "${a[0]}" and "${b[0]}" share ${Math.round(ratio * 100)}% of the smaller rect's area (threshold ${Math.round(OVERLAP_WARN_THRESHOLD * 100)}%). Separate the rects, or nest deliberately; the later-defined hotspot silently wins clicks in the shared region.`,
             ),
           );
         }
@@ -628,16 +631,26 @@ function pairKey(a: string, b: string): string {
   return a < b ? `${a}\0${b}` : `${b}\0${a}`;
 }
 
-function rectsOverlap(a: RectLayout, b: RectLayout): boolean {
-  // Strict interior overlap with a small epsilon so edge-adjacent rects
-  // (touching but sharing no interior pixels) are not flagged. The epsilon
-  // absorbs floating-point accumulation from authored decimal coordinates
-  // (e.g. 0.1 + 0.2 === 0.30000000000000004 in JS); real overlaps in this
-  // domain are orders of magnitude larger, so they remain detected.
+/** Warn when the overlap covers at least this fraction of the smaller rect. */
+const OVERLAP_WARN_THRESHOLD = 0.8;
+
+/**
+ * Returns the overlap area as a fraction of the smaller rect's area, or 0
+ * when the rects do not share interior area. Edge-adjacent rects (touching
+ * but non-overlapping) return 0. The epsilon absorbs floating-point
+ * accumulation from authored decimal coordinates (e.g.
+ * 0.1 + 0.2 === 0.30000000000000004 in JS); real overlaps in this domain
+ * are orders of magnitude larger, so they remain detected.
+ */
+function overlapRatio(a: RectLayout, b: RectLayout): number {
   const EPSILON = 1e-9;
   const overlapX = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
   const overlapY = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
-  return overlapX > EPSILON && overlapY > EPSILON;
+  if (overlapX <= EPSILON || overlapY <= EPSILON) return 0;
+  const overlapArea = overlapX * overlapY;
+  const minArea = Math.min(a.w * a.h, b.w * b.h);
+  if (minArea <= EPSILON) return 0;
+  return overlapArea / minArea;
 }
 
 function error(

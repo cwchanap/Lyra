@@ -220,6 +220,126 @@ describe("layout-store", () => {
     });
   });
 
+  describe("intentionalOverlaps preservation", () => {
+    it("setHotspotLayout preserves intentionalOverlaps on the edited sublocation", () => {
+      editorState.layout = {
+        version: 1,
+        sceneId: "scene_1",
+        sublocations: {
+          office: {
+            hotspots: {
+              a: { kind: "rect", x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+              b: { kind: "rect", x: 0.15, y: 0.15, w: 0.2, h: 0.2 },
+            },
+            characters: {},
+            intentionalOverlaps: [{ hotspots: ["a", "b"] }],
+          },
+        },
+      };
+
+      setHotspotLayout("office", "a", {
+        kind: "rect",
+        x: 0.05,
+        y: 0.05,
+        w: 0.2,
+        h: 0.2,
+      });
+
+      expect(
+        editorState.layout?.sublocations.office.intentionalOverlaps,
+      ).toEqual([{ hotspots: ["a", "b"] }]);
+    });
+
+    it("setCharacterLayout preserves intentionalOverlaps on the edited sublocation", () => {
+      editorState.layout = {
+        version: 1,
+        sceneId: "scene_1",
+        sublocations: {
+          office: {
+            hotspots: {
+              a: { kind: "rect", x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+              b: { kind: "rect", x: 0.15, y: 0.15, w: 0.2, h: 0.2 },
+            },
+            characters: {},
+            intentionalOverlaps: [{ hotspots: ["a", "b"] }],
+          },
+        },
+      };
+
+      setCharacterLayout("office", "witness", {
+        kind: "sprite",
+        assetId: "standee.witness.standard",
+        x: 0.5,
+        y: 0.2,
+        w: 0.2,
+        h: 0.6,
+        anchor: "bottomCenter",
+      });
+
+      expect(
+        editorState.layout?.sublocations.office.intentionalOverlaps,
+      ).toEqual([{ hotspots: ["a", "b"] }]);
+    });
+
+    it("round-trips a sidecar with intentionalOverlaps through load + edit + save shape", async () => {
+      const sceneJson = {
+        type: "investigation",
+        id: "scene_overlap",
+        title: "Overlap Scene",
+        intro: [],
+        sublocations: [],
+        evidenceManifest: [],
+      };
+
+      const existingLayout = {
+        version: 1,
+        sceneId: "scene_overlap",
+        sublocations: {
+          office: {
+            hotspots: {
+              a: { kind: "rect", x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+              b: { kind: "rect", x: 0.15, y: 0.15, w: 0.2, h: 0.2 },
+            },
+            characters: {},
+            intentionalOverlaps: [{ hotspots: ["a", "b"] }],
+          },
+        },
+      };
+
+      mockInvoke
+        .mockResolvedValueOnce({
+          path: "scenes/scene_overlap.json",
+          contents: JSON.stringify(sceneJson),
+        })
+        .mockResolvedValueOnce("layouts/scene_overlap.layout.json")
+        .mockResolvedValueOnce({
+          path: "layouts/scene_overlap.layout.json",
+          contents: JSON.stringify(existingLayout),
+        });
+
+      await loadInvestigationScene("scenes/scene_overlap.json");
+
+      expect(editorState.error).toBeNull();
+      expect(
+        editorState.layout?.sublocations.office.intentionalOverlaps,
+      ).toEqual([{ hotspots: ["a", "b"] }]);
+
+      // Edit a hotspot — the opt-out must survive the rebuild.
+      setHotspotLayout("office", "a", {
+        kind: "rect",
+        x: 0.05,
+        y: 0.05,
+        w: 0.2,
+        h: 0.2,
+      });
+
+      expect(
+        editorState.layout?.sublocations.office.intentionalOverlaps,
+      ).toEqual([{ hotspots: ["a", "b"] }]);
+      expect(editorState.layout?.sublocations.office.hotspots.a.x).toBe(0.05);
+    });
+  });
+
   describe("loadInvestigationScene", () => {
     it("synthesizes empty layout when sidecar file is not found", async () => {
       const sceneJson = {

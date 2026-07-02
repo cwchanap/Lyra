@@ -32,10 +32,13 @@ function dialogueHistoryPanelSource() {
 }
 
 describe("DialogueHistoryPanel", () => {
-  it("uses modal dialog semantics while focus is trapped", () => {
+  it("uses non-modal dialog semantics with focus trapped on the panel only", () => {
     render(DialogueHistoryPanel, { history, onClose: vi.fn() });
 
-    expect(screen.getByRole("dialog")).toHaveAttribute("aria-modal", "true");
+    // aria-modal="false" because only the dialogue .wrapper is inerted, not
+    // the whole game shell — the panel is a non-modal overlay, not a true
+    // modal dialog.
+    expect(screen.getByRole("dialog")).toHaveAttribute("aria-modal", "false");
   });
 
   it("renders spoken lines and narration in play order", () => {

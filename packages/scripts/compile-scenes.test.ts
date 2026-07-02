@@ -588,3 +588,150 @@ describe("compile (multiple source roots)", () => {
     }
   });
 });
+
+describe("compile (layout warning wiring)", () => {
+  // End-to-end test for the orchestrator's non-blocking warning path:
+  // a .layout.json sidecar with overlapping hotspot rects must produce a
+  // successful compile (warnings are non-blocking) with layoutHotspotOverlap
+  // entries in result.warnings. This verifies the full wiring from sidecar
+  // parsing → detectLayoutOverlaps → CompileResult.warnings that the CLI
+  // (compile-scenes.ts runOnce) prints via console.warn.
+  it("returns ok with layoutHotspotOverlap warnings for overlapping hotspot rects", () => {
+    const sourceRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-overlap-warn-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-overlap-warn-out-"),
+    );
+    try {
+      const chapterRoot = resolve(sourceRoot, "chapter_1");
+      mkdirSync(chapterRoot, { recursive: true });
+      writeFileSync(
+        resolve(chapterRoot, "chapter.md"),
+        "# Chapter 1: Overlap Warn\n\n**Summary:** s\n\n## Scenes\n1. investigation_scene_1.md\n",
+      );
+      // Reuse the valid fixture's investigation scene — it has hotspots
+      // `table` and `window` in sublocation `main_hall`.
+      writeFileSync(
+        resolve(chapterRoot, "investigation_scene_1.md"),
+        readFileSync(
+          "packages/scripts/__fixtures__/valid/chapter_1/investigation_scene_1.md",
+          "utf-8",
+        ),
+      );
+      // Sidecar with near-identical overlapping `table` and `window` rects
+      // (>80% overlap of the smaller rect) and NO intentionalOverlaps opt-out
+      // → should trigger layoutHotspotOverlap.
+      writeFileSync(
+        resolve(chapterRoot, "investigation_scene_1.layout.json"),
+        JSON.stringify(
+          {
+            version: 1,
+            sceneId: "investigation_scene_1",
+            sublocations: {
+              main_hall: {
+                hotspots: {
+                  table: { kind: "rect", x: 0.1, y: 0.1, w: 0.3, h: 0.3 },
+                  window: { kind: "rect", x: 0.11, y: 0.11, w: 0.3, h: 0.3 },
+                },
+                characters: {},
+              },
+              back_room: {
+                hotspots: {
+                  cabinet: { kind: "rect", x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+                },
+                characters: {},
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+
+      // Warnings are non-blocking — compile must still succeed.
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // The orchestrator must have wired detectLayoutOverlaps output into
+      // CompileResult.warnings (the array the CLI prints).
+      expect(result.warnings.length).toBeGreaterThan(0);
+      const overlapWarnings = result.warnings.filter(
+        (w) => w.code === "layoutHotspotOverlap",
+      );
+      expect(overlapWarnings.length).toBe(1);
+      expect(overlapWarnings[0]!.sourceFile).toBe(
+        "chapter_1/investigation_scene_1.layout.json",
+      );
+      expect(overlapWarnings[0]!.message).toContain("table");
+      expect(overlapWarnings[0]!.message).toContain("window");
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("returns ok with no warnings when intentionalOverlaps suppresses the overlap", () => {
+    const sourceRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-overlap-suppressed-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-overlap-suppressed-out-"),
+    );
+    try {
+      const chapterRoot = resolve(sourceRoot, "chapter_1");
+      mkdirSync(chapterRoot, { recursive: true });
+      writeFileSync(
+        resolve(chapterRoot, "chapter.md"),
+        "# Chapter 1: Overlap Suppressed\n\n**Summary:** s\n\n## Scenes\n1. investigation_scene_1.md\n",
+      );
+      writeFileSync(
+        resolve(chapterRoot, "investigation_scene_1.md"),
+        readFileSync(
+          "packages/scripts/__fixtures__/valid/chapter_1/investigation_scene_1.md",
+          "utf-8",
+        ),
+      );
+      // Same near-identical overlapping rects (>80%), but with
+      // intentionalOverlaps opt-out → no warning should be emitted.
+      writeFileSync(
+        resolve(chapterRoot, "investigation_scene_1.layout.json"),
+        JSON.stringify(
+          {
+            version: 1,
+            sceneId: "investigation_scene_1",
+            sublocations: {
+              main_hall: {
+                hotspots: {
+                  table: { kind: "rect", x: 0.1, y: 0.1, w: 0.3, h: 0.3 },
+                  window: { kind: "rect", x: 0.11, y: 0.11, w: 0.3, h: 0.3 },
+                },
+                characters: {},
+                intentionalOverlaps: [{ hotspots: ["table", "window"] }],
+              },
+              back_room: {
+                hotspots: {
+                  cabinet: { kind: "rect", x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+                },
+                characters: {},
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.warnings).toEqual([]);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+});
