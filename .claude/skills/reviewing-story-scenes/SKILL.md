@@ -1,6 +1,6 @@
 ---
 name: reviewing-story-scenes
-description: Use when reviewing authored scene files (scene_*.md / investigation_scene_*.md / interrogation_scene_*.md) for the Lyra detective game 《東京雨證：第零證人》 against the story bible, chapter plan, writing addendum, and visual-background coverage before story content ships. You produce a findings report and edit nothing.
+description: Use when reviewing authored scene files (scene_*.md / investigation_scene_*.md / interrogation_scene_*.md) for the Lyra detective game 《東京雨證：第零證人》 against the story bible, chapter plan, writing addendum, and visual-background coverage before story content ships.
 ---
 
 # Reviewing Story Scenes (《東京雨證：第零證人》)
@@ -60,7 +60,7 @@ re-read; they work from the excerpts you quote in their brief.
 
 ## Phase 2: Spawn parallel subagents — one per axis
 
-Do not review all axes yourself in one pass. Instead, launch **five background
+Do not review all axes yourself in one pass. Instead, launch **seven background
 subagents in parallel**, each responsible for exactly one axis.
 
 ### Brief template for each subagent
@@ -82,7 +82,7 @@ Front-load the context. Each subagent brief must contain:
    - One-line findings: `Severity — file:line — issue — suggested fix`
    - A short strengths list.
 
-### The five axes
+### The seven axes
 
 | Axis | Check | Sources the subagent needs |
 |---|---|---|
@@ -91,8 +91,10 @@ Front-load the context. Each subagent brief must contain:
 | **3. Voice & style** | Each character matches the addendum voice guide; no exposition 講義 / system lectures; dialogue lines ≤100 Chinese chars; **Traditional Chinese only** (no Simplified, no JP-only kanji). | Addendum voice guides + `writing-detective-game-dialogue` format rules + all character dialogue lines |
 | **4. Cross-beat continuity** | Hand-offs between scenes land; planted seeds pay off; evidence/statement IDs referenced across files resolve; the chapter's required evidence-package seeds are all present. | Plan evidence-package list + all scene files (outros, intros, evidence manifests, statement manifests, unlock chains) |
 | **5. Visual background coverage** | Every player-visible location change that needs a backdrop has authored `Background Prompt` metadata and compiles to a non-null `backgroundAssetId`. Linear scene queues and investigation/interrogation intros must establish a background before the first dialogue/action unless the previous scene background is intentionally carried and documented. Flag scene tags, sub-locations, or interrogation phases with missing prompts/IDs, and flag intro/dialogue sequences that start before any background cue. | All scene files with `[場景：...]`, `Background Prompt`, sub-location metadata, interrogation phase metadata + compiled `src-tauri/resources/scenes/chapter_<N>/*.json` + `bun run scenes:compile` warnings |
+| **6. Investigation interaction balance** | The chapter's investigation scenes' interaction points, *in aggregate*, follow the addendum §2.1 ratio guidance: ~40% 破案資訊 (directly support the three evidence packages), ~30% 角色生活資訊 (make characters feel alive), ~20% 氣氛與伏筆 (blue umbrella, osmanthus, rain, shop objects), ~10% 錯誤焦點 / 紅鯡魚 (let players briefly suspect the manager, Katase, or deeper Miyake lies). The ratio is per-chapter, not per-scene — a single scene may legitimately concentrate in one bucket (e.g. a reversal scene mostly 破案). Flag the chapter-wide aggregate when it starves a bucket, and flag individual points that leak case-breaking info through a 生活/氣氛 point. | Addendum §2.1 ratio table + all `investigation_scene_*.md` hotspot/topic/evidence manifests + evidence-package list from the plan |
+| **7. Natural conversation & situational context** | Every scene has enough natural, non-case dialogue to ground the player before investigation/hearing mechanics begin. Check against addendum §5.4 minimums: linear transitions ≥25% breathing dialogue, investigation scenes need 2–3 lines of pre-investigation dialogue (why we're here, partner check-in, first impression), interrogation/hearing scenes need 2–3 lines of pre-proceeding partner dialogue, breathing points ≥30%. New characters get a natural introduction exchange, not just a Bio field. Flag scenes that open directly into case mechanics with no human grounding, scenes where the 相馬/早坂 partnership has no relational texture (no history, no familiarity, no working dynamic), and breathing points that are actually case summaries in dialogue form. | Addendum §5.4 ratio table + all scene files' opening dialogue blocks + character voice guides for partnership dynamics |
 
-**Launch order:** spawn all five at once. They have no shared state and no
+**Launch order:** spawn all seven at once. They have no shared state and no
 sequential dependencies.
 
 ### Visual Background Minimum Checks
@@ -114,16 +116,16 @@ For Axis 5, at minimum check:
 
 ---
 
-## Phase 3: Synthesize the five axis reports
+## Phase 3: Synthesize the seven axis reports
 
-After all five subagents return, produce **exactly one consolidated findings
+After all seven subagents return, produce **exactly one consolidated findings
 report** with:
 
-1. **Verdict** — the worst of the five axis verdicts (BLOCKERS-PRESENT wins
+1. **Verdict** — the worst of the seven axis verdicts (BLOCKERS-PRESENT wins
    over FIX-RECOMMENDED wins over SHIP).
 2. **All findings merged** — deduplicate if the same `file:line` issue was
    caught by two axes. Keep the more severe severity.
-3. **Strengths** — merged strengths from all five subagents, deduplicated.
+3. **Strengths** — merged strengths from all seven subagents, deduplicated.
 
 **Do not synthesize by watering down.** If Axis 1 says BLOCKERS-PRESENT and
 Axis 3 says SHIP, the consolidated verdict is BLOCKERS-PRESENT. Quote the
@@ -136,7 +138,7 @@ subagent's finding verbatim; do not rewrite its evidence.
 ```markdown
 ## Review Report: Chapter N 《...》
 
-**Subagent axes:** Canon, Forbidden, Voice, Continuity, Visual Background — all completed.
+**Subagent axes:** Canon, Forbidden, Voice, Continuity, Visual Background, Investigation Interaction Balance, Natural Conversation — all completed.
 
 ### Verdict: [BLOCKERS-PRESENT / FIX-RECOMMENDED / SHIP]
 
@@ -179,7 +181,7 @@ subagent's finding verbatim; do not rewrite its evidence.
 | Asserting canon from memory | Cite the source line; if it's absent, request the source. |
 | Editing or "fixing" the files | Report only. Edit nothing. |
 | Findings without a location or a quote | Every finding: `file:line` + quoted text + suggested fix. |
-| Monolithic single-agent review | Spawn five parallel subagents. One brain trying to hold bible, plan, addendum, voice guides, format rules, visual cues, and all scene text at once misses things. |
+| Monolithic single-agent review | Spawn seven parallel subagents. One brain trying to hold bible, plan, addendum, voice guides, format rules, visual cues, interaction balance, natural conversation, and all scene text at once misses things. |
 | Subagent re-reading files | You read the files; paste excerpts into each subagent brief. Each axis reviewer works from your excerpt, not by re-reading source files. |
 
 ---
