@@ -238,7 +238,7 @@
   <DialogueHistoryPanel {history} onClose={closeHistory} />
 {/if}
 
-<div class="wrapper" class:line={current.kind === "line"} inert={historyOpen}>
+<div class="wrapper" class:line={current.kind === "line"}>
   <button
     bind:this={logButton}
     class="log-button"
@@ -261,6 +261,7 @@
     onkeydown={handleBoxKeydown}
     aria-label="推進對話"
     aria-disabled={disabled}
+    inert={historyOpen}
   >
     {#if current.kind === "sceneTag"}
       <span class="kind">場 · SCENE</span>
