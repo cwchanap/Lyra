@@ -2888,6 +2888,166 @@ mod tests {
     }
 
     #[test]
+    fn jump_to_scene_restores_non_empty_dialogue_history_when_priming_fails() {
+        // Companion to jump_to_scene_restores_previous_state_when_priming_fails.
+        // That test starts with empty dialogue_history, so it cannot
+        // distinguish "rollback restored empty" from "nothing to restore."
+        // This test populates history by advancing dialogue on scene_0 before
+        // the failing jump, then asserts restore_snapshot put the non-empty
+        // history back exactly as it was.
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-jump-restore-history-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+            "chapters": [{
+                "id": "chapter_1",
+                "title": "Chapter One",
+                "summary": "First",
+                "scenes": [
+                    { "type": "linear", "file": "chapter_1/scene_0.json" },
+                    { "type": "linear", "file": "chapter_1/scene_1.json" },
+                    { "type": "linear", "file": "chapter_1/scene_2.json" }
+                ]
+            }]
+        }"#,
+        )
+        .unwrap();
+        // Startup scene: three lines so we can advance once and still have
+        // remaining lines (staying within scene_0, no cascade into scene_1).
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{
+            "type": "linear",
+            "id": "scene_0",
+            "title": "Opening",
+            "queue": [
+                { "kind": "line", "speaker": "A", "text": "start" },
+                { "kind": "line", "speaker": "A", "text": "second" },
+                { "kind": "line", "speaker": "A", "text": "third" }
+            ]
+        }"#,
+        )
+        .unwrap();
+        // Jump target: empty queue → prime_initial_queue calls advance_scene.
+        fs::write(
+            chapter_1.join("scene_1.json"),
+            r#"{
+            "type": "linear",
+            "id": "scene_1",
+            "title": "Empty",
+            "queue": []
+        }"#,
+        )
+        .unwrap();
+        // Next scene after the jump target: declared linear but file is
+        // investigation-typed → load_scene_runtime rejects with
+        // sceneValidationFailed during advance_scene.
+        fs::write(
+            chapter_1.join("scene_2.json"),
+            r#"{
+            "type": "investigation",
+            "id": "scene_2",
+            "title": "Mismatched",
+            "intro": [],
+            "sublocations": [{
+                "id": "room",
+                "label": "Room",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "room",
+                "transitionDialogue": [],
+                "hotspots": [],
+                "characters": []
+            }],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": "auto", "dialogue": [] }
+        }"#,
+        )
+        .unwrap();
+
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        // Startup records the first visible line ("start") into history.
+        let started = engine.view();
+        assert_eq!(
+            history_labels(&started),
+            vec!["A: start".to_string()],
+            "startup should record the first visible line"
+        );
+
+        // Advance once to focus "second"; this records "second" into history,
+        // giving us a non-empty, multi-entry history to verify rollback against.
+        let advanced = engine.advance_dialogue(token_from(&started)).unwrap();
+        let pre_jump_history = history_labels(&advanced);
+        assert_eq!(
+            pre_jump_history,
+            vec!["A: start".to_string(), "A: second".to_string()],
+            "advance should record the newly focused line"
+        );
+        let pre_jump_token = token_from(&advanced);
+
+        // Failing jump: scene_1 is empty so priming cascades into scene_2,
+        // which fails validation. jump_to_scene must restore the snapshot
+        // taken before mutating state — including the non-empty history.
+        let err = engine
+            .jump_to_scene("chapter_1", "scene_1")
+            .expect_err("jump should fail during priming");
+        assert_eq!(err.code, "sceneValidationFailed");
+
+        // Scene identity restored.
+        let after = engine.view();
+        let after_scene_id = match &after.scene {
+            SceneView::Linear { id, .. } => id.clone(),
+            other => panic!("expected linear scene after restore, got {other:?}"),
+        };
+        assert_eq!(after_scene_id, "scene_0");
+
+        // The non-empty dialogue history must be restored verbatim, proving
+        // restore_snapshot copied the history fields (not just left them empty).
+        assert_eq!(
+            history_labels(&after),
+            pre_jump_history,
+            "rollback must restore the pre-jump non-empty dialogue history"
+        );
+
+        // The restored queue token must match the pre-jump token, proving
+        // next_queue_gen was restored (not incremented by the failed jump).
+        assert_eq!(
+            token_from(&after),
+            pre_jump_token,
+            "rollback must restore the queue generation"
+        );
+
+        // The engine remains usable: advancing from the restored cursor
+        // focuses "third", and records it into history on top of the restored
+        // entries — proving both the cursor and the history log are live.
+        let next = engine.advance_dialogue(token_from(&after)).unwrap();
+        assert_eq!(
+            history_labels(&next),
+            vec![
+                "A: start".to_string(),
+                "A: second".to_string(),
+                "A: third".to_string(),
+            ],
+            "post-rollback advance must append to the restored history"
+        );
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
     fn scene_lookup_returns_loaded_runtime_for_matching_scene() {
         let d = scene_jump_fixture_resources();
         let chapters = load_chapter_manifests(&d).unwrap();
