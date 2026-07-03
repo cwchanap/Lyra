@@ -478,19 +478,43 @@ describe("DialogueBox", () => {
       { kind: "action", text: "hello" },
       { history },
     );
-    const wrapper = container.querySelector(".wrapper") as HTMLElement;
+    const box = container.querySelector(".box") as HTMLElement;
 
     const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
     await user.click(logButton);
 
-    expect(isInert(wrapper)).toBe(true);
+    expect(isInert(box)).toBe(true);
     expect(closeTopmostEscapeClaim()).toBe(true);
     await waitFor(() => {
       expect(
         screen.queryByRole("dialog", { name: "對話紀錄" }),
       ).not.toBeInTheDocument();
-      expect(isInert(wrapper)).toBe(false);
+      expect(isInert(box)).toBe(false);
       expect(logButton).toHaveFocus();
+    });
+  });
+
+  it("keeps the LOG button non-inert while history is open so it can close the panel", async () => {
+    const user = userEvent.setup();
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
+    const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
+    await user.click(logButton);
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
+
+    // The advance box is inert, but the LOG button itself must not be so
+    // clicking it again can close the panel.
+    expect(isInert(logButton)).toBe(false);
+
+    await user.click(logButton);
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
     });
   });
 
