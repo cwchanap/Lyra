@@ -41,7 +41,7 @@
 
 **相馬律**：就這麼一句。還有張縮圖。
 
-[資訊欄一閃：preview_cache / contractor_thumb / low-res。]
+[資訊欄一閃而過，標著某個外包縮圖板的來源標記。]
 
 **早坂茜**：不是原檔。像某個外包縮圖板流出的一角。
 
@@ -174,19 +174,22 @@
 **早坂茜**：只能說他看不見。不能說他全程不在場。
 
 ### Hotspot: 半掩防火門與巡查路徑 {#takase_replay}
-- **Description:** 半掩防火門與門前地面，對應店長 23:20 從前場走進內側倉庫的路徑。
+- **Description:** 半掩防火門與門前地面，對應店長 23:20 從前場走進內側倉庫的發現動線 replay。
+- **Evidence Source:** implied
+- **Scene Source Prompt:** Visible half-open fire door and doorway floor used as the local sightline carrier for the manager's 23:20 discovery replay; no final replay card or readable overlay in the background.
+- **Reveals:** [evidence:takase_2320_replay]
 
 [相馬律順著店長 23:20 走過的路線，從前場往後場走。]
 
 **相馬律**：前場對帳卡住了。片瀨趕末班車，漏了維護紀錄冊的確認。
 
-**早坂茜**：所以店長走到後場，看見那本還沒蓋章的維護紀錄冊。
+**早坂茜**：所以店長走到後場，看見那本還沒蓋章的維護紀錄冊——就是白板上那個沒勾的項目。
 
 [相馬律推開半掩的防火門，感應燈亮起。]
 
 **相馬律**：燈一亮……高貨架後面，先露出來的是增田的鞋尖。
 
-**早坂茜**：白板跟紀錄冊的那條線，又對上了。
+**早坂茜**：白板跟紀錄冊的那條線，又對上了。這就是為什麼發現會拖到 23:20。
 
 ### Character: 黑瀨徹 {#kurose}
 - **Role:** 現場刑警
@@ -339,6 +342,19 @@
 **相馬律**：從那個點，看不到屍體。
 
 **早坂茜**：看不見，不等於不在場。先記著這條界線。
+
+### evidence:takase_2320_replay {#takase_2320_replay}
+- **Name:** 店長 23:20 發現 replay
+- **Description:** 店長 23:20 從前場走進內側倉庫、發現增田鞋尖的動線 replay。
+- **Details:** 前場對帳卡住、片瀨趕末班車漏了維護紀錄冊確認，店長才會在 23:20 走到後場，看見那本還沒蓋章的維護紀錄冊——就是 Beat 3 白板上沒勾的項目。推開半掩防火門、感應燈亮，才露出高貨架後方的鞋尖。它回收閉店 SOP 白板的 visual seed，解釋 23:20 發現延遲的生活原因。
+- **Source Sublocation:** inner
+- **Image Prompt:** Manager discovery replay card from a cafe backroom, half-open fire door, sensor light cone, shoe-tip peeking from behind a high shelf, no readable labels, isolated evidence icon.
+
+#### On Collect
+
+**相馬律**：23:20 才發現，原來是白板上那條沒做完的流程。
+
+**早坂茜**：流程沒走完，發現就會晚。這條線，從閉店白板一路接上了。
 
 ## Outro
 

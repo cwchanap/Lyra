@@ -88,6 +88,12 @@
 
 [店長把紙箱蓋上，放到角落。門邊的傘架，只在畫面邊緣靜靜立著。]
 
+**旁白**：案子結了。三宅的那杯太甜的拿鐵，也喝完了。
+
+**旁白**：但相馬心裡清楚——結案的，只是這一樁。
+
+**旁白**：增田留下的那支隨身碟，還沒有人打開過。
+
 [場景：相馬事務所，夜晚。窗外街燈昏黃，桌上只有一盞檯燈和一台筆電。]
 - **Background Prompt:** Small private detective office at night, desk lamp glow, laptop and sealed USB drive on worn desk, city streetlight outside rainy window, no readable screen text.
 - **BGM:** bgm_chapter_close
