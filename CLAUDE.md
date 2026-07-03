@@ -5,7 +5,8 @@ this repository.
 
 ## Commands
 
-Package manager is **bun** (see `bun.lock`). The repo is a Turborepo
+Package manager is **bun**, pinned to `bun@1.3.1` (see `packageManager` in the
+root `package.json` and `bun.lock`). The repo is a Turborepo
 workspace with apps under `apps/*` and shared libraries under `packages/*` (see
 "Shared packages" below); use the root scripts for orchestration and
 `bun run --cwd apps/<app>` when targeting one app directly. Lyra supports the
@@ -63,7 +64,10 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   `noUncheckedIndexedAccess`) via `tsconfig.scripts.json`. Enforced in CI.
   Run after changing compiler/audio logic.
 - `bun run test` / `bun run test:watch` - Vitest unit tests for frontend logic
-  and compile-script tests. Run a single file with
+  and compile-script tests. Root `test` runs two runners in sequence:
+  `test:scripts` (the `packages/scripts` compiler/audio suite via
+  `vitest.scripts.config.ts`) and then `turbo run test` (each app's own test
+  task); when a run fails, check which half. Run a single file with
   `bun run --cwd apps/game test src/lib/state/mode.test.ts` or a single case with
   `bun run --cwd apps/game test -t "test name"`.
 - `bun run test:e2e` / `bun run test:e2e:ui` - Playwright e2e tests in `e2e/`
@@ -72,7 +76,9 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   browser**. Tauri `invoke()` calls do not work there, so e2e tests must cover
   only the pure-frontend surface or explicit browser-safe mocks.
 - `bun run lint:all` - ESLint, Prettier check, Rust format check, and Rust
-  clippy with warnings denied.
+  clippy with warnings denied. `lint` / `lint:fix` run `svelte-kit sync`
+  (`--cwd apps/game sync`) before ESLint, so linting regenerates `.svelte-kit/`
+  and will fail if that sync fails.
 - Rust-side checks can be run through package scripts
   (`bun run rust:fmt`, `bun run rust:lint`) or directly with
   `cargo check --manifest-path apps/game/src-tauri/Cargo.toml` /
