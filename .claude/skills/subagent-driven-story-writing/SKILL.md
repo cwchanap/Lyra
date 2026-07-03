@@ -1,6 +1,6 @@
 ---
 name: subagent-driven-story-writing
-description: Use when an orchestrating agent is asked to author one or more chapter beats/scenes for the Lyra detective game 《東京雨證：第零證人》 by delegating to writing subagents — e.g. "work on beat N", "write the next scenes", "use a subagent per beat/scene with the proper writing skill". Trigger when turning a construction plan (施工圖/詳細計劃) into playable scene files under stories_plan, not when editing a single file yourself.
+description: Use when an orchestrating agent is asked to author one or more chapter beats/scenes for the Lyra detective game 《東京雨證：第零證人》 — e.g. "work on beat N", "write the next scenes", "use a subagent per beat/scene with the proper writing skill". Trigger when turning a construction plan (施工圖/詳細計劃) into playable scene files under stories_plan, not when editing a single file yourself.
 ---
 
 # Subagent-Driven Story Writing (《東京雨證：第零證人》)
@@ -55,7 +55,8 @@ format details (those live in the `writing-*` skills this skill dispatches to).
 5. **Dispatch writing subagents — in parallel when independent.** Two scene
    files that share no evidence/statement IDs are independent; dispatch them in
    one message (see superpowers:dispatching-parallel-agents). Each brief MUST be
-   self-contained (the agent starts cold) — see the brief contract below.
+   self-contained (the agent starts cold) — see the brief contract below. Each
+   subagent runs the §2.4 self-review on its own scene before returning.
 6. **GREEN gate.** Re-run `bun run scenes:compile`; expect
    `OK — N chapter(s), M scene(s)`. If errors, fix the offending file **in
    place** (common: a `Reveals`/`Unlock` target not matching its `{#id}`; a
@@ -89,14 +90,61 @@ Because the agent has none of your context, every brief carries all of:
   evidence/statement IDs are declared once; hotspot/topic/sublocation IDs are
   scene-local. State which locked blocks get exactly one inbound `Reveals` and
   no `Unlock` (a block must not have both); first sub-location is `unlocked`.
+- **For investigation scenes: the interaction-point ratio budget
+  (addendum §2.1, per-chapter not per-scene).** Tell the writer the target
+  mix across the chapter's investigation scenes *in aggregate*: ~40% 破案資訊
+  (directly support the three evidence packages), ~30% 角色生活資訊 (make
+  characters feel alive), ~20% 氣氛與伏筆 (blue umbrella, osmanthus, rain,
+  shop objects), ~10% 錯誤焦點 / 紅鯡魚 (let players briefly suspect the
+  manager, Katase, or deeper Miyake lies). A single scene may concentrate in
+  one bucket (e.g. a reversal scene can be mostly 破案); the orchestrator
+  balances across scenes. Instruct the writer to label each interaction
+  point's bucket in their summary so the orchestrator can aggregate the
+  chapter-wide mix; case-breaking info must not leak through a 生活/氣氛
+  point.
+- **For any scene that grants or updates evidence: the three-layer evidence
+  text rule (addendum §2.3).** Each evidence item needs (1) **初始描述** —
+  the neutral wording the player sees on first acquisition, (2) **更新後描述**
+  — one added sentence after the player discovers its new meaning, and
+  (3) **審查會使用語** — the 1–2 lines 相馬 can say when presenting it in a
+  hearing/review. Tell the writer which evidence IDs this scene introduces or
+  updates and require all three layers for each.
+- **Immediate self-review before returning (addendum §2.4 Scene QA Checklist).**
+  After writing the scene and before reporting back, the writing subagent MUST
+  self-review its own scene against these five questions and fix any violation
+  in place:
+  1. Does this scene serve only 1–2 main functions? (If it tries to do more,
+     cut or move the excess.)
+  2. Is any character lecturing the theme instead of acting it? (Rewrite as
+     action/dialogue, not exposition.)
+  3. Can the player *see* the clue, or are they only *told* it? (Convert
+     told-clues to visible/investigable objects.)
+  4. Does this scene introduce unnecessary new questions? (Remove side plots
+     that don't serve the beat's evidence packages.)
+  5. Is any foreshadow mistaken for evidence? (Foreshadow stays atmospheric;
+     evidence enters the manifest with formal IDs.)
+  The subagent reports which questions passed/failed and what it fixed.
+- **Natural conversation & situational context (addendum §5.4).** Every scene
+  must open with natural dialogue that grounds the player before case
+  mechanics begin. Tell the writer the minimum breathing-dialogue ratio for
+  this scene type: linear transitions ≥25%, investigation scenes need 2–3
+  lines of pre-investigation dialogue (why we're here, partner check-in,
+  first impression of the location), interrogation/hearing scenes need 2–3
+  lines of pre-proceeding partner dialogue (nervousness, strategy, opponent
+  read), breathing points ≥30%. New characters get a natural introduction
+  exchange, not just a Bio field. The writer must not assume the player
+  remembers the previous scene's motivation — re-establish presence and
+  stakes through human dialogue, not narration.
 - **A self-check list** to run before returning, plus "report a 3–5 line summary
   and the final IDs used."
 
 ## Review-subagent brief
 
 The review subagent owns *how* to review: its brief's first action is to invoke
-Skill `reviewing-story-scenes`, which defines the four axes (canon/factual,
-forbidden/premature reveals, voice & style, cross-beat continuity), the verdict
+Skill `reviewing-story-scenes`, which defines the seven axes (canon/factual,
+forbidden/premature reveals, voice & style, cross-beat continuity, visual
+background coverage, investigation interaction balance, natural conversation &
+situational context), the verdict
 format (SHIP / FIX-RECOMMENDED / BLOCKERS-PRESENT), and the edit-nothing rule.
 Your job is to hand it what that skill needs:
 
