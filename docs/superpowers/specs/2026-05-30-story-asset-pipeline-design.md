@@ -132,6 +132,15 @@ Every non-`旁白` speaker must resolve to one entry. `旁白` is a built-in no-
 
 Portrait speakers must define `standard`. Expressions are controlled per character.
 
+#### Scene character IDs vs. character config IDs
+
+These are **two deliberately separate namespaces**; they are not expected to match:
+
+- **Scene character IDs** are the `{#id}` anchors declared on `### Character:` headings inside investigation/interrogation scene markdown (e.g. `#hayasaka`, `#kurose`, `#kitami`). They are local to a scene, used as layout-sidecar keys and as the `character-id` segment in `topic:<character-id>@<topic-id>` reveal targets. They may be short slugs.
+- **Character config IDs** are the `id` fields in `characters.yaml` (e.g. `hayasaka_akane`, `kurose_toru`, `kitami_shuichi`). They are the global asset-catalog keys referenced by the middle segment of `assetId` strings (`portrait.<characterId>.<expression>`, `standee.<characterId>.<pose>`).
+
+The layout sidecar bridges the two: its per-sublocation `characters` map is keyed by the **scene character ID** (validated against the scene's declared character anchors), while each entry's `assetId` references the **character config ID**. For example, a scene with `### Character: 黑瀨徹 {#kurose}` pairs with a layout entry `"kurose": { "assetId": "standee.kurose_toru.standard" }`. This is the intended, consistent pattern across every character — it is not a rename drift.
+
 Example shape:
 
 ```yaml

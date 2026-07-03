@@ -3805,6 +3805,15 @@ mod tests {
             panic!("expected interrogation scene after rollback");
         };
         assert!(scene.pending_queue.is_none());
+        // Snapshot rollback must restore dialogue history after a failed
+        // advance path (design spec: dialogue-history-design.md "Testing").
+        // The fixture starts with empty history; the failed reexamine records
+        // nothing on the success path, so rollback should leave it empty.
+        assert!(
+            engine.dialogue_history.is_empty(),
+            "dialogue history must be restored to its pre-command state after rollback, got {:?}",
+            engine.dialogue_history
+        );
         let _ = fs::remove_dir_all(d);
     }
 
