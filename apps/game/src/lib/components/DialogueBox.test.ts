@@ -621,7 +621,7 @@ describe("DialogueBox", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
-  it("uses the default empty history when no history prop is passed", () => {
+  it("uses the default empty history when no history prop is passed", async () => {
     const onAdvance = vi.fn();
     render(DialogueBox, {
       current: { kind: "action", text: "hello" },
@@ -630,9 +630,15 @@ describe("DialogueBox", () => {
     });
 
     // The LOG button still renders; opening history shows the empty state.
-    expect(
-      screen.getByRole("button", { name: "開啟對話紀錄" }),
-    ).toBeInTheDocument();
+    const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
+    expect(logButton).toBeInTheDocument();
+    fireEvent.click(logButton, { detail: 0 });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByText("尚無對話紀錄")).toBeInTheDocument();
   });
 
   it("opens dialogue history with L while the LOG button is focused", async () => {
