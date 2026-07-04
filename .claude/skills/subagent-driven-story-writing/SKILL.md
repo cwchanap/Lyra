@@ -141,12 +141,9 @@ Because the agent has none of your context, every brief carries all of:
 ## Review-subagent brief
 
 The review subagent owns *how* to review: its brief's first action is to invoke
-Skill `reviewing-story-scenes`, which defines the seven axes (canon/factual,
-forbidden/premature reveals, voice & style, cross-beat continuity, visual
-background coverage, investigation interaction balance, natural conversation &
-situational context), the verdict
-format (SHIP / FIX-RECOMMENDED / BLOCKERS-PRESENT), and the edit-nothing rule.
-Your job is to hand it what that skill needs:
+Skill `reviewing-story-scenes`, which defines the review axes, verdict format,
+and the edit-nothing rule. Your job is to hand it what that skill needs — do not
+restate the axes, verdict, or finding format in the brief, the skill owns them:
 
 - The exact files under review, and the chapter id.
 - The authoritative sources to check against: the story bible, the chapter
@@ -154,10 +151,6 @@ Your job is to hand it what that skill needs:
   `static/stories_plan/`).
 - "First action: invoke Skill `reviewing-story-scenes`. Edit nothing — return a
   findings report only, not corrected files."
-
-Don't restate the axes, verdict, or finding format in the brief — the skill owns
-them. It returns a verdict plus `Severity — file:line — issue — suggested fix`
-findings (offending text quoted, source cited) and a short strengths list.
 
 ## Common Mistakes
 
