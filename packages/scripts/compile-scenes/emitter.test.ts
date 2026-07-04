@@ -5,13 +5,75 @@ import {
   emitInvestigationScene,
   emitLinearScene,
 } from "./emitter";
+import { parseInterrogationScene } from "./parser-interrogation";
 import type {
   ASTChapter,
   ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
   JSONChaptersIndex,
+  JSONInterrogationScene,
 } from "./types";
+
+// Mirrors XEXAM_SRC from parser-interrogation.test.ts (Task-2 grammar
+// fixture): a question/testimony/line scene with one honest line and one
+// contradiction line whose On Correct reveals a follow-up question.
+const XEXAM_SRC = `# Scene 1: 訊問
+
+## Intro
+
+## Phase: 訊問若槻 {#press}
+- **Kind:** inquiry
+[場景：審訊室、深夜]
+
+### Subject: 若槻悠真 {#wakatsuki}
+- **Role:** 清掃員
+- **Bio:** 值夜班的清潔工。
+
+### Question: 當晚行蹤 {#alibi}
+- **Status:** unlocked
+
+#### Testimony
+- **On Loop:** **相馬律**：還有哪裡對不上。再說一次。
+
+##### Line: 下班時間 {#l_off}
+**若槻悠真**：八點就下班了。
+
+##### Line: 否認接觸 {#l_deny}
+**若槻悠真**：那台機器我根本沒碰過。
+- **Contradiction:** evidence:cleaning_log
+- **Challenge:** **相馬律**：這句話對不上。
+- **On Correct:** **若槻悠真**：好吧，我碰過。
+  - **Reveals:** [question:cleaning_time]
+- **On Wrong Evidence:** **若槻悠真**：這能證明什麼？
+
+### Question: 追問清掃 {#cleaning_time}
+- **Status:** locked
+#### Testimony
+- **On Loop:** **相馬律**：別想混過去。
+##### Line: 交代 {#l_ct}
+**若槻悠真**：我只是忘了關電源。
+
+## Evidence Manifest
+
+## Statement Manifest
+
+## Outro
+`;
+
+function emitInterrogationFixture(): JSONInterrogationScene {
+  const parsed = parseInterrogationScene(
+    XEXAM_SRC,
+    "interrogation_scene_1.md",
+    "interrogation_scene_1",
+  );
+  if (!parsed.ok) {
+    throw new Error(
+      `fixture parse failed: ${parsed.error.code} ${parsed.error.message}`,
+    );
+  }
+  return emitInterrogationScene(parsed.value);
+}
 
 describe("emitter", () => {
   it("emits a linear scene JSON", () => {
@@ -268,6 +330,23 @@ describe("emitter", () => {
         },
       ],
     });
+  });
+
+  it("emits interrogation testimony lines with contradiction + reveals", () => {
+    const json = emitInterrogationFixture();
+    const phase = json.phases[0]!;
+    expect(phase.kind).toBe("inquiry");
+    const deny = phase.questions[0]!.testimony.lines[1]!;
+    expect(deny.contradiction).toEqual({
+      kind: "evidence",
+      id: "cleaning_log",
+    });
+    expect(deny.onCorrect?.length).toBeGreaterThan(0);
+    expect(deny.reveals).toContainEqual({
+      kind: "question",
+      id: "cleaning_time",
+    });
+    expect(phase.questions[0]!.testimony.onLoop.length).toBeGreaterThan(0);
   });
 
   it("emits a chapters index", () => {
