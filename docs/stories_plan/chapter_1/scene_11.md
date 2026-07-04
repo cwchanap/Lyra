@@ -78,7 +78,7 @@
 
 **旁白**：那股甜香，沒有人再多說一句。
 
-[牆上那座舊掛鐘被取了下來，靜靜躺在吧台上。]
+[倉庫裡那座停擺的舊掛鐘被取了下來，靜靜躺在吧台上。]
 
 [店長拿來一個紙箱，把掛鐘輕輕放進去。]
 
@@ -159,6 +159,7 @@
 [場景：雨鐘咖啡館外，深夜。雨已經停了，街面仍泛著水光，店招的燈滅了。]
 - **Background Prompt:** Exterior of Rain Bell cafe late at night after rain, dark storefront, wet street reflections, umbrella stand near the door holding a blue transparent umbrella, no readable sign.
 - **BGM:** bgm_chapter_close
+- **BGS:** none
 
 **旁白**：相馬走出事務所時，雨早就停了。
 
