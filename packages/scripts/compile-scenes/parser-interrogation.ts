@@ -6,9 +6,17 @@
 // Block hierarchy:
 //   H1: # Scene N: <title>
 //   H2: ## Intro | ## Phase: | ## Evidence Manifest | ## Statement Manifest | ## Outro
-//   H3: ### Subject: | ### Question: | ### Testimony | ### Result:
-//   H4: #### Follow-up: | #### On Reask | #### Statement:
-//   H5: ##### On Reask | ##### On Press | ##### On Present | ##### On Wrong Present
+//   H3: ### Subject: | ### Question:
+//   H4: #### Testimony
+//   H5: ##### Line:
+//
+// Every phase is `Kind: inquiry`. Each `### Question:` owns exactly one
+// `#### Testimony` block, which carries a required `On Loop` line plus one or
+// more `##### Line:` entries -- the suspect's cross-examinable testimony. A
+// Line with a `Contradiction` target must also declare `Challenge`,
+// `On Correct`, and `On Wrong Evidence`; `On Correct` may itself carry a
+// nested `- **Reveals:** [...]` bullet (functionally just another metadata
+// key on the same Line block -- the tokenizer does not track indentation).
 // =============================================================================
 
 import { tokenize, type Token } from "./tokenizer";
@@ -32,9 +40,8 @@ import type {
   ASTInterrogationScene,
   ASTStatement,
   ASTSubject,
-  ASTTestimonyPhase,
-  ASTTestimonyResult,
-  ASTTestimonyStatement,
+  ASTTestimony,
+  ASTTestimonyLine,
   CompileError,
   DialogueItem,
   InterrogationRevealTarget,
@@ -235,13 +242,6 @@ function parsePhase(
       label,
       meta: meta.value,
     });
-  if (kind === "testimony")
-    return parseTestimonyPhase(cur, {
-      head,
-      id: head.anchorId,
-      label,
-      meta: meta.value,
-    });
   return fail(
     cur.sourceFile,
     head.line,
@@ -325,7 +325,6 @@ function parseInquiryPhase(
   let sceneTag: string | null = null;
   const entryDialogue: DialogueItem[] = [];
   const questions: ASTInquiryQuestion[] = [];
-  let lastQuestionId: string | null = null;
 
   while (true) {
     const next = cur.peek();
@@ -353,25 +352,7 @@ function parseInquiryPhase(
       next.level === 3 &&
       next.text.startsWith("Question:")
     ) {
-      const q = parseInquiryQuestion(cur, null);
-      if (!q.ok) return q;
-      questions.push(q.value);
-      lastQuestionId = q.value.id;
-      continue;
-    }
-    if (
-      next.kind === "heading" &&
-      next.level === 4 &&
-      next.text.startsWith("Follow-up:")
-    ) {
-      if (!lastQuestionId)
-        return fail(
-          cur.sourceFile,
-          next.line,
-          "interrogationQuestionMalformedHeading",
-          "Follow-up must appear after a parent Question.",
-        );
-      const q = parseInquiryQuestion(cur, lastQuestionId);
+      const q = parseInquiryQuestion(cur);
       if (!q.ok) return q;
       questions.push(q.value);
       continue;
@@ -439,164 +420,13 @@ function parseInquiryPhase(
   };
 }
 
-function parseTestimonyPhase(
-  cur: Cursor,
-  phaseMeta: PhaseMeta,
-): { ok: true; value: ASTTestimonyPhase } | { ok: false; error: CompileError } {
-  const common = parseCommonPhaseMeta(phaseMeta);
-  if (!common.ok) return common;
-
-  let subject: ASTSubject | null = null;
-  let sceneTag: string | null = null;
-  let hasTestimonyContainer = false;
-  const entryDialogue: DialogueItem[] = [];
-  const statements: ASTTestimonyStatement[] = [];
-  const results: ASTTestimonyResult[] = [];
-
-  while (true) {
-    const next = cur.peek();
-    if (!next) break;
-    if (next.kind === "heading" && next.level <= 2) break;
-    if (
-      next.kind === "heading" &&
-      next.level === 3 &&
-      next.text.startsWith("Subject:")
-    ) {
-      if (subject)
-        return fail(
-          cur.sourceFile,
-          next.line,
-          "interrogationPhaseDuplicateSubject",
-          `Phase ${phaseMeta.id} declared multiple Subject blocks.`,
-        );
-      const s = parseSubject(cur);
-      if (!s.ok) return s;
-      subject = s.value;
-      continue;
-    }
-    if (
-      next.kind === "heading" &&
-      next.level === 3 &&
-      next.text === "Testimony"
-    ) {
-      if (hasTestimonyContainer)
-        return fail(
-          cur.sourceFile,
-          next.line,
-          "testimonyDuplicateContainer",
-          `Testimony phase ${phaseMeta.id} declared multiple Testimony containers.`,
-        );
-      cur.next();
-      hasTestimonyContainer = true;
-      while (true) {
-        const tok = cur.peek();
-        if (!tok) break;
-        if (tok.kind === "heading" && tok.level <= 3) break;
-        if (
-          tok.kind === "heading" &&
-          tok.level === 4 &&
-          tok.text.startsWith("Statement:")
-        ) {
-          const s = parseTestimonyStatement(cur);
-          if (!s.ok) return s;
-          statements.push(s.value);
-          continue;
-        }
-        return fail(
-          cur.sourceFile,
-          tok.line,
-          "testimonyMissingContainer",
-          `Unexpected content in Testimony container: ${describe(tok)}.`,
-        );
-      }
-      continue;
-    }
-    if (
-      next.kind === "heading" &&
-      next.level === 3 &&
-      next.text.startsWith("Result:")
-    ) {
-      const r = parseTestimonyResult(cur);
-      if (!r.ok) return r;
-      results.push(r.value);
-      continue;
-    }
-    const body = consumePhaseBodyToken(
-      cur,
-      sceneTag,
-      entryDialogue,
-      phaseMeta.id,
-    );
-    if (!body.ok) return body;
-    sceneTag = body.value.sceneTag;
-  }
-
-  if (sceneTag === null)
-    return fail(
-      cur.sourceFile,
-      phaseMeta.head.line,
-      "interrogationPhaseNoSceneTag",
-      "Interrogation phase body must include exactly one [場景：...] tag.",
-    );
-  if (!subject)
-    return fail(
-      cur.sourceFile,
-      phaseMeta.head.line,
-      "interrogationPhaseMissingSubject",
-      `Phase ${phaseMeta.id} must declare a Subject.`,
-    );
-  if (!hasTestimonyContainer)
-    return fail(
-      cur.sourceFile,
-      phaseMeta.head.line,
-      "testimonyMissingContainer",
-      `Testimony phase ${phaseMeta.id} must declare ### Testimony.`,
-    );
-  if (statements.length === 0)
-    return fail(
-      cur.sourceFile,
-      phaseMeta.head.line,
-      "testimonyNoStatements",
-      `Testimony phase ${phaseMeta.id} must declare at least one statement.`,
-    );
-  if (results.length === 0)
-    return fail(
-      cur.sourceFile,
-      phaseMeta.head.line,
-      "testimonyNoResults",
-      `Testimony phase ${phaseMeta.id} must declare at least one result.`,
-    );
-
-  return {
-    ok: true,
-    value: {
-      kind: "testimony",
-      id: phaseMeta.id,
-      label: phaseMeta.label,
-      subject,
-      required: common.value.required,
-      status: common.value.status,
-      unlock: common.value.unlock,
-      reveals: common.value.reveals,
-      sceneTag,
-      assetCue: common.value.assetCue,
-      entryDialogue,
-      statements,
-      results,
-      sourceFile: cur.sourceFile,
-      line: phaseMeta.head.line,
-    },
-  };
-}
-
 function parseInquiryQuestion(
   cur: Cursor,
-  parentQuestionId: string | null,
 ):
   | { ok: true; value: ASTInquiryQuestion }
   | { ok: false; error: CompileError } {
   const head = cur.next();
-  if (!head || head.kind !== "heading")
+  if (!head || head.kind !== "heading" || head.level !== 3)
     return fail(
       cur.sourceFile,
       head?.line ?? 1,
@@ -610,18 +440,7 @@ function parseInquiryQuestion(
       "interrogationQuestionMissingAnchor",
       "Question heading must include {#id}.",
     );
-  const expectedLevel = parentQuestionId === null ? 3 : 4;
-  if (head.level !== expectedLevel)
-    return fail(
-      cur.sourceFile,
-      head.line,
-      "interrogationQuestionMalformedHeading",
-      `Unexpected question heading level H${head.level}.`,
-    );
-  const labelMatch =
-    parentQuestionId === null
-      ? /^Question:\s*(.+)$/.exec(head.text)
-      : /^Follow-up:\s*(.+)$/.exec(head.text);
+  const labelMatch = /^Question:\s*(.+)$/.exec(head.text);
   if (!labelMatch)
     return fail(
       cur.sourceFile,
@@ -680,82 +499,55 @@ function parseInquiryQuestion(
   );
   if (!required.ok) return required;
 
-  const answer = consumeDialogueUntilHeading(cur, head.level);
-  if (!answer.ok) return answer;
-
-  let onReask: DialogueItem[] | null = null;
   const next = cur.peek();
-  const onReaskLevel = parentQuestionId === null ? 4 : 5;
   if (
-    next &&
-    next.kind === "heading" &&
-    next.level === onReaskLevel &&
-    next.text === "On Reask"
-  ) {
-    cur.next();
-    const r = consumeDialogueUntilHeading(cur, onReaskLevel);
-    if (!r.ok) return r;
-    onReask = r.value;
-  } else if (
-    next &&
-    next.kind === "heading" &&
-    next.level === 5 &&
-    parentQuestionId === null
+    !next ||
+    next.kind !== "heading" ||
+    next.level !== 4 ||
+    next.text !== "Testimony"
   ) {
     return fail(
       cur.sourceFile,
-      next.line,
-      "interrogationQuestionMalformedHeading",
-      `Unexpected H5 under Question: ${next.text}.`,
+      head.line,
+      "interrogationQuestionMissingTestimony",
+      `Question ${head.anchorId} must be followed by exactly one #### Testimony block.`,
     );
   }
+  const testimony = parseTestimony(cur, head.anchorId);
+  if (!testimony.ok) return testimony;
 
   return {
     ok: true,
     value: {
       id: head.anchorId,
       label: (labelMatch[1] ?? "").trim(),
-      kind: parentQuestionId === null ? "question" : "followUp",
-      parentQuestionId,
       status: status.value,
       required: required.value,
       unlock,
       reveals: reveals.value,
-      answerDialogue: answer.value,
-      onReask,
+      testimony: testimony.value,
       sourceFile: cur.sourceFile,
       line: head.line,
     },
   };
 }
 
-function parseTestimonyStatement(
+function parseTestimony(
   cur: Cursor,
-):
-  | { ok: true; value: ASTTestimonyStatement }
-  | { ok: false; error: CompileError } {
-  const head = cur.next();
-  if (!head || head.kind !== "heading" || head.level !== 4)
+  questionId: string,
+): { ok: true; value: ASTTestimony } | { ok: false; error: CompileError } {
+  const head = cur.next(); // the "#### Testimony" heading itself
+  if (
+    !head ||
+    head.kind !== "heading" ||
+    head.level !== 4 ||
+    head.text !== "Testimony"
+  )
     return fail(
       cur.sourceFile,
       head?.line ?? 1,
       "internalParserState",
-      "parseTestimonyStatement called off-position.",
-    );
-  if (!head.anchorId)
-    return fail(
-      cur.sourceFile,
-      head.line,
-      "testimonyStatementMissingAnchor",
-      "Testimony statement heading must include {#id}.",
-    );
-  const labelMatch = /^Statement:\s*(.+)$/.exec(head.text);
-  if (!labelMatch)
-    return fail(
-      cur.sourceFile,
-      head.line,
-      "testimonyStatementMissingAnchor",
-      `Malformed testimony statement heading: ${head.text}`,
+      "parseTestimony called off-position.",
     );
 
   const meta = consumeMetadata(cur);
@@ -767,18 +559,206 @@ function parseTestimonyStatement(
     head.line,
   );
   if (badAssetMeta) return { ok: false, error: badAssetMeta };
-  const content = meta.value.Content;
-  if (!content)
+
+  const TESTIMONY_FIELDS = new Set([
+    "On Loop",
+    "Default Challenge",
+    "Default Wrong",
+  ]);
+  for (const key of Object.keys(meta.value)) {
+    if (!TESTIMONY_FIELDS.has(key))
+      return fail(
+        cur.sourceFile,
+        head.line,
+        "interrogationBadTestimonyField",
+        `Unknown Testimony field "${key}" on question ${questionId}.`,
+      );
+  }
+
+  const onLoopRaw = meta.value["On Loop"];
+  if (!onLoopRaw)
     return fail(
       cur.sourceFile,
       head.line,
-      "testimonyStatementMissingContent",
-      `Testimony statement ${head.anchorId} requires Content.`,
+      "interrogationMissingOnLoop",
+      `Question ${questionId}'s #### Testimony requires On Loop dialogue.`,
     );
-  const contradiction = meta.value.Contradiction
-    ? parseInventoryTarget(meta.value.Contradiction, cur.sourceFile, head.line)
-    : { ok: true as const, value: null };
-  if (!contradiction.ok) return contradiction;
+  const onLoop = parseDialogueFieldValue(onLoopRaw, cur.sourceFile, head.line);
+  if (!onLoop.ok) return onLoop;
+
+  let defaultChallenge: DialogueItem[] | null = null;
+  if (meta.value["Default Challenge"] !== undefined) {
+    const r = parseDialogueFieldValue(
+      meta.value["Default Challenge"],
+      cur.sourceFile,
+      head.line,
+    );
+    if (!r.ok) return r;
+    defaultChallenge = r.value;
+  }
+  let defaultWrong: DialogueItem[] | null = null;
+  if (meta.value["Default Wrong"] !== undefined) {
+    const r = parseDialogueFieldValue(
+      meta.value["Default Wrong"],
+      cur.sourceFile,
+      head.line,
+    );
+    if (!r.ok) return r;
+    defaultWrong = r.value;
+  }
+
+  const lines: ASTTestimonyLine[] = [];
+  while (true) {
+    const next = cur.peek();
+    if (!next) break;
+    if (next.kind === "heading" && next.level <= 3) break;
+    if (
+      next.kind === "heading" &&
+      next.level === 5 &&
+      next.text.startsWith("Line:")
+    ) {
+      const l = parseTestimonyLine(cur);
+      if (!l.ok) return l;
+      lines.push(l.value);
+      continue;
+    }
+    return fail(
+      cur.sourceFile,
+      next.line,
+      "interrogationTestimonyUnexpectedContent",
+      `Unexpected content in question ${questionId}'s #### Testimony: ${describe(next)}.`,
+    );
+  }
+  if (lines.length === 0)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "interrogationEmptyTestimony",
+      `Question ${questionId}'s #### Testimony needs at least one ##### Line.`,
+    );
+
+  return {
+    ok: true,
+    value: {
+      onLoop: onLoop.value,
+      defaultChallenge,
+      defaultWrong,
+      lines,
+      sourceFile: cur.sourceFile,
+      line: head.line,
+    },
+  };
+}
+
+function parseTestimonyLine(
+  cur: Cursor,
+): { ok: true; value: ASTTestimonyLine } | { ok: false; error: CompileError } {
+  const head = cur.next(); // "##### Line: <label> {#id}"
+  if (!head || head.kind !== "heading" || head.level !== 5)
+    return fail(
+      cur.sourceFile,
+      head?.line ?? 1,
+      "internalParserState",
+      "parseTestimonyLine called off-position.",
+    );
+  if (!head.anchorId)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "interrogationLineMissingAnchor",
+      "##### Line heading must include {#id}.",
+    );
+  const labelMatch = /^Line:\s*(.+)$/.exec(head.text);
+  if (!labelMatch)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "interrogationLineMalformedHeading",
+      `Malformed line heading: ${head.text}`,
+    );
+  const label = (labelMatch[1] ?? "").trim();
+
+  const content = readLeadingDialogue(cur);
+  if (!content.ok) return content;
+  if (content.value.length === 0)
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "interrogationEmptyLine",
+      `##### Line "${head.anchorId}" needs suspect dialogue.`,
+    );
+
+  const meta = consumeMetadata(cur);
+  if (!meta.ok) return meta;
+  const badAssetMeta = rejectReservedAssetMetadata(
+    meta.value,
+    [],
+    cur.sourceFile,
+    head.line,
+  );
+  if (badAssetMeta) return { ok: false, error: badAssetMeta };
+
+  const LINE_FIELDS = new Set([
+    "Contradiction",
+    "Challenge",
+    "On Correct",
+    "On Wrong Evidence",
+    "Reveals",
+  ]);
+  for (const key of Object.keys(meta.value)) {
+    if (!LINE_FIELDS.has(key))
+      return fail(
+        cur.sourceFile,
+        head.line,
+        "interrogationBadLineField",
+        `Unknown Line field "${key}" on ${head.anchorId}.`,
+      );
+  }
+
+  let contradiction: InventoryTarget | null = null;
+  if (meta.value.Contradiction !== undefined) {
+    const r = parseInventoryTarget(
+      meta.value.Contradiction,
+      cur.sourceFile,
+      head.line,
+    );
+    if (!r.ok) return r;
+    contradiction = r.value;
+  }
+  let challenge: DialogueItem[] | null = null;
+  if (meta.value.Challenge !== undefined) {
+    const r = parseDialogueFieldValue(
+      meta.value.Challenge,
+      cur.sourceFile,
+      head.line,
+    );
+    if (!r.ok) return r;
+    challenge = r.value;
+  }
+  let onCorrect: DialogueItem[] | null = null;
+  if (meta.value["On Correct"] !== undefined) {
+    const r = parseDialogueFieldValue(
+      meta.value["On Correct"],
+      cur.sourceFile,
+      head.line,
+    );
+    if (!r.ok) return r;
+    onCorrect = r.value;
+  }
+  let onWrongEvidence: DialogueItem[] | null = null;
+  if (meta.value["On Wrong Evidence"] !== undefined) {
+    const r = parseDialogueFieldValue(
+      meta.value["On Wrong Evidence"],
+      cur.sourceFile,
+      head.line,
+    );
+    if (!r.ok) return r;
+    onWrongEvidence = r.value;
+  }
+  // "- **Reveals:** [...]" is authored indented under "- **On Correct:**" for
+  // readability, but the tokenizer trims leading whitespace on every line, so
+  // it arrives here as just another metadata key on this Line block -- there
+  // is no nesting to thread through.
   const reveals = meta.value.Reveals
     ? parseInterrogationRevealsList(
         meta.value.Reveals,
@@ -788,124 +768,41 @@ function parseTestimonyStatement(
     : { ok: true as const, value: [] as InterrogationRevealTarget[] };
   if (!reveals.ok) return reveals;
 
-  let onPress: DialogueItem[] | null = null;
-  let onPresent: DialogueItem[] | null = null;
-  let onWrongPresent: DialogueItem[] | null = null;
-
-  while (true) {
-    const next = cur.peek();
-    if (!next) break;
-    if (next.kind === "heading" && next.level <= 4) break;
-    if (next.kind === "heading" && next.level === 5) {
-      if (next.text === "On Press") {
-        cur.next();
-        const r = consumeDialogueUntilHeading(cur, 5);
-        if (!r.ok) return r;
-        onPress = r.value;
-        continue;
-      }
-      if (next.text === "On Present") {
-        cur.next();
-        const r = consumeDialogueUntilHeading(cur, 5);
-        if (!r.ok) return r;
-        onPresent = r.value;
-        continue;
-      }
-      if (next.text === "On Wrong Present") {
-        cur.next();
-        const r = consumeDialogueUntilHeading(cur, 5);
-        if (!r.ok) return r;
-        onWrongPresent = r.value;
-        continue;
-      }
+  if (contradiction !== null) {
+    if (!challenge)
       return fail(
         cur.sourceFile,
-        next.line,
-        "testimonyUnknownH5",
-        `Unknown H5 under testimony statement ${head.anchorId}: ${next.text}.`,
+        head.line,
+        "interrogationMissingChallenge",
+        `Line "${head.anchorId}" with Contradiction needs Challenge.`,
       );
-    }
-    return fail(
-      cur.sourceFile,
-      next.line,
-      "testimonyUnknownH5",
-      `Unexpected token in testimony statement ${head.anchorId}: ${describe(next)}.`,
-    );
+    if (!onCorrect)
+      return fail(
+        cur.sourceFile,
+        head.line,
+        "interrogationMissingOnCorrect",
+        `Line "${head.anchorId}" with Contradiction needs On Correct.`,
+      );
+    if (!onWrongEvidence)
+      return fail(
+        cur.sourceFile,
+        head.line,
+        "interrogationMissingOnWrongEvidence",
+        `Line "${head.anchorId}" with Contradiction needs On Wrong Evidence.`,
+      );
   }
 
   return {
     ok: true,
     value: {
       id: head.anchorId,
-      label: (labelMatch[1] ?? "").trim(),
-      content,
-      contradiction: contradiction.value,
-      onCorrect: meta.value["On Correct"] ?? null,
-      onWrong: meta.value["On Wrong"] ?? null,
-      onPress,
-      onPresent,
-      onWrongPresent,
+      label,
+      content: content.value,
+      contradiction,
+      challenge,
+      onCorrect,
+      onWrongEvidence,
       reveals: reveals.value,
-      sourceFile: cur.sourceFile,
-      line: head.line,
-    },
-  };
-}
-
-function parseTestimonyResult(
-  cur: Cursor,
-):
-  | { ok: true; value: ASTTestimonyResult }
-  | { ok: false; error: CompileError } {
-  const head = cur.next();
-  if (!head || head.kind !== "heading" || head.level !== 3)
-    return fail(
-      cur.sourceFile,
-      head?.line ?? 1,
-      "internalParserState",
-      "parseTestimonyResult called off-position.",
-    );
-  if (!head.anchorId)
-    return fail(
-      cur.sourceFile,
-      head.line,
-      "testimonyResultMissingAnchor",
-      "Testimony result heading must include {#id}.",
-    );
-  const labelMatch = /^Result:\s*(.+)$/.exec(head.text);
-  if (!labelMatch)
-    return fail(
-      cur.sourceFile,
-      head.line,
-      "testimonyResultMissingAnchor",
-      `Malformed testimony result heading: ${head.text}`,
-    );
-  const meta = consumeMetadata(cur);
-  if (!meta.ok) return meta;
-  const badAssetMeta = rejectReservedAssetMetadata(
-    meta.value,
-    [],
-    cur.sourceFile,
-    head.line,
-  );
-  if (badAssetMeta) return { ok: false, error: badAssetMeta };
-  const reveals = meta.value.Reveals
-    ? parseInterrogationRevealsList(
-        meta.value.Reveals,
-        cur.sourceFile,
-        head.line,
-      )
-    : { ok: true as const, value: [] as InterrogationRevealTarget[] };
-  if (!reveals.ok) return reveals;
-  const dialogue = consumeDialogueUntilHeading(cur, 3);
-  if (!dialogue.ok) return dialogue;
-  return {
-    ok: true,
-    value: {
-      id: head.anchorId,
-      label: (labelMatch[1] ?? "").trim(),
-      reveals: reveals.value,
-      dialogue: dialogue.value,
       sourceFile: cur.sourceFile,
       line: head.line,
     },
@@ -1168,6 +1065,87 @@ function consumeDialogueUntilHeading(
     }
   }
   return { ok: true, value: out };
+}
+
+// Like consumeDialogueUntilHeading, but for a ##### Line body: the suspect's
+// dialogue is immediately followed by "- **Key:** value" metadata fields
+// (Contradiction, Challenge, ...), not another heading. Unlike
+// consumeDialogueUntilHeading, hitting a metadata token here is the normal,
+// expected end of the leading dialogue -- not a stray-metadata error -- so
+// this stops cleanly at either a heading or a metadata token.
+function readLeadingDialogue(cur: Cursor): DialogueResult {
+  const out: DialogueItem[] = [];
+  while (true) {
+    const next = cur.peek();
+    if (!next) break;
+    if (next.kind === "heading" || next.kind === "metadata") break;
+    cur.next();
+    if (next.kind === "sceneTag")
+      out.push({ kind: "sceneTag", text: next.text, assetCue: null });
+    else if (next.kind === "action")
+      out.push({ kind: "action", text: next.text });
+    else if (next.kind === "dialogue") {
+      out.push({
+        kind: "line",
+        speaker: next.speaker,
+        text: next.text,
+        expression: next.expression,
+        portrait: null,
+      });
+    } else if (next.kind === "unknown") {
+      return fail(
+        cur.sourceFile,
+        next.line,
+        "unrecognizedDialogueLine",
+        `Unrecognized line in dialogue body: ${next.text}.`,
+      );
+    }
+  }
+  return { ok: true, value: out };
+}
+
+// Testimony/Line fields (On Loop, Challenge, On Correct, On Wrong Evidence,
+// ...) are authored as a single metadata bullet whose value is itself a
+// dialogue line, e.g. `- **On Loop:** **相馬律**：還有哪裡對不上。`. The
+// tokenizer already knows how to recognize a "**Speaker**：text" or
+// "[action]" line -- re-tokenizing the raw field value (guaranteed to be a
+// single physical line; METADATA_RE never spans lines) reuses that logic
+// instead of duplicating its regexes here.
+function parseDialogueFieldValue(
+  raw: string,
+  sourceFile: string,
+  line: number,
+): { ok: true; value: DialogueItem[] } | { ok: false; error: CompileError } {
+  const toks = tokenize(raw, sourceFile);
+  const items: DialogueItem[] = [];
+  for (const t of toks) {
+    if (t.kind === "dialogue") {
+      items.push({
+        kind: "line",
+        speaker: t.speaker,
+        text: t.text,
+        expression: t.expression,
+        portrait: null,
+      });
+    } else if (t.kind === "action") {
+      items.push({ kind: "action", text: t.text });
+    } else {
+      return fail(
+        sourceFile,
+        line,
+        "interrogationBadDialogueField",
+        `Expected dialogue text (e.g. **Name**：...); got: ${raw}`,
+      );
+    }
+  }
+  if (items.length === 0)
+    return fail(
+      sourceFile,
+      line,
+      "interrogationBadDialogueField",
+      `Expected dialogue text (e.g. **Name**：...); got: ${raw}`,
+    );
+  return { ok: true, value: items };
 }
 
 function parseInterrogationRevealsList(
