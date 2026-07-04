@@ -3,20 +3,20 @@
 ## Intro
 
 [場景：雨鐘咖啡館後場門口，深夜，雨勢轉大。門口燈光照著止滑墊，後巷一片濕黑。]
-- **Background Prompt:** Rain Bell cafe back door area at late rainy night before re-entering the back room, non-slip mat at the threshold, dark wet rear alley beyond, phone notification glow in the detective's hand, tense investigative mood, no readable text.
+- **Background Prompt:** Rain Bell cafe back door area at late rainy night before re-entering the back room, non-slip mat at the threshold, dark wet rear alley beyond, tense investigative mood, no readable text.
 - **BGS:** bgs_cafe_closed_night
 
-[相馬律的手機在口袋裡震了一下。他低頭看螢幕，眉頭皺起。]
+[相馬律與早坂茜沿著後巷走回雨鐘的後場門口。雨勢比前一晚更大，兩人的外套肩頭都濕了一層。相馬律停在門檻前，沒有馬上進去。]
 
-**相馬律**：有一則匿名訊息。
+**相馬律**：前場那條，是三宅的。後巷這條，摘要只把它當旁註。
 
-**早坂茜**：哪個帳號？
+**相馬律**：所以才想再走一遍這間店。
 
-**相馬律**：署名雨宮。沒有正文，只有一句話和一張圖。
+**早坂茜**：旁註不代表不存在。
 
-**早坂茜**：別急著回。先看現場。
+[黑瀨徹已經站在後場門口內側，朝兩人擺了下手。他穿著一件皺巴巴的外套，肩膀撐得有些歪，腳下的皮鞋鞋面佈滿細碎刮痕——跑現場跑出來的那種。臉上皺紋很深，尤其是眼尾，像是在強光下盯了太多年證物袋。粗大的手指隨意搭在門框上，穩穩的。]
 
-[黑瀨徹從後場門口探出頭，朝兩人擺了下手。他穿著一件皺巴巴的外套，肩膀撐得有些歪，腳下的皮鞋鞋面佈滿細碎刮痕——跑現場跑出來的那種。臉上皺紋很深，尤其是眼尾，像是在強光下盯了太多年證物袋。粗大的手指隨意搭在門框上，穩穩的。]
+**黑瀨徹**：你們說要看『店裡沒寫進摘要的動線』，就是這裡？
 
 **黑瀨徹**：要看，就進來看。外面雨大。
 
@@ -27,9 +27,7 @@
 
 [場景：雨鐘咖啡館後場門口，深夜，雨夜。止滑墊鋪在門檻內側，地上有半乾的水痕，牆角掛著一只濕傘套，門外是後巷入口。]
 
-[相馬律站在門檻邊，把手機螢幕轉給早坂茜看。早坂茜微微退了半步，雙手插在口袋裡，安靜地盯著螢幕。]
-
-**相馬律**：訊息剛到。我先看看現場對不對得上。
+[相馬律與早坂茜跨過門檻，走進後場門口。相馬律的視線先落在地上的止滑墊，沒有急著往裡走。早坂茜雙手插在口袋裡，安靜地掃過牆角的傘套和門外的後巷。]
 
 ### Hotspot: 止滑墊與半乾水痕 {#floor_water}
 - **Description:** 門檻內側的止滑墊，旁邊一灘半乾的水痕。
@@ -37,11 +35,33 @@
 - **Scene Source Prompt:** Non-slip mat and half-dry water trace at the back-door threshold as the visible source for comparing the anonymous message thumbnail and drying pattern.
 - **Reveals:** [evidence:amemiya_message_thumb, evidence:floor_water_drying_map]
 
+[相馬律蹲下，湊近看止滑墊邊緣的半乾水痕。他剛蹲穩，手機在口袋裡震了一下。他低頭看螢幕，眉頭皺起。]
+
+**相馬律**：有一則匿名訊息。
+
+**早坂茜**：哪個帳號？
+
+**相馬律**：署名雨宮。沒有正文，只有一句話和一張圖。
+
+**早坂茜**：別急著回。先看現場。
+
+**相馬律**：訊息剛到。我先看看現場對不對得上。
+
 [相馬律把手機舉到兩人之間。螢幕上一句話：「雨會替東京洗掉腳印。」]
 
 **相馬律**：就這麼一句。還有張縮圖。
 
 [資訊欄一閃而過，標著某個外包縮圖板的來源標記。]
+
+**黑瀨徹**：匿名訊息這種東西，十條裡九條是鬧事。
+
+**相馬律**：那剩下一條呢？
+
+**黑瀨徹**：剩下一條，不見得說謊，也不見得幫得上忙。那種最麻煩。
+
+[相馬律又低頭看了一眼螢幕。「雨會替東京洗掉腳印」這句話不像線索，倒像有人隔著什麼在看他。]
+
+**相馬律**：……這句話，不像隨便寫的。
 
 **早坂茜**：不是原檔。像某個外包縮圖板流出的一角。
 
@@ -212,11 +232,11 @@
 
 [相馬律問起店長那晚有沒有聽見聲響。]
 
-**黑瀨徹**：店長說，他聽到一聲悶響。但那台機器 backflush 的時候，也常那樣。
+**黑瀨徹**：店長說，她聽到一聲悶響。但那台洗杯機排氣的時候，也常那樣。
 
 **相馬律**：所以悶響被蓋過去了。
 
-**黑瀨徹**：兩個來源。一個是 backflush，一個是收銀抽屜的硬幣盤。
+**黑瀨徹**：兩個來源。一個是洗杯機排氣，一個是收銀抽屜的硬幣盤。
 
 **黑瀨徹**：別問我更多。聲音這種事，要用就讓鑑識去固定。
 
@@ -346,7 +366,7 @@
 ### evidence:takase_2320_replay {#takase_2320_replay}
 - **Name:** 店長 23:20 發現 replay
 - **Description:** 店長 23:20 從前場走進內側倉庫、發現增田鞋尖的動線 replay。
-- **Details:** 前場對帳卡住、片瀨趕末班車漏了維護紀錄冊確認，店長才會在 23:20 走到後場，看見那本還沒蓋章的維護紀錄冊——就是 Beat 3 白板上沒勾的項目。推開半掩防火門、感應燈亮，才露出高貨架後方的鞋尖。它回收閉店 SOP 白板的 visual seed，解釋 23:20 發現延遲的生活原因。
+- **Details:** 前場對帳卡住、片瀨趕末班車漏了維護紀錄冊確認，店長才會在 23:20 走到後場，看見那本還沒蓋章的維護紀錄冊——對應閉店告示板上沒勾的那一欄。推開半掩防火門、感應燈亮，才露出高貨架後方的鞋尖。它解釋了 23:20 發現延遲的生活原因。
 - **Source Sublocation:** inner
 - **Image Prompt:** Manager discovery replay card from a cafe backroom, half-open fire door, sensor light cone, shoe-tip peeking from behind a high shelf, no readable labels, isolated evidence icon.
 
