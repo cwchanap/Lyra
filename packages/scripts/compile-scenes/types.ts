@@ -242,7 +242,7 @@ export type ASTSubject = Located<{
   bio: string;
 }>;
 
-export type ASTInterrogationPhase = ASTInquiryPhase | ASTTestimonyPhase;
+export type ASTInterrogationPhase = ASTInquiryPhase; // testimony kind removed
 
 export type ASTInquiryPhase = Located<{
   kind: "inquiry";
@@ -263,50 +263,29 @@ export type ASTInquiryPhase = Located<{
 export type ASTInquiryQuestion = Located<{
   id: string;
   label: string;
-  kind: "question" | "followUp";
-  parentQuestionId: string | null;
   status: "locked" | "unlocked";
   required: boolean;
   unlock: InterrogationUnlockExpr | null;
   reveals: InterrogationRevealTarget[];
-  answerDialogue: DialogueItem[];
-  onReask: DialogueItem[] | null;
+  testimony: ASTTestimony;
 }>;
 
-export type ASTTestimonyPhase = Located<{
-  kind: "testimony";
-  id: string;
-  label: string;
-  subject: ASTSubject;
-  required: boolean;
-  status: "locked" | "unlocked";
-  unlock: InterrogationUnlockExpr | null;
-  reveals: InterrogationRevealTarget[];
-  sceneTag: string;
-  assetCue: VisualAssetCue | null;
-  entryDialogue: DialogueItem[];
-  statements: ASTTestimonyStatement[];
-  results: ASTTestimonyResult[];
+export type ASTTestimony = Located<{
+  onLoop: DialogueItem[]; // required
+  defaultChallenge: DialogueItem[] | null;
+  defaultWrong: DialogueItem[] | null;
+  lines: ASTTestimonyLine[]; // >= 1
 }>;
 
-export type ASTTestimonyStatement = Located<{
+export type ASTTestimonyLine = Located<{
   id: string;
   label: string;
-  content: string;
+  content: DialogueItem[]; // the suspect's line(s), played as dialogue
   contradiction: InventoryTarget | null;
-  onCorrect: string | null;
-  onWrong: string | null;
-  onPress: DialogueItem[] | null;
-  onPresent: DialogueItem[] | null;
-  onWrongPresent: DialogueItem[] | null;
-  reveals: InterrogationRevealTarget[];
-}>;
-
-export type ASTTestimonyResult = Located<{
-  id: string;
-  label: string;
-  reveals: InterrogationRevealTarget[];
-  dialogue: DialogueItem[];
+  challenge: DialogueItem[] | null; // required iff contradiction != null
+  onCorrect: DialogueItem[] | null; // required iff contradiction != null
+  onWrongEvidence: DialogueItem[] | null; // required iff contradiction != null
+  reveals: InterrogationRevealTarget[]; // applied on correct present
 }>;
 
 export type ASTInterrogationOutro = {
@@ -435,73 +414,50 @@ export type JSONSubject = {
   bio: string;
 };
 
-export type JSONInterrogationPhase =
-  | {
-      kind: "inquiry";
-      id: string;
-      label: string;
-      subject: JSONSubject;
-      required: boolean;
-      status: "locked" | "unlocked";
-      unlock: InterrogationUnlockExpr | null;
-      reveals: InterrogationRevealTarget[];
-      sceneTag: string;
-      backgroundAssetId: string | null;
-      bgm: AudioCue | null;
-      bgs: AudioCue | null;
-      entryDialogue: JSONDialogueItem[];
-      complete: "auto" | InterrogationUnlockExpr;
-      questions: JSONInquiryQuestion[];
-    }
-  | {
-      kind: "testimony";
-      id: string;
-      label: string;
-      subject: JSONSubject;
-      required: boolean;
-      status: "locked" | "unlocked";
-      unlock: InterrogationUnlockExpr | null;
-      reveals: InterrogationRevealTarget[];
-      sceneTag: string;
-      backgroundAssetId: string | null;
-      bgm: AudioCue | null;
-      bgs: AudioCue | null;
-      entryDialogue: JSONDialogueItem[];
-      statements: JSONTestimonyStatement[];
-      results: JSONTestimonyResult[];
-    };
+export type JSONInterrogationPhase = {
+  kind: "inquiry";
+  id: string;
+  label: string;
+  subject: JSONSubject;
+  required: boolean;
+  status: "locked" | "unlocked";
+  unlock: InterrogationUnlockExpr | null;
+  reveals: InterrogationRevealTarget[];
+  sceneTag: string;
+  backgroundAssetId: string | null;
+  bgm: AudioCue | null;
+  bgs: AudioCue | null;
+  entryDialogue: JSONDialogueItem[];
+  complete: "auto" | InterrogationUnlockExpr;
+  questions: JSONInquiryQuestion[];
+};
 
 export type JSONInquiryQuestion = {
   id: string;
   label: string;
-  kind: "question" | "followUp";
-  parentQuestionId: string | null;
   status: "locked" | "unlocked";
   required: boolean;
   unlock: InterrogationUnlockExpr | null;
   reveals: InterrogationRevealTarget[];
-  answerDialogue: JSONDialogueItem[];
-  onReask: JSONDialogueItem[] | null;
+  testimony: JSONTestimony;
 };
 
-export type JSONTestimonyStatement = {
+export type JSONTestimony = {
+  onLoop: JSONDialogueItem[];
+  defaultChallenge: JSONDialogueItem[] | null;
+  defaultWrong: JSONDialogueItem[] | null;
+  lines: JSONTestimonyLine[];
+};
+
+export type JSONTestimonyLine = {
   id: string;
   label: string;
-  content: string;
+  content: JSONDialogueItem[];
   contradiction: InventoryTarget | null;
-  onCorrect: string | null;
-  onWrong: string | null;
-  onPress: JSONDialogueItem[] | null;
-  onPresent: JSONDialogueItem[] | null;
-  onWrongPresent: JSONDialogueItem[] | null;
+  challenge: JSONDialogueItem[] | null;
+  onCorrect: JSONDialogueItem[] | null;
+  onWrongEvidence: JSONDialogueItem[] | null;
   reveals: InterrogationRevealTarget[];
-};
-
-export type JSONTestimonyResult = {
-  id: string;
-  label: string;
-  reveals: InterrogationRevealTarget[];
-  dialogue: JSONDialogueItem[];
 };
 
 // ----- Compile errors --------------------------------------------------------
