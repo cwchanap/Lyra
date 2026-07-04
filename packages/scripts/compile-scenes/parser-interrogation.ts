@@ -1000,10 +1000,11 @@ function consumeDialogueUntilHeading(
   _atOrAboveLevel: number,
 ): DialogueResult {
   // Stops at ANY heading regardless of level. Every dialogue body in this
-  // grammar terminates at the next heading (the next structural block or an
-  // optional sub-block like On Reask), so a level-aware check would silently
-  // swallow headings whose level exceeds the cutoff. The level parameter is
-  // kept for documentation but no longer affects behavior.
+  // grammar terminates at the next heading (the next structural block, e.g.
+  // a Subject, Question, Phase, or Outro heading), so a level-aware check
+  // would silently swallow headings whose level exceeds the cutoff. The
+  // level parameter is kept for documentation but no longer affects
+  // behavior.
   //
   // Unknown/metadata tokens inside a dialogue body are a hard error -- they
   // indicate authoring mistakes (typo'd dialogue line, stray metadata) that

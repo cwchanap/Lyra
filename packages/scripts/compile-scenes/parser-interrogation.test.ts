@@ -349,6 +349,202 @@ describe("parseInterrogationScene", () => {
     if (!parsed.ok)
       expect(parsed.error.code).toBe("interrogationQuestionMissingTestimony");
   });
+
+  it("rejects a #### Testimony with no On Loop", () => {
+    const source = `# Scene 9: 測試
+
+## Phase: 測試階段 {#test_phase}
+- **Kind:** inquiry
+
+[場景：測試場景]
+
+### Subject: 測試對象 {#subject_x}
+- **Role:** 角色
+- **Bio:** 簡介。
+
+### Question: 缺起手台詞的問題 {#missing_on_loop}
+- **Status:** unlocked
+
+#### Testimony
+
+## Outro
+`;
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_9",
+    );
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok)
+      expect(parsed.error.code).toBe("interrogationMissingOnLoop");
+  });
+
+  it("rejects a #### Testimony with On Loop but zero ##### Line entries", () => {
+    const source = `# Scene 9: 測試
+
+## Phase: 測試階段 {#test_phase}
+- **Kind:** inquiry
+
+[場景：測試場景]
+
+### Subject: 測試對象 {#subject_x}
+- **Role:** 角色
+- **Bio:** 簡介。
+
+### Question: 沒有台詞的問題 {#empty_testimony}
+- **Status:** unlocked
+
+#### Testimony
+- **On Loop:** **相馬律**：還有哪裡對不上，再說一次。
+
+## Outro
+`;
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_9",
+    );
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok)
+      expect(parsed.error.code).toBe("interrogationEmptyTestimony");
+  });
+
+  it("rejects a ##### Line with Contradiction but no Challenge", () => {
+    const source = `# Scene 9: 測試
+
+## Phase: 測試階段 {#test_phase}
+- **Kind:** inquiry
+
+[場景：測試場景]
+
+### Subject: 測試對象 {#subject_x}
+- **Role:** 角色
+- **Bio:** 簡介。
+
+### Question: 缺挑戰的問題 {#missing_challenge}
+- **Status:** unlocked
+
+#### Testimony
+- **On Loop:** **相馬律**：還有哪裡對不上，再說一次。
+
+##### Line: 矛盾但缺挑戰 {#l_missing_challenge}
+**若槻蓮**：我只是去拿咖啡豆。
+- **Contradiction:** evidence:some_evidence
+
+## Outro
+`;
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_9",
+    );
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok)
+      expect(parsed.error.code).toBe("interrogationMissingChallenge");
+  });
+
+  it("rejects a ##### Line with Contradiction and Challenge but no On Correct", () => {
+    const source = `# Scene 9: 測試
+
+## Phase: 測試階段 {#test_phase}
+- **Kind:** inquiry
+
+[場景：測試場景]
+
+### Subject: 測試對象 {#subject_x}
+- **Role:** 角色
+- **Bio:** 簡介。
+
+### Question: 缺正確回應的問題 {#missing_on_correct}
+- **Status:** unlocked
+
+#### Testimony
+- **On Loop:** **相馬律**：還有哪裡對不上，再說一次。
+
+##### Line: 矛盾但缺正確回應 {#l_missing_on_correct}
+**若槻蓮**：我只是去拿咖啡豆。
+- **Contradiction:** evidence:some_evidence
+- **Challenge:** **相馬律**：這份紀錄顯示你進去前已經清潔過了。
+
+## Outro
+`;
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_9",
+    );
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok)
+      expect(parsed.error.code).toBe("interrogationMissingOnCorrect");
+  });
+
+  it("rejects a ##### Line with Contradiction, Challenge, and On Correct but no On Wrong Evidence", () => {
+    const source = `# Scene 9: 測試
+
+## Phase: 測試階段 {#test_phase}
+- **Kind:** inquiry
+
+[場景：測試場景]
+
+### Subject: 測試對象 {#subject_x}
+- **Role:** 角色
+- **Bio:** 簡介。
+
+### Question: 缺誤指證據回應的問題 {#missing_on_wrong_evidence}
+- **Status:** unlocked
+
+#### Testimony
+- **On Loop:** **相馬律**：還有哪裡對不上，再說一次。
+
+##### Line: 矛盾但缺誤指證據回應 {#l_missing_on_wrong_evidence}
+**若槻蓮**：我只是去拿咖啡豆。
+- **Contradiction:** evidence:some_evidence
+- **Challenge:** **相馬律**：這份紀錄顯示你進去前已經清潔過了。
+- **On Correct:** **若槻蓮**：好吧，我看到的其實是清潔完成後的畫面。
+
+## Outro
+`;
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_9",
+    );
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok)
+      expect(parsed.error.code).toBe("interrogationMissingOnWrongEvidence");
+  });
+
+  it("rejects a ##### Line heading with no leading suspect dialogue", () => {
+    const source = `# Scene 9: 測試
+
+## Phase: 測試階段 {#test_phase}
+- **Kind:** inquiry
+
+[場景：測試場景]
+
+### Subject: 測試對象 {#subject_x}
+- **Role:** 角色
+- **Bio:** 簡介。
+
+### Question: 沒有台詞內容的問題 {#empty_line}
+- **Status:** unlocked
+
+#### Testimony
+- **On Loop:** **相馬律**：還有哪裡對不上，再說一次。
+
+##### Line: 沒有台詞 {#l_empty}
+- **Contradiction:** evidence:some_evidence
+
+## Outro
+`;
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_9",
+    );
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.error.code).toBe("interrogationEmptyLine");
+  });
 });
 
 const XEXAM_SRC = `# Scene 1: 訊問
