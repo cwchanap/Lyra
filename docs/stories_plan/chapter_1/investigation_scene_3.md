@@ -97,11 +97,11 @@
 
 [然後他繼續往下看，沒有多問。]
 
-### Hotspot: 收銀 POS 與吧台管理紀錄 {#counter_admin_records}
-- **Description:** 收銀台後方的 POS、抽屜和值班資料夾，是店長保管訂單、閉店回放與門鎖摘要的地方。
+### Hotspot: 收銀 POS 與訂單紀錄 {#counter_admin_records}
+- **Description:** 收銀台後方的 POS 與訂單，是店長保管當晚點單的地方。
 - **Evidence Source:** visible
-- **Scene Source Prompt:** Visible cafe counter POS and administration area with register terminal, small storage drawer, clipped folders, and staff record binder as the local source for order, CCTV playback, timecard, and doorlock summary; no readable document text.
-- **Reveals:** [evidence:two_coffee_order, evidence:cctv_screenshot, evidence:timecard_record, evidence:doorlock_summary_timetable]
+- **Scene Source Prompt:** Visible cafe counter POS terminal and paper order slips beside it as the source object for the night's drink orders; no readable document text.
+- **Reveals:** [evidence:two_coffee_order]
 
 [相馬律翻看 POS 旁的訂單，指尖沿著紙邊慢慢滑過去，停在其中一筆。]
 
@@ -115,6 +115,12 @@
 
 **店長高瀨**：店裡標杯習慣寫首字母，方便分。不是全名。
 
+### Hotspot: 閉店回放小螢幕 {#closing_playback_screen}
+- **Description:** POS 旁的小螢幕，可以調出閉店前二三十秒的監視器回放。
+- **Evidence Source:** visible
+- **Scene Source Prompt:** Small cafe counter playback monitor screen showing a brief grainy closing-time surveillance clip as the source object; unreadable timestamp, no UI text.
+- **Reveals:** [evidence:cctv_screenshot]
+
 [相馬律在 POS 旁的小螢幕調出閉店回放。畫面大約二三十秒。]
 
 **相馬律**：三宅補紙杯，去後場拿清潔用品，到倉庫門口拿了個紙箱。
@@ -124,6 +130,12 @@
 **早坂茜**：來回後場好幾趟。
 
 **相馬律**：閉店本來就要進後場。靠近後場，不等於做了什麼。
+
+### Hotspot: 值班資料與門鎖摘要終端 {#staff_admin_records}
+- **Description:** 收銀台後方小抽屜裡的值班資料夾，加上旁邊終端能叫出的門鎖摘要。
+- **Evidence Source:** visible
+- **Scene Source Prompt:** Cafe counter small drawer with a clipped staff duty folder beside a terminal showing an unreadable doorlock summary panel as the source objects; no readable text.
+- **Reveals:** [evidence:timecard_record, evidence:doorlock_summary_timetable]
 
 [店長打開收銀台後方的小抽屜，取出值班資料，又在旁邊的終端叫出門鎖摘要。]
 
@@ -217,7 +229,7 @@
 
 **店長高瀨**：換了我就懶得校了。反正客人也不看。
 
-**相馬律**：這個一直走著，只是慢。跟裡面倉庫那個不一樣。
+**相馬律**：這個一直走著，只是慢。
 
 #### Topic: 增田為何能在後場 {#masuda_backroom}
 - **Status:** unlocked

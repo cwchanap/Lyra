@@ -45,7 +45,9 @@
 
 [長椅上坐著三四個人，手裡各捏一張臨時識別證，等著交回。一個人在簽到板上劃掉自己的名字，筆尖頓了一下才補上離場時間。]
 
-**承包商主管**：（朝長椅那側，頭也沒抬）權限過期就不能進系統。人也一樣，到期就走流程。
+[承包商主管朝長椅那側偏了偏下巴，頭也沒抬。]
+
+**承包商主管**：權限過期就不能進系統。人也一樣，到期就走流程。
 
 [相馬律的目光在那塊白板上停了一拍，沒有說話，只是把領口往內收了一下。]
 
@@ -53,19 +55,25 @@
 
 **早坂茜**：他們的排程跟我們無關。回函拿到了，看裡面。
 
-### Hotspot: 承包商回函資料包 {#workorder}
-- **Description:** 窗口推來的回函資料包，包含臨時維護工單、權限名單與資材包清單。
+### Hotspot: 臨時維護工單 {#workorder}
+- **Description:** 回函資料包最上面那張，當晚臨時排定的後場門鎖維護工單。
 - **Evidence Source:** visible
-- **Scene Source Prompt:** Contractor reply packet folder on the service-window counter as the visible source document bundle, containing temporary maintenance work order, access permission list, and material-kit list; no readable text.
-- **Reveals:** [evidence:temp_maintenance_workorder, evidence:kitami_external_access, evidence:contractor_umbrella_sleeve_match]
+- **Scene Source Prompt:** Contractor reply packet folder open on the service-window counter, top sheet a temporary maintenance work order with doorlock icon and clipped approval stamp shape; no readable text.
+- **Reveals:** [evidence:temp_maintenance_workorder]
 
-[相馬律翻開那張工單，順著欄位看下去。]
+[相馬律翻開最上面那張工單，順著欄位看下去。]
 
 **相馬律**：那晚臨時排了一張維護工單，就是後場那扇門。
 
 **相馬律**：工單底下對應一組外包維護憑證。
 
 **早坂茜**：先記著。工單對得上憑證，但還沒對上人。
+
+### Hotspot: 外包維護權限名單 {#access_permission_list}
+- **Description:** 回函資料包裡，那晚能動用該憑證的外包維護權限名單。
+- **Evidence Source:** visible
+- **Scene Source Prompt:** Contractor access-permission list page from the reply packet on the counter, rows of codes with one highlighted row and keycard symbol, names and codes unreadable.
+- **Reveals:** [evidence:kitami_external_access]
 
 [相馬律把工單上的憑證編號，逐一比對權限名單。]
 
@@ -85,6 +93,12 @@
 
 **早坂茜**：別急著定罪，先把材料補齊。
 
+### Hotspot: 資材包清單 {#material_kit_list}
+- **Description:** 回函資料包裡，外包維護資材包的內容清單。
+- **Evidence Source:** visible
+- **Scene Source Prompt:** Contractor material-kit list page from the reply packet on the counter, one row showing a transparent umbrella sleeve item icon, labels unreadable.
+- **Reveals:** [evidence:contractor_umbrella_sleeve_match]
+
 [相馬律把資材包清單裡的傘套，跟手上後場那只濕傘套的尺寸對著看。]
 
 **相馬律**：資材包這只傘套，尺寸跟後場牆角那只濕傘套一樣。
@@ -95,7 +109,70 @@
 
 **早坂茜**：要對到某一個人，還是得靠那張臨時工單和外包憑證。
 
+### Hotspot: 玻璃隔板上的雨水 {#window_rain_glass}
+- **Description:** 承包商窗口的玻璃隔板，雨水在玻璃上拖成一道道細長的水痕。
+
+[玻璃隔板上，雨水順著表面往下爬，在半途匯成一條較粗的水線，把後方檔案櫃的輪廓糊開。]
+
+**相馬律**：……從這邊看過去，那邊只剩影子。
+
+[一陣風從門縫帶進什麼，甜的，一下就被辦公室的冷氣壓平了。相馬律的手停在紙頁邊上，沒有翻。]
+
+**早坂茜**：看資料，不要看雨。
+
+**相馬律**：……嗯。
+
+### Character: 承包商主管 {#contractor_clerk}
+- **Role:** KAGAMI 外包資料審查窗口承辦人
+- **Bio:** 中年男人，袖口磨得發白。做好了份內的事就不再多走一步的那種人。
+
+#### Topic: 另一個 K {#other_k_name}
+- **Status:** unlocked
+
+[相馬律指著名單上另一行 K 開頭的編號。]
+
+**相馬律**：這一個呢？那晚也在名單上。
+
+[承包商主管瞟了一眼，翻了翻手邊一本小冊子。]
+
+**承包商主管**：這個上週就到期了。badge 交回，憑證停用。
+
+**承包商主管**：那晚他進不來。
+
+**早坂茜**：所以那晚能動這組憑證的，還是只剩北見那一組。
+
+**承包商主管**：我只照規矩給名單。誰是誰，你們自己判。
+
+**相馬律**：……是條死路。
+
+**早坂茜**：記著，別再繞回來。
+
+##### On Reexamine
+
+[承包商主管把小冊子合上。]
+
+**承包商主管**：我說過了，那個上週到期。
+
+#### Topic: 你這張桌子 {#clerk_long_day}
+- **Status:** unlocked
+
+[相馬律的目光落在主管袖口那圈磨白的縫線上。]
+
+**相馬律**：你今天也待了很久。
+
+**承包商主管**：這窗口開到五點。我到點就走。
+
+**承包商主管**：二十年了，都是這張桌子。
+
+[他把回函資料包往相馬那側再推了半寸，動作很輕。]
+
+**承包商主管**：資料給你了。剩下的不在我份內。
+
+**早坂茜**：……謝謝。我們看資料就好。
+
 ### Hotspot: 前往質問北見 {#to_confront}
+- **Status:** locked
+- **Unlock:** evidence:temp_maintenance_workorder collected and evidence:kitami_external_access collected and evidence:contractor_umbrella_sleeve_match collected
 - **Description:** 北見修一已被請到隔壁的訪談室，可以過去當面問。
 - **Reveals:** [sublocation:confront_kitami]
 
@@ -207,6 +284,31 @@
 [他把那張摺痕很深的名片又對摺了一次，紙角已經起了毛邊。]
 
 **早坂茜**：壓力講夠了。盜賊就是盜賊，審查再急也不改這件事。
+
+#### Topic: 早班 {#early_shift}
+- **Status:** unlocked
+
+[北見又推了一下眼鏡，中指在鏡架上停了一拍。]
+
+**相馬律**：你看起來沒睡。
+
+**北見修一**：……我另一個早班四點開始。跟這件無關。
+
+[他把這句說得很輕，像是怕被人聽成在解釋什麼。]
+
+**相馬律**：這條線跑了多久？
+
+**北見修一**：八年。都是這種排法。
+
+**早坂茜**：你的班表不是這裡要處理的事。
+
+**早坂茜**：名字對上了，就先對著名字走。
+
+##### On Reexamine
+
+[北見沒有再接話，只是又把名片摺痕抹平了一次。]
+
+**北見修一**：……沒什麼好說的了。
 
 ## Evidence Manifest
 
