@@ -9,12 +9,16 @@ import type {
   ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
+  ASTTestimony,
+  ASTTestimonyLine,
   DialogueItem,
   JSONChaptersIndex,
   JSONDialogueItem,
   JSONInterrogationScene,
   JSONInvestigationScene,
   JSONLinearScene,
+  JSONTestimony,
+  JSONTestimonyLine,
   JSONVisualAssetCue,
   VisualAssetCue,
 } from "./types";
@@ -110,66 +114,34 @@ export function emitInterrogationScene(
     title: ast.title,
     intro: emitDialogueItems(ast.intro),
     assetRefs: ast.assetRefs,
-    phases: ast.phases.map((phase) => {
-      const common = {
-        id: phase.id,
-        label: phase.label,
-        subject: {
-          id: phase.subject.id,
-          name: phase.subject.name,
-          role: phase.subject.role,
-          bio: phase.subject.bio,
-        },
-        required: phase.required,
-        status: phase.status,
-        unlock: phase.unlock,
-        reveals: phase.reveals,
-        sceneTag: phase.sceneTag,
-        ...emitVisualFields(phase.assetCue),
-        entryDialogue: emitDialogueItems(phase.entryDialogue),
-      };
-      if (phase.kind === "inquiry") {
-        return {
-          kind: "inquiry",
-          ...common,
-          complete: phase.complete,
-          questions: phase.questions.map((q) => ({
-            id: q.id,
-            label: q.label,
-            kind: q.kind,
-            parentQuestionId: q.parentQuestionId,
-            status: q.status,
-            required: q.required,
-            unlock: q.unlock,
-            reveals: q.reveals,
-            answerDialogue: emitDialogueItems(q.answerDialogue),
-            onReask: emitNullableDialogueItems(q.onReask),
-          })),
-        };
-      }
-      return {
-        kind: "testimony",
-        ...common,
-        statements: phase.statements.map((s) => ({
-          id: s.id,
-          label: s.label,
-          content: s.content,
-          contradiction: s.contradiction,
-          onCorrect: s.onCorrect,
-          onWrong: s.onWrong,
-          onPress: emitNullableDialogueItems(s.onPress),
-          onPresent: emitNullableDialogueItems(s.onPresent),
-          onWrongPresent: emitNullableDialogueItems(s.onWrongPresent),
-          reveals: s.reveals,
-        })),
-        results: phase.results.map((r) => ({
-          id: r.id,
-          label: r.label,
-          reveals: r.reveals,
-          dialogue: emitDialogueItems(r.dialogue),
-        })),
-      };
-    }),
+    phases: ast.phases.map((phase) => ({
+      kind: "inquiry",
+      id: phase.id,
+      label: phase.label,
+      subject: {
+        id: phase.subject.id,
+        name: phase.subject.name,
+        role: phase.subject.role,
+        bio: phase.subject.bio,
+      },
+      required: phase.required,
+      status: phase.status,
+      unlock: phase.unlock,
+      reveals: phase.reveals,
+      sceneTag: phase.sceneTag,
+      ...emitVisualFields(phase.assetCue),
+      entryDialogue: emitDialogueItems(phase.entryDialogue),
+      complete: phase.complete,
+      questions: phase.questions.map((q) => ({
+        id: q.id,
+        label: q.label,
+        status: q.status,
+        required: q.required,
+        unlock: q.unlock,
+        reveals: q.reveals,
+        testimony: emitTestimony(q.testimony),
+      })),
+    })),
     evidenceManifest: ast.evidenceManifest.map((e) => ({
       id: e.id,
       name: e.name,
@@ -195,6 +167,35 @@ export function emitInterrogationScene(
 
 function emitDialogueItems(items: DialogueItem[]): JSONDialogueItem[] {
   return items.map(emitDialogueItem);
+}
+
+// The AST leaves un-authored dialogue arrays as null (defaultChallenge,
+// defaultWrong, and a line's challenge/onCorrect/onWrongEvidence on an
+// honest line). The Rust runtime deserializes these fields with
+// #[serde(default)] Vec<DialogueItem>, which only tolerates an ABSENT key,
+// not an explicit JSON null — so every one of these must emit as `[]`,
+// never `null`. Only `contradiction` stays nullable (deserialized as
+// Option in Rust, which does accept null).
+function emitTestimony(ast: ASTTestimony): JSONTestimony {
+  return {
+    onLoop: emitDialogueItems(ast.onLoop),
+    defaultChallenge: emitDialogueItems(ast.defaultChallenge ?? []),
+    defaultWrong: emitDialogueItems(ast.defaultWrong ?? []),
+    lines: ast.lines.map(emitTestimonyLine),
+  };
+}
+
+function emitTestimonyLine(ast: ASTTestimonyLine): JSONTestimonyLine {
+  return {
+    id: ast.id,
+    label: ast.label,
+    content: emitDialogueItems(ast.content),
+    contradiction: ast.contradiction,
+    challenge: emitDialogueItems(ast.challenge ?? []),
+    onCorrect: emitDialogueItems(ast.onCorrect ?? []),
+    onWrongEvidence: emitDialogueItems(ast.onWrongEvidence ?? []),
+    reveals: ast.reveals,
+  };
 }
 
 function emitNullableDialogueItems(
