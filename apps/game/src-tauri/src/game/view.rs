@@ -193,17 +193,12 @@ pub struct TopicView {
 pub struct InterrogationPhaseView {
     pub id: String,
     pub label: String,
-    pub kind: InterrogationPhaseKindView,
     pub subject: SubjectView,
     pub questions: Vec<InquiryQuestionView>,
-    pub testimony: Vec<TestimonyStatementView>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum InterrogationPhaseKindView {
-    Inquiry,
-    Testimony,
+    /// Some when a testimony is actively being cross-examined (playing a
+    /// line or presenting evidence); None while the player is at the
+    /// question menu.
+    pub cross_exam: Option<CrossExamView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -220,14 +215,19 @@ pub struct SubjectView {
 pub struct InquiryQuestionView {
     pub id: String,
     pub label: String,
-    pub answered: bool,
+    pub broken: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TestimonyStatementView {
-    pub id: String,
-    pub label: String,
-    pub content: String,
-    pub pressed: bool,
+pub struct CrossExamView {
+    pub question_id: String,
+    pub line_id: String,
+    pub line_label: String,
+    /// Echoed current line, rendered in DialogueBox styling.
+    pub line_content: Vec<DialogueItem>,
+    pub line_index: usize,
+    pub line_total: usize,
+    /// True when the evidence tray should be shown.
+    pub presenting: bool,
 }

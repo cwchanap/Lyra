@@ -15,7 +15,7 @@ pub use error::GameError;
 pub use view::{DialogueHistoryEntry, GameStateView, ModeView, QueueToken, SceneNavigationIndex};
 
 use scenes::interrogation::{
-    phase_id, phase_required, InterrogationSceneAndInventoryCtx, InterrogationSceneState,
+    phase_id, phase_required, CrossExam, InterrogationSceneAndInventoryCtx, InterrogationSceneState,
 };
 use scenes::investigation::{DialogueQueue, InvestigationSceneState};
 use scenes::linear::LinearSceneState;
@@ -26,10 +26,9 @@ use schema::{
 use state::{ChapterManifest, Inventory, SceneRef};
 use std::path::PathBuf;
 use view::{
-    AudioCueView, ChapterView, CharacterView, HotspotView, InquiryQuestionView,
-    InterrogationPhaseKindView, InterrogationPhaseView, SceneNavigationChapter,
-    SceneNavigationScene, SceneView, SubjectView, SublocationView, TestimonyStatementView,
-    TopicView,
+    AudioCueView, ChapterView, CharacterView, CrossExamView, HotspotView, InquiryQuestionView,
+    InterrogationPhaseView, SceneNavigationChapter, SceneNavigationScene, SceneView, SubjectView,
+    SublocationView, TopicView,
 };
 
 pub struct GameEngine {
@@ -1817,22 +1816,68 @@ impl GameEngine {
                     scene,
                     inventory: &self.inventory,
                 };
+                // The active cross-examination (if any) belongs to exactly one
+                // question, and therefore to exactly one phase. Build it once
+                // and attach it to whichever phase owns that question below.
+                let cross_exam_view: Option<CrossExamView> = match scene.cross_exam() {
+                    CrossExam::Idle => None,
+                    CrossExam::Playing {
+                        question_id,
+                        line_index,
+                    } => scene.question(question_id).and_then(|question| {
+                        let line = question.testimony.lines.get(*line_index)?;
+                        Some(CrossExamView {
+                            question_id: question_id.clone(),
+                            line_id: line.id.clone(),
+                            line_label: line.label.clone(),
+                            line_content: line.content.clone(),
+                            line_index: *line_index,
+                            line_total: question.testimony.lines.len(),
+                            presenting: false,
+                        })
+                    }),
+                    CrossExam::Presenting {
+                        question_id,
+                        line_id,
+                    } => scene.question(question_id).and_then(|question| {
+                        let line_index = question
+                            .testimony
+                            .lines
+                            .iter()
+                            .position(|line| &line.id == line_id)?;
+                        let line = &question.testimony.lines[line_index];
+                        Some(CrossExamView {
+                            question_id: question_id.clone(),
+                            line_id: line.id.clone(),
+                            line_label: line.label.clone(),
+                            line_content: line.content.clone(),
+                            line_index,
+                            line_total: question.testimony.lines.len(),
+                            presenting: true,
+                        })
+                    }),
+                };
+
                 let visible_phases = scene
                     .def
                     .phases
                     .iter()
                     .filter(|phase| scene.is_phase_unlocked(phase, &ctx))
-                    .map(|phase| match phase {
-                        InterrogationPhaseJson::Inquiry {
+                    .map(|phase| {
+                        let InterrogationPhaseJson::Inquiry {
                             id,
                             label,
                             subject,
                             questions,
                             ..
-                        } => InterrogationPhaseView {
+                        } = phase;
+                        let cross_exam = cross_exam_view
+                            .as_ref()
+                            .filter(|cev| questions.iter().any(|q| q.id == cev.question_id))
+                            .cloned();
+                        InterrogationPhaseView {
                             id: id.clone(),
                             label: label.clone(),
-                            kind: InterrogationPhaseKindView::Inquiry,
                             subject: SubjectView {
                                 id: subject.id.clone(),
                                 name: subject.name.clone(),
@@ -1845,38 +1890,11 @@ impl GameEngine {
                                 .map(|question| InquiryQuestionView {
                                     id: question.id.clone(),
                                     label: question.label.clone(),
-                                    answered: scene.answered_questions.contains(&question.id),
+                                    broken: scene.is_question_broken(&question.id),
                                 })
                                 .collect(),
-                            testimony: vec![],
-                        },
-                        InterrogationPhaseJson::Testimony {
-                            id,
-                            label,
-                            subject,
-                            statements,
-                            ..
-                        } => InterrogationPhaseView {
-                            id: id.clone(),
-                            label: label.clone(),
-                            kind: InterrogationPhaseKindView::Testimony,
-                            subject: SubjectView {
-                                id: subject.id.clone(),
-                                name: subject.name.clone(),
-                                role: subject.role.clone(),
-                                bio: subject.bio.clone(),
-                            },
-                            questions: vec![],
-                            testimony: statements
-                                .iter()
-                                .map(|statement| TestimonyStatementView {
-                                    id: statement.id.clone(),
-                                    label: statement.label.clone(),
-                                    content: statement.content.clone(),
-                                    pressed: scene.pressed_statements.contains(&statement.id),
-                                })
-                                .collect(),
-                        },
+                            cross_exam,
+                        }
                     })
                     .collect();
 
@@ -2107,11 +2125,12 @@ mod tests {
     use super::*;
     use crate::game::schema::{
         AudioChannelJson, AudioCueJson, AutoMarker, CharacterJson, EvidenceJson, HotspotJson,
-        InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
-        InterrogationRevealTarget, InterrogationSceneJson, InterrogationUnlockExpr,
-        InventoryTarget, InvestigationSceneJson, LockStatus, OutroJson, OutroUnlock, RevealTarget,
-        SceneType, SubjectJson, SublocationJson, TestimonyResultJson, TestimonyStatementJson,
-        TopicJson, UnlockExpr, VisualAssetCueJson,
+        InquiryQuestionJson, InterrogationOutroJson, InterrogationOutroUnlock,
+        InterrogationPhaseJson, InterrogationRevealTarget, InterrogationSceneJson,
+        InterrogationUnlockExpr, InventoryTarget, InvestigationSceneJson, LockStatus, OutroJson,
+        OutroUnlock, RevealTarget, SceneType, SubjectJson, SublocationJson, TestimonyJson,
+        TestimonyLineJson, TestimonyResultJson, TestimonyStatementJson, TopicJson, UnlockExpr,
+        VisualAssetCueJson,
     };
     use crate::game::state::{EvidenceRecord, StatementRecord};
     use crate::game::view::DialogueHistoryEntry;
@@ -3349,6 +3368,128 @@ mod tests {
             name: "Suspect".into(),
             role: "Witness".into(),
             bio: "Quiet.".into(),
+        }
+    }
+
+    /// A single required phase (`press`) with one question (`alibi`) that has
+    /// two testimony lines: `l_off` (no contradiction) and `l_deny`
+    /// (contradiction `evidence:cleaning_log`). Mirrors
+    /// `scenes::interrogation::tests::two_line_question_scene` so the
+    /// view-builder test below exercises the same cross-exam shape Task 7's
+    /// state-machine tests cover.
+    fn two_line_question_scene() -> InterrogationSceneJson {
+        InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "press".into(),
+                label: "Press".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: VisualAssetCueJson::default(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![InquiryQuestionJson {
+                    id: "alibi".into(),
+                    label: "Alibi".into(),
+                    status: LockStatus::Unlocked,
+                    required: true,
+                    unlock: None,
+                    reveals: vec![],
+                    testimony: TestimonyJson {
+                        on_loop: vec![DialogueItem::Action {
+                            text: "loop".into(),
+                        }],
+                        default_challenge: vec![],
+                        default_wrong: vec![],
+                        lines: vec![
+                            TestimonyLineJson {
+                                id: "l_off".into(),
+                                label: "Off".into(),
+                                content: vec![DialogueItem::Line {
+                                    speaker: "suspect".into(),
+                                    text: "我那天沒去。".into(),
+                                    portrait: None,
+                                }],
+                                contradiction: None,
+                                challenge: vec![],
+                                on_correct: vec![],
+                                on_wrong_evidence: vec![],
+                                reveals: vec![],
+                            },
+                            TestimonyLineJson {
+                                id: "l_deny".into(),
+                                label: "Deny".into(),
+                                content: vec![DialogueItem::Line {
+                                    speaker: "suspect".into(),
+                                    text: "我從沒打掃過那裡。".into(),
+                                    portrait: None,
+                                }],
+                                contradiction: Some(InventoryTarget::Evidence {
+                                    id: "cleaning_log".into(),
+                                }),
+                                challenge: vec![DialogueItem::Action {
+                                    text: "challenge".into(),
+                                }],
+                                on_correct: vec![DialogueItem::Action {
+                                    text: "correct".into(),
+                                }],
+                                on_wrong_evidence: vec![DialogueItem::Action {
+                                    text: "wrong".into(),
+                                }],
+                                reveals: vec![],
+                            },
+                        ],
+                    },
+                }],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        }
+    }
+
+    #[test]
+    fn interrogation_view_reflects_active_cross_exam() {
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        match &mut engine.scene {
+            SceneRuntime::Interrogation(scene) => scene.begin_question("alibi"),
+            _ => panic!("expected interrogation scene"),
+        }
+
+        match engine.view().scene {
+            SceneView::Interrogation { visible_phases, .. } => {
+                let phase = visible_phases
+                    .iter()
+                    .find(|phase| phase.id == "press")
+                    .expect("press phase should be visible");
+                let question = phase
+                    .questions
+                    .iter()
+                    .find(|question| question.id == "alibi")
+                    .expect("alibi question should be visible");
+                assert!(!question.broken);
+
+                let cross_exam = phase
+                    .cross_exam
+                    .as_ref()
+                    .expect("cross_exam should be Some while playing a testimony line");
+                assert_eq!(cross_exam.question_id, "alibi");
+                assert_eq!(cross_exam.line_id, "l_off");
+                assert_eq!(cross_exam.line_index, 0);
+                assert_eq!(cross_exam.line_total, 2);
+                assert!(!cross_exam.presenting);
+            }
+            other => panic!("expected interrogation scene view, got {other:?}"),
         }
     }
 
