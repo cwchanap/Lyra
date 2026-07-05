@@ -207,20 +207,26 @@ export async function reexamineEvidence(evidenceId: string) {
 export async function reexamineStatement(statementId: string) {
   await dispatchGameCommand("reexamine_statement", { statementId });
 }
-export async function answerInterrogationQuestion(questionId: string) {
-  await dispatchGameCommand("answer_interrogation_question", { questionId });
+export async function askInterrogationQuestion(questionId: string) {
+  await dispatchGameCommand("ask_interrogation_question", { questionId });
 }
-export async function pressTestimonyStatement(statementId: string) {
-  await dispatchGameCommand("press_testimony_statement", { statementId });
+export async function proceedInterrogationLine() {
+  await dispatchGameCommand("proceed_interrogation_line", {});
 }
-export async function presentTestimonyItem(
-  statementId: string,
+export async function challengeInterrogationLine(lineId: string) {
+  await dispatchGameCommand("challenge_interrogation_line", { lineId });
+}
+export async function presentInterrogationEvidence(
+  lineId: string,
   itemKind: "evidence" | "statement",
   itemId: string,
 ) {
-  await dispatchGameCommand("present_testimony_item", {
-    statementId,
+  await dispatchGameCommand("present_interrogation_evidence", {
+    lineId,
     itemKind,
     itemId,
   });
+}
+export async function withdrawInterrogation() {
+  await dispatchGameCommand("withdraw_interrogation", {});
 }
