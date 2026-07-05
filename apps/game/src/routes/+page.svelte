@@ -10,9 +10,11 @@
     enterSublocation,
     reexamineEvidence,
     reexamineStatement,
-    answerInterrogationQuestion,
-    pressTestimonyStatement,
-    presentTestimonyItem,
+    askInterrogationQuestion,
+    proceedInterrogationLine,
+    challengeInterrogationLine,
+    presentInterrogationEvidence,
+    withdrawInterrogation,
     listScenes,
     jumpToScene,
   } from "$lib/state/game-client.svelte";
@@ -268,9 +270,11 @@
       <InterrogationView
         scene={gameState.value.scene}
         inventory={gameState.value.inventory}
-        onAnswerQuestion={answerInterrogationQuestion}
-        onPressStatement={pressTestimonyStatement}
-        onPresentItem={presentTestimonyItem}
+        onAsk={askInterrogationQuestion}
+        onProceed={proceedInterrogationLine}
+        onChallenge={challengeInterrogationLine}
+        onPresent={presentInterrogationEvidence}
+        onWithdraw={withdrawInterrogation}
         disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "gameComplete"}

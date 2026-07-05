@@ -597,10 +597,10 @@ describe("inferGameplaySfxEvents", () => {
     ]);
   });
 
-  it("dispatches testimony-pressed for the challenge command", () => {
+  it("dispatches menu-confirm for the challenge command", () => {
     expect(
       inferGameplaySfxEvents(state(), state(), "challenge_interrogation_line"),
-    ).toEqual(["interrogation:testimony-pressed"]);
+    ).toEqual(["ui:menu-confirm"]);
   });
 
   it("emits a ui:new-game event on start_game", () => {
