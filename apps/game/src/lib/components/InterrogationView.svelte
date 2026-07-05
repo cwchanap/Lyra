@@ -1,135 +1,151 @@
 <script lang="ts">
-  import type { Inventory, SceneView } from "../state/types";
+  import type { Inventory, SceneView, DialogueItem } from "../state/types";
 
   let {
     scene,
     inventory,
-    onAnswerQuestion,
-    onPressStatement,
-    onPresentItem,
+    onAsk,
+    onProceed,
+    onChallenge,
+    onPresent,
+    onWithdraw,
     disabled = false,
   }: {
     scene: SceneView;
     inventory: Inventory;
-    onAnswerQuestion: (questionId: string) => void | Promise<void>;
-    onPressStatement: (statementId: string) => void | Promise<void>;
-    onPresentItem: (
-      statementId: string,
+    onAsk: (questionId: string) => void | Promise<void>;
+    onProceed: () => void | Promise<void>;
+    onChallenge: (lineId: string) => void | Promise<void>;
+    onPresent: (
+      lineId: string,
       itemKind: "evidence" | "statement",
       itemId: string,
     ) => void | Promise<void>;
+    onWithdraw: () => void | Promise<void>;
     disabled?: boolean;
   } = $props();
 
   let interrogation = $derived(scene.kind === "interrogation" ? scene : null);
-  let currentPhase = $derived(
+  let phase = $derived(
     interrogation?.visiblePhases.find(
-      (phase) => phase.id === interrogation.currentPhaseId,
+      (p) => p.id === interrogation.currentPhaseId,
     ) ?? null,
   );
+  let xexam = $derived(phase?.crossExam ?? null);
+
+  // Only the "line" and "action" arms carry rendered dialogue text (a
+  // sceneTag item is stage-setting metadata, not spoken/narrated content
+  // that belongs inside a cross-exam line card).
+  function lineText(items: DialogueItem[]): string {
+    return items
+      .filter((item) => item.kind === "line" || item.kind === "action")
+      .map((item) => item.text)
+      .join(" ");
+  }
 </script>
 
-{#if interrogation && currentPhase}
+{#if phase}
   <section class="interrogation" aria-label="interrogation">
-    <header class="phase">
-      <div class="phase-id">
-        <span class="kind-marker {currentPhase.kind}">
-          <span class="diamond"></span>
-          {currentPhase.kind === "inquiry"
-            ? "詢問 · INQUIRY"
-            : "證詞 · TESTIMONY"}
-        </span>
-        <h2>{currentPhase.label}</h2>
+    <header class="subject">
+      <div class="subject-id">
+        <strong>{phase.subject.name}</strong>
+        <small>{phase.subject.role}</small>
       </div>
-      <div class="subject">
-        <div class="subject-id">
-          <strong>{currentPhase.subject.name}</strong>
-          <small>{currentPhase.subject.role}</small>
-        </div>
-        {#if currentPhase.subject.bio}
-          <p class="bio">{currentPhase.subject.bio}</p>
-        {/if}
-      </div>
+      {#if phase.subject.bio}
+        <p class="bio">{phase.subject.bio}</p>
+      {/if}
     </header>
 
-    {#if currentPhase.kind === "inquiry"}
-      <div class="question-grid">
-        {#each currentPhase.questions as question, i (question.id)}
-          <button
-            class="qcard"
-            class:done={question.answered}
-            type="button"
-            {disabled}
-            onclick={() => onAnswerQuestion(question.id)}
+    {#if xexam}
+      <article class="line-card" class:presenting={xexam.presenting}>
+        <div class="prog">
+          <span class="prog-count"
+            >{xexam.lineIndex + 1} / {xexam.lineTotal}</span
           >
-            <span class="qnum">Q.{String(i + 1).padStart(2, "0")}</span>
-            <span class="qbody">{question.label}</span>
-            <span class="qstatus"
-              >{question.answered ? "已詢問" : "未詢問"}</span
-            >
-          </button>
-        {/each}
-      </div>
-    {:else}
-      <div class="testimony-list">
-        {#each currentPhase.testimony as statement, i (statement.id)}
-          <article class="statement" class:pressed={statement.pressed}>
-            <header class="statement-head">
-              <div class="statement-id">
-                <span class="snum">§{String(i + 1).padStart(2, "0")}</span>
-                <strong>{statement.label}</strong>
-              </div>
-              <span class="status"
-                >{statement.pressed ? "● 已追問" : "○ 未追問"}</span
-              >
-            </header>
-            <blockquote class="statement-quote">{statement.content}</blockquote>
-            <div class="statement-actions">
+          <span class="prog-mark">↻</span>
+        </div>
+        <blockquote class="line">{lineText(xexam.lineContent)}</blockquote>
+
+        {#if xexam.presenting}
+          <p class="tray-label">針對此句提出證據 · PRESENT</p>
+          <div class="tray">
+            {#each inventory.evidence as item (item.id)}
               <button
-                class="primary"
+                class="secondary"
                 type="button"
                 {disabled}
-                onclick={() => onPressStatement(statement.id)}
+                onclick={() => onPresent(xexam.lineId, "evidence", item.id)}
               >
-                <span class="act-mark">▸</span>
-                <span>{statement.pressed ? "再次追問" : "追問"}</span>
-                <span class="act-en">PRESS</span>
+                <span class="item-kind">證</span>
+                <span>{item.name}</span>
               </button>
-              {#if inventory.evidence.length + inventory.statements.length > 0}
-                <span class="present-label">提示 · PRESENT</span>
-                {#each inventory.evidence as item (item.id)}
-                  <button
-                    class="secondary"
-                    type="button"
-                    {disabled}
-                    onclick={() =>
-                      onPresentItem(statement.id, "evidence", item.id)}
-                  >
-                    <span class="item-kind">證</span>
-                    <span>{item.name}</span>
-                  </button>
-                {/each}
-                {#each inventory.statements as item (item.id)}
-                  <button
-                    class="secondary"
-                    type="button"
-                    {disabled}
-                    onclick={() =>
-                      onPresentItem(statement.id, "statement", item.id)}
-                  >
-                    <span class="item-kind alt">言</span>
-                    <span>{item.speaker}</span>
-                  </button>
-                {/each}
-              {/if}
-            </div>
-          </article>
+            {/each}
+            {#each inventory.statements as item (item.id)}
+              <button
+                class="secondary"
+                type="button"
+                {disabled}
+                onclick={() => onPresent(xexam.lineId, "statement", item.id)}
+              >
+                <span class="item-kind alt">言</span>
+                <span>{item.speaker}</span>
+              </button>
+            {/each}
+            <button
+              class="ghost"
+              type="button"
+              {disabled}
+              onclick={() => onWithdraw()}
+            >
+              收回
+            </button>
+          </div>
+        {:else}
+          <div class="controls">
+            <button
+              class="primary"
+              type="button"
+              {disabled}
+              onclick={() => onChallenge(xexam.lineId)}
+            >
+              <span class="act-mark">▸</span>
+              反駁
+            </button>
+            <button type="button" {disabled} onclick={() => onProceed()}>
+              繼續聆聽 ▸
+            </button>
+            <button
+              class="ghost"
+              type="button"
+              {disabled}
+              onclick={() => onWithdraw()}
+            >
+              退下
+            </button>
+          </div>
+        {/if}
+      </article>
+    {:else}
+      <ul class="menu">
+        {#each phase.questions as question (question.id)}
+          <li>
+            <button
+              class="qbtn"
+              class:broken={question.broken}
+              type="button"
+              {disabled}
+              onclick={() => onAsk(question.id)}
+            >
+              <span class="ql">{question.label}</span>
+              <span class="qs">{question.broken ? "已破" : "提問"}</span>
+            </button>
+          </li>
         {/each}
-      </div>
+      </ul>
     {/if}
   </section>
 {:else if interrogation}
-  <p class="muted">尚未進入任何詢問階段。</p>
+  <p class="muted">尚未進入任何訊問階段。</p>
 {/if}
 
 <style>
@@ -140,72 +156,15 @@
     color: var(--bone);
   }
 
-  /* phase header */
-  .phase {
-    display: grid;
-    grid-template-columns: minmax(280px, 1fr) minmax(280px, 1.4fr);
-    gap: 0;
-    background: var(--char);
-    border: 1px solid var(--rule-strong);
-    border-left: 3px solid var(--crimson);
-  }
-
-  .phase-id {
-    padding: 18px 20px 20px;
-    border-right: 1px solid var(--rule);
-  }
-
-  .kind-marker {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    font-family: var(--impact);
-    font-weight: 500;
-    font-size: 10px;
-    letter-spacing: 0.32em;
-    color: var(--bone);
-    padding: 6px 11px 5px;
-    border: 1px solid var(--crimson);
-    background: var(--crimson-soft);
-    text-transform: uppercase;
-    margin-bottom: 10px;
-  }
-
-  .kind-marker.testimony {
-    border-color: var(--cyan);
-    background: var(--cyan-soft);
-    color: var(--cyan);
-  }
-
-  .diamond {
-    width: 5px;
-    height: 5px;
-    background: var(--crimson);
-    transform: rotate(45deg);
-    box-shadow: 0 0 7px var(--crimson);
-  }
-
-  .kind-marker.testimony .diamond {
-    background: var(--cyan);
-    box-shadow: 0 0 7px var(--cyan);
-  }
-
-  h2 {
-    margin: 0;
-    font-family: var(--display-jp);
-    font-weight: 400;
-    font-size: 22px;
-    letter-spacing: 0.08em;
-    line-height: 1.15;
-    color: var(--bone);
-    text-shadow: 2px 2px 0 var(--cell);
-  }
-
+  /* subject header */
   .subject {
-    padding: 18px 20px 20px;
     display: flex;
     flex-direction: column;
     gap: 10px;
+    padding: 18px 20px 20px;
+    background: var(--char);
+    border: 1px solid var(--rule-strong);
+    border-left: 3px solid var(--crimson);
   }
 
   .subject-id strong {
@@ -235,20 +194,23 @@
     max-width: 56ch;
   }
 
-  /* inquiry: question grid */
-  .question-grid {
+  /* question menu */
+  .menu {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
 
-  .qcard {
+  .qbtn {
     position: relative;
-    display: grid;
-    grid-template-columns: auto 1fr;
-    grid-template-rows: auto 1fr;
-    column-gap: 12px;
-    row-gap: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
     padding: 14px 16px;
     background: var(--char);
     color: var(--bone);
@@ -263,7 +225,7 @@
       border-color 0.18s;
   }
 
-  .qcard::before {
+  .qbtn::before {
     content: "";
     position: absolute;
     left: 0;
@@ -276,44 +238,28 @@
     transition: transform 0.22s cubic-bezier(0.6, 0, 0.3, 1);
   }
 
-  .qcard:hover:not(:disabled)::before,
-  .qcard:focus-visible:not(:disabled)::before {
+  .qbtn:hover:not(:disabled)::before,
+  .qbtn:focus-visible:not(:disabled)::before {
     transform: scaleY(1);
   }
 
-  .qcard:hover:not(:disabled),
-  .qcard:focus-visible:not(:disabled) {
+  .qbtn:hover:not(:disabled),
+  .qbtn:focus-visible:not(:disabled) {
     transform: translateX(-2px);
     background: var(--char-2);
     border-color: rgba(212, 20, 58, 0.4);
   }
 
-  .qcard:disabled {
+  .qbtn:disabled {
     opacity: 0.55;
     cursor: wait;
   }
 
-  .qcard.done {
+  .qbtn.broken {
     opacity: 0.7;
   }
 
-  .qnum {
-    grid-column: 1;
-    grid-row: 1 / 3;
-    align-self: start;
-    font-family: var(--impact);
-    font-weight: 500;
-    font-size: 12px;
-    letter-spacing: 0.18em;
-    color: var(--crimson);
-    padding-right: 12px;
-    border-right: 1px solid var(--rule);
-    height: 100%;
-  }
-
-  .qbody {
-    grid-column: 2;
-    grid-row: 1;
+  .ql {
     font-family: var(--display-jp);
     font-weight: 400;
     font-size: 14px;
@@ -322,27 +268,21 @@
     color: var(--bone);
   }
 
-  .qstatus {
-    grid-column: 2;
-    grid-row: 2;
+  .qs {
+    flex: none;
     font-family: var(--mono);
     font-size: 10px;
     letter-spacing: 0.24em;
-    color: var(--bone-faint);
+    color: var(--crimson);
     text-transform: uppercase;
   }
 
-  .qcard.done .qnum {
+  .qbtn.broken .qs {
     color: var(--bone-faint);
   }
 
-  /* testimony list */
-  .testimony-list {
-    display: grid;
-    gap: 14px;
-  }
-
-  .statement {
+  /* cross-exam line card */
+  .line-card {
     position: relative;
     background: var(--char);
     border: 1px solid var(--rule-strong);
@@ -351,12 +291,11 @@
     color: var(--bone);
   }
 
-  .statement.pressed {
-    border-left-color: var(--bone-faint);
-    opacity: 0.85;
+  .line-card.presenting {
+    border-left-color: var(--crimson);
   }
 
-  .statement-head {
+  .prog {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
@@ -366,13 +305,7 @@
     margin-bottom: 12px;
   }
 
-  .statement-id {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-  }
-
-  .snum {
+  .prog-count {
     font-family: var(--impact);
     font-weight: 500;
     font-size: 12px;
@@ -380,27 +313,18 @@
     color: var(--cyan);
   }
 
-  .statement.pressed .snum {
-    color: var(--bone-faint);
+  .line-card.presenting .prog-count {
+    color: var(--crimson);
   }
 
-  .statement-id strong {
-    font-family: var(--display-jp);
-    font-weight: 400;
-    font-size: 15px;
-    letter-spacing: 0.08em;
-    color: var(--bone);
-  }
-
-  .status {
+  .prog-mark {
     font-family: var(--mono);
     font-size: 10px;
     letter-spacing: 0.24em;
     color: var(--bone-faint);
-    text-transform: uppercase;
   }
 
-  .statement-quote {
+  .line {
     margin: 0 0 14px;
     padding: 0 0 0 14px;
     border-left: 1px solid var(--rule);
@@ -412,7 +336,7 @@
     quotes: "「" "」";
   }
 
-  .statement-quote::before {
+  .line::before {
     content: open-quote;
     color: var(--crimson);
     font-family: var(--display-jp);
@@ -420,7 +344,7 @@
     margin-right: 2px;
   }
 
-  .statement-quote::after {
+  .line::after {
     content: close-quote;
     color: var(--crimson);
     font-family: var(--display-jp);
@@ -428,14 +352,15 @@
     margin-left: 2px;
   }
 
-  .statement-actions {
+  .controls,
+  .tray {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
   }
 
-  .present-label {
+  .tray-label {
     flex: 1 0 100%;
     font-family: var(--impact);
     font-weight: 500;
@@ -443,10 +368,11 @@
     letter-spacing: 0.32em;
     color: var(--bone-faint);
     text-transform: uppercase;
-    margin: 8px 0 -2px;
+    margin: 0 0 6px;
   }
 
-  .statement-actions button {
+  .controls button,
+  .tray button {
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -465,37 +391,31 @@
       color 0.18s;
   }
 
-  .statement-actions button:hover:not(:disabled) {
+  .controls button:hover:not(:disabled),
+  .tray button:hover:not(:disabled) {
     border-color: var(--crimson);
     background: var(--crimson-soft);
   }
 
-  .statement-actions button.primary {
+  .controls button.primary {
     color: var(--crimson);
     border-color: var(--crimson);
     background: var(--crimson-soft);
   }
 
-  .statement-actions button.primary .act-en {
-    color: var(--crimson);
+  .controls button.ghost,
+  .tray button.ghost {
+    color: var(--bone-faint);
   }
 
-  .statement-actions button:disabled {
+  .controls button:disabled,
+  .tray button:disabled {
     opacity: 0.55;
     cursor: wait;
   }
 
   .act-mark {
     color: var(--crimson);
-  }
-
-  .act-en {
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.24em;
-    color: var(--bone-faint);
-    text-transform: uppercase;
-    margin-left: 4px;
   }
 
   .item-kind {
@@ -525,12 +445,8 @@
 
   @media (max-width: 720px) {
     /* lyra-mobile-breakpoint — see tokens.css. */
-    .phase {
+    .menu {
       grid-template-columns: 1fr;
-    }
-    .phase-id {
-      border-right: none;
-      border-bottom: 1px solid var(--rule);
     }
   }
 </style>
