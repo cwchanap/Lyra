@@ -62,84 +62,82 @@
         {
           "id": "entered_storage",
           "label": "進倉庫的理由",
-          "kind": "question",
-          "parentQuestionId": null,
           "status": "unlocked",
           "required": true,
           "unlock": null,
-          "reveals": [
-            {
-              "kind": "statement",
-              "id": "wakatsuki_entered_for_beans"
-            },
-            {
-              "kind": "evidence",
-              "id": "coffee_machine_cleaning_log"
-            }
-          ],
-          "answerDialogue": [
-            {
-              "kind": "line",
-              "speaker": "相馬律",
-              "text": "你為什麼進倉庫？"
-            },
-            {
-              "kind": "line",
-              "speaker": "若槻蓮",
-              "text": "我只是去拿咖啡豆。"
-            },
-            {
-              "kind": "line",
-              "speaker": "神谷澪",
-              "text": "案發時間去拿咖啡豆，真巧。"
-            },
-            {
-              "kind": "line",
-              "speaker": "若槻蓮",
-              "text": "不是案發時間。我進去時，增田先生還活著。"
-            },
-            {
-              "kind": "line",
-              "speaker": "早坂茜",
-              "text": "拿完咖啡豆後呢？"
-            },
-            {
-              "kind": "line",
-              "speaker": "若槻蓮",
-              "text": "我回到吧台，立刻按了咖啡機清潔鍵。"
-            },
-            {
-              "kind": "action",
-              "text": "相馬律翻開咖啡機本地操作紀錄。"
-            },
-            {
-              "kind": "line",
-              "speaker": "相馬律",
-              "text": "清潔啟動時間，21:13:29。"
-            },
-            {
-              "kind": "line",
-              "speaker": "若槻蓮",
-              "text": "對。我按完還被店長提醒，吧台也要擦乾淨。"
-            },
-            {
-              "kind": "line",
-              "speaker": "相馬律",
-              "text": "這份紀錄，先放進證物袋。"
-            }
-          ],
-          "onReask": [
-            {
-              "kind": "line",
-              "speaker": "若槻蓮",
-              "text": "我進倉庫只是拿咖啡豆。出來後，我馬上按了清潔鍵。"
-            }
-          ]
+          "reveals": [],
+          "testimony": {
+            "onLoop": [],
+            "defaultChallenge": [],
+            "defaultWrong": [],
+            "lines": [
+              {
+                "id": "l_entered_storage",
+                "label": "進倉庫的理由",
+                "content": [
+                  {
+                    "kind": "line",
+                    "speaker": "相馬律",
+                    "text": "你為什麼進倉庫？"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "若槻蓮",
+                    "text": "我只是去拿咖啡豆。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "神谷澪",
+                    "text": "案發時間去拿咖啡豆，真巧。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "若槻蓮",
+                    "text": "不是案發時間。我進去時，增田先生還活著。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "早坂茜",
+                    "text": "拿完咖啡豆後呢？"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "若槻蓮",
+                    "text": "我回到吧台，立刻按了咖啡機清潔鍵。"
+                  },
+                  {
+                    "kind": "action",
+                    "text": "相馬律翻開咖啡機本地操作紀錄。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "相馬律",
+                    "text": "清潔啟動時間，21:13:29。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "若槻蓮",
+                    "text": "對。我按完還被店長提醒，吧台也要擦乾淨。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "相馬律",
+                    "text": "這份紀錄，先放進證物袋。"
+                  }
+                ],
+                "contradiction": null,
+                "challenge": [],
+                "onCorrect": [],
+                "onWrongEvidence": [],
+                "reveals": []
+              }
+            ]
+          }
         }
       ]
     },
     {
-      "kind": "testimony",
+      "kind": "inquiry",
       "id": "wakatsuki_testimony",
       "label": "若槻蓮的行動證詞",
       "subject": {
@@ -151,10 +149,19 @@
       "required": true,
       "status": "locked",
       "unlock": {
-        "predicate": "statement_acquired",
-        "id": "wakatsuki_entered_for_beans"
+        "predicate": "question_answered",
+        "id": "entered_storage"
       },
-      "reveals": [],
+      "reveals": [
+        {
+          "kind": "statement",
+          "id": "wakatsuki_entered_for_beans"
+        },
+        {
+          "kind": "evidence",
+          "id": "coffee_machine_cleaning_log"
+        }
+      ],
       "sceneTag": "警視廳臨時證據審查室，深夜。投影幕顯示 KAGAMI 官方時間線，旁邊並列咖啡機清潔紀錄。長桌上有證物袋、平板電腦與紅色錄音燈。神谷澪站在投影幕前，若槻蓮低頭坐著。",
       "entryDialogue": [
         {
@@ -173,115 +180,125 @@
           "text": "那就請你指出，哪一份紀錄先說不通。"
         }
       ],
-      "statements": [
+      "complete": "auto",
+      "questions": [
         {
           "id": "cleaning_button",
           "label": "清潔鍵",
-          "content": "我離開倉庫後，立刻回到吧台按下咖啡機清潔鍵。",
-          "contradiction": {
-            "kind": "evidence",
-            "id": "coffee_machine_cleaning_log"
-          },
-          "onCorrect": "kagami_timeline_gap",
-          "onWrong": "wrong_record_focus",
-          "onPress": [
-            {
-              "kind": "line",
-              "speaker": "相馬律",
-              "text": "你說「立刻」，中間沒有做別的事？"
-            },
-            {
-              "kind": "line",
-              "speaker": "若槻蓮",
-              "text": "沒有。我怕被店長罵，所以先按清潔鍵。"
-            },
-            {
-              "kind": "line",
-              "speaker": "早坂茜",
-              "text": "你當時看過時間嗎？"
-            },
-            {
-              "kind": "line",
-              "speaker": "若槻蓮",
-              "text": "沒有。但機器自己會記錄。"
-            }
-          ],
-          "onPresent": [
-            {
-              "kind": "line",
-              "speaker": "相馬律",
-              "text": "這份咖啡機清潔紀錄，正好記下了按鍵時間。"
-            }
-          ],
-          "onWrongPresent": [
-            {
-              "kind": "line",
-              "speaker": "神谷澪",
-              "text": "那份資料無法證明若槻蓮何時離開倉庫。"
-            },
-            {
-              "kind": "line",
-              "speaker": "相馬律",
-              "text": "方向不對。要找能和「立刻按鍵」對上的紀錄。"
-            }
-          ],
-          "reveals": []
-        }
-      ],
-      "results": [
-        {
-          "id": "kagami_timeline_gap",
-          "label": "KAGAMI 時間線不一致",
-          "reveals": [
-            {
-              "kind": "statement",
-              "id": "kagami_timeline_inconsistent"
-            }
-          ],
-          "dialogue": [
-            {
-              "kind": "line",
-              "speaker": "相馬律",
-              "text": "咖啡機清潔啟動時間，是 21:13:29。"
-            },
-            {
-              "kind": "line",
-              "speaker": "相馬律",
-              "text": "但 KAGAMI 說若槻蓮 21:14:52 才離開倉庫。"
-            },
-            {
-              "kind": "line",
-              "speaker": "早坂茜",
-              "text": "他不可能人在倉庫裡，同時按下吧台的清潔鍵。"
-            },
-            {
-              "kind": "line",
-              "speaker": "神谷澪",
-              "text": "也可能是咖啡機時間沒有校準。"
-            },
-            {
-              "kind": "line",
-              "speaker": "相馬律",
-              "text": "可能。但至少，KAGAMI 時間線已經不是唯一解釋。"
-            }
-          ]
-        },
-        {
-          "id": "wrong_record_focus",
-          "label": "紀錄方向錯誤",
+          "status": "unlocked",
+          "required": true,
+          "unlock": null,
           "reveals": [],
-          "dialogue": [
-            {
-              "kind": "line",
-              "speaker": "早坂茜",
-              "text": "那份證據不能連到清潔鍵。"
-            },
-            {
-              "kind": "line",
-              "speaker": "相馬律",
-              "text": "要用能直接標出按鍵時間的紀錄。"
-            }
-          ]
+          "testimony": {
+            "onLoop": [
+              {
+                "kind": "line",
+                "speaker": "相馬律",
+                "text": "還有哪裡對不上，再想想。"
+              }
+            ],
+            "defaultChallenge": [],
+            "defaultWrong": [],
+            "lines": [
+              {
+                "id": "l_cleaning_button",
+                "label": "清潔鍵",
+                "content": [
+                  {
+                    "kind": "line",
+                    "speaker": "若槻蓮",
+                    "text": "我離開倉庫後，立刻回到吧台按下咖啡機清潔鍵。"
+                  }
+                ],
+                "contradiction": {
+                  "kind": "evidence",
+                  "id": "coffee_machine_cleaning_log"
+                },
+                "challenge": [
+                  {
+                    "kind": "line",
+                    "speaker": "相馬律",
+                    "text": "你說「立刻」，中間沒有做別的事？"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "若槻蓮",
+                    "text": "沒有。我怕被店長罵，所以先按清潔鍵。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "早坂茜",
+                    "text": "你當時看過時間嗎？"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "若槻蓮",
+                    "text": "沒有。但機器自己會記錄。"
+                  }
+                ],
+                "onCorrect": [
+                  {
+                    "kind": "line",
+                    "speaker": "相馬律",
+                    "text": "這份咖啡機清潔紀錄，正好記下了按鍵時間。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "相馬律",
+                    "text": "咖啡機清潔啟動時間，是 21:13:29。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "相馬律",
+                    "text": "但 KAGAMI 說若槻蓮 21:14:52 才離開倉庫。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "早坂茜",
+                    "text": "他不可能人在倉庫裡，同時按下吧台的清潔鍵。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "神谷澪",
+                    "text": "也可能是咖啡機時間沒有校準。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "相馬律",
+                    "text": "可能。但至少，KAGAMI 時間線已經不是唯一解釋。"
+                  }
+                ],
+                "onWrongEvidence": [
+                  {
+                    "kind": "line",
+                    "speaker": "神谷澪",
+                    "text": "那份資料無法證明若槻蓮何時離開倉庫。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "相馬律",
+                    "text": "方向不對。要找能和「立刻按鍵」對上的紀錄。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "早坂茜",
+                    "text": "那份證據不能連到清潔鍵。"
+                  },
+                  {
+                    "kind": "line",
+                    "speaker": "相馬律",
+                    "text": "要用能直接標出按鍵時間的紀錄。"
+                  }
+                ],
+                "reveals": [
+                  {
+                    "kind": "statement",
+                    "id": "kagami_timeline_inconsistent"
+                  }
+                ]
+              }
+            ]
+          }
         }
       ]
     }

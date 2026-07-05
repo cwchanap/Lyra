@@ -590,10 +590,7 @@ mod tests {
             complete,
             questions,
             ..
-        } = scene.phases.remove(0)
-        else {
-            panic!("expected inquiry phase");
-        };
+        } = scene.phases.remove(0);
         InterrogationPhaseJson::Inquiry {
             id: id.into(),
             label,
@@ -622,10 +619,7 @@ mod tests {
             complete,
             questions,
             ..
-        } = scene.phases.remove(0)
-        else {
-            panic!("expected inquiry phase");
-        };
+        } = scene.phases.remove(0);
         InterrogationPhaseJson::Inquiry {
             id: id.into(),
             label,

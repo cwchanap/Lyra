@@ -251,31 +251,30 @@ fn dispatch(state: &ServerState, command: &str, body: &[u8]) -> Result<String, G
             let args: Args = parse_body(body)?;
             with_engine(state, |e| e.reexamine_statement(&args.statement_id))
         }
-        "answer_interrogation_question" => {
+        "ask_interrogation_question" => {
             #[derive(Deserialize)]
             struct Args {
                 #[serde(rename = "questionId")]
                 question_id: String,
             }
             let args: Args = parse_body(body)?;
-            with_engine(state, |e| {
-                e.answer_interrogation_question(&args.question_id)
-            })
+            with_engine(state, |e| e.ask_interrogation_question(&args.question_id))
         }
-        "press_testimony_statement" => {
+        "proceed_interrogation_line" => with_engine(state, |e| e.proceed_interrogation_line()),
+        "challenge_interrogation_line" => {
             #[derive(Deserialize)]
             struct Args {
-                #[serde(rename = "statementId")]
-                statement_id: String,
+                #[serde(rename = "lineId")]
+                line_id: String,
             }
             let args: Args = parse_body(body)?;
-            with_engine(state, |e| e.press_testimony_statement(&args.statement_id))
+            with_engine(state, |e| e.challenge_interrogation_line(&args.line_id))
         }
-        "present_testimony_item" => {
+        "present_interrogation_evidence" => {
             #[derive(Deserialize)]
             struct Args {
-                #[serde(rename = "statementId")]
-                statement_id: String,
+                #[serde(rename = "lineId")]
+                line_id: String,
                 #[serde(rename = "itemKind")]
                 item_kind: String,
                 #[serde(rename = "itemId")]
@@ -283,9 +282,10 @@ fn dispatch(state: &ServerState, command: &str, body: &[u8]) -> Result<String, G
             }
             let args: Args = parse_body(body)?;
             with_engine(state, |e| {
-                e.present_testimony_item(&args.statement_id, &args.item_kind, &args.item_id)
+                e.present_interrogation_evidence(&args.line_id, &args.item_kind, &args.item_id)
             })
         }
+        "withdraw_interrogation" => with_engine(state, |e| e.withdraw_interrogation()),
         other => Err(GameError::new(
             "unknownCommand",
             format!("unknown command: {other}"),
@@ -331,16 +331,16 @@ mod tests {
 
         for (command, body) in [
             (
-                "answer_interrogation_question",
+                "ask_interrogation_question",
                 r#"{"questionId":"wakatsuki_where"}"#,
             ),
             (
-                "press_testimony_statement",
-                r#"{"statementId":"wakatsuki_statement_1"}"#,
+                "challenge_interrogation_line",
+                r#"{"lineId":"wakatsuki_line_1"}"#,
             ),
             (
-                "present_testimony_item",
-                r#"{"statementId":"wakatsuki_statement_1","itemKind":"evidence","itemId":"receipt"}"#,
+                "present_interrogation_evidence",
+                r#"{"lineId":"wakatsuki_line_1","itemKind":"evidence","itemId":"receipt"}"#,
             ),
         ] {
             let err = dispatch(&state, command, body.as_bytes()).unwrap_err();

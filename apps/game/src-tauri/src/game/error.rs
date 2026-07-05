@@ -113,6 +113,12 @@ impl GameError {
             format!("Interrogation question '{id}' is locked."),
         )
     }
+    pub fn not_in_cross_examination(action: &str) -> Self {
+        Self::new(
+            "notInCrossExamination",
+            format!("Action '{action}' requires an active cross-examination."),
+        )
+    }
     pub fn unknown_testimony_statement(id: &str) -> Self {
         Self::new(
             "unknownTestimonyStatement",
