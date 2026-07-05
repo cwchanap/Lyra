@@ -159,7 +159,7 @@ export function inferGameplaySfxEvents(
   if (command === "ask_interrogation_question")
     events.push("interrogation:question-answered");
   if (command === "challenge_interrogation_line")
-    events.push("interrogation:testimony-pressed");
+    events.push("ui:menu-confirm");
 
   if (inventoryEvidenceCount(next) > inventoryEvidenceCount(previous)) {
     events.push("investigation:evidence-acquired");
