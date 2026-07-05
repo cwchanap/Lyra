@@ -256,38 +256,28 @@ impl InterrogationUnlockContext for InterrogationSceneAndInventoryCtx<'_> {
 }
 
 pub fn phase_id(phase: &InterrogationPhaseJson) -> &str {
-    match phase {
-        InterrogationPhaseJson::Inquiry { id, .. }
-        | InterrogationPhaseJson::Testimony { id, .. } => id,
-    }
+    let InterrogationPhaseJson::Inquiry { id, .. } = phase;
+    id
 }
 
 pub fn phase_label(phase: &InterrogationPhaseJson) -> &str {
-    match phase {
-        InterrogationPhaseJson::Inquiry { label, .. }
-        | InterrogationPhaseJson::Testimony { label, .. } => label,
-    }
+    let InterrogationPhaseJson::Inquiry { label, .. } = phase;
+    label
 }
 
 pub fn phase_required(phase: &InterrogationPhaseJson) -> bool {
-    match phase {
-        InterrogationPhaseJson::Inquiry { required, .. }
-        | InterrogationPhaseJson::Testimony { required, .. } => *required,
-    }
+    let InterrogationPhaseJson::Inquiry { required, .. } = phase;
+    *required
 }
 
 pub fn phase_status(phase: &InterrogationPhaseJson) -> LockStatus {
-    match phase {
-        InterrogationPhaseJson::Inquiry { status, .. }
-        | InterrogationPhaseJson::Testimony { status, .. } => *status,
-    }
+    let InterrogationPhaseJson::Inquiry { status, .. } = phase;
+    *status
 }
 
 pub fn phase_unlock(phase: &InterrogationPhaseJson) -> Option<&InterrogationUnlockExpr> {
-    match phase {
-        InterrogationPhaseJson::Inquiry { unlock, .. }
-        | InterrogationPhaseJson::Testimony { unlock, .. } => unlock.as_ref(),
-    }
+    let InterrogationPhaseJson::Inquiry { unlock, .. } = phase;
+    unlock.as_ref()
 }
 
 #[cfg(test)]

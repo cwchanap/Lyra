@@ -402,21 +402,6 @@ pub enum InterrogationPhaseJson {
         complete: InterrogationOutroUnlock,
         questions: Vec<InquiryQuestionJson>,
     },
-    Testimony {
-        id: String,
-        label: String,
-        subject: SubjectJson,
-        required: bool,
-        status: LockStatus,
-        unlock: Option<InterrogationUnlockExpr>,
-        reveals: Vec<InterrogationRevealTarget>,
-        scene_tag: String,
-        #[serde(flatten)]
-        flattened_asset_cue: VisualAssetCueJson,
-        entry_dialogue: Vec<DialogueItem>,
-        statements: Vec<TestimonyStatementJson>,
-        results: Vec<TestimonyResultJson>,
-    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -433,45 +418,39 @@ pub struct SubjectJson {
 pub struct InquiryQuestionJson {
     pub id: String,
     pub label: String,
-    pub kind: InquiryQuestionKind,
-    pub parent_question_id: Option<String>,
     pub status: LockStatus,
     pub required: bool,
     pub unlock: Option<InterrogationUnlockExpr>,
     pub reveals: Vec<InterrogationRevealTarget>,
-    pub answer_dialogue: Vec<DialogueItem>,
-    pub on_reask: Option<Vec<DialogueItem>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum InquiryQuestionKind {
-    Question,
-    FollowUp,
+    pub testimony: TestimonyJson,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TestimonyStatementJson {
+pub struct TestimonyJson {
+    pub on_loop: Vec<DialogueItem>,
+    #[serde(default)]
+    pub default_challenge: Vec<DialogueItem>,
+    #[serde(default)]
+    pub default_wrong: Vec<DialogueItem>,
+    pub lines: Vec<TestimonyLineJson>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestimonyLineJson {
     pub id: String,
     pub label: String,
-    pub content: String,
+    pub content: Vec<DialogueItem>,
     pub contradiction: Option<InventoryTarget>,
-    pub on_correct: Option<String>,
-    pub on_wrong: Option<String>,
-    pub on_press: Option<Vec<DialogueItem>>,
-    pub on_present: Option<Vec<DialogueItem>>,
-    pub on_wrong_present: Option<Vec<DialogueItem>>,
+    #[serde(default)]
+    pub challenge: Vec<DialogueItem>,
+    #[serde(default)]
+    pub on_correct: Vec<DialogueItem>,
+    #[serde(default)]
+    pub on_wrong_evidence: Vec<DialogueItem>,
+    #[serde(default)]
     pub reveals: Vec<InterrogationRevealTarget>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TestimonyResultJson {
-    pub id: String,
-    pub label: String,
-    pub reveals: Vec<InterrogationRevealTarget>,
-    pub dialogue: Vec<DialogueItem>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -498,17 +477,11 @@ impl SublocationJson {
 
 impl InterrogationPhaseJson {
     pub fn visual_asset_cue(&self) -> Option<VisualAssetCueJson> {
-        let flattened = match self {
-            Self::Inquiry {
-                flattened_asset_cue,
-                ..
-            }
-            | Self::Testimony {
-                flattened_asset_cue,
-                ..
-            } => flattened_asset_cue,
-        };
-        (!flattened.is_empty()).then(|| flattened.clone())
+        let Self::Inquiry {
+            flattened_asset_cue,
+            ..
+        } = self;
+        (!flattened_asset_cue.is_empty()).then(|| flattened_asset_cue.clone())
     }
 }
 
