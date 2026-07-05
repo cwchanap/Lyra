@@ -118,10 +118,9 @@ export type SublocationView = {
 export type InterrogationPhaseView = {
   id: string;
   label: string;
-  kind: "inquiry" | "testimony";
   subject: SubjectView;
   questions: InquiryQuestionView[];
-  testimony: TestimonyStatementView[];
+  crossExam: CrossExamView | null;
 };
 export type SubjectView = {
   id: string;
@@ -132,13 +131,16 @@ export type SubjectView = {
 export type InquiryQuestionView = {
   id: string;
   label: string;
-  answered: boolean;
+  broken: boolean;
 };
-export type TestimonyStatementView = {
-  id: string;
-  label: string;
-  content: string;
-  pressed: boolean;
+export type CrossExamView = {
+  questionId: string;
+  lineId: string;
+  lineLabel: string;
+  lineContent: DialogueItem[];
+  lineIndex: number;
+  lineTotal: number;
+  presenting: boolean;
 };
 
 export type SceneView =
