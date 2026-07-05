@@ -336,7 +336,7 @@ entries:
       - {
           file: docs/stories_plan/chapter_1/scene_6.md,
           line: 81,
-          note: 便利店門口傍晚雨漸小，片瀨趕末班車路過
+          note: 便利店門口傍晚雨漸小，片瀨美咲趕末班車路過
         }
   - id: bgs_shopping_street_rain_night
     channel: bgs

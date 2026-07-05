@@ -93,7 +93,7 @@ Declared **exactly once** at the listed site (its `#### On Collect` / evidence m
 
 ## Canon constraints (every task — from 施工圖 Appendix B + addendum)
 
-- Suspect surface = **三宅蒼太**; victim = **增田圭**; true killer = **北見修一** (revealed Beat 9–10, never earlier). Roster voices: 相馬律 (orderly, "tidy data protects people," not yet a genius), 早坂茜 (procedure/chain-of-custody), 神谷澪 (審查會 gatekeeper, NOT a villain), 黑瀨徹 (field detective, supplies forensic/chain-of-custody), 店長高瀨 + 片瀨 (店員, NOT engineers).
+- Suspect surface = **三宅蒼太**; victim = **增田圭**; true killer = **北見修一** (revealed Beat 9–10, never earlier). Roster voices: 相馬律 (orderly, "tidy data protects people," not yet a genius), 早坂茜 (procedure/chain-of-custody), 神谷澪 (審查會 gatekeeper, NOT a villain), 黑瀨徹 (field detective, supplies forensic/chain-of-custody), 店長高瀨 + 片瀨美咲 (店員, NOT engineers).
 - 22:50 = 閉店流程開始; **22:52** = 維護模式 ON (never write 22:50 as maintenance-ON).
 - `K.` must NOT equal 北見 until Beat 9 merges it. Coffee machine / 第二杯 must NOT alone prove death-minute. 店長手機截圖 is only a lead — 黑瀨/鑑識 program-fixes the formal record.
 - Assets disabled (`policy.yaml: enabled:false`): semantic content only — no `Background Prompt`/`BGM`/`BGS`/`Image Prompt`/asset metadata. Writers author intent, never filesystem paths.
@@ -149,11 +149,11 @@ Expected: `OK — 1 chapter(s), 2 scene(s).`
 
 **Declares evidence:** `cctv_screenshot`, `timecard_record`, `backroom_floorplan`, `two_coffee_order`, `doorlock_summary_timetable`, `closing_routine` (each with `#### On Collect`).
 
-**Structure (施工圖 336–528):** sub-locations as the L-型 space — `前場 {#front}` (unlocked: 藍傘 空鏡 only/no discuss, 金木犀 看板 → 相馬 手停半拍, 收銀台, 片瀨 趕末班車; 店長高瀨 + 片瀨 characters), then `後場走廊 {#corridor}` and `內側倉庫入口 {#inner_storage}` reached by Reveals from a front-of-house hotspot (e.g. inspecting 監視器 unlocks 後場). Hotspots → evidence collection: 監視器回放→`cctv_screenshot` (3B normal routine), 打卡→`timecard_record`, 後場 L 型/高貨架/半掩防火門/內側感應燈→`backroom_floorplan` (3C sight occlusion; do NOT yet let 相馬 deduce 三宅 can't see body), 閉店 SOP 白板→`closing_routine` (3D; 22:50 閉店開始 / 22:52 維護 ON; 維護紀錄冊未蓋章), 收銀第二杯→`two_coffee_order` (`K.`, not full name, 3E), 門鎖摘要 hotspot→`doorlock_summary_timetable`. 3F 北見 ambient mention (片瀨/店長, NOT evidence), 3G 聲音種子 (backflush/抽屜, no character lists them as masking), 3H 增田 後場 表面理由 (店長 認得他是「門鎖資料那邊的人」; surface reason only; 店長 does NOT know 北見/USB/盜賣).
+**Structure (施工圖 336–528):** sub-locations as the L-型 space — `前場 {#front}` (unlocked: 藍傘 空鏡 only/no discuss, 金木犀 看板 → 相馬 手停半拍, 收銀台, 片瀨美咲 趕末班車; 店長高瀨 + 片瀨美咲 characters), then `後場走廊 {#corridor}` and `內側倉庫入口 {#inner_storage}` reached by Reveals from a front-of-house hotspot (e.g. inspecting 監視器 unlocks 後場). Hotspots → evidence collection: 監視器回放→`cctv_screenshot` (3B normal routine), 打卡→`timecard_record`, 後場 L 型/高貨架/半掩防火門/內側感應燈→`backroom_floorplan` (3C sight occlusion; do NOT yet let 相馬 deduce 三宅 can't see body), 閉店 SOP 白板→`closing_routine` (3D; 22:50 閉店開始 / 22:52 維護 ON; 維護紀錄冊未蓋章), 收銀第二杯→`two_coffee_order` (`K.`, not full name, 3E), 門鎖摘要 hotspot→`doorlock_summary_timetable`. 3F 北見 ambient mention (片瀨美咲/店長, NOT evidence), 3G 聲音種子 (backflush/抽屜, no character lists them as masking), 3H 增田 後場 表面理由 (店長 認得他是「門鎖資料那邊的人」; surface reason only; 店長 does NOT know 北見/USB/盜賣).
 
 **Unlock graph:** `front` unlocked; texture hotspots unlocked; one front hotspot Reveals `corridor`; `corridor` Reveals `inner_storage`; evidence collected via On Collect. Acyclic; each locked sub-location/topic exactly one inbound `Reveals`, no double `Unlock`. Outro: 玩家 has surface evidence, feels 三宅 suspicious, space/routine seeds planted.
 
-- [ ] **Step 1: Dispatch writing subagent** (`writing-investigation-scene` first; 336–528 excerpt; the six evidence IDs + their On-Collect sites; the sub-location unlock graph above; characters 店長高瀨/片瀨; canon + 不要做 518–524 — 藍傘/金木犀 not evidence, `K.`≠北見, 店長 not engineer, sound not perfect score; assets-disabled; self-check incl. "first sub-location unlocked, each locked block one inbound Reveals, every evidence has On Collect").
+- [ ] **Step 1: Dispatch writing subagent** (`writing-investigation-scene` first; 336–528 excerpt; the six evidence IDs + their On-Collect sites; the sub-location unlock graph above; characters 店長高瀨/片瀨美咲; canon + 不要做 518–524 — 藍傘/金木犀 not evidence, `K.`≠北見, 店長 not engineer, sound not perfect score; assets-disabled; self-check incl. "first sub-location unlocked, each locked block one inbound Reveals, every evidence has On Collect").
 - [ ] **Step 2: Append manifest** → `4. investigation_scene_3.md`.
 - [ ] **Step 3: GREEN gate** — `bun run scenes:compile` → `OK — 1 chapter(s), 4 scene(s).`
 - [ ] **Step 4: REVIEW gate** — review subagent over `investigation_scene_3.md`.
@@ -200,7 +200,7 @@ Expected: `OK — 1 chapter(s), 2 scene(s).`
 - Create: `docs/stories_plan/chapter_1/scene_6.md`
 - Modify: `chapter.md` (append `7. scene_6.md`)
 
-**Content (施工圖 699–760):** breather 商店街避雨. 6A 便利店屋簷 (早坂 紙本收據; sorts data into three piles — 人說的話 / 店裡留下的物 / 系統排好的摘要 — shown via 貼紙/收據/分堆, NOT a thesis speech). 6B 濕傘套路人 (visual bridge, not new evidence, 相馬 不立刻推理). 6C 片瀨 末班車錯覺 optional (estimate-time ≠ lying). **No evidence (linear).** 不要做 752–756. Outro: 相馬 decides to re-walk 雨鐘, not re-read summary.
+**Content (施工圖 699–760):** breather 商店街避雨. 6A 便利店屋簷 (早坂 紙本收據; sorts data into three piles — 人說的話 / 店裡留下的物 / 系統排好的摘要 — shown via 貼紙/收據/分堆, NOT a thesis speech). 6B 濕傘套路人 (visual bridge, not new evidence, 相馬 不立刻推理). 6C 片瀨美咲 末班車錯覺 optional (estimate-time ≠ lying). **No evidence (linear).** 不要做 752–756. Outro: 相馬 decides to re-walk 雨鐘, not re-read summary.
 
 - [ ] **Step 1: Dispatch writing subagent** (`writing-detective-game-dialogue` first; 699–760 excerpt; 早坂 voice; canon + 不要做; assets-disabled; self-check).
 - [ ] **Step 2: Append manifest** → `7. scene_6.md`.
