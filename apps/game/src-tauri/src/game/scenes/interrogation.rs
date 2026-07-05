@@ -3,10 +3,43 @@ use std::collections::HashSet;
 use crate::game::scenes::investigation::DialogueQueue;
 use crate::game::schema::{
     InquiryQuestionJson, InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationSceneJson,
-    InterrogationUnlockExpr, LockStatus,
+    InterrogationUnlockExpr, LockStatus, TestimonyLineJson,
 };
 use crate::game::state::Inventory;
 use crate::game::unlock::{self, InterrogationUnlockContext};
+
+/// Cross-examination sub-state for the currently active inquiry question.
+///
+/// This is deliberately separate from `current_phase_id`/`completed_phases`:
+/// a phase can have many questions, and each question's testimony can be
+/// stepped through, challenged, and either broken (via a correct evidence
+/// present) or looped back to the top.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CrossExam {
+    /// No question is being cross-examined; the player sees the question menu.
+    Idle,
+    /// Showing testimony line `line_index` of `question_id`, with press/present
+    /// controls available.
+    Playing {
+        question_id: String,
+        line_index: usize,
+    },
+    /// The evidence tray is open so the player can present evidence against
+    /// `line_id` of `question_id`.
+    Presenting {
+        question_id: String,
+        line_id: String,
+    },
+}
+
+/// Result of advancing to the next testimony line via [`InterrogationSceneState::advance_line`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdvanceOutcome {
+    /// Moved forward to the line at this index.
+    NextLine(usize),
+    /// Advanced past the last line; testimony looped back to line 0.
+    Loop,
+}
 
 #[derive(Debug, Clone)]
 pub struct InterrogationSceneState {
@@ -16,9 +49,8 @@ pub struct InterrogationSceneState {
     pub current_phase_id: Option<String>,
     pub pending_queue: Option<DialogueQueue>,
     pub intro_queue_gen: u64,
-    pub answered_questions: HashSet<String>,
-    pub pressed_statements: HashSet<String>,
-    pub wrong_presented_statements: HashSet<String>,
+    pub cross_exam: CrossExam,
+    pub broken_questions: HashSet<String>,
     pub completed_phases: HashSet<String>,
     pub unlocked_overrides: HashSet<String>,
     entered_phases: HashSet<String>,
@@ -43,9 +75,8 @@ impl InterrogationSceneState {
             current_phase_id,
             pending_queue: None,
             intro_queue_gen,
-            answered_questions: HashSet::new(),
-            pressed_statements: HashSet::new(),
-            wrong_presented_statements: HashSet::new(),
+            cross_exam: CrossExam::Idle,
+            broken_questions: HashSet::new(),
             completed_phases: HashSet::new(),
             unlocked_overrides: HashSet::new(),
             entered_phases: HashSet::new(),
@@ -63,23 +94,139 @@ impl InterrogationSceneState {
         self.current_phase_id.clone()
     }
 
-    pub fn record_question_answered(&mut self, id: &str) {
-        self.answered_questions.insert(id.into());
+    pub fn cross_exam(&self) -> &CrossExam {
+        &self.cross_exam
     }
 
-    pub fn record_statement_pressed(&mut self, id: &str) {
-        self.pressed_statements.insert(id.into());
+    /// Looks up a question by id across all phases.
+    pub fn question<'a>(&'a self, id: &str) -> Option<&'a InquiryQuestionJson> {
+        self.def.phases.iter().find_map(|phase| {
+            let InterrogationPhaseJson::Inquiry { questions, .. } = phase;
+            questions.iter().find(|question| question.id == id)
+        })
     }
 
-    pub fn record_wrong_present(&mut self, statement_id: &str) {
-        self.wrong_presented_statements.insert(statement_id.into());
+    /// Looks up a testimony line by (question id, line id).
+    pub fn line<'a>(&'a self, question_id: &str, line_id: &str) -> Option<&'a TestimonyLineJson> {
+        self.question(question_id)?
+            .testimony
+            .lines
+            .iter()
+            .find(|line| line.id == line_id)
     }
 
-    pub fn record_correct_present(&mut self, phase_id: &str) {
-        self.completed_phases.insert(phase_id.into());
-        if self.current_phase_id.as_deref() == Some(phase_id) {
-            self.current_phase_id = None;
+    pub fn is_question_broken(&self, id: &str) -> bool {
+        self.broken_questions.contains(id)
+    }
+
+    /// Begins cross-examining `question_id`, entering `Playing` at line 0.
+    ///
+    /// A question whose testimony has no line carrying a `contradiction`
+    /// target can never be "broken" via an evidence present — there is
+    /// nothing for the player to press. Rather than leaving such a question
+    /// permanently unresolvable, it is treated as auto-broken the moment its
+    /// cross-examination begins: this is the simplest rule consistent with
+    /// `broken_questions` being the single source of truth `phase_complete`
+    /// consults for "has this question been dealt with".
+    pub fn begin_question(&mut self, question_id: &str) {
+        self.cross_exam = CrossExam::Playing {
+            question_id: question_id.to_string(),
+            line_index: 0,
+        };
+        let has_contradiction = self.question(question_id).is_some_and(|question| {
+            question
+                .testimony
+                .lines
+                .iter()
+                .any(|line| line.contradiction.is_some())
+        });
+        if !has_contradiction {
+            self.broken_questions.insert(question_id.to_string());
         }
+    }
+
+    /// Advances to the next testimony line of the question currently being
+    /// played. If already on the last line, loops back to line 0.
+    ///
+    /// No-op (returns `Loop` without changing state) if `cross_exam` is not
+    /// `Playing`; callers are expected to only invoke this while playing.
+    pub fn advance_line(&mut self) -> AdvanceOutcome {
+        let CrossExam::Playing {
+            question_id,
+            line_index,
+        } = &self.cross_exam
+        else {
+            return AdvanceOutcome::Loop;
+        };
+        let question_id = question_id.clone();
+        let line_count = self
+            .question(&question_id)
+            .map(|question| question.testimony.lines.len())
+            .unwrap_or(0);
+        let next_index = line_index + 1;
+        if next_index >= line_count {
+            self.cross_exam = CrossExam::Playing {
+                question_id,
+                line_index: 0,
+            };
+            AdvanceOutcome::Loop
+        } else {
+            self.cross_exam = CrossExam::Playing {
+                question_id,
+                line_index: next_index,
+            };
+            AdvanceOutcome::NextLine(next_index)
+        }
+    }
+
+    /// Opens the evidence tray against `line_id` of the question currently
+    /// being played. No-op if `cross_exam` is not `Playing`.
+    pub fn begin_present(&mut self, line_id: &str) {
+        if let CrossExam::Playing { question_id, .. } = &self.cross_exam {
+            self.cross_exam = CrossExam::Presenting {
+                question_id: question_id.clone(),
+                line_id: line_id.to_string(),
+            };
+        }
+    }
+
+    /// Marks `question_id` as broken (its contradiction has been proven) and
+    /// returns to the question menu.
+    pub fn record_break(&mut self, question_id: &str) {
+        self.broken_questions.insert(question_id.to_string());
+        self.cross_exam = CrossExam::Idle;
+    }
+
+    /// Returns from presenting evidence back to playing the same testimony
+    /// line (used after a wrong present). No-op if `cross_exam` is not
+    /// `Presenting`.
+    pub fn return_to_line(&mut self) {
+        if let CrossExam::Presenting {
+            question_id,
+            line_id,
+        } = &self.cross_exam
+        {
+            let question_id = question_id.clone();
+            let line_index = self
+                .question(&question_id)
+                .and_then(|question| {
+                    question
+                        .testimony
+                        .lines
+                        .iter()
+                        .position(|line| &line.id == line_id)
+                })
+                .unwrap_or(0);
+            self.cross_exam = CrossExam::Playing {
+                question_id,
+                line_index,
+            };
+        }
+    }
+
+    /// Abandons the current cross-examination and returns to the question menu.
+    pub fn withdraw(&mut self) {
+        self.cross_exam = CrossExam::Idle;
     }
 
     pub fn unlock_override(&mut self, key: &str) {
@@ -173,31 +320,30 @@ impl InterrogationSceneState {
         if self.completed_phases.contains(id) {
             return true;
         }
-        match phase {
-            InterrogationPhaseJson::Inquiry {
-                complete,
-                questions,
-                ..
-            } => match complete {
-                InterrogationOutroUnlock::Auto(_) => {
-                    let all_required_answered = questions
-                        .iter()
-                        .filter(|question| question.required)
-                        .all(|question| self.answered_questions.contains(&question.id));
-                    if !all_required_answered {
-                        return false;
-                    }
-                    // Do not auto-complete while unlocked questions remain unanswered,
-                    // so the player can interact with optional follow-ups that may have
-                    // just become visible after a required question was answered.
-                    !questions.iter().any(|question| {
-                        self.is_question_unlocked(question, ctx)
-                            && !self.answered_questions.contains(&question.id)
-                    })
+        let InterrogationPhaseJson::Inquiry {
+            complete,
+            questions,
+            ..
+        } = phase;
+        match complete {
+            InterrogationOutroUnlock::Auto(_) => {
+                let all_required_broken = questions
+                    .iter()
+                    .filter(|question| question.required)
+                    .all(|question| self.broken_questions.contains(&question.id));
+                if !all_required_broken {
+                    return false;
                 }
-                InterrogationOutroUnlock::Expr(expr) => unlock::evaluate_interrogation(expr, ctx),
-            },
-            InterrogationPhaseJson::Testimony { .. } => false,
+                // Do not auto-complete while unlocked questions remain
+                // unbroken, so the player can interact with optional
+                // follow-ups that may have just become visible after a
+                // required question was broken.
+                !questions.iter().any(|question| {
+                    self.is_question_unlocked(question, ctx)
+                        && !self.broken_questions.contains(&question.id)
+                })
+            }
+            InterrogationOutroUnlock::Expr(expr) => unlock::evaluate_interrogation(expr, ctx),
         }
     }
 
@@ -247,7 +393,7 @@ impl InterrogationUnlockContext for InterrogationSceneAndInventoryCtx<'_> {
     }
 
     fn question_answered(&self, id: &str) -> bool {
-        self.scene.answered_questions.contains(id)
+        self.scene.is_question_broken(id)
     }
 
     fn phase_completed(&self, id: &str) -> bool {
@@ -284,9 +430,9 @@ pub fn phase_unlock(phase: &InterrogationPhaseJson) -> Option<&InterrogationUnlo
 mod tests {
     use super::*;
     use crate::game::schema::{
-        AutoMarker, DialogueItem, InterrogationOutroJson, InterrogationOutroUnlock,
-        InterrogationPhaseJson, InterrogationSceneJson, InventoryTarget, LockStatus, SubjectJson,
-        TestimonyResultJson, TestimonyStatementJson,
+        AutoMarker, DialogueItem, InquiryQuestionJson, InterrogationOutroJson,
+        InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationSceneJson, InventoryTarget,
+        LockStatus, SubjectJson, TestimonyJson, TestimonyLineJson,
     };
     use crate::game::state::Inventory;
 
@@ -303,6 +449,15 @@ mod tests {
         InterrogationOutroJson {
             unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
             dialogue: vec![],
+        }
+    }
+
+    fn empty_testimony() -> TestimonyJson {
+        TestimonyJson {
+            on_loop: vec![],
+            default_challenge: vec![],
+            default_wrong: vec![],
+            lines: vec![],
         }
     }
 
@@ -324,19 +479,14 @@ mod tests {
                 flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
-                questions: vec![crate::game::schema::InquiryQuestionJson {
+                questions: vec![InquiryQuestionJson {
                     id: "reason".into(),
                     label: "Reason".into(),
-                    kind: crate::game::schema::InquiryQuestionKind::Question,
-                    parent_question_id: None,
                     status: LockStatus::Unlocked,
                     required: true,
                     unlock: None,
                     reveals: vec![],
-                    answer_dialogue: vec![DialogueItem::Action {
-                        text: "asked".into(),
-                    }],
-                    on_reask: None,
+                    testimony: empty_testimony(),
                 }],
             }],
             evidence_manifest: vec![],
@@ -345,15 +495,19 @@ mod tests {
         }
     }
 
-    fn one_testimony_scene() -> InterrogationSceneJson {
+    /// A single required phase (`press`) with one question (`alibi`) that has
+    /// two testimony lines: `l_off` (no contradiction) and `l_deny`
+    /// (contradiction `evidence:cleaning_log`, with non-empty
+    /// challenge/on_correct/on_wrong_evidence dialogue).
+    fn two_line_question_scene() -> InterrogationSceneJson {
         InterrogationSceneJson {
             id: "interrogation".into(),
             title: "Interrogation".into(),
             asset_refs: vec![],
             intro: vec![],
-            phases: vec![InterrogationPhaseJson::Testimony {
-                id: "testimony".into(),
-                label: "Testimony".into(),
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "press".into(),
+                label: "Press".into(),
                 subject: subject(),
                 required: true,
                 status: LockStatus::Unlocked,
@@ -362,34 +516,60 @@ mod tests {
                 scene_tag: "room".into(),
                 flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
-                statements: vec![TestimonyStatementJson {
-                    id: "cleaning_button".into(),
-                    label: "Cleaning button".into(),
-                    content: "I never touched the machine.".into(),
-                    contradiction: Some(InventoryTarget::Evidence {
-                        id: "cleaning_log".into(),
-                    }),
-                    on_correct: Some("contradiction".into()),
-                    on_wrong: Some("wrong".into()),
-                    on_press: None,
-                    on_present: None,
-                    on_wrong_present: None,
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![InquiryQuestionJson {
+                    id: "alibi".into(),
+                    label: "Alibi".into(),
+                    status: LockStatus::Unlocked,
+                    required: true,
+                    unlock: None,
                     reveals: vec![],
+                    testimony: TestimonyJson {
+                        on_loop: vec![DialogueItem::Action {
+                            text: "loop".into(),
+                        }],
+                        default_challenge: vec![],
+                        default_wrong: vec![],
+                        lines: vec![
+                            TestimonyLineJson {
+                                id: "l_off".into(),
+                                label: "Off".into(),
+                                content: vec![DialogueItem::Line {
+                                    speaker: "suspect".into(),
+                                    text: "我那天沒去。".into(),
+                                    portrait: None,
+                                }],
+                                contradiction: None,
+                                challenge: vec![],
+                                on_correct: vec![],
+                                on_wrong_evidence: vec![],
+                                reveals: vec![],
+                            },
+                            TestimonyLineJson {
+                                id: "l_deny".into(),
+                                label: "Deny".into(),
+                                content: vec![DialogueItem::Line {
+                                    speaker: "suspect".into(),
+                                    text: "我從沒打掃過那裡。".into(),
+                                    portrait: None,
+                                }],
+                                contradiction: Some(InventoryTarget::Evidence {
+                                    id: "cleaning_log".into(),
+                                }),
+                                challenge: vec![DialogueItem::Action {
+                                    text: "challenge".into(),
+                                }],
+                                on_correct: vec![DialogueItem::Action {
+                                    text: "correct".into(),
+                                }],
+                                on_wrong_evidence: vec![DialogueItem::Action {
+                                    text: "wrong".into(),
+                                }],
+                                reveals: vec![],
+                            },
+                        ],
+                    },
                 }],
-                results: vec![
-                    TestimonyResultJson {
-                        id: "contradiction".into(),
-                        label: "Contradiction".into(),
-                        reveals: vec![],
-                        dialogue: vec![],
-                    },
-                    TestimonyResultJson {
-                        id: "wrong".into(),
-                        label: "Wrong".into(),
-                        reveals: vec![],
-                        dialogue: vec![],
-                    },
-                ],
             }],
             evidence_manifest: vec![],
             statement_manifest: vec![],
@@ -463,10 +643,66 @@ mod tests {
     }
 
     #[test]
-    fn inquiry_phase_completes_after_required_question_answered() {
+    fn advance_past_last_line_loops() {
+        let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
+        scene.begin_question("alibi");
+        assert_eq!(
+            *scene.cross_exam(),
+            CrossExam::Playing {
+                question_id: "alibi".into(),
+                line_index: 0
+            }
+        );
+        assert!(matches!(scene.advance_line(), AdvanceOutcome::NextLine(1)));
+        assert!(matches!(scene.advance_line(), AdvanceOutcome::Loop));
+        assert_eq!(
+            *scene.cross_exam(),
+            CrossExam::Playing {
+                question_id: "alibi".into(),
+                line_index: 0
+            }
+        );
+    }
+
+    #[test]
+    fn recording_break_marks_question_and_returns_to_menu() {
+        let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
+        scene.begin_question("alibi");
+        scene.begin_present("l_deny");
+        scene.record_break("alibi");
+        assert!(scene.is_question_broken("alibi"));
+        assert_eq!(*scene.cross_exam(), CrossExam::Idle);
+    }
+
+    #[test]
+    fn wrong_present_returns_to_same_line() {
+        let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
+        scene.begin_question("alibi");
+        scene.advance_line(); // now at line 1 (l_deny)
+        scene.begin_present("l_deny");
+        scene.return_to_line();
+        assert_eq!(
+            *scene.cross_exam(),
+            CrossExam::Playing {
+                question_id: "alibi".into(),
+                line_index: 1
+            }
+        );
+    }
+
+    #[test]
+    fn phase_completes_when_all_required_questions_broken() {
+        let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
+        scene.record_break("alibi");
+        scene.refresh_phase_completion(&Inventory::default());
+        assert!(scene.completed_phases.contains("press"));
+    }
+
+    #[test]
+    fn inquiry_phase_completes_after_required_question_broken() {
         let mut scene = InterrogationSceneState::from_json(one_question_inquiry_scene(), 1);
         assert_eq!(scene.current_phase_id().as_deref(), Some("inquiry"));
-        scene.record_question_answered("reason");
+        scene.record_break("reason");
         scene.refresh_phase_completion(&Inventory::default());
         assert!(scene.completed_phases.contains("inquiry"));
     }
@@ -501,25 +737,10 @@ mod tests {
     }
 
     #[test]
-    fn testimony_wrong_present_does_not_complete_phase() {
-        let mut scene = InterrogationSceneState::from_json(one_testimony_scene(), 1);
-        scene.record_wrong_present("cleaning_button");
-        assert!(!scene.completed_phases.contains("testimony"));
-        assert!(scene.wrong_presented_statements.contains("cleaning_button"));
-    }
-
-    #[test]
-    fn testimony_correct_present_completes_phase() {
-        let mut scene = InterrogationSceneState::from_json(one_testimony_scene(), 1);
-        scene.record_correct_present("testimony");
-        assert!(scene.completed_phases.contains("testimony"));
-    }
-
-    #[test]
     fn inquiry_phase_does_not_auto_complete_when_required_question_is_locked() {
         // Phase has two required questions: one unlocked, one locked.
-        // Answering only the unlocked one should NOT complete the phase,
-        // because the locked required question still needs to be answered.
+        // Breaking only the unlocked one should NOT complete the phase,
+        // because the locked required question still needs to be dealt with.
         let def = InterrogationSceneJson {
             id: "interrogation".into(),
             title: "Interrogation".into(),
@@ -538,33 +759,23 @@ mod tests {
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![
-                    crate::game::schema::InquiryQuestionJson {
+                    InquiryQuestionJson {
                         id: "unlocked_q".into(),
                         label: "Unlocked".into(),
-                        kind: crate::game::schema::InquiryQuestionKind::Question,
-                        parent_question_id: None,
                         status: LockStatus::Unlocked,
                         required: true,
                         unlock: None,
                         reveals: vec![],
-                        answer_dialogue: vec![DialogueItem::Action {
-                            text: "asked".into(),
-                        }],
-                        on_reask: None,
+                        testimony: empty_testimony(),
                     },
-                    crate::game::schema::InquiryQuestionJson {
+                    InquiryQuestionJson {
                         id: "locked_q".into(),
                         label: "Locked".into(),
-                        kind: crate::game::schema::InquiryQuestionKind::Question,
-                        parent_question_id: None,
                         status: LockStatus::Locked,
                         required: true,
                         unlock: None,
                         reveals: vec![],
-                        answer_dialogue: vec![DialogueItem::Action {
-                            text: "secret".into(),
-                        }],
-                        on_reask: None,
+                        testimony: empty_testimony(),
                     },
                 ],
             }],
@@ -575,8 +786,8 @@ mod tests {
         let mut scene = InterrogationSceneState::from_json(def, 1);
         let inventory = Inventory::default();
 
-        // Answer only the unlocked question — phase should NOT complete.
-        scene.record_question_answered("unlocked_q");
+        // Break only the unlocked question — phase should NOT complete.
+        scene.record_break("unlocked_q");
         scene.refresh_phase_completion(&inventory);
 
         let ctx = InterrogationSceneAndInventoryCtx {
@@ -610,19 +821,14 @@ mod tests {
                     flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                     entry_dialogue: vec![],
                     complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
-                    questions: vec![crate::game::schema::InquiryQuestionJson {
+                    questions: vec![InquiryQuestionJson {
                         id: "q1".into(),
                         label: "Q1".into(),
-                        kind: crate::game::schema::InquiryQuestionKind::Question,
-                        parent_question_id: None,
                         status: LockStatus::Unlocked,
                         required: true,
                         unlock: None,
                         reveals: vec![],
-                        answer_dialogue: vec![DialogueItem::Action {
-                            text: "asked".into(),
-                        }],
-                        on_reask: None,
+                        testimony: empty_testimony(),
                     }],
                 },
                 inquiry_phase_with_status("locked_inquiry", LockStatus::Locked),
@@ -634,8 +840,8 @@ mod tests {
         let mut scene = InterrogationSceneState::from_json(def, 1);
         let inventory = Inventory::default();
 
-        // Answer the unlocked phase's question and complete it.
-        scene.record_question_answered("q1");
+        // Break the unlocked phase's question and complete it.
+        scene.record_break("q1");
         scene.refresh_phase_completion(&inventory);
 
         assert!(scene.completed_phases.contains("unlocked_inquiry"));
@@ -700,19 +906,14 @@ mod tests {
                 flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
-                questions: vec![crate::game::schema::InquiryQuestionJson {
+                questions: vec![InquiryQuestionJson {
                     id: "opt_question".into(),
                     label: "Opt Q".into(),
-                    kind: crate::game::schema::InquiryQuestionKind::Question,
-                    parent_question_id: None,
                     status: LockStatus::Unlocked,
                     required: true,
                     unlock: None,
                     reveals: vec![],
-                    answer_dialogue: vec![DialogueItem::Action {
-                        text: "optional answer".into(),
-                    }],
-                    on_reask: None,
+                    testimony: empty_testimony(),
                 }],
             },
         ];
@@ -724,7 +925,7 @@ mod tests {
         assert_eq!(scene.current_phase_id().as_deref(), Some("required_phase"));
 
         // Complete the required phase.
-        scene.record_question_answered("reason");
+        scene.record_break("reason");
         scene.refresh_phase_completion(&inventory);
         assert!(scene.completed_phases.contains("required_phase"));
 
@@ -766,12 +967,10 @@ mod tests {
     #[test]
     fn auto_complete_waits_for_unlocked_optional_follow_up() {
         // An inquiry with one required question whose answer unlocks an optional
-        // follow-up. After answering the required question, the phase must NOT
+        // follow-up. After breaking the required question, the phase must NOT
         // auto-complete because the optional follow-up is now unlocked but
-        // unanswered — the player has not had a chance to interact with it.
-        use crate::game::schema::{
-            InquiryQuestionKind, InterrogationUnlockExpr, PredicateQuestionAnswered,
-        };
+        // unbroken — the player has not had a chance to interact with it.
+        use crate::game::schema::{InterrogationUnlockExpr, PredicateQuestionAnswered};
 
         let def = InterrogationSceneJson {
             id: "interrogation".into(),
@@ -791,37 +990,27 @@ mod tests {
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![
-                    crate::game::schema::InquiryQuestionJson {
+                    InquiryQuestionJson {
                         id: "required_q".into(),
                         label: "Required".into(),
-                        kind: InquiryQuestionKind::Question,
-                        parent_question_id: None,
                         status: LockStatus::Unlocked,
                         required: true,
                         unlock: None,
                         reveals: vec![],
-                        answer_dialogue: vec![DialogueItem::Action {
-                            text: "answered".into(),
-                        }],
-                        on_reask: None,
+                        testimony: empty_testimony(),
                     },
-                    crate::game::schema::InquiryQuestionJson {
+                    InquiryQuestionJson {
                         id: "optional_followup".into(),
                         label: "Follow Up".into(),
-                        kind: InquiryQuestionKind::FollowUp,
-                        parent_question_id: Some("required_q".into()),
                         status: LockStatus::Locked,
                         required: false,
-                        // Unlocked once required_q is answered.
+                        // Unlocked once required_q is broken.
                         unlock: Some(InterrogationUnlockExpr::QuestionAnswered {
                             _predicate: PredicateQuestionAnswered::X,
                             id: "required_q".into(),
                         }),
                         reveals: vec![],
-                        answer_dialogue: vec![DialogueItem::Action {
-                            text: "follow-up answered".into(),
-                        }],
-                        on_reask: None,
+                        testimony: empty_testimony(),
                     },
                 ],
             }],
@@ -833,9 +1022,9 @@ mod tests {
         let mut scene = InterrogationSceneState::from_json(def, 1);
         let inventory = Inventory::default();
 
-        // Answer the required question — this should satisfy the "all required
-        // answered" check, but the optional follow-up is now unlocked & unanswered.
-        scene.record_question_answered("required_q");
+        // Break the required question — this should satisfy the "all required
+        // broken" check, but the optional follow-up is now unlocked & unbroken.
+        scene.record_break("required_q");
         scene.refresh_phase_completion(&inventory);
 
         let ctx = InterrogationSceneAndInventoryCtx {
@@ -844,19 +1033,19 @@ mod tests {
         };
         assert!(
             !scene.phase_complete(&scene.def.phases[0], &ctx),
-            "phase should NOT auto-complete while an unlocked optional follow-up is unanswered"
+            "phase should NOT auto-complete while an unlocked optional follow-up is unbroken"
         );
         assert!(
             !scene.completed_phases.contains("inquiry"),
             "inquiry should not be in completed_phases set"
         );
 
-        // Now answer the optional follow-up — phase should auto-complete.
-        scene.record_question_answered("optional_followup");
+        // Now break the optional follow-up — phase should auto-complete.
+        scene.record_break("optional_followup");
         scene.refresh_phase_completion(&inventory);
         assert!(
             scene.completed_phases.contains("inquiry"),
-            "inquiry should auto-complete after all unlocked questions are answered"
+            "inquiry should auto-complete after all unlocked questions are broken"
         );
     }
 }
