@@ -8,6 +8,7 @@
 
 - **Kind:** inquiry
 - **Required:** true
+- **Reveals:** [evidence:coffee_machine_cleaning_log]
 
 [場景：警視廳臨時詢問室，深夜，白色日光燈刺眼。]
 
@@ -21,73 +22,37 @@
 - **Status:** unlocked
 - **Reveals:** [statement:wakatsuki_entered_for_beans]
 
-**相馬律**：你為什麼進倉庫？
+#### Testimony
+
+- **On Loop:** **相馬律**：還有哪裡對不上，再說一次。
+
+##### Line: 拿咖啡豆的說法 {#l_beans}
 
 **若槻蓮**：我只是去拿咖啡豆。
 
-#### On Reask
+##### Line: 清潔紀錄的說法 {#l_cleaning}
 
-**若槻蓮**：我說過了，是咖啡豆。
+**若槻蓮**：我進倉庫前看到咖啡機還沒清潔。
 
-#### Follow-up: 追問咖啡豆 {#beans_follow_up}
+- **Contradiction:** evidence:coffee_machine_cleaning_log
+- **Challenge:** **相馬律**：這份紀錄顯示你進去前已經清潔過了。
+- **On Correct:** **若槻蓮**：好吧，我看到的其實是清潔完成後的畫面。
+  - **Reveals:** [statement:kagami_timeline_inconsistent]
+- **On Wrong Evidence:** **若槻蓮**：這能證明什麼？
+
+### Question: 追問咖啡豆 {#beans_follow_up}
 
 - **Status:** locked
 - **Unlock:** question:entered_storage answered
 - **Required:** false
-- **Reveals:** [evidence:coffee_machine_cleaning_log]
 
-**相馬律**：再說一次咖啡豆的事。
+#### Testimony
 
-**若槻蓮**：我進倉庫前看到咖啡機還沒清潔。
+- **On Loop:** **相馬律**：再說一次咖啡豆的事。
 
-##### On Reask
+##### Line: 忘了清潔 {#l_follow}
 
 **若槻蓮**：我只能確定當時還沒清潔。
-
-## Phase: 若槻蓮的行動證詞 {#wakatsuki_testimony}
-
-- **Kind:** testimony
-- **Required:** true
-- **Status:** locked
-- **Unlock:** statement:wakatsuki_entered_for_beans acquired
-
-[場景：警視廳臨時證據審查室，深夜，投影幕顯示 KAGAMI 門鎖時間線。]
-
-### Subject: 若槻蓮 {#wakatsuki_ren}
-
-- **Role:** 第一嫌疑人
-- **Bio:** 雨鐘咖啡館兼職店員。
-
-### Testimony
-
-#### Statement: 清潔鍵 {#cleaning_button}
-
-- **Content:** 我出來後，立刻按下清潔鍵。
-- **Contradiction:** evidence:coffee_machine_cleaning_log
-- **On Correct:** breakthrough_cleaning_time
-- **On Wrong:** wrong_time_record
-
-##### On Press
-
-**相馬律**：你說立刻？
-
-##### On Present
-
-**相馬律**：這份清潔紀錄能說明時間。
-
-##### On Wrong Present
-
-**神谷澪**：那份資料不夠。
-
-### Result: breakthrough_cleaning_time {#breakthrough_cleaning_time}
-
-- **Reveals:** [statement:kagami_timeline_inconsistent]
-
-**相馬律**：這和門鎖時間線矛盾。
-
-### Result: wrong_time_record {#wrong_time_record}
-
-**早坂茜**：還不夠。
 
 ## Evidence Manifest
 

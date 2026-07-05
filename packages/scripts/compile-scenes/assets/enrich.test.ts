@@ -1715,8 +1715,8 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
 });
 
 describe("enrichScenesWithAssets — interrogation scenes", () => {
-  it("enriches inquiry phase with assetCue, entryDialogue, and question answerDialogue", () => {
-    const scenes: SceneRecord[] = [interrogationScene("inquiry")];
+  it("enriches inquiry phase assetCue, entryDialogue, and every question-testimony dialogue array", () => {
+    const scenes: SceneRecord[] = [interrogationScene()];
     const result = enrichScenesWithAssets({ scenes, config: config() });
     expect(result.errors).toEqual([]);
 
@@ -1747,17 +1747,79 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
       );
     }
 
-    // Question answer dialogue enriched
-    const question = phase.questions[0];
-    const answerLine = question?.answerDialogue[0];
-    expect(answerLine?.kind).toBe("line");
-    if (answerLine?.kind === "line") {
-      expect(answerLine.portrait?.assetId).toBe(
+    const testimony = phase.questions[0]?.testimony;
+
+    // Testimony onLoop enriched
+    const onLoopLine = testimony?.onLoop[0];
+    expect(onLoopLine?.kind).toBe("line");
+    if (onLoopLine?.kind === "line") {
+      expect(onLoopLine.portrait?.assetId).toBe(
         "portrait.hayasaka_akane.standard",
       );
     }
 
-    // Manifest has background + 2 portraits (entry + question)
+    // Testimony defaultChallenge/defaultWrong enriched, staying non-null
+    const defaultChallengeLine = testimony?.defaultChallenge?.[0];
+    expect(defaultChallengeLine?.kind).toBe("line");
+    if (defaultChallengeLine?.kind === "line") {
+      expect(defaultChallengeLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.concerned",
+      );
+    }
+    const defaultWrongLine = testimony?.defaultWrong?.[0];
+    expect(defaultWrongLine?.kind).toBe("line");
+    if (defaultWrongLine?.kind === "line") {
+      expect(defaultWrongLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.standard",
+      );
+    }
+
+    // Honest line (no Contradiction): content enriched, challenge/onCorrect/
+    // onWrongEvidence stay null rather than becoming [].
+    const honestLine = testimony?.lines[0];
+    const honestContentLine = honestLine?.content[0];
+    expect(honestContentLine?.kind).toBe("line");
+    if (honestContentLine?.kind === "line") {
+      expect(honestContentLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.standard",
+      );
+    }
+    expect(honestLine?.challenge).toBeNull();
+    expect(honestLine?.onCorrect).toBeNull();
+    expect(honestLine?.onWrongEvidence).toBeNull();
+
+    // Contradiction line: content, challenge, onCorrect, onWrongEvidence all enriched
+    const contradictionLine = testimony?.lines[1];
+    const contentLine = contradictionLine?.content[0];
+    expect(contentLine?.kind).toBe("line");
+    if (contentLine?.kind === "line") {
+      expect(contentLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.standard",
+      );
+    }
+    const challengeLine = contradictionLine?.challenge?.[0];
+    expect(challengeLine?.kind).toBe("line");
+    if (challengeLine?.kind === "line") {
+      expect(challengeLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.concerned",
+      );
+    }
+    const onCorrectLine = contradictionLine?.onCorrect?.[0];
+    expect(onCorrectLine?.kind).toBe("line");
+    if (onCorrectLine?.kind === "line") {
+      expect(onCorrectLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.standard",
+      );
+    }
+    const onWrongEvidenceLine = contradictionLine?.onWrongEvidence?.[0];
+    expect(onWrongEvidenceLine?.kind).toBe("line");
+    if (onWrongEvidenceLine?.kind === "line") {
+      expect(onWrongEvidenceLine.portrait?.assetId).toBe(
+        "portrait.hayasaka_akane.standard",
+      );
+    }
+
+    // Manifest has background + both portrait expressions used above
     const manifestIds = result.manifest.entries.map((e) => e.assetId);
     expect(manifestIds).toContain(
       "background.chapter_1.interrogation_scene_2.p",
@@ -1766,62 +1828,8 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
     expect(manifestIds).toContain("portrait.hayasaka_akane.standard");
   });
 
-  it("enriches testimony phase with assetCue, statements (onPress/onPresent/onWrongPresent), and results", () => {
-    const scenes: SceneRecord[] = [interrogationScene("testimony")];
-    const result = enrichScenesWithAssets({ scenes, config: config() });
-    expect(result.errors).toEqual([]);
-
-    const ast = result.scenes[0]?.ast;
-    if (ast?.kind !== "interrogationScene") return;
-    const phase = ast.phases[0];
-    if (phase?.kind !== "testimony") return;
-
-    // Phase assetCue enriched
-    expect(phase.assetCue?.backgroundAssetId).toBe(
-      "background.chapter_1.interrogation_scene_2.p",
-    );
-
-    // Statement onPress enriched
-    const stmt = phase.statements[0];
-    const pressLine = stmt?.onPress?.[0];
-    expect(pressLine?.kind).toBe("line");
-    if (pressLine?.kind === "line") {
-      expect(pressLine.portrait?.assetId).toBe(
-        "portrait.hayasaka_akane.concerned",
-      );
-    }
-
-    // Statement onPresent enriched
-    const presentLine = stmt?.onPresent?.[0];
-    expect(presentLine?.kind).toBe("line");
-    if (presentLine?.kind === "line") {
-      expect(presentLine.portrait?.assetId).toBe(
-        "portrait.hayasaka_akane.standard",
-      );
-    }
-
-    // Statement onWrongPresent enriched
-    const wrongLine = stmt?.onWrongPresent?.[0];
-    expect(wrongLine?.kind).toBe("line");
-    if (wrongLine?.kind === "line") {
-      expect(wrongLine.portrait?.assetId).toBe(
-        "portrait.hayasaka_akane.standard",
-      );
-    }
-
-    // Result dialogue enriched
-    const res = phase.results[0];
-    const resultLine = res?.dialogue[0];
-    expect(resultLine?.kind).toBe("line");
-    if (resultLine?.kind === "line") {
-      expect(resultLine.portrait?.assetId).toBe(
-        "portrait.hayasaka_akane.standard",
-      );
-    }
-  });
-
   it("enriches interrogation evidence and intro/outro dialogue", () => {
-    const scenes: SceneRecord[] = [interrogationScene("inquiry")];
+    const scenes: SceneRecord[] = [interrogationScene()];
     const result = enrichScenesWithAssets({ scenes, config: config() });
     expect(result.errors).toEqual([]);
 
@@ -1852,7 +1860,7 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
   });
 });
 
-function interrogationScene(phaseKind: "inquiry" | "testimony"): SceneRecord {
+function interrogationScene(): SceneRecord {
   const subject = {
     id: "suspect",
     name: "嫌疑人",
@@ -1862,194 +1870,192 @@ function interrogationScene(phaseKind: "inquiry" | "testimony"): SceneRecord {
     line: 10,
   };
 
-  const basePhase = {
-    id: "p",
-    label: "問話",
-    subject,
-    required: true,
-    status: "unlocked" as const,
-    unlock: null,
-    reveals: [],
-    sceneTag: "詢問室",
-    assetCue: {
-      backgroundPrompt: "Dark interrogation room.",
-      backgroundAssetId: null,
-      bgm: { channel: "bgm", assetId: null },
-      bgs: { channel: "bgs", assetId: null },
-    },
-    entryDialogue: [
-      {
-        kind: "line" as const,
-        speaker: "早坂茜",
-        expression: "concerned",
-        portrait: null,
-        text: "你為什麼在這裡？",
-      },
-    ],
-    sourceFile: "chapter_1/interrogation_scene_2.md",
-    line: 20,
-  };
-
-  if (phaseKind === "inquiry") {
-    return {
-      chapterId: "chapter_1",
-      file: "interrogation_scene_2.md",
-      ast: {
-        kind: "interrogationScene",
-        id: "interrogation_scene_2",
-        title: "詢問",
-        intro: [
-          {
-            kind: "line" as const,
-            speaker: "早坂茜",
-            expression: null,
-            portrait: null,
-            text: "開始吧。",
-          },
-        ],
-        phases: [
-          {
-            ...basePhase,
-            kind: "inquiry" as const,
-            complete: "auto" as const,
-            questions: [
-              {
-                id: "q1",
-                label: "動機",
-                kind: "question" as const,
-                parentQuestionId: null,
-                status: "unlocked" as const,
-                required: true,
-                unlock: null,
-                reveals: [],
-                answerDialogue: [
-                  {
-                    kind: "line" as const,
-                    speaker: "早坂茜",
-                    expression: null,
-                    portrait: null,
-                    text: "說吧。",
-                  },
-                ],
-                onReask: null,
-                sourceFile: "chapter_1/interrogation_scene_2.md",
-                line: 30,
-              },
-            ],
-          } as ASTInterrogationPhase,
-        ],
-        evidenceManifest: [
-          {
-            id: "bloody_knife",
-            name: "血刀",
-            description: "A blood-stained knife.",
-            details: "Found at the scene.",
-            imageCue: {
-              imagePrompt: "Blood-stained knife on transparent background.",
-              imageAssetId: null,
-            },
-            sourceSublocationId: null,
-            onCollect: [],
-            onReexamine: null,
-            sourceFile: "chapter_1/interrogation_scene_2.md",
-            line: 40,
-          },
-        ],
-        statementManifest: [],
-        outro: {
-          unlock: "auto" as const,
-          dialogue: [
-            {
-              kind: "line" as const,
-              speaker: "早坂茜",
-              expression: null,
-              portrait: null,
-              text: "結束了。",
-            },
-          ],
-        },
-        assetRefs: [],
-        sourceFile: "chapter_1/interrogation_scene_2.md",
-        line: 1,
-      },
-    };
-  }
-
   return {
     chapterId: "chapter_1",
     file: "interrogation_scene_2.md",
     ast: {
       kind: "interrogationScene",
       id: "interrogation_scene_2",
-      title: "證言",
-      intro: [],
+      title: "詢問",
+      intro: [
+        {
+          kind: "line" as const,
+          speaker: "早坂茜",
+          expression: null,
+          portrait: null,
+          text: "開始吧。",
+        },
+      ],
       phases: [
         {
-          ...basePhase,
-          kind: "testimony" as const,
-          statements: [
+          kind: "inquiry" as const,
+          id: "p",
+          label: "問話",
+          subject,
+          required: true,
+          status: "unlocked" as const,
+          unlock: null,
+          reveals: [],
+          sceneTag: "詢問室",
+          assetCue: {
+            backgroundPrompt: "Dark interrogation room.",
+            backgroundAssetId: null,
+            bgm: { channel: "bgm", assetId: null },
+            bgs: { channel: "bgs", assetId: null },
+          },
+          entryDialogue: [
             {
-              id: "s1",
-              label: "不在場證明",
-              content: "我那時候在家。",
-              contradiction: null,
-              onCorrect: null,
-              onWrong: null,
-              onPress: [
-                {
-                  kind: "line" as const,
-                  speaker: "早坂茜",
-                  expression: "concerned",
-                  portrait: null,
-                  text: "確定嗎？",
-                },
-              ],
-              onPresent: [
-                {
-                  kind: "line" as const,
-                  speaker: "早坂茜",
-                  expression: null,
-                  portrait: null,
-                  text: "看看這個。",
-                },
-              ],
-              onWrongPresent: [
-                {
-                  kind: "line" as const,
-                  speaker: "早坂茜",
-                  expression: null,
-                  portrait: null,
-                  text: "這不對。",
-                },
-              ],
-              reveals: [],
-              sourceFile: "chapter_1/interrogation_scene_2.md",
-              line: 50,
+              kind: "line" as const,
+              speaker: "早坂茜",
+              expression: "concerned",
+              portrait: null,
+              text: "你為什麼在這裡？",
             },
           ],
-          results: [
+          complete: "auto" as const,
+          questions: [
             {
-              id: "r1",
-              label: "真相",
+              id: "q1",
+              label: "動機",
+              status: "unlocked" as const,
+              required: true,
+              unlock: null,
               reveals: [],
-              dialogue: [
-                {
-                  kind: "line" as const,
-                  speaker: "早坂茜",
-                  expression: null,
-                  portrait: null,
-                  text: "就是這樣。",
-                },
-              ],
+              testimony: {
+                onLoop: [
+                  {
+                    kind: "line" as const,
+                    speaker: "早坂茜",
+                    expression: null,
+                    portrait: null,
+                    text: "還有哪裡對不上，再說一次。",
+                  },
+                ],
+                defaultChallenge: [
+                  {
+                    kind: "line" as const,
+                    speaker: "早坂茜",
+                    expression: "concerned",
+                    portrait: null,
+                    text: "等等，這句話讓我想想。",
+                  },
+                ],
+                defaultWrong: [
+                  {
+                    kind: "line" as const,
+                    speaker: "早坂茜",
+                    expression: null,
+                    portrait: null,
+                    text: "這句話沒問題吧？",
+                  },
+                ],
+                lines: [
+                  {
+                    id: "l_honest",
+                    label: "老實的說法",
+                    content: [
+                      {
+                        kind: "line" as const,
+                        speaker: "早坂茜",
+                        expression: null,
+                        portrait: null,
+                        text: "八點就下班了。",
+                      },
+                    ],
+                    contradiction: null,
+                    challenge: null,
+                    onCorrect: null,
+                    onWrongEvidence: null,
+                    reveals: [],
+                    sourceFile: "chapter_1/interrogation_scene_2.md",
+                    line: 31,
+                  },
+                  {
+                    id: "l_contradiction",
+                    label: "矛盾的說法",
+                    content: [
+                      {
+                        kind: "line" as const,
+                        speaker: "早坂茜",
+                        expression: null,
+                        portrait: null,
+                        text: "那台機器我根本沒碰過。",
+                      },
+                    ],
+                    contradiction: { kind: "evidence", id: "bloody_knife" },
+                    challenge: [
+                      {
+                        kind: "line" as const,
+                        speaker: "早坂茜",
+                        expression: "concerned",
+                        portrait: null,
+                        text: "這句話對不上。",
+                      },
+                    ],
+                    onCorrect: [
+                      {
+                        kind: "line" as const,
+                        speaker: "早坂茜",
+                        expression: null,
+                        portrait: null,
+                        text: "好吧，我碰過。",
+                      },
+                    ],
+                    onWrongEvidence: [
+                      {
+                        kind: "line" as const,
+                        speaker: "早坂茜",
+                        expression: null,
+                        portrait: null,
+                        text: "這能證明什麼？",
+                      },
+                    ],
+                    reveals: [],
+                    sourceFile: "chapter_1/interrogation_scene_2.md",
+                    line: 32,
+                  },
+                ],
+                sourceFile: "chapter_1/interrogation_scene_2.md",
+                line: 30,
+              },
               sourceFile: "chapter_1/interrogation_scene_2.md",
-              line: 60,
+              line: 30,
             },
           ],
+          sourceFile: "chapter_1/interrogation_scene_2.md",
+          line: 20,
         } as ASTInterrogationPhase,
       ],
-      evidenceManifest: [],
+      evidenceManifest: [
+        {
+          id: "bloody_knife",
+          name: "血刀",
+          description: "A blood-stained knife.",
+          details: "Found at the scene.",
+          imageCue: {
+            imagePrompt: "Blood-stained knife on transparent background.",
+            imageAssetId: null,
+          },
+          sourceSublocationId: null,
+          onCollect: [],
+          onReexamine: null,
+          sourceFile: "chapter_1/interrogation_scene_2.md",
+          line: 40,
+        },
+      ],
       statementManifest: [],
-      outro: { unlock: "auto" as const, dialogue: [] },
+      outro: {
+        unlock: "auto" as const,
+        dialogue: [
+          {
+            kind: "line" as const,
+            speaker: "早坂茜",
+            expression: null,
+            portrait: null,
+            text: "結束了。",
+          },
+        ],
+      },
       assetRefs: [],
       sourceFile: "chapter_1/interrogation_scene_2.md",
       line: 1,
