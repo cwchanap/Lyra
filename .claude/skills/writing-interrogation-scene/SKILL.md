@@ -1,19 +1,53 @@
 ---
 name: writing-interrogation-scene
-description: Use when writing or extending an interrogation_scene_<N>.md file under static/stories_plan/chapter_<N>/ for compiler-validated suspect inquiry plus testimony cross-examination phases with evidence presentation.
+description: Use when writing or extending an interrogation_scene_<N>.md file under static/stories_plan/chapter_<N>/ for compiler-validated suspect cross-examination — locked/unlocked Questions whose Testimony lines the player challenges with evidence.
 ---
 
 # Writing Interrogation Scenes (《東京雨證：第零證人》)
 
 ## Role
 
-You author compiler-validated interrogation scene markdown. An interrogation scene can contain both inquiry phases, where the player asks suspect questions, and testimony phases, where the player presses testimony lines and presents evidence or statements.
+You author compiler-validated interrogation scene markdown. An interrogation
+scene has exactly one phase kind, `inquiry`. Asking a suspect a Question plays
+their answer as a line-by-line **Testimony**; the player cross-examines that
+testimony by challenging a line and presenting evidence against it — there is
+no separate "testimony phase" to write, the questioning IS the
+cross-examination.
 
 ## Required Background
 
-Read `writing-detective-game-dialogue` first. Reuse its dialogue rules exactly: Traditional Chinese player-facing text, `**角色名**：內容`, bracketed stage directions, `[場景：...]` tags, and short dialogue lines.
+Read `writing-detective-game-dialogue` first. Reuse its dialogue rules exactly:
+Traditional Chinese player-facing text, `**角色名**：內容`, bracketed stage
+directions, `[場景：...]` tags, and short dialogue lines.
 
-Read `writing-investigation-scene` for evidence and statement manifest rules. Interrogation scenes reuse those manifest formats.
+Read `writing-investigation-scene` for evidence and statement manifest rules.
+Interrogation scenes reuse those manifest formats.
+
+## The unified model
+
+- A **Phase** has one **Subject** and one or more **Questions**.
+- Each **Question**, once asked, plays a **Testimony**: an ordered list of
+  **Lines** delivered one at a time.
+- At each line the player may **反駁 (challenge)**, **繼續 (proceed)** to the
+  next line, or **退下 (withdraw)** back to the question menu.
+- A line may carry a **Contradiction** — an `evidence:<id>` / `statement:<id>`
+  inventory target. Challenging a line with the right evidence fires the
+  line's authored **On Correct** breakthrough (+`Reveals`); challenging it
+  with the wrong evidence fires **On Wrong Evidence**; challenging a line with
+  no `Contradiction` (an honest line) falls back to the testimony's
+  **Default Challenge** / **Default Wrong**.
+- Reaching the end of a testimony without a breakthrough plays the testimony's
+  **On Loop** line, then repeats from line 1.
+- **A follow-up is not a separate block kind.** It is an ordinary `### Question`
+  that starts `locked` and is unlocked by an earlier line's
+  `On Correct → Reveals: [question:<id>]`. Whether that follow-up feels like
+  "the same testimony, deeper" or "a completely different question" is purely
+  a matter of which question id(s) you reveal — the structure is identical
+  either way.
+
+Nothing is flagged in the UI: honest lines and lies render identically. Author
+`On Wrong Evidence` / `Default Wrong` so a wrong guess is a satisfying dead
+end, not a dead-end error.
 
 ## File Skeleton
 
@@ -22,7 +56,10 @@ Read `writing-investigation-scene` for evidence and statement manifest rules. In
 
 ## Intro
 
+**角色名**：...
+
 ## Phase: <label> {#phase_id}
+
 - **Kind:** inquiry
 - **Required:** true
 - **Status:** unlocked
@@ -30,41 +67,80 @@ Read `writing-investigation-scene` for evidence and statement manifest rules. In
 [場景：地點、時間、氛圍、視覺要素]
 
 ### Subject: <name> {#subject_id}
+
 - **Role:** <player-facing role>
 - **Bio:** <player-facing bio>
 
 ### Question: <label> {#question_id}
+
 - **Status:** unlocked
-
-**相馬律**：...
-
-## Phase: <label> {#phase_id}
-- **Kind:** testimony
 - **Required:** true
-- **Status:** locked
-- **Unlock:** statement:<id> acquired
 
-[場景：地點、時間、氛圍、視覺要素]
+#### Testimony
 
-### Subject: <name> {#subject_id}
-- **Role:** <player-facing role>
-- **Bio:** <player-facing bio>
+- **On Loop:** **角色名**：還有哪裡對不上，再說一次。
+- **Default Challenge:** **偵探名**：等等，這句話讓我想想。
+- **Default Wrong:** **角色名**：這句話沒問題吧？
 
-### Testimony
+##### Line: <label> {#l_honest}
 
-#### Statement: <label> {#statement_id}
-- **Content:** <testimony line>
+**角色名**：<誠實的證詞，沒有 Contradiction>
+
+##### Line: <label> {#l_lie}
+
+**角色名**：<有問題的證詞>
+
 - **Contradiction:** evidence:<id>
-- **On Correct:** <result_id>
+- **Challenge:** **偵探名**：等一下，這句話和我手上的東西對不上。
+- **On Correct:** **角色名**：好吧⋯⋯是我。
+  - **Reveals:** [question:<follow_up_id>, evidence:<id>]
+- **On Wrong Evidence:** **角色名**：這能證明什麼？
 
-### Result: <label> {#result_id}
+### Question: <label> {#follow_up_id}
+
+- **Status:** locked
+- **Unlock:** question:<question_id> answered
+
+#### Testimony
+
+- **On Loop:** **偵探名**：⋯你在迴避什麼？
+
+##### Line: <label> {#l2}
+
+**角色名**：...
 
 ## Evidence Manifest
 
+### evidence:<id> {#id}
+
+- **Name:** ...
+- **Description:** ...
+- **Details:** ...
+
+#### On Collect
+
+**偵探名**：...
+
 ## Statement Manifest
 
+### statement:<id> {#id}
+
+- **Speaker:** ...
+- **Content:** ...
+
+#### On Acquire
+
+**偵探名**：...
+
 ## Outro
+
+**偵探名**：...
 ```
+
+This skeleton is a faithful reduction of the canonical compiler fixture
+`packages/scripts/__fixtures__/valid_interrogation/chapter_1/interrogation_scene_1.md`
+— every heading level and field label above matches that fixture exactly.
+When in doubt about a field name, defer to that fixture over prose.
 
 ## Heading Hierarchy Reference
 
@@ -72,105 +148,123 @@ Read `writing-investigation-scene` for evidence and statement manifest rules. In
 | --- | --- |
 | H1 | `# Scene N: <title>` |
 | H2 | `## Intro`, `## Phase:`, `## Evidence Manifest`, `## Statement Manifest`, `## Outro` |
-| H3 | `### Subject:`, `### Question:`, `### Testimony`, `### Result:`, `### evidence:`, `### statement:` |
-| H4 | `#### Follow-up:`, `#### On Reask`, `#### Statement:`, `#### On Collect`, `#### On Acquire`, `#### On Reexamine` |
-| H5 | `##### On Reask`, `##### On Press`, `##### On Present`, `##### On Wrong Present` |
+| H3 | `### Subject:`, `### Question:`, `### evidence:`, `### statement:` |
+| H4 | `#### Testimony`, `#### On Collect`, `#### On Acquire`, `#### On Reexamine` |
+| H5 | `##### Line:` |
+
+There is no `#### Follow-up:`, `#### On Reask`, `#### Statement:`,
+`### Result:`, or `##### On Press` / `On Present` / `On Wrong Present` in the
+current grammar — those belonged to the retired two-kind model. Do not author
+them; the parser has no handler for them and will reject the scene as an
+unknown heading.
 
 ## Block Field Schemas
 
-Field labels are English. Reserved metadata values are English (`inquiry`, `testimony`, `true`, `false`, `locked`, `unlocked`). Player-facing field values and dialogue are Traditional Chinese. IDs are English slugs anchored with `{#id}`.
+Field labels are English. Reserved metadata values are English (`inquiry`,
+`true`, `false`, `locked`, `unlocked`). Player-facing field values and dialogue
+are Traditional Chinese. IDs are English slugs anchored with `{#id}`.
 
 ### Intro (H2)
+
 - **Heading:** `## Intro`.
 - **Metadata:** none on the `## Intro` heading itself.
-- **Scene-tag asset metadata:** when assets are enabled, any `[場景：...]`
-  tag inside the Intro may be followed immediately by `Background Prompt`
-  plus optional `BGM` / `BGS`, using the same visual metadata rules as phases.
-  This attaches a backdrop to the intro moment before the first inquiry or
-  testimony phase.
+- **Scene-tag asset metadata:** when assets are enabled, any `[場景：...]` tag
+  inside the Intro may be followed immediately by `Background Prompt` plus
+  optional `BGM` / `BGS`, using the same visual metadata rules as phases.
 - **Body:** linear dialogue. Plays on scene load.
 
 ### Phase (H2)
-- **Heading:** `## Phase: <label> {#phase_id}`
-- **Required:** `Kind` (`inquiry` or `testimony`)
-- **Required when assets are enabled:** `Background Prompt`
-- **Optional:** `Required` (`true` or `false`, defaults to `true`), `Status` (`locked` or `unlocked`, defaults to `unlocked`), `Unlock`, `Reveals`, `Complete` (inquiry phases only, defaults to `auto`)
-- **Optional after first visual unit:** `BGM`, `BGS` (IDs from `static/assets/config/audio.yaml`, or `none`)
-- **Body:** exactly one `[場景：...]` tag, then optional entry dialogue, then one `### Subject:` and the phase-specific blocks.
 
-Use `Required: false` for optional branches. If a phase has `Unlock`, its `Status` must be `locked`. A locked phase must be reachable by either its own `Unlock` or an inbound `Reveals` target from an earlier reachable block.
+- **Heading:** `## Phase: <label> {#phase_id}`
+- **Required:** `Kind` — always `inquiry` (kept for forward compatibility;
+  there is no other value the parser accepts).
+- **Required when assets are enabled:** `Background Prompt`
+- **Optional:** `Required` (`true`/`false`, defaults to `true`), `Status`
+  (`locked`/`unlocked`, defaults to `unlocked`), `Unlock`, `Reveals`,
+  `Complete` (defaults to `auto`: satisfied once every `Required` Question in
+  the phase has been broken — see "Contradiction guarantee" below)
+- **Optional after first visual unit:** `BGM`, `BGS` (IDs from
+  `static/assets/config/audio.yaml`, or `none`)
+- **Body:** exactly one `[場景：...]` tag, then optional entry dialogue, then
+  one `### Subject:` and one or more `### Question:` blocks.
+
+Use `Required: false` for optional branches. If a phase has `Unlock`, its
+`Status` must be `locked`. A locked phase must be reachable by either its own
+`Unlock` or an inbound `Reveals` target from an earlier reachable block.
 
 ### Subject (H3)
+
 - **Heading:** `### Subject: <name> {#subject_id}`
 - **Required:** `Role`, `Bio`
 - **Optional:** none
 - **Body:** none directly.
 
-Every phase must declare exactly one Subject. If the same subject ID appears in multiple phases, keep `name`, `Role`, and `Bio` identical.
-
-## Inquiry Phase
-
-Use inquiry for suspect Q&A. Required blocks:
-
-- `### Subject: <name> {#id}`
-- `### Question: <label> {#id}`
-- optional `#### Follow-up: <label> {#id}`
-- optional `#### On Reask` or `##### On Reask`
-
-Questions can reveal `evidence:<id>`, `statement:<id>`, `question:<id>`, or `phase:<id>`.
+Every phase declares exactly one Subject. If the same subject id appears in
+multiple phases, keep `name`, `Role`, and `Bio` identical.
 
 ### Question (H3)
+
 - **Heading:** `### Question: <label> {#question_id}`
-- **Optional:** `Status` (defaults to `unlocked`), `Required` (defaults to `true`), `Unlock`, `Reveals`
-- **Body:** answer dialogue that plays the first time the player asks the question.
-- **Optional sub-block:** `#### On Reask` — plays on repeat asks.
+- **Optional:** `Status` (defaults to `unlocked`), `Required` (defaults to
+  `true`), `Unlock`, `Reveals`
+- **Body:** exactly one `#### Testimony` block. There is no follow-up field —
+  a follow-up question is just another `### Question` (see "Follow-ups"
+  below).
 
-### Follow-up (H4)
-- **Heading:** `#### Follow-up: <label> {#follow_up_id}`
-- **Optional:** `Status` (defaults to `unlocked`), `Required` (defaults to `true`), `Unlock`, `Reveals`
-- **Body:** answer dialogue that plays the first time the player asks the follow-up.
-- **Optional sub-block:** `##### On Reask` — plays on repeat asks.
+If a question has `Unlock`, its `Status` must be `locked`. For a locked
+question, use either an inbound `Reveals: [question:<id>]` or an `Unlock`
+expression, not both (`interrogationRevealsAndUnlockBoth`); a locked question
+with neither is unreachable (`interrogationLockedBlockUnreachable`).
 
-Follow-ups must appear immediately after their parent Question. If a question or follow-up has `Unlock`, its `Status` must be `locked`. For locked questions and follow-ups, use either an inbound `Reveals: [question:<id>]` or an `Unlock` expression, not both.
+### Testimony (H4)
 
-## Testimony Phase
+- **Heading:** `#### Testimony`, directly under a `### Question:`.
+- **Required:** `On Loop` — the main-character line that plays when the
+  player reaches the end of the testimony without a breakthrough, before
+  looping back to line 1.
+- **Optional:** `Default Challenge` (lead-in used when the player challenges
+  an honest line, i.e. a Line with no `Contradiction`), `Default Wrong` (the
+  rebuff that follows). Both may be overridden per line.
+- **Body:** one or more `##### Line:` blocks, in play order.
 
-Use testimony for cross-examination. Required blocks:
+Every field value (`On Loop`, `Default Challenge`, `Default Wrong`, and the
+per-line fields below) is a single bold-label dialogue line or `[action]` —
+`- **On Loop:** **相馬律**：...` — not a multi-line exchange.
 
-- `### Subject: <name> {#id}`
-- `### Testimony`
-- `#### Statement: <label> {#id}`
-- `### Result: <label> {#id}`
+### Line (H5)
 
-A testimony statement can define:
+- **Heading:** `##### Line: <label> {#line_id}`
+- **Body immediately under the heading:** exactly one bold-label dialogue line
+  — the suspect's statement. This is plain dialogue, **not** a `- **Content:**`
+  metadata bullet (that field name belonged to the old `#### Statement:`
+  block and no longer exists — see Common Mistakes).
+- **Optional:** `Contradiction` (`evidence:<id>` or `statement:<id>`).
+- **Required iff `Contradiction` is present:** `Challenge` (the lead-in played
+  before the evidence tray opens), `On Correct` (the breakthrough dialogue;
+  may carry a nested `- **Reveals:** [...]` bullet), `On Wrong Evidence` (the
+  rebuff for presenting the wrong item against this line).
+- **Optional even without `Contradiction`:** per-line `Challenge` /
+  `On Wrong Evidence` overrides of the testimony defaults are allowed on
+  honest lines too.
 
-- `Content`
-- `Contradiction`
-- `On Correct`
-- `On Wrong`
-- `Reveals`
-- `##### On Press`
-- `##### On Present`
-- `##### On Wrong Present`
+A line with no `Contradiction` is honest: challenging it always falls back to
+the testimony's `Default Challenge` / `Default Wrong`.
 
-### Testimony Statement (H4)
-- **Heading:** `#### Statement: <label> {#statement_id}` under `### Testimony`
-- **Required:** `Content`
-- **Optional:** `Contradiction`, `On Correct`, `On Wrong`, `Reveals`
-- **Optional sub-blocks:** `##### On Press`, `##### On Present`, `##### On Wrong Present`
+## Follow-ups
 
-`Contradiction` must be an exact inventory target: `evidence:<id>` or `statement:<id>`. When `Contradiction` is present, `On Correct` is required and must name a `### Result:` ID in the same testimony phase. `On Wrong` is optional and also names a Result ID. `Reveals` uses the same interrogation reveal list syntax as inquiry questions.
-
-### Result (H3)
-- **Heading:** `### Result: <label> {#result_id}`
-- **Optional:** `Reveals`
-- **Body:** result dialogue. Correct-result reveals should add any evidence or statement that later scenes rely on.
-
-Every required testimony phase needs at least one reachable statement with both a valid `Contradiction` and a valid `On Correct` result. Wrong-present dialogue returns to the same testimony phase; it should not advance the scene.
+A follow-up is not a distinct block. It is an ordinary `### Question` that
+starts `Status: locked` and is unlocked by an earlier line's
+`On Correct → Reveals: [question:<id>]`. Whether the follow-up reads as "the
+same testimony, deeper" or "a different question entirely" is purely a matter
+of which question id(s) that `On Correct` reveals — author it exactly like
+any other locked Question with its own `#### Testimony` and `##### Line:`
+blocks. There is no `parent_question_id`, no flattening rule, and no special
+casing to remember.
 
 ## Reveal And Unlock Syntax
 
-Interrogation reveals are declared on phases, questions, follow-ups, testimony statements, or results:
+Interrogation reveals are declared on phases, questions, or `On Correct`
+lines:
 
 ```markdown
 - **Reveals:** [evidence:cleaning_log, statement:timeline_gap, question:hidden_follow_up, phase:wakatsuki_testimony]
@@ -180,7 +274,7 @@ Interrogation reveals are declared on phases, questions, follow-ups, testimony s
 | --- | --- |
 | `evidence:<id>` | Adds an Evidence Manifest item to inventory and plays its `#### On Collect`. |
 | `statement:<id>` | Adds a Statement Manifest item to the log and plays its `#### On Acquire`. |
-| `question:<id>` | Unlocks a locked question or follow-up in this interrogation scene. |
+| `question:<id>` | Unlocks a locked question in this interrogation scene. |
 | `phase:<id>` | Unlocks a locked phase in this interrogation scene. |
 
 Interrogation `Unlock` and `Complete` expressions only support:
@@ -192,43 +286,109 @@ Interrogation `Unlock` and `Complete` expressions only support:
 - `<a> and <b>`
 - `<a> or <b>`
 
-Hotspot, topic, and sub-location predicates are investigation-only. Do not use them in interrogation scenes.
+`question:<id> answered` means that question's testimony has been **broken**
+— the player presented the correct evidence on one of its `Contradiction`
+lines. Hotspot, topic, and sub-location predicates are investigation-only. Do
+not use them in interrogation scenes.
+
+## Contradiction guarantee (critical — the Beat-10 trap)
+
+Every `Contradiction` target must be **guaranteed** obtainable before the
+player can reach the line that needs it — either from a prior guaranteed
+scene, or from an earlier guaranteed breakthrough in this same scene.
+"Guaranteed" is stricter than "obtainable": an item revealed only inside an
+**optional** (`Required: false`) question's `On Correct` is obtainable (a
+thorough player might find it) but is **not guaranteed**, because the
+compiler cannot assume every player answers an optional question.
+
+Two compiler checks enforce this, and you will hit one of them if a
+contradiction chain isn't guaranteed:
+
+- **`crossSceneInventoryNotGuaranteed`** — a `Contradiction` (or `Unlock`)
+  references `evidence:<id>` / `statement:<id>` from an earlier scene that the
+  compiler cannot prove is guaranteed before this interrogation scene runs
+  (e.g. it only exists behind an optional investigation branch, or the
+  investigation's `## Outro` has an explicit `Unlock:` that only guarantees
+  one predicate's evidence rather than everything reachable).
+- **`interrogationUnguaranteedContradiction`** — a `Required` phase has no
+  reachable question whose `Contradiction` line is guaranteed and whose
+  `On Correct` can fire, *within this scene*. This is the in-scene form of the
+  same trap: a chain of reveals that only fires through an optional question
+  never counts as guaranteed.
+
+**The workaround you need for a real, accepted case:** if a `Required`
+follow-up question's only unlock/contradiction path is gated behind an
+`Optional` (`Required: false`) question's `On Correct → Reveals`, the compiler
+conservatively rejects it with `interrogationUnguaranteedContradiction` — it
+propagates guaranteed inventory only through `Required` questions when a
+phase auto-completes, so an optional question's reveals never count as
+guaranteed even if, in practice, the player has no other way to finish the
+phase. **Fix: mark the gating (parent) question `Required: true`.** Once the
+parent question is required, its `On Correct` reveals participate in the
+guaranteed-inventory pass, and the downstream required follow-up resolves.
+(See `packages/scripts/__fixtures__/invalid/interrogation_unguaranteed_contradiction/`
+for the exact shape of this failure.)
+
+One more subtlety: if a single Question has **multiple** `Contradiction` lines
+that are all independently obtainable (the player could break the question
+via any one of them), only `Reveals` **common to every valid line** are
+guaranteed downstream — the compiler cannot assume which line the player
+presented against. Don't rely on one specific line's unique reveal unless
+every viable breakthrough line for that question reveals the same id(s).
 
 ## Evidence And Statement Manifests
 
 Use the same manifest entry formats as `writing-investigation-scene`:
 
-- `### evidence:<id> {#id}` with `Name`, `Description`, `Details`, required `Image Prompt` when assets are enabled, required `#### On Collect`, optional `#### On Reexamine`
-- `### statement:<id> {#id}` with `Speaker`, `Content`, required `#### On Acquire`, optional `#### On Reexamine`
+- `### evidence:<id> {#id}` with `Name`, `Description`, `Details`, required
+  `Image Prompt` when assets are enabled, required `#### On Collect`, optional
+  `#### On Reexamine`
+- `### statement:<id> {#id}` with `Speaker`, `Content`, required
+  `#### On Acquire`, optional `#### On Reexamine`
 
-`Image Prompt` is an English production prompt for the evidence icon. Do not include a path. Phase scene tags and background prompts are semantic production prompts, not filesystem paths; writers never author paths.
-
-Contradictions can use evidence or statements from earlier guaranteed scenes, or from this interrogation scene if the item is obtainable before the testimony phase. If the compiler cannot prove the item is guaranteed, the build fails.
+`Image Prompt` is an English production prompt for the evidence icon. Do not
+include a path. Phase scene tags and background prompts are semantic
+production prompts, not filesystem paths; writers never author paths.
 
 ## Outro
 
 - **Heading:** `## Outro`
 - **Optional:** `Unlock` (defaults to `auto`)
-- **Body:** closing dialogue parsed into the scene JSON. Runtime advancement for interrogation scenes belongs to the later engine/frontend tasks.
+- **Body:** closing dialogue parsed into the scene JSON.
 
 ## Workflow
 
 1. Read the chapter detail plan and General Plan.
-2. Identify whether this scene has inquiry, testimony, or both.
-3. Sketch phases before writing dialogue.
-4. List every evidence and statement ID used by contradictions.
-5. Write the scene in canonical order.
-6. Self-check that every phase has exactly one scene tag and one Subject with Role/Bio.
-7. Self-check that every contradiction has a named exact evidence or statement and a valid On Correct result.
+2. Sketch phases and questions before writing dialogue: which questions are
+   `Required`, which lines carry a `Contradiction`, which follow-up ids each
+   breakthrough reveals.
+3. List every evidence and statement id used by a `Contradiction`, and confirm
+   where it becomes guaranteed (a prior scene's guaranteed inventory, or an
+   earlier `Required` breakthrough in this scene).
+4. Write the scene in canonical order: `## Intro`, `## Phase:` blocks, then
+   `## Evidence Manifest`, `## Statement Manifest`, `## Outro`.
+5. Self-check that every phase has exactly one scene tag and one Subject with
+   `Role`/`Bio`.
+6. Self-check that every `Contradiction` line also has `Challenge`,
+   `On Correct`, and `On Wrong Evidence`, and every `#### Testimony` has
+   `On Loop`.
+7. Self-check that any `Required` follow-up's unlock chain does not pass
+   through an `Optional` question's reveal — if it must, mark that question
+   `Required` instead.
 
 ## Common Mistakes
 
 | Mistake | Fix |
 | --- | --- |
-| Writing testimony as ordinary questions | Use `### Testimony` and `#### Statement:` blocks. |
-| Referencing a clue by display name | Use exact `evidence:<id>` or `statement:<id>`. |
-| Making wrong evidence end the scene | Wrong present returns to the same testimony phase. |
-| Reusing investigation hotspot/topic predicates | Interrogation unlocks use inventory, question, and phase predicates only. |
-| Omitting the phase scene tag | Add exactly one `[場景：...]` tag inside every Phase body. |
-| Subject without `Role` and `Bio` | Add both metadata fields under `### Subject:`. |
-| `Contradiction` without `On Correct` | Add an `On Correct` result ID and define the matching `### Result:` block. |
+| Authoring a `- **Content:**` field on a `##### Line:` | The suspect line is plain dialogue directly under the heading (`**角色名**：...`), not a metadata bullet — `Content` was a field of the retired `#### Statement:` block. Writing it as metadata triggers `interrogationEmptyLine` (no dialogue found) or `interrogationBadLineField`. |
+| Writing a `#### Follow-up:`, `#### On Reask`, `#### Statement:`, or `### Result:` block | These blocks no longer exist. A follow-up is a locked `### Question`; the parser rejects unknown headings. |
+| `Contradiction` line missing `Challenge` / `On Correct` / `On Wrong Evidence` | All three are required together — the compiler fails with `interrogationMissingChallenge`, `interrogationMissingOnCorrect`, or `interrogationMissingOnWrongEvidence`. |
+| `#### Testimony` missing `On Loop` | `On Loop` is required on every Testimony — fails with `interrogationMissingOnLoop`. |
+| `#### Testimony` with zero `##### Line:` blocks | Every Testimony needs at least one Line — fails with `interrogationEmptyTestimony`. |
+| A `Required` follow-up unlocked only through an `Optional` question's reveal | Fails with `interrogationUnguaranteedContradiction`. Mark the gating question `Required: true` (see "Contradiction guarantee" above). |
+| Referencing a clue by display name | Use exact `evidence:<id>` or `statement:<id>` in `Contradiction` / `Reveals`. Malformed targets fail with `interrogationContradictionMalformed` / `interrogationRevealUnknownTarget`. |
+| Reusing investigation hotspot/topic predicates in `Unlock` | Interrogation unlocks use inventory, question, and phase predicates only. |
+| Omitting the phase scene tag | Add exactly one `[場景：...]` tag inside every Phase body (`interrogationPhaseNoSceneTag`). |
+| Subject without `Role` and `Bio` | Add both metadata fields under `### Subject:` (`interrogationSubjectMissingMetadata`). |
+| Locked question with both `Unlock` and an inbound `Reveals` | Pick one — `interrogationRevealsAndUnlockBoth`. |
+| Locked question with neither `Unlock` nor an inbound `Reveals` | It's unreachable — `interrogationLockedBlockUnreachable`. |
