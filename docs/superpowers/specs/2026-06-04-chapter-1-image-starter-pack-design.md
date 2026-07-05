@@ -84,7 +84,7 @@ slice:
 - 三宅母親
 - 書記官
 - 店長高瀨
-- 片瀨
+- 片瀨美咲
 
 Each portrait character requires a `standard` expression. The first pass may
 add one extra expression only where the selected scenes strongly need it:

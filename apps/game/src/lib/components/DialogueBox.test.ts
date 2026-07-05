@@ -189,7 +189,7 @@ describe("DialogueBox", () => {
   it("renders Katase on the left because her portrait faces right", async () => {
     const { container } = renderDialogueBox({
       kind: "line",
-      speaker: "片瀨",
+      speaker: "片瀨美咲",
       text: "終電が……",
       portrait: {
         characterId: "katase",

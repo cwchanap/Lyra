@@ -65,7 +65,7 @@ characters:
         prompt: visibly fatigued expression, shoulders slightly lowered
 
   - id: katase
-    displayNames: ["片瀨"]
+    displayNames: ["片瀨美咲"]
     portraitMode: portrait
     visualPrompt: >
       Petite Japanese cafe employee in her early twenties, uniform apron, small
