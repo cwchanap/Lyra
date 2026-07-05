@@ -59,9 +59,11 @@ export type GameplayCommandName =
   | "enter_sublocation"
   | "reexamine_evidence"
   | "reexamine_statement"
-  | "answer_interrogation_question"
-  | "press_testimony_statement"
-  | "present_testimony_item";
+  | "ask_interrogation_question"
+  | "proceed_interrogation_line"
+  | "challenge_interrogation_line"
+  | "present_interrogation_evidence"
+  | "withdraw_interrogation";
 
 const SFX_ASSETS: Partial<Record<GameplaySfxEvent, string>> = {
   "ui:menu-confirm": "audio.sfx.sfx_dialogue_proceed_tick",
@@ -154,9 +156,9 @@ export function inferGameplaySfxEvents(
     events.push("investigation:topic-discussed");
   if (command === "enter_sublocation")
     events.push("investigation:sublocation-entered");
-  if (command === "answer_interrogation_question")
+  if (command === "ask_interrogation_question")
     events.push("interrogation:question-answered");
-  if (command === "press_testimony_statement")
+  if (command === "challenge_interrogation_line")
     events.push("interrogation:testimony-pressed");
 
   if (inventoryEvidenceCount(next) > inventoryEvidenceCount(previous)) {

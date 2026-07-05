@@ -589,7 +589,7 @@ describe("inferGameplaySfxEvents", () => {
       inferGameplaySfxEvents(
         interrogation("inquiry"),
         interrogation("testimony"),
-        "answer_interrogation_question",
+        "ask_interrogation_question",
       ),
     ).toEqual([
       "interrogation:question-answered",
@@ -597,9 +597,9 @@ describe("inferGameplaySfxEvents", () => {
     ]);
   });
 
-  it("dispatches testimony-pressed for the press command", () => {
+  it("dispatches testimony-pressed for the challenge command", () => {
     expect(
-      inferGameplaySfxEvents(state(), state(), "press_testimony_statement"),
+      inferGameplaySfxEvents(state(), state(), "challenge_interrogation_line"),
     ).toEqual(["interrogation:testimony-pressed"]);
   });
 
@@ -657,16 +657,18 @@ describe("inferGameplaySfxEvents", () => {
       enter_sublocation: true,
       reexamine_evidence: true,
       reexamine_statement: true,
-      answer_interrogation_question: true,
-      press_testimony_statement: true,
-      present_testimony_item: true,
+      ask_interrogation_question: true,
+      proceed_interrogation_line: true,
+      challenge_interrogation_line: true,
+      present_interrogation_evidence: true,
+      withdraw_interrogation: true,
     };
     const names = Object.keys(exhaustive) as GameplayCommandName[];
 
     // Every union member is listed exactly once.
     expect(new Set(names).size).toBe(names.length);
-    expect(names).toContain("present_testimony_item");
-    expect(names).toHaveLength(11);
+    expect(names).toContain("present_interrogation_evidence");
+    expect(names).toHaveLength(13);
   });
 });
 
