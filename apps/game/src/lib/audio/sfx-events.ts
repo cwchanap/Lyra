@@ -125,7 +125,7 @@ export const STORY_BEAT_SFX_TRIGGERS: readonly StoryBeatSfxTrigger[] = [
     sceneKind: "investigation",
     sceneId: "investigation_scene_7",
     dialogueKind: "line",
-    substring: "那台機器 backflush 的時候",
+    substring: "那台洗杯機排氣的時候",
   },
 ];
 
