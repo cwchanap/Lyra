@@ -122,6 +122,12 @@ Each subagent brief must contain:
 **Launch order:** spawn all seven at once. They have no shared state and no
 sequential dependencies.
 
+**Serial fallback:** if your environment has no subagent-dispatch tool, run the
+seven axes yourself one at a time in the table order above (Axis 1 → Axis 7),
+keeping each axis's findings separate before consolidation. Do not collapse
+them into a single pass — the axis separation is what prevents the
+monolithic-review failure mode.
+
 ### Visual Background Minimum Checks
 
 For Axis 5, at minimum check:
