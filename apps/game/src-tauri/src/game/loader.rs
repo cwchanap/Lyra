@@ -572,57 +572,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_interrogation_scene_with_unresolved_testimony_result() {
-        let d = unique_temp_dir();
-        let chapter_dir = d.join("chapter_1");
-        fs::create_dir_all(&chapter_dir).unwrap();
-        fs::write(
-            chapter_dir.join("interrogation_scene_1.json"),
-            r#"{
-                "type": "interrogation",
-                "id": "interrogation_scene_1",
-                "title": "Broken Result",
-                "intro": [],
-                "phases": [{
-                    "kind": "testimony",
-                    "id": "testimony",
-                    "label": "Testimony",
-                    "subject": { "id": "suspect", "name": "Suspect", "role": "Suspect", "bio": "Bio" },
-                    "required": true,
-                    "status": "unlocked",
-                    "unlock": null,
-                    "reveals": [],
-                    "sceneTag": "Room",
-                    "entryDialogue": [],
-                    "statements": [{
-                        "id": "statement_1",
-                        "label": "Statement",
-                        "content": "Content",
-                        "contradiction": null,
-                        "onCorrect": "missing_result",
-                        "onWrong": null,
-                        "onPress": null,
-                        "onPresent": null,
-                        "onWrongPresent": null,
-                        "reveals": []
-                    }],
-                    "results": []
-                }],
-                "evidenceManifest": [],
-                "statementManifest": [],
-                "outro": { "unlock": "auto", "dialogue": [] }
-            }"#,
-        )
-        .unwrap();
-
-        let err = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap_err();
-        assert_eq!(err.code, "sceneValidationFailed");
-        assert!(err.message.contains("interrogation result:missing_result"));
-        let _ = fs::remove_dir_all(d);
-    }
-
-    #[test]
     fn accepts_interrogation_scene_with_external_inventory_contradiction() {
+        // A testimony line's `contradiction` target references evidence that
+        // is not declared in this scene's local evidenceManifest. Under the
+        // cross-examination model, `contradiction` targets are checked at
+        // runtime against the player's global inventory (not this scene's
+        // manifest), so the loader must accept this rather than reject it as
+        // an unresolved reference.
         let d = unique_temp_dir();
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
@@ -634,9 +590,9 @@ mod tests {
                 "title": "External Inventory",
                 "intro": [],
                 "phases": [{
-                    "kind": "testimony",
-                    "id": "testimony",
-                    "label": "Testimony",
+                    "kind": "inquiry",
+                    "id": "inquiry",
+                    "label": "Inquiry",
                     "subject": { "id": "suspect", "name": "Suspect", "role": "Suspect", "bio": "Bio" },
                     "required": true,
                     "status": "unlocked",
@@ -644,19 +600,25 @@ mod tests {
                     "reveals": [],
                     "sceneTag": "Room",
                     "entryDialogue": [],
-                    "statements": [{
-                        "id": "statement_1",
-                        "label": "Statement",
-                        "content": "Content",
-                        "contradiction": { "kind": "evidence", "id": "external_receipt" },
-                        "onCorrect": "win",
-                        "onWrong": null,
-                        "onPress": null,
-                        "onPresent": null,
-                        "onWrongPresent": null,
-                        "reveals": []
-                    }],
-                    "results": [{ "id": "win", "label": "Win", "reveals": [], "dialogue": [] }]
+                    "complete": "auto",
+                    "questions": [{
+                        "id": "question_1",
+                        "label": "Question",
+                        "status": "unlocked",
+                        "required": true,
+                        "unlock": null,
+                        "reveals": [],
+                        "testimony": {
+                            "onLoop": [],
+                            "lines": [{
+                                "id": "line_1",
+                                "label": "Line",
+                                "content": [],
+                                "contradiction": { "kind": "evidence", "id": "external_receipt" },
+                                "reveals": []
+                            }]
+                        }
+                    }]
                 }],
                 "evidenceManifest": [],
                 "statementManifest": [],
@@ -697,14 +659,11 @@ mod tests {
                     "questions": [{
                         "id": "known_question",
                         "label": "Known Question",
-                        "kind": "question",
-                        "parentQuestionId": null,
                         "status": "locked",
                         "required": true,
                         "unlock": { "predicate": "statement_acquired", "id": "external_statement" },
                         "reveals": [],
-                        "answerDialogue": [],
-                        "onReask": null
+                        "testimony": { "onLoop": [], "lines": [] }
                     }]
                 }],
                 "evidenceManifest": [],

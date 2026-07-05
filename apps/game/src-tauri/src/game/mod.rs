@@ -15,7 +15,8 @@ pub use error::GameError;
 pub use view::{DialogueHistoryEntry, GameStateView, ModeView, QueueToken, SceneNavigationIndex};
 
 use scenes::interrogation::{
-    phase_id, phase_required, CrossExam, InterrogationSceneAndInventoryCtx, InterrogationSceneState,
+    phase_id, phase_required, AdvanceOutcome, CrossExam, InterrogationSceneAndInventoryCtx,
+    InterrogationSceneState,
 };
 use scenes::investigation::{DialogueQueue, InvestigationSceneState};
 use scenes::linear::LinearSceneState;
@@ -66,7 +67,6 @@ struct GameSnapshot {
 }
 
 const REEXAMINE_FALLBACK_TEXT: &str = "（沒有新發現。）";
-const WRONG_PRESENT_FALLBACK_TEXT: &str = "（這個提示還不足以推翻證詞。）";
 const DIALOGUE_HISTORY_LIMIT: usize = 50;
 
 impl LastVisualCue {
@@ -707,27 +707,21 @@ impl GameEngine {
             return Ok(false);
         };
 
-        let (phase_id, scene_tag, asset_cue, entry_dialogue, reveals) = match &phase {
-            InterrogationPhaseJson::Inquiry {
+        let (phase_id, scene_tag, asset_cue, entry_dialogue, reveals) = {
+            let InterrogationPhaseJson::Inquiry {
                 id,
                 scene_tag,
                 entry_dialogue,
                 reveals,
                 ..
-            }
-            | InterrogationPhaseJson::Testimony {
-                id,
-                scene_tag,
-                entry_dialogue,
-                reveals,
-                ..
-            } => (
+            } = &phase;
+            (
                 id.clone(),
                 scene_tag.clone(),
                 phase.visual_asset_cue(),
                 entry_dialogue.clone(),
                 reveals.clone(),
-            ),
+            )
         };
         let queue_items = {
             let scene = match &mut self.scene {
@@ -1266,21 +1260,22 @@ impl GameEngine {
         self.restore_on_error(snapshot, result)
     }
 
-    pub fn answer_interrogation_question(
+    /// `ask_interrogation_question` — enters cross-examination on `question_id`,
+    /// installing its testimony's first line as a dialogue queue.
+    pub fn ask_interrogation_question(
         &mut self,
         question_id: &str,
     ) -> Result<GameStateView, GameError> {
         if self.current_chapter_idx >= self.chapters.len() {
             return Err(GameError::game_complete());
         }
-        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
-        let (question, first_time) = {
+        {
             let scene = match &self.scene {
                 SceneRuntime::Interrogation(scene) => scene,
                 _ => {
                     return Err(GameError::wrong_mode(
-                        "answer_interrogation_question",
+                        "ask_interrogation_question",
                         "not interrogation",
                     ))
                 }
@@ -1290,46 +1285,19 @@ impl GameEngine {
                 .as_ref()
                 .is_some_and(|q| q.cursor < q.items.len())
             {
-                return Err(GameError::dialogue_active("answer_interrogation_question"));
+                return Err(GameError::dialogue_active("ask_interrogation_question"));
             }
-            let phase_id = scene
-                .current_phase_id
-                .as_deref()
-                .ok_or_else(|| GameError::locked_interrogation_question(question_id))?;
-            let Some(InterrogationPhaseJson::Inquiry { questions, .. }) = scene
-                .def
-                .phases
-                .iter()
-                .find(|phase| phase_id == crate::game::scenes::interrogation::phase_id(phase))
-            else {
-                return Err(GameError::locked_interrogation_question(question_id));
-            };
-            let question = questions
-                .iter()
-                .find(|question| question.id == question_id)
-                .cloned()
-                .ok_or_else(|| {
-                    if scene.def.phases.iter().any(|phase| match phase {
-                        InterrogationPhaseJson::Inquiry { questions, .. } => {
-                            questions.iter().any(|q| q.id == question_id)
-                        }
-                        InterrogationPhaseJson::Testimony { .. } => false,
-                    }) {
-                        GameError::locked_interrogation_question(question_id)
-                    } else {
-                        GameError::unknown_interrogation_question(question_id)
-                    }
-                })?;
+            let question = scene
+                .question(question_id)
+                .ok_or_else(|| GameError::unknown_interrogation_question(question_id))?;
             let ctx = InterrogationSceneAndInventoryCtx {
                 scene,
                 inventory: &self.inventory,
             };
-            if !scene.is_question_unlocked(&question, &ctx) {
+            if !scene.is_question_unlocked(question, &ctx) {
                 return Err(GameError::locked_interrogation_question(question_id));
             }
-            let first_time = !scene.answered_questions.contains(question_id);
-            (question, first_time)
-        };
+        }
 
         let snapshot = self.snapshot();
         let result = (|| -> Result<GameStateView, GameError> {
@@ -1338,30 +1306,92 @@ impl GameEngine {
                     SceneRuntime::Interrogation(scene) => scene,
                     _ => {
                         return Err(GameError::internal(
-                            "scene changed during answer_interrogation_question".into(),
+                            "scene changed during ask_interrogation_question".into(),
                         ))
                     }
                 };
-                if first_time {
-                    scene.record_question_answered(question_id);
-                    reveals::apply_interrogation_reveals_and_build_queue(
-                        scene,
-                        &mut self.inventory,
-                        question.answer_dialogue.clone(),
-                        &question.reveals,
-                        &chapter_id,
-                    )
-                } else {
-                    question
-                        .on_reask
-                        .clone()
-                        .unwrap_or(question.answer_dialogue.clone())
-                }
+                scene.begin_question(question_id);
+                scene
+                    .question(question_id)
+                    .and_then(|question| question.testimony.lines.first())
+                    .map(|line| line.content.clone())
+                    .unwrap_or_default()
             };
 
+            if queue_items.is_empty() {
+                self.on_queue_exhausted()?;
+            } else {
+                let queue_gen = self.alloc_queue_gen();
+                self.install_scene_queue(queue_items, queue_gen)?;
+            }
             if let SceneRuntime::Interrogation(scene) = &mut self.scene {
                 scene.refresh_phase_completion(&self.inventory);
             }
+            Ok(self.view_with_history())
+        })();
+        self.restore_on_error(snapshot, result)
+    }
+
+    /// `proceed_interrogation_line` — advances the currently-playing testimony
+    /// to its next line, or (past the last line) loops back to line 0.
+    pub fn proceed_interrogation_line(&mut self) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
+
+        {
+            let scene = match &self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => {
+                    return Err(GameError::wrong_mode(
+                        "proceed_interrogation_line",
+                        "not interrogation",
+                    ))
+                }
+            };
+            if scene
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
+                return Err(GameError::dialogue_active("proceed_interrogation_line"));
+            }
+            if !matches!(scene.cross_exam(), CrossExam::Playing { .. }) {
+                return Err(GameError::not_in_cross_examination(
+                    "proceed_interrogation_line",
+                ));
+            }
+        }
+
+        let snapshot = self.snapshot();
+        let result = (|| -> Result<GameStateView, GameError> {
+            let queue_items = {
+                let scene = match &mut self.scene {
+                    SceneRuntime::Interrogation(scene) => scene,
+                    _ => {
+                        return Err(GameError::internal(
+                            "scene changed during proceed_interrogation_line".into(),
+                        ))
+                    }
+                };
+                let CrossExam::Playing { question_id, .. } = scene.cross_exam().clone() else {
+                    return Err(GameError::internal(
+                        "cross_exam changed during proceed_interrogation_line".into(),
+                    ));
+                };
+                match scene.advance_line() {
+                    AdvanceOutcome::NextLine(index) => scene
+                        .question(&question_id)
+                        .and_then(|question| question.testimony.lines.get(index))
+                        .map(|line| line.content.clone())
+                        .unwrap_or_default(),
+                    AdvanceOutcome::Loop => scene
+                        .question(&question_id)
+                        .map(|question| question.testimony.on_loop.clone())
+                        .unwrap_or_default(),
+                }
+            };
+
             if queue_items.is_empty() {
                 self.on_queue_exhausted()?;
             } else {
@@ -1373,21 +1403,22 @@ impl GameEngine {
         self.restore_on_error(snapshot, result)
     }
 
-    pub fn press_testimony_statement(
+    /// `challenge_interrogation_line` — opens the evidence tray against
+    /// `line_id`, installing its challenge lead-in dialogue.
+    pub fn challenge_interrogation_line(
         &mut self,
-        statement_id: &str,
+        line_id: &str,
     ) -> Result<GameStateView, GameError> {
         if self.current_chapter_idx >= self.chapters.len() {
             return Err(GameError::game_complete());
         }
-        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
-        let (statement, first_time) = {
+        {
             let scene = match &self.scene {
                 SceneRuntime::Interrogation(scene) => scene,
                 _ => {
                     return Err(GameError::wrong_mode(
-                        "press_testimony_statement",
+                        "challenge_interrogation_line",
                         "not interrogation",
                     ))
                 }
@@ -1397,28 +1428,14 @@ impl GameEngine {
                 .as_ref()
                 .is_some_and(|q| q.cursor < q.items.len())
             {
-                return Err(GameError::dialogue_active("press_testimony_statement"));
+                return Err(GameError::dialogue_active("challenge_interrogation_line"));
             }
-            let phase_id = scene
-                .current_phase_id
-                .as_deref()
-                .ok_or_else(|| GameError::unknown_testimony_statement(statement_id))?;
-            let Some(InterrogationPhaseJson::Testimony { statements, .. }) = scene
-                .def
-                .phases
-                .iter()
-                .find(|phase| phase_id == crate::game::scenes::interrogation::phase_id(phase))
-            else {
-                return Err(GameError::unknown_testimony_statement(statement_id));
-            };
-            let statement = statements
-                .iter()
-                .find(|statement| statement.id == statement_id)
-                .cloned()
-                .ok_or_else(|| GameError::unknown_testimony_statement(statement_id))?;
-            let first_time = !scene.pressed_statements.contains(statement_id);
-            (statement, first_time)
-        };
+            if !matches!(scene.cross_exam(), CrossExam::Playing { .. }) {
+                return Err(GameError::not_in_cross_examination(
+                    "challenge_interrogation_line",
+                ));
+            }
+        }
 
         let snapshot = self.snapshot();
         let result = (|| -> Result<GameStateView, GameError> {
@@ -1427,42 +1444,55 @@ impl GameEngine {
                     SceneRuntime::Interrogation(scene) => scene,
                     _ => {
                         return Err(GameError::internal(
-                            "scene changed during press_testimony_statement".into(),
+                            "scene changed during challenge_interrogation_line".into(),
                         ))
                     }
                 };
-                scene.record_statement_pressed(statement_id);
-                if first_time {
-                    reveals::apply_interrogation_reveals_and_build_queue(
-                        scene,
-                        &mut self.inventory,
-                        statement.on_press.clone().unwrap_or_default(),
-                        &statement.reveals,
-                        &chapter_id,
-                    )
-                } else {
-                    statement.on_press.clone().unwrap_or_default()
-                }
+                let CrossExam::Playing { question_id, .. } = scene.cross_exam().clone() else {
+                    return Err(GameError::internal(
+                        "cross_exam changed during challenge_interrogation_line".into(),
+                    ));
+                };
+                let challenge = scene.line(&question_id, line_id).map(|line| {
+                    if line.challenge.is_empty() {
+                        scene
+                            .question(&question_id)
+                            .map(|question| question.testimony.default_challenge.clone())
+                            .unwrap_or_default()
+                    } else {
+                        line.challenge.clone()
+                    }
+                });
+                let challenge = match challenge {
+                    Some(challenge) => challenge,
+                    None => scene
+                        .question(&question_id)
+                        .map(|question| question.testimony.default_challenge.clone())
+                        .unwrap_or_default(),
+                };
+                scene.begin_present(line_id);
+                challenge
             };
-            let items = if queue_items.is_empty() {
-                vec![DialogueItem::Line {
-                    speaker: "Narrator".into(),
-                    text: "你仔細思考了這句話，但沒有發現新的線索。".into(),
-                    portrait: None,
-                }]
+
+            if queue_items.is_empty() {
+                self.on_queue_exhausted()?;
             } else {
-                queue_items
-            };
-            let queue_gen = self.alloc_queue_gen();
-            self.install_scene_queue(items, queue_gen)?;
+                let queue_gen = self.alloc_queue_gen();
+                self.install_scene_queue(queue_items, queue_gen)?;
+            }
             Ok(self.view_with_history())
         })();
         self.restore_on_error(snapshot, result)
     }
 
-    pub fn present_testimony_item(
+    /// `present_interrogation_evidence` — presents `item_kind:item_id` against
+    /// `line_id`. On a correct contradiction match, plays `on_correct`,
+    /// applies the line's reveals, and marks the question broken (returning to
+    /// the question menu). Otherwise plays `on_wrong_evidence` (or the
+    /// testimony's `default_wrong` fallback) and returns to the same line.
+    pub fn present_interrogation_evidence(
         &mut self,
-        statement_id: &str,
+        line_id: &str,
         item_kind: &str,
         item_id: &str,
     ) -> Result<GameStateView, GameError> {
@@ -1471,12 +1501,12 @@ impl GameEngine {
         }
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
-        let (phase_id_value, statement, result, correct) = {
+        let question_id = {
             let scene = match &self.scene {
                 SceneRuntime::Interrogation(scene) => scene,
                 _ => {
                     return Err(GameError::wrong_mode(
-                        "present_testimony_item",
+                        "present_interrogation_evidence",
                         "not interrogation",
                     ))
                 }
@@ -1486,112 +1516,68 @@ impl GameEngine {
                 .as_ref()
                 .is_some_and(|q| q.cursor < q.items.len())
             {
-                return Err(GameError::dialogue_active("present_testimony_item"));
+                return Err(GameError::dialogue_active("present_interrogation_evidence"));
             }
-            let phase_id_value = scene
-                .current_phase_id
-                .clone()
-                .ok_or_else(|| GameError::unknown_testimony_statement(statement_id))?;
-            let Some(InterrogationPhaseJson::Testimony {
-                statements,
-                results,
-                ..
-            }) = scene.def.phases.iter().find(|phase| {
-                phase_id_value == crate::game::scenes::interrogation::phase_id(phase)
-            })
-            else {
-                return Err(GameError::unknown_testimony_statement(statement_id));
+            let CrossExam::Presenting { question_id, .. } = scene.cross_exam() else {
+                return Err(GameError::not_in_cross_examination(
+                    "present_interrogation_evidence",
+                ));
             };
-            let statement = statements
-                .iter()
-                .find(|statement| statement.id == statement_id)
-                .cloned()
-                .ok_or_else(|| GameError::unknown_testimony_statement(statement_id))?;
             if !self.inventory_target_exists(item_kind, item_id) {
                 return Err(GameError::unknown_inventory_target(item_kind, item_id));
             }
-            let correct = statement
-                .contradiction
-                .as_ref()
-                .is_some_and(|target| inventory_target_matches(target, item_kind, item_id));
-            let result_id = if correct {
-                statement.on_correct.as_deref()
-            } else {
-                statement.on_wrong.as_deref()
-            };
-            let result = match result_id {
-                Some(id) => Some(
-                    results
-                        .iter()
-                        .find(|result| result.id == id)
-                        .cloned()
-                        .ok_or_else(|| GameError::unknown_testimony_result(id))?,
-                ),
-                None => None,
-            };
-            (phase_id_value, statement, result, correct)
+            question_id.clone()
         };
 
         let snapshot = self.snapshot();
-        let result_view = (|| -> Result<GameStateView, GameError> {
-            let mut queue_items = if correct {
-                statement.on_present.clone().unwrap_or_default()
-            } else {
-                statement.on_wrong_present.clone().unwrap_or_else(|| {
-                    vec![DialogueItem::Action {
-                        text: WRONG_PRESENT_FALLBACK_TEXT.into(),
-                    }]
-                })
-            };
+        let result = (|| -> Result<GameStateView, GameError> {
+            let queue_items = {
+                let scene = match &mut self.scene {
+                    SceneRuntime::Interrogation(scene) => scene,
+                    _ => {
+                        return Err(GameError::internal(
+                            "scene changed during present_interrogation_evidence".into(),
+                        ))
+                    }
+                };
+                let line = scene.line(&question_id, line_id).cloned();
+                let correct = line
+                    .as_ref()
+                    .and_then(|line| line.contradiction.as_ref())
+                    .is_some_and(|target| inventory_target_matches(target, item_kind, item_id));
 
-            if correct {
-                if let Some(result) = result {
-                    let scene = match &mut self.scene {
-                        SceneRuntime::Interrogation(scene) => scene,
-                        _ => {
-                            return Err(GameError::internal(
-                                "scene changed during present_testimony_item".into(),
-                            ))
-                        }
-                    };
-                    // Append result dialogue first so the narrative explanation
-                    // plays before the acquire/collect callback text from reveals.
-                    queue_items.extend(result.dialogue);
-                    queue_items = reveals::apply_interrogation_reveals_and_build_queue(
+                if correct {
+                    let on_correct = line
+                        .as_ref()
+                        .map(|line| line.on_correct.clone())
+                        .unwrap_or_default();
+                    let reveals = line
+                        .as_ref()
+                        .map(|line| line.reveals.clone())
+                        .unwrap_or_default();
+                    let queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
                         &mut self.inventory,
-                        queue_items,
-                        &result.reveals,
+                        on_correct,
+                        &reveals,
                         &chapter_id,
                     );
+                    scene.record_break(&question_id);
+                    queue
+                } else {
+                    let default_wrong = scene
+                        .question(&question_id)
+                        .map(|question| question.testimony.default_wrong.clone())
+                        .unwrap_or_default();
+                    let on_wrong = line
+                        .as_ref()
+                        .map(|line| line.on_wrong_evidence.clone())
+                        .filter(|dialogue| !dialogue.is_empty())
+                        .unwrap_or(default_wrong);
+                    scene.return_to_line();
+                    on_wrong
                 }
-                if let SceneRuntime::Interrogation(scene) = &mut self.scene {
-                    scene.record_correct_present(&phase_id_value);
-                    scene.refresh_phase_completion(&self.inventory);
-                }
-            } else {
-                if let Some(result) = result {
-                    queue_items.extend(result.dialogue);
-                    let scene = match &mut self.scene {
-                        SceneRuntime::Interrogation(scene) => scene,
-                        _ => {
-                            return Err(GameError::internal(
-                                "scene changed during present_testimony_item".into(),
-                            ))
-                        }
-                    };
-                    queue_items = reveals::apply_interrogation_reveals_and_build_queue(
-                        scene,
-                        &mut self.inventory,
-                        queue_items,
-                        &result.reveals,
-                        &chapter_id,
-                    );
-                }
-                if let SceneRuntime::Interrogation(scene) = &mut self.scene {
-                    scene.record_wrong_present(statement_id);
-                }
-            }
+            };
 
             if queue_items.is_empty() {
                 self.on_queue_exhausted()?;
@@ -1599,9 +1585,61 @@ impl GameEngine {
                 let queue_gen = self.alloc_queue_gen();
                 self.install_scene_queue(queue_items, queue_gen)?;
             }
+            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                scene.refresh_phase_completion(&self.inventory);
+            }
             Ok(self.view_with_history())
         })();
-        self.restore_on_error(snapshot, result_view)
+        self.restore_on_error(snapshot, result)
+    }
+
+    /// `withdraw_interrogation` — abandons the current cross-examination and
+    /// returns to the question menu.
+    pub fn withdraw_interrogation(&mut self) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
+
+        {
+            let scene = match &self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => {
+                    return Err(GameError::wrong_mode(
+                        "withdraw_interrogation",
+                        "not interrogation",
+                    ))
+                }
+            };
+            if scene
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
+                return Err(GameError::dialogue_active("withdraw_interrogation"));
+            }
+            if !matches!(
+                scene.cross_exam(),
+                CrossExam::Playing { .. } | CrossExam::Presenting { .. }
+            ) {
+                return Err(GameError::not_in_cross_examination(
+                    "withdraw_interrogation",
+                ));
+            }
+        }
+
+        let snapshot = self.snapshot();
+        let result = (|| -> Result<GameStateView, GameError> {
+            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                scene.withdraw();
+            }
+            // The guard above already ensured no dialogue queue is active, so
+            // there is nothing to install here — always drive the scene
+            // machinery forward (phase/outro checks) as if the queue had just
+            // been exhausted.
+            self.on_queue_exhausted()?;
+            Ok(self.view_with_history())
+        })();
+        self.restore_on_error(snapshot, result)
     }
 
     fn inventory_target_exists(&self, item_kind: &str, item_id: &str) -> bool {
@@ -2129,8 +2167,7 @@ mod tests {
         InterrogationPhaseJson, InterrogationRevealTarget, InterrogationSceneJson,
         InterrogationUnlockExpr, InventoryTarget, InvestigationSceneJson, LockStatus, OutroJson,
         OutroUnlock, RevealTarget, SceneType, SubjectJson, SublocationJson, TestimonyJson,
-        TestimonyLineJson, TestimonyResultJson, TestimonyStatementJson, TopicJson, UnlockExpr,
-        VisualAssetCueJson,
+        TestimonyLineJson, TopicJson, UnlockExpr, VisualAssetCueJson,
     };
     use crate::game::state::{EvidenceRecord, StatementRecord};
     use crate::game::view::DialogueHistoryEntry;
@@ -2360,7 +2397,7 @@ mod tests {
             "title": "Interrogation",
             "intro": [],
             "phases": [{
-                "kind": "testimony",
+                "kind": "inquiry",
                 "id": "phase_1",
                 "label": "證言",
                 "subject": { "id": "witness", "name": "Witness", "role": "Witness", "bio": "Quiet." },
@@ -2371,8 +2408,24 @@ mod tests {
                 "sceneTag": "interrogation room",
                 "backgroundAssetId": "background.interrogation",
                 "entryDialogue": [],
-                "statements": [],
-                "results": []
+                "complete": "auto",
+                "questions": [{
+                    "id": "q1",
+                    "label": "問題一",
+                    "status": "unlocked",
+                    "required": true,
+                    "unlock": null,
+                    "reveals": [],
+                    "testimony": {
+                        "onLoop": [{ "kind": "line", "speaker": "witness", "text": "沒有別的了。" }],
+                        "lines": [{
+                            "id": "l1",
+                            "label": "行1",
+                            "content": [{ "kind": "line", "speaker": "witness", "text": "我在店裡。" }],
+                            "contradiction": null
+                        }]
+                    }
+                }]
             }],
             "evidenceManifest": [],
             "statementManifest": [],
@@ -3245,7 +3298,7 @@ mod tests {
             "title": "Interrogation",
             "intro": [],
             "phases": [{
-                "kind": "testimony",
+                "kind": "inquiry",
                 "id": "phase_1",
                 "label": "證言",
                 "subject": { "id": "witness", "name": "Witness", "role": "Witness", "bio": "Quiet." },
@@ -3258,19 +3311,24 @@ mod tests {
                 "bgm": { "channel": "bgm", "assetId": "audio.bgm.tension" },
                 "bgs": { "channel": "bgs", "assetId": "audio.bgs.roomtone" },
                 "entryDialogue": [],
-                "statements": [{
-                    "id": "s1",
-                    "label": "證言1",
-                    "content": "我在店裡。",
-                    "contradiction": null,
-                    "onCorrect": null,
-                    "onWrong": null,
-                    "onPress": null,
-                    "onPresent": null,
-                    "onWrongPresent": null,
-                    "reveals": []
-                }],
-                "results": []
+                "complete": "auto",
+                "questions": [{
+                    "id": "q1",
+                    "label": "問題一",
+                    "status": "unlocked",
+                    "required": true,
+                    "unlock": null,
+                    "reveals": [],
+                    "testimony": {
+                        "onLoop": [{ "kind": "line", "speaker": "witness", "text": "沒有別的了。" }],
+                        "lines": [{
+                            "id": "l1",
+                            "label": "行1",
+                            "content": [{ "kind": "line", "speaker": "witness", "text": "我在店裡。" }],
+                            "contradiction": null
+                        }]
+                    }
+                }]
             }],
             "evidenceManifest": [],
             "statementManifest": [],
@@ -3368,6 +3426,18 @@ mod tests {
             name: "Suspect".into(),
             role: "Witness".into(),
             bio: "Quiet.".into(),
+        }
+    }
+
+    /// A testimony with no lines — used for questions whose testimony content
+    /// is irrelevant to the test at hand. Note that `begin_question` treats a
+    /// testimony with no contradiction-bearing line as auto-broken.
+    fn empty_testimony() -> TestimonyJson {
+        TestimonyJson {
+            on_loop: vec![],
+            default_challenge: vec![],
+            default_wrong: vec![],
+            lines: vec![],
         }
     }
 
@@ -3493,51 +3563,6 @@ mod tests {
         }
     }
 
-    fn testimony_interrogation_scene() -> InterrogationSceneJson {
-        InterrogationSceneJson {
-            id: "interrogation_scene_1".into(),
-            title: "Interrogation".into(),
-            asset_refs: vec![],
-            intro: vec![],
-            phases: vec![InterrogationPhaseJson::Testimony {
-                id: "testimony".into(),
-                label: "Testimony".into(),
-                subject: subject(),
-                required: true,
-                status: LockStatus::Unlocked,
-                unlock: None,
-                reveals: vec![],
-                scene_tag: "room".into(),
-                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
-                entry_dialogue: vec![],
-                statements: vec![TestimonyStatementJson {
-                    id: "statement".into(),
-                    label: "Statement".into(),
-                    content: "I did nothing.".into(),
-                    contradiction: Some(InventoryTarget::Evidence { id: "log".into() }),
-                    on_correct: Some("correct".into()),
-                    on_wrong: None,
-                    on_press: None,
-                    on_present: None,
-                    on_wrong_present: None,
-                    reveals: vec![],
-                }],
-                results: vec![TestimonyResultJson {
-                    id: "correct".into(),
-                    label: "Correct".into(),
-                    reveals: vec![],
-                    dialogue: vec![],
-                }],
-            }],
-            evidence_manifest: vec![],
-            statement_manifest: vec![],
-            outro: InterrogationOutroJson {
-                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
-                dialogue: vec![],
-            },
-        }
-    }
-
     fn empty_inquiry_interrogation_scene() -> InterrogationSceneJson {
         InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
@@ -3645,14 +3670,11 @@ mod tests {
                 questions: vec![crate::game::schema::InquiryQuestionJson {
                     id: "required_question".into(),
                     label: "Required Question".into(),
-                    kind: crate::game::schema::InquiryQuestionKind::Question,
-                    parent_question_id: None,
                     status: LockStatus::Unlocked,
                     required: true,
                     unlock: None,
                     reveals: vec![],
-                    answer_dialogue: vec![],
-                    on_reask: None,
+                    testimony: empty_testimony(),
                 }],
             }],
             evidence_manifest: vec![EvidenceJson {
@@ -3703,14 +3725,11 @@ mod tests {
                     questions: vec![crate::game::schema::InquiryQuestionJson {
                         id: "early_question".into(),
                         label: "Early Question".into(),
-                        kind: crate::game::schema::InquiryQuestionKind::Question,
-                        parent_question_id: None,
                         status: LockStatus::Unlocked,
                         required: true,
                         unlock: None,
                         reveals: vec![],
-                        answer_dialogue: vec![],
-                        on_reask: None,
+                        testimony: empty_testimony(),
                     }],
                 },
                 InterrogationPhaseJson::Inquiry {
@@ -3734,14 +3753,11 @@ mod tests {
                     questions: vec![crate::game::schema::InquiryQuestionJson {
                         id: "late_question".into(),
                         label: "Late Question".into(),
-                        kind: crate::game::schema::InquiryQuestionKind::Question,
-                        parent_question_id: None,
                         status: LockStatus::Unlocked,
                         required: true,
                         unlock: None,
                         reveals: vec![],
-                        answer_dialogue: vec![],
-                        on_reask: None,
+                        testimony: empty_testimony(),
                     }],
                 },
             ],
@@ -3807,7 +3823,7 @@ mod tests {
         resources_dir: PathBuf,
         inventory: Inventory,
     ) -> GameEngine {
-        let mut scene = InterrogationSceneState::from_json(testimony_interrogation_scene(), 1);
+        let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
         scene.current_phase_id = None;
         scene.outro_played = true;
         GameEngine {
@@ -3973,14 +3989,11 @@ mod tests {
                 questions: vec![crate::game::schema::InquiryQuestionJson {
                     id: question_id.into(),
                     label: question_id.into(),
-                    kind: crate::game::schema::InquiryQuestionKind::Question,
-                    parent_question_id: None,
                     status: LockStatus::Unlocked,
                     required: true,
                     unlock: None,
                     reveals: vec![],
-                    answer_dialogue: vec![],
-                    on_reask: None,
+                    testimony: empty_testimony(),
                 }],
             }
         };
@@ -4032,7 +4045,7 @@ mod tests {
             ModeView::Interrogation { ref phase_id, .. } if phase_id == "required_inquiry"
         ));
 
-        let view = engine.answer_interrogation_question("required_q").unwrap();
+        let view = engine.ask_interrogation_question("required_q").unwrap();
 
         assert!(!engine.inventory.has_evidence("optional_leak"));
         if let SceneRuntime::Interrogation(scene) = &engine.scene {
@@ -4277,20 +4290,20 @@ mod tests {
     }
 
     #[test]
-    fn present_testimony_item_rejects_non_interrogation_before_missing_inventory() {
+    fn present_interrogation_evidence_rejects_non_interrogation_before_missing_inventory() {
         let scene = investigation_scene_with_intro("investigation_scene_1", vec![]);
         let mut engine = empty_engine_with_scene(scene, 1);
 
         let err = engine
-            .present_testimony_item("statement", "evidence", "missing")
+            .present_interrogation_evidence("l_off", "evidence", "missing")
             .unwrap_err();
 
         assert_eq!(err.code, "wrongMode");
     }
 
     #[test]
-    fn present_testimony_item_rejects_active_interrogation_dialogue_before_missing_inventory() {
-        let mut engine = empty_engine_with_interrogation_scene(testimony_interrogation_scene(), 1);
+    fn present_interrogation_evidence_rejects_active_dialogue_before_not_presenting() {
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
         let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
             panic!("expected interrogation scene");
         };
@@ -4303,73 +4316,25 @@ mod tests {
         });
 
         let err = engine
-            .present_testimony_item("statement", "evidence", "missing")
+            .present_interrogation_evidence("l_deny", "evidence", "missing")
             .unwrap_err();
 
         assert_eq!(err.code, "dialogueActive");
     }
 
     #[test]
-    fn interrogation_present_testimony_item_resolves_unknown_statement_before_missing_inventory() {
-        let mut engine = empty_engine_with_interrogation_scene(testimony_interrogation_scene(), 1);
+    fn present_interrogation_evidence_rejects_when_not_presenting_before_missing_inventory() {
+        // cross_exam is Idle (no ask/challenge yet) — the "must be
+        // Presenting" guard should fire before the inventory-target lookup,
+        // mirroring the old model's "unknown statement resolved before
+        // missing inventory" ordering guarantee.
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
 
         let err = engine
-            .present_testimony_item("missing_statement", "evidence", "missing_item")
+            .present_interrogation_evidence("l_deny", "evidence", "missing_item")
             .unwrap_err();
 
-        assert_eq!(err.code, "unknownTestimonyStatement");
-    }
-
-    #[test]
-    fn wrong_testimony_result_applies_reveals() {
-        let mut def = testimony_interrogation_scene();
-        let InterrogationPhaseJson::Testimony {
-            statements,
-            results,
-            ..
-        } = &mut def.phases[0]
-        else {
-            panic!("expected testimony phase");
-        };
-        statements[0].on_wrong = Some("wrong".into());
-        results.push(TestimonyResultJson {
-            id: "wrong".into(),
-            label: "Wrong".into(),
-            reveals: vec![InterrogationRevealTarget::Evidence { id: "hint".into() }],
-            dialogue: vec![],
-        });
-        def.evidence_manifest.push(EvidenceJson {
-            id: "hint".into(),
-            name: "Hint".into(),
-            description: "Hint".into(),
-            details: "Hint".into(),
-            image_asset_id: None,
-            on_collect: vec![],
-            on_reexamine: None,
-        });
-        let mut engine = empty_engine_with_interrogation_scene(def, 1);
-        engine.inventory.evidence.push(EvidenceRecord {
-            id: "wrong_item".into(),
-            name: "Wrong Item".into(),
-            description: "Wrong Item".into(),
-            details: "Wrong Item".into(),
-            image_asset_id: None,
-            on_reexamine: None,
-            collected_in_chapter_id: "chapter_1".into(),
-            collected_in_scene_id: "previous_scene".into(),
-        });
-
-        let view = engine
-            .present_testimony_item("statement", "evidence", "wrong_item")
-            .unwrap();
-
-        assert!(engine.inventory.has_evidence("hint"));
-        let SceneRuntime::Interrogation(scene) = &engine.scene else {
-            panic!("expected interrogation scene");
-        };
-        assert!(scene.wrong_presented_statements.contains("statement"));
-        assert!(!scene.completed_phases.contains("testimony"));
-        assert!(matches!(view.mode, ModeView::Dialogue { .. }));
+        assert_eq!(err.code, "notInCrossExamination");
     }
 
     #[test]
@@ -5034,7 +4999,7 @@ mod tests {
                 "title": "Interrogation",
                 "intro": [],
                 "phases": [{
-                    "kind": "testimony",
+                    "kind": "inquiry",
                     "id": "phase_1",
                     "label": "證言",
                     "subject": { "id": "witness", "name": "Witness", "role": "Witness", "bio": "Quiet." },
@@ -5044,8 +5009,8 @@ mod tests {
                     "reveals": [],
                     "sceneTag": "room",
                     "entryDialogue": [],
-                    "statements": [],
-                    "results": []
+                    "complete": "auto",
+                    "questions": []
                 }],
                 "evidenceManifest": [],
                 "statementManifest": [],
@@ -5837,19 +5802,18 @@ mod tests {
     fn correct_present_dialogue_plays_before_reveal_on_collect() {
         use crate::game::schema::{
             InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
-            InterrogationRevealTarget, InterrogationSceneJson, StatementJson, TestimonyResultJson,
-            TestimonyStatementJson,
+            InterrogationRevealTarget, InterrogationSceneJson, StatementJson,
         };
 
-        // Build a testimony scene where the correct-present result has both
-        // dialogue and a reveal of a statement whose on_acquire text should
-        // appear AFTER the result dialogue.
+        // Build an inquiry question whose correct-present testimony line has
+        // both dialogue and a reveal of a statement whose on_acquire text
+        // should appear AFTER the on_correct dialogue.
         let scene = InterrogationSceneJson {
             id: "ordering_test".into(),
             title: "Ordering Test".into(),
             asset_refs: vec![],
             intro: vec![],
-            phases: vec![InterrogationPhaseJson::Testimony {
+            phases: vec![InterrogationPhaseJson::Inquiry {
                 id: "testimony".into(),
                 label: "Testimony".into(),
                 subject: subject(),
@@ -5860,31 +5824,43 @@ mod tests {
                 scene_tag: "room".into(),
                 flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![],
-                statements: vec![TestimonyStatementJson {
-                    id: "s1".into(),
-                    label: "S1".into(),
-                    content: "I am innocent.".into(),
-                    contradiction: Some(InventoryTarget::Evidence {
-                        id: "contradiction_ev".into(),
-                    }),
-                    on_correct: Some("correct_result".into()),
-                    on_wrong: None,
-                    on_press: None,
-                    on_present: None,
-                    on_wrong_present: None,
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![InquiryQuestionJson {
+                    id: "q1".into(),
+                    label: "Q1".into(),
+                    status: LockStatus::Unlocked,
+                    required: true,
+                    unlock: None,
                     reveals: vec![],
-                }],
-                results: vec![TestimonyResultJson {
-                    id: "correct_result".into(),
-                    label: "Correct!".into(),
-                    reveals: vec![InterrogationRevealTarget::Statement {
-                        id: "acquired_stmt".into(),
-                    }],
-                    dialogue: vec![DialogueItem::Line {
-                        speaker: "Detective".into(),
-                        text: "Contradiction explained!".into(),
-                        portrait: None,
-                    }],
+                    testimony: TestimonyJson {
+                        on_loop: vec![],
+                        default_challenge: vec![],
+                        default_wrong: vec![],
+                        lines: vec![TestimonyLineJson {
+                            id: "l1".into(),
+                            label: "L1".into(),
+                            content: vec![DialogueItem::Line {
+                                speaker: "suspect".into(),
+                                text: "I am innocent.".into(),
+                                portrait: None,
+                            }],
+                            contradiction: Some(InventoryTarget::Evidence {
+                                id: "contradiction_ev".into(),
+                            }),
+                            challenge: vec![DialogueItem::Action {
+                                text: "challenge".into(),
+                            }],
+                            on_correct: vec![DialogueItem::Line {
+                                speaker: "Detective".into(),
+                                text: "Contradiction explained!".into(),
+                                portrait: None,
+                            }],
+                            on_wrong_evidence: vec![],
+                            reveals: vec![InterrogationRevealTarget::Statement {
+                                id: "acquired_stmt".into(),
+                            }],
+                        }],
+                    },
                 }],
             }],
             evidence_manifest: vec![EvidenceJson {
@@ -5927,22 +5903,24 @@ mod tests {
         });
 
         engine.prime_initial_queue().unwrap();
+        assert!(matches!(engine.view().mode, ModeView::Interrogation { .. }));
 
-        // Advance through the entry phase to reach interrogation mode.
-        while matches!(engine.view().mode, ModeView::Dialogue { .. }) {
-            let tok = token_from(&engine.view());
-            engine.advance_dialogue(tok).unwrap();
-            if matches!(engine.view().mode, ModeView::Interrogation { .. }) {
-                break;
-            }
-        }
+        // Ask the question, drain its testimony-line content, then challenge
+        // to reach Presenting.
+        let ask_view = engine.ask_interrogation_question("q1").unwrap();
+        engine.advance_dialogue(token_from(&ask_view)).unwrap();
+
+        let challenge_view = engine.challenge_interrogation_line("l1").unwrap();
+        engine
+            .advance_dialogue(token_from(&challenge_view))
+            .unwrap();
 
         // Present the correct evidence.
         let view = engine
-            .present_testimony_item("s1", "evidence", "contradiction_ev")
+            .present_interrogation_evidence("l1", "evidence", "contradiction_ev")
             .unwrap();
 
-        // We should be in Dialogue mode with result dialogue first, then
+        // We should be in Dialogue mode with on_correct dialogue first, then
         // on_acquire text.  Advance and verify ordering.
         match &view.mode {
             ModeView::Dialogue {
@@ -5950,10 +5928,10 @@ mod tests {
                 queue_remaining,
                 ..
             } => {
-                // First item: the result dialogue (narrative explanation).
+                // First item: the on_correct dialogue (narrative explanation).
                 assert!(
                     matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "Detective" && text == "Contradiction explained!"),
-                    "Expected result dialogue first, got {:?}",
+                    "Expected on_correct dialogue first, got {:?}",
                     current
                 );
                 assert_eq!(
@@ -5983,120 +5961,12 @@ mod tests {
                 other
             ),
         }
-    }
 
-    #[test]
-    fn press_statement_with_no_press_content_returns_fallback_feedback() {
-        use crate::game::schema::{
-            InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
-            InterrogationSceneJson, TestimonyStatementJson,
+        // The question should now be broken and the phase completed.
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
         };
-
-        // A testimony scene with a statement that has no on_press, no reveals,
-        // and no contradiction — pressing should still produce fallback feedback.
-        let scene = InterrogationSceneJson {
-            id: "press_fallback_test".into(),
-            title: "Press Fallback Test".into(),
-            asset_refs: vec![],
-            intro: vec![],
-            phases: vec![InterrogationPhaseJson::Testimony {
-                id: "testimony".into(),
-                label: "Testimony".into(),
-                subject: subject(),
-                required: true,
-                status: LockStatus::Unlocked,
-                unlock: None,
-                reveals: vec![],
-                scene_tag: "room".into(),
-                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
-                entry_dialogue: vec![],
-                statements: vec![TestimonyStatementJson {
-                    id: "s1".into(),
-                    label: "S1".into(),
-                    content: "Nothing to press here.".into(),
-                    contradiction: None,
-                    on_correct: None,
-                    on_wrong: None,
-                    on_press: None,
-                    on_present: None,
-                    on_wrong_present: None,
-                    reveals: vec![],
-                }],
-                results: vec![],
-            }],
-            evidence_manifest: vec![],
-            statement_manifest: vec![],
-            outro: InterrogationOutroJson {
-                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
-                dialogue: vec![],
-            },
-        };
-        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
-        engine.prime_initial_queue().unwrap();
-
-        // Advance through entry to reach interrogation mode.
-        while matches!(engine.view().mode, ModeView::Dialogue { .. }) {
-            let tok = token_from(&engine.view());
-            engine.advance_dialogue(tok).unwrap();
-            if matches!(engine.view().mode, ModeView::Interrogation { .. }) {
-                break;
-            }
-        }
-
-        // Press the statement with no on_press and no reveals.
-        let view = engine.press_testimony_statement("s1").unwrap();
-
-        // Should be in Dialogue mode showing fallback feedback.
-        match &view.mode {
-            ModeView::Dialogue {
-                current,
-                queue_remaining,
-                ..
-            } => {
-                assert!(
-                    matches!(current, DialogueItem::Line { speaker, text, .. }
-                        if speaker == "Narrator" && !text.is_empty()),
-                    "Expected fallback narrator line, got {:?}",
-                    current
-                );
-                assert_eq!(*queue_remaining, 0, "Expected single fallback item");
-            }
-            other => panic!("Expected Dialogue mode with fallback, got {:?}", other),
-        }
-
-        // Advance past the fallback line — should return to interrogation.
-        let tok = token_from(&view);
-        let view2 = engine.advance_dialogue(tok).unwrap();
-        assert!(
-            matches!(view2.mode, ModeView::Interrogation { .. }),
-            "Expected Interrogation mode after advancing fallback, got {:?}",
-            view2.mode
-        );
-
-        // Press again (not first time) — should still produce fallback.
-        let view3 = engine.press_testimony_statement("s1").unwrap();
-        match &view3.mode {
-            ModeView::Dialogue {
-                current,
-                queue_remaining,
-                ..
-            } => {
-                assert!(
-                    matches!(current, DialogueItem::Line { speaker, text, .. }
-                        if speaker == "Narrator" && !text.is_empty()),
-                    "Expected fallback narrator line on re-press, got {:?}",
-                    current
-                );
-                assert_eq!(
-                    *queue_remaining, 0,
-                    "Expected single fallback item on re-press"
-                );
-            }
-            other => panic!(
-                "Expected Dialogue mode with fallback on re-press, got {:?}",
-                other
-            ),
-        }
+        assert!(scene.is_question_broken("q1"));
     }
 
     #[test]

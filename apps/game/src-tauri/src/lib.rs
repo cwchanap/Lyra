@@ -133,35 +133,51 @@ fn reexamine_statement(
 }
 
 #[tauri::command]
-fn answer_interrogation_question(
+fn ask_interrogation_question(
     state: tauri::State<'_, AppState>,
     question_id: String,
 ) -> Result<GameStateView, GameError> {
     let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
     let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
-    engine.answer_interrogation_question(&question_id)
+    engine.ask_interrogation_question(&question_id)
 }
 
 #[tauri::command]
-fn press_testimony_statement(
+fn proceed_interrogation_line(
     state: tauri::State<'_, AppState>,
-    statement_id: String,
 ) -> Result<GameStateView, GameError> {
     let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
     let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
-    engine.press_testimony_statement(&statement_id)
+    engine.proceed_interrogation_line()
 }
 
 #[tauri::command]
-fn present_testimony_item(
+fn challenge_interrogation_line(
     state: tauri::State<'_, AppState>,
-    statement_id: String,
+    line_id: String,
+) -> Result<GameStateView, GameError> {
+    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
+    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    engine.challenge_interrogation_line(&line_id)
+}
+
+#[tauri::command]
+fn present_interrogation_evidence(
+    state: tauri::State<'_, AppState>,
+    line_id: String,
     item_kind: String,
     item_id: String,
 ) -> Result<GameStateView, GameError> {
     let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
     let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
-    engine.present_testimony_item(&statement_id, &item_kind, &item_id)
+    engine.present_interrogation_evidence(&line_id, &item_kind, &item_id)
+}
+
+#[tauri::command]
+fn withdraw_interrogation(state: tauri::State<'_, AppState>) -> Result<GameStateView, GameError> {
+    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
+    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    engine.withdraw_interrogation()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -183,9 +199,11 @@ pub fn run() {
             enter_sublocation,
             reexamine_evidence,
             reexamine_statement,
-            answer_interrogation_question,
-            press_testimony_statement,
-            present_testimony_item,
+            ask_interrogation_question,
+            proceed_interrogation_line,
+            challenge_interrogation_line,
+            present_interrogation_evidence,
+            withdraw_interrogation,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

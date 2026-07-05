@@ -221,8 +221,12 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
         view.mode,
     );
 
+    // Asking `entered_storage` plays its (no-contradiction, auto-broken)
+    // testimony line; draining it completes the `wakatsuki_inquiry` phase and
+    // enters `wakatsuki_testimony`, whose phase-level reveals apply the
+    // evidence/statement the old fixture used to reveal on question-answer.
     let view = engine
-        .answer_interrogation_question("entered_storage")
+        .ask_interrogation_question("entered_storage")
         .unwrap();
     let view = advance_all_dialogue(&mut engine, view);
     assert!(view.inventory.has_evidence("coffee_machine_cleaning_log"));
@@ -233,17 +237,28 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
         view.mode,
     );
 
-    let view = engine.press_testimony_statement("cleaning_button").unwrap();
+    // Ask `cleaning_button` to hear its testimony line, then challenge it to
+    // open the evidence tray.
+    let view = engine
+        .ask_interrogation_question("cleaning_button")
+        .unwrap();
     let view = advance_all_dialogue(&mut engine, view);
     assert!(
         matches!(view.mode, ModeView::Interrogation { ref phase_id, .. } if phase_id == "wakatsuki_testimony"),
-        "expected to remain in testimony after pressing, got {:?}",
+        "expected to remain in testimony after asking, got {:?}",
         view.mode,
     );
 
+    let view = engine
+        .challenge_interrogation_line("l_cleaning_button")
+        .unwrap();
+    let view = advance_all_dialogue(&mut engine, view);
+
+    // Present the wrong evidence (collected earlier during investigation) —
+    // should rebuff and return to the same line without breaking it.
     assert!(view.inventory.has_evidence("coffee_machine_log"));
     let view = engine
-        .present_testimony_item("cleaning_button", "evidence", "coffee_machine_log")
+        .present_interrogation_evidence("l_cleaning_button", "evidence", "coffee_machine_log")
         .unwrap();
     let view = advance_all_dialogue(&mut engine, view);
     assert!(
@@ -252,8 +267,18 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
         view.mode,
     );
 
+    // Challenge again, then present the correct contradiction evidence.
     let view = engine
-        .present_testimony_item("cleaning_button", "evidence", "coffee_machine_cleaning_log")
+        .challenge_interrogation_line("l_cleaning_button")
+        .unwrap();
+    advance_all_dialogue(&mut engine, view);
+
+    let view = engine
+        .present_interrogation_evidence(
+            "l_cleaning_button",
+            "evidence",
+            "coffee_machine_cleaning_log",
+        )
         .unwrap();
     let view = advance_all_dialogue(&mut engine, view);
 
