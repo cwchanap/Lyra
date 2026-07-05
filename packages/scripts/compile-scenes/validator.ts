@@ -14,9 +14,9 @@
 import type {
   ASTChapter,
   ASTInquiryPhase,
+  ASTInquiryQuestion,
   ASTInterrogationScene,
-  ASTTestimonyPhase,
-  ASTTestimonyStatement,
+  ASTTestimonyLine,
   ASTInvestigationScene,
   ASTLinearScene,
   ASTSublocation,
@@ -194,7 +194,7 @@ function validateInterrogationScene(
   const localStatement = new Set(scene.statementManifest.map((s) => s.id));
   const localPhase = new Set<string>();
   const localQuestion = new Set<string>();
-  const localTestimonyStatement = new Set<string>();
+  const localLine = new Set<string>();
   const subjectById = new Map<
     string,
     { name: string; role: string; bio: string }
@@ -256,31 +256,10 @@ function validateInterrogationScene(
       });
     }
 
-    if (phase.kind === "inquiry") {
-      for (const question of phase.questions) {
-        checkDuplicate(localQuestion, question.id, "question", question.line);
-      }
-    } else {
-      for (const statement of phase.statements) {
-        checkDuplicate(
-          localTestimonyStatement,
-          statement.id,
-          "testimony statement",
-          statement.line,
-        );
-      }
-
-      const resultIds = new Set<string>();
-      for (const result of phase.results) {
-        if (resultIds.has(result.id)) {
-          errors.push({
-            code: "duplicateInterrogationId",
-            message: `Duplicate result id "${result.id}" within testimony phase "${phase.id}".`,
-            sourceFile: scene.sourceFile,
-            line: result.line,
-          });
-        }
-        resultIds.add(result.id);
+    for (const question of phase.questions) {
+      checkDuplicate(localQuestion, question.id, "question", question.line);
+      for (const line of question.testimony.lines) {
+        checkDuplicate(localLine, line.id, "testimony line", line.line);
       }
     }
   }
@@ -410,82 +389,66 @@ function validateInterrogationScene(
     const phaseSource = `phase:${phase.id}`;
     checkReveals(phaseSource, phase.line, phase.reveals);
     checkUnlock(phase.unlock, phase.line, { checkCrossSceneInventory: true });
+    if (phase.complete !== "auto")
+      checkUnlock(phase.complete, phase.line, {
+        checkCrossSceneInventory: false,
+      });
+    if (
+      phase.required &&
+      !guaranteedInterrogationFlow.phaseCompletable.get(phase.id)
+    ) {
+      errors.push({
+        code: "interrogationUnguaranteedContradiction",
+        message: `Required phase "${phase.id}" has no guaranteed breakthrough: no reachable required question has a Contradiction line whose target is guaranteed in inventory and whose On Correct fires.`,
+        sourceFile: scene.sourceFile,
+        line: phase.line,
+      });
+    }
 
-    if (phase.kind === "inquiry") {
-      if (phase.complete !== "auto")
-        checkUnlock(phase.complete, phase.line, {
-          checkCrossSceneInventory: false,
-        });
-      if (
-        phase.required &&
-        !guaranteedInterrogationFlow.phaseCompletable.get(phase.id)
-      ) {
-        errors.push({
-          code: "interrogationNoValidCompletionPath",
-          message: `Required inquiry phase "${phase.id}" has no satisfiable completion path.`,
-          sourceFile: scene.sourceFile,
-          line: phase.line,
-        });
+    // Inventory obtainable within this phase, used to check that each
+    // Contradiction target could plausibly be held when the line is
+    // challenged. `beforePhase` already includes this phase's entry reveals
+    // (the obtainable-mode pass adds phase.reveals before recording it); we
+    // add every question- and line-level reveal in the phase so that a
+    // contradiction targeting an item revealed by an earlier breakthrough in
+    // the same phase resolves. This mirrors the old testimony model, which
+    // treated all press reveals in a phase as obtainable.
+    const obtainableBeforePhase =
+      interrogationFlow.beforePhase.get(phase.id) ?? new Set<string>();
+    const obtainableInPhase = new Set(obtainableBeforePhase);
+    for (const question of phase.questions) {
+      for (const reveal of question.reveals) {
+        if (reveal.kind === "evidence")
+          obtainableInPhase.add(`evidence:${reveal.id}`);
+        if (reveal.kind === "statement")
+          obtainableInPhase.add(`statement:${reveal.id}`);
       }
-      for (const question of phase.questions) {
-        checkReveals(
-          `question:${question.id}`,
-          question.line,
-          question.reveals,
-        );
-        checkUnlock(question.unlock, question.line, {
-          checkCrossSceneInventory: false,
-        });
-      }
-    } else {
-      validateTestimonyPhaseResults(scene, phase, errors);
-      if (
-        phase.required &&
-        !guaranteedInterrogationFlow.phaseCompletable.get(phase.id)
-      ) {
-        errors.push({
-          code: "interrogationNoValidContradictionPath",
-          message: `Required testimony phase "${phase.id}" has no valid Contradiction plus On Correct result path.`,
-          sourceFile: scene.sourceFile,
-          line: phase.line,
-        });
-      }
-      const obtainableBeforePhase =
-        interrogationFlow.beforePhase.get(phase.id) ?? new Set<string>();
-      // Press reveals are obtainable within the phase: the player can press
-      // any statement before presenting, so all statement-level reveals are
-      // available as contradiction targets within the same testimony phase.
-      const obtainableInPhase = new Set(obtainableBeforePhase);
-      for (const statement of phase.statements) {
-        for (const reveal of statement.reveals) {
+      for (const line of question.testimony.lines) {
+        for (const reveal of line.reveals) {
           if (reveal.kind === "evidence")
             obtainableInPhase.add(`evidence:${reveal.id}`);
           if (reveal.kind === "statement")
             obtainableInPhase.add(`statement:${reveal.id}`);
         }
       }
-      for (const statement of phase.statements) {
-        checkReveals(
-          `testimonyStatement:${statement.id}`,
-          statement.line,
-          statement.reveals,
-        );
+    }
+
+    for (const question of phase.questions) {
+      checkReveals(`question:${question.id}`, question.line, question.reveals);
+      checkUnlock(question.unlock, question.line, {
+        checkCrossSceneInventory: false,
+      });
+      for (const line of question.testimony.lines) {
+        checkReveals(`line:${question.id}:${line.id}`, line.line, line.reveals);
         validateContradiction(
           scene,
-          statement,
+          line,
           errors,
           corpusContext,
           localEvidence,
           localStatement,
           obtainableInPhase,
           guaranteedBefore,
-        );
-      }
-      for (const result of phase.results) {
-        checkReveals(
-          `result:${phase.id}:${result.id}`,
-          result.line,
-          result.reveals,
         );
       }
     }
@@ -514,7 +477,6 @@ function validateInterrogationScene(
       phase.line,
       errors,
     );
-    if (phase.kind !== "inquiry") continue;
     for (const question of phase.questions) {
       checkInterrogationLockedReachability(
         `question:${question.id}`,
@@ -529,77 +491,42 @@ function validateInterrogationScene(
   }
 }
 
-function validateTestimonyPhaseResults(
-  scene: ASTInterrogationScene,
-  phase: ASTTestimonyPhase,
-  errors: CompileError[],
-): void {
-  const resultIds = new Set(phase.results.map((result) => result.id));
-  for (const statement of phase.statements) {
-    if (statement.contradiction && statement.onCorrect === null) {
-      errors.push({
-        code: "interrogationContradictionMissingCorrectResult",
-        message: `Testimony statement "${statement.id}" has a Contradiction but no On Correct result.`,
-        sourceFile: scene.sourceFile,
-        line: statement.line,
-      });
-    }
-    for (const [field, resultId] of [
-      ["On Correct", statement.onCorrect],
-      ["On Wrong", statement.onWrong],
-    ] as const) {
-      if (resultId !== null && !resultIds.has(resultId)) {
-        errors.push({
-          code: "interrogationResultUnresolved",
-          message: `Testimony statement "${statement.id}" ${field} references missing result "${resultId}" in phase "${phase.id}".`,
-          sourceFile: scene.sourceFile,
-          line: statement.line,
-        });
-      }
-    }
-  }
-}
-
 function validateContradiction(
   scene: ASTInterrogationScene,
-  statement: ASTTestimonyStatement,
+  line: ASTTestimonyLine,
   errors: CompileError[],
   corpusContext: CorpusContext,
   localEvidence: Set<string>,
   localStatement: Set<string>,
-  obtainableBeforePhase: Set<string>,
+  obtainableInPhase: Set<string>,
   guaranteedBefore: Set<string>,
 ): void {
-  if (statement.contradiction === null) return;
-  const target = statement.contradiction;
+  if (line.contradiction === null) return;
+  const target = line.contradiction;
   if (target.kind === "evidence") {
     if (!knownEvidence(target.id, scene, corpusContext)) {
       errors.push({
         code: "interrogationContradictionUnresolved",
         message: `Contradiction target evidence:${target.id} not declared in any loaded Evidence Manifest.`,
         sourceFile: scene.sourceFile,
-        line: statement.line,
+        line: line.line,
       });
     } else if (
       localEvidence.has(target.id) &&
-      !obtainableBeforePhase.has(`evidence:${target.id}`)
+      !obtainableInPhase.has(`evidence:${target.id}`)
     ) {
       errors.push({
         code: "interrogationContradictionUnresolved",
-        message: `Contradiction target evidence:${target.id} is declared locally but is not obtainable before this testimony phase.`,
+        message: `Contradiction target evidence:${target.id} is declared locally but is not obtainable when this line can be challenged.`,
         sourceFile: scene.sourceFile,
-        line: statement.line,
+        line: line.line,
       });
     } else if (
       !localEvidence.has(target.id) &&
       !guaranteedBefore.has(`evidence:${target.id}`)
     ) {
       errors.push(
-        crossSceneInventoryError(
-          scene,
-          statement.line,
-          `evidence:${target.id}`,
-        ),
+        crossSceneInventoryError(scene, line.line, `evidence:${target.id}`),
       );
     }
     return;
@@ -609,24 +536,24 @@ function validateContradiction(
       code: "interrogationContradictionUnresolved",
       message: `Contradiction target statement:${target.id} not declared in any loaded Statement Manifest.`,
       sourceFile: scene.sourceFile,
-      line: statement.line,
+      line: line.line,
     });
   } else if (
     localStatement.has(target.id) &&
-    !obtainableBeforePhase.has(`statement:${target.id}`)
+    !obtainableInPhase.has(`statement:${target.id}`)
   ) {
     errors.push({
       code: "interrogationContradictionUnresolved",
-      message: `Contradiction target statement:${target.id} is declared locally but is not obtainable before this testimony phase.`,
+      message: `Contradiction target statement:${target.id} is declared locally but is not obtainable when this line can be challenged.`,
       sourceFile: scene.sourceFile,
-      line: statement.line,
+      line: line.line,
     });
   } else if (
     !localStatement.has(target.id) &&
     !guaranteedBefore.has(`statement:${target.id}`)
   ) {
     errors.push(
-      crossSceneInventoryError(scene, statement.line, `statement:${target.id}`),
+      crossSceneInventoryError(scene, line.line, `statement:${target.id}`),
     );
   }
 }
@@ -1011,7 +938,7 @@ function analyzeInterrogationInventory(
   //      previously-locked required phase unlocked.
   //   3. A single-pass required-then-optional ordering would evaluate locked
   //      required phases before their optional-phase unlockers run, producing
-  //      false-positive interrogationNoValidCompletionPath errors.
+  //      false-positive interrogationUnguaranteedContradiction errors.
   //
   // The loop below repeatedly attempts to process reachable phases until no
   // new progress is made. Each iteration processes required phases first
@@ -1083,21 +1010,11 @@ function analyzeInterrogationInventory(
           revealedPhases,
         });
         addInterrogationRevealsToState(clone, phase.reveals);
-        if (phase.kind === "inquiry") {
-          const complete = collectInquiryInventory(phase, {
-            mode: "guaranteed",
-            ...clone,
-          });
-          phaseCompletable.set(phase.id, complete);
-        } else {
-          const hasValidCorrectPath = collectTestimonyResultInventory(phase, {
-            mode: "guaranteed",
-            inventory: clone.inventory,
-            revealedQuestions: clone.revealedQuestions,
-            revealedPhases: clone.revealedPhases,
-          });
-          phaseCompletable.set(phase.id, hasValidCorrectPath);
-        }
+        const complete = collectInquiryInventory(phase, {
+          mode: "guaranteed",
+          ...clone,
+        });
+        phaseCompletable.set(phase.id, complete);
         continue;
       }
 
@@ -1107,27 +1024,16 @@ function analyzeInterrogationInventory(
       );
       beforePhase.set(phase.id, new Set(inventory));
 
-      if (phase.kind === "inquiry") {
-        const complete = collectInquiryInventory(phase, {
-          mode: options.mode,
-          inventory,
-          answeredQuestions,
-          completedPhases,
-          revealedQuestions,
-          revealedPhases,
-        });
-        phaseCompletable.set(phase.id, complete);
-        if (complete) completedPhases.add(phase.id);
-      } else {
-        const hasValidCorrectPath = collectTestimonyResultInventory(phase, {
-          mode: options.mode,
-          inventory,
-          revealedQuestions,
-          revealedPhases,
-        });
-        phaseCompletable.set(phase.id, hasValidCorrectPath);
-        if (hasValidCorrectPath) completedPhases.add(phase.id);
-      }
+      const complete = collectInquiryInventory(phase, {
+        mode: options.mode,
+        inventory,
+        answeredQuestions,
+        completedPhases,
+        revealedQuestions,
+        revealedPhases,
+      });
+      phaseCompletable.set(phase.id, complete);
+      if (complete) completedPhases.add(phase.id);
     }
 
     // In guaranteed mode, detect effectively-forced optional phases: those
@@ -1162,20 +1068,10 @@ function analyzeInterrogationInventory(
         // Check if this optional phase's reveals would unlock any locked required phase.
         const clone = cloneInterrogationInventoryState(state);
         addInterrogationRevealsToState(clone, phase.reveals);
-        let completable: boolean;
-        if (phase.kind === "inquiry") {
-          completable = collectInquiryInventory(phase, {
-            mode: "guaranteed",
-            ...clone,
-          });
-        } else {
-          completable = collectTestimonyResultInventory(phase, {
-            mode: "guaranteed",
-            inventory: clone.inventory,
-            revealedQuestions: clone.revealedQuestions,
-            revealedPhases: clone.revealedPhases,
-          });
-        }
+        const completable = collectInquiryInventory(phase, {
+          mode: "guaranteed",
+          ...clone,
+        });
         // Mark the phase as completed in the clone so that phase_completed
         // predicates in downstream unlock checks evaluate correctly.
         if (completable) clone.completedPhases.add(phase.id);
@@ -1244,20 +1140,10 @@ function analyzeInterrogationInventory(
         // Evaluate the phase on a clone to see what it produces
         const clone = cloneInterrogationInventoryState(currentState);
         addInterrogationRevealsToState(clone, phase.reveals);
-        let cloneCompletable: boolean;
-        if (phase.kind === "inquiry") {
-          cloneCompletable = collectInquiryInventory(phase, {
-            mode: "guaranteed",
-            ...clone,
-          });
-        } else {
-          cloneCompletable = collectTestimonyResultInventory(phase, {
-            mode: "guaranteed",
-            inventory: clone.inventory,
-            revealedQuestions: clone.revealedQuestions,
-            revealedPhases: clone.revealedPhases,
-          });
-        }
+        const cloneCompletable = collectInquiryInventory(phase, {
+          mode: "guaranteed",
+          ...clone,
+        });
         // Mark the phase as completed on the clone so that
         // phase_completed predicates in the outro expression are
         // detected by cloneProducesNeededOutroAtom.
@@ -1273,27 +1159,16 @@ function analyzeInterrogationInventory(
             phase.reveals,
           );
           beforePhase.set(phase.id, new Set(inventory));
-          if (phase.kind === "inquiry") {
-            const complete = collectInquiryInventory(phase, {
-              mode: "guaranteed",
-              inventory,
-              answeredQuestions,
-              completedPhases,
-              revealedQuestions,
-              revealedPhases,
-            });
-            phaseCompletable.set(phase.id, complete);
-            if (complete) completedPhases.add(phase.id);
-          } else {
-            const hasValidCorrectPath = collectTestimonyResultInventory(phase, {
-              mode: "guaranteed",
-              inventory,
-              revealedQuestions,
-              revealedPhases,
-            });
-            phaseCompletable.set(phase.id, hasValidCorrectPath);
-            if (hasValidCorrectPath) completedPhases.add(phase.id);
-          }
+          const complete = collectInquiryInventory(phase, {
+            mode: "guaranteed",
+            inventory,
+            answeredQuestions,
+            completedPhases,
+            revealedQuestions,
+            revealedPhases,
+          });
+          phaseCompletable.set(phase.id, complete);
+          if (complete) completedPhases.add(phase.id);
           changed = true;
           break; // Restart while-loop with updated state
         }
@@ -1400,8 +1275,16 @@ function collectInquiryInventory(
       )
         continue;
 
+      // A question is "answered/broken" only when the player can present the
+      // correct evidence on one of its Contradiction lines (see design §5).
+      // breakInquiryQuestion returns whether that is possible given the current
+      // inventory and, if so, the reveals that firing On Correct guarantees.
+      const outcome = breakInquiryQuestion(question, state);
+      if (!outcome.broken) continue;
+
       state.answeredQuestions.add(question.id);
       addInterrogationRevealsToState(state, question.reveals);
+      addInterrogationRevealsToState(state, outcome.reveals);
       if (
         explicitComplete &&
         interrogationUnlockSatisfiable(explicitComplete, state)
@@ -1470,9 +1353,16 @@ function collectExplicitInquiryCompletionStates(
     )
       continue;
 
+    const outcome = breakInquiryQuestion(question, {
+      ...state,
+      mode: "guaranteed",
+    });
+    if (!outcome.broken) continue;
+
     const next = cloneInterrogationInventoryState(state);
     next.answeredQuestions.add(question.id);
     addInterrogationRevealsToState(next, question.reveals);
+    addInterrogationRevealsToState(next, outcome.reveals);
     completions.push(
       ...collectExplicitInquiryCompletionStates(phase, next, complete),
     );
@@ -1508,81 +1398,60 @@ function commonSet<T>(sets: Set<T>[]): Set<T> {
 
 function guaranteedInquiryQuestionIds(phase: ASTInquiryPhase): Set<string> {
   if (phase.complete === "auto") {
-    // For auto-complete, the runtime waits for ALL unlocked questions to be
-    // answered before auto-completing (see Rust phase_complete: it checks that
-    // no unlocked question remains unanswered, regardless of required flag).
-    // So every question that can become reachable is guaranteed to be answered.
-    // The reachability check inside collectInquiryInventory's fixed-point loop
-    // handles which questions are actually reachable; we include all IDs here
-    // so the loop doesn't filter out optional follow-ups.
-    return new Set(phase.questions.map((question) => question.id));
+    // For auto-complete, the runtime waits for all *Required* questions to be
+    // broken (design §5: "auto when all Required questions are broken"). An
+    // optional question may be skipped, so it is NOT guaranteed to be answered
+    // and its On Correct reveals must NOT propagate into the guaranteed
+    // inventory — this is the question-level form of the Beat-10 trap. We
+    // therefore restrict the guaranteed-answered set to required questions;
+    // required follow-ups that start locked are picked up once an earlier
+    // guaranteed breakthrough reveals them (reachability is re-checked inside
+    // collectInquiryInventory's fixed-point loop).
+    return new Set(
+      phase.questions
+        .filter((question) => question.required)
+        .map((question) => question.id),
+    );
   }
   return new Set<string>();
 }
 
-function collectTestimonyResultInventory(
-  phase: ASTTestimonyPhase,
-  state: Pick<
-    InterrogationInventoryState,
-    "inventory" | "revealedQuestions" | "revealedPhases"
-  > & { mode: InterrogationInventoryMode },
-): boolean {
-  // Press reveals: the player *can* press any statement, but pressing is
-  // optional — a player may complete the phase by presenting evidence without
-  // ever pressing.  In obtainable mode we include press reveals (the player
-  // has the option to collect them).  In guaranteed mode we skip them because
-  // they are not guaranteed to be collected.
-  const baseInventory = new Set(state.inventory);
-  const availableForContradictions = new Set(state.inventory);
-  if (state.mode === "obtainable") {
-    for (const statement of phase.statements) {
-      addInterrogationRevealsToState(state, statement.reveals);
-      addInterrogationInventoryReveals(
-        availableForContradictions,
-        statement.reveals,
-      );
-    }
-  } else {
-    for (const statement of phase.statements) {
-      addInterrogationInventoryReveals(
-        availableForContradictions,
-        statement.reveals,
-      );
-    }
-  }
-
+/**
+ * Determines whether an inquiry question can be "broken" (its testimony
+ * cross-examined to a breakthrough) given the current inventory, and, if so,
+ * which reveals firing its winning On Correct guarantees.
+ *
+ * A Contradiction line is a valid breakthrough path only when its target is
+ * already in `state.inventory` — in obtainable mode that inventory includes
+ * everything collectible so far, and in guaranteed mode only items guaranteed
+ * before this question (from a prior guaranteed scene or an earlier guaranteed
+ * breakthrough in this scene). This mirrors the old testimony model
+ * (collectTestimonyResultInventory + commonInterrogationReveals): a question
+ * may have several breakable lines, so obtainable mode unions their On Correct
+ * reveals (the player can pick any), while guaranteed mode keeps only the
+ * reveals common to every satisfiable line (the player picks one and only the
+ * intersection is guaranteed downstream).
+ */
+function breakInquiryQuestion(
+  question: ASTInquiryQuestion,
+  state: Pick<InterrogationInventoryState, "inventory"> & {
+    mode: InterrogationInventoryMode;
+  },
+): { broken: boolean; reveals: InterrogationRevealTarget[] } {
   const validPathReveals: InterrogationRevealTarget[][] = [];
-  for (const statement of phase.statements) {
-    if (statement.contradiction === null || statement.onCorrect === null)
-      continue;
-    if (!availableForContradictions.has(inventoryAtom(statement.contradiction)))
-      continue;
-    const result = phase.results.find(
-      (candidate) => candidate.id === statement.onCorrect,
-    );
-    if (!result) continue;
-    const pathReveals = [...result.reveals];
-    if (
-      state.mode === "guaranteed" &&
-      !baseInventory.has(inventoryAtom(statement.contradiction))
-    ) {
-      pathReveals.push(statement.contradiction);
-    }
-    validPathReveals.push(pathReveals);
+  for (const line of question.testimony.lines) {
+    if (line.contradiction === null || line.onCorrect === null) continue;
+    if (!state.inventory.has(inventoryAtom(line.contradiction))) continue;
+    validPathReveals.push([...line.reveals]);
   }
-
-  if (validPathReveals.length === 0) return false;
+  if (validPathReveals.length === 0) return { broken: false, reveals: [] };
   if (state.mode === "obtainable") {
-    for (const reveals of validPathReveals) {
-      addInterrogationRevealsToState(state, reveals);
-    }
-    return true;
+    return { broken: true, reveals: validPathReveals.flat() };
   }
-
-  for (const reveal of commonInterrogationReveals(validPathReveals)) {
-    addInterrogationRevealsToState(state, [reveal]);
-  }
-  return true;
+  return {
+    broken: true,
+    reveals: commonInterrogationReveals(validPathReveals),
+  };
 }
 
 function interrogationBlockReachable(

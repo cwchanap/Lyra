@@ -23,6 +23,7 @@ import type {
   ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
+  ASTTestimony,
   AssetRef,
   CompileError,
   DialogueItem,
@@ -451,34 +452,33 @@ function stripInterrogationScene(
 }
 
 function stripPhase(phase: ASTInterrogationPhase): ASTInterrogationPhase {
-  const common = {
+  // Unified interrogation model: a phase is always an inquiry whose questions
+  // each own a #### Testimony with cross-examinable lines. (Task 5 retargets
+  // the *enabled* asset-injection path; this disabled-mode strip only needs to
+  // null out asset cues and portraits without crashing on the new shape.)
+  return {
     ...phase,
     assetCue: stripVisualCue(phase.assetCue),
     entryDialogue: stripDialogue(phase.entryDialogue),
-  };
-  if (phase.kind === "inquiry") {
-    return {
-      ...common,
-      kind: "inquiry",
-      questions: phase.questions.map((q) => ({
-        ...q,
-        answerDialogue: stripDialogue(q.answerDialogue),
-        onReask: stripNullableDialogue(q.onReask),
-      })),
-    } as ASTInterrogationPhase;
-  }
-  return {
-    ...common,
-    kind: "testimony",
-    statements: phase.statements.map((s) => ({
-      ...s,
-      onPress: stripNullableDialogue(s.onPress),
-      onPresent: stripNullableDialogue(s.onPresent),
-      onWrongPresent: stripNullableDialogue(s.onWrongPresent),
+    questions: phase.questions.map((q) => ({
+      ...q,
+      testimony: stripTestimony(q.testimony),
     })),
-    results: phase.results.map((r) => ({
-      ...r,
-      dialogue: stripDialogue(r.dialogue),
+  };
+}
+
+function stripTestimony(testimony: ASTTestimony): ASTTestimony {
+  return {
+    ...testimony,
+    onLoop: stripDialogue(testimony.onLoop),
+    defaultChallenge: stripNullableDialogue(testimony.defaultChallenge),
+    defaultWrong: stripNullableDialogue(testimony.defaultWrong),
+    lines: testimony.lines.map((line) => ({
+      ...line,
+      content: stripDialogue(line.content),
+      challenge: stripNullableDialogue(line.challenge),
+      onCorrect: stripNullableDialogue(line.onCorrect),
+      onWrongEvidence: stripNullableDialogue(line.onWrongEvidence),
     })),
   };
 }
