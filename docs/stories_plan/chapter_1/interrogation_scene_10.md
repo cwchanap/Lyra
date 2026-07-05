@@ -166,7 +166,6 @@
 ### Question: 請求核准片段 {#q_request_clip}
 - **Status:** unlocked
 - **Required:** true
-- **Reveals:** [evidence:approved_clip]
 
 #### Testimony
 
@@ -181,6 +180,7 @@
 - **Contradiction:** evidence:doorlock_summary_timetable
 - **Challenge:** **相馬律**：現在，我們正式請求核准那段後場門鎖的限定調出。要調的，正是這份摘要背後、被排成主時間線的那筆原始紀錄。
 - **On Correct:** **神谷澪**：……剛才那三條矛盾，已經夠我懷疑這行主時間錨了。範圍就那六欄，我核准這段限定調出，超出範圍的不給。
+  - **Reveals:** [evidence:approved_clip]
 - **On Wrong Evidence:** **神谷澪**：這動搖不了那行時間。拿那份把門鎖事件排成主時間線的摘要來，我才知道你們要翻的是哪一筆。
 
 ## Phase: 門鎖時間不是事件時間 {#p4}
