@@ -1016,7 +1016,7 @@ function enteredChapterOneCoffeeBackflushBeat(
       previous,
       next,
       (kind, text) =>
-        kind === "line" && text.includes("那台機器 backflush 的時候"),
+        kind === "line" && text.includes("那台洗杯機排氣的時候"),
     )
   );
 }

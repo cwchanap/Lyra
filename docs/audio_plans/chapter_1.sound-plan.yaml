@@ -101,7 +101,19 @@ entries:
     reuseRationale: >-
       Catalog is empty. Serves the post-case wind-down and the unexplained
       blue-umbrella hook; no other chapter-1 beat carries this emotional shape.
+      Also reused in the prologue (scene_p0/p1/p2) as intentional bookending —
+      the same suspended-question theme frames the chapter opening and close.
     evidence:
+      - {
+          file: docs/stories_plan/chapter_1/scene_p0.md,
+          line: 5,
+          note: 序章吉祥寺月台雨景，主題首現
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_p2.md,
+          line: 5,
+          note: 序章雨鐘咖啡館普通日，主題延續
+        }
       - {
           file: docs/stories_plan/chapter_1/scene_11.md,
           line: 3,
@@ -536,7 +548,7 @@ entries:
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_7.md,
           line: 210,
-          note: 那台機器 backflush 的時候也常那樣
+          note: 那台洗杯機排氣的時候也常那樣
         }
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_7.md,
