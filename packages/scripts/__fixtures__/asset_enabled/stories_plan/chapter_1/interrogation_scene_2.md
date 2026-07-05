@@ -18,6 +18,7 @@
 - **Background Prompt:** Harsh temporary police interview room at night, white fluorescent light, cafe floor plan and KAGAMI timeline on table.
 - **BGM:** rain_mystery_low
 - **BGS:** indoor_rain_window
+- **Reveals:** [evidence:coffee_machine_cleaning_log]
 
 [場景：警視廳臨時詢問室，深夜。白色日光燈刺眼，桌上放著咖啡館平面圖與 KAGAMI 門鎖時間線。若槻蓮坐在對面，手指緊扣紙杯。早坂茜站在相馬律身旁，神谷澪隔著玻璃觀察。]
 
@@ -35,103 +36,27 @@
 ### Question: 進倉庫的理由 {#entered_storage}
 
 - **Status:** unlocked
-- **Reveals:** [statement:wakatsuki_entered_for_beans, evidence:coffee_machine_cleaning_log]
+- **Reveals:** [statement:wakatsuki_entered_for_beans]
 
-**相馬律**：你為什麼進倉庫？
+#### Testimony
 
-**若槻蓮**：我只是去拿咖啡豆。
+- **On Loop:** **相馬律**[thinking]：還有哪裡對不上，再說一次。
+- **Default Challenge:** **早坂茜**[concerned]：等等，這句話讓我想想。
+- **Default Wrong:** **若槻蓮**：這句話沒問題吧？
 
-**神谷澪**：案發時間去拿咖啡豆，真巧。
+##### Line: 拿咖啡豆的說法 {#l_beans}
 
-**若槻蓮**：不是案發時間。我進去時，增田先生還活著。
+**若槻蓮**：我只是去拿咖啡豆，出來後立刻按了咖啡機清潔鍵。
 
-**早坂茜**：拿完咖啡豆後呢？
+##### Line: 清潔紀錄的說法 {#l_cleaning}
 
-**若槻蓮**：我回到吧台，立刻按了咖啡機清潔鍵。
+**若槻蓮**：我離開倉庫後，立刻回到吧台按下咖啡機清潔鍵。
 
-[相馬律翻開咖啡機本地操作紀錄。]
-
-**相馬律**：清潔啟動時間，21:13:29。
-
-**若槻蓮**：對。我按完還被店長提醒，吧台也要擦乾淨。
-
-**相馬律**：這份紀錄，先放進證物袋。
-
-#### On Reask
-
-**若槻蓮**：我進倉庫只是拿咖啡豆。出來後，我馬上按了清潔鍵。
-
-## Phase: 若槻蓮的行動證詞 {#wakatsuki_testimony}
-
-- **Kind:** testimony
-- **Required:** true
-- **Status:** locked
-- **Unlock:** statement:wakatsuki_entered_for_beans acquired
-- **Background Prompt:** Night evidence review room with projection screen showing KAGAMI timeline beside coffee machine cleaning log, red recorder light.
-- **BGM:** rain_mystery_low
-- **BGS:** indoor_rain_window
-
-[場景：警視廳臨時證據審查室，深夜。投影幕顯示 KAGAMI 官方時間線，旁邊並列咖啡機清潔紀錄。長桌上有證物袋、平板電腦與紅色錄音燈。神谷澪站在投影幕前，若槻蓮低頭坐著。]
-
-**神谷澪**：被告人若槻蓮的說法，與 KAGAMI 時間線正面衝突。
-
-**相馬律**[thinking]：衝突不代表他說謊。
-
-**神谷澪**：那就請你指出，哪一份紀錄先說不通。
-
-### Subject: 若槻蓮 {#wakatsuki_ren}
-
-- **Role:** 第一嫌疑人
-- **Bio:** 雨鐘咖啡館兼職店員。承認進過倉庫，但堅稱離開時增田圭還活著。
-
-### Testimony
-
-#### Statement: 清潔鍵 {#cleaning_button}
-
-- **Content:** 我離開倉庫後，立刻回到吧台按下咖啡機清潔鍵。
 - **Contradiction:** evidence:coffee_machine_cleaning_log
-- **On Correct:** kagami_timeline_gap
-- **On Wrong:** wrong_record_focus
-
-##### On Press
-
-**相馬律**：你說「立刻」，中間沒有做別的事？
-
-**若槻蓮**：沒有。我怕被店長罵，所以先按清潔鍵。
-
-**早坂茜**[concerned]：你當時看過時間嗎？
-
-**若槻蓮**：沒有。但機器自己會記錄。
-
-##### On Present
-
-**相馬律**：這份咖啡機清潔紀錄，正好記下了按鍵時間。
-
-##### On Wrong Present
-
-**神谷澪**：那份資料無法證明若槻蓮何時離開倉庫。
-
-**相馬律**：方向不對。要找能和「立刻按鍵」對上的紀錄。
-
-### Result: KAGAMI 時間線不一致 {#kagami_timeline_gap}
-
-- **Reveals:** [statement:kagami_timeline_inconsistent]
-
-**相馬律**：咖啡機清潔啟動時間，是 21:13:29。
-
-**相馬律**：但 KAGAMI 說若槻蓮 21:14:52 才離開倉庫。
-
-**早坂茜**：他不可能人在倉庫裡，同時按下吧台的清潔鍵。
-
-**神谷澪**：也可能是咖啡機時間沒有校準。
-
-**相馬律**：可能。但至少，KAGAMI 時間線已經不是唯一解釋。
-
-### Result: 紀錄方向錯誤 {#wrong_record_focus}
-
-**早坂茜**：那份證據不能連到清潔鍵。
-
-**相馬律**：要用能直接標出按鍵時間的紀錄。
+- **Challenge:** **相馬律**[thinking]：這份紀錄顯示你進去前已經清潔過了。
+- **On Correct:** **若槻蓮**：好吧，我看到的其實是清潔完成後的畫面。
+  - **Reveals:** [statement:kagami_timeline_inconsistent]
+- **On Wrong Evidence:** **神谷澪**[stern]：那份資料無法證明若槻蓮何時離開倉庫。
 
 ## Evidence Manifest
 

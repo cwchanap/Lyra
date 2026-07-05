@@ -222,7 +222,11 @@ function enrichInterrogationPhase(
   phase: ASTInterrogationPhase,
   context: EnrichContext,
 ): ASTInterrogationPhase {
-  const common = {
+  // Unified interrogation model: a phase is always an inquiry whose
+  // questions each own a #### Testimony with cross-examinable lines (see
+  // emitter.ts's emitTestimony/emitTestimonyLine for the matching dialogue
+  // enumeration on the emit side).
+  return {
     ...phase,
     assetCue: enrichVisualCue(
       phase.assetCue,
@@ -232,34 +236,31 @@ function enrichInterrogationPhase(
       context,
     ),
     entryDialogue: enrichDialogue(phase.entryDialogue, context),
-  };
-  if (phase.kind === "inquiry") {
-    // `common` is built from `...phase` (a union); spreading it before
-    // re-setting the discriminator leaves TS unable to see the result is a
-    // valid inquiry variant. The runtime structure is correct (spread +
-    // override), so assert the narrowed variant.
-    return {
-      ...common,
-      kind: "inquiry",
-      questions: phase.questions.map((question) => ({
-        ...question,
-        answerDialogue: enrichDialogue(question.answerDialogue, context),
-        onReask: enrichNullableDialogue(question.onReask, context),
-      })),
-    } as ASTInterrogationPhase;
-  }
-  return {
-    ...common,
-    kind: "testimony",
-    statements: phase.statements.map((statement) => ({
-      ...statement,
-      onPress: enrichNullableDialogue(statement.onPress, context),
-      onPresent: enrichNullableDialogue(statement.onPresent, context),
-      onWrongPresent: enrichNullableDialogue(statement.onWrongPresent, context),
+    questions: phase.questions.map((question) => ({
+      ...question,
+      testimony: enrichTestimony(question.testimony, context),
     })),
-    results: phase.results.map((result) => ({
-      ...result,
-      dialogue: enrichDialogue(result.dialogue, context),
+  };
+}
+
+function enrichTestimony(
+  testimony: ASTTestimony,
+  context: EnrichContext,
+): ASTTestimony {
+  return {
+    ...testimony,
+    onLoop: enrichDialogue(testimony.onLoop, context),
+    defaultChallenge: enrichNullableDialogue(
+      testimony.defaultChallenge,
+      context,
+    ),
+    defaultWrong: enrichNullableDialogue(testimony.defaultWrong, context),
+    lines: testimony.lines.map((line) => ({
+      ...line,
+      content: enrichDialogue(line.content, context),
+      challenge: enrichNullableDialogue(line.challenge, context),
+      onCorrect: enrichNullableDialogue(line.onCorrect, context),
+      onWrongEvidence: enrichNullableDialogue(line.onWrongEvidence, context),
     })),
   };
 }

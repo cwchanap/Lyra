@@ -98,13 +98,25 @@ describe("compile (end-to-end against valid fixture)", () => {
       expect(interrogation.type).toBe("interrogation");
       expect(
         interrogation.phases.map((phase: { kind: string }) => phase.kind),
-      ).toEqual(["inquiry", "testimony"]);
-      expect(interrogation.phases[0].questions[0].id).toBe("entered_storage");
-      expect(interrogation.phases[1].statements[0].contradiction).toEqual({
+      ).toEqual(["inquiry"]);
+      expect(
+        interrogation.phases[0].questions.map(
+          (question: { id: string }) => question.id,
+        ),
+      ).toEqual(["entered_storage", "beans_follow_up"]);
+      const enteredStorage = interrogation.phases[0].questions[0];
+      expect(
+        enteredStorage.testimony.lines.map((line: { id: string }) => line.id),
+      ).toEqual(["l_beans", "l_cleaning"]);
+      const cleaningLine = enteredStorage.testimony.lines[1];
+      expect(cleaningLine.contradiction).toEqual({
         kind: "evidence",
         id: "coffee_machine_cleaning_log",
       });
-      expect(interrogation.phases[1].results[0].reveals).toContainEqual({
+      expect(cleaningLine.challenge.length).toBeGreaterThan(0);
+      expect(cleaningLine.onCorrect.length).toBeGreaterThan(0);
+      expect(cleaningLine.onWrongEvidence.length).toBeGreaterThan(0);
+      expect(cleaningLine.reveals).toContainEqual({
         kind: "statement",
         id: "kagami_timeline_inconsistent",
       });
