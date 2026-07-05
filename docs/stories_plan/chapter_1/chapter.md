@@ -3,16 +3,19 @@
 **Summary:** 偵探相馬律與律師早坂茜接下委託，在 KAGAMI 摘要與雨鐘咖啡館現場之間，重新檢視三宅蒼太被指為兇手的命案。
 
 ## Scenes
-1. scene_0.md
-2. investigation_scene_1.md
-3. scene_2.md
-4. investigation_scene_3.md
-5. interrogation_scene_4.md
-6. scene_5.md
-7. scene_6.md
-8. investigation_scene_7.md
-9. investigation_scene_8.md
-10. scene_8_5.md
-11. investigation_scene_9.md
-12. interrogation_scene_10.md
-13. scene_11.md
+1. scene_p0.md
+2. scene_p1.md
+3. scene_p2.md
+4. scene_0.md
+5. investigation_scene_1.md
+6. scene_2.md
+7. investigation_scene_3.md
+8. interrogation_scene_4.md
+9. scene_5.md
+10. scene_6.md
+11. investigation_scene_7.md
+12. investigation_scene_8.md
+13. scene_8_5.md
+14. investigation_scene_9.md
+15. interrogation_scene_10.md
+16. scene_11.md
