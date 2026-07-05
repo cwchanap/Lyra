@@ -160,120 +160,51 @@ fn validate_interrogation_scene_references(
     let mut questions: HashSet<&str> = HashSet::new();
 
     for phase in &scene.phases {
-        match phase {
-            InterrogationPhaseJson::Inquiry {
-                id, questions: qs, ..
-            } => {
-                phases.insert(id.as_str());
-                for question in qs {
-                    questions.insert(question.id.as_str());
-                }
-            }
-            InterrogationPhaseJson::Testimony { id, .. } => {
-                phases.insert(id.as_str());
-            }
+        let InterrogationPhaseJson::Inquiry {
+            id, questions: qs, ..
+        } = phase;
+        phases.insert(id.as_str());
+        for question in qs {
+            questions.insert(question.id.as_str());
         }
     }
 
     for phase in &scene.phases {
-        match phase {
-            InterrogationPhaseJson::Inquiry {
-                id,
-                unlock,
-                reveals,
-                complete,
-                questions: qs,
-                ..
-            } => {
-                validate_interrogation_reveals(
-                    reveals,
-                    &evidence,
-                    &statements,
-                    &questions,
-                    &phases,
-                    file_rel,
-                )?;
-                validate_interrogation_unlock(unlock.as_ref(), &questions, &phases, file_rel)?;
-                if let InterrogationOutroUnlock::Expr(expr) = complete {
-                    validate_interrogation_unlock(Some(expr), &questions, &phases, file_rel)?;
-                }
-                for question in qs {
-                    if let Some(parent_id) = &question.parent_question_id {
-                        if !questions.contains(parent_id.as_str()) {
-                            return Err(GameError::scene_validation_failed(format!(
-                                "{file_rel}: unresolved interrogation question parent:{parent_id}",
-                            )));
-                        }
-                    }
-                    validate_interrogation_reveals(
-                        &question.reveals,
-                        &evidence,
-                        &statements,
-                        &questions,
-                        &phases,
-                        file_rel,
-                    )?;
-                    validate_interrogation_unlock(
-                        question.unlock.as_ref(),
-                        &questions,
-                        &phases,
-                        file_rel,
-                    )?;
-                }
-                if !phases.contains(id.as_str()) {
-                    return Err(GameError::scene_validation_failed(format!(
-                        "{file_rel}: unresolved interrogation phase:{id}",
-                    )));
-                }
-            }
-            InterrogationPhaseJson::Testimony {
-                unlock,
-                reveals,
-                statements: testimony_statements,
-                results,
-                ..
-            } => {
-                let result_ids: HashSet<&str> = results.iter().map(|r| r.id.as_str()).collect();
-                validate_interrogation_reveals(
-                    reveals,
-                    &evidence,
-                    &statements,
-                    &questions,
-                    &phases,
-                    file_rel,
-                )?;
-                validate_interrogation_unlock(unlock.as_ref(), &questions, &phases, file_rel)?;
-                for result in results {
-                    validate_interrogation_reveals(
-                        &result.reveals,
-                        &evidence,
-                        &statements,
-                        &questions,
-                        &phases,
-                        file_rel,
-                    )?;
-                }
-                for statement in testimony_statements {
-                    validate_testimony_result_reference(
-                        statement.on_correct.as_deref(),
-                        &result_ids,
-                        file_rel,
-                    )?;
-                    validate_testimony_result_reference(
-                        statement.on_wrong.as_deref(),
-                        &result_ids,
-                        file_rel,
-                    )?;
-                    validate_interrogation_reveals(
-                        &statement.reveals,
-                        &evidence,
-                        &statements,
-                        &questions,
-                        &phases,
-                        file_rel,
-                    )?;
-                }
-            }
+        let InterrogationPhaseJson::Inquiry {
+            id,
+            unlock,
+            reveals,
+            complete,
+            questions: qs,
+            ..
+        } = phase;
+        validate_interrogation_reveals(
+            reveals,
+            &evidence,
+            &statements,
+            &questions,
+            &phases,
+            file_rel,
+        )?;
+        validate_interrogation_unlock(unlock.as_ref(), &questions, &phases, file_rel)?;
+        if let InterrogationOutroUnlock::Expr(expr) = complete {
+            validate_interrogation_unlock(Some(expr), &questions, &phases, file_rel)?;
+        }
+        for question in qs {
+            validate_interrogation_reveals(
+                &question.reveals,
+                &evidence,
+                &statements,
+                &questions,
+                &phases,
+                file_rel,
+            )?;
+            validate_interrogation_unlock(question.unlock.as_ref(), &questions, &phases, file_rel)?;
+        }
+        if !phases.contains(id.as_str()) {
+            return Err(GameError::scene_validation_failed(format!(
+                "{file_rel}: unresolved interrogation phase:{id}",
+            )));
         }
     }
 
@@ -281,21 +212,6 @@ fn validate_interrogation_scene_references(
         validate_interrogation_unlock(Some(expr), &questions, &phases, file_rel)?;
     }
 
-    Ok(())
-}
-
-fn validate_testimony_result_reference(
-    result_id: Option<&str>,
-    result_ids: &HashSet<&str>,
-    file_rel: &str,
-) -> Result<(), GameError> {
-    if let Some(id) = result_id {
-        if !result_ids.contains(id) {
-            return Err(GameError::scene_validation_failed(format!(
-                "{file_rel}: unresolved interrogation result:{id}",
-            )));
-        }
-    }
     Ok(())
 }
 
