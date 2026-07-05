@@ -47,6 +47,11 @@
 
 [鏡頭移開——畫面切到相馬律的事務所，辦公桌。]
 
+[場景：相馬律的事務所，辦公桌。午後，安靜。]
+- **Background Prompt:** Soma's law-office desk under a single overhead lamp, an open case-summary document with clean unreadable text, quiet professional stillness, no people, no readable text, cinematic visual-novel background, neo-noir mood.
+- **BGM:** none
+- **BGS:** none
+
 [桌上躺著那份 KAGAMI 摘要的副本，攤開著，字跡乾淨。]
 
 **旁白**：故事看起來，已經完整了。
