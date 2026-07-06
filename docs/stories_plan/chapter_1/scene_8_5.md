@@ -2,7 +2,7 @@
 
 [場景：警署走廊，自動販賣機旁，深夜。販賣機的燈光是走廊唯一的光源，旁邊有一塊空白告示板，相馬從事務所帶來的資料夾放在長椅上，窗外雨聲未停。]
 - **Background Prompt:** Late-night Japanese police station corridor beside a vending machine, vending-machine glow the only light source, blank notice board on the wall, case folder on a bench, cold institutional air, faint rain on dark windows, no readable text.
-- **BGS:** bgs_police_station_late_night
+- **BGS:** bgs_shopping_street_rain_night
 
 [相馬站在販賣機前，手指停在兩個按鈕之間，沒有按下去。]
 

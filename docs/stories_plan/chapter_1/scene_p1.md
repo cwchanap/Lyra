@@ -25,6 +25,7 @@
 
 [場景：文具店店內。日光燈偏白，空氣裡混著紙張與碳粉的味道，影印機靠牆嗡嗡作響。櫃台前站著一位中年婦人——店主，和一個背著書包的學生，兩人之間隔著一張收據。]
 - **Background Prompt:** Interior of a small Tokyo stationery and copy shop, pale white fluorescent light, a wooden counter with a small receipt on it, an old register and a compact security monitor against the back wall, a copier humming, stacked paper reams and stationery shelves, faint rain audible through the glass door, no people, no readable text, cinematic visual-novel background, neo-noir mood.
+- **BGS:** bgs_stationery_copy_shop
 
 **店主**：我跟你說了多少次——
 
@@ -268,6 +269,7 @@
 
 [場景：文具店外的騎樓，雨還在下。相馬和早坂撐起傘，往事務所的方向走。]
 - **Background Prompt:** Rainy dusk exterior of a small Tokyo shopping-street awning outside a stationery shop, wet pavement reflecting warm storefront glow, steady awning-edge drip, distant umbrella-bearing silhouettes walking away, no readable text, cinematic visual-novel background, neo-noir mood.
+- **BGS:** bgs_shopping_street_rain_dusk
 
 **旁白**：雨打在傘面上，發出細碎的聲響。
 
