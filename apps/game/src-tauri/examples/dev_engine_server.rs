@@ -286,6 +286,7 @@ fn dispatch(state: &ServerState, command: &str, body: &[u8]) -> Result<String, G
             })
         }
         "withdraw_interrogation" => with_engine(state, |e| e.withdraw_interrogation()),
+        "complete_interrogation_phase" => with_engine(state, |e| e.complete_interrogation_phase()),
         other => Err(GameError::new(
             "unknownCommand",
             format!("unknown command: {other}"),

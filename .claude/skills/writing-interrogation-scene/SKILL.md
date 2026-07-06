@@ -44,6 +44,13 @@ Interrogation scenes reuse those manifest formats.
   "the same testimony, deeper" or "a completely different question" is purely
   a matter of which question id(s) you reveal — the structure is identical
   either way.
+- **Completing a phase is a player action.** A `Complete: auto` phase never
+  ends on its own: once every `Required` Question is broken, a **完成訊問
+  (complete)** button appears at the question menu and the player presses it to
+  conclude the phase (advancing to the next phase, or the scene outro). Optional
+  questions never block completion — the player may break the follow-ups they
+  want, or none, before finishing. A phase with an explicit `Complete:`
+  expression instead ends automatically the moment that expression is satisfied.
 
 Nothing is flagged in the UI: honest lines and lies render identically. Author
 `On Wrong Evidence` / `Default Wrong` so a wrong guess is a satisfying dead
@@ -181,8 +188,10 @@ are Traditional Chinese. IDs are English slugs anchored with `{#id}`.
 - **Required when assets are enabled:** `Background Prompt`
 - **Optional:** `Required` (`true`/`false`, defaults to `true`), `Status`
   (`locked`/`unlocked`, defaults to `unlocked`), `Unlock`, `Reveals`,
-  `Complete` (defaults to `auto`: satisfied once every `Required` Question in
-  the phase has been broken — see "Contradiction guarantee" below)
+  `Complete` (defaults to `auto`: the phase never ends on its own — the player
+  presses the **完成訊問** button, which becomes available once every `Required`
+  Question in the phase is broken; an explicit expression instead completes the
+  phase automatically when satisfied — see "Contradiction guarantee" below)
 - **Optional after first visual unit:** `BGM`, `BGS` (IDs from
   `static/assets/config/audio.yaml`, or `none`)
 - **Body:** exactly one `[場景：...]` tag, then optional entry dialogue, then
@@ -320,8 +329,8 @@ contradiction chain isn't guaranteed:
 follow-up question's only unlock/contradiction path is gated behind an
 `Optional` (`Required: false`) question's `On Correct → Reveals`, the compiler
 conservatively rejects it with `interrogationUnguaranteedContradiction` — it
-propagates guaranteed inventory only through `Required` questions when a
-phase auto-completes, so an optional question's reveals never count as
+propagates guaranteed inventory only through `Required` questions (only those
+are guaranteed to be broken), so an optional question's reveals never count as
 guaranteed even if, in practice, the player has no other way to finish the
 phase. **Fix: mark the gating (parent) question `Required: true`.** Once the
 parent question is required, its `On Correct` reveals participate in the

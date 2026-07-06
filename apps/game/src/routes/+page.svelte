@@ -15,6 +15,7 @@
     challengeInterrogationLine,
     presentInterrogationEvidence,
     withdrawInterrogation,
+    completeInterrogationPhase,
     listScenes,
     jumpToScene,
   } from "$lib/state/game-client.svelte";
@@ -275,6 +276,7 @@
         onChallenge={challengeInterrogationLine}
         onPresent={presentInterrogationEvidence}
         onWithdraw={withdrawInterrogation}
+        onComplete={completeInterrogationPhase}
         disabled={gameState.inFlight}
       />
     {:else if gameState.value.mode.type === "gameComplete"}

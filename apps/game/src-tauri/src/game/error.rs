@@ -119,6 +119,12 @@ impl GameError {
             format!("Action '{action}' requires an active cross-examination."),
         )
     }
+    pub fn interrogation_phase_not_completable() -> Self {
+        Self::new(
+            "interrogationPhaseNotCompletable",
+            "The current interrogation phase cannot be completed yet: it is not an auto phase, a cross-examination is in progress, or a required question is unbroken.".to_string(),
+        )
+    }
     pub fn unknown_testimony_statement(id: &str) -> Self {
         Self::new(
             "unknownTestimonyStatement",

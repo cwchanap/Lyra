@@ -121,6 +121,7 @@ export type InterrogationPhaseView = {
   subject: SubjectView;
   questions: InquiryQuestionView[];
   crossExam: CrossExamView | null;
+  canComplete: boolean;
 };
 export type SubjectView = {
   id: string;

@@ -320,31 +320,57 @@ impl InterrogationSceneState {
         if self.completed_phases.contains(id) {
             return true;
         }
+        let InterrogationPhaseJson::Inquiry { complete, .. } = phase;
+        match complete {
+            // `Auto` phases never complete on their own — the player ends the
+            // inquiry explicitly via `complete_current_phase` (gated on
+            // `current_phase_can_complete`). Only an explicit `Complete:`
+            // expression completes without a manual trigger.
+            InterrogationOutroUnlock::Auto(_) => false,
+            InterrogationOutroUnlock::Expr(expr) => unlock::evaluate_interrogation(expr, ctx),
+        }
+    }
+
+    /// Whether the current phase can be manually completed: it exists, uses
+    /// `Auto` completion, the player is at the question menu (`CrossExam::Idle`
+    /// — not mid-cross-examination), and every REQUIRED question in the phase
+    /// is broken. Optional questions never gate completion.
+    pub fn current_phase_can_complete(&self) -> bool {
+        if !matches!(self.cross_exam, CrossExam::Idle) {
+            return false;
+        }
+        let Some(current_id) = self.current_phase_id.as_deref() else {
+            return false;
+        };
+        let Some(phase) = self
+            .def
+            .phases
+            .iter()
+            .find(|phase| phase_id(phase) == current_id)
+        else {
+            return false;
+        };
         let InterrogationPhaseJson::Inquiry {
             complete,
             questions,
             ..
         } = phase;
-        match complete {
-            InterrogationOutroUnlock::Auto(_) => {
-                let all_required_broken = questions
-                    .iter()
-                    .filter(|question| question.required)
-                    .all(|question| self.broken_questions.contains(&question.id));
-                if !all_required_broken {
-                    return false;
-                }
-                // Do not auto-complete while unlocked questions remain
-                // unbroken, so the player can interact with optional
-                // follow-ups that may have just become visible after a
-                // required question was broken.
-                !questions.iter().any(|question| {
-                    self.is_question_unlocked(question, ctx)
-                        && !self.broken_questions.contains(&question.id)
-                })
-            }
-            InterrogationOutroUnlock::Expr(expr) => unlock::evaluate_interrogation(expr, ctx),
+        if !matches!(complete, InterrogationOutroUnlock::Auto(_)) {
+            return false;
         }
+        questions
+            .iter()
+            .filter(|question| question.required)
+            .all(|question| self.broken_questions.contains(&question.id))
+    }
+
+    /// Marks the current phase completed (manual completion). Returns the
+    /// completed phase id, or `None` if there is no current phase. Callers are
+    /// expected to gate on [`Self::current_phase_can_complete`] first.
+    pub fn complete_current_phase(&mut self) -> Option<String> {
+        let current_id = self.current_phase_id.clone()?;
+        self.completed_phases.insert(current_id.clone());
+        Some(current_id)
     }
 
     pub fn outro_satisfied(&self, ctx: &impl InterrogationUnlockContext) -> bool {
@@ -685,18 +711,27 @@ mod tests {
     }
 
     #[test]
-    fn phase_completes_when_all_required_questions_broken() {
+    fn phase_completes_after_manual_completion() {
         let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
         scene.record_break("alibi");
+        scene.refresh_phase_completion(&Inventory::default());
+        // Auto phases do not complete on their own; only manual completion does.
+        assert!(!scene.completed_phases.contains("press"));
+        assert!(scene.current_phase_can_complete());
+        scene.complete_current_phase();
         scene.refresh_phase_completion(&Inventory::default());
         assert!(scene.completed_phases.contains("press"));
     }
 
     #[test]
-    fn inquiry_phase_completes_after_required_question_broken() {
+    fn inquiry_phase_completes_after_manual_completion() {
         let mut scene = InterrogationSceneState::from_json(one_question_inquiry_scene(), 1);
         assert_eq!(scene.current_phase_id().as_deref(), Some("inquiry"));
         scene.record_break("reason");
+        scene.refresh_phase_completion(&Inventory::default());
+        assert!(!scene.completed_phases.contains("inquiry"));
+        assert!(scene.current_phase_can_complete());
+        scene.complete_current_phase();
         scene.refresh_phase_completion(&Inventory::default());
         assert!(scene.completed_phases.contains("inquiry"));
     }
@@ -834,8 +869,11 @@ mod tests {
         let mut scene = InterrogationSceneState::from_json(def, 1);
         let inventory = Inventory::default();
 
-        // Break the unlocked phase's question and complete it.
+        // Break the unlocked phase's question and manually complete it.
         scene.record_break("q1");
+        scene.refresh_phase_completion(&inventory);
+        assert!(scene.current_phase_can_complete());
+        scene.complete_current_phase();
         scene.refresh_phase_completion(&inventory);
 
         assert!(scene.completed_phases.contains("unlocked_inquiry"));
@@ -918,8 +956,11 @@ mod tests {
         // Initially the required phase is current.
         assert_eq!(scene.current_phase_id().as_deref(), Some("required_phase"));
 
-        // Complete the required phase.
+        // Break then manually complete the required phase.
         scene.record_break("reason");
+        scene.refresh_phase_completion(&inventory);
+        assert!(scene.current_phase_can_complete());
+        scene.complete_current_phase();
         scene.refresh_phase_completion(&inventory);
         assert!(scene.completed_phases.contains("required_phase"));
 
@@ -959,11 +1000,12 @@ mod tests {
     }
 
     #[test]
-    fn auto_complete_waits_for_unlocked_optional_follow_up() {
+    fn manual_complete_available_despite_unlocked_optional_follow_up() {
         // An inquiry with one required question whose answer unlocks an optional
-        // follow-up. After breaking the required question, the phase must NOT
-        // auto-complete because the optional follow-up is now unlocked but
-        // unbroken — the player has not had a chance to interact with it.
+        // follow-up. Breaking the required question makes the phase manually
+        // completable — the unlocked optional follow-up does NOT block
+        // completion — so the player may complete the phase without ever
+        // engaging the follow-up.
         use crate::game::schema::{InterrogationUnlockExpr, PredicateQuestionAnswered};
 
         let def = InterrogationSceneJson {
@@ -1016,30 +1058,25 @@ mod tests {
         let mut scene = InterrogationSceneState::from_json(def, 1);
         let inventory = Inventory::default();
 
-        // Break the required question — this should satisfy the "all required
-        // broken" check, but the optional follow-up is now unlocked & unbroken.
+        // Break the required question — this unlocks the optional follow-up.
         scene.record_break("required_q");
         scene.refresh_phase_completion(&inventory);
 
-        let ctx = InterrogationSceneAndInventoryCtx {
-            scene: &scene,
-            inventory: &inventory,
-        };
-        assert!(
-            !scene.phase_complete(&scene.def.phases[0], &ctx),
-            "phase should NOT auto-complete while an unlocked optional follow-up is unbroken"
-        );
+        // Auto phases never complete on their own.
         assert!(
             !scene.completed_phases.contains("inquiry"),
-            "inquiry should not be in completed_phases set"
+            "Auto phase must not complete without a manual trigger"
+        );
+        // ...but the phase is manually completable, even though the optional
+        // follow-up is unlocked and unbroken — optional questions never gate.
+        assert!(
+            scene.current_phase_can_complete(),
+            "unlocked optional follow-up must not block manual completion"
         );
 
-        // Now break the optional follow-up — phase should auto-complete.
-        scene.record_break("optional_followup");
+        // Completing the phase works without ever breaking the follow-up.
+        scene.complete_current_phase();
         scene.refresh_phase_completion(&inventory);
-        assert!(
-            scene.completed_phases.contains("inquiry"),
-            "inquiry should auto-complete after all unlocked questions are broken"
-        );
+        assert!(scene.completed_phases.contains("inquiry"));
     }
 }

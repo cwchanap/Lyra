@@ -222,12 +222,17 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
     );
 
     // Asking `entered_storage` plays its (no-contradiction, auto-broken)
-    // testimony line; draining it completes the `wakatsuki_inquiry` phase and
-    // enters `wakatsuki_testimony`, whose phase-level reveals apply the
-    // evidence/statement the old fixture used to reveal on question-answer.
+    // testimony line. Return to the menu and manually complete the
+    // `wakatsuki_inquiry` phase to enter `wakatsuki_testimony`, whose
+    // phase-level reveals apply the evidence/statement the old fixture used to
+    // reveal on question-answer.
     let view = engine
         .ask_interrogation_question("entered_storage")
         .unwrap();
+    advance_all_dialogue(&mut engine, view);
+    let view = engine.withdraw_interrogation().unwrap();
+    advance_all_dialogue(&mut engine, view);
+    let view = engine.complete_interrogation_phase().unwrap();
     let view = advance_all_dialogue(&mut engine, view);
     assert!(view.inventory.has_evidence("coffee_machine_cleaning_log"));
     assert!(view.inventory.has_statement("wakatsuki_entered_for_beans"));
@@ -280,6 +285,11 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
             "coffee_machine_cleaning_log",
         )
         .unwrap();
+    advance_all_dialogue(&mut engine, view);
+
+    // The sole required question is broken; manually complete
+    // `wakatsuki_testimony` to fire the outro and advance the scene.
+    let view = engine.complete_interrogation_phase().unwrap();
     let view = advance_all_dialogue(&mut engine, view);
 
     let reached_next_scene_or_complete = matches!(view.mode, ModeView::GameComplete)

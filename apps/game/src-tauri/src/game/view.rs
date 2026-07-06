@@ -199,6 +199,10 @@ pub struct InterrogationPhaseView {
     /// line or presenting evidence); None while the player is at the
     /// question menu.
     pub cross_exam: Option<CrossExamView>,
+    /// True when the player may manually complete this (current) phase: it is
+    /// the current `Auto` phase, no cross-examination is active, and every
+    /// required question is broken. Drives the "完成訊問" button.
+    pub can_complete: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

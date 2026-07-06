@@ -63,7 +63,8 @@ export type GameplayCommandName =
   | "proceed_interrogation_line"
   | "challenge_interrogation_line"
   | "present_interrogation_evidence"
-  | "withdraw_interrogation";
+  | "withdraw_interrogation"
+  | "complete_interrogation_phase";
 
 const SFX_ASSETS: Partial<Record<GameplaySfxEvent, string>> = {
   "ui:menu-confirm": "audio.sfx.sfx_dialogue_proceed_tick",
@@ -159,6 +160,8 @@ export function inferGameplaySfxEvents(
   if (command === "ask_interrogation_question")
     events.push("interrogation:question-answered");
   if (command === "challenge_interrogation_line")
+    events.push("ui:menu-confirm");
+  if (command === "complete_interrogation_phase")
     events.push("ui:menu-confirm");
 
   if (inventoryEvidenceCount(next) > inventoryEvidenceCount(previous)) {
