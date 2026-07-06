@@ -41,8 +41,10 @@
 #### Testimony
 
 - **On Loop:** **相馬律**[thinking]：還有哪裡對不上，再說一次。
+- **Loop Prompt:** **相馬律**：從頭再聽一次。
 - **Default Challenge:** **早坂茜**[concerned]：等等，這句話讓我想想。
 - **Default Wrong:** **若槻蓮**：這句話沒問題吧？
+- **Wrong Reply:** **相馬律**：不對，這不是關鍵。
 
 ##### Line: 拿咖啡豆的說法 {#l_beans}
 

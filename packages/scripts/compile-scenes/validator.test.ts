@@ -137,8 +137,14 @@ const mkContradictionLine = (
 
 const mkTestimony = (lines: ASTTestimonyLine[] = [mkLine()]): ASTTestimony => ({
   onLoop: [line("loop")],
+  loopPrompt: lines.some((l) => l.contradiction !== null)
+    ? [line("loop-prompt")]
+    : null,
   defaultChallenge: null,
   defaultWrong: null,
+  wrongReply: lines.some((l) => l.contradiction !== null)
+    ? [line("wrong-reply")]
+    : null,
   lines,
   sourceFile: "interrogation_scene_1.md",
   line: 1,

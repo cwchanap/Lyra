@@ -35,6 +35,8 @@ const XEXAM_SRC = `# Scene 1: 訊問
 
 #### Testimony
 - **On Loop:** **相馬律**：還有哪裡對不上。再說一次。
+- **Loop Prompt:** **相馬律**：從頭再聽一次。
+- **Wrong Reply:** **相馬律**：不對，這不是關鍵。
 
 ##### Line: 下班時間 {#l_off}
 **若槻悠真**：八點就下班了。

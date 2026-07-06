@@ -250,11 +250,13 @@ function enrichTestimony(
   return {
     ...testimony,
     onLoop: enrichDialogue(testimony.onLoop, context),
+    loopPrompt: enrichNullableDialogue(testimony.loopPrompt, context),
     defaultChallenge: enrichNullableDialogue(
       testimony.defaultChallenge,
       context,
     ),
     defaultWrong: enrichNullableDialogue(testimony.defaultWrong, context),
+    wrongReply: enrichNullableDialogue(testimony.wrongReply, context),
     lines: testimony.lines.map((line) => ({
       ...line,
       content: enrichDialogue(line.content, context),

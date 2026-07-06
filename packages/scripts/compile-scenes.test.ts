@@ -120,6 +120,11 @@ describe("compile (end-to-end against valid fixture)", () => {
         kind: "statement",
         id: "kagami_timeline_inconsistent",
       });
+      expect(enteredStorage.testimony.loopPrompt.length).toBeGreaterThan(0);
+      expect(enteredStorage.testimony.wrongReply.length).toBeGreaterThan(0);
+      const beansFollowUp = interrogation.phases[0].questions[1];
+      expect(beansFollowUp.testimony.loopPrompt).toEqual([]);
+      expect(beansFollowUp.testimony.wrongReply).toEqual([]);
       expect(
         interrogation.evidenceManifest.map((e: { id: string }) => e.id),
       ).toEqual(["coffee_machine_cleaning_log"]);
