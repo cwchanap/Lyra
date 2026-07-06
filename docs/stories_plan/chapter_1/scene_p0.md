@@ -33,6 +33,7 @@
 
 [場景：吉祥寺商店街的騎樓下，傍晚，雨勢轉小。幾名路人站在簷下避雨，遠處招牌的燈光映在濕地上。]
 - **Background Prompt:** Kichijoji shopping street arcade under an awning at rainy dusk, small group of anonymous commuters sheltering from drizzle, wet pavement reflecting neon storefront signs, stacked vending machines glowing softly, neo-noir visual novel background, no foreground faces, no readable signage text.
+- **BGS:** bgs_shopping_street_rain_dusk
 
 **路人甲**：新聞說現在連證據都能先整理好。
 
@@ -44,6 +45,7 @@
 
 [場景：大型十字路口，傍晚，雨。透明傘成群穿越斑馬線，頭頂巨型螢幕的字幕映在傘面上。]
 - **Background Prompt:** Wide Tokyo pedestrian crossing in the rain at dusk, a stream of transparent umbrellas crossing under traffic lights, giant overhead screen captions reflected on wet umbrella surfaces, blue storefront signboard glow briefly tinting a few umbrellas pale blue, wet asphalt reflections, cinematic neo-noir visual novel background, no individual faces, no readable screen text.
+- **BGS:** bgs_shopping_street_rain_dusk
 
 **旁白**：透明傘，一片片，穿過路口。
 

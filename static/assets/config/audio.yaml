@@ -97,6 +97,13 @@ bgs:
       footsteps, no commuter chatter, muted closed storefronts, hollower and
       colder than dusk, no voices up close, no music.
     loop: true
+  bgs_stationery_copy_shop:
+    prompt:
+      Small Tokyo stationery and copy shop interior, pale white fluorescent
+      light, compact copier humming steadily against the back wall, faint paper
+      and toner air, occasional paper-slide, faint rain audible through the
+      glass door, no voices, no music.
+    loop: true
 sfx:
   sfx_anonymous_message_buzz:
     prompt:
