@@ -430,9 +430,13 @@ pub struct InquiryQuestionJson {
 pub struct TestimonyJson {
     pub on_loop: Vec<DialogueItem>,
     #[serde(default)]
+    pub loop_prompt: Vec<DialogueItem>,
+    #[serde(default)]
     pub default_challenge: Vec<DialogueItem>,
     #[serde(default)]
     pub default_wrong: Vec<DialogueItem>,
+    #[serde(default)]
+    pub wrong_reply: Vec<DialogueItem>,
     pub lines: Vec<TestimonyLineJson>,
 }
 

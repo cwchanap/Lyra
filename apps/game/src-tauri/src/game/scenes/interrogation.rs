@@ -517,8 +517,10 @@ mod tests {
     fn empty_testimony() -> TestimonyJson {
         TestimonyJson {
             on_loop: vec![],
+            loop_prompt: vec![],
             default_challenge: vec![],
             default_wrong: vec![],
+            wrong_reply: vec![],
             lines: vec![],
         }
     }
@@ -590,8 +592,10 @@ mod tests {
                         on_loop: vec![DialogueItem::Action {
                             text: "loop".into(),
                         }],
+                        loop_prompt: vec![],
                         default_challenge: vec![],
                         default_wrong: vec![],
+                        wrong_reply: vec![],
                         lines: vec![
                             TestimonyLineJson {
                                 id: "l_off".into(),
