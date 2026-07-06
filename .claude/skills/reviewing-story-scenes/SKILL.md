@@ -71,12 +71,16 @@ For the chapter under review (under `docs/stories_plan/` and/or
 If a source path you need is missing, **say so and request it. Do not guess
 canon.**
 
-**You do NOT read source content.** You read `chapter.md` only to get the
-ordered scene list (so you know which scene files to pass to subagents). All
-other sources — bible, characters.md, construction plan, addendum, scenes,
-compiled JSON — are read by the subagents themselves from the paths you give
-them. Your job is to locate paths, spawn subagents, and consolidate their
-reports.
+**You do NOT read source content when subagents are dispatched.** You read
+`chapter.md` only to get the ordered scene list (so you know which scene files
+to pass to subagents). All other sources — bible, characters.md, construction
+plan, addendum, scenes, compiled JSON — are read by the subagents themselves
+from the paths you give them. Your job is to locate paths, spawn subagents, and
+consolidate their reports. **Serial fallback is the exception:** when no
+subagent-dispatch tool exists (see Phase 2 fallback), you must read each axis's
+sources yourself in the table order, because there is no subagent to delegate
+the reading to. In that mode the no-read rule below does not apply; keep each
+axis's findings separate as the fallback specifies.
 
 ---
 
@@ -201,8 +205,11 @@ subagent's finding verbatim; do not rewrite its evidence.
 - An `Edit` or `Write` tool is opened on a scene file.
 - A subagent's output is a corrected file instead of a findings list + verdict.
 - You (orchestrator) are reading source content (bible, characters.md,
-  construction plan, addendum, scenes, JSON) instead of just locating paths.
-  The only source file you read is `chapter.md` for the scene list.
+  construction plan, addendum, scenes, JSON) instead of just locating paths,
+  **while subagents are dispatched**. The only source file you read in that
+  mode is `chapter.md` for the scene list. (Serial fallback is exempt: when no
+  subagent-dispatch tool exists, you must read each axis's sources yourself —
+  see Phase 2 fallback.)
 - A subagent states a canon "fact" with no source line in front of it.
 - You're renumbering scenes, deleting characters, or rewriting beats.
 
@@ -216,7 +223,7 @@ subagent's finding verbatim; do not rewrite its evidence.
 | Editing or "fixing" the files | Report only. Edit nothing. |
 | Findings without a location or a quote | Every finding: `file:line` + quoted text + suggested fix. |
 | Monolithic single-agent review | Spawn seven parallel subagents. One brain trying to hold bible, plan, addendum, voice guides, format rules, visual cues, interaction balance, natural conversation, and all scene text at once misses things. |
-| Orchestrator reading source content | You locate paths and spawn subagents; you do NOT read bible, characters.md, construction plan, addendum, scenes, or JSON yourself. The only file you read is `chapter.md` (to get the scene list). Subagents read everything else directly. |
+| Orchestrator reading source content | When subagents are dispatched, you locate paths and spawn subagents; you do NOT read bible, characters.md, construction plan, addendum, scenes, or JSON yourself. The only file you read is `chapter.md` (to get the scene list). Subagents read everything else directly. Under the serial fallback (no subagent-dispatch tool), this rule is inverted: you must read each axis's sources yourself in table order. |
 | Pasting excerpts into subagent briefs | Give subagents file paths, not pasted content. Subagents read sources themselves so they see full text and can cite exact lines; pasted excerpts lose context and bloat the orchestrator. |
 | Verifying subagent findings by reading sources yourself | Do not re-read sources to "double-check" a subagent's citation. Quote the subagent's finding verbatim in your consolidated report; trust its citation. If a finding looks wrong, flag it as a question for the human, don't re-verify by reading the source. |
 
