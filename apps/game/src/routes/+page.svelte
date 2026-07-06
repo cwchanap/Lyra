@@ -14,6 +14,7 @@
     challengeInterrogationLine,
     presentInterrogationEvidence,
     withdrawInterrogation,
+    resumeInterrogationTestimony,
     completeInterrogationPhase,
     listScenes,
     jumpToScene,
@@ -279,7 +280,7 @@
         inventory={gameState.value.inventory}
         onAsk={askInterrogationQuestion}
         onPresent={presentInterrogationEvidence}
-        onWithdraw={withdrawInterrogation}
+        onResume={resumeInterrogationTestimony}
         onComplete={completeInterrogationPhase}
         disabled={gameState.inFlight}
       />

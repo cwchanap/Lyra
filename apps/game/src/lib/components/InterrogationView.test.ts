@@ -118,7 +118,7 @@ function renderView(
       itemKind: "evidence" | "statement",
       itemId: string,
     ) => void | Promise<void>;
-    onWithdraw?: () => void | Promise<void>;
+    onResume?: () => void | Promise<void>;
     onComplete?: () => void | Promise<void>;
     disabled?: boolean;
   },
@@ -128,7 +128,7 @@ function renderView(
     inventory: overrides?.inventory ?? sampleInventory(),
     onAsk: overrides?.onAsk ?? vi.fn(),
     onPresent: overrides?.onPresent ?? vi.fn(),
-    onWithdraw: overrides?.onWithdraw ?? vi.fn(),
+    onResume: overrides?.onResume ?? vi.fn(),
     onComplete: overrides?.onComplete ?? vi.fn(),
     disabled: overrides?.disabled ?? false,
   });
@@ -154,6 +154,13 @@ describe("InterrogationView", () => {
       "evidence",
       "cleaning_log",
     );
+  });
+
+  it("resumes the testimony (not the menu) when 收回 is clicked in the tray", async () => {
+    const onResume = vi.fn();
+    const { getByRole } = renderView(sceneInPresenting(), { onResume });
+    await fireEvent.click(getByRole("button", { name: "收回" }));
+    expect(onResume).toHaveBeenCalledTimes(1);
   });
 
   it("disables the 完成訊問 button until the phase is completable", () => {

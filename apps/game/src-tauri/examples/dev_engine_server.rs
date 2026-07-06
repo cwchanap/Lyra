@@ -285,6 +285,9 @@ fn dispatch(state: &ServerState, command: &str, body: &[u8]) -> Result<String, G
             })
         }
         "withdraw_interrogation" => with_engine(state, |e| e.withdraw_interrogation()),
+        "resume_interrogation_testimony" => {
+            with_engine(state, |e| e.resume_interrogation_testimony())
+        }
         "complete_interrogation_phase" => with_engine(state, |e| e.complete_interrogation_phase()),
         other => Err(GameError::new(
             "unknownCommand",

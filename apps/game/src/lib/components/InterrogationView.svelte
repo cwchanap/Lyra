@@ -6,7 +6,7 @@
     inventory,
     onAsk,
     onPresent,
-    onWithdraw,
+    onResume,
     onComplete,
     disabled = false,
   }: {
@@ -18,7 +18,8 @@
       itemKind: "evidence" | "statement",
       itemId: string,
     ) => void | Promise<void>;
-    onWithdraw: () => void | Promise<void>;
+    /** Backs out of the evidence tray to keep listening to the testimony. */
+    onResume: () => void | Promise<void>;
     onComplete: () => void | Promise<void>;
     disabled?: boolean;
   } = $props();
@@ -92,7 +93,7 @@
             class="ghost"
             type="button"
             {disabled}
-            onclick={() => onWithdraw()}
+            onclick={() => onResume()}
           >
             收回
           </button>
