@@ -623,6 +623,7 @@ impl GameEngine {
                     .question(&question_id)
                     .map(|question| {
                         let mut items = question.testimony.on_loop.clone();
+                        items.extend(question.testimony.loop_prompt.iter().cloned());
                         if let Some(first) = question.testimony.lines.first() {
                             items.extend(first.content.iter().cloned());
                         }
@@ -1642,11 +1643,15 @@ impl GameEngine {
                         .question(&question_id)
                         .map(|question| question.testimony.default_wrong.clone())
                         .unwrap_or_default();
-                    let on_wrong = line
+                    let mut on_wrong = line
                         .as_ref()
                         .map(|line| line.on_wrong_evidence.clone())
                         .filter(|dialogue| !dialogue.is_empty())
                         .unwrap_or(default_wrong);
+                    // Append the required detective reaction after the suspect's rebuff.
+                    if let Some(question) = scene.question(&question_id) {
+                        on_wrong.extend(question.testimony.wrong_reply.iter().cloned());
+                    }
                     scene.return_to_line();
                     on_wrong
                 }
@@ -3630,8 +3635,10 @@ mod tests {
     fn empty_testimony() -> TestimonyJson {
         TestimonyJson {
             on_loop: vec![],
+            loop_prompt: vec![],
             default_challenge: vec![],
             default_wrong: vec![],
+            wrong_reply: vec![],
             lines: vec![],
         }
     }
@@ -3671,8 +3678,14 @@ mod tests {
                         on_loop: vec![DialogueItem::Action {
                             text: "loop".into(),
                         }],
+                        loop_prompt: vec![DialogueItem::Action {
+                            text: "detective-loop".into(),
+                        }],
                         default_challenge: vec![],
                         default_wrong: vec![],
+                        wrong_reply: vec![DialogueItem::Action {
+                            text: "detective-wrong".into(),
+                        }],
                         lines: vec![
                             TestimonyLineJson {
                                 id: "l_off".into(),
@@ -6033,8 +6046,10 @@ mod tests {
                     reveals: vec![],
                     testimony: TestimonyJson {
                         on_loop: vec![],
+                        loop_prompt: vec![],
                         default_challenge: vec![],
                         default_wrong: vec![],
+                        wrong_reply: vec![],
                         lines: vec![TestimonyLineJson {
                             id: "l1".into(),
                             label: "L1".into(),
@@ -6207,8 +6222,10 @@ mod tests {
                     }],
                     testimony: TestimonyJson {
                         on_loop: vec![],
+                        loop_prompt: vec![],
                         default_challenge: vec![],
                         default_wrong: vec![],
+                        wrong_reply: vec![],
                         lines: vec![TestimonyLineJson {
                             id: "l1".into(),
                             label: "L1".into(),
@@ -6328,8 +6345,10 @@ mod tests {
                         }],
                         testimony: TestimonyJson {
                             on_loop: vec![],
+                            loop_prompt: vec![],
                             default_challenge: vec![],
                             default_wrong: vec![],
+                            wrong_reply: vec![],
                             lines: vec![TestimonyLineJson {
                                 id: "h1".into(),
                                 label: "H1".into(),
@@ -6357,8 +6376,10 @@ mod tests {
                         reveals: vec![],
                         testimony: TestimonyJson {
                             on_loop: vec![],
+                            loop_prompt: vec![],
                             default_challenge: vec![],
                             default_wrong: vec![],
+                            wrong_reply: vec![],
                             lines: vec![],
                         },
                     },
@@ -6426,8 +6447,10 @@ mod tests {
                     reveals: vec![],
                     testimony: TestimonyJson {
                         on_loop: vec![],
+                        loop_prompt: vec![],
                         default_challenge: vec![],
                         default_wrong: vec![],
+                        wrong_reply: vec![],
                         lines: vec![TestimonyLineJson {
                             id: "l1".into(),
                             label: "L1".into(),
@@ -6597,8 +6620,10 @@ mod tests {
                     reveals: vec![],
                     testimony: TestimonyJson {
                         on_loop: vec![],
+                        loop_prompt: vec![],
                         default_challenge: vec![],
                         default_wrong: vec![],
+                        wrong_reply: vec![],
                         lines: vec![TestimonyLineJson {
                             id: "h1".into(),
                             label: "H1".into(),
@@ -6667,6 +6692,74 @@ mod tests {
                 );
             }
             other => panic!("expected looping Dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn loop_plays_detective_prompt_after_on_loop() {
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.prime_initial_queue().unwrap();
+        engine.ask_interrogation_question("alibi").unwrap();
+        // Drain line 0 -> line 1, drain line 1 -> loop installs
+        // on_loop ++ loop_prompt ++ line0.
+        let view = engine.advance_dialogue(token_from(&engine.view())).unwrap();
+        let view = engine.advance_dialogue(token_from(&view)).unwrap();
+        // The suspect's On Loop ("loop") plays first...
+        match &view.mode {
+            ModeView::Dialogue { current, .. } => assert!(
+                matches!(current, DialogueItem::Action { text } if text == "loop"),
+                "expected the suspect On Loop first, got {current:?}"
+            ),
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+        // ...then the detective's Loop Prompt.
+        let view = engine.advance_dialogue(token_from(&view)).unwrap();
+        match &view.mode {
+            ModeView::Dialogue { current, .. } => assert!(
+                matches!(current, DialogueItem::Action { text } if text == "detective-loop"),
+                "expected the detective loop prompt after On Loop, got {current:?}"
+            ),
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wrong_present_plays_detective_reply_after_rebuff() {
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "unrelated".into(),
+            name: "Unrelated".into(),
+            description: "d".into(),
+            details: "d".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "prev".into(),
+        });
+        engine.prime_initial_queue().unwrap();
+        engine.ask_interrogation_question("alibi").unwrap();
+        let view = engine.challenge_interrogation_line("l_deny").unwrap();
+        engine.advance_dialogue(token_from(&view)).unwrap();
+        // Present the wrong evidence against the contradiction line.
+        let view = engine
+            .present_interrogation_evidence("l_deny", "evidence", "unrelated")
+            .unwrap();
+        // The suspect's On Wrong Evidence ("wrong") plays first...
+        match &view.mode {
+            ModeView::Dialogue { current, .. } => assert!(
+                matches!(current, DialogueItem::Action { text } if text == "wrong"),
+                "expected the suspect rebuff first, got {current:?}"
+            ),
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+        // ...then the detective's Wrong Reply.
+        let view = engine.advance_dialogue(token_from(&view)).unwrap();
+        match &view.mode {
+            ModeView::Dialogue { current, .. } => assert!(
+                matches!(current, DialogueItem::Action { text } if text == "detective-wrong"),
+                "expected the detective wrong reply second, got {current:?}"
+            ),
+            other => panic!("expected Dialogue mode, got {other:?}"),
         }
     }
 
