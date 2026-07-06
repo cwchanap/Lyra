@@ -603,6 +603,12 @@ describe("inferGameplaySfxEvents", () => {
     ).toEqual(["ui:menu-confirm"]);
   });
 
+  it("dispatches menu-confirm for the complete-phase command", () => {
+    expect(
+      inferGameplaySfxEvents(state(), state(), "complete_interrogation_phase"),
+    ).toEqual(["ui:menu-confirm"]);
+  });
+
   it("emits a ui:new-game event on start_game", () => {
     const neutral = state({
       scene: {
@@ -662,13 +668,14 @@ describe("inferGameplaySfxEvents", () => {
       challenge_interrogation_line: true,
       present_interrogation_evidence: true,
       withdraw_interrogation: true,
+      complete_interrogation_phase: true,
     };
     const names = Object.keys(exhaustive) as GameplayCommandName[];
 
     // Every union member is listed exactly once.
     expect(new Set(names).size).toBe(names.length);
     expect(names).toContain("present_interrogation_evidence");
-    expect(names).toHaveLength(13);
+    expect(names).toHaveLength(14);
   });
 });
 

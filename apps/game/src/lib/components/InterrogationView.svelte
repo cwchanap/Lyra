@@ -9,6 +9,7 @@
     onChallenge,
     onPresent,
     onWithdraw,
+    onComplete,
     disabled = false,
   }: {
     scene: SceneView;
@@ -22,6 +23,7 @@
       itemId: string,
     ) => void | Promise<void>;
     onWithdraw: () => void | Promise<void>;
+    onComplete: () => void | Promise<void>;
     disabled?: boolean;
   } = $props();
 
@@ -142,6 +144,16 @@
           </li>
         {/each}
       </ul>
+      <div class="phase-actions">
+        <button
+          class="complete"
+          type="button"
+          disabled={disabled || !phase.canComplete}
+          onclick={() => onComplete()}
+        >
+          完成訊問
+        </button>
+      </div>
     {/if}
   </section>
 {:else if interrogation}
@@ -279,6 +291,46 @@
 
   .qbtn.broken .qs {
     color: var(--bone-faint);
+  }
+
+  /* complete-phase action */
+  .phase-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+
+  .complete {
+    padding: 11px 22px 10px;
+    background: var(--crimson-soft);
+    color: var(--crimson);
+    border: 1px solid var(--crimson);
+    cursor: pointer;
+    font: inherit;
+    font-family: var(--display-jp);
+    font-size: 13px;
+    letter-spacing: 0.16em;
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+    transition:
+      transform 0.18s,
+      background 0.18s,
+      border-color 0.18s,
+      color 0.18s;
+  }
+
+  .complete:hover:not(:disabled),
+  .complete:focus-visible:not(:disabled) {
+    transform: translateY(-1px);
+    background: var(--crimson);
+    color: var(--bone);
+  }
+
+  .complete:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    color: var(--bone-faint);
+    background: transparent;
+    border-color: var(--rule-strong);
   }
 
   /* cross-exam line card */

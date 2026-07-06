@@ -230,3 +230,6 @@ export async function presentInterrogationEvidence(
 export async function withdrawInterrogation() {
   await dispatchGameCommand("withdraw_interrogation", {});
 }
+export async function completeInterrogationPhase() {
+  await dispatchGameCommand("complete_interrogation_phase", {});
+}

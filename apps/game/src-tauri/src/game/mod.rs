@@ -1667,6 +1667,52 @@ impl GameEngine {
         self.restore_on_error(snapshot, result)
     }
 
+    /// `complete_interrogation_phase` — the player manually concludes the
+    /// current `Auto` inquiry phase from the question menu. Gated on every
+    /// required question being broken (see
+    /// [`InterrogationSceneState::current_phase_can_complete`]); the phase then
+    /// advances (or fires the outro) via the same machinery a drained dialogue
+    /// queue drives.
+    pub fn complete_interrogation_phase(&mut self) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
+
+        {
+            let scene = match &self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => {
+                    return Err(GameError::wrong_mode(
+                        "complete_interrogation_phase",
+                        "not interrogation",
+                    ))
+                }
+            };
+            if scene
+                .pending_queue
+                .as_ref()
+                .is_some_and(|q| q.cursor < q.items.len())
+            {
+                return Err(GameError::dialogue_active("complete_interrogation_phase"));
+            }
+            if !scene.current_phase_can_complete() {
+                return Err(GameError::interrogation_phase_not_completable());
+            }
+        }
+
+        let snapshot = self.snapshot();
+        let result = (|| -> Result<GameStateView, GameError> {
+            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                scene.complete_current_phase();
+            }
+            // The guard ensured no dialogue queue is active; drive the scene
+            // machinery (phase-advance / outro) as if a queue had just drained.
+            self.on_queue_exhausted()?;
+            Ok(self.view_with_history())
+        })();
+        self.restore_on_error(snapshot, result)
+    }
+
     fn inventory_target_exists(&self, item_kind: &str, item_id: &str) -> bool {
         match item_kind {
             "evidence" => self.inventory.has_evidence(item_id),
@@ -1957,6 +2003,8 @@ impl GameEngine {
                                 })
                                 .collect(),
                             cross_exam,
+                            can_complete: scene.current_phase_id.as_deref() == Some(id.as_str())
+                                && scene.current_phase_can_complete(),
                         }
                     })
                     .collect();
@@ -3993,7 +4041,7 @@ mod tests {
     }
 
     #[test]
-    fn interrogation_auto_outro_skips_optional_phase_after_required_completion() {
+    fn outro_skips_optional_phase_after_required_completion() {
         let inquiry_phase = |id: &str,
                              required: bool,
                              question_id: &str,
@@ -4070,7 +4118,11 @@ mod tests {
             ModeView::Interrogation { ref phase_id, .. } if phase_id == "required_inquiry"
         ));
 
-        let view = engine.ask_interrogation_question("required_q").unwrap();
+        // Break the required question, return to the menu, then manually
+        // complete the phase — the outro fires and skips the optional phase.
+        engine.ask_interrogation_question("required_q").unwrap();
+        engine.withdraw_interrogation().unwrap();
+        let view = engine.complete_interrogation_phase().unwrap();
 
         assert!(!engine.inventory.has_evidence("optional_leak"));
         if let SceneRuntime::Interrogation(scene) = &engine.scene {
@@ -6216,6 +6268,177 @@ mod tests {
             panic!("expected interrogation scene");
         };
         assert!(scene.is_question_broken("honest_q"));
+    }
+
+    /// Builds a single required `Auto` inquiry phase with one required
+    /// contradiction question (`q1`/`l1`, contradiction `ev`) and a non-empty
+    /// outro, for manual-completion tests.
+    fn single_required_question_scene() -> crate::game::schema::InterrogationSceneJson {
+        use crate::game::schema::{
+            InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
+            InterrogationSceneJson,
+        };
+        InterrogationSceneJson {
+            id: "manual_complete".into(),
+            title: "Manual Complete".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "phase".into(),
+                label: "Phase".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![InquiryQuestionJson {
+                    id: "q1".into(),
+                    label: "Q1".into(),
+                    status: LockStatus::Unlocked,
+                    required: true,
+                    unlock: None,
+                    reveals: vec![],
+                    testimony: TestimonyJson {
+                        on_loop: vec![],
+                        default_challenge: vec![],
+                        default_wrong: vec![],
+                        lines: vec![TestimonyLineJson {
+                            id: "l1".into(),
+                            label: "L1".into(),
+                            content: vec![DialogueItem::Line {
+                                speaker: "suspect".into(),
+                                text: "I am innocent.".into(),
+                                portrait: None,
+                            }],
+                            contradiction: Some(InventoryTarget::Evidence { id: "ev".into() }),
+                            challenge: vec![DialogueItem::Action {
+                                text: "challenge".into(),
+                            }],
+                            on_correct: vec![DialogueItem::Line {
+                                speaker: "Detective".into(),
+                                text: "Broken!".into(),
+                                portrait: None,
+                            }],
+                            on_wrong_evidence: vec![],
+                            reveals: vec![],
+                        }],
+                    },
+                }],
+            }],
+            evidence_manifest: vec![EvidenceJson {
+                id: "ev".into(),
+                name: "Ev".into(),
+                description: "d".into(),
+                details: "d".into(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![DialogueItem::Line {
+                    speaker: "Detective".into(),
+                    text: "That concludes the interrogation.".into(),
+                    portrait: None,
+                }],
+            },
+        }
+    }
+
+    fn break_q1(engine: &mut GameEngine) {
+        let ask_view = engine.ask_interrogation_question("q1").unwrap();
+        engine.advance_dialogue(token_from(&ask_view)).unwrap();
+        let challenge_view = engine.challenge_interrogation_line("l1").unwrap();
+        engine
+            .advance_dialogue(token_from(&challenge_view))
+            .unwrap();
+        let present_view = engine
+            .present_interrogation_evidence("l1", "evidence", "ev")
+            .unwrap();
+        engine.advance_dialogue(token_from(&present_view)).unwrap();
+    }
+
+    #[test]
+    fn complete_interrogation_phase_errors_when_required_unbroken() {
+        let mut engine = empty_engine_with_interrogation_scene(single_required_question_scene(), 1);
+        engine.prime_initial_queue().unwrap();
+
+        // At the menu with the required question still unbroken.
+        let err = engine.complete_interrogation_phase().unwrap_err();
+        assert_eq!(err.code, "interrogationPhaseNotCompletable");
+
+        // The phase must not have been completed.
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(!scene.completed_phases.contains("phase"));
+    }
+
+    #[test]
+    fn auto_phase_does_not_complete_without_manual_trigger() {
+        let mut engine = empty_engine_with_interrogation_scene(single_required_question_scene(), 1);
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "ev".into(),
+            name: "Ev".into(),
+            description: "d".into(),
+            details: "d".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "previous_scene".into(),
+        });
+        engine.prime_initial_queue().unwrap();
+        break_q1(&mut engine);
+
+        // Breaking every required question must NOT auto-complete the phase.
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(scene.is_question_broken("q1"));
+        assert!(
+            !scene.completed_phases.contains("phase"),
+            "Auto phase must not complete without a manual trigger"
+        );
+        assert!(
+            scene.current_phase_can_complete(),
+            "phase should be manually completable once required questions are broken"
+        );
+    }
+
+    #[test]
+    fn complete_interrogation_phase_completes_and_fires_outro() {
+        let mut engine = empty_engine_with_interrogation_scene(single_required_question_scene(), 1);
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "ev".into(),
+            name: "Ev".into(),
+            description: "d".into(),
+            details: "d".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "previous_scene".into(),
+        });
+        engine.prime_initial_queue().unwrap();
+        break_q1(&mut engine);
+
+        // Manually complete the phase — the outro dialogue should now play.
+        let view = engine.complete_interrogation_phase().unwrap();
+        assert!(
+            matches!(view.mode, ModeView::Dialogue { .. }),
+            "expected the outro dialogue to play after manual completion, got {:?}",
+            view.mode
+        );
+
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(scene.completed_phases.contains("phase"));
+        assert!(scene.outro_played);
     }
 
     #[test]

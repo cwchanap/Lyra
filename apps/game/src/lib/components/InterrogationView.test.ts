@@ -42,6 +42,22 @@ function sceneWithMenu(): InterrogationSceneView {
         subject: { id: "suspect_1", name: "嫌疑人", role: "店員", bio: "" },
         questions: [{ id: "q_alibi", label: "當晚行蹤", broken: false }],
         crossExam: null,
+        canComplete: false,
+      },
+    ],
+  };
+}
+
+function sceneWithCompletableMenu(): InterrogationSceneView {
+  const scene = sceneWithMenu();
+  const phase = scene.visiblePhases[0];
+  return {
+    ...scene,
+    visiblePhases: [
+      {
+        ...phase,
+        questions: [{ id: "q_alibi", label: "當晚行蹤", broken: true }],
+        canComplete: true,
       },
     ],
   };
@@ -72,6 +88,7 @@ function sceneInPlayback(): InterrogationSceneView {
           lineTotal: 3,
           presenting: false,
         },
+        canComplete: false,
       },
     ],
   };
@@ -104,6 +121,7 @@ function renderView(
       itemId: string,
     ) => void | Promise<void>;
     onWithdraw?: () => void | Promise<void>;
+    onComplete?: () => void | Promise<void>;
     disabled?: boolean;
   },
 ) {
@@ -115,6 +133,7 @@ function renderView(
     onChallenge: overrides?.onChallenge ?? vi.fn(),
     onPresent: overrides?.onPresent ?? vi.fn(),
     onWithdraw: overrides?.onWithdraw ?? vi.fn(),
+    onComplete: overrides?.onComplete ?? vi.fn(),
     disabled: overrides?.disabled ?? false,
   });
 }
@@ -146,5 +165,30 @@ describe("InterrogationView", () => {
       "evidence",
       "cleaning_log",
     );
+  });
+
+  it("disables the 完成訊問 button until the phase is completable", () => {
+    const { getByRole } = renderView(sceneWithMenu()); // canComplete: false
+    expect(
+      (getByRole("button", { name: "完成訊問" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("enables 完成訊問 and calls onComplete when the phase is completable", async () => {
+    const onComplete = vi.fn();
+    const { getByRole } = renderView(sceneWithCompletableMenu(), {
+      onComplete,
+    });
+    const button = getByRole("button", {
+      name: "完成訊問",
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    await fireEvent.click(button);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the 完成訊問 button during an active cross-examination", () => {
+    const { queryByRole } = renderView(sceneInPlayback());
+    expect(queryByRole("button", { name: "完成訊問" })).toBeNull();
   });
 });
