@@ -272,8 +272,10 @@ export type ASTInquiryQuestion = Located<{
 
 export type ASTTestimony = Located<{
   onLoop: DialogueItem[]; // required
+  loopPrompt: DialogueItem[] | null; // detective loop beat; required iff a line has a Contradiction
   defaultChallenge: DialogueItem[] | null;
   defaultWrong: DialogueItem[] | null;
+  wrongReply: DialogueItem[] | null; // detective wrong-present beat; required iff a line has a Contradiction
   lines: ASTTestimonyLine[]; // >= 1
 }>;
 
@@ -444,8 +446,10 @@ export type JSONInquiryQuestion = {
 
 export type JSONTestimony = {
   onLoop: JSONDialogueItem[];
+  loopPrompt: JSONDialogueItem[];
   defaultChallenge: JSONDialogueItem[] | null;
   defaultWrong: JSONDialogueItem[] | null;
+  wrongReply: JSONDialogueItem[];
   lines: JSONTestimonyLine[];
 };
 

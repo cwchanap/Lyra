@@ -562,8 +562,10 @@ function parseTestimony(
 
   const TESTIMONY_FIELDS = new Set([
     "On Loop",
+    "Loop Prompt",
     "Default Challenge",
     "Default Wrong",
+    "Wrong Reply",
   ]);
   for (const key of Object.keys(meta.value)) {
     if (!TESTIMONY_FIELDS.has(key))
@@ -606,6 +608,26 @@ function parseTestimony(
     if (!r.ok) return r;
     defaultWrong = r.value;
   }
+  let loopPrompt: DialogueItem[] | null = null;
+  if (meta.value["Loop Prompt"] !== undefined) {
+    const r = parseDialogueFieldValue(
+      meta.value["Loop Prompt"],
+      cur.sourceFile,
+      head.line,
+    );
+    if (!r.ok) return r;
+    loopPrompt = r.value;
+  }
+  let wrongReply: DialogueItem[] | null = null;
+  if (meta.value["Wrong Reply"] !== undefined) {
+    const r = parseDialogueFieldValue(
+      meta.value["Wrong Reply"],
+      cur.sourceFile,
+      head.line,
+    );
+    if (!r.ok) return r;
+    wrongReply = r.value;
+  }
 
   const lines: ASTTestimonyLine[] = [];
   while (true) {
@@ -637,12 +659,32 @@ function parseTestimony(
       `Question ${questionId}'s #### Testimony needs at least one ##### Line.`,
     );
 
+  const hasContradiction = lines.some((line) => line.contradiction !== null);
+  if (hasContradiction) {
+    if (!loopPrompt)
+      return fail(
+        cur.sourceFile,
+        head.line,
+        "interrogationMissingLoopPrompt",
+        `Question ${questionId}'s #### Testimony has a Contradiction line and requires Loop Prompt dialogue.`,
+      );
+    if (!wrongReply)
+      return fail(
+        cur.sourceFile,
+        head.line,
+        "interrogationMissingWrongReply",
+        `Question ${questionId}'s #### Testimony has a Contradiction line and requires Wrong Reply dialogue.`,
+      );
+  }
+
   return {
     ok: true,
     value: {
       onLoop: onLoop.value,
+      loopPrompt,
       defaultChallenge,
       defaultWrong,
+      wrongReply,
       lines,
       sourceFile: cur.sourceFile,
       line: head.line,

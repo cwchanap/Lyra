@@ -25,6 +25,8 @@
 #### Testimony
 
 - **On Loop:** **相馬律**：再說一次。
+- **Loop Prompt:** **相馬律**：從頭再聽一次。
+- **Wrong Reply:** **相馬律**：不對，這不是關鍵。
 
 ##### Line: 選擇性反駁 {#l_opt}
 
@@ -44,6 +46,8 @@
 #### Testimony
 
 - **On Loop:** **相馬律**：這一點你還沒交代。
+- **Loop Prompt:** **相馬律**：從頭再聽一次。
+- **Wrong Reply:** **相馬律**：不對，這不是關鍵。
 
 ##### Line: 關鍵反駁 {#l_req}
 

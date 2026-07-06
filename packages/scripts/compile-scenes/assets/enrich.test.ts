@@ -1931,6 +1931,7 @@ function interrogationScene(): SceneRecord {
                     text: "還有哪裡對不上，再說一次。",
                   },
                 ],
+                loopPrompt: null,
                 defaultChallenge: [
                   {
                     kind: "line" as const,
@@ -1949,6 +1950,7 @@ function interrogationScene(): SceneRecord {
                     text: "這句話沒問題吧？",
                   },
                 ],
+                wrongReply: null,
                 lines: [
                   {
                     id: "l_honest",

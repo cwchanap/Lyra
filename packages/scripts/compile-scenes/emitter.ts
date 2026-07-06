@@ -179,8 +179,10 @@ function emitDialogueItems(items: DialogueItem[]): JSONDialogueItem[] {
 function emitTestimony(ast: ASTTestimony): JSONTestimony {
   return {
     onLoop: emitDialogueItems(ast.onLoop),
+    loopPrompt: emitDialogueItems(ast.loopPrompt ?? []),
     defaultChallenge: emitDialogueItems(ast.defaultChallenge ?? []),
     defaultWrong: emitDialogueItems(ast.defaultWrong ?? []),
+    wrongReply: emitDialogueItems(ast.wrongReply ?? []),
     lines: ast.lines.map(emitTestimonyLine),
   };
 }
