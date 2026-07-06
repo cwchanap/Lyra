@@ -2,6 +2,9 @@ schemaVersion: 1
 chapterId: chapter_1
 sources:
   - docs/stories_plan/chapter_1/chapter.md
+  - docs/stories_plan/chapter_1/scene_p0.md
+  - docs/stories_plan/chapter_1/scene_p1.md
+  - docs/stories_plan/chapter_1/scene_p2.md
   - docs/stories_plan/chapter_1/scene_0.md
   - docs/stories_plan/chapter_1/investigation_scene_1.md
   - docs/stories_plan/chapter_1/scene_2.md
@@ -247,6 +250,16 @@ entries:
       office corner and the inner storage room.
     evidence:
       - {
+          file: docs/stories_plan/chapter_1/scene_p2.md,
+          line: 38,
+          note: 雨鐘後場走道，午後，牆上舊掛鐘，秒針走得有點慢
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_p2.md,
+          line: 104,
+          note: 雨鐘吧台後方，閉店流程白板，咖啡機低聲運轉
+        }
+      - {
           file: docs/stories_plan/chapter_1/investigation_scene_3.md,
           line: 149,
           note: 腳步聲在窄牆間彈回，日光燈管嗡嗡作響，盡頭一盞閃了一下
@@ -341,6 +354,21 @@ entries:
       gets its own BGS.
     evidence:
       - {
+          file: docs/stories_plan/chapter_1/scene_p0.md,
+          line: 3,
+          note: 吉祥寺車站月台傍晚細雨，通勤人潮撐傘
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_p0.md,
+          line: 34,
+          note: 吉祥寺商店街騎樓下，傍晚，雨勢轉小
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_p1.md,
+          line: 3,
+          note: 吉祥寺商店街，黃昏，細雨，騎樓邊緣滴著水
+        }
+      - {
           file: docs/stories_plan/chapter_1/scene_6.md,
           line: 3,
           note: 商店街傍晚雨，屋簷邊雨水一條線落下，行人撐傘走過
@@ -365,6 +393,11 @@ entries:
       dusk version; split so the post-hearing regroup feels isolated.
     evidence:
       - {
+          file: docs/stories_plan/chapter_1/scene_p0.md,
+          line: 64,
+          note: 法律扶助協會外電子看板，傍晚轉夜，雨
+        }
+      - {
           file: docs/stories_plan/chapter_1/scene_8_5.md,
           line: 3,
           note: 商店街屋簷下深夜，雨仍未停，雨聲蓋過遠處人聲
@@ -373,6 +406,27 @@ entries:
           file: docs/stories_plan/chapter_1/scene_8_5.md,
           line: 60,
           note: 相馬收起資料夾，雨水順著屋簷滴下
+        }
+  - id: bgs_stationery_copy_shop
+    channel: bgs
+    status: approved
+    loop: true
+    intendedDurationSeconds: 60
+    prompt: >-
+      Small Tokyo stationery and copy shop interior, pale white fluorescent
+      light, compact copier humming steadily against the back wall, faint paper
+      and toner air, occasional paper-slide, faint rain audible through the
+      glass door, no voices, no music.
+    reuseRationale: >-
+      Catalog is empty. Copier-hum fluorescent interior distinct from the law
+      office (no copier), the contractor office (glass partition, no copier),
+      and the interview room (hard reflective walls, no copier). Serves only the
+      prologue zero-case stationery-shop visit.
+    evidence:
+      - {
+          file: docs/stories_plan/chapter_1/scene_p1.md,
+          line: 26,
+          note: 文具店店內，日光燈偏白，影印機靠牆嗡嗡作響
         }
   - id: bgs_contractor_office_day
     channel: bgs
@@ -428,6 +482,21 @@ entries:
       Catalog is empty. Post-rain calm distinct from the rainy closed-night
       cafe; carries the chapter wind-down.
     evidence:
+      - {
+          file: docs/stories_plan/chapter_1/scene_p2.md,
+          line: 3,
+          note: 雨鐘咖啡館主廳，午後，雨剛停，店內暖黃光
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_p2.md,
+          line: 52,
+          note: 雨鐘咖啡館主廳與店門口，午後，門外雨又細細地下起來
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_p2.md,
+          line: 130,
+          note: 雨鐘主廳與店門外，傍晚，雨變大了，招牌在雨裡發亮
+        }
       - {
           file: docs/stories_plan/chapter_1/scene_11.md,
           line: 3,
@@ -573,9 +642,83 @@ entries:
           note: 相馬把隨身碟插上筆電，螢幕跳出一行目錄
         }
 cues:
-  # scene_0 — KAGAMI summary. tag_001 is the corpus-first visual unit; it must
-  # explicitly set both BGM and BGS (spec L251-252). The scene authors silence,
-  # so both channels are "none".
+  # scene_p0 — prologue opening. tag_001 is the corpus-first visual unit; it
+  # must explicitly set both BGM and BGS (spec L251-252). The chapter-close
+  # theme bookends the prologue and the chapter wind-down (scene_11).
+  - {
+      file: docs/stories_plan/chapter_1/scene_p0.md,
+      visualUnit: tag_001,
+      bgm: bgm_chapter_close,
+      bgs: bgs_shopping_street_rain_dusk
+    }
+  # scene_p0 — tag_002 inherits BGM; shopping-street arcade awning.
+  - {
+      file: docs/stories_plan/chapter_1/scene_p0.md,
+      visualUnit: tag_002,
+      bgs: bgs_shopping_street_rain_dusk
+    }
+  # scene_p0 — tag_003 pedestrian crossing, rainy dusk.
+  - {
+      file: docs/stories_plan/chapter_1/scene_p0.md,
+      visualUnit: tag_003,
+      bgs: bgs_shopping_street_rain_dusk
+    }
+  # scene_p0 — tag_004 legal-aid billboard, dusk shifting to night.
+  - {
+      file: docs/stories_plan/chapter_1/scene_p0.md,
+      visualUnit: tag_004,
+      bgs: bgs_shopping_street_rain_night
+    }
+  # scene_p1 — zero-case opening, shopping street at rainy dusk.
+  - {
+      file: docs/stories_plan/chapter_1/scene_p1.md,
+      visualUnit: tag_001,
+      bgs: bgs_shopping_street_rain_dusk
+    }
+  # scene_p1 — tag_002 stationery/copy shop interior.
+  - {
+      file: docs/stories_plan/chapter_1/scene_p1.md,
+      visualUnit: tag_002,
+      bgs: bgs_stationery_copy_shop
+    }
+  # scene_p1 — tag_003 exterior awning, rain continues.
+  - {
+      file: docs/stories_plan/chapter_1/scene_p1.md,
+      visualUnit: tag_003,
+      bgs: bgs_shopping_street_rain_dusk
+    }
+  # scene_p2 — rain bell cafe, ordinary afternoon after rain.
+  - {
+      file: docs/stories_plan/chapter_1/scene_p2.md,
+      visualUnit: tag_001,
+      bgs: bgs_cafe_afternoon_after_rain
+    }
+  # scene_p2 — tag_002 back corridor, old wall clock.
+  - {
+      file: docs/stories_plan/chapter_1/scene_p2.md,
+      visualUnit: tag_002,
+      bgs: bgs_cafe_backroom_corridor
+    }
+  # scene_p2 — tag_003 main hall and entrance, rain resumes.
+  - {
+      file: docs/stories_plan/chapter_1/scene_p2.md,
+      visualUnit: tag_003,
+      bgs: bgs_cafe_afternoon_after_rain
+    }
+  # scene_p2 — tag_004 behind the counter, closing procedure whiteboard.
+  - {
+      file: docs/stories_plan/chapter_1/scene_p2.md,
+      visualUnit: tag_004,
+      bgs: bgs_cafe_backroom_corridor
+    }
+  # scene_p2 — tag_005 main hall and exterior, rain heavier, sign glowing.
+  - {
+      file: docs/stories_plan/chapter_1/scene_p2.md,
+      visualUnit: tag_005,
+      bgs: bgs_cafe_afternoon_after_rain
+    }
+  # scene_0 — KAGAMI summary. The scene authors silence, so both channels
+  # are "none", ending the prologue's chapter-close theme.
   - {
       file: docs/stories_plan/chapter_1/scene_0.md,
       visualUnit: tag_001,
@@ -810,6 +953,62 @@ cues:
       bgm: bgm_chapter_close
     }
 rejected:
+  - {
+      file: docs/stories_plan/chapter_1/scene_p0.md,
+      line: 3,
+      sound: 遠處電車進站的低鳴,
+      reason: incidental environmental texture,
+      covered by shopping-street rain BGS
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_p1.md,
+      line: 24,
+      sound: 門鈴叮噹響了一聲,
+      reason: incidental prop handling,
+      not a repeated or emphasized action
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_p1.md,
+      line: 26,
+      sound: 影印機靠牆嗡嗡作響,
+      reason: machine texture covered by stationery-shop BGS,
+      not an emphasized action
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_p1.md,
+      line: 215,
+      sound: 門鈴又叮噹響了一聲,
+      reason: incidental prop handling,
+      not a repeated or emphasized action
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_p1.md,
+      line: 267,
+      sound: 門鈴又響了一聲,
+      reason: incidental prop handling,
+      not a repeated or emphasized action
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_p2.md,
+      line: 70,
+      sound: 增田手機螢幕亮了一下,
+      reason: incidental notification glance,
+      not a plot-emphasized action
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_p2.md,
+      line: 94,
+      sound: 片瀨美咲手機震了一下末班車提醒,
+      reason: incidental notification,
+      not a plot-emphasized action
+    }
+  - {
+      file: docs/stories_plan/chapter_1/scene_p2.md,
+      line: 118,
+      sound: 咖啡機悶悶地哼了一聲,
+      reason: incidental machine texture,
+      covered by backroom corridor BGS
+    }
   - {
       file: docs/stories_plan/chapter_1/investigation_scene_3.md,
       line: 26,
