@@ -569,7 +569,7 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_7.md,
-          line: 8,
+          line: 42,
           note: 相馬手機在口袋裡震了一下，匿名訊息到達
         }
   - id: sfx_rice_ball_bag_crinkle

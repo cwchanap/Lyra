@@ -22,11 +22,12 @@ export type GameplaySfxEvent =
 
 // Mapping policy for v1. SFX_ASSETS below has FIVE entries, partitioned as:
 //   - four Chapter 1 story-beat SFX (anonymous-message, rice-ball-bag,
-//     coffee-backflush, usb-insert). Three of these (rice-ball-bag,
-//     coffee-backflush, usb-insert) couple a cue to a specific authored
-//     dialogue line via STORY_BEAT_SFX_TRIGGERS; anonymous-message instead
-//     couples by scene id (enteredChapterOneAnonymousMessage), since its cue
-//     marks entering a scene rather than a specific line; plus
+//     coffee-backflush, usb-insert). All four couple a cue to a specific
+//     authored dialogue line via STORY_BEAT_SFX_TRIGGERS, including
+//     anonymous-message: the phone-buzz beat lives inside the floor_water
+//     hotspot of investigation_scene_7 (the player must inspect the hotspot
+//     to reach it), so coupling by scene id would fire the buzz on scene
+//     entry before any message text appears; plus
 //   - one generic UI tick (ui:menu-confirm) reused across confirm actions.
 //
 // Every other event in the GameplaySfxEvent union currently resolves to NO
@@ -104,6 +105,14 @@ export type StoryBeatSfxTrigger = {
 
 export const STORY_BEAT_SFX_TRIGGERS: readonly StoryBeatSfxTrigger[] = [
   {
+    event: "story:anonymous-message",
+    chapterId: "chapter_1",
+    sceneKind: "investigation",
+    sceneId: "investigation_scene_7",
+    dialogueKind: "action",
+    substring: "手機在口袋裡震了一下",
+  },
+  {
     event: "story:usb-insert",
     chapterId: "chapter_1",
     sceneKind: "linear",
@@ -157,9 +166,6 @@ export function inferGameplaySfxEvents(
     events.push("investigation:statement-acquired");
   }
   if (enteredPhase(previous, next)) events.push("interrogation:phase-entered");
-  if (enteredChapterOneAnonymousMessage(previous, next)) {
-    events.push("story:anonymous-message");
-  }
   for (const trigger of STORY_BEAT_SFX_TRIGGERS) {
     if (enteredStoryBeatSfx(previous, next, trigger)) {
       events.push(trigger.event);
@@ -185,18 +191,6 @@ function enteredPhase(
   const previousPhase =
     previous?.mode.type === "interrogation" ? previous.mode.phaseId : null;
   return previousPhase !== next.mode.phaseId;
-}
-
-function enteredChapterOneAnonymousMessage(
-  previous: GameStateView | null,
-  next: GameStateView,
-): boolean {
-  return (
-    next.chapter.id === "chapter_1" &&
-    next.scene.kind === "investigation" &&
-    next.scene.id === "investigation_scene_7" &&
-    previous?.scene.id !== next.scene.id
-  );
 }
 
 function enteredStoryBeatSfx(
