@@ -222,7 +222,10 @@ describe("inferGameplaySfxEvents", () => {
     );
   });
 
-  it("dispatches the anonymous-message hook when entering chapter 1 investigation scene 7", () => {
+  it("does not dispatch the anonymous-message hook on scene entry alone", () => {
+    // The phone-buzz beat lives inside the floor_water hotspot, so entering
+    // investigation_scene_7 in explore mode must NOT fire the buzz before the
+    // player inspects the hotspot and reaches the message dialogue.
     const previous = state({
       scene: { kind: "linear", id: "scene_6", title: "", index: 0, total: 1 },
       mode: {
@@ -237,6 +240,50 @@ describe("inferGameplaySfxEvents", () => {
       },
     });
     const next = state();
+    expect(inferGameplaySfxEvents(previous, next, "advance_dialogue")).toEqual(
+      [],
+    );
+  });
+
+  it("dispatches the anonymous-message hook on the chapter 1 floor_water phone-buzz action beat", () => {
+    const previous = state({
+      mode: {
+        type: "dialogue",
+        current: {
+          kind: "action",
+          text: "相馬律蹲下，湊近看止滑墊邊緣的半乾水痕。",
+        },
+        queueRemaining: 6,
+        sceneTag: null,
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+        queueToken: {
+          sceneId: "investigation_scene_7",
+          queueGen: 3,
+          cursor: 1,
+        },
+      },
+    });
+    const next = state({
+      mode: {
+        type: "dialogue",
+        current: {
+          kind: "action",
+          text: "相馬律蹲下，湊近看止滑墊邊緣的半乾水痕。他剛蹲穩，手機在口袋裡震了一下。他低頭看螢幕，眉頭皺起。",
+        },
+        queueRemaining: 5,
+        sceneTag: null,
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+        queueToken: {
+          sceneId: "investigation_scene_7",
+          queueGen: 3,
+          cursor: 2,
+        },
+      },
+    });
     expect(inferGameplaySfxEvents(previous, next, "advance_dialogue")).toEqual([
       "story:anonymous-message",
     ]);
