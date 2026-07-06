@@ -113,8 +113,6 @@ function renderView(
   overrides?: {
     inventory?: Inventory;
     onAsk?: (questionId: string) => void | Promise<void>;
-    onProceed?: () => void | Promise<void>;
-    onChallenge?: (lineId: string) => void | Promise<void>;
     onPresent?: (
       lineId: string,
       itemKind: "evidence" | "statement",
@@ -129,8 +127,6 @@ function renderView(
     scene,
     inventory: overrides?.inventory ?? sampleInventory(),
     onAsk: overrides?.onAsk ?? vi.fn(),
-    onProceed: overrides?.onProceed ?? vi.fn(),
-    onChallenge: overrides?.onChallenge ?? vi.fn(),
     onPresent: overrides?.onPresent ?? vi.fn(),
     onWithdraw: overrides?.onWithdraw ?? vi.fn(),
     onComplete: overrides?.onComplete ?? vi.fn(),
@@ -142,13 +138,6 @@ describe("InterrogationView", () => {
   it("shows the question menu when no cross-exam is active", async () => {
     const { getByText } = renderView(sceneWithMenu()); // crossExam: null, one question "當晚行蹤"
     expect(getByText("當晚行蹤")).toBeTruthy();
-  });
-
-  it("shows 反駁/繼續/退下 controls during playback", () => {
-    const { getByRole } = renderView(sceneInPlayback()); // crossExam.presenting === false
-    expect(getByRole("button", { name: /反駁/ })).toBeTruthy();
-    expect(getByRole("button", { name: /繼續/ })).toBeTruthy();
-    expect(getByRole("button", { name: /退下/ })).toBeTruthy();
   });
 
   it("shows the evidence tray when presenting", () => {
@@ -187,8 +176,11 @@ describe("InterrogationView", () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 
-  it("hides the 完成訊問 button during an active cross-examination", () => {
-    const { queryByRole } = renderView(sceneInPlayback());
-    expect(queryByRole("button", { name: "完成訊問" })).toBeNull();
+  it("shows the question menu (not the tray) while a testimony is only playing", () => {
+    // A non-presenting cross-exam plays in the DialogueBox, so the
+    // InterrogationView falls back to the question menu rather than a line card.
+    const { getByText, queryByText } = renderView(sceneInPlayback());
+    expect(getByText("當晚行蹤")).toBeTruthy();
+    expect(queryByText("針對此句提出證據 · PRESENT")).toBeNull();
   });
 });

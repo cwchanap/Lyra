@@ -57,6 +57,9 @@ export type Mode =
       queueRemaining: number;
       sceneTag: string | null;
       queueToken: QueueToken;
+      /** While an interrogation testimony plays in the dialogue box, the id of
+       * the line the inline `反駁` challenge targets; null otherwise. */
+      crossExamLineId: string | null;
     } & VisualAssetCue)
   | ({ type: "explore"; sublocationId: string } & VisualAssetCue)
   | ({ type: "interrogation"; phaseId: string } & VisualAssetCue)

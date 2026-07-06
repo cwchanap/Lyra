@@ -520,10 +520,89 @@ impl GameEngine {
                 }
             }
             SceneRuntime::Interrogation(_) => {
-                if self.try_advance_interrogation()? {
-                    self.advance_scene()?;
+                if self.interrogation_playing_unbroken() {
+                    // A not-yet-broken testimony loops in the dialogue box: when
+                    // one line's content drains, auto-advance to the next line
+                    // instead of ending the phase. The player leaves this loop
+                    // only by challenging (反駁) or withdrawing (退下).
+                    self.advance_playing_testimony()?;
+                } else {
+                    // An honest (auto-broken) question has nothing left to
+                    // challenge; drop back to the question menu before running
+                    // the phase/outro checks so the menu (not an empty Playing
+                    // state) is shown.
+                    self.finish_broken_playing();
+                    if self.try_advance_interrogation()? {
+                        self.advance_scene()?;
+                    }
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Whether the current interrogation scene is playing a not-yet-broken
+    /// testimony (see [`InterrogationSceneState::is_playing_unbroken`]).
+    fn interrogation_playing_unbroken(&self) -> bool {
+        matches!(&self.scene, SceneRuntime::Interrogation(scene) if scene.is_playing_unbroken())
+    }
+
+    /// Returns a still-`Playing` (broken) cross-examination to the question
+    /// menu. No-op unless a testimony line is being played.
+    fn finish_broken_playing(&mut self) {
+        if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+            if scene.is_playing() {
+                scene.withdraw();
+            }
+        }
+    }
+
+    /// Auto-advances a looping testimony to its next line while it plays in the
+    /// dialogue box, installing that line's content as the next dialogue queue.
+    /// Past the last line the testimony loops: the `on_loop` bridge plays and
+    /// then line 0 is re-shown, so the whole statement repeats without ever
+    /// skipping line 0. Only called while `is_playing_unbroken()`.
+    fn advance_playing_testimony(&mut self) -> Result<(), GameError> {
+        let queue_items = {
+            let scene = match &mut self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => return Ok(()),
+            };
+            let CrossExam::Playing { question_id, .. } = scene.cross_exam().clone() else {
+                return Ok(());
+            };
+            match scene.advance_line() {
+                AdvanceOutcome::NextLine(index) => scene
+                    .question(&question_id)
+                    .and_then(|question| question.testimony.lines.get(index))
+                    .map(|line| line.content.clone())
+                    .unwrap_or_default(),
+                AdvanceOutcome::Loop => scene
+                    .question(&question_id)
+                    .map(|question| {
+                        let mut items = question.testimony.on_loop.clone();
+                        if let Some(first) = question.testimony.lines.first() {
+                            items.extend(first.content.iter().cloned());
+                        }
+                        items
+                    })
+                    .unwrap_or_default(),
+            }
+        };
+
+        if queue_items.is_empty() {
+            // Degenerate testimony (no line content and no loop bridge): return
+            // to the menu rather than leaving the player stuck on an empty
+            // Playing state.
+            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                scene.withdraw();
+            }
+            if self.try_advance_interrogation()? {
+                self.advance_scene()?;
+            }
+        } else {
+            let queue_gen = self.alloc_queue_gen();
+            self.install_scene_queue(queue_items, queue_gen)?;
         }
         Ok(())
     }
@@ -1351,77 +1430,6 @@ impl GameEngine {
         self.restore_on_error(snapshot, result)
     }
 
-    /// `proceed_interrogation_line` — advances the currently-playing testimony
-    /// to its next line, or (past the last line) loops back to line 0.
-    pub fn proceed_interrogation_line(&mut self) -> Result<GameStateView, GameError> {
-        if self.current_chapter_idx >= self.chapters.len() {
-            return Err(GameError::game_complete());
-        }
-
-        {
-            let scene = match &self.scene {
-                SceneRuntime::Interrogation(scene) => scene,
-                _ => {
-                    return Err(GameError::wrong_mode(
-                        "proceed_interrogation_line",
-                        "not interrogation",
-                    ))
-                }
-            };
-            if scene
-                .pending_queue
-                .as_ref()
-                .is_some_and(|q| q.cursor < q.items.len())
-            {
-                return Err(GameError::dialogue_active("proceed_interrogation_line"));
-            }
-            if !matches!(scene.cross_exam(), CrossExam::Playing { .. }) {
-                return Err(GameError::not_in_cross_examination(
-                    "proceed_interrogation_line",
-                ));
-            }
-        }
-
-        let snapshot = self.snapshot();
-        let result = (|| -> Result<GameStateView, GameError> {
-            let queue_items = {
-                let scene = match &mut self.scene {
-                    SceneRuntime::Interrogation(scene) => scene,
-                    _ => {
-                        return Err(GameError::internal(
-                            "scene changed during proceed_interrogation_line".into(),
-                        ))
-                    }
-                };
-                let CrossExam::Playing { question_id, .. } = scene.cross_exam().clone() else {
-                    return Err(GameError::internal(
-                        "cross_exam changed during proceed_interrogation_line".into(),
-                    ));
-                };
-                match scene.advance_line() {
-                    AdvanceOutcome::NextLine(index) => scene
-                        .question(&question_id)
-                        .and_then(|question| question.testimony.lines.get(index))
-                        .map(|line| line.content.clone())
-                        .unwrap_or_default(),
-                    AdvanceOutcome::Loop => scene
-                        .question(&question_id)
-                        .map(|question| question.testimony.on_loop.clone())
-                        .unwrap_or_default(),
-                }
-            };
-
-            if queue_items.is_empty() {
-                self.on_queue_exhausted()?;
-            } else {
-                let queue_gen = self.alloc_queue_gen();
-                self.install_scene_queue(queue_items, queue_gen)?;
-            }
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
-    }
-
     /// `challenge_interrogation_line` — opens the evidence tray against
     /// `line_id`, installing its challenge lead-in dialogue.
     pub fn challenge_interrogation_line(
@@ -1442,13 +1450,11 @@ impl GameEngine {
                     ))
                 }
             };
-            if scene
-                .pending_queue
-                .as_ref()
-                .is_some_and(|q| q.cursor < q.items.len())
-            {
-                return Err(GameError::dialogue_active("challenge_interrogation_line"));
-            }
+            // The inline `反駁` button fires while the testimony line is still
+            // on screen (its content queue active), so no `dialogue_active`
+            // guard here — the `Playing` state is the sole gate. Every other
+            // active dialogue (intro, challenge lead-in, on-correct reveal)
+            // leaves `cross_exam` non-`Playing`, so this still rejects them.
             if !matches!(scene.cross_exam(), CrossExam::Playing { .. }) {
                 return Err(GameError::not_in_cross_examination(
                     "challenge_interrogation_line",
@@ -1635,13 +1641,10 @@ impl GameEngine {
                     ))
                 }
             };
-            if scene
-                .pending_queue
-                .as_ref()
-                .is_some_and(|q| q.cursor < q.items.len())
-            {
-                return Err(GameError::dialogue_active("withdraw_interrogation"));
-            }
+            // The inline `退下` button fires while the testimony line is still
+            // on screen, so no `dialogue_active` guard — the cross-exam state
+            // is the sole gate. Other active dialogue leaves `cross_exam`
+            // non-`Playing`/`Presenting`, so this still rejects it.
             if !matches!(
                 scene.cross_exam(),
                 CrossExam::Playing { .. } | CrossExam::Presenting { .. }
@@ -1656,11 +1659,11 @@ impl GameEngine {
         let result = (|| -> Result<GameStateView, GameError> {
             if let SceneRuntime::Interrogation(scene) = &mut self.scene {
                 scene.withdraw();
+                // A testimony content queue may still be active (withdrawing
+                // mid-line); drop it so the scene machinery below runs as if
+                // the queue had just drained.
+                scene.pending_queue = None;
             }
-            // The guard above already ensured no dialogue queue is active, so
-            // there is nothing to install here — always drive the scene
-            // machinery forward (phase/outro checks) as if the queue had just
-            // been exhausted.
             self.on_queue_exhausted()?;
             Ok(self.view_with_history())
         })();
@@ -1790,6 +1793,10 @@ impl GameEngine {
                 bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
                 bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
                 queue_token: t,
+                cross_exam_line_id: match &self.scene {
+                    SceneRuntime::Interrogation(scene) => scene.playing_unbroken_line_id(),
+                    _ => None,
+                },
             },
             _ => match &self.scene {
                 SceneRuntime::Investigation(inv) => match &inv.current_sublocation_id {
@@ -4118,10 +4125,10 @@ mod tests {
             ModeView::Interrogation { ref phase_id, .. } if phase_id == "required_inquiry"
         ));
 
-        // Break the required question, return to the menu, then manually
-        // complete the phase — the outro fires and skips the optional phase.
+        // Ask the required question: its empty (contradiction-free) testimony
+        // auto-breaks and returns to the menu on its own. Manually complete the
+        // phase — the outro fires and skips the optional phase.
         engine.ask_interrogation_question("required_q").unwrap();
-        engine.withdraw_interrogation().unwrap();
         let view = engine.complete_interrogation_phase().unwrap();
 
         assert!(!engine.inventory.has_evidence("optional_leak"));
@@ -6439,6 +6446,168 @@ mod tests {
         };
         assert!(scene.completed_phases.contains("phase"));
         assert!(scene.outro_played);
+    }
+
+    /// One phase with a single required question whose only testimony line is
+    /// contradiction-free (honest) — auto-broken on ask. Used to exercise the
+    /// honest-question return-to-menu path.
+    fn single_honest_question_scene() -> crate::game::schema::InterrogationSceneJson {
+        use crate::game::schema::{
+            InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
+            InterrogationSceneJson,
+        };
+        InterrogationSceneJson {
+            id: "honest".into(),
+            title: "Honest".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "phase".into(),
+                label: "Phase".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![InquiryQuestionJson {
+                    id: "q1".into(),
+                    label: "Q1".into(),
+                    status: LockStatus::Unlocked,
+                    required: true,
+                    unlock: None,
+                    reveals: vec![],
+                    testimony: TestimonyJson {
+                        on_loop: vec![],
+                        default_challenge: vec![],
+                        default_wrong: vec![],
+                        lines: vec![TestimonyLineJson {
+                            id: "h1".into(),
+                            label: "H1".into(),
+                            content: vec![DialogueItem::Line {
+                                speaker: "suspect".into(),
+                                text: "誠實回答。".into(),
+                                portrait: None,
+                            }],
+                            contradiction: None,
+                            challenge: vec![],
+                            on_correct: vec![],
+                            on_wrong_evidence: vec![],
+                            reveals: vec![],
+                        }],
+                    },
+                }],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![DialogueItem::Line {
+                    speaker: "Detective".into(),
+                    text: "done".into(),
+                    portrait: None,
+                }],
+            },
+        }
+    }
+
+    #[test]
+    fn ask_playing_testimony_exposes_cross_exam_line_id() {
+        // Asking a not-yet-broken question plays its first testimony line in
+        // the dialogue box, exposing the line id the inline 反駁 targets.
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.prime_initial_queue().unwrap();
+
+        let view = engine.ask_interrogation_question("alibi").unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                cross_exam_line_id, ..
+            } => assert_eq!(cross_exam_line_id.as_deref(), Some("l_off")),
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn draining_unbroken_testimony_loops_in_dialogue() {
+        // Draining line 0's content auto-advances to line 1 and stays in the
+        // dialogue box (the testimony loops) rather than dropping to the menu.
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.prime_initial_queue().unwrap();
+
+        let view = engine.ask_interrogation_question("alibi").unwrap();
+        let view = engine.advance_dialogue(token_from(&view)).unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                current,
+                cross_exam_line_id,
+                ..
+            } => {
+                assert_eq!(cross_exam_line_id.as_deref(), Some("l_deny"));
+                assert!(
+                    matches!(current, DialogueItem::Line { text, .. } if text == "我從沒打掃過那裡。"),
+                    "expected to advance to line 1, got {current:?}"
+                );
+            }
+            other => panic!("expected looping Dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn challenge_fires_during_active_testimony_dialogue() {
+        // The inline 反駁 fires while the testimony content queue is still
+        // active — no `dialogue_active` rejection (relaxed guard).
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.prime_initial_queue().unwrap();
+
+        let view = engine.ask_interrogation_question("alibi").unwrap();
+        assert!(matches!(view.mode, ModeView::Dialogue { .. }));
+
+        // Challenge mid-dialogue; l_off's empty challenge lead-in opens the
+        // tray immediately.
+        engine.challenge_interrogation_line("l_off").unwrap();
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(
+            matches!(scene.cross_exam(), CrossExam::Presenting { line_id, .. } if line_id == "l_off"),
+            "challenge mid-dialogue should reach Presenting, got {:?}",
+            scene.cross_exam()
+        );
+    }
+
+    #[test]
+    fn honest_question_returns_to_menu_after_draining() {
+        // An honest (auto-broken) question exposes no inline challenge line and
+        // returns to the question menu once its testimony drains — it does not
+        // loop like an unbroken testimony.
+        let mut engine = empty_engine_with_interrogation_scene(single_honest_question_scene(), 1);
+        engine.prime_initial_queue().unwrap();
+
+        let view = engine.ask_interrogation_question("q1").unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                cross_exam_line_id, ..
+            } => assert_eq!(
+                *cross_exam_line_id, None,
+                "a broken question exposes no challenge line"
+            ),
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+
+        let view = engine.advance_dialogue(token_from(&view)).unwrap();
+        assert!(
+            matches!(view.mode, ModeView::Interrogation { .. }),
+            "honest testimony should return to the menu, got {:?}",
+            view.mode
+        );
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(matches!(scene.cross_exam(), CrossExam::Idle));
+        assert!(scene.is_question_broken("q1"));
     }
 
     #[test]

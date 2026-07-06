@@ -260,7 +260,6 @@ fn dispatch(state: &ServerState, command: &str, body: &[u8]) -> Result<String, G
             let args: Args = parse_body(body)?;
             with_engine(state, |e| e.ask_interrogation_question(&args.question_id))
         }
-        "proceed_interrogation_line" => with_engine(state, |e| e.proceed_interrogation_line()),
         "challenge_interrogation_line" => {
             #[derive(Deserialize)]
             struct Args {

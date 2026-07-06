@@ -143,15 +143,6 @@ fn ask_interrogation_question(
 }
 
 #[tauri::command]
-fn proceed_interrogation_line(
-    state: tauri::State<'_, AppState>,
-) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
-    engine.proceed_interrogation_line()
-}
-
-#[tauri::command]
 fn challenge_interrogation_line(
     state: tauri::State<'_, AppState>,
     line_id: String,
@@ -209,7 +200,6 @@ pub fn run() {
             reexamine_evidence,
             reexamine_statement,
             ask_interrogation_question,
-            proceed_interrogation_line,
             challenge_interrogation_line,
             present_interrogation_evidence,
             withdraw_interrogation,

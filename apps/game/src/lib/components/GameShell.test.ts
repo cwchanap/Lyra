@@ -42,6 +42,7 @@ import GameShellHarness from "./GameShellHarness.svelte";
 function state(
   mode: GameStateView["mode"] = {
     type: "dialogue",
+    crossExamLineId: null,
     current: { kind: "action", text: "幕開" },
     queueRemaining: 0,
     sceneTag: null,

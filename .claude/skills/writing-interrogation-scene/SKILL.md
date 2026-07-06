@@ -28,8 +28,9 @@ Interrogation scenes reuse those manifest formats.
 - A **Phase** has one **Subject** and one or more **Questions**.
 - Each **Question**, once asked, plays a **Testimony**: an ordered list of
   **Lines** delivered one at a time.
-- At each line the player may **反駁 (challenge)**, **繼續 (proceed)** to the
-  next line, or **退下 (withdraw)** back to the question menu.
+- The testimony plays its lines one at a time in the dialogue box and loops;
+  advancing (Space) steps to the next line. At any line the player may
+  **反駁 (challenge)** that line or **退下 (withdraw)** back to the question menu.
 - A line may carry a **Contradiction** — an `evidence:<id>` / `statement:<id>`
   inventory target. Challenging a line with the right evidence fires the
   line's authored **On Correct** breakthrough (+`Reveals`); challenging it

@@ -210,9 +210,6 @@ export async function reexamineStatement(statementId: string) {
 export async function askInterrogationQuestion(questionId: string) {
   await dispatchGameCommand("ask_interrogation_question", { questionId });
 }
-export async function proceedInterrogationLine() {
-  await dispatchGameCommand("proceed_interrogation_line", {});
-}
 export async function challengeInterrogationLine(lineId: string) {
   await dispatchGameCommand("challenge_interrogation_line", { lineId });
 }

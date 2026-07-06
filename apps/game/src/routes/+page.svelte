@@ -11,7 +11,6 @@
     reexamineEvidence,
     reexamineStatement,
     askInterrogationQuestion,
-    proceedInterrogationLine,
     challengeInterrogationLine,
     presentInterrogationEvidence,
     withdrawInterrogation,
@@ -253,6 +252,13 @@
         onAdvanceFeedback={() => playGameplaySfxEvent("ui:menu-confirm")}
         history={gameState.value.dialogueHistory}
         disabled={gameState.inFlight}
+        crossExam={gameState.value.mode.crossExamLineId
+          ? {
+              lineId: gameState.value.mode.crossExamLineId,
+              onChallenge: challengeInterrogationLine,
+              onWithdraw: withdrawInterrogation,
+            }
+          : null}
       />
     {:else if gameState.value.mode.type === "explore"}
       <ExploreView
@@ -272,8 +278,6 @@
         scene={gameState.value.scene}
         inventory={gameState.value.inventory}
         onAsk={askInterrogationQuestion}
-        onProceed={proceedInterrogationLine}
-        onChallenge={challengeInterrogationLine}
         onPresent={presentInterrogationEvidence}
         onWithdraw={withdrawInterrogation}
         onComplete={completeInterrogationPhase}

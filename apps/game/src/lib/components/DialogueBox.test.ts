@@ -41,6 +41,11 @@ function renderDialogueBox(
     disabled?: boolean;
     onAdvanceFeedback?: () => void;
     history?: DialogueHistoryEntry[];
+    crossExam?: {
+      lineId: string;
+      onChallenge: (lineId: string) => void;
+      onWithdraw: () => void;
+    } | null;
   },
 ) {
   const onAdvance = vi.fn();
@@ -51,6 +56,7 @@ function renderDialogueBox(
     history: overrides?.history ?? [],
     disabled: overrides?.disabled,
     onAdvanceFeedback: overrides?.onAdvanceFeedback,
+    crossExam: overrides?.crossExam ?? null,
   });
   return { onAdvance, ...result };
 }
@@ -778,5 +784,96 @@ describe("DialogueBox", () => {
     fireEvent.keyDown(logButton, { key: " " });
 
     expect(onAdvance).not.toHaveBeenCalled();
+  });
+});
+
+describe("DialogueBox inline cross-examination controls", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetEscapeCoordinator();
+  });
+
+  it("renders no 反駁 / 退下 controls without a crossExam prop", () => {
+    renderDialogueBox({ kind: "line", speaker: "嫌疑人", text: "我沒去過。" });
+    expect(screen.queryByRole("button", { name: /反駁/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /退下/ })).toBeNull();
+  });
+
+  it("renders the inline 反駁 / 退下 controls while a testimony plays", () => {
+    renderDialogueBox(
+      { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+      {
+        crossExam: {
+          lineId: "l_deny",
+          onChallenge: vi.fn(),
+          onWithdraw: vi.fn(),
+        },
+      },
+    );
+    expect(screen.getByRole("button", { name: /反駁/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /退下/ })).toBeInTheDocument();
+  });
+
+  it("challenges the current line without advancing the dialogue", async () => {
+    const onChallenge = vi.fn();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+      { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: /反駁/ }));
+
+    expect(onChallenge).toHaveBeenCalledWith("l_deny");
+    // The button lives inside the click-to-advance box; its click must not
+    // also advance the testimony.
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("withdraws without advancing the dialogue", async () => {
+    const onWithdraw = vi.fn();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+      { crossExam: { lineId: "l_deny", onChallenge: vi.fn(), onWithdraw } },
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: /退下/ }));
+
+    expect(onWithdraw).toHaveBeenCalledTimes(1);
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("still advances when the box itself is clicked", async () => {
+    const { onAdvance } = renderDialogueBox(
+      { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+      {
+        crossExam: {
+          lineId: "l_deny",
+          onChallenge: vi.fn(),
+          onWithdraw: vi.fn(),
+        },
+      },
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: "推進對話" }));
+
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fire challenge / withdraw while disabled", async () => {
+    const onChallenge = vi.fn();
+    const onWithdraw = vi.fn();
+    renderDialogueBox(
+      { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+      {
+        disabled: true,
+        crossExam: { lineId: "l_deny", onChallenge, onWithdraw },
+      },
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: /反駁/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /退下/ }));
+
+    expect(onChallenge).not.toHaveBeenCalled();
+    expect(onWithdraw).not.toHaveBeenCalled();
   });
 });

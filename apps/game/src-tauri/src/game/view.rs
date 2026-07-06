@@ -52,6 +52,11 @@ pub enum ModeView {
         bgm: Option<AudioCueView>,
         bgs: Option<AudioCueView>,
         queue_token: QueueToken,
+        /// While an interrogation testimony plays in the dialogue box, the id
+        /// of the (not-yet-broken) line the inline `反駁` challenge targets.
+        /// `None` for every other dialogue (linear/investigation scenes, the
+        /// challenge lead-in, on-correct reveals, honest-question testimony).
+        cross_exam_line_id: Option<String>,
     },
     Explore {
         sublocation_id: String,
