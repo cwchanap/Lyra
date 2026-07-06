@@ -1269,6 +1269,7 @@ impl GameEngine {
         if self.current_chapter_idx >= self.chapters.len() {
             return Err(GameError::game_complete());
         }
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
         {
             let scene = match &self.scene {
@@ -1311,11 +1312,29 @@ impl GameEngine {
                     }
                 };
                 scene.begin_question(question_id);
-                scene
+                let line_content = scene
                     .question(question_id)
                     .and_then(|question| question.testimony.lines.first())
                     .map(|line| line.content.clone())
-                    .unwrap_or_default()
+                    .unwrap_or_default();
+                // A no-contradiction (honest) question auto-breaks the moment
+                // it is asked. There is no `On Correct` line to carry its
+                // reveals, so fire the question-level reveals here.
+                if scene.is_question_broken(question_id) {
+                    let reveals = scene
+                        .question(question_id)
+                        .map(|question| question.reveals.clone())
+                        .unwrap_or_default();
+                    reveals::apply_interrogation_reveals_and_build_queue(
+                        scene,
+                        &mut self.inventory,
+                        line_content,
+                        &reveals,
+                        &chapter_id,
+                    )
+                } else {
+                    line_content
+                }
             };
 
             if queue_items.is_empty() {
@@ -1551,10 +1570,16 @@ impl GameEngine {
                         .as_ref()
                         .map(|line| line.on_correct.clone())
                         .unwrap_or_default();
-                    let reveals = line
+                    let mut reveals = line
                         .as_ref()
                         .map(|line| line.reveals.clone())
                         .unwrap_or_default();
+                    // Breaking the question also fires its question-level
+                    // reveals (the runtime otherwise only applies phase-entry
+                    // and line-level `On Correct` reveals).
+                    if let Some(question) = scene.question(&question_id) {
+                        reveals.extend(question.reveals.iter().cloned());
+                    }
                     let queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
                         &mut self.inventory,
@@ -5967,6 +5992,230 @@ mod tests {
             panic!("expected interrogation scene");
         };
         assert!(scene.is_question_broken("q1"));
+    }
+
+    #[test]
+    fn present_correct_applies_question_level_reveals() {
+        use crate::game::schema::{
+            InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
+            InterrogationRevealTarget, InterrogationSceneJson, StatementJson,
+        };
+
+        // The reveal lives at the QUESTION level (question.reveals) while the
+        // contradiction line carries NO line-level reveals. Breaking the
+        // question by presenting correct evidence must still collect the
+        // question-level revealed statement.
+        let scene = InterrogationSceneJson {
+            id: "q_reveal_present".into(),
+            title: "Q Reveal Present".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "phase".into(),
+                label: "Phase".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![InquiryQuestionJson {
+                    id: "q1".into(),
+                    label: "Q1".into(),
+                    status: LockStatus::Unlocked,
+                    required: true,
+                    unlock: None,
+                    reveals: vec![InterrogationRevealTarget::Statement {
+                        id: "revealed_stmt".into(),
+                    }],
+                    testimony: TestimonyJson {
+                        on_loop: vec![],
+                        default_challenge: vec![],
+                        default_wrong: vec![],
+                        lines: vec![TestimonyLineJson {
+                            id: "l1".into(),
+                            label: "L1".into(),
+                            content: vec![DialogueItem::Line {
+                                speaker: "suspect".into(),
+                                text: "I am innocent.".into(),
+                                portrait: None,
+                            }],
+                            contradiction: Some(InventoryTarget::Evidence {
+                                id: "contradiction_ev".into(),
+                            }),
+                            challenge: vec![DialogueItem::Action {
+                                text: "challenge".into(),
+                            }],
+                            on_correct: vec![DialogueItem::Line {
+                                speaker: "Detective".into(),
+                                text: "Broken!".into(),
+                                portrait: None,
+                            }],
+                            on_wrong_evidence: vec![],
+                            reveals: vec![], // NO line-level reveals
+                        }],
+                    },
+                }],
+            }],
+            evidence_manifest: vec![EvidenceJson {
+                id: "contradiction_ev".into(),
+                name: "Contradiction".into(),
+                description: "d".into(),
+                details: "d".into(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![StatementJson {
+                id: "revealed_stmt".into(),
+                speaker: "Witness".into(),
+                content: "The truth".into(),
+                on_acquire: vec![],
+                on_reexamine: None,
+            }],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "contradiction_ev".into(),
+            name: "Contradiction".into(),
+            description: "d".into(),
+            details: "d".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "previous_scene".into(),
+        });
+        engine.prime_initial_queue().unwrap();
+
+        let ask_view = engine.ask_interrogation_question("q1").unwrap();
+        engine.advance_dialogue(token_from(&ask_view)).unwrap();
+        let challenge_view = engine.challenge_interrogation_line("l1").unwrap();
+        engine
+            .advance_dialogue(token_from(&challenge_view))
+            .unwrap();
+        engine
+            .present_interrogation_evidence("l1", "evidence", "contradiction_ev")
+            .unwrap();
+
+        assert!(
+            engine.inventory.has_statement("revealed_stmt"),
+            "question-level reveal should collect the statement on break"
+        );
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(scene.is_question_broken("q1"));
+    }
+
+    #[test]
+    fn honest_question_auto_break_applies_question_level_reveals() {
+        use crate::game::schema::{
+            InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
+            InterrogationRevealTarget, InterrogationSceneJson, StatementJson,
+        };
+
+        // An honest question (no contradiction line) auto-breaks the moment
+        // it is asked. Its question-level reveal must fire even though there
+        // is no On Correct line to carry it. A second REQUIRED question keeps
+        // the phase from vacuously completing and ending the game.
+        let scene = InterrogationSceneJson {
+            id: "q_reveal_ask".into(),
+            title: "Q Reveal Ask".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "phase".into(),
+                label: "Phase".into(),
+                subject: subject(),
+                required: true,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![
+                    InquiryQuestionJson {
+                        id: "honest_q".into(),
+                        label: "Honest".into(),
+                        status: LockStatus::Unlocked,
+                        required: false,
+                        unlock: None,
+                        reveals: vec![InterrogationRevealTarget::Statement {
+                            id: "revealed_stmt".into(),
+                        }],
+                        testimony: TestimonyJson {
+                            on_loop: vec![],
+                            default_challenge: vec![],
+                            default_wrong: vec![],
+                            lines: vec![TestimonyLineJson {
+                                id: "h1".into(),
+                                label: "H1".into(),
+                                content: vec![DialogueItem::Line {
+                                    speaker: "suspect".into(),
+                                    text: "Nothing to hide.".into(),
+                                    portrait: None,
+                                }],
+                                contradiction: None, // honest -> auto-break on ask
+                                challenge: vec![],
+                                on_correct: vec![],
+                                on_wrong_evidence: vec![],
+                                reveals: vec![],
+                            }],
+                        },
+                    },
+                    // Keeps the phase incomplete so asking only the honest
+                    // question does not complete the game.
+                    InquiryQuestionJson {
+                        id: "required_q".into(),
+                        label: "Required".into(),
+                        status: LockStatus::Unlocked,
+                        required: true,
+                        unlock: None,
+                        reveals: vec![],
+                        testimony: TestimonyJson {
+                            on_loop: vec![],
+                            default_challenge: vec![],
+                            default_wrong: vec![],
+                            lines: vec![],
+                        },
+                    },
+                ],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![StatementJson {
+                id: "revealed_stmt".into(),
+                speaker: "Witness".into(),
+                content: "The truth".into(),
+                on_acquire: vec![],
+                on_reexamine: None,
+            }],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
+        engine.prime_initial_queue().unwrap();
+
+        engine.ask_interrogation_question("honest_q").unwrap();
+
+        assert!(
+            engine.inventory.has_statement("revealed_stmt"),
+            "honest-question auto-break should fire its question-level reveal"
+        );
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(scene.is_question_broken("honest_q"));
     }
 
     #[test]
