@@ -63,6 +63,7 @@ export type GameplayCommandName =
   | "challenge_interrogation_line"
   | "present_interrogation_evidence"
   | "withdraw_interrogation"
+  | "resume_interrogation_testimony"
   | "complete_interrogation_phase";
 
 const SFX_ASSETS: Partial<Record<GameplaySfxEvent, string>> = {

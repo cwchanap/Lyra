@@ -173,9 +173,51 @@ impl GameEngine {
 
         let result = (|| -> Result<GameStateView, GameError> {
             self.prime_initial_queue()?;
+            // Developer convenience: jumping straight into an interrogation via
+            // scene-navigation skips the investigation where its contradiction
+            // evidence is normally collected. Grant everything so every
+            // testimony is presentable for testing.
+            if matches!(self.scene, SceneRuntime::Interrogation(_)) {
+                self.grant_all_evidence_for_testing();
+            }
             Ok(self.view_with_history())
         })();
         self.restore_on_error(snapshot, result)
+    }
+
+    /// Grants every evidence and statement defined across all scenes so that
+    /// any interrogation contradiction can be presented. Testing-only, reached
+    /// solely from [`Self::jump_to_scene`] into an interrogation scene. Scenes
+    /// that fail to load are skipped — this is a best-effort convenience, not a
+    /// correctness path, so a single bad scene must not abort the grant.
+    fn grant_all_evidence_for_testing(&mut self) {
+        let chapters = self.chapters.clone();
+        for chapter in &chapters {
+            for scene_ref in &chapter.scenes {
+                let Ok(scene) = loader::load_scene(&self.resources_dir, &scene_ref.file) else {
+                    continue;
+                };
+                let (scene_id, _) = scene_json_identity(&scene);
+                let scene_id = scene_id.to_string();
+                let (evidence, statements) = match &scene {
+                    SceneJson::Investigation(inv) => {
+                        (&inv.evidence_manifest, &inv.statement_manifest)
+                    }
+                    SceneJson::Interrogation(intr) => {
+                        (&intr.evidence_manifest, &intr.statement_manifest)
+                    }
+                    SceneJson::Linear(_) => continue,
+                };
+                for def in evidence {
+                    self.inventory
+                        .add_evidence_from_def(def, &chapter.id, &scene_id);
+                }
+                for def in statements {
+                    self.inventory
+                        .add_statement_from_def(def, &chapter.id, &scene_id);
+                }
+            }
+        }
     }
 
     fn prime_initial_queue(&mut self) -> Result<(), GameError> {
@@ -1670,6 +1712,71 @@ impl GameEngine {
         self.restore_on_error(snapshot, result)
     }
 
+    /// `resume_interrogation_testimony` — backs out of the evidence tray (收回)
+    /// to keep listening: returns from `Presenting` to *playing* the same
+    /// testimony line in the dialogue box, rather than abandoning the
+    /// cross-examination back to the question menu (which `withdraw` does).
+    pub fn resume_interrogation_testimony(&mut self) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
+
+        {
+            let scene = match &self.scene {
+                SceneRuntime::Interrogation(scene) => scene,
+                _ => {
+                    return Err(GameError::wrong_mode(
+                        "resume_interrogation_testimony",
+                        "not interrogation",
+                    ))
+                }
+            };
+            if !matches!(scene.cross_exam(), CrossExam::Presenting { .. }) {
+                return Err(GameError::not_in_cross_examination(
+                    "resume_interrogation_testimony",
+                ));
+            }
+        }
+
+        let snapshot = self.snapshot();
+        let result = (|| -> Result<GameStateView, GameError> {
+            let queue_items = {
+                let scene = match &mut self.scene {
+                    SceneRuntime::Interrogation(scene) => scene,
+                    _ => {
+                        return Err(GameError::internal(
+                            "scene changed during resume_interrogation_testimony".into(),
+                        ))
+                    }
+                };
+                scene.return_to_line();
+                let CrossExam::Playing {
+                    question_id,
+                    line_index,
+                } = scene.cross_exam().clone()
+                else {
+                    return Err(GameError::internal(
+                        "cross_exam not Playing after return_to_line".into(),
+                    ));
+                };
+                scene
+                    .question(&question_id)
+                    .and_then(|question| question.testimony.lines.get(line_index))
+                    .map(|line| line.content.clone())
+                    .unwrap_or_default()
+            };
+
+            if queue_items.is_empty() {
+                self.on_queue_exhausted()?;
+            } else {
+                let queue_gen = self.alloc_queue_gen();
+                self.install_scene_queue(queue_items, queue_gen)?;
+            }
+            Ok(self.view_with_history())
+        })();
+        self.restore_on_error(snapshot, result)
+    }
+
     /// `complete_interrogation_phase` — the player manually concludes the
     /// current `Auto` inquiry phase from the question menu. Gated on every
     /// required question being broken (see
@@ -2463,7 +2570,15 @@ mod tests {
                 }],
                 "characters": []
             }],
-            "evidenceManifest": [],
+            "evidenceManifest": [{
+                "id": "test_evidence",
+                "name": "Test Evidence",
+                "description": "d",
+                "details": "d",
+                "imageAssetId": null,
+                "onCollect": [],
+                "onReexamine": null
+            }],
             "statementManifest": [],
             "outro": { "unlock": { "predicate": "hotspot_investigated", "id": "never" }, "dialogue": [] }
         }"#,
@@ -6608,6 +6723,57 @@ mod tests {
         };
         assert!(matches!(scene.cross_exam(), CrossExam::Idle));
         assert!(scene.is_question_broken("q1"));
+    }
+
+    #[test]
+    fn resume_interrogation_testimony_returns_to_the_challenged_line() {
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.prime_initial_queue().unwrap();
+        engine.ask_interrogation_question("alibi").unwrap();
+
+        // Challenge the contradiction line and drain the lead-in to open the tray.
+        let view = engine.challenge_interrogation_line("l_deny").unwrap();
+        let view = engine.advance_dialogue(token_from(&view)).unwrap();
+        assert!(matches!(view.mode, ModeView::Interrogation { .. }));
+
+        // Backing out of the tray resumes playing that same line in the dialogue
+        // box — it does NOT drop back to the question menu.
+        let view = engine.resume_interrogation_testimony().unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                cross_exam_line_id, ..
+            } => assert_eq!(cross_exam_line_id.as_deref(), Some("l_deny")),
+            other => panic!("expected the testimony to resume, got {other:?}"),
+        }
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(matches!(scene.cross_exam(), CrossExam::Playing { .. }));
+    }
+
+    #[test]
+    fn resume_interrogation_testimony_rejects_outside_presenting() {
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.prime_initial_queue().unwrap();
+        // At the question menu (Idle), not presenting.
+        let err = engine.resume_interrogation_testimony().unwrap_err();
+        assert_eq!(err.code, "notInCrossExamination");
+    }
+
+    #[test]
+    fn jump_to_interrogation_grants_all_evidence_for_testing() {
+        let d = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+
+        let view = engine
+            .jump_to_scene("chapter_1", "interrogation_scene_2")
+            .expect("jump to interrogation scene");
+
+        // Cross-scene evidence (defined in the investigation scene's manifest)
+        // is granted so interrogation contradictions are presentable in testing.
+        assert!(view.inventory.has_evidence("test_evidence"));
+
+        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]

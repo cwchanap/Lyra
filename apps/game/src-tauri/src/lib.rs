@@ -172,6 +172,15 @@ fn withdraw_interrogation(state: tauri::State<'_, AppState>) -> Result<GameState
 }
 
 #[tauri::command]
+fn resume_interrogation_testimony(
+    state: tauri::State<'_, AppState>,
+) -> Result<GameStateView, GameError> {
+    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
+    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    engine.resume_interrogation_testimony()
+}
+
+#[tauri::command]
 fn complete_interrogation_phase(
     state: tauri::State<'_, AppState>,
 ) -> Result<GameStateView, GameError> {
@@ -203,6 +212,7 @@ pub fn run() {
             challenge_interrogation_line,
             present_interrogation_evidence,
             withdraw_interrogation,
+            resume_interrogation_testimony,
             complete_interrogation_phase,
         ])
         .run(tauri::generate_context!())
