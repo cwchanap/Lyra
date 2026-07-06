@@ -786,11 +786,6 @@ cues:
       visualUnit: ask_miyake,
       bgs: bgs_police_station_late_night
     }
-  - {
-      file: docs/stories_plan/chapter_1/interrogation_scene_4.md,
-      visualUnit: press_miyake,
-      bgs: bgs_police_station_late_night
-    }
   # scene_5 — first-round hearing (loss)
   - {
       file: docs/stories_plan/chapter_1/scene_5.md,
