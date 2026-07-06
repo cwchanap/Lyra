@@ -222,15 +222,13 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
     );
 
     // Asking `entered_storage` plays its (no-contradiction, auto-broken)
-    // testimony line. Return to the menu and manually complete the
-    // `wakatsuki_inquiry` phase to enter `wakatsuki_testimony`, whose
-    // phase-level reveals apply the evidence/statement the old fixture used to
-    // reveal on question-answer.
+    // testimony line, which returns to the menu on its own once drained. Then
+    // manually complete the `wakatsuki_inquiry` phase to enter
+    // `wakatsuki_testimony`, whose phase-level reveals apply the
+    // evidence/statement the old fixture used to reveal on question-answer.
     let view = engine
         .ask_interrogation_question("entered_storage")
         .unwrap();
-    advance_all_dialogue(&mut engine, view);
-    let view = engine.withdraw_interrogation().unwrap();
     advance_all_dialogue(&mut engine, view);
     let view = engine.complete_interrogation_phase().unwrap();
     let view = advance_all_dialogue(&mut engine, view);
@@ -242,15 +240,15 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
         view.mode,
     );
 
-    // Ask `cleaning_button` to hear its testimony line, then challenge it to
-    // open the evidence tray.
+    // Ask `cleaning_button`: its testimony plays (and loops) in the dialogue
+    // box. Rather than draining it, challenge the line mid-testimony — the
+    // inline 反駁 fires while the content queue is still active.
     let view = engine
         .ask_interrogation_question("cleaning_button")
         .unwrap();
-    let view = advance_all_dialogue(&mut engine, view);
     assert!(
-        matches!(view.mode, ModeView::Interrogation { ref phase_id, .. } if phase_id == "wakatsuki_testimony"),
-        "expected to remain in testimony after asking, got {:?}",
+        matches!(view.mode, ModeView::Dialogue { .. }),
+        "expected testimony to play in the dialogue box, got {:?}",
         view.mode,
     );
 
@@ -265,12 +263,26 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
     let view = engine
         .present_interrogation_evidence("l_cleaning_button", "evidence", "coffee_machine_log")
         .unwrap();
-    let view = advance_all_dialogue(&mut engine, view);
+    // The wrong rebuff returns to the (still-unbroken) testimony line, which
+    // loops in the dialogue box; challenge again mid-testimony rather than
+    // draining (which would loop forever).
     assert!(
-        matches!(view.mode, ModeView::Interrogation { ref phase_id, .. } if phase_id == "wakatsuki_testimony"),
-        "expected wrong evidence to keep testimony active, got {:?}",
+        matches!(view.mode, ModeView::Dialogue { .. }),
+        "expected wrong rebuff to resume the looping testimony, got {:?}",
         view.mode,
     );
+    {
+        let SceneView::Interrogation { visible_phases, .. } = &view.scene else {
+            panic!("expected interrogation scene, got {:?}", view.scene);
+        };
+        let broken = visible_phases
+            .iter()
+            .flat_map(|phase| &phase.questions)
+            .find(|question| question.id == "cleaning_button")
+            .map(|question| question.broken)
+            .expect("cleaning_button question should be visible");
+        assert!(!broken, "wrong evidence must not break the question");
+    }
 
     // Challenge again, then present the correct contradiction evidence.
     let view = engine

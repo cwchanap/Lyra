@@ -67,6 +67,7 @@ function currentState(): GameStateView {
     scene: { kind: "linear", id: "scene_1", title: "序章", index: 0, total: 1 },
     mode: {
       type: "dialogue",
+      crossExamLineId: null,
       current: { kind: "action", text: "幕開" },
       queueRemaining: 0,
       sceneTag: null,
@@ -121,6 +122,7 @@ function jumpedState(): GameStateView {
     },
     mode: {
       type: "dialogue",
+      crossExamLineId: null,
       current: { kind: "action", text: "幕開" },
       queueRemaining: 0,
       sceneTag: null,

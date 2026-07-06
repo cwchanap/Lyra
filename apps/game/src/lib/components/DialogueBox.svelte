@@ -20,6 +20,7 @@
     onAdvanceFeedback,
     history = [],
     disabled = false,
+    crossExam = null,
   }: {
     current: DialogueItem;
     queueToken: QueueToken;
@@ -27,6 +28,13 @@
     onAdvanceFeedback?: () => void;
     history?: DialogueHistoryEntry[];
     disabled?: boolean;
+    /** Present while an interrogation testimony plays here: renders the inline
+     * 反駁 / 退下 controls that act on the currently-shown line. */
+    crossExam?: {
+      lineId: string;
+      onChallenge: (lineId: string) => void;
+      onWithdraw: () => void;
+    } | null;
   } = $props();
 
   const rightSidePortraitCharacterIds = new Set([
@@ -87,6 +95,20 @@
   function handleClick() {
     if (historyOpen) return;
     dispatchAdvance();
+  }
+
+  // The inline cross-exam buttons live inside the click-to-advance box, so
+  // each must stop propagation or the click would also advance the testimony.
+  function handleChallengeClick(e: MouseEvent) {
+    e.stopPropagation();
+    if (disabled || !crossExam) return;
+    crossExam.onChallenge(crossExam.lineId);
+  }
+
+  function handleWithdrawClick(e: MouseEvent) {
+    e.stopPropagation();
+    if (disabled || !crossExam) return;
+    crossExam.onWithdraw();
   }
 
   function handleBoxKeydown(e: KeyboardEvent) {
@@ -279,9 +301,34 @@
       </div>
     {/if}
 
+    {#if crossExam}
+      <div class="xexam-actions">
+        <button
+          class="xexam-challenge"
+          type="button"
+          {disabled}
+          onclick={handleChallengeClick}
+        >
+          <span class="act-mark">▸</span>
+          反駁
+        </button>
+        <button
+          class="xexam-withdraw"
+          type="button"
+          {disabled}
+          onclick={handleWithdrawClick}
+        >
+          退下
+        </button>
+      </div>
+    {/if}
+
     <div class="hint">
       <span class="key">Space</span>
       <span class="arrow">▶</span>
+      {#if crossExam}
+        <span class="hint-label">繼續聆聽</span>
+      {/if}
     </div>
   </div>
 </div>
@@ -472,5 +519,65 @@
   .hint .arrow {
     color: var(--crimson);
     animation: lyra-pulse 1.6s ease-in-out infinite;
+  }
+
+  .hint-label {
+    font-family: var(--serif-jp);
+    letter-spacing: 0.12em;
+    color: var(--bone-faint);
+    text-transform: none;
+  }
+
+  /* inline cross-examination controls */
+  .xexam-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .xexam-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px 6px;
+    background: transparent;
+    color: var(--bone);
+    border: 1px solid var(--rule-strong);
+    cursor: pointer;
+    font: inherit;
+    font-family: var(--serif-jp);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    transition:
+      border-color 0.18s,
+      background 0.18s,
+      color 0.18s;
+  }
+
+  .xexam-actions button:hover:not(:disabled),
+  .xexam-actions button:focus-visible:not(:disabled) {
+    border-color: var(--crimson);
+    background: var(--crimson-soft);
+    outline: none;
+  }
+
+  .xexam-challenge {
+    color: var(--crimson);
+    border-color: var(--crimson);
+    background: var(--crimson-soft);
+  }
+
+  .xexam-withdraw {
+    color: var(--bone-faint);
+  }
+
+  .xexam-actions button:disabled {
+    opacity: 0.55;
+    cursor: wait;
+  }
+
+  .act-mark {
+    color: var(--crimson);
   }
 </style>

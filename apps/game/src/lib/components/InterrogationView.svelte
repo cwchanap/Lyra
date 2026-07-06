@@ -5,8 +5,6 @@
     scene,
     inventory,
     onAsk,
-    onProceed,
-    onChallenge,
     onPresent,
     onWithdraw,
     onComplete,
@@ -15,8 +13,6 @@
     scene: SceneView;
     inventory: Inventory;
     onAsk: (questionId: string) => void | Promise<void>;
-    onProceed: () => void | Promise<void>;
-    onChallenge: (lineId: string) => void | Promise<void>;
     onPresent: (
       lineId: string,
       itemKind: "evidence" | "statement",
@@ -58,8 +54,8 @@
       {/if}
     </header>
 
-    {#if xexam}
-      <article class="line-card" class:presenting={xexam.presenting}>
+    {#if xexam?.presenting}
+      <article class="line-card presenting">
         <div class="prog">
           <span class="prog-count"
             >{xexam.lineIndex + 1} / {xexam.lineTotal}</span
@@ -68,64 +64,39 @@
         </div>
         <blockquote class="line">{lineText(xexam.lineContent)}</blockquote>
 
-        {#if xexam.presenting}
-          <p class="tray-label">針對此句提出證據 · PRESENT</p>
-          <div class="tray">
-            {#each inventory.evidence as item (item.id)}
-              <button
-                class="secondary"
-                type="button"
-                {disabled}
-                onclick={() => onPresent(xexam.lineId, "evidence", item.id)}
-              >
-                <span class="item-kind">證</span>
-                <span>{item.name}</span>
-              </button>
-            {/each}
-            {#each inventory.statements as item (item.id)}
-              <button
-                class="secondary"
-                type="button"
-                {disabled}
-                onclick={() => onPresent(xexam.lineId, "statement", item.id)}
-              >
-                <span class="item-kind alt">言</span>
-                <span>{item.speaker}</span>
-              </button>
-            {/each}
+        <p class="tray-label">針對此句提出證據 · PRESENT</p>
+        <div class="tray">
+          {#each inventory.evidence as item (item.id)}
             <button
-              class="ghost"
+              class="secondary"
               type="button"
               {disabled}
-              onclick={() => onWithdraw()}
+              onclick={() => onPresent(xexam.lineId, "evidence", item.id)}
             >
-              收回
+              <span class="item-kind">證</span>
+              <span>{item.name}</span>
             </button>
-          </div>
-        {:else}
-          <div class="controls">
+          {/each}
+          {#each inventory.statements as item (item.id)}
             <button
-              class="primary"
+              class="secondary"
               type="button"
               {disabled}
-              onclick={() => onChallenge(xexam.lineId)}
+              onclick={() => onPresent(xexam.lineId, "statement", item.id)}
             >
-              <span class="act-mark">▸</span>
-              反駁
+              <span class="item-kind alt">言</span>
+              <span>{item.speaker}</span>
             </button>
-            <button type="button" {disabled} onclick={() => onProceed()}>
-              繼續聆聽 ▸
-            </button>
-            <button
-              class="ghost"
-              type="button"
-              {disabled}
-              onclick={() => onWithdraw()}
-            >
-              退下
-            </button>
-          </div>
-        {/if}
+          {/each}
+          <button
+            class="ghost"
+            type="button"
+            {disabled}
+            onclick={() => onWithdraw()}
+          >
+            收回
+          </button>
+        </div>
       </article>
     {:else}
       <ul class="menu">
@@ -404,7 +375,6 @@
     margin-left: 2px;
   }
 
-  .controls,
   .tray {
     display: flex;
     flex-wrap: wrap;
@@ -423,7 +393,6 @@
     margin: 0 0 6px;
   }
 
-  .controls button,
   .tray button {
     display: inline-flex;
     align-items: center;
@@ -443,31 +412,18 @@
       color 0.18s;
   }
 
-  .controls button:hover:not(:disabled),
   .tray button:hover:not(:disabled) {
     border-color: var(--crimson);
     background: var(--crimson-soft);
   }
 
-  .controls button.primary {
-    color: var(--crimson);
-    border-color: var(--crimson);
-    background: var(--crimson-soft);
-  }
-
-  .controls button.ghost,
   .tray button.ghost {
     color: var(--bone-faint);
   }
 
-  .controls button:disabled,
   .tray button:disabled {
     opacity: 0.55;
     cursor: wait;
-  }
-
-  .act-mark {
-    color: var(--crimson);
   }
 
   .item-kind {

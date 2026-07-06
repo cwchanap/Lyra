@@ -194,6 +194,7 @@ describe("inferGameplaySfxEvents", () => {
       scene: { kind: "linear", id: "scene_2", title: "", index: 0, total: 1 },
       mode: {
         type: "dialogue",
+        crossExamLineId: null,
         current: { kind: "line", speaker: "相馬律", text: "先確認時間。" },
         queueRemaining: 2,
         sceneTag: null,
@@ -207,6 +208,7 @@ describe("inferGameplaySfxEvents", () => {
       scene: { kind: "linear", id: "scene_2", title: "", index: 0, total: 1 },
       mode: {
         type: "dialogue",
+        crossExamLineId: null,
         current: { kind: "line", speaker: "早坂朱音", text: "好。" },
         queueRemaining: 1,
         sceneTag: null,
@@ -230,6 +232,7 @@ describe("inferGameplaySfxEvents", () => {
       scene: { kind: "linear", id: "scene_6", title: "", index: 0, total: 1 },
       mode: {
         type: "dialogue",
+        crossExamLineId: null,
         current: { kind: "action", text: "" },
         queueRemaining: 0,
         sceneTag: null,
@@ -297,6 +300,7 @@ describe("inferGameplaySfxEvents", () => {
       scene: { kind: "linear", id: "scene_11", title: "", index: 0, total: 1 },
       mode: {
         type: "dialogue",
+        crossExamLineId: null,
         current: {
           kind: "action",
           text: "他把隨身碟插上筆電。螢幕跳出一行目錄。",
@@ -319,6 +323,7 @@ describe("inferGameplaySfxEvents", () => {
       scene: { kind: "linear", id: "scene_11", title: "", index: 0, total: 1 },
       mode: {
         type: "dialogue",
+        crossExamLineId: null,
         current: {
           kind: "action",
           text: "他把隨身碟插上筆電。螢幕跳出一行目錄。",
@@ -335,6 +340,7 @@ describe("inferGameplaySfxEvents", () => {
       scene: { kind: "linear", id: "scene_11", title: "", index: 0, total: 1 },
       mode: {
         type: "dialogue",
+        crossExamLineId: null,
         current: { kind: "line", speaker: "旁白", text: "裡頭只有一個檔案。" },
         queueRemaining: 3,
         sceneTag: "相馬事務所，夜晚。",
@@ -362,6 +368,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        crossExamLineId: null,
         current: {
           kind: "line",
           speaker: "神谷澪",
@@ -391,6 +398,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        crossExamLineId: null,
         current: {
           kind: "action",
           text: "旁聽席上，三宅母親把膝上那只飯糰袋輕輕抱緊了一下，沒有出聲。",
@@ -425,6 +433,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        crossExamLineId: null,
         current: {
           kind: "action",
           text: "相馬律問起店長那晚有沒有聽見聲響。",
@@ -453,6 +462,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        crossExamLineId: null,
         current: {
           kind: "line",
           speaker: "黑瀨徹",
@@ -664,7 +674,6 @@ describe("inferGameplaySfxEvents", () => {
       reexamine_evidence: true,
       reexamine_statement: true,
       ask_interrogation_question: true,
-      proceed_interrogation_line: true,
       challenge_interrogation_line: true,
       present_interrogation_evidence: true,
       withdraw_interrogation: true,
@@ -675,7 +684,7 @@ describe("inferGameplaySfxEvents", () => {
     // Every union member is listed exactly once.
     expect(new Set(names).size).toBe(names.length);
     expect(names).toContain("present_interrogation_evidence");
-    expect(names).toHaveLength(14);
+    expect(names).toHaveLength(13);
   });
 });
 

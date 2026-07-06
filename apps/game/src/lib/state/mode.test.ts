@@ -30,6 +30,7 @@ describe("mode helpers", () => {
   it("shows the inventory panel in dialogue mode but disables reexamine", () => {
     const mode: Mode = {
       type: "dialogue",
+      crossExamLineId: null,
       current: { kind: "action", text: "Found evidence." },
       queueRemaining: 0,
       sceneTag: null,

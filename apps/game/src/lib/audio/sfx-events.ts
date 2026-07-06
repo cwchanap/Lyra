@@ -60,7 +60,6 @@ export type GameplayCommandName =
   | "reexamine_evidence"
   | "reexamine_statement"
   | "ask_interrogation_question"
-  | "proceed_interrogation_line"
   | "challenge_interrogation_line"
   | "present_interrogation_evidence"
   | "withdraw_interrogation"

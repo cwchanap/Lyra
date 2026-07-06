@@ -98,6 +98,42 @@ impl InterrogationSceneState {
         &self.cross_exam
     }
 
+    /// True while any testimony line is being played (broken or not).
+    pub fn is_playing(&self) -> bool {
+        matches!(self.cross_exam, CrossExam::Playing { .. })
+    }
+
+    /// True while a not-yet-broken question is playing its testimony — the
+    /// looping cross-examination that should keep flowing in the dialogue box.
+    /// A broken (e.g. honest, auto-broken) question is excluded: its testimony
+    /// has nothing left to challenge, so it must not loop forever.
+    pub fn is_playing_unbroken(&self) -> bool {
+        matches!(&self.cross_exam, CrossExam::Playing { question_id, .. }
+            if !self.broken_questions.contains(question_id))
+    }
+
+    /// The id of the testimony line currently playing in a not-yet-broken
+    /// cross-examination — the line the inline challenge button targets while
+    /// the testimony plays in the dialogue box. `None` when idle, presenting,
+    /// or the question is already broken.
+    pub fn playing_unbroken_line_id(&self) -> Option<String> {
+        let CrossExam::Playing {
+            question_id,
+            line_index,
+        } = &self.cross_exam
+        else {
+            return None;
+        };
+        if self.broken_questions.contains(question_id) {
+            return None;
+        }
+        self.question(question_id)?
+            .testimony
+            .lines
+            .get(*line_index)
+            .map(|line| line.id.clone())
+    }
+
     /// Looks up a question by id across all phases.
     pub fn question<'a>(&'a self, id: &str) -> Option<&'a InquiryQuestionJson> {
         self.def.phases.iter().find_map(|phase| {
