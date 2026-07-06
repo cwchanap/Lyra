@@ -109,12 +109,12 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_p0.md,
-          line: 5,
+          line: 3,
           note: 序章吉祥寺月台雨景，主題首現
         }
       - {
           file: docs/stories_plan/chapter_1/scene_p2.md,
-          line: 5,
+          line: 3,
           note: 序章雨鐘咖啡館普通日，主題延續
         }
       - {
@@ -394,7 +394,7 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_p0.md,
-          line: 64,
+          line: 66,
           note: 法律扶助協會外電子看板，傍晚轉夜，雨
         }
       - {
