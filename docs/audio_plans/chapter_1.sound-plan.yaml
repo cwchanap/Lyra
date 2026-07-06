@@ -407,15 +407,11 @@ entries:
           line: 60,
           note: 相馬收起資料夾，雨水順著屋簷滴下
         }
-  # generation pending: ffmpeg + ELEVENLABS_API_KEY unavailable in the
-  # authoring environment. Run `bun run audio:generate docs/audio_plans/
-  # chapter_1.sound-plan.yaml --only bgs_stationery_copy_shop` in an
-  # environment with both before shipping scene_p1's copy-shop ambience.
   - id: bgs_stationery_copy_shop
     channel: bgs
     status: approved
     loop: true
-    intendedDurationSeconds: 60
+    intendedDurationSeconds: 30
     prompt: >-
       Small Tokyo stationery and copy shop interior, pale white fluorescent
       light, compact copier humming steadily against the back wall, faint paper
