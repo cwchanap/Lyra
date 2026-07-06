@@ -311,6 +311,16 @@ entries:
           line: 95,
           note: 警署詢問室深夜，雨聲透過窗縫滲進來
         }
+      - {
+          file: docs/stories_plan/chapter_1/scene_8_5.md,
+          line: 3,
+          note: 警署走廊深夜，販賣機燈光唯一光源，窗外雨聲未停
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_8_5.md,
+          line: 7,
+          note: 相馬站在販賣機前，販賣機嗡嗡聲為走廊底噪
+        }
   - id: bgs_review_board_room
     channel: bgs
     status: approved
@@ -390,22 +400,13 @@ entries:
       colder than dusk, no voices up close, no music.
     reuseRationale: >-
       Catalog is empty. Late-night awning reprise is emptier and colder than the
-      dusk version; split so the post-hearing regroup feels isolated.
+      dusk version; reusable for any post-dusk street scene that lingers under a
+      shop awning after the commuters have gone.
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_p0.md,
           line: 66,
           note: 法律扶助協會外電子看板，傍晚轉夜，雨
-        }
-      - {
-          file: docs/stories_plan/chapter_1/scene_8_5.md,
-          line: 3,
-          note: 商店街屋簷下深夜，雨仍未停，雨聲蓋過遠處人聲
-        }
-      - {
-          file: docs/stories_plan/chapter_1/scene_8_5.md,
-          line: 60,
-          note: 相馬收起資料夾，雨水順著屋簷滴下
         }
   - id: bgs_stationery_copy_shop
     channel: bgs
@@ -857,11 +858,11 @@ cues:
       visualUnit: fixed_panel,
       bgs: bgs_cafe_backroom_office
     }
-  # scene_8_5 — shopping street awning, late night
+  # scene_8_5 — police station corridor, late night
   - {
       file: docs/stories_plan/chapter_1/scene_8_5.md,
       visualUnit: tag_001,
-      bgs: bgs_shopping_street_rain_night
+      bgs: bgs_police_station_late_night
     }
   # investigation_scene_9 — contractor office + interview room
   - {
