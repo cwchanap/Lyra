@@ -85,7 +85,7 @@
 - **Loop Prompt:** **相馬律**：後場那段，我再聽一次。
 - **Default Challenge:** **相馬律**：這句，先停一下。
 - **Default Wrong:** **三宅蒼太**：這……沒有不對吧？
-- **Wrong Reply:** **相馬律**：不是這個。要對上的是後場那段畫面。
+- **Wrong Reply:** **相馬律**：不是這件，再找一次，別繞著清潔用品打轉。
 
 ##### Line: 後場只拿清潔用品 {#miyake_backroom_reason}
 
