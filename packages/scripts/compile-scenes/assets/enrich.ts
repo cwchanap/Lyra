@@ -474,8 +474,10 @@ function stripTestimony(testimony: ASTTestimony): ASTTestimony {
   return {
     ...testimony,
     onLoop: stripDialogue(testimony.onLoop),
+    loopPrompt: stripNullableDialogue(testimony.loopPrompt),
     defaultChallenge: stripNullableDialogue(testimony.defaultChallenge),
     defaultWrong: stripNullableDialogue(testimony.defaultWrong),
+    wrongReply: stripNullableDialogue(testimony.wrongReply),
     lines: testimony.lines.map((line) => ({
       ...line,
       content: stripDialogue(line.content),
