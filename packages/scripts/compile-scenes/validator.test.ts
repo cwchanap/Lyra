@@ -2478,6 +2478,83 @@ describe("validator", () => {
     expect(validateInterrogation(scene)).toEqual([]);
   });
 
+  // A required honest question (no Contradiction line anywhere) auto-breaks
+  // the instant it is asked at runtime (there is nothing to press), firing
+  // only its question-level reveals. The guarantee analysis must treat such a
+  // question as guaranteed-answered — otherwise a required auto-complete phase
+  // whose only required question is honest would falsely fail
+  // interrogationUnguaranteedContradiction. See design §5 / SKILL "Honest
+  // questions play only their first Line."
+  it("accepts a required honest question in an auto-complete phase (auto-break, no false unguaranteed error)", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "p",
+          required: true,
+          questions: [
+            mkQuestion({
+              id: "q_honest",
+              required: true,
+              reveals: [{ kind: "evidence", id: "honest_reveal" }],
+              testimony: mkTestimony([mkLine({ id: "l_honest" })]),
+            }),
+          ],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("honest_reveal")],
+    });
+    const errors = validateInterrogation(scene);
+    expect(
+      errors.some((e) => e.code === "interrogationUnguaranteedContradiction"),
+    ).toBe(false);
+  });
+
+  it("propagates a required honest question's question-level reveals into guaranteed inventory", () => {
+    // The honest question auto-breaks and fires its question-level reveal
+    // (evidence:honest_key). A downstream required question in a later phase
+    // whose contradiction targets honest_key must therefore be guaranteed —
+    // proving the honest auto-break's reveals flow through the guarantee pass.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "p1",
+          required: true,
+          questions: [
+            mkQuestion({
+              id: "q_honest",
+              required: true,
+              reveals: [{ kind: "evidence", id: "honest_key" }],
+              testimony: mkTestimony([mkLine({ id: "l_honest" })]),
+            }),
+          ],
+        }),
+        mkInquiryPhase({
+          id: "p2",
+          required: true,
+          status: "locked",
+          unlock: { predicate: "phase_completed", id: "p1" },
+          questions: [
+            mkQuestion({
+              id: "q_follow",
+              required: true,
+              testimony: mkTestimony([
+                mkContradictionLine("l_follow", {
+                  kind: "evidence",
+                  id: "honest_key",
+                }),
+              ]),
+            }),
+          ],
+        }),
+      ],
+      evidenceManifest: [mkEvidence("honest_key")],
+    });
+    const errors = validateInterrogation(scene);
+    expect(
+      errors.some((e) => e.code === "interrogationUnguaranteedContradiction"),
+    ).toBe(false);
+  });
+
   it("rejects a required contradiction that is only satisfiable through an optional breakthrough (Beat-10)", () => {
     const scene = mkInterrogationScene({
       phases: [

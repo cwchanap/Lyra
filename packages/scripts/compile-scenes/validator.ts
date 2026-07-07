@@ -1438,6 +1438,19 @@ function breakInquiryQuestion(
     mode: InterrogationInventoryMode;
   },
 ): { broken: boolean; reveals: InterrogationRevealTarget[] } {
+  // A question whose testimony carries no Contradiction line anywhere is
+  // honest: the runtime auto-breaks it the instant it is asked (there is
+  // nothing to press) and fires only its question-level reveals — there is no
+  // On Correct line to carry line-level reveals. This mirrors
+  // InterrogationSceneState::begin_question's `has_contradiction` auto-break
+  // (see apps/game/.../scenes/interrogation.rs). Treat such a question as
+  // broken with empty line reveals so the guarantee analysis does not falsely
+  // flag a required auto-complete phase as unguaranteed.
+  const hasContradictionLine = question.testimony.lines.some(
+    (line) => line.contradiction !== null,
+  );
+  if (!hasContradictionLine) return { broken: true, reveals: [] };
+
   const validPathReveals: InterrogationRevealTarget[][] = [];
   for (const line of question.testimony.lines) {
     if (line.contradiction === null || line.onCorrect === null) continue;

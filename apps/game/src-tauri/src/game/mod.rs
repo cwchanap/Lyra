@@ -1474,7 +1474,11 @@ impl GameEngine {
     }
 
     /// `challenge_interrogation_line` — opens the evidence tray against
-    /// `line_id`, installing its challenge lead-in dialogue.
+    /// `line_id`, installing its challenge lead-in dialogue. The player may
+    /// challenge any line of the currently-playing question (the inline 反駁
+    /// button targets a player-chosen line, not necessarily the one at
+    /// `Playing.line_index`), so `line_id` is a genuine player choice; it is
+    /// validated to belong to the current question before use.
     pub fn challenge_interrogation_line(
         &mut self,
         line_id: &str,
@@ -1521,6 +1525,17 @@ impl GameEngine {
                         "cross_exam changed during challenge_interrogation_line".into(),
                     ));
                 };
+                // Defense-in-depth: `line_id` is a player choice (any line of
+                // the current question may be challenged), so it cannot be
+                // derived from `Playing.line_index`. But it MUST belong to the
+                // current question — reject a crafted IPC call that names a
+                // line from another question, which would otherwise pollute
+                // the `Presenting` state with a foreign line id.
+                if scene.line(&question_id, line_id).is_none() {
+                    return Err(GameError::internal(format!(
+                        "challenge_interrogation_line: line '{line_id}' is not a testimony line of question '{question_id}'"
+                    )));
+                }
                 let challenge = scene.line(&question_id, line_id).map(|line| {
                     if line.challenge.is_empty() {
                         scene
@@ -1554,13 +1569,15 @@ impl GameEngine {
     }
 
     /// `present_interrogation_evidence` — presents `item_kind:item_id` against
-    /// `line_id`. On a correct contradiction match, plays `on_correct`,
+    /// the line recorded in the `Presenting` cross-exam state (derived from the
+    /// engine's own state, not the frontend-supplied `line_id`). On a correct
+    /// contradiction match, plays `on_correct`,
     /// applies the line's reveals, and marks the question broken (returning to
     /// the question menu). Otherwise plays `on_wrong_evidence` (or the
     /// testimony's `default_wrong` fallback) and returns to the same line.
     pub fn present_interrogation_evidence(
         &mut self,
-        line_id: &str,
+        _line_id: &str,
         item_kind: &str,
         item_id: &str,
     ) -> Result<GameStateView, GameError> {
@@ -1569,7 +1586,7 @@ impl GameEngine {
         }
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
-        let question_id = {
+        let (question_id, active_line_id) = {
             let scene = match &self.scene {
                 SceneRuntime::Interrogation(scene) => scene,
                 _ => {
@@ -1586,7 +1603,17 @@ impl GameEngine {
             {
                 return Err(GameError::dialogue_active("present_interrogation_evidence"));
             }
-            let CrossExam::Presenting { question_id, .. } = scene.cross_exam() else {
+            // Defense-in-depth: take the line being challenged from the
+            // engine's own `Presenting` state rather than trusting the
+            // frontend-supplied `line_id` — the tray was opened against this
+            // exact line by `challenge_interrogation_line`, and a crafted IPC
+            // call must not be able to present evidence against a different
+            // line than the one the tray is open for.
+            let CrossExam::Presenting {
+                question_id,
+                line_id,
+            } = scene.cross_exam()
+            else {
                 return Err(GameError::not_in_cross_examination(
                     "present_interrogation_evidence",
                 ));
@@ -1594,7 +1621,7 @@ impl GameEngine {
             if !self.inventory_target_exists(item_kind, item_id) {
                 return Err(GameError::unknown_inventory_target(item_kind, item_id));
             }
-            question_id.clone()
+            (question_id.clone(), line_id.clone())
         };
 
         let snapshot = self.snapshot();
@@ -1608,7 +1635,7 @@ impl GameEngine {
                         ))
                     }
                 };
-                let line = scene.line(&question_id, line_id).cloned();
+                let line = scene.line(&question_id, &active_line_id).cloned();
                 let correct = line
                     .as_ref()
                     .and_then(|line| line.contradiction.as_ref())
@@ -6770,6 +6797,67 @@ mod tests {
             ),
             other => panic!("expected Dialogue mode, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn present_interrogation_evidence_uses_state_line_not_frontend_param() {
+        // Defense-in-depth: the line evaluated for a contradiction match is the
+        // one recorded in the `Presenting` cross-exam state, not the
+        // frontend-supplied `line_id`. Challenge `l_deny` (contradiction
+        // evidence:cleaning_log), then present the correct evidence while
+        // passing `l_off` (an honest line with no contradiction) as the param.
+        // The engine must still resolve against `l_deny` and break the question.
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "cleaning_log".into(),
+            name: "Cleaning Log".into(),
+            description: "d".into(),
+            details: "d".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "prev".into(),
+        });
+        engine.prime_initial_queue().unwrap();
+        engine.ask_interrogation_question("alibi").unwrap();
+        let view = engine.challenge_interrogation_line("l_deny").unwrap();
+        engine.advance_dialogue(token_from(&view)).unwrap();
+        // Pass `l_off` (wrong) as the line param; the correct evidence for
+        // `l_deny` is `cleaning_log`. The engine should break the question
+        // because it evaluates `Presenting.line_id == "l_deny"`.
+        engine
+            .present_interrogation_evidence("l_off", "evidence", "cleaning_log")
+            .unwrap();
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(
+            scene.is_question_broken("alibi"),
+            "present should evaluate the state's line (l_deny), not the param (l_off)"
+        );
+    }
+
+    #[test]
+    fn challenge_interrogation_line_rejects_foreign_line_id() {
+        // Defense-in-depth: `line_id` is a player choice but must belong to the
+        // current question. A crafted IPC call naming a non-existent line must
+        // be rejected rather than polluting the `Presenting` state.
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.prime_initial_queue().unwrap();
+        engine.ask_interrogation_question("alibi").unwrap();
+        let err = engine
+            .challenge_interrogation_line("line_from_another_question")
+            .unwrap_err();
+        assert_eq!(err.code, "internalError");
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        // The bogus challenge must not have opened the tray.
+        assert!(
+            matches!(scene.cross_exam(), CrossExam::Playing { .. }),
+            "foreign line_id must not transition to Presenting, got {:?}",
+            scene.cross_exam()
+        );
     }
 
     #[test]
