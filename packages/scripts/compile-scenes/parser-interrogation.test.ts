@@ -411,6 +411,75 @@ describe("parseInterrogationScene", () => {
       expect(parsed.error.code).toBe("interrogationEmptyTestimony");
   });
 
+  it("rejects a multi-Line honest (no Contradiction) Testimony, since only the first Line plays", () => {
+    const source = `# Scene 9: 測試
+
+## Phase: 測試階段 {#test_phase}
+- **Kind:** inquiry
+
+[場景：測試場景]
+
+### Subject: 測試對象 {#subject_x}
+- **Role:** 角色
+- **Bio:** 簡介。
+
+### Question: 多行誠實問題 {#multi_line_honest}
+- **Status:** unlocked
+
+#### Testimony
+- **On Loop:** **相馬律**：還有哪裡對不上，再說一次。
+
+##### Line: 第一行 {#l_honest_a}
+**若槻蓮**：我只是去拿咖啡豆。
+
+##### Line: 第二行會被靜默丟棄 {#l_honest_b}
+**若槻蓮**：然後我就離開了。
+
+## Outro
+`;
+    const parsed = parseInterrogationScene(
+      source,
+      "bad.md",
+      "interrogation_scene_9",
+    );
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok)
+      expect(parsed.error.code).toBe(
+        "interrogationHonestTestimonyMultipleLines",
+      );
+  });
+
+  it("accepts a single-Line honest (no Contradiction) Testimony", () => {
+    const source = `# Scene 9: 測試
+
+## Phase: 測試階段 {#test_phase}
+- **Kind:** inquiry
+
+[場景：測試場景]
+
+### Subject: 測試對象 {#subject_x}
+- **Role:** 角色
+- **Bio:** 簡介。
+
+### Question: 單行誠實問題 {#single_line_honest}
+- **Status:** unlocked
+
+#### Testimony
+- **On Loop:** **相馬律**：還有哪裡對不上，再說一次。
+
+##### Line: 唯一行 {#l_honest_only}
+**若槻蓮**：我只是去拿咖啡豆。
+
+## Outro
+`;
+    const parsed = parseInterrogationScene(
+      source,
+      "ok.md",
+      "interrogation_scene_9",
+    );
+    expect(parsed.ok).toBe(true);
+  });
+
   it("rejects a ##### Line with Contradiction but no Challenge", () => {
     const source = `# Scene 9: 測試
 

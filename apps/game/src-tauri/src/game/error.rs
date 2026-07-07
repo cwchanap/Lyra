@@ -125,22 +125,10 @@ impl GameError {
             "The current interrogation phase cannot be completed yet: it is not an auto phase, a cross-examination is in progress, or a required question is unbroken.".to_string(),
         )
     }
-    pub fn unknown_testimony_statement(id: &str) -> Self {
-        Self::new(
-            "unknownTestimonyStatement",
-            format!("Testimony statement '{id}' does not exist."),
-        )
-    }
     pub fn unknown_inventory_target(kind: &str, id: &str) -> Self {
         Self::new(
             "unknownInventoryTarget",
             format!("Inventory target '{kind}:{id}' is not available."),
-        )
-    }
-    pub fn unknown_testimony_result(id: &str) -> Self {
-        Self::new(
-            "unknownTestimonyResult",
-            format!("Testimony result '{id}' does not exist."),
         )
     }
     pub fn scene_load_failed(detail: String) -> Self {

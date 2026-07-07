@@ -187,6 +187,15 @@ Question and follow-up fields:
 
 An inquiry phase completes when every reachable required question and follow-up in that phase has been answered, unless the phase defines an explicit `Complete` expression.
 
+> **Note (implemented addition, see the 2026-07-04 cross-examination design).**
+> For an `auto` inquiry phase the engine does not advance the instant the last
+> required question is answered. The player manually concludes the phase via a
+> `complete_interrogation_phase` command, surfaced as a "完成訊問" button in the
+> question menu that is disabled until every required question is broken and no
+> dialogue is active. This lets the player re-ask or re-examine already-answered
+> questions before choosing to move on. `Complete`-expression phases remain
+> auto-evaluated and are not manually completable.
+
 Optional phase field:
 
 ```markdown
