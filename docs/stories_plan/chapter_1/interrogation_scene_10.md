@@ -135,7 +135,7 @@
 - **Loop Prompt:** **相馬律**：把他放在那個位置的理由，再擺一次。
 - **Default Challenge:** **相馬律**：這句，先讓我對一下。
 - **Default Wrong:** **神谷澪**：這證不到是哪一個人，換一個。
-- **Wrong Reply:** **相馬律**：知道，下一步就去找工單和憑證。
+- **Wrong Reply:** **相馬律**：這對不到是哪一個人，下一步找工單和憑證。
 
 ##### Line: 更早也可能是三宅 {#summary_could_still_be_miyake}
 
@@ -224,7 +224,7 @@
 - **Loop Prompt:** **相馬律**：這行時間，我再讀一次。
 - **Default Challenge:** **相馬律**：這句，先讓我比一下。
 - **Default Wrong:** **神谷澪**：這一句沒問題，換個東西。
-- **Wrong Reply:** **相馬律**：知道，錯的是讀法，不是紀錄本身。
+- **Wrong Reply:** **相馬律**：不是造假的事，要拿的是本機那份事件順序。
 
 ##### Line: 門鎖未偽造故三宅時間可信 {#summary_doorlock_authentic}
 
