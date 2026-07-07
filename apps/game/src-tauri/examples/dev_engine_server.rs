@@ -345,6 +345,9 @@ mod tests {
                 "present_interrogation_evidence",
                 r#"{"lineId":"wakatsuki_line_1","itemKind":"evidence","itemId":"receipt"}"#,
             ),
+            ("withdraw_interrogation", ""),
+            ("resume_interrogation_testimony", ""),
+            ("complete_interrogation_phase", ""),
         ] {
             let err = dispatch(&state, command, body.as_bytes()).unwrap_err();
             assert_eq!(err.code, "gameNotStarted");

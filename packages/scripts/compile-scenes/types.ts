@@ -447,8 +447,8 @@ export type JSONInquiryQuestion = {
 export type JSONTestimony = {
   onLoop: JSONDialogueItem[];
   loopPrompt: JSONDialogueItem[];
-  defaultChallenge: JSONDialogueItem[] | null;
-  defaultWrong: JSONDialogueItem[] | null;
+  defaultChallenge: JSONDialogueItem[];
+  defaultWrong: JSONDialogueItem[];
   wrongReply: JSONDialogueItem[];
   lines: JSONTestimonyLine[];
 };
@@ -458,9 +458,9 @@ export type JSONTestimonyLine = {
   label: string;
   content: JSONDialogueItem[];
   contradiction: InventoryTarget | null;
-  challenge: JSONDialogueItem[] | null;
-  onCorrect: JSONDialogueItem[] | null;
-  onWrongEvidence: JSONDialogueItem[] | null;
+  challenge: JSONDialogueItem[];
+  onCorrect: JSONDialogueItem[];
+  onWrongEvidence: JSONDialogueItem[];
   reveals: InterrogationRevealTarget[];
 };
 
