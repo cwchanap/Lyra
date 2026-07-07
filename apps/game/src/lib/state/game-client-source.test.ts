@@ -379,3 +379,95 @@ describe("game client scene navigation commands", () => {
     expect(client.gameState.inFlight).toBe(false);
   });
 });
+
+describe("game client interrogation commands", () => {
+  // Each interrogation command is a thin wrapper over dispatchGameCommand
+  // that forwards a fixed-shape args payload to a named Rust command. The
+  // assertions pin both the command name and the snake_case arg keys Tauri
+  // expects across the bridge, so a rename on either side fails loudly here.
+  async function resolveAfterCall(
+    client: GameClientModule,
+    fn: () => Promise<void>,
+  ): Promise<GameStateView> {
+    const next = state("next");
+    let resolveInvoke!: (value: GameStateView) => void;
+    mocks.invoke.mockReturnValueOnce(
+      new Promise<GameStateView>((resolve) => {
+        resolveInvoke = resolve;
+      }),
+    );
+    mocks.inferGameplaySfxEvents.mockReturnValueOnce([]);
+
+    const pending = fn();
+    // The dispatch must have already invoked the backend before resolving.
+    await Promise.resolve();
+    resolveInvoke(next);
+    await pending;
+    return next;
+  }
+
+  it("askInterrogationQuestion forwards ask_interrogation_question with questionId", async () => {
+    const client = await loadGameClient(state("previous"));
+    const next = await resolveAfterCall(client, () =>
+      client.askInterrogationQuestion("q_alibi"),
+    );
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "ask_interrogation_question",
+      { questionId: "q_alibi" },
+    );
+    expect(client.gameState.value?.scene.id).toBe(next.scene.id);
+  });
+
+  it("challengeInterrogationLine forwards challenge_interrogation_line with lineId", async () => {
+    const client = await loadGameClient(state("previous"));
+    await resolveAfterCall(client, () =>
+      client.challengeInterrogationLine("l_deny"),
+    );
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "challenge_interrogation_line",
+      { lineId: "l_deny" },
+    );
+  });
+
+  it("presentInterrogationEvidence forwards present_interrogation_evidence with line/itemKind/itemId", async () => {
+    const client = await loadGameClient(state("previous"));
+    await resolveAfterCall(client, () =>
+      client.presentInterrogationEvidence("l_deny", "evidence", "cleaning_log"),
+    );
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "present_interrogation_evidence",
+      {
+        lineId: "l_deny",
+        itemKind: "evidence",
+        itemId: "cleaning_log",
+      },
+    );
+  });
+
+  it("withdrawInterrogation forwards withdraw_interrogation with an empty args object", async () => {
+    const client = await loadGameClient(state("previous"));
+    await resolveAfterCall(client, () => client.withdrawInterrogation());
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "withdraw_interrogation",
+      {},
+    );
+  });
+
+  it("resumeInterrogationTestimony forwards resume_interrogation_testimony with an empty args object", async () => {
+    const client = await loadGameClient(state("previous"));
+    await resolveAfterCall(client, () => client.resumeInterrogationTestimony());
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "resume_interrogation_testimony",
+      {},
+    );
+  });
+
+  it("completeInterrogationPhase forwards complete_interrogation_phase with an empty args object", async () => {
+    const client = await loadGameClient(state("previous"));
+    await resolveAfterCall(client, () => client.completeInterrogationPhase());
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "complete_interrogation_phase",
+      {},
+    );
+  });
+});

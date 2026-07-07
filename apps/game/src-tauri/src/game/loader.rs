@@ -171,7 +171,6 @@ fn validate_interrogation_scene_references(
 
     for phase in &scene.phases {
         let InterrogationPhaseJson::Inquiry {
-            id,
             unlock,
             reveals,
             complete,
@@ -200,11 +199,6 @@ fn validate_interrogation_scene_references(
                 file_rel,
             )?;
             validate_interrogation_unlock(question.unlock.as_ref(), &questions, &phases, file_rel)?;
-        }
-        if !phases.contains(id.as_str()) {
-            return Err(GameError::scene_validation_failed(format!(
-                "{file_rel}: unresolved interrogation phase:{id}",
-            )));
         }
     }
 

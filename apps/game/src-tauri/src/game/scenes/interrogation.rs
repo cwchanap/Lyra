@@ -1119,4 +1119,136 @@ mod tests {
         scene.refresh_phase_completion(&inventory);
         assert!(scene.completed_phases.contains("inquiry"));
     }
+
+    #[test]
+    fn is_playing_reflects_cross_exam_state() {
+        let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
+        assert!(!scene.is_playing());
+        scene.begin_question("alibi");
+        assert!(scene.is_playing());
+        scene.begin_present("l_deny");
+        assert!(!scene.is_playing()); // Presenting is not "playing".
+        scene.return_to_line();
+        assert!(scene.is_playing());
+        scene.withdraw();
+        assert!(!scene.is_playing());
+    }
+
+    #[test]
+    fn is_playing_unbroken_excludes_broken_questions() {
+        // A question whose testimony has no contradiction is auto-broken on
+        // begin_question, so is_playing_unbroken must be false even though
+        // cross_exam is Playing.
+        let mut scene = InterrogationSceneState::from_json(one_question_inquiry_scene(), 1);
+        scene.begin_question("reason"); // empty testimony -> auto-broken
+        assert!(scene.is_playing());
+        assert!(!scene.is_playing_unbroken());
+
+        // A question with a contradiction is not auto-broken.
+        let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
+        scene.begin_question("alibi");
+        assert!(scene.is_playing_unbroken());
+        scene.record_break("alibi");
+        // record_break returns to Idle, so neither flag is true afterwards.
+        assert!(!scene.is_playing());
+        assert!(!scene.is_playing_unbroken());
+    }
+
+    #[test]
+    fn playing_unbroken_line_id_tracks_current_line_and_clears_when_broken() {
+        let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
+
+        // Idle -> None.
+        assert!(scene.playing_unbroken_line_id().is_none());
+
+        scene.begin_question("alibi");
+        assert_eq!(scene.playing_unbroken_line_id().as_deref(), Some("l_off"));
+        scene.advance_line(); // -> l_deny
+        assert_eq!(scene.playing_unbroken_line_id().as_deref(), Some("l_deny"));
+
+        // Presenting -> None (the line card is open, not playing).
+        scene.begin_present("l_deny");
+        assert!(scene.playing_unbroken_line_id().is_none());
+
+        // After returning to the line, the id resolves again.
+        scene.return_to_line();
+        assert_eq!(scene.playing_unbroken_line_id().as_deref(), Some("l_deny"));
+
+        // Breaking the question -> None even if cross_exam were Playing again,
+        // because a broken question has nothing left to challenge.
+        scene.record_break("alibi");
+        assert!(scene.playing_unbroken_line_id().is_none());
+    }
+
+    #[test]
+    fn playing_unbroken_line_id_is_none_for_auto_broken_question() {
+        // begin_question on a no-contradiction question auto-breaks it, so
+        // playing_unbroken_line_id must be None even though cross_exam is
+        // Playing (the broken guard fires before the line lookup).
+        let mut scene = InterrogationSceneState::from_json(one_question_inquiry_scene(), 1);
+        scene.begin_question("reason");
+        assert!(matches!(
+            scene.cross_exam(),
+            CrossExam::Playing { question_id, .. } if question_id == "reason"
+        ));
+        assert!(scene.playing_unbroken_line_id().is_none());
+    }
+
+    #[test]
+    fn line_lookup_finds_existing_and_rejects_missing() {
+        let scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
+        assert!(scene.line("alibi", "l_deny").is_some());
+        assert!(scene.line("alibi", "missing_line").is_none());
+        assert!(scene.line("missing_question", "l_deny").is_none());
+    }
+
+    #[test]
+    fn withdraw_returns_to_idle_from_playing_and_presenting() {
+        let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
+
+        scene.begin_question("alibi");
+        assert!(scene.is_playing());
+        scene.withdraw();
+        assert_eq!(*scene.cross_exam(), CrossExam::Idle);
+
+        // Withdraw from the presenting arm also returns to Idle (it does not
+        // resume the testimony — that is return_to_line's job).
+        scene.begin_question("alibi");
+        scene.begin_present("l_deny");
+        assert!(matches!(scene.cross_exam(), CrossExam::Presenting { .. }));
+        scene.withdraw();
+        assert_eq!(*scene.cross_exam(), CrossExam::Idle);
+    }
+
+    #[test]
+    fn advance_line_is_a_no_op_when_not_playing() {
+        // advance_line documents a no-op (returns Loop without mutating state)
+        // when cross_exam is not Playing. Callers gate on is_playing_unbroken,
+        // but the method itself must remain safe to call from any state.
+        let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
+        assert_eq!(scene.advance_line(), AdvanceOutcome::Loop);
+        assert_eq!(*scene.cross_exam(), CrossExam::Idle);
+
+        // Also a no-op while Presenting (only Playing advances).
+        scene.begin_question("alibi");
+        scene.begin_present("l_deny");
+        assert_eq!(scene.advance_line(), AdvanceOutcome::Loop);
+        assert!(matches!(scene.cross_exam(), CrossExam::Presenting { .. }));
+    }
+
+    #[test]
+    fn begin_present_is_a_no_op_when_not_playing() {
+        // begin_present documents a no-op when cross_exam is not Playing.
+        let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
+        scene.begin_present("l_deny");
+        assert_eq!(*scene.cross_exam(), CrossExam::Idle);
+
+        // Also a no-op while already Presenting (only Playing transitions into
+        // Presenting).
+        scene.begin_question("alibi");
+        scene.begin_present("l_deny");
+        let first = scene.cross_exam().clone();
+        scene.begin_present("l_off");
+        assert_eq!(*scene.cross_exam(), first);
+    }
 }
