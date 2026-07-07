@@ -266,10 +266,10 @@ not a multi-line exchange.
 ### Line (H5)
 
 - **Heading:** `##### Line: <label> {#line_id}`
-- **Body immediately under the heading:** exactly one bold-label dialogue line
-  — the suspect's statement. This is plain dialogue, **not** a `- **Content:**`
-  metadata bullet (that field name belonged to the old `#### Statement:`
-  block and no longer exists — see Common Mistakes).
+- **Body immediately under the heading:** one or more bold-label dialogue
+  lines — the suspect's statement. This is plain dialogue, **not** a
+  `- **Content:**` metadata bullet (that field name belonged to the old
+  `#### Statement:` block and no longer exists — see Common Mistakes).
 - **Optional:** `Contradiction` (`evidence:<id>` or `statement:<id>`).
 - **Required iff `Contradiction` is present:** `Challenge` (the lead-in played
   before the evidence tray opens), `On Correct` (the breakthrough dialogue;
