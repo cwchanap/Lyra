@@ -252,6 +252,7 @@ describe("inferGameplaySfxEvents", () => {
     const previous = state({
       mode: {
         type: "dialogue",
+        crossExamLineId: null,
         current: {
           kind: "action",
           text: "相馬律蹲下，湊近看止滑墊邊緣的半乾水痕。",
@@ -271,6 +272,7 @@ describe("inferGameplaySfxEvents", () => {
     const next = state({
       mode: {
         type: "dialogue",
+        crossExamLineId: null,
         current: {
           kind: "action",
           text: "相馬律蹲下，湊近看止滑墊邊緣的半乾水痕。他剛蹲穩，手機在口袋裡震了一下。他低頭看螢幕，眉頭皺起。",
