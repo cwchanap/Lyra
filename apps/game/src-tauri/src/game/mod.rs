@@ -1652,6 +1652,15 @@ impl GameEngine {
                     if let Some(question) = scene.question(&question_id) {
                         on_wrong.extend(question.testimony.wrong_reply.iter().cloned());
                     }
+                    // `return_to_line` resets cross_exam to the challenged line's
+                    // index, but once `on_wrong` drains, `on_queue_exhausted` →
+                    // `advance_playing_testimony` calls `advance_line()`, moving
+                    // to N+1. So a wrong present does NOT re-show the challenged
+                    // line — it advances past it, acting like 繼續. This is
+                    // intended: the spec's "return to the loop" wording is
+                    // ambiguous, and we chose "resume the looping playback"
+                    // (advance) over "re-show the same line." Re-challenging the
+                    // same line is still possible on the next loop pass.
                     scene.return_to_line();
                     on_wrong
                 }
