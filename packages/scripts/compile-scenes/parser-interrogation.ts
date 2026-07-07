@@ -675,6 +675,18 @@ function parseTestimony(
         "interrogationMissingWrongReply",
         `Question ${questionId}'s #### Testimony has a Contradiction line and requires Wrong Reply dialogue.`,
       );
+  } else if (lines.length > 1) {
+    // A no-contradiction (honest) question auto-breaks the instant it is
+    // asked, so the runtime plays only the first Line and then returns to
+    // the question menu — any further Lines are silently dropped. Reject
+    // multi-Line honest testimonies at compile time so authors hear about
+    // the truncation instead of losing content silently.
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "interrogationHonestTestimonyMultipleLines",
+      `Question ${questionId}'s #### Testimony has no Contradiction line (it is an honest question) but has ${lines.length} ##### Line entries. Honest questions play only their first Line; author a single Line, or give at least one Line a Contradiction so multiple Lines play.`,
+    );
   }
 
   return {

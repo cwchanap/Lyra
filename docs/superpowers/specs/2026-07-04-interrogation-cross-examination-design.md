@@ -268,6 +268,18 @@ cross-examination state:
   are broken (and no unlocked-unanswered required questions remain), or an
   explicit `Complete:` expr. `outro_satisfied` unchanged in spirit.
 
+  **Manual completion (implemented addition).** For an `Auto` inquiry phase the
+  engine does *not* auto-advance the moment the last required question breaks.
+  Instead the player explicitly concludes the phase via a `complete_interrogation_phase`
+  command, surfaced in the question menu as a "完成訊問" button that is disabled
+  until `current_phase_can_complete()` (every required question broken, no
+  dialogue active). This lets the player keep re-asking or re-examining
+  already-broken questions before choosing to move on. The command rejects with
+  `interrogationPhaseNotCompletable` when the guard fails, and on success drives
+  phase-advance / outro through the same `on_queue_exhausted` path a drained
+  dialogue queue uses. `Expr` phases remain auto-evaluated and are not
+  manually completable.
+
 **Mode / view** (`view.rs`, `mod.rs`): the `ModeView::Interrogation` view is
 extended to describe the cross-examination sub-state. `InterrogationPhaseView`
 carries the subject + questions (with `broken`/`locked` flags) for the menu; a
@@ -289,8 +301,13 @@ render playback vs tray. Remove `TestimonyStatementView`; rework
   `reveals::apply_interrogation_reveals_and_build_queue` and mark the question
   broken; on wrong enqueue the rebuff.
 - `withdraw_interrogation()` — return to the question menu.
+- `complete_interrogation_phase()` — manually conclude the current `Auto`
+  inquiry phase from the question menu (see "Manual completion" above).
+- `resume_interrogation_testimony()` — back out of the evidence tray
+  (`Presenting`) to the challenged testimony line without presenting anything.
 Register each in `generate_handler!`. Errors stay typed `GameError`
-(`locked_interrogation_question`, a new `not_in_cross_examination`, etc.).
+(`locked_interrogation_question`, a new `not_in_cross_examination`,
+`interrogationPhaseNotCompletable`, etc.).
 
 **Reveals/unlock** (`reveals.rs`, `unlock.rs`): reuse the interrogation reveal
 plumbing; `question:<id> answered` now means "broken".

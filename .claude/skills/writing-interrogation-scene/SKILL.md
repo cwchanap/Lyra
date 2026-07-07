@@ -252,11 +252,11 @@ with neither is unreachable (`interrogationLockedBlockUnreachable`).
 - **Honest questions play only their first Line.** A testimony with no
   `Contradiction` line anywhere auto-breaks the instant it is asked (there is
   nothing to press), so the runtime plays only the first `##### Line:` block
-  and then returns to the question menu — any further `##### Line:` blocks you
-  author are silently dropped. Author an honest question as a **single** Line,
-  or give at least one Line a `Contradiction` if you want multiple Lines to
-  play. (This is a runtime constraint, not a compiler error: the compiler
-  accepts multi-Line honest testimonies without warning.)
+  and then returns to the question menu — any further `##### Line:` blocks
+  would be silently dropped. The compiler therefore rejects a multi-Line
+  honest testimony with `interrogationHonestTestimonyMultipleLines`. Author an
+  honest question as a **single** Line, or give at least one Line a
+  `Contradiction` if you want multiple Lines to play.
 
 Every field value (`On Loop`, `Loop Prompt`, `Default Challenge`,
 `Default Wrong`, `Wrong Reply`, and the per-line fields below) is a single
