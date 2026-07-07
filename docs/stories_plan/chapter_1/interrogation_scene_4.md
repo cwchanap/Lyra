@@ -81,7 +81,7 @@
 - **Challenge:** **相馬律**：那個時間，白板上的收銀關帳、清潔回收都還沒做完。你不會完全沒印象。
 - **On Correct:** **三宅蒼太**：……那時候我躲在員工休息區，偷偷打給我媽。值班不能打私人電話，我怕被說，才沒講。
   - **Reveals:** [evidence:miyake_mother_call_log]
-- **On Wrong Evidence:** **相馬律**：這個證不到他那段時間的去向。要對的是閉店流程，流程能說明那個時間他該在做什麼。
+- **On Wrong Evidence:** **三宅蒼太**：這跟那個時間有什麼關係？我記不清楚就是記不清楚。
 
 ### Question: 為什麼去後場 {#q_backroom}
 - **Status:** unlocked
@@ -107,7 +107,7 @@
 - **Challenge:** **相馬律**：只拿清潔用品？再想一次。
 - **On Correct:** **三宅蒼太**：……我還從後場拿了一個蛋糕盒。本來就要丟的，我想帶回去給我媽，怕被當成偷東西，才沒講。
   - **Reveals:** [evidence:cake_box]
-- **On Wrong Evidence:** **相馬律**：這個對不上他這句話。能戳破「只拿清潔用品」的，是後場那段畫面。
+- **On Wrong Evidence:** **三宅蒼太**：這跟清潔用品有什麼關係？我就是拿了那些而已。
 
 ### Question: 是否進入內側倉庫 {#q_inner_storage}
 - **Status:** unlocked
