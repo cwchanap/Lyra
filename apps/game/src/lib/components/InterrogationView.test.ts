@@ -23,7 +23,16 @@ function sampleInventory(): Inventory {
         collectedInSceneId: "scene_0",
       },
     ],
-    statements: [],
+    statements: [
+      {
+        id: "stmt_clerk",
+        speaker: "店員的證言",
+        content: "當晚的清掃時段。",
+        onReexamine: null,
+        acquiredInChapterId: "chapter_1",
+        acquiredInSceneId: "scene_0",
+      },
+    ],
   };
 }
 
@@ -108,6 +117,25 @@ function sceneInPresenting(): InterrogationSceneView {
   };
 }
 
+function sceneWithBio(bio: string): InterrogationSceneView {
+  const scene = sceneWithMenu();
+  const phase = scene.visiblePhases[0];
+  return {
+    ...scene,
+    visiblePhases: [
+      {
+        ...phase,
+        subject: { ...phase.subject, bio },
+      },
+    ],
+  };
+}
+
+function sceneWithNoCurrentPhase(): InterrogationSceneView {
+  const scene = sceneWithMenu();
+  return { ...scene, currentPhaseId: null };
+}
+
 function renderView(
   scene: SceneView,
   overrides?: {
@@ -189,5 +217,62 @@ describe("InterrogationView", () => {
     const { getByText, queryByText } = renderView(sceneInPlayback());
     expect(getByText("當晚行蹤")).toBeTruthy();
     expect(queryByText("針對此句提出證據 · PRESENT")).toBeNull();
+  });
+
+  it("renders the subject bio when present", () => {
+    const { getByText } = renderView(sceneWithBio("沉默寡言的店員。"));
+    expect(getByText("沉默寡言的店員。")).toBeTruthy();
+  });
+
+  it("omits the bio paragraph when the subject bio is empty", () => {
+    const { queryByText } = renderView(sceneWithBio(""));
+    expect(queryByText("沉默寡言的店員。")).toBeNull();
+  });
+
+  it("calls onAsk with the question id when a question button is clicked", async () => {
+    const onAsk = vi.fn();
+    const { getByText } = renderView(sceneWithMenu(), { onAsk });
+    await fireEvent.click(getByText("當晚行蹤"));
+    expect(onAsk).toHaveBeenCalledExactlyOnceWith("q_alibi");
+  });
+
+  it("renders statement items in the evidence tray and calls onPresent with statement kind", async () => {
+    const onPresent = vi.fn();
+    const { getByText } = renderView(sceneInPresenting(), { onPresent });
+    // The statement tray button is labelled with the statement's speaker.
+    const statementButton = getByText("店員的證言");
+    await fireEvent.click(statementButton);
+    expect(onPresent).toHaveBeenCalledExactlyOnceWith(
+      "l_deny",
+      "statement",
+      "stmt_clerk",
+    );
+  });
+
+  it("shows the muted placeholder when the interrogation has no current phase", () => {
+    const { getByText, queryByText } = renderView(sceneWithNoCurrentPhase());
+    expect(getByText("尚未進入任何訊問階段。")).toBeTruthy();
+    // The question menu must not render while no phase is current.
+    expect(queryByText("當晚行蹤")).toBeNull();
+  });
+
+  it("disables every button when the disabled prop is set in the presenting branch", () => {
+    const { getAllByRole } = renderView(sceneInPresenting(), {
+      disabled: true,
+    });
+    // Every button inside the view (evidence/statement tray + 收回) must be
+    // disabled so an in-flight command can't be re-triggered mid-dispatch.
+    for (const button of getAllByRole("button")) {
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+    }
+  });
+
+  it("disables the 完成訊問 button when disabled is set even if the phase is completable", () => {
+    const { getByRole } = renderView(sceneWithCompletableMenu(), {
+      disabled: true,
+    });
+    expect(
+      (getByRole("button", { name: "完成訊問" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });
