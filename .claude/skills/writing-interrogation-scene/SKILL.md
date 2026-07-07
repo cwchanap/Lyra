@@ -38,7 +38,8 @@ Interrogation scenes reuse those manifest formats.
   no `Contradiction` (an honest line) falls back to the testimony's
   **Default Challenge** / **Default Wrong**.
 - Reaching the end of a testimony without a breakthrough plays the testimony's
-  **On Loop** line, then repeats from line 1.
+  **On Loop** line, then the detective's **Loop Prompt** line, then repeats
+  from line 1.
 - **A follow-up is not a separate block kind.** It is an ordinary `### Question`
   that starts `locked` and is unlocked by an earlier line's
   `On Correct → Reveals: [question:<id>]`. Whether that follow-up feels like
@@ -87,8 +88,10 @@ end, not a dead-end error.
 #### Testimony
 
 - **On Loop:** **角色名**：還有哪裡對不上，再說一次。
+- **Loop Prompt:** **偵探名**：從頭再聽一次。
 - **Default Challenge:** **偵探名**：等等，這句話讓我想想。
 - **Default Wrong:** **角色名**：這句話沒問題吧？
+- **Wrong Reply:** **偵探名**：不對，這不是關鍵。
 
 ##### Line: <label> {#l_honest}
 
@@ -235,11 +238,22 @@ with neither is unreachable (`interrogationLockedBlockUnreachable`).
 - **Optional:** `Default Challenge` (lead-in used when the player challenges
   an honest line, i.e. a Line with no `Contradiction`), `Default Wrong` (the
   rebuff that follows). Both may be overridden per line.
+- **Required iff the testimony has ≥1 `Contradiction` line:** `Loop Prompt`
+  (the detective 相馬律's line, played after `On Loop` and before the
+  testimony repeats from line 1 — the runtime plays `On Loop` then
+  `Loop Prompt` then the first Line), `Wrong Reply` (the detective's line,
+  played after whichever suspect rebuff fires — a line's own
+  `On Wrong Evidence`, or the testimony's `Default Wrong` — whenever the
+  player presents wrong evidence). A testimony with no `Contradiction` line at
+  all (an honest question) may omit both — this mirrors the `Challenge` /
+  `On Correct` / `On Wrong Evidence` required-iff-`Contradiction` rule on Line
+  (H5) below.
 - **Body:** one or more `##### Line:` blocks, in play order.
 
-Every field value (`On Loop`, `Default Challenge`, `Default Wrong`, and the
-per-line fields below) is a single bold-label dialogue line or `[action]` —
-`- **On Loop:** **相馬律**：...` — not a multi-line exchange.
+Every field value (`On Loop`, `Loop Prompt`, `Default Challenge`,
+`Default Wrong`, `Wrong Reply`, and the per-line fields below) is a single
+bold-label dialogue line or `[action]` — `- **On Loop:** **相馬律**：...` —
+not a multi-line exchange.
 
 ### Line (H5)
 
@@ -380,8 +394,9 @@ production prompts, not filesystem paths; writers never author paths.
 5. Self-check that every phase has exactly one scene tag and one Subject with
    `Role`/`Bio`.
 6. Self-check that every `Contradiction` line also has `Challenge`,
-   `On Correct`, and `On Wrong Evidence`, and every `#### Testimony` has
-   `On Loop`.
+   `On Correct`, and `On Wrong Evidence`; that every `#### Testimony` has
+   `On Loop`; and that any testimony with a `Contradiction` line also has
+   `Loop Prompt` and `Wrong Reply`.
 7. Self-check that any `Required` follow-up's unlock chain does not pass
    through an `Optional` question's reveal — if it must, mark that question
    `Required` instead.
@@ -394,6 +409,7 @@ production prompts, not filesystem paths; writers never author paths.
 | Writing a `#### Follow-up:`, `#### On Reask`, `#### Statement:`, or `### Result:` block | These blocks no longer exist. A follow-up is a locked `### Question`; the parser rejects unknown headings. |
 | `Contradiction` line missing `Challenge` / `On Correct` / `On Wrong Evidence` | All three are required together — the compiler fails with `interrogationMissingChallenge`, `interrogationMissingOnCorrect`, or `interrogationMissingOnWrongEvidence`. |
 | `#### Testimony` missing `On Loop` | `On Loop` is required on every Testimony — fails with `interrogationMissingOnLoop`. |
+| `#### Testimony` with a `Contradiction` line but missing `Loop Prompt` or `Wrong Reply` | Both are required once the testimony has ≥1 `Contradiction` line — fails with `interrogationMissingLoopPrompt` or `interrogationMissingWrongReply`. |
 | `#### Testimony` with zero `##### Line:` blocks | Every Testimony needs at least one Line — fails with `interrogationEmptyTestimony`. |
 | A `Required` follow-up unlocked only through an `Optional` question's reveal | Fails with `interrogationUnguaranteedContradiction`. Mark the gating question `Required: true` (see "Contradiction guarantee" above). |
 | Referencing a clue by display name | Use exact `evidence:<id>` or `statement:<id>` in `Contradiction` / `Reveals`. Malformed targets fail with `interrogationContradictionMalformed` / `interrogationRevealUnknownTarget`. |
