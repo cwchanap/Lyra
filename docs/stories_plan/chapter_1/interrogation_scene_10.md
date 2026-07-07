@@ -48,8 +48,10 @@
 #### Testimony
 
 - **On Loop:** **神谷澪**：哪一句還對不上，你再指一次。
+- **Loop Prompt:** **相馬律**：哪一句對不上，我再確認一次。
 - **Default Challenge:** **相馬律**：這句先停一下。
 - **Default Wrong:** **神谷澪**：這一句我沒說錯，換個東西再來。
+- **Wrong Reply:** **相馬律**：不是比人品，要對的是那句謊話。
 
 ##### Line: 三宅說謊故摘要更可信 {#summary_miyake_most_credible}
 
@@ -88,8 +90,10 @@
 #### Testimony
 
 - **On Loop:** **神谷澪**：要往前移那條死亡時間，你再指一次。
+- **Loop Prompt:** **相馬律**：那條死亡時間，我再看一次。
 - **Default Challenge:** **相馬律**：這句，我想再確認一下。
 - **Default Wrong:** **神谷澪**：這對不上死亡那一分鐘，換一個。
+- **Wrong Reply:** **相馬律**：這換不到死亡那一刻，我再找別的。
 
 ##### Line: 死亡在三宅進後場後 {#summary_death_after_miyake}
 
@@ -128,8 +132,10 @@
 #### Testimony
 
 - **On Loop:** **神谷澪**：要把他從那個位置拉開，你再指一次。
+- **Loop Prompt:** **相馬律**：把他放在那個位置的理由，再擺一次。
 - **Default Challenge:** **相馬律**：這句，先讓我對一下。
 - **Default Wrong:** **神谷澪**：這證不到是哪一個人，換一個。
+- **Wrong Reply:** **相馬律**：知道，下一步就去找工單和憑證。
 
 ##### Line: 更早也可能是三宅 {#summary_could_still_be_miyake}
 
@@ -170,6 +176,8 @@
 #### Testimony
 
 - **On Loop:** **神谷澪**：要我開那扇門，先把理由再擺一次。
+- **Loop Prompt:** **相馬律**：要動那扇門，我把理由再理一次。
+- **Wrong Reply:** **相馬律**：不是這個，我得先找到那份摘要。
 
 ##### Line: 原始紀錄壓著 {#gate_hold_record}
 
@@ -213,8 +221,10 @@
 #### Testimony
 
 - **On Loop:** **神谷澪**：這行時間你要翻，再指一次。
+- **Loop Prompt:** **相馬律**：這行時間，我再讀一次。
 - **Default Challenge:** **相馬律**：這句，先讓我比一下。
 - **Default Wrong:** **神谷澪**：這一句沒問題，換個東西。
+- **Wrong Reply:** **相馬律**：知道，錯的是讀法，不是紀錄本身。
 
 ##### Line: 門鎖未偽造故三宅時間可信 {#summary_doorlock_authentic}
 
@@ -253,8 +263,10 @@
 #### Testimony
 
 - **On Loop:** **神谷澪**：要把他放進那一刻，你再指一次。
+- **Loop Prompt:** **相馬律**：把他放進那一刻，我再想一次。
 - **Default Challenge:** **相馬律**：這句，先讓我對一下。
 - **Default Wrong:** **神谷澪**：這放不進那一刻，換一個。
+- **Wrong Reply:** **相馬律**：不是靠印象定他，我得找那張把他放進後場的東西。
 
 ##### Line: 不能證明北見殺人 {#summary_cannot_prove_kitami}
 
