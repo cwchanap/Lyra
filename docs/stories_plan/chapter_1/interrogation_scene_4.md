@@ -58,8 +58,10 @@
 #### Testimony
 
 - **On Loop:** **三宅蒼太**：那個時間……你要問，我再想一次。
+- **Loop Prompt:** **相馬律**：把那段時間，從頭再理一次。
 - **Default Challenge:** **相馬律**：等一下，這句先讓我想想。
 - **Default Wrong:** **三宅蒼太**：這句……應該沒問題吧？
+- **Wrong Reply:** **相馬律**：不對，這對不上那個時間點。
 
 ##### Line: 二十二點五十六分記不清 {#miyake_whereabouts_2256}
 
@@ -80,8 +82,10 @@
 #### Testimony
 
 - **On Loop:** **三宅蒼太**：後場那趟……我說的都是真的。
+- **Loop Prompt:** **相馬律**：後場那段，我再聽一次。
 - **Default Challenge:** **相馬律**：這句，先停一下。
 - **Default Wrong:** **三宅蒼太**：這……沒有不對吧？
+- **Wrong Reply:** **相馬律**：不是這個。要對上的是後場那段畫面。
 
 ##### Line: 後場只拿清潔用品 {#miyake_backroom_reason}
 
