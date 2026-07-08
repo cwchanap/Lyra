@@ -176,8 +176,12 @@ impl GameEngine {
             // Developer convenience: jumping straight into an interrogation via
             // scene-navigation skips the investigation where its contradiction
             // evidence is normally collected. Grant everything so every
-            // testimony is presentable for testing.
-            if matches!(self.scene, SceneRuntime::Interrogation(_)) {
+            // testimony is presentable for testing. Gated to debug builds
+            // (`cfg!(debug_assertions)`) because Scene Select is also exposed
+            // in production replay after `storyClearedOnce`; releasing the full
+            // inventory there would spoil every scene's evidence and bypass
+            // the intended inventory gating.
+            if cfg!(debug_assertions) && matches!(self.scene, SceneRuntime::Interrogation(_)) {
                 self.grant_all_evidence_for_testing();
             }
             Ok(self.view_with_history())
@@ -187,9 +191,10 @@ impl GameEngine {
 
     /// Grants every evidence and statement defined across all scenes so that
     /// any interrogation contradiction can be presented. Testing-only, reached
-    /// solely from [`Self::jump_to_scene`] into an interrogation scene. Scenes
-    /// that fail to load are skipped — this is a best-effort convenience, not a
-    /// correctness path, so a single bad scene must not abort the grant.
+    /// solely from [`Self::jump_to_scene`] into an interrogation scene and only
+    /// in debug builds (`cfg!(debug_assertions)`). Scenes that fail to load are
+    /// skipped — this is a best-effort convenience, not a correctness path, so
+    /// a single bad scene must not abort the grant.
     fn grant_all_evidence_for_testing(&mut self) {
         let chapters = self.chapters.clone();
         for chapter in &chapters {
