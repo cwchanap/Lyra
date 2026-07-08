@@ -31,6 +31,10 @@
     ) ?? null,
   );
   let xexam = $derived(phase?.crossExam ?? null);
+  // This view only mounts while mode.type === "interrogation"; during
+  // cross-exam Playing the engine switches to mode "dialogue" and DialogueBox
+  // renders the inline 反駁 controls instead, so the `presenting` branch below
+  // is the only cross-exam state reachable here.
 
   // Only the "line" and "action" arms carry rendered dialogue text (a
   // sceneTag item is stage-setting metadata, not spoken/narrated content

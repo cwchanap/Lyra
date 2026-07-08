@@ -1545,15 +1545,14 @@ function addInterrogationRevealsToState(
 function commonInterrogationReveals(
   paths: InterrogationRevealTarget[][],
 ): InterrogationRevealTarget[] {
-  if (paths.length === 0) return [];
-  let common = new Set(paths[0]!.map(interrogationRevealKey));
+  const first = paths.at(0);
+  if (!first) return [];
+  let common = new Set(first.map(interrogationRevealKey));
   for (const path of paths.slice(1)) {
     const keys = new Set(path.map(interrogationRevealKey));
     common = new Set([...common].filter((key) => keys.has(key)));
   }
-  return paths[0]!.filter((reveal) =>
-    common.has(interrogationRevealKey(reveal)),
-  );
+  return first.filter((reveal) => common.has(interrogationRevealKey(reveal)));
 }
 
 function inventoryAtom(target: InventoryTarget): string {
