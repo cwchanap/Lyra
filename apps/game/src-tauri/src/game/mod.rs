@@ -527,6 +527,11 @@ impl GameEngine {
                 ));
             }
             SceneRuntime::Interrogation(scene) => {
+                // Default: nothing in this queue is challengeable testimony
+                // line content. Testimony-line installers override this after
+                // the call so the inline 反駁 control only surfaces when the
+                // cursor is on actual line content.
+                scene.line_content_start = items.len();
                 scene.pending_queue = Some(DialogueQueue {
                     items,
                     cursor: 0,
@@ -610,7 +615,7 @@ impl GameEngine {
     /// then line 0 is re-shown, so the whole statement repeats without ever
     /// skipping line 0. Only called while `is_playing_unbroken()`.
     fn advance_playing_testimony(&mut self) -> Result<(), GameError> {
-        let queue_items = {
+        let (queue_items, line_content_start) = {
             let scene = match &mut self.scene {
                 SceneRuntime::Interrogation(scene) => scene,
                 _ => return Ok(()),
@@ -619,22 +624,32 @@ impl GameEngine {
                 return Ok(());
             };
             match scene.advance_line() {
-                AdvanceOutcome::NextLine(index) => scene
-                    .question(&question_id)
-                    .and_then(|question| question.testimony.lines.get(index))
-                    .map(|line| line.content.clone())
-                    .unwrap_or_default(),
-                AdvanceOutcome::Loop => scene
-                    .question(&question_id)
-                    .map(|question| {
-                        let mut items = question.testimony.on_loop.clone();
-                        items.extend(question.testimony.loop_prompt.iter().cloned());
-                        if let Some(first) = question.testimony.lines.first() {
-                            items.extend(first.content.iter().cloned());
-                        }
-                        items
-                    })
-                    .unwrap_or_default(),
+                AdvanceOutcome::NextLine(index) => (
+                    scene
+                        .question(&question_id)
+                        .and_then(|question| question.testimony.lines.get(index))
+                        .map(|line| line.content.clone())
+                        .unwrap_or_default(),
+                    // Pure line content — challengeable from the first item.
+                    0,
+                ),
+                AdvanceOutcome::Loop => {
+                    scene
+                        .question(&question_id)
+                        .map_or((Vec::new(), 0), |question| {
+                            let on_loop_len = question.testimony.on_loop.len();
+                            let loop_prompt_len = question.testimony.loop_prompt.len();
+                            let mut items = question.testimony.on_loop.clone();
+                            items.extend(question.testimony.loop_prompt.iter().cloned());
+                            if let Some(first) = question.testimony.lines.first() {
+                                items.extend(first.content.iter().cloned());
+                            }
+                            // The on_loop + loop_prompt bridge plays first; line 0
+                            // content follows, so the challenge target only surfaces
+                            // once the cursor reaches the line content.
+                            (items, on_loop_len + loop_prompt_len)
+                        })
+                }
             }
         };
 
@@ -651,6 +666,9 @@ impl GameEngine {
         } else {
             let queue_gen = self.alloc_queue_gen();
             self.install_scene_queue(queue_items, queue_gen)?;
+            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                scene.line_content_start = line_content_start;
+            }
         }
         Ok(())
     }
@@ -1439,7 +1457,7 @@ impl GameEngine {
 
         let snapshot = self.snapshot();
         let result = (|| -> Result<GameStateView, GameError> {
-            let queue_items = {
+            let (queue_items, line_content_start) = {
                 let scene = match &mut self.scene {
                     SceneRuntime::Interrogation(scene) => scene,
                     _ => {
@@ -1462,15 +1480,22 @@ impl GameEngine {
                         .question(question_id)
                         .map(|question| question.reveals.clone())
                         .unwrap_or_default();
-                    reveals::apply_interrogation_reveals_and_build_queue(
+                    let queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
                         &mut self.inventory,
                         line_content,
                         &reveals,
                         &chapter_id,
-                    )
+                    );
+                    // A broken question exposes no challenge target. The broken
+                    // guard in `playing_unbroken_line_id` already returns None,
+                    // but set `line_content_start` past the queue as
+                    // defense-in-depth so the cursor check would also suppress.
+                    let start = queue.len();
+                    (queue, start)
                 } else {
-                    line_content
+                    // Pure testimony line content — challengeable from item 0.
+                    (line_content, 0)
                 }
             };
 
@@ -1479,6 +1504,9 @@ impl GameEngine {
             } else {
                 let queue_gen = self.alloc_queue_gen();
                 self.install_scene_queue(queue_items, queue_gen)?;
+                if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                    scene.line_content_start = line_content_start;
+                }
             }
             if let SceneRuntime::Interrogation(scene) = &mut self.scene {
                 scene.refresh_phase_completion(&self.inventory);
@@ -1822,6 +1850,11 @@ impl GameEngine {
             } else {
                 let queue_gen = self.alloc_queue_gen();
                 self.install_scene_queue(queue_items, queue_gen)?;
+                // Resuming installs the challenged line's pure content —
+                // challengeable from the first item.
+                if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                    scene.line_content_start = 0;
+                }
             }
             Ok(self.view_with_history())
         })();
@@ -6903,6 +6936,168 @@ mod tests {
             ModeView::Dialogue { current, .. } => assert!(
                 matches!(current, DialogueItem::Action { text } if text == "detective-wrong"),
                 "expected the detective wrong reply second, got {current:?}"
+            ),
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn loop_bridge_hides_cross_exam_line_id_until_line_content() {
+        // While the on_loop + loop_prompt bridge plays, the active dialogue is
+        // not a testimony line, so `cross_exam_line_id` must be None — the
+        // inline 反駁 control must not surface a challenge target for a line
+        // that is not on screen. It reappears once the cursor reaches line 0.
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.prime_initial_queue().unwrap();
+        engine.ask_interrogation_question("alibi").unwrap();
+        // Drain line 0 -> line 1, drain line 1 -> loop installs
+        // on_loop ++ loop_prompt ++ line0.
+        let view = engine.advance_dialogue(token_from(&engine.view())).unwrap();
+        let view = engine.advance_dialogue(token_from(&view)).unwrap();
+        // Cursor on the On Loop bridge item — no challenge target.
+        match &view.mode {
+            ModeView::Dialogue {
+                current,
+                cross_exam_line_id,
+                ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Action { text } if text == "loop"),
+                    "expected the On Loop bridge, got {current:?}"
+                );
+                assert_eq!(
+                    cross_exam_line_id.as_deref(),
+                    None,
+                    "反駁 must stay hidden during the on_loop bridge"
+                );
+            }
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+        // Cursor on the Loop Prompt bridge item — still no challenge target.
+        let view = engine.advance_dialogue(token_from(&view)).unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                current,
+                cross_exam_line_id,
+                ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Action { text } if text == "detective-loop"),
+                    "expected the Loop Prompt bridge, got {current:?}"
+                );
+                assert_eq!(
+                    cross_exam_line_id.as_deref(),
+                    None,
+                    "反駁 must stay hidden during the loop_prompt bridge"
+                );
+            }
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+        // Cursor reaches line 0 content — challenge target reappears.
+        let view = engine.advance_dialogue(token_from(&view)).unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                current,
+                cross_exam_line_id,
+                ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { text, .. } if text == "我那天沒去。"),
+                    "expected line 0 content after the bridge, got {current:?}"
+                );
+                assert_eq!(
+                    cross_exam_line_id.as_deref(),
+                    Some("l_off"),
+                    "反駁 must target line 0 once its content is showing"
+                );
+            }
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wrong_evidence_feedback_hides_cross_exam_line_id() {
+        // After a wrong present, `return_to_line` resets cross_exam to Playing
+        // while the on_wrong_evidence + wrong_reply feedback queue plays. The
+        // inline 反駁 control must not surface a challenge target during that
+        // feedback — the player is seeing the rebuff, not the testimony line.
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "unrelated".into(),
+            name: "Unrelated".into(),
+            description: "d".into(),
+            details: "d".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "prev".into(),
+        });
+        engine.prime_initial_queue().unwrap();
+        engine.ask_interrogation_question("alibi").unwrap();
+        let view = engine.challenge_interrogation_line("l_deny").unwrap();
+        engine.advance_dialogue(token_from(&view)).unwrap();
+        // Present wrong evidence; the feedback queue plays with cross_exam back
+        // to Playing (return_to_line), but no challenge target must surface.
+        let view = engine
+            .present_interrogation_evidence("l_deny", "evidence", "unrelated")
+            .unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                current,
+                cross_exam_line_id,
+                ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Action { text } if text == "wrong"),
+                    "expected the On Wrong Evidence rebuff, got {current:?}"
+                );
+                assert_eq!(
+                    cross_exam_line_id.as_deref(),
+                    None,
+                    "反駁 must stay hidden during wrong-evidence feedback"
+                );
+            }
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+        let view = engine.advance_dialogue(token_from(&view)).unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                current,
+                cross_exam_line_id,
+                ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Action { text } if text == "detective-wrong"),
+                    "expected the Wrong Reply, got {current:?}"
+                );
+                assert_eq!(
+                    cross_exam_line_id.as_deref(),
+                    None,
+                    "反駁 must stay hidden during the wrong_reply feedback"
+                );
+            }
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn challenge_lead_in_hides_cross_exam_line_id() {
+        // The challenge lead-in dialogue plays with cross_exam already moved to
+        // Presenting, so `playing_unbroken_line_id` returns None via the
+        // CrossExam::Playing match. This test pins that behavior so a future
+        // regression that re-introduces a Playing state during the lead-in is
+        // caught by the cursor guard as well.
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.prime_initial_queue().unwrap();
+        engine.ask_interrogation_question("alibi").unwrap();
+        let view = engine.challenge_interrogation_line("l_deny").unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                cross_exam_line_id, ..
+            } => assert_eq!(
+                cross_exam_line_id.as_deref(),
+                None,
+                "反駁 must stay hidden during the challenge lead-in"
             ),
             other => panic!("expected Dialogue mode, got {other:?}"),
         }

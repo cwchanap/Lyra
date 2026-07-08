@@ -54,6 +54,15 @@ pub struct InterrogationSceneState {
     pub completed_phases: HashSet<String>,
     pub unlocked_overrides: HashSet<String>,
     entered_phases: HashSet<String>,
+    /// The queue cursor index from which the current `pending_queue` items are
+    /// actual testimony line content (challengeable via the inline 反駁
+    /// control). Items before this index are bridge/feedback dialogue
+    /// (`on_loop`, `loop_prompt`, `on_wrong_evidence`, `wrong_reply`,
+    /// challenge lead-in, etc.) that must not expose a challenge target.
+    /// `install_scene_queue` resets this to `items.len()` (nothing
+    /// challengeable) as a safe default; testimony-line installers override
+    /// it to the correct start. `0` means every queue item is line content.
+    pub line_content_start: usize,
 }
 
 impl InterrogationSceneState {
@@ -80,6 +89,7 @@ impl InterrogationSceneState {
             completed_phases: HashSet::new(),
             unlocked_overrides: HashSet::new(),
             entered_phases: HashSet::new(),
+            line_content_start: 0,
         }
     }
 
@@ -115,7 +125,11 @@ impl InterrogationSceneState {
     /// The id of the testimony line currently playing in a not-yet-broken
     /// cross-examination — the line the inline challenge button targets while
     /// the testimony plays in the dialogue box. `None` when idle, presenting,
-    /// or the question is already broken.
+    /// the question is already broken, or the active queue item is bridge/
+    /// feedback dialogue rather than the testimony line itself (e.g.
+    /// `on_loop`, `loop_prompt`, `on_wrong_evidence`, `wrong_reply`, or the
+    /// challenge lead-in). The latter guard prevents the player from
+    /// challenging a line that is not actually on screen.
     pub fn playing_unbroken_line_id(&self) -> Option<String> {
         let CrossExam::Playing {
             question_id,
@@ -125,6 +139,15 @@ impl InterrogationSceneState {
             return None;
         };
         if self.broken_questions.contains(question_id) {
+            return None;
+        }
+        // Only surface a challenge target when the active queue item is actual
+        // testimony line content. `line_content_start` marks the first
+        // challengeable index; a cursor before it means bridge/feedback
+        // dialogue is still playing and the inline 反駁 control must stay
+        // hidden so the player cannot challenge a line that isn't shown.
+        let cursor = self.pending_queue.as_ref().map(|q| q.cursor).unwrap_or(0);
+        if cursor < self.line_content_start {
             return None;
         }
         self.question(question_id)?
