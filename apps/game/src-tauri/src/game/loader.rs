@@ -199,6 +199,20 @@ fn validate_interrogation_scene_references(
                 file_rel,
             )?;
             validate_interrogation_unlock(question.unlock.as_ref(), &questions, &phases, file_rel)?;
+            // `On Correct` line reveals are carried on `testimony.lines`;
+            // validate them at load time so a typo like `evidence:missing_id`
+            // is rejected here rather than silently dropping the reveal at
+            // runtime when no manifest entry matches.
+            for line in &question.testimony.lines {
+                validate_interrogation_reveals(
+                    &line.reveals,
+                    &evidence,
+                    &statements,
+                    &questions,
+                    &phases,
+                    file_rel,
+                )?;
+            }
         }
     }
 
@@ -562,6 +576,69 @@ mod tests {
         assert!(err
             .message
             .contains("interrogation unlock predicate question:missing_question"));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn rejects_interrogation_scene_with_unresolved_testimony_line_reveal_target() {
+        // `On Correct` line reveals are carried on `testimony.lines[*].reveals`.
+        // A typo like `evidence:missing_id` on a line reveal must be rejected
+        // at load time; otherwise the scene loads and the runtime later
+        // silently drops the reveal when no manifest entry matches, leaving a
+        // successful contradiction unable to grant required inventory/unlocks.
+        let d = unique_temp_dir();
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_1",
+                "title": "Broken Line Reveal",
+                "intro": [],
+                "phases": [{
+                    "kind": "inquiry",
+                    "id": "inquiry",
+                    "label": "Inquiry",
+                    "subject": { "id": "suspect", "name": "Suspect", "role": "Suspect", "bio": "Bio" },
+                    "required": true,
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "Room",
+                    "entryDialogue": [],
+                    "complete": "auto",
+                    "questions": [{
+                        "id": "question_1",
+                        "label": "Question",
+                        "status": "unlocked",
+                        "required": true,
+                        "unlock": null,
+                        "reveals": [],
+                        "testimony": {
+                            "onLoop": [],
+                            "lines": [{
+                                "id": "line_1",
+                                "label": "Line",
+                                "content": [],
+                                "contradiction": null,
+                                "reveals": [{ "kind": "evidence", "id": "missing" }]
+                            }]
+                        }
+                    }]
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let err = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap_err();
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert!(err
+            .message
+            .contains("interrogation reveal target evidence:missing"));
         let _ = fs::remove_dir_all(d);
     }
 

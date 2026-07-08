@@ -142,6 +142,24 @@ impl InterrogationSceneState {
         })
     }
 
+    /// Looks up a question by id, but only within the current phase.
+    /// Returns `None` if there is no current phase or the question belongs
+    /// to a different (future or locked) phase. This is the lookup
+    /// `ask_interrogation_question` must use: a question whose own unlock
+    /// expression is satisfied but whose owning phase has not been entered
+    /// must not be askable, or its reveals would fire before the phase's
+    /// entry dialogue and the phase-completion accounting for it.
+    pub fn current_phase_question<'a>(&'a self, id: &str) -> Option<&'a InquiryQuestionJson> {
+        let current_id = self.current_phase_id.as_deref()?;
+        let phase = self
+            .def
+            .phases
+            .iter()
+            .find(|phase| phase_id(phase) == current_id)?;
+        let InterrogationPhaseJson::Inquiry { questions, .. } = phase;
+        questions.iter().find(|question| question.id == id)
+    }
+
     /// Looks up a testimony line by (question id, line id).
     pub fn line<'a>(&'a self, question_id: &str, line_id: &str) -> Option<&'a TestimonyLineJson> {
         self.question(question_id)?
