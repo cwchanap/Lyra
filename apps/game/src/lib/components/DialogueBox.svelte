@@ -272,16 +272,28 @@
     LOG
   </button>
 
+  <!--
+    When `crossExam` is set, the inline 反駁/退下 <button>s render inside this
+    box. Giving the box `role="button"` then would nest buttons inside a button
+    (screen readers announce "button inside button"), so the role/tabindex/
+    aria-label are dropped in that branch — the cross-exam buttons become the
+    only announced interactive controls, and the 繼續聆聽 Space/Enter advance
+    still works via the window-level handleKey (when nothing is focused) and
+    via mouse click on the box. The svelte-ignore below is a false positive:
+    `role` and `tabindex` are keyed on the same `crossExam` flag, so the div is
+    never noninteractive while carrying a nonnegative tabindex.
+  -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     class="box"
     class:scene={current.kind === "sceneTag"}
     class:action={current.kind === "action"}
     class:line={current.kind === "line"}
-    role="button"
-    tabindex="0"
+    role={crossExam ? undefined : "button"}
+    tabindex={crossExam ? undefined : 0}
     onclick={handleClick}
     onkeydown={handleBoxKeydown}
-    aria-label="推進對話"
+    aria-label={crossExam ? undefined : "推進對話"}
     aria-disabled={disabled}
     inert={historyOpen}
   >

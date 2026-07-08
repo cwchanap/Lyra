@@ -278,6 +278,12 @@ not a multi-line exchange.
 - **Optional even without `Contradiction`:** per-line `Challenge` /
   `On Wrong Evidence` overrides of the testimony defaults are allowed on
   honest lines too.
+- **Forbidden without `Contradiction`:** `Reveals`. A Line `Reveals` is the
+  `On Correct` reveal list (authored as a nested bullet under `On Correct`).
+  `On Correct` only fires on a correct contradiction present, so a `Reveals`
+  on an honest line is dead — it never fires at runtime but the validator
+  would still count it as obtainable, which can mask an unwinnable scene. The
+  compiler rejects it with `interrogationRevealsOnHonestLine`.
 
 A line with no `Contradiction` is honest: challenging it always falls back to
 the testimony's `Default Challenge` / `Default Wrong`.
@@ -416,6 +422,7 @@ production prompts, not filesystem paths; writers never author paths.
 | Authoring a `- **Content:**` field on a `##### Line:` | The suspect line is plain dialogue directly under the heading (`**角色名**：...`), not a metadata bullet — `Content` was a field of the retired `#### Statement:` block. Writing it as metadata triggers `interrogationEmptyLine` (no dialogue found) or `interrogationBadLineField`. |
 | Writing a `#### Follow-up:`, `#### On Reask`, `#### Statement:`, or `### Result:` block | These blocks no longer exist. A follow-up is a locked `### Question`; the parser rejects unknown headings. |
 | `Contradiction` line missing `Challenge` / `On Correct` / `On Wrong Evidence` | All three are required together — the compiler fails with `interrogationMissingChallenge`, `interrogationMissingOnCorrect`, or `interrogationMissingOnWrongEvidence`. |
+| `Reveals` on an honest line (no `Contradiction`) | `Reveals` is the `On Correct` reveal list and only fires on a correct contradiction present. Move it under a contradiction line's `On Correct`, or remove it — fails with `interrogationRevealsOnHonestLine`. |
 | `#### Testimony` missing `On Loop` | `On Loop` is required on every Testimony — fails with `interrogationMissingOnLoop`. |
 | `#### Testimony` with a `Contradiction` line but missing `Loop Prompt` or `Wrong Reply` | Both are required once the testimony has ≥1 `Contradiction` line — fails with `interrogationMissingLoopPrompt` or `interrogationMissingWrongReply`. |
 | `#### Testimony` with zero `##### Line:` blocks | Every Testimony needs at least one Line — fails with `interrogationEmptyTestimony`. |

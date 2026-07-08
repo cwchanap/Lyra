@@ -292,8 +292,6 @@ render playback vs tray. Remove `TestimonyStatementView`; rework
 `press_testimony_statement`, `present_testimony_item` with:
 - `ask_interrogation_question(questionId)` — start/replay a testimony (enqueue
   line 1 as dialogue).
-- `proceed_interrogation_line()` — advance to the next line, or fire `On Loop`
-  and wrap.
 - `challenge_interrogation_line(lineId)` — enqueue the `Challenge` /
   `Default Challenge` lead-in, then set `present_pending`.
 - `present_interrogation_evidence(lineId, itemKind, itemId)` — resolve
@@ -308,6 +306,18 @@ render playback vs tray. Remove `TestimonyStatementView`; rework
 Register each in `generate_handler!`. Errors stay typed `GameError`
 (`locked_interrogation_question`, a new `not_in_cross_examination`,
 `interrogationPhaseNotCompletable`, etc.).
+
+> **Implementation deviation (繼續聆聽 / `proceed_interrogation_line`).** The
+> original design listed a dedicated `proceed_interrogation_line()` IPC command
+> for the 繼續聆聽 affordance. This was **folded into the existing dialogue-box
+> advance path** during implementation: the testimony line renders through the
+> normal `DialogueBox` (which carries `role="button"` + Space/Enter advance), so
+> `advance_dialogue` → `on_queue_exhausted` → `advance_playing_testimony` already
+> advances to the next line or fires `On Loop` and wraps. No separate command is
+> registered. The §2.2 "繼續聆聽" control and the §2.1 "繼續 ──▶ line i+1" flow
+> remain accurate as *player-facing* affordances; only the IPC surface was
+> simplified. Restore the dedicated command if playtesting finds the unified
+> advance path conflates testimony advance with non-testimony dialogue advance.
 
 **Reveals/unlock** (`reveals.rs`, `unlock.rs`): reuse the interrogation reveal
 plumbing; `question:<id> answered` now means "broken".

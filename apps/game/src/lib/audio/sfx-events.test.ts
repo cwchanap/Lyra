@@ -167,7 +167,7 @@ describe("SFX event mapping", () => {
       assetIdForGameplaySfxEvent("investigation:hotspot-inspected"),
     ).toBeNull();
     expect(
-      assetIdForGameplaySfxEvent("interrogation:question-answered"),
+      assetIdForGameplaySfxEvent("interrogation:testimony-started"),
     ).toBeNull();
   });
 
@@ -604,7 +604,7 @@ describe("inferGameplaySfxEvents", () => {
         "ask_interrogation_question",
       ),
     ).toEqual([
-      "interrogation:question-answered",
+      "interrogation:testimony-started",
       "interrogation:phase-entered",
     ]);
   });

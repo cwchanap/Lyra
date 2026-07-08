@@ -1531,27 +1531,22 @@ impl GameEngine {
                 // current question — reject a crafted IPC call that names a
                 // line from another question, which would otherwise pollute
                 // the `Presenting` state with a foreign line id.
-                if scene.line(&question_id, line_id).is_none() {
-                    return Err(GameError::internal(format!(
-                        "challenge_interrogation_line: line '{line_id}' is not a testimony line of question '{question_id}'"
-                    )));
-                }
-                let challenge = scene.line(&question_id, line_id).map(|line| {
-                    if line.challenge.is_empty() {
-                        scene
-                            .question(&question_id)
-                            .map(|question| question.testimony.default_challenge.clone())
-                            .unwrap_or_default()
-                    } else {
-                        line.challenge.clone()
+                let challenge = match scene.line(&question_id, line_id) {
+                    Some(line) => {
+                        if line.challenge.is_empty() {
+                            scene
+                                .question(&question_id)
+                                .map(|question| question.testimony.default_challenge.clone())
+                                .unwrap_or_default()
+                        } else {
+                            line.challenge.clone()
+                        }
                     }
-                });
-                let challenge = match challenge {
-                    Some(challenge) => challenge,
-                    None => scene
-                        .question(&question_id)
-                        .map(|question| question.testimony.default_challenge.clone())
-                        .unwrap_or_default(),
+                    None => {
+                        return Err(GameError::internal(format!(
+                            "challenge_interrogation_line: line '{line_id}' is not a testimony line of question '{question_id}'"
+                        )));
+                    }
                 };
                 scene.begin_present(line_id);
                 challenge

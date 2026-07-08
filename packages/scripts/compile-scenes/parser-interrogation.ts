@@ -844,6 +844,19 @@ function parseTestimonyLine(
         "interrogationMissingOnWrongEvidence",
         `Line "${head.anchorId}" with Contradiction needs On Wrong Evidence.`,
       );
+  } else if (reveals.value.length > 0) {
+    // Reveals on a Line are the On Correct reveals (authored indented under
+    // On Correct for readability). On Correct only fires on a correct
+    // contradiction present, so a Reveals on an honest line (no Contradiction)
+    // is dead: it never fires at runtime but the validator would still count
+    // it as obtainable, which can mask an unwinnable scene. Reject it at
+    // compile time so the authoring error surfaces immediately.
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "interrogationRevealsOnHonestLine",
+      `Line "${head.anchorId}" has Reveals but no Contradiction. Reveals only fire on On Correct, which requires a Contradiction — move the Reveals under a contradiction line's On Correct, or remove it.`,
+    );
   }
 
   return {
