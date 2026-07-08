@@ -1410,9 +1410,19 @@ impl GameEngine {
             {
                 return Err(GameError::dialogue_active("ask_interrogation_question"));
             }
-            let question = scene
-                .question(question_id)
-                .ok_or_else(|| GameError::unknown_interrogation_question(question_id))?;
+            // Restrict the lookup to the current phase. `question()` is a
+            // global lookup across all phases; using it here would let a
+            // caller ask a question whose own unlock is satisfied but whose
+            // owning phase has not been entered yet, firing its reveals
+            // before the phase's entry dialogue and completion accounting.
+            let question = scene.current_phase_question(question_id).ok_or_else(|| {
+                if scene.question(question_id).is_some() {
+                    // Exists, but belongs to a different phase.
+                    GameError::locked_interrogation_question(question_id)
+                } else {
+                    GameError::unknown_interrogation_question(question_id)
+                }
+            })?;
             let ctx = InterrogationSceneAndInventoryCtx {
                 scene,
                 inventory: &self.inventory,
@@ -4305,6 +4315,105 @@ mod tests {
             }
             other => panic!("expected outro dialogue after required completion, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn ask_interrogation_question_rejects_question_from_non_current_phase() {
+        // Two unlocked phases. The required phase is current; the optional
+        // phase is unlocked (so its question's own unlock is satisfied) but
+        // has not been entered. Asking the optional phase's question must be
+        // rejected — otherwise its reveals would fire before the phase's
+        // entry dialogue and before the engine accounts for it as a
+        // cross-exam in the current phase.
+        let inquiry_phase = |id: &str,
+                             required: bool,
+                             question_id: &str,
+                             reveals: Vec<InterrogationRevealTarget>| {
+            InterrogationPhaseJson::Inquiry {
+                id: id.into(),
+                label: id.into(),
+                subject: subject(),
+                required,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals,
+                scene_tag: "interrogation_room".into(),
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![crate::game::schema::InquiryQuestionJson {
+                    id: question_id.into(),
+                    label: question_id.into(),
+                    status: LockStatus::Unlocked,
+                    required: true,
+                    unlock: None,
+                    reveals: vec![],
+                    testimony: empty_testimony(),
+                }],
+            }
+        };
+        let scene = InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            phases: vec![
+                inquiry_phase("required_inquiry", true, "required_q", vec![]),
+                inquiry_phase(
+                    "optional_inquiry",
+                    false,
+                    "optional_q",
+                    vec![InterrogationRevealTarget::Evidence {
+                        id: "optional_leak".into(),
+                    }],
+                ),
+            ],
+            evidence_manifest: vec![EvidenceJson {
+                id: "optional_leak".into(),
+                name: "Optional Leak".into(),
+                description: "Optional Leak".into(),
+                details: "Optional Leak".into(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![DialogueItem::Line {
+                    speaker: "A".into(),
+                    text: "outro".into(),
+                    portrait: None,
+                }],
+            },
+        };
+        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
+        engine.prime_initial_queue().unwrap();
+        assert!(matches!(
+            engine.view().mode,
+            ModeView::Interrogation { ref phase_id, .. } if phase_id == "required_inquiry"
+        ));
+
+        // Asking the optional phase's question while the required phase is
+        // current must be rejected as locked, and must not grant the reveal.
+        let err = engine.ask_interrogation_question("optional_q").unwrap_err();
+        assert_eq!(err.code, "lockedInterrogationQuestion");
+        assert!(!engine.inventory.has_evidence("optional_leak"));
+        if let SceneRuntime::Interrogation(scene) = &engine.scene {
+            assert!(!scene.is_question_broken("optional_q"));
+            assert_eq!(
+                scene.current_phase_id().as_deref(),
+                Some("required_inquiry")
+            );
+        } else {
+            panic!("expected interrogation scene");
+        }
+
+        // A genuinely unknown question still surfaces the distinct error.
+        let err = engine
+            .ask_interrogation_question("no_such_question")
+            .unwrap_err();
+        assert_eq!(err.code, "unknownInterrogationQuestion");
     }
 
     #[test]
