@@ -11,7 +11,7 @@ export type GameplaySfxEvent =
   | "investigation:evidence-acquired"
   | "investigation:statement-acquired"
   | "interrogation:phase-entered"
-  | "interrogation:question-answered"
+  | "interrogation:testimony-started"
   | "interrogation:testimony-pressed"
   | "interrogation:wrong-present"
   | "interrogation:successful-contradiction"
@@ -33,7 +33,7 @@ export type GameplaySfxEvent =
 // Every other event in the GameplaySfxEvent union currently resolves to NO
 // SOUND, but for two different reasons — keep them straight:
 //   1. "No dispatch path yet." Events like ui:new-game / ui:reset /
-//      investigation:* / interrogation:phase-entered / question-answered /
+//      investigation:* / interrogation:phase-entered / testimony-started /
 //      testimony-pressed ARE emitted by inferGameplaySfxEvents, but they have
 //      no Chapter 1 asset so assetIdForGameplaySfxEvent returns null and
 //      playGameplaySfxEvent short-circuits. These are intentionally silent
@@ -158,7 +158,7 @@ export function inferGameplaySfxEvents(
   if (command === "enter_sublocation")
     events.push("investigation:sublocation-entered");
   if (command === "ask_interrogation_question")
-    events.push("interrogation:question-answered");
+    events.push("interrogation:testimony-started");
   if (command === "challenge_interrogation_line")
     events.push("ui:menu-confirm");
   if (command === "complete_interrogation_phase")

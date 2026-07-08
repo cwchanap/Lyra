@@ -843,7 +843,7 @@ describe("DialogueBox inline cross-examination controls", () => {
   });
 
   it("still advances when the box itself is clicked", async () => {
-    const { onAdvance } = renderDialogueBox(
+    const { container, onAdvance } = renderDialogueBox(
       { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
       {
         crossExam: {
@@ -854,7 +854,12 @@ describe("DialogueBox inline cross-examination controls", () => {
       },
     );
 
-    await fireEvent.click(screen.getByRole("button", { name: "推進對話" }));
+    // In cross-exam mode the box drops role="button"/tabindex so the inline
+    // 反駁/退下 buttons are not nested inside a button (a11y). Click-to-advance
+    // still works via the box's onclick, so target the .box element directly
+    // rather than querying by role.
+    const box = container.querySelector(".box") as HTMLElement;
+    await fireEvent.click(box);
 
     expect(onAdvance).toHaveBeenCalledTimes(1);
   });

@@ -141,3 +141,26 @@ Unknown-field rejection is unchanged: `Loop Prompt` / `Wrong Reply` become known
 - No speaker-id validation (the detective voice is an authoring convention, not
   compiler-enforced).
 - No new field for the correct-present or challenge lead-in beats.
+
+## Resolved asymmetry: wrong-present advances, tray-resume re-shows
+
+The two "leave the tray" paths reach the `Playing` state via `return_to_line()`
+(resetting `line_index` to the challenged line), but they diverge in what they
+enqueue next, producing an intentional asymmetry:
+
+- **Wrong present** (`present_interrogation_evidence`, wrong branch): enqueues
+  `on_wrong ++ wrong_reply` and calls `return_to_line()`. When that queue
+  drains, `on_queue_exhausted` → `advance_playing_testimony` → `advance_line()`
+  moves to `line_index + 1`. So a wrong present **advances past** the challenged
+  line — the player does not re-see it immediately. Re-challenging the same line
+  is still possible on the next loop pass.
+- **Tray-resume** (`resume_interrogation_testimony`): calls `return_to_line()`
+  then **re-enqueues the challenged line's `content`** directly, so the player
+  **re-sees** the challenged line in the dialogue box.
+
+This is intended (see the inline comment at `mod.rs` in the wrong branch of
+`present_interrogation_evidence`). The spec's "return to the loop" wording is
+ambiguous; the chosen feel is "a wrong guess costs you a loop pass on that line,
+while backing out of the tray lets you re-read it before deciding again." Do not
+"fix" this asymmetry without confirming the intended feel — the two paths are
+deliberately different.

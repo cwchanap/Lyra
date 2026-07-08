@@ -39,7 +39,7 @@
     return items
       .filter((item) => item.kind === "line" || item.kind === "action")
       .map((item) => item.text)
-      .join(" ");
+      .join("");
   }
 </script>
 
