@@ -665,7 +665,7 @@ git commit -m "feat(engine): interrogation view with cross-examination sub-state
 
 **Interfaces — Produces (used by frontend):** commands (JS name → Rust fn):
 - `ask_interrogation_question` ← `{ questionId }`
-- `proceed_interrogation_line` ← `{}`
+- `proceed_interrogation_line` ← `{}` — **DEViation: folded into `advance_dialogue`; see design spec 2026-07-04 §Implementation deviation.**
 - `challenge_interrogation_line` ← `{ lineId }`
 - `present_interrogation_evidence` ← `{ lineId, itemKind: "evidence"|"statement", itemId }`
 - `withdraw_interrogation` ← `{}`
@@ -678,7 +678,7 @@ Each returns `Result<GameStateView, GameError>`.
 
 - [ ] **Step 3: Implement the command bodies** on the engine, reusing the existing pattern from the old `answer_interrogation_question` (snapshot → guard dialogue-active → mutate → `install_scene_queue`/`on_queue_exhausted` → `refresh_phase_completion` → `restore_on_error`):
   - `ask`: guard not mid-dialogue; `begin_question`; enqueue line-0 `content`.
-  - `proceed`: `advance_line`; on `NextLine(i)` enqueue that line's `content`; on `Loop` enqueue `on_loop` then wrap.
+  - `proceed`: `advance_line`; on `NextLine(i)` enqueue that line's `content`; on `Loop` enqueue `on_loop` then wrap. — **DEViation: not a separate command; handled by `advance_dialogue` → `on_queue_exhausted` → `advance_playing_testimony`.**
   - `challenge`: require `Playing`; `begin_present`; enqueue the line's `challenge` (fallback `testimony.default_challenge`).
   - `present`: require `Presenting`; if `itemKind/itemId` matches the line's `contradiction` → `apply_interrogation_reveals_and_build_queue(on_correct, line.reveals)`, `record_break`; else enqueue `on_wrong_evidence` (fallback `default_wrong`) and `return_to_line`.
   - `withdraw`: require `Playing`/`Presenting`; `withdraw`; empty queue → `on_queue_exhausted`.
@@ -743,6 +743,8 @@ export async function askInterrogationQuestion(questionId: string) {
   await dispatchGameCommand("ask_interrogation_question", { questionId });
 }
 export async function proceedInterrogationLine() {
+  // DEViation: not registered; 繼續聆聽 reuses advanceDialogue (advance_dialogue).
+  // Retained here only as a historical plan artifact.
   await dispatchGameCommand("proceed_interrogation_line", {});
 }
 export async function challengeInterrogationLine(lineId: string) {

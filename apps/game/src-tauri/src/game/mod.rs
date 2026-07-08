@@ -1474,10 +1474,10 @@ impl GameEngine {
     }
 
     /// `challenge_interrogation_line` — opens the evidence tray against
-    /// `line_id`, installing its challenge lead-in dialogue. The player may
-    /// challenge any line of the currently-playing question (the inline 反駁
-    /// button targets a player-chosen line, not necessarily the one at
-    /// `Playing.line_index`), so `line_id` is a genuine player choice; it is
+    /// `line_id`, installing its challenge lead-in dialogue. The inline 反駁
+    /// button currently sends the currently-playing line id (the line at
+    /// `Playing.line_index`, surfaced as `cross_exam_line_id` in the dialogue
+    /// view), but `line_id` is treated as untrusted player input and
     /// validated to belong to the current question before use.
     pub fn challenge_interrogation_line(
         &mut self,
