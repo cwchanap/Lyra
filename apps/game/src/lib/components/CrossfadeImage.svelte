@@ -208,6 +208,11 @@
   // duration: a small grace period lets the browser paint the 1ms transition
   // before the node is detached.
   const REDUCED_MOTION_REMOVAL_GRACE_MS = 50;
+  // For the normal path the CSS transition duration equals durationMs, so a
+  // timer set to exactly durationMs can fire just before the browser paints
+  // the transition's final frame and yank the node mid-fade. A small grace
+  // ensures the fade completes before the layer is detached.
+  const REMOVAL_GRACE_MS = 50;
 
   function removalDelayMs() {
     if (
@@ -217,7 +222,7 @@
     ) {
       return REDUCED_MOTION_REMOVAL_GRACE_MS;
     }
-    return durationMs;
+    return durationMs + REMOVAL_GRACE_MS;
   }
 
   function scheduleRemoval(layerId: number) {
