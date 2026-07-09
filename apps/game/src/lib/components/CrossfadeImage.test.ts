@@ -69,6 +69,46 @@ describe("CrossfadeImage", () => {
     expect(newImage).not.toHaveClass("leaving");
   });
 
+  it("updates the live image presentation props when src stays the same", async () => {
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/portrait.png",
+      imageClass: "portrait left",
+      imageStyle: "--portrait-height: min(1536px, 80vh);",
+      alt: "",
+      ariaHidden: true,
+      dataAttributes: { placement: "left", layer: "back" },
+    });
+
+    await rerender({
+      src: "/portrait.png",
+      imageClass: "portrait right",
+      imageStyle: "--portrait-height: min(1024px, 60vh);",
+      alt: "",
+      ariaHidden: "false",
+      dataAttributes: {
+        placement: "right",
+        layer: "front",
+        tone: "bright",
+      },
+    });
+
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+    const image = firstImage(container);
+    expect(image).toHaveClass(
+      "crossfade-image-layer",
+      "portrait right",
+      "visible",
+    );
+    expect(image).not.toHaveClass("portrait left");
+    expect(image).toHaveAttribute("aria-hidden", "false");
+    expect(image).toHaveAttribute("data-placement", "right");
+    expect(image).toHaveAttribute("data-layer", "front");
+    expect(image).toHaveAttribute("data-tone", "bright");
+    expect(image.style.getPropertyValue("--portrait-height")).toBe(
+      "min(1024px, 60vh)",
+    );
+  });
+
   it("snapshots caller presentation props per layer during a transition", async () => {
     const { container, rerender } = render(CrossfadeImage, {
       src: "/old.png",
