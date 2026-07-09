@@ -69,6 +69,57 @@ describe("CrossfadeImage", () => {
     expect(newImage).not.toHaveClass("leaving");
   });
 
+  it("snapshots caller presentation props per layer during a transition", async () => {
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/old.png",
+      imageClass: "portrait left",
+      imageStyle: "--portrait-height: min(1536px, 80vh);",
+      alt: "",
+      ariaHidden: true,
+      dataAttributes: { placement: "left", layer: "back" },
+    });
+
+    await rerender({
+      src: "/new.png",
+      imageClass: "portrait right",
+      imageStyle: "--portrait-height: min(1024px, 60vh);",
+      alt: "",
+      ariaHidden: "false",
+      dataAttributes: {
+        placement: "right",
+        layer: "front",
+        tone: "bright",
+      },
+    });
+
+    const [oldImage, newImage] = Array.from(
+      container.querySelectorAll("img"),
+    ) as HTMLImageElement[];
+
+    expect(oldImage).toHaveClass(
+      "crossfade-image-layer",
+      "portrait left",
+      "visible",
+    );
+    expect(oldImage).toHaveAttribute("aria-hidden", "true");
+    expect(oldImage).toHaveAttribute("data-placement", "left");
+    expect(oldImage).toHaveAttribute("data-layer", "back");
+    expect(oldImage).not.toHaveAttribute("data-tone");
+    expect(oldImage.style.getPropertyValue("--portrait-height")).toBe(
+      "min(1536px, 80vh)",
+    );
+
+    expect(newImage).toHaveClass("crossfade-image-layer", "portrait right");
+    expect(newImage).not.toHaveClass("visible");
+    expect(newImage).toHaveAttribute("aria-hidden", "false");
+    expect(newImage).toHaveAttribute("data-placement", "right");
+    expect(newImage).toHaveAttribute("data-layer", "front");
+    expect(newImage).toHaveAttribute("data-tone", "bright");
+    expect(newImage.style.getPropertyValue("--portrait-height")).toBe(
+      "min(1024px, 60vh)",
+    );
+  });
+
   it("activates the incoming image after load and removes the old layer after the duration", async () => {
     vi.useFakeTimers();
     const { container, rerender } = render(CrossfadeImage, {

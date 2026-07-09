@@ -3,12 +3,20 @@
 
   type ImageDataAttributeValue = string | number | boolean | null | undefined;
 
+  type ImageLayerPresentation = {
+    className: string;
+    style: string;
+    ariaHidden?: string;
+    dataProps: Record<string, string>;
+  };
+
   type ImageLayer = {
     id: number;
     src: string;
     visible: boolean;
     leaving: boolean;
     pending: boolean;
+    presentation: ImageLayerPresentation;
   };
 
   let {
@@ -37,25 +45,6 @@
   let layerSequence = 0;
   let lastRequestedSrc = $state<string | null>(null);
   const cleanupTimers = new SvelteMap<number, ReturnType<typeof setTimeout>>();
-
-  const durationStyle = $derived(`--crossfade-duration: ${durationMs}ms;`);
-  const imageStyleValue = $derived(
-    imageStyle ? `${durationStyle} ${imageStyle}` : durationStyle,
-  );
-  const imageAriaHidden = $derived(
-    ariaHidden === true
-      ? "true"
-      : ariaHidden === false
-        ? undefined
-        : ariaHidden,
-  );
-  const dataProps = $derived(
-    Object.fromEntries(
-      Object.entries(dataAttributes)
-        .filter(([, value]) => value !== null && value !== undefined)
-        .map(([key, value]) => [`data-${key}`, String(value)]),
-    ),
-  );
 
   $effect(() => {
     if (src === lastRequestedSrc) {
@@ -86,9 +75,32 @@
       visible: !hasVisibleLayer,
       leaving: false,
       pending: hasVisibleLayer,
+      presentation: snapshotPresentation(),
     };
     layers = [...layers, nextLayer];
   });
+
+  function snapshotPresentation(): ImageLayerPresentation {
+    const style = imageStyle
+      ? `--crossfade-duration: ${durationMs}ms; ${imageStyle}`
+      : `--crossfade-duration: ${durationMs}ms;`;
+
+    return {
+      className: imageClass,
+      style,
+      ariaHidden:
+        ariaHidden === true
+          ? "true"
+          : ariaHidden === false
+            ? undefined
+            : ariaHidden,
+      dataProps: Object.fromEntries(
+        Object.entries(dataAttributes)
+          .filter(([, value]) => value !== null && value !== undefined)
+          .map(([key, value]) => [`data-${key}`, String(value)]),
+      ),
+    };
+  }
 
   function fadeOutAllLayers() {
     const activeIds = layers
@@ -168,14 +180,14 @@
 
 {#each layers as layer (layer.id)}
   <img
-    class={`crossfade-image-layer ${imageClass}`}
+    class={`crossfade-image-layer ${layer.presentation.className}`}
     class:visible={layer.visible}
     class:leaving={layer.leaving}
     src={layer.src}
     {alt}
-    aria-hidden={imageAriaHidden}
-    style={imageStyleValue}
-    {...dataProps}
+    aria-hidden={layer.presentation.ariaHidden}
+    style={layer.presentation.style}
+    {...layer.presentation.dataProps}
     onload={(event) => handleLoad(layer, event)}
     onerror={(event) => handleError(layer, event)}
   />
