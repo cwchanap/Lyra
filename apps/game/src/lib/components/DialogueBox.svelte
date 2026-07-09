@@ -249,10 +249,11 @@
   });
 
   $effect(() => {
-    const key = revealKey;
+    // Read revealKey so this effect re-runs when the reveal target changes;
+    // the value itself is not needed beyond dependency tracking.
+    void revealKey;
     const text = revealableText;
     const duration = textRevealDurationMs;
-    void key;
 
     clearTextRevealTimer();
     if (text.length === 0 || duration <= 0) {

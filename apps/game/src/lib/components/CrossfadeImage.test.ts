@@ -420,6 +420,101 @@ describe("CrossfadeImage", () => {
     expect(imageSources(container)).toEqual(["/a.png", "/c.png"]);
   });
 
+  it("renders no image when the initial src is null", () => {
+    const { container } = render(CrossfadeImage, {
+      src: null,
+      alt: "",
+      ariaHidden: true,
+    });
+
+    expect(container.querySelector("img")).not.toBeInTheDocument();
+  });
+
+  it("clears pending removal timers on unmount so no layer mutates after detach", async () => {
+    vi.useFakeTimers();
+    const { container, rerender, unmount } = render(CrossfadeImage, {
+      src: "/old.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+    });
+
+    await rerender({
+      src: "/new.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+    });
+
+    const incoming = container.querySelectorAll("img")[1] as HTMLImageElement;
+    await fireEvent.load(incoming);
+
+    // Old layer is now `leaving` with a pending 300ms removal timer.
+    expect(container.querySelectorAll("img")).toHaveLength(2);
+    expect(container.querySelectorAll("img")[0]).toHaveClass("leaving");
+
+    unmount();
+    // Advancing past the scheduled removal must not throw or mutate state.
+    vi.advanceTimersByTime(300);
+    expect(container.querySelector("img")).not.toBeInTheDocument();
+  });
+
+  it("removes leaving layers on the reduced-motion schedule, not the full duration", async () => {
+    const reducedMotionList = {
+      matches: true,
+      media: "(prefers-reduced-motion: reduce)",
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    } as unknown as MediaQueryList;
+    vi.stubGlobal("matchMedia", (query: string) =>
+      query === "(prefers-reduced-motion: reduce)"
+        ? reducedMotionList
+        : ({ matches: false } as unknown as MediaQueryList),
+    );
+
+    vi.useFakeTimers();
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/old.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 1500,
+    });
+
+    await rerender({
+      src: "/new.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 1500,
+    });
+
+    const incoming = container.querySelectorAll("img")[1] as HTMLImageElement;
+    await fireEvent.load(incoming);
+
+    expect(container.querySelectorAll("img")).toHaveLength(2);
+    expect(container.querySelectorAll("img")[0]).toHaveClass("leaving");
+
+    // Full duration has NOT elapsed, but the reduced-motion grace (50ms) has.
+    vi.advanceTimersByTime(50);
+    await waitFor(() => {
+      expect(imageSources(container)).toEqual(["/new.png"]);
+    });
+
+    // Advance the remainder of the full duration to prove the layer was
+    // already removed early and no further mutation occurs.
+    vi.advanceTimersByTime(1450);
+    expect(imageSources(container)).toEqual(["/new.png"]);
+
+    vi.unstubAllGlobals();
+  });
+
   it("defines the transition and reduced-motion CSS contract", () => {
     const source = readFileSync(
       resolve(import.meta.dirname!, "CrossfadeImage.svelte"),
