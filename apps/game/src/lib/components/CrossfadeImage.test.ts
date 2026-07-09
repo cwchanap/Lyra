@@ -128,6 +128,41 @@ describe("CrossfadeImage", () => {
     );
   });
 
+  it("creates a transition layer when the transition key changes even if src stays the same", async () => {
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/portrait.png",
+      transitionKey: "/portrait.png:left",
+      imageClass: "portrait left",
+      imageStyle: "--portrait-height: min(1536px, 80vh);",
+      alt: "",
+      ariaHidden: true,
+      dataAttributes: { placement: "left", layer: "back" },
+    });
+
+    await rerender({
+      src: "/portrait.png",
+      transitionKey: "/portrait.png:right",
+      imageClass: "portrait right",
+      imageStyle: "--portrait-height: min(1536px, 80vh);",
+      alt: "",
+      ariaHidden: true,
+      dataAttributes: { placement: "right", layer: "back" },
+    });
+
+    const [oldImage, newImage] = Array.from(
+      container.querySelectorAll("img"),
+    ) as HTMLImageElement[];
+
+    expect(container.querySelectorAll("img")).toHaveLength(2);
+    expect(oldImage).toHaveAttribute("src", "/portrait.png");
+    expect(oldImage).toHaveClass("portrait left", "visible");
+    expect(oldImage).toHaveAttribute("data-placement", "left");
+    expect(newImage).toHaveAttribute("src", "/portrait.png");
+    expect(newImage).toHaveClass("portrait right");
+    expect(newImage).not.toHaveClass("visible");
+    expect(newImage).toHaveAttribute("data-placement", "right");
+  });
+
   it("snapshots caller presentation props per layer during a transition", async () => {
     const { container, rerender } = render(CrossfadeImage, {
       src: "/old.png",

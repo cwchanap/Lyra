@@ -13,6 +13,7 @@
 
   type ImageLayer = {
     id: number;
+    key: string;
     src: string;
     visible: boolean;
     leaving: boolean;
@@ -22,6 +23,7 @@
 
   let {
     src,
+    transitionKey = null,
     alt = "",
     imageClass = "",
     imageStyle = "",
@@ -32,6 +34,7 @@
     onImageError,
   }: {
     src: string | null;
+    transitionKey?: string | null;
     alt?: string;
     imageClass?: string;
     imageStyle?: string;
@@ -44,21 +47,22 @@
 
   let layers = $state<ImageLayer[]>([]);
   let layerSequence = 0;
-  let lastRequestedSrc: string | null = null;
+  let lastRequestedKey: string | null = null;
   const cleanupTimers = new SvelteMap<number, ReturnType<typeof setTimeout>>();
 
   $effect(() => {
     const desiredSrc = src;
+    const desiredKey = desiredSrc ? (transitionKey ?? desiredSrc) : null;
     const presentation = snapshotPresentation();
 
     untrack(() => {
-      if (desiredSrc === lastRequestedSrc) {
-        if (!desiredSrc) {
+      if (desiredKey === lastRequestedKey) {
+        if (!desiredKey) {
           return;
         }
 
         const existingIndex = layers.findIndex(
-          (layer) => layer.src === desiredSrc && !layer.leaving,
+          (layer) => layer.key === desiredKey && !layer.leaving,
         );
         if (existingIndex === -1) {
           return;
@@ -75,15 +79,15 @@
         return;
       }
 
-      lastRequestedSrc = desiredSrc;
+      lastRequestedKey = desiredKey;
 
-      if (!desiredSrc) {
+      if (!desiredSrc || !desiredKey) {
         fadeOutAllLayers();
         return;
       }
 
       const existing = layers.find(
-        (layer) => layer.src === desiredSrc && !layer.leaving,
+        (layer) => layer.key === desiredKey && !layer.leaving,
       );
       if (existing) {
         activateLayer(existing.id);
@@ -100,6 +104,7 @@
         : layers;
       const nextLayer: ImageLayer = {
         id: ++layerSequence,
+        key: desiredKey,
         src: desiredSrc,
         visible: !hasVisibleLayer,
         leaving: false,
@@ -216,7 +221,7 @@
     if (!layer) {
       return;
     }
-    if (layer.src !== lastRequestedSrc || layer.leaving) {
+    if (layer.key !== lastRequestedKey || layer.leaving) {
       if (layer.pending) {
         removeLayer(layer.id);
       }
@@ -231,7 +236,7 @@
     if (!layer) {
       return;
     }
-    if (layer.src !== lastRequestedSrc || layer.leaving) {
+    if (layer.key !== lastRequestedKey || layer.leaving) {
       if (layer.pending) {
         removeLayer(layer.id);
       }
