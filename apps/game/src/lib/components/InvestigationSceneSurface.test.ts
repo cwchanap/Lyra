@@ -201,8 +201,110 @@ describe("InvestigationSceneSurface", () => {
     }
   });
 
+  it("crossfades investigation background asset changes without removing the old background first", async () => {
+    const { container, rerender } = render(InvestigationSceneSurface, {
+      sublocation,
+      backgroundAssetId: "background.chapter_1.scene_0.cafe",
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(".surface-shell > img.background-image"),
+      ).toHaveAttribute(
+        "src",
+        "/assets/backgrounds/chapter_1/scene_0/cafe.png",
+      );
+    });
+
+    await rerender({
+      sublocation,
+      backgroundAssetId: "background.chapter_1.scene_0.alley",
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      const images = container.querySelectorAll(
+        ".surface-shell > img.background-image",
+      );
+      expect(images.length).toBe(2);
+      expect(images[0]).toHaveAttribute(
+        "src",
+        "/assets/backgrounds/chapter_1/scene_0/cafe.png",
+      );
+      expect(images[1]).toHaveAttribute(
+        "src",
+        "/assets/backgrounds/chapter_1/scene_0/alley.png",
+      );
+    });
+  });
+
+  it("crossfades a placed character asset change inside the existing target", async () => {
+    const { container, rerender } = render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(".character-target img")).toHaveAttribute(
+        "src",
+        "/assets/portraits/witness/standard.png",
+      );
+    });
+
+    const updatedSublocation = {
+      ...sublocation,
+      characters: [
+        {
+          ...sublocation.characters[0],
+          layout: {
+            ...sublocation.characters[0].layout!,
+            assetId: "standee.witness.standard",
+          },
+        },
+      ],
+    } satisfies SublocationView;
+
+    await rerender({
+      sublocation: updatedSublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      const images = container.querySelectorAll(".character-target img");
+      expect(images.length).toBe(2);
+      expect(images[0]).toHaveAttribute(
+        "src",
+        "/assets/portraits/witness/standard.png",
+      );
+      expect(images[1]).toHaveAttribute(
+        "src",
+        "/assets/standees/witness/standard.png",
+      );
+    });
+  });
+
+  it("uses the shared crossfade image primitive for investigation images", () => {
+    const source = surfaceSource();
+    expect(source).toContain(
+      'import CrossfadeImage from "./CrossfadeImage.svelte"',
+    );
+    expect(source).toContain("<CrossfadeImage");
+    expect(source).toContain('imageClass="background-image"');
+    expect(source).toContain('imageClass=""');
+    expect(source).toContain("onImageLoad");
+    expect(source).toContain("onImageError");
+  });
+
   it("matches story scenes by fixing investigation backgrounds to the viewport", () => {
-    const backgroundRule = cssRule(surfaceSource(), ".background-image");
+    const backgroundRule = cssRule(
+      surfaceSource(),
+      ":global(.background-image)",
+    );
     expect(backgroundRule).toContain("position: fixed");
     expect(backgroundRule).toContain("z-index: -1");
     expect(backgroundRule).toContain("width: 100vw");
@@ -668,7 +770,13 @@ describe("InvestigationSceneSurface", () => {
     img.dispatchEvent(new Event("error"));
 
     await waitFor(() => {
-      expect(img.src).toContain("data:image/svg+xml");
+      const backgrounds = container.querySelectorAll(
+        ".surface-shell > img.background-image",
+      );
+      expect(backgrounds).toHaveLength(2);
+      expect(backgrounds[1]?.getAttribute("src")).toContain(
+        "data:image/svg+xml",
+      );
     });
   });
 
@@ -1052,11 +1160,18 @@ describe("InvestigationSceneSurface", () => {
     img.dispatchEvent(new Event("error"));
 
     await waitFor(() => {
-      expect(img.src).toContain("data:image/svg+xml");
+      const backgrounds = container.querySelectorAll("img.background-image");
+      expect(backgrounds).toHaveLength(2);
+      expect(backgrounds[1]?.getAttribute("src")).toContain(
+        "data:image/svg+xml",
+      );
     });
 
     warnSpy.mockClear();
-    img.dispatchEvent(new Event("error"));
+    const placeholder = container.querySelectorAll(
+      "img.background-image",
+    )[1] as HTMLImageElement;
+    placeholder.dispatchEvent(new Event("error"));
     expect(warnSpy).not.toHaveBeenCalled();
 
     warnSpy.mockRestore();
@@ -1083,11 +1198,16 @@ describe("InvestigationSceneSurface", () => {
     img.dispatchEvent(new Event("error"));
 
     await waitFor(() => {
-      expect(img.src).toContain("data:image/svg+xml");
+      const portraits = container.querySelectorAll(".character-target img");
+      expect(portraits).toHaveLength(2);
+      expect(portraits[1]?.getAttribute("src")).toContain("data:image/svg+xml");
     });
 
     warnSpy.mockClear();
-    img.dispatchEvent(new Event("error"));
+    const placeholder = container.querySelectorAll(
+      ".character-target img",
+    )[1] as HTMLImageElement;
+    placeholder.dispatchEvent(new Event("error"));
     expect(warnSpy).not.toHaveBeenCalled();
 
     warnSpy.mockRestore();

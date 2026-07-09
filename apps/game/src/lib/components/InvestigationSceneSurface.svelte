@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import CrossfadeImage from "./CrossfadeImage.svelte";
   import {
     imageStoryAssetTypeForId,
     placeholderForMissingStoryAsset,
@@ -66,7 +67,6 @@
 
   $effect(() => {
     let cancelled = false;
-    portraits = {};
 
     for (const character of placedCharacters) {
       const { id, layout } = character;
@@ -93,7 +93,6 @@
 
   $effect(() => {
     let cancelled = false;
-    background = null;
 
     resolveStoryAsset(backgroundAssetId, "background")
       .then((asset) => {
@@ -243,15 +242,13 @@
 </script>
 
 <section class="surface-shell" aria-label={`${sublocation.label}調查場景`}>
-  {#if background}
-    <img
-      class="background-image"
-      src={background.url}
-      alt=""
-      aria-hidden="true"
-      onerror={handleBackgroundError}
-    />
-  {/if}
+  <CrossfadeImage
+    src={background?.url ?? null}
+    imageClass="background-image"
+    alt=""
+    ariaHidden={true}
+    onImageError={handleBackgroundError}
+  />
 
   <div class="scene-surface">
     <div class="scene-label">
@@ -297,13 +294,14 @@
               class="character-preview-crop"
               style={cropStyleForAsset(character.layout.assetId)}
             >
-              <img
-                src={portraits[character.id]?.url}
+              <CrossfadeImage
+                src={portraits[character.id]?.url ?? null}
+                imageClass=""
                 alt=""
-                aria-hidden="true"
-                onload={(event) =>
+                ariaHidden={true}
+                onImageLoad={(event) =>
                   loadCharacterCrop(character.layout.assetId, event)}
-                onerror={() => handlePortraitError(character)}
+                onImageError={() => handlePortraitError(character)}
               />
             </div>
           {:else}
@@ -460,7 +458,7 @@
     pointer-events: none;
   }
 
-  .background-image {
+  :global(.background-image) {
     position: fixed;
     inset: 0;
     z-index: -1;
@@ -658,7 +656,7 @@
     pointer-events: none;
   }
 
-  .character-preview-crop img {
+  .character-preview-crop :global(img) {
     position: absolute;
     top: calc(-100% * var(--crop-top, 0) / var(--crop-height, 1));
     left: 50%;
@@ -671,8 +669,8 @@
     pointer-events: none;
   }
 
-  .character-preview-crop:not([style]) img,
-  .character-preview-crop[style=""] img {
+  .character-preview-crop:not([style]) :global(img),
+  .character-preview-crop[style=""] :global(img) {
     inset: 0;
     width: 100%;
     height: 100%;
