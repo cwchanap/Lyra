@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
 
   type ImageDataAttributeValue = string | number | boolean | null | undefined;
@@ -43,41 +44,64 @@
 
   let layers = $state<ImageLayer[]>([]);
   let layerSequence = 0;
-  let lastRequestedSrc = $state<string | null>(null);
+  let lastRequestedSrc: string | null = null;
   const cleanupTimers = new SvelteMap<number, ReturnType<typeof setTimeout>>();
 
   $effect(() => {
-    if (src === lastRequestedSrc) {
-      return;
-    }
+    const presentation = snapshotPresentation();
 
-    lastRequestedSrc = src;
+    untrack(() => {
+      if (src === lastRequestedSrc) {
+        if (!src) {
+          return;
+        }
 
-    if (!src) {
-      fadeOutAllLayers();
-      return;
-    }
+        const existingIndex = layers.findIndex(
+          (layer) => layer.src === src && !layer.leaving,
+        );
+        if (existingIndex === -1) {
+          return;
+        }
 
-    const existing = layers.find(
-      (layer) => layer.src === src && !layer.leaving,
-    );
-    if (existing) {
-      activateLayer(existing.id);
-      return;
-    }
+        const existing = layers[existingIndex];
+        if (hasSamePresentation(existing.presentation, presentation)) {
+          return;
+        }
 
-    const hasVisibleLayer = layers.some(
-      (layer) => layer.visible && !layer.leaving,
-    );
-    const nextLayer: ImageLayer = {
-      id: ++layerSequence,
-      src,
-      visible: !hasVisibleLayer,
-      leaving: false,
-      pending: hasVisibleLayer,
-      presentation: snapshotPresentation(),
-    };
-    layers = [...layers, nextLayer];
+        layers = layers.map((layer, index) =>
+          index === existingIndex ? { ...layer, presentation } : layer,
+        );
+        return;
+      }
+
+      lastRequestedSrc = src;
+
+      if (!src) {
+        fadeOutAllLayers();
+        return;
+      }
+
+      const existing = layers.find(
+        (layer) => layer.src === src && !layer.leaving,
+      );
+      if (existing) {
+        activateLayer(existing.id);
+        return;
+      }
+
+      const hasVisibleLayer = layers.some(
+        (layer) => layer.visible && !layer.leaving,
+      );
+      const nextLayer: ImageLayer = {
+        id: ++layerSequence,
+        src,
+        visible: !hasVisibleLayer,
+        leaving: false,
+        pending: hasVisibleLayer,
+        presentation,
+      };
+      layers = [...layers, nextLayer];
+    });
   });
 
   function snapshotPresentation(): ImageLayerPresentation {
@@ -100,6 +124,29 @@
           .map(([key, value]) => [`data-${key}`, String(value)]),
       ),
     };
+  }
+
+  function hasSamePresentation(
+    left: ImageLayerPresentation,
+    right: ImageLayerPresentation,
+  ) {
+    if (
+      left.className !== right.className ||
+      left.style !== right.style ||
+      left.ariaHidden !== right.ariaHidden
+    ) {
+      return false;
+    }
+
+    const leftKeys = Object.keys(left.dataProps);
+    const rightKeys = Object.keys(right.dataProps);
+    if (leftKeys.length !== rightKeys.length) {
+      return false;
+    }
+
+    return leftKeys.every(
+      (key) => left.dataProps[key] === right.dataProps[key],
+    );
   }
 
   function fadeOutAllLayers() {
