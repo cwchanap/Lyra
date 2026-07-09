@@ -261,6 +261,17 @@
       return;
     }
 
+    // Respect prefers-reduced-motion: skip the JS typewriter and reveal the
+    // full line immediately. Mirrors CrossfadeImage's reduced-motion handling.
+    if (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      visibleTextLength = text.length;
+      return;
+    }
+
     visibleTextLength = 0;
     const startedAt = Date.now();
     textRevealTimer = setInterval(() => {
