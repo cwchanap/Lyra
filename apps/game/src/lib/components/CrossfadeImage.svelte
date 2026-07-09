@@ -48,6 +48,8 @@
   let layers = $state<ImageLayer[]>([]);
   let layerSequence = 0;
   let lastRequestedKey: string | null = null;
+  // SvelteMap is required by the svelte/prefer-svelte-reactivity lint rule
+  // even though these timers are never read in a reactive context.
   const cleanupTimers = new SvelteMap<number, ReturnType<typeof setTimeout>>();
 
   $effect(() => {
@@ -195,12 +197,31 @@
     }
   }
 
+  // Under prefers-reduced-motion the CSS transition collapses to 1ms (see the
+  // reduced-motion media query in the style block below), so waiting the full
+  // durationMs would leave invisible `leaving` layers in the DOM for up to 1.5s
+  // during rapid advances. Match the removal delay to the effective CSS
+  // duration: a small grace period lets the browser paint the 1ms transition
+  // before the node is detached.
+  const reducedMotionRemovalMs = 50;
+
+  function removalDelayMs() {
+    if (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return reducedMotionRemovalMs;
+    }
+    return durationMs;
+  }
+
   function scheduleRemoval(layerId: number) {
     clearRemoval(layerId);
     const timer = setTimeout(() => {
       cleanupTimers.delete(layerId);
       layers = layers.filter((layer) => layer.id !== layerId);
-    }, durationMs);
+    }, removalDelayMs());
     cleanupTimers.set(layerId, timer);
   }
 
