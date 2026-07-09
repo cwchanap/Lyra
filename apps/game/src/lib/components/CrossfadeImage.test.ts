@@ -282,6 +282,11 @@ describe("CrossfadeImage", () => {
       ariaHidden: true,
       onImageLoad,
     });
+
+    const stalePending = container.querySelectorAll(
+      "img",
+    )[1] as HTMLImageElement;
+
     await rerender({
       src: "/c.png",
       imageClass: "background-image",
@@ -289,10 +294,6 @@ describe("CrossfadeImage", () => {
       ariaHidden: true,
       onImageLoad,
     });
-
-    const stalePending = container.querySelectorAll(
-      "img",
-    )[1] as HTMLImageElement;
     await fireEvent.load(stalePending);
 
     await waitFor(() => {
@@ -328,6 +329,11 @@ describe("CrossfadeImage", () => {
       ariaHidden: true,
       onImageError,
     });
+
+    const stalePending = container.querySelectorAll(
+      "img",
+    )[1] as HTMLImageElement;
+
     await rerender({
       src: "/c.png",
       imageClass: "background-image",
@@ -335,10 +341,6 @@ describe("CrossfadeImage", () => {
       ariaHidden: true,
       onImageError,
     });
-
-    const stalePending = container.querySelectorAll(
-      "img",
-    )[1] as HTMLImageElement;
     await fireEvent.error(stalePending);
 
     await waitFor(() => {
@@ -356,6 +358,33 @@ describe("CrossfadeImage", () => {
     expect(firstImage(container)).toHaveClass("visible");
   });
 
+  it("drops superseded pending layers immediately during rapid source changes", async () => {
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+
+    await rerender({
+      src: "/b.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+
+    expect(imageSources(container)).toEqual(["/a.png", "/b.png"]);
+
+    await rerender({
+      src: "/c.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+
+    expect(imageSources(container)).toEqual(["/a.png", "/c.png"]);
+  });
+
   it("defines the transition and reduced-motion CSS contract", () => {
     const source = readFileSync(
       resolve(import.meta.dirname!, "CrossfadeImage.svelte"),
@@ -368,6 +397,7 @@ describe("CrossfadeImage", () => {
     );
     expect(source).toContain("opacity: var(--crossfade-visible-opacity, 1)");
     expect(source).toContain("@media (prefers-reduced-motion: reduce)");
-    expect(source).toContain("--crossfade-duration: 1ms");
+    expect(source).toContain("transition-duration: 1ms");
+    expect(source).not.toContain("--crossfade-duration: 1ms");
   });
 });

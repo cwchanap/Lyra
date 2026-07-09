@@ -60,6 +60,7 @@ function surfaceSource() {
 
 describe("InvestigationSceneSurface", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     resetEscapeCoordinator();
   });
 
@@ -363,6 +364,10 @@ describe("InvestigationSceneSurface", () => {
     expect(source).toContain("loadCharacterCrop");
     expect(source).toContain("cropVariablesForAlphaBounds");
     expect(source).toContain("character-preview-crop");
+    expect(source).toContain("portraitAssetId");
+    expect(source).toContain(
+      "imageStyle={cropStyleForAsset(portraitAssetId(character))}",
+    );
   });
 
   it("only highlights placed hotspots on navigation and shows checked state separately", () => {
@@ -925,8 +930,7 @@ describe("InvestigationSceneSurface", () => {
     img.dispatchEvent(new Event("load"));
 
     await waitFor(() => {
-      const cropDiv = container.querySelector(".character-preview-crop");
-      expect(cropDiv?.getAttribute("style")).toContain("--crop-height:");
+      expect(img.getAttribute("style")).toContain("--crop-height:");
     });
 
     createElementSpy.mockRestore();
@@ -981,10 +985,7 @@ describe("InvestigationSceneSurface", () => {
       });
     });
 
-    const cropDiv = container.querySelector(".character-preview-crop");
-    expect(cropDiv?.getAttribute("style") ?? "").not.toContain(
-      "--crop-height:",
-    );
+    expect(img.getAttribute("style") ?? "").not.toContain("--crop-height:");
 
     createElementSpy.mockRestore();
   });
@@ -1046,10 +1047,7 @@ describe("InvestigationSceneSurface", () => {
       expect(fakeContext.getImageData).toHaveBeenCalled();
     });
 
-    const cropDiv = container.querySelector(".character-preview-crop");
-    expect(cropDiv?.getAttribute("style") ?? "").not.toContain(
-      "--crop-height:",
-    );
+    expect(img.getAttribute("style") ?? "").not.toContain("--crop-height:");
 
     createElementSpy.mockRestore();
   });
@@ -1109,13 +1107,161 @@ describe("InvestigationSceneSurface", () => {
 
     img.dispatchEvent(new Event("load"));
     await waitFor(() => {
-      const cropDiv = container.querySelector(".character-preview-crop");
-      expect(cropDiv?.getAttribute("style")).toContain("--crop-height:");
+      expect(img.getAttribute("style")).toContain("--crop-height:");
     });
 
     const callsBefore = fakeContext.getImageData.mock.calls.length;
     img.dispatchEvent(new Event("load"));
     expect(fakeContext.getImageData.mock.calls.length).toBe(callsBefore);
+
+    createElementSpy.mockRestore();
+  });
+
+  it("snapshots crop variables per crossfade layer when a placed character asset changes", async () => {
+    const origCreateElement = document.createElement.bind(document);
+
+    const firstImageData = {
+      data: new Uint8ClampedArray(4 * 4 * 4),
+      width: 4,
+      height: 4,
+    };
+    firstImageData.data[(1 * 4 + 1) * 4 + 3] = 255;
+
+    const secondImageData = {
+      data: new Uint8ClampedArray(4 * 4 * 4),
+      width: 4,
+      height: 4,
+    };
+    secondImageData.data[(2 * 4 + 0) * 4 + 3] = 255;
+    secondImageData.data[(3 * 4 + 0) * 4 + 3] = 255;
+
+    const fakeContext = {
+      drawImage: vi.fn(),
+      getImageData: vi
+        .fn()
+        .mockReturnValueOnce(firstImageData)
+        .mockReturnValueOnce(secondImageData),
+    };
+    const fakeCanvas = {
+      width: 0,
+      height: 0,
+      getContext: vi.fn(() => fakeContext),
+    };
+
+    const createElementSpy = vi
+      .spyOn(document, "createElement")
+      .mockImplementation((tag: string) => {
+        if (tag === "canvas") return fakeCanvas as unknown as HTMLElement;
+        return origCreateElement(tag);
+      });
+
+    const { container, rerender } = render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(".character-target img"),
+      ).toBeInTheDocument();
+    });
+
+    const originalImage = container.querySelector(
+      ".character-target img",
+    ) as HTMLImageElement;
+    Object.defineProperty(originalImage, "naturalWidth", {
+      value: 4,
+      configurable: true,
+    });
+    Object.defineProperty(originalImage, "naturalHeight", {
+      value: 4,
+      configurable: true,
+    });
+    fakeCanvas.width = 4;
+    fakeCanvas.height = 4;
+    originalImage.dispatchEvent(new Event("load"));
+
+    await waitFor(() => {
+      expect(originalImage.getAttribute("style")).toContain("--crop-top: 0.25");
+      expect(originalImage.getAttribute("style")).toContain(
+        "--crop-height: 0.25",
+      );
+    });
+
+    const updatedSublocation = {
+      ...sublocation,
+      characters: [
+        {
+          ...sublocation.characters[0],
+          layout: {
+            ...sublocation.characters[0].layout!,
+            assetId: "standee.witness.standard",
+          },
+        },
+      ],
+    } satisfies SublocationView;
+
+    await rerender({
+      sublocation: updatedSublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      const portraits = container.querySelectorAll(".character-target img");
+      expect(portraits).toHaveLength(2);
+      expect(portraits[0]).toHaveAttribute(
+        "src",
+        "/assets/portraits/witness/standard.png",
+      );
+      expect(portraits[1]).toHaveAttribute(
+        "src",
+        "/assets/standees/witness/standard.png",
+      );
+    });
+
+    let portraits = container.querySelectorAll(
+      ".character-target img",
+    ) as NodeListOf<HTMLImageElement>;
+    const outgoingImage = portraits[0] as HTMLImageElement;
+    const incomingImage = portraits[1] as HTMLImageElement;
+
+    expect(outgoingImage.getAttribute("style")).toContain("--crop-top: 0.25");
+    expect(outgoingImage.getAttribute("style")).toContain(
+      "--crop-height: 0.25",
+    );
+    expect(incomingImage.getAttribute("style") ?? "").not.toContain(
+      "--crop-height:",
+    );
+
+    Object.defineProperty(incomingImage, "naturalWidth", {
+      value: 4,
+      configurable: true,
+    });
+    Object.defineProperty(incomingImage, "naturalHeight", {
+      value: 4,
+      configurable: true,
+    });
+    incomingImage.dispatchEvent(new Event("load"));
+
+    await waitFor(() => {
+      portraits = container.querySelectorAll(
+        ".character-target img",
+      ) as NodeListOf<HTMLImageElement>;
+      expect(
+        (portraits[0] as HTMLImageElement).getAttribute("style"),
+      ).toContain("--crop-top: 0.25");
+      expect(
+        (portraits[0] as HTMLImageElement).getAttribute("style"),
+      ).toContain("--crop-height: 0.25");
+      expect(
+        (portraits[1] as HTMLImageElement).getAttribute("style"),
+      ).toContain("--crop-top: 0.5");
+      expect(
+        (portraits[1] as HTMLImageElement).getAttribute("style"),
+      ).toContain("--crop-height: 0.5");
+    });
 
     createElementSpy.mockRestore();
   });
