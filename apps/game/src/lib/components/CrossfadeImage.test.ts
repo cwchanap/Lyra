@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import CrossfadeImage from "./CrossfadeImage.svelte";
+import CrossfadeImageHarness from "./CrossfadeImageHarness.svelte";
 
 function imageSources(container: HTMLElement) {
   return Array.from(container.querySelectorAll("img")).map((img) =>
@@ -67,6 +68,24 @@ describe("CrossfadeImage", () => {
     expect(oldImage).toHaveClass("visible");
     expect(newImage).not.toHaveClass("visible");
     expect(newImage).not.toHaveClass("leaving");
+  });
+
+  it("adds a pending layer when only src changes and presentation props stay stable", async () => {
+    const { container } = render(CrossfadeImageHarness);
+
+    await fireEvent.click(
+      container.querySelector("button") as HTMLButtonElement,
+    );
+
+    await waitFor(() => {
+      const images = Array.from(container.querySelectorAll("img"));
+      expect(images).toHaveLength(2);
+      expect(images[0]).toHaveAttribute("src", "/old.png");
+      expect(images[0]).toHaveClass("visible");
+      expect(images[1]).toHaveAttribute("src", "/new.png");
+      expect(images[1]).not.toHaveClass("visible");
+      expect(images[1]).not.toHaveClass("leaving");
+    });
   });
 
   it("updates the live image presentation props when src stays the same", async () => {

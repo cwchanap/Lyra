@@ -130,10 +130,23 @@ describe("DialogueBox", () => {
     image.dispatchEvent(new Event("error"));
 
     await waitFor(() => {
-      expect(container.querySelector("img.portrait")).toHaveAttribute(
+      const portraits = container.querySelectorAll("img.portrait");
+      expect(portraits).toHaveLength(2);
+      expect(portraits[1]).toHaveAttribute(
         "src",
         expect.stringContaining("data:image/svg+xml"),
       );
+    });
+
+    const placeholder = container.querySelectorAll(
+      "img.portrait",
+    )[1] as HTMLImageElement;
+    placeholder.dispatchEvent(new Event("load"));
+
+    await waitFor(() => {
+      const portraits = container.querySelectorAll("img.portrait");
+      expect(portraits[1]).toHaveClass("visible");
+      expect(portraits[0]).toHaveClass("leaving");
     });
   });
 
@@ -188,8 +201,12 @@ describe("DialogueBox", () => {
     });
 
     const source = dialogueBoxSource();
-    expect(source).toMatch(/\.portrait\.left\s*{[^}]*transform:\s*none;/s);
-    expect(source).toMatch(/\.portrait\.right\s*{[^}]*transform:\s*none;/s);
+    expect(source).toMatch(
+      /(?::global\()?\.portrait\.left\)?\s*{[^}]*transform:\s*none;/s,
+    );
+    expect(source).toMatch(
+      /(?::global\()?\.portrait\.right\)?\s*{[^}]*transform:\s*none;/s,
+    );
   });
 
   it("renders Katase on the left because her portrait faces right", async () => {
@@ -218,6 +235,69 @@ describe("DialogueBox", () => {
     expect(image.style.getPropertyValue("--portrait-height")).toBe(
       "min(1536px, 80vh)",
     );
+  });
+
+  it("crossfades between portrait asset changes without removing the old portrait first", async () => {
+    const { container, rerender } = renderDialogueBox({
+      kind: "line",
+      speaker: "早坂茜",
+      text: "第一句。",
+      portrait: {
+        characterId: "hayasaka_akane",
+        expression: "standard",
+        assetId: "portrait.hayasaka_akane.standard",
+      },
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector("img.portrait")).toHaveAttribute(
+        "src",
+        "/assets/portraits/hayasaka_akane/standard.png",
+      );
+    });
+
+    await rerender({
+      current: {
+        kind: "line",
+        speaker: "早坂茜",
+        text: "第二句。",
+        portrait: {
+          characterId: "hayasaka_akane",
+          expression: "concerned",
+          assetId: "portrait.hayasaka_akane.concerned",
+        },
+      },
+      queueToken: token,
+      onAdvance: vi.fn(),
+      history: [],
+      disabled: false,
+      crossExam: null,
+    });
+
+    await waitFor(() => {
+      const portraits = container.querySelectorAll("img.portrait");
+      expect(portraits.length).toBe(2);
+      expect(portraits[0]).toHaveAttribute(
+        "src",
+        "/assets/portraits/hayasaka_akane/standard.png",
+      );
+      expect(portraits[1]).toHaveAttribute(
+        "src",
+        "/assets/portraits/hayasaka_akane/concerned.png",
+      );
+    });
+  });
+
+  it("uses the shared crossfade image primitive for portrait rendering", () => {
+    const source = dialogueBoxSource();
+    expect(source).toContain(
+      'import CrossfadeImage from "./CrossfadeImage.svelte"',
+    );
+    expect(source).toContain("<CrossfadeImage");
+    expect(source).toContain("imageClass={`portrait ${portraitPlacement}`}");
+    expect(source).toContain("dataAttributes={{");
+    expect(source).toContain("placement: portraitPlacement");
+    expect(source).toContain('layer: "behind-dialogue"');
   });
 
   it("renders a sceneTag dialogue item", () => {

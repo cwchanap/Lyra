@@ -6,6 +6,7 @@
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
   import { claimEscape } from "$lib/state/escape-coordinator";
+  import CrossfadeImage from "./CrossfadeImage.svelte";
   import DialogueHistoryPanel from "./DialogueHistoryPanel.svelte";
   import type {
     DialogueHistoryEntry,
@@ -66,7 +67,6 @@
 
   $effect(() => {
     let cancelled = false;
-    portraitAsset = null;
     resolveStoryAsset(portraitAssetId, "portrait").then((asset) => {
       if (!cancelled) portraitAsset = asset;
     });
@@ -241,20 +241,18 @@
 -->
 <svelte:window onkeydown={handleKey} />
 
-{#if current.kind === "line" && portraitAsset}
-  <img
-    class="portrait"
-    src={portraitAsset.url}
-    alt=""
-    aria-hidden="true"
-    onerror={handlePortraitError}
-    data-placement={portraitPlacement}
-    data-layer="behind-dialogue"
-    class:left={portraitPlacement === "left"}
-    class:right={portraitPlacement === "right"}
-    style="--portrait-height: min(1536px, 80vh);"
-  />
-{/if}
+<CrossfadeImage
+  src={current.kind === "line" ? (portraitAsset?.url ?? null) : null}
+  alt=""
+  ariaHidden={true}
+  imageClass={`portrait ${portraitPlacement}`}
+  dataAttributes={{
+    placement: portraitPlacement,
+    layer: "behind-dialogue",
+  }}
+  imageStyle="--portrait-height: min(1536px, 80vh);"
+  onImageError={handlePortraitError}
+/>
 
 {#if historyOpen}
   <DialogueHistoryPanel {history} onClose={closeHistory} />
@@ -418,7 +416,7 @@
     outline: none;
   }
 
-  .portrait {
+  :global(.portrait) {
     position: fixed;
     bottom: 0;
     width: auto;
@@ -430,12 +428,12 @@
     z-index: 20;
   }
 
-  .portrait.left {
+  :global(.portrait.left) {
     left: 0;
     transform: none;
   }
 
-  .portrait.right {
+  :global(.portrait.right) {
     right: 0;
     transform: none;
   }
