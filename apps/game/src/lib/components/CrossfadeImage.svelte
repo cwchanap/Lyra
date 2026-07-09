@@ -47,6 +47,10 @@
 
   let layers = $state<ImageLayer[]>([]);
   let layerSequence = 0;
+  // Intentionally a plain `let`, not `$state`: this tracks the last requested
+  // transition key inside untrack() so it must NOT trigger reactivity. Making
+  // it reactive would re-run the $effect on every assignment and re-enter the
+  // untrack block, causing spurious layer churn.
   let lastRequestedKey: string | null = null;
   // SvelteMap is required by the svelte/prefer-svelte-reactivity lint rule
   // even though these timers are never read in a reactive context.
@@ -203,7 +207,7 @@
   // during rapid advances. Match the removal delay to the effective CSS
   // duration: a small grace period lets the browser paint the 1ms transition
   // before the node is detached.
-  const reducedMotionRemovalMs = 50;
+  const REDUCED_MOTION_REMOVAL_GRACE_MS = 50;
 
   function removalDelayMs() {
     if (
@@ -211,7 +215,7 @@
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
     ) {
-      return reducedMotionRemovalMs;
+      return REDUCED_MOTION_REMOVAL_GRACE_MS;
     }
     return durationMs;
   }
@@ -286,7 +290,7 @@
     class:leaving={layer.leaving}
     src={layer.src}
     {alt}
-    aria-hidden={layer.presentation.ariaHidden}
+    aria-hidden={layer.leaving ? "true" : layer.presentation.ariaHidden}
     style={layer.presentation.style}
     {...layer.presentation.dataProps}
     onload={(event) => handleLoad(layer.id, event)}

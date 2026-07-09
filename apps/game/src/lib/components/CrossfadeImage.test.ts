@@ -839,6 +839,39 @@ describe("CrossfadeImage", () => {
     });
   });
 
+  it("forces aria-hidden on leaving layers even when the caller opts out", async () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/old.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: false,
+      durationMs: 300,
+    });
+
+    const oldImage = firstImage(container);
+    // Caller opted out, so the visible layer is NOT aria-hidden.
+    expect(oldImage).not.toHaveAttribute("aria-hidden", "true");
+
+    await rerender({
+      src: "/new.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: false,
+      durationMs: 300,
+    });
+
+    const incoming = container.querySelectorAll("img")[1] as HTMLImageElement;
+    await fireEvent.load(incoming);
+
+    // The old layer is now leaving and must be hidden from AT regardless of
+    // the caller's aria-hidden preference.
+    expect(oldImage).toHaveClass("leaving");
+    expect(oldImage).toHaveAttribute("aria-hidden", "true");
+    // The incoming visible layer still respects the caller's opt-out.
+    expect(incoming).not.toHaveAttribute("aria-hidden", "true");
+  });
+
   it("defines the transition and reduced-motion CSS contract", () => {
     const source = readFileSync(
       resolve(import.meta.dirname!, "CrossfadeImage.svelte"),

@@ -445,6 +445,50 @@ describe("DialogueBox", () => {
     expect(text).toHaveTextContent("答案還在雨裡。");
   });
 
+  it("reveals the full line immediately under prefers-reduced-motion without scheduling a typewriter interval", async () => {
+    const reducedMotionList = {
+      matches: true,
+      media: "(prefers-reduced-motion: reduce)",
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    } as unknown as MediaQueryList;
+    vi.stubGlobal("matchMedia", (query: string) =>
+      query === "(prefers-reduced-motion: reduce)"
+        ? reducedMotionList
+        : ({ matches: false } as unknown as MediaQueryList),
+    );
+
+    vi.useFakeTimers();
+    const { container } = renderDialogueBox(
+      {
+        kind: "line",
+        speaker: "若月",
+        text: "答案還在雨裡。",
+      },
+      {
+        textRevealDurationMs: 1500,
+      },
+    );
+    const text = container.querySelector(".text-line") as HTMLElement;
+
+    // Flush the mount effect (microtask queue) without advancing the clock.
+    // Under reduced motion the full line must be revealed immediately; without
+    // the reduced-motion branch, visibleTextLength would still be 0 here.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(text).toHaveTextContent("答案還在雨裡。");
+
+    // Advancing the full duration must not mutate the already-fully-revealed
+    // text — confirms no typewriter interval was scheduled.
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(text).toHaveTextContent("答案還在雨裡。");
+
+    vi.unstubAllGlobals();
+  });
+
   it("completes the current text reveal before advancing dialogue", async () => {
     vi.useFakeTimers();
     const { onAdvance } = renderDialogueBox(
