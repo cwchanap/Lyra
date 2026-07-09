@@ -14,6 +14,9 @@
     QueueToken,
   } from "../state/types";
 
+  const dialogueTransitionDurationMs = 1500;
+  const textRevealTickMs = 25;
+
   let {
     current,
     queueToken,
@@ -22,6 +25,7 @@
     history = [],
     disabled = false,
     crossExam = null,
+    textRevealDurationMs = dialogueTransitionDurationMs,
   }: {
     current: DialogueItem;
     queueToken: QueueToken;
@@ -36,6 +40,7 @@
       onChallenge: (lineId: string) => void;
       onWithdraw: () => void;
     } | null;
+    textRevealDurationMs?: number;
   } = $props();
 
   const rightSidePortraitCharacterIds = new Set([
@@ -50,6 +55,8 @@
   let portraitAsset = $state<ResolvedStoryAsset | null>(null);
   let historyOpen = $state(false);
   let logButton: HTMLButtonElement | undefined = $state();
+  let visibleTextLength = $state(0);
+  let textRevealTimer: ReturnType<typeof setInterval> | null = null;
   const portraitAssetId = $derived(
     current.kind === "line" ? (current.portrait?.assetId ?? null) : null,
   );
@@ -57,6 +64,30 @@
     current.kind === "line"
       ? placementForPortrait(current.portrait?.characterId)
       : "left",
+  );
+  const portraitSource = $derived(
+    current.kind === "line" ? (portraitAsset?.url ?? null) : null,
+  );
+  const portraitTransitionKey = $derived(
+    portraitSource ? `${portraitSource}:${portraitPlacement}` : null,
+  );
+  const revealableText = $derived(
+    current.kind === "line" || current.kind === "action" ? current.text : "",
+  );
+  const revealKey = $derived(
+    `${queueToken.sceneId}:${queueToken.queueGen}:${queueToken.cursor}:${current.kind}:${
+      current.kind === "line" ? current.speaker : ""
+    }:${revealableText}`,
+  );
+  const visibleDialogueText = $derived(
+    textRevealDurationMs <= 0
+      ? revealableText
+      : revealableText.slice(0, visibleTextLength),
+  );
+  const textRevealActive = $derived(
+    textRevealDurationMs > 0 &&
+      revealableText.length > 0 &&
+      visibleTextLength < revealableText.length,
   );
 
   function placementForPortrait(characterId: string | null | undefined) {
@@ -86,6 +117,19 @@
     );
   }
 
+  function clearTextRevealTimer() {
+    if (!textRevealTimer) return;
+    clearInterval(textRevealTimer);
+    textRevealTimer = null;
+  }
+
+  function completeTextRevealIfNeeded() {
+    if (!textRevealActive) return false;
+    clearTextRevealTimer();
+    visibleTextLength = revealableText.length;
+    return true;
+  }
+
   function dispatchAdvance() {
     onAdvanceFeedback?.();
     if (disabled) return;
@@ -94,6 +138,10 @@
 
   function handleClick() {
     if (historyOpen) return;
+    if (completeTextRevealIfNeeded()) {
+      onAdvanceFeedback?.();
+      return;
+    }
     dispatchAdvance();
   }
 
@@ -118,6 +166,10 @@
     e.preventDefault();
     e.stopPropagation();
     if (historyOpen) return;
+    if (completeTextRevealIfNeeded()) {
+      onAdvanceFeedback?.();
+      return;
+    }
     dispatchAdvance();
   }
 
@@ -196,6 +248,34 @@
     };
   });
 
+  $effect(() => {
+    const key = revealKey;
+    const text = revealableText;
+    const duration = textRevealDurationMs;
+    void key;
+
+    clearTextRevealTimer();
+    if (text.length === 0 || duration <= 0) {
+      visibleTextLength = text.length;
+      return;
+    }
+
+    visibleTextLength = 0;
+    const startedAt = Date.now();
+    textRevealTimer = setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      visibleTextLength = Math.min(
+        text.length,
+        Math.floor((elapsed / duration) * text.length),
+      );
+      if (visibleTextLength >= text.length) {
+        clearTextRevealTimer();
+      }
+    }, textRevealTickMs);
+
+    return clearTextRevealTimer;
+  });
+
   function handleKey(e: KeyboardEvent) {
     if (e.repeat) return;
 
@@ -227,6 +307,10 @@
     const active = document.activeElement;
     if (active && active !== document.body) return;
     e.preventDefault();
+    if (completeTextRevealIfNeeded()) {
+      onAdvanceFeedback?.();
+      return;
+    }
     dispatchAdvance();
   }
 </script>
@@ -243,9 +327,11 @@
 
 <div class="portrait-shell">
   <CrossfadeImage
-    src={current.kind === "line" ? (portraitAsset?.url ?? null) : null}
+    src={portraitSource}
+    transitionKey={portraitTransitionKey}
     alt=""
     ariaHidden={true}
+    durationMs={dialogueTransitionDurationMs}
     imageClass={`portrait ${portraitPlacement}`}
     dataAttributes={{
       placement: portraitPlacement,
@@ -302,14 +388,14 @@
       <p class="text-scene">（場景切換）</p>
     {:else if current.kind === "action"}
       <span class="kind">敘述 · NARRATION</span>
-      <p class="text-action">{current.text}</p>
+      <p class="text-action">{visibleDialogueText}</p>
     {:else if current.kind === "line"}
       <div class="line-grid">
         <div class="speaker-block">
           <span class="kind">發言 · LINE</span>
           <span class="speaker">{current.speaker}</span>
         </div>
-        <p class="text-line">{current.text}</p>
+        <p class="text-line">{visibleDialogueText}</p>
       </div>
     {/if}
 

@@ -46,6 +46,7 @@ function renderDialogueBox(
       onChallenge: (lineId: string) => void;
       onWithdraw: () => void;
     } | null;
+    textRevealDurationMs?: number;
   },
 ) {
   const onAdvance = vi.fn();
@@ -57,6 +58,7 @@ function renderDialogueBox(
     disabled: overrides?.disabled,
     onAdvanceFeedback: overrides?.onAdvanceFeedback,
     crossExam: overrides?.crossExam ?? null,
+    textRevealDurationMs: overrides?.textRevealDurationMs ?? 0,
   });
   return { onAdvance, ...result };
 }
@@ -90,6 +92,7 @@ function dispatchWindowKeydown(init: KeyboardEventInit) {
 
 describe("DialogueBox", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     resetEscapeCoordinator();
   });
@@ -288,6 +291,79 @@ describe("DialogueBox", () => {
     });
   });
 
+  it("crossfades same-source portraits when placement changes sides", async () => {
+    const { container, rerender } = renderDialogueBox({
+      kind: "line",
+      speaker: "早坂茜",
+      text: "右側。",
+      portrait: {
+        characterId: "hayasaka_akane",
+        expression: "standard",
+        assetId: "portrait.hayasaka_akane.standard",
+      },
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector("img.portrait")).toHaveAttribute(
+        "src",
+        "/assets/portraits/hayasaka_akane/standard.png",
+      );
+    });
+
+    await rerender({
+      current: {
+        kind: "line",
+        speaker: "片瀨美咲",
+        text: "左側。",
+        portrait: {
+          characterId: "katase",
+          expression: "standard",
+          assetId: "portrait.hayasaka_akane.standard",
+        },
+      },
+      queueToken: token,
+      onAdvance: vi.fn(),
+      history: [],
+      disabled: false,
+      crossExam: null,
+    });
+
+    await waitFor(() => {
+      const portraits = Array.from(
+        container.querySelectorAll("img.portrait"),
+      ) as HTMLImageElement[];
+      expect(portraits).toHaveLength(2);
+      expect(portraits[0]).toHaveAttribute("data-placement", "right");
+      expect(portraits[0]).toHaveClass("right", "visible");
+      expect(portraits[1]).toHaveAttribute("data-placement", "left");
+      expect(portraits[1]).toHaveClass("left");
+      expect(portraits[1]).not.toHaveClass("visible");
+    });
+  });
+
+  it("uses a 1500ms portrait transition duration", async () => {
+    const { container } = renderDialogueBox({
+      kind: "line",
+      speaker: "早坂茜",
+      text: "慢慢切換。",
+      portrait: {
+        characterId: "hayasaka_akane",
+        expression: "standard",
+        assetId: "portrait.hayasaka_akane.standard",
+      },
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector("img.portrait")).toHaveAttribute(
+        "src",
+        "/assets/portraits/hayasaka_akane/standard.png",
+      );
+    });
+
+    const image = container.querySelector("img.portrait") as HTMLImageElement;
+    expect(image.style.getPropertyValue("--crossfade-duration")).toBe("1500ms");
+  });
+
   it("uses the shared crossfade image primitive for portrait rendering", () => {
     const source = dialogueBoxSource();
     expect(source).toContain(
@@ -322,6 +398,74 @@ describe("DialogueBox", () => {
       text: "hello",
     });
     await user.click(screen.getByRole("button", { name: "推進對話" }));
+    expect(onAdvance).toHaveBeenCalledWith(token);
+  });
+
+  it("reveals action text over 1500ms", async () => {
+    vi.useFakeTimers();
+    const { container } = renderDialogueBox(
+      {
+        kind: "action",
+        text: "雨聲壓過車流。",
+      },
+      {
+        textRevealDurationMs: 1500,
+      },
+    );
+    const text = container.querySelector(".text-action") as HTMLElement;
+
+    expect(text).not.toHaveTextContent("雨聲壓過車流。");
+
+    await vi.advanceTimersByTimeAsync(750);
+    expect(text.textContent?.length ?? 0).toBeGreaterThan(0);
+    expect(text).not.toHaveTextContent("雨聲壓過車流。");
+
+    await vi.advanceTimersByTimeAsync(750);
+    expect(text).toHaveTextContent("雨聲壓過車流。");
+  });
+
+  it("reveals line text gradually while keeping the speaker visible", async () => {
+    vi.useFakeTimers();
+    const { container } = renderDialogueBox(
+      {
+        kind: "line",
+        speaker: "若月",
+        text: "答案還在雨裡。",
+      },
+      {
+        textRevealDurationMs: 1500,
+      },
+    );
+    const text = container.querySelector(".text-line") as HTMLElement;
+
+    expect(screen.getByText("若月")).toBeInTheDocument();
+    expect(text).not.toHaveTextContent("答案還在雨裡。");
+
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(text).toHaveTextContent("答案還在雨裡。");
+  });
+
+  it("completes the current text reveal before advancing dialogue", async () => {
+    vi.useFakeTimers();
+    const { onAdvance } = renderDialogueBox(
+      {
+        kind: "action",
+        text: "先把這句說完。",
+      },
+      {
+        textRevealDurationMs: 1500,
+      },
+    );
+    const advanceControl = screen.getByRole("button", { name: "推進對話" });
+
+    await fireEvent.click(advanceControl);
+
+    expect(screen.getByText("先把這句說完。")).toBeInTheDocument();
+    expect(onAdvance).not.toHaveBeenCalled();
+
+    await fireEvent.click(advanceControl);
+
+    expect(onAdvance).toHaveBeenCalledTimes(1);
     expect(onAdvance).toHaveBeenCalledWith(token);
   });
 
