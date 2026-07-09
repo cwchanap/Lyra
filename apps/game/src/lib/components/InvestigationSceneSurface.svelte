@@ -123,6 +123,12 @@
     return cropStyles[assetId] ?? "";
   }
 
+  function portraitAssetId(
+    character: CharacterView & { layout: CharacterLayout },
+  ) {
+    return portraits[character.id]?.assetId ?? character.layout.assetId;
+  }
+
   function loadCharacterCrop(assetId: string, event: Event) {
     if (cropStyles[assetId]) return;
 
@@ -235,8 +241,8 @@
       `[InvestigationSceneSurface] Missing portrait asset: ${current.url} (assetId: ${current.assetId})`,
     );
     portraits[character.id] = placeholderForMissingStoryAsset(
-      character.layout.assetId,
-      imageStoryAssetTypeForId(character.layout.assetId),
+      current.assetId,
+      imageStoryAssetTypeForId(current.assetId),
     );
   }
 </script>
@@ -291,17 +297,15 @@
         >
           <span class="character-highlight"></span>
           {#if portraits[character.id]}
-            <div
-              class="character-preview-crop"
-              style={cropStyleForAsset(character.layout.assetId)}
-            >
+            <div class="character-preview-crop">
               <CrossfadeImage
                 src={portraits[character.id]?.url ?? null}
                 imageClass=""
+                imageStyle={cropStyleForAsset(portraitAssetId(character))}
                 alt=""
                 ariaHidden={true}
                 onImageLoad={(event) =>
-                  loadCharacterCrop(character.layout.assetId, event)}
+                  loadCharacterCrop(portraitAssetId(character), event)}
                 onImageError={() => handlePortraitError(character)}
               />
             </div>
@@ -669,11 +673,12 @@
     pointer-events: none;
   }
 
-  .character-preview-crop:not([style]) :global(img),
-  .character-preview-crop[style=""] :global(img) {
+  .character-preview-crop :global(img:not([style*="--crop-height"])) {
     inset: 0;
     width: 100%;
     height: 100%;
+    left: auto;
+    top: auto;
     transform: none;
     object-fit: contain;
   }

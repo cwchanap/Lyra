@@ -93,6 +93,11 @@
       const hasVisibleLayer = layers.some(
         (layer) => layer.visible && !layer.leaving,
       );
+      const retainedLayers = hasVisibleLayer
+        ? layers.filter(
+            (layer) => !layer.pending || layer.visible || layer.leaving,
+          )
+        : layers;
       const nextLayer: ImageLayer = {
         id: ++layerSequence,
         src: desiredSrc,
@@ -101,7 +106,7 @@
         pending: hasVisibleLayer,
         presentation,
       };
-      layers = [...layers, nextLayer];
+      layers = [...retainedLayers, nextLayer];
     });
   });
 
@@ -279,7 +284,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .crossfade-image-layer {
-      --crossfade-duration: 1ms;
+      transition-duration: 1ms;
     }
   }
 </style>
