@@ -347,6 +347,9 @@
     imageClass={`portrait ${portraitPlacement}`}
     dataAttributes={{
       placement: portraitPlacement,
+      // Stable hook for tests/e2e to locate the dialogue portrait layer
+      // (asserted in DialogueBox.test.ts and app.spec.ts). Not consumed by
+      // production CSS, which keys off the .portrait/.left/.right classes.
       layer: "behind-dialogue",
     }}
     imageStyle="--portrait-height: min(1536px, 80vh);"

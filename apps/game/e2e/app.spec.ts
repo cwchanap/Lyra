@@ -226,6 +226,14 @@ if (shouldRegisterPlaywrightSuite) {
     }
 
     async function advanceDialogue(page: Page) {
+      // DialogueBox reveals the current line over up to 1500ms via a JS
+      // typewriter. A click while the reveal is still running completes the
+      // text instead of advancing (handleClick -> completeTextRevealIfNeeded
+      // returns early), so a single immediate click would not advance. Wait
+      // for the full intro line to be shown first; getByText only matches
+      // once the .text-line element contains the complete string, which
+      // implies the typewriter has finished and the next click advances.
+      await expect(page.getByText("測試開始。")).toBeVisible();
       const advanceButton = page.getByRole("button", { name: "推進對話" });
       await expect(advanceButton).toBeEnabled();
       await advanceButton.click();

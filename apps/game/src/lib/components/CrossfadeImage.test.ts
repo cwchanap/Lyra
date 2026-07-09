@@ -239,7 +239,9 @@ describe("CrossfadeImage", () => {
     expect(oldImage).toHaveClass("leaving");
     expect(newImage).toHaveClass("visible");
 
-    vi.advanceTimersByTime(300);
+    // Removal is scheduled at durationMs + REMOVAL_GRACE_MS (350ms) so the
+    // fade completes before the layer is detached.
+    vi.advanceTimersByTime(350);
     await waitFor(() => {
       expect(imageSources(container)).toEqual(["/new.png"]);
     });
@@ -264,7 +266,8 @@ describe("CrossfadeImage", () => {
     });
 
     expect(firstImage(container)).toHaveClass("leaving");
-    vi.advanceTimersByTime(300);
+    // Removal is scheduled at durationMs + REMOVAL_GRACE_MS (350ms).
+    vi.advanceTimersByTime(350);
     await waitFor(() => {
       expect(container.querySelector("img")).not.toBeInTheDocument();
     });

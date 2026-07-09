@@ -291,6 +291,57 @@ describe("DialogueBox", () => {
     });
   });
 
+  it("fades out the portrait when a line transitions to a portraitless action", async () => {
+    const { container, rerender } = renderDialogueBox({
+      kind: "line",
+      speaker: "早坂茜",
+      text: "看著你。",
+      portrait: {
+        characterId: "hayasaka_akane",
+        expression: "standard",
+        assetId: "portrait.hayasaka_akane.standard",
+      },
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector("img.portrait")).toHaveAttribute(
+        "src",
+        "/assets/portraits/hayasaka_akane/standard.png",
+      );
+    });
+    const portrait = container.querySelector(
+      "img.portrait",
+    ) as HTMLImageElement;
+    await waitFor(() => {
+      expect(portrait).toHaveClass("visible");
+    });
+
+    // A portraitless action item drives portraitSource to null, which the
+    // shared CrossfadeImage turns into a fade-out of the existing layer
+    // rather than an immediate detach. This verifies the DialogueBox ->
+    // CrossfadeImage wiring for the line -> action transition, complementing
+    // the primitive-level null-src fade-out test in CrossfadeImage.test.ts.
+    await rerender({
+      current: { kind: "action", text: "她轉過身。" },
+      queueToken: token,
+      onAdvance: vi.fn(),
+      history: [],
+      disabled: false,
+      crossExam: null,
+    });
+
+    await waitFor(() => {
+      const portraits = container.querySelectorAll("img.portrait");
+      expect(portraits).toHaveLength(1);
+      expect(portraits[0]).toHaveAttribute(
+        "src",
+        "/assets/portraits/hayasaka_akane/standard.png",
+      );
+      expect(portraits[0]).toHaveClass("leaving");
+      expect(portraits[0]).not.toHaveClass("visible");
+    });
+  });
+
   it("crossfades same-source portraits when placement changes sides", async () => {
     const { container, rerender } = renderDialogueBox({
       kind: "line",
