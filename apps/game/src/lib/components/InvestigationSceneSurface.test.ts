@@ -192,6 +192,13 @@ describe("InvestigationSceneSurface", () => {
           "src",
           "/assets/backgrounds/chapter_1/scene_0/cafe.png",
         );
+        expect(
+          (
+            container.querySelector(
+              ".surface-shell > img.background-image",
+            ) as HTMLImageElement
+          ).style.getPropertyValue("--crossfade-visible-opacity"),
+        ).toBe("0.62");
       });
       expect(
         container.querySelector(".scene-surface img.background-image"),
@@ -303,12 +310,19 @@ describe("InvestigationSceneSurface", () => {
   it("matches story scenes by fixing investigation backgrounds to the viewport", () => {
     const backgroundRule = cssRule(
       surfaceSource(),
-      ":global(.background-image)",
+      ".surface-shell > :global(img.background-image)",
     );
     expect(backgroundRule).toContain("position: fixed");
     expect(backgroundRule).toContain("z-index: -1");
     expect(backgroundRule).toContain("width: 100vw");
     expect(backgroundRule).toContain("height: 100vh");
+  });
+
+  it("scopes the background selector to the surface shell", () => {
+    const source = surfaceSource();
+
+    expect(source).toContain(".surface-shell > :global(img.background-image)");
+    expect(source).not.toContain(":global(.background-image) {");
   });
 
   it("renders standee assets for placed scene characters", async () => {

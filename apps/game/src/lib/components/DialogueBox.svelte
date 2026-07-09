@@ -241,18 +241,20 @@
 -->
 <svelte:window onkeydown={handleKey} />
 
-<CrossfadeImage
-  src={current.kind === "line" ? (portraitAsset?.url ?? null) : null}
-  alt=""
-  ariaHidden={true}
-  imageClass={`portrait ${portraitPlacement}`}
-  dataAttributes={{
-    placement: portraitPlacement,
-    layer: "behind-dialogue",
-  }}
-  imageStyle="--portrait-height: min(1536px, 80vh);"
-  onImageError={handlePortraitError}
-/>
+<div class="portrait-shell">
+  <CrossfadeImage
+    src={current.kind === "line" ? (portraitAsset?.url ?? null) : null}
+    alt=""
+    ariaHidden={true}
+    imageClass={`portrait ${portraitPlacement}`}
+    dataAttributes={{
+      placement: portraitPlacement,
+      layer: "behind-dialogue",
+    }}
+    imageStyle="--portrait-height: min(1536px, 80vh);"
+    onImageError={handlePortraitError}
+  />
+</div>
 
 {#if historyOpen}
   <DialogueHistoryPanel {history} onClose={closeHistory} />
@@ -416,7 +418,7 @@
     outline: none;
   }
 
-  :global(.portrait) {
+  .portrait-shell :global(img.portrait) {
     position: fixed;
     bottom: 0;
     width: auto;
@@ -428,12 +430,12 @@
     z-index: 20;
   }
 
-  :global(.portrait.left) {
+  .portrait-shell :global(img.portrait.left) {
     left: 0;
     transform: none;
   }
 
-  :global(.portrait.right) {
+  .portrait-shell :global(img.portrait.right) {
     right: 0;
     transform: none;
   }

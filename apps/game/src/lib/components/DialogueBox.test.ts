@@ -202,10 +202,10 @@ describe("DialogueBox", () => {
 
     const source = dialogueBoxSource();
     expect(source).toMatch(
-      /(?::global\()?\.portrait\.left\)?\s*{[^}]*transform:\s*none;/s,
+      /\.portrait-shell\s+:global\(img\.portrait\.left\)\s*{[^}]*transform:\s*none;/s,
     );
     expect(source).toMatch(
-      /(?::global\()?\.portrait\.right\)?\s*{[^}]*transform:\s*none;/s,
+      /\.portrait-shell\s+:global\(img\.portrait\.right\)\s*{[^}]*transform:\s*none;/s,
     );
   });
 
@@ -298,6 +298,16 @@ describe("DialogueBox", () => {
     expect(source).toContain("dataAttributes={{");
     expect(source).toContain("placement: portraitPlacement");
     expect(source).toContain('layer: "behind-dialogue"');
+  });
+
+  it("scopes portrait selectors through the local portrait shell", () => {
+    const source = dialogueBoxSource();
+
+    expect(source).toContain('class="portrait-shell"');
+    expect(source).toContain(".portrait-shell :global(img.portrait)");
+    expect(source).toContain(".portrait-shell :global(img.portrait.left)");
+    expect(source).toContain(".portrait-shell :global(img.portrait.right)");
+    expect(source).not.toContain(":global(.portrait) {");
   });
 
   it("renders a sceneTag dialogue item", () => {

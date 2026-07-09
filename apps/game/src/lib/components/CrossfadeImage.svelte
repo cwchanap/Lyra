@@ -201,18 +201,40 @@
     cleanupTimers.delete(layerId);
   }
 
-  function handleLoad(layer: ImageLayer, event: Event) {
-    onImageLoad?.(event);
-    if (layer.src !== lastRequestedSrc || layer.leaving) {
+  function removeLayer(layerId: number) {
+    clearRemoval(layerId);
+    layers = layers.filter((layer) => layer.id !== layerId);
+  }
+
+  function handleLoad(layerId: number, event: Event) {
+    const layer = layers.find((current) => current.id === layerId);
+    if (!layer) {
       return;
     }
+    if (layer.src !== lastRequestedSrc || layer.leaving) {
+      if (layer.pending) {
+        removeLayer(layer.id);
+      }
+      return;
+    }
+    onImageLoad?.(event);
     activateLayer(layer.id);
   }
 
-  function handleError(layer: ImageLayer, event: Event) {
+  function handleError(layerId: number, event: Event) {
+    const layer = layers.find((current) => current.id === layerId);
+    if (!layer) {
+      return;
+    }
+    if (layer.src !== lastRequestedSrc || layer.leaving) {
+      if (layer.pending) {
+        removeLayer(layer.id);
+      }
+      return;
+    }
     onImageError?.(event);
     if (layer.pending) {
-      layers = layers.filter((current) => current.id !== layer.id);
+      removeLayer(layer.id);
     }
   }
 
@@ -236,8 +258,8 @@
     aria-hidden={layer.presentation.ariaHidden}
     style={layer.presentation.style}
     {...layer.presentation.dataProps}
-    onload={(event) => handleLoad(layer, event)}
-    onerror={(event) => handleError(layer, event)}
+    onload={(event) => handleLoad(layer.id, event)}
+    onerror={(event) => handleError(layer.id, event)}
   />
 {/each}
 
@@ -248,7 +270,7 @@
   }
 
   .crossfade-image-layer.visible {
-    opacity: 1;
+    opacity: var(--crossfade-visible-opacity, 1);
   }
 
   .crossfade-image-layer.leaving {
