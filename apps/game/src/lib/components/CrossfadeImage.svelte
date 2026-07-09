@@ -7,7 +7,7 @@
   type ImageLayerPresentation = {
     className: string;
     style: string;
-    ariaHidden?: string;
+    ariaHidden?: "true" | "false";
     dataProps: Record<string, string>;
   };
 
