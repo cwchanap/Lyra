@@ -515,6 +515,330 @@ describe("CrossfadeImage", () => {
     vi.unstubAllGlobals();
   });
 
+  it("reactivates an existing non-leaving layer when the key switches back before the pending layer loads", async () => {
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+
+    // Add a pending /b layer alongside the visible /a layer.
+    await rerender({
+      src: "/b.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+    expect(imageSources(container)).toEqual(["/a.png", "/b.png"]);
+    const aImage = container.querySelectorAll("img")[0] as HTMLImageElement;
+    const bImage = container.querySelectorAll("img")[1] as HTMLImageElement;
+    expect(aImage).toHaveClass("visible");
+    expect(bImage).not.toHaveClass("visible");
+
+    // Switch back to /a before /b loads — /a is still visible and non-leaving,
+    // so the effect should reactivate it and mark /b as leaving.
+    await rerender({
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+
+    expect(imageSources(container)).toEqual(["/a.png", "/b.png"]);
+    expect(aImage).toHaveClass("visible");
+    expect(bImage).toHaveClass("leaving");
+    expect(bImage).not.toHaveClass("visible");
+  });
+
+  it("creates a fresh layer when switching back to a key whose prior layer is already leaving", async () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+    });
+
+    // Transition to /b and load it so /a becomes leaving.
+    await rerender({
+      src: "/b.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+    });
+    const incoming = container.querySelectorAll("img")[1] as HTMLImageElement;
+    await fireEvent.load(incoming);
+
+    // /a is now leaving (removal scheduled), /b is visible.
+    expect(container.querySelectorAll("img")[0]).toHaveClass("leaving");
+    expect(container.querySelectorAll("img")[1]).toHaveClass("visible");
+
+    // Switch back to /a. The find at the top of the effect should skip the
+    // leaving /a layer (key matches but leaving is true) and create a fresh
+    // /a layer instead of reactivating the stale one.
+    await rerender({
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+    });
+
+    const images = Array.from(container.querySelectorAll("img"));
+    // The old leaving /a, the visible /b (now leaving), and the new /a.
+    expect(images.length).toBe(3);
+    expect(images[2]).toHaveAttribute("src", "/a.png");
+    expect(images[2]).not.toHaveClass("visible");
+    expect(images[2]).not.toHaveClass("leaving");
+  });
+
+  it("does not create a new layer when rerendered with identical presentation props", async () => {
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/portrait.png",
+      imageClass: "portrait left",
+      imageStyle: "--portrait-height: min(1536px, 80vh);",
+      alt: "",
+      ariaHidden: true,
+      dataAttributes: { placement: "left", layer: "back" },
+    });
+
+    await rerender({
+      src: "/portrait.png",
+      imageClass: "portrait left",
+      imageStyle: "--portrait-height: min(1536px, 80vh);",
+      alt: "",
+      ariaHidden: true,
+      dataAttributes: { placement: "left", layer: "back" },
+    });
+
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+    expect(firstImage(container)).toHaveClass("visible");
+  });
+
+  it("updates only data attributes when src and other presentation props stay the same", async () => {
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/portrait.png",
+      imageClass: "portrait left",
+      imageStyle: "--portrait-height: min(1536px, 80vh);",
+      alt: "",
+      ariaHidden: true,
+      dataAttributes: { tone: "bright" },
+    });
+
+    await rerender({
+      src: "/portrait.png",
+      imageClass: "portrait left",
+      imageStyle: "--portrait-height: min(1536px, 80vh);",
+      alt: "",
+      ariaHidden: true,
+      dataAttributes: { tone: "dim" },
+    });
+
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+    const image = firstImage(container);
+    expect(image).toHaveAttribute("data-tone", "dim");
+    expect(image).not.toHaveAttribute("data-tone", "bright");
+  });
+
+  it("detects data attribute length changes when src and other presentation props stay the same", async () => {
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/portrait.png",
+      imageClass: "portrait left",
+      imageStyle: "--portrait-height: min(1536px, 80vh);",
+      alt: "",
+      ariaHidden: true,
+      dataAttributes: { tone: "bright" },
+    });
+
+    await rerender({
+      src: "/portrait.png",
+      imageClass: "portrait left",
+      imageStyle: "--portrait-height: min(1536px, 80vh);",
+      alt: "",
+      ariaHidden: true,
+      dataAttributes: { tone: "bright", mood: "calm" },
+    });
+
+    expect(container.querySelectorAll("img")).toHaveLength(1);
+    const image = firstImage(container);
+    expect(image).toHaveAttribute("data-tone", "bright");
+    expect(image).toHaveAttribute("data-mood", "calm");
+  });
+
+  it("does not set aria-hidden when ariaHidden is false", () => {
+    const { container } = render(CrossfadeImage, {
+      src: "/portrait.png",
+      imageClass: "portrait left",
+      alt: "",
+      ariaHidden: false,
+    });
+
+    const image = firstImage(container);
+    expect(image).not.toHaveAttribute("aria-hidden");
+  });
+
+  it("removes a stale pending layer on load after src becomes null", async () => {
+    vi.useFakeTimers();
+    const onImageLoad = vi.fn();
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+      onImageLoad,
+    });
+
+    // Create a pending /b layer alongside visible /a.
+    await rerender({
+      src: "/b.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+      onImageLoad,
+    });
+
+    // Fade out all layers (including the pending /b) by clearing src.
+    await rerender({
+      src: null,
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+      onImageLoad,
+    });
+
+    const pendingImage = container.querySelectorAll(
+      "img",
+    )[1] as HTMLImageElement;
+    expect(pendingImage).toHaveAttribute("src", "/b.png");
+    expect(pendingImage).toHaveClass("leaving");
+
+    // The stale pending layer's load event should not forward to onImageLoad
+    // and should remove the layer immediately.
+    await fireEvent.load(pendingImage);
+    expect(onImageLoad).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(imageSources(container)).toEqual(["/a.png"]);
+    });
+  });
+
+  it("ignores load events from a stale leaving non-pending layer without removing it early", async () => {
+    vi.useFakeTimers();
+    const onImageLoad = vi.fn();
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+      onImageLoad,
+    });
+
+    // Transition to /b and load it so /a becomes leaving (pending=false).
+    await rerender({
+      src: "/b.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+      onImageLoad,
+    });
+    const bImage = container.querySelectorAll("img")[1] as HTMLImageElement;
+    await fireEvent.load(bImage);
+
+    const aImage = container.querySelectorAll("img")[0] as HTMLImageElement;
+    expect(aImage).toHaveClass("leaving");
+
+    // onImageLoad was called once for /b's legitimate load. Clear it so we
+    // can verify the stale /a load is NOT forwarded.
+    onImageLoad.mockClear();
+
+    // A load event on the leaving, non-pending /a layer should not forward
+    // to onImageLoad and should not remove the layer early (the removal
+    // timer handles that).
+    await fireEvent.load(aImage);
+    expect(onImageLoad).not.toHaveBeenCalled();
+    expect(aImage).toBeInTheDocument();
+  });
+
+  it("ignores error events from a stale leaving non-pending layer without removing it early", async () => {
+    vi.useFakeTimers();
+    const onImageError = vi.fn();
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+      onImageError,
+    });
+
+    await rerender({
+      src: "/b.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+      onImageError,
+    });
+    const bImage = container.querySelectorAll("img")[1] as HTMLImageElement;
+    await fireEvent.load(bImage);
+
+    const aImage = container.querySelectorAll("img")[0] as HTMLImageElement;
+    expect(aImage).toHaveClass("leaving");
+
+    await fireEvent.error(aImage);
+    expect(onImageError).not.toHaveBeenCalled();
+    expect(aImage).toBeInTheDocument();
+  });
+
+  it("removes a stale pending layer on error after src becomes null", async () => {
+    vi.useFakeTimers();
+    const onImageError = vi.fn();
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+      onImageError,
+    });
+
+    await rerender({
+      src: "/b.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+      onImageError,
+    });
+
+    await rerender({
+      src: null,
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 300,
+      onImageError,
+    });
+
+    const pendingImage = container.querySelectorAll(
+      "img",
+    )[1] as HTMLImageElement;
+    expect(pendingImage).toHaveAttribute("src", "/b.png");
+
+    await fireEvent.error(pendingImage);
+    expect(onImageError).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(imageSources(container)).toEqual(["/a.png"]);
+    });
+  });
+
   it("defines the transition and reduced-motion CSS contract", () => {
     const source = readFileSync(
       resolve(import.meta.dirname!, "CrossfadeImage.svelte"),

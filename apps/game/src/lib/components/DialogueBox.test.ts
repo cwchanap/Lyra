@@ -469,6 +469,69 @@ describe("DialogueBox", () => {
     expect(onAdvance).toHaveBeenCalledWith(token);
   });
 
+  it("plays advance feedback when completing text reveal via click", async () => {
+    vi.useFakeTimers();
+    const onAdvanceFeedback = vi.fn();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "先把這句說完。" },
+      { textRevealDurationMs: 1500, onAdvanceFeedback },
+    );
+    const advanceControl = screen.getByRole("button", { name: "推進對話" });
+
+    await fireEvent.click(advanceControl);
+
+    expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
+    expect(onAdvance).not.toHaveBeenCalled();
+    expect(screen.getByText("先把這句說完。")).toBeInTheDocument();
+
+    await fireEvent.click(advanceControl);
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+  });
+
+  it("plays advance feedback when completing text reveal via window Space", async () => {
+    vi.useFakeTimers();
+    const onAdvanceFeedback = vi.fn();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "先把這句說完。" },
+      { textRevealDurationMs: 1500, onAdvanceFeedback },
+    );
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+
+    expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
+    expect(onAdvance).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByText("先把這句說完。")).toBeInTheDocument();
+    });
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+  });
+
+  it("plays advance feedback when completing text reveal via focused Space", async () => {
+    vi.useFakeTimers();
+    const onAdvanceFeedback = vi.fn();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "先把這句說完。" },
+      { textRevealDurationMs: 1500, onAdvanceFeedback },
+    );
+    const advanceControl = screen.getByRole("button", { name: "推進對話" });
+    advanceControl.focus();
+
+    await fireEvent.keyDown(advanceControl, { key: " " });
+
+    expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
+    expect(onAdvance).not.toHaveBeenCalled();
+    expect(screen.getByText("先把這句說完。")).toBeInTheDocument();
+
+    await fireEvent.keyDown(advanceControl, { key: " " });
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+  });
+
   it("plays advance feedback before dispatching advance on click", async () => {
     const user = userEvent.setup();
     const calls: string[] = [];
