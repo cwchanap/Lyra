@@ -40,6 +40,7 @@
     <CrossfadeImage
       src={resolved?.url ?? null}
       imageClass="background-image"
+      imageStyle="--crossfade-visible-opacity: 0.52;"
       alt=""
       ariaHidden={true}
       onImageError={handleBackgroundError}
@@ -60,14 +61,13 @@
     min-height: 1px;
   }
 
-  :global(.background-image) {
+  .backdrop :global(img.background-image) {
     position: fixed;
     inset: 0;
     z-index: -1;
     width: 100vw;
     height: 100vh;
     object-fit: cover;
-    opacity: 0.52;
     pointer-events: none;
   }
 

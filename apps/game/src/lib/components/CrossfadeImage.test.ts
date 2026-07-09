@@ -265,6 +265,97 @@ describe("CrossfadeImage", () => {
     expect(firstImage(container)).toHaveClass("visible");
   });
 
+  it("ignores stale pending load events during rapid source changes and still forwards the current load", async () => {
+    const onImageLoad = vi.fn();
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      onImageLoad,
+    });
+
+    await rerender({
+      src: "/b.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      onImageLoad,
+    });
+    await rerender({
+      src: "/c.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      onImageLoad,
+    });
+
+    const stalePending = container.querySelectorAll(
+      "img",
+    )[1] as HTMLImageElement;
+    await fireEvent.load(stalePending);
+
+    await waitFor(() => {
+      expect(onImageLoad).not.toHaveBeenCalled();
+      expect(imageSources(container)).toEqual(["/a.png", "/c.png"]);
+    });
+
+    const currentPending = container.querySelectorAll(
+      "img",
+    )[1] as HTMLImageElement;
+    await fireEvent.load(currentPending);
+
+    expect(onImageLoad).toHaveBeenCalledTimes(1);
+    const [oldImage, newImage] = Array.from(container.querySelectorAll("img"));
+    expect(oldImage).toHaveClass("leaving");
+    expect(newImage).toHaveClass("visible");
+  });
+
+  it("ignores stale pending error events during rapid source changes and still forwards the current error", async () => {
+    const onImageError = vi.fn();
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      onImageError,
+    });
+
+    await rerender({
+      src: "/b.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      onImageError,
+    });
+    await rerender({
+      src: "/c.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      onImageError,
+    });
+
+    const stalePending = container.querySelectorAll(
+      "img",
+    )[1] as HTMLImageElement;
+    await fireEvent.error(stalePending);
+
+    await waitFor(() => {
+      expect(onImageError).not.toHaveBeenCalled();
+      expect(imageSources(container)).toEqual(["/a.png", "/c.png"]);
+    });
+
+    const currentPending = container.querySelectorAll(
+      "img",
+    )[1] as HTMLImageElement;
+    await fireEvent.error(currentPending);
+
+    expect(onImageError).toHaveBeenCalledTimes(1);
+    expect(imageSources(container)).toEqual(["/a.png"]);
+    expect(firstImage(container)).toHaveClass("visible");
+  });
+
   it("defines the transition and reduced-motion CSS contract", () => {
     const source = readFileSync(
       resolve(import.meta.dirname!, "CrossfadeImage.svelte"),
@@ -275,6 +366,7 @@ describe("CrossfadeImage", () => {
     expect(source).toContain(
       "transition: opacity var(--crossfade-duration, 300ms)",
     );
+    expect(source).toContain("opacity: var(--crossfade-visible-opacity, 1)");
     expect(source).toContain("@media (prefers-reduced-motion: reduce)");
     expect(source).toContain("--crossfade-duration: 1ms");
   });

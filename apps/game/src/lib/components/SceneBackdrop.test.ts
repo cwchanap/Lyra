@@ -23,6 +23,9 @@ describe("SceneBackdrop", () => {
       expect(img.getAttribute("src")).toBe(
         "/assets/backgrounds/chapter_1/scene_0/render_test.png",
       );
+      expect(img.style.getPropertyValue("--crossfade-visible-opacity")).toBe(
+        "0.52",
+      );
     });
   });
 
@@ -125,5 +128,15 @@ describe("SceneBackdrop", () => {
     );
     expect(source).toContain("<CrossfadeImage");
     expect(source).toContain('imageClass="background-image"');
+  });
+
+  it("scopes the backdrop background selector to the component-owned surface", () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname!, "SceneBackdrop.svelte"),
+      "utf-8",
+    );
+
+    expect(source).toContain(".backdrop :global(img.background-image)");
+    expect(source).not.toContain(":global(.background-image) {");
   });
 });
