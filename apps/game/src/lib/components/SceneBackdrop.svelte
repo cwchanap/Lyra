@@ -4,6 +4,7 @@
     resolveStoryAsset,
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
+  import CrossfadeImage from "./CrossfadeImage.svelte";
 
   let {
     sceneTag,
@@ -17,7 +18,6 @@
 
   $effect(() => {
     let cancelled = false;
-    resolved = null;
     resolveStoryAsset(backgroundAssetId, "background").then((asset) => {
       if (!cancelled) resolved = asset;
     });
@@ -37,15 +37,13 @@
 
 {#if sceneTag || backgroundAssetId || resolved}
   <div class="backdrop">
-    {#if resolved}
-      <img
-        class="background-image"
-        src={resolved.url}
-        alt=""
-        aria-hidden="true"
-        onerror={handleBackgroundError}
-      />
-    {/if}
+    <CrossfadeImage
+      src={resolved?.url ?? null}
+      imageClass="background-image"
+      alt=""
+      ariaHidden={true}
+      onImageError={handleBackgroundError}
+    />
     {#if sceneTag}
       <span class="stamp">
         <span class="kana">場 / SCENE</span>
@@ -62,7 +60,7 @@
     min-height: 1px;
   }
 
-  .background-image {
+  :global(.background-image) {
     position: fixed;
     inset: 0;
     z-index: -1;

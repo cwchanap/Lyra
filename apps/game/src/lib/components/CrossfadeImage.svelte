@@ -48,16 +48,17 @@
   const cleanupTimers = new SvelteMap<number, ReturnType<typeof setTimeout>>();
 
   $effect(() => {
+    const desiredSrc = src;
     const presentation = snapshotPresentation();
 
     untrack(() => {
-      if (src === lastRequestedSrc) {
-        if (!src) {
+      if (desiredSrc === lastRequestedSrc) {
+        if (!desiredSrc) {
           return;
         }
 
         const existingIndex = layers.findIndex(
-          (layer) => layer.src === src && !layer.leaving,
+          (layer) => layer.src === desiredSrc && !layer.leaving,
         );
         if (existingIndex === -1) {
           return;
@@ -74,15 +75,15 @@
         return;
       }
 
-      lastRequestedSrc = src;
+      lastRequestedSrc = desiredSrc;
 
-      if (!src) {
+      if (!desiredSrc) {
         fadeOutAllLayers();
         return;
       }
 
       const existing = layers.find(
-        (layer) => layer.src === src && !layer.leaving,
+        (layer) => layer.src === desiredSrc && !layer.leaving,
       );
       if (existing) {
         activateLayer(existing.id);
@@ -94,7 +95,7 @@
       );
       const nextLayer: ImageLayer = {
         id: ++layerSequence,
-        src,
+        src: desiredSrc,
         visible: !hasVisibleLayer,
         leaving: false,
         pending: hasVisibleLayer,

@@ -36,7 +36,7 @@ describe("SceneBackdrop", () => {
       "utf-8",
     );
     const match = source.match(
-      /\.background-image\s*\{[^}]*z-index:\s*(-?\d+)/s,
+      /(?::global\()?\.background-image\)?\s*\{[^}]*z-index:\s*(-?\d+)/s,
     );
     expect(match).toBeTruthy();
     expect(parseInt(match![1], 10)).toBeLessThan(0);
@@ -63,10 +63,67 @@ describe("SceneBackdrop", () => {
     image.dispatchEvent(new Event("error"));
 
     await waitFor(() => {
-      expect(container.querySelector("img.background-image")).toHaveAttribute(
+      const images = container.querySelectorAll("img.background-image");
+      expect(images).toHaveLength(2);
+      expect(images[1]).toHaveAttribute(
         "src",
         expect.stringContaining("data:image/svg+xml"),
       );
     });
+
+    const placeholder = container.querySelectorAll(
+      "img.background-image",
+    )[1] as HTMLImageElement;
+    placeholder.dispatchEvent(new Event("load"));
+
+    await waitFor(() => {
+      const images = container.querySelectorAll("img.background-image");
+      expect(images[1]).toHaveClass("visible");
+      expect(images[0]).toHaveClass("leaving");
+    });
+  });
+
+  it("crossfades between background asset changes without removing the old image first", async () => {
+    const { container, rerender } = render(SceneBackdrop, {
+      sceneTag: null,
+      backgroundAssetId: "background.chapter_1.scene_0.old",
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector("img.background-image")).toHaveAttribute(
+        "src",
+        "/assets/backgrounds/chapter_1/scene_0/old.png",
+      );
+    });
+
+    await rerender({
+      sceneTag: null,
+      backgroundAssetId: "background.chapter_1.scene_0.new",
+    });
+
+    await waitFor(() => {
+      const images = container.querySelectorAll("img.background-image");
+      expect(images.length).toBe(2);
+      expect(images[0]).toHaveAttribute(
+        "src",
+        "/assets/backgrounds/chapter_1/scene_0/old.png",
+      );
+      expect(images[1]).toHaveAttribute(
+        "src",
+        "/assets/backgrounds/chapter_1/scene_0/new.png",
+      );
+    });
+  });
+
+  it("uses the shared crossfade image primitive for backdrop rendering", () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname!, "SceneBackdrop.svelte"),
+      "utf-8",
+    );
+    expect(source).toContain(
+      'import CrossfadeImage from "./CrossfadeImage.svelte"',
+    );
+    expect(source).toContain("<CrossfadeImage");
+    expect(source).toContain('imageClass="background-image"');
   });
 });
