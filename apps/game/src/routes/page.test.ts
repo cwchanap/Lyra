@@ -6,7 +6,15 @@ import {
   within,
 } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type MockInstance,
+  vi,
+} from "vitest";
 import type { GameStateView, SceneNavigationIndex } from "$lib/state/types";
 import { gameState } from "$lib/state/game-client.svelte";
 import { acquisitionController } from "$lib/state/acquisition-controller.svelte";
@@ -206,7 +214,14 @@ function stubFetchForSceneNavigation() {
 }
 
 describe("+page acquisition popup integration", () => {
+  let canvasGetContextSpy: MockInstance<
+    typeof HTMLCanvasElement.prototype.getContext
+  >;
+
   beforeEach(() => {
+    canvasGetContextSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
     mocks.fetch.mockReset();
     vi.stubGlobal("fetch", mocks.fetch);
     mocks.currentWindow.isFullscreen.mockResolvedValue(false);
@@ -216,6 +231,7 @@ describe("+page acquisition popup integration", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     cleanup();
+    canvasGetContextSpy.mockRestore();
     acquisitionController.clear();
     gameState.value = null;
     gameState.error = null;
