@@ -9,6 +9,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GameStateView, SceneNavigationIndex } from "$lib/state/types";
 import { gameState } from "$lib/state/game-client.svelte";
+import { acquisitionController } from "$lib/state/acquisition-controller.svelte";
+import type { AcquisitionNotification } from "$lib/state/acquisition-notifications";
 import {
   STORY_CLEARED_STORAGE_KEY,
   __resetStoryClearanceWarningLatches,
@@ -54,6 +56,14 @@ vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
   retryLockedGameplayAudio: mocks.retryLockedGameplayAudio,
   disposeGameplayAudio: mocks.disposeGameplayAudio,
 }));
+
+beforeEach(() => {
+  acquisitionController.clear();
+});
+
+afterEach(() => {
+  acquisitionController.clear();
+});
 
 function currentState(): GameStateView {
   return {
@@ -147,6 +157,34 @@ const sceneNavigationIndex: SceneNavigationIndex = {
   ],
 };
 
+const acquiredEvidence: AcquisitionNotification = {
+  key: "evidence:receipt",
+  kind: "evidence",
+  record: {
+    id: "receipt",
+    name: "咖啡收據",
+    description: "收據上的時間被圈起。",
+    details: "",
+    imageAssetId: null,
+    onReexamine: null,
+    collectedInChapterId: "chapter_1",
+    collectedInSceneId: "scene_1",
+  },
+};
+
+const acquiredStatement: AcquisitionNotification = {
+  key: "statement:alibi",
+  kind: "statement",
+  record: {
+    id: "alibi",
+    speaker: "若月",
+    content: "我一直在店內。",
+    onReexamine: null,
+    acquiredInChapterId: "chapter_1",
+    acquiredInSceneId: "scene_1",
+  },
+};
+
 // `httpInvoke` (the non-Tauri dev fallback used in tests, since
 // `__TAURI_INTERNALS__` is absent) POSTs to `${DEV_HTTP_BASE}/${command}` and
 // reads `r.text()`. Shape a minimal Response so the fallback resolves.
@@ -166,6 +204,90 @@ function stubFetchForSceneNavigation() {
     return jsonResponse({});
   });
 }
+
+describe("+page acquisition popup integration", () => {
+  beforeEach(() => {
+    mocks.fetch.mockReset();
+    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.currentWindow.isFullscreen.mockResolvedValue(false);
+    seedGameState();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    cleanup();
+    acquisitionController.clear();
+    gameState.value = null;
+    gameState.error = null;
+    gameState.loading = false;
+    gameState.inFlight = false;
+  });
+
+  it("inerts gameplay and restores focus after the final acknowledgement", async () => {
+    const user = userEvent.setup();
+    const { container } = render(Page);
+    const dialogueButton = screen.getByRole("button", { name: "推進對話" });
+    dialogueButton.focus();
+
+    acquisitionController.enqueue([acquiredEvidence]);
+
+    const popup = await screen.findByRole("dialog", { name: "物證取得" });
+    const gameplayRoot = container.querySelector("[data-gameplay-root]")!;
+    expect(gameplayRoot).toHaveAttribute("inert");
+    expect(
+      within(popup).getByRole("button", { name: "CONTINUE / 繼續" }),
+    ).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "物證取得" })).toBeNull();
+      expect(gameplayRoot).not.toHaveAttribute("inert");
+      expect(dialogueButton).toHaveFocus();
+    });
+    expect(
+      mocks.fetch.mock.calls.some(([url]) =>
+        String(url).endsWith("/advance_dialogue"),
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps Escape on the popup until a multi-item queue is empty", async () => {
+    const user = userEvent.setup();
+    render(Page);
+    acquisitionController.enqueue([acquiredEvidence, acquiredStatement]);
+
+    await screen.findByRole("dialog", { name: "物證取得" });
+    await user.keyboard("{Escape}");
+
+    expect(
+      await screen.findByRole("dialog", { name: "證言取得" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "證言取得" })).toBeNull();
+    });
+    expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+
+    await user.keyboard("{Escape}");
+    expect(
+      await screen.findByRole("dialog", { name: "遊戲選單" }),
+    ).toBeInTheDocument();
+  });
+
+  it("clears queued acquisitions when the page unmounts", () => {
+    const result = render(Page);
+    acquisitionController.enqueue([acquiredEvidence, acquiredStatement]);
+    expect(acquisitionController.blocking).toBe(true);
+
+    result.unmount();
+
+    expect(acquisitionController.blocking).toBe(false);
+    expect(acquisitionController.size).toBe(0);
+  });
+});
 
 describe("+page close case flow", () => {
   beforeEach(() => {
