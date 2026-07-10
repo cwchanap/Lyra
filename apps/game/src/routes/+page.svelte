@@ -28,6 +28,7 @@
     saveStoryClearedOnce,
   } from "$lib/state/story-clearance";
   import type { SceneNavigationIndex } from "$lib/state/types";
+  import AcquisitionPopup from "$lib/components/AcquisitionPopup.svelte";
   import DialogueBox from "$lib/components/DialogueBox.svelte";
   import ExploreView from "$lib/components/ExploreView.svelte";
   import SceneBackdrop from "$lib/components/SceneBackdrop.svelte";
@@ -40,7 +41,8 @@
   import InterrogationView from "$lib/components/InterrogationView.svelte";
   import MainMenu from "$lib/components/MainMenu.svelte";
   import { playGameplaySfxEvent } from "$lib/audio/gameplay-audio-runtime.svelte";
-  import { untrack } from "svelte";
+  import { acquisitionController } from "$lib/state/acquisition-controller.svelte";
+  import { onDestroy, untrack } from "svelte";
 
   async function handleExit() {
     try {
@@ -76,6 +78,34 @@
   let sceneNavigationEnabled = $derived(
     import.meta.env.DEV || storyClearedOnce,
   );
+  let acquisitionReturnFocus = $state<HTMLElement | null>(null);
+  let acquisitionWasBlocking = false;
+  let gameplayRoot: HTMLDivElement | null = $state(null);
+
+  $effect.pre(() => {
+    const blocking = acquisitionController.blocking;
+    if (blocking && !acquisitionWasBlocking) {
+      const active = document.activeElement;
+      acquisitionReturnFocus = active instanceof HTMLElement ? active : null;
+    }
+    acquisitionWasBlocking = blocking;
+  });
+
+  $effect(() => {
+    // Svelte assigns `inert` as a DOM property. Keep the content attribute in
+    // sync as well so the blocking boundary remains explicit in DOMs that do
+    // not reflect that property (including the test DOM).
+    gameplayRoot?.toggleAttribute("inert", acquisitionController.blocking);
+  });
+
+  onDestroy(() => {
+    acquisitionController.clear();
+  });
+
+  function handleAcquisitionContinue(key: string) {
+    acquisitionController.dismissCurrent(key);
+    return acquisitionController.blocking;
+  }
 
   $effect(() => {
     if (gameState.value?.mode.type === "gameComplete" && !storyClearedOnce) {
@@ -201,93 +231,107 @@
 </script>
 
 {#if gameState.value}
-  <GameplayAudio mode={gameState.value.mode} />
-  <GameShell
-    gameState={gameState.value}
-    onCloseCase={handleCloseCase}
-    disabled={gameState.inFlight}
-    sceneMenuEnabled={sceneNavigationEnabled}
-    evidenceMenuEnabled={shouldShowInventoryPanel(gameState.value.mode)}
-    onOpenEvidence={() => {
-      inventoryPanelOpen = true;
-    }}
-    bind:open={gameMenuOpen}
+  <div
+    bind:this={gameplayRoot}
+    class="gameplay-root"
+    data-gameplay-root=""
+    inert={acquisitionController.blocking}
   >
-    {#snippet sceneMenu()}
-      <SceneNavigationPanel
-        index={sceneNavigationIndex}
-        current={gameState.value!}
-        loading={sceneNavigationLoading}
-        error={sceneNavigationError}
-        disabled={gameState.inFlight}
-        onSelect={handleJumpToScene}
-        onRetry={retrySceneNavigation}
-      />
-    {/snippet}
-
-    {#snippet menu()}
-      {#if shouldShowInventoryPanel(gameState.value!.mode)}
-        <InventoryPanel
-          inventory={gameState.value!.inventory}
-          reexamineEnabled={canReexamineInventory(gameState.value!.mode)}
-          onReexamineEvidence={handleReexamineEvidence}
-          onReexamineStatement={handleReexamineStatement}
+    <GameplayAudio mode={gameState.value.mode} />
+    <GameShell
+      gameState={gameState.value}
+      onCloseCase={handleCloseCase}
+      disabled={gameState.inFlight}
+      sceneMenuEnabled={sceneNavigationEnabled}
+      evidenceMenuEnabled={shouldShowInventoryPanel(gameState.value.mode)}
+      onOpenEvidence={() => {
+        inventoryPanelOpen = true;
+      }}
+      bind:open={gameMenuOpen}
+    >
+      {#snippet sceneMenu()}
+        <SceneNavigationPanel
+          index={sceneNavigationIndex}
+          current={gameState.value!}
+          loading={sceneNavigationLoading}
+          error={sceneNavigationError}
           disabled={gameState.inFlight}
-          bind:open={inventoryPanelOpen}
+          onSelect={handleJumpToScene}
+          onRetry={retrySceneNavigation}
         />
-      {/if}
-    {/snippet}
+      {/snippet}
 
-    {#if gameState.error}
-      <ErrorBanner message={gameState.error} />
-    {/if}
-    {#if gameState.value.mode.type === "dialogue"}
-      <SceneBackdrop
-        sceneTag={gameState.value.mode.sceneTag}
-        backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
-      />
-      <DialogueBox
-        current={gameState.value.mode.current}
-        queueToken={gameState.value.mode.queueToken}
-        onAdvance={advanceDialogue}
-        onAdvanceFeedback={() => playGameplaySfxEvent("ui:menu-confirm")}
-        history={gameState.value.dialogueHistory}
-        disabled={gameState.inFlight}
-        crossExam={gameState.value.mode.crossExamLineId
-          ? {
-              lineId: gameState.value.mode.crossExamLineId,
-              onChallenge: challengeInterrogationLine,
-              onWithdraw: withdrawInterrogation,
-            }
-          : null}
-      />
-    {:else if gameState.value.mode.type === "explore"}
-      <ExploreView
-        scene={gameState.value.scene}
-        backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
-        onInspect={inspectHotspot}
-        onInterview={interviewTopic}
-        onEnterSublocation={enterSublocation}
-        disabled={gameState.inFlight}
-      />
-    {:else if gameState.value.mode.type === "interrogation"}
-      <SceneBackdrop
-        sceneTag={null}
-        backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
-      />
-      <InterrogationView
-        scene={gameState.value.scene}
-        inventory={gameState.value.inventory}
-        onAsk={askInterrogationQuestion}
-        onPresent={presentInterrogationEvidence}
-        onResume={resumeInterrogationTestimony}
-        onComplete={completeInterrogationPhase}
-        disabled={gameState.inFlight}
-      />
-    {:else if gameState.value.mode.type === "gameComplete"}
-      <GameComplete onReset={handleReset} disabled={gameState.inFlight} />
-    {/if}
-  </GameShell>
+      {#snippet menu()}
+        {#if shouldShowInventoryPanel(gameState.value!.mode)}
+          <InventoryPanel
+            inventory={gameState.value!.inventory}
+            reexamineEnabled={canReexamineInventory(gameState.value!.mode)}
+            onReexamineEvidence={handleReexamineEvidence}
+            onReexamineStatement={handleReexamineStatement}
+            disabled={gameState.inFlight}
+            bind:open={inventoryPanelOpen}
+          />
+        {/if}
+      {/snippet}
+
+      {#if gameState.error}
+        <ErrorBanner message={gameState.error} />
+      {/if}
+      {#if gameState.value.mode.type === "dialogue"}
+        <SceneBackdrop
+          sceneTag={gameState.value.mode.sceneTag}
+          backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
+        />
+        <DialogueBox
+          current={gameState.value.mode.current}
+          queueToken={gameState.value.mode.queueToken}
+          onAdvance={advanceDialogue}
+          onAdvanceFeedback={() => playGameplaySfxEvent("ui:menu-confirm")}
+          history={gameState.value.dialogueHistory}
+          disabled={gameState.inFlight}
+          crossExam={gameState.value.mode.crossExamLineId
+            ? {
+                lineId: gameState.value.mode.crossExamLineId,
+                onChallenge: challengeInterrogationLine,
+                onWithdraw: withdrawInterrogation,
+              }
+            : null}
+        />
+      {:else if gameState.value.mode.type === "explore"}
+        <ExploreView
+          scene={gameState.value.scene}
+          backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
+          onInspect={inspectHotspot}
+          onInterview={interviewTopic}
+          onEnterSublocation={enterSublocation}
+          disabled={gameState.inFlight}
+        />
+      {:else if gameState.value.mode.type === "interrogation"}
+        <SceneBackdrop
+          sceneTag={null}
+          backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
+        />
+        <InterrogationView
+          scene={gameState.value.scene}
+          inventory={gameState.value.inventory}
+          onAsk={askInterrogationQuestion}
+          onPresent={presentInterrogationEvidence}
+          onResume={resumeInterrogationTestimony}
+          onComplete={completeInterrogationPhase}
+          disabled={gameState.inFlight}
+        />
+      {:else if gameState.value.mode.type === "gameComplete"}
+        <GameComplete onReset={handleReset} disabled={gameState.inFlight} />
+      {/if}
+    </GameShell>
+  </div>
+  {#if acquisitionController.current}
+    <AcquisitionPopup
+      notification={acquisitionController.current}
+      returnFocusTo={acquisitionReturnFocus}
+      onContinue={handleAcquisitionContinue}
+    />
+  {/if}
 {:else if gameState.loading}
   <main><p class="status">載入中...</p></main>
 {:else}

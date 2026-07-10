@@ -55,6 +55,17 @@ describe("+page gameplay audio wiring", () => {
   });
 });
 
+describe("+page acquisition popup ownership", () => {
+  it("mounts one popup outside an inert gameplay root", () => {
+    const source = pageSource();
+
+    expect(source).toContain('data-gameplay-root=""');
+    expect(source).toContain("inert={acquisitionController.blocking}");
+    expect(source).toContain("<AcquisitionPopup");
+    expect(source).toContain("notification={acquisitionController.current}");
+  });
+});
+
 describe("+page scene navigation wiring", () => {
   it("passes scene navigation through the GameShell sceneMenu snippet", () => {
     const source = pageSource();
