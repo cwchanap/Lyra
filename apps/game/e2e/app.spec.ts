@@ -134,7 +134,16 @@ async function installTauriMock(page: Page) {
             collectedInSceneId: "investigation_scene_1",
           },
         ],
-        statements: [],
+        statements: [
+          {
+            id: "witness_timeline",
+            speaker: "證人",
+            content: "我在十一點前看見桌上的咖啡仍冒著熱氣。",
+            onReexamine: null,
+            acquiredInChapterId: "chapter_1",
+            acquiredInSceneId: "investigation_scene_1",
+          },
+        ],
       },
       scene: {
         ...scene,
@@ -300,26 +309,48 @@ if (shouldRegisterPlaywrightSuite) {
       expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width + 0.5);
     });
 
-    test("inspects a hotspot and shows inventory", async ({ page }) => {
+    test("shows sequential acquisition popups before dialogue and inventory", async ({
+      page,
+    }) => {
       await startFromMenu(page);
       await advanceDialogue(page);
       await page.getByRole("button", { name: /桌子/ }).click();
 
-      await expect(page.getByText("還是熱的。")).toBeVisible();
-      await expect(page.getByRole("button", { name: /EVIDENCE/ })).toHaveCount(
+      const evidencePopup = page.getByRole("dialog", { name: "物證取得" });
+      await expect(evidencePopup).toBeVisible();
+      await expect(evidencePopup.getByText("還熱的咖啡")).toBeVisible();
+      await expect(
+        evidencePopup.getByRole("button", { name: "CONTINUE / 繼續" }),
+      ).toBeFocused();
+
+      await page.keyboard.press("Enter");
+
+      const statementPopup = page.getByRole("dialog", { name: "證言取得" });
+      await expect(statementPopup).toBeVisible();
+      await expect(statementPopup.getByText("證人")).toBeVisible();
+      await expect(statementPopup).toContainText(
+        "我在十一點前看見桌上的咖啡仍冒著熱氣。",
+      );
+      await expect(page.getByRole("dialog", { name: "遊戲選單" })).toHaveCount(
         0,
       );
 
       await page.keyboard.press("Escape");
+
+      await expect(statementPopup).toBeHidden();
+      await expect(page.getByRole("dialog", { name: "遊戲選單" })).toHaveCount(
+        0,
+      );
+      await expect(page.getByText("還是熱的。")).toBeVisible();
+
+      await page.keyboard.press("Escape");
       const gameMenu = page.getByRole("dialog", { name: "遊戲選單" });
+      await expect(gameMenu).toBeVisible();
       await gameMenu.getByRole("button", { name: /物證/ }).click();
 
-      // Opening the evidence submenu changes the dialog's accessible name
-      // from "遊戲選單" to "物證檔案" (the heading rebinds via aria-labelledby),
-      // so re-query the dialog under its submenu name before asserting on the
-      // dossier contents.
       const evidenceMenu = page.getByRole("dialog", { name: "物證檔案" });
       await expect(evidenceMenu.getByText("還熱的咖啡")).toBeVisible();
+      await expect(evidenceMenu.getByText("證人")).toBeVisible();
     });
 
     test("surfaces command errors in the banner", async ({ page }) => {
@@ -333,6 +364,7 @@ if (shouldRegisterPlaywrightSuite) {
       await expect(page.getByRole("alert")).toContainText(
         "Hotspot 'table' is locked.",
       );
+      await expect(page.getByRole("dialog", { name: /取得/ })).toHaveCount(0);
     });
   });
 }
