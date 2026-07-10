@@ -11,6 +11,28 @@ import {
 import type { AcquisitionNotification } from "$lib/state/acquisition-notifications";
 import AcquisitionPopup from "./AcquisitionPopup.svelte";
 
+const storyAssetMocks = vi.hoisted(() => ({
+  placeholderForMissingStoryAsset: vi.fn(),
+  resolveStoryAsset: vi.fn(),
+}));
+
+vi.mock("$lib/assets/story-assets", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("$lib/assets/story-assets")>();
+  storyAssetMocks.placeholderForMissingStoryAsset.mockImplementation(
+    (assetId, type) => actual.placeholderForMissingStoryAsset(assetId, type),
+  );
+  storyAssetMocks.resolveStoryAsset.mockImplementation((assetId, type) =>
+    actual.resolveStoryAsset(assetId, type),
+  );
+  return {
+    ...actual,
+    placeholderForMissingStoryAsset:
+      storyAssetMocks.placeholderForMissingStoryAsset,
+    resolveStoryAsset: storyAssetMocks.resolveStoryAsset,
+  };
+});
+
 const testDir = dirname(fileURLToPath(import.meta.url));
 
 const evidenceNotification: AcquisitionNotification = {
@@ -44,6 +66,7 @@ const statementNotification: AcquisitionNotification = {
 afterEach(() => {
   cleanup();
   resetEscapeCoordinator();
+  vi.clearAllMocks();
 });
 
 describe("AcquisitionPopup", () => {
@@ -82,6 +105,30 @@ describe("AcquisitionPopup", () => {
     });
 
     await waitFor(() => {
+      expect(container.querySelector("img.evidence-image")).toHaveAttribute(
+        "src",
+        expect.stringContaining("data:image/svg+xml"),
+      );
+    });
+  });
+
+  it("preserves a non-null asset ID when resolution returns null", async () => {
+    const assetId = "evidence.null_resolution_component_test";
+    const unresolved = {
+      ...evidenceNotification,
+      record: { ...evidenceNotification.record, imageAssetId: assetId },
+    };
+    storyAssetMocks.resolveStoryAsset.mockResolvedValueOnce(null);
+    const { container } = render(AcquisitionPopup, {
+      notification: unresolved,
+      returnFocusTo: null,
+      onContinue: vi.fn(() => false),
+    });
+
+    await waitFor(() => {
+      expect(
+        storyAssetMocks.placeholderForMissingStoryAsset,
+      ).toHaveBeenCalledExactlyOnceWith(assetId, "evidence");
       expect(container.querySelector("img.evidence-image")).toHaveAttribute(
         "src",
         expect.stringContaining("data:image/svg+xml"),
