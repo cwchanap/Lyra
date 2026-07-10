@@ -1017,9 +1017,9 @@ describe("GameShell", () => {
         gameState: state(),
         onCloseCase: vi.fn(),
         disabled: true,
+        open: true,
       });
 
-      window.dispatchEvent(escapeKeydown());
       const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
       const closeCase = within(dialog).getByRole("button", {
         name: /結束案件/,

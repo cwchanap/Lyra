@@ -16,7 +16,7 @@ import {
   vi,
 } from "vitest";
 import type { GameStateView, SceneNavigationIndex } from "$lib/state/types";
-import { gameState } from "$lib/state/game-client.svelte";
+import { advanceDialogue, gameState } from "$lib/state/game-client.svelte";
 import { acquisitionController } from "$lib/state/acquisition-controller.svelte";
 import type { AcquisitionNotification } from "$lib/state/acquisition-notifications";
 import {
@@ -213,6 +213,26 @@ function stubFetchForSceneNavigation() {
   });
 }
 
+function stateWithAcquiredEvidence(): GameStateView {
+  const next = currentState();
+  if (acquiredEvidence.kind !== "evidence") {
+    throw new Error("Acquisition fixture must be evidence");
+  }
+  next.inventory.evidence = [acquiredEvidence.record];
+  next.mode = {
+    type: "dialogue",
+    crossExamLineId: null,
+    current: { kind: "action", text: "還是熱的。" },
+    queueRemaining: 0,
+    sceneTag: null,
+    queueToken: { sceneId: "scene_1", queueGen: 1, cursor: 1 },
+    backgroundAssetId: null,
+    bgm: null,
+    bgs: null,
+  };
+  return next;
+}
+
 describe("+page acquisition popup integration", () => {
   let canvasGetContextSpy: MockInstance<
     typeof HTMLCanvasElement.prototype.getContext
@@ -291,6 +311,115 @@ describe("+page acquisition popup integration", () => {
     expect(
       await screen.findByRole("dialog", { name: "遊戲選單" }),
     ).toBeInTheDocument();
+  });
+
+  it("acknowledges backdrop and card keyboard input without advancing dialogue", async () => {
+    const user = userEvent.setup();
+    const { container } = render(Page);
+    acquisitionController.enqueue([acquiredEvidence, acquiredStatement]);
+
+    const evidencePopup = await screen.findByRole("dialog", {
+      name: "物證取得",
+    });
+    const evidenceContinue = within(evidencePopup).getByRole("button", {
+      name: "CONTINUE / 繼續",
+    });
+    document.body.focus();
+    await user.tab();
+    expect(evidenceContinue).toHaveFocus();
+
+    await user.click(evidencePopup);
+    await user.keyboard("{Enter}");
+
+    const statementPopup = await screen.findByRole("dialog", {
+      name: "證言取得",
+    });
+    const scrim = container.querySelector<HTMLElement>(".acquisition-scrim");
+    expect(scrim).not.toBeNull();
+    await user.click(scrim!);
+    document.body.focus();
+    expect(document.body).toHaveFocus();
+    await user.keyboard(" ");
+
+    await waitFor(() => {
+      expect(statementPopup).not.toBeInTheDocument();
+    });
+    expect(
+      mocks.fetch.mock.calls.some(([url]) =>
+        String(url).endsWith("/advance_dialogue"),
+      ),
+    ).toBe(false);
+  });
+
+  it("closes a menu that was open before a delayed acquisition completes", async () => {
+    const user = userEvent.setup();
+    let resolveAdvance!: (response: Response) => void;
+    const delayedAdvance = new Promise<Response>((resolve) => {
+      resolveAdvance = resolve;
+    });
+    mocks.fetch.mockImplementation(async (url: string) => {
+      if (String(url).endsWith("/advance_dialogue")) return delayedAdvance;
+      if (String(url).endsWith("/list_scenes")) {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      return jsonResponse({});
+    });
+    render(Page);
+
+    await user.keyboard("{Escape}");
+    expect(
+      await screen.findByRole("dialog", { name: "遊戲選單" }),
+    ).toBeInTheDocument();
+
+    const command = advanceDialogue({
+      sceneId: "scene_1",
+      queueGen: 1,
+      cursor: 0,
+    });
+    await waitFor(() => expect(gameState.inFlight).toBe(true));
+    resolveAdvance(jsonResponse(stateWithAcquiredEvidence()));
+    await command;
+
+    expect(
+      await screen.findByRole("dialog", { name: "物證取得" }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+    });
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "物證取得" })).toBeNull();
+    });
+    expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+  });
+
+  it("does not open the game menu while a command is in flight", async () => {
+    const user = userEvent.setup();
+    let resolveAdvance!: (response: Response) => void;
+    const delayedAdvance = new Promise<Response>((resolve) => {
+      resolveAdvance = resolve;
+    });
+    mocks.fetch.mockImplementation(async (url: string) => {
+      if (String(url).endsWith("/advance_dialogue")) return delayedAdvance;
+      if (String(url).endsWith("/list_scenes")) {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      return jsonResponse({});
+    });
+    render(Page);
+
+    const command = advanceDialogue({
+      sceneId: "scene_1",
+      queueGen: 1,
+      cursor: 0,
+    });
+    await waitFor(() => expect(gameState.inFlight).toBe(true));
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+    resolveAdvance(jsonResponse(currentState()));
+    await command;
   });
 
   it("clears queued acquisitions when the page unmounts", () => {

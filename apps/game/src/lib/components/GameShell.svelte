@@ -260,6 +260,10 @@
         return;
       }
 
+      if (disabled) {
+        return;
+      }
+
       void reassertFullscreenIfActive();
       void openGameMenu();
     };
