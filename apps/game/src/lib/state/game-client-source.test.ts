@@ -6,6 +6,9 @@ import type {
 import type { GameStateView } from "./types";
 
 const mocks = vi.hoisted(() => ({
+  acquisitionClear: vi.fn(),
+  acquisitionEnqueue: vi.fn(),
+  inferAcquisitionNotifications: vi.fn(),
   inferGameplaySfxEvents: vi.fn(),
   invoke: vi.fn(),
   playGameplaySfxEvent: vi.fn(),
@@ -21,6 +24,17 @@ vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
 
 vi.mock("$lib/audio/sfx-events", () => ({
   inferGameplaySfxEvents: mocks.inferGameplaySfxEvents,
+}));
+
+vi.mock("./acquisition-notifications", () => ({
+  inferAcquisitionNotifications: mocks.inferAcquisitionNotifications,
+}));
+
+vi.mock("./acquisition-controller.svelte", () => ({
+  acquisitionController: {
+    enqueue: mocks.acquisitionEnqueue,
+    clear: mocks.acquisitionClear,
+  },
 }));
 
 type GameClientModule = typeof import("./game-client.svelte");
@@ -73,6 +87,9 @@ async function loadGameClient(
 
 beforeEach(() => {
   vi.resetModules();
+  mocks.acquisitionClear.mockReset();
+  mocks.acquisitionEnqueue.mockReset();
+  mocks.inferAcquisitionNotifications.mockReset().mockReturnValue([]);
   mocks.inferGameplaySfxEvents.mockReset();
   mocks.invoke.mockReset();
   mocks.playGameplaySfxEvent.mockReset();
@@ -133,6 +150,40 @@ describe("game client audio events", () => {
     expect(mocks.playGameplaySfxEvent).toHaveBeenCalledExactlyOnceWith(event);
   });
 
+  it("commits a successful state and enqueues inferred acquisitions once", async () => {
+    const previous = state("previous");
+    const next = state("next");
+    const notification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_next",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke.mockResolvedValueOnce(next);
+    mocks.inferAcquisitionNotifications.mockReturnValueOnce([notification]);
+    mocks.inferGameplaySfxEvents.mockReturnValueOnce([]);
+
+    await client.inspectHotspot("receipt");
+
+    expect(client.gameState.value).toEqual(next);
+    expect(mocks.inferAcquisitionNotifications).toHaveBeenCalledExactlyOnceWith(
+      previous,
+      next,
+    );
+    expect(mocks.acquisitionEnqueue).toHaveBeenCalledExactlyOnceWith([
+      notification,
+    ]);
+  });
+
   it("commits the new state and does not rethrow when SFX playback throws", async () => {
     const previous = state("previous");
     const next = state("next");
@@ -172,8 +223,54 @@ describe("game client audio events", () => {
 
     expect(client.gameState.value).toBe(capturedPrevious);
     expect(client.gameState.error).toBe("Command failed.");
+    expect(mocks.inferAcquisitionNotifications).not.toHaveBeenCalled();
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
     expect(mocks.inferGameplaySfxEvents).not.toHaveBeenCalled();
     expect(mocks.playGameplaySfxEvent).not.toHaveBeenCalled();
+  });
+
+  it("keeps the committed state when acquisition inference throws", async () => {
+    const previous = state("previous");
+    const next = state("next");
+    const client = await loadGameClient(previous);
+    mocks.invoke.mockResolvedValueOnce(next);
+    mocks.inferAcquisitionNotifications.mockImplementationOnce(() => {
+      throw new Error("inventory contract drift");
+    });
+    mocks.inferGameplaySfxEvents.mockReturnValueOnce([]);
+    const warnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+
+    await expect(client.inspectHotspot("receipt")).resolves.toBeUndefined();
+
+    expect(client.gameState.value).toEqual(next);
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+    expect(mocks.inferGameplaySfxEvents).toHaveBeenCalledExactlyOnceWith(
+      previous,
+      next,
+      "inspect_hotspot",
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[AcquisitionPopup] inference failed for inspect_hotspot",
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("clears pending acquisitions before resetting the game", async () => {
+    const client = await loadGameClient(state("previous"));
+    const next = state("reset");
+    mocks.invoke.mockResolvedValueOnce(next);
+    mocks.inferGameplaySfxEvents.mockReturnValueOnce([]);
+
+    await client.resetGame();
+
+    expect(mocks.acquisitionClear).toHaveBeenCalledTimes(1);
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "reset_game",
+      undefined,
+    );
   });
 
   it("does not infer or play SFX when a command returns null", async () => {
@@ -317,6 +414,7 @@ describe("game client scene navigation commands", () => {
       sceneId: "scene_0",
     });
     expect(client.gameState.value).toEqual(next);
+    expect(mocks.acquisitionClear).toHaveBeenCalledTimes(1);
     expect(mocks.inferGameplaySfxEvents).not.toHaveBeenCalled();
   });
 
@@ -365,6 +463,7 @@ describe("game client scene navigation commands", () => {
 
     expect(client.gameState.value).toBe(capturedPrevious);
     expect(client.gameState.inFlight).toBe(true);
+    expect(mocks.acquisitionClear).not.toHaveBeenCalled();
   });
 
   it("returnToMainMenu clears state when no command is in flight", async () => {
@@ -377,6 +476,7 @@ describe("game client scene navigation commands", () => {
     expect(client.gameState.error).toBeNull();
     expect(client.gameState.loading).toBe(false);
     expect(client.gameState.inFlight).toBe(false);
+    expect(mocks.acquisitionClear).toHaveBeenCalledTimes(1);
   });
 });
 

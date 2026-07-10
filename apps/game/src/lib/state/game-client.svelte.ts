@@ -4,6 +4,8 @@ import {
   inferGameplaySfxEvents,
   type GameplayCommandName,
 } from "$lib/audio/sfx-events";
+import { acquisitionController } from "./acquisition-controller.svelte";
+import { inferAcquisitionNotifications } from "./acquisition-notifications";
 import type {
   GameError,
   GameStateView,
@@ -82,6 +84,20 @@ async function runCommand<T>(
   }
 }
 
+function enqueueAcquisitions(
+  previous: GameStateView | null,
+  next: GameStateView,
+  command: GameplayCommandName,
+) {
+  try {
+    acquisitionController.enqueue(
+      inferAcquisitionNotifications(previous, next),
+    );
+  } catch (error) {
+    console.warn(`[AcquisitionPopup] inference failed for ${command}`, error);
+  }
+}
+
 async function dispatchGameCommand(
   command: GameplayCommandName,
   args?: Record<string, unknown>,
@@ -95,6 +111,7 @@ async function dispatchGameCommand(
     const v = await runCommand<GameStateView>(command, args);
     if (v) {
       gameState.value = v;
+      enqueueAcquisitions(previous, v, command);
       // Audio is a non-essential side effect of a successful game-state update:
       // the new state is already committed. An unexpected throw from SFX
       // inference/playback must not propagate to the caller and break the game
@@ -157,11 +174,13 @@ export async function startGame() {
 }
 
 export async function resetGame() {
+  acquisitionController.clear();
   await dispatchGameCommand("reset_game", undefined, true);
 }
 
 export function returnToMainMenu() {
   if (gameState.inFlight) return;
+  acquisitionController.clear();
   gameState.value = null;
   gameState.error = null;
   gameState.loading = false;
@@ -185,6 +204,7 @@ export async function listScenes(): Promise<SceneNavigationIndex | null> {
 }
 
 export async function jumpToScene(chapterId: string, sceneId: string) {
+  acquisitionController.clear();
   await dispatchStateCommand("jump_to_scene", { chapterId, sceneId }, true);
 }
 
