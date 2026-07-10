@@ -37,7 +37,7 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => mocks.currentWindow,
 }));
 
-import GameShellHarness from "./GameShellHarness.svelte";
+import GameShellHarness from "$lib/test-harnesses/GameShellHarness.svelte";
 
 function state(
   mode: GameStateView["mode"] = {

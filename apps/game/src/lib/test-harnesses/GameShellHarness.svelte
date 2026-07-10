@@ -1,5 +1,5 @@
 <script lang="ts">
-  import GameShell from "./GameShell.svelte";
+  import GameShell from "$lib/components/GameShell.svelte";
   import type { GameStateView } from "$lib/state/types";
 
   let {

@@ -16,6 +16,12 @@
 
   const dialogueTransitionDurationMs = 1500;
   const textRevealTickMs = 25;
+  // Per-character floor so short lines finish faster than the full transition
+  // duration. The effective reveal duration is `min(text.length * this, cap)`,
+  // where the cap is `textRevealDurationMs` (default 1500ms). Long lines still
+  // hit the cap; short lines feel snappier instead of dragging out the full
+  // 1500ms.
+  const minMsPerChar = 40;
 
   let {
     current,
@@ -261,6 +267,10 @@
       return;
     }
 
+    // Short lines finish faster: cap the reveal duration at
+    // `text.length * minMsPerChar` when that is below the configured duration.
+    const effectiveDuration = Math.min(text.length * minMsPerChar, duration);
+
     // Respect prefers-reduced-motion: skip the JS typewriter and reveal the
     // full line immediately. Mirrors CrossfadeImage's reduced-motion handling.
     if (
@@ -278,7 +288,7 @@
       const elapsed = Date.now() - startedAt;
       visibleTextLength = Math.min(
         text.length,
-        Math.floor((elapsed / duration) * text.length),
+        Math.floor((elapsed / effectiveDuration) * text.length),
       );
       if (visibleTextLength >= text.length) {
         clearTextRevealTimer();

@@ -159,6 +159,12 @@ newer asset.
 The default transition duration is 300 ms. The transition uses opacity only and
 must not animate position or scale by default.
 
+Callers may dim the visible (loaded) layer by setting the
+`--crossfade-visible-opacity` CSS variable on the component's wrapper (e.g.
+`SceneBackdrop` uses `0.52`); the component applies it to loaded layers so the
+crossfade target opacity is the caller-supplied value rather than a hard-coded
+`1`.
+
 For users with `prefers-reduced-motion: reduce`, the component must complete
 the cutover with a near-instant opacity change while still preserving the
 important loading rule: do not remove the old image until the new one has

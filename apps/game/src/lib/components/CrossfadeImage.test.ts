@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import CrossfadeImage from "./CrossfadeImage.svelte";
-import CrossfadeImageHarness from "./CrossfadeImageHarness.svelte";
+import CrossfadeImageHarness from "$lib/test-harnesses/CrossfadeImageHarness.svelte";
 
 function imageSources(container: HTMLElement) {
   return Array.from(container.querySelectorAll("img")).map((img) =>

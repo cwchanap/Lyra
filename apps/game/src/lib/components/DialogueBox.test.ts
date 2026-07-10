@@ -452,12 +452,15 @@ describe("DialogueBox", () => {
     expect(onAdvance).toHaveBeenCalledWith(token);
   });
 
-  it("reveals action text over 1500ms", async () => {
+  it("reveals long action text over the configured 1500ms cap", async () => {
     vi.useFakeTimers();
+    // 40 chars * 40ms/char floor = 1600ms, so the 1500ms cap governs.
+    const longText =
+      "雨聲壓過車流，霓虹在積水裡碎成一片片流動的光，遠處的號誌模糊成暈開的色塊與殘影。";
     const { container } = renderDialogueBox(
       {
         kind: "action",
-        text: "雨聲壓過車流。",
+        text: longText,
       },
       {
         textRevealDurationMs: 1500,
@@ -465,14 +468,41 @@ describe("DialogueBox", () => {
     );
     const text = container.querySelector(".text-action") as HTMLElement;
 
-    expect(text).not.toHaveTextContent("雨聲壓過車流。");
+    expect(text).not.toHaveTextContent(longText);
 
     await vi.advanceTimersByTimeAsync(750);
     expect(text.textContent?.length ?? 0).toBeGreaterThan(0);
-    expect(text).not.toHaveTextContent("雨聲壓過車流。");
+    expect(text).not.toHaveTextContent(longText);
 
     await vi.advanceTimersByTimeAsync(750);
-    expect(text).toHaveTextContent("雨聲壓過車流。");
+    expect(text).toHaveTextContent(longText);
+  });
+
+  it("reveals short action text faster than the cap via the per-char floor", async () => {
+    vi.useFakeTimers();
+    // 7 chars * 40ms/char = 280ms, well below the 1500ms cap.
+    const shortText = "雨聲壓過車流。";
+    const { container } = renderDialogueBox(
+      {
+        kind: "action",
+        text: shortText,
+      },
+      {
+        textRevealDurationMs: 1500,
+      },
+    );
+    const text = container.querySelector(".text-action") as HTMLElement;
+
+    expect(text).not.toHaveTextContent(shortText);
+
+    // At 150ms (past half of the 280ms effective duration) it is partial.
+    await vi.advanceTimersByTimeAsync(150);
+    expect(text.textContent?.length ?? 0).toBeGreaterThan(0);
+    expect(text).not.toHaveTextContent(shortText);
+
+    // Completes well before the 1500ms cap.
+    await vi.advanceTimersByTimeAsync(150);
+    expect(text).toHaveTextContent(shortText);
   });
 
   it("reveals line text gradually while keeping the speaker visible", async () => {
