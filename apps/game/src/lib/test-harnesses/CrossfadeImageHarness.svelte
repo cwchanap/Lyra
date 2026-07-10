@@ -1,5 +1,5 @@
 <script lang="ts">
-  import CrossfadeImage from "./CrossfadeImage.svelte";
+  import CrossfadeImage from "$lib/components/CrossfadeImage.svelte";
 
   const dataAttributes = { placement: "left", layer: "behind-dialogue" };
   const onImageLoad = () => {};
