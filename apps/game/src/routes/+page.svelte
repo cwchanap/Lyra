@@ -87,6 +87,7 @@
     if (blocking && !acquisitionWasBlocking) {
       const active = document.activeElement;
       acquisitionReturnFocus = active instanceof HTMLElement ? active : null;
+      gameMenuOpen = false;
     }
     acquisitionWasBlocking = blocking;
   });

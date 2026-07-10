@@ -90,8 +90,18 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key !== "Tab") return;
+    if (event.key !== "Tab" && event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
     event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+
+    if (event.key === "Enter" || event.key === " ") {
+      if (!event.repeat) dismissCurrent();
+      return;
+    }
+
     continueButton?.focus();
   }
 
@@ -106,10 +116,12 @@
   onMount(() => {
     focusTarget = returnFocusTo;
     releaseEscapeClaim = claimEscape(dismissCurrent);
+    window.addEventListener("keydown", handleKeydown, { capture: true });
     void tick().then(() => continueButton?.focus());
   });
 
   onDestroy(() => {
+    window.removeEventListener("keydown", handleKeydown, { capture: true });
     releaseEscapeClaim?.();
     releaseEscapeClaim = null;
     const target = focusTarget;
@@ -128,7 +140,6 @@
       aria-labelledby="acquisition-heading"
       aria-describedby="acquisition-description"
       tabindex="-1"
-      onkeydown={handleKeydown}
     >
       <header>
         <p class="eyebrow">{eyebrow}</p>
