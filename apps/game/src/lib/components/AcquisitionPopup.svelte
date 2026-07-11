@@ -117,7 +117,6 @@
     focusTarget = returnFocusTo;
     releaseEscapeClaim = claimEscape(dismissCurrent);
     window.addEventListener("keydown", handleKeydown, { capture: true });
-    void tick().then(() => continueButton?.focus());
   });
 
   onDestroy(() => {

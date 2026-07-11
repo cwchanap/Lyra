@@ -222,6 +222,22 @@ describe("AcquisitionPopup", () => {
     expect(onContinue).toHaveBeenCalledExactlyOnceWith("evidence:receipt");
   });
 
+  it("does not double-dismiss when Space fires on a non-final item", async () => {
+    const user = userEvent.setup();
+    const onContinue = vi.fn(() => true);
+    render(AcquisitionPopup, {
+      notification: evidenceNotification,
+      returnFocusTo: null,
+      onContinue,
+    });
+    const button = screen.getByRole("button", { name: "CONTINUE / 繼續" });
+
+    await waitFor(() => expect(button).toHaveFocus());
+    await user.keyboard(" ");
+
+    expect(onContinue).toHaveBeenCalledExactlyOnceWith("evidence:receipt");
+  });
+
   it("routes Escape through the coordinator and releases on the final item", async () => {
     const onContinue = vi.fn(() => false);
     render(AcquisitionPopup, {
