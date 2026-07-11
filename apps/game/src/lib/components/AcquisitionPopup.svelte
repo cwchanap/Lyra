@@ -43,6 +43,10 @@
       : notification.record.content,
   );
 
+  // Guard against stale async results: if the notification changes (via
+  // {#key} remount or effect re-run) before the asset resolves, the cleanup
+  // sets `cancelled` and the key check prevents the old promise from
+  // overwriting `evidenceImage` with the previous item's asset.
   $effect(() => {
     const key = notification.key;
     let cancelled = false;
@@ -143,7 +147,6 @@
       aria-modal="true"
       aria-labelledby="acquisition-heading"
       aria-describedby="acquisition-description"
-      tabindex="-1"
     >
       <header>
         <p class="eyebrow">{eyebrow}</p>
