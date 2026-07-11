@@ -170,6 +170,7 @@ async function dispatchStateCommand(
 }
 
 export async function startGame() {
+  acquisitionController.clear();
   await dispatchGameCommand("start_game", undefined, true);
 }
 
