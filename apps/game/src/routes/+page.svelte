@@ -93,9 +93,11 @@
   });
 
   $effect(() => {
-    // Svelte assigns `inert` as a DOM property. Keep the content attribute in
-    // sync as well so the blocking boundary remains explicit in DOMs that do
-    // not reflect that property (including the test DOM).
+    // Svelte 5 sets `inert` as a DOM *property*, which real browsers reflect
+    // as the content attribute — so the `inert={...}` directive on gameplayRoot
+    // is sufficient in production. jsdom (Vitest) does NOT reflect that
+    // property, so tests querying the attribute would miss the blocking
+    // boundary. Mirror it explicitly here for the test DOM only.
     gameplayRoot?.toggleAttribute("inert", acquisitionController.blocking);
   });
 
