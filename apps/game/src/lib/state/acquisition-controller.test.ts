@@ -61,6 +61,15 @@ describe("createAcquisitionController", () => {
     expect(controller.size).toBe(2);
   });
 
+  it("is a no-op when the queue is empty", () => {
+    const controller = createAcquisitionController();
+
+    expect(controller.dismissCurrent("evidence:noop")).toBe(false);
+    expect(controller.current).toBeNull();
+    expect(controller.size).toBe(0);
+    expect(controller.blocking).toBe(false);
+  });
+
   it("clears the complete queue", () => {
     const controller = createAcquisitionController();
     controller.enqueue([

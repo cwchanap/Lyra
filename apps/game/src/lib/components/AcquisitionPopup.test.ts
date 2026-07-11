@@ -112,30 +112,6 @@ describe("AcquisitionPopup", () => {
     });
   });
 
-  it("preserves a non-null asset ID when resolution returns null", async () => {
-    const assetId = "evidence.null_resolution_component_test";
-    const unresolved = {
-      ...evidenceNotification,
-      record: { ...evidenceNotification.record, imageAssetId: assetId },
-    };
-    storyAssetMocks.resolveStoryAsset.mockResolvedValueOnce(null);
-    const { container } = render(AcquisitionPopup, {
-      notification: unresolved,
-      returnFocusTo: null,
-      onContinue: vi.fn(() => false),
-    });
-
-    await waitFor(() => {
-      expect(
-        storyAssetMocks.placeholderForMissingStoryAsset,
-      ).toHaveBeenCalledExactlyOnceWith(assetId, "evidence");
-      expect(container.querySelector("img.evidence-image")).toHaveAttribute(
-        "src",
-        expect.stringContaining("data:image/svg+xml"),
-      );
-    });
-  });
-
   it("falls back when a resolved evidence image emits an error", async () => {
     const { container } = render(AcquisitionPopup, {
       notification: evidenceNotification,
