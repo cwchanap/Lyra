@@ -65,8 +65,7 @@
     resolveStoryAsset(assetId, "evidence")
       .then((asset) => {
         if (!cancelled && notification.key === key) {
-          evidenceImage =
-            asset ?? placeholderForMissingStoryAsset(assetId, "evidence");
+          evidenceImage = asset;
         }
       })
       .catch(() => {

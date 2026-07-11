@@ -85,9 +85,17 @@
   $effect.pre(() => {
     const blocking = acquisitionController.blocking;
     if (blocking && !acquisitionWasBlocking) {
-      const active = document.activeElement;
-      acquisitionReturnFocus = active instanceof HTMLElement ? active : null;
-      gameMenuOpen = false;
+      if (gameMenuOpen) {
+        // The menu is open and will be unmounted below, so any element
+        // inside it would be disconnected by the time the popup closes —
+        // focus restoration would fall through to <body>. Redirect the
+        // return-focus target to the gameplay root instead.
+        acquisitionReturnFocus = gameplayRoot;
+        gameMenuOpen = false;
+      } else {
+        const active = document.activeElement;
+        acquisitionReturnFocus = active instanceof HTMLElement ? active : null;
+      }
     }
     acquisitionWasBlocking = blocking;
   });
@@ -98,6 +106,7 @@
     // is sufficient in production. jsdom (Vitest) does NOT reflect that
     // property, so tests querying the attribute would miss the blocking
     // boundary. Mirror it explicitly here for the test DOM only.
+    if (!import.meta.env.DEV) return;
     gameplayRoot?.toggleAttribute("inert", acquisitionController.blocking);
   });
 
@@ -237,6 +246,7 @@
   <div
     bind:this={gameplayRoot}
     data-gameplay-root=""
+    tabindex="-1"
     inert={acquisitionController.blocking}
   >
     <GameplayAudio mode={gameState.value.mode} />

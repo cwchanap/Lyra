@@ -247,6 +247,14 @@
       event.stopPropagation();
       event.stopImmediatePropagation();
 
+      // Ignore auto-repeated Escape keydowns. The "close one layer per
+      // Escape" contract means one action per physical press, not one per
+      // OS key-repeat tick (~30ms). Without this guard, holding Escape
+      // dismisses queued acquisition popups in rapid succession.
+      if (event.repeat) {
+        return;
+      }
+
       if (open) {
         if (activeMenuPanel !== null) {
           closeMenuPanel();
