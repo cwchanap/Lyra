@@ -190,9 +190,9 @@ Existing gameplay audio behavior remains unchanged.
   `aria-describedby`.
 - Continue receives focus after the popup mounts and whenever the current item
   changes.
-- Tab and Shift+Tab remain inside the modal. Continue is the only interactive
-  control in this scope.
-- Enter and Space use the focused native button's activation behavior.
+- A capture-phase window listener intercepts Enter, Space, Tab, and Shift+Tab
+  so dismissal and focus trapping work even if focus escapes the modal.
+  Continue is the only interactive control in this scope.
 - The popup claims Escape through the existing coordinator. Escape dismisses
   one item and cannot open or close the game menu in the same keypress.
 - The Escape claim is released synchronously on dismissal and through effect
