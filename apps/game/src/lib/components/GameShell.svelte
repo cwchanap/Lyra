@@ -260,6 +260,8 @@
         return;
       }
 
+      // disabled mirrors gameState.inFlight: swallow Escape while a command
+      // is mid-flight so the menu can't open/race against a pending invoke.
       if (disabled) {
         return;
       }
