@@ -81,6 +81,11 @@
     void tick().then(() => continueButton?.focus());
   });
 
+  // Shared by the Continue button, Enter/Space, and the Escape claim.
+  // Reads `notification.key` as a live reactive prop at call time, not a
+  // captured value — after a `{#key}` remount the closure sees the new
+  // notification, so it dismisses the *current* item, not the one that was
+  // mounted when the handler was bound.
   function dismissCurrent() {
     const remainsOpen = onContinue(notification.key);
     if (!remainsOpen) {

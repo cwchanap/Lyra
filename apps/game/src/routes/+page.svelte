@@ -236,7 +236,6 @@
 {#if gameState.value}
   <div
     bind:this={gameplayRoot}
-    class="gameplay-root"
     data-gameplay-root=""
     inert={acquisitionController.blocking}
   >
