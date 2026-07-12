@@ -194,12 +194,9 @@ compile_error!("feature \"e2e\" is only for debug e2e builds");
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
-
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
     #[cfg(feature = "e2e")]
-    {
-        builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
-    }
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
     builder
         .manage(AppState {
