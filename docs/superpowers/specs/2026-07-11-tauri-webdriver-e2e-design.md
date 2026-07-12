@@ -11,10 +11,12 @@ Replace the Playwright browser e2e suite with WebdriverIO +
 its mocks (`__TAURI_INTERNALS__`), and the browser-preview CI job. Run the new
 suite locally on macOS and in GitHub Actions on Linux (headless via xvfb).
 
-The e2e binary is a **debug-profile** Tauri build (`tauri build --debug
---no-bundle`) so the embedded WebDriver plugin is present under
-`cfg(debug_assertions)`. The frontend is still produced by `vite build`, so
+The e2e binary is built with **Cargo feature `e2e`** (debug profile,
+`--no-bundle`) so the embedded WebDriver plugin is linked only for that
+target. The frontend is still produced by `vite build`, so
 `import.meta.env.DEV === false` and the scene-nav production gate is real.
+Ordinary `bun run dev:game` does **not** enable `e2e` and must not open a
+WebDriver port.
 
 ## Goals
 
@@ -27,6 +29,8 @@ The e2e binary is a **debug-profile** Tauri build (`tauri build --debug
 - Linux CI from day one; macOS for local developer runs.
 - Port the **intent** of the three existing specs (app shell, investigation
   layout, scene-nav production gate).
+- Isolated e2e WebView storage (no pollution of the developer’s normal app
+  data; Spec C starts from empty clearance).
 
 ## Non-goals
 
@@ -39,7 +43,7 @@ The e2e binary is a **debug-profile** Tauri build (`tauri build --debug
 - Changing engine behavior, scene authoring format, or production resource
   layout beyond what e2e packaging already requires.
 - Shipping the WebDriver plugin (or its permissions) in store/release
-  artifacts.
+  artifacts, or enabling it during normal `dev:game`.
 
 ## Background
 
@@ -52,12 +56,18 @@ Today:
 - The existing scene-nav e2e already exercises `import.meta.env.DEV === false`
   via the production Vite build served by `vite preview` — the gap is **real
   IPC + real shell**, not the DEV flag.
+- Playwright page contexts isolate storage; a real Tauri WebView does **not**.
+  Reusing the production app identifier would share `localStorage` with the
+  developer’s normal install.
 - AGENTS.md documents the mock-IPC limitation and that full desktop smoke is
   `bun run dev:game`.
 - Rust already has engine integration tests under
   `apps/game/src-tauri/tests/` (e.g. `full_playthrough.rs`) that do **not**
   cover the WebView UI.
 - CI job `e2e` (Playwright E2E) installs Chromium and runs `bun run test:e2e`.
+- Root `test:e2e` is Turbo-filtered to `@lyra/game`. Turbo currently has
+  `test:e2e.dependsOn: ["build"]`, which only runs the **Vite** `build` task —
+  not a Tauri binary build.
 
 Scene-nav gate (frontend only):
 
@@ -87,17 +97,33 @@ for Spec C.
 | Concern | Profile / flag |
 | --- | --- |
 | Frontend | `vite build` via Tauri `beforeBuildCommand` → `import.meta.env.DEV === false` |
-| Rust binary | **Debug** (`tauri build --debug --no-bundle`) → `cfg(debug_assertions)` on |
-| Bundle packaging | `--no-bundle` → unbundled `src-tauri/target/debug/lyra` (faster CI; no installer) |
-| Embedded WebDriver plugin | Registered **only** under `#[cfg(debug_assertions)]` |
-| WebDriver capability | Present **only** in debug e2e builds (see Capabilities below) |
-| Store / release builds | No plugin, no WebDriver HTTP server, no test permissions |
+| Rust binary | **Debug** + **`--features e2e`** (`tauri build --debug --no-bundle --features e2e` or equivalent) |
+| Bundle packaging | `--no-bundle` → unbundled `src-tauri/target/debug/lyra` |
+| Embedded WebDriver plugin | Linked and registered **only** under `#[cfg(feature = "e2e")]` |
+| WebDriver capability | Present **only** in e2e builds (see Capabilities) |
+| App identity / storage | **E2E-only** Tauri `identifier` (separate from production) |
+| Ordinary `dev:game` / release | No `e2e` feature → no plugin, no WebDriver port, production identifier |
 
-Upstream guidance for `tauri-plugin-wdio-webdriver`: do **not** ship it in
-production. The plugin opens a W3C WebDriver HTTP server (default
-`127.0.0.1:4445`) that any local client can drive — it is **not** “inert
-without a client.” Conditional compilation is the strip mechanism for the
-Rust plugin. Capability files must be gated the same way (see next section).
+**Why feature `e2e`, not `cfg(debug_assertions)` alone:**
+
+1. Cargo cannot use `cfg(debug_assertions)` to *conditionally add* crate
+   dependencies the way `[target.'cfg(...)'.dependencies]` works for OS
+   targets. Optional deps must use a **Cargo feature** (or always depend and
+   cfg-gate usage — still wrong for “not in dev”).
+2. Registering the plugin under only `#[cfg(debug_assertions)]` would open the
+   default WebDriver HTTP server (port **4445**) on **every** ordinary
+   `bun run dev:game` debug session — not “e2e only.”
+3. Feature `e2e` is enabled **only** by the e2e build scripts. Dev and
+   release never pass it.
+
+Optional hardening (recommended): compile-fail if `feature = "e2e"` is set
+without `debug_assertions`, so a mistaken `cargo build --release --features e2e`
+cannot ship the server:
+
+```rust
+#[cfg(all(feature = "e2e", not(debug_assertions)))]
+compile_error!("feature \"e2e\" is only for debug e2e builds");
+```
 
 ### Capabilities (v1 blocker — not a follow-up)
 
@@ -108,37 +134,55 @@ tauri-apps/plugins-workspace#2261 for unlinked plugins).
 
 Therefore **do not** put `"wdio-webdriver:default"` permanently in the shared
 `capabilities/default.json`. That would break `bun run build:tauri` / release
-paths the moment the plugin is debug-only.
+paths whenever the plugin is not linked.
 
-**v1 mechanism (required):**
+**v1 mechanism (required), tied to feature `e2e`:**
 
 1. Keep `capabilities/default.json` free of WebDriver permissions (production
-   path unchanged).
-2. Maintain a debug-only capability fragment, e.g.
-   `capabilities/wdio-debug.json` (or generated equivalent), that grants
-   `"wdio-webdriver:default"` for the main window.
-3. Ensure that fragment is **present only for debug e2e builds** and **absent
-   for release builds**. Concrete implementation (pick one during migration
-   step 1 and keep the other as fallback):
+   and normal dev path unchanged).
+2. When building with `--features e2e`, ensure a capability fragment is present
+   that grants `"wdio-webdriver:default"` for the main window (e.g. generated
+   `capabilities/wdio-e2e.json`).
+3. When building without `e2e`, that fragment must be **absent** so release ACL
+   never references the permission.
+4. Lifecycle: `build.rs` and/or the `test:e2e:build` prep step creates the
+   fragment when `CARGO_FEATURE_E2E` / `LYRA_E2E=1` is set, and removes it
+   otherwise (or never commits a permanent file that release builds would
+   pick up).
+5. Migration step 1 **must** prove both:
+   - e2e build (`--features e2e`, debug, e2e config) succeeds with plugin +
+     capability
+   - release / default build succeeds **without** the permission and without
+     the plugin
+   - ordinary `dev:game` does not open port 4445
 
-   - **Preferred:** `build.rs` (or a small pre-build script invoked by
-     `test:e2e:build`) writes/removes `capabilities/wdio-debug.json` based on
-     profile / env (e.g. only when building debug / `LYRA_E2E=1`). Tauri
-     auto-includes files under `capabilities/`. Release builds must not leave
-     the file in the tree (gitkeep or regenerate; do not commit a permanent
-     permission that release ACL cannot resolve).
-   - **Alternative:** optional Cargo feature `e2e` that links the plugin and
-     is paired with the same capability file lifecycle; e2e always builds with
-     `--features e2e`, release never does.
+### E2E app identity and WebView storage (v1 blocker)
 
-4. Migration step 1 **must** prove both:
-   - debug e2e build succeeds with plugin + capability
-   - release build (`tauri build` without debug/e2e) succeeds **without** the
-     permission and without the plugin
+Real Tauri WebViews persist origin storage. Playwright’s isolated page
+contexts do not. If the e2e binary reuses production
+`identifier` (`com.chanwaichan.lyra`), Spec C and local runs will:
 
-If empirical step 1 shows Tauri is more lenient than expected on this crate
-version, still keep the gated capability design — do not rely on accidental
-leniency.
+- inherit a developer’s existing `lyra.storyClearedOnce.v1` (false “cleared”
+  assumptions)
+- write clearance / other keys into the same store the normal app uses
+
+**v1 requirements:**
+
+1. **E2E-only Tauri config** (e.g. `tauri.e2e.conf.json` merged/overlaid like
+   `tauri.dev.conf.json`) that sets a distinct
+   `identifier` such as `com.chanwaichan.lyra.e2e` (and any related bundle id
+   fields the platform uses for WebView data directories).
+2. E2e builds invoke Tauri with that config (`tauri build -c …e2e…` or
+   documented merge path).
+3. **Helper `resetE2eStorage()`** (or equivalent) runs at the start of each
+   test (or suite hook):
+   - `browser.execute` → remove known Lyra keys (at least
+     `STORY_CLEARED_STORAGE_KEY`) or `localStorage.clear()` if no other
+     durable keys must survive within a single test
+   - `browser.refresh()` so the SPA re-reads storage on cold init
+4. Spec C “empty storage” cases rely on this reset, not on process isolation
+   alone.
+5. `seedStoryCleared()` runs **after** reset: set key → reload → assert.
 
 ### Plugin / crate disambiguation
 
@@ -156,13 +200,19 @@ of v1 scope.
 
 ### New components
 
-1. **Cargo (debug-only):** `tauri-plugin-wdio-webdriver` under
-   `[target.'cfg(debug_assertions)'.dependencies]` (or optional feature
-   `e2e` if that pairs cleaner with capability gating). Register in
-   `lib.rs`:
+1. **Cargo feature `e2e` (mandatory for WebDriver):**
+
+   ```toml
+   [features]
+   e2e = ["dep:tauri-plugin-wdio-webdriver"]
+   # existing features unchanged
+
+   [dependencies]
+   tauri-plugin-wdio-webdriver = { version = "=…", optional = true }
+   ```
 
    ```rust
-   #[cfg(debug_assertions)]
+   #[cfg(feature = "e2e")]
    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
    ```
 
@@ -171,26 +221,27 @@ of v1 scope.
    adoption, pin `=1.0.0` or the oldest compatible `1.x` that supports
    embedded provider + Tauri 2.
 
-2. **Capabilities (debug-only):** gated `"wdio-webdriver:default"` as
-   described above — **not** a permanent line in `default.json`.
+2. **Capabilities (e2e-only):** gated `"wdio-webdriver:default"` as above —
+   **not** a permanent line in `default.json`.
 
-3. **WDIO project** under `apps/game/`:
+3. **E2E Tauri config** with distinct `identifier` (storage isolation).
+
+4. **WDIO project** under `apps/game/`:
    - `wdio.conf.ts` lives in `apps/game/`. Service key
      `@wdio/tauri-service`. Options: `driverProvider: 'embedded'`,
      `appBinaryPath: './src-tauri/target/debug/lyra'` (**relative to the
-     config file directory**, not the monorepo root — do not use
-     `apps/game/src-tauri/...` from this config). If the installed service
-     also honors `tauri:options.application`, set one canonical path and
-     avoid conflicting overrides.
+     config file directory**, not the monorepo root). If the installed
+     service also honors `tauri:options.application`, set one canonical path
+     and avoid conflicting overrides.
    - `e2e-tauri/` — specs, helpers, production anchors
 
-4. **Build pipeline for e2e:** ensure debug capability is present →
-   `tauri build --debug --no-bundle` (runs `beforeBuildCommand`, which
-   already compiles scenes + `vite build`) → WDIO launches
-   `./src-tauri/target/debug/lyra`.
+5. **Build pipeline for e2e:** prepare e2e capability →
+   `tauri build --debug --no-bundle` with `--features e2e` and e2e config →
+   WDIO launches `./src-tauri/target/debug/lyra`.
 
-5. **CI:** Linux job with Tauri WebKit/GTK runtime/build deps + xvfb; no
-   Playwright; no webkit2gtk-driver required for the embedded provider.
+6. **CI:** Linux job with Tauri WebKit/GTK runtime/build deps + xvfb; no
+   Playwright; no webkit2gtk-driver required for the embedded provider. CI
+   entry **must** run the build-and-run script (see Package scripts).
 
 ### Explicit deletions after cutover
 
@@ -213,6 +264,10 @@ fake “測試開始。” strings.
 
 ### Shared helpers (`e2e-tauri/helpers.ts`)
 
+- `resetE2eStorage()` — clear relevant webview `localStorage` (at least story
+  clearance; prefer clear of known Lyra keys), then reload and wait for shell.
+  Called from a global `beforeEach` (or equivalent) so every test starts clean
+  on the e2e app identifier.
 - `startFromMenu()` — app ready → 開始調查 → wait for first real dialogue
 - `advanceDialogueUntil(predicate)` — wait typewriter complete → 推進對話;
   loop until explore/menu-ready; hard cap with a clear failure. **Cap value
@@ -221,19 +276,16 @@ fake “測試開始。” strings.
   scenes) and set the cap to **intro length + comfortable margin**. Document
   the chosen number next to the helper.
 - `openGameMenu()` / `closeGameMenu()` — Escape + assert dialog accessible names
-- `seedStoryCleared()` — **primary mechanism: set-then-reload**. W3C
-  WebDriver has no Playwright-style `addInitScript`. With the embedded
-  server alone:
+- `seedStoryCleared()` — **after** `resetE2eStorage()` (or after an explicit
+  clear in that test): set-then-reload. W3C WebDriver has no Playwright-style
+  `addInitScript`. With the embedded server alone:
 
   1. Wait until the webview document is available.
   2. `browser.execute` → `localStorage.setItem(STORY_CLEARED_STORAGE_KEY, "true")`
-  3. `browser.refresh()` (or equivalent navigation reload)
-  4. Wait for app shell again so `loadStoryClearedOnce()` runs on a cold
-     SPA init that observes the key.
+  3. `browser.refresh()`
+  4. Wait for app shell so `loadStoryClearedOnce()` runs on a cold SPA init.
 
-  Do not document a fictional pre-navigation init script as the primary
-  path. If a later optional `@wdio/tauri-plugin` execute path offers a
-  cleaner hook, that is a follow-up — v1 uses set-then-reload.
+  Do not document a fictional pre-navigation init script as the primary path.
 
 - Stable role selectors (遊戲選單, 物證 / EVIDENCE, 推進對話, etc.)
 
@@ -259,20 +311,21 @@ earliest stable investigation entry after intro).
 | Old | New |
 | --- | --- |
 | Click placed hotspot | Production hotspot with rect layout (not list-only fallback) |
-| Character hover CSS | Production sprite-layout character; assert highlight/name **opacity** on hover (and that name becomes visible). **Intentionally drop** the old Playwright pixel geometry asserts (`top: 10px`, `right: 10px`, `font-size: 18px`) — those are pure layout CSS better covered by component/source tests if needed, and they flake across WebKit. Opacity/visibility is the sprite-layout interaction contract for e2e. |
+| Character hover CSS | Production sprite-layout character; assert highlight/name **opacity** on hover (and that name becomes visible). **Intentionally drop** the old Playwright pixel geometry asserts (`top: 10px`, `right: 10px`, `font-size: 18px`) — pure layout CSS / flaky across WebKit. Opacity/visibility is the e2e interaction contract. |
 | Escape closes topic popover before menu | Open topics → Escape → popover gone, menu not open → Escape → 遊戲選單 |
 
 ### Spec C — Scene nav prod gate (`scene-navigation-gate.e2e.ts`)
 
 | Old | New |
 | --- | --- |
-| Hide 場景跳轉 when not cleared | Debug-profile binary + production frontend (`DEV=false`) + empty storage → no 場景跳轉 |
-| Show when cleared | `seedStoryCleared()` (set-then-reload) then open menu → 場景跳轉 visible |
+| Hide 場景跳轉 when not cleared | E2e binary + production frontend (`DEV=false`) + **reset storage** → no 場景跳轉 |
+| Show when cleared | After reset, `seedStoryCleared()` then open menu → 場景跳轉 visible |
 
 **What this gains over Playwright:** real Tauri shell + real `invoke` +
-production scene resources. It does **not** uniquely gain `DEV=false` — the
-old suite already got that from `vite preview`. Frame the win as
-**end-to-end desktop fidelity**, not as the first production-gate coverage.
+production scene resources + isolated e2e storage. It does **not** uniquely
+gain `DEV=false` — the old suite already got that from `vite preview`. Frame
+the win as **end-to-end desktop fidelity**, not as the first production-gate
+coverage.
 
 ### Non-ports
 
@@ -281,6 +334,7 @@ old suite already got that from `vite preview`. Frame the win as
 - Exact mock dialogue/evidence strings
 - Playwright `addInitScript` pre-init injection (use set-then-reload)
 - Exact pixel geometry CSS asserts from the old hover test
+- Sharing production app identifier / WebView data with e2e
 
 ## Tooling and layout
 
@@ -293,14 +347,15 @@ apps/game/
     investigation-layout.e2e.ts
     scene-navigation-gate.e2e.ts
   wdio.conf.ts
-  package.json          # test:e2e scripts
+  package.json                    # test:e2e = build+run; test:e2e:run = WDIO only
   src-tauri/
-    Cargo.toml          # debug-only tauri-plugin-wdio-webdriver
-    build.rs            # optional: capability fragment lifecycle
+    Cargo.toml                    # feature e2e + optional plugin dep
+    tauri.e2e.conf.json           # distinct identifier for storage isolation
+    build.rs                      # capability fragment lifecycle for e2e
     capabilities/
-      default.json      # production — no wdio-webdriver permission
-      wdio-debug.json   # debug/e2e only (generated or gated; not for release)
-    src/lib.rs          # #[cfg(debug_assertions)] plugin init
+      default.json                # production — no wdio-webdriver permission
+      wdio-e2e.json               # present only when feature e2e is building
+    src/lib.rs                    # #[cfg(feature = "e2e")] plugin init
 ```
 
 ### npm / bun packages (`apps/game` devDependencies)
@@ -316,13 +371,15 @@ Optional later (second plugin row above): `@wdio/tauri-plugin` + Cargo
 `tauri-plugin-wdio` for execute/mock/logs — not required for v1 DOM + real-IPC
 tests.
 
-### Cargo + capabilities checklist
+### Cargo + capabilities + identity checklist
 
-- Debug-only dependency: `tauri-plugin-wdio-webdriver` (pinned version)
-- `#[cfg(debug_assertions)]` `.plugin(tauri_plugin_wdio_webdriver::init())`
-- **Gated** `"wdio-webdriver:default"` capability (debug/e2e only)
-- **Never** leave that permission in the ACL graph of a release build
-- Do **not** register or depend on the plugin in release/store builds
+- Feature `e2e` enables optional `tauri-plugin-wdio-webdriver` (pinned)
+- `#[cfg(feature = "e2e")]` plugin registration
+- Recommended: `compile_error!` if `e2e` without `debug_assertions`
+- **Gated** `"wdio-webdriver:default"` capability (e2e builds only)
+- **E2E-only** Tauri `identifier` (e.g. `com.chanwaichan.lyra.e2e`)
+- Never leave WebDriver permission in the ACL graph of a non-e2e build
+- Never enable `e2e` for `dev:game` or store/release builds
 
 ### WDIO config essentials
 
@@ -335,42 +392,54 @@ tests.
 - `maxInstances: 1` (one desktop app)
 - Elevated command timeouts (typewriter + production dialogue)
 - CI retries: 1–2; local: 0
+- Global hook: `resetE2eStorage()` before each test
 
 ## Build and scripts
 
 ### Build under test
 
-1. Ensure debug WebDriver capability fragment is present (see Capabilities).
-2. `tauri build --debug --no-bundle` from `apps/game` — runs
-   `beforeBuildCommand` (`scenes:compile` + `vite build`) so the WebView
-   loads a production frontend (`DEV=false`) while the Rust profile stays
-   debug so the embedded WebDriver plugin is linked.
+1. Prepare e2e capability fragment (feature `e2e` / `LYRA_E2E=1`).
+2. From `apps/game`, build with **debug**, **`--features e2e`**, **e2e Tauri
+   config**, **`--no-bundle`**. Exact CLI shape is implementation detail
+   (e.g. `tauri build --debug --no-bundle -c src-tauri/tauri.e2e.conf.json`
+   plus Cargo feature pass-through as supported by the Tauri CLI / env).
+   `beforeBuildCommand` still runs `scenes:compile` + `vite build`.
 3. WDIO launches `./src-tauri/target/debug/lyra`.
 
-**Do not** double-run `scenes:compile` in `test:e2e:build` unless there is a
-specific reason: `beforeBuildCommand` already compiles scenes. An explicit
-pre-step is optional for local iteration when only resources changed and the
-binary is already built; the default documented path relies on
-`beforeBuildCommand` alone.
+**Do not** double-run `scenes:compile` in the default path:
+`beforeBuildCommand` already compiles scenes. An explicit pre-step is only
+for local iteration when resources change and the binary is already built.
 
-### Package scripts
+### Package scripts (naming is load-bearing)
+
+Turbo’s `test:e2e.dependsOn: ["build"]` only runs the **Vite** frontend
+build. That is **not** a Tauri binary. Therefore:
 
 | Script | Behavior |
 | --- | --- |
-| `apps/game` `test:e2e` | Run WDIO (assumes debug binary + capability already prepared) |
-| `apps/game` `test:e2e:build` | Prepare debug capability → `tauri build --debug --no-bundle` → WDIO |
-| Root `test:e2e` | Turbo filter `@lyra/game` → e2e entry used by CI (build + run) |
+| `apps/game` **`test:e2e`** | **Build-and-run** (prepare capability + e2e Tauri build with `--features e2e` + WDIO). This is what root Turbo and CI must invoke. |
+| `apps/game` **`test:e2e:run`** | WDIO only (assumes binary already built) — local fast re-run after a successful build |
+| Root **`test:e2e`** | `turbo run test:e2e --filter=@lyra/game` → app **`test:e2e`** (build-and-run) |
+
+Update `turbo.json` accordingly:
+
+- `test:e2e` must not rely on Vite-only `dependsOn: ["build"]` as a substitute
+  for the Tauri e2e binary. Either drop that dependsOn and let `test:e2e`
+  own the full build, or make `dependsOn` include a dedicated
+  `test:e2e:prepare` / tauri-e2e-build task that produces
+  `src-tauri/target/debug/lyra`. Document the chosen graph in the
+  implementation plan.
 
 Drop Playwright `test:e2e:ui` unless a WDIO watch equivalent is added later.
 
 ### AGENTS.md / CLAUDE.md
 
-Replace the Playwright preview caveat with: e2e drives a **debug-profile**
-Tauri binary (embedded WebDriver) with a **production** frontend bundle and
-production scene resources; requires platform WebView deps. Note
-`production-anchors.ts` as the coupling point to chapter content. State that
-the WebDriver plugin and its capability must never ship in release/store
-builds.
+Replace the Playwright preview caveat with: e2e drives a **debug + feature
+`e2e`** Tauri binary (embedded WebDriver, e2e app identifier) with a
+**production** frontend bundle and production scene resources; requires
+platform WebView deps. Note `production-anchors.ts`, storage reset, and that
+the WebDriver plugin must never ship in release/store builds or run during
+`dev:game`.
 
 ## CI
 
@@ -382,9 +451,10 @@ Replace the `e2e` job in `.github/workflows/ci.yml`:
   - **Required:** Tauri Linux build/runtime deps (webkit2gtk, gtk,
     appindicator, etc.) and **xvfb** for a virtual display
   - **Not required** under `driverProvider: 'embedded'`: `webkit2gtk-driver`
-    / external `tauri-driver` (those are for the external-driver path)
+    / external `tauri-driver`
 - **Steps:** checkout → bun install → rust toolchain + rust-cache (workspace
-  `apps/game/src-tauri`) → `test:e2e:build` under `xvfb-run`
+  `apps/game/src-tauri`) → **`bun run test:e2e`** (build-and-run) under
+  `xvfb-run`
 - **Artifacts:** WDIO logs / failure screenshots (not Playwright HTML)
 - **Caching:** Rust target + bun lockfile to limit wall time
 
@@ -400,20 +470,20 @@ Windows/macOS CI matrix is a later option, not v1.
   containment and CSS opacity contracts. Spec B hover is opacity/visibility
   only (no exact `px` geometry).
 - Serial execution only.
+- Storage reset before each test; never assume empty WebView store from a
+  fresh OS user alone.
 
 ## Migration order
 
-1. Scaffold WDIO + Cargo plugin behind `cfg(debug_assertions)`; implement
-   **gated** `wdio-webdriver:default` capability. **Smoke:**
-   - `tauri build --debug --no-bundle` + WDIO → title / main menu
+1. Scaffold feature `e2e` + optional plugin + gated capability + e2e Tauri
+   config (distinct identifier). **Smoke:**
+   - e2e build + WDIO → title / main menu
    - release/default build still succeeds (no unknown permission)
-   - (A release binary will not expose the embedded server — session-start
-     timeouts usually mean wrong profile, not missing Linux deps.)
-2. Add helpers + discover/write `production-anchors.ts` from compiled
-   production JSON / authored chapter_1; measure intro length and set
-   dialogue drain cap.
-3. Port Spec A → B → C (including set-then-reload `seedStoryCleared()`).
-4. Wire Linux CI job; delete Playwright and old `e2e/`.
+   - `dev:game` does not listen on 4445
+2. Helpers: `resetE2eStorage`, dialogue drain (measure intro length), anchors.
+3. Port Spec A → B → C.
+4. Wire scripts so root/`turbo`/`CI` call **build-and-run** `test:e2e`; delete
+   Playwright and old `e2e/`.
 5. Update AGENTS.md / CLAUDE.md.
 
 ## Risks and mitigations
@@ -422,27 +492,34 @@ Windows/macOS CI matrix is a later option, not v1.
 | --- | --- |
 | Long production intro | Drain helper with cap sized from real intro + margin |
 | Authoring renames break suite | Single anchors file; clear failure text |
-| CI build duration | rust-cache; debug unbundled binary (`--debug --no-bundle`) |
-| Wrong build profile (no embedded server) | Document debug-only plugin; smoke step uses `--debug` explicitly |
-| Release build fails on unknown permission | **v1 gated capability** (not permanent `default.json`) |
+| CI build duration | rust-cache; debug unbundled binary |
+| Wrong feature/profile (no server / server in dev) | Feature `e2e` only in e2e scripts; optional compile_error for release+e2e |
+| Release build fails on unknown permission | Gated capability with feature `e2e` |
+| CI runs WDIO without binary | Root/`test:e2e` is build-and-run; turbo graph fixed |
+| Flaky Spec C / polluted storage | E2e identifier + `resetE2eStorage` every test |
 | Embedded plugin Linux quirks | Follow WDIO embedded docs; only then consider external driver |
 | Error-banner gap | Explicitly out of v1; unit tests remain |
-| Hover/CSS flake | Opacity/visibility only; no exact pixel geometry in e2e |
-| Community plugin maintenance | Pin versions (prefer ≥7-day-old release); treat as WDIO-community path |
+| Hover/CSS flake | Opacity/visibility only |
+| Community plugin maintenance | Pin versions (prefer ≥7-day-old release) |
 
 ## Success criteria
 
-- After `tauri build --debug --no-bundle` (with debug capability present),
-  `bun run test:e2e` launches real Tauri and the ported suite passes on macOS
-  local and Linux CI.
-- Release/store builds succeed **without** the WebDriver plugin and **without**
-  `wdio-webdriver` permissions in the ACL graph; no WebDriver HTTP port.
+- After e2e build (`--features e2e`, debug, e2e identifier/config),
+  `bun run test:e2e` (build-and-run) launches real Tauri and the ported suite
+  passes on macOS local and Linux CI.
+- Clean CI checkout produces the binary as part of `test:e2e` (no separate
+  manual Tauri step required).
+- Release/store builds and ordinary `dev:game` succeed **without** the
+  WebDriver plugin, **without** `wdio-webdriver` permissions, and **without**
+  listening on the WebDriver port.
+- E2e WebView storage is isolated from the production app identifier; tests
+  reset clearance state before each case.
 - No Playwright dependency or browser Tauri mocks remain.
 - Real IPC loads production scenes.
 - Scene-nav production gate is covered on a production frontend bundle
   (`import.meta.env.DEV === false`) inside the desktop shell.
-- Docs describe the new e2e path, debug-only plugin + capability policy, and
-  production anchors.
+- Docs describe feature `e2e`, e2e identity, storage reset, and production
+  anchors.
 
 ## Alternatives considered
 
@@ -458,16 +535,19 @@ Windows/macOS CI matrix is a later option, not v1.
    from the user’s choice of production content. Not chosen for v1; can be
    revisited if flake cost becomes high.
 5. **Cargo release binary + unconditional plugin** — rejected: ships a local
-   remote-control HTTP server in production artifacts and contradicts
-   upstream plugin guidance. Debug-profile e2e binary is the fix.
+   remote-control HTTP server in production artifacts.
 6. **Permanent `wdio-webdriver:default` in `default.json`** — rejected: breaks
-   release builds when the plugin is not linked. Gated capability is required
-   in v1.
+   non-e2e builds when the plugin is not linked.
+7. **`cfg(debug_assertions)` alone for plugin dependency/registration** —
+   rejected: Cargo cannot feature-select deps that way cleanly, and debug
+   registration would expose WebDriver during every `dev:game`. **Feature
+   `e2e` is required.**
+8. **Reuse production app identifier** — rejected: shared WebView storage
+   pollutes Spec C and developer installs.
 
 ## Open follow-ups (not v1)
 
 - Re-add error-banner e2e via locked hotspot or approved test command.
 - Optional `tauri-plugin-wdio` / `@wdio/tauri-plugin` for execute/mock/logs
-  (still debug-only), which could replace set-then-reload if a better storage
-  hook appears.
+  (still behind feature `e2e`).
 - macOS/Windows CI matrix.
