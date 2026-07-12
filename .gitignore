@@ -35,4 +35,3 @@ packages/scripts/.audio-cache/
 
 coverage/
 test-results/
-playwright-report/
