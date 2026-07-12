@@ -243,7 +243,7 @@ export async function drainToInvestigationExplore(): Promise<void> {
   });
 }
 
-export async function openGameMenu(): Promise<WebdriverIO.Element> {
+export async function openGameMenu(): Promise<ChainablePromiseElement> {
   await browser.keys("Escape");
   const menu = await $(dialogByHeading(anchors.gameMenu));
   await browser.waitUntil(
