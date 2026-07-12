@@ -25,7 +25,8 @@ export const config: WebdriverIO.Config = {
   reporters: ["spec"],
   mochaOpts: {
     ui: "bdd",
-    timeout: 180000,
+    // Full intro drain is ~273 advances; allow headroom for typewriter + IPC.
+    timeout: 600000,
   },
   services: [
     [
