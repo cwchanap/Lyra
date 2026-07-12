@@ -17,7 +17,9 @@
       "cache": false
     },
     "test:e2e": {
-      "dependsOn": ["build"],
+      "cache": false
+    },
+    "test:e2e:run": {
       "cache": false
     },
     "test:e2e:ui": {
