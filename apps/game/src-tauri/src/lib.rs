@@ -189,10 +189,19 @@ fn complete_interrogation_phase(
     engine.complete_interrogation_phase()
 }
 
+#[cfg(all(feature = "e2e", not(debug_assertions)))]
+compile_error!("feature \"e2e\" is only for debug e2e builds");
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+
+    #[cfg(feature = "e2e")]
+    {
+        builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+    }
+
+    builder
         .manage(AppState {
             engine: Mutex::new(None),
         })

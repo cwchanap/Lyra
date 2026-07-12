@@ -1,0 +1,13 @@
+{
+  "identifier": "com.chanwaichan.lyra.e2e",
+  "productName": "lyra-e2e",
+  "app": {
+    "windows": [
+      {
+        "title": "lyra-e2e",
+        "width": 800,
+        "height": 600
+      }
+    ]
+  }
+}
