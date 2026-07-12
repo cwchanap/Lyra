@@ -144,32 +144,46 @@ jobs:
           flags: rust
 
   e2e:
-    name: Playwright E2E
+    name: Tauri E2E
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            libgtk-3-dev \
+            xvfb
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/game/src-tauri
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Compile scenes
-        run: bun run scenes:compile
+      - name: Run Tauri e2e (build + WDIO)
+        run: xvfb-run -a bun run test:e2e
 
-      - name: Build frontend
-        run: bun run build
-
-      - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium
-
-      - name: Run Playwright tests
-        run: bun run test:e2e
-
-      - name: Upload Playwright report
+      - name: Upload WDIO logs
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report
-          path: apps/game/playwright-report/
+          name: tauri-e2e-logs
+          path: |
+            apps/game/*.log
+            apps/game/logs/
           retention-days: 7
+          if-no-files-found: ignore
