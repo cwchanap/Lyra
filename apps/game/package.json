@@ -21,7 +21,6 @@
     "test:e2e": "bun run test:e2e:build",
     "test:e2e:build": "bun run tauri build --debug --no-bundle --features e2e -c src-tauri/tauri.e2e.conf.json && bun run test:e2e:run",
     "test:e2e:run": "wdio run wdio.conf.ts",
-    "test:e2e:ui": "playwright test --ui",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --all --check",
     "rust:fmt:fix": "cargo fmt --manifest-path src-tauri/Cargo.toml --all",
     "rust:lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings"

@@ -22,10 +22,6 @@
     "test:e2e:run": {
       "cache": false
     },
-    "test:e2e:ui": {
-      "dependsOn": ["build"],
-      "cache": false
-    },
     "dev:frontend": {
       "cache": false,
       "persistent": true

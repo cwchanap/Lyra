@@ -70,11 +70,15 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   task); when a run fails, check which half. Run a single file with
   `bun run --cwd apps/game test src/lib/state/mode.test.ts` or a single case with
   `bun run --cwd apps/game test -t "test name"`.
-- `bun run test:e2e` / `bun run test:e2e:ui` - Playwright e2e tests in `e2e/`
-  under `apps/game` (config: `apps/game/playwright.config.ts`). These spin up
-  `bun run preview` on port 4173 and exercise the **built static SPA in a
-  browser**. Tauri `invoke()` calls do not work there, so e2e tests must cover
-  only the pure-frontend surface or explicit browser-safe mocks.
+- `bun run test:e2e` - build a **debug** Tauri binary with Cargo feature
+  `e2e` (embedded WebDriver, identifier `com.chanwaichan.lyra.e2e`) and run
+  WebdriverIO specs under `apps/game/e2e-tauri/`. Production scene resources
+  and a production frontend bundle (`import.meta.env.DEV === false`) are used;
+  ordinary `dev:game` does **not** enable the WebDriver plugin.
+- `bun run --cwd apps/game test:e2e:run` - re-run WDIO against an already-built
+  e2e binary.
+- Production UI coupling lives in
+  `apps/game/e2e-tauri/production-anchors.ts`.
 - `bun run lint:all` - ESLint, Prettier check, Rust format check, and Rust
   clippy with warnings denied. `lint` / `lint:fix` run `svelte-kit sync`
   (`--cwd apps/game sync`) before ESLint, so linting regenerates `.svelte-kit/`
@@ -238,6 +242,6 @@ broader checks before claiming cross-stack work is done.
 ## Misc
 
 - `AGENTS.md` is a symlink to `CLAUDE.md`; edit one, both update.
-- Keep generated artifacts, local settings, build output, coverage, Playwright
+- Keep generated artifacts, local settings, build output, coverage, e2e
   reports, and `.worktrees/` out of commits unless the task explicitly changes
   ignore policy.
