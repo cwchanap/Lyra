@@ -103,17 +103,13 @@ export async function resetE2eStorage(): Promise<void> {
     { timeout: 30000, timeoutMsg: "localStorage unavailable" },
   );
   await browser.execute((key: string) => {
-    try {
-      window.localStorage.removeItem(key);
-      const toRemove: string[] = [];
-      for (let i = 0; i < window.localStorage.length; i++) {
-        const k = window.localStorage.key(i);
-        if (k && k.startsWith("lyra.")) toRemove.push(k);
-      }
-      for (const k of toRemove) window.localStorage.removeItem(k);
-    } catch {
-      // storage may be unavailable briefly during startup
+    window.localStorage.removeItem(key);
+    const toRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith("lyra.")) toRemove.push(k);
     }
+    for (const k of toRemove) window.localStorage.removeItem(k);
   }, STORY_CLEARED_STORAGE_KEY);
   await browser.refresh();
   // Re-apply motion stubs after navigation (refresh drops injected scripts).
@@ -172,6 +168,18 @@ export async function advanceDialogueOnce(): Promise<void> {
 }
 
 /**
+ * Read the currently visible dialogue line/narration/scene text so capped
+ * drain failures report what was on screen (see flake policy in the design
+ * spec). Returns "" when no dialogue text element is present.
+ */
+export async function lastVisibleDialogueText(): Promise<string> {
+  return browser.execute(() => {
+    const el = document.querySelector(".text-line, .text-action, .text-scene");
+    return el ? (el.textContent ?? "").trim() : "";
+  });
+}
+
+/**
  * Advance dialogue until `predicate` returns true or cap is hit.
  * Cap must be intro-length + margin (see production-anchors).
  */
@@ -186,14 +194,16 @@ export async function advanceDialogueUntil(
     }, advanceDialogueSelector);
     if (!hasAdvance) {
       if (await predicate()) return;
+      const lastText = await lastVisibleDialogueText();
       throw new Error(
-        `advanceDialogueUntil: advance control unavailable at step ${i}; predicate still false`,
+        `advanceDialogueUntil: advance control unavailable at step ${i}; predicate still false; last visible text: ${JSON.stringify(lastText)}`,
       );
     }
     await advanceDialogueOnce();
   }
+  const lastText = await lastVisibleDialogueText();
   throw new Error(
-    `advanceDialogueUntil: exceeded cap ${cap}; predicate still false`,
+    `advanceDialogueUntil: exceeded cap ${cap}; predicate still false; last visible text: ${JSON.stringify(lastText)}`,
   );
 }
 
@@ -260,6 +270,16 @@ export async function seedStoryCleared(): Promise<void> {
   }, STORY_CLEARED_STORAGE_KEY);
   await browser.refresh();
   await waitForShell();
+  // Assert persistence so storage-isolation failures surface during setup,
+  // before the test body runs with a missing clearance flag.
+  const value = await browser.execute((key: string) => {
+    return window.localStorage.getItem(key);
+  }, STORY_CLEARED_STORAGE_KEY);
+  if (value !== "true") {
+    throw new Error(
+      `seedStoryCleared: ${STORY_CLEARED_STORAGE_KEY} did not persist across refresh (got ${JSON.stringify(value)})`,
+    );
+  }
 }
 
 export async function jsClick(selector: string): Promise<void> {

@@ -455,7 +455,11 @@ Replace the `e2e` job in `.github/workflows/ci.yml`:
 - **Steps:** checkout → bun install → rust toolchain + rust-cache (workspace
   `apps/game/src-tauri`) → **`bun run test:e2e`** (build-and-run) under
   `xvfb-run`
-- **Artifacts:** WDIO logs / failure screenshots (not Playwright HTML)
+- **Artifacts:** WDIO logs (not Playwright HTML). Failure screenshots are
+  **not** captured in v1 — the WDIO config has no `screenshotPath`/capture
+  hook, so the artifact contract is logs-only. Add screenshot capture and a
+  corresponding artifact path as a follow-up only if flake debugging demands
+  it.
 - **Caching:** Rust target + bun lockfile to limit wall time
 
 Windows/macOS CI matrix is a later option, not v1.

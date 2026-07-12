@@ -17,7 +17,14 @@ fn main() {
         fs::write(&cap_path, body).expect("write capabilities/wdio-e2e.json");
         println!("cargo:rerun-if-changed=capabilities");
     } else if cap_path.exists() {
-        let _ = fs::remove_file(&cap_path);
+        if let Err(err) = fs::remove_file(&cap_path) {
+            // NotFound is benign (TOCTOU: removed between exists() and here);
+            // any other failure means a stale e2e capability could leak into a
+            // non-e2e build, so surface it loudly.
+            if err.kind() != std::io::ErrorKind::NotFound {
+                panic!("remove capabilities/wdio-e2e.json: {err}");
+            }
+        }
     }
 
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_E2E");

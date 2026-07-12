@@ -46,7 +46,7 @@
 - `package.json` (root) — drop `@playwright/test`; keep `test:e2e` → turbo.
 - `turbo.json` — `test:e2e` no longer depends only on Vite `build`.
 - `.github/workflows/ci.yml` — replace Playwright job with Tauri E2E.
-- `AGENTS.md` / `CLAUDE.md` (symlink) — document new e2e path.
+- `CLAUDE.md` (canonical; `AGENTS.md` is a symlink to it) — document new e2e path. Edit `CLAUDE.md` directly; both names update via the symlink.
 
 ### Delete (after suite green)
 
@@ -211,6 +211,19 @@ cargo check --manifest-path apps/game/src-tauri/Cargo.toml --features e2e
 
 Expected: success, and `capabilities/wdio-e2e.json` exists with `wdio-webdriver:default`.
 
+Then run a plain/default Tauri build smoke (no `e2e` feature) to confirm the
+standard packaging path succeeds and does **not** leave a capability fragment
+behind:
+
+```bash
+cargo build --manifest-path apps/game/src-tauri/Cargo.toml
+test ! -f apps/game/src-tauri/capabilities/wdio-e2e.json
+```
+
+Expected: default build succeeds; `capabilities/wdio-e2e.json` is absent
+(`build.rs` removes it when `CARGO_FEATURE_E2E` is unset). Keep the existing
+`cargo check` expectations above unchanged.
+
 - [ ] **Step 6: Commit**
 
 ```bash
@@ -370,12 +383,19 @@ bun run scenes:compile
 Record `N` advances required. Set:
 
 ```ts
-export const DIALOGUE_DRAIN_CAP = N + 30; // margin
+// Measured N=<measured> advances (scene_p0+p1+p2+0 queues + investigation_scene_1
+// intro) via compiled JSON. Cap is ~2N + margin because advanceDialogueOnce
+// double-clicks (typewriter-complete, then advance) when reduced-motion is not
+// honored; a single-click cap of N+30 is insufficient under that model.
+export const DIALOGUE_DRAIN_CAP = 2 * N + 60;
 ```
 
 Document the measured `N` in a one-line comment next to the constant.
 
-Until measured, use a temporary high cap of `400` and replace with measured value before Task 6 cutover (chapter_1 has long p0–p2 prologue before `investigation_scene_1`).
+**Measured value (post-implementation):** `N = 273` advances through
+`scene_p0+p1+p2+0 queues + investigation_scene_1` intro, so the cap is
+`2*273 + 54 = 600`. The temporary high cap of `400` from earlier draft is
+replaced; no TBD placeholder remains.
 
 - [ ] **Step 2: Write production anchors**
 
@@ -386,7 +406,10 @@ Create `apps/game/e2e-tauri/production-anchors.ts` (adjust labels if compiled UI
 export const STORY_CLEARED_STORAGE_KEY = "lyra.storyClearedOnce.v1";
 
 /** Measured intro advances + margin; see plan Task 3. */
-export const DIALOGUE_DRAIN_CAP = 400;
+// Measured N=273 advances (scene_p0+p1+p2+0 queues + investigation_scene_1 intro)
+// via compiled JSON. Cap is ~2N + margin because advanceDialogueOnce double-clicks
+// (typewriter-complete, then advance); a single-click cap of N+30 is insufficient.
+export const DIALOGUE_DRAIN_CAP = 600;
 
 export const anchors = {
   startButton: /開始調查/,
@@ -434,19 +457,23 @@ export async function waitForShell(): Promise<void> {
 }
 
 export async function resetE2eStorage(): Promise<void> {
+  // Bounded retry: wait until localStorage is available before clearing, then
+  // let any unexpected clear error surface as a test failure (do not swallow).
+  await browser.waitUntil(
+    async () => {
+      return browser.execute(() => typeof window.localStorage !== "undefined");
+    },
+    { timeout: 30000, timeoutMsg: "localStorage unavailable" },
+  );
   await browser.execute((key: string) => {
-    try {
-      window.localStorage.removeItem(key);
-      // Clear other lyra.* keys if present so tests do not inherit prefs.
-      const toRemove: string[] = [];
-      for (let i = 0; i < window.localStorage.length; i++) {
-        const k = window.localStorage.key(i);
-        if (k && k.startsWith("lyra.")) toRemove.push(k);
-      }
-      for (const k of toRemove) window.localStorage.removeItem(k);
-    } catch {
-      // storage may be unavailable briefly during startup
+    window.localStorage.removeItem(key);
+    // Clear other lyra.* keys if present so tests do not inherit prefs.
+    const toRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith("lyra.")) toRemove.push(k);
     }
+    for (const k of toRemove) window.localStorage.removeItem(k);
   }, STORY_CLEARED_STORAGE_KEY);
   await browser.refresh();
   await waitForShell();
@@ -472,6 +499,18 @@ export async function advanceDialogueOnce(): Promise<void> {
 }
 
 /**
+ * Read the currently visible dialogue line/narration/scene text so capped
+ * drain failures report what was on screen (see flake policy in the design
+ * spec). Returns "" when no dialogue text element is present.
+ */
+export async function lastVisibleDialogueText(): Promise<string> {
+  return browser.execute(() => {
+    const el = document.querySelector(".text-line, .text-action, .text-scene");
+    return el ? (el.textContent ?? "").trim() : "";
+  });
+}
+
+/**
  * Advance dialogue until `predicate` returns true or cap is hit.
  * Cap must be intro-length + margin (see production-anchors).
  */
@@ -484,14 +523,16 @@ export async function advanceDialogueUntil(
     const advance = await $(`button[aria-label="${anchors.advanceDialogue}"]`);
     if (!(await advance.isExisting()) || !(await advance.isEnabled())) {
       if (await predicate()) return;
+      const lastText = await lastVisibleDialogueText();
       throw new Error(
-        `advanceDialogueUntil: advance control unavailable at step ${i}; predicate still false`,
+        `advanceDialogueUntil: advance control unavailable at step ${i}; predicate still false; last visible text: ${JSON.stringify(lastText)}`,
       );
     }
     await advanceDialogueOnce();
   }
+  const lastText = await lastVisibleDialogueText();
   throw new Error(
-    `advanceDialogueUntil: exceeded cap ${cap}; predicate still false`,
+    `advanceDialogueUntil: exceeded cap ${cap}; predicate still false; last visible text: ${JSON.stringify(lastText)}`,
   );
 }
 
@@ -519,6 +560,16 @@ export async function seedStoryCleared(): Promise<void> {
   }, STORY_CLEARED_STORAGE_KEY);
   await browser.refresh();
   await waitForShell();
+  // Assert persistence so storage-isolation failures surface during setup,
+  // before the test body runs with a missing clearance flag.
+  const value = await browser.execute((key: string) => {
+    return window.localStorage.getItem(key);
+  }, STORY_CLEARED_STORAGE_KEY);
+  if (value !== "true") {
+    throw new Error(
+      `seedStoryCleared: ${STORY_CLEARED_STORAGE_KEY} did not persist across refresh (got ${JSON.stringify(value)})`,
+    );
+  }
 }
 ```
 
@@ -793,8 +844,12 @@ Replace the `e2e` job in `.github/workflows/ci.yml` with:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.1"
 
       - name: Install system dependencies
         run: |
@@ -850,7 +905,7 @@ git commit -m "ci: run Tauri WDIO e2e instead of Playwright preview"
 **Files:**
 - Delete: `apps/game/e2e/`, `apps/game/playwright.config.ts`
 - Modify: root `package.json` (remove `@playwright/test`)
-- Modify: `AGENTS.md` / `CLAUDE.md`
+- Modify: `CLAUDE.md` (canonical; `AGENTS.md` is a symlink to it)
 - Modify: `turbo.json` (drop `test:e2e:ui` if still present)
 - Modify: any leftover Playwright references in plans/docs only if required by AGENTS
 
@@ -864,7 +919,9 @@ Remove `@playwright/test` from root `package.json` devDependencies and run `bun 
 
 Remove root/`apps/game` `test:e2e:ui` scripts and turbo `test:e2e:ui` task.
 
-- [ ] **Step 2: Update AGENTS.md e2e section**
+- [ ] **Step 2: Update CLAUDE.md e2e section**
+
+(`AGENTS.md` is a symlink to `CLAUDE.md`; edit `CLAUDE.md` directly.)
 
 Replace the Playwright paragraph (commands + architecture note) with:
 
@@ -895,10 +952,26 @@ Expected: e2e green; non-e2e check green; capability file absent without feature
 
 - [ ] **Step 4: Commit**
 
+First inspect the working tree to confirm only the intended files changed and
+that no generated artifacts, build output, coverage, e2e reports, local
+settings, or `.worktrees/` entries are staged:
+
 ```bash
-git add -A
+git status
+```
+
+Then stage only the documented files explicitly (adjust the list to what this
+task actually touched — typically the Playwright deletions, root `package.json`
++ `bun.lock`, `turbo.json`, and `CLAUDE.md`):
+
+```bash
+git add apps/game/e2e apps/game/playwright.config.ts \
+  package.json bun.lock turbo.json CLAUDE.md
 git commit -m "chore(game): remove Playwright e2e; document Tauri WDIO suite"
 ```
+
+Do **not** use `git add -A`; keep generated artifacts and e2e reports out of
+the commit unless the ignore policy is intentionally changed.
 
 ---
 
@@ -919,7 +992,7 @@ git commit -m "chore(game): remove Playwright e2e; document Tauri WDIO suite"
 | Opacity-only hover | Task 4 Spec B |
 | set-then-reload seed | Task 3 helpers |
 
-No TBD placeholders left. Dialogue drain cap starts high and must be measured before cutover (explicit in Task 3).
+No TBD placeholders left. Dialogue drain cap measured at N=273 advances; cap set to 600 (~2N + margin for the double-click advance model, explicit in Task 3).
 
 ---
 
