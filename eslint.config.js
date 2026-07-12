@@ -26,8 +26,6 @@ export default defineConfig(
       "apps/layout-editor/src-tauri/gen/**",
       "apps/layout-editor/src-tauri/target/**",
       "node_modules/**",
-      "playwright-report/**",
-      "test-results/**",
     ],
   },
   js.configs.recommended,
@@ -88,13 +86,29 @@ export default defineConfig(
     },
   },
   {
-    files: ["**/*.test.ts", "e2e/**/*.ts"],
+    files: ["**/*.test.ts"],
     languageOptions: {
       globals: {
         ...globals.browser,
         ...globals.node,
         ...globals.vitest,
         Bun: "readonly",
+      },
+    },
+  },
+  {
+    // Tauri WDIO e2e specs use ambient browser/$/$$/expect + mocha globals.
+    files: ["apps/game/e2e-tauri/**/*.ts", "apps/game/wdio.conf.ts"],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        ...globals.mocha,
+        browser: "readonly",
+        driver: "readonly",
+        $: "readonly",
+        $$: "readonly",
+        expect: "readonly",
       },
     },
   },

@@ -8,13 +8,14 @@ export const config: WebdriverIO.Config = {
   runner: "local",
   specs: ["./e2e-tauri/**/*.e2e.ts"],
   maxInstances: 1,
+  // Desktop-e2e is inherently flaky (focus, WebView animations, IPC timing).
+  // Spec-level retries are CI-only per the e2e design spec (local: 0).
+  specFileRetries: process.env.CI ? 2 : 0,
+  specFileRetriesDelay: 5,
   capabilities: [
     {
       browserName: "tauri",
       "wdio:enforceWebDriverClassic": true,
-      "tauri:options": {
-        application: appBinaryPath,
-      },
     },
   ],
   logLevel: "info",

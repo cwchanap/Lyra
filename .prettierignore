@@ -14,7 +14,5 @@ apps/layout-editor/src-tauri/gen
 apps/layout-editor/src-tauri/target
 docs
 node_modules
-playwright-report
 scripts/__fixtures__
 static/stories_plan
-test-results

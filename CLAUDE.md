@@ -76,9 +76,17 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   and a production frontend bundle (`import.meta.env.DEV === false`) are used;
   ordinary `dev:game` does **not** enable the WebDriver plugin.
 - `bun run --cwd apps/game test:e2e:run` - re-run WDIO against an already-built
-  e2e binary.
+  e2e binary. A guard (`apps/game/scripts/require-e2e-binary.mjs`) fails fast
+  with a clear message if the debug binary is missing.
+- `bun run --cwd apps/game check:e2e` - type-check the WDIO e2e specs and
+  `wdio.conf.ts` via `tsconfig.e2e.json` (separate from svelte-check, which
+  excludes `e2e-tauri/**`). Wired into CI after svelte-check.
 - Production UI coupling lives in
   `apps/game/e2e-tauri/production-anchors.ts`.
+- The root `package.json` `overrides` pins `@wdio/native-utils` to `2.5.0` so
+  every transitive WDIO consumer resolves the same version (dedup across the
+  `@wdio/tauri-service` / `webdriverio` tree). Bump only after verifying the
+  WDIO suite still type-checks and runs.
 - `bun run lint:all` - ESLint, Prettier check, Rust format check, and Rust
   clippy with warnings denied. `lint` / `lint:fix` run `svelte-kit sync`
   (`--cwd apps/game sync`) before ESLint, so linting regenerates `.svelte-kit/`
