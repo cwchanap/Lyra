@@ -44,6 +44,9 @@
     "prepare": "husky"
   },
   "license": "MIT",
+  "overrides": {
+    "@wdio/native-utils": "2.5.0"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@lyra/asset-paths": "workspace:*",

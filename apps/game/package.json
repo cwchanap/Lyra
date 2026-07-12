@@ -18,7 +18,9 @@
     "prepare:build": "bun run scenes:compile && bun run build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "bun run test:e2e:build",
+    "test:e2e:build": "bun run tauri build --debug --no-bundle --features e2e -c src-tauri/tauri.e2e.conf.json && bun run test:e2e:run",
+    "test:e2e:run": "wdio run wdio.conf.ts",
     "test:e2e:ui": "playwright test --ui",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --all --check",
     "rust:fmt:fix": "cargo fmt --manifest-path src-tauri/Cargo.toml --all",
@@ -28,5 +30,14 @@
     "@lyra/asset-paths": "workspace:*",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2"
+  },
+  "devDependencies": {
+    "@wdio/cli": "^9.29.1",
+    "@wdio/local-runner": "^9.29.1",
+    "@wdio/mocha-framework": "^9.29.1",
+    "@wdio/spec-reporter": "^9.29.1",
+    "@wdio/tauri-service": "^1.2.0",
+    "tsx": "^4.23.0",
+    "webdriverio": "^9.29.1"
   }
 }
