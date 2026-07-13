@@ -4,6 +4,7 @@
 // access the module via the public crate API (`lyra_lib::game::*`).
 pub mod game;
 
+use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::path::BaseDirectory;
 use tauri::Manager;
@@ -18,15 +19,47 @@ fn unavailable_error() -> GameError {
     GameError::unavailable()
 }
 
+/// Resolve the `resources/scenes` directory.
+///
+/// `BaseDirectory::Resource` works for bundled/production builds, but Tauri's
+/// resource resolver only recognizes a Cargo output directory named exactly
+/// `target` (it checks `parts[len-2] == "target"`). The e2e debug build uses a
+/// dedicated `CARGO_TARGET_DIR=target-e2e` to avoid clobbering the ordinary
+/// debug binary, so that check fails and `resource_dir()` returns
+/// `Error::UnknownPath`. The build still copies resources into
+/// `<exe_dir>/resources/`, so fall back to the executable's directory when the
+/// canonical resolution fails.
+fn resolve_scenes_dir(app: &tauri::AppHandle) -> Result<PathBuf, GameError> {
+    if let Ok(dir) = app
+        .path()
+        .resolve("resources/scenes", BaseDirectory::Resource)
+    {
+        return Ok(dir);
+    }
+    let exe = std::env::current_exe()
+        .map_err(|e| GameError::scene_load_failed(format!("cannot resolve resources dir: {e}")))?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| {
+            GameError::scene_load_failed("cannot resolve resources dir: no parent".into())
+        })?
+        .join("resources")
+        .join("scenes");
+    if !dir.exists() {
+        return Err(GameError::scene_load_failed(format!(
+            "cannot resolve resources dir: {} does not exist",
+            dir.display()
+        )));
+    }
+    Ok(dir)
+}
+
 #[tauri::command]
 fn start_game(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<GameStateView, GameError> {
-    let resources_dir = app
-        .path()
-        .resolve("resources/scenes", BaseDirectory::Resource)
-        .map_err(|e| GameError::scene_load_failed(format!("cannot resolve resources dir: {e}")))?;
+    let resources_dir = resolve_scenes_dir(&app)?;
     let engine = GameEngine::new_started(resources_dir)?;
     let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
     let view = engine.view();
@@ -53,10 +86,7 @@ fn get_state(state: tauri::State<'_, AppState>) -> Result<GameStateView, GameErr
 
 #[tauri::command]
 fn list_scenes(app: tauri::AppHandle) -> Result<SceneNavigationIndex, GameError> {
-    let resources_dir = app
-        .path()
-        .resolve("resources/scenes", BaseDirectory::Resource)
-        .map_err(|e| GameError::scene_load_failed(format!("cannot resolve resources dir: {e}")))?;
+    let resources_dir = resolve_scenes_dir(&app)?;
     GameEngine::scene_navigation_index(resources_dir)
 }
 
