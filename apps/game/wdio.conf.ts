@@ -2,7 +2,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const appBinaryPath = path.join(__dirname, "src-tauri/target/debug/lyra");
+// Dedicated e2e target dir (CARGO_TARGET_DIR=src-tauri/target-e2e) so that
+// ordinary `cargo build` / `tauri dev` cannot overwrite the e2e binary.
+const appBinaryPath = path.join(__dirname, "src-tauri/target-e2e/debug/lyra");
 
 export const config: WebdriverIO.Config = {
   runner: "local",
