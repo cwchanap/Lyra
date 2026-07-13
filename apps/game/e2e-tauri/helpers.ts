@@ -118,18 +118,35 @@ export async function resetE2eStorage(): Promise<void> {
 
 export async function startFromMenu(): Promise<void> {
   await clickStartButton();
-  await browser.waitUntil(
-    async () => {
-      return browser.execute((sel: string) => {
-        return document.querySelector(sel) !== null;
-      }, advanceDialogueSelector);
-    },
-    {
-      timeout: 30000,
-      timeoutMsg: "dialogue advance control did not appear after start",
-      interval: 200,
-    },
-  );
+  try {
+    await browser.waitUntil(
+      async () => {
+        return browser.execute((sel: string) => {
+          return document.querySelector(sel) !== null;
+        }, advanceDialogueSelector);
+      },
+      {
+        timeout: 30000,
+        timeoutMsg: "dialogue advance control did not appear after start",
+        interval: 200,
+      },
+    );
+  } catch (e) {
+    // Surface the on-screen error banner (if any) so resource/IPC failures
+    // are diagnosable instead of just "did not appear after start".
+    const diag = await browser.execute(() => {
+      const banner = document.querySelector("[role='alert'], .error-banner");
+      const tauriInternals =
+        typeof (window as unknown as Record<string, unknown>)
+          .__TAURI_INTERNALS__ !== "undefined";
+      return {
+        tauriInternals,
+        errorBanner: banner ? (banner.textContent ?? "").trim() : null,
+      };
+    });
+    console.error("[startFromMenu diagnostic]", JSON.stringify(diag));
+    throw e;
+  }
 }
 
 export async function waitTypewriterIdle(): Promise<void> {
