@@ -18,8 +18,6 @@ export const anchors = {
   evidenceMenuEntry: "物證檔案",
   sceneSelect: "場景跳轉",
   evidenceAcquired: "物證取得",
-  statementAcquired: "證言取得",
-  continueAcquire: "CONTINUE / 繼續",
   evidenceFile: "物證檔案",
 
   // investigation_scene_1 (first investigation after prologue)
