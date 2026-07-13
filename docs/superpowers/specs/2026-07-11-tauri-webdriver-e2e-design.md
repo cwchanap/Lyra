@@ -98,7 +98,8 @@ for Spec C.
 | --- | --- |
 | Frontend | `vite build` via Tauri `beforeBuildCommand` → `import.meta.env.DEV === false` |
 | Rust binary | **Debug** + **`--features e2e`** (`tauri build --debug --no-bundle --features e2e` or equivalent) |
-| Bundle packaging | `--no-bundle` → unbundled `src-tauri/target/debug/lyra` |
+| Bundle packaging | `--no-bundle` → unbundled `src-tauri/target-e2e/debug/lyra` |
+| Target directory | `CARGO_TARGET_DIR=src-tauri/target-e2e` (set by `build-e2e.mjs`) isolates the e2e binary from ordinary `cargo build` / `tauri dev` outputs in `src-tauri/target/` |
 | Embedded WebDriver plugin | Linked and registered **only** under `#[cfg(feature = "e2e")]` |
 | WebDriver capability | Present **only** in e2e builds (see Capabilities) |
 | App identity / storage | **E2E-only** Tauri `identifier` (separate from production) |
@@ -229,7 +230,7 @@ of v1 scope.
 4. **WDIO project** under `apps/game/`:
    - `wdio.conf.ts` lives in `apps/game/`. Service key
      `@wdio/tauri-service`. Options: `driverProvider: 'embedded'`,
-     `appBinaryPath: './src-tauri/target/debug/lyra'` (**relative to the
+     `appBinaryPath: './src-tauri/target-e2e/debug/lyra'` (**relative to the
      config file directory**, not the monorepo root). If the installed
      service also honors `tauri:options.application`, set one canonical path
      and avoid conflicting overrides.
@@ -237,7 +238,7 @@ of v1 scope.
 
 5. **Build pipeline for e2e:** prepare e2e capability →
    `tauri build --debug --no-bundle` with `--features e2e` and e2e config →
-   WDIO launches `./src-tauri/target/debug/lyra`.
+   WDIO launches `./src-tauri/target-e2e/debug/lyra`.
 
 6. **CI:** Linux job with Tauri WebKit/GTK runtime/build deps + xvfb; no
    Playwright; no webkit2gtk-driver required for the embedded provider. CI
@@ -386,7 +387,7 @@ tests.
 - Config file: `apps/game/wdio.conf.ts`
 - Service: `['@wdio/tauri-service', { ... }]`
 - `driverProvider: 'embedded'`
-- `appBinaryPath: './src-tauri/target/debug/lyra'` (relative to config dir)
+- `appBinaryPath: './src-tauri/target-e2e/debug/lyra'` (relative to config dir)
 - Prefer explicit path over discovery; avoid conflicting
   `tauri:options.application` overrides
 - `maxInstances: 1` (one desktop app)
@@ -404,7 +405,7 @@ tests.
    (e.g. `tauri build --debug --no-bundle -c src-tauri/tauri.e2e.conf.json`
    plus Cargo feature pass-through as supported by the Tauri CLI / env).
    `beforeBuildCommand` still runs `scenes:compile` + `vite build`.
-3. WDIO launches `./src-tauri/target/debug/lyra`.
+3. WDIO launches `./src-tauri/target-e2e/debug/lyra`.
 
 **Do not** double-run `scenes:compile` in the default path:
 `beforeBuildCommand` already compiles scenes. An explicit pre-step is only
@@ -427,7 +428,7 @@ Update `turbo.json` accordingly:
   for the Tauri e2e binary. Either drop that dependsOn and let `test:e2e`
   own the full build, or make `dependsOn` include a dedicated
   `test:e2e:prepare` / tauri-e2e-build task that produces
-  `src-tauri/target/debug/lyra`. Document the chosen graph in the
+  `src-tauri/target-e2e/debug/lyra`. Document the chosen graph in the
   implementation plan.
 
 Drop Playwright `test:e2e:ui` unless a WDIO watch equivalent is added later.

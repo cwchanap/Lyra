@@ -149,6 +149,10 @@ jobs:
   e2e:
     name: Tauri E2E
     runs-on: ubuntu-latest
+    env:
+      # Dedicated target dir for e2e builds so rust-cache caches it
+      # separately from the normal debug target used by other jobs.
+      CARGO_TARGET_DIR: apps/game/src-tauri/target-e2e
     steps:
       - uses: actions/checkout@v4
         with:
@@ -176,7 +180,7 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/game/src-tauri
+          workspaces: apps/game/src-tauri -> target-e2e
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

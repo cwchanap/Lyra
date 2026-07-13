@@ -15,7 +15,8 @@
 - Plugin and capability only when Cargo feature `e2e` is enabled; never during `dev:game` or store/release builds.
 - Prefer `compile_error!` if `feature = "e2e"` without `debug_assertions`.
 - E2e app `identifier` must be `com.chanwaichan.lyra.e2e` (not production `com.chanwaichan.lyra`).
-- `appBinaryPath` is relative to `apps/game/wdio.conf.ts`: `./src-tauri/target/debug/lyra`.
+- `appBinaryPath` is relative to `apps/game/wdio.conf.ts`: `./src-tauri/target-e2e/debug/lyra`.
+- E2e binary is built into a dedicated `CARGO_TARGET_DIR=src-tauri/target-e2e` (set by `apps/game/scripts/build-e2e.mjs`) so ordinary `cargo build` / `tauri dev` cannot overwrite it.
 - Root/`turbo`/`CI` `test:e2e` is **build-and-run**; `test:e2e:run` is WDIO-only.
 - Pin plugin versions (use `=1.2.0` for the Cargo crate — published 2026-06-25, ≥7 days before 2026-07-11).
 - No Playwright left after cutover; error-banner e2e deferred (unit coverage remains).
@@ -243,7 +244,7 @@ git commit -m "feat(game): add e2e Cargo feature and gated WebDriver capability"
 - Modify: `apps/game/package.json`
 
 **Interfaces:**
-- Consumes: debug binary at `./src-tauri/target/debug/lyra` built with feature `e2e` + e2e config.
+- Consumes: debug binary at `./src-tauri/target-e2e/debug/lyra` built with feature `e2e` + e2e config.
 - Produces: `test:e2e` (build-and-run), `test:e2e:run` (WDIO only).
 
 - [ ] **Step 1: Install WDIO packages in `apps/game`**
@@ -272,7 +273,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const appBinaryPath = path.join(__dirname, "src-tauri/target/debug/lyra");
+const appBinaryPath = path.join(__dirname, "src-tauri/target-e2e/debug/lyra");
 
 export const config: WebdriverIO.Config = {
   runner: "local",
@@ -342,7 +343,7 @@ bun run --cwd apps/game test:e2e:build
 
 Expected: Tauri debug build succeeds; WDIO launches app; smoke passes.
 
-If session start times out: confirm feature `e2e` is in the build command, binary path exists (`ls apps/game/src-tauri/target/debug/lyra`), and port 4445 is free.
+If session start times out: confirm feature `e2e` is in the build command, binary path exists (`ls apps/game/src-tauri/target-e2e/debug/lyra`), and port 4445 is free.
 
 Also confirm release/default path still works:
 
