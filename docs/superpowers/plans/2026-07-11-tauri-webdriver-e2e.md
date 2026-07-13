@@ -114,7 +114,14 @@ fn main() {
         fs::write(&cap_path, body).expect("write capabilities/wdio-e2e.json");
         println!("cargo:rerun-if-changed=capabilities");
     } else if cap_path.exists() {
-        let _ = fs::remove_file(&cap_path);
+        // NotFound is benign (TOCTOU: removed between exists() and here);
+        // any other failure means a stale e2e capability could leak into a
+        // non-e2e build, so surface it loudly.
+        if let Err(err) = fs::remove_file(&cap_path) {
+            if err.kind() != std::io::ErrorKind::NotFound {
+                panic!("remove capabilities/wdio-e2e.json: {err}");
+            }
+        }
     }
 
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_E2E");
@@ -388,7 +395,7 @@ Record `N` advances required. Set:
 // intro) via compiled JSON. Cap is ~2N + margin because advanceDialogueOnce
 // double-clicks (typewriter-complete, then advance) when reduced-motion is not
 // honored; a single-click cap of N+30 is insufficient under that model.
-export const DIALOGUE_DRAIN_CAP = 2 * N + 60;
+export const DIALOGUE_DRAIN_CAP = 2 * N + 54;
 ```
 
 Document the measured `N` in a one-line comment next to the constant.
