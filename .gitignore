@@ -35,3 +35,4 @@ packages/scripts/.audio-cache/
 
 coverage/
 test-results/
+apps/game/logs/

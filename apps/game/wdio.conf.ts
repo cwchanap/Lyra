@@ -19,6 +19,7 @@ export const config: WebdriverIO.Config = {
     },
   ],
   logLevel: "info",
+  outputDir: path.join(__dirname, "logs"),
   waitforTimeout: 15000,
   connectionRetryTimeout: 120000,
   connectionRetryCount: 2,
