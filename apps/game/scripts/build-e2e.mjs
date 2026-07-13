@@ -34,4 +34,11 @@ const result = spawnSync("bun", args, {
   cwd: appRoot,
 });
 
+if (result.error) {
+  // Spawn itself failed (e.g. `bun` missing or unlaunchable). Surface the
+  // cause before exiting; a bare status-based exit would hide the real reason.
+  console.error("build-e2e: failed to spawn `bun`:", result.error);
+  process.exit(1);
+}
+
 process.exit(result.status ?? 1);
