@@ -7,6 +7,3 @@
 # will have schema files for capabilities auto-completion
 /gen/schemas
 
-# Generated only when building with --features e2e
-/capabilities/wdio-e2e.json
-

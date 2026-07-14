@@ -49,24 +49,26 @@ describe("App shell", () => {
     await advanceDialogueUntil(async () => {
       return browser.execute(() => {
         const img = document.querySelector(
-          "img.portrait",
+          'img.portrait[data-placement="right"]',
         ) as HTMLImageElement | null;
         return !!img && img.offsetWidth > 0;
       });
     }, 80);
     const box = await browser.execute(() => {
       const img = document.querySelector(
-        "img.portrait",
+        'img.portrait[data-placement="right"]',
       ) as HTMLImageElement | null;
       if (!img) return null;
       const r = img.getBoundingClientRect();
       return {
+        placement: img.getAttribute("data-placement"),
         x: r.x,
         width: r.width,
         viewportWidth: window.innerWidth,
       };
     });
     expect(box).not.toBeNull();
+    expect(box!.placement).toBe("right");
     expect(box!.x).toBeGreaterThanOrEqual(-0.5);
     expect(box!.x + box!.width).toBeLessThanOrEqual(box!.viewportWidth + 0.5);
   });
