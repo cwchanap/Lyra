@@ -8,6 +8,17 @@
         "width": 800,
         "height": 600
       }
-    ]
+    ],
+    "security": {
+      "capabilities": [
+        "default",
+        {
+          "identifier": "wdio-e2e",
+          "description": "E2E-only WebDriver capability (feature e2e)",
+          "windows": ["main"],
+          "permissions": ["wdio-webdriver:default"]
+        }
+      ]
+    }
   }
 }
