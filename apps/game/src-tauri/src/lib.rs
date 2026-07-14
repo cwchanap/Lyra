@@ -29,12 +29,21 @@ fn unavailable_error() -> GameError {
 /// `Error::UnknownPath`. The build still copies resources into
 /// `<exe_dir>/resources/`, so fall back to the executable's directory when the
 /// canonical resolution fails.
+///
+/// On Linux, `BaseDirectory::Resource` can resolve to a system-install path
+/// derived from the app identifier (e.g. `/usr/lib/lyra-e2e/resources/scenes`)
+/// even when that path does not exist on disk — `--no-bundle` skips the install
+/// step, so the path is a phantom. We therefore require the resolved path to
+/// actually exist before accepting it, and only then fall back to the
+/// executable's directory.
 fn resolve_scenes_dir(app: &tauri::AppHandle) -> Result<PathBuf, GameError> {
     if let Ok(dir) = app
         .path()
         .resolve("resources/scenes", BaseDirectory::Resource)
     {
-        return Ok(dir);
+        if dir.exists() {
+            return Ok(dir);
+        }
     }
     let exe = std::env::current_exe()
         .map_err(|e| GameError::scene_load_failed(format!("cannot resolve resources dir: {e}")))?;
