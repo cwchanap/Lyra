@@ -2,6 +2,7 @@
   "identifier": "com.chanwaichan.lyra.e2e",
   "productName": "lyra-e2e",
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "lyra-e2e",
@@ -16,7 +17,7 @@
           "identifier": "wdio-e2e",
           "description": "E2E-only WebDriver capability (feature e2e)",
           "windows": ["main"],
-          "permissions": ["wdio-webdriver:default"]
+          "permissions": ["wdio:default", "wdio-webdriver:default"]
         }
       ]
     }

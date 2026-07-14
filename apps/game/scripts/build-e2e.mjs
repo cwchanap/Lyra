@@ -15,6 +15,10 @@ const targetDir = path.join(appRoot, "src-tauri", "target-e2e");
 const env = {
   ...process.env,
   CARGO_TARGET_DIR: targetDir,
+  // Signals the Vite build (run via beforeBuildCommand) to include the
+  // @wdio/tauri-plugin frontend import. Tree-shaken out of ordinary builds
+  // where this var is absent (import.meta.env.VITE_E2E is undefined).
+  VITE_E2E: "true",
 };
 
 const args = [
