@@ -4,7 +4,13 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Dedicated e2e target dir (CARGO_TARGET_DIR=src-tauri/target-e2e) so that
 // ordinary `cargo build` / `tauri dev` cannot overwrite the e2e binary.
-const appBinaryPath = path.join(__dirname, "src-tauri/target-e2e/debug/lyra");
+// Cargo emits `lyra.exe` on Windows; the extensionless path only exists on
+// macOS/Linux, so derive the suffix from the platform.
+const exeSuffix = process.platform === "win32" ? ".exe" : "";
+const appBinaryPath = path.join(
+  __dirname,
+  `src-tauri/target-e2e/debug/lyra${exeSuffix}`,
+);
 
 export const config: WebdriverIO.Config = {
   runner: "local",
