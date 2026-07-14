@@ -5,6 +5,7 @@
 // making the existence-only guard meaningful again.
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,4 +42,40 @@ if (result.error) {
   process.exit(1);
 }
 
-process.exit(result.status ?? 1);
+if ((result.status ?? 1) !== 0) {
+  process.exit(result.status ?? 1);
+}
+
+// `tauri build --no-bundle` skips the bundling step that would otherwise copy
+// `bundle.resources` entries next to the binary. The runtime's
+// `resolve_scenes_dir` falls back to `<exe_dir>/resources/scenes`, so mirror
+// the bundled layout there. Source resources are emitted by `scenes:compile`
+// (run via `beforeBuildCommand`) into `src-tauri/resources/{scenes,assets}`.
+const debugDir = path.join(targetDir, "debug");
+const resourcesDest = path.join(debugDir, "resources");
+const resourcesSrc = path.join(appRoot, "src-tauri", "resources");
+for (const sub of ["scenes", "assets"]) {
+  const src = path.join(resourcesSrc, sub);
+  const dest = path.join(resourcesDest, sub);
+  if (!existsSync(src)) {
+    console.error(
+      `build-e2e: missing resource source ${src} (run scenes:compile?)`,
+    );
+    process.exit(1);
+  }
+  mkdirSync(dest, { recursive: true });
+  cpSync(src, dest, { recursive: true });
+}
+
+// Sanity check: the runtime reads chapters.json from the scenes dir.
+const chaptersJson = path.join(resourcesDest, "scenes", "chapters.json");
+if (!existsSync(chaptersJson)) {
+  console.error(`build-e2e: ${chaptersJson} missing after resource copy`);
+  process.exit(1);
+}
+console.log(`build-e2e: copied resources to ${resourcesDest}`);
+console.log(
+  `build-e2e: resources contain ${readdirSync(path.join(resourcesDest, "scenes")).length} scene entries`,
+);
+
+process.exit(0);
