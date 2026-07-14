@@ -1,6 +1,5 @@
 import {
   anchors,
-  dialogByHeading,
   DIALOGUE_DRAIN_CAP,
   STORY_CLEARED_STORAGE_KEY,
 } from "./production-anchors";
@@ -260,9 +259,8 @@ export async function drainToInvestigationExplore(): Promise<void> {
   });
 }
 
-export async function openGameMenu(): Promise<ChainablePromiseElement> {
+export async function openGameMenu(): Promise<void> {
   await browser.keys("Escape");
-  const menu = await $(dialogByHeading(anchors.gameMenu));
   await browser.waitUntil(
     async () => {
       return browser.execute((heading: string) => {
@@ -278,7 +276,6 @@ export async function openGameMenu(): Promise<ChainablePromiseElement> {
     },
     { timeout: 10000, timeoutMsg: "game menu dialog did not open" },
   );
-  return menu;
 }
 
 export async function seedStoryCleared(): Promise<void> {

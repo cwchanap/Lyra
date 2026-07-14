@@ -25,9 +25,25 @@ describe("App shell", () => {
 
   it("opens the game menu with Escape during investigation", async () => {
     await drainToInvestigationExplore();
-    const menu = await openGameMenu();
-    const cont = await menu.$(`button*=${anchors.continueInvestigation}`);
-    await expect(cont).toExist();
+    await openGameMenu();
+    const hasContinue = await browser.execute(
+      (heading: string, label: string) => {
+        const dialog = Array.from(
+          document.querySelectorAll('[role="dialog"]'),
+        ).find((d) =>
+          Array.from(d.querySelectorAll("h2")).some((h) =>
+            (h.textContent ?? "").includes(heading),
+          ),
+        );
+        if (!dialog) return false;
+        return Array.from(dialog.querySelectorAll("button")).some((b) =>
+          (b.textContent ?? "").includes(label),
+        );
+      },
+      anchors.gameMenu,
+      anchors.continueInvestigation,
+    );
+    expect(hasContinue).toBe(true);
     await jsClickButtonContaining(anchors.continueInvestigation);
     await browser.waitUntil(
       async () => {

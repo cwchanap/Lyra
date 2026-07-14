@@ -39,14 +39,12 @@ describe("Scene navigation prod eligibility gate", () => {
   it("hides Scene Select when the story has not been cleared", async () => {
     await resetE2eStorage();
     await startFromMenu();
-    const menu = await openGameMenu();
+    await openGameMenu();
     const present = await menuHasSceneButton(
       anchors.gameMenu,
       anchors.sceneSelect,
     );
     expect(present).toBe(false);
-    // Keep reference so menu locator is exercised.
-    await expect(menu).toExist();
   });
 
   it("shows Scene Select once the story has been cleared", async () => {

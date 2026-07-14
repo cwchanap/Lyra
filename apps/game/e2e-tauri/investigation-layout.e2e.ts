@@ -53,21 +53,30 @@ describe("investigation layout surface", () => {
     // Production CSS raises highlight/name opacity on :hover, :focus-visible,
     // or [aria-expanded="true"]. OS-focus flake makes real hover + getComputedStyle
     // via execute unreliable (script timeouts under tauri-service window hooks).
-    // Expand the character (same CSS rules as hover) and assert via WDIO CSS API.
-    const character = await $(characterSel);
-    await character.click();
+    // Expand the character (same CSS rules as hover) and assert via JS
+    // getComputedStyle to avoid findElement/elementClick focus-hook timeouts.
+    await jsClick(characterSel);
     await browser.waitUntil(
-      async () => (await character.getAttribute("aria-expanded")) === "true",
+      async () =>
+        browser.execute((sel: string) => {
+          const el = document.querySelector(sel);
+          return el?.getAttribute("aria-expanded") === "true";
+        }, characterSel),
       { timeout: 10000, timeoutMsg: "character did not expand" },
     );
 
-    const highlight = await character.$(".character-highlight");
-    const name = await character.$(".character-name");
     await browser.waitUntil(
       async () => {
-        const ho = await highlight.getCSSProperty("opacity");
-        const no = await name.getCSSProperty("opacity");
-        return Number(ho.value) >= 0.99 && Number(no.value) >= 0.99;
+        return browser.execute((sel: string) => {
+          const el = document.querySelector(sel);
+          if (!el) return false;
+          const highlight = el.querySelector(".character-highlight");
+          const name = el.querySelector(".character-name");
+          if (!highlight || !name) return false;
+          const ho = window.getComputedStyle(highlight).opacity;
+          const no = window.getComputedStyle(name).opacity;
+          return Number(ho) >= 0.99 && Number(no) >= 0.99;
+        }, characterSel);
       },
       {
         timeout: 10000,
