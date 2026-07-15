@@ -312,6 +312,63 @@ describe("game client audio events", () => {
     expect(mocks.acquisitionEnqueue).toHaveBeenCalledWith([secondNotification]);
   });
 
+  it("flushes pending acquisitions when a non-advance command leaves dialogue", async () => {
+    // Covers the `if (next.mode.type !== "dialogue") flushPendingAcquisitions()`
+    // branch in enqueueAcquisitions (game-client.svelte.ts): a notification
+    // buffered while a prior command returned dialogue must be flushed when a
+    // subsequent non-advance_dialogue command (here inspectHotspot) returns a
+    // non-dialogue mode, without waiting for an advance_dialogue to finish the
+    // queue.
+    const previous = state("previous");
+    const dialogue = state("dialogue");
+    dialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "item dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const afterExplore = state("after-explore");
+    const notification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_dialogue",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke
+      .mockResolvedValueOnce(dialogue)
+      .mockResolvedValueOnce(afterExplore);
+    mocks.inferAcquisitionNotifications
+      .mockReturnValueOnce([notification])
+      .mockReturnValueOnce([]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    // First inspectHotspot returns dialogue — the notification is buffered,
+    // not enqueued.
+    await client.inspectHotspot("receipt");
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // A second non-advance command returns a non-dialogue mode, flushing the
+    // buffered notification via the line-117 branch (not via advance_dialogue).
+    await client.inspectHotspot("other");
+    expect(mocks.acquisitionEnqueue).toHaveBeenCalledExactlyOnceWith([
+      notification,
+    ]);
+  });
+
   it("commits the new state and does not rethrow when SFX playback throws", async () => {
     const previous = state("previous");
     const next = state("next");
