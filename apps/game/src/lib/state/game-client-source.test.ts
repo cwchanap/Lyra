@@ -184,6 +184,134 @@ describe("game client audio events", () => {
     ]);
   });
 
+  it("waits until the final investigation dialogue item before enqueuing an acquisition", async () => {
+    const previous = state("previous");
+    const dialogue = state("dialogue");
+    dialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "item dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const afterDialogue = state("after-dialogue");
+    const notification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_dialogue",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke
+      .mockResolvedValueOnce(dialogue)
+      .mockResolvedValueOnce(afterDialogue);
+    mocks.inferAcquisitionNotifications
+      .mockReturnValueOnce([notification])
+      .mockReturnValueOnce([]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    await client.inspectHotspot("receipt");
+
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    await client.advanceDialogue({
+      sceneId: "scene_dialogue",
+      queueGen: 2,
+      cursor: 1,
+    });
+
+    expect(mocks.acquisitionEnqueue).toHaveBeenCalledExactlyOnceWith([
+      notification,
+    ]);
+  });
+
+  it("does not flush a new acquisition from a newly started dialogue", async () => {
+    const previous = state("previous");
+    const firstDialogue = state("first-dialogue");
+    firstDialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "first item dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_first", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const secondDialogue = state("second-dialogue");
+    secondDialogue.mode = {
+      ...firstDialogue.mode,
+      current: { kind: "line", speaker: "B", text: "second item dialogue" },
+      queueToken: { sceneId: "scene_second", queueGen: 3, cursor: 0 },
+    };
+    const firstNotification = {
+      key: "evidence:first",
+      kind: "evidence" as const,
+      record: {
+        id: "first",
+        name: "First",
+        description: "First item.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_first",
+      },
+    };
+    const secondNotification = {
+      ...firstNotification,
+      key: "evidence:second",
+      record: {
+        ...firstNotification.record,
+        id: "second",
+        name: "Second",
+        description: "Second item.",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke
+      .mockResolvedValueOnce(firstDialogue)
+      .mockResolvedValueOnce(secondDialogue)
+      .mockResolvedValueOnce(state("after-dialogue"));
+    mocks.inferAcquisitionNotifications
+      .mockReturnValueOnce([firstNotification])
+      .mockReturnValueOnce([secondNotification])
+      .mockReturnValueOnce([]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    await client.inspectHotspot("first");
+    await client.advanceDialogue({
+      sceneId: "scene_first",
+      queueGen: 2,
+      cursor: 1,
+    });
+
+    expect(mocks.acquisitionEnqueue).toHaveBeenCalledExactlyOnceWith([
+      firstNotification,
+    ]);
+
+    await client.advanceDialogue({
+      sceneId: "scene_second",
+      queueGen: 3,
+      cursor: 0,
+    });
+
+    expect(mocks.acquisitionEnqueue).toHaveBeenCalledWith([secondNotification]);
+  });
+
   it("commits the new state and does not rethrow when SFX playback throws", async () => {
     const previous = state("previous");
     const next = state("next");

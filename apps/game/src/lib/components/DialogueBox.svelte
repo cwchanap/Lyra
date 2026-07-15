@@ -165,20 +165,6 @@
     crossExam.onWithdraw();
   }
 
-  function handleBoxKeydown(e: KeyboardEvent) {
-    if (e.target !== e.currentTarget) return;
-    if (e.repeat) return;
-    if (e.key !== " " && e.key !== "Enter") return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (historyOpen) return;
-    if (completeTextRevealIfNeeded()) {
-      onAdvanceFeedback?.();
-      return;
-    }
-    dispatchAdvance();
-  }
-
   // The LOG button is a native <button>, so Space/Enter activation is delivered
   // as a synthesized click (with detail 0). AT click activation (e.g. VoiceOver
   // VO+Space, programmatic .click()) also produces detail 0. Treat the click
@@ -226,18 +212,26 @@
     "select",
     "textarea",
     '[role="button"]',
-    '[tabindex]:not([tabindex="-1"])',
     '[contenteditable="true"]',
   ].join(",");
 
-  function isShortcutBlockedByFocusedControl() {
+  function isAdvanceBlockedByFocusedControl() {
     const active = document.activeElement;
     if (!(active instanceof HTMLElement) || active === document.body) {
       return false;
     }
-    if (active === logButton || active.closest(".box")) {
+    return Boolean(active.closest(interactiveFocusSelector));
+  }
+
+  function isHistoryShortcutBlockedByFocusedControl() {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || active === document.body) {
       return false;
     }
+    // LOG and cross-examination buttons are part of this dialogue surface, so
+    // L remains available while either is focused. Other native controls keep
+    // their normal text-entry/activation behavior.
+    if (active === logButton || active.closest(".box")) return false;
     return Boolean(active.closest(interactiveFocusSelector));
   }
 
@@ -308,7 +302,7 @@
         toggleHistory();
         return;
       }
-      if (isShortcutBlockedByFocusedControl()) return;
+      if (isHistoryShortcutBlockedByFocusedControl()) return;
       e.preventDefault();
       toggleHistory();
       return;
@@ -326,8 +320,7 @@
       e.preventDefault();
       return;
     }
-    const active = document.activeElement;
-    if (active && active !== document.body) return;
+    if (isAdvanceBlockedByFocusedControl()) return;
     e.preventDefault();
     if (completeTextRevealIfNeeded()) {
       onAdvanceFeedback?.();
@@ -338,7 +331,7 @@
 </script>
 
 <!--
-  This window-level keydown handler advances dialogue on Space/Enter ONLY.
+  This window-level keydown handler advances dialogue on Space/Enter.
   Escape is deliberately NOT handled here: it is reserved by GameShell's
   capture-phase handler as the sole entry point for opening the game menu,
   which calls stopImmediatePropagation() so Escape never reaches this handler
@@ -383,29 +376,17 @@
     LOG
   </button>
 
-  <!--
-    When `crossExam` is set, the inline 反駁/退下 <button>s render inside this
-    box. Giving the box `role="button"` then would nest buttons inside a button
-    (screen readers announce "button inside button"), so the role/tabindex/
-    aria-label are dropped in that branch — the cross-exam buttons become the
-    only announced interactive controls, and the 繼續聆聽 Space/Enter advance
-    still works via the window-level handleKey (when nothing is focused) and
-    via mouse click on the box. The svelte-ignore below is a false positive:
-    `role` and `tabindex` are keyed on the same `crossExam` flag, so the div is
-    never noninteractive while carrying a nonnegative tabindex.
-  -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <!-- Keyboard advance is global; the dialogue surface itself is click-only
+       so it does not become a selectable/focusable control. -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="box"
     class:scene={current.kind === "sceneTag"}
     class:action={current.kind === "action"}
     class:line={current.kind === "line"}
-    role={crossExam ? undefined : "button"}
-    tabindex={crossExam ? undefined : 0}
+    class:disabled
     onclick={handleClick}
-    onkeydown={handleBoxKeydown}
-    aria-label={crossExam ? undefined : "推進對話"}
-    aria-disabled={disabled}
     inert={historyOpen}
   >
     {#if current.kind === "sceneTag"}
@@ -492,14 +473,12 @@
       background 0.2s;
   }
 
-  .box:hover:not([aria-disabled="true"]),
-  .box:focus-visible {
+  .box:hover {
     border-color: var(--crimson);
     background: rgba(29, 29, 43, 0.96);
-    outline: none;
   }
 
-  .box[aria-disabled="true"] {
+  .box.disabled {
     cursor: wait;
     opacity: 0.7;
   }
