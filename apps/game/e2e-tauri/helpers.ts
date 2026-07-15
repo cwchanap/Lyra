@@ -4,8 +4,11 @@ import {
   STORY_CLEARED_STORAGE_KEY,
 } from "./production-anchors";
 
-/** DialogueBox uses role="button" on a div, not a <button>. */
-export const advanceDialogueSelector = `[role="button"][aria-label="${anchors.advanceDialogue}"]`;
+/** DialogueBox renders a visually-hidden <button aria-label="推進對話"> as a
+ * sibling of the click-to-advance .box div. The button is the SR/e2e anchor;
+ * the .box div itself is click-only (no role/tabindex) to avoid nesting
+ * buttons inside a button role. */
+export const advanceDialogueSelector = `button[aria-label="${anchors.advanceDialogue}"]`;
 
 /**
  * Main-menu cards animate with opacity 0 (fill-mode both). Under WebDriver the

@@ -309,6 +309,10 @@
     }
 
     if (e.key !== " " && e.key !== "Enter") return;
+    // IME composition fires Space/Enter with isComposing=true; advancing
+    // mid-composition would corrupt CJK input. No text inputs exist in the
+    // dialogue flow so this is low-risk, but guard for correctness.
+    if (e.isComposing) return;
     if (historyOpen) {
       // Don't swallow Space/Enter when focus is inside the history panel —
       // let native button activation (the close button) proceed. Only
@@ -378,10 +382,19 @@
 
   <!-- Keyboard advance is global; the dialogue surface itself is click-only
        so it does not become a selectable/focusable control. This avoids a
-       nested-button role conflict (LOG / cross-exam buttons live inside it),
-       at the cost that screen-reader users no longer have a dedicated focusable
-       advance target — they rely on document-body focus for Space/Enter, since
-       the window-level handler treats body as the non-interactive baseline. -->
+       nested-button role conflict (LOG / cross-exam buttons live inside it).
+       The sibling .advance-button below restores a Tab-reachable, SR-announced
+       advance target without nesting a button inside .box. Sighted keyboard
+       users still rely on the global Space/Enter handler; the visually-hidden
+       button exists for screen-reader users and as the e2e anchor. -->
+  <button
+    class="advance-button sr-only"
+    type="button"
+    aria-label="推進對話"
+    aria-disabled={disabled}
+    inert={historyOpen}
+    onclick={handleClick}
+  ></button>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -442,6 +455,18 @@
 </div>
 
 <style>
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
   .wrapper {
     --dialogue-width: min(960px, calc(100vw - 56px));
     position: fixed;

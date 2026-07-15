@@ -973,7 +973,7 @@ describe("DialogueBox", () => {
     expect(onAdvance).toHaveBeenCalledWith(token);
   });
 
-  it("does not expose the dialogue surface as a selectable advance control", () => {
+  it("keeps the dialogue surface click-only but exposes a sibling advance button for SR", () => {
     const { container } = renderDialogueBox({
       kind: "action",
       text: "hello",
@@ -982,7 +982,37 @@ describe("DialogueBox", () => {
     const box = container.querySelector(".box");
     expect(box).not.toHaveAttribute("role");
     expect(box).not.toHaveAttribute("tabindex");
-    expect(screen.queryByRole("button", { name: "推進對話" })).toBeNull();
+    // The advance button is a sibling of .box (not nested inside it), so
+    // screen-reader users have a Tab-reachable advance target without a
+    // nested-button role conflict.
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
+    expect(advanceButton).not.toBe(box);
+    expect(advanceButton.closest(".box")).toBeNull();
+  });
+
+  it("advances dialogue when the SR advance button is clicked", async () => {
+    const { onAdvance } = renderDialogueBox({
+      kind: "action",
+      text: "hello",
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "推進對話" }));
+    expect(onAdvance).toHaveBeenCalledWith(token);
+  });
+
+  it("marks the SR advance button inert while dialogue history is open", async () => {
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
+    expect(isInert(advanceButton)).toBe(true);
+
+    // Clicking an inert button must not advance.
+    await fireEvent.click(advanceButton);
+    expect(onAdvance).not.toHaveBeenCalled();
   });
 
   it("advances from Space when a noninteractive gameplay container is focused", () => {
