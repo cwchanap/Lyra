@@ -563,9 +563,10 @@ describe("game client scene navigation commands", () => {
   });
 
   it("suppresses scene jumps while another command is in flight", async () => {
-    // Covers the `if (gameState.inFlight) return null;` guard in
-    // dispatchStateCommand. With inFlight already true, jumpToScene must
-    // short-circuit without invoking the backend or touching state.
+    // Covers the `if (gameState.inFlight) return;` guard in jumpToScene
+    // (mirrors returnToMainMenu). With inFlight already true, jumpToScene must
+    // short-circuit without invoking the backend, touching state, or wiping
+    // acquisition state — the in-flight command may still enqueue popups.
     const previous = state("previous");
     const client = await loadGameClient(previous);
     client.gameState.inFlight = true;
@@ -576,6 +577,41 @@ describe("game client scene navigation commands", () => {
     expect(mocks.invoke).not.toHaveBeenCalled();
     expect(client.gameState.value).toBe(capturedPrevious);
     expect(client.gameState.inFlight).toBe(true);
+    expect(mocks.acquisitionClear).not.toHaveBeenCalled();
+  });
+
+  it("suppresses startGame while another command is in flight", async () => {
+    // Covers the `if (gameState.inFlight) return;` guard in startGame.
+    // With inFlight true, startGame must not wipe acquisition state or invoke
+    // the backend — the in-flight command may still commit a fresh view.
+    const previous = state("previous");
+    const client = await loadGameClient(previous);
+    client.gameState.inFlight = true;
+    const capturedPrevious = client.gameState.value;
+
+    await client.startGame();
+
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(client.gameState.value).toBe(capturedPrevious);
+    expect(client.gameState.inFlight).toBe(true);
+    expect(mocks.acquisitionClear).not.toHaveBeenCalled();
+  });
+
+  it("suppresses resetGame while another command is in flight", async () => {
+    // Covers the `if (gameState.inFlight) return;` guard in resetGame.
+    // With inFlight true, resetGame must not wipe acquisition state or invoke
+    // the backend — the in-flight command may still commit a fresh view.
+    const previous = state("previous");
+    const client = await loadGameClient(previous);
+    client.gameState.inFlight = true;
+    const capturedPrevious = client.gameState.value;
+
+    await client.resetGame();
+
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(client.gameState.value).toBe(capturedPrevious);
+    expect(client.gameState.inFlight).toBe(true);
+    expect(mocks.acquisitionClear).not.toHaveBeenCalled();
   });
 
   it("returnToMainMenu no-ops while a command is in flight", async () => {

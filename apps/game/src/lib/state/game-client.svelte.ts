@@ -203,12 +203,14 @@ async function dispatchStateCommand(
 }
 
 export async function startGame() {
+  if (gameState.inFlight) return;
   clearPendingAcquisitions();
   acquisitionController.clear();
   await dispatchGameCommand("start_game", undefined, true);
 }
 
 export async function resetGame() {
+  if (gameState.inFlight) return;
   clearPendingAcquisitions();
   acquisitionController.clear();
   await dispatchGameCommand("reset_game", undefined, true);
@@ -241,6 +243,7 @@ export async function listScenes(): Promise<SceneNavigationIndex | null> {
 }
 
 export async function jumpToScene(chapterId: string, sceneId: string) {
+  if (gameState.inFlight) return;
   clearPendingAcquisitions();
   acquisitionController.clear();
   await dispatchStateCommand("jump_to_scene", { chapterId, sceneId }, true);
