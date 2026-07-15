@@ -467,6 +467,33 @@
     border: 0;
   }
 
+  /* Un-hide the sr-only advance button when keyboard focus lands on it so
+     sighted keyboard users get a visible focus target (WCAG 2.4.7). The
+     button is normally invisible because the dialogue surface is click-only
+     and Space/Enter advance is handled at the window level; this restores
+     the focus ring only for keyboard navigation, not for mouse clicks. */
+  .advance-button.sr-only:focus-visible {
+    position: absolute;
+    width: auto;
+    height: auto;
+    padding: 6px 14px;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+    top: 14px;
+    left: 18px;
+    z-index: 2;
+    border: 1px solid var(--crimson);
+    background: var(--crimson-soft);
+    color: var(--bone);
+    font-family: var(--serif-jp);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    outline: 2px solid var(--crimson);
+    outline-offset: 2px;
+  }
+
   .wrapper {
     --dialogue-width: min(960px, calc(100vw - 56px));
     position: fixed;

@@ -14,6 +14,12 @@ import type {
   SceneNavigationIndex,
 } from "./types";
 
+// Module-level buffer for acquisition notifications deferred while an authored
+// item-dialogue queue is playing. Deliberately a plain (non-$state) array: it
+// is an internal implementation detail of enqueueAcquisitions/flushPendingAcquisitions,
+// not something the UI binds to. Reactivity is driven by acquisitionController,
+// which this buffer feeds into via enqueue() — making this $state would cause
+// spurious reactivity with no consumer.
 let pendingAcquisitionNotifications: AcquisitionNotification[] = [];
 
 const isTauri =
