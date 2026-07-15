@@ -407,8 +407,8 @@
     aria-disabled={disabled}
     inert={historyOpen}
     bind:this={advanceButton}
-    onclick={handleClick}
-  ></button>
+    onclick={handleClick}>推進對話</button
+  >
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
