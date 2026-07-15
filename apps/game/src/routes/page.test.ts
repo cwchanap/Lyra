@@ -262,13 +262,14 @@ describe("+page acquisition popup integration", () => {
   it("inerts gameplay and restores focus after the final acknowledgement", async () => {
     const user = userEvent.setup();
     const { container } = render(Page);
-    const dialogueButton = screen.getByRole("button", { name: "推進對話" });
-    dialogueButton.focus();
+    const gameplayRoot = container.querySelector(
+      "[data-gameplay-root]",
+    ) as HTMLElement;
+    gameplayRoot.focus();
 
     acquisitionController.enqueue([acquiredEvidence]);
 
     const popup = await screen.findByRole("dialog", { name: "物證取得" });
-    const gameplayRoot = container.querySelector("[data-gameplay-root]")!;
     expect(gameplayRoot).toHaveAttribute("inert");
     expect(
       within(popup).getByRole("button", { name: "CONTINUE / 繼續" }),
@@ -279,7 +280,7 @@ describe("+page acquisition popup integration", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "物證取得" })).toBeNull();
       expect(gameplayRoot).not.toHaveAttribute("inert");
-      expect(dialogueButton).toHaveFocus();
+      expect(gameplayRoot).toHaveFocus();
     });
     expect(
       mocks.fetch.mock.calls.some(([url]) =>
@@ -351,14 +352,20 @@ describe("+page acquisition popup integration", () => {
     ).toBe(false);
   });
 
-  it("closes a menu that was open before a delayed acquisition completes", async () => {
+  it("closes a menu before showing a delayed acquisition after its dialogue", async () => {
     const user = userEvent.setup();
     let resolveAdvance!: (response: Response) => void;
+    let advanceCallCount = 0;
     const delayedAdvance = new Promise<Response>((resolve) => {
       resolveAdvance = resolve;
     });
     mocks.fetch.mockImplementation(async (url: string) => {
-      if (String(url).endsWith("/advance_dialogue")) return delayedAdvance;
+      if (String(url).endsWith("/advance_dialogue")) {
+        advanceCallCount += 1;
+        return advanceCallCount === 1
+          ? delayedAdvance
+          : jsonResponse(currentState());
+      }
       if (String(url).endsWith("/list_scenes")) {
         return jsonResponse(sceneNavigationIndex);
       }
@@ -379,6 +386,15 @@ describe("+page acquisition popup integration", () => {
     await waitFor(() => expect(gameState.inFlight).toBe(true));
     resolveAdvance(jsonResponse(stateWithAcquiredEvidence()));
     await command;
+
+    expect(screen.queryByRole("dialog", { name: "物證取得" })).toBeNull();
+
+    const finishDialogue = advanceDialogue({
+      sceneId: "scene_1",
+      queueGen: 1,
+      cursor: 1,
+    });
+    await finishDialogue;
 
     expect(
       await screen.findByRole("dialog", { name: "物證取得" }),

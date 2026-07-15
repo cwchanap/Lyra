@@ -444,11 +444,11 @@ describe("DialogueBox", () => {
 
   it("calls onAdvance with queueToken on click", async () => {
     const user = userEvent.setup();
-    const { onAdvance } = renderDialogueBox({
+    const { onAdvance, container } = renderDialogueBox({
       kind: "action",
       text: "hello",
     });
-    await user.click(screen.getByRole("button", { name: "推進對話" }));
+    await user.click(container.querySelector(".box") as HTMLElement);
     expect(onAdvance).toHaveBeenCalledWith(token);
   });
 
@@ -572,7 +572,7 @@ describe("DialogueBox", () => {
 
   it("completes the current text reveal before advancing dialogue", async () => {
     vi.useFakeTimers();
-    const { onAdvance } = renderDialogueBox(
+    const { onAdvance, container } = renderDialogueBox(
       {
         kind: "action",
         text: "先把這句說完。",
@@ -581,7 +581,7 @@ describe("DialogueBox", () => {
         textRevealDurationMs: 1500,
       },
     );
-    const advanceControl = screen.getByRole("button", { name: "推進對話" });
+    const advanceControl = container.querySelector(".box") as HTMLElement;
 
     await fireEvent.click(advanceControl);
 
@@ -597,17 +597,19 @@ describe("DialogueBox", () => {
   it("plays advance feedback when completing text reveal via click", async () => {
     vi.useFakeTimers();
     const onAdvanceFeedback = vi.fn();
-    const { onAdvance } = renderDialogueBox(
+    const { onAdvance, container } = renderDialogueBox(
       { kind: "action", text: "先把這句說完。" },
       { textRevealDurationMs: 1500, onAdvanceFeedback },
     );
-    const advanceControl = screen.getByRole("button", { name: "推進對話" });
+    const advanceControl = container.querySelector(".box") as HTMLElement;
 
     await fireEvent.click(advanceControl);
 
     expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
     expect(onAdvance).not.toHaveBeenCalled();
-    expect(screen.getByText("先把這句說完。")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("先把這句說完。")).toBeInTheDocument();
+    });
 
     await fireEvent.click(advanceControl);
     expect(onAdvance).toHaveBeenCalledTimes(1);
@@ -637,23 +639,22 @@ describe("DialogueBox", () => {
     expect(onAdvance).toHaveBeenCalledTimes(1);
   });
 
-  it("plays advance feedback when completing text reveal via focused Space", async () => {
+  it("plays advance feedback when completing text reveal via Space", async () => {
     vi.useFakeTimers();
     const onAdvanceFeedback = vi.fn();
     const { onAdvance } = renderDialogueBox(
       { kind: "action", text: "先把這句說完。" },
       { textRevealDurationMs: 1500, onAdvanceFeedback },
     );
-    const advanceControl = screen.getByRole("button", { name: "推進對話" });
-    advanceControl.focus();
-
-    await fireEvent.keyDown(advanceControl, { key: " " });
+    dispatchWindowKeydown({ key: " " });
 
     expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
     expect(onAdvance).not.toHaveBeenCalled();
-    expect(screen.getByText("先把這句說完。")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("先把這句說完。")).toBeInTheDocument();
+    });
 
-    await fireEvent.keyDown(advanceControl, { key: " " });
+    dispatchWindowKeydown({ key: " " });
     expect(onAdvance).toHaveBeenCalledTimes(1);
   });
 
@@ -661,13 +662,13 @@ describe("DialogueBox", () => {
     const user = userEvent.setup();
     const calls: string[] = [];
     const onAdvanceFeedback = vi.fn(() => calls.push("feedback"));
-    const { onAdvance } = renderDialogueBox(
+    const { onAdvance, container } = renderDialogueBox(
       { kind: "action", text: "hello" },
       { onAdvanceFeedback },
     );
     onAdvance.mockImplementationOnce(() => calls.push("advance"));
 
-    await user.click(screen.getByRole("button", { name: "推進對話" }));
+    await user.click(container.querySelector(".box") as HTMLElement);
 
     expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
     expect(onAdvance).toHaveBeenCalledWith(token);
@@ -677,41 +678,39 @@ describe("DialogueBox", () => {
   it("plays advance feedback even when command dispatch is disabled", async () => {
     const user = userEvent.setup();
     const onAdvanceFeedback = vi.fn();
-    const { onAdvance } = renderDialogueBox(
+    const { onAdvance, container } = renderDialogueBox(
       { kind: "action", text: "hello" },
       { disabled: true, onAdvanceFeedback },
     );
-    await user.click(screen.getByRole("button", { name: "推進對話" }));
+    await user.click(container.querySelector(".box") as HTMLElement);
     expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
   it("does not advance when the advance control is clicked while dialogue history is open", async () => {
     const user = userEvent.setup();
-    const { onAdvance } = renderDialogueBox(
+    const { onAdvance, container } = renderDialogueBox(
       { kind: "action", text: "hello" },
       { history },
     );
 
     await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
-    await user.click(screen.getByRole("button", { name: "推進對話" }));
+    await user.click(container.querySelector(".box") as HTMLElement);
 
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
-  it("advances exactly once from Space or Enter when the advance control is focused", async () => {
+  it("advances exactly once from Space or Enter on the window", () => {
     const { onAdvance } = renderDialogueBox({
       kind: "action",
       text: "hello",
     });
-    const advanceControl = screen.getByRole("button", { name: "推進對話" });
 
-    advanceControl.focus();
-    await fireEvent.keyDown(advanceControl, { key: " " });
+    dispatchWindowKeydown({ key: " " });
     expect(onAdvance).toHaveBeenCalledTimes(1);
     expect(onAdvance).toHaveBeenLastCalledWith(token);
 
-    await fireEvent.keyDown(advanceControl, { key: "Enter" });
+    dispatchWindowKeydown({ key: "Enter" });
     expect(onAdvance).toHaveBeenCalledTimes(2);
     expect(onAdvance).toHaveBeenLastCalledWith(token);
   });
@@ -974,6 +973,48 @@ describe("DialogueBox", () => {
     expect(onAdvance).toHaveBeenCalledWith(token);
   });
 
+  it("does not expose the dialogue surface as a selectable advance control", () => {
+    const { container } = renderDialogueBox({
+      kind: "action",
+      text: "hello",
+    });
+
+    const box = container.querySelector(".box");
+    expect(box).not.toHaveAttribute("role");
+    expect(box).not.toHaveAttribute("tabindex");
+    expect(screen.queryByRole("button", { name: "推進對話" })).toBeNull();
+  });
+
+  it("advances from Space when a noninteractive gameplay container is focused", () => {
+    const { onAdvance } = renderDialogueBox({ kind: "action", text: "hello" });
+    const gameplayRoot = document.createElement("div");
+    gameplayRoot.tabIndex = 0;
+    document.body.appendChild(gameplayRoot);
+    gameplayRoot.focus();
+
+    dispatchWindowKeydown({ key: " " });
+    gameplayRoot.remove();
+
+    expect(onAdvance).toHaveBeenCalledWith(token);
+  });
+
+  it("opens dialogue history with L when a noninteractive gameplay container is focused", async () => {
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+    const gameplayRoot = document.createElement("div");
+    gameplayRoot.tabIndex = 0;
+    document.body.appendChild(gameplayRoot);
+    gameplayRoot.focus();
+
+    dispatchWindowKeydown({ key: "l" });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
+    gameplayRoot.remove();
+  });
+
   it("advances dialogue when Enter is pressed on the window", () => {
     const { onAdvance } = renderDialogueBox({ kind: "action", text: "hello" });
 
@@ -1120,40 +1161,6 @@ describe("DialogueBox", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
-  it("does not advance when a non-Space/Enter key is pressed on the focused advance control", () => {
-    const { onAdvance } = renderDialogueBox({ kind: "action", text: "hello" });
-    const advanceControl = screen.getByRole("button", { name: "推進對話" });
-
-    advanceControl.focus();
-    fireEvent.keyDown(advanceControl, { key: "ArrowRight" });
-
-    expect(onAdvance).not.toHaveBeenCalled();
-  });
-
-  it("does not advance when a held Space repeats on the focused advance control", () => {
-    const { onAdvance } = renderDialogueBox({ kind: "action", text: "hello" });
-    const advanceControl = screen.getByRole("button", { name: "推進對話" });
-
-    advanceControl.focus();
-    fireEvent.keyDown(advanceControl, { key: " ", repeat: true });
-
-    expect(onAdvance).not.toHaveBeenCalled();
-  });
-
-  it("does not advance when keydown bubbles from a child of the advance control", () => {
-    const { onAdvance, container } = renderDialogueBox({
-      kind: "action",
-      text: "hello",
-    });
-    const advanceControl = screen.getByRole("button", { name: "推進對話" });
-    advanceControl.focus();
-    const text = container.querySelector(".text-action") as HTMLElement;
-
-    fireEvent.keyDown(text, { key: " ", bubbles: true });
-
-    expect(onAdvance).not.toHaveBeenCalled();
-  });
-
   it("does not advance when a non-Space/Enter key is pressed on the focused LOG button", () => {
     const { onAdvance } = renderDialogueBox(
       { kind: "action", text: "hello" },
@@ -1176,20 +1183,6 @@ describe("DialogueBox", () => {
 
     logButton.focus();
     fireEvent.keyDown(logButton, { key: " ", repeat: true });
-
-    expect(onAdvance).not.toHaveBeenCalled();
-  });
-
-  it("does not advance from the advance control keydown while history is open", async () => {
-    const user = userEvent.setup();
-    const { onAdvance } = renderDialogueBox(
-      { kind: "action", text: "hello" },
-      { history },
-    );
-
-    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
-    const advanceControl = screen.getByRole("button", { name: "推進對話" });
-    fireEvent.keyDown(advanceControl, { key: " " });
 
     expect(onAdvance).not.toHaveBeenCalled();
   });

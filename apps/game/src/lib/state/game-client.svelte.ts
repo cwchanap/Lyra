@@ -6,12 +6,15 @@ import {
 } from "$lib/audio/sfx-events";
 import { acquisitionController } from "./acquisition-controller.svelte";
 import { inferAcquisitionNotifications } from "./acquisition-notifications";
+import type { AcquisitionNotification } from "./acquisition-notifications";
 import type {
   GameError,
   GameStateView,
   QueueToken,
   SceneNavigationIndex,
 } from "./types";
+
+let pendingAcquisitionNotifications: AcquisitionNotification[] = [];
 
 const isTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -90,12 +93,42 @@ function enqueueAcquisitions(
   command: GameplayCommandName,
 ) {
   try {
-    acquisitionController.enqueue(
-      inferAcquisitionNotifications(previous, next),
-    );
+    const finishedDialogue =
+      command === "advance_dialogue" &&
+      previous?.mode.type === "dialogue" &&
+      previous.mode.queueRemaining === 0;
+    if (finishedDialogue) {
+      flushPendingAcquisitions();
+    }
+
+    const notifications = inferAcquisitionNotifications(previous, next);
+    if (notifications.length > 0) {
+      // Rust adds an item's authored on_collect/on_acquire dialogue to the
+      // same queue that is returned with the inventory update. Keep the
+      // notification pending while that queue is visible so the popup comes
+      // after the player finishes the authored item dialogue.
+      if (next.mode.type === "dialogue") {
+        pendingAcquisitionNotifications.push(...notifications);
+      } else {
+        acquisitionController.enqueue(notifications);
+      }
+    }
+
+    if (next.mode.type !== "dialogue") flushPendingAcquisitions();
   } catch (error) {
     console.warn(`[AcquisitionPopup] inference failed for ${command}`, error);
   }
+}
+
+function flushPendingAcquisitions() {
+  if (pendingAcquisitionNotifications.length === 0) return;
+  const pending = pendingAcquisitionNotifications;
+  acquisitionController.enqueue(pending);
+  pendingAcquisitionNotifications = [];
+}
+
+function clearPendingAcquisitions() {
+  pendingAcquisitionNotifications = [];
 }
 
 async function dispatchGameCommand(
@@ -170,17 +203,20 @@ async function dispatchStateCommand(
 }
 
 export async function startGame() {
+  clearPendingAcquisitions();
   acquisitionController.clear();
   await dispatchGameCommand("start_game", undefined, true);
 }
 
 export async function resetGame() {
+  clearPendingAcquisitions();
   acquisitionController.clear();
   await dispatchGameCommand("reset_game", undefined, true);
 }
 
 export function returnToMainMenu() {
   if (gameState.inFlight) return;
+  clearPendingAcquisitions();
   acquisitionController.clear();
   gameState.value = null;
   gameState.error = null;
@@ -205,6 +241,7 @@ export async function listScenes(): Promise<SceneNavigationIndex | null> {
 }
 
 export async function jumpToScene(chapterId: string, sceneId: string) {
+  clearPendingAcquisitions();
   acquisitionController.clear();
   await dispatchStateCommand("jump_to_scene", { chapterId, sceneId }, true);
 }
