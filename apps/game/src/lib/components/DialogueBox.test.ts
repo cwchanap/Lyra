@@ -1105,6 +1105,30 @@ describe("DialogueBox", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
+  it("does not advance from Space or Enter while IME is composing", () => {
+    const onAdvanceFeedback = vi.fn();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { onAdvanceFeedback },
+    );
+
+    // IME composition fires Space/Enter with isComposing=true; advancing
+    // mid-composition would corrupt CJK input. Neither advance nor the
+    // feedback SFX should fire.
+    const spaceEvent = dispatchWindowKeydown({ key: " ", isComposing: true });
+    const enterEvent = dispatchWindowKeydown({
+      key: "Enter",
+      isComposing: true,
+    });
+
+    expect(onAdvance).not.toHaveBeenCalled();
+    expect(onAdvanceFeedback).not.toHaveBeenCalled();
+    // The guard returns before preventDefault, so the event is not swallowed
+    // — the IME keeps the keypress for composition.
+    expect(spaceEvent.defaultPrevented).toBe(false);
+    expect(enterEvent.defaultPrevented).toBe(false);
+  });
+
   it("does not advance from the keyboard while another element is focused", () => {
     const onAdvance = vi.fn();
     renderDialogueBox({ kind: "action", text: "hello" });
