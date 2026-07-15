@@ -99,18 +99,22 @@ function enqueueAcquisitions(
   command: GameplayCommandName,
 ) {
   try {
-    // When the final advance drains the dialogue queue, flush any pending
-    // acquisition notifications BEFORE inferring new ones from the state
-    // transition. This ordering matters: the same advance that empties the
-    // queue may also produce new notifications (e.g. an on_collect dialogue
-    // queues more items), and we want the previously-buffered popups to
-    // surface first so the player sees acquisitions in the order they were
-    // earned, not interleaved with the new batch.
+    // Flush any pending acquisition notifications BEFORE inferring new ones
+    // whenever a command leaves dialogue. This ordering matters: the same
+    // command that empties the queue (or otherwise exits dialogue) may also
+    // produce new notifications (e.g. an on_collect dialogue queues more
+    // items, or an interrogation resolution both exits dialogue and acquires),
+    // and we want the previously-buffered popups to surface first so the
+    // player sees acquisitions in the order they were earned, not interleaved
+    // with — or reordered after — the new batch.
     const finishedDialogue =
       command === "advance_dialogue" &&
       previous?.mode.type === "dialogue" &&
       previous.mode.queueRemaining === 0;
-    if (finishedDialogue) {
+    const leavingDialogue =
+      finishedDialogue ||
+      (previous?.mode.type === "dialogue" && next.mode.type !== "dialogue");
+    if (leavingDialogue) {
       flushPendingAcquisitions();
     }
 
