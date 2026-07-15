@@ -61,6 +61,7 @@
   let portraitAsset = $state<ResolvedStoryAsset | null>(null);
   let historyOpen = $state(false);
   let logButton: HTMLButtonElement | undefined = $state();
+  let advanceButton: HTMLButtonElement | undefined = $state();
   let visibleTextLength = $state(0);
   let textRevealTimer: ReturnType<typeof setInterval> | null = null;
   const portraitAssetId = $derived(
@@ -228,10 +229,15 @@
     if (!(active instanceof HTMLElement) || active === document.body) {
       return false;
     }
-    // LOG and cross-examination buttons are part of this dialogue surface, so
-    // L remains available while either is focused. Other native controls keep
-    // their normal text-entry/activation behavior.
-    if (active === logButton || active.closest(".box")) return false;
+    // LOG, cross-examination, and the SR advance button are all part of this
+    // dialogue surface, so L remains available while any of them is focused.
+    // Other native controls keep their normal text-entry/activation behavior.
+    if (
+      active === logButton ||
+      active === advanceButton ||
+      active.closest(".box")
+    )
+      return false;
     return Boolean(active.closest(interactiveFocusSelector));
   }
 
@@ -386,13 +392,21 @@
        The sibling .advance-button below restores a Tab-reachable, SR-announced
        advance target without nesting a button inside .box. Sighted keyboard
        users still rely on the global Space/Enter handler; the visually-hidden
-       button exists for screen-reader users and as the e2e anchor. -->
+       button exists for screen-reader users and as the e2e anchor.
+
+       This button uses aria-disabled (not the native disabled attribute) so
+       it remains Tab-focusable and SR-announced while signalling the disabled
+       state — screen-reader users need a reachable advance target even when
+       the dialogue is mid-reveal. The cross-examination buttons below, by
+       contrast, use the native disabled attribute because they are optional
+       affordances that should drop out of the tab order when unavailable. -->
   <button
     class="advance-button sr-only"
     type="button"
     aria-label="推進對話"
     aria-disabled={disabled}
     inert={historyOpen}
+    bind:this={advanceButton}
     onclick={handleClick}
   ></button>
   <!-- svelte-ignore a11y_click_events_have_key_events -->

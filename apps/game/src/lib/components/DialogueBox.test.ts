@@ -1010,7 +1010,12 @@ describe("DialogueBox", () => {
     const advanceButton = screen.getByRole("button", { name: "推進對話" });
     expect(isInert(advanceButton)).toBe(true);
 
-    // Clicking an inert button must not advance.
+    // jsdom does not enforce `inert` (it does not block click dispatch), so
+    // this assertion is not a faithful test of inert enforcement. The click is
+    // blocked here by the `historyOpen` guard inside handleClick, not by
+    // inert. Real inert enforcement is covered by the e2e (browser) path;
+    // this unit test only verifies the inert attribute is applied AND that
+    // the historyOpen guard independently prevents advancement.
     await fireEvent.click(advanceButton);
     expect(onAdvance).not.toHaveBeenCalled();
   });
@@ -1043,6 +1048,25 @@ describe("DialogueBox", () => {
       ).toBeInTheDocument();
     });
     gameplayRoot.remove();
+  });
+
+  it("opens dialogue history with L while the SR advance button is focused", async () => {
+    // The SR advance button is a sibling of .box (a native <button>), so
+    // without an explicit exemption isHistoryShortcutBlockedByFocusedControl
+    // would treat it as an interactive control and swallow L. The advance
+    // button is part of this dialogue surface, so L must remain available.
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
+    advanceButton.focus();
+    expect(advanceButton).toHaveFocus();
+
+    dispatchWindowKeydown({ key: "l" });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
   });
 
   it("advances dialogue when Enter is pressed on the window", () => {

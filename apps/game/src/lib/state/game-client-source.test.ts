@@ -369,6 +369,81 @@ describe("game client audio events", () => {
     ]);
   });
 
+  it("flushes pending acquisitions before new ones when a non-advance command leaves dialogue and acquires", async () => {
+    // Regression: a non-advance_dialogue command that exits dialogue AND
+    // produces new acquisitions must surface the previously-buffered (pending)
+    // popups BEFORE the new batch, so the player sees acquisitions in the order
+    // they were earned. Previously the new notifications were enqueued (line
+    // 126) before the pending ones were flushed (line 130), yielding
+    // [new, pending] — an earned-order inversion.
+    const previous = state("previous");
+    const dialogue = state("dialogue");
+    dialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "first item dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const afterExplore = state("after-explore");
+    const pendingNotification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_dialogue",
+      },
+    };
+    const newNotification = {
+      key: "evidence:note",
+      kind: "evidence" as const,
+      record: {
+        id: "note",
+        name: "Note",
+        description: "Scrawled margin note.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_after-explore",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke
+      .mockResolvedValueOnce(dialogue)
+      .mockResolvedValueOnce(afterExplore);
+    mocks.inferAcquisitionNotifications
+      .mockReturnValueOnce([pendingNotification])
+      .mockReturnValueOnce([newNotification]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    // First inspectHotspot returns dialogue — the notification is buffered.
+    await client.inspectHotspot("receipt");
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // Second non-advance command exits dialogue AND acquires a new item.
+    await client.inspectHotspot("note");
+
+    // Pending must surface before new: first call [pending], second call [new].
+    expect(mocks.acquisitionEnqueue).toHaveBeenCalledTimes(2);
+    expect(mocks.acquisitionEnqueue).toHaveBeenNthCalledWith(1, [
+      pendingNotification,
+    ]);
+    expect(mocks.acquisitionEnqueue).toHaveBeenNthCalledWith(2, [
+      newNotification,
+    ]);
+  });
+
   it("commits the new state and does not rethrow when SFX playback throws", async () => {
     const previous = state("previous");
     const next = state("next");
