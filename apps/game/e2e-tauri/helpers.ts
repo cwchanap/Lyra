@@ -321,7 +321,14 @@ export async function jsClickButtonContaining(text: string): Promise<void> {
   if (!ok) throw new Error(`jsClickButtonContaining: no button with ${text}`);
 }
 
-/** Collect kagami_summary evidence and dismiss acquisition UI back to explore/dialogue. */
+/** Collect kagami_summary evidence and dismiss acquisition UI back to explore/dialogue.
+ *
+ * Acquisition popups are deferred while an authored on_collect dialogue queue
+ * plays (game-client.svelte.ts buffers the notification until the queue
+ * drains). So the 物證取得 popup does NOT appear immediately after clicking
+ * the hotspot — it surfaces only once the on_collect dialogue finishes.
+ * This mirrors the page.test.ts "delayed acquisition after dialogue" pattern:
+ * drain dialogue first, then expect the popup, then CONTINUE. */
 export async function collectKagamiSummaryEvidence(): Promise<void> {
   const hotspotSel = `button[aria-label="${anchors.hotspotEvidence.label}"]`;
   await browser.waitUntil(async () => elementExists(hotspotSel), {
@@ -329,21 +336,22 @@ export async function collectKagamiSummaryEvidence(): Promise<void> {
     timeoutMsg: "evidence hotspot not in DOM",
   });
   await jsClick(hotspotSel);
-  await browser.waitUntil(
-    async () => {
-      return browser.execute((heading: string) => {
-        return Array.from(document.querySelectorAll('[role="dialog"]')).some(
-          (d) =>
-            Array.from(d.querySelectorAll("h2")).some((h) =>
-              (h.textContent ?? "").includes(heading),
-            ),
-        );
-      }, anchors.evidenceAcquired);
-    },
-    { timeout: 15000, timeoutMsg: "evidence acquisition popup missing" },
-  );
+  // Drain the on_collect dialogue queue. The popup surfaces once the queue
+  // empties and the deferred acquisition notification flushes. If the hotspot
+  // has no on_collect dialogue, the predicate is true on the first check and
+  // this returns immediately.
+  await advanceDialogueUntil(async () => {
+    return browser.execute((heading: string) => {
+      return Array.from(document.querySelectorAll('[role="dialog"]')).some(
+        (d) =>
+          Array.from(d.querySelectorAll("h2")).some((h) =>
+            (h.textContent ?? "").includes(heading),
+          ),
+      );
+    }, anchors.evidenceAcquired);
+  }, 40);
   await jsClickButtonContaining("CONTINUE");
-  // On-collect may queue dialogue; drain until explore or character is usable again.
+  // After CONTINUE, drain any residual dialogue until explore is usable again.
   await advanceDialogueUntil(async () => {
     if (await elementExists(`button[aria-label="${anchors.character.label}"]`))
       return true;
