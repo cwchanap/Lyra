@@ -377,7 +377,11 @@
   </button>
 
   <!-- Keyboard advance is global; the dialogue surface itself is click-only
-       so it does not become a selectable/focusable control. -->
+       so it does not become a selectable/focusable control. This avoids a
+       nested-button role conflict (LOG / cross-exam buttons live inside it),
+       at the cost that screen-reader users no longer have a dedicated focusable
+       advance target — they rely on document-body focus for Space/Enter, since
+       the window-level handler treats body as the non-interactive baseline. -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -473,7 +477,7 @@
       background 0.2s;
   }
 
-  .box:hover {
+  .box:hover:not(.disabled) {
     border-color: var(--crimson);
     background: rgba(29, 29, 43, 0.96);
   }
