@@ -213,10 +213,41 @@ export async function advanceDialogueUntil(
     }, advanceDialogueSelector);
     if (!hasAdvance) {
       if (await predicate()) return;
-      const lastText = await lastVisibleDialogueText();
-      throw new Error(
-        `advanceDialogueUntil: advance control unavailable at step ${i}; predicate still false; last visible text: ${JSON.stringify(lastText)}`,
-      );
+      // The advance selector can be transiently absent during a mode
+      // transition. Right after a hotspot click, jsClick only dispatches the
+      // DOM event while inspect_hotspot is still awaiting IPC — the app
+      // remains in explore mode with no advance selector until the response
+      // re-renders into dialogue. Symmetrically, when a dialogue queue
+      // exhausts, the app transitions out of dialogue and the selector
+      // disappears while the target mode renders. Wait briefly for either the
+      // predicate to become true (the transition completed into the target
+      // state) or the advance selector to reappear (the transition completed
+      // into a new dialogue) before declaring a terminal failure. Without
+      // this grace, the drain throws at step 0 during the IPC window.
+      try {
+        await browser.waitUntil(
+          async () => {
+            if (await predicate()) return true;
+            return browser.execute((sel: string) => {
+              return document.querySelector(sel) !== null;
+            }, advanceDialogueSelector);
+          },
+          {
+            timeout: 5000,
+            interval: 100,
+            timeoutMsg:
+              "advanceDialogueUntil: advance control did not return and predicate did not become true",
+          },
+        );
+      } catch {
+        const lastText = await lastVisibleDialogueText();
+        throw new Error(
+          `advanceDialogueUntil: advance control unavailable at step ${i}; predicate still false; last visible text: ${JSON.stringify(lastText)}`,
+        );
+      }
+      if (await predicate()) return;
+      // The selector reappeared — continue draining from the next step.
+      continue;
     }
     await advanceDialogueOnce();
   }
