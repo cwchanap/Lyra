@@ -146,6 +146,13 @@ function flushPendingAcquisitions() {
   pendingAcquisitionNotifications = [];
 }
 
+// Silently DISCARDS (does not flush) any acquisition notifications buffered
+// while an authored item-dialogue queue was playing. Navigation commands
+// (startGame/resetGame/returnToMainMenu/jumpToScene) reset the game state to a
+// different scene/mode, so previously-buffered popups no longer belong to the
+// context the player is leaving — they are dropped intentionally, not surfaced.
+// Contrast flushPendingAcquisitions, which drains the same buffer into
+// acquisitionController so the popups are shown.
 function clearPendingAcquisitions() {
   pendingAcquisitionNotifications = [];
 }
@@ -223,6 +230,8 @@ async function dispatchStateCommand(
 
 export async function startGame() {
   if (gameState.inFlight) return;
+  // Navigation resets context: drop buffered acquisition popups (see
+  // clearPendingAcquisitions) rather than surfacing them in the new state.
   clearPendingAcquisitions();
   acquisitionController.clear();
   await dispatchGameCommand("start_game", undefined, true);
@@ -230,6 +239,8 @@ export async function startGame() {
 
 export async function resetGame() {
   if (gameState.inFlight) return;
+  // Navigation resets context: drop buffered acquisition popups (see
+  // clearPendingAcquisitions) rather than surfacing them in the new state.
   clearPendingAcquisitions();
   acquisitionController.clear();
   await dispatchGameCommand("reset_game", undefined, true);
@@ -237,6 +248,8 @@ export async function resetGame() {
 
 export function returnToMainMenu() {
   if (gameState.inFlight) return;
+  // Navigation resets context: drop buffered acquisition popups (see
+  // clearPendingAcquisitions) rather than surfacing them in the new state.
   clearPendingAcquisitions();
   acquisitionController.clear();
   gameState.value = null;
@@ -263,6 +276,8 @@ export async function listScenes(): Promise<SceneNavigationIndex | null> {
 
 export async function jumpToScene(chapterId: string, sceneId: string) {
   if (gameState.inFlight) return;
+  // Navigation resets context: drop buffered acquisition popups (see
+  // clearPendingAcquisitions) rather than surfacing them in the new state.
   clearPendingAcquisitions();
   acquisitionController.clear();
   await dispatchStateCommand("jump_to_scene", { chapterId, sceneId }, true);
