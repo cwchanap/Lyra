@@ -157,6 +157,13 @@ function clearPendingAcquisitions() {
   pendingAcquisitionNotifications = [];
 }
 
+// Test-only: drains the module-level pending buffer so tests don't leak
+// buffered acquisition notifications across cases. Mirrors the
+// __resetStoryClearanceWarningLatches pattern in story-clearance.ts.
+export function __clearPendingAcquisitionsForTest(): void {
+  pendingAcquisitionNotifications = [];
+}
+
 async function dispatchGameCommand(
   command: GameplayCommandName,
   args?: Record<string, unknown>,

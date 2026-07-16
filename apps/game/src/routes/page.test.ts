@@ -16,7 +16,11 @@ import {
   vi,
 } from "vitest";
 import type { GameStateView, SceneNavigationIndex } from "$lib/state/types";
-import { advanceDialogue, gameState } from "$lib/state/game-client.svelte";
+import {
+  __clearPendingAcquisitionsForTest,
+  advanceDialogue,
+  gameState,
+} from "$lib/state/game-client.svelte";
 import { acquisitionController } from "$lib/state/acquisition-controller.svelte";
 import type { AcquisitionNotification } from "$lib/state/acquisition-notifications";
 import {
@@ -67,10 +71,12 @@ vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
 
 beforeEach(() => {
   acquisitionController.clear();
+  __clearPendingAcquisitionsForTest();
 });
 
 afterEach(() => {
   acquisitionController.clear();
+  __clearPendingAcquisitionsForTest();
 });
 
 function currentState(): GameStateView {

@@ -1025,6 +1025,17 @@ describe("DialogueBox", () => {
     expect(onAdvance).toHaveBeenCalledWith(token);
   });
 
+  it("reflects the disabled state on the SR advance button via aria-disabled", () => {
+    // The advance button uses aria-disabled (not the native disabled attribute)
+    // so it remains Tab-focusable and SR-announced while signalling the
+    // disabled state. Verify the attribute tracks the disabled prop.
+    renderDialogueBox({ kind: "action", text: "hello" }, { disabled: true });
+    expect(screen.getByRole("button", { name: "推進對話" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
   it("marks the SR advance button inert while dialogue history is open", async () => {
     const user = userEvent.setup();
     const { onAdvance } = renderDialogueBox(
