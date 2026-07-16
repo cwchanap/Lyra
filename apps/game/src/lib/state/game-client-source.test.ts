@@ -362,7 +362,8 @@ describe("game client audio events", () => {
     expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
 
     // A second non-advance command returns a non-dialogue mode, flushing the
-    // buffered notification via the line-117 branch (not via advance_dialogue).
+    // buffered notification via the leavingDialogue branch (not via
+    // advance_dialogue's finishedDialogue check).
     await client.inspectHotspot("other");
     expect(mocks.acquisitionEnqueue).toHaveBeenCalledExactlyOnceWith([
       notification,
@@ -373,9 +374,9 @@ describe("game client audio events", () => {
     // Regression: a non-advance_dialogue command that exits dialogue AND
     // produces new acquisitions must surface the previously-buffered (pending)
     // popups BEFORE the new batch, so the player sees acquisitions in the order
-    // they were earned. Previously the new notifications were enqueued (line
-    // 126) before the pending ones were flushed (line 130), yielding
-    // [new, pending] — an earned-order inversion.
+    // they were earned. Previously the new notifications were enqueued before
+    // the pending ones were flushed, yielding [new, pending] — an
+    // earned-order inversion.
     const previous = state("previous");
     const dialogue = state("dialogue");
     dialogue.mode = {
@@ -441,6 +442,294 @@ describe("game client audio events", () => {
     ]);
     expect(mocks.acquisitionEnqueue).toHaveBeenNthCalledWith(2, [
       newNotification,
+    ]);
+  });
+
+  it("silently drops buffered acquisitions on jumpToScene without leaking later", async () => {
+    // Navigation commands (jumpToScene/returnToMainMenu/startGame/resetGame)
+    // call clearPendingAcquisitions() to discard buffered popups, not
+    // flushPendingAcquisitions(). A popup buffered while an authored
+    // item-dialogue queue was playing no longer belongs to the context the
+    // player is leaving, so it must be dropped — not surfaced in the new
+    // scene. This also verifies the drop is permanent: a later command that
+    // would trigger a flush must not surface the stale buffered notification.
+    const previous = state("previous");
+    const dialogue = state("dialogue");
+    dialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "item dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const droppedNotification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_dialogue",
+      },
+    };
+    const jumped = state("jumped");
+    const client = await loadGameClient(previous);
+    mocks.invoke.mockResolvedValueOnce(dialogue).mockResolvedValueOnce(jumped);
+    mocks.inferAcquisitionNotifications
+      .mockReturnValueOnce([droppedNotification])
+      .mockReturnValueOnce([]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    // First inspectHotspot returns dialogue — notification is buffered.
+    await client.inspectHotspot("receipt");
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // jumpToScene drops the buffered notification (clearPendingAcquisitions)
+    // and clears the acquisition controller.
+    await client.jumpToScene("chapter_1", "scene_0");
+    expect(mocks.acquisitionClear).toHaveBeenCalledTimes(1);
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // A later advance_dialogue from the jumped state's last dialogue item
+    // would trigger flushPendingAcquisitions — but the buffer is empty, so
+    // the stale notification must NOT surface.
+    const afterJumpDialogue = state("after-jump-dialogue");
+    afterJumpDialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "B", text: "jumped dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_jumped", queueGen: 1, cursor: 0 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const afterJumpExplore = state("after-jump-explore");
+    mocks.invoke
+      .mockResolvedValueOnce(afterJumpDialogue)
+      .mockResolvedValueOnce(afterJumpExplore);
+    mocks.inferAcquisitionNotifications.mockReturnValue([]);
+
+    await client.advanceDialogue({
+      sceneId: "scene_jumped",
+      queueGen: 1,
+      cursor: 0,
+    });
+    await client.advanceDialogue({
+      sceneId: "scene_jumped",
+      queueGen: 1,
+      cursor: 0,
+    });
+
+    // The dropped notification never surfaced.
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalledWith([
+      droppedNotification,
+    ]);
+  });
+
+  it("silently drops buffered acquisitions on returnToMainMenu without leaking later", async () => {
+    // returnToMainMenu is synchronous (no backend invoke) but shares the
+    // same clearPendingAcquisitions + acquisitionController.clear path.
+    const previous = state("previous");
+    const dialogue = state("dialogue");
+    dialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "item dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const droppedNotification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_dialogue",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke.mockResolvedValueOnce(dialogue);
+    mocks.inferAcquisitionNotifications.mockReturnValueOnce([
+      droppedNotification,
+    ]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    // inspectHotspot returns dialogue — notification is buffered.
+    await client.inspectHotspot("receipt");
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // returnToMainMenu drops the buffered notification.
+    client.returnToMainMenu();
+    expect(mocks.acquisitionClear).toHaveBeenCalledTimes(1);
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // Start a fresh game; the stale buffered notification must not surface
+    // even when the new session enters and exits dialogue.
+    const freshDialogue = state("fresh-dialogue");
+    freshDialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "C", text: "fresh dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_fresh", queueGen: 1, cursor: 0 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const freshExplore = state("fresh-explore");
+    mocks.invoke
+      .mockResolvedValueOnce(freshDialogue)
+      .mockResolvedValueOnce(freshExplore);
+    mocks.inferAcquisitionNotifications.mockReturnValue([]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    // Seed gameState so startGame's dispatchGameCommand has a previous state.
+    client.gameState.value = previous;
+    await client.startGame();
+    // startGame itself calls clearPendingAcquisitions again.
+    expect(mocks.acquisitionClear).toHaveBeenCalledTimes(2);
+
+    await client.advanceDialogue({
+      sceneId: "scene_fresh",
+      queueGen: 1,
+      cursor: 0,
+    });
+    await client.advanceDialogue({
+      sceneId: "scene_fresh",
+      queueGen: 1,
+      cursor: 0,
+    });
+
+    // The dropped notification never surfaced.
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalledWith([
+      droppedNotification,
+    ]);
+  });
+
+  it("defers an acquisition across a multi-line dialogue queue until the queue exhausts", async () => {
+    // queueRemaining counts items AFTER the current one. A notification
+    // buffered while a multi-item queue is playing must stay buffered across
+    // every intermediate advance_dialogue (where previous.queueRemaining > 0)
+    // and only flush on the advance from the last item (queueRemaining === 0).
+    // This covers the original race: without deferral, the popup would surface
+    // mid-queue while authored dialogue is still playing.
+    const previous = state("previous");
+    const dialogue1 = state("dialogue-1");
+    dialogue1.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "first of three" },
+      queueRemaining: 2,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 0 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const dialogue2 = state("dialogue-2");
+    dialogue2.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "second of three" },
+      queueRemaining: 1,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const dialogue3 = state("dialogue-3");
+    dialogue3.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "last of three" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 2 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const afterDialogue = state("after-dialogue");
+    const notification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_dialogue",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke
+      .mockResolvedValueOnce(dialogue1)
+      .mockResolvedValueOnce(dialogue2)
+      .mockResolvedValueOnce(dialogue3)
+      .mockResolvedValueOnce(afterDialogue);
+    mocks.inferAcquisitionNotifications
+      .mockReturnValueOnce([notification])
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    // inspectHotspot returns the first dialogue item (queueRemaining 2) and
+    // the notification — buffered, not enqueued.
+    await client.inspectHotspot("receipt");
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // Advance to the second item (previous.queueRemaining 2 ≠ 0, next is
+    // still dialogue) — no flush.
+    await client.advanceDialogue({
+      sceneId: "scene_dialogue",
+      queueGen: 2,
+      cursor: 0,
+    });
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // Advance to the last item (previous.queueRemaining 1 ≠ 0, next is
+    // still dialogue) — no flush.
+    await client.advanceDialogue({
+      sceneId: "scene_dialogue",
+      queueGen: 2,
+      cursor: 1,
+    });
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // Advance from the last item (previous.queueRemaining 0 === 0) —
+    // finishedDialogue is true, flush fires.
+    await client.advanceDialogue({
+      sceneId: "scene_dialogue",
+      queueGen: 2,
+      cursor: 2,
+    });
+    expect(mocks.acquisitionEnqueue).toHaveBeenCalledExactlyOnceWith([
+      notification,
     ]);
   });
 
