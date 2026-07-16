@@ -93,6 +93,36 @@ async function runCommand<T>(
   }
 }
 
+// Detect that an advance_dialogue command exhausted the previous dialogue
+// queue (and possibly installed a new one), by checking the returned
+// mode/queue transition — NOT previous.queueRemaining. The queueRemaining
+// heuristic is unsound for two reasons:
+//  1. Rust advance_dialogue returns the UNCHANGED view for a stale
+//     QueueToken (mod.rs: current_token != expected -> Ok(self.view())),
+//     so queueRemaining === 0 on the previous frame would false-positive
+//     and flush the popup while the same item is still displayed.
+//  2. Queues ending in auto-skipped SceneTags have queueRemaining > 0 at
+//     the last real line (the trailing tags are counted). advance_dialogue
+//     skips them (consume_scene_tags_at_cursor) and on_queue_exhausted may
+//     install a NEW dialogue queue (e.g. an investigation outro) with a
+//     fresh queueGen — deferring the popup through that whole dialogue.
+//
+// alloc_queue_gen is monotonic and every queue installation calls it, so a
+// queueGen or sceneId change in `next` reliably signals the previous queue
+// exhausted and a new one was installed. A normal in-queue advance keeps
+// the same queueGen/sceneId and only increments cursor.
+function dialogueQueueExhausted(
+  previous: GameStateView | null,
+  next: GameStateView,
+): boolean {
+  if (!previous || previous.mode.type !== "dialogue") return false;
+  if (next.mode.type !== "dialogue") return true;
+  return (
+    next.mode.queueToken.sceneId !== previous.mode.queueToken.sceneId ||
+    next.mode.queueToken.queueGen !== previous.mode.queueToken.queueGen
+  );
+}
+
 function enqueueAcquisitions(
   previous: GameStateView | null,
   next: GameStateView,
@@ -107,35 +137,10 @@ function enqueueAcquisitions(
     // and we want the previously-buffered popups to surface first so the
     // player sees acquisitions in the order they were earned, not interleaved
     // with — or reordered after — the new batch.
-    // Detect that the previous dialogue queue actually exhausted by checking
-    // the returned mode/queue transition, NOT previous.queueRemaining. The
-    // queueRemaining heuristic is unsound for two reasons:
-    //  1. Rust advance_dialogue returns the UNCHANGED view for a stale
-    //     QueueToken (mod.rs: current_token != expected -> Ok(self.view())),
-    //     so queueRemaining === 0 on the previous frame would false-positive
-    //     and flush the popup while the same item is still displayed.
-    //  2. Queues ending in auto-skipped SceneTags have queueRemaining > 0 at
-    //     the last real line (the trailing tags are counted). advance_dialogue
-    //     skips them (consume_scene_tags_at_cursor) and on_queue_exhausted may
-    //     install a NEW dialogue queue (e.g. an investigation outro) with a
-    //     fresh queueGen — deferring the popup through that whole dialogue.
-    //
-    // alloc_queue_gen is monotonic and every queue installation calls it, so a
-    // queueGen or sceneId change in `next` reliably signals the previous queue
-    // exhausted and a new one was installed. A normal in-queue advance keeps
-    // the same queueGen/sceneId and only increments cursor.
     const advancedFromDialogue =
       command === "advance_dialogue" && previous?.mode.type === "dialogue";
-    const previousQueueExhausted =
-      advancedFromDialogue &&
-      (next.mode.type !== "dialogue" ||
-        (next.mode.type === "dialogue" &&
-          previous.mode.type === "dialogue" &&
-          (next.mode.queueToken.sceneId !== previous.mode.queueToken.sceneId ||
-            next.mode.queueToken.queueGen !==
-              previous.mode.queueToken.queueGen)));
     const leavingDialogue =
-      previousQueueExhausted ||
+      (advancedFromDialogue && dialogueQueueExhausted(previous, next)) ||
       (previous?.mode.type === "dialogue" && next.mode.type !== "dialogue");
     if (leavingDialogue) {
       flushPendingAcquisitions();
@@ -259,30 +264,30 @@ async function dispatchStateCommand(
 
 export async function startGame() {
   if (gameState.inFlight) return;
-  // Snapshot the pending buffer so it can be restored if the command fails.
-  // On success, the old context is gone — buffered popups no longer belong
-  // to the new state, so they are dropped. On failure, the player remains in
-  // the previous state and its buffered popups must survive so they surface
-  // when the current dialogue exhausts.
-  const savedPending = pendingAcquisitionNotifications;
-  clearPendingAcquisitions();
-  acquisitionController.clear();
+  // Clear buffered acquisition popups and the controller only after the
+  // navigation command succeeds (see jumpToScene). If start_game fails, the
+  // player remains in the previous state and both the pending buffer and any
+  // visible popup must survive so they surface when the current dialogue
+  // exhausts. dispatchGameCommand calls enqueueAcquisitions, which may flush
+  // the pending buffer into the controller if the previous state was dialogue
+  // — the post-success acquisitionController.clear() wipes those too, so no
+  // old popups leak into the new state.
   const v = await dispatchGameCommand("start_game", undefined, true);
-  if (!v) {
-    pendingAcquisitionNotifications = savedPending;
+  if (v) {
+    clearPendingAcquisitions();
+    acquisitionController.clear();
   }
 }
 
 export async function resetGame() {
   if (gameState.inFlight) return;
-  // Same snapshot/restore pattern as startGame: on failure the player
-  // remains in the previous state and its buffered popups must survive.
-  const savedPending = pendingAcquisitionNotifications;
-  clearPendingAcquisitions();
-  acquisitionController.clear();
+  // Same post-success clear pattern as startGame/jumpToScene: on failure the
+  // player remains in the previous state and both the pending buffer and any
+  // visible popup must survive.
   const v = await dispatchGameCommand("reset_game", undefined, true);
-  if (!v) {
-    pendingAcquisitionNotifications = savedPending;
+  if (v) {
+    clearPendingAcquisitions();
+    acquisitionController.clear();
   }
 }
 
