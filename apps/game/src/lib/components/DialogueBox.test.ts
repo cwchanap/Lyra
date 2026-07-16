@@ -715,6 +715,31 @@ describe("DialogueBox", () => {
     expect(onAdvance).toHaveBeenLastCalledWith(token);
   });
 
+  it("does not advance from Space or Enter when focus is inside a role=dialog surface (e.g. game menu panel)", () => {
+    const { onAdvance } = renderDialogueBox({
+      kind: "action",
+      text: "hello",
+    });
+
+    // Simulate the GameShell menu panel: a tabindex=-1 div with role="dialog"
+    // that can receive programmatic/assistive focus. Without the
+    // [role="dialog"] entry in interactiveFocusSelector, Space/Enter would
+    // advance the dialogue behind the menu even though <main> is inert.
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.tabIndex = -1;
+    document.body.append(dialog);
+    dialog.focus();
+    expect(document.activeElement).toBe(dialog);
+
+    dispatchWindowKeydown({ key: " " });
+    dispatchWindowKeydown({ key: "Enter" });
+    expect(onAdvance).not.toHaveBeenCalled();
+
+    dialog.remove();
+  });
+
   it("advances from Space or Enter via the focused SR advance button (native activation)", async () => {
     const user = userEvent.setup();
     const { onAdvance } = renderDialogueBox({

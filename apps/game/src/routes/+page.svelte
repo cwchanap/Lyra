@@ -341,6 +341,7 @@
     <AcquisitionPopup
       notification={acquisitionController.current}
       returnFocusTo={acquisitionReturnFocus}
+      fallbackFocusTarget={gameplayRoot}
       onContinue={handleAcquisitionContinue}
     />
   {/if}

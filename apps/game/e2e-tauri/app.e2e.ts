@@ -1,8 +1,8 @@
 import {
   advanceDialogueUntil,
+  collectKagamiSummaryEvidence,
   drainToInvestigationExplore,
   elementExists,
-  jsClick,
   jsClickButtonContaining,
   openGameMenu,
   resetE2eStorage,
@@ -91,41 +91,12 @@ describe("App shell", () => {
 
   it("shows acquisition popup when collecting production evidence", async () => {
     await drainToInvestigationExplore();
-    await jsClick(`button[aria-label="${anchors.hotspotEvidence.label}"]`);
-
-    await browser.waitUntil(
-      async () => {
-        return browser.execute(
-          (heading: string, name: string) => {
-            const dialog = Array.from(
-              document.querySelectorAll('[role="dialog"]'),
-            ).find((d) =>
-              Array.from(d.querySelectorAll("h2")).some((h) =>
-                (h.textContent ?? "").includes(heading),
-              ),
-            );
-            return !!dialog && (dialog.textContent ?? "").includes(name);
-          },
-          anchors.evidenceAcquired,
-          anchors.evidenceName,
-        );
-      },
-      { timeout: 15000, timeoutMsg: "acquisition popup missing evidence name" },
-    );
-    await jsClickButtonContaining("CONTINUE");
-
-    // On-collect dialogue may play; drain until explore so the menu can open.
-    await advanceDialogueUntil(async () => {
-      const sub = await browser.execute((label: string) => {
-        return Array.from(document.querySelectorAll("button")).some((b) =>
-          (b.textContent ?? "").includes(label),
-        );
-      }, anchors.sublocationLabel);
-      if (sub) return true;
-      return elementExists(
-        `button[aria-label="${anchors.hotspotEvidence.label}"]`,
-      );
-    }, 40);
+    // collectKagamiSummaryEvidence drains the authored on_collect dialogue
+    // queue before expecting the deferred 物證取得 popup, then dismisses it
+    // and drains residual dialogue back to explore. The popup is buffered
+    // while the on_collect queue plays (game-client.svelte.ts defers it), so
+    // a direct wait after the hotspot click would time out.
+    await collectKagamiSummaryEvidence();
 
     await openGameMenu();
     await jsClickButtonContaining(anchors.evidenceMenuEntry);
