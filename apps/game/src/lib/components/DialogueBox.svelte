@@ -213,6 +213,7 @@
     "select",
     "textarea",
     '[role="button"]',
+    '[role="dialog"]',
     '[contenteditable="true"]',
   ].join(",");
 

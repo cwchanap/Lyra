@@ -12,16 +12,27 @@
   let {
     notification,
     returnFocusTo = null,
+    fallbackFocusTarget = null,
     onContinue,
   }: {
     notification: AcquisitionNotification;
     returnFocusTo?: HTMLElement | null;
+    // When the return-focus target is captured from a component that unmounts
+    // in the same render as the popup appearing (e.g. the SR advance button
+    // inside DialogueBox, which unmounts when an on_collect queue empties and
+    // the mode flips to explore), the target is disconnected by the time the
+    // popup dismisses. Without a connected fallback, focus falls through to
+    // <body> and keyboard/SR users lose their place in gameplay. The gameplay
+    // root is a stable, always-mounted (while a session is active) container
+    // with tabindex=-1, so it is a safe restoration point.
+    fallbackFocusTarget?: HTMLElement | null;
     onContinue: (key: string) => boolean;
   } = $props();
 
   let continueButton: HTMLButtonElement | undefined = $state();
   let evidenceImage: ResolvedStoryAsset | null = $state(null);
   let focusTarget: HTMLElement | null = null;
+  let fallbackTarget: HTMLElement | null = null;
   let releaseEscapeClaim: (() => void) | null = null;
 
   const heading = $derived(
@@ -123,6 +134,7 @@
 
   onMount(() => {
     focusTarget = returnFocusTo;
+    fallbackTarget = fallbackFocusTarget;
     releaseEscapeClaim = claimEscape(dismissCurrent);
     window.addEventListener("keydown", handleKeydown, { capture: true });
   });
@@ -132,8 +144,13 @@
     releaseEscapeClaim?.();
     releaseEscapeClaim = null;
     const target = focusTarget;
+    const fallback = fallbackTarget;
     void tick().then(() => {
-      if (target?.isConnected) target.focus();
+      if (target?.isConnected) {
+        target.focus();
+      } else if (fallback?.isConnected) {
+        fallback.focus();
+      }
     });
   });
 </script>

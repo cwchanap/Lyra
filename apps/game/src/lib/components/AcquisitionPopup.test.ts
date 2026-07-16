@@ -262,6 +262,32 @@ describe("AcquisitionPopup", () => {
     target.remove();
   });
 
+  it("falls back to fallbackFocusTarget when returnFocusTo is disconnected", async () => {
+    const target = document.createElement("button");
+    document.body.append(target);
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.append(fallback);
+    const result = render(AcquisitionPopup, {
+      notification: evidenceNotification,
+      returnFocusTo: target,
+      fallbackFocusTarget: fallback,
+      onContinue: vi.fn(() => false),
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "CONTINUE / 繼續" }),
+      ).toHaveFocus();
+    });
+    // Disconnect the primary target (simulates DialogueBox unmounting when
+    // an on_collect queue empties and the mode flips to explore).
+    target.remove();
+    result.unmount();
+    await waitFor(() => expect(fallback).toHaveFocus());
+    fallback.remove();
+  });
+
   it("disables the entrance animation for reduced motion", () => {
     const source = readFileSync(
       join(testDir, "AcquisitionPopup.svelte"),
@@ -275,6 +301,8 @@ describe("AcquisitionPopup", () => {
     expect(source).toContain("max-height: min(220px, 32dvh)");
     expect(source).toContain("overflow-y: auto");
     expect(source).toContain("!cancelled && notification.key === key");
-    expect(source).toContain("if (target?.isConnected) target.focus()");
+    expect(source).toContain("if (target?.isConnected) {");
+    expect(source).toContain("} else if (fallback?.isConnected) {");
+    expect(source).toContain("fallback.focus()");
   });
 });
