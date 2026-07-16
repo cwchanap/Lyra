@@ -715,6 +715,32 @@ describe("DialogueBox", () => {
     expect(onAdvance).toHaveBeenLastCalledWith(token);
   });
 
+  it("advances from Space or Enter via the focused SR advance button (native activation)", async () => {
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox({
+      kind: "action",
+      text: "hello",
+    });
+
+    // The SR advance button is a native <button>; when focused, Space/Enter
+    // activate it natively (→ handleClick → dispatchAdvance). The window-level
+    // handler bails because the focused element matches `button` in
+    // interactiveFocusSelector, so advance must come from the button's own
+    // click, not the global shortcut. dispatchWindowKeydown does not synthesize
+    // this native activation in jsdom; userEvent.keyboard does.
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
+    advanceButton.focus();
+    expect(document.activeElement).toBe(advanceButton);
+
+    await user.keyboard(" ");
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+    expect(onAdvance).toHaveBeenLastCalledWith(token);
+
+    await user.keyboard("{Enter}");
+    expect(onAdvance).toHaveBeenCalledTimes(2);
+    expect(onAdvance).toHaveBeenLastCalledWith(token);
+  });
+
   it("opens dialogue history from the LOG button", async () => {
     const user = userEvent.setup();
     renderDialogueBox({ kind: "action", text: "hello" }, { history });
