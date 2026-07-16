@@ -490,7 +490,8 @@
      the focus ring only for keyboard navigation, not for mouse clicks.
      Anchored to the bottom-right of the wrapper so it clears the top-left
      kind label (敘述/發言) and the top-right LOG button; cross-exam buttons
-     (反駁/退下) are bottom-left, so this corner stays free in every mode. */
+     (反駁/退下) are bottom-left. The bottom-right corner hosts the Space ▶
+     hint, so the pill is lifted above it (bottom: 30px) to avoid overlap. */
   .advance-button.sr-only:focus-visible {
     position: absolute;
     width: auto;
@@ -500,7 +501,7 @@
     overflow: visible;
     clip-path: none;
     white-space: normal;
-    bottom: 14px;
+    bottom: 30px;
     right: 18px;
     z-index: 2;
     border: 1px solid var(--crimson);

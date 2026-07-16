@@ -185,7 +185,7 @@ function clearPendingAcquisitions() {
 // buffered acquisition notifications across cases. Mirrors the
 // __resetStoryClearanceWarningLatches pattern in story-clearance.ts.
 export function __clearPendingAcquisitionsForTest(): void {
-  pendingAcquisitionNotifications = [];
+  clearPendingAcquisitions();
 }
 
 async function dispatchGameCommand(
