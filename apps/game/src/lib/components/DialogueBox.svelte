@@ -408,8 +408,8 @@
     aria-disabled={disabled}
     inert={historyOpen}
     bind:this={advanceButton}
-    onclick={handleClick}
-  ></button>
+    onclick={handleClick}>推進對話</button
+  >
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -477,7 +477,7 @@
     padding: 0;
     margin: -1px;
     overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
   }
@@ -494,7 +494,7 @@
     padding: 6px 14px;
     margin: 0;
     overflow: visible;
-    clip: auto;
+    clip-path: none;
     white-space: normal;
     top: 14px;
     left: 18px;

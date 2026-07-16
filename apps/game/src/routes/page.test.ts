@@ -262,14 +262,13 @@ describe("+page acquisition popup integration", () => {
   it("inerts gameplay and restores focus after the final acknowledgement", async () => {
     const user = userEvent.setup();
     const { container } = render(Page);
-    const gameplayRoot = container.querySelector(
-      "[data-gameplay-root]",
-    ) as HTMLElement;
-    gameplayRoot.focus();
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
+    advanceButton.focus();
 
     acquisitionController.enqueue([acquiredEvidence]);
 
     const popup = await screen.findByRole("dialog", { name: "物證取得" });
+    const gameplayRoot = container.querySelector("[data-gameplay-root]")!;
     expect(gameplayRoot).toHaveAttribute("inert");
     expect(
       within(popup).getByRole("button", { name: "CONTINUE / 繼續" }),
@@ -280,7 +279,7 @@ describe("+page acquisition popup integration", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "物證取得" })).toBeNull();
       expect(gameplayRoot).not.toHaveAttribute("inert");
-      expect(gameplayRoot).toHaveFocus();
+      expect(advanceButton).toHaveFocus();
     });
     expect(
       mocks.fetch.mock.calls.some(([url]) =>
@@ -436,6 +435,32 @@ describe("+page acquisition popup integration", () => {
     expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
     resolveAdvance(jsonResponse(currentState()));
     await command;
+  });
+
+  it("clears inFlight after a command error so the UI does not lock up", async () => {
+    mocks.fetch.mockImplementation(async (url: string) => {
+      if (String(url).endsWith("/advance_dialogue")) {
+        return {
+          ok: false,
+          status: 500,
+          text: () => Promise.resolve(JSON.stringify({ message: "bad token" })),
+        } as unknown as Response;
+      }
+      return jsonResponse({});
+    });
+    render(Page);
+
+    expect(gameState.inFlight).toBe(false);
+    const command = advanceDialogue({
+      sceneId: "scene_1",
+      queueGen: 1,
+      cursor: 0,
+    });
+    await waitFor(() => expect(gameState.inFlight).toBe(true));
+    await command;
+
+    expect(gameState.inFlight).toBe(false);
+    expect(gameState.error).not.toBeNull();
   });
 
   it("clears queued acquisitions when the page unmounts", () => {
