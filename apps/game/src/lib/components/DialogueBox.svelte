@@ -486,7 +486,10 @@
      sighted keyboard users get a visible focus target (WCAG 2.4.7). The
      button is normally invisible because the dialogue surface is click-only
      and Space/Enter advance is handled at the window level; this restores
-     the focus ring only for keyboard navigation, not for mouse clicks. */
+     the focus ring only for keyboard navigation, not for mouse clicks.
+     Anchored to the bottom-right of the wrapper so it clears the top-left
+     kind label (敘述/發言) and the top-right LOG button; cross-exam buttons
+     (反駁/退下) are bottom-left, so this corner stays free in every mode. */
   .advance-button.sr-only:focus-visible {
     position: absolute;
     width: auto;
@@ -496,8 +499,8 @@
     overflow: visible;
     clip-path: none;
     white-space: normal;
-    top: 14px;
-    left: 18px;
+    bottom: 14px;
+    right: 18px;
     z-index: 2;
     border: 1px solid var(--crimson);
     background: var(--crimson-soft);
