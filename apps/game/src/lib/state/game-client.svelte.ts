@@ -107,6 +107,10 @@ function enqueueAcquisitions(
     // and we want the previously-buffered popups to surface first so the
     // player sees acquisitions in the order they were earned, not interleaved
     // with — or reordered after — the new batch.
+    // queueRemaining counts dialogue items AFTER the current one (Rust
+    // LinearSceneState::queue_remaining = queue.len() - cursor - 1), so === 0
+    // means the current item was the last: an advance_dialogue issued from
+    // that state exhausts the queue and is finishing dialogue.
     const finishedDialogue =
       command === "advance_dialogue" &&
       previous?.mode.type === "dialogue" &&
@@ -130,8 +134,6 @@ function enqueueAcquisitions(
         acquisitionController.enqueue(notifications);
       }
     }
-
-    if (next.mode.type !== "dialogue") flushPendingAcquisitions();
   } catch (error) {
     console.warn(`[AcquisitionPopup] inference failed for ${command}`, error);
   }

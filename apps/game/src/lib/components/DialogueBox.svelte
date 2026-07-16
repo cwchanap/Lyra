@@ -396,8 +396,9 @@
 
        This button uses aria-disabled (not the native disabled attribute) so
        it remains Tab-focusable and SR-announced while signalling the disabled
-       state — screen-reader users need a reachable advance target even when
-       the dialogue is mid-reveal. The cross-examination buttons below, by
+       state — screen-reader users need a reachable advance target even while
+       a command is in flight (disabled mirrors gameState.inFlight). The
+       cross-examination buttons below, by
        contrast, use the native disabled attribute because they are optional
        affordances that should drop out of the tab order when unavailable. -->
   <button
@@ -407,8 +408,8 @@
     aria-disabled={disabled}
     inert={historyOpen}
     bind:this={advanceButton}
-    onclick={handleClick}>推進對話</button
-  >
+    onclick={handleClick}
+  ></button>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div

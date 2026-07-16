@@ -313,8 +313,8 @@ describe("game client audio events", () => {
   });
 
   it("flushes pending acquisitions when a non-advance command leaves dialogue", async () => {
-    // Covers the `if (next.mode.type !== "dialogue") flushPendingAcquisitions()`
-    // branch in enqueueAcquisitions (game-client.svelte.ts): a notification
+    // Covers the leavingDialogue flush in enqueueAcquisitions
+    // (game-client.svelte.ts): a notification
     // buffered while a prior command returned dialogue must be flushed when a
     // subsequent non-advance_dialogue command (here inspectHotspot) returns a
     // non-dialogue mode, without waiting for an advance_dialogue to finish the
