@@ -733,6 +733,142 @@ describe("game client audio events", () => {
     ]);
   });
 
+  it("does not flush on a stale-token advance that returns the unchanged dialogue view", async () => {
+    // Rust advance_dialogue returns Ok(self.view()) (unchanged) when the
+    // expected QueueToken is stale (mod.rs: current_token != expected). The
+    // flush logic must NOT infer exhaustion from previous.queueRemaining === 0
+    // in that case — the same dialogue item is still displayed and the popup
+    // must stay buffered. The queue-transition check (same queueGen/sceneId in
+    // next) correctly detects that the queue did NOT exhaust.
+    const previous = state("previous");
+    const dialogue = state("dialogue");
+    dialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "last item" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    // Stale-token advance: Rust returns the SAME view (same queueGen/cursor).
+    const unchanged = state("dialogue");
+    unchanged.mode = { ...dialogue.mode };
+    const notification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_dialogue",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke
+      .mockResolvedValueOnce(dialogue)
+      .mockResolvedValueOnce(unchanged);
+    mocks.inferAcquisitionNotifications
+      .mockReturnValueOnce([notification])
+      .mockReturnValueOnce([]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    // inspectHotspot returns dialogue — notification buffered.
+    await client.inspectHotspot("receipt");
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // Stale-token advance returns the unchanged view (same queueGen/cursor).
+    // The popup must NOT flush — the queue did not transition.
+    await client.advanceDialogue({
+      sceneId: "scene_dialogue",
+      queueGen: 2,
+      cursor: 1,
+    });
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("flushes before a new dialogue queue installed after trailing auto-skipped SceneTags", async () => {
+    // A queue ending in auto-skipped SceneTags has queueRemaining > 0 at the
+    // last real line (the trailing tags are counted). advance_dialogue skips
+    // them (consume_scene_tags_at_cursor) and on_queue_exhausted installs a
+    // NEW dialogue queue (e.g. an investigation outro) with a fresh queueGen.
+    // The popup must flush BEFORE the new dialogue plays, not be deferred
+    // through it. The queue-transition check (queueGen change in next) detects
+    // the exhaustion; the old queueRemaining === 0 heuristic would have
+    // false-negated (queueRemaining was 1) and deferred the popup.
+    const previous = state("previous");
+    const lastRealLine = state("last-real-line");
+    lastRealLine.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "last real line" },
+      // 1 trailing SceneTag is counted in queueRemaining.
+      queueRemaining: 1,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const outroDialogue = state("outro-dialogue");
+    outroDialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "B", text: "outro line" },
+      queueRemaining: 0,
+      sceneTag: null,
+      // New queue installed by on_queue_exhausted: fresh queueGen, same scene.
+      queueToken: { sceneId: "scene_dialogue", queueGen: 3, cursor: 0 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const notification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_dialogue",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke
+      .mockResolvedValueOnce(lastRealLine)
+      .mockResolvedValueOnce(outroDialogue);
+    mocks.inferAcquisitionNotifications
+      .mockReturnValueOnce([notification])
+      .mockReturnValueOnce([]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    // inspectHotspot returns the last real line (queueRemaining 1) — buffered.
+    await client.inspectHotspot("receipt");
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // Advance past the last real line: Rust skips the trailing SceneTag,
+    // exhausts the queue, and installs the outro dialogue (queueGen 3). The
+    // queue transition must flush the popup BEFORE the outro plays.
+    await client.advanceDialogue({
+      sceneId: "scene_dialogue",
+      queueGen: 2,
+      cursor: 1,
+    });
+    expect(mocks.acquisitionEnqueue).toHaveBeenCalledExactlyOnceWith([
+      notification,
+    ]);
+  });
+
   it("commits the new state and does not rethrow when SFX playback throws", async () => {
     const previous = state("previous");
     const next = state("next");

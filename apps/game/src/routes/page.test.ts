@@ -369,7 +369,12 @@ describe("+page acquisition popup integration", () => {
         advanceCallCount += 1;
         return advanceCallCount === 1
           ? delayedAdvance
-          : jsonResponse(currentState());
+          : // The finishing advance exhausts the linear scene's queue: Rust
+            // runs on_queue_exhausted -> advance_scene and, this being the last
+            // scene, returns mode gameComplete (not the same dialogue queue
+            // rewound). The flush logic detects exhaustion via the mode/queue
+            // transition (non-dialogue next), not previous.queueRemaining.
+            jsonResponse(gameCompleteState());
       }
       if (String(url).endsWith("/list_scenes")) {
         return jsonResponse(sceneNavigationIndex);

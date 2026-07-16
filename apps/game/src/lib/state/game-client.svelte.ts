@@ -107,16 +107,35 @@ function enqueueAcquisitions(
     // and we want the previously-buffered popups to surface first so the
     // player sees acquisitions in the order they were earned, not interleaved
     // with — or reordered after — the new batch.
-    // queueRemaining counts dialogue items AFTER the current one (Rust
-    // LinearSceneState::queue_remaining = queue.len() - cursor - 1), so === 0
-    // means the current item was the last: an advance_dialogue issued from
-    // that state exhausts the queue and is finishing dialogue.
-    const finishedDialogue =
-      command === "advance_dialogue" &&
-      previous?.mode.type === "dialogue" &&
-      previous.mode.queueRemaining === 0;
+    // Detect that the previous dialogue queue actually exhausted by checking
+    // the returned mode/queue transition, NOT previous.queueRemaining. The
+    // queueRemaining heuristic is unsound for two reasons:
+    //  1. Rust advance_dialogue returns the UNCHANGED view for a stale
+    //     QueueToken (mod.rs: current_token != expected -> Ok(self.view())),
+    //     so queueRemaining === 0 on the previous frame would false-positive
+    //     and flush the popup while the same item is still displayed.
+    //  2. Queues ending in auto-skipped SceneTags have queueRemaining > 0 at
+    //     the last real line (the trailing tags are counted). advance_dialogue
+    //     skips them (consume_scene_tags_at_cursor) and on_queue_exhausted may
+    //     install a NEW dialogue queue (e.g. an investigation outro) with a
+    //     fresh queueGen — deferring the popup through that whole dialogue.
+    //
+    // alloc_queue_gen is monotonic and every queue installation calls it, so a
+    // queueGen or sceneId change in `next` reliably signals the previous queue
+    // exhausted and a new one was installed. A normal in-queue advance keeps
+    // the same queueGen/sceneId and only increments cursor.
+    const advancedFromDialogue =
+      command === "advance_dialogue" && previous?.mode.type === "dialogue";
+    const previousQueueExhausted =
+      advancedFromDialogue &&
+      (next.mode.type !== "dialogue" ||
+        (next.mode.type === "dialogue" &&
+          previous.mode.type === "dialogue" &&
+          (next.mode.queueToken.sceneId !== previous.mode.queueToken.sceneId ||
+            next.mode.queueToken.queueGen !==
+              previous.mode.queueToken.queueGen)));
     const leavingDialogue =
-      finishedDialogue ||
+      previousQueueExhausted ||
       (previous?.mode.type === "dialogue" && next.mode.type !== "dialogue");
     if (leavingDialogue) {
       flushPendingAcquisitions();
