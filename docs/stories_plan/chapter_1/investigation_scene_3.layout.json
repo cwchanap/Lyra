@@ -6,10 +6,24 @@
       "hotspots": {
         "counter_admin_records": {
           "kind": "rect",
-          "x": 0.627166,
-          "y": 0.407753,
-          "w": 0.151489,
-          "h": 0.18803
+          "x": 0.646,
+          "y": 0.53,
+          "w": 0.14,
+          "h": 0.12
+        },
+        "closing_playback_screen": {
+          "kind": "rect",
+          "x": 0.686,
+          "y": 0.416,
+          "w": 0.045,
+          "h": 0.1
+        },
+        "staff_admin_records": {
+          "kind": "rect",
+          "x": 0.59,
+          "y": 0.505,
+          "w": 0.053,
+          "h": 0.128
         },
         "osmanthus_sign": {
           "kind": "rect",
@@ -24,6 +38,27 @@
           "y": 0.547148,
           "w": 0.107904,
           "h": 0.357115
+        },
+        "miyake_locker": {
+          "kind": "rect",
+          "x": 0.87,
+          "y": 0.05,
+          "w": 0.12,
+          "h": 0.33
+        },
+        "katase_register_gap": {
+          "kind": "rect",
+          "x": 0.78,
+          "y": 0.545,
+          "w": 0.03,
+          "h": 0.075
+        },
+        "takase_access_record": {
+          "kind": "rect",
+          "x": 0.817,
+          "y": 0.39,
+          "w": 0.045,
+          "h": 0.17
         }
       },
       "characters": {
