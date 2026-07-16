@@ -187,10 +187,11 @@ async function dispatchGameCommand(
   command: GameplayCommandName,
   args?: Record<string, unknown>,
   loading = false,
-) {
-  if (gameState.inFlight) return;
+): Promise<GameStateView | null> {
+  if (gameState.inFlight) return null;
   gameState.inFlight = true;
   if (loading) gameState.loading = true;
+  let result: GameStateView | null = null;
   try {
     const previous = gameState.value;
     const v = await runCommand<GameStateView>(command, args);
@@ -227,11 +228,13 @@ async function dispatchGameCommand(
           console.warn("[GameplayAudio] SFX playback failed", playbackError);
         }
       }
+      result = v;
     }
   } finally {
     if (loading) gameState.loading = false;
     gameState.inFlight = false;
   }
+  return result;
 }
 
 async function dispatchStateCommand(
@@ -256,20 +259,31 @@ async function dispatchStateCommand(
 
 export async function startGame() {
   if (gameState.inFlight) return;
-  // Navigation resets context: drop buffered acquisition popups (see
-  // clearPendingAcquisitions) rather than surfacing them in the new state.
+  // Snapshot the pending buffer so it can be restored if the command fails.
+  // On success, the old context is gone — buffered popups no longer belong
+  // to the new state, so they are dropped. On failure, the player remains in
+  // the previous state and its buffered popups must survive so they surface
+  // when the current dialogue exhausts.
+  const savedPending = pendingAcquisitionNotifications;
   clearPendingAcquisitions();
   acquisitionController.clear();
-  await dispatchGameCommand("start_game", undefined, true);
+  const v = await dispatchGameCommand("start_game", undefined, true);
+  if (!v) {
+    pendingAcquisitionNotifications = savedPending;
+  }
 }
 
 export async function resetGame() {
   if (gameState.inFlight) return;
-  // Navigation resets context: drop buffered acquisition popups (see
-  // clearPendingAcquisitions) rather than surfacing them in the new state.
+  // Same snapshot/restore pattern as startGame: on failure the player
+  // remains in the previous state and its buffered popups must survive.
+  const savedPending = pendingAcquisitionNotifications;
   clearPendingAcquisitions();
   acquisitionController.clear();
-  await dispatchGameCommand("reset_game", undefined, true);
+  const v = await dispatchGameCommand("reset_game", undefined, true);
+  if (!v) {
+    pendingAcquisitionNotifications = savedPending;
+  }
 }
 
 export function returnToMainMenu() {
@@ -302,11 +316,21 @@ export async function listScenes(): Promise<SceneNavigationIndex | null> {
 
 export async function jumpToScene(chapterId: string, sceneId: string) {
   if (gameState.inFlight) return;
-  // Navigation resets context: drop buffered acquisition popups (see
-  // clearPendingAcquisitions) rather than surfacing them in the new state.
-  clearPendingAcquisitions();
-  acquisitionController.clear();
-  await dispatchStateCommand("jump_to_scene", { chapterId, sceneId }, true);
+  // Clear buffered acquisition popups only after the jump succeeds. If the
+  // jump fails, gameState.value is unchanged (the player remains in the
+  // previous dialogue) and the buffered popups must survive so they surface
+  // when the current dialogue exhausts. dispatchStateCommand does not call
+  // enqueueAcquisitions, so there are no new notifications to preserve on
+  // success — clearing after the dispatch is safe.
+  const v = await dispatchStateCommand(
+    "jump_to_scene",
+    { chapterId, sceneId },
+    true,
+  );
+  if (v) {
+    clearPendingAcquisitions();
+    acquisitionController.clear();
+  }
 }
 
 export async function advanceDialogue(expected: QueueToken) {

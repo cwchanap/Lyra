@@ -1,7 +1,8 @@
 # Acquisition Popup Design
 
 **Date:** 2026-07-10
-**Status:** Approved design
+**Status:** Approved design (amended 2026-07-15 — see "Popup Timing
+Amendment" below)
 
 ## Summary
 
@@ -20,8 +21,10 @@ contract, authored scene Markdown, the compiler, or asset catalogs.
 
 - Make newly acquired evidence and statements impossible to miss.
 - Present acquisitions consistently across investigation and interrogation.
-- Show the popup before the dialogue returned by the acquisition command can
-  be advanced.
+- Show the popup after the acquisition command's authored `On Collect`/`On
+  Acquire` dialogue queue drains, so the player experiences the narrative
+  context before the mechanical notification interrupts. (Amended 2026-07-15;
+  see "Popup Timing Amendment" below.)
 - Support multiple acquisitions from one command without dropping or merging
   items.
 - Preserve Lyra's existing inventory, dialogue, audio, keyboard, focus, and
@@ -64,8 +67,10 @@ After a successful gameplay command returns:
 2. Find evidence IDs present only in the next inventory.
 3. Find statement IDs present only in the next inventory.
 4. Convert the new records into acquisition notifications.
-5. Commit the next game state and enqueue the notifications synchronously,
-   before the browser's next paint.
+5. Commit the next game state. If the returned mode is dialogue, buffer the
+   notifications in a pending queue (they will be flushed when the dialogue
+   queue exhausts). Otherwise, enqueue them into the acquisition controller
+   synchronously, before the browser's next paint.
 
 The detector treats a missing previous state as baseline hydration and emits
 nothing. Inventory removals, reset results, and duplicate records also emit
@@ -127,18 +132,25 @@ dialogue, interrogation, HUD, and menu layers.
 ## Data and Interaction Flow
 
 1. The player performs a normal gameplay action.
-2. Rust mutates inventory, prepares any resulting dialogue, and returns the
-   next `GameStateView`.
+2. Rust mutates inventory, prepares any resulting `On Collect`/`On Acquire`
+   dialogue, and returns the next `GameStateView`.
 3. The game client detects newly added inventory records, commits the returned
-   state, and enqueues notifications in the same synchronous update.
-4. Svelte's next paint shows the first popup over the returned scene/dialogue.
-5. The player activates Continue, Enter, Space, or Escape.
-6. Exactly one notification is removed. If another remains, its content
+   state, and — if the returned mode is dialogue — **buffers** the
+   notifications in a pending queue rather than enqueuing them immediately.
+   If the returned mode is not dialogue, notifications are enqueued
+   immediately (there is no authored dialogue to drain first).
+4. Svelte's next paint shows the returned scene/dialogue. The player advances
+   the authored acquisition dialogue normally.
+5. When the dialogue queue exhausts (detected via a `queueToken` scene-id or
+   queue-gen transition, or a mode change out of dialogue), the game client
+   flushes the pending buffer into the acquisition controller.
+6. Svelte's next paint shows the first popup over the now-settled scene.
+7. The player activates Continue, Enter, Space, or Escape.
+8. Exactly one notification is removed. If another remains, its content
    replaces the first popup and Continue receives focus again.
-7. When the queue becomes empty, the modal unmounts, gameplay stops being
+9. When the queue becomes empty, the modal unmounts, gameplay stops being
    inert, and focus returns to the control that was active before the first
    popup.
-8. The player can now advance the already-prepared acquisition dialogue.
 
 The modal backdrop does not dismiss the popup. It prevents pointer input from
 reaching gameplay but forces a deliberate acknowledgement through the approved
@@ -204,13 +216,24 @@ Existing gameplay audio behavior remains unchanged.
 
 ## Lifecycle and Failure Handling
 
-- Failed commands do not commit state and do not enqueue notifications.
+- Failed commands do not commit state and do not enqueue or buffer
+  notifications.
 - Duplicate inventory items do not enqueue because they are not additions.
 - Removal-only and reset state transitions do not enqueue.
 - Initial hydration with no previous state establishes a baseline and does not
   replay the full inventory.
-- Returning to the main menu, resetting the game, or unmounting gameplay clears
-  pending notifications.
+- When a command returns dialogue, notifications are buffered in a pending
+  queue and flushed only when that dialogue queue exhausts (detected via a
+  `queueToken` scene-id or queue-gen transition, or a mode change out of
+  dialogue). A subsequent non-advance command that exits dialogue also
+  flushes the pending buffer before inferring new notifications, preserving
+  earned order.
+- Returning to the main menu, resetting the game, or unmounting gameplay
+  clears pending notifications. Navigation commands (`start_game`,
+  `reset_game`, `jump_to_scene`) clear the pending buffer and the
+  acquisition controller only after the navigation command succeeds; if the
+  command fails, the buffer is restored so the player can still see buffered
+  popups when the current dialogue exhausts.
 - Asset resolution guards against stale asynchronous results when queued items
   change quickly and falls back through the existing placeholder path.
 - Dismissal callbacks carry the notification key, so a stale callback cannot
@@ -252,6 +275,13 @@ Existing gameplay audio behavior remains unchanged.
 
 - A successful state command commits state and enqueues each addition once.
 - A rejected/failed command enqueues nothing.
+- When a successful command returns dialogue, notifications are buffered
+  (not enqueued) until the dialogue queue exhausts.
+- A subsequent non-advance command that exits dialogue flushes the pending
+  buffer before inferring new notifications.
+- Navigation commands (`jump_to_scene`, `start_game`, `reset_game`) clear
+  the pending buffer and acquisition controller on success; on failure, the
+  pending buffer is restored.
 - Existing SFX inference still runs independently of popup inference.
 - Gameplay is inert while a popup is visible.
 - Underlying dialogue does not advance from popup Enter/Space input.
@@ -259,9 +289,10 @@ Existing gameplay audio behavior remains unchanged.
 
 ### Browser-safe end-to-end test
 
-Using the existing Tauri mock path, acquire an item, assert that the popup
-appears before resulting dialogue can advance, dismiss it, and confirm gameplay
-resumes. Cover a multi-item command or fixture so sequential display is proven.
+Using the existing Tauri mock path, acquire an item, advance the resulting
+`On Collect`/`On Acquire` dialogue to exhaustion, assert that the popup
+appears after the dialogue drains, dismiss it, and confirm gameplay resumes.
+Cover a multi-item command or fixture so sequential display is proven.
 
 Final verification runs the focused Vitest files, the focused Playwright flow,
 and `bun run check`.
@@ -273,10 +304,33 @@ and `bun run check`.
 - Multiple records are never merged, lost, or skipped.
 - Evidence precedes statements for mixed acquisitions, with stable order inside
   each type.
-- The popup appears before the returned acquisition dialogue can be advanced.
+- The popup appears after the acquisition command's authored dialogue queue
+  drains (or immediately if the command returns a non-dialogue mode).
 - Continue, Enter, Space, and Escape dismiss exactly one item.
 - The game menu and underlying dialogue never react to the same dismissal
   input.
 - Missing assets, failed commands, hydration, reset, and duplicate inventory do
   not create stale or repeated popups.
 - The inventory and authored acquisition dialogue remain unchanged.
+
+## Popup Timing Amendment (2026-07-15)
+
+The original design (2026-07-10) required the popup to appear *before* the
+returned acquisition dialogue could be advanced. Implementation on the
+`fix/dialogue-advance-acquisition-timing` branch revealed that interrupting
+the authored `On Collect`/`On Acquire` dialogue with a mechanical popup
+breaks the narrative flow the writer intended — the player sees "EVIDENCE
+ACQUIRED" before the character's reaction line that gives the acquisition
+its emotional context.
+
+**Amended contract:** the popup now appears *after* the acquisition
+command's authored dialogue queue drains. Notifications are buffered in a
+pending queue while the returned mode is dialogue, and flushed when the
+queue exhausts (detected via a `queueToken` scene-id or queue-gen
+transition, or a mode change out of dialogue). If the command returns a
+non-dialogue mode, notifications are enqueued immediately as before.
+
+This amendment updates the Goals, Data and Interaction Flow, Lifecycle and
+Failure Handling, Testing Strategy, and Acceptance Criteria sections above.
+All other aspects of the design (detection, controller, popup component,
+accessibility, Escape layering) are unchanged.

@@ -536,6 +536,135 @@ describe("game client audio events", () => {
     ]);
   });
 
+  it("preserves buffered acquisitions when jumpToScene fails", async () => {
+    // Regression: jumpToScene must clear the pending buffer only after the
+    // jump succeeds. If the jump fails, gameState.value is unchanged (the
+    // player remains in the previous dialogue) and the buffered popups must
+    // survive so they surface when the current dialogue exhausts.
+    const previous = state("previous");
+    const dialogue = state("dialogue");
+    dialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "item dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const bufferedNotification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_dialogue",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke.mockResolvedValueOnce(dialogue);
+    mocks.inferAcquisitionNotifications
+      .mockReturnValueOnce([bufferedNotification])
+      .mockReturnValue([]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    // inspectHotspot returns dialogue — notification is buffered.
+    await client.inspectHotspot("receipt");
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // jumpToScene fails (invoke returns null). The buffer must NOT be
+    // cleared and the controller must NOT be cleared.
+    mocks.invoke.mockResolvedValueOnce(null);
+    await client.jumpToScene("chapter_1", "scene_0");
+    expect(mocks.acquisitionClear).not.toHaveBeenCalled();
+
+    // Now advance the dialogue to exhaust the queue. The buffered
+    // notification must flush into the controller.
+    const afterDialogue = state("after-dialogue");
+    mocks.invoke.mockResolvedValueOnce(afterDialogue);
+
+    await client.advanceDialogue({
+      sceneId: "scene_dialogue",
+      queueGen: 2,
+      cursor: 1,
+    });
+
+    expect(mocks.acquisitionEnqueue).toHaveBeenCalledExactlyOnceWith([
+      bufferedNotification,
+    ]);
+  });
+
+  it("preserves buffered acquisitions when startGame fails", async () => {
+    // Same snapshot/restore pattern as jumpToScene: if startGame fails, the
+    // player remains in the previous state and its buffered popups must
+    // survive.
+    const previous = state("previous");
+    const dialogue = state("dialogue");
+    dialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "item dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const bufferedNotification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_dialogue",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke.mockResolvedValueOnce(dialogue);
+    mocks.inferAcquisitionNotifications
+      .mockReturnValueOnce([bufferedNotification])
+      .mockReturnValue([]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    await client.inspectHotspot("receipt");
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // startGame fails — the pending buffer must be restored. The controller
+    // clear runs before the dispatch (it dismisses any visible popup, which
+    // is a no-op here since the player can't trigger navigation while a popup
+    // is visible), but the pending buffer is restored so the buffered
+    // notification survives.
+    mocks.invoke.mockResolvedValueOnce(null);
+    await client.startGame();
+
+    // Advancing the dialogue flushes the preserved notification.
+    const afterDialogue = state("after-dialogue");
+    mocks.invoke.mockResolvedValueOnce(afterDialogue);
+
+    await client.advanceDialogue({
+      sceneId: "scene_dialogue",
+      queueGen: 2,
+      cursor: 1,
+    });
+
+    expect(mocks.acquisitionEnqueue).toHaveBeenCalledExactlyOnceWith([
+      bufferedNotification,
+    ]);
+  });
+
   it("silently drops buffered acquisitions on returnToMainMenu without leaking later", async () => {
     // returnToMainMenu is synchronous (no backend invoke) but shares the
     // same clearPendingAcquisitions + acquisitionController.clear path.
