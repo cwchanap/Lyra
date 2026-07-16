@@ -642,13 +642,83 @@ describe("game client audio events", () => {
     await client.inspectHotspot("receipt");
     expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
 
-    // startGame fails — the pending buffer must be restored. The controller
-    // clear runs before the dispatch (it dismisses any visible popup, which
-    // is a no-op here since the player can't trigger navigation while a popup
-    // is visible), but the pending buffer is restored so the buffered
-    // notification survives.
+    // startGame fails — the player remains in the previous state, so both
+    // the pending buffer and any visible popup must survive. Neither
+    // clearPendingAcquisitions nor acquisitionController.clear should run on
+    // failure (the clears happen only after a successful navigation, matching
+    // jumpToScene).
     mocks.invoke.mockResolvedValueOnce(null);
     await client.startGame();
+
+    // The controller clear must NOT fire on a failed navigation — a visible
+    // popup (if one were shown) would otherwise be dismissed even though the
+    // player never left the previous state.
+    expect(mocks.acquisitionClear).not.toHaveBeenCalled();
+
+    // Advancing the dialogue flushes the preserved notification.
+    const afterDialogue = state("after-dialogue");
+    mocks.invoke.mockResolvedValueOnce(afterDialogue);
+
+    await client.advanceDialogue({
+      sceneId: "scene_dialogue",
+      queueGen: 2,
+      cursor: 1,
+    });
+
+    expect(mocks.acquisitionEnqueue).toHaveBeenCalledExactlyOnceWith([
+      bufferedNotification,
+    ]);
+  });
+
+  it("preserves buffered acquisitions and visible popups when resetGame fails", async () => {
+    // Same post-success clear contract as startGame/jumpToScene: if resetGame
+    // fails, the player remains in the previous state and both the pending
+    // buffer and any visible popup must survive.
+    const previous = state("previous");
+    const dialogue = state("dialogue");
+    dialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "item dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const bufferedNotification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_dialogue",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke.mockResolvedValueOnce(dialogue);
+    mocks.inferAcquisitionNotifications
+      .mockReturnValueOnce([bufferedNotification])
+      .mockReturnValue([]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    await client.inspectHotspot("receipt");
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // resetGame fails — neither the pending buffer nor the controller may be
+    // cleared. A visible popup (if one were shown) must survive the failed
+    // navigation, and the buffered notification must still flush when the
+    // current dialogue exhausts.
+    mocks.invoke.mockResolvedValueOnce(null);
+    await client.resetGame();
+
+    expect(mocks.acquisitionClear).not.toHaveBeenCalled();
 
     // Advancing the dialogue flushes the preserved notification.
     const afterDialogue = state("after-dialogue");
@@ -735,7 +805,8 @@ describe("game client audio events", () => {
     // Seed gameState so startGame's dispatchGameCommand has a previous state.
     client.gameState.value = previous;
     await client.startGame();
-    // startGame itself calls clearPendingAcquisitions again.
+    // returnToMainMenu cleared once (synchronous), then startGame cleared
+    // once after its successful dispatch — total 2.
     expect(mocks.acquisitionClear).toHaveBeenCalledTimes(2);
 
     await client.advanceDialogue({
@@ -1072,7 +1143,7 @@ describe("game client audio events", () => {
     warnSpy.mockRestore();
   });
 
-  it("clears pending acquisitions before resetting the game", async () => {
+  it("clears pending acquisitions after a successful reset", async () => {
     const client = await loadGameClient(state("previous"));
     const next = state("reset");
     mocks.invoke.mockResolvedValueOnce(next);

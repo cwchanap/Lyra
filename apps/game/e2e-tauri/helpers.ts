@@ -207,6 +207,10 @@ export async function advanceDialogueUntil(
   cap: number = DIALOGUE_DRAIN_CAP,
 ): Promise<void> {
   for (let i = 0; i < cap; i++) {
+    // Check the predicate before every advance so the drain stops as soon as
+    // the target state is reached — e.g. when an acquisition popup appears
+    // mid-dialogue. Without this guard the loop would advance past the popup,
+    // dismissing it and draining dialogue the popup was supposed to interrupt.
     if (await predicate()) return;
     const hasAdvance = await browser.execute((sel: string) => {
       return document.querySelector(sel) !== null;
