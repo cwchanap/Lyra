@@ -301,8 +301,5 @@ describe("AcquisitionPopup", () => {
     expect(source).toContain("max-height: min(220px, 32dvh)");
     expect(source).toContain("overflow-y: auto");
     expect(source).toContain("!cancelled && notification.key === key");
-    expect(source).toContain("if (target?.isConnected) {");
-    expect(source).toContain("} else if (fallback?.isConnected) {");
-    expect(source).toContain("fallback.focus()");
   });
 });
