@@ -288,6 +288,34 @@ describe("AcquisitionPopup", () => {
     fallback.remove();
   });
 
+  it("falls back to fallbackFocusTarget when returnFocusTo is document.body", async () => {
+    // When the popup is advanced by a pointer click on the click-only .box,
+    // document.activeElement can be document.body. The page stores that as
+    // returnFocusTo. body.isConnected is true, so without treating body as a
+    // non-target the popup would focus body and never reach fallbackFocusTarget,
+    // leaving keyboard/SR users without a gameplay focus target after dismiss.
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.append(fallback);
+    const result = render(AcquisitionPopup, {
+      notification: evidenceNotification,
+      returnFocusTo: document.body,
+      fallbackFocusTarget: fallback,
+      onContinue: vi.fn(() => false),
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "CONTINUE / 繼續" }),
+      ).toHaveFocus();
+    });
+
+    result.unmount();
+    await waitFor(() => expect(fallback).toHaveFocus());
+    expect(document.body).not.toHaveFocus();
+    fallback.remove();
+  });
+
   it("disables the entrance animation for reduced motion", () => {
     const source = readFileSync(
       join(testDir, "AcquisitionPopup.svelte"),

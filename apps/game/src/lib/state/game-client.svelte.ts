@@ -181,6 +181,18 @@ function clearPendingAcquisitions() {
   pendingAcquisitionNotifications = [];
 }
 
+// Page teardown: drains the module-level pending buffer so a later mount that
+// resumes the shared game state does not flush stale buffered notifications as
+// popups. The buffer is module-scoped (it outlives any single page mount), and
+// navigation commands already clear it on success — but a teardown without a
+// navigation command (e.g. the gameplay root unmounting while an authored
+// item-dialogue queue is still playing) would otherwise leave the buffer
+// populated for the next session. Mirrors the acquisitionController.clear()
+// call in +page.svelte's onDestroy.
+export function clearPendingAcquisitionsOnTeardown(): void {
+  clearPendingAcquisitions();
+}
+
 // Test-only: drains the module-level pending buffer so tests don't leak
 // buffered acquisition notifications across cases. Mirrors the
 // __resetStoryClearanceWarningLatches pattern in story-clearance.ts.

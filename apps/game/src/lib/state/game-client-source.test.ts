@@ -826,6 +826,92 @@ describe("game client audio events", () => {
     ]);
   });
 
+  it("clearPendingAcquisitionsOnTeardown drops buffered acquisitions so a later mount does not flush them", async () => {
+    // Page teardown (onDestroy) calls clearPendingAcquisitionsOnTeardown to
+    // drain the module-level pending buffer. Without it, a later mount that
+    // resumes the shared game state would flush stale buffered notifications
+    // as popups. This mirrors the navigation drop tests but exercises the
+    // teardown entry point instead of a navigation command.
+    const previous = state("previous");
+    const dialogue = state("dialogue");
+    dialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "A", text: "item dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_dialogue", queueGen: 2, cursor: 1 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const droppedNotification = {
+      key: "evidence:receipt",
+      kind: "evidence" as const,
+      record: {
+        id: "receipt",
+        name: "Receipt",
+        description: "Timestamp circled.",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "scene_dialogue",
+      },
+    };
+    const client = await loadGameClient(previous);
+    mocks.invoke.mockResolvedValueOnce(dialogue);
+    mocks.inferAcquisitionNotifications.mockReturnValueOnce([
+      droppedNotification,
+    ]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    // inspectHotspot returns dialogue — notification is buffered.
+    await client.inspectHotspot("receipt");
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // Teardown clears the pending buffer (does NOT flush into the controller).
+    client.clearPendingAcquisitionsOnTeardown();
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalled();
+
+    // A later flush-triggering advance from a resumed session must not surface
+    // the stale buffered notification.
+    const resumedDialogue = state("resumed-dialogue");
+    resumedDialogue.mode = {
+      type: "dialogue",
+      current: { kind: "line", speaker: "B", text: "resumed dialogue" },
+      queueRemaining: 0,
+      sceneTag: null,
+      queueToken: { sceneId: "scene_resumed", queueGen: 1, cursor: 0 },
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      crossExamLineId: null,
+    };
+    const resumedExplore = state("resumed-explore");
+    mocks.invoke
+      .mockResolvedValueOnce(resumedDialogue)
+      .mockResolvedValueOnce(resumedExplore);
+    mocks.inferAcquisitionNotifications.mockReturnValue([]);
+    mocks.inferGameplaySfxEvents.mockReturnValue([]);
+
+    await client.advanceDialogue({
+      sceneId: "scene_resumed",
+      queueGen: 1,
+      cursor: 0,
+    });
+    await client.advanceDialogue({
+      sceneId: "scene_resumed",
+      queueGen: 1,
+      cursor: 0,
+    });
+
+    // The dropped notification never surfaced.
+    expect(mocks.acquisitionEnqueue).not.toHaveBeenCalledWith([
+      droppedNotification,
+    ]);
+  });
+
   it("defers an acquisition across a multi-line dialogue queue until the queue exhausts", async () => {
     // queueRemaining counts items AFTER the current one. A notification
     // buffered while a multi-item queue is playing must stay buffered across

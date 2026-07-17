@@ -146,7 +146,13 @@
     const target = focusTarget;
     const fallback = fallbackTarget;
     void tick().then(() => {
-      if (target?.isConnected) {
+      // Treat document.body as a non-target: when the popup is advanced by a
+      // pointer click on the click-only .box, document.activeElement can be
+      // document.body and the page stores that as returnFocusTo. body.isConnected
+      // is true, so without this guard focus restoration would land on body and
+      // never reach fallbackFocusTarget, leaving keyboard/SR users without a
+      // gameplay focus target after dismissing the popup.
+      if (target && target.isConnected && target !== document.body) {
         target.focus();
       } else if (fallback?.isConnected) {
         fallback.focus();
