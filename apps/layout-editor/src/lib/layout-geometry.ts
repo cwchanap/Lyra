@@ -8,7 +8,7 @@ export {
   cropVariablesForAlphaBounds,
   DEFAULT_ASSET_WIDTH,
   DEFAULT_ASSET_HEIGHT,
-} from "@lyra/game/src/lib/assets/alpha-crop";
+} from "@lyra/shared";
 
 export const MIN_LAYOUT_SIZE = 0.025;
 
