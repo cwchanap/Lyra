@@ -92,6 +92,9 @@ jobs:
       - name: Run compiler and workspace layout tests
         run: bun run test:scripts
 
+      - name: Run shared package Vitest
+        run: bun run --cwd packages/shared test
+
       - name: Run editor Vitest
         run: bun run --cwd apps/layout-editor test
 
