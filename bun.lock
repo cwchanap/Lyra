@@ -104,6 +104,10 @@
         "vitest": "^4.1.6",
       },
     },
+    "packages/shared": {
+      "name": "@lyra/shared",
+      "version": "0.1.0",
+    },
   },
   "overrides": {
     "@wdio/native-utils": "2.5.0",
@@ -292,6 +296,8 @@
     "@lyra/scene-types": ["@lyra/scene-types@workspace:packages/scene-types"],
 
     "@lyra/scripts": ["@lyra/scripts@workspace:packages/scripts"],
+
+    "@lyra/shared": ["@lyra/shared@workspace:packages/shared"],
 
     "@nodable/entities": ["@nodable/entities@2.2.0", "", {}, "sha512-9uGyhaQavEUMC8AIddIjau4NsnsXhou+j5sBAGojCM1oxmQpVKTWR/9JxABD6UAv12vpIms55fPZKFQEhG6uBg=="],
 
