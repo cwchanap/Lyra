@@ -10,7 +10,7 @@
   import {
     alphaBoundsFromImageData,
     cropVariablesForAlphaBounds,
-  } from "$lib/assets/alpha-crop";
+  } from "@lyra/shared";
   import type {
     CharacterLayout,
     CharacterView,

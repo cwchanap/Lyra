@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@lyra/asset-paths": "workspace:*",
+    "@lyra/shared": "workspace:*",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2"
   },
