@@ -337,13 +337,10 @@
     // dialogue flow so this is low-risk, but guard for correctness.
     if (e.isComposing) return;
     if (historyOpen) {
-      // Don't swallow Space/Enter when focus is inside the history panel —
-      // let native button activation (the close button) proceed. Only
-      // preventDefault elsewhere to stop page scroll / dialogue advance.
-      const active = document.activeElement;
-      if (active instanceof HTMLElement && active.closest(".history-panel")) {
-        return;
-      }
+      // While history is open, Space/Enter must neither advance dialogue nor
+      // activate the focused CLOSE button — the popup closes only via the L
+      // shortcut or a mouse click on CLOSE. Swallow both keys entirely so the
+      // browser does not synthesize a click on the auto-focused CLOSE button.
       e.preventDefault();
       return;
     }
@@ -388,6 +385,10 @@
 </div>
 
 {#if historyOpen}
+  <!-- Dim the gameplay behind the history popup. pointer-events: none keeps
+       existing click targets (e.g. the LOG button) reachable so the popup
+       can still be toggled; the backdrop is purely visual. -->
+  <div class="history-backdrop" aria-hidden="true"></div>
   <DialogueHistoryPanel {history} onClose={closeHistory} />
 {/if}
 
@@ -538,6 +539,18 @@
     transform: translateX(-50%);
     width: var(--dialogue-width);
     z-index: 30;
+  }
+
+  /* Sits above the dialogue box (z-index 30) and portrait (z-index 20) but
+     below the history panel (z-index 35) so the popup stays fully visible
+     while the gameplay behind it is dimmed. pointer-events: none so clicks
+     pass through to the LOG button / dialogue surface behind. */
+  .history-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 32;
+    background: rgba(0, 0, 0, 0.55);
+    pointer-events: none;
   }
 
   .box {

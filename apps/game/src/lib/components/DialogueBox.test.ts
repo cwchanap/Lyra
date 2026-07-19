@@ -952,7 +952,28 @@ describe("DialogueBox", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
-  it("closes dialogue history when Space or Enter is pressed on the focused close button", async () => {
+  it("renders a dimming backdrop over the gameplay while history is open", async () => {
+    const user = userEvent.setup();
+    const { container } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+
+    expect(container.querySelector(".history-backdrop")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    const backdrop = container.querySelector(".history-backdrop");
+    expect(backdrop).not.toBeNull();
+    expect(backdrop).toHaveAttribute("aria-hidden", "true");
+
+    // Backdrop disappears when history closes.
+    await user.click(screen.getByRole("button", { name: "關閉對話紀錄" }));
+    await waitFor(() => {
+      expect(container.querySelector(".history-backdrop")).toBeNull();
+    });
+  });
+
+  it("does not close dialogue history when Space or Enter is pressed on the focused close button", async () => {
     const user = userEvent.setup();
     renderDialogueBox({ kind: "action", text: "hello" }, { history });
 
@@ -962,24 +983,42 @@ describe("DialogueBox", () => {
       expect(closeButton).toHaveFocus();
     });
 
-    // Enter on the focused close button must activate it (not be swallowed by
-    // the window-level guard that prevents dialogue advancement).
+    // Enter on the focused close button must NOT activate it — the popup
+    // closes only via the L shortcut or a mouse click on CLOSE.
     await user.keyboard("{Enter}");
+    await Promise.resolve();
+    expect(
+      screen.getByRole("dialog", { name: "對話紀錄" }),
+    ).toBeInTheDocument();
+
+    // Space also must not close the popup.
+    await user.keyboard(" ");
+    await Promise.resolve();
+    expect(
+      screen.getByRole("dialog", { name: "對話紀錄" }),
+    ).toBeInTheDocument();
+
+    // A mouse click on CLOSE still closes the popup.
+    await user.click(closeButton);
     await waitFor(() => {
       expect(
         screen.queryByRole("dialog", { name: "對話紀錄" }),
       ).not.toBeInTheDocument();
     });
+  });
 
-    // Reopen and verify Space also activates the close button.
+  it("closes dialogue history with L while the focused close button is open", async () => {
+    const user = userEvent.setup();
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
     await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
     await waitFor(() => {
       expect(
-        screen.getByRole("dialog", { name: "對話紀錄" }),
-      ).toBeInTheDocument();
+        screen.getByRole("button", { name: "關閉對話紀錄" }),
+      ).toHaveFocus();
     });
-    screen.getByRole("button", { name: "關閉對話紀錄" }).focus();
-    await user.keyboard(" ");
+
+    await user.keyboard("l");
     await waitFor(() => {
       expect(
         screen.queryByRole("dialog", { name: "對話紀錄" }),
