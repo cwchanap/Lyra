@@ -889,8 +889,8 @@ describe("DialogueBox", () => {
 
     await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
     const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
-    // The panel does not auto-focus on mount; focus the close button
-    // explicitly to verify L still closes when it is focused.
+    // The panel auto-focuses the close button on mount; focus it explicitly
+    // to verify L still closes when it is focused.
     closeButton.focus();
     expect(closeButton).toHaveFocus();
 
@@ -1001,8 +1001,8 @@ describe("DialogueBox", () => {
 
       await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
       const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
-      // The panel does not auto-focus on mount; focus the close button
-      // explicitly to verify Space/Enter do not activate it.
+      // The panel auto-focuses the close button on mount; focus it explicitly
+      // to verify Space/Enter do not activate it.
       closeButton.focus();
       expect(closeButton).toHaveFocus();
 
