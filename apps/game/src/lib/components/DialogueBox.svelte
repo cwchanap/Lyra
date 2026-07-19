@@ -198,13 +198,14 @@
     if (refocusLog) {
       void tick().then(() => logButton?.focus());
     } else {
-      // Closing via the L shortcut returns the user to dialogue mode, where
-      // Space/Enter should advance dialogue. If we refocus the LOG button,
-      // the browser's default Space-activates-focused-button behavior would
-      // synthesize a click on it (handleKey returns without preventDefault
-      // when a button is focused), re-opening history instead of advancing.
-      // Blur whatever inside the panel had focus so activeElement falls back
-      // to body, where the window-level Space/Enter handler advances.
+      // Closing via the L shortcut or the CLOSE button returns the user to
+      // dialogue mode, where Space/Enter should advance dialogue. If we
+      // refocus the LOG button, the browser's default
+      // Space-activates-focused-button behavior would synthesize a click on
+      // it (handleKey returns without preventDefault when a button is
+      // focused), re-opening history instead of advancing. Blur whatever
+      // inside the panel had focus so activeElement falls back to body,
+      // where the window-level Space/Enter handler advances.
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
@@ -336,11 +337,18 @@
     // mid-composition would corrupt CJK input. No text inputs exist in the
     // dialogue flow so this is low-risk, but guard for correctness.
     if (e.isComposing) return;
+    // While history is open, do not advance dialogue. We intentionally do
+    // NOT swallow Space/Enter here: the history panel auto-focuses the CLOSE
+    // button on mount, and a keyboard user must be able to activate it with
+    // Space/Enter (WCAG 2.1.1). isAdvanceBlockedByFocusedControl returns true
+    // while focus is inside the panel (CLOSE is a <button>, the list has
+    // tabindex), so the global handler returns without preventDefault and the
+    // browser's native button activation proceeds. The popup closes via CLOSE,
+    // the L shortcut, or Escape (escape-coordinator claim).
     if (historyOpen) {
-      // While history is open, Space/Enter must neither advance dialogue nor
-      // activate the focused CLOSE button — the popup closes only via the L
-      // shortcut or a mouse click on CLOSE. Swallow both keys entirely so the
-      // browser does not synthesize a click on the auto-focused CLOSE button.
+      if (isAdvanceBlockedByFocusedControl()) return;
+      // Focus is on body (e.g. race before auto-focus lands): swallow to
+      // avoid advancing dialogue behind the open popup.
       e.preventDefault();
       return;
     }
@@ -389,7 +397,10 @@
        existing click targets (e.g. the LOG button) reachable so the popup
        can still be toggled; the backdrop is purely visual. -->
   <div class="history-backdrop" aria-hidden="true"></div>
-  <DialogueHistoryPanel {history} onClose={closeHistory} />
+  <DialogueHistoryPanel
+    {history}
+    onClose={() => closeHistory({ refocusLog: false })}
+  />
 {/if}
 
 <div class="wrapper" class:line={current.kind === "line"}>
