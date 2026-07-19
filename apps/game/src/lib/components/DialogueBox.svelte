@@ -188,14 +188,27 @@
   // idempotent so the double-release on close is harmless.
   let releaseEscapeClaim: (() => void) | null = null;
 
-  function closeHistory() {
+  function closeHistory({ refocusLog = true } = {}) {
     if (!historyOpen) return;
     historyOpen = false;
     // Release synchronously so the escape coordinator's "close one layer per
     // Escape" contract holds even before Svelte flushes the effect cleanup.
     releaseEscapeClaim?.();
     releaseEscapeClaim = null;
-    void tick().then(() => logButton?.focus());
+    if (refocusLog) {
+      void tick().then(() => logButton?.focus());
+    } else {
+      // Closing via the L shortcut returns the user to dialogue mode, where
+      // Space/Enter should advance dialogue. If we refocus the LOG button,
+      // the browser's default Space-activates-focused-button behavior would
+      // synthesize a click on it (handleKey returns without preventDefault
+      // when a button is focused), re-opening history instead of advancing.
+      // Blur whatever inside the panel had focus so activeElement falls back
+      // to body, where the window-level Space/Enter handler advances.
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    }
   }
 
   function toggleHistory() {
@@ -306,12 +319,15 @@
       if (isModifiedHistoryShortcut(e)) return;
       if (historyOpen) {
         e.preventDefault();
-        toggleHistory();
+        // Close via the L shortcut returns the user to dialogue mode: blur
+        // rather than refocus the LOG button so a subsequent Space advances
+        // dialogue instead of re-activating LOG.
+        closeHistory({ refocusLog: false });
         return;
       }
       if (isHistoryShortcutBlockedByFocusedControl()) return;
       e.preventDefault();
-      toggleHistory();
+      openHistory();
       return;
     }
 
