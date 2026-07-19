@@ -437,6 +437,11 @@ describe("DialogueBox", () => {
     expect(source).not.toContain(":global(.portrait) {");
   });
 
+  it("uses a fixed min-height on the dialogue box so it doesn't resize per line", () => {
+    const source = dialogueBoxSource();
+    expect(source).toMatch(/\.box\s*{[^}]*min-height:\s*160px/);
+  });
+
   it("renders a sceneTag dialogue item", () => {
     renderDialogueBox({ kind: "sceneTag", text: "cafe" });
     expect(screen.getByText(/SCENE/)).toBeInTheDocument();
@@ -883,9 +888,10 @@ describe("DialogueBox", () => {
 
     await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
     const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
-    await waitFor(() => {
-      expect(closeButton).toHaveFocus();
-    });
+    // The panel does not auto-focus on mount; focus the close button
+    // explicitly to verify L still closes when it is focused.
+    closeButton.focus();
+    expect(closeButton).toHaveFocus();
 
     window.dispatchEvent(
       new KeyboardEvent("keydown", { key: "l", bubbles: true }),
@@ -979,9 +985,10 @@ describe("DialogueBox", () => {
 
     await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
     const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
-    await waitFor(() => {
-      expect(closeButton).toHaveFocus();
-    });
+    // The panel does not auto-focus on mount; focus the close button
+    // explicitly to verify Space/Enter do not activate it.
+    closeButton.focus();
+    expect(closeButton).toHaveFocus();
 
     // Enter on the focused close button must NOT activate it — the popup
     // closes only via the L shortcut or a mouse click on CLOSE.
@@ -1012,11 +1019,9 @@ describe("DialogueBox", () => {
     renderDialogueBox({ kind: "action", text: "hello" }, { history });
 
     await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
-    await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: "關閉對話紀錄" }),
-      ).toHaveFocus();
-    });
+    const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
+    closeButton.focus();
+    expect(closeButton).toHaveFocus();
 
     await user.keyboard("l");
     await waitFor(() => {

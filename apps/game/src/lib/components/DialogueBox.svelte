@@ -555,8 +555,16 @@
 
   .box {
     width: 100%;
+    /* Fixed min-height so the dialogue surface doesn't resize per line —
+       short single-line dialogue and longer multi-line dialogue render in a
+       consistent frame. 160px fits the kind label + up to ~3 wrapped lines
+       with the current padding/line-height; longer text still grows. */
+    min-height: 160px;
     box-sizing: border-box;
     padding: 22px 104px 24px 28px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     background: rgba(20, 20, 31, 0.94);
     color: var(--bone);
     border: 1px solid var(--rule-strong);
@@ -661,22 +669,28 @@
     min-width: 140px;
     padding-right: 22px;
     border-right: 1px solid var(--rule-strong);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
 
   .line-grid {
     display: flex;
     gap: 24px;
-    align-items: flex-start;
+    align-items: stretch;
+    flex: 1;
   }
 
   .text-line {
-    margin: 4px 0 0;
+    margin: 0;
     font-family: var(--serif-jp);
     font-size: 16px;
     line-height: 1.75;
     color: var(--bone);
     letter-spacing: 0.04em;
     flex: 1 1 auto;
+    display: flex;
+    align-items: center;
   }
 
   .text-action {

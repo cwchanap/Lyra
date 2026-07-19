@@ -84,9 +84,15 @@ describe("DialogueHistoryPanel", () => {
     const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
     const list = screen.getByRole("list", { name: "對話紀錄列表" });
 
-    // onMount focuses the close button, so the first forward Tab moves into
-    // the scrollable list — keyboard-only users can now reach it and scroll
-    // older entries with arrow/PageUp/PageDown keys.
+    // The panel does not auto-focus any element on mount (auto-focus made
+    // Space feel "stuck" on the close button in a game context). Focus the
+    // close button explicitly to set up the Tab-trap assertions below.
+    closeButton.focus();
+    expect(closeButton).toHaveFocus();
+
+    // The first forward Tab moves into the scrollable list — keyboard-only
+    // users can now reach it and scroll older entries with arrow/PageUp/
+    // PageDown keys.
     await user.tab();
     expect(list).toHaveFocus();
 
