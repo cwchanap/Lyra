@@ -897,6 +897,43 @@ describe("DialogueBox", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("advances dialogue with Space after closing history via L (does not refocus LOG)", async () => {
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+
+    // Open history via the L shortcut (focus is on body, not the LOG button).
+    await user.keyboard("l");
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
+
+    // Close history via the L shortcut.
+    await user.keyboard("l");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
+    });
+
+    // Space must advance dialogue, not re-open history via the refocused
+    // LOG button's native Space-activates-button behavior. If closeHistory
+    // leaves focus on the LOG button, the browser synthesizes a click on it
+    // (since handleKey returns without preventDefault when a button is
+    // focused), re-opening history instead of advancing.
+    await user.keyboard(" ");
+    await waitFor(() => {
+      expect(onAdvance).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "對話紀錄" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not advance with Space or Enter while dialogue history is open", async () => {
     const user = userEvent.setup();
     const { onAdvance } = renderDialogueBox(
