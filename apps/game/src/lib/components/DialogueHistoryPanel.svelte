@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount, tick } from "svelte";
   import type { DialogueHistoryEntry } from "../state/types";
 
   let {
@@ -20,6 +21,16 @@
     "textarea:not(:disabled)",
     '[tabindex]:not([tabindex="-1"])',
   ].join(",");
+
+  // Hand focus to the CLOSE button on mount so keyboard users who open
+  // history via the LOG button (which renders after this panel in DOM and
+  // whose sibling advance controls go inert while history is open) can
+  // still reach the panel's Tab cycle. The post-L-close Space concern is
+  // handled separately in DialogueBox by blurring activeElement on
+  // closeHistory({ refocusLog: false }), so this open-path handoff is safe.
+  onMount(() => {
+    void tick().then(() => closeButton?.focus());
+  });
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key !== "Tab" || !panel) return;

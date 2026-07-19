@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/svelte";
+import { render, screen, waitFor } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
@@ -84,9 +84,9 @@ describe("DialogueHistoryPanel", () => {
     const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
     const list = screen.getByRole("list", { name: "對話紀錄列表" });
 
-    // The panel does not auto-focus any element on mount (auto-focus made
-    // Space feel "stuck" on the close button in a game context). Focus the
-    // close button explicitly to set up the Tab-trap assertions below.
+    // The panel auto-focuses the CLOSE button on mount (so keyboard users
+    // who open history via the LOG button can reach the panel's Tab cycle).
+    // Focus explicitly to set a known baseline for the Tab-trap assertions.
     closeButton.focus();
     expect(closeButton).toHaveFocus();
 
@@ -108,6 +108,18 @@ describe("DialogueHistoryPanel", () => {
     // Shift+Tab from the list wraps back to the close button.
     await user.keyboard("{Shift>}{Tab}{/Shift}");
     expect(closeButton).toHaveFocus();
+  });
+
+  it("auto-focuses the CLOSE button on mount", async () => {
+    render(DialogueHistoryPanel, { history, onClose: vi.fn() });
+
+    const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
+    // onMount hands focus to the close button so keyboard users who open
+    // history via the LOG button can reach the panel's Tab cycle without
+    // reverse-tabbing out of the dialogue surface.
+    await waitFor(() => {
+      expect(closeButton).toHaveFocus();
+    });
   });
 
   it("exposes the scrollable history list with a keyboard-reachable tabindex", () => {
