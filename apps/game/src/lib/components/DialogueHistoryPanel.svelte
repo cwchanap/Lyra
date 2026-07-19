@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
   import type { DialogueHistoryEntry } from "../state/types";
 
   let {
@@ -21,10 +20,6 @@
     "textarea:not(:disabled)",
     '[tabindex]:not([tabindex="-1"])',
   ].join(",");
-
-  onMount(() => {
-    void tick().then(() => closeButton?.focus());
-  });
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key !== "Tab" || !panel) return;
