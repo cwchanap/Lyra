@@ -92,8 +92,8 @@ jobs:
       - name: Run compiler and workspace layout tests
         run: bun run test:scripts
 
-      - name: Run shared package Vitest
-        run: bun run --cwd packages/shared test
+      - name: Run shared package Vitest with coverage
+        run: bun run --cwd packages/shared test -- --coverage.enabled
 
       - name: Run editor Vitest
         run: bun run --cwd apps/layout-editor test
@@ -104,7 +104,9 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: apps/game/coverage/lcov.info
+          files: |
+            apps/game/coverage/lcov.info
+            packages/shared/coverage/lcov.info
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: frontend
