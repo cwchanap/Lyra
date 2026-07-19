@@ -9,7 +9,6 @@ import {
   closeTopmostEscapeClaim,
   resetEscapeCoordinator,
 } from "$lib/state/escape-coordinator";
-import { reportAsyncTestFailure } from "$lib/test-utils";
 import DialogueBox from "./DialogueBox.svelte";
 import type {
   DialogueHistoryEntry,
@@ -905,46 +904,40 @@ describe("DialogueBox", () => {
   });
 
   it("advances dialogue with Space after closing history via L (does not refocus LOG)", async () => {
-    const testName =
-      "advances dialogue with Space after closing history via L (does not refocus LOG)";
-    try {
-      const user = userEvent.setup();
-      const { onAdvance } = renderDialogueBox(
-        { kind: "action", text: "hello" },
-        { history },
-      );
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
 
-      // Open history via the L shortcut (focus is on body, not the LOG button).
-      await user.keyboard("l");
-      await waitFor(() => {
-        expect(
-          screen.getByRole("dialog", { name: "對話紀錄" }),
-        ).toBeInTheDocument();
-      });
+    // Open history via the L shortcut (focus is on body, not the LOG button).
+    await user.keyboard("l");
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
 
-      // Close history via the L shortcut.
-      await user.keyboard("l");
-      await waitFor(() => {
-        expect(
-          screen.queryByRole("dialog", { name: "對話紀錄" }),
-        ).not.toBeInTheDocument();
-      });
-
-      // Space must advance dialogue, not re-open history via the refocused
-      // LOG button's native Space-activates-button behavior. If closeHistory
-      // leaves focus on the LOG button, the browser synthesizes a click on it
-      // (since handleKey returns without preventDefault when a button is
-      // focused), re-opening history instead of advancing.
-      await user.keyboard(" ");
-      await waitFor(() => {
-        expect(onAdvance).toHaveBeenCalledTimes(1);
-      });
+    // Close history via the L shortcut.
+    await user.keyboard("l");
+    await waitFor(() => {
       expect(
         screen.queryByRole("dialog", { name: "對話紀錄" }),
       ).not.toBeInTheDocument();
-    } catch (error) {
-      reportAsyncTestFailure(testName, error);
-    }
+    });
+
+    // Space must advance dialogue, not re-open history via the refocused
+    // LOG button's native Space-activates-button behavior. If closeHistory
+    // leaves focus on the LOG button, the browser synthesizes a click on it
+    // (since handleKey returns without preventDefault when a button is
+    // focused), re-opening history instead of advancing.
+    await user.keyboard(" ");
+    await waitFor(() => {
+      expect(onAdvance).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "對話紀錄" }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not advance with Space or Enter while dialogue history is open", async () => {
@@ -966,94 +959,73 @@ describe("DialogueBox", () => {
   });
 
   it("renders a dimming backdrop over the gameplay while history is open", async () => {
-    const testName =
-      "renders a dimming backdrop over the gameplay while history is open";
-    try {
-      const user = userEvent.setup();
-      const { container } = renderDialogueBox(
-        { kind: "action", text: "hello" },
-        { history },
-      );
+    const user = userEvent.setup();
+    const { container } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
 
+    expect(container.querySelector(".history-backdrop")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    const backdrop = container.querySelector(".history-backdrop");
+    expect(backdrop).not.toBeNull();
+    expect(backdrop).toHaveAttribute("aria-hidden", "true");
+
+    // Backdrop disappears when history closes.
+    await user.click(screen.getByRole("button", { name: "關閉對話紀錄" }));
+    await waitFor(() => {
       expect(container.querySelector(".history-backdrop")).toBeNull();
-
-      await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
-      const backdrop = container.querySelector(".history-backdrop");
-      expect(backdrop).not.toBeNull();
-      expect(backdrop).toHaveAttribute("aria-hidden", "true");
-
-      // Backdrop disappears when history closes.
-      await user.click(screen.getByRole("button", { name: "關閉對話紀錄" }));
-      await waitFor(() => {
-        expect(container.querySelector(".history-backdrop")).toBeNull();
-      });
-    } catch (error) {
-      reportAsyncTestFailure(testName, error);
-    }
+    });
   });
 
-  it("does not close dialogue history when Space or Enter is pressed on the focused close button", async () => {
-    const testName =
-      "does not close dialogue history when Space or Enter is pressed on the focused close button";
-    try {
-      const user = userEvent.setup();
-      renderDialogueBox({ kind: "action", text: "hello" }, { history });
+  it("closes dialogue history when Space or Enter is pressed on the focused close button", async () => {
+    const user = userEvent.setup();
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
 
-      await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
-      const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
-      // The panel auto-focuses the close button on mount; focus it explicitly
-      // to verify Space/Enter do not activate it.
-      closeButton.focus();
-      expect(closeButton).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
+    // The panel auto-focuses the close button on mount; focus it explicitly
+    // to verify Space/Enter activate it (WCAG 2.1.1 — the auto-focused close
+    // target must be operable by keyboard, not just by mouse or the L
+    // shortcut).
+    closeButton.focus();
+    expect(closeButton).toHaveFocus();
 
-      // Enter on the focused close button must NOT activate it — the popup
-      // closes only via the L shortcut or a mouse click on CLOSE.
-      await user.keyboard("{Enter}");
-      await Promise.resolve();
+    // Enter on the focused close button activates it and closes the popup.
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
       expect(
-        screen.getByRole("dialog", { name: "對話紀錄" }),
-      ).toBeInTheDocument();
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
+    });
 
-      // Space also must not close the popup.
-      await user.keyboard(" ");
-      await Promise.resolve();
+    // Reopen and verify Space also closes via CLOSE.
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    screen.getByRole("button", { name: "關閉對話紀錄" }).focus();
+    await user.keyboard(" ");
+    await waitFor(() => {
       expect(
-        screen.getByRole("dialog", { name: "對話紀錄" }),
-      ).toBeInTheDocument();
-
-      // A mouse click on CLOSE still closes the popup.
-      await user.click(closeButton);
-      await waitFor(() => {
-        expect(
-          screen.queryByRole("dialog", { name: "對話紀錄" }),
-        ).not.toBeInTheDocument();
-      });
-    } catch (error) {
-      reportAsyncTestFailure(testName, error);
-    }
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
+    });
   });
 
-  it("closes dialogue history with L while the focused close button is open", async () => {
-    const testName =
-      "closes dialogue history with L while the focused close button is open";
-    try {
-      const user = userEvent.setup();
-      renderDialogueBox({ kind: "action", text: "hello" }, { history });
+  it("closes dialogue history with L while the focused close button is focused", async () => {
+    const user = userEvent.setup();
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
 
-      await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
-      const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
-      closeButton.focus();
-      expect(closeButton).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    const closeButton = screen.getByRole("button", { name: "關閉對話紀錄" });
+    closeButton.focus();
+    expect(closeButton).toHaveFocus();
 
-      await user.keyboard("l");
-      await waitFor(() => {
-        expect(
-          screen.queryByRole("dialog", { name: "對話紀錄" }),
-        ).not.toBeInTheDocument();
-      });
-    } catch (error) {
-      reportAsyncTestFailure(testName, error);
-    }
+    await user.keyboard("l");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it("registers an Escape claim while history is open and restores focus to the LOG button", async () => {
