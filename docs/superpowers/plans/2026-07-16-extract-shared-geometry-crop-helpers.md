@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Move the duplicated alpha-crop helpers (`alphaBoundsFromImageData`, `cropVariablesForAlphaBounds`, `AlphaBounds`, `DEFAULT_ASSET_WIDTH/HEIGHT`) into a new `@lyra/shared` workspace package so the game and layout editor consume one implementation, and remove the editor's cross-app dependency on `@lyra/game`.
+**Goal:** Lift the alpha-crop helpers (`alphaBoundsFromImageData`, `cropVariablesForAlphaBounds`, `AlphaBounds`, `DEFAULT_ASSET_WIDTH/HEIGHT`) — a canonical implementation currently owned by `@lyra/game` and re-exported by the layout editor via a deep `@lyra/game/src/lib/assets/alpha-crop` import — into a new `@lyra/shared` workspace package so the game and layout editor consume one implementation, and remove the editor's cross-app dependency on `@lyra/game`.
 
 **Architecture:** Create `packages/shared/` following the established `@lyra/asset-paths` / `@lyra/scene-types` conventions (source-only package, no build step). It is type-checked by its own `check` script (enforcing the package's strict options over `index.ts` *and* `index.test.ts`) and re-checked transitively by its consumers. Both apps then import the crop helpers from `@lyra/shared`. The editor stops reaching into `@lyra/game/src/lib/assets/alpha-crop` and drops `@lyra/game` from its dependencies.
 
