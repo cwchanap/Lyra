@@ -25,8 +25,8 @@
   // Hand focus to the CLOSE button on mount so keyboard users who open
   // history via the LOG button (which renders after this panel in DOM and
   // whose sibling advance controls go inert while history is open) can
-  // still reach the panel's Tab cycle. The post-L-close Space concern is
-  // handled separately in DialogueBox by blurring activeElement on
+  // still reach the panel's Tab cycle. The post-L-close focus concern is
+  // handled separately in DialogueBox by focusing the advance button on
   // closeHistory({ refocusLog: false }), so this open-path handoff is safe.
   onMount(() => {
     void tick().then(() => closeButton?.focus());
