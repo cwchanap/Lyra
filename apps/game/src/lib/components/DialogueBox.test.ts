@@ -687,6 +687,32 @@ describe("DialogueBox", () => {
     expect(onAdvance).toHaveBeenLastCalledWith(token);
   });
 
+  it("multi-advances on repeated activation of the focused advance button (no repeat guard, by design)", async () => {
+    // The advance button is a native <button>; in a real browser, holding
+    // Space auto-fires repeated native clicks (button-activation auto-repeat).
+    // The previous global keydown handler suppressed this with
+    // `if (e.repeat) return;`, but advancing is now owned by the button
+    // itself, so held Space multi-advances by design (VN auto-read convention).
+    //
+    // jsdom does not simulate native button auto-repeat on held Space, so this
+    // test dispatches repeated clicks directly to document the contract: the
+    // advance button has NO repeat guard — each activation advances. A real
+    // browser maps each repeated Space keydown to one such click.
+    const { onAdvance } = renderDialogueBox({
+      kind: "action",
+      text: "hello",
+    });
+
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
+    advanceButton.focus();
+
+    await fireEvent.click(advanceButton);
+    await fireEvent.click(advanceButton);
+    await fireEvent.click(advanceButton);
+
+    expect(onAdvance).toHaveBeenCalledTimes(3);
+  });
+
   it("opens dialogue history from the LOG button", async () => {
     const user = userEvent.setup();
     renderDialogueBox({ kind: "action", text: "hello" }, { history });
@@ -720,13 +746,17 @@ describe("DialogueBox", () => {
     expect(onAdvance).not.toHaveBeenCalled();
 
     // Space also opens history. The Escape claim is driven by GameShell in
-    // production; here we close it via the coordinator directly to refocus LOG.
+    // production; here we close it via the coordinator directly. Escape-close
+    // focuses the advance button (not LOG) to avoid the Space-reopens-history
+    // hazard, so re-focus LOG explicitly before pressing Space to verify Space
+    // on the focused LOG button opens history.
     expect(closeTopmostEscapeClaim()).toBe(true);
     await waitFor(() => {
       expect(
         screen.queryByRole("dialog", { name: "對話紀錄" }),
       ).not.toBeInTheDocument();
     });
+    logButton.focus();
     await user.keyboard(" ");
     await waitFor(() => {
       expect(
@@ -990,7 +1020,7 @@ describe("DialogueBox", () => {
     });
   });
 
-  it("registers an Escape claim while history is open and restores focus to the LOG button", async () => {
+  it("registers an Escape claim while history is open and restores focus to the advance button (not LOG)", async () => {
     const user = userEvent.setup();
     const { container } = renderDialogueBox(
       { kind: "action", text: "hello" },
@@ -1008,7 +1038,13 @@ describe("DialogueBox", () => {
         screen.queryByRole("dialog", { name: "對話紀錄" }),
       ).not.toBeInTheDocument();
       expect(isInert(box)).toBe(false);
-      expect(logButton).toHaveFocus();
+      // Escape closes history and focuses the advance button (not LOG), so a
+      // subsequent Space advances dialogue instead of re-opening history.
+      // Asserting LOG focus here would re-introduce the Space-reopens-history
+      // bug this test guards against.
+      const advanceButton = screen.getByRole("button", { name: "推進對話" });
+      expect(advanceButton).toHaveFocus();
+      expect(logButton).not.toHaveFocus();
     });
   });
 
@@ -1158,6 +1194,27 @@ describe("DialogueBox", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
+  it("does not advance from keyboard activation of the aria-disabled advance button", async () => {
+    // The advance button uses aria-disabled (not the native disabled attribute)
+    // so it remains Tab-focusable and keyboard-operable. The disabled guard
+    // lives in dispatchAdvance (`if (disabled) return;`), so native Space/Enter
+    // activation must still be blocked at the handler level. This complements
+    // the click-only test above by covering the keyboard path.
+    const user = userEvent.setup();
+    const onAdvance = vi.fn();
+    renderDialogueBox({ kind: "action", text: "hello" }, { disabled: true });
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
+
+    advanceButton.focus();
+    expect(advanceButton).toHaveAttribute("aria-disabled", "true");
+
+    await user.keyboard(" ");
+    expect(onAdvance).not.toHaveBeenCalled();
+
+    await user.keyboard("{Enter}");
+    expect(onAdvance).not.toHaveBeenCalled();
+  });
+
   it("uses the default empty history when no history prop is passed", async () => {
     const onAdvance = vi.fn();
     render(DialogueBox, {
@@ -1210,7 +1267,8 @@ describe("DialogueBox", () => {
         screen.getByRole("dialog", { name: "對話紀錄" }),
       ).toBeInTheDocument();
     });
-    // Close via the escape coordinator so LOG refocuses for the next step.
+    // Close via the escape coordinator (simulating Escape). Escape-close
+    // focuses the advance button; re-focus LOG explicitly for the next step.
     expect(closeTopmostEscapeClaim()).toBe(true);
     await waitFor(() => {
       expect(

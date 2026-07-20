@@ -186,7 +186,13 @@
   // idempotent so the double-release on close is harmless.
   let releaseEscapeClaim: (() => void) | null = null;
 
-  function closeHistory({ refocusLog = true } = {}) {
+  // The default is `refocusLog: false` (focus the advance button) because
+  // refocusing the LOG button reintroduces the Space-reopens-history hazard:
+  // Space on the focused LOG button activates it natively and toggles history
+  // back open. Only the LOG-click toggle path (toggleHistory) legitimately
+  // wants LOG refocus, so it passes `{ refocusLog: true }` explicitly. Any
+  // future caller defaults to the safe path.
+  function closeHistory({ refocusLog = false } = {}) {
     if (!historyOpen) return;
     historyOpen = false;
     // Release synchronously so the escape coordinator's "close one layer per
@@ -212,7 +218,9 @@
 
   function toggleHistory() {
     if (historyOpen) {
-      closeHistory();
+      // LOG-click toggle: the user activated LOG to close, so return focus to
+      // LOG. This is the one path that legitimately wants refocusLog: true.
+      closeHistory({ refocusLog: true });
       return;
     }
     openHistory();
@@ -252,7 +260,13 @@
 
   $effect(() => {
     if (!historyOpen) return;
-    releaseEscapeClaim = claimEscape(closeHistory);
+    // Escape closes history and focuses the advance button (not LOG), so a
+    // subsequent Space advances dialogue instead of re-opening history.
+    // Passing closeHistory directly would invoke it with no args, but the
+    // default is now refocusLog: false so the bare reference would also be
+    // safe; the arrow is kept for explicitness and to survive future default
+    // changes.
+    releaseEscapeClaim = claimEscape(() => closeHistory({ refocusLog: false }));
     return () => {
       releaseEscapeClaim?.();
       releaseEscapeClaim = null;
@@ -394,7 +408,13 @@
        a command is in flight (disabled mirrors gameState.inFlight). The
        cross-examination buttons below, by
        contrast, use the native disabled attribute because they are optional
-       affordances that should drop out of the tab order when unavailable. -->
+       affordances that should drop out of the tab order when unavailable.
+
+       Held Space/Enter on the focused button auto-fires repeated native
+       clicks (browser button-activation auto-repeat), so holding Space
+       multi-advances. This is intentional (VN auto-read convention) and
+       documented in DialogueBox.test.ts; the old global `if (e.repeat)
+       return;` guard was removed when advance ownership moved here. -->
   <button
     class="advance-button"
     type="button"

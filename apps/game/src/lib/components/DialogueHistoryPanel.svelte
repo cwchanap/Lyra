@@ -64,6 +64,13 @@
   }
 </script>
 
+<!-- aria-modal="false" is intentional even though the gameplay behind this
+     panel is dimmed (.history-backdrop in DialogueBox). The backdrop is
+     purely visual with pointer-events: none so the LOG button stays
+     mouse-clickable while history is open (LOG toggles the panel closed).
+     aria-modal="true" would instruct ATs to hide background content, but
+     the LOG button must remain operable, so we mark the panel non-modal and
+     rely on the dimmed backdrop + inert dialogue surface for sighted users. -->
 <div
   bind:this={panel}
   class="history-panel"
@@ -130,10 +137,18 @@
   .history-panel {
     position: fixed;
     left: 50%;
-    bottom: 170px;
+    /* Lift the panel above the dialogue wrapper so it does not cover the
+       LOG toggle. The wrapper is fixed at bottom: 28px and the dialogue
+       box has min-height: 160px, so the wrapper's top edge sits at
+       28 + 160 = 188px from the viewport bottom; the LOG button
+       (top: 14px within the wrapper) has its top edge at ~174px. A
+       180px bottom clears the LOG button with a small gap so the
+       toggle remains mouse-clickable while history is open. The height
+       formula is adjusted to keep the same top margin. */
+    bottom: 180px;
     z-index: 35;
     width: min(900px, calc(100vw - 56px));
-    height: min(460px, calc(100dvh - 220px));
+    height: min(460px, calc(100dvh - 230px));
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     gap: 18px;
