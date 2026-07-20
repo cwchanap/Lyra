@@ -940,6 +940,47 @@ describe("DialogueBox", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("restores a stable focus target (the SR advance button) after closing history via CLOSE", async () => {
+    const user = userEvent.setup();
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    await user.click(screen.getByRole("button", { name: "關閉對話紀錄" }));
+
+    // After dismissal via CLOSE, focus must land on a stable, AT-announced
+    // target rather than <body>. The SR advance button (推進對話) is the
+    // chosen target: its own Space/Enter activation advances dialogue, so
+    // it does not reintroduce the Space-re-opens-history hazard that
+    // refocusing the LOG button would.
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
+    await waitFor(() => {
+      expect(advanceButton).toHaveFocus();
+    });
+  });
+
+  it("restores a stable focus target (the SR advance button) after closing history via L", async () => {
+    const user = userEvent.setup();
+    renderDialogueBox({ kind: "action", text: "hello" }, { history });
+
+    await user.keyboard("l");
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    });
+    await user.keyboard("l");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "對話紀錄" }),
+      ).not.toBeInTheDocument();
+    });
+
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
+    await waitFor(() => {
+      expect(advanceButton).toHaveFocus();
+    });
+  });
+
   it("does not advance with Space or Enter while dialogue history is open", async () => {
     const user = userEvent.setup();
     const { onAdvance } = renderDialogueBox(

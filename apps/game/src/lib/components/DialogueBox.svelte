@@ -199,16 +199,24 @@
       void tick().then(() => logButton?.focus());
     } else {
       // Closing via the L shortcut or the CLOSE button returns the user to
-      // dialogue mode, where Space/Enter should advance dialogue. If we
-      // refocus the LOG button, the browser's default
+      // dialogue mode, where Space/Enter should advance dialogue. We must
+      // NOT refocus the LOG button: the browser's default
       // Space-activates-focused-button behavior would synthesize a click on
       // it (handleKey returns without preventDefault when a button is
-      // focused), re-opening history instead of advancing. Blur whatever
-      // inside the panel had focus so activeElement falls back to body,
-      // where the window-level Space/Enter handler advances.
-      if (document.activeElement instanceof HTMLElement) {
-        document.activeElement.blur();
-      }
+      // focused), re-opening history instead of advancing. Focus the SR
+      // advance button instead — it is a stable, Tab-reachable, AT-announced
+      // target whose own Space/Enter activation advances dialogue (via
+      // handleClick → dispatchAdvance), so keyboard/AT users get a named
+      // focus target without the re-open-on-Space hazard that blurring to
+      // body avoided. Wait a tick so Svelte clears `inert={historyOpen}`
+      // before we focus.
+      void tick().then(() => {
+        if (advanceButton) {
+          advanceButton.focus();
+        } else if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+      });
     }
   }
 
