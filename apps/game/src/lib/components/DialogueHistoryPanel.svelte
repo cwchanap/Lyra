@@ -239,9 +239,17 @@
 
   @media (max-width: 720px) {
     .history-panel {
-      bottom: 150px;
+      /* Lift the panel above the dialogue wrapper so it does not cover the
+         LOG toggle. The wrapper is fixed at bottom: 28px and the dialogue
+         box has min-height: 160px, so the wrapper's top edge sits at
+         28 + 160 = 188px from the viewport bottom; the LOG button
+         (top: 14px within the wrapper) has its top edge at ~174px. A
+         180px bottom clears the LOG button with a small gap so the
+         toggle remains mouse-clickable while history is open. The height
+         formula is adjusted to keep the same top margin. */
+      bottom: 180px;
       width: min(900px, calc(100vw - 36px));
-      height: min(440px, calc(100dvh - 190px));
+      height: min(440px, calc(100dvh - 220px));
       padding: 18px;
     }
   }

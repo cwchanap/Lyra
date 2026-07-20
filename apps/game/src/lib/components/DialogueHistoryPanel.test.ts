@@ -62,7 +62,12 @@ describe("DialogueHistoryPanel", () => {
     const source = dialogueHistoryPanelSource();
 
     expect(source).toContain("height: min(460px, calc(100dvh - 220px));");
-    expect(source).toContain("height: min(440px, calc(100dvh - 190px));");
+    // Mobile panel is lifted to bottom: 180px so it clears the dialogue
+    // wrapper (bottom: 28px + 160px min-height = 188px top) and the LOG
+    // button (top edge ~174px) stays mouse-clickable while history is open.
+    // Height formula keeps the same top margin (180 + 40 = 220).
+    expect(source).toContain("bottom: 180px;");
+    expect(source).toContain("height: min(440px, calc(100dvh - 220px));");
     expect(source).not.toContain("max-height:");
     expect(source).toContain("background: rgba(8, 8, 14, 0.99);");
   });
