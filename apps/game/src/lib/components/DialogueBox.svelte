@@ -202,12 +202,10 @@
       // advances dialogue (via handleClick → dispatchAdvance), so keyboard/AT
       // users get a named focus target ready to proceed. Wait a tick so
       // Svelte clears `inert={historyOpen}` before we focus.
+      // The advance button is always rendered (it lives inside the
+      // always-present .wrapper), so advanceButton is defined after mount.
       void tick().then(() => {
-        if (advanceButton) {
-          advanceButton.focus();
-        } else if (document.activeElement instanceof HTMLElement) {
-          document.activeElement.blur();
-        }
+        advanceButton?.focus();
       });
     }
   }
