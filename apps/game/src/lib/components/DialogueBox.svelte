@@ -170,9 +170,7 @@
   // as a synthesized click (with detail 0). AT click activation (e.g. VoiceOver
   // VO+Space, programmatic .click()) also produces detail 0. Treat the click
   // handler as the single activation path so all of these reach toggleHistory;
-  // do NOT gate on e.detail === 0, which would drop AT activation. The
-  // window-level handleKey returns early when the LOG button is focused, so
-  // Space/Enter never advances dialogue from here.
+  // do NOT gate on e.detail === 0, which would drop AT activation.
   function handleLogButtonClick(e: MouseEvent) {
     e.stopPropagation();
     toggleHistory();
@@ -199,17 +197,11 @@
       void tick().then(() => logButton?.focus());
     } else {
       // Closing via the L shortcut or the CLOSE button returns the user to
-      // dialogue mode, where Space/Enter should advance dialogue. We must
-      // NOT refocus the LOG button: the browser's default
-      // Space-activates-focused-button behavior would synthesize a click on
-      // it (handleKey returns without preventDefault when a button is
-      // focused), re-opening history instead of advancing. Focus the SR
-      // advance button instead — it is a stable, Tab-reachable, AT-announced
-      // target whose own Space/Enter activation advances dialogue (via
-      // handleClick → dispatchAdvance), so keyboard/AT users get a named
-      // focus target without the re-open-on-Space hazard that blurring to
-      // body avoided. Wait a tick so Svelte clears `inert={historyOpen}`
-      // before we focus.
+      // dialogue mode. Focus the visible advance button — it is a stable,
+      // Tab-reachable, AT-announced target whose own Enter/Space activation
+      // advances dialogue (via handleClick → dispatchAdvance), so keyboard/AT
+      // users get a named focus target ready to proceed. Wait a tick so
+      // Svelte clears `inert={historyOpen}` before we focus.
       void tick().then(() => {
         if (advanceButton) {
           advanceButton.focus();
@@ -239,20 +231,12 @@
     '[contenteditable="true"]',
   ].join(",");
 
-  function isAdvanceBlockedByFocusedControl() {
-    const active = document.activeElement;
-    if (!(active instanceof HTMLElement) || active === document.body) {
-      return false;
-    }
-    return Boolean(active.closest(interactiveFocusSelector));
-  }
-
   function isHistoryShortcutBlockedByFocusedControl() {
     const active = document.activeElement;
     if (!(active instanceof HTMLElement) || active === document.body) {
       return false;
     }
-    // LOG, cross-examination, and the SR advance button are all part of this
+    // LOG, cross-examination, and the advance button are all part of this
     // dialogue surface, so L remains available while any of them is focused.
     // Other native controls keep their normal text-entry/activation behavior.
     if (
@@ -328,9 +312,10 @@
       if (isModifiedHistoryShortcut(e)) return;
       if (historyOpen) {
         e.preventDefault();
-        // Close via the L shortcut returns the user to dialogue mode: blur
-        // rather than refocus the LOG button so a subsequent Space advances
-        // dialogue instead of re-activating LOG.
+        // Close via the L shortcut returns the user to dialogue mode: focus
+        // the visible advance button rather than the LOG button so a
+        // subsequent Enter/Space proceeds with dialogue instead of
+        // re-activating LOG.
         closeHistory({ refocusLog: false });
         return;
       }
@@ -339,44 +324,19 @@
       openHistory();
       return;
     }
-
-    if (e.key !== " " && e.key !== "Enter") return;
-    // IME composition fires Space/Enter with isComposing=true; advancing
-    // mid-composition would corrupt CJK input. No text inputs exist in the
-    // dialogue flow so this is low-risk, but guard for correctness.
-    if (e.isComposing) return;
-    // While history is open, do not advance dialogue. We intentionally do
-    // NOT swallow Space/Enter here: the history panel auto-focuses the CLOSE
-    // button on mount, and a keyboard user must be able to activate it with
-    // Space/Enter (WCAG 2.1.1). isAdvanceBlockedByFocusedControl returns true
-    // while focus is inside the panel (CLOSE is a <button>, the list has
-    // tabindex), so the global handler returns without preventDefault and the
-    // browser's native button activation proceeds. The popup closes via CLOSE,
-    // the L shortcut, or Escape (escape-coordinator claim).
-    if (historyOpen) {
-      if (isAdvanceBlockedByFocusedControl()) return;
-      // Focus is on body (e.g. race before auto-focus lands): swallow to
-      // avoid advancing dialogue behind the open popup.
-      e.preventDefault();
-      return;
-    }
-    if (isAdvanceBlockedByFocusedControl()) return;
-    e.preventDefault();
-    if (completeTextRevealIfNeeded()) {
-      onAdvanceFeedback?.();
-      return;
-    }
-    dispatchAdvance();
   }
 </script>
 
 <!--
-  This window-level keydown handler advances dialogue on Space/Enter.
-  Escape is deliberately NOT handled here: it is reserved by GameShell's
-  capture-phase handler as the sole entry point for opening the game menu,
-  which calls stopImmediatePropagation() so Escape never reaches this handler
-  while the menu is open. Do NOT add Escape handling here — it would race the
-  menu toggle and reintroduce the conflict. See GameShell.svelte onMount.
+  This window-level keydown handler only toggles dialogue history on L.
+  Advancing dialogue is owned by the visible .advance-button below (and the
+  click-to-advance .box): press Enter/Space while the button is focused, or
+  click. Escape is deliberately NOT handled here: it is reserved by
+  GameShell's capture-phase handler as the sole entry point for opening the
+  game menu, which calls stopImmediatePropagation() so Escape never reaches
+  this handler while the menu is open. Do NOT add Escape handling here — it
+  would race the menu toggle and reintroduce the conflict. See
+  GameShell.svelte onMount.
 -->
 <svelte:window onkeydown={handleKey} />
 
@@ -423,13 +383,12 @@
     LOG
   </button>
 
-  <!-- Keyboard advance is global; the dialogue surface itself is click-only
-       so it does not become a selectable/focusable control. This avoids a
-       nested-button role conflict (LOG / cross-exam buttons live inside it).
-       The sibling .advance-button below restores a Tab-reachable, SR-announced
-       advance target without nesting a button inside .box. Sighted keyboard
-       users still rely on the global Space/Enter handler; the visually-hidden
-       button exists for screen-reader users and as the e2e anchor.
+  <!-- The dialogue surface itself is click-only so it does not become a
+       selectable/focusable control. This avoids a nested-button role conflict
+       (LOG / cross-exam buttons live inside it). The sibling .advance-button
+       below is the visible, Tab-reachable, SR-announced advance target without
+       nesting a button inside .box. Sighted keyboard users activate it with
+       Enter/Space (native button activation) or click anywhere on .box.
 
        This button uses aria-disabled (not the native disabled attribute) so
        it remains Tab-focusable and SR-announced while signalling the disabled
@@ -439,14 +398,17 @@
        contrast, use the native disabled attribute because they are optional
        affordances that should drop out of the tab order when unavailable. -->
   <button
-    class="advance-button sr-only"
+    class="advance-button"
     type="button"
     aria-label="推進對話"
     aria-disabled={disabled}
     inert={historyOpen}
     bind:this={advanceButton}
-    onclick={handleClick}>推進對話</button
+    onclick={handleClick}
   >
+    <span class="advance-label">推進對話</span>
+    <span class="advance-arrow" aria-hidden="true">▶</span>
+  </button>
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -495,59 +457,58 @@
         </button>
       </div>
     {/if}
-
-    <div class="hint">
-      <span class="key">Space</span>
-      <span class="arrow">▶</span>
-      {#if crossExam}
-        <span class="hint-label">繼續聆聽</span>
-      {/if}
-    </div>
   </div>
 </div>
 
 <style>
-  .sr-only {
+  /* The visible advance target, anchored to the bottom-right of the wrapper
+     so it clears the top-left kind label (敘述/發言) and the top-right LOG
+     button; cross-exam buttons (反駁/退下) sit bottom-left inside .box.
+     Click-to-advance still works on .box, but this pill is the named,
+     Tab-reachable, AT-announced affordance and the e2e anchor. */
+  .advance-button {
     position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-    border: 0;
-  }
-
-  /* Un-hide the sr-only advance button when keyboard focus lands on it so
-     sighted keyboard users get a visible focus target (WCAG 2.4.7). The
-     button is normally invisible because the dialogue surface is click-only
-     and Space/Enter advance is handled at the window level; this restores
-     the focus ring only for keyboard navigation, not for mouse clicks.
-     Anchored to the bottom-right of the wrapper so it clears the top-left
-     kind label (敘述/發言) and the top-right LOG button; cross-exam buttons
-     (反駁/退下) are bottom-left. The bottom-right corner hosts the Space ▶
-     hint, so the pill is lifted above it (bottom: 30px) to avoid overlap. */
-  .advance-button.sr-only:focus-visible {
-    position: absolute;
-    width: auto;
-    height: auto;
-    padding: 6px 14px;
-    margin: 0;
-    overflow: visible;
-    clip-path: none;
-    white-space: normal;
-    bottom: 30px;
+    bottom: 14px;
     right: 18px;
     z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px 6px;
     border: 1px solid var(--crimson);
     background: var(--crimson-soft);
     color: var(--bone);
+    cursor: pointer;
     font-family: var(--serif-jp);
     font-size: 13px;
     letter-spacing: 0.08em;
+    transition:
+      border-color 0.18s,
+      background 0.18s,
+      color 0.18s;
+  }
+
+  .advance-button:hover:not([aria-disabled="true"]) {
+    background: rgba(174, 28, 49, 0.3);
+  }
+
+  .advance-button:focus-visible {
     outline: 2px solid var(--crimson);
     outline-offset: 2px;
+  }
+
+  .advance-button[aria-disabled="true"] {
+    cursor: wait;
+    opacity: 0.55;
+  }
+
+  .advance-arrow {
+    color: var(--crimson);
+    animation: lyra-pulse 1.6s ease-in-out infinite;
+  }
+
+  .advance-button[aria-disabled="true"] .advance-arrow {
+    animation: none;
   }
 
   .wrapper {
@@ -735,37 +696,6 @@
   .box.action,
   .box.scene {
     border-left-color: var(--rule-strong);
-  }
-
-  .hint {
-    position: absolute;
-    right: 22px;
-    bottom: 10px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.18em;
-    color: var(--bone-faint);
-    text-transform: uppercase;
-  }
-
-  .hint .key {
-    padding: 2px 6px 1px;
-    border: 1px solid var(--rule-strong);
-  }
-
-  .hint .arrow {
-    color: var(--crimson);
-    animation: lyra-pulse 1.6s ease-in-out infinite;
-  }
-
-  .hint-label {
-    font-family: var(--serif-jp);
-    letter-spacing: 0.12em;
-    color: var(--bone-faint);
-    text-transform: none;
   }
 
   /* inline cross-examination controls */

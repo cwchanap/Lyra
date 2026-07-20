@@ -4,10 +4,10 @@ import {
   STORY_CLEARED_STORAGE_KEY,
 } from "./production-anchors";
 
-/** DialogueBox renders a visually-hidden <button aria-label="推進對話"> as a
- * sibling of the click-to-advance .box div. The button is the SR/e2e anchor;
- * the .box div itself is click-only (no role/tabindex) to avoid nesting
- * buttons inside a button role. */
+/** DialogueBox renders a visible <button aria-label="推進對話"> as a sibling
+ * of the click-to-advance .box div. The button is the named advance target
+ * and the e2e anchor; the .box div itself is click-only (no role/tabindex)
+ * to avoid nesting buttons inside a button role. */
 export const advanceDialogueSelector = `button[aria-label="${anchors.advanceDialogue}"]`;
 
 /**

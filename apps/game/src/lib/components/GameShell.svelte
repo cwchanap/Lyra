@@ -225,9 +225,10 @@
     // intercept it before the menu toggles.
     //
     // Coexistence note: DialogueBox also registers a window keydown, but only
-    // for Space/Enter (not Escape). capture + stopImmediatePropagation keeps
-    // the contract one-directional — Escape is owned here, advance keys stay
-    // owned by DialogueBox.
+    // for the L history-toggle shortcut (not Escape). capture +
+    // stopImmediatePropagation keeps the contract one-directional — Escape is
+    // owned here, L stays owned by DialogueBox. Dialogue advance is owned by
+    // the visible advance button + click-to-advance .box, not a window key.
     //
     // Priority: submenu screens step back to the root menu before the menu
     // closes, because the submenu is the topmost layer. The root menu itself

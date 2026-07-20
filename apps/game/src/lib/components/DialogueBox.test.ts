@@ -620,49 +620,6 @@ describe("DialogueBox", () => {
     expect(onAdvance).toHaveBeenCalledTimes(1);
   });
 
-  it("plays advance feedback when completing text reveal via window Space", async () => {
-    vi.useFakeTimers();
-    const onAdvanceFeedback = vi.fn();
-    const { onAdvance } = renderDialogueBox(
-      { kind: "action", text: "先把這句說完。" },
-      { textRevealDurationMs: 1500, onAdvanceFeedback },
-    );
-
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
-    );
-
-    expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
-    expect(onAdvance).not.toHaveBeenCalled();
-    await waitFor(() => {
-      expect(screen.getByText("先把這句說完。")).toBeInTheDocument();
-    });
-
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
-    );
-    expect(onAdvance).toHaveBeenCalledTimes(1);
-  });
-
-  it("plays advance feedback when completing text reveal via Space", async () => {
-    vi.useFakeTimers();
-    const onAdvanceFeedback = vi.fn();
-    const { onAdvance } = renderDialogueBox(
-      { kind: "action", text: "先把這句說完。" },
-      { textRevealDurationMs: 1500, onAdvanceFeedback },
-    );
-    dispatchWindowKeydown({ key: " " });
-
-    expect(onAdvanceFeedback).toHaveBeenCalledTimes(1);
-    expect(onAdvance).not.toHaveBeenCalled();
-    await waitFor(() => {
-      expect(screen.getByText("先把這句說完。")).toBeInTheDocument();
-    });
-
-    dispatchWindowKeydown({ key: " " });
-    expect(onAdvance).toHaveBeenCalledTimes(1);
-  });
-
   it("plays advance feedback before dispatching advance on click", async () => {
     const user = userEvent.setup();
     const calls: string[] = [];
@@ -705,59 +662,18 @@ describe("DialogueBox", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
-  it("advances exactly once from Space or Enter on the window", () => {
-    const { onAdvance } = renderDialogueBox({
-      kind: "action",
-      text: "hello",
-    });
-
-    dispatchWindowKeydown({ key: " " });
-    expect(onAdvance).toHaveBeenCalledTimes(1);
-    expect(onAdvance).toHaveBeenLastCalledWith(token);
-
-    dispatchWindowKeydown({ key: "Enter" });
-    expect(onAdvance).toHaveBeenCalledTimes(2);
-    expect(onAdvance).toHaveBeenLastCalledWith(token);
-  });
-
-  it("does not advance from Space or Enter when focus is inside a role=dialog surface (e.g. game menu panel)", () => {
-    const { onAdvance } = renderDialogueBox({
-      kind: "action",
-      text: "hello",
-    });
-
-    // Simulate the GameShell menu panel: a tabindex=-1 div with role="dialog"
-    // that can receive programmatic/assistive focus. Without the
-    // [role="dialog"] entry in interactiveFocusSelector, Space/Enter would
-    // advance the dialogue behind the menu even though <main> is inert.
-    const dialog = document.createElement("div");
-    dialog.setAttribute("role", "dialog");
-    dialog.setAttribute("aria-modal", "true");
-    dialog.tabIndex = -1;
-    document.body.append(dialog);
-    dialog.focus();
-    expect(document.activeElement).toBe(dialog);
-
-    dispatchWindowKeydown({ key: " " });
-    dispatchWindowKeydown({ key: "Enter" });
-    expect(onAdvance).not.toHaveBeenCalled();
-
-    dialog.remove();
-  });
-
-  it("advances from Space or Enter via the focused SR advance button (native activation)", async () => {
+  it("advances from Space or Enter via the focused advance button (native activation)", async () => {
     const user = userEvent.setup();
     const { onAdvance } = renderDialogueBox({
       kind: "action",
       text: "hello",
     });
 
-    // The SR advance button is a native <button>; when focused, Space/Enter
-    // activate it natively (→ handleClick → dispatchAdvance). The window-level
-    // handler bails because the focused element matches `button` in
-    // interactiveFocusSelector, so advance must come from the button's own
-    // click, not the global shortcut. dispatchWindowKeydown does not synthesize
-    // this native activation in jsdom; userEvent.keyboard does.
+    // The advance button is a native <button>; when focused, Space/Enter
+    // activate it natively (→ handleClick → dispatchAdvance). There is no
+    // window-level advance handler, so advance must come from the button's
+    // own click. dispatchWindowKeydown does not synthesize this native
+    // activation in jsdom; userEvent.keyboard does.
     const advanceButton = screen.getByRole("button", { name: "推進對話" });
     advanceButton.focus();
     expect(document.activeElement).toBe(advanceButton);
@@ -903,7 +819,7 @@ describe("DialogueBox", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("advances dialogue with Space after closing history via L (does not refocus LOG)", async () => {
+  it("advances dialogue with Enter after closing history via L (focuses the advance button, not LOG)", async () => {
     const user = userEvent.setup();
     const { onAdvance } = renderDialogueBox(
       { kind: "action", text: "hello" },
@@ -926,12 +842,14 @@ describe("DialogueBox", () => {
       ).not.toBeInTheDocument();
     });
 
-    // Space must advance dialogue, not re-open history via the refocused
-    // LOG button's native Space-activates-button behavior. If closeHistory
-    // leaves focus on the LOG button, the browser synthesizes a click on it
-    // (since handleKey returns without preventDefault when a button is
-    // focused), re-opening history instead of advancing.
-    await user.keyboard(" ");
+    // closeHistory via L focuses the advance button (not LOG), so a
+    // subsequent Enter activates the advance button natively and proceeds
+    // with dialogue instead of re-opening history.
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
+    await waitFor(() => {
+      expect(advanceButton).toHaveFocus();
+    });
+    await user.keyboard("{Enter}");
     await waitFor(() => {
       expect(onAdvance).toHaveBeenCalledTimes(1);
     });
@@ -940,7 +858,7 @@ describe("DialogueBox", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("restores a stable focus target (the SR advance button) after closing history via CLOSE", async () => {
+  it("restores a stable focus target (the advance button) after closing history via CLOSE", async () => {
     const user = userEvent.setup();
     renderDialogueBox({ kind: "action", text: "hello" }, { history });
 
@@ -948,17 +866,17 @@ describe("DialogueBox", () => {
     await user.click(screen.getByRole("button", { name: "關閉對話紀錄" }));
 
     // After dismissal via CLOSE, focus must land on a stable, AT-announced
-    // target rather than <body>. The SR advance button (推進對話) is the
-    // chosen target: its own Space/Enter activation advances dialogue, so
-    // it does not reintroduce the Space-re-opens-history hazard that
-    // refocusing the LOG button would.
+    // target rather than <body>. The advance button (推進對話) is the
+    // chosen target: its own Enter/Space activation advances dialogue, so
+    // it does not reintroduce the re-opens-history hazard that refocusing
+    // the LOG button would.
     const advanceButton = screen.getByRole("button", { name: "推進對話" });
     await waitFor(() => {
       expect(advanceButton).toHaveFocus();
     });
   });
 
-  it("restores a stable focus target (the SR advance button) after closing history via L", async () => {
+  it("restores a stable focus target (the advance button) after closing history via L", async () => {
     const user = userEvent.setup();
     renderDialogueBox({ kind: "action", text: "hello" }, { history });
 
@@ -981,7 +899,7 @@ describe("DialogueBox", () => {
     });
   });
 
-  it("does not advance with Space or Enter while dialogue history is open", async () => {
+  it("does not advance from window Space or Enter while dialogue history is open", async () => {
     const user = userEvent.setup();
     const { onAdvance } = renderDialogueBox(
       { kind: "action", text: "hello" },
@@ -989,6 +907,9 @@ describe("DialogueBox", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    // With the window-level advance handler gone, Space/Enter on the window
+    // must not advance dialogue behind the open popup. The history panel
+    // auto-focuses its CLOSE button; Space/Enter activate CLOSE natively.
     window.dispatchEvent(
       new KeyboardEvent("keydown", { key: " ", bubbles: true }),
     );
@@ -1133,17 +1054,7 @@ describe("DialogueBox", () => {
     expect(behindCloser).toHaveBeenCalledTimes(1);
   });
 
-  it("advances dialogue when Space is pressed on the window", () => {
-    const { onAdvance } = renderDialogueBox({ kind: "action", text: "hello" });
-
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
-    );
-
-    expect(onAdvance).toHaveBeenCalledWith(token);
-  });
-
-  it("keeps the dialogue surface click-only but exposes a sibling advance button for SR", () => {
+  it("keeps the dialogue surface click-only but exposes a sibling advance button", () => {
     const { container } = renderDialogueBox({
       kind: "action",
       text: "hello",
@@ -1153,14 +1064,14 @@ describe("DialogueBox", () => {
     expect(box).not.toHaveAttribute("role");
     expect(box).not.toHaveAttribute("tabindex");
     // The advance button is a sibling of .box (not nested inside it), so
-    // screen-reader users have a Tab-reachable advance target without a
+    // keyboard/AT users have a Tab-reachable advance target without a
     // nested-button role conflict.
     const advanceButton = screen.getByRole("button", { name: "推進對話" });
     expect(advanceButton).not.toBe(box);
     expect(advanceButton.closest(".box")).toBeNull();
   });
 
-  it("advances dialogue when the SR advance button is clicked", async () => {
+  it("advances dialogue when the advance button is clicked", async () => {
     const { onAdvance } = renderDialogueBox({
       kind: "action",
       text: "hello",
@@ -1169,7 +1080,7 @@ describe("DialogueBox", () => {
     expect(onAdvance).toHaveBeenCalledWith(token);
   });
 
-  it("reflects the disabled state on the SR advance button via aria-disabled", () => {
+  it("reflects the disabled state on the advance button via aria-disabled", () => {
     // The advance button uses aria-disabled (not the native disabled attribute)
     // so it remains Tab-focusable and SR-announced while signalling the
     // disabled state. Verify the attribute tracks the disabled prop.
@@ -1180,7 +1091,7 @@ describe("DialogueBox", () => {
     );
   });
 
-  it("marks the SR advance button inert while dialogue history is open", async () => {
+  it("marks the advance button inert while dialogue history is open", async () => {
     const user = userEvent.setup();
     const { onAdvance } = renderDialogueBox(
       { kind: "action", text: "hello" },
@@ -1201,19 +1112,6 @@ describe("DialogueBox", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
-  it("advances from Space when a noninteractive gameplay container is focused", () => {
-    const { onAdvance } = renderDialogueBox({ kind: "action", text: "hello" });
-    const gameplayRoot = document.createElement("div");
-    gameplayRoot.tabIndex = 0;
-    document.body.appendChild(gameplayRoot);
-    gameplayRoot.focus();
-
-    dispatchWindowKeydown({ key: " " });
-    gameplayRoot.remove();
-
-    expect(onAdvance).toHaveBeenCalledWith(token);
-  });
-
   it("opens dialogue history with L when a noninteractive gameplay container is focused", async () => {
     renderDialogueBox({ kind: "action", text: "hello" }, { history });
     const gameplayRoot = document.createElement("div");
@@ -1231,8 +1129,8 @@ describe("DialogueBox", () => {
     gameplayRoot.remove();
   });
 
-  it("opens dialogue history with L while the SR advance button is focused", async () => {
-    // The SR advance button is a sibling of .box (a native <button>), so
+  it("opens dialogue history with L while the advance button is focused", async () => {
+    // The advance button is a sibling of .box (a native <button>), so
     // without an explicit exemption isHistoryShortcutBlockedByFocusedControl
     // would treat it as an interactive control and swallow L. The advance
     // button is part of this dialogue surface, so L must remain available.
@@ -1250,101 +1148,12 @@ describe("DialogueBox", () => {
     });
   });
 
-  it("advances dialogue when Enter is pressed on the window", () => {
-    const { onAdvance } = renderDialogueBox({ kind: "action", text: "hello" });
-
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-    );
-
-    expect(onAdvance).toHaveBeenCalledWith(token);
-  });
-
-  it("plays advance feedback before advancing from the keyboard", () => {
-    const order: string[] = [];
-    const onAdvanceFeedback = () => order.push("feedback");
-    const { onAdvance } = renderDialogueBox(
-      { kind: "action", text: "hello" },
-      { onAdvanceFeedback },
-    );
-    onAdvance.mockImplementation(() => order.push("advance"));
-
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
-    );
-
-    expect(onAdvance).toHaveBeenCalledWith(token);
-    expect(order).toEqual(["feedback", "advance"]);
-  });
-
-  it("does not advance from the keyboard while disabled", () => {
+  it("does not advance from the advance button while disabled", async () => {
     const onAdvance = vi.fn();
     renderDialogueBox({ kind: "action", text: "hello" }, { disabled: true });
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
 
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
-    );
-
-    expect(onAdvance).not.toHaveBeenCalled();
-  });
-
-  it("ignores repeated key holds", () => {
-    const onAdvance = vi.fn();
-    renderDialogueBox({ kind: "action", text: "hello" });
-
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", { key: " ", bubbles: true, repeat: true }),
-    );
-
-    expect(onAdvance).not.toHaveBeenCalled();
-  });
-
-  it("ignores keys that are not Space or Enter", () => {
-    const onAdvance = vi.fn();
-    renderDialogueBox({ kind: "action", text: "hello" });
-
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
-    );
-
-    expect(onAdvance).not.toHaveBeenCalled();
-  });
-
-  it("does not advance from Space or Enter while IME is composing", () => {
-    const onAdvanceFeedback = vi.fn();
-    const { onAdvance } = renderDialogueBox(
-      { kind: "action", text: "hello" },
-      { onAdvanceFeedback },
-    );
-
-    // IME composition fires Space/Enter with isComposing=true; advancing
-    // mid-composition would corrupt CJK input. Neither advance nor the
-    // feedback SFX should fire.
-    const spaceEvent = dispatchWindowKeydown({ key: " ", isComposing: true });
-    const enterEvent = dispatchWindowKeydown({
-      key: "Enter",
-      isComposing: true,
-    });
-
-    expect(onAdvance).not.toHaveBeenCalled();
-    expect(onAdvanceFeedback).not.toHaveBeenCalled();
-    // The guard returns before preventDefault, so the event is not swallowed
-    // — the IME keeps the keypress for composition.
-    expect(spaceEvent.defaultPrevented).toBe(false);
-    expect(enterEvent.defaultPrevented).toBe(false);
-  });
-
-  it("does not advance from the keyboard while another element is focused", () => {
-    const onAdvance = vi.fn();
-    renderDialogueBox({ kind: "action", text: "hello" });
-
-    const input = document.createElement("input");
-    document.body.appendChild(input);
-    input.focus();
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", { key: " ", bubbles: true }),
-    );
-    input.remove();
+    await fireEvent.click(advanceButton);
 
     expect(onAdvance).not.toHaveBeenCalled();
   });
