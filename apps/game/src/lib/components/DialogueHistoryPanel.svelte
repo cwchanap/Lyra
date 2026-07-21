@@ -145,12 +145,21 @@
        top edge with a 12px gap. This keeps the LOG button mouse-clickable
        even when the dialogue box grows past its 160px min-height (long
        wrapping action/testimony lines). The default 180px is a fallback;
-       DialogueBox overrides it on open. The height formula keeps the same
-       top margin (180 + 50 = 230). */
+       DialogueBox overrides it on open. The height formula references the
+       same custom property so the panel shrinks as `bottom` grows — keeping
+       a 24px top margin and the header/CLOSE control within the viewport on
+       the 800×600 Tauri window instead of letting the top slip off-screen
+       when the wrapper grows past its min-height. `box-sizing: border-box`
+       makes `height` the border-box height so the padding+border are
+       accounted for by the formula (no content-box overflow). */
+    box-sizing: border-box;
     bottom: var(--history-panel-bottom, 180px);
     z-index: 35;
     width: min(900px, calc(100vw - 56px));
-    height: min(460px, calc(100dvh - 230px));
+    height: min(
+      460px,
+      calc(100dvh - var(--history-panel-bottom, 180px) - 24px)
+    );
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     gap: 18px;
@@ -257,7 +266,10 @@
   @media (max-width: 720px) {
     .history-panel {
       width: min(900px, calc(100vw - 36px));
-      height: min(440px, calc(100dvh - 220px));
+      height: min(
+        440px,
+        calc(100dvh - var(--history-panel-bottom, 180px) - 24px)
+      );
       padding: 18px;
     }
   }

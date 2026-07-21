@@ -68,7 +68,6 @@
   // always clears the LOG button even when the dialogue box grows past its
   // 160px min-height. Default 180 matches the fallback in the panel.
   let historyPanelBottom = $state(180);
-  let wrapperResizeObserver: ResizeObserver | null = null;
   let visibleTextLength = $state(0);
   let textRevealTimer: ReturnType<typeof setInterval> | null = null;
   const portraitAssetId = $derived(
@@ -196,14 +195,11 @@
   function openHistory() {
     historyOpen = true;
     updateHistoryPanelBottom();
-    // Track wrapper resizes (e.g. window resize changing text wrap) while
-    // history is open so the panel stays positioned above the wrapper.
-    if (wrapper && typeof ResizeObserver !== "undefined") {
-      wrapperResizeObserver = new ResizeObserver(() =>
-        updateHistoryPanelBottom(),
-      );
-      wrapperResizeObserver.observe(wrapper);
-    }
+    // The ResizeObserver that tracks wrapper resizes while history is open
+    // is created/destroyed by the $effect below keyed on `historyOpen`, so
+    // it is also torn down on close and on component unmount (e.g. when the
+    // mode flips from dialogue to explore/interrogation while history is
+    // open). We only need to seed the initial bottom offset here.
   }
 
   // Held while history is open so closeHistory can release the escape claim
@@ -221,8 +217,9 @@
   function closeHistory({ refocusLog = false } = {}) {
     if (!historyOpen) return;
     historyOpen = false;
-    wrapperResizeObserver?.disconnect();
-    wrapperResizeObserver = null;
+    // The ResizeObserver is torn down by the $effect below keyed on
+    // `historyOpen` (its cleanup runs when this flips to false, and also on
+    // unmount), so no manual disconnect is needed here.
     // Release synchronously so the escape coordinator's "close one layer per
     // Escape" contract holds even before Svelte flushes the effect cleanup.
     releaseEscapeClaim?.();
@@ -316,6 +313,22 @@
       releaseEscapeClaim?.();
       releaseEscapeClaim = null;
     };
+  });
+
+  // Track wrapper resizes (e.g. window resize changing text wrap) while
+  // history is open so the panel stays positioned above the wrapper. The
+  // cleanup runs both when `historyOpen` flips back to false (close) and when
+  // the component unmounts while history is open (e.g. the mode flips from
+  // dialogue to explore/interrogation), disconnecting the observer so it does
+  // not outlive the wrapper element or retain the callback's component-state
+  // closure.
+  $effect(() => {
+    if (!historyOpen) return;
+    const target = wrapper;
+    if (!target || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => updateHistoryPanelBottom());
+    observer.observe(target);
+    return () => observer.disconnect();
   });
 
   $effect(() => {

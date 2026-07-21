@@ -68,10 +68,16 @@ describe("DialogueHistoryPanel", () => {
     expect(source).toContain("bottom = 180");
     expect(source).toContain("bottom: var(--history-panel-bottom, 180px);");
     expect(source).toContain("--history-panel-bottom: {bottom}px");
-    // Height formula keeps the same top margin (180 + 50 = 230).
-    expect(source).toContain("height: min(460px, calc(100dvh - 230px));");
-    // Mobile panel height formula keeps a 40px top margin (180 + 40 = 220).
-    expect(source).toContain("height: min(440px, calc(100dvh - 220px));");
+    // Height formula references the same custom property so the panel shrinks
+    // as `bottom` grows, keeping a 24px top margin within the viewport. Match
+    // the meaningful fragments (Prettier wraps the declaration across lines).
+    expect(source).toContain("min(");
+    expect(source).toContain("460px,");
+    expect(source).toContain("440px,");
+    expect(source).toContain(
+      "calc(100dvh - var(--history-panel-bottom, 180px) - 24px)",
+    );
+    expect(source).toContain("box-sizing: border-box;");
     expect(source).not.toContain("max-height:");
     expect(source).toContain("background: rgba(8, 8, 14, 0.99);");
   });
