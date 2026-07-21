@@ -224,11 +224,16 @@
     // dialogue/investigation controls behind the overlay, so they can't
     // intercept it before the menu toggles.
     //
-    // Coexistence note: DialogueBox also registers a window keydown, but only
-    // for the L history-toggle shortcut (not Escape). capture +
-    // stopImmediatePropagation keeps the contract one-directional — Escape is
-    // owned here, L stays owned by DialogueBox. Dialogue advance is owned by
-    // the visible advance button + click-to-advance .box, not a window key.
+    // Coexistence note: DialogueBox also registers a window keydown for the
+    // L history-toggle shortcut and a Space/Enter advance fallback that only
+    // fires when focus is on <body>/a non-interactive element (focused
+    // interactive controls keep their native Space/Enter activation). Neither
+    // handles Escape. capture + stopImmediatePropagation keeps the contract
+    // one-directional — Escape is owned here, L and the body-focus Space/Enter
+    // fallback stay owned by DialogueBox. Dialogue advance is primarily owned
+    // by the visible advance button + click-to-advance .box; the window key
+    // is only a focus-agnostic fallback for when the advance button is not
+    // focused.
     //
     // Priority: submenu screens step back to the root menu before the menu
     // closes, because the submenu is the topmost layer. The root menu itself
