@@ -5,9 +5,11 @@
   let {
     history,
     onClose,
+    bottom = 180,
   }: {
     history: DialogueHistoryEntry[];
     onClose: () => void;
+    bottom?: number;
   } = $props();
 
   let panel: HTMLDivElement | undefined = $state();
@@ -79,6 +81,7 @@
   aria-labelledby="dialogue-history-title"
   tabindex="-1"
   onkeydown={handleKeydown}
+  style="--history-panel-bottom: {bottom}px"
 >
   <header>
     <div>
@@ -137,15 +140,14 @@
   .history-panel {
     position: fixed;
     left: 50%;
-    /* Lift the panel above the dialogue wrapper so it does not cover the
-       LOG toggle. The wrapper is fixed at bottom: 28px and the dialogue
-       box has min-height: 160px, so the wrapper's top edge sits at
-       28 + 160 = 188px from the viewport bottom; the LOG button
-       (top: 14px within the wrapper) has its top edge at ~174px. A
-       180px bottom clears the LOG button with a small gap so the
-       toggle remains mouse-clickable while history is open. The height
-       formula is adjusted to keep the same top margin. */
-    bottom: 180px;
+    /* `bottom` is passed in from DialogueBox, which measures the dialogue
+       wrapper's actual height and positions this panel above the wrapper's
+       top edge with a 12px gap. This keeps the LOG button mouse-clickable
+       even when the dialogue box grows past its 160px min-height (long
+       wrapping action/testimony lines). The default 180px is a fallback;
+       DialogueBox overrides it on open. The height formula keeps the same
+       top margin (180 + 50 = 230). */
+    bottom: var(--history-panel-bottom, 180px);
     z-index: 35;
     width: min(900px, calc(100vw - 56px));
     height: min(460px, calc(100dvh - 230px));
@@ -254,15 +256,6 @@
 
   @media (max-width: 720px) {
     .history-panel {
-      /* Lift the panel above the dialogue wrapper so it does not cover the
-         LOG toggle. The wrapper is fixed at bottom: 28px and the dialogue
-         box has min-height: 160px, so the wrapper's top edge sits at
-         28 + 160 = 188px from the viewport bottom; the LOG button
-         (top: 14px within the wrapper) has its top edge at ~174px. A
-         180px bottom clears the LOG button with a small gap so the
-         toggle remains mouse-clickable while history is open. The height
-         formula is adjusted to keep the same top margin. */
-      bottom: 180px;
       width: min(900px, calc(100vw - 36px));
       height: min(440px, calc(100dvh - 220px));
       padding: 18px;

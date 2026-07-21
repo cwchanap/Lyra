@@ -62,6 +62,13 @@
   let historyOpen = $state(false);
   let logButton: HTMLButtonElement | undefined = $state();
   let advanceButton: HTMLButtonElement | undefined = $state();
+  let wrapper: HTMLDivElement | undefined = $state();
+  // History panel bottom offset, updated from the wrapper's actual height
+  // when history opens (and on wrapper resize while open) so the panel
+  // always clears the LOG button even when the dialogue box grows past its
+  // 160px min-height. Default 180 matches the fallback in the panel.
+  let historyPanelBottom = $state(180);
+  let wrapperResizeObserver: ResizeObserver | null = null;
   let visibleTextLength = $state(0);
   let textRevealTimer: ReturnType<typeof setInterval> | null = null;
   const portraitAssetId = $derived(
@@ -176,8 +183,27 @@
     toggleHistory();
   }
 
+  function updateHistoryPanelBottom() {
+    if (!wrapper) return;
+    // The wrapper is fixed at bottom: 28px and grows upward. Position the
+    // history panel above the wrapper's actual top edge with a 12px gap so
+    // the LOG button (top: 14px within the wrapper) stays mouse-clickable
+    // even when the dialogue box grows past its 160px min-height (long
+    // action/testimony lines that wrap).
+    historyPanelBottom = 28 + wrapper.getBoundingClientRect().height + 12;
+  }
+
   function openHistory() {
     historyOpen = true;
+    updateHistoryPanelBottom();
+    // Track wrapper resizes (e.g. window resize changing text wrap) while
+    // history is open so the panel stays positioned above the wrapper.
+    if (wrapper && typeof ResizeObserver !== "undefined") {
+      wrapperResizeObserver = new ResizeObserver(() =>
+        updateHistoryPanelBottom(),
+      );
+      wrapperResizeObserver.observe(wrapper);
+    }
   }
 
   // Held while history is open so closeHistory can release the escape claim
@@ -195,6 +221,8 @@
   function closeHistory({ refocusLog = false } = {}) {
     if (!historyOpen) return;
     historyOpen = false;
+    wrapperResizeObserver?.disconnect();
+    wrapperResizeObserver = null;
     // Release synchronously so the escape coordinator's "close one layer per
     // Escape" contract holds even before Svelte flushes the effect cleanup.
     releaseEscapeClaim?.();
@@ -439,11 +467,12 @@
   <div class="history-backdrop" aria-hidden="true"></div>
   <DialogueHistoryPanel
     {history}
+    bottom={historyPanelBottom}
     onClose={() => closeHistory({ refocusLog: false })}
   />
 {/if}
 
-<div class="wrapper" class:line={current.kind === "line"}>
+<div class="wrapper" class:line={current.kind === "line"} bind:this={wrapper}>
   <button
     bind:this={logButton}
     class="log-button"
@@ -760,14 +789,18 @@
     align-items: center;
   }
 
-  /* Narrow-screen layout. Below ~480px the side-by-side line-grid collapses:
-     the fixed 140px speaker block + 24px gap + 130px right padding (clears
-     the absolutely-positioned advance pill) leaves the text column with no
-     usable width. Stack the speaker above the text so the text gets the full
-     content width, and drop the speaker block's min-width / right border so
-     it doesn't force overflow. The advance pill still needs ~125px of
+  /* Narrow-screen layout. Below ~600px the side-by-side line-grid collapses:
+     the fixed 140px speaker block + 22px padding + 24px gap + 130px right
+     padding (clears the absolutely-positioned advance pill) leaves the text
+     column only viewport-400 px wide — at 481px that's ~81px, far too narrow
+     for readable dialogue. Stacking the speaker above the text gives the
+     text the full content width. The previous 480px breakpoint created a
+     one-pixel discontinuity where 480px stacked gave ~272px of text but 481px
+     side-by-side gave ~81px. 600px ensures the side-by-side text column is at
+     least ~200px (600 - 56 wrapper inset - 158 box padding - 186 speaker
+     reservation), which is usable. The advance pill still needs ~125px of
      clearance from the right edge, so the right padding stays at 130px. */
-  @media (max-width: 480px) {
+  @media (max-width: 600px) {
     .box {
       padding: 18px 130px 50px 22px;
     }
