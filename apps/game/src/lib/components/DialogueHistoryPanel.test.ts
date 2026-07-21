@@ -58,17 +58,19 @@ describe("DialogueHistoryPanel", () => {
     expect(screen.getByText("尚無對話紀錄")).toBeInTheDocument();
   });
 
-  it("uses a fixed responsive panel height with a high-opacity backdrop", () => {
+  it("uses a dynamic panel bottom with a high-opacity backdrop", () => {
     const source = dialogueHistoryPanelSource();
 
-    // Desktop panel is lifted to bottom: 180px so it clears the dialogue
-    // wrapper (bottom: 28px + 160px min-height = 188px top) and the LOG
-    // button (top edge ~174px) stays mouse-clickable while history is open.
+    // The panel's `bottom` is driven by a CSS custom property set from the
+    // `bottom` prop (default 180), which DialogueBox measures from the
+    // wrapper's actual height so the panel always clears the LOG button.
+    expect(source).toContain("bottom?: number;");
+    expect(source).toContain("bottom = 180");
+    expect(source).toContain("bottom: var(--history-panel-bottom, 180px);");
+    expect(source).toContain("--history-panel-bottom: {bottom}px");
     // Height formula keeps the same top margin (180 + 50 = 230).
-    expect(source).toContain("bottom: 180px;");
     expect(source).toContain("height: min(460px, calc(100dvh - 230px));");
-    // Mobile panel uses the same 180px bottom; its height formula keeps a
-    // 40px top margin (180 + 40 = 220).
+    // Mobile panel height formula keeps a 40px top margin (180 + 40 = 220).
     expect(source).toContain("height: min(440px, calc(100dvh - 220px));");
     expect(source).not.toContain("max-height:");
     expect(source).toContain("background: rgba(8, 8, 14, 0.99);");
