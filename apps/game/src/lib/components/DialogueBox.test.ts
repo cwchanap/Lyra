@@ -937,8 +937,11 @@ describe("DialogueBox", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
-    // With the window-level advance handler gone, Space/Enter on the window
-    // must not advance dialogue behind the open popup. The history panel
+    // Regression guard: the window-level Space/Enter advance handler was
+    // deliberately removed (commit 1501ff7) in favor of the visible
+    // .advance-button. If someone re-adds a global Space/Enter advance
+    // handler, these dispatched window keydown events would reach it and
+    // onAdvance would fire — failing this test. The history panel
     // auto-focuses its CLOSE button; Space/Enter activate CLOSE natively.
     window.dispatchEvent(
       new KeyboardEvent("keydown", { key: " ", bubbles: true }),
