@@ -414,7 +414,9 @@
        clicks (browser button-activation auto-repeat), so holding Space
        multi-advances. This is intentional (VN auto-read convention) and
        documented in DialogueBox.test.ts; the old global `if (e.repeat)
-       return;` guard was removed when advance ownership moved here. -->
+       return;` guard that gated advance was removed when advance ownership
+       moved here. The L-shortcut handler above retains its own e.repeat
+       guard (line 321) — that one is L-specific, not the old global gate. -->
   <button
     class="advance-button"
     type="button"
