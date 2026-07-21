@@ -1009,6 +1009,36 @@ describe("DialogueBox", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
+  it("lets Space scroll the focused history list without advancing or preventDefault", async () => {
+    // Regression guard for the focus-on-history-list case: the window-level
+    // Space handler must NOT call preventDefault while focus is on the
+    // scrollable .history-list, so the browser's native Space-to-scroll
+    // behavior on the focused <ol tabindex="0"> proceeds. The guard works
+    // because .history-list lives inside .history-panel (role="dialog"), and
+    // isAdvanceBlockedByFocusedControl's selector includes [role="dialog"],
+    // so closest() matches the panel ancestor even though the list itself
+    // only has tabindex/role="list" (which are NOT in the selector). If
+    // someone removes role="dialog" from the panel OR drops the ancestor
+    // match, this test fails: preventDefault would be called and Space
+    // scrolling would break.
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    const list = screen.getByRole("list", { name: "對話紀錄列表" });
+    list.focus();
+    expect(list).toHaveFocus();
+
+    const event = dispatchWindowKeydown({ key: " " });
+    await Promise.resolve();
+
+    expect(onAdvance).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it("renders a dimming backdrop over the gameplay while history is open", async () => {
     const user = userEvent.setup();
     const { container } = renderDialogueBox(
