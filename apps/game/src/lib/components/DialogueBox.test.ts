@@ -670,10 +670,12 @@ describe("DialogueBox", () => {
     });
 
     // The advance button is a native <button>; when focused, Space/Enter
-    // activate it natively (→ handleClick → dispatchAdvance). There is no
-    // window-level advance handler, so advance must come from the button's
-    // own click. dispatchWindowKeydown does not synthesize this native
-    // activation in jsdom; userEvent.keyboard does.
+    // activate it natively (→ handleClick → dispatchAdvance). The window-
+    // level Space/Enter fallback is gated by isAdvanceBlockedByFocusedControl
+    // and returns without preventDefault while the advance button is focused,
+    // so it must NOT double-advance — advance comes from the button's own
+    // native click only. dispatchWindowKeydown does not synthesize this
+    // native activation in jsdom; userEvent.keyboard does.
     const advanceButton = screen.getByRole("button", { name: "推進對話" });
     advanceButton.focus();
     expect(document.activeElement).toBe(advanceButton);
@@ -685,6 +687,57 @@ describe("DialogueBox", () => {
     await user.keyboard("{Enter}");
     expect(onAdvance).toHaveBeenCalledTimes(2);
     expect(onAdvance).toHaveBeenLastCalledWith(token);
+  });
+
+  it("advances dialogue from window Space/Enter when focus is on <body> (focus-agnostic fallback)", async () => {
+    // Regression guard for the focus-agnostic fallback: the advance button
+    // is NOT auto-focused on dialogue mount, so before the player Tabs onto
+    // it, focus sits on <body>. The window-level Space/Enter handler must
+    // advance dialogue in that state — otherwise Space/Enter does nothing
+    // until the player Tabs to the advance button. isAdvanceBlockedByFocused
+    // Control returns false for <body>, so the global handler falls through
+    // to dispatchAdvance.
+    const { onAdvance } = renderDialogueBox({
+      kind: "action",
+      text: "hello",
+    });
+
+    // No focus management has run — focus is <body>, not the advance button.
+    expect(document.activeElement).toBe(document.body);
+    expect(document.activeElement).not.toBe(
+      screen.getByRole("button", { name: "推進對話" }),
+    );
+
+    dispatchWindowKeydown({ key: " " });
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+    expect(onAdvance).toHaveBeenLastCalledWith(token);
+
+    dispatchWindowKeydown({ key: "Enter" });
+    expect(onAdvance).toHaveBeenCalledTimes(2);
+    expect(onAdvance).toHaveBeenLastCalledWith(token);
+  });
+
+  it("does not double-advance when Space fires both native activation and the window fallback", async () => {
+    // When the advance button is focused, native Space activation fires
+    // handleClick → dispatchAdvance. The window-level handler must return
+    // without preventDefault (and without dispatching) so it does not
+    // double-advance. jsdom's dispatchWindowKeydown does NOT synthesize
+    // native button activation, so this test only verifies the global
+    // handler's guard: dispatching a window Space keydown while the advance
+    // button is focused must NOT call onAdvance by itself. The native
+    // activation path is covered by the userEvent test above.
+    const { onAdvance } = renderDialogueBox({
+      kind: "action",
+      text: "hello",
+    });
+
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
+    advanceButton.focus();
+    expect(document.activeElement).toBe(advanceButton);
+
+    dispatchWindowKeydown({ key: " " });
+    dispatchWindowKeydown({ key: "Enter" });
+    expect(onAdvance).not.toHaveBeenCalled();
   });
 
   it("multi-advances on repeated activation of the focused advance button (no repeat guard, by design)", async () => {
@@ -937,12 +990,15 @@ describe("DialogueBox", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
-    // Regression guard: the window-level Space/Enter advance handler was
-    // deliberately removed (commit 1501ff7) in favor of the visible
-    // .advance-button. If someone re-adds a global Space/Enter advance
-    // handler, these dispatched window keydown events would reach it and
-    // onAdvance would fire — failing this test. The history panel
-    // auto-focuses its CLOSE button; Space/Enter activate CLOSE natively.
+    // Regression guard: the window-level Space/Enter advance fallback is
+    // gated by isAdvanceBlockedByFocusedControl, which returns true while
+    // focus is inside the history panel (CLOSE is a <button>, the list has
+    // tabindex). So the global handler returns without preventDefault and
+    // onAdvance must NOT fire — the history panel auto-focuses its CLOSE
+    // button, and Space/Enter activate CLOSE natively. If someone unguards
+    // the global handler (e.g. drops the isAdvanceBlockedByFocusedControl
+    // check), these dispatched window keydown events would reach it and
+    // onAdvance would fire — failing this test.
     window.dispatchEvent(
       new KeyboardEvent("keydown", { key: " ", bubbles: true }),
     );

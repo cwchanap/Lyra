@@ -254,6 +254,23 @@
     return Boolean(active.closest(interactiveFocusSelector));
   }
 
+  // Returns true when focus is on an interactive control (button, link, input,
+  // etc.) so the window-level Space/Enter fallback should NOT fire — the
+  // focused control's native activation owns those keys (e.g. Space on the
+  // focused LOG button toggles history; Space on the focused advance button
+  // advances via its own click handler). Returns false for <body> and
+  // non-interactive elements, where there is no native activation to fall
+  // back to, so the window-level fallback must advance dialogue. This guard
+  // is what lets the global handler coexist with the visible advance button
+  // without double-advancing or stealing Space from focused controls.
+  function isAdvanceBlockedByFocusedControl() {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || active === document.body) {
+      return false;
+    }
+    return Boolean(active.closest(interactiveFocusSelector));
+  }
+
   function isModifiedHistoryShortcut(e: KeyboardEvent) {
     return e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.isComposing;
   }
@@ -336,14 +353,57 @@
       openHistory();
       return;
     }
+
+    if (e.key !== " " && e.key !== "Enter") return;
+    // IME composition fires Space/Enter with isComposing=true; advancing
+    // mid-composition would corrupt CJK input. No text inputs exist in the
+    // dialogue flow so this is low-risk, but guard for correctness.
+    if (e.isComposing) return;
+    // While history is open, do not advance dialogue. We intentionally do
+    // NOT swallow Space/Enter here when focus is inside the panel: the
+    // history panel auto-focuses its CLOSE button on mount, and a keyboard
+    // user must be able to activate it with Space/Enter (WCAG 2.1.1).
+    // isAdvanceBlockedByFocusedControl returns true while focus is inside the
+    // panel (CLOSE is a <button>, the list has tabindex), so the global
+    // handler returns without preventDefault and the browser's native button
+    // activation proceeds. Only when focus is on <body> (e.g. a race before
+    // auto-focus lands) do we swallow Space/Enter to avoid advancing dialogue
+    // behind the open popup.
+    if (historyOpen) {
+      if (isAdvanceBlockedByFocusedControl()) return;
+      e.preventDefault();
+      return;
+    }
+    // Focus is on an interactive control (the advance button, LOG, a
+    // cross-exam button, or any other native control): let native activation
+    // own Space/Enter. This is the no-double-advance / no-stealing-Space
+    // contract. Only <body> and non-interactive elements fall through to the
+    // window-level advance below — this is the focus-agnostic fallback that
+    // restores Space/Enter advancement before the player has Tabbed onto the
+    // advance button (which is not auto-focused on dialogue mount).
+    if (isAdvanceBlockedByFocusedControl()) return;
+    e.preventDefault();
+    if (completeTextRevealIfNeeded()) {
+      onAdvanceFeedback?.();
+      return;
+    }
+    dispatchAdvance();
   }
 </script>
 
 <!--
-  This window-level keydown handler only toggles dialogue history on L.
-  Advancing dialogue is owned by the visible .advance-button below (and the
+  This window-level keydown handler toggles dialogue history on L and
+  advances dialogue on Space/Enter as a focus-agnostic fallback. Advancing
+  is primarily owned by the visible .advance-button below (and the
   click-to-advance .box): press Enter/Space while the button is focused, or
-  click. Escape is deliberately NOT handled here: it is reserved by
+  click. The Space/Enter branch here only fires when focus is on <body> or
+  a non-interactive element — isAdvanceBlockedByFocusedControl returns true
+  for any focused interactive control, letting native button activation own
+  those keys (so Space on the focused LOG button toggles history, Space on
+  the focused advance button advances via its own click, and neither
+  double-advances). This restores Space/Enter advancement before the player
+  has Tabbed onto the advance button, which is not auto-focused on dialogue
+  mount. Escape is deliberately NOT handled here: it is reserved by
   GameShell's capture-phase handler as the sole entry point for opening the
   game menu, which calls stopImmediatePropagation() so Escape never reaches
   this handler while the menu is open. Do NOT add Escape handling here — it
@@ -413,10 +473,12 @@
        Held Space/Enter on the focused button auto-fires repeated native
        clicks (browser button-activation auto-repeat), so holding Space
        multi-advances. This is intentional (VN auto-read convention) and
-       documented in DialogueBox.test.ts; the old global `if (e.repeat)
-       return;` guard that gated advance was removed when advance ownership
-       moved here. The L-shortcut handler above retains its own e.repeat
-       guard (line 321) — that one is L-specific, not the old global gate. -->
+       documented in DialogueBox.test.ts. The window-level handleKey has its
+       own `if (e.repeat) return;` guard at the top, but it only gates the
+       body-focus fallback path — when the advance button is focused,
+       isAdvanceBlockedByFocusedControl returns true and handleKey returns
+       without preventDefault, so native button auto-repeat proceeds
+       unaffected. -->
   <button
     class="advance-button"
     type="button"
