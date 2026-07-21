@@ -760,6 +760,31 @@
     align-items: center;
   }
 
+  /* Narrow-screen layout. Below ~480px the side-by-side line-grid collapses:
+     the fixed 140px speaker block + 24px gap + 130px right padding (clears
+     the absolutely-positioned advance pill) leaves the text column with no
+     usable width. Stack the speaker above the text so the text gets the full
+     content width, and drop the speaker block's min-width / right border so
+     it doesn't force overflow. The advance pill still needs ~125px of
+     clearance from the right edge, so the right padding stays at 130px. */
+  @media (max-width: 480px) {
+    .box {
+      padding: 18px 130px 50px 22px;
+    }
+    .line-grid {
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+    }
+    .speaker-block {
+      min-width: 0;
+      padding-right: 0;
+      border-right: none;
+      border-bottom: 1px solid var(--rule-strong);
+      padding-bottom: 8px;
+    }
+  }
+
   .text-action {
     margin: 0;
     font-family: var(--serif-it);
