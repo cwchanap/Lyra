@@ -619,11 +619,16 @@
     width: 100%;
     /* Fixed min-height so the dialogue surface doesn't resize per line —
        short single-line dialogue and longer multi-line dialogue render in a
-       consistent frame. 160px fits the kind label + up to ~3 wrapped lines
+       consistent frame. 160px fits the kind label + up to ~2 wrapped lines
        with the current padding/line-height; longer text still grows. */
     min-height: 160px;
     box-sizing: border-box;
-    padding: 22px 104px 24px 28px;
+    /* Right padding clears the LOG button (top-right) AND the advance pill
+       (bottom-right, ~105px wide at right:18px). Bottom padding clears the
+       advance pill (~31px tall at bottom:14px). Without these insets the
+       absolutely-positioned pill paints over the lower-right characters of
+       deeply-wrapping lines. */
+    padding: 22px 130px 50px 28px;
     display: flex;
     flex-direction: column;
     justify-content: center;
