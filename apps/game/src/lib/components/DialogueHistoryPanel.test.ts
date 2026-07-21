@@ -66,7 +66,6 @@ describe("DialogueHistoryPanel", () => {
     // wrapper's actual height so the panel always clears the LOG button.
     expect(source).toContain("bottom?: number;");
     expect(source).toContain("bottom = 180");
-    expect(source).toContain("bottom: var(--history-panel-bottom, 180px);");
     expect(source).toContain("--history-panel-bottom: {bottom}px");
     // Height formula references the same custom property so the panel shrinks
     // as `bottom` grows, keeping a 24px top margin within the viewport. Match
@@ -80,6 +79,27 @@ describe("DialogueHistoryPanel", () => {
     expect(source).toContain("box-sizing: border-box;");
     expect(source).not.toContain("max-height:");
     expect(source).toContain("background: rgba(8, 8, 14, 0.99);");
+  });
+
+  it("clamps panel bottom and height so a tall dialogue wrapper cannot collapse the popup", () => {
+    const source = dialogueHistoryPanelSource();
+
+    // When a long wrapped action/testimony grows the dialogue wrapper past
+    // its 160px min-height, DialogueBox measures a large `bottom` and the
+    // panel's `calc(100dvh - bottom - 24px)` height would go negative —
+    // clipping the history list and CLOSE control inside `overflow: hidden`.
+    // The CSS caps `bottom` at `calc(100dvh - 184px)` (so the panel never
+    // slips off the top) and floors `height` at 160px (so header + CLOSE +
+    // a few rows stay visible). 184px = 160px min panel height + 24px top
+    // margin.
+    expect(source).toContain("calc(100dvh - 184px)");
+    expect(source).toContain("160px,");
+    // Both the base and mobile (max-width: 720px) height declarations must
+    // floor with `max(160px, ...)`.
+    const baseHeight = source.indexOf("height: max(");
+    const mobileHeight = source.indexOf("height: max(", baseHeight + 1);
+    expect(baseHeight).toBeGreaterThan(-1);
+    expect(mobileHeight).toBeGreaterThan(-1);
   });
 
   it("calls onClose from the close button", async () => {

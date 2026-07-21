@@ -151,14 +151,24 @@
        the 800×600 Tauri window instead of letting the top slip off-screen
        when the wrapper grows past its min-height. `box-sizing: border-box`
        makes `height` the border-box height so the padding+border are
-       accounted for by the formula (no content-box overflow). */
+       accounted for by the formula (no content-box overflow).
+       Clamp both values so a very tall wrapper (long wrapped action or
+       testimony pushing `--history-panel-bottom` past the viewport) cannot
+       collapse the panel: `bottom` is capped at `calc(100dvh - 184px)` so
+       the panel never slips fully off the top (184px = 160px min panel
+       height + 24px top margin), and `height` is floored at 160px so the
+       header + CLOSE control + a few history rows stay visible inside the
+       `overflow: hidden` panel. In the degenerate case the panel overlaps
+       the upper portion of the dialogue wrapper, which is acceptable — the
+       panel sits at z-index 35 above the wrapper (z-index 30) and the
+       backdrop dims the wrapper behind it. */
     box-sizing: border-box;
-    bottom: var(--history-panel-bottom, 180px);
+    bottom: min(var(--history-panel-bottom, 180px), calc(100dvh - 184px));
     z-index: 35;
     width: min(900px, calc(100vw - 56px));
-    height: min(
-      460px,
-      calc(100dvh - var(--history-panel-bottom, 180px) - 24px)
+    height: max(
+      160px,
+      min(460px, calc(100dvh - var(--history-panel-bottom, 180px) - 24px))
     );
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
@@ -266,9 +276,9 @@
   @media (max-width: 720px) {
     .history-panel {
       width: min(900px, calc(100vw - 36px));
-      height: min(
-        440px,
-        calc(100dvh - var(--history-panel-bottom, 180px) - 24px)
+      height: max(
+        160px,
+        min(440px, calc(100dvh - var(--history-panel-bottom, 180px) - 24px))
       );
       padding: 18px;
     }
