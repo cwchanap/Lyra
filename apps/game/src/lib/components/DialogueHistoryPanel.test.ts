@@ -67,14 +67,15 @@ describe("DialogueHistoryPanel", () => {
     expect(source).toContain("bottom?: number;");
     expect(source).toContain("bottom = 180");
     expect(source).toContain("--history-panel-bottom: {bottom}px");
-    // Height formula references the same custom property so the panel shrinks
-    // as `bottom` grows, keeping a 24px top margin within the viewport. Match
-    // the meaningful fragments (Prettier wraps the declaration across lines).
+    // Height formula references the clamped custom property so the panel
+    // shrinks as `bottom` grows, keeping a 24px top margin within the
+    // viewport. Match the meaningful fragments (Prettier wraps the
+    // declaration across lines).
     expect(source).toContain("min(");
     expect(source).toContain("460px,");
     expect(source).toContain("440px,");
     expect(source).toContain(
-      "calc(100dvh - var(--history-panel-bottom, 180px) - 24px)",
+      "calc(100dvh - var(--history-panel-bottom-clamped) - 24px)",
     );
     expect(source).toContain("box-sizing: border-box;");
     expect(source).not.toContain("max-height:");
@@ -100,6 +101,37 @@ describe("DialogueHistoryPanel", () => {
     const mobileHeight = source.indexOf("height: max(", baseHeight + 1);
     expect(baseHeight).toBeGreaterThan(-1);
     expect(mobileHeight).toBeGreaterThan(-1);
+  });
+
+  it("clamps --history-panel-bottom before the height calc so a tall wrapper on a short viewport cannot clip history", () => {
+    const source = dialogueHistoryPanelSource();
+
+    // Regression guard: the incoming `--history-panel-bottom` (set from the
+    // `bottom` prop, which DialogueBox measures from the dialogue wrapper's
+    // height) is clamped once into `--history-panel-bottom-clamped` via
+    // `min(var, calc(100dvh - 184px))`, and BOTH `bottom` and `height`
+    // reference the clamped value. This ensures that when a long wrapped
+    // action/testimony line grows the wrapper past the viewport on a short
+    // window (e.g. 800x600 Tauri), the height formula never receives an
+    // out-of-range bottom value that would collapse the panel inside
+    // `overflow: hidden` and clip the history list + CLOSE control.
+    expect(source).toContain("--history-panel-bottom-clamped: min(");
+    expect(source).toContain("var(--history-panel-bottom, 180px)");
+    expect(source).toContain("calc(100dvh - 184px)");
+    // `bottom` must consume the clamped value.
+    expect(source).toContain("bottom: var(--history-panel-bottom-clamped);");
+    // Both base (460px) and mobile (440px) height formulas must reference
+    // the clamped var, not the raw incoming var.
+    expect(source).toContain(
+      "calc(100dvh - var(--history-panel-bottom-clamped) - 24px)",
+    );
+    // The raw incoming var (with its 180px fallback) must NOT appear inside
+    // a height calc — only inside the clamp definition. Counting occurrences
+    // guards against a regression that reverts the height formula to the
+    // unclamped var.
+    const rawVarRefs =
+      source.match(/var\(--history-panel-bottom, 180px\)/gu)?.length ?? 0;
+    expect(rawVarRefs).toBe(1);
   });
 
   it("calls onClose from the close button", async () => {
