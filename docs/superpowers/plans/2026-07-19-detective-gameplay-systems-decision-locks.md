@@ -95,11 +95,13 @@ Board completion, accepted draft, facts/objectives/authorizations, inventory/pro
 
 If a reveal fails, none of those durable effects survive. Repeated submission cannot replay them.
 
-## 14. Mid-dialogue saves use stable queue origins
+## 14. Mid-dialogue saves use ordered stable queue segments
 
 Saves do not serialize arbitrary copied dialogue prose.
 
-They store a stable queue origin, definition hash, and cursor, allowing Rust to reconstruct the authored queue. Active/incomplete queue definitions require exact hash compatibility or an explicit migration.
+An active dialogue queue is an ordered list of stable authored segments. A one-segment queue is the simple case; a command that combines several `onCollect`, `onAcquire`, result, or reveal dialogues stores each segment’s stable origin and definition hash in order, plus the active segment/cursor position.
+
+Rust reconstructs the composite queue from packaged definitions. Active/incomplete segment definitions require exact hash compatibility or an explicit migration.
 
 ## 15. Acquisition acknowledgement is durable
 
@@ -145,3 +147,9 @@ At minimum, Chapter 2 separately establishes:
 ## 20. Chapter 2 starts only after the Chapter 1 acceptance gate
 
 `compare`, `route`, staged map, media/timecode, investigation item use, and Chapter 2 content integration do not begin until the Chapter 1 analysis/save packaged Tauri end-to-end path passes.
+
+## 21. Authored ordering belongs in definitions
+
+Display order, objective sort order, chapter order, and other author-controlled ordering values are immutable compiled definition fields.
+
+Mutable save state stores status and stable IDs, not authored sort keys. The runtime joins state to definitions when producing ordered public views.
