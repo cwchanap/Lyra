@@ -2,21 +2,18 @@
 
 **Date:** 2026-07-19  
 **Revised:** 2026-07-21  
-**Status:** Revised after architectural self-review; pending final approval  
-**Scope:** Shared detective-gameplay architecture, persistence, and the Chapter 1/2 vertical slices. Each major subsystem still requires a focused design and executable implementation plan before code changes begin.
+**Status:** Proposed for final approval  
+**Scope:** Shared detective-gameplay architecture, persistence, and the Chapter 1/2 validation slices. Each major subsystem still requires a focused design and executable implementation plan before code changes begin.
 
-## 1. Canonical source of truth
+## 1. Normative source and narrative precedence
 
-This document and its companion high-level plan are the canonical program documents for the detective-gameplay work.
+This file is the **sole normative architecture and gameplay contract** for the detective-gameplay program:
 
-- Canonical design: `docs/superpowers/specs/2026-07-19-detective-gameplay-systems-design.md`
-- Canonical plan: `docs/superpowers/plans/2026-07-19-detective-gameplay-systems-high-level-plan.md`
-- Normative decisions: `docs/superpowers/plans/2026-07-19-detective-gameplay-systems-decision-locks.md`
-- Tracking parent: Linear `HPA-254`
+```text
+docs/superpowers/specs/2026-07-19-detective-gameplay-systems-design.md
+```
 
-The parallel “Detective Gameplay Foundations” proposal and Linear `HPA-239` tree are superseded. Future implementation and review must not mix contracts from both proposals.
-
-### Narrative canon precedence
+The companion implementation plan defines sequencing, code ownership, tickets, and verification gates. It may summarize a requirement for execution context, but it must not create a competing behavioral contract.
 
 Where narrative documents disagree, use this order:
 
@@ -26,102 +23,92 @@ Where narrative documents disagree, use this order:
 4. Story Bible V6.4.
 5. Older handover notes and review drafts.
 
-This prevents runtime design from reintroducing superseded Chapter 1 timing rules, the old Chapter 2 one-way-glass/work-order interpretation, premature `ZW_A16.lock` decoding, or conflicting chapter duration targets.
+This prevents implementation from restoring superseded Chapter 1 timing, the old Chapter 2 one-way-glass or forged-work-order explanation, premature `ZW_A16.lock` decoding, or obsolete chapter-duration targets.
 
 ## 2. Summary
 
-Lyra already supports a strong baseline loop:
+Lyra currently supports this core loop:
 
 1. read linear dialogue,
-2. inspect investigation hotspots and interview characters,
+2. investigate hotspots and interview characters,
 3. collect evidence and statements,
-4. challenge a testimony line, and
-5. present one evidence item or statement as the contradiction.
+4. challenge testimony,
+5. present one record against one contradiction.
 
-The story requires one missing middle step: the player must organize several individually truthful fragments into an explicit inference before using that inference in a hearing.
+The story requires a missing middle step: players must organize several individually truthful fragments into an explicit inference before using that inference in a hearing.
 
-This design adds that middle layer without replacing investigation or interrogation. The central addition is a fourth compiler-driven scene type, `analysis`, backed by Rust-owned deterministic state and reusable board templates. Analysis scenes let the player classify, order, compare, route, and connect records into authored facts.
+The central addition is a fourth compiler-driven scene type, `analysis`, backed by Rust-owned deterministic state and reusable board templates. It does not replace investigation or interrogation.
 
-The program also adds the product foundations required by multi-hour chapters:
+The program also adds:
 
-- versioned save/load, autosave, and Continue,
-- first-class facts, questions, objectives, and named procedure authorizations,
-- shared case-record provenance and proof-capability metadata,
-- a case file that separates records from established conclusions,
-- contextual wrong-answer feedback and progressive hints,
+- exact save/load, autosave, and Continue,
+- first-class facts, questions, objectives, and named authorizations,
+- shared case-record provenance and support lineage,
+- a case file separating records from conclusions,
+- contextual feedback and authored hints,
 - investigation-time evidence and statement use,
-- staged investigation maps, and
-- a static frame-strip/timecode viewer for Chapter 2 and later media-heavy cases.
+- staged investigation maps,
+- static media frame strips with dual time axes.
 
-The result is one reusable detective grammar rather than a bespoke minigame for every chapter.
+The result is one reusable detective grammar instead of one custom minigame per chapter.
 
 ## 3. Narrative drivers
 
-The story’s recurring rule is:
+The recurring story rule is:
 
 > Evidence fragments may be individually true while the story assembled from them is false.
 
-The system must support these player actions:
+The system must let players:
 
 - group records by the claim they can support,
-- distinguish independent sources from repeated observations of one source,
+- distinguish independent sources from repeated views of one source,
 - place events in a defensible order,
 - compare raw, synchronized, summarized, composite, physical, testimonial, and subjective representations,
 - build routes through authored locations and access gates,
 - connect multiple contributors in a responsibility chain,
-- prepare a justified procedural request from independent contradictions,
-- receive an institutional authorization only when the appropriate authority grants it, and
-- carry unresolved questions and cross-chapter anomalies without marking them as spoilers.
+- prepare a justified procedural request,
+- receive authorization only from the institution represented by the story,
+- carry unresolved questions across chapters without labeling spoilers.
 
 ## 4. Goals
 
-- Make the player perform the key inference instead of watching the detective explain it.
-- Preserve one canonical truth and deterministic outcomes while allowing flexible investigation order.
-- Support the eight-chapter evidence themes with a small set of reusable, compiler-validated templates.
-- Keep Rust authoritative for rules, accepted solutions, durable state, transactions, and save snapshots.
-- Keep authored story content in Markdown and semantic IDs rather than frontend-only rules or filesystem paths.
-- Preserve the current `linear`, `investigation`, and `interrogation` contracts for content that does not opt into new features.
-- Make source, procedural status, and proof limits understandable without turning dialogue into a terminology lecture.
-- Make Chapters 1 and 2 the validation slices before expanding to later chapters.
-- Support keyboard, assistive technology, reduced motion, and non-pointer alternatives for every analysis interaction.
-- Make a three-to-four-hour chapter safe to leave and resume, including an incomplete analysis board.
+- Make the player perform the important inference.
+- Preserve one canonical truth while allowing flexible investigation order.
+- Support the eight-chapter evidence themes with a small typed template set.
+- Keep Rust authoritative for accepted solutions, durable state, transactions, and saves.
+- Keep story authoring in Markdown and semantic IDs.
+- Preserve existing `linear`, `investigation`, and `interrogation` content unless it opts into a new feature.
+- Explain source and proof limitations without turning dialogue into a terminology lesson.
+- Validate the shared system through Chapter 1, then Chapter 2.
+- Support keyboard, assistive technology, reduced motion, and non-pointer interactions.
+- Make three-to-four-hour chapters safe to leave and resume.
 
 ## 5. Non-goals
 
-- A free-form corkboard or unrestricted evidence graph.
-- Natural-language or LLM-evaluated theory submission.
-- Multiple truths, alternate canonical culprits, or branching culprit identities.
-- Traditional health points, trial lives, consumable objections, or irreversible failure states.
-- Real-time countdown puzzles or quick-time events.
+- Free-form corkboards or unrestricted evidence graphs.
+- Natural-language or LLM-evaluated deductions.
+- Alternate canonical culprits or branching truths.
+- Hearing health, lives, consumable objections, or permanent failure.
+- Quick-time events or real-time countdown puzzles.
 - A large open world or second navigation engine.
-- Full video decoding, editing, or arbitrary frame-accurate seek in the first release.
-- Replacing authored testimony cross-examination with analysis boards.
-- Custom Svelte correctness logic for a single chapter.
+- A full video pipeline in the first release.
+- Replacing testimony cross-examination with analysis.
+- Chapter-specific Svelte correctness rules.
 - Generic mutable string flags.
-- Generic negative unlock predicates that can re-lock content.
+- Generic negative unlock predicates.
 
-## 6. Program shape
+## 6. Current repository baseline
 
-The program is delivered in five stages:
+The design deliberately starts from the repository as it exists, not from the desired end state.
 
-1. **Persistence and story state** — saves, facts, questions, objectives, authorizations, provenance, and monotonic unlock/reveal extensions.
-2. **Analysis Scene MVP** — compiler contract, Rust runtime, Svelte workbench, and `classify`, `order`, and `threshold`.
-3. **Chapter 1 vertical slice** — Beat 8.5 boards prepare a narrow-extraction request; the hearing grants the actual authorization.
-4. **Chapter 2 expansion** — `compare`, `route`, staged city-map navigation, frame-strip/timecode media, investigation-time record use, and a control-room reaction `order` board.
-5. **Later-chapter platform** — `chain`, richer archive views, authoring/editor support, and migration hardening.
-
-No stage should bundle the entire program into one implementation branch. Each stage must leave the game buildable, testable, and playable.
-
-## 7. Architectural invariants
-
-### 7.1 One-directional content flow
+### 6.1 Existing content and runtime flow
 
 ```text
 Authored Markdown
     ↓
-compile-scenes
+packages/scripts/compile-scenes
     ↓
-validated global story catalog + validated scene JSON
+validated generated JSON in Tauri resources
     ↓
 Rust GameEngine
     ↓
@@ -130,25 +117,82 @@ public GameStateView
 Svelte presentation and semantic input
 ```
 
+Current runtime scene variants are:
+
+- `linear`,
+- `investigation`,
+- `interrogation`.
+
+The current unlock grammar already uses positive predicates with `and` and `or`. This design extends that pattern rather than adding negation.
+
+### 6.2 Existing `game/mod.rs` debt
+
+On the reviewed `main` revision, `apps/game/src-tauri/src/game/mod.rs` is roughly 7,350 lines / 288 KB. It currently owns or coordinates:
+
+- `GameEngine`,
+- internal command rollback snapshots,
+- scene loading and navigation,
+- dialogue queue advancement and installation,
+- opportunistic dialogue-history recording,
+- many gameplay command implementations,
+- inventory and reveal orchestration,
+- view construction and scene transitions.
+
+Therefore, “keep `game/mod.rs` as orchestration” is not merely a rule preventing future growth. A scoped seam extraction is a **P0.0 prerequisite** before save/runtime and analysis-runtime work expands the engine.
+
+P0.0 is not a full rewrite. It extracts only the seams this program immediately needs:
+
+- command transaction and rollback,
+- dialogue queue lifecycle and history finalization,
+- chapter/scene navigation,
+- durable acquisition-event orchestration,
+- save capture/restore entry points,
+- analysis command dispatch when introduced.
+
+After extraction, `game/mod.rs` remains the façade containing core engine ownership and delegating to focused modules. Acceptance is based on clear ownership and tests, not an arbitrary line-count target.
+
+### 6.3 Current shared-type boundary
+
+`@lyra/scene-types` contains only values that must be byte-identical between compiler/runtime/editor consumers. `DialogueItem` is deliberately **not** shared there because the layout editor uses a narrower presentation model.
+
+Analysis types must preserve that boundary; the full authored/runtime board contract must not be placed wholesale in `@lyra/scene-types`.
+
+### 6.4 Authored content roots
+
+The compiler merges:
+
+- `static/stories_plan/`,
+- `docs/stories_plan/`.
+
+A chapter must not exist in both roots. Chapter 1 currently lives under:
+
+```text
+docs/stories_plan/chapter_1/
+```
+
+Its current manifest contains `scene_8_5.md` as entry 13.
+
+## 7. Architectural invariants
+
+### 7.1 One-directional ownership
+
 - Markdown is parsed only at build time.
 - Generated resources are never hand-edited.
 - Rust never parses authored Markdown.
 - Svelte never contains accepted solutions or answer keys.
-- The frontend may own transient drag animation and focus state, but not durable board state.
+- Frontend drag animation and focus may be transient; board state is durable in Rust.
 
 ### 7.2 Monotonic progression
 
-Ordinary authored progression is monotonic:
+> Once content becomes visible or unlocked, later positive story-state mutations cannot hide or re-lock it.
 
-> Once content becomes visible or unlocked, a later positive story-state mutation cannot hide or re-lock it.
+The unlock language does not include generic `not`.
 
-The unlock language therefore does **not** include generic `not`.
-
-This invariant keeps runtime behavior replay-safe and permits compiler reachability analysis through a positive fixed point.
+This keeps runtime behavior replay-safe and lets the compiler use positive fixed-point reachability.
 
 ### 7.3 Definitions are not mutable state
 
-Authored labels, descriptions, accepted solutions, and dependencies are immutable compiled definitions. Saves contain mutable state and stable references, not copied authored definitions.
+Authored labels, copy, accepted solutions, ordering, and dependencies are immutable compiled definitions. Saves contain stable references and mutable progress, not copied prose or solutions.
 
 The compiler emits a game-wide catalog containing definitions needed outside the current scene:
 
@@ -163,11 +207,37 @@ type StoryCatalog = {
 };
 ```
 
-The exact file may be `story-catalog.json` or an equivalent section of the generated chapter index. The focused compiler spec locks the physical format; this umbrella design locks the ownership and availability requirement.
+The focused compiler spec chooses the physical output file. This design requires global availability and the definition/state boundary.
 
-On load, Rust loads the catalog and current authored scene definitions, then applies the mutable snapshot.
+### 7.4 Transient rollback and persistent saves have distinct types
 
-## 8. ID namespace contract
+The existing private command rollback clone must be renamed conceptually to:
+
+```rust
+EngineRollbackSnapshot
+```
+
+The serialized player-progress payload is:
+
+```rust
+SaveSnapshot
+```
+
+They serve different purposes and must not share the ambiguous name `GameSnapshot`.
+
+## 8. Type ownership contract
+
+| Type | Owner | Contains |
+|---|---|---|
+| `AnalysisBoardAst` | `packages/scripts/compile-scenes` | Parsed authored dialogue, reveals, hints, solutions, source locations |
+| `AnalysisBoardJson` | Compiler output + Rust serde schema | Full validated runtime definition, including dialogue and accepted solution |
+| `AnalysisBoardLayout` | `@lyra/scene-types` | Only byte-identical layout/geometry/presentation values needed by editor and runtime |
+| `AnalysisBoardView` | Rust public view + frontend mirror | Available candidates, draft, completion, visible hints, feedback; never accepted solution |
+| `AnalysisBoardSaveState` | Rust save schema | Draft, completion, failures, hint level, active-board state; no authored prose |
+
+The illustrative board definitions in this document describe semantic ownership; they do not imply that `DialogueItem` belongs in `@lyra/scene-types`.
+
+## 9. ID namespace contract
 
 | ID type | Scope |
 |---|---|
@@ -175,16 +245,14 @@ On load, Rust loads the catalog and current authored scene definitions, then app
 | Statement | Game-global |
 | Fact | Game-global |
 | Question | Game-global |
-| Objective | Game-global; chapter-specific IDs should be chapter-qualified by naming convention |
+| Objective | Game-global; chapter-specific IDs use a chapter-qualified naming convention |
 | Authorization | Game-global |
 | Chapter | Game-global |
-| Scene | Unique within a chapter; durable references use chapter ID + scene ID |
-| Analysis board | Scene-local |
-| Card/group/slot | Board-local or scene-local as declared by the focused schema |
+| Scene | Unique within chapter; durable reference uses chapter + scene |
+| Analysis board | Scene-local; durable reference uses chapter + scene + board |
+| Card/group/slot | Board-local or scene-local as declared |
 | Hotspot/topic/sublocation | Investigation-scene-local |
 | Map node | Investigation-scene-local |
-
-A durable reference to a local board is qualified:
 
 ```ts
 type AnalysisBoardRef = {
@@ -194,13 +262,11 @@ type AnalysisBoardRef = {
 };
 ```
 
-`analysis_completed` must distinguish board completion from scene completion through separate predicates or a qualified target kind; it must not accept an ambiguous unqualified ID.
+Board completion and scene completion use distinct predicates or an explicitly qualified target kind.
 
-## 9. Shared case-record provenance
+## 10. Shared case-record provenance
 
-Evidence and statements share one provenance concept. The public type is `CaseRecordProvenance`, not `EvidenceProvenance`.
-
-The dimensions are orthogonal:
+Evidence and statements share `CaseRecordProvenance`.
 
 ```ts
 type CaseRecordSourceKind =
@@ -260,17 +326,15 @@ type CaseRecordProvenance = {
 };
 ```
 
-### 9.1 Neutral legacy behavior
+### 10.1 Neutral legacy behavior
 
-Legacy records receive unspecified/empty defaults and remain visually unchanged.
+Legacy records use unspecified/empty defaults and remain visually unchanged.
 
-An unspecified procedural status is **not** treated as an exhibit for rules that explicitly require an exhibit. A board that depends on status, source independence, completeness, or proof capability must require explicit metadata; missing required metadata is a compiler error, not a warning.
+An unspecified status cannot satisfy an explicit exhibit requirement. A board depending on procedure, source independence, completeness, or capabilities requires explicit metadata; missing required metadata is a compiler error.
 
-### 9.2 Immutable record chain
+### 10.2 Immutable record chain
 
-Lead → reacquired → exhibit is modeled as a chain of records, not an in-place mutation that erases provenance.
-
-Example:
+Lead → reacquired → exhibit creates new records rather than mutating one record and erasing history.
 
 ```text
 anonymous_social_clip_lead
@@ -280,15 +344,13 @@ verified_original_clip
 hearing_exhibit_clip
 ```
 
-The earlier record remains inspectable. The later record carries its own acquisition/procedure origin and points to the record it supersedes.
+Earlier records remain inspectable. This supports Chapter 1 screenshot → forensic fixed page, Chapter 2 online clip → verified original, and Chapter 8 lead → reacquired → exhibit.
 
-This supports Chapter 1’s phone screenshot → forensic fixed page, Chapter 2’s online clip → verified original, and Chapter 8’s lead → reacquired → exhibit process.
+## 11. Story-state definitions and mutable state
 
-## 10. Story-state definitions and state
+### 11.1 Facts
 
-### 10.1 Facts
-
-A fact is a durable proposition that the player has established. It is not a physical item and cannot be presented as a photograph.
+A fact is a durable conclusion, not physical evidence.
 
 ```ts
 type FactDefinition = {
@@ -316,11 +378,11 @@ type FactState = {
 };
 ```
 
-The engine can calculate the transitive supporting record closure of a fact.
+Rust can compute the transitive supporting-record closure.
 
-For the MVP, a threshold board that enforces independent sources may select only evidence and statement cards. Fact and free case-note cards are not eligible for source-count thresholds until transitive-lineage evaluation has focused tests.
+For the MVP, an independent-source threshold may select only evidence and statement cards. Facts and free case notes cannot manufacture additional independent sources.
 
-### 10.2 Questions
+### 11.2 Questions
 
 ```ts
 type QuestionDefinition = {
@@ -337,13 +399,11 @@ type QuestionState = {
 };
 ```
 
-Questions use neutral wording. A cross-chapter question is never labeled “main story clue” in the player UI.
+Cross-chapter questions use neutral wording and are not marked as main-story clues.
 
-Resolution is deterministic when all required facts are asserted, unless the definition explicitly uses an authored hearing ruling as the resolution event.
+### 11.3 Objectives: uniqueness by construction
 
-### 10.3 Objectives
-
-The system supports exactly one primary active objective. Optional secondary objectives may exist, but Continue and HUD summaries always use the primary objective.
+The system represents the primary objective with one scalar field rather than trying to prove exclusivity across every reachable combination of independent statuses.
 
 ```ts
 type ObjectiveDefinition = {
@@ -351,19 +411,40 @@ type ObjectiveDefinition = {
   label: string;
   summary: string;
   kind: "primary" | "secondary";
+  sortOrder: number;
 };
 
-type ObjectiveState = {
+type ObjectiveProgress = {
   id: string;
   revealed: boolean;
-  status: "inactive" | "active" | "completed";
-  sortOrder: number;
+  completed: boolean;
+};
+
+type StoryObjectiveState = {
+  activePrimaryObjectiveId: string | null;
+  objectives: ObjectiveProgress[];
 };
 ```
 
-Compiler validation rejects reachable states with more than one active primary objective.
+A dedicated atomic reveal changes the primary objective:
 
-### 10.4 Procedure authorizations
+```ts
+type SetPrimaryObjectiveReveal = {
+  kind: "setPrimaryObjective";
+  completeCurrent: boolean;
+  nextObjectiveId: string | null;
+};
+```
+
+Rules:
+
+- Rust structurally guarantees zero or one active primary objective.
+- The compiler validates that `nextObjectiveId` exists and is declared `primary`.
+- `sortOrder` is immutable authored metadata, not save state.
+- The compiler may lint suspicious transition graphs, but the program does not claim exhaustive combinatorial proof of all objective activation orders.
+- Continue and HUD summaries use `activePrimaryObjectiveId`.
+
+### 11.4 Procedure authorizations
 
 ```ts
 type AuthorizationDefinition = {
@@ -382,71 +463,53 @@ type AuthorizationState = {
 };
 ```
 
-An internal detective workbench can establish that a request is justified, but it cannot grant a court, review-board, police, vendor, or building authorization unless that authority is represented by the authored resolution event.
+A detective workbench may prove that a request is justified. It cannot grant court, review-board, police, vendor, or building authority unless the authored resolution represents that authority.
 
-Chapter 1 therefore separates:
+Chapter 1 separates:
 
-- **request readiness:** established in Beat 8.5 analysis; and
-- **`narrow_lock_export`:** granted by the review hearing after the request is argued.
+- request readiness in Beat 8.5,
+- `narrow_lock_export` granted by the hearing.
 
-Wrong submissions never permanently consume the opportunity to request or receive an authorization.
+## 12. Fourth scene type: `analysis`
 
-## 11. Fourth scene type: `analysis`
+### 12.1 Scene contract
 
-### 11.1 Scene contract
-
-The compiler adds `analysis` to the chapter scene union and recognizes `analysis_scene_<K>.md`.
+The compiler recognizes `analysis_scene_<K>.md` and adds `analysis` to the scene union.
 
 An analysis scene contains:
 
-- scene identity and title,
-- intro dialogue,
-- one or more ordered board definitions,
-- card sources and case-note definitions,
-- feedback and hint definitions,
-- success reveals,
-- outro dialogue and completion condition,
+- scene identity/title,
+- intro/outro dialogue,
+- ordered board definitions,
+- card and case-note sources,
+- feedback and hints,
+- accepted solutions and success reveals,
 - semantic asset/audio references.
 
-Game-global fact/question/objective/authorization definitions live in the global story catalog. An analysis scene references them; it does not become their only definition store.
+Global fact/question/objective/authorization definitions live in the story catalog. Scenes reference them.
 
-Boards are a tagged union. A generic untyped `config` object is not permitted.
+Boards are a tagged union; generic untyped `config` objects are not allowed.
 
-### 11.2 Board availability and navigation
-
-```ts
-type AnalysisBoardBase = {
-  id: string;
-  label: string;
-  prompt: string;
-  required: boolean;
-  unlock: StoryUnlockExpr | null;
-  cards: AnalysisCardDefinition[];
-  reveals: AnalysisRevealTarget[];
-  onCorrect: DialogueItem[];
-  feedbackRules: AnalysisFeedbackRule[];
-  hints: AnalysisHint[];
-};
-```
+### 12.2 Board availability
 
 Rust exposes:
 
-- all currently available boards,
+- available boards,
 - `activeBoardId`,
 - completion state,
-- the durable draft for each board,
-- revealed hints and latest feedback.
+- durable draft per board,
+- visible hints and latest feedback.
 
 Rules:
 
-- The engine may auto-focus the first newly available incomplete required board.
-- The player may explicitly select any available board.
-- `required` affects scene completion, not whether an available board may be opened.
-- Completed boards can be revisited in read-only review mode.
-- Optional boards can strengthen corroboration, dialogue, or context but cannot be the only source of a mandatory fact.
-- Chapter 1 may author a sequential board order without hard-coding global runtime linearity.
+- The engine may focus the first newly available incomplete required board.
+- Players may select any available board.
+- `required` controls scene completion, not accessibility.
+- Completed boards reopen read-only.
+- Optional boards cannot be the only source of a mandatory fact.
+- Chapter 1 may author sequential boards without making the global runtime linear.
 
-### 11.3 Card sources
+### 12.3 Card sources
 
 ```ts
 type AnalysisCardSource =
@@ -456,162 +519,158 @@ type AnalysisCardSource =
   | { kind: "caseNote"; id: string; label: string; summary: string };
 ```
 
-The accepted solution is present only in compiled Rust resources. Public views contain candidates, groups/slots/nodes, drafts, completion, visible hints, and feedback—never accepted mappings, orders, or paths.
+Accepted solutions exist only in compiled runtime definitions. Public views never expose them.
 
-## 12. Analysis templates
+## 13. Analysis templates
 
-### 12.1 MVP templates
+### 13.1 MVP
 
-#### `classify`
+**`classify`** — assign every required card to one authored group; one accepted group per required card.
 
-The player assigns every required card to one authored group. The MVP supports one accepted group per required card.
+**`order`** — place required cards in one canonical total order; fixed anchor cards may be immovable.
 
-#### `order`
-
-The player places every required card in one canonical total order. Fixed anchor cards may be displayed but not moved.
-
-#### `threshold`
-
-The player selects a minimum number of eligible evidence/statement cards while satisfying authored requirements:
+**`threshold`** — select eligible evidence/statement cards while satisfying:
 
 - minimum selected count,
-- minimum distinct `sourceGroupId` count,
-- required proof capabilities,
-- allowed or prohibited procedural statuses,
-- optional explicit eligible-card set.
+- minimum distinct source groups,
+- required capabilities,
+- allowed/prohibited procedural statuses,
+- optional explicit eligible set.
 
-A source-independent threshold cannot be satisfied by two records derived from one source group.
+Two records derived from one source group are not independent.
 
-### 12.2 Expansion templates
+### 13.2 Expansion
 
-#### `compare`
+**`compare`** — align records across authored columns/layers.
 
-The player aligns records across two or more authored columns/layers. It supports Chapter 2 wall/composite/direct-observation comparison and Chapter 6 raw/sync/summary comparison.
+**`route`** — select/order declared nodes and edges through an authored graph, including separate outbound/return paths.
 
-#### `route`
+**`chain`** — connect declared cause, intervention, omission, and consequence nodes using accepted directed edges.
 
-The player selects and orders declared nodes/edges through an authored graph. It supports multiple authored valid paths and explicit outbound/return routes. It is not arbitrary pathfinding or freehand drawing.
+None of these are free-form editors.
 
-#### `chain`
+## 14. Analysis runtime and transaction flow
 
-The player connects declared cause, intervention, omission, and consequence nodes using accepted directed edge sets. It supports multiple contributors and does not force a false single-culprit model.
-
-## 13. Analysis runtime and transaction flow
-
-1. Entering an analysis scene plays its intro through a stable authored queue origin.
-2. Rust exposes available boards and chooses/retains `activeBoardId`.
-3. A completed card move, placement, selection, connection, or reorder sends the complete typed draft to Rust.
-4. Rust validates draft shape and stores the last valid draft durably.
+1. Enter scene and install a stable intro dialogue segment.
+2. Rust exposes available boards and retains/selects `activeBoardId`.
+3. A completed interaction sends the complete typed draft to Rust.
+4. Rust validates shape and stores the last valid draft.
 5. Submit evaluates the stored draft.
-6. A wrong but well-formed submission returns gameplay feedback, increments the failure count, and preserves the draft.
-7. A malformed draft returns a typed application error and preserves the prior valid draft.
+6. A wrong well-formed submission returns gameplay feedback and preserves the draft.
+7. A malformed draft returns a typed application error and preserves the previous valid draft.
 8. A correct submission atomically commits:
-   - accepted player draft,
+   - accepted draft,
    - board completion,
-   - fact/question/objective mutations,
-   - request-readiness or authorization state when appropriate,
+   - fact/question/objective changes,
+   - request readiness or authorization where appropriate,
    - inventory/provenance reveals,
    - durable acquisition events,
-   - installation of the stable `onCorrect` dialogue queue.
-9. If any required reveal fails, none of the durable changes survive.
-10. Repeated correct submissions cannot replay durable reveals or acquisition events.
-11. After all required boards and the outro condition are complete, the scene advances.
+   - ordered result dialogue segments.
+9. Failure rolls back the whole command transaction.
+10. Repeated submission cannot replay durable effects.
+11. The scene advances only after required boards and outro conditions are complete.
 
-The durable resolution is committed before `onCorrect` is displayed. The queue origin/cursor is saved so resume cannot repeat the reveal or skip the dialogue.
+Durable effects commit before result dialogue displays. Dialogue segment state prevents reveal replay or skipped dialogue after resume.
 
-## 14. Reveal and unlock language
+## 15. Reveal, unlock, and reachability
 
-Existing positive predicates remain valid. The shared language adds:
+Existing positive predicates remain. The shared language adds:
 
 - `fact_asserted`,
 - `question_resolved`,
 - `objective_completed`,
 - `analysis_board_completed`,
 - `analysis_scene_completed`,
-- `authorization_granted`, and
-- `at_least(count, conditions[])` over a non-empty list.
+- `authorization_granted`,
+- `at_least(count, conditions[])`.
 
-Existing `and` and `or` remain supported.
+`and` and `or` remain supported. There is no generic `not`.
 
-There is no generic `not` predicate.
+Reveal targets include:
 
-The reveal union adds:
-
-- reveal/open question,
+- open/resolve question,
 - assert fact,
-- activate/complete objective,
-- mark request readiness where modeled as a fact/objective,
-- grant authorization from an authored authority event,
-- reveal evidence/statement/case record,
-- unlock later boards/scenes through positive state.
+- reveal/complete objective progress,
+- atomically set the primary objective,
+- grant authorization from an authority event,
+- reveal case records,
+- unlock later content through positive state.
 
 All reveal transactions are atomic and idempotent.
 
-## 15. Compiler reachability analysis
+### 15.1 Positive fixed-point analysis
 
-The compiler performs positive fixed-point reachability:
+The compiler:
 
-1. Seed initially unlocked chapters/scenes/boards/sublocations/cards/records.
-2. Apply every reveal reachable from those states.
-3. Re-evaluate `and`, `or`, and `at_least` expressions.
-4. Repeat until no new state becomes reachable.
-5. Error on unreachable mandatory content or grants required by mandatory content.
-6. Warn on unreachable optional content.
+1. seeds initially available content,
+2. applies reachable reveals,
+3. re-evaluates positive expressions,
+4. repeats to convergence,
+5. errors on unreachable mandatory content,
+6. warns on unreachable optional content.
 
-Compiler validation also rejects:
+It rejects:
 
-- unresolved or duplicate IDs according to the namespace table,
-- self-reference and positive unlock cycles,
+- unresolved/duplicate IDs,
+- ambiguous local references,
+- self-reference and positive cycles,
 - invalid `at_least` counts,
-- required cards that can never become visible,
-- facts declared but never assertable,
-- authorizations required with no reachable authority grant,
-- more than one reachable active primary objective,
-- incomplete `classify` and `order` solutions,
-- unsatisfiable threshold requirements,
-- provenance-dependent boards whose referenced records lack required metadata,
-- invalid route nodes/edges,
-- invalid media time mappings, and
-- feedback or hint references that do not resolve.
+- unreachable required cards/facts/grants,
+- incomplete classify/order solutions,
+- unsatisfiable thresholds,
+- missing provenance required by a rule,
+- invalid routes/media mappings,
+- invalid feedback/hint references,
+- invalid primary-objective transition targets.
 
-Diagnostics include source file and line information.
+It does not claim an exhaustive combinatorial proof that independently authored objective transitions can never conflict; uniqueness is guaranteed by the scalar runtime representation.
 
 ## 16. Save, load, autosave, and Continue
 
 ### 16.1 User-facing behavior
 
-Lyra provides:
-
 - one rolling autosave,
 - one previous-autosave backup,
 - three manual slots,
-- Continue loading the newest valid save,
-- slot metadata showing chapter, scene, primary objective, save type, and update time,
-- overwrite confirmation for occupied manual slots,
-- clear corrupt/incompatible diagnostics without deleting the file.
+- Continue loads the newest valid save,
+- slot metadata includes chapter, scene, primary objective, save type, and update time,
+- occupied manual slots require confirmation,
+- corrupt/incompatible diagnostics do not silently erase files.
 
-Manual saving is allowed only after a command has committed and no mutation is in flight. Dialogue, investigation, interrogation, and analysis may all be saved when their current state is reconstructable under the queue/event contract below.
+Saving is allowed only after a command commits and no mutation is in flight.
 
-### 16.2 Stable queue origins and durable events
+### 16.2 Ordered stable dialogue segments
 
-The save system does not copy arbitrary authored dialogue text into the snapshot and does not rely on frontend-only pending queues.
+The save system does not copy arbitrary authored dialogue prose and does not rely on frontend-only pending queues.
 
-Every active dialogue queue has a stable origin, for example:
+A runtime dialogue queue may be composed from multiple authored segments, such as several `onCollect`, `onAcquire`, result, or reveal segments.
 
 ```ts
-type DialogueQueueOrigin =
+type DialogueSegmentOrigin =
   | { kind: "linearScene"; chapterId: string; sceneId: string }
   | { kind: "investigationIntro"; chapterId: string; sceneId: string }
   | { kind: "investigationInteraction"; chapterId: string; sceneId: string; interactionId: string }
   | { kind: "interrogationPhase"; chapterId: string; sceneId: string; phaseId: string; segmentId: string }
   | { kind: "analysisIntro"; chapterId: string; sceneId: string }
-  | { kind: "analysisResult"; chapterId: string; sceneId: string; boardId: string }
-  | { kind: "storyEvent"; chapterId: string; sceneId: string; eventId: string };
+  | { kind: "analysisResult"; chapterId: string; sceneId: string; boardId: string; segmentId: string }
+  | { kind: "recordAcquisition"; recordKind: "evidence" | "statement"; recordId: string; segmentId: string }
+  | { kind: "storyEvent"; chapterId: string; sceneId: string; eventId: string; segmentId: string };
+
+type DialogueSegmentState = {
+  origin: DialogueSegmentOrigin;
+  definitionHash: string;
+};
+
+type ActiveDialogueQueueState = {
+  segments: DialogueSegmentState[];
+  activeSegmentIndex: number;
+  cursorWithinSegment: number;
+};
 ```
 
-The snapshot stores the queue origin, queue-definition hash, and cursor. Rust reconstructs the authored queue from packaged definitions.
+Rust reconstructs the ordered segments from compiled definitions.
 
-Acquisition acknowledgement is also durable. A successful transaction creates ordered acquisition events owned by Rust:
+### 16.3 Durable acquisition acknowledgement
 
 ```ts
 type AcquisitionEventState = {
@@ -623,9 +682,9 @@ type AcquisitionEventState = {
 };
 ```
 
-The frontend displays unacknowledged events after their authored dialogue drains and acknowledges them through a command. Saving during acquisition dialogue therefore preserves the eventual popup instead of losing a module-local buffer.
+The frontend displays unacknowledged events after their authored dialogue drains and acknowledges them through a command. Saving during acquisition dialogue cannot lose the eventual popup or replay inventory mutation.
 
-### 16.3 Save envelope
+### 16.4 Save envelope
 
 ```ts
 type SaveEnvelope = {
@@ -637,205 +696,171 @@ type SaveEnvelope = {
   createdAt: string;
   updatedAt: string;
   summary: SaveSummary;
-  snapshot: GameSnapshot;
+  snapshot: SaveSnapshot;
 };
 ```
 
-The snapshot stores stable IDs and mutable state, including:
+`SaveSnapshot` stores stable IDs and mutable state, including:
 
-- current chapter and scene,
-- current scene runtime state,
-- active dialogue origin/hash/cursor,
-- inventory record IDs and acquisition metadata,
+- chapter/scene and scene runtime progress,
+- ordered active dialogue segments and cursor,
+- inventory and provenance references,
 - unacknowledged acquisition events,
-- facts/questions/objectives/authorizations,
-- investigation progress,
-- interrogation progress,
-- analysis board drafts/completion/failures/hints,
-- dialogue-history state needed for exact resume,
-- monotonic generation counters needed to reject stale actions.
+- story state and active primary objective ID,
+- investigation/interrogation progress,
+- analysis drafts/completion/failures/hints,
+- dialogue history needed for exact resume,
+- generation counters needed for stale-action rejection.
 
-### 16.4 Autosave policy
+### 16.5 Autosave and storage
 
-A debounced autosave runs after successful commands that change durable state. It executes after the state transaction commits and never during an in-flight mutation.
+Autosave runs after successful durable mutations and never during an in-flight command.
 
 The writer:
 
 1. writes a temporary file,
-2. flushes and fsyncs where supported,
-3. rotates the current autosave to the previous-autosave backup,
+2. flushes/fsyncs where supported,
+3. rotates the current autosave to backup,
 4. atomically replaces the current autosave.
 
-Autosave failure surfaces a persistent non-blocking warning and preserves the previous valid file.
+Failure preserves the prior valid file and shows a persistent non-blocking warning.
 
-### 16.5 Compatibility policy
+### 16.6 Compatibility
 
-ID existence alone is not sufficient for compatibility.
+Semantic ID existence alone is insufficient.
 
-- `schemaVersion` controls explicit data migrations.
-- `contentRevision` identifies the compiled story bundle.
-- Active/incomplete scene, board, and dialogue definitions carry definition hashes.
-- An active/incomplete object requires an exact hash match or an explicit migration.
-- Completed historical boards may be grandfathered across a definition change only through an explicit migration that preserves their durable outputs.
-- Optional completed state may be dropped only when compiled dependency analysis proves that no surviving fact, objective, authorization, unlock, or current state depends on it.
-- A missing current chapter, scene, required board, queue origin, inventory definition, or required story definition rejects the load transactionally.
-- A corrupt primary autosave may fall back to the previous-autosave backup.
-- Incompatible/corrupt files are preserved until the player deliberately replaces or deletes them.
+- `schemaVersion` controls data migrations.
+- `contentRevision` identifies the compiled bundle.
+- Active/incomplete scene, board, route, and dialogue-segment definitions carry hashes.
+- Active/incomplete definitions require exact hashes or explicit migration.
+- Completed boards survive changed definitions only through explicit migration preserving durable outputs.
+- Optional state may be dropped only when dependency analysis proves no surviving state depends on it.
+- Missing current/required definitions reject load transactionally.
+- A corrupt primary autosave may fall back to backup.
+- Files remain until the player deliberately replaces/deletes them.
 
-Audio preferences remain separate user settings.
+Audio preferences remain separate.
 
-## 17. Case file, objective, and recap
+## 17. Case file and recap
 
-The current inventory view evolves into an MVP case file with:
+The MVP case file contains:
 
-1. **Current Objective** — one primary objective plus optional secondary objectives.
-2. **Evidence** — details, provenance, procedure, confidence, source group, and proof capabilities.
-3. **Statements** — statement copy and provenance where authored.
-4. **Established Facts** — conclusions personally established by the player.
-5. **Open Questions** — neutral open/resolved problems.
-6. **Authorizations** — granted institutional permissions and their meaning.
+1. primary and secondary objectives,
+2. evidence,
+3. statements,
+4. established facts,
+5. open/resolved questions,
+6. granted authorizations.
 
 Rules:
 
-- Existing evidence/statement re-examination remains available in valid modes.
+- Existing re-examination remains available where valid.
 - Facts cannot be selected as physical evidence.
-- Superseded leads remain inspectable and link to the later record.
-- Locked definitions are not exposed.
-- Cross-chapter questions are not visually marked as main-story clues.
-- Save/Continue summaries use authored chapter/scene copy and the primary active objective; no LLM recap is required.
+- Superseded leads remain inspectable.
+- Locked definitions are hidden.
+- Cross-chapter questions are not marked as main-story clues.
+- Continue uses authored chapter/scene copy and the active primary objective; no LLM recap.
 
-People, locations, full chronology, and social-response archives remain P4 work.
+People, locations, full chronology, and social archives remain later work.
 
 ## 18. Investigation-time record interactions
 
-Investigation gains one generic action: present or use a collected evidence item or statement on an authored target.
+Investigation gains one generic action: use a collected evidence item or statement on an authored target.
 
-Supported targets:
+Targets:
 
 - character,
 - topic,
 - hotspot,
 - sublocation interaction point.
 
-An authored interaction declares:
-
-- accepted record IDs or capability/status requirements,
-- correct dialogue,
-- exact-record wrong dialogue,
-- proof-capability mismatch feedback,
-- procedure-status mismatch feedback,
-- default wrong dialogue,
-- atomic reveals.
+An interaction declares accepted IDs/capabilities/statuses, correct dialogue, specific and generic wrong feedback, and atomic reveals.
 
 Only authored targets expose the action. Wrong use never consumes a record or mutates story state.
 
 ## 19. Procedure gates
 
-Procedure is represented by named authorizations and reasoned request preparation, not by a score.
-
 A typical sequence is:
 
 1. investigation finds contradictions,
-2. analysis establishes facts and completes a “prepare request” objective,
-3. a hearing presents those facts,
-4. the authority grants a named authorization,
-5. the authorization unlocks limited evidence access or a later phase.
+2. analysis establishes facts and completes request preparation,
+3. hearing presents those facts,
+4. authority grants a named authorization,
+5. authorization unlocks access or a later phase.
 
 Examples:
 
-- Chapter 1: prepare narrow lock request → review hearing grants `narrow_lock_export`.
-- Chapter 6: establish a three-source contradiction → hearing grants `limited_raw_export`, then later `batch_raw_export`.
-- Chapter 8: reacquire identity/provenance package → judge grants witness standing or exhibit admissibility.
+- Chapter 1: hearing grants `narrow_lock_export`.
+- Chapter 6: hearing grants `limited_raw_export`, then `batch_raw_export`.
+- Chapter 8: judge grants witness standing or exhibit admissibility.
 
-A wrong request receives a reasoned denial and remains retryable.
+Wrong requests remain retryable.
 
 ## 20. Feedback and hints
 
 Feedback precedence:
 
-1. exact record or combination,
+1. exact record/combination,
 2. prohibited procedural status,
 3. duplicate source group,
-4. missing proof capability,
+4. missing capability,
 5. structural incompleteness,
 6. default feedback.
 
-Examples:
-
-- “This establishes time, not identity.”
-- “Both clips derive from the broadcast wall; they are not independent observations.”
-- “This source is still a lead and has not been reacquired.”
-- “The route reaches the empty floor but does not explain the return path.”
-
-Boards may define four deliberate hint levels:
-
-1. restate the question,
-2. identify the relevant evidence package/source layer,
-3. identify the missing capability or independence rule,
-4. name the specific next record set/connection.
-
-Hints never mutate durable facts, solve a board, or consume a resource.
+Hints may progress from restating the question to identifying a specific next record set. Hints never mutate facts, solve boards, or consume resources.
 
 ## 21. Media and map support
 
-### 21.1 Static frame-strip viewer
+### 21.1 Static frame strips
 
-The first media feature uses authored still frames, not a video pipeline.
+Frame sets may define ordered assets, absolute timestamps, optional `S+` offsets, source/viewpoint metadata, provenance, annotations, and overlays.
 
-A frame set may define:
-
-- ordered image assets,
-- absolute timestamps,
-- an optional relative time axis such as Chapter 2 `S+`,
-- source/viewpoint label,
-- provenance/source group,
-- short annotations,
-- optional authored overlays.
-
-Absolute time and `S+` are displayed simultaneously when needed. `S+00m45s` must never be rendered or parsed as `00:45 a.m.`.
-
-The viewer is an evidence-detail surface and `compare` card source, not a video editor.
+`S+00m45s` must never be parsed or displayed as `00:45 a.m.`.
 
 ### 21.2 Staged investigation map
 
-Map metadata contains only:
+Map metadata owns only:
 
-- normalized node position,
+- node position,
 - mapped sublocation ID,
-- cluster/stage,
+- stage/cluster,
 - optional edges,
-- display label/icon.
+- label/icon.
 
-Visible, locked, current, and completed states are derived from the mapped investigation sublocation and existing progression state. They are not separately authored or persisted.
+Visibility, lock, current, and completion derive from the mapped investigation sublocation. The map selects the same `currentSublocationId`; it is not a second navigation state.
 
-The map selects the same `currentSublocationId` used by ordinary investigation navigation. It never creates a second navigation state.
+## 22. Chapter 1 validation slice
 
-## 22. Chapter 1 vertical slice
-
-Chapter 1 uses one playable analysis scene at Beat 8.5:
+The playable Chapter 1 source root is:
 
 ```text
-analysis_scene_8_5.md
+docs/stories_plan/chapter_1/
 ```
 
-The current Beat 8.5 transition dialogue moves into its intro/outro. The playable manifest does not retain both the old linear scene and the analysis scene.
+Implementation must:
 
-### 22.1 Required boards
+```text
+Modify:  docs/stories_plan/chapter_1/chapter.md
+Replace: docs/stories_plan/chapter_1/scene_8_5.md
+Create:  docs/stories_plan/chapter_1/analysis_scene_8_5.md
+```
+
+Do not introduce a duplicate `chapter_1` under `static/stories_plan/`.
+
+### 22.1 Boards
 
 1. **Evidence packages (`classify`)**
    - Miyake’s known small lies unrelated to murder.
    - Earlier third-party contractor route.
    - Lock chronology.
-
 2. **Local event sequence (`order`)**
    - `Event-1841` through `Event-1844`.
-   - Establish that local order is not an exact event timestamp.
-
+   - Local order is not an exact timestamp.
 3. **Narrow-request basis (`threshold`)**
-   - Select at least two independent contradictions directly challenging lock chronology.
+   - At least two independent contradictions challenging lock chronology.
    - Same-source records fail.
 
-### 22.2 Beat 8.5 outputs
+### 22.2 Outputs
 
 Facts:
 
@@ -844,76 +869,27 @@ Facts:
 - `merge_time_is_not_event_time`
 - `two_independent_lock_contradictions_identified`
 
-Objective transition:
+Objective progress:
 
 - complete `prepare_narrow_lock_request`
 
-Beat 8.5 does **not** grant `narrow_lock_export`.
+Beat 8.5 does not grant `narrow_lock_export`.
 
-### 22.3 Hearing handoff
+The hearing consumes the facts/objective, grants `narrow_lock_export`, reveals the limited extract, and continues the existing proof order.
 
-The final hearing consumes the facts and completed request-preparation objective. After the authority accepts the argument, the hearing grants:
+## 23. Chapter 2 validation slice
 
-- `narrow_lock_export`
+Chapter 2 uses Phase A/B/C and no more than 7–8 mandatory locations. Optional side stories cannot be the only source of required facts.
 
-The hearing then reveals the limited extract and continues the existing proof order. This preserves the fiction that the detective prepares the request and the institution grants access.
+### 23.1 Boards
 
-Chapter 1 is the acceptance gate for:
+1. **Sightline (`classify`)** — box, wall, Program Composite, side/direct view.
+2. **Image source (`compare`)** — wall, fan phone, Program Composite, low-frame QA.
+3. **Control-room reaction (`order`)** — director fault classification → AD standby call → Hasumi response → PR template → security leaves route unsealed.
+4. **Route (`route`)** — outbound safety position → sponsor corridor → M-03 → service lift B → vacant floor; separate return route; expired pass cannot be reused.
+5. **Person/capability** — Saneda’s malice without access versus Hasumi’s access, first-response control, and urgent motive.
 
-- persistence,
-- stable dialogue/acquisition resume,
-- story state and catalog,
-- provenance,
-- monotonic unlock/reveal targets,
-- analysis compilation/runtime/UI,
-- all three MVP templates,
-- case-file integration,
-- feedback/hints,
-- request/authorization separation,
-- accessibility,
-- packaged Tauri end-to-end flow.
-
-## 23. Chapter 2 expansion
-
-Chapter 2 validates flexible investigation order and richer source reasoning.
-
-The map uses Phase A/B/C and keeps the golden path within 7–8 mandatory locations. Optional side stories strengthen corroboration, dialogue, or context but are never the only source of a required fact.
-
-### 23.1 Required boards
-
-1. **Sightline (`classify`)**
-   - box,
-   - broadcast wall,
-   - Program Composite,
-   - side/direct view.
-
-2. **Image source (`compare`)**
-   - broadcast wall,
-   - fan phone,
-   - Program Composite,
-   - low-frame QA records.
-
-3. **Control-room reaction (`order`)**
-   - director identifies apparent projection/sync fault,
-   - AD calls back standby,
-   - Hasumi answers for Mashiro,
-   - PR opens the technical-incident template,
-   - security leaves M-03/service lift unsealed while the request remains valid.
-
-   This is an ordered response reconstruction using the MVP `order` grammar. It does not wait for the later causal `chain` template.
-
-4. **Route (`route`)**
-   - outbound safety-position → sponsor corridor → M-03 → service lift B → vacant floor,
-   - separate return route through stairs/rear exit,
-   - expired sponsor pass cannot be reused for return.
-
-5. **Person/capability (`classify` or authored threshold composition)**
-   - Saneda’s malice and streaming knowledge,
-   - Hasumi’s sponsor access,
-   - Hasumi’s first-response control position,
-   - Hasumi’s urgent financial/control motive.
-
-### 23.2 Resulting facts
+### 23.2 Facts
 
 - `crowd_watched_the_wall_not_the_box`
 - `program_composite_is_not_direct_observation`
@@ -926,166 +902,126 @@ The map uses Phase A/B/C and keeps the golden path within 7–8 mandatory locati
 - `hasumi_controlled_the_first_response`
 - `hasumi_had_urgent_financial_motive`
 
-The final culprit conclusion is established only after route, access, first-response control, and motive are all available. A single broad fact must not hide those separate proof functions.
+Access, control, and motive remain separate proof functions.
 
-### 23.3 Chapter 2 constraints
+### 23.3 Constraints
 
-- Wall-derived fan clips share one source group.
-- QA frames prove movement/route, not identity.
-- The fifteen-minute pass proves the outbound route, not the return route.
-- `S+` is an offset from the midnight sponsor block, not a clock time.
-- Amemiya’s “Don’t look at the wall” is one route, not the unique mandatory path.
-- Online material starts as a lead and must be reacquired/fixed before hearing use.
-- Hasumi planned isolation/control; killing escalated after his control failed.
-- No Chapter 2-specific evaluator logic exists outside authored data and reusable templates.
+- Wall-derived clips share one source group.
+- QA frames prove route, not identity.
+- The pass proves outbound access, not return.
+- `S+` is relative time, not clock time.
+- Amemiya’s message is not the unique mandatory route.
+- Online material begins as lead and must be formally reacquired.
+- Hasumi planned isolation/control; killing escalated after control failed.
+- No Chapter 2-specific evaluator logic outside reusable authored templates.
 
-## 24. Frontend interaction and accessibility
+## 24. Accessibility and interaction
 
-- Every drag action has an equivalent select/move/confirm keyboard path.
-- Cards, groups, slots, nodes, and connections expose semantic names and state.
-- No result is communicated by color alone.
-- Feedback/hints use live regions and return focus to the relevant control.
+- Every drag action has a select/move/confirm keyboard path.
+- Semantic controls expose card/group/slot/node/connection state.
+- No result is color-only.
+- Feedback/hints use live regions and restore focus.
 - Escape follows the existing one-layer-per-press coordinator.
-- Modal case-file, hint, feedback, and save surfaces manage focus and inertness correctly.
-- `prefers-reduced-motion` removes card-flight, line-draw, and result animation.
-- Analysis submissions cannot fire from accidental background clicks.
+- Modal surfaces manage focus and inertness.
+- Reduced motion removes nonessential movement.
 - Required controls remain visible at 1280×720.
-- Source tests pin that Svelte contains no accepted solution or correctness branch.
+- Source tests ensure Svelte contains no solution branches.
 
 ## 25. Failure handling
 
-- Invalid draft shape returns a typed error and preserves the last valid durable draft.
-- Wrong well-formed submission is gameplay feedback, not an application error.
-- Stale actions are rejected through board/view generation tokens.
-- Every gameplay command that may apply multiple reveals is transactional.
-- Save failure preserves the last valid save.
-- Load failure never partially mutates the active engine.
-- Missing optional media assets use existing placeholders and do not block logic.
-- Missing required authored cards, definitions, maps, routes, queues, or solutions are compile-time errors.
-- Debug scene navigation may grant prerequisites only in debug builds and must create valid story-state/acquisition state rather than bypassing invariants.
+- Invalid draft shape preserves the last valid draft.
+- Wrong well-formed submissions are gameplay feedback.
+- Stale actions are rejected with generation tokens.
+- Multi-reveal commands are transactional.
+- Save/load failures preserve valid state/files.
+- Optional missing media uses placeholders.
+- Missing required content is a compile-time error.
+- Debug navigation creates valid prerequisites only in debug builds.
 
-## 26. Testing strategy
+## 26. Verification strategy
 
 ### Compiler
 
-- global catalog definition and ID tests,
-- parser/emitter fixtures for every template,
-- invalid fixtures for missing IDs, impossible thresholds, cycles, duplicate cards, bad routes, bad time maps, ambiguous local references, and missing provenance,
-- positive fixed-point reachability tests,
-- Rust serde compatibility snapshots.
+- global catalog and ID tests,
+- parser/emitter fixtures,
+- positive fixed-point reachability,
+- invalid thresholds/routes/time maps/provenance/objective transitions,
+- Rust serde snapshots.
 
 ### Rust
 
-- story-state reveal/unlock tests,
-- provenance and support-lineage tests,
-- typed draft mutation and stale-token tests,
-- correct/wrong evaluation for every implemented template,
-- source-group independence tests,
-- request-readiness versus authority-grant tests,
-- atomic resolution and exactly-once acquisition-event tests,
-- save/load round trips for every scene runtime,
-- mid-dialogue queue reconstruction,
-- pending acquisition acknowledgement resume,
-- definition-hash incompatibility and explicit migration tests,
-- investigation record-interaction tests,
+- story-state and reveal tests,
+- provenance/support lineage,
+- transaction rollback,
+- template evaluation,
+- source independence,
+- request versus authority grant,
+- exact acquisition acknowledgement,
+- `EngineRollbackSnapshot` transaction coverage,
+- `SaveSnapshot` round trips,
+- composite dialogue-segment reconstruction,
+- definition-hash and migration tests,
 - full Chapter 1 playthrough.
 
 ### Frontend
 
-- case-file sections and neutral legacy rendering,
+- case-file sections,
 - keyboard/pointer parity,
 - focus/Escape/inert behavior,
-- feedback and hint announcements,
-- acquisition-event acknowledgement after save/resume,
-- save-slot and Continue behavior,
-- dual-time display,
-- map-derived state and navigation,
+- feedback/hints,
+- acquisition acknowledgement after resume,
+- save slots/Continue,
+- dual time display,
+- map-derived state,
 - reduced motion.
 
 ### End to end
 
-The packaged Tauri app must prove:
+The packaged Tauri app proves:
 
-- new game through Chapter 1 analysis and final hearing,
-- save during every incomplete Chapter 1 board and restore exact drafts,
-- save during authored result/acquisition dialogue and restore the pending acknowledgement,
-- wrong same-source threshold feedback,
-- request readiness established in analysis,
-- `narrow_lock_export` granted only in the hearing,
-- return to title and Continue,
-- manual overwrite confirmation,
-- Chapter 2 staged-map and five-board golden path when P3 is implemented.
+- new game through Chapter 1 hearing,
+- exact resume from every incomplete Chapter 1 board,
+- exact resume from multi-segment result/acquisition dialogue,
+- same-source threshold rejection,
+- request readiness in analysis,
+- authorization only in hearing,
+- title → Continue,
+- manual overwrite,
+- Chapter 2 map and five-board golden path when implemented.
 
-## 27. Rollout and compatibility
+## 27. Rollout
 
-- Save/load may ship before authored analysis content.
-- The global catalog and new state collections default empty for legacy content.
-- `analysis` enters Chapter 1 only when P0/P1 contracts are stable.
-- Legacy records remain usable and visually unchanged but cannot satisfy metadata-dependent rules without explicit metadata.
+- P0.0 extracts engine seams before save/runtime and analysis-runtime growth.
+- Save/load may ship before authored analysis.
+- New catalog/state defaults empty for legacy content.
+- `analysis` enters Chapter 1 only after P0/P1 contracts stabilize.
+- Legacy records remain usable but cannot satisfy metadata rules without metadata.
 - Existing investigation/interrogation Markdown remains valid.
 - Layout-editor support begins read-only.
-- Every new template requires compiler fixtures, Rust tests, frontend tests, and one authored acceptance board before later chapters use it.
-- Chapter 2 implementation remains blocked until the complete Chapter 1 acceptance gate passes.
+- Every template requires compiler, Rust, frontend, and authored acceptance coverage.
+- Chapter 2 starts only after the Chapter 1 packaged acceptance gate.
 
-## 28. Alternatives not chosen
+## 28. Required focused specifications
 
-### One bespoke minigame per chapter
+Before implementation, approve focused specifications and executable plans for:
 
-Rejected because it duplicates state, validation, accessibility, save, authoring, and test logic.
+1. P0.0 engine seam extraction.
+2. Global catalog, story state, provenance, support lineage, and monotonic reveals.
+3. Save snapshot, ordered dialogue segments, acquisition events, hashes, and migrations.
+4. Analysis Markdown/compiler contract and reachability.
+5. Rust analysis runtime, transactions, and public views.
+6. Workbench interaction/accessibility.
+7. Chapter 1 analysis and hearing handoff.
+8. Investigation-time record interaction.
+9. Chapter 2 map/media/compare/route/control-room expansion.
 
-### Frontend-only analysis
+This umbrella design defines shared invariants. It does not authorize one all-at-once implementation branch.
 
-Rejected because it exposes answer keys, complicates persistence, and violates Rust ownership.
+## Tracking (non-normative)
 
-### Free-form deduction graph
+At the time of writing:
 
-Rejected because it is difficult to author, validate, hint, save, test, and make accessible.
+- originating pull request: GitHub #23,
+- program tracking issue: Linear HPA-254.
 
-### Generic negation in unlocks
-
-Rejected because it permits re-locking and makes reachability/order semantics unstable. Positive monotonic predicates and `at_least` cover the planned chapters.
-
-### Numeric credibility or hearing health
-
-Rejected because punishment does not model the story’s procedural stakes. Named authorizations and reasoned denials do.
-
-### Full video pipeline first
-
-Deferred because frame strips and dual time axes prove the gameplay requirement with much less packaging and test risk.
-
-### Serialize full authored dialogue into saves
-
-Rejected because it bloats and semantically freezes copied story text. Stable queue origins, definition hashes, and durable acquisition events preserve exact resume while keeping definitions in compiled resources.
-
-## 29. Program acceptance criteria
-
-The program-level design is satisfied when:
-
-- PR #23/HPA-254 are the single canonical program track,
-- the game saves and resumes every durable scene state and required pending acknowledgement,
-- definitions and mutable state are cleanly separated through a global catalog,
-- facts, questions, objectives, authorizations, and provenance are first-class runtime data,
-- progression remains monotonic and compiler-reachable,
-- an authored `analysis` scene compiles and runs without frontend answer keys,
-- Chapter 1’s boards prepare a request while the hearing grants the authorization,
-- the case file separates evidence, statements, facts, questions, objectives, and authorizations,
-- wrong submissions explain proof limits and never make the case unwinnable,
-- Chapter 2 distinguishes shared sources, reconstructs the control-room reaction, compares media layers, and proves separate outbound/return routes,
-- investigation can use records on authored targets,
-- all new behavior is compiler-, Rust-, frontend-, accessibility-, save-, and Tauri-e2e tested,
-- later chapters can add `compare`, `route`, or `chain` without a bespoke runtime mode.
-
-## 30. Required focused specifications
-
-Before implementation, approve focused specs and executable plans for:
-
-1. Global story catalog, state, provenance, support lineage, and monotonic unlock/reveal contract.
-2. Save snapshot, stable queue origins, durable acquisition events, definition hashes, and compatibility/migration policy.
-3. Analysis-scene Markdown/compiler contract and fixed-point reachability.
-4. Rust analysis runtime, transactions, public views, and generation-token contract.
-5. Analysis workbench interaction and accessibility.
-6. Chapter 1 Beat 8.5 analysis and hearing handoff.
-7. Investigation-time record interaction.
-8. Chapter 2 map/media/compare/route/control-room expansion.
-
-This umbrella document defines shared invariants. It does not authorize one all-at-once implementation branch.
+Tracking identifiers may change and do not define the architecture.
