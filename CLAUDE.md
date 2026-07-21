@@ -135,6 +135,12 @@ that is what prevents silent drift in the emitted JSON/wire contract:
   root `scripts/` directory). The root `scenes:*`, `audio:*`, and
   `evidence-sources:audit` scripts delegate here via
   `bun run --cwd packages/scripts <task>`.
+- `@lyra/shared` - deliberately narrow alpha-crop helpers
+  (`alphaBoundsFromImageData`, `cropVariablesForAlphaBounds`) that compute the
+  visible bounds of an RGBA standee/portrait and emit the `--crop-*` CSS
+  variables the runtime uses to crop sprites. Single source of truth shared by
+  the game (`InvestigationSceneSurface.svelte`) and the editor
+  (`layout-geometry.ts`); keep unrelated shared utilities out of this package.
 
 ## Scene Pipeline
 
