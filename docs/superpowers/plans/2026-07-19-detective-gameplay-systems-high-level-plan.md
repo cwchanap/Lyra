@@ -1,615 +1,586 @@
 # Detective Gameplay Systems High-Level Implementation Plan
 
-> **For agentic workers:** This is the umbrella delivery plan, not a single executable coding plan. Before implementing any epic below, write and approve a focused design and a task-by-task implementation plan using `superpowers:writing-plans`; execute that plan with `superpowers:subagent-driven-development` or `superpowers:executing-plans`.
+> **For agentic workers:** This is the umbrella delivery plan, not a single executable coding plan. Before implementing any epic, write and approve a focused design and a task-by-task implementation plan using `superpowers:writing-plans`; execute it with `superpowers:subagent-driven-development` or `superpowers:executing-plans`.
 
-**Goal:** Add persistence and a reusable detective reasoning layer so players can organize evidence into explicit facts, use those facts in hearings, and support the Chapter 1 and Chapter 2 gameplay plans without building one-off minigames.
+**Goal:** Add persistence and a reusable detective-reasoning layer so players organize records into explicit facts, prepare justified procedural requests, receive authority-granted access, and play the Chapter 1/2 plans without chapter-specific correctness logic.
 
-**Architecture:** Preserve the compiler-driven Markdown pipeline and Rust-authoritative `GameEngine`. Add durable story state, evidence provenance, and a fourth `analysis` scene type; expose typed public views to Svelte, which renders accessible reusable workbenches. Deliver the platform through a Chapter 1 vertical slice before adding Chapter 2 map, media, compare, and route capabilities.
+**Architecture:** Preserve Markdown → compiler → global story catalog/scene JSON → Rust `GameEngine` → typed Svelte presentation. Rust owns durable state, transactions, accepted solutions, stable dialogue/acquisition resume, and save compatibility. Chapter 1 is the acceptance gate before Chapter 2 expands the template and UI contract.
 
 **Tech Stack:** Rust, Tauri 2, SvelteKit static SPA, Svelte 5 runes, TypeScript 5.6, Bun 1.3.1, Turborepo, Vitest, Testing Library for Svelte, WebdriverIO/Tauri e2e, compiler-authored Markdown/YAML/JSON resources.
 
-## Global Constraints
+**Canonical design:** `docs/superpowers/specs/2026-07-19-detective-gameplay-systems-design.md`
 
-- Keep the SvelteKit application in static SPA mode; do not add SSR, SvelteKit endpoints, or a Node server.
-- Rust owns durable game state, correctness, analysis solutions, save snapshots, and transactional mutations.
-- The frontend receives typed views and sends semantic IDs; it never contains answer keys.
-- Authored Markdown remains the source of truth; generated resources under `apps/game/src-tauri/resources/` are never hand-edited or committed.
-- Existing `linear`, `investigation`, and `interrogation` content must continue to compile and play without migration.
-- New evidence provenance defaults must remain neutral and invisible for legacy evidence until authors opt in.
-- One canonical story truth remains fixed; flexible investigation order must not create alternate culprit outcomes.
-- Do not add a health bar, trial lives, real-time countdowns, or irreversible failure states.
-- Every drag-and-drop interaction requires a keyboard and assistive-technology alternative.
-- Every implementation epic must include focused tests and the smallest broader verification set that proves cross-layer compatibility.
-- Chapter 1 is the acceptance gate for the MVP; Chapter 2 expansion does not begin until the Chapter 1 vertical slice passes compiler, Rust, frontend, and Tauri e2e verification.
+**Normative decisions:** `docs/superpowers/plans/2026-07-19-detective-gameplay-systems-decision-locks.md`
 
-## Reference Design
+**Linear parent:** HPA-254
 
-The shared contract is defined in:
+## 1. Global constraints
 
-- `docs/superpowers/specs/2026-07-19-detective-gameplay-systems-design.md`
+- PR #23/HPA-254 are the single program source of truth; PR #24/HPA-239 are superseded.
+- Keep the SvelteKit application in static SPA mode; do not add SSR, endpoints, or a Node server.
+- Rust owns durable game state, correctness, accepted solutions, transactions, queue/acquisition resume, and save snapshots.
+- Svelte receives public views and sends semantic IDs; it never contains answer keys.
+- Markdown remains the authored source of truth; generated resources are never hand-edited.
+- Existing `linear`, `investigation`, and `interrogation` content continues to compile and play without migration.
+- Progression remains monotonic; do not add generic `not` or rules that re-lock content.
+- Definitions and mutable state remain separate through a global story catalog.
+- Legacy case records use unspecified provenance defaults and cannot silently satisfy metadata-dependent rules.
+- Lead/reacquired/exhibit transitions create immutable superseding records.
+- Exactly one primary objective is active.
+- Analysis request readiness and institutional authorization are separate events.
+- Every drag interaction has a keyboard/assistive-technology path.
+- Every implementation epic lands as an independently reviewable PR with focused tests.
+- Chapter 2 implementation remains blocked until the Chapter 1 packaged Tauri acceptance flow passes.
 
-Narrative acceptance inputs are:
+## 2. Narrative precedence
 
-- `docs/stories_plan/tokyo_rain_witness_final_story_bible_v64.md`
-- the Chapter 1 final writing plan,
-- the Chapter 2 V0.7 plan, and
-- the V6.5 canon-sync patch.
+1. Chapter 1 Final Writing Plan V3.7.
+2. Chapter 2 Plan V0.7 Timecode / Control-Room Reaction Lock.
+3. Story Bible V6.5 Canon Sync Patch.
+4. Story Bible V6.4.
+5. Older notes.
 
-## Program File-Responsibility Map
+## 3. Program ownership map
 
-This is the expected ownership map. Focused specs may split files further, but they must not move ownership to a different layer without updating the umbrella design.
+### 3.1 Compiler and shared contracts
 
-### Shared and compiler contracts
+Expected ownership:
 
-- `packages/scene-types/src/index.ts` — byte-identical scene index, analysis layout, map layout, and other runtime/editor shared values.
-- `packages/scripts/compile-scenes/types.ts` — compiler AST and emitted JSON types for story state, provenance, analysis scenes, feedback, hints, and template-specific definitions.
-- `packages/scripts/compile-scenes/parser-chapter.ts` — accept `analysis` in chapter manifests.
-- `packages/scripts/compile-scenes/parser-analysis.ts` — new Markdown parser for `analysis_scene_<K>.md`.
-- `packages/scripts/compile-scenes/validator.ts` and focused validation modules — IDs, references, cycles, template solutions, thresholds, routes, media time maps, and reachability.
-- `packages/scripts/compile-scenes/emitter.ts` — emit the Rust wire contract.
-- `packages/scripts/__fixtures__/` and compiler tests — valid and invalid analysis/story-state fixtures.
+- `packages/scene-types/src/index.ts` — byte-identical scene index, map layout, and editor/runtime shared values.
+- `packages/scripts/compile-scenes/types.ts` — compiler AST and emitted JSON types.
+- `packages/scripts/compile-scenes/parser-analysis.ts` — analysis Markdown parser.
+- focused compiler modules for story catalog, analysis validation, reachability, provenance, map/media, and definition hashes.
+- `packages/scripts/compile-scenes/parser-chapter.ts` — `analysis_scene_*.md` recognition.
+- `packages/scripts/compile-scenes/emitter.ts` — scene resources plus global story catalog.
+- fixtures/snapshots for valid and invalid cross-layer contracts.
 
-### Rust engine and persistence
+### 3.2 Rust engine
 
-- `apps/game/src-tauri/src/game/schema.rs` — serde types for story state, provenance, analysis scenes, templates, feedback, hints, maps, and media metadata.
-- `apps/game/src-tauri/src/game/state.rs` — durable inventory/story records and chapter/scene state.
-- `apps/game/src-tauri/src/game/scenes/analysis.rs` — analysis scene runtime and template-specific draft/evaluation logic.
-- `apps/game/src-tauri/src/game/unlock.rs` — extended predicates and threshold evaluation.
-- `apps/game/src-tauri/src/game/reveals.rs` — facts, questions, objectives, authorizations, and analysis reveals.
-- `apps/game/src-tauri/src/game/save.rs` — save envelope, migrations, atomic file operations, validation, and load transactions.
-- `apps/game/src-tauri/src/game/view.rs` — public analysis, case-file, map, media, save-summary, and story-state views.
-- `apps/game/src-tauri/src/game/mod.rs` — orchestration only; new analysis/save logic should live in focused modules rather than expanding the existing large file.
-- `apps/game/src-tauri/src/lib.rs` — register typed Tauri commands.
-- `apps/game/src-tauri/tests/` — cross-scene, save/load, and full-playthrough coverage.
+Expected focused modules:
 
-### Frontend state and components
+```text
+apps/game/src-tauri/src/game/
+  story_catalog.rs
+  story_state.rs
+  provenance.rs
+  support_lineage.rs
+  acquisition_events.rs
+  unlock.rs
+  reveals.rs
+  save/
+    mod.rs
+    schema.rs
+    storage.rs
+    compatibility.rs
+    migrations.rs
+  scenes/
+    analysis/
+      mod.rs
+      state.rs
+      view.rs
+      feedback.rs
+      classify.rs
+      order.rs
+      threshold.rs
+      compare.rs
+      route.rs
+      chain.rs
+```
 
-- `apps/game/src/lib/state/types.ts` — mirror public Rust views.
-- `apps/game/src/lib/state/game-client.svelte.ts` — typed command wrappers and successful-state commit boundary.
-- `apps/game/src/lib/state/save-client.svelte.ts` — save-slot metadata, save/load commands, and Continue orchestration.
-- `apps/game/src/lib/components/AnalysisWorkbench.svelte` — board host and common controls.
-- `apps/game/src/lib/components/analysis/` — focused template components and keyboard helpers.
-- `apps/game/src/lib/components/CaseFilePanel.svelte` — objective, evidence, statements, facts, and questions.
-- `apps/game/src/lib/components/SaveLoadPanel.svelte` — manual slots and overwrite confirmation.
-- `apps/game/src/lib/components/InvestigationMap.svelte` — staged Chapter 2 map/HUD.
-- `apps/game/src/lib/components/MediaEvidenceViewer.svelte` — static frame strip and dual-time axes.
-- `apps/game/src/lib/components/InvestigationSceneSurface.svelte` — authored item-use entry points without embedding correctness.
-- `apps/game/src/lib/components/InterrogationView.svelte` and `DialogueBox.svelte` — consume facts/authorizations only where focused specs require it.
-- `apps/game/src/routes/+page.svelte` — route the new modes and mount case-file/save surfaces without becoming the rule owner.
-- `apps/game/e2e-tauri/` — production-bundle acceptance flows.
+`game/mod.rs` remains orchestration; it must not absorb template validators, migration logic, or media/map rules.
 
-### Authoring and editor
+### 3.3 Svelte frontend
 
-- `.claude/skills/writing-analysis-scene/SKILL.md` — new authored format and narrative constraints.
-- Existing investigation/interrogation writer skills — reference facts, provenance, authorizations, and investigation item interactions.
-- `apps/layout-editor` — read-only analysis/map preview first; interactive board authoring is a later milestone.
+Expected focused components/state:
 
-## Milestone Sequence
+```text
+apps/game/src/lib/state/
+  save-client.svelte.ts
+  types.ts
+  game-client.svelte.ts
+
+apps/game/src/lib/components/
+  AnalysisWorkbench.svelte
+  CaseFilePanel.svelte
+  SaveLoadPanel.svelte
+  InvestigationMap.svelte
+  MediaEvidenceViewer.svelte
+  analysis/
+    AnalysisCard.svelte
+    AnalysisFeedback.svelte
+    ClassifyBoard.svelte
+    OrderBoard.svelte
+    ThresholdBoard.svelte
+    CompareBoard.svelte
+    RouteBoard.svelte
+    ChainBoard.svelte
+```
+
+The actual focused specs may split names further, but responsibility may not move from Rust to Svelte.
+
+### 3.4 Authoring/editor
+
+- `.claude/skills/writing-analysis-scene/SKILL.md` after the Markdown contract stabilizes.
+- investigation/interrogation skills updated for story-state and record interaction references.
+- layout editor reads map/analysis/provenance data after Chapter 2 proves the runtime contract.
+- authored Markdown remains source of truth; interactive board authoring is deferred.
+
+## 4. Milestone sequence
 
 | Milestone | Outcome | Entry gate | Exit gate |
 |---|---|---|---|
-| P0 — Persistence and Story State | Long sessions are resumable; facts, questions, objectives, authorizations, and provenance exist as durable typed data | Umbrella design approved | Save/load round trip and existing Chapter 1 regression suite pass |
-| P1 — Analysis Scene MVP | Authored `analysis` scenes compile and run with `classify`, `order`, and `threshold` | P0 public contracts stable | Template fixtures, Rust tests, keyboard UI tests, and a fixture e2e pass |
-| P2 — Chapter 1 Vertical Slice | Beat 8.5 is playable and its facts/authorization drive the existing final hearing | P1 complete | Full Chapter 1 playthrough, save/resume, and Tauri e2e pass |
-| P3 — Chapter 2 Expansion | Staged map, source comparison, dual timecode, routes, and investigation item use support the V0.7 plan | P2 accepted | Chapter 2 golden-path prototype and route/source acceptance tests pass |
-| P4 — Later-Chapter Platform | Chain reasoning, richer archive, editor support, and migration hardening are ready for Chapters 3–8 | P3 contracts stable | At least one later-chapter fixture uses each new capability without bespoke runtime code |
-
----
-
-## P0 — Persistence and Story State
-
-### Epic P0.1: Save/load, autosave, and Continue
-
-**Linear tracking:** expand the existing `HPA-129 Save Load system` ticket rather than creating a duplicate.
-
-**Deliverables**
-
-- One rolling autosave, one previous autosave backup, and three manual slots.
-- Versioned `SaveEnvelope` and stable-ID `GameSnapshot`.
-- Atomic write and transactional load.
-- Continue loads the newest valid save.
-- Save-slot metadata includes chapter, scene, active objective, save type, and update time.
-- Save during dialogue, investigation, interrogation, and analysis.
-- Clear incompatible/corrupt-save diagnostics without partial engine mutation.
-
-**Primary code areas**
-
-- Create `apps/game/src-tauri/src/game/save.rs`.
-- Modify `apps/game/src-tauri/src/game/mod.rs`, `state.rs`, `view.rs`, and `lib.rs`.
-- Create `apps/game/src/lib/state/save-client.svelte.ts`.
-- Create `apps/game/src/lib/components/SaveLoadPanel.svelte`.
-- Modify `MainMenu.svelte`, `GameShell.svelte`, and `+page.svelte`.
-
-**Verification gate**
-
-- Rust round-trip tests for every current scene runtime.
-- Atomic-backup and incompatible-content tests.
-- Frontend save-slot and Continue tests.
-- Tauri e2e: save, return to title, Continue, and manual overwrite.
-
-### Epic P0.2: Durable facts, questions, objectives, and authorizations
-
-**Deliverables**
-
-- Rust-owned story-state collections with stable IDs.
-- Public views for facts, questions, objectives, and authorizations.
-- Definitions loaded from compiled content.
-- Empty defaults for existing chapters.
-- Snapshot support and cross-scene persistence.
-
-**Primary code areas**
-
-- Modify compiler types/emitter and Rust `schema.rs`, `state.rs`, and `view.rs`.
-- Modify frontend `state/types.ts`.
-
-**Verification gate**
-
-- Duplicate-ID and unresolved-definition compiler failures.
-- Rust reveal/persistence tests.
-- Existing Chapter 1 resources compile unchanged.
-
-### Epic P0.3: Evidence provenance, source groups, and proof capabilities
-
-**Deliverables**
-
-- Optional authored provenance metadata on evidence and statements.
-- Neutral legacy defaults.
-- Source-group independence and proof-capability values available to Rust evaluators and the case file.
-- Visible badges only when metadata is meaningful.
-
-**Primary code areas**
-
-- Modify `parser-investigation.ts`, `parser-interrogation.ts`, compiler types/emitter/validator, Rust schema/state/view, and frontend record types.
-
-**Verification gate**
-
-- Parser and serde tests for every enum.
-- Legacy records remain visually unchanged.
-- A fixture proves multiple records can share one source group.
-
-### Epic P0.4: Story-state unlock and reveal extensions
-
-**Deliverables**
-
-- Predicates for asserted facts, resolved questions, completed objectives, completed analysis boards, and granted authorizations.
-- `not` and `at_least` combinators.
-- Reveal targets for story-state mutations.
-- Reachability and cycle diagnostics.
-
-**Primary code areas**
-
-- Modify compiler unlock parsing/validation, Rust `unlock.rs` and `reveals.rs`, and shared types.
-
-**Verification gate**
-
-- Unit tests for every predicate/combinator.
-- Compiler rejects cycles and impossible authorizations.
-- Existing evidence/topic/phase unlock fixtures still pass.
-
-### Epic P0.5: Case file, active objective, and Continue recap
-
-**Deliverables**
-
-- Case-file sections for Objective, Evidence, Statements, Facts, and Questions.
-- Provenance/procedure/proof-limit detail view.
-- Active objective in the gameplay HUD where appropriate.
-- Save/Continue recap from authored summaries and active objective.
-
-**Primary code areas**
-
-- Replace or wrap `InventoryPanel.svelte` with `CaseFilePanel.svelte` while preserving current re-examination behavior.
-- Modify `GameShell.svelte`, `MainMenu.svelte`, and related tests.
-
-**Verification gate**
-
-- No spoiler labels for cross-chapter questions.
-- Keyboard/focus/Escape tests.
-- Evidence re-examination remains available in valid modes.
-
----
-
-## P1 — Analysis Scene MVP
-
-### Epic P1.1: Analysis-scene Markdown, compiler schema, and validation
-
-**Deliverables**
-
-- `analysis` chapter-manifest entry.
-- `analysis_scene_<K>.md` parser.
-- Tagged board union and card sources.
-- Fact/question/objective/authorization definitions and reveal references.
-- Template-specific diagnostics with file and line numbers.
-
-**Primary code areas**
-
-- Create `packages/scripts/compile-scenes/parser-analysis.ts` and focused tests/fixtures.
-- Modify shared/compiler types, chapter parser, validator, emitter, and scene index.
-
-**Verification gate**
-
-- Valid fixtures for all MVP templates.
-- Invalid fixtures for duplicate IDs, unresolved sources, impossible thresholds, missing cards, and cycles.
-- Emitted JSON snapshot matches the Rust serde contract.
-
-### Epic P1.2: Rust analysis runtime, typed drafts, evaluation, and public views
-
-**Deliverables**
-
-- `AnalysisSceneState` with board progress, typed drafts, failure count, hints, and resolutions.
-- Commands to update a draft, submit a board, request a hint, and continue after result dialogue.
-- Generation-token protection for stale UI actions.
-- Transactional reveals on correct completion.
-
-**Primary code areas**
-
-- Create `apps/game/src-tauri/src/game/scenes/analysis.rs`.
-- Modify `schema.rs`, `state.rs`, `view.rs`, `mod.rs`, and `lib.rs`.
-
-**Verification gate**
-
-- Rust tests for draft mutation, stale generation, wrong submission, correct submission, reveals, and save restoration.
-
-### Epic P1.3: Accessible analysis workbench UI
-
-**Deliverables**
-
-- Shared board host, submit/back/hint controls, feedback surface, progress, and source/procedure badges.
-- Pointer and keyboard parity.
-- Focus restoration, Escape layering, live-region announcements, reduced motion, and 1280x720 support.
-- Typed command wrappers and new page mode routing.
-
-**Primary code areas**
-
-- Create `AnalysisWorkbench.svelte` and `components/analysis/` helpers.
-- Modify frontend state types, game client, and `+page.svelte`.
-
-**Verification gate**
-
-- Component tests for keyboard-only completion and modal layering.
-- Source tests pin that correctness remains in Rust.
-
-### Epic P1.4: `classify`, `order`, and `threshold` templates
-
-**Deliverables**
-
-- Typed schema, Rust evaluator, public view, and Svelte component for each template.
-- Draft persistence through save/load.
-- Threshold support for minimum count, distinct source groups, capabilities, procedural status, and eligible sets.
-
-**Primary code areas**
-
-- Compiler template types/validators.
-- Rust template evaluator modules under `scenes/analysis/` if file size warrants.
-- Frontend template components under `components/analysis/`.
-
-**Verification gate**
-
-- One valid and several invalid compiler fixtures per template.
-- Rust evaluator property/edge-case tests.
-- Keyboard/pointer parity tests.
-
-### Epic P1.5: Contextual feedback and progressive hints
-
-**Deliverables**
-
-- Feedback precedence for exact combinations, procedure status, duplicate source group, missing capability, incomplete structure, and default.
-- Four authored hint levels.
-- Failure count and requested hint level saved with the board.
-- No answer reveal before the authored hint level allows it.
-
-**Primary code areas**
-
-- Compiler feedback/hint parser and validation.
-- Rust feedback evaluator and views.
-- Workbench feedback/hint components.
-
-**Verification gate**
-
-- Deterministic precedence tests.
-- Accessibility tests for feedback announcements and focus return.
-
-### Epic P1.6: Named procedure-authorization gates
-
-**Deliverables**
-
-- Authorization definitions, grants, case-file display, unlock predicates, and hearing integration.
-- No numeric credibility or life meter.
-- Wrong requests remain retryable.
-
-**Primary code areas**
-
-- Story-state compiler/Rust modules, analysis reveals, case file, and focused interrogation unlock paths.
-
-**Verification gate**
-
-- Threshold board grants an authorization exactly once.
-- Locked content remains locked without the grant.
-- Save/load preserves the grant.
-
----
-
-## P2 — Chapter 1 Vertical Slice
-
-### Epic P2.1: Author Chapter 1 Beat 8.5 analysis scene
-
-**Deliverables**
-
-- Add `analysis_scene_8_5.md` or replace the current Beat 8.5 transition with an analysis scene while preserving manifest order and existing canon.
-- Classify evidence into the three Chapter 1 packages.
-- Order `Event-1841` through `Event-1844`.
-- Select two independent contradictions for narrow extraction.
-- Assert three facts and grant `narrow_lock_export`.
-- Preserve the current final hearing as the dramatic proof stage.
-
-**Primary content areas**
-
-- `docs/stories_plan/chapter_1/chapter.md`.
-- Chapter 1 Beat 8.5 authored files and affected final-hearing unlocks.
-- Chapter 1 evidence provenance metadata for board-referenced records.
-
-**Verification gate**
-
-- `bun run scenes:compile` succeeds without warnings for required board metadata.
-- Existing scene assets/audio remain valid.
-- A player cannot reach the narrow-extraction phase with two same-source contradictions.
-
-### Epic P2.2: Chapter 1 analysis/save acceptance coverage
-
-**Deliverables**
-
-- Rust full-playthrough updates.
-- Tauri e2e path through all three boards and the final hearing.
-- Save during an incomplete board; close, Continue, and resume the draft.
-- Wrong feedback, hint, authorization, acquisition, dialogue history, audio, and Escape integration coverage.
-
-**Primary code areas**
-
-- `apps/game/src-tauri/tests/full_playthrough.rs` and focused Rust tests.
-- `apps/game/e2e-tauri/` production anchors/helpers/specs.
-- Frontend page/component integration tests.
-
-**Verification gate**
-
-- Root `bun run test`, `bun run check`, `bun run check:scripts`, Rust test/lint, scene compile, and Tauri e2e pass.
-
-P2 is the go/no-go gate for Chapter 2 expansion.
-
----
-
-## P3 — Chapter 2 Expansion
-
-### Epic P3.1: Evidence and statement use during investigation
-
-**Deliverables**
-
-- Authored item interactions for characters, topics, hotspots, and sublocation interaction points.
-- Correct, item-specific wrong, capability-mismatch, procedure-mismatch, and default dialogue.
-- Reveal processing through the existing inventory/story-state system.
-- Inventory selector reusable by analysis/interrogation/investigation.
-
-**Verification gate**
-
-- Only authored targets accept item use.
-- Wrong use does not mutate story state.
-- Save/load preserves resulting reveals.
-
-### Epic P3.2: `compare` and `route` analysis templates
-
-**Deliverables**
-
-- Multi-column alignment for source/layer comparison.
-- Authored map-node paths with multiple valid paths where declared.
-- Separate outbound and return routes.
-- Structured feedback for source mismatch, missing node, invalid edge, and route that proves movement but not identity.
-
-**Verification gate**
-
-- Chapter 2 fixture aligns wall/composite/direct observation correctly.
-- Route fixture rejects use of the expired pass on the return path.
-
-### Epic P3.3: Staged investigation-map metadata and HUD navigation
-
-**Deliverables**
-
-- Map node positions, edges, stage/cluster membership, sublocation mapping, and completion state.
-- Phase A/B/C reveal progression using existing unlock rules.
-- Current objective and case-file entry points in the Explore HUD.
-- No second navigation state separate from investigation sublocations.
-
-**Verification gate**
-
-- Locked nodes are not keyboard or pointer reachable.
-- Map and sublocation state cannot drift.
-- Phase transitions survive save/load.
-
-### Epic P3.4: Static frame-strip media evidence and dual timecode viewer
-
-**Deliverables**
-
-- Ordered still frames with absolute time, optional `S+` relative time, source labels, provenance, and optional overlays.
-- Evidence detail and `compare` card integration.
-- Asset fallback, keyboard frame navigation, and reduced motion.
-
-**Verification gate**
-
-- `S+00m45s` aligns with `00:00:45 a.m.` in compiler and UI tests.
-- Invalid or non-monotonic time maps fail compilation.
-- Missing optional frame art does not block logic.
-
-### Epic P3.5: Author Chapter 2 gameplay boards and map progression
-
-**Deliverables**
-
-- Sightline, image-source, route, and person boards.
-- Phase A/B/C map metadata with 7–8 golden-path locations.
-- Main facts and procedure gates defined in the Chapter 2 plan.
-- Optional side investigations strengthen dialogue or evidence but are never the only required source.
-- Investigation-time evidence interactions for selected witness and access-route beats.
-
-**Verification gate**
-
-- The first sightline inversion occurs within the planned Phase A pacing.
-- Multiple videos derived from the wall count as one source group.
-- The player proves both outbound and return routes.
-- Saneda can be identified as malicious but cannot satisfy access requirements.
-- Hasumi is not indictable until access, control position, motive, and route are established.
-
----
-
-## P4 — Later-Chapter Platform
-
-### Epic P4.1: `chain` template and later-chapter readiness
-
-**Deliverables**
-
-- Directed authored cause/omission/consequence chains.
-- Multiple contributors without forcing one culprit node.
-- Chapter 3 and Chapter 7 valid fixtures.
-- Chapter 6 raw/sync/summary comparison fixture using `compare`.
-
-**Verification gate**
-
-- The evaluator distinguishes causation from mere chronology.
-- A valid multi-contributor chain does not require a false single-culprit answer.
-
-### Epic P4.2: Layout-editor and authoring-skill support
-
-**Deliverables**
-
-- Read-only analysis/map preview in the layout editor.
-- Evidence-source/provenance inspection.
-- Authoring skill for analysis scenes.
-- Focused authoring guidance for facts, questions, objectives, authorizations, feedback, and hints.
-- Interactive editor authoring only after the Markdown/runtime contract has been stable through Chapter 2.
-
-**Verification gate**
-
-- Editor and runtime read the same shared map/layout wire types.
-- Writer fixtures compile without hand-editing generated JSON.
-
-### Epic P4.3: Case archive expansion and migration hardening
-
-**Deliverables**
-
-- People, locations, chronology, cross-chapter anomalies, and resolved-case history if Chapter 1/2 usability testing supports them.
-- Save-schema migrations for every released version.
-- Content-revision compatibility diagnostics suitable for packaged releases.
-
-**Verification gate**
-
-- Historical save fixtures migrate forward.
-- Incompatible saves remain recoverable as files and are never silently overwritten.
-
----
-
-## Dependency Graph
+| P0 — Persistence and Story State | Saves are exact; catalog/state/provenance/unlocks/case file exist | Umbrella revision approved | Existing Chapter 1 regression + save/queue/acquisition round trips pass |
+| P1 — Analysis Scene MVP | `analysis` compiles/runs with classify/order/threshold | P0 contracts stable | Compiler/Rust/UI fixture e2e and accessibility pass |
+| P2 — Chapter 1 Vertical Slice | Beat 8.5 prepares request; hearing grants export | P1 complete | Full Chapter 1 packaged Tauri save/resume flow passes |
+| P3 — Chapter 2 Expansion | Map, media, compare, route, control-room order, item use | P2 accepted | Five-board Chapter 2 golden-path prototype passes |
+| P4 — Later-Chapter Platform | Chain, richer archive, authoring/editor, migrations | P3 stable | Later-chapter fixtures use shared runtime only |
+
+## 5. Dependency map
 
 ```text
-P0.2 Story state ─┬─> P0.4 Unlock/reveal ─┬─> P1.1 Compiler contract
-                  │                        └─> P1.6 Procedure gates
-P0.3 Provenance ──┴──────────────────────────> P1.4 Threshold evaluation
-P0.1 Save/load ──────────────────────────────> P2 Chapter 1 acceptance
-P0.5 Case file <── P0.2 + P0.3 + P0.1
+P0
+HPA-255 Story catalog/state ──────────────┐
+HPA-256 Provenance/support lineage ───────┼─ HPA-257 Monotonic unlock/reveal
+                                          │
+HPA-129 Save/queue/acquisition ───────────┼─ HPA-258 Case file/recap
+                                          │
+                                          └─ P1
 
-P1.1 Compiler ─┬─> P1.2 Rust runtime ─> P1.3 Workbench
-               └─> P1.4 Templates ─────> P1.5 Feedback/hints
-P1.2 + P1.3 + P1.4 + P1.6 ─────────────> P2.1 Chapter 1 content
-P2.1 ───────────────────────────────────> P2.2 Acceptance gate
+P1
+HPA-259 Analysis compiler/reachability
+            ↓
+HPA-260 Rust runtime/transactions
+            ↓
+HPA-261 Workbench UI
+            ↓
+HPA-262 Classify/order/threshold
+            ├─ HPA-263 Feedback/hints
+            └─ HPA-264 Procedure request/authorization gates
 
-P2 accepted ─┬─> P3.1 Investigation item use
-             ├─> P3.2 Compare/route
-             ├─> P3.3 Map
-             └─> P3.4 Media/timecode
-P3.1 + P3.2 + P3.3 + P3.4 ─────────────> P3.5 Chapter 2 content
-P3 accepted ─────────────────────────────> P4 later-chapter work
+P2
+HPA-265 Chapter 1 content integration
+            ↓
+HPA-266 Chapter 1 packaged acceptance gate
+
+P3 (all blocked by HPA-266)
+HPA-267 Investigation record use
+HPA-268 Compare/route templates
+HPA-269 Derived-state staged map
+HPA-270 Frame strip/dual timecode
+            └───────────────┐
+                            ↓
+HPA-271 Chapter 2 five-board integration
+
+P4
+HPA-272 Chain/later fixtures
+HPA-273 Authoring/editor support
+HPA-274 Archive/migration hardening
 ```
 
-## Verification Matrix
+Focused Linear relations are the execution source of truth. This diagram records intended sequencing.
 
-| Change type | Minimum focused verification | Broader gate before completion |
-|---|---|---|
-| Compiler schema/parser | Focused parser/validator/emitter tests and fixtures | `bun run scenes:compile`, `bun run test:scripts`, `bun run check:scripts` |
-| Rust engine/state/save | Focused Cargo tests | full `cargo test`, `bun run rust:lint` |
-| Frontend state/component | Focused Vitest/Testing Library tests | `bun run check`, app test task, `bun run lint` where applicable |
-| Cross-stack scene feature | compiler + Rust + frontend focused tests | root `bun run test`, scene compile, checks, Rust tests/lint |
-| Production flow | production-anchor update and focused WDIO spec | `bun run test:e2e` |
-| Authored Chapter 1/2 content | compile and full-playthrough fixture | Tauri e2e golden path and manual desktop smoke test |
+---
 
-## Program Risks and Controls
+## 6. P0 — Persistence and Story State
 
-### Scope explosion
+### Epic P0.1 — HPA-255: Global story catalog and durable story state
 
-**Risk:** every chapter requests a unique interaction.  
-**Control:** new gameplay must first be expressible as a typed template or authored interaction. A bespoke runtime mode requires a separate design proving the existing grammar cannot represent it.
+**Goal:** Separate immutable definitions from mutable facts/questions/objectives/authorizations.
 
-### `GameEngine` file growth
+**Deliverables**
 
-**Risk:** `mod.rs` becomes harder to reason about.  
-**Control:** save and analysis logic live in focused modules. The umbrella plan explicitly avoids placing template evaluators or persistence serialization directly in `mod.rs`.
+- Generated global story catalog.
+- Game-global ID validation.
+- Qualified references for local scene/board objects.
+- `FactDefinition/State`, `QuestionDefinition/State`, `ObjectiveDefinition/State`, and `AuthorizationDefinition/State`.
+- Exactly one primary active objective.
+- Assertion origin and supporting record/fact lineage.
+- Empty defaults for legacy chapters.
 
-### Authoring complexity
+**Verification gate**
 
-**Risk:** boards become difficult to write and debug.  
-**Control:** tagged templates, precise compiler diagnostics, valid/invalid fixtures, and a dedicated authoring skill. The layout editor remains read-only until the contract is stable.
+- Duplicate/global/local-reference compiler fixtures.
+- Existing Chapter 1 compiles unchanged.
+- Cross-scene and cross-chapter state persistence tests.
+- Save round trip through catalog definitions.
 
-### Frontend/Rust contract drift
+### Epic P0.2 — HPA-256: Case-record provenance and support lineage
 
-**Risk:** public views and Svelte types silently diverge.  
-**Control:** mirror types intentionally, add source/serde tests, keep byte-identical layout values in `@lyra/scene-types`, and verify emitted snapshots against Rust fixtures.
+**Goal:** Give evidence/statements explicit independent dimensions and immutable supersession chains.
 
-### Save incompatibility during active story editing
+**Deliverables**
 
-**Risk:** scene IDs change while content is still being authored.  
-**Control:** stable semantic IDs, content revision checks, explicit migrations, transactional loading, and no silent reset.
+- Shared `CaseRecordProvenance`.
+- Source kind, representation layer, procedure, completeness, confidence, source group, proof capabilities, and supersession.
+- Unspecified neutral legacy defaults.
+- Immutable lead → reacquired → exhibit chains.
+- Transitive support closure for facts.
+- Compiler errors when metadata-dependent rules reference unspecified records.
 
-### Puzzle frustration
+**Verification gate**
 
-**Risk:** players brute-force cards or cannot tell why a plausible answer failed.  
-**Control:** source groups, proof capabilities, procedure status, contextual feedback, preserved drafts, and deliberate progressive hints.
+- Parser/serde/view tests for every enum.
+- Legacy visual regression.
+- Multiple wall-derived clips count as one source.
+- Superseded records remain inspectable.
 
-### Accessibility regressions
+### Epic P0.3 — HPA-257: Monotonic unlock, reveal, and fixed-point reachability
 
-**Risk:** visual boards become pointer-only.  
-**Control:** keyboard interaction is part of each template's acceptance gate, not a later polish ticket.
+**Goal:** Add positive story-state predicates and deterministic reachability.
 
-## Linear Tracking Structure
+**Deliverables**
 
-Use the existing Linear project **Lyra** and team **hapadona**.
+- `fact_asserted`, `question_resolved`, `objective_completed`, qualified analysis board/scene completion, `authorization_granted`.
+- `and`, `or`, and `at_least` only; no generic `not`.
+- Atomic idempotent reveal targets.
+- Positive fixed-point reachability diagnostics.
 
-Create these milestones:
+**Verification gate**
 
-- `P0 — Persistence and Story State`
-- `P1 — Analysis Scene MVP`
-- `P2 — Chapter 1 Vertical Slice`
-- `P3 — Chapter 2 Expansion`
-- `P4 — Later-Chapter Platform`
+- Existing unlock fixtures unchanged.
+- Invalid count/cycle/unreachable-required/grant-path tests.
+- No authored operation can re-lock already visible content.
 
-Create one parent program issue and use the epic titles from this plan as child issues. Reuse and expand existing `HPA-129` for P0.1. Relate existing `HPA-131 Investigation scene enhancement` to P3.1 rather than duplicating its already-tracked acquisition/re-examination concerns.
+### Epic P0.4 — HPA-129: Save/load, stable queues, durable acquisitions, and Continue
 
-Each Linear feature ticket must include:
+**Goal:** Resume exact authoritative state across every current and planned durable mode.
 
-- the relevant design and plan links,
-- scope and explicit non-goals,
-- affected ownership layers,
-- measurable acceptance criteria,
-- verification commands/categories,
-- milestone,
-- dependency relations, and
-- priority.
+**Deliverables**
 
-No due dates or assignees are invented in this plan.
+- One autosave, previous-autosave backup, three manual slots.
+- Versioned `SaveEnvelope` and mutable snapshot.
+- Stable dialogue queue origins + queue definition hashes + cursors.
+- Rust-owned durable acquisition events with acknowledgement state.
+- Definition hashes for active/incomplete scenes/boards/queues.
+- Atomic writes, transactional loads, explicit schema/content migrations.
+- Continue selects newest valid save.
 
-## Program Completion Definition
+**Verification gate**
+
+- Round-trip every current runtime.
+- Save during dialogue and restore exact queue item.
+- Save during acquisition dialogue and still show pending popup once.
+- Save during incomplete analysis fixture and restore exact draft.
+- Definition-change incompatibility tests.
+- Corrupt primary fallback to backup.
+- Tauri save → title → Continue and manual overwrite.
+
+### Epic P0.5 — HPA-258: Case file, objective, authorization, and recap
+
+**Goal:** Present what the player owns, has proved, is asking for, and is still investigating.
+
+**Deliverables**
+
+- Objective, Evidence, Statements, Facts, Questions, and Authorizations sections.
+- Provenance/proof-limit/supersession detail.
+- Preserve re-examination.
+- Primary objective in HUD and save/Continue summaries.
+- Neutral cross-chapter question treatment.
+
+**Verification gate**
+
+- No locked definition spoilers.
+- Keyboard/focus/Escape coverage.
+- Legacy evidence remains visually unchanged.
+- Save/load restores each section and recap.
+
+---
+
+## 7. P1 — Analysis Scene MVP
+
+### Epic P1.1 — HPA-259: Analysis Markdown, compiler, and reachability contract
+
+**Deliverables**
+
+- `analysis_scene_<K>.md` manifest recognition.
+- Typed board union and card sources.
+- Global catalog references rather than scene-owned global definitions.
+- Valid fixtures for classify/order/threshold.
+- Definition hashes.
+- Fixed-point validation for required boards/cards/reveals/grants.
+
+**Verification gate**
+
+- Source-line diagnostics for duplicates, missing references, impossible thresholds, cycles, and unspecified required provenance.
+- Emitted JSON accepted by Rust serde tests.
+- Existing scene types unchanged.
+
+### Epic P1.2 — HPA-260: Rust analysis runtime and atomic resolution
+
+**Deliverables**
+
+- `AnalysisSceneState` with available boards, `activeBoardId`, durable drafts, failures, hints, resolution.
+- Explicit board selection.
+- Completed-board read-only review.
+- Generation-token protection.
+- Atomic correct-resolution transaction.
+- Stable result-dialogue origins.
+- Save snapshot integration.
+
+**Verification gate**
+
+- Malformed/wrong/correct/repeated/stale-action tests.
+- Transaction rollback on failed reveal.
+- Leave/re-enter and save/load exact draft restoration.
+- Public views contain no accepted solution.
+
+### Epic P1.3 — HPA-261: Accessible analysis workbench
+
+**Deliverables**
+
+- Shared host, board selector, progress, submit, hint, back, review, and feedback surfaces.
+- Pointer/keyboard parity.
+- Focus restoration, live regions, Escape layering, reduced motion, 1280×720 support.
+- Typed command wrappers and page mode routing.
+
+**Verification gate**
+
+- Keyboard-only fixture completion.
+- Source tests prove no Svelte correctness rules.
+- Acquisition/dialogue/menu/audio layering remains correct.
+
+### Epic P1.4 — HPA-262: Classify, order, and threshold
+
+**Deliverables**
+
+- `classify`: required cards assigned once to one accepted group.
+- `order`: canonical total order plus fixed anchors.
+- `threshold`: evidence/statement eligibility, counts, source-group independence, capability/procedure requirements.
+- Facts/case notes excluded from independent-source counting in MVP.
+
+**Verification gate**
+
+- Valid/invalid fixtures and Rust evaluators.
+- Same-source selection fails.
+- Drafts save/restore.
+- Pointer/keyboard paths produce identical Rust drafts.
+
+### Epic P1.5 — HPA-263: Contextual feedback and hints
+
+**Deliverables**
+
+- Exact → procedure → duplicate source → missing capability → structural → default precedence.
+- Four-level deliberate hint ladder.
+- Persistent failure/hint state.
+- Draft preservation after wrong submission.
+
+**Verification gate**
+
+- Precedence tests.
+- Time-not-identity, same-wall-source, and lead-not-exhibit examples.
+- Accessible announcement/focus tests.
+
+### Epic P1.6 — HPA-264: Procedure request and authority-grant gates
+
+**Deliverables**
+
+- Named authorizations and authority metadata.
+- Analysis establishes request readiness/objective completion.
+- Hearing/story authority event grants authorization.
+- Retryable reasoned denial.
+- Reachable grant-path compiler checks.
+
+**Chapter 1 acceptance**
+
+- Beat 8.5 completes `prepare_narrow_lock_request`.
+- Hearing grants `narrow_lock_export` once.
+
+---
+
+## 8. P2 — Chapter 1 Vertical Slice
+
+### Epic P2.1 — HPA-265: Beat 8.5 content integration
+
+**Migration**
+
+- Replace playable `scene_8_5.md` with `analysis_scene_8_5.md`.
+- Move transition dialogue into intro/outro.
+
+**Boards**
+
+1. Classify three evidence packages.
+2. Order `Event-1841` through `Event-1844`.
+3. Select two independent lock contradictions.
+
+**Facts**
+
+- `miyake_known_lies_are_unrelated_to_murder`
+- `earlier_external_entry_exists`
+- `merge_time_is_not_event_time`
+- `two_independent_lock_contradictions_identified`
+
+**Objective**
+
+- complete `prepare_narrow_lock_request`
+
+**Hearing**
+
+- grant `narrow_lock_export` after the authority accepts the argument.
+
+**Verification gate**
+
+- Chapter 1 canon/proof order/assets/audio remain intact.
+- Same-source contradictions fail clearly.
+- No export authorization exists before hearing approval.
+
+### Epic P2.2 — HPA-266: Packaged acceptance gate
+
+**Required coverage**
+
+- Full Rust playthrough.
+- Packaged Tauri path through all boards and final hearing.
+- Save/resume each incomplete board.
+- Save/resume result dialogue and pending acquisition acknowledgement.
+- Wrong same-source feedback.
+- Request readiness followed by hearing grant.
+- Case file, hint, dialogue history, audio, focus, Escape, and menu integration.
+
+**Gate commands**
+
+```bash
+bun run scenes:compile
+bun run test
+bun run check
+bun run check:scripts
+bun run lint:all
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+bun run test:e2e
+```
+
+P3 remains blocked until this ticket is Done.
+
+---
+
+## 9. P3 — Chapter 2 Expansion
+
+### Epic P3.1 — HPA-267: Evidence/statement use during investigation
+
+- Authored targets: character, topic, hotspot, sublocation interaction point.
+- Accepted ID/capability/procedure rules.
+- Correct and contextual wrong dialogue.
+- Transactional one-time reveals.
+- Shared accessible record selector.
+
+### Epic P3.2 — HPA-268: Compare and route templates
+
+- `compare`: authored columns/layers and media-card integration.
+- `route`: declared nodes/edges, multiple valid paths, access/time constraints.
+- Separate outbound and return paths.
+- Route evidence cannot overclaim identity.
+
+### Epic P3.3 — HPA-269: Derived-state staged map
+
+- Node positions, mapped sublocations, phases/clusters, optional edges.
+- Visibility/current/complete derived from investigation state.
+- Map selection changes the existing current sublocation.
+- No duplicated map lock/progress state.
+
+### Epic P3.4 — HPA-270: Frame-strip and dual timecode
+
+- Ordered still frames and authored overlays.
+- Absolute time plus optional `S+` axis.
+- Provenance/source groups.
+- Compare-card source integration.
+- `S+00m45s` regression protection.
+
+### Epic P3.5 — HPA-271: Chapter 2 five-board integration
+
+**Boards**
+
+1. Sightline classify.
+2. Image-source compare.
+3. Control-room reaction order.
+4. Outbound/return route.
+5. Person/capability resolution.
+
+**Facts remain separate**
+
+- `crowd_watched_the_wall_not_the_box`
+- `program_composite_is_not_direct_observation`
+- `hasumi_was_the_first_human_status_source`
+- `control_room_followed_a_misclassified_sponsor_incident`
+- `maintenance_route_reached_the_vacant_floor`
+- `return_route_did_not_use_the_expired_pass`
+- `saneda_lacked_required_access`
+- `hasumi_had_sponsor_access`
+- `hasumi_controlled_the_first_response`
+- `hasumi_had_urgent_financial_motive`
+
+**Acceptance**
+
+- Golden path ≤8 mandatory locations.
+- At least one required sightline fact has alternate investigation routes.
+- Wall-derived clips count as one source.
+- QA/movement proof does not become identity proof.
+- Outbound and return route both required.
+- Online leads are reacquired before hearing use.
+- No chapter-specific evaluator code.
+
+---
+
+## 10. P4 — Later-Chapter Platform
+
+### HPA-272 — Chain template and later-chapter fixtures
+
+- Directed cause/intervention/omission/consequence edges.
+- Multiple contributors and accepted edge sets.
+- Chapter 3 and 7 fixtures; Chapter 6 compare fixture.
+
+### HPA-273 — Authoring skills and editor preview
+
+- Analysis authoring skill.
+- Investigation/interrogation story-state guidance.
+- Read-only analysis/map/provenance preview.
+- Shared editor/runtime layout types.
+
+### HPA-274 — Archive expansion and migration hardening
+
+- People, locations, authored chronology, cross-chapter anomalies, corrected official story.
+- Released-schema migration fixtures.
+- Definition-hash/content-revision policy documentation.
+- Incompatible files remain preserved.
+
+## 11. Required focused design sequence
+
+Before implementation begins, write/approve focused specs in this order:
+
+1. Global story catalog, state, provenance, support lineage, and monotonic unlock/reveal.
+2. Save snapshot, stable dialogue origins, durable acquisition events, definition hashes, compatibility, and migrations.
+3. Analysis Markdown/compiler/fixed-point reachability.
+4. Rust analysis runtime/transactions/public view.
+5. Workbench interaction/accessibility.
+6. Chapter 1 Beat 8.5 and hearing handoff.
+7. Investigation record interaction.
+8. Chapter 2 map/media/compare/route/control-room expansion.
+
+## 12. Program risk controls
+
+| Risk | Control |
+|---|---|
+| Duplicate program contracts | Close PR #24 and supersede HPA-239 tree |
+| `game/mod.rs` growth | Focused modules; orchestration only |
+| Save drift after story edits | Definition hashes + explicit migrations |
+| Lost acquisition popup after resume | Rust-owned durable acquisition events |
+| Re-locking/unreachable content | Positive monotonic unlocks + fixed-point compiler audit |
+| Provenance metadata soup | Orthogonal shared type + unspecified defaults |
+| Fact laundering source independence | Supporting lineage + MVP threshold source restriction |
+| Analysis grants institutional authority | Request readiness in analysis; grant in authority event |
+| Map/runtime progress drift | Derive map state from sublocation state |
+| Chapter 2 feature creep | P2 gate + five named boards + ≤8 mandatory locations |
+| Frontend answer-key leakage | Public-view/source tests |
+| Accessibility deferred | Keyboard/focus/motion acceptance in each feature ticket |
+
+## 13. Program acceptance
 
 The program is complete when:
 
-- players can safely save and resume across all durable modes,
-- Chapter 1 includes a saved, accessible analysis scene that produces facts and a procedure authorization,
-- the existing final hearing consumes those results without duplicating the analysis explanation,
-- Chapter 2 can stage its map, compare independent observation sources, align `S+` and absolute time, and prove separate outbound/return routes,
-- evidence can be used on authored investigation targets,
-- later chapters can use `compare`, `route`, and `chain` without bespoke engines,
-- all authored content is compiler validated,
-- Rust remains authoritative,
-- frontend interactions have keyboard parity, and
-- full tests, checks, lint, and Tauri e2e gates pass for the affected milestones.
+- PR #23/HPA-254 are the only active program track,
+- save/resume is exact for dialogue, acquisitions, investigation, interrogation, and analysis,
+- catalog definitions and mutable state are separated,
+- provenance/source lineage support fair source-independence checks,
+- progression is monotonic and compiler-reachable,
+- Chapter 1 analysis prepares a request and the hearing grants access,
+- Chapter 1 packaged acceptance passes,
+- Chapter 2 proves sightline, image source, control-room reaction, routes, and person capability using shared systems,
+- investigation can use records on authored targets,
+- later chapters can use compare/route/chain without a bespoke runtime mode.
