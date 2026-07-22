@@ -40,7 +40,7 @@ impl Inventory {
     pub fn has_statement(&self, id: &str) -> bool {
         self.statements.iter().any(|s| s.id == id)
     }
-    pub fn add_evidence_from_def(
+    pub(in crate::game) fn add_evidence_from_def(
         &mut self,
         def: &EvidenceJson,
         chapter_id: &str,
@@ -61,7 +61,7 @@ impl Inventory {
         });
         true
     }
-    pub fn add_statement_from_def(
+    pub(in crate::game) fn add_statement_from_def(
         &mut self,
         def: &StatementJson,
         chapter_id: &str,

@@ -2,6 +2,7 @@
 //
 // Chapter/scene loading and the navigation paths that move between scenes.
 
+use super::acquisition::AcquisitionCtx;
 use super::loader;
 use super::scenes::interrogation::InterrogationSceneState;
 use super::scenes::investigation::InvestigationSceneState;
@@ -83,13 +84,14 @@ impl GameEngine {
                     }
                     SceneJson::Linear(_) => continue,
                 };
+                let mut acq = AcquisitionCtx {
+                    inventory: &mut self.inventory,
+                };
                 for def in evidence {
-                    self.inventory
-                        .add_evidence_from_def(def, &chapter.id, &scene_id);
+                    acq.evidence(def, &chapter.id, &scene_id);
                 }
                 for def in statements {
-                    self.inventory
-                        .add_statement_from_def(def, &chapter.id, &scene_id);
+                    acq.statement(def, &chapter.id, &scene_id);
                 }
             }
         }
