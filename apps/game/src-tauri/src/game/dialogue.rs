@@ -308,7 +308,7 @@ impl GameEngine {
     }
 
     /// Whether the current interrogation scene is playing a not-yet-broken
-    /// testimony (see [`InterrogationSceneState::is_playing_unbroken`]).
+    /// testimony (see [`super::scenes::interrogation::InterrogationSceneState::is_playing_unbroken`]).
     pub(super) fn interrogation_playing_unbroken(&self) -> bool {
         matches!(&self.scene, SceneRuntime::Interrogation(scene) if scene.is_playing_unbroken())
     }
@@ -427,8 +427,18 @@ impl GameEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::schema::DialogueItem;
-    use crate::game::view::{DialogueHistoryEntry, QueueToken};
+    use crate::game::dialogue;
+    use crate::game::scenes::investigation::InvestigationSceneState;
+    use crate::game::scenes::linear::LinearSceneState;
+    use crate::game::schema::{
+        DialogueItem, HotspotJson, InvestigationSceneJson, LockStatus, OutroJson, OutroUnlock,
+        SceneType, SublocationJson,
+    };
+    use crate::game::state::{ChapterManifest, SceneRef};
+    use crate::game::test_support::*;
+    use crate::game::view::{DialogueHistoryEntry, ModeView, QueueToken};
+    use crate::game::{GameEngine, Inventory, LastVisualCue};
+    use std::path::PathBuf;
 
     fn token(cursor: usize) -> QueueToken {
         QueueToken {
@@ -501,5 +511,401 @@ mod tests {
             DialogueHistoryEntry::Line { id, .. } => assert_eq!(*id, 1),
             other => panic!("expected line, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn dialogue_history_records_initial_visible_item_and_skips_scene_tags() {
+        let d = dialogue_history_fixture_resources(2);
+        let engine = GameEngine::new_started(d.clone()).unwrap();
+        let view = engine.view();
+
+        assert_eq!(history_labels(&view), vec!["A: line 0"]);
+        assert_eq!(view.dialogue_history.len(), 1);
+        match &view.dialogue_history[0] {
+            DialogueHistoryEntry::Line {
+                id,
+                speaker,
+                text,
+                chapter_title,
+                scene_title,
+            } => {
+                assert_eq!(*id, 1);
+                assert_eq!(speaker, "A");
+                assert_eq!(text, "line 0");
+                assert_eq!(chapter_title, "Chapter One");
+                assert_eq!(scene_title, "Opening");
+            }
+            other => panic!("expected line history entry, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn dialogue_history_records_action_and_line_items_and_keeps_newest_fifty() {
+        let d = dialogue_history_fixture_resources(55);
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+
+        while matches!(engine.view().mode, ModeView::Dialogue { .. }) {
+            let token = token_from(&engine.view());
+            engine.advance_dialogue(token).unwrap();
+            if matches!(engine.view().mode, ModeView::GameComplete) {
+                break;
+            }
+        }
+
+        let view = engine.view();
+        assert_eq!(view.dialogue_history.len(), 50);
+        assert_eq!(history_labels(&view).first().unwrap(), "A: line 6");
+        assert_eq!(history_labels(&view).last().unwrap(), "B: next scene");
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn dialogue_history_ignores_stale_queue_tokens() {
+        let d = dialogue_history_fixture_resources(3);
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let stale = token_from(&engine.view());
+
+        let after_first = engine.advance_dialogue(stale.clone()).unwrap();
+        assert_eq!(
+            history_labels(&after_first),
+            vec!["A: line 0", "narration: action 1"]
+        );
+
+        let after_stale = engine.advance_dialogue(stale).unwrap();
+        assert_eq!(
+            history_labels(&after_stale),
+            vec!["A: line 0", "narration: action 1"]
+        );
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn dialogue_history_resets_on_scene_jump() {
+        let d = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        assert_eq!(history_labels(&engine.view()), vec!["A: linear start"]);
+
+        let view = engine
+            .jump_to_scene("chapter_1", "investigation_scene_1")
+            .unwrap();
+
+        assert_eq!(history_labels(&view), vec!["B: investigation intro"]);
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn stale_intro_token_does_not_advance_later_scene_with_same_id() {
+        let first_scene = investigation_scene_with_intro(
+            "investigation_scene_1",
+            vec![DialogueItem::Line {
+                speaker: "A".into(),
+                text: "first".into(),
+                portrait: None,
+            }],
+        );
+        let mut engine = empty_engine_with_scene(first_scene, 3);
+        engine.prime_initial_queue().unwrap();
+        let stale_token = token_from(&engine.view());
+
+        let next_scene = investigation_scene_with_intro(
+            "investigation_scene_1",
+            vec![DialogueItem::Line {
+                speaker: "B".into(),
+                text: "second".into(),
+                portrait: None,
+            }],
+        );
+        engine.scene = SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(
+            next_scene, 7,
+        )));
+        engine.last_visual_cue.scene_tag = None;
+        engine.prime_initial_queue().unwrap();
+
+        let before = token_from(&engine.view());
+        assert_ne!(stale_token, before);
+
+        let after = token_from(&engine.advance_dialogue(stale_token).unwrap());
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn prime_initial_queue_consumes_leading_scene_tags_in_investigation_intro() {
+        let scene = investigation_scene_with_intro(
+            "investigation_scene_1",
+            vec![
+                DialogueItem::SceneTag {
+                    text: "吉祥寺街道".into(),
+                    asset_cue: None,
+                },
+                DialogueItem::SceneTag {
+                    text: "雨中".into(),
+                    asset_cue: None,
+                },
+                DialogueItem::Line {
+                    speaker: "A".into(),
+                    text: "hello".into(),
+                    portrait: None,
+                },
+            ],
+        );
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.prime_initial_queue().unwrap();
+
+        assert_eq!(engine.last_visual_cue.scene_tag, Some("雨中".into()));
+        let view = engine.view();
+        match &view.mode {
+            ModeView::Dialogue {
+                current, scene_tag, ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "hello")
+                );
+                assert_eq!(scene_tag.as_deref(), Some("雨中"));
+            }
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inspect_hotspot_consumes_leading_scene_tags_in_investigation_queue() {
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                label: "Room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
+                transition_dialogue: vec![],
+                hotspots: vec![HotspotJson {
+                    id: "desk".into(),
+                    label: "Desk".into(),
+                    description: "Desk".into(),
+                    status: LockStatus::Unlocked,
+                    unlock: None,
+                    reveals: vec![],
+                    layout: None,
+                    inspect_dialogue: vec![
+                        DialogueItem::SceneTag {
+                            text: "desk_closeup".into(),
+                            asset_cue: None,
+                        },
+                        DialogueItem::Line {
+                            speaker: "A".into(),
+                            text: "found it".into(),
+                            portrait: None,
+                        },
+                    ],
+                    on_reexamine: None,
+                }],
+                characters: vec![],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Auto(crate::game::schema::AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.prime_initial_queue().unwrap();
+
+        let view = engine.inspect_hotspot("desk").unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                current, scene_tag, ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "found it")
+                );
+                assert_eq!(scene_tag.as_deref(), Some("desk_closeup"));
+            }
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn prime_initial_queue_consumes_leading_scene_tags_in_linear_scene() {
+        use crate::game::schema::LinearSceneJson;
+        let scene_json = LinearSceneJson {
+            id: "scene_0".into(),
+            title: "Test".into(),
+            asset_refs: vec![],
+            queue: vec![
+                DialogueItem::SceneTag {
+                    text: "吉祥寺街道".into(),
+                    asset_cue: None,
+                },
+                DialogueItem::SceneTag {
+                    text: "雨中".into(),
+                    asset_cue: None,
+                },
+                DialogueItem::Line {
+                    speaker: "A".into(),
+                    text: "hello".into(),
+                    portrait: None,
+                },
+            ],
+        };
+        let mut engine = GameEngine {
+            resources_dir: PathBuf::new(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Linear,
+                    file: "chapter_1/scene_0.json".into(),
+                }],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Linear(LinearSceneState::from_json(scene_json, 1)),
+            last_visual_cue: LastVisualCue::default(),
+            inventory: Inventory::default(),
+            next_queue_gen: 2,
+            history: dialogue::DialogueHistory::default(),
+        };
+        engine.prime_initial_queue().unwrap();
+
+        // Both leading SceneTags should be consumed; last_visual_cue.scene_tag holds the
+        // most recent tag text and the cursor points at the first real item.
+        assert_eq!(engine.last_visual_cue.scene_tag, Some("雨中".into()));
+        let view = engine.view();
+        match &view.mode {
+            ModeView::Dialogue {
+                current, scene_tag, ..
+            } => {
+                assert!(matches!(current, DialogueItem::Line { .. }));
+                assert_eq!(scene_tag.as_deref(), Some("雨中"));
+            }
+            other => panic!("expected Dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn advance_dialogue_skips_mid_scene_tags_in_linear_scene() {
+        // Queue: Line → SceneTag → SceneTag → Line
+        // Advancing past the first Line should skip both SceneTags and land
+        // directly on the second Line, with last_visual_cue.scene_tag holding the final tag.
+        use crate::game::schema::LinearSceneJson;
+        let scene_json = LinearSceneJson {
+            id: "scene_0".into(),
+            title: "Test".into(),
+            asset_refs: vec![],
+            queue: vec![
+                DialogueItem::Line {
+                    speaker: "A".into(),
+                    text: "first".into(),
+                    portrait: None,
+                },
+                DialogueItem::SceneTag {
+                    text: "mid_scene_1".into(),
+                    asset_cue: None,
+                },
+                DialogueItem::SceneTag {
+                    text: "mid_scene_2".into(),
+                    asset_cue: None,
+                },
+                DialogueItem::Line {
+                    speaker: "B".into(),
+                    text: "second".into(),
+                    portrait: None,
+                },
+            ],
+        };
+        let mut engine = GameEngine {
+            resources_dir: PathBuf::new(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Linear,
+                    file: "chapter_1/scene_0.json".into(),
+                }],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Linear(LinearSceneState::from_json(scene_json, 1)),
+            last_visual_cue: LastVisualCue::default(),
+            inventory: Inventory::default(),
+            next_queue_gen: 2,
+            history: dialogue::DialogueHistory::default(),
+        };
+        // prime_initial_queue: no leading tags, cursor at 0 (first Line)
+        engine.prime_initial_queue().unwrap();
+        assert_eq!(engine.last_visual_cue.scene_tag, None);
+
+        let view = engine.view();
+        let token = match &view.mode {
+            ModeView::Dialogue { queue_token, .. } => queue_token.clone(),
+            other => panic!("expected Dialogue, got {other:?}"),
+        };
+
+        // Advance past "first" — should skip both SceneTags, land on "second"
+        let view = engine.advance_dialogue(token).unwrap();
+        assert_eq!(engine.last_visual_cue.scene_tag, Some("mid_scene_2".into()));
+        match &view.mode {
+            ModeView::Dialogue {
+                current, scene_tag, ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "B" && text == "second")
+                );
+                assert_eq!(scene_tag.as_deref(), Some("mid_scene_2"));
+            }
+            other => panic!("expected Dialogue after mid-scene tag skip, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tag_only_linear_scene_advances_to_game_complete() {
+        use crate::game::schema::LinearSceneJson;
+        // A chapter with a single tag-only scene should advance to GameComplete
+        // instead of stalling with the cursor at the end of the queue.
+        let tag_only_json = LinearSceneJson {
+            id: "scene_0".into(),
+            title: "Tag Only".into(),
+            asset_refs: vec![],
+            queue: vec![DialogueItem::SceneTag {
+                text: "吉祥寺街道".into(),
+                asset_cue: None,
+            }],
+        };
+        let mut engine = GameEngine {
+            resources_dir: PathBuf::new(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Linear,
+                    file: "chapter_1/scene_0.json".into(),
+                }],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Linear(LinearSceneState::from_json(tag_only_json, 1)),
+            last_visual_cue: LastVisualCue::default(),
+            inventory: Inventory::default(),
+            next_queue_gen: 2,
+            history: dialogue::DialogueHistory::default(),
+        };
+        engine.prime_initial_queue().unwrap();
+
+        // Scene was tag-only → advance_scene ran → past last chapter → GameComplete.
+        assert!(matches!(engine.view().mode, ModeView::GameComplete));
+        assert_eq!(engine.last_visual_cue.scene_tag, Some("吉祥寺街道".into()));
     }
 }

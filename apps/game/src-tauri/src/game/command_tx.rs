@@ -116,3 +116,647 @@ impl GameEngine {
         Ok(self.view())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::schema::{
+        EvidenceJson, HotspotJson, InvestigationSceneJson, LockStatus, OutroJson, OutroUnlock,
+        RevealTarget, SceneType, SublocationJson, UnlockExpr,
+    };
+    use crate::game::state::{EvidenceRecord, SceneRef, StatementRecord};
+    use crate::game::test_support::*;
+    use crate::game::*;
+
+    #[test]
+    fn reexamine_evidence_rolls_back_tag_only_queue_when_scene_advance_fails() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-reexamine-evidence-rollback-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_2.json"),
+            r#"{
+                "type": "linear",
+                "id": "interrogation_scene_2",
+                "title": "Wrong Type",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let inventory = Inventory {
+            evidence: vec![EvidenceRecord {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                image_asset_id: None,
+                on_reexamine: Some(vec![DialogueItem::SceneTag {
+                    text: "tag_only".into(),
+                    asset_cue: None,
+                }]),
+                collected_in_chapter_id: "chapter_1".into(),
+                collected_in_scene_id: "interrogation_scene_1".into(),
+            }],
+            statements: vec![],
+        };
+        let mut engine = completed_interrogation_engine_with_bad_next_scene(d.clone(), inventory);
+        let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();
+        let previous_next_queue_gen = engine.next_queue_gen;
+
+        let err = engine.reexamine_evidence("note").unwrap_err();
+
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert_eq!(engine.current_scene_idx, 0);
+        assert_eq!(engine.last_visual_cue.scene_tag, previous_scene_tag);
+        assert_eq!(engine.next_queue_gen, previous_next_queue_gen);
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene after rollback");
+        };
+        assert!(scene.pending_queue.is_none());
+        // Snapshot rollback must restore dialogue history after a failed
+        // advance path (design spec: dialogue-history-design.md "Testing").
+        // The fixture starts with empty history; the failed reexamine records
+        // nothing on the success path, so rollback should leave it empty.
+        assert!(
+            engine.history.entries().is_empty(),
+            "dialogue history must be restored to its pre-command state after rollback, got {:?}",
+            engine.history.entries()
+        );
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn reexamine_statement_rolls_back_tag_only_queue_when_scene_advance_fails() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-reexamine-statement-rollback-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_2.json"),
+            r#"{
+                "type": "linear",
+                "id": "interrogation_scene_2",
+                "title": "Wrong Type",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let inventory = Inventory {
+            evidence: vec![],
+            statements: vec![StatementRecord {
+                id: "alibi".into(),
+                speaker: "Witness".into(),
+                content: "Alibi".into(),
+                on_reexamine: Some(vec![DialogueItem::SceneTag {
+                    text: "tag_only".into(),
+                    asset_cue: None,
+                }]),
+                acquired_in_chapter_id: "chapter_1".into(),
+                acquired_in_scene_id: "interrogation_scene_1".into(),
+            }],
+        };
+        let mut engine = completed_interrogation_engine_with_bad_next_scene(d.clone(), inventory);
+        let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();
+        let previous_next_queue_gen = engine.next_queue_gen;
+
+        let err = engine.reexamine_statement("alibi").unwrap_err();
+
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert_eq!(engine.current_scene_idx, 0);
+        assert_eq!(engine.last_visual_cue.scene_tag, previous_scene_tag);
+        assert_eq!(engine.next_queue_gen, previous_next_queue_gen);
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene after rollback");
+        };
+        assert!(scene.pending_queue.is_none());
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn failed_scene_advance_keeps_previous_dialogue_view() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d =
+            std::env::temp_dir().join(format!("lyra-advance-test-{}-{}", std::process::id(), n));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter 1",
+                    "summary": "Summary",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_0.json" },
+                        { "type": "interrogation", "file": "chapter_1/interrogation_scene_1.json" }
+                    ]
+                }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("scene_0.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Opening",
+                "queue": [{ "kind": "line", "speaker": "A", "text": "before" }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "linear",
+                "id": "interrogation_scene_1",
+                "title": "Wrong Type",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let before = engine.view();
+        assert_eq!(history_labels(&before), vec!["A: before"]);
+        let token = token_from(&before);
+        let err = engine.advance_dialogue(token).unwrap_err();
+        assert_eq!(err.code, "sceneValidationFailed");
+
+        let after = engine.view();
+        assert_eq!(history_labels(&after), vec!["A: before"]);
+        match after.mode {
+            ModeView::Dialogue { current, .. } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "before")
+                );
+            }
+            other => panic!("expected previous dialogue mode after failed advance, got {other:?}"),
+        }
+        match after.scene {
+            SceneView::Linear {
+                id, index, total, ..
+            } => {
+                assert_eq!(id, "scene_0");
+                assert_eq!(index, 0);
+                assert_eq!(total, 2);
+            }
+            other => panic!("expected previous linear scene after failed advance, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn failed_initial_silent_investigation_transition_rolls_back_inventory() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-initial-transition-rollback-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter 1",
+                    "summary": "Summary",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_0.json" },
+                        { "type": "investigation", "file": "chapter_1/investigation_scene_1.json" },
+                        { "type": "interrogation", "file": "chapter_1/interrogation_scene_1.json" }
+                    ]
+                }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("scene_0.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Opening",
+                "queue": [{ "kind": "line", "speaker": "A", "text": "before" }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("investigation_scene_1.json"),
+            r#"{
+                "type": "investigation",
+                "id": "investigation_scene_1",
+                "title": "Investigation",
+                "intro": [],
+                "sublocations": [{
+                    "id": "room",
+                    "label": "Room",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [{ "kind": "evidence", "id": "note" }],
+                    "sceneTag": "room",
+                    "transitionDialogue": [],
+                    "hotspots": [],
+                    "characters": []
+                }],
+                "evidenceManifest": [{
+                    "id": "note",
+                    "name": "Note",
+                    "description": "Note",
+                    "details": "Note",
+                    "onCollect": [],
+                    "onReexamine": null
+                }],
+                "statementManifest": [],
+                "outro": {
+                    "unlock": { "predicate": "evidence_collected", "id": "note" },
+                    "dialogue": []
+                }
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "linear",
+                "id": "interrogation_scene_1",
+                "title": "Wrong Type",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let token = token_from(&engine.view());
+
+        let err = engine.advance_dialogue(token).unwrap_err();
+        assert_eq!(err.code, "sceneValidationFailed");
+
+        assert!(engine.inventory.evidence.is_empty());
+        assert_eq!(engine.current_chapter_idx, 0);
+        assert_eq!(engine.current_scene_idx, 0);
+        match engine.view().scene {
+            SceneView::Linear {
+                id, index, total, ..
+            } => {
+                assert_eq!(id, "scene_0");
+                assert_eq!(index, 0);
+                assert_eq!(total, 3);
+            }
+            other => panic!("expected previous linear scene after failed advance, got {other:?}"),
+        }
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn failed_investigation_intro_completion_rolls_back_inventory() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-intro-rollback-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "linear",
+                "id": "interrogation_scene_1",
+                "title": "Wrong Type",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            asset_refs: vec![],
+            intro: vec![DialogueItem::Line {
+                speaker: "A".into(),
+                text: "intro".into(),
+                portrait: None,
+            }],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                label: "Room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                scene_tag: "room".into(),
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
+                transition_dialogue: vec![],
+                hotspots: vec![],
+                characters: vec![],
+            }],
+            evidence_manifest: vec![EvidenceJson {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
+                    _predicate: crate::game::schema::PredicateEvidenceCollected::X,
+                    id: "note".into(),
+                }),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = GameEngine {
+            resources_dir: d.clone(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![
+                    SceneRef {
+                        scene_type: SceneType::Investigation,
+                        file: "chapter_1/investigation_scene_1.json".into(),
+                    },
+                    SceneRef {
+                        scene_type: SceneType::Interrogation,
+                        file: "chapter_1/interrogation_scene_1.json".into(),
+                    },
+                ],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(
+                scene, 1,
+            ))),
+            last_visual_cue: LastVisualCue::default(),
+            inventory: Inventory::default(),
+            next_queue_gen: 2,
+            history: dialogue::DialogueHistory::default(),
+        };
+        engine.prime_initial_queue().unwrap();
+        let token = token_from(&engine.view());
+
+        let err = engine.advance_dialogue(token).unwrap_err();
+        assert_eq!(err.code, "sceneValidationFailed");
+
+        assert!(engine.inventory.evidence.is_empty());
+        assert_eq!(engine.current_chapter_idx, 0);
+        assert_eq!(engine.current_scene_idx, 0);
+        let view = engine.view();
+        match view.mode {
+            ModeView::Dialogue { current, .. } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "intro")
+                );
+            }
+            other => panic!("expected previous intro dialogue after failed advance, got {other:?}"),
+        }
+        match view.scene {
+            SceneView::Investigation {
+                id, index, total, ..
+            } => {
+                assert_eq!(id, "investigation_scene_1");
+                assert_eq!(index, 0);
+                assert_eq!(total, 2);
+            }
+            other => {
+                panic!("expected previous investigation scene after failed advance, got {other:?}")
+            }
+        }
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn failed_silent_investigation_completion_rolls_back_action_state() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-silent-action-rollback-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "linear",
+                "id": "interrogation_scene_1",
+                "title": "Wrong Type",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                label: "Room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
+                transition_dialogue: vec![],
+                hotspots: vec![HotspotJson {
+                    id: "desk".into(),
+                    label: "Desk".into(),
+                    description: "Desk".into(),
+                    status: LockStatus::Unlocked,
+                    unlock: None,
+                    reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                    layout: None,
+                    inspect_dialogue: vec![],
+                    on_reexamine: None,
+                }],
+                characters: vec![],
+            }],
+            evidence_manifest: vec![EvidenceJson {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            }],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
+                    _predicate: crate::game::schema::PredicateEvidenceCollected::X,
+                    id: "note".into(),
+                }),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = GameEngine {
+            resources_dir: d.clone(),
+            chapters: vec![ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Chapter 1".into(),
+                summary: "summary".into(),
+                scenes: vec![
+                    SceneRef {
+                        scene_type: SceneType::Investigation,
+                        file: "chapter_1/investigation_scene_1.json".into(),
+                    },
+                    SceneRef {
+                        scene_type: SceneType::Interrogation,
+                        file: "chapter_1/interrogation_scene_1.json".into(),
+                    },
+                ],
+            }],
+            current_chapter_idx: 0,
+            current_scene_idx: 0,
+            scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(
+                scene, 1,
+            ))),
+            last_visual_cue: LastVisualCue::default(),
+            inventory: Inventory::default(),
+            next_queue_gen: 2,
+            history: dialogue::DialogueHistory::default(),
+        };
+        engine.prime_initial_queue().unwrap();
+        let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();
+        let previous_next_queue_gen = engine.next_queue_gen;
+
+        let err = engine.inspect_hotspot("desk").unwrap_err();
+        assert_eq!(err.code, "sceneValidationFailed");
+
+        assert_eq!(engine.current_chapter_idx, 0);
+        assert_eq!(engine.current_scene_idx, 0);
+        assert_eq!(engine.last_visual_cue.scene_tag, previous_scene_tag);
+        assert_eq!(engine.next_queue_gen, previous_next_queue_gen);
+        assert!(engine.inventory.evidence.is_empty());
+
+        let SceneRuntime::Investigation(inv) = &engine.scene else {
+            panic!("expected investigation scene after failed silent completion");
+        };
+        assert_eq!(inv.current_sublocation_id.as_deref(), Some("room"));
+        assert!(inv.inspected_hotspots.is_empty());
+        assert!(!inv.outro_played);
+
+        let view = engine.view();
+        assert!(
+            matches!(view.mode, ModeView::Explore { sublocation_id, .. } if sublocation_id == "room")
+        );
+        match view.scene {
+            SceneView::Investigation {
+                id, index, total, ..
+            } => {
+                assert_eq!(id, "investigation_scene_1");
+                assert_eq!(index, 0);
+                assert_eq!(total, 2);
+            }
+            other => {
+                panic!("expected previous investigation scene after failed advance, got {other:?}")
+            }
+        }
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn rollback_scope_restores_every_tracked_field_on_error() {
+        let scene = investigation_scene_with_intro(
+            "investigation_scene_1",
+            vec![DialogueItem::Line {
+                speaker: "A".into(),
+                text: "intro".into(),
+                portrait: None,
+            }],
+        );
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.inventory.add_evidence_from_def(
+            &EvidenceJson {
+                id: "before".into(),
+                name: "before".into(),
+                description: "before".into(),
+                details: "before".into(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            },
+            "chapter_1",
+            "investigation_scene_1",
+        );
+        let gen_before = engine.next_queue_gen;
+        let evidence_before = engine.inventory.evidence.len();
+
+        let result: Result<(), GameError> = engine.rollback_scope(|e| {
+            e.next_queue_gen += 99;
+            e.inventory.evidence.clear();
+            e.current_scene_idx += 5;
+            Err(GameError::internal("boom".into()))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(
+            engine.next_queue_gen, gen_before,
+            "next_queue_gen not restored"
+        );
+        assert_eq!(
+            engine.inventory.evidence.len(),
+            evidence_before,
+            "inventory not restored"
+        );
+        assert_eq!(engine.current_scene_idx, 0, "scene index not restored");
+    }
+
+    #[test]
+    fn rollback_scope_keeps_mutations_on_success() {
+        let scene = investigation_scene_with_intro("investigation_scene_1", vec![]);
+        let mut engine = empty_engine_with_scene(scene, 1);
+        let gen_before = engine.next_queue_gen;
+
+        let result: Result<u64, GameError> = engine.rollback_scope(|e| {
+            e.next_queue_gen += 7;
+            Ok(e.next_queue_gen)
+        });
+
+        assert_eq!(result.unwrap(), gen_before + 7);
+        assert_eq!(engine.next_queue_gen, gen_before + 7);
+    }
+}
