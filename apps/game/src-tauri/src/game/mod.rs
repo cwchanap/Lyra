@@ -149,7 +149,7 @@ impl GameEngine {
         )?
         .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
 
-        self.rollback_scope(move |engine| -> Result<GameStateView, GameError> {
+        self.command_tx(move |engine| {
             engine.current_chapter_idx = chapter_idx;
             engine.current_scene_idx = scene_idx;
             engine.scene = new_scene;
@@ -172,7 +172,7 @@ impl GameEngine {
             if cfg!(debug_assertions) && matches!(engine.scene, SceneRuntime::Interrogation(_)) {
                 engine.grant_all_evidence_for_testing();
             }
-            Ok(engine.view_with_history())
+            Ok(())
         })
     }
 
@@ -278,23 +278,6 @@ impl GameEngine {
         }
     }
 
-    /// Build the post-command view while recording the currently focused
-    /// dialogue item into `dialogue_history`.
-    ///
-    /// Dialogue history is captured opportunistically: there is no single
-    /// recording hook, so every `#[tauri::command]` path that advances or
-    /// changes the focused dialogue item MUST return `Ok(self.view_with_history())`
-    /// rather than `Ok(self.view())`. `record_current_dialogue_history` is
-    /// idempotent (it dedups by queue token), so calling this on a path that
-    /// does not advance is harmless — but skipping it on a path that *does*
-    /// advance silently drops the line from the history log. When adding a
-    /// new command that can change `current_dialogue_item`, route its return
-    /// through this method and add coverage in the dialogue-history tests.
-    fn view_with_history(&mut self) -> GameStateView {
-        self.record_current_dialogue_history();
-        self.view()
-    }
-
     fn record_current_dialogue_history(&mut self) {
         let Some(token) = self.current_queue_token() else {
             return;
@@ -381,7 +364,7 @@ impl GameEngine {
             return Ok(self.view());
         }
 
-        self.rollback_scope(|engine| -> Result<(), GameError> {
+        self.command_tx(|engine| {
             let _ = match &mut engine.scene {
                 SceneRuntime::Linear(s) => s.advance(),
                 SceneRuntime::Investigation(inv) => {
@@ -424,8 +407,7 @@ impl GameEngine {
                 engine.on_queue_exhausted()?;
             }
             Ok(())
-        })?;
-        Ok(self.view_with_history())
+        })
     }
 
     fn peek_just_consumed(&self) -> Option<DialogueItem> {
@@ -1017,7 +999,7 @@ impl GameEngine {
             (hot_def, first_time)
         };
 
-        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+        self.command_tx(|engine| {
             // Phase 2 — compute: build queue (mutates scene + inventory together).
             let queue_items = if first_time {
                 let inv = match &mut engine.scene {
@@ -1053,7 +1035,7 @@ impl GameEngine {
                 let queue_gen = engine.alloc_queue_gen();
                 engine.install_investigation_queue(queue_items, queue_gen)?;
             }
-            Ok(engine.view_with_history())
+            Ok(())
         })
     }
 
@@ -1113,7 +1095,7 @@ impl GameEngine {
             (topic, first_time)
         };
 
-        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+        self.command_tx(|engine| {
             let queue_items = if first_time {
                 let inv = match &mut engine.scene {
                     SceneRuntime::Investigation(i) => i,
@@ -1147,7 +1129,7 @@ impl GameEngine {
                 let queue_gen = engine.alloc_queue_gen();
                 engine.install_investigation_queue(queue_items, queue_gen)?;
             }
-            Ok(engine.view_with_history())
+            Ok(())
         })
     }
 
@@ -1198,7 +1180,7 @@ impl GameEngine {
             )
         };
 
-        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+        self.command_tx(|engine| {
             let queue_items: Vec<DialogueItem> = if first_entry {
                 let inv = match &mut engine.scene {
                     SceneRuntime::Investigation(i) => i,
@@ -1234,7 +1216,7 @@ impl GameEngine {
                 engine.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
                 engine.install_investigation_queue(queue_items, queue_gen)?;
             }
-            Ok(engine.view_with_history())
+            Ok(())
         })
     }
 
@@ -1278,10 +1260,10 @@ impl GameEngine {
                 text: REEXAMINE_FALLBACK_TEXT.into(),
             }],
         };
-        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+        self.command_tx(|engine| {
             let queue_gen = engine.alloc_queue_gen();
             engine.install_scene_queue(queue_items, queue_gen)?;
-            Ok(engine.view_with_history())
+            Ok(())
         })
     }
 
@@ -1325,10 +1307,10 @@ impl GameEngine {
                 text: REEXAMINE_FALLBACK_TEXT.into(),
             }],
         };
-        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+        self.command_tx(|engine| {
             let queue_gen = engine.alloc_queue_gen();
             engine.install_scene_queue(queue_items, queue_gen)?;
-            Ok(engine.view_with_history())
+            Ok(())
         })
     }
 
@@ -1382,7 +1364,7 @@ impl GameEngine {
             }
         }
 
-        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+        self.command_tx(|engine| {
             let (queue_items, line_content_start) = {
                 let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
@@ -1437,7 +1419,7 @@ impl GameEngine {
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.refresh_phase_completion(&engine.inventory);
             }
-            Ok(engine.view_with_history())
+            Ok(())
         })
     }
 
@@ -1477,7 +1459,7 @@ impl GameEngine {
             }
         }
 
-        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+        self.command_tx(|engine| {
             let queue_items = {
                 let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
@@ -1525,7 +1507,7 @@ impl GameEngine {
                 let queue_gen = engine.alloc_queue_gen();
                 engine.install_scene_queue(queue_items, queue_gen)?;
             }
-            Ok(engine.view_with_history())
+            Ok(())
         })
     }
 
@@ -1585,7 +1567,7 @@ impl GameEngine {
             (question_id.clone(), line_id.clone())
         };
 
-        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+        self.command_tx(|engine| {
             let queue_items = {
                 let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
@@ -1662,7 +1644,7 @@ impl GameEngine {
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.refresh_phase_completion(&engine.inventory);
             }
-            Ok(engine.view_with_history())
+            Ok(())
         })
     }
 
@@ -1697,7 +1679,7 @@ impl GameEngine {
             }
         }
 
-        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+        self.command_tx(|engine| {
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.withdraw();
                 // A testimony content queue may still be active (withdrawing
@@ -1706,7 +1688,7 @@ impl GameEngine {
                 scene.pending_queue = None;
             }
             engine.on_queue_exhausted()?;
-            Ok(engine.view_with_history())
+            Ok(())
         })
     }
 
@@ -1736,7 +1718,7 @@ impl GameEngine {
             }
         }
 
-        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+        self.command_tx(|engine| {
             let queue_items = {
                 let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
@@ -1774,7 +1756,7 @@ impl GameEngine {
                     scene.line_content_start = 0;
                 }
             }
-            Ok(engine.view_with_history())
+            Ok(())
         })
     }
 
@@ -1811,14 +1793,14 @@ impl GameEngine {
             }
         }
 
-        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+        self.command_tx(|engine| {
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.complete_current_phase();
             }
             // The guard ensured no dialogue queue is active; drive the scene
             // machinery (phase-advance / outro) as if a queue had just drained.
             engine.on_queue_exhausted()?;
-            Ok(engine.view_with_history())
+            Ok(())
         })
     }
 
@@ -2715,163 +2697,103 @@ mod tests {
         let _ = std::fs::remove_dir_all(d);
     }
 
-    /// Source-contract test: every `pub fn` on `GameEngine` that returns
-    /// `Result<GameStateView, GameError>` MUST route its success path through
-    /// `view_with_history()`. This is the only way to catch a new advancing
-    /// command that forgets to record dialogue history — the bug class the
-    /// `view_with_history()` contract exists to prevent (see the doc comment
-    /// on `view_with_history`). `view()` itself returns `GameStateView`
-    /// directly (not a `Result`), so it is naturally excluded.
+    /// Source-contract guard. `command_tx` guarantees history finalization only
+    /// for commands that use it, and `GameEngine::view` must stay `pub` for
+    /// lib.rs, so nothing structurally prevents a new command from returning
+    /// `Ok(self.view())` and skipping the log. This scans the engine modules
+    /// for that mistake.
     ///
-    /// The scan enforces two invariants per tracked function:
-    /// 1. `view_with_history()` appears at least once in the body, AND
-    /// 2. no `Ok(self.view())` appears in the body — because a command whose
-    ///    main advancing branch returns `Ok(self.view())` would silently drop
-    ///    dialogue history even if `view_with_history()` happens to appear on
-    ///    a side branch or in a comment. The single tolerated `Ok(self.view())`
-    ///    is the stale-token early return in `advance_dialogue`, which
-    ///    intentionally does not advance the focused item — so `view()` there
-    ///    is correct and `view_with_history()` is still present elsewhere in
-    ///    the same function for the advancing path. That exception is
-    ///    allow-listed by function name below; new exceptions require explicit
-    ///    review and a matching entry.
+    /// Weaker than a type guarantee, and deliberately kept until one exists.
     #[test]
-    fn every_view_returning_command_routes_through_view_with_history() {
-        let source = include_str!("mod.rs");
-        // Functions allow-listed for an `Ok(self.view())` return. Each entry
-        // must have a documented reason in the doc comment above.
-        let allowed_bare_view: &[&str] = &["advance_dialogue"];
+    fn every_view_returning_command_routes_through_command_tx() {
+        let sources: &[(&str, &str)] = &[
+            ("mod.rs", include_str!("mod.rs")),
+            ("command_tx.rs", include_str!("command_tx.rs")),
+        ];
+        // Documented exemptions. Each needs a justification here.
+        //   advance_dialogue — stale-token early return is not a transaction
+        //                      and deliberately records no history.
+        let allowed: &[&str] = &["advance_dialogue"];
 
-        let mut seen_commands: Vec<String> = Vec::new();
+        let mut seen: Vec<String> = Vec::new();
         let mut missing: Vec<String> = Vec::new();
-        let mut bare_view: Vec<String> = Vec::new();
 
-        // Walk the source line by line. When a `pub fn` is encountered, start
-        // accumulating its signature (which may span multiple lines until the
-        // opening `{`). If the signature contains `-> Result<GameStateView,
-        // GameError>`, track the function body for `view_with_history()` and
-        // `Ok(self.view())`. When the next `pub fn` starts (or we hit the test
-        // module), close out the current function and assert it called
-        // `view_with_history()` and did not return `Ok(self.view())`.
-        let mut current_fn: Option<String> = None;
-        let mut current_body_has_history = false;
-        let mut current_body_has_bare_view = false;
-        // Accumulates signature lines for multi-line `pub fn` declarations.
-        let mut signature_buf: String = String::new();
-        let mut in_signature = false;
+        for (file, source) in sources {
+            let mut current: Option<String> = None;
+            let mut body_has_tx = false;
+            let mut signature = String::new();
+            let mut in_signature = false;
 
-        for line in source.lines() {
-            let trimmed = line.trim_start();
-
-            // Stop scanning at the test module boundary — test code (including
-            // this very test) mentions `view_with_history()` and
-            // `Ok(self.view())` in string literals and would create false
-            // positives.
-            if trimmed.starts_with("mod tests {") || trimmed.starts_with("#[cfg(test)]") {
-                break;
-            }
-
-            // A new `pub fn` starts. Close out the previous tracked function.
-            if trimmed.starts_with("pub fn ") {
-                if let Some(name) = current_fn.take() {
-                    if !current_body_has_history {
-                        missing.push(name.clone());
+            for line in source.lines() {
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("mod tests {") || trimmed.starts_with("#[cfg(test)]") {
+                    break;
+                }
+                if trimmed.starts_with("pub fn ") {
+                    if let Some(name) = current.take() {
+                        if !body_has_tx && !allowed.contains(&name.as_str()) {
+                            missing.push(format!("{file}::{name}"));
+                        }
+                        body_has_tx = false;
                     }
-                    if current_body_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
-                        bare_view.push(name);
+                    signature.clear();
+                    signature.push_str(trimmed);
+                    in_signature = !trimmed.contains('{');
+                    if !in_signature {
+                        if let Some(name) = tracked_command_name(&signature) {
+                            seen.push(format!("{file}::{name}"));
+                            current = Some(name);
+                        }
                     }
-                    current_body_has_history = false;
-                    current_body_has_bare_view = false;
+                    continue;
                 }
-
-                // Extract the function name and begin accumulating the
-                // signature (may span multiple lines until `{`).
-                let after_fn = trimmed.strip_prefix("pub fn ").unwrap_or(trimmed);
-                let name = after_fn
-                    .split(|c: char| c == '(' || c.is_whitespace())
-                    .next()
-                    .unwrap_or("<unknown>")
-                    .to_string();
-                signature_buf.clear();
-                signature_buf.push_str(trimmed);
-                in_signature = true;
-
-                // Single-line signature: `pub fn foo(...) -> Type {`
-                if trimmed.contains('{') {
-                    in_signature = false;
-                    if signature_buf.contains("-> Result<GameStateView, GameError>") {
-                        current_fn = Some(name.clone());
-                        seen_commands.push(name);
+                if in_signature {
+                    signature.push(' ');
+                    signature.push_str(trimmed);
+                    if trimmed.contains('{') {
+                        in_signature = false;
+                        if let Some(name) = tracked_command_name(&signature) {
+                            seen.push(format!("{file}::{name}"));
+                            current = Some(name);
+                        }
                     }
+                    continue;
                 }
-                continue;
-            }
-
-            // Continuation of a multi-line signature.
-            if in_signature {
-                signature_buf.push(' ');
-                signature_buf.push_str(trimmed);
-                if trimmed.contains('{') {
-                    in_signature = false;
-                    if signature_buf.contains("-> Result<GameStateView, GameError>") {
-                        // Re-extract the name from the buffer.
-                        let after_fn = signature_buf
-                            .strip_prefix("pub fn ")
-                            .unwrap_or(&signature_buf);
-                        let name = after_fn
-                            .split(|c: char| c == '(' || c.is_whitespace())
-                            .next()
-                            .unwrap_or("<unknown>")
-                            .to_string();
-                        current_fn = Some(name.clone());
-                        seen_commands.push(name);
-                    }
-                }
-                continue;
-            }
-
-            if current_fn.is_some() {
-                if trimmed.contains("view_with_history()") {
-                    current_body_has_history = true;
-                }
-                if trimmed.contains("Ok(self.view())") {
-                    current_body_has_bare_view = true;
+                if current.is_some() && trimmed.contains("command_tx(") {
+                    body_has_tx = true;
                 }
             }
-        }
-
-        // Close out the last tracked function.
-        if let Some(name) = current_fn.take() {
-            if !current_body_has_history {
-                missing.push(name.clone());
-            }
-            if current_body_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
-                bare_view.push(name);
+            if let Some(name) = current.take() {
+                if !body_has_tx && !allowed.contains(&name.as_str()) {
+                    missing.push(format!("{file}::{name}"));
+                }
             }
         }
 
         assert!(
-            !seen_commands.is_empty(),
-            "source-contract test found no Result<GameStateView, GameError> commands; \
-             the scanner is likely broken"
+            !seen.is_empty(),
+            "scanner found no Result<GameStateView, GameError> commands; it is broken"
         );
         assert!(
             missing.is_empty(),
-            "these GameEngine commands return Result<GameStateView, GameError> but never \
-             call view_with_history() — they will silently drop dialogue history \
-             when they advance the focused item: {missing:?} \
-             (tracked commands: {seen_commands:?})"
+            "these commands return Result<GameStateView, GameError> but never call \
+             command_tx(), so they can silently skip dialogue history: {missing:?} \
+             (tracked: {seen:?})"
         );
-        assert!(
-            bare_view.is_empty(),
-            "these GameEngine commands return Result<GameStateView, GameError> and contain \
-             `Ok(self.view())` — a bare view return on an advancing path silently drops \
-             dialogue history. Route the success path through `view_with_history()` instead. \
-             If this is a documented non-advancing early return (e.g. a stale-token guard), \
-             add the function name to `allowed_bare_view` in this test with a justification \
-             in the doc comment. Offending functions: {bare_view:?} \
-             (tracked commands: {seen_commands:?})"
-        );
+    }
+
+    /// Extracts the fn name from an accumulated signature if it returns a view.
+    fn tracked_command_name(signature: &str) -> Option<String> {
+        if !signature.contains("-> Result<GameStateView, GameError>") {
+            return None;
+        }
+        let after = signature.strip_prefix("pub fn ")?;
+        Some(
+            after
+                .split(|c: char| c == '(' || c.is_whitespace())
+                .next()?
+                .to_string(),
+        )
     }
 
     #[test]

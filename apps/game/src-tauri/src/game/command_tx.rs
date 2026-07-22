@@ -116,11 +116,6 @@ impl GameEngine {
     /// the limit of that guarantee: `GameEngine::view` is `pub` (lib.rs needs
     /// it), so a command that bypasses `command_tx` entirely can still skip
     /// history. The source-contract test in mod.rs covers that residual gap.
-    ///
-    /// `#[allow(dead_code)]`: no command body calls this yet in Task 1 — Task
-    /// 2 converts command bodies to use it. Remove this allow once a caller
-    /// exists.
-    #[allow(dead_code)]
     pub(super) fn command_tx(
         &mut self,
         f: impl FnOnce(&mut Self) -> Result<(), GameError>,
