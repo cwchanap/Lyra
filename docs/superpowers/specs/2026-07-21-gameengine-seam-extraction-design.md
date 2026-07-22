@@ -203,10 +203,20 @@ pub(super) fn command_tx(
 ) -> Result<GameStateView, GameError>;
 ```
 
-`command_tx`'s closure returns `()`, so a command cannot construct its own
-`GameStateView`. History finalization becomes structurally unskippable rather
-than conventional, which is what acceptance criterion "dialogue history is
-finalized through one shared path" asks for.
+`command_tx`'s closure returns `()`, so a command **that uses `command_tx`**
+cannot skip history finalization — there is no path through it that yields a
+`GameStateView` without recording first.
+
+**Be precise about the limit of this guarantee.** It is not absolute.
+`GameEngine::view` is `pub` and must stay so: `lib.rs` calls it directly in
+`start_game` and `get_state`. A future command can therefore still write
+`Ok(self.view())` and never call `command_tx` at all. What the seam removes is
+the *per-command convention* — inside the transaction, history is automatic —
+not the possibility of bypassing the transaction entirely.
+
+This matters because it is the sole justification for deleting the source
+scanner, so the residual gap must be covered deliberately rather than assumed
+away. See "Enforcement after the scanner" under Testing.
 
 Nesting is safe and behaviour-preserving: an inner `rollback_scope` restore
 followed by an outer restore lands on the outer snapshot. This already happens
@@ -236,6 +246,36 @@ impl EngineRollbackSnapshot {
     }
 }
 ```
+
+**Restore must be symmetric.** Exhaustive destructuring on `capture` alone is
+half a guarantee: it forces a new `GameEngine` field to be classified, but
+nothing stops a captured field from being dropped on the way back. `restore`
+therefore destructures the snapshot by value, exhaustively and without `..`:
+
+```rust
+fn restore(engine: &mut GameEngine, snapshot: EngineRollbackSnapshot) {
+    // Exhaustive, no `..`: a field added to the snapshot must be named here,
+    // and an unused binding is an error under clippy's -D warnings, so it
+    // cannot be named and then silently ignored.
+    let EngineRollbackSnapshot {
+        current_chapter_idx,
+        current_scene_idx,
+        scene,
+        last_visual_cue,
+        inventory,
+        next_queue_gen,
+        history,
+    } = snapshot;
+    engine.current_chapter_idx = current_chapter_idx;
+    /* … one assignment per binding … */
+}
+```
+
+Both halves together give the property the chosen approach is meant to deliver:
+a field cannot enter rollback tracking without also leaving it. (The alternative
+— one clonable `EngineProgress` struct, where restore is a single assignment —
+was considered and rejected earlier for its field-path churn across ~2,400
+lines.)
 
 `EngineRollbackSnapshot` carries a doc comment distinguishing it from §16's
 persistent `SaveSnapshot`, per canonical design §7.4.
@@ -382,11 +422,23 @@ change has begun HPA-129 under a P0.0 ticket.
 
 ### 3. Navigation (`navigation.rs`)
 
-Moving verbatim (already stateless free functions):
-`load_chapter_manifests`, `scene_navigation_index_from_chapters`,
-`find_scene_runtime_by_id`, `load_scene_runtime`, `load_scene_json_for_ref`,
-`scene_runtime_from_json`, `validate_manifest_scene_type`, `scene_json_identity`,
-`scene_json_type`, `scene_type_label`.
+Ten stateless free functions move. Their **bodies** are verbatim, but three need
+a visibility change — Rust privacy runs parent-to-child only, so a private item
+in `game::navigation` is *not* visible to its parent `game`, and `new_started`
+and `scene_navigation_index` stay in `mod.rs`:
+
+| Function | Visibility | Why |
+|---|---|---|
+| `load_chapter_manifests` | `pub(super)` | called from `new_started` (mod.rs:111) and `scene_navigation_index` (:140) |
+| `scene_navigation_index_from_chapters` | `pub(super)` | called from `scene_navigation_index` (:141) |
+| `load_scene_runtime` | `pub(super)` | called from `new_started` (:118) |
+| `find_scene_runtime_by_id` | private | only caller is the `jump_to_scene` body, which moves here |
+| `scene_json_identity` | private | callers at :205, :2286, :2332 all move here |
+| `load_scene_json_for_ref`, `scene_runtime_from_json`, `validate_manifest_scene_type`, `scene_json_type`, `scene_type_label` | private | navigation-internal only |
+
+Getting this wrong is a compile error, not a silent bug, so it is cheap to
+correct during implementation — but the table saves a round of confusion about
+whether "verbatim" meant visibility too.
 
 Moving as `pub(super)` methods: `prime_initial_queue`, `advance_scene`
 (keeping its own `rollback_scope`), `grant_all_evidence_for_testing`, and
@@ -473,13 +525,30 @@ newly added) and the `on_collect` / `on_acquire` queue-append behaviour are
 unchanged.
 
 `Inventory::add_evidence_from_def` and `add_statement_from_def` narrow from
-`pub` to `pub(in crate::game)`. Be precise about what that buys: it guarantees
-no code **outside** `game` can bypass the funnel, and it makes any new bypass
-inside `game` visible in review. It does **not** make `AcquisitionCtx` the only
-possible caller — Rust has no single-caller visibility, and `state.rs`'s own
-unit tests call these methods directly and will continue to. Single-caller is a
-convention here, enforced by review and by the funnel test, not by the type
-system. Claiming otherwise would set a false expectation when the diff is read.
+`pub` to `pub(in crate::game)`.
+
+**Call this a hook, not a funnel.** The word "funnel" implies all acquisition
+traffic is forced through one point, and that is not achievable in this issue:
+
+- Rust has no single-caller visibility. `pub(in crate::game)` stops bypass from
+  *outside* `game` and makes a new bypass inside `game` visible in review, but
+  `state.rs`'s own unit tests call these methods directly and will continue to.
+- More fundamentally, `Inventory` exposes `pub evidence: Vec<EvidenceRecord>`
+  and `pub statements: Vec<StatementRecord>` (state.rs:32–33). Any code holding
+  `&mut Inventory` can `.push()` a record directly, and no method-level
+  visibility change prevents that.
+
+Closing the second gap means making those fields private with accessors, which
+ripples into every `self.inventory.evidence.iter().find(…)` in the commands —
+scope this issue explicitly excludes. So the honest contract is: **P0.0 gives
+acquisition a single well-named entry point and routes all three current call
+sites through it.** It does not prove no fourth path can exist. If HPA-129
+needs that proof before attaching `AcquisitionLog`, field encapsulation is its
+prerequisite, and this design flags it as such rather than implying the work is
+already done.
+
+The funnel test asserts dedup behaviour only. It does not and cannot assert
+absence of bypass; the earlier claim that it enforced the funnel was wrong.
 
 Two separate decisions are at work here, and they must not be conflated:
 
@@ -520,6 +589,12 @@ reviewer does not read them as violating "unmodified":
    currently assign — so this is one token per site, not a rewrite.
 3. **Direct field reads.** Two assertions read `engine.dialogue_history`
    directly; they become `engine.history.entries()`.
+4. **Fixture visibility.** Declaring `#[cfg(test)] mod test_support;` does not
+   by itself let sibling modules call into it — the same parent-to-child
+   privacy rule applies. Every shared fixture needs `pub(super)`, which makes it
+   visible in `game` and therefore in every descendant, including
+   `game::dialogue::tests`. Fixtures that stay local to one module keep their
+   current private visibility.
 
 `view.dialogue_history` reads are **not** affected. `GameStateView` keeps its
 `dialogue_history` field unchanged — that is the serialized IPC contract the
@@ -536,12 +611,35 @@ frontend consumes — so the majority of history assertions need no edit at all.
 `test_support` is `#[cfg(test)] mod test_support;` declared in `game/mod.rs`, so
 sibling modules reach it as `super::test_support`.
 
-### Deleted
+### Enforcement after the scanner
 
-`every_view_returning_command_routes_through_view_with_history` is deleted, not
-ported. Its contract is now enforced by `command_tx`'s type signature. Porting
-it would mean teaching a source-text scanner to walk four files while the
-property it checks has become a compile-time guarantee.
+`every_view_returning_command_routes_through_view_with_history` is retired in
+its current form, but **its contract is not fully absorbed by the type system**.
+As noted under §1, `command_tx` guarantees history only for commands that go
+through it; `self.view()` stays `pub` for `lib.rs`, so a future command can
+still bypass the transaction. Deleting the scanner outright would reopen exactly
+the hole it was written to close.
+
+It is therefore replaced, not dropped, by a **rewritten source-contract test**
+with a narrower and more honest predicate: every
+`pub fn … -> Result<GameStateView, GameError>` in the `game` module tree must
+contain a `command_tx(` call, with a documented allow-list. Differences from the
+version being retired:
+
+- It scans the four engine files, not `include_str!("mod.rs")` alone — the
+  original could not see commands defined outside `mod.rs`, which is precisely
+  what this refactor creates.
+- It checks one token (`command_tx(`) instead of tracking both
+  `view_with_history()` presence and `Ok(self.view())` absence, because the
+  bare-view failure mode is now unreachable inside a transaction.
+- `advance_dialogue` remains allow-listed, for its documented stale-token early
+  return.
+
+This is still a source-text test, which is a weak instrument. It is retained
+because the alternative is an unenforced convention, and because the acceptance
+criterion it backs — "dialogue history is finalized through one shared path" —
+is one HPA-129 will build on. If a later epic makes the property genuinely
+structural, the test should go then.
 
 ### Added
 
@@ -549,9 +647,10 @@ property it checks has become a compile-time guarantee.
   leaves inventory, scene progress, `next_queue_gen`, and dialogue history at
   their pre-command values.
 - **Rollback, interrogation delegate.** Same, for a cross-examination command.
-- **History finalization, behavioural.** This replaces the deleted source
-  scanner, and must be specified in terms of the **focused queue token**, not
-  "advancing". `record_current_dialogue_history` dedups on
+- **History finalization, behavioural.** This complements the rewritten
+  source-contract test above — that one checks a command *routes through*
+  `command_tx`, this one checks the routing produces the right entries — and
+  must be specified in terms of the **focused queue token**, not "advancing". `record_current_dialogue_history` dedups on
   `last_recorded_dialogue_token`, so an *installing* command like
   `inspect_hotspot` or `ask_interrogation_question` appends an entry despite
   advancing nothing — it produced a new token at cursor 0. Phrasing the test as
@@ -593,13 +692,39 @@ signature, and error behaviour, so `lib.rs`, `generate_handler!`, the IPC wire
 contract, and the entire Svelte frontend are untouched by this issue.
 
 **What "save capture/restore entry points" means here.** Canonical §6.2 lists
-that among P0.0's seams, and a reader coming from §6.2 alone could expect more
-than this issue delivers. Concretely, P0.0 ships exactly two things toward it:
-the exhaustive field enumeration in `EngineRollbackSnapshot::capture`, which
-forces every future field to be classified as durable or transient; and the
-reserved extension point on `AcquisitionCtx`. There is no `SaveSnapshot` type,
-no capture or restore function, no serialization, and no file I/O. Anything
-beyond those two is HPA-129.
+"save capture/restore entry points" among P0.0's seams and plan §5 says
+"establish … save integration entry points," so this needs an explicit
+reconciliation rather than a flat denial.
+
+An *entry point* is a place to attach, not an implementation. On that reading
+P0.0 delivers three, all of them real and none of them speculative:
+
+1. **The commit point.** §16.1 requires that "saving is allowed after a command
+   commits and no mutation is in flight," and §16.4 that "autosave runs after
+   committed durable mutations." After this refactor there is exactly one such
+   moment in the engine — `command_tx`'s success path, between the closure
+   returning `Ok(())` and the view being built. Before the refactor there were
+   twelve. That single point is what autosave hooks.
+2. **The state enumeration.** `EngineRollbackSnapshot`'s symmetric exhaustive
+   capture/restore is the authoritative list of mutable engine state, and the
+   compiler forces every future field into it. `SaveSnapshot` is a different
+   contract (§7.4) but reads the same enumeration.
+3. **The acquisition entry point**, with `AcquisitionCtx` reserving `events`
+   and `command_id`.
+
+What P0.0 does **not** ship: any `SaveSnapshot` type, capture or restore
+function, serialization, or file I/O. Those are deliberately excluded, on two
+grounds. §16.3's `SaveSnapshot` includes facts, questions, objectives, and
+authorizations that do not exist until HPA-255, so an adapter designed now would
+be designed against unknowns. And an unused adapter is dead code, which
+`bun run rust:lint` rejects under clippy's `-D warnings` unless annotated —
+trading a real lint gate for a placeholder.
+
+**Open item for the epic owner:** if §6.2 is meant to require an actual save
+adapter *function* in P0.0 rather than attachment points, that is a scope
+change to this issue and the canonical plan should say so explicitly. This
+design assumes the attachment-point reading and assigns adapter creation to
+HPA-129.
 
 Deliberate downstream seams left for later epics:
 
