@@ -4,6 +4,9 @@
 **Status:** Approved design; implementation plan to follow
 **Linear:** [HPA-55](https://linear.app/cwchanap/issue/HPA-55/extract-gameengine-transaction-dialogue-and-navigation-seams)
 **Milestone:** P0.0 — Engine Seam Extraction
+**Line citations:** pinned to `f4fcb70`, the `main` revision this design was
+written against. They will rot as soon as implementation starts; the
+implementation plan should reference symbol names, not line numbers.
 **Related specs:**
 
 - `docs/superpowers/specs/2026-07-19-detective-gameplay-systems-design.md` (canonical design, §§6.2, 7.4, 16.2)
@@ -155,6 +158,8 @@ Rejected alternatives:
 - Any line-count target as an acceptance criterion.
 
 ## Module Layout
+
+Sizes below are orientation estimates, not targets or acceptance criteria:
 
 ```text
 apps/game/src-tauri/src/game/
@@ -331,6 +336,17 @@ body of `advance_dialogue`.
   ) -> Result<(), GameError>;
   ```
 
+  **`install_or_exhaust_line_content` must install first, then assign.**
+  `install_scene_queue`'s interrogation arm sets
+  `scene.line_content_start = items.len()` *before* storing the queue
+  (mod.rs:534) — the "nothing here is challengeable" default. Testimony callers
+  override it afterwards. An implementation that assigns before installing has
+  its value overwritten by that default, and the inline 反駁 control silently
+  never appears. The assignment also keeps its existing
+  `if let SceneRuntime::Interrogation(scene) = &mut self.scene` guard rather
+  than assuming the variant: installation can drain to empty and reach
+  `on_queue_exhausted`, which may transition the scene entirely.
+
   Five sites use the first verbatim. Three testimony sites
   (`ask_interrogation_question`, `resume_interrogation_testimony`,
   `advance_playing_testimony`'s non-degenerate branch) use the second. The two
@@ -356,6 +372,14 @@ body of `advance_dialogue`.
 matches, but it changes persisted scene-state shape — that is HPA-129's call to
 make alongside `ActiveDialogueState`.
 
+**Terminology warning.** Plan §5 phrases this deliverable as "extract ordered
+dialogue-segment lifecycle." That is *not* §16.2's `DialogueSegmentOrigin` /
+`ActiveDialogueState` model. In P0.0 it means the existing runtime queue
+lifecycle — install, tag consumption, cursor advance, exhaustion dispatch, and
+history finalization. Nothing in this issue introduces authored segment origins,
+definition hashes, or queue reconstruction; an implementer who starts that shape
+change has begun HPA-129 under a P0.0 ticket.
+
 ### 3. Navigation (`navigation.rs`)
 
 Moving verbatim (already stateless free functions):
@@ -375,6 +399,43 @@ scene-entry paths and it is scene-entry sequencing, not queue mechanics. It
 lives here, with a doc comment cross-referencing `dialogue.rs` for the install
 primitives it calls, and a matching pointer beside `install_scene_queue` in
 `dialogue.rs`.
+
+#### `jump_to_scene` conversion hazard
+
+`jump_to_scene` is the one command whose transaction boundary is **not** the
+existing closure, and converting it naively silently breaks rollback.
+
+Today the snapshot is taken at mod.rs:162, and nine mutations run between it and
+the closure at mod.rs:174:
+
+```rust
+let snapshot = self.snapshot();          // 162
+
+self.current_chapter_idx = chapter_idx;  // 164  ─┐
+self.current_scene_idx = scene_idx;               │
+self.scene = new_scene;                           │  inside the snapshot's
+self.last_visual_cue = LastVisualCue::default();  │  protection, but OUTSIDE
+self.inventory = Inventory::default();            │  the closure
+self.next_queue_gen = queue_gen + 1;              │
+self.dialogue_history = vec![];                   │
+self.next_dialogue_history_id = 1;                │
+self.last_recorded_dialogue_token = None;    // 172 ─┘
+
+let result = (|| { self.prime_initial_queue()?; /* … */ })();  // 174
+self.restore_on_error(snapshot, result)
+```
+
+Wrapping only the closure body in `command_tx` would take the snapshot *after*
+the resets, so a `prime_initial_queue` failure would roll back to the
+already-wiped state instead of the pre-jump state. **All nine mutations must
+move inside the `command_tx` closure.** Only the chapter/scene resolution —
+`find_scene_runtime_by_id` and the two `ok_or_else` guards, which mutate
+nothing — stays outside.
+
+`jump_to_scene_restores_previous_state_when_priming_fails` and
+`jump_to_scene_restores_non_empty_dialogue_history_when_priming_fails` are the
+tests that catch this. They must be run against the converted command
+specifically, not just as part of the suite.
 
 `jump_to_scene` and `scene_navigation_index` stay `pub` on `mod.rs` as
 delegations, preserving the public surface. The `cfg!(debug_assertions)` gate on
@@ -407,10 +468,18 @@ impl AcquisitionCtx<'_> {
 
 Both `reveals` functions take `&mut AcquisitionCtx` in place of
 `&mut Inventory`; `grant_all_evidence_for_testing` routes through it too,
-closing the path that currently bypasses `reveals`. `Inventory::add_evidence_from_def`
-and `add_statement_from_def` drop to `pub(crate)` so the funnel is their only
-caller. Return values (`true` when newly added) and the
-`on_collect` / `on_acquire` queue-append behaviour are unchanged.
+closing the path that currently bypasses `reveals`. Return values (`true` when
+newly added) and the `on_collect` / `on_acquire` queue-append behaviour are
+unchanged.
+
+`Inventory::add_evidence_from_def` and `add_statement_from_def` narrow from
+`pub` to `pub(in crate::game)`. Be precise about what that buys: it guarantees
+no code **outside** `game` can bypass the funnel, and it makes any new bypass
+inside `game` visible in review. It does **not** make `AcquisitionCtx` the only
+possible caller — Rust has no single-caller visibility, and `state.rs`'s own
+unit tests call these methods directly and will continue to. Single-caller is a
+convention here, enforced by review and by the funnel test, not by the type
+system. Claiming otherwise would set a false expectation when the diff is read.
 
 Two separate decisions are at work here, and they must not be conflated:
 
@@ -480,14 +549,33 @@ property it checks has become a compile-time guarantee.
   leaves inventory, scene progress, `next_queue_gen`, and dialogue history at
   their pre-command values.
 - **Rollback, interrogation delegate.** Same, for a cross-examination command.
-- **History finalization, behavioural.** A command that advances the focused
-  dialogue item appends exactly one history entry; a command that does not
-  advance appends none. This replaces the deleted source scanner.
+- **History finalization, behavioural.** This replaces the deleted source
+  scanner, and must be specified in terms of the **focused queue token**, not
+  "advancing". `record_current_dialogue_history` dedups on
+  `last_recorded_dialogue_token`, so an *installing* command like
+  `inspect_hotspot` or `ask_interrogation_question` appends an entry despite
+  advancing nothing — it produced a new token at cursor 0. Phrasing the test as
+  "advances → one entry" would pass while leaving the install path uncovered,
+  which is most of the commands. The three cases:
+  - success path leaves a **new** focused token → exactly one new entry for that
+    item, unless the item is a `SceneTag`, which records nothing;
+  - success path leaves the **same** token, or no active dialogue → zero new
+    entries;
+  - `advance_dialogue` with a stale token → zero new entries, and no
+    transaction is opened at all.
 - **`DialogueHistory` unit tests.** Token dedup, 50-entry cap with front-drain
   overflow, `SceneTag` items recording nothing — asserted directly against the
   struct without a `GameEngine`.
 - **`AcquisitionCtx` funnel test.** Both `evidence` and `statement` dedupe on
   second acquisition and report `false`.
+- **Degenerate-testimony regression test.** A question whose testimony has no
+  line content and no `on_loop` / `loop_prompt` bridge returns to the question
+  menu and terminates. This locks the `advance_playing_testimony` carve-out
+  described above into CI, so a later "fold everything into `install_or_exhaust`"
+  cleanup fails loudly instead of hanging. The existing `empty_testimony()`
+  fixture (mod.rs:3714) is the starting point. The test must assert termination
+  by construction — a drain-everything loop helper would itself spin on an
+  unbroken `Playing` state.
 
 ### Unchanged
 
@@ -503,6 +591,15 @@ across its `#[tauri::command]` handlers: the thirteen view-returners plus
 `new_started`, `view`, and `scene_navigation_index`. Every one keeps its name,
 signature, and error behaviour, so `lib.rs`, `generate_handler!`, the IPC wire
 contract, and the entire Svelte frontend are untouched by this issue.
+
+**What "save capture/restore entry points" means here.** Canonical §6.2 lists
+that among P0.0's seams, and a reader coming from §6.2 alone could expect more
+than this issue delivers. Concretely, P0.0 ships exactly two things toward it:
+the exhaustive field enumeration in `EngineRollbackSnapshot::capture`, which
+forces every future field to be classified as durable or transient; and the
+reserved extension point on `AcquisitionCtx`. There is no `SaveSnapshot` type,
+no capture or restore function, no serialization, and no file I/O. Anything
+beyond those two is HPA-129.
 
 Deliberate downstream seams left for later epics:
 
