@@ -2,6 +2,7 @@
 //
 // GameEngine — the single owner of mutable game state.
 
+pub mod command_tx;
 pub mod error;
 pub mod loader;
 pub mod reveals;
@@ -52,18 +53,6 @@ struct LastVisualCue {
     background_asset_id: Option<String>,
     bgm: Option<schema::AudioCueJson>,
     bgs: Option<schema::AudioCueJson>,
-}
-
-struct GameSnapshot {
-    current_chapter_idx: usize,
-    current_scene_idx: usize,
-    scene: SceneRuntime,
-    last_visual_cue: LastVisualCue,
-    inventory: Inventory,
-    next_queue_gen: u64,
-    dialogue_history: Vec<DialogueHistoryEntry>,
-    next_dialogue_history_id: u64,
-    last_recorded_dialogue_token: Option<QueueToken>,
 }
 
 const REEXAMINE_FALLBACK_TEXT: &str = "（沒有新發現。）";
@@ -159,20 +148,19 @@ impl GameEngine {
             queue_gen,
         )?
         .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
-        let snapshot = self.snapshot();
 
-        self.current_chapter_idx = chapter_idx;
-        self.current_scene_idx = scene_idx;
-        self.scene = new_scene;
-        self.last_visual_cue = LastVisualCue::default();
-        self.inventory = Inventory::default();
-        self.next_queue_gen = queue_gen + 1;
-        self.dialogue_history = vec![];
-        self.next_dialogue_history_id = 1;
-        self.last_recorded_dialogue_token = None;
+        self.rollback_scope(move |engine| -> Result<GameStateView, GameError> {
+            engine.current_chapter_idx = chapter_idx;
+            engine.current_scene_idx = scene_idx;
+            engine.scene = new_scene;
+            engine.last_visual_cue = LastVisualCue::default();
+            engine.inventory = Inventory::default();
+            engine.next_queue_gen = queue_gen + 1;
+            engine.dialogue_history = vec![];
+            engine.next_dialogue_history_id = 1;
+            engine.last_recorded_dialogue_token = None;
 
-        let result = (|| -> Result<GameStateView, GameError> {
-            self.prime_initial_queue()?;
+            engine.prime_initial_queue()?;
             // Developer convenience: jumping straight into an interrogation via
             // scene-navigation skips the investigation where its contradiction
             // evidence is normally collected. Grant everything so every
@@ -181,12 +169,11 @@ impl GameEngine {
             // in production replay after `storyClearedOnce`; releasing the full
             // inventory there would spoil every scene's evidence and bypass
             // the intended inventory gating.
-            if cfg!(debug_assertions) && matches!(self.scene, SceneRuntime::Interrogation(_)) {
-                self.grant_all_evidence_for_testing();
+            if cfg!(debug_assertions) && matches!(engine.scene, SceneRuntime::Interrogation(_)) {
+                engine.grant_all_evidence_for_testing();
             }
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
+            Ok(engine.view_with_history())
+        })
     }
 
     /// Grants every evidence and statement defined across all scenes so that
@@ -394,10 +381,8 @@ impl GameEngine {
             return Ok(self.view());
         }
 
-        let snapshot = self.snapshot();
-
-        let result = (|| -> Result<(), GameError> {
-            let _ = match &mut self.scene {
+        self.rollback_scope(|engine| -> Result<(), GameError> {
+            let _ = match &mut engine.scene {
                 SceneRuntime::Linear(s) => s.advance(),
                 SceneRuntime::Investigation(inv) => {
                     let q = inv
@@ -417,14 +402,14 @@ impl GameEngine {
                 }
             };
             // Capture the just-consumed item as a scene tag if applicable.
-            if let Some(DialogueItem::SceneTag { text, asset_cue }) = self.peek_just_consumed() {
-                self.last_visual_cue.set_scene_tag(text, asset_cue);
+            if let Some(DialogueItem::SceneTag { text, asset_cue }) = engine.peek_just_consumed() {
+                engine.last_visual_cue.set_scene_tag(text, asset_cue);
             }
             // Skip over any consecutive SceneTag items so the next visible frame
             // is a real dialogue/action line. This mirrors the leading-tag skip
             // in prime_initial_queue.
-            self.consume_scene_tags_at_cursor();
-            let exhausted = match &self.scene {
+            engine.consume_scene_tags_at_cursor();
+            let exhausted = match &engine.scene {
                 SceneRuntime::Linear(s) => s.cursor >= s.queue.len(),
                 SceneRuntime::Investigation(inv) => inv
                     .pending_queue
@@ -436,15 +421,10 @@ impl GameEngine {
                     .is_none_or(|q| q.cursor >= q.items.len()),
             };
             if exhausted {
-                self.on_queue_exhausted()?;
+                engine.on_queue_exhausted()?;
             }
             Ok(())
-        })();
-
-        if let Err(err) = result {
-            self.restore_snapshot(snapshot);
-            return Err(err);
-        }
+        })?;
         Ok(self.view_with_history())
     }
 
@@ -956,46 +936,6 @@ impl GameEngine {
         g
     }
 
-    fn snapshot(&self) -> GameSnapshot {
-        GameSnapshot {
-            current_chapter_idx: self.current_chapter_idx,
-            current_scene_idx: self.current_scene_idx,
-            scene: self.scene.clone(),
-            last_visual_cue: self.last_visual_cue.clone(),
-            inventory: self.inventory.clone(),
-            next_queue_gen: self.next_queue_gen,
-            dialogue_history: self.dialogue_history.clone(),
-            next_dialogue_history_id: self.next_dialogue_history_id,
-            last_recorded_dialogue_token: self.last_recorded_dialogue_token.clone(),
-        }
-    }
-
-    fn restore_snapshot(&mut self, snapshot: GameSnapshot) {
-        self.current_chapter_idx = snapshot.current_chapter_idx;
-        self.current_scene_idx = snapshot.current_scene_idx;
-        self.scene = snapshot.scene;
-        self.last_visual_cue = snapshot.last_visual_cue;
-        self.inventory = snapshot.inventory;
-        self.next_queue_gen = snapshot.next_queue_gen;
-        self.dialogue_history = snapshot.dialogue_history;
-        self.next_dialogue_history_id = snapshot.next_dialogue_history_id;
-        self.last_recorded_dialogue_token = snapshot.last_recorded_dialogue_token;
-    }
-
-    fn restore_on_error<T>(
-        &mut self,
-        snapshot: GameSnapshot,
-        result: Result<T, GameError>,
-    ) -> Result<T, GameError> {
-        match result {
-            Ok(value) => Ok(value),
-            Err(err) => {
-                self.restore_snapshot(snapshot);
-                Err(err)
-            }
-        }
-    }
-
     fn advance_scene(&mut self) -> Result<(), GameError> {
         let mut next_chapter_idx = self.current_chapter_idx;
         let mut next_scene_idx = self.current_scene_idx + 1;
@@ -1017,18 +957,14 @@ impl GameEngine {
             .clone();
         let new_scene = load_scene_runtime(&self.resources_dir, &scene_ref, queue_gen)?;
 
-        let snapshot = self.snapshot();
-
-        self.current_chapter_idx = next_chapter_idx;
-        self.current_scene_idx = next_scene_idx;
-        self.scene = new_scene;
-        self.last_visual_cue.reset_for_new_scene();
-        self.next_queue_gen += 1;
-        if let Err(err) = self.prime_initial_queue() {
-            self.restore_snapshot(snapshot);
-            return Err(err);
-        }
-        Ok(())
+        self.rollback_scope(|engine| {
+            engine.current_chapter_idx = next_chapter_idx;
+            engine.current_scene_idx = next_scene_idx;
+            engine.scene = new_scene;
+            engine.last_visual_cue.reset_for_new_scene();
+            engine.next_queue_gen += 1;
+            engine.prime_initial_queue()
+        })
     }
 
     pub fn inspect_hotspot(&mut self, hotspot_id: &str) -> Result<GameStateView, GameError> {
@@ -1081,11 +1017,10 @@ impl GameEngine {
             (hot_def, first_time)
         };
 
-        let snapshot = self.snapshot();
-        let result = (|| -> Result<GameStateView, GameError> {
+        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
             // Phase 2 — compute: build queue (mutates scene + inventory together).
             let queue_items = if first_time {
-                let inv = match &mut self.scene {
+                let inv = match &mut engine.scene {
                     SceneRuntime::Investigation(i) => i,
                     _ => {
                         return Err(GameError::internal(
@@ -1097,7 +1032,7 @@ impl GameEngine {
                 let body = hot_def.inspect_dialogue.clone();
                 reveals::apply_reveals_and_build_queue(
                     inv,
-                    &mut self.inventory,
+                    &mut engine.inventory,
                     body,
                     &hot_def.reveals,
                     &chapter_id,
@@ -1113,14 +1048,13 @@ impl GameEngine {
 
             // Phase 3 — write: attach the queue.
             if queue_items.is_empty() {
-                self.on_queue_exhausted()?;
+                engine.on_queue_exhausted()?;
             } else {
-                let queue_gen = self.alloc_queue_gen();
-                self.install_investigation_queue(queue_items, queue_gen)?;
+                let queue_gen = engine.alloc_queue_gen();
+                engine.install_investigation_queue(queue_items, queue_gen)?;
             }
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
+            Ok(engine.view_with_history())
+        })
     }
 
     pub fn interview_topic(
@@ -1179,10 +1113,9 @@ impl GameEngine {
             (topic, first_time)
         };
 
-        let snapshot = self.snapshot();
-        let result = (|| -> Result<GameStateView, GameError> {
+        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
             let queue_items = if first_time {
-                let inv = match &mut self.scene {
+                let inv = match &mut engine.scene {
                     SceneRuntime::Investigation(i) => i,
                     _ => {
                         return Err(GameError::internal(
@@ -1194,7 +1127,7 @@ impl GameEngine {
                 let body = topic.topic_dialogue.clone();
                 reveals::apply_reveals_and_build_queue(
                     inv,
-                    &mut self.inventory,
+                    &mut engine.inventory,
                     body,
                     &topic.reveals,
                     &chapter_id,
@@ -1209,14 +1142,13 @@ impl GameEngine {
             };
 
             if queue_items.is_empty() {
-                self.on_queue_exhausted()?;
+                engine.on_queue_exhausted()?;
             } else {
-                let queue_gen = self.alloc_queue_gen();
-                self.install_investigation_queue(queue_items, queue_gen)?;
+                let queue_gen = engine.alloc_queue_gen();
+                engine.install_investigation_queue(queue_items, queue_gen)?;
             }
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
+            Ok(engine.view_with_history())
+        })
     }
 
     pub fn enter_sublocation(&mut self, sublocation_id: &str) -> Result<GameStateView, GameError> {
@@ -1266,10 +1198,9 @@ impl GameEngine {
             )
         };
 
-        let snapshot = self.snapshot();
-        let result = (|| -> Result<GameStateView, GameError> {
+        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
             let queue_items: Vec<DialogueItem> = if first_entry {
-                let inv = match &mut self.scene {
+                let inv = match &mut engine.scene {
                     SceneRuntime::Investigation(i) => i,
                     _ => {
                         return Err(GameError::internal(
@@ -1281,30 +1212,30 @@ impl GameEngine {
                 inv.record_sublocation_entered(sublocation_id);
                 reveals::apply_reveals_and_build_queue(
                     inv,
-                    &mut self.inventory,
+                    &mut engine.inventory,
                     transition_dialogue,
                     &sub_reveals,
                     &chapter_id,
                 )
             } else {
-                if let SceneRuntime::Investigation(inv) = &mut self.scene {
+                if let SceneRuntime::Investigation(inv) = &mut engine.scene {
                     inv.current_sublocation_id = Some(sublocation_id.into());
                 }
                 Vec::new()
             };
 
             if queue_items.is_empty() {
-                self.last_visual_cue
+                engine
+                    .last_visual_cue
                     .set_scene_tag(scene_tag.clone(), asset_cue.clone());
-                self.on_queue_exhausted()?;
+                engine.on_queue_exhausted()?;
             } else {
-                let queue_gen = self.alloc_queue_gen();
-                self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
-                self.install_investigation_queue(queue_items, queue_gen)?;
+                let queue_gen = engine.alloc_queue_gen();
+                engine.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
+                engine.install_investigation_queue(queue_items, queue_gen)?;
             }
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
+            Ok(engine.view_with_history())
+        })
     }
 
     pub fn reexamine_evidence(&mut self, id: &str) -> Result<GameStateView, GameError> {
@@ -1347,13 +1278,11 @@ impl GameEngine {
                 text: REEXAMINE_FALLBACK_TEXT.into(),
             }],
         };
-        let snapshot = self.snapshot();
-        let result = (|| -> Result<GameStateView, GameError> {
-            let queue_gen = self.alloc_queue_gen();
-            self.install_scene_queue(queue_items, queue_gen)?;
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
+        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+            let queue_gen = engine.alloc_queue_gen();
+            engine.install_scene_queue(queue_items, queue_gen)?;
+            Ok(engine.view_with_history())
+        })
     }
 
     pub fn reexamine_statement(&mut self, id: &str) -> Result<GameStateView, GameError> {
@@ -1396,13 +1325,11 @@ impl GameEngine {
                 text: REEXAMINE_FALLBACK_TEXT.into(),
             }],
         };
-        let snapshot = self.snapshot();
-        let result = (|| -> Result<GameStateView, GameError> {
-            let queue_gen = self.alloc_queue_gen();
-            self.install_scene_queue(queue_items, queue_gen)?;
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
+        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+            let queue_gen = engine.alloc_queue_gen();
+            engine.install_scene_queue(queue_items, queue_gen)?;
+            Ok(engine.view_with_history())
+        })
     }
 
     /// `ask_interrogation_question` — enters cross-examination on `question_id`,
@@ -1455,10 +1382,9 @@ impl GameEngine {
             }
         }
 
-        let snapshot = self.snapshot();
-        let result = (|| -> Result<GameStateView, GameError> {
+        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
             let (queue_items, line_content_start) = {
-                let scene = match &mut self.scene {
+                let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
                     _ => {
                         return Err(GameError::internal(
@@ -1482,7 +1408,7 @@ impl GameEngine {
                         .unwrap_or_default();
                     let queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
-                        &mut self.inventory,
+                        &mut engine.inventory,
                         line_content,
                         &reveals,
                         &chapter_id,
@@ -1500,20 +1426,19 @@ impl GameEngine {
             };
 
             if queue_items.is_empty() {
-                self.on_queue_exhausted()?;
+                engine.on_queue_exhausted()?;
             } else {
-                let queue_gen = self.alloc_queue_gen();
-                self.install_scene_queue(queue_items, queue_gen)?;
-                if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                let queue_gen = engine.alloc_queue_gen();
+                engine.install_scene_queue(queue_items, queue_gen)?;
+                if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                     scene.line_content_start = line_content_start;
                 }
             }
-            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
-                scene.refresh_phase_completion(&self.inventory);
+            if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
+                scene.refresh_phase_completion(&engine.inventory);
             }
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
+            Ok(engine.view_with_history())
+        })
     }
 
     /// `challenge_interrogation_line` — opens the evidence tray against
@@ -1552,10 +1477,9 @@ impl GameEngine {
             }
         }
 
-        let snapshot = self.snapshot();
-        let result = (|| -> Result<GameStateView, GameError> {
+        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
             let queue_items = {
-                let scene = match &mut self.scene {
+                let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
                     _ => {
                         return Err(GameError::internal(
@@ -1596,14 +1520,13 @@ impl GameEngine {
             };
 
             if queue_items.is_empty() {
-                self.on_queue_exhausted()?;
+                engine.on_queue_exhausted()?;
             } else {
-                let queue_gen = self.alloc_queue_gen();
-                self.install_scene_queue(queue_items, queue_gen)?;
+                let queue_gen = engine.alloc_queue_gen();
+                engine.install_scene_queue(queue_items, queue_gen)?;
             }
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
+            Ok(engine.view_with_history())
+        })
     }
 
     /// `present_interrogation_evidence` — presents `item_kind:item_id` against
@@ -1662,10 +1585,9 @@ impl GameEngine {
             (question_id.clone(), line_id.clone())
         };
 
-        let snapshot = self.snapshot();
-        let result = (|| -> Result<GameStateView, GameError> {
+        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
             let queue_items = {
-                let scene = match &mut self.scene {
+                let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
                     _ => {
                         return Err(GameError::internal(
@@ -1696,7 +1618,7 @@ impl GameEngine {
                     }
                     let queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
-                        &mut self.inventory,
+                        &mut engine.inventory,
                         on_correct,
                         &reveals,
                         &chapter_id,
@@ -1732,17 +1654,16 @@ impl GameEngine {
             };
 
             if queue_items.is_empty() {
-                self.on_queue_exhausted()?;
+                engine.on_queue_exhausted()?;
             } else {
-                let queue_gen = self.alloc_queue_gen();
-                self.install_scene_queue(queue_items, queue_gen)?;
+                let queue_gen = engine.alloc_queue_gen();
+                engine.install_scene_queue(queue_items, queue_gen)?;
             }
-            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
-                scene.refresh_phase_completion(&self.inventory);
+            if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
+                scene.refresh_phase_completion(&engine.inventory);
             }
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
+            Ok(engine.view_with_history())
+        })
     }
 
     /// `withdraw_interrogation` — abandons the current cross-examination and
@@ -1776,19 +1697,17 @@ impl GameEngine {
             }
         }
 
-        let snapshot = self.snapshot();
-        let result = (|| -> Result<GameStateView, GameError> {
-            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+            if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.withdraw();
                 // A testimony content queue may still be active (withdrawing
                 // mid-line); drop it so the scene machinery below runs as if
                 // the queue had just drained.
                 scene.pending_queue = None;
             }
-            self.on_queue_exhausted()?;
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
+            engine.on_queue_exhausted()?;
+            Ok(engine.view_with_history())
+        })
     }
 
     /// `resume_interrogation_testimony` — backs out of the evidence tray (收回)
@@ -1817,10 +1736,9 @@ impl GameEngine {
             }
         }
 
-        let snapshot = self.snapshot();
-        let result = (|| -> Result<GameStateView, GameError> {
+        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
             let queue_items = {
-                let scene = match &mut self.scene {
+                let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
                     _ => {
                         return Err(GameError::internal(
@@ -1846,19 +1764,18 @@ impl GameEngine {
             };
 
             if queue_items.is_empty() {
-                self.on_queue_exhausted()?;
+                engine.on_queue_exhausted()?;
             } else {
-                let queue_gen = self.alloc_queue_gen();
-                self.install_scene_queue(queue_items, queue_gen)?;
+                let queue_gen = engine.alloc_queue_gen();
+                engine.install_scene_queue(queue_items, queue_gen)?;
                 // Resuming installs the challenged line's pure content —
                 // challengeable from the first item.
-                if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                     scene.line_content_start = 0;
                 }
             }
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
+            Ok(engine.view_with_history())
+        })
     }
 
     /// `complete_interrogation_phase` — the player manually concludes the
@@ -1894,17 +1811,15 @@ impl GameEngine {
             }
         }
 
-        let snapshot = self.snapshot();
-        let result = (|| -> Result<GameStateView, GameError> {
-            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+        self.rollback_scope(|engine| -> Result<GameStateView, GameError> {
+            if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.complete_current_phase();
             }
             // The guard ensured no dialogue queue is active; drive the scene
             // machinery (phase-advance / outro) as if a queue had just drained.
-            self.on_queue_exhausted()?;
-            Ok(self.view_with_history())
-        })();
-        self.restore_on_error(snapshot, result)
+            engine.on_queue_exhausted()?;
+            Ok(engine.view_with_history())
+        })
     }
 
     fn inventory_target_exists(&self, item_kind: &str, item_id: &str) -> bool {
@@ -7353,5 +7268,67 @@ mod tests {
         );
         // Background was provided → overwritten
         assert_eq!(cue.background_asset_id.as_deref(), Some("bg_new"));
+    }
+
+    #[test]
+    fn rollback_scope_restores_every_tracked_field_on_error() {
+        let scene = investigation_scene_with_intro(
+            "investigation_scene_1",
+            vec![DialogueItem::Line {
+                speaker: "A".into(),
+                text: "intro".into(),
+                portrait: None,
+            }],
+        );
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.inventory.add_evidence_from_def(
+            &EvidenceJson {
+                id: "before".into(),
+                name: "before".into(),
+                description: "before".into(),
+                details: "before".into(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            },
+            "chapter_1",
+            "investigation_scene_1",
+        );
+        let gen_before = engine.next_queue_gen;
+        let evidence_before = engine.inventory.evidence.len();
+
+        let result: Result<(), GameError> = engine.rollback_scope(|e| {
+            e.next_queue_gen += 99;
+            e.inventory.evidence.clear();
+            e.current_scene_idx += 5;
+            Err(GameError::internal("boom".into()))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(
+            engine.next_queue_gen, gen_before,
+            "next_queue_gen not restored"
+        );
+        assert_eq!(
+            engine.inventory.evidence.len(),
+            evidence_before,
+            "inventory not restored"
+        );
+        assert_eq!(engine.current_scene_idx, 0, "scene index not restored");
+    }
+
+    #[test]
+    fn rollback_scope_keeps_mutations_on_success() {
+        let scene = investigation_scene_with_intro("investigation_scene_1", vec![]);
+        let mut engine = empty_engine_with_scene(scene, 1);
+        let gen_before = engine.next_queue_gen;
+
+        let result: Result<u64, GameError> = engine.rollback_scope(|e| {
+            e.next_queue_gen += 7;
+            Ok(e.next_queue_gen)
+        });
+
+        assert_eq!(result.unwrap(), gen_before + 7);
+        assert_eq!(engine.next_queue_gen, gen_before + 7);
     }
 }
