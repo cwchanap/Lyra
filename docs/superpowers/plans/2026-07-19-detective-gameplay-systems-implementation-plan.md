@@ -243,7 +243,8 @@ Linear relations are the execution source for current blockers. This diagram rec
 - Global/local ID validation and qualified board refs.
 - Fact/question/objective/authorization definitions and progress.
 - Structural `activePrimaryObjectiveId` representation.
-- Atomic `setPrimaryObjective` reveal.
+- Atomic, idempotent `setPrimaryObjective` state mutation and target validation.
+- P0.3 consumes the P0.1-owned transition through the reveal contract; it does not implement a second objective-state mutation.
 - Assertion origin and support-lineage hooks.
 - Empty defaults for legacy chapters.
 
@@ -251,6 +252,7 @@ Linear relations are the execution source for current blockers. This diagram rec
 
 - Duplicate and ambiguous-reference fixtures.
 - Invalid primary-objective target diagnostics.
+- Atomic transition completes or replaces the current primary objective without violating the zero-or-one invariant.
 - Existing Chapter 1 compiles unchanged.
 - Cross-scene/chapter state tests.
 - Runtime structurally permits zero or one primary objective.
@@ -282,14 +284,16 @@ Linear relations are the execution source for current blockers. This diagram rec
 
 - Positive story-state predicates and `at_least`.
 - No generic `not`.
-- Atomic/idempotent reveals, including primary-objective transition.
-- Positive fixed-point reachability.
+- Atomic/idempotent reveal dispatch for story-state targets, delegating `setPrimaryObjective` to the P0.1-owned mutation.
+- Positive fixed-point reachability over the resulting state transitions.
+- No duplicate primary-objective mutation logic in the unlock/reachability layer.
 
 **Verification gate**
 
 - Existing unlock fixtures unchanged.
 - Invalid count/cycle/unreachable tests.
-- Invalid objective-transition target tests.
+- Fixed-point reachability accounts for P0.1-owned primary-objective transitions.
+- Module/source tests prove P0.3 delegates objective mutation rather than changing objective state directly.
 - No authored operation re-locks visible content.
 
 ### Epic P0.4 — HPA-129: Exact saves, ordered dialogue segments, and acquisitions
@@ -303,16 +307,19 @@ Linear relations are the execution source for current blockers. This diagram rec
 - Rust-owned acquisition events and acknowledgement.
 - Atomic storage, backup rotation, Continue, and manual slots.
 - Active-definition hashes and explicit migrations.
+- A P0-owned generic resumable-state fixture that exercises incomplete mutable state without depending on the P1 analysis runtime.
 
 **Verification gate**
 
 - Round-trip every current runtime.
 - Resume exact single- and multi-segment dialogue.
 - Resume acquisition dialogue and display popup once.
-- Resume an incomplete analysis fixture once P1 supplies it.
+- Resume the P0-owned generic fixture with its incomplete state, active definition reference/hash, and cursor restored exactly.
 - Definition-change rejection/migration tests.
 - Corrupt-primary fallback.
 - Packaged save → title → Continue and overwrite flow.
+
+Analysis-specific draft resume remains in P1.2, with packaged board/result-dialogue resume accepted in P2.2.
 
 ### Epic P0.5 — HPA-258: Case file and recap
 
@@ -511,37 +518,78 @@ P3 cannot begin until this gate is accepted.
 
 **Design reference:** §18.
 
+**Deliverables**
+
 - Compiler/runtime/public-view contract for authored target interactions.
 - Evidence/statement selection and contextual feedback.
 - Atomic correct reveals and non-destructive wrong use.
 - Keyboard/pointer/focus coverage.
 
+**Verification gate**
+
+- Compiler fixtures cover character, topic, hotspot, and sublocation targets plus exact-record, proof-capability, procedural-status, and default-wrong branches.
+- Rust tests prove correct use commits reveals once, while wrong or stale use neither mutates state nor consumes a record.
+- Frontend tests cover keyboard/pointer selection, focus return, and contextual feedback.
+- Run `bun run scenes:compile`, `bun run check:scripts`, `cargo test --manifest-path apps/game/src-tauri/Cargo.toml`, and `bun run --cwd apps/game test`.
+- Existing investigation scenes with no authored record interactions remain behaviorally unchanged.
+
 ### Epic P3.2 — HPA-268: Compare and route templates
 
 **Design reference:** §13.2.
+
+**Deliverables**
 
 - Compare authored layers/sources without spreadsheet editing.
 - Route authored nodes/edges with access and time constraints.
 - Outbound and return paths may differ.
 - No freehand pathfinding.
 
+**Verification gate**
+
+- Valid/invalid compiler fixtures cover missing compare layers, unknown route nodes/edges, impossible access/time constraints, and distinct outbound/return solutions.
+- Rust evaluator tests cover accepted and rejected comparisons/routes without chapter-specific branches.
+- Frontend tests cover keyboard/pointer editing and accessible route/compare feedback.
+- Save/load restores incomplete compare and route drafts exactly.
+- Run `bun run scenes:compile`, `bun run check:scripts`, `cargo test --manifest-path apps/game/src-tauri/Cargo.toml`, and `bun run --cwd apps/game test`.
+
 ### Epic P3.3 — HPA-269: Derived-state staged map
 
 **Design reference:** §21.2.
+
+**Deliverables**
 
 - Map owns only layout metadata.
 - Visibility/current/completion derive from investigation sublocation state.
 - No duplicate map progress.
 - Existing sublocation navigation remains fallback.
 
+**Verification gate**
+
+- A staged-map fixture covers locked, visible, current, completed, mandatory, and optional sublocations using one underlying investigation state.
+- Compiler fixtures reject missing, duplicate, or cross-scene sublocation references.
+- Rust/public-view tests prove map status is derived and no separate durable map-progress collection exists.
+- Frontend tests prove map selection changes the existing `currentSublocationId` and ordinary navigation remains available.
+- Run `bun run scenes:compile`, `bun run check:scripts`, `cargo test --manifest-path apps/game/src-tauri/Cargo.toml`, and `bun run --cwd apps/game test`.
+
 ### Epic P3.4 — HPA-270: Frame strip and dual timecode
 
 **Design reference:** §21.1.
+
+**Deliverables**
 
 - Authored still-frame sets.
 - Absolute time and `S+` displayed distinctly.
 - Selected frame can source analysis cards.
 - No video decoding or arbitrary seek.
+
+**Verification gate**
+
+- Valid/invalid media fixtures cover frame ordering, asset references, absolute timestamps, `S+` offsets, and source/viewpoint metadata.
+- Compiler and Rust serde tests reject malformed mappings and preserve semantic frame IDs.
+- Frontend tests prove absolute time and `S+` render distinctly and never parse an offset as a clock time.
+- Selected-frame state reconstructs after save/load and can produce the authored analysis-card source.
+- Run `bun run scenes:compile`, `bun run check:scripts`, `cargo test --manifest-path apps/game/src-tauri/Cargo.toml`, and `bun run --cwd apps/game test`.
+- No video decoder, arbitrary seek implementation, or new media-server dependency is introduced.
 
 ### Epic P3.5 — HPA-271: Chapter 2 five-board integration
 
@@ -575,23 +623,53 @@ P3 cannot begin until this gate is accepted.
 
 **Design reference:** §13.2.
 
+**Deliverables**
+
 - Reusable responsibility/causation chain template.
 - Chapter 3 and Chapter 7 fixtures validate multiple contributors and omissions.
 - No forced single-culprit model.
 
+**Verification gate**
+
+- Valid Chapter 3/7 fixtures cover multiple contributors, interventions, omissions, and consequences; invalid fixtures cover unknown/duplicate edges and incomplete required connections.
+- Rust evaluator tests accept authored alternative edge sets where declared and reject false single-contributor simplifications.
+- Frontend tests cover keyboard/pointer connection editing, review mode, and accessible error feedback.
+- Save/load restores incomplete chain drafts exactly.
+- Run `bun run scenes:compile`, `bun run check:scripts`, `cargo test --manifest-path apps/game/src-tauri/Cargo.toml`, and `bun run --cwd apps/game test`.
+
 ### Epic P4.2 — HPA-273: Authoring and editor support
+
+**Deliverables**
 
 - Repository-local analysis authoring skill after schema stability.
 - Valid/invalid examples and audit guidance.
 - Read-only editor preview before editing support.
 - No duplicated answer-key logic in editor code.
 
+**Verification gate**
+
+- Every authoring example is exercised by the compiler fixture suite, including at least one invalid example per supported template family.
+- The authoring skill and audit guidance reference the canonical schema and generated-resource rules rather than duplicating them.
+- A read-only editor fixture renders shared layout/public data without loading accepted solutions or mutation rules.
+- Source tests prove editor code contains no answer-key evaluator.
+- Run `bun run scenes:compile`, `bun run check:scripts`, `bun run editor:build`, and `bun run lint:all`.
+
 ### Epic P4.3 — HPA-274: Archive and migration hardening
+
+**Deliverables**
 
 - People, locations, chronology, and social-response archive views as justified.
 - Explicit migration registry and compatibility documentation.
 - Golden save fixtures across supported schema/content revisions.
 - No silent lossy migration of required state.
+
+**Verification gate**
+
+- Golden saves cover every supported schema/content revision and representative completed/incomplete story state.
+- Migration tests prove each supported path is explicit, deterministic, and preserves required facts, objectives, authorizations, records, queues, and current-state references.
+- Missing migration paths and incompatible definitions reject transactionally without modifying the active engine or source save.
+- Archive-view tests expose only unlocked definitions and preserve neutral cross-chapter wording.
+- Run `cargo test --manifest-path apps/game/src-tauri/Cargo.toml`, `bun run test`, `bun run check`, and `bun run lint:all`.
 
 ---
 
