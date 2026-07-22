@@ -37,8 +37,9 @@ the headline number would be measuring the wrong thing.
 
 ### Seam problems, concretely
 
-1. **The transaction is a convention, repeated.** `self.snapshot()` appears 14
-   times and `restore_on_error` 13 times. Eleven of the twelve public commands
+1. **The transaction is a convention, repeated.** Sixteen methods on
+   `GameEngine` are public; thirteen return `Result<GameStateView, GameError>`.
+   Twelve of those thirteen (`jump_to_scene` plus the eleven gameplay commands)
    follow an identical shape:
 
    ```rust
@@ -50,8 +51,11 @@ the headline number would be measuring the wrong thing.
    self.restore_on_error(snapshot, result)
    ```
 
-   `advance_dialogue` and `advance_scene` hand-roll the same thing with an
-   inline `if let Err(err) = result { self.restore_snapshot(snapshot); … }`.
+   The thirteenth, `advance_dialogue`, hand-rolls the same thing with an inline
+   `if let Err(err) = result { self.restore_snapshot(snapshot); … }` (mod.rs:445),
+   as does the private `advance_scene` (mod.rs:1028). That accounts for all 14
+   `self.snapshot()` call sites: 12 paired with `restore_on_error`, plus these
+   two.
 
 2. **Rollback completeness is unenforced.** `snapshot()` and
    `restore_snapshot()` hand-enumerate nine fields. Adding a tenth field to
@@ -90,9 +94,19 @@ the headline number would be measuring the wrong thing.
    }
    ```
 
-   appears ten times: five verbatim, three followed by a
-   `scene.line_content_start = …` assignment, and two preceded by a
-   `set_scene_tag` call applied to both branches.
+   appears at exactly ten sites, verified individually:
+
+   | Shape | Count | Sites (mod.rs) |
+   |---|---|---|
+   | Verbatim | 5 | 886, 1115, 1211, 1598, 1734 |
+   | Followed by `scene.line_content_start = …` | 3 | 656 (`else` arm), 1502, 1848 |
+   | Preceded by `set_scene_tag` in both arms | 2 | 942, 1296 |
+
+   Two nearby constructs are *not* instances and must not be folded in:
+   mod.rs:273 is `if let Some((items, queue_gen)) = intro_queue`, a different
+   shape; and mod.rs:559 is the `if exhausted { self.on_queue_exhausted()?; }`
+   tail *inside* `install_scene_queue` itself — that is the callee the helper
+   wraps, so absorbing it would nest the exhaustion check.
 
 ## Approved Approach
 
@@ -130,7 +144,7 @@ Rejected alternatives:
 
 - Any save schema, save file, autosave, `AcquisitionEventState`, story catalog,
   provenance, analysis scene, or other P0/P1 feature behaviour.
-- Rewriting the twelve public command bodies. Their guard clauses,
+- Rewriting the thirteen public view-returning command bodies. Their guard clauses,
   read/compute/write phasing, and error ordering stay as they are.
 - Unifying `LinearSceneState`'s inline queue with `DialogueQueue`. This would
   remove most triplicated matches, but it changes scene-state shape and belongs
@@ -145,7 +159,7 @@ Rejected alternatives:
 ```text
 apps/game/src-tauri/src/game/
   mod.rs            ~1,250 prod   engine struct, LastVisualCue, new_started,
-                                  12 public commands, view builders,
+                                  13 view-returning commands, view builders,
                                   SceneAndInventoryCtx
   command_tx.rs       ~110 prod   EngineRollbackSnapshot, rollback_scope, command_tx
   dialogue.rs         ~470 prod   DialogueHistory, queue lifecycle
@@ -242,6 +256,16 @@ pub fn inspect_hotspot(&mut self, hotspot_id: &str) -> Result<GameStateView, Gam
 The closure captures only owned locals, never `self`, so `&mut self` is free for
 `command_tx` to pass in as `engine`.
 
+**The compute phase does not move.** The closure *receives* `&mut Self` as its
+parameter, so everything the current immediately-invoked closure does with
+`self` — including the large compute phases in `interview_topic`,
+`ask_interrogation_question`, and `present_interrogation_evidence` — stays
+exactly where it is, with `self.` renamed to `engine.`. No command needs a
+fatter pre-transaction read phase. The only data that must be produced before
+the transaction is what the closure captures, and today's read phases already
+`.clone()` everything they hand forward, because the existing IIFE takes a
+unique borrow of `self` for the same reason.
+
 `advance_dialogue`'s stale-token early return (`Ok(self.view())` with no history
 record) happens before the transaction opens, so it needs no allow-list entry —
 it is simply not a transaction.
@@ -314,9 +338,18 @@ body of `advance_dialogue`.
   their `set_scene_tag` call above the branch and then call
   `install_or_exhaust`; because the tag is currently set in both branches this
   is behaviour-identical, and it removes two `.clone()` calls that exist only to
-  satisfy the duplicated borrow. `advance_playing_testimony`'s degenerate
-  empty-testimony branch (withdraw, then `try_advance_interrogation`) stays
-  bespoke.
+  satisfy the duplicated borrow.
+
+  `advance_playing_testimony`'s degenerate empty-testimony branch (mod.rs:656)
+  stays bespoke, and the reason must not be lost: **it deliberately does not
+  call `on_queue_exhausted()`**. That function's interrogation arm dispatches
+  straight back into `advance_playing_testimony` whenever
+  `interrogation_playing_unbroken()` holds (mod.rs:574–581), so a testimony with
+  no line content and no loop bridge would recurse without bound. The branch
+  calls `scene.withdraw()` *first* — making that predicate false — and only then
+  runs `try_advance_interrogation` / `advance_scene`. Forcing this branch into
+  `install_or_exhaust` reintroduces the recursion. Its `else` branch is an
+  ordinary `install_or_exhaust_line_content` call and does convert.
 
 **Deliberately not done.** `LinearSceneState` keeps its inline `queue` / `cursor`
 / `queue_gen`. Unifying it with `DialogueQueue` would collapse most triplicated
@@ -334,6 +367,14 @@ Moving verbatim (already stateless free functions):
 Moving as `pub(super)` methods: `prime_initial_queue`, `advance_scene`
 (keeping its own `rollback_scope`), `grant_all_evidence_for_testing`, and
 `jump_to_scene`'s resolution/reset body.
+
+`prime_initial_queue` is a deliberate judgement call: it installs a dialogue
+queue, so a reader chasing queue logic will look in `dialogue.rs` first, but its
+three callers (`new_started`, `jump_to_scene`, `advance_scene`) are all
+scene-entry paths and it is scene-entry sequencing, not queue mechanics. It
+lives here, with a doc comment cross-referencing `dialogue.rs` for the install
+primitives it calls, and a matching pointer beside `install_scene_queue` in
+`dialogue.rs`.
 
 `jump_to_scene` and `scene_navigation_index` stay `pub` on `mod.rs` as
 delegations, preserving the public surface. The `cfg!(debug_assertions)` gate on
@@ -371,19 +412,49 @@ and `add_statement_from_def` drop to `pub(crate)` so the funnel is their only
 caller. Return values (`true` when newly added) and the
 `on_collect` / `on_acquire` queue-append behaviour are unchanged.
 
+Two separate decisions are at work here, and they must not be conflated:
+
+- **Shape** is forced, not chosen. Because `reveals::*` already holds
+  `&mut scene` and `&mut inventory` as disjoint borrows of `self`, the funnel
+  cannot be a `&mut self` method in *any* module. A borrowed context struct is
+  the only shape that compiles.
+- **Placement** is a cohesion judgement, and the borrow argument says nothing
+  about it — a context struct would compile equally well from `command_tx.rs`.
+  It gets its own module because acquisition is where HPA-129's `AcquisitionLog`
+  and its `acknowledged` flag will live, and because the two `reveals` functions
+  are its only production callers, giving it a boundary independent of the
+  transaction machinery. The `command_id` that arrives with HPA-129 is passed
+  *into* the context, not owned by it.
+
 This is a fourth module beyond the issue's three named files. The issue states
 new modules "may include" those three and that "the focused spec may refine
-names," so a fourth focused module is in bounds; the alternative — putting
-acquisition inside `command_tx.rs`, since the future `command_id` is a
-transaction property — was rejected as a less obvious home.
+names," so a fourth focused module is in bounds.
 
 ## Testing
 
 ### Relocation
 
-Test **bodies move unmodified** — only `use` statements and fixture paths adjust
-to the new module. The existing assertions are the behaviour-preservation
+Test **assertions move unmodified**. They are the behaviour-preservation
 evidence for this refactor; rewriting them would forfeit the proof.
+
+Three categories of mechanical adjustment are expected and allowed, so that a
+reviewer does not read them as violating "unmodified":
+
+1. `use` statements and fixture-path references for the new module.
+2. **Engine struct literals.** Nine test-side `GameEngine { … }` literals
+   (mod.rs:2498, 3640, 4104, 4143, 5127, 5196, 5862, 5995, 6181) currently spell
+   out `dialogue_history: vec![]`, `next_dialogue_history_id: 1`,
+   `last_recorded_dialogue_token: None`. Each becomes
+   `history: DialogueHistory::default()`. `DialogueHistory` therefore implements
+   `Default` as `{ entries: vec![], next_id: 1, last_token: None }` — matching
+   what `new_started` (mod.rs:127–130) and `jump_to_scene` (mod.rs:170–172)
+   currently assign — so this is one token per site, not a rewrite.
+3. **Direct field reads.** Two assertions read `engine.dialogue_history`
+   directly; they become `engine.history.entries()`.
+
+`view.dialogue_history` reads are **not** affected. `GameStateView` keeps its
+`dialogue_history` field unchanged — that is the serialized IPC contract the
+frontend consumes — so the majority of history assertions need no edit at all.
 
 | Destination | Tests |
 |---|---|
@@ -427,10 +498,11 @@ holds byte-identical. It is the primary regression gate.
 
 ## Integration Points
 
-`apps/game/src-tauri/src/lib.rs` calls fourteen `GameEngine` methods across its
-`#[tauri::command]` handlers. Every one keeps its name, signature, and error
-behaviour, so `lib.rs`, `generate_handler!`, the IPC wire contract, and the
-entire Svelte frontend are untouched by this issue.
+`apps/game/src-tauri/src/lib.rs` calls all sixteen public `GameEngine` methods
+across its `#[tauri::command]` handlers: the thirteen view-returners plus
+`new_started`, `view`, and `scene_navigation_index`. Every one keeps its name,
+signature, and error behaviour, so `lib.rs`, `generate_handler!`, the IPC wire
+contract, and the entire Svelte frontend are untouched by this issue.
 
 Deliberate downstream seams left for later epics:
 
