@@ -1,12 +1,12 @@
 // src-tauri/src/game/reveals.rs
+use crate::game::acquisition::AcquisitionCtx;
 use crate::game::scenes::interrogation::InterrogationSceneState;
 use crate::game::scenes::investigation::InvestigationSceneState;
 use crate::game::schema::{DialogueItem, InterrogationRevealTarget, RevealTarget};
-use crate::game::state::Inventory;
 
-pub fn apply_reveals_and_build_queue(
+pub(super) fn apply_reveals_and_build_queue(
     scene: &mut InvestigationSceneState,
-    inventory: &mut Inventory,
+    acq: &mut AcquisitionCtx,
     trigger_body: Vec<DialogueItem>,
     reveals: &[RevealTarget],
     chapter_id: &str,
@@ -16,8 +16,7 @@ pub fn apply_reveals_and_build_queue(
         match r {
             RevealTarget::Evidence { id } => {
                 if let Some(def) = scene.def.evidence_manifest.iter().find(|e| e.id == *id) {
-                    let newly_added =
-                        inventory.add_evidence_from_def(def, chapter_id, &scene.def.id);
+                    let newly_added = acq.evidence(def, chapter_id, &scene.def.id);
                     if newly_added {
                         queue.extend(def.on_collect.iter().cloned());
                     }
@@ -25,8 +24,7 @@ pub fn apply_reveals_and_build_queue(
             }
             RevealTarget::Statement { id } => {
                 if let Some(def) = scene.def.statement_manifest.iter().find(|s| s.id == *id) {
-                    let newly_added =
-                        inventory.add_statement_from_def(def, chapter_id, &scene.def.id);
+                    let newly_added = acq.statement(def, chapter_id, &scene.def.id);
                     if newly_added {
                         queue.extend(def.on_acquire.iter().cloned());
                     }
@@ -49,9 +47,9 @@ pub fn apply_reveals_and_build_queue(
     queue
 }
 
-pub fn apply_interrogation_reveals_and_build_queue(
+pub(super) fn apply_interrogation_reveals_and_build_queue(
     scene: &mut InterrogationSceneState,
-    inventory: &mut Inventory,
+    acq: &mut AcquisitionCtx,
     trigger_body: Vec<DialogueItem>,
     reveals: &[InterrogationRevealTarget],
     chapter_id: &str,
@@ -61,8 +59,7 @@ pub fn apply_interrogation_reveals_and_build_queue(
         match r {
             InterrogationRevealTarget::Evidence { id } => {
                 if let Some(def) = scene.def.evidence_manifest.iter().find(|e| e.id == *id) {
-                    let newly_added =
-                        inventory.add_evidence_from_def(def, chapter_id, &scene.def.id);
+                    let newly_added = acq.evidence(def, chapter_id, &scene.def.id);
                     if newly_added {
                         queue.extend(def.on_collect.iter().cloned());
                     }
@@ -70,8 +67,7 @@ pub fn apply_interrogation_reveals_and_build_queue(
             }
             InterrogationRevealTarget::Statement { id } => {
                 if let Some(def) = scene.def.statement_manifest.iter().find(|s| s.id == *id) {
-                    let newly_added =
-                        inventory.add_statement_from_def(def, chapter_id, &scene.def.id);
+                    let newly_added = acq.statement(def, chapter_id, &scene.def.id);
                     if newly_added {
                         queue.extend(def.on_acquire.iter().cloned());
                     }
@@ -95,6 +91,7 @@ mod tests {
         AutoMarker, EvidenceJson, InterrogationOutroJson, InterrogationOutroUnlock,
         InterrogationSceneJson, InvestigationSceneJson, OutroJson, OutroUnlock,
     };
+    use crate::game::state::Inventory;
 
     fn evidence_def(id: &str) -> EvidenceJson {
         EvidenceJson {
@@ -154,9 +151,12 @@ mod tests {
     fn reveals_evidence_appends_on_collect_to_queue() {
         let mut scene = empty_scene_with_evidence(vec![evidence_def("coffee")]);
         let mut inv = Inventory::default();
+        let mut acq = AcquisitionCtx {
+            inventory: &mut inv,
+        };
         let queue = apply_reveals_and_build_queue(
             &mut scene,
-            &mut inv,
+            &mut acq,
             vec![DialogueItem::Line {
                 speaker: "A".into(),
                 text: "trigger".into(),
@@ -176,9 +176,12 @@ mod tests {
         let mut scene =
             empty_scene_with_evidence(vec![evidence_def("receipt"), evidence_def("cctv")]);
         let mut inv = Inventory::default();
+        let mut acq = AcquisitionCtx {
+            inventory: &mut inv,
+        };
         let queue = apply_reveals_and_build_queue(
             &mut scene,
-            &mut inv,
+            &mut acq,
             vec![DialogueItem::Line {
                 speaker: "A".into(),
                 text: "trigger".into(),
@@ -211,9 +214,12 @@ mod tests {
     fn double_reveal_of_same_evidence_does_not_double_append() {
         let mut scene = empty_scene_with_evidence(vec![evidence_def("coffee")]);
         let mut inv = Inventory::default();
+        let mut acq = AcquisitionCtx {
+            inventory: &mut inv,
+        };
         let _ = apply_reveals_and_build_queue(
             &mut scene,
-            &mut inv,
+            &mut acq,
             vec![],
             &[RevealTarget::Evidence {
                 id: "coffee".into(),
@@ -222,7 +228,7 @@ mod tests {
         );
         let queue2 = apply_reveals_and_build_queue(
             &mut scene,
-            &mut inv,
+            &mut acq,
             vec![],
             &[RevealTarget::Evidence {
                 id: "coffee".into(),
@@ -236,9 +242,12 @@ mod tests {
     fn reveals_sublocation_silently_unlocks_it() {
         let mut scene = empty_scene_with_evidence(vec![]);
         let mut inv = Inventory::default();
+        let mut acq = AcquisitionCtx {
+            inventory: &mut inv,
+        };
         let queue = apply_reveals_and_build_queue(
             &mut scene,
-            &mut inv,
+            &mut acq,
             vec![],
             &[RevealTarget::Sublocation {
                 id: "back_room".into(),
@@ -253,9 +262,12 @@ mod tests {
     fn interrogation_reveals_evidence_appends_on_collect_to_queue() {
         let mut scene = empty_interrogation_scene_with_evidence(vec![evidence_def("receipt")]);
         let mut inv = Inventory::default();
+        let mut acq = AcquisitionCtx {
+            inventory: &mut inv,
+        };
         let queue = apply_interrogation_reveals_and_build_queue(
             &mut scene,
-            &mut inv,
+            &mut acq,
             vec![DialogueItem::Line {
                 speaker: "A".into(),
                 text: "trigger".into(),
@@ -274,9 +286,12 @@ mod tests {
     fn interrogation_reveals_question_and_phase_unlock_overrides() {
         let mut scene = empty_interrogation_scene_with_evidence(vec![]);
         let mut inv = Inventory::default();
+        let mut acq = AcquisitionCtx {
+            inventory: &mut inv,
+        };
         let queue = apply_interrogation_reveals_and_build_queue(
             &mut scene,
-            &mut inv,
+            &mut acq,
             vec![],
             &[
                 InterrogationRevealTarget::Question {

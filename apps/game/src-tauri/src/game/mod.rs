@@ -2,6 +2,7 @@
 //
 // GameEngine — the single owner of mutable game state.
 
+pub mod acquisition;
 pub mod command_tx;
 pub mod dialogue;
 pub mod error;
@@ -17,6 +18,7 @@ pub mod view;
 pub use error::GameError;
 pub use view::{DialogueHistoryEntry, GameStateView, ModeView, QueueToken, SceneNavigationIndex};
 
+use acquisition::AcquisitionCtx;
 use navigation::{
     load_chapter_manifests, load_scene_runtime, scene_navigation_index_from_chapters,
 };
@@ -395,7 +397,9 @@ impl GameEngine {
             scene.mark_phase_entered(&phase_id);
             reveals::apply_interrogation_reveals_and_build_queue(
                 scene,
-                &mut self.inventory,
+                &mut AcquisitionCtx {
+                    inventory: &mut self.inventory,
+                },
                 entry_dialogue,
                 &reveals,
                 chapter_id,
@@ -443,7 +447,9 @@ impl GameEngine {
             if first_entry {
                 reveals::apply_reveals_and_build_queue(
                     inv,
-                    &mut self.inventory,
+                    &mut AcquisitionCtx {
+                        inventory: &mut self.inventory,
+                    },
                     transition,
                     &sub_reveals,
                     &chapter_id,
@@ -523,7 +529,9 @@ impl GameEngine {
                 let body = hot_def.inspect_dialogue.clone();
                 reveals::apply_reveals_and_build_queue(
                     inv,
-                    &mut engine.inventory,
+                    &mut AcquisitionCtx {
+                        inventory: &mut engine.inventory,
+                    },
                     body,
                     &hot_def.reveals,
                     &chapter_id,
@@ -613,7 +621,9 @@ impl GameEngine {
                 let body = topic.topic_dialogue.clone();
                 reveals::apply_reveals_and_build_queue(
                     inv,
-                    &mut engine.inventory,
+                    &mut AcquisitionCtx {
+                        inventory: &mut engine.inventory,
+                    },
                     body,
                     &topic.reveals,
                     &chapter_id,
@@ -693,7 +703,9 @@ impl GameEngine {
                 inv.record_sublocation_entered(sublocation_id);
                 reveals::apply_reveals_and_build_queue(
                     inv,
-                    &mut engine.inventory,
+                    &mut AcquisitionCtx {
+                        inventory: &mut engine.inventory,
+                    },
                     transition_dialogue,
                     &sub_reveals,
                     &chapter_id,
@@ -881,7 +893,9 @@ impl GameEngine {
                         .unwrap_or_default();
                     let queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
-                        &mut engine.inventory,
+                        &mut AcquisitionCtx {
+                            inventory: &mut engine.inventory,
+                        },
                         line_content,
                         &reveals,
                         &chapter_id,
@@ -1078,7 +1092,9 @@ impl GameEngine {
                     }
                     let queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
-                        &mut engine.inventory,
+                        &mut AcquisitionCtx {
+                            inventory: &mut engine.inventory,
+                        },
                         on_correct,
                         &reveals,
                         &chapter_id,
