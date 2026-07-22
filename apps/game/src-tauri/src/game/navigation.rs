@@ -274,7 +274,7 @@ pub(super) fn scene_navigation_index_from_chapters(
     })
 }
 
-pub(super) fn find_scene_runtime_by_id(
+fn find_scene_runtime_by_id(
     resources_dir: &std::path::Path,
     chapter: &ChapterManifest,
     scene_id: &str,
@@ -369,5 +369,945 @@ fn scene_type_label(scene_type: SceneType) -> &'static str {
         SceneType::Linear => "linear",
         SceneType::Investigation => "investigation",
         SceneType::Interrogation => "interrogation",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::state::{EvidenceRecord, SceneRef};
+    use crate::game::test_support::*;
+    use crate::game::*;
+
+    #[test]
+    fn jump_to_scene_starts_linear_scene_fresh() {
+        let d = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let view = engine
+            .jump_to_scene("chapter_1", "scene_0")
+            .expect("jump to linear scene");
+
+        assert_eq!(view.chapter.id, "chapter_1");
+        match view.scene {
+            SceneView::Linear {
+                id, index, total, ..
+            } => {
+                assert_eq!(id, "scene_0");
+                assert_eq!(index, 0);
+                assert_eq!(total, 3);
+            }
+            other => panic!("expected linear scene, got {other:?}"),
+        }
+        match view.mode {
+            ModeView::Dialogue {
+                current,
+                scene_tag,
+                background_asset_id,
+                ..
+            } => {
+                assert_eq!(scene_tag.as_deref(), Some("opening"));
+                assert_eq!(background_asset_id.as_deref(), Some("background.opening"));
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "linear start")
+                );
+            }
+            other => panic!("expected dialogue mode, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn jump_to_scene_starts_investigation_scene_fresh_and_resets_inventory() {
+        let d = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "old".into(),
+            name: "Old".into(),
+            description: "Old".into(),
+            details: "Old".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "scene_0".into(),
+        });
+
+        let view = engine
+            .jump_to_scene("chapter_1", "investigation_scene_1")
+            .expect("jump to investigation scene");
+
+        assert!(view.inventory.evidence.is_empty());
+        match view.scene {
+            SceneView::Investigation {
+                id, index, total, ..
+            } => {
+                assert_eq!(id, "investigation_scene_1");
+                assert_eq!(index, 1);
+                assert_eq!(total, 3);
+            }
+            other => panic!("expected investigation scene, got {other:?}"),
+        }
+        match view.mode {
+            ModeView::Dialogue { current, .. } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "B" && text == "investigation intro")
+                );
+            }
+            other => panic!("expected investigation intro dialogue, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn jump_to_scene_starts_interrogation_scene_fresh() {
+        let d = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+
+        let view = engine
+            .jump_to_scene("chapter_1", "interrogation_scene_2")
+            .expect("jump to interrogation scene");
+
+        match view.scene {
+            SceneView::Interrogation {
+                id,
+                index,
+                total,
+                current_phase_id,
+                ..
+            } => {
+                assert_eq!(id, "interrogation_scene_2");
+                assert_eq!(index, 2);
+                assert_eq!(total, 3);
+                assert_eq!(current_phase_id.as_deref(), Some("phase_1"));
+            }
+            other => panic!("expected interrogation scene, got {other:?}"),
+        }
+        match view.mode {
+            ModeView::Interrogation {
+                phase_id,
+                background_asset_id,
+                ..
+            } => {
+                assert_eq!(phase_id, "phase_1");
+                assert_eq!(
+                    background_asset_id.as_deref(),
+                    Some("background.interrogation")
+                );
+            }
+            other => panic!("expected interrogation mode, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn jump_to_scene_returns_typed_errors_for_unknown_ids() {
+        let d = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+
+        let err = engine
+            .jump_to_scene("chapter_missing", "scene_0")
+            .unwrap_err();
+        assert_eq!(err.code, "unknownChapter");
+
+        let err = engine
+            .jump_to_scene("chapter_1", "scene_missing")
+            .unwrap_err();
+        assert_eq!(err.code, "unknownScene");
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn jump_to_scene_restores_previous_state_when_priming_fails() {
+        // Covers the `if let Err(err) = self.prime_initial_queue()` restore
+        // branch in jump_to_scene. The jump target (scene_1) has an empty
+        // linear queue, so prime_initial_queue calls advance_scene to load
+        // scene_2. scene_2's manifest declares "linear" but its file is
+        // investigation-typed, so load_scene_runtime rejects with
+        // sceneValidationFailed. jump_to_scene must restore the snapshot
+        // (still on scene_0) and propagate the error.
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-jump-restore-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+            "chapters": [{
+                "id": "chapter_1",
+                "title": "Chapter One",
+                "summary": "First",
+                "scenes": [
+                    { "type": "linear", "file": "chapter_1/scene_0.json" },
+                    { "type": "linear", "file": "chapter_1/scene_1.json" },
+                    { "type": "linear", "file": "chapter_1/scene_2.json" }
+                ]
+            }]
+        }"#,
+        )
+        .unwrap();
+        // Startup scene: non-empty queue so new_started primes successfully.
+        // Two lines so a single advance_dialogue stays within scene_0 (and
+        // does not cascade into advance_scene → scene_1 → scene_2).
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{
+            "type": "linear",
+            "id": "scene_0",
+            "title": "Opening",
+            "queue": [
+                { "kind": "line", "speaker": "A", "text": "start" },
+                { "kind": "line", "speaker": "A", "text": "second" }
+            ]
+        }"#,
+        )
+        .unwrap();
+        // Jump target: empty queue → prime_initial_queue calls advance_scene.
+        fs::write(
+            chapter_1.join("scene_1.json"),
+            r#"{
+            "type": "linear",
+            "id": "scene_1",
+            "title": "Empty",
+            "queue": []
+        }"#,
+        )
+        .unwrap();
+        // Next scene after the jump target: declared linear but file is
+        // investigation-typed → load_scene_runtime rejects with
+        // sceneValidationFailed during advance_scene.
+        fs::write(
+            chapter_1.join("scene_2.json"),
+            r#"{
+            "type": "investigation",
+            "id": "scene_2",
+            "title": "Mismatched",
+            "intro": [],
+            "sublocations": [{
+                "id": "room",
+                "label": "Room",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "room",
+                "transitionDialogue": [],
+                "hotspots": [],
+                "characters": []
+            }],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": "auto", "dialogue": [] }
+        }"#,
+        )
+        .unwrap();
+
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        // Sanity: engine started on scene_0.
+        let before = engine.view();
+        let before_scene_id = match &before.scene {
+            SceneView::Linear { id, .. } => id.clone(),
+            other => panic!("expected linear scene at startup, got {other:?}"),
+        };
+        assert_eq!(before_scene_id, "scene_0");
+
+        let err = engine
+            .jump_to_scene("chapter_1", "scene_1")
+            .expect_err("jump should fail during priming");
+        assert_eq!(err.code, "sceneValidationFailed");
+
+        // Snapshot restored: the engine is still on scene_0 with the
+        // original queue generation sequence intact.
+        let after = engine.view();
+        let after_scene_id = match &after.scene {
+            SceneView::Linear { id, .. } => id.clone(),
+            other => panic!("expected linear scene after restore, got {other:?}"),
+        };
+        assert_eq!(after_scene_id, "scene_0");
+        assert_eq!(after.chapter.id, "chapter_1");
+
+        // The engine remains usable: advancing dialogue on the restored
+        // scene still works.
+        let token = match &after.mode {
+            ModeView::Dialogue { queue_token, .. } => queue_token.clone(),
+            other => panic!("expected Dialogue mode after restore, got {other:?}"),
+        };
+        let advanced = engine.advance_dialogue(token).unwrap();
+        match advanced.mode {
+            ModeView::Dialogue { current, .. } => {
+                // Advancing past the first line ("start") lands on the
+                // second line ("second") — proving the restored queue cursor
+                // and queue generation are intact and the engine is usable.
+                assert!(
+                    matches!(&current, DialogueItem::Line { text, .. } if text == "second"),
+                    "expected second line after advance, got {current:?}"
+                );
+            }
+            other => panic!("expected Dialogue mode after advance, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn jump_to_scene_restores_non_empty_dialogue_history_when_priming_fails() {
+        // Companion to jump_to_scene_restores_previous_state_when_priming_fails.
+        // That test starts with empty dialogue_history, so it cannot
+        // distinguish "rollback restored empty" from "nothing to restore."
+        // This test populates history by advancing dialogue on scene_0 before
+        // the failing jump, then asserts restore_snapshot put the non-empty
+        // history back exactly as it was.
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-jump-restore-history-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+            "chapters": [{
+                "id": "chapter_1",
+                "title": "Chapter One",
+                "summary": "First",
+                "scenes": [
+                    { "type": "linear", "file": "chapter_1/scene_0.json" },
+                    { "type": "linear", "file": "chapter_1/scene_1.json" },
+                    { "type": "linear", "file": "chapter_1/scene_2.json" }
+                ]
+            }]
+        }"#,
+        )
+        .unwrap();
+        // Startup scene: three lines so we can advance once and still have
+        // remaining lines (staying within scene_0, no cascade into scene_1).
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{
+            "type": "linear",
+            "id": "scene_0",
+            "title": "Opening",
+            "queue": [
+                { "kind": "line", "speaker": "A", "text": "start" },
+                { "kind": "line", "speaker": "A", "text": "second" },
+                { "kind": "line", "speaker": "A", "text": "third" }
+            ]
+        }"#,
+        )
+        .unwrap();
+        // Jump target: empty queue → prime_initial_queue calls advance_scene.
+        fs::write(
+            chapter_1.join("scene_1.json"),
+            r#"{
+            "type": "linear",
+            "id": "scene_1",
+            "title": "Empty",
+            "queue": []
+        }"#,
+        )
+        .unwrap();
+        // Next scene after the jump target: declared linear but file is
+        // investigation-typed → load_scene_runtime rejects with
+        // sceneValidationFailed during advance_scene.
+        fs::write(
+            chapter_1.join("scene_2.json"),
+            r#"{
+            "type": "investigation",
+            "id": "scene_2",
+            "title": "Mismatched",
+            "intro": [],
+            "sublocations": [{
+                "id": "room",
+                "label": "Room",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "room",
+                "transitionDialogue": [],
+                "hotspots": [],
+                "characters": []
+            }],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": "auto", "dialogue": [] }
+        }"#,
+        )
+        .unwrap();
+
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        // Startup records the first visible line ("start") into history.
+        let started = engine.view();
+        assert_eq!(
+            history_labels(&started),
+            vec!["A: start".to_string()],
+            "startup should record the first visible line"
+        );
+
+        // Advance once to focus "second"; this records "second" into history,
+        // giving us a non-empty, multi-entry history to verify rollback against.
+        let advanced = engine.advance_dialogue(token_from(&started)).unwrap();
+        let pre_jump_history = history_labels(&advanced);
+        assert_eq!(
+            pre_jump_history,
+            vec!["A: start".to_string(), "A: second".to_string()],
+            "advance should record the newly focused line"
+        );
+        let pre_jump_token = token_from(&advanced);
+
+        // Failing jump: scene_1 is empty so priming cascades into scene_2,
+        // which fails validation. jump_to_scene must restore the snapshot
+        // taken before mutating state — including the non-empty history.
+        let err = engine
+            .jump_to_scene("chapter_1", "scene_1")
+            .expect_err("jump should fail during priming");
+        assert_eq!(err.code, "sceneValidationFailed");
+
+        // Scene identity restored.
+        let after = engine.view();
+        let after_scene_id = match &after.scene {
+            SceneView::Linear { id, .. } => id.clone(),
+            other => panic!("expected linear scene after restore, got {other:?}"),
+        };
+        assert_eq!(after_scene_id, "scene_0");
+
+        // The non-empty dialogue history must be restored verbatim, proving
+        // restore_snapshot copied the history fields (not just left them empty).
+        assert_eq!(
+            history_labels(&after),
+            pre_jump_history,
+            "rollback must restore the pre-jump non-empty dialogue history"
+        );
+
+        // The restored queue token must match the pre-jump token, proving
+        // next_queue_gen was restored (not incremented by the failed jump).
+        assert_eq!(
+            token_from(&after),
+            pre_jump_token,
+            "rollback must restore the queue generation"
+        );
+
+        // The engine remains usable: advancing from the restored cursor
+        // focuses "third", and records it into history on top of the restored
+        // entries — proving both the cursor and the history log are live.
+        let next = engine.advance_dialogue(token_from(&after)).unwrap();
+        assert_eq!(
+            history_labels(&next),
+            vec![
+                "A: start".to_string(),
+                "A: second".to_string(),
+                "A: third".to_string(),
+            ],
+            "post-rollback advance must append to the restored history"
+        );
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_lookup_returns_loaded_runtime_for_matching_scene() {
+        let d = scene_jump_fixture_resources();
+        let chapters = load_chapter_manifests(&d).unwrap();
+
+        let (index, runtime) =
+            find_scene_runtime_by_id(&d, &chapters[0], "investigation_scene_1", 42)
+                .expect("scene lookup succeeds")
+                .expect("matching scene exists");
+
+        assert_eq!(index, 1);
+        match runtime {
+            SceneRuntime::Investigation(scene) => {
+                assert_eq!(scene.def.id, "investigation_scene_1");
+                assert_eq!(scene.intro_queue_gen, 42);
+            }
+            other => panic!("expected investigation runtime, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_lookup_rejects_duplicate_scene_ids_as_ambiguous() {
+        // Defense-in-depth for review comment #7: the navigation index build
+        // rejects duplicate scene ids per chapter, but find_scene_runtime_by_id
+        // must also resolve targets unambiguously so a jump never silently
+        // lands on the "first" of two same-id scenes. Build a chapter with two
+        // files carrying the same id and assert both the helper and
+        // jump_to_scene surface a typed duplicateSceneTarget error.
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-jump-dup-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+            "chapters": [{
+                "id": "chapter_1",
+                "title": "Chapter One",
+                "summary": "First",
+                "scenes": [
+                    { "type": "linear", "file": "chapter_1/scene_0.json" },
+                    { "type": "linear", "file": "chapter_1/dup_a.json" },
+                    { "type": "linear", "file": "chapter_1/dup_b.json" }
+                ]
+            }]
+        }"#,
+        )
+        .unwrap();
+        // Startup scene: non-empty queue so new_started primes successfully.
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{
+            "type": "linear",
+            "id": "scene_0",
+            "title": "Opening",
+            "queue": [{ "kind": "line", "speaker": "A", "text": "start" }]
+        }"#,
+        )
+        .unwrap();
+        // Two scenes sharing id "dup_scene" — the ambiguity this test guards.
+        fs::write(
+            chapter_1.join("dup_a.json"),
+            r#"{
+            "type": "linear",
+            "id": "dup_scene",
+            "title": "First dup",
+            "queue": [{ "kind": "line", "speaker": "A", "text": "a" }]
+        }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("dup_b.json"),
+            r#"{
+            "type": "linear",
+            "id": "dup_scene",
+            "title": "Second dup",
+            "queue": [{ "kind": "line", "speaker": "A", "text": "b" }]
+        }"#,
+        )
+        .unwrap();
+
+        let chapters = load_chapter_manifests(&d).unwrap();
+
+        // The helper itself rejects the ambiguous target.
+        let err = find_scene_runtime_by_id(&d, &chapters[0], "dup_scene", 1)
+            .expect_err("duplicate ids must be rejected");
+        assert_eq!(err.code, "duplicateSceneTarget");
+
+        // And jump_to_scene propagates the same typed error.
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let err = engine
+            .jump_to_scene("chapter_1", "dup_scene")
+            .expect_err("jump to ambiguous scene must fail");
+        assert_eq!(err.code, "duplicateSceneTarget");
+        // The engine is untouched (no snapshot/restore needed since the
+        // ambiguity is detected before any state mutation).
+        let after_scene_id = match &engine.view().scene {
+            SceneView::Linear { id, .. } => id.clone(),
+            other => panic!("expected linear scene, got {other:?}"),
+        };
+        assert_eq!(after_scene_id, "scene_0");
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn load_scene_runtime_accepts_interrogation_scene() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-runtime-unsupported-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_1",
+                "title": "Interrogation",
+                "intro": [],
+                "phases": [],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let runtime = load_scene_runtime(
+            &d,
+            &SceneRef {
+                scene_type: SceneType::Interrogation,
+                file: "chapter_1/interrogation_scene_1.json".into(),
+            },
+            1,
+        )
+        .unwrap();
+
+        assert!(matches!(runtime, SceneRuntime::Interrogation(_)));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn load_scene_runtime_rejects_manifest_scene_type_mismatch() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-runtime-mismatch-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("interrogation_scene_1.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Wrong Kind",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let err = load_scene_runtime(
+            &d,
+            &SceneRef {
+                scene_type: SceneType::Interrogation,
+                file: "chapter_1/interrogation_scene_1.json".into(),
+            },
+            1,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert!(err.message.contains("declares interrogation"));
+        assert!(err.message.contains("contains linear"));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_navigation_index_lists_compiled_chapters_and_scenes() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-index-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        let chapter_2 = d.join("chapter_2");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::create_dir_all(&chapter_2).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [
+                    {
+                        "id": "chapter_1",
+                        "title": "Chapter One",
+                        "summary": "First",
+                        "scenes": [
+                            { "type": "linear", "file": "chapter_1/scene_0.json" },
+                            { "type": "investigation", "file": "chapter_1/investigation_scene_1.json" }
+                        ]
+                    },
+                    {
+                        "id": "chapter_2",
+                        "title": "Chapter Two",
+                        "summary": "Second",
+                        "scenes": [
+                            { "type": "interrogation", "file": "chapter_2/interrogation_scene_0.json" }
+                        ]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Opening",
+                "queue": [{ "kind": "line", "speaker": "A", "text": "start" }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("investigation_scene_1.json"),
+            r#"{
+                "type": "investigation",
+                "id": "investigation_scene_1",
+                "title": "Investigation",
+                "intro": [],
+                "sublocations": [{
+                    "id": "room",
+                    "label": "Room",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "room",
+                    "transitionDialogue": [],
+                    "hotspots": [],
+                    "characters": []
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_2.join("interrogation_scene_0.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_scene_0",
+                "title": "Interrogation",
+                "intro": [],
+                "phases": [{
+                    "kind": "inquiry",
+                    "id": "phase_1",
+                    "label": "證言",
+                    "subject": { "id": "witness", "name": "Witness", "role": "Witness", "bio": "Quiet." },
+                    "required": true,
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "room",
+                    "entryDialogue": [],
+                    "complete": "auto",
+                    "questions": []
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let index = GameEngine::scene_navigation_index(d.clone()).unwrap();
+
+        assert_eq!(index.chapters.len(), 2);
+        assert_eq!(index.chapters[0].id, "chapter_1");
+        assert_eq!(index.chapters[0].title, "Chapter One");
+        assert_eq!(index.chapters[0].index, 0);
+        assert_eq!(index.chapters[0].scenes.len(), 2);
+        assert_eq!(index.chapters[0].scenes[0].id, "scene_0");
+        assert_eq!(index.chapters[0].scenes[0].title, "Opening");
+        assert_eq!(index.chapters[0].scenes[0].scene_type, SceneType::Linear);
+        assert_eq!(index.chapters[0].scenes[0].index, 0);
+        assert_eq!(index.chapters[0].scenes[1].id, "investigation_scene_1");
+        assert_eq!(index.chapters[0].scenes[1].title, "Investigation");
+        assert_eq!(
+            index.chapters[0].scenes[1].scene_type,
+            SceneType::Investigation
+        );
+        assert_eq!(index.chapters[0].scenes[1].index, 1);
+        assert_eq!(index.chapters[1].id, "chapter_2");
+        assert_eq!(index.chapters[1].title, "Chapter Two");
+        assert_eq!(index.chapters[1].index, 1);
+        assert_eq!(index.chapters[1].scenes.len(), 1);
+        assert_eq!(index.chapters[1].scenes[0].id, "interrogation_scene_0");
+        assert_eq!(index.chapters[1].scenes[0].title, "Interrogation");
+        assert_eq!(
+            index.chapters[1].scenes[0].scene_type,
+            SceneType::Interrogation
+        );
+        assert_eq!(index.chapters[1].scenes[0].index, 0);
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_navigation_index_rejects_manifest_type_mismatch() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-index-mismatch-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [{ "type": "interrogation", "file": "chapter_1/scene_0.json" }]
+                }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Opening",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let err = GameEngine::scene_navigation_index(d.clone()).unwrap_err();
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert!(err.message.contains("declares interrogation"));
+        assert!(err.message.contains("contains linear"));
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_navigation_index_rejects_duplicate_scene_id_within_chapter() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-index-dup-scene-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_a.json" },
+                        { "type": "linear", "file": "chapter_1/scene_b.json" }
+                    ]
+                }]
+            }"#,
+        )
+        .unwrap();
+        // Both scenes share the same id — jump_to_scene resolves by first
+        // match, so this would silently target the wrong scene. The index
+        // build must reject it before navigation is possible.
+        fs::write(
+            chapter_1.join("scene_a.json"),
+            r#"{ "type": "linear", "id": "dup", "title": "A", "queue": [] }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("scene_b.json"),
+            r#"{ "type": "linear", "id": "dup", "title": "B", "queue": [] }"#,
+        )
+        .unwrap();
+
+        let err = GameEngine::scene_navigation_index(d.clone()).unwrap_err();
+        assert_eq!(err.code, "chapterLoadFailed");
+        assert!(err.message.contains("duplicate scene id \"dup\""));
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_navigation_index_rejects_duplicate_chapter_id() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-scene-index-dup-chapter-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dup = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dup).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [
+                    {
+                        "id": "chapter_1",
+                        "title": "First",
+                        "summary": "First",
+                        "scenes": [{ "type": "linear", "file": "chapter_1/scene_0.json" }]
+                    },
+                    {
+                        "id": "chapter_1",
+                        "title": "Second",
+                        "summary": "Second",
+                        "scenes": [{ "type": "linear", "file": "chapter_1/scene_0.json" }]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dup.join("scene_0.json"),
+            r#"{ "type": "linear", "id": "scene_0", "title": "S", "queue": [] }"#,
+        )
+        .unwrap();
+
+        let err = GameEngine::scene_navigation_index(d.clone()).unwrap_err();
+        assert_eq!(err.code, "chapterLoadFailed");
+        assert!(err.message.contains("duplicate chapter id \"chapter_1\""));
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn jump_to_interrogation_grants_all_evidence_for_testing() {
+        let d = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+
+        let view = engine
+            .jump_to_scene("chapter_1", "interrogation_scene_2")
+            .expect("jump to interrogation scene");
+
+        // Cross-scene evidence (defined in the investigation scene's manifest)
+        // is granted so interrogation contradictions are presentable in testing.
+        assert!(view.inventory.has_evidence("test_evidence"));
+
+        let _ = std::fs::remove_dir_all(d);
     }
 }

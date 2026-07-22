@@ -48,7 +48,7 @@ impl AcquisitionCtx<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::schema::EvidenceJson;
+    use crate::game::schema::{EvidenceJson, StatementJson};
     use crate::game::state::Inventory;
 
     fn evidence_def(id: &str) -> EvidenceJson {
@@ -63,6 +63,16 @@ mod tests {
         }
     }
 
+    fn statement_def(id: &str) -> StatementJson {
+        StatementJson {
+            id: id.into(),
+            speaker: id.into(),
+            content: id.into(),
+            on_acquire: vec![],
+            on_reexamine: None,
+        }
+    }
+
     #[test]
     fn evidence_reports_newly_added_then_dedupes() {
         let mut inventory = Inventory::default();
@@ -72,5 +82,16 @@ mod tests {
         assert!(ctx.evidence(&evidence_def("coffee"), "chapter_1", "scene_1"));
         assert!(!ctx.evidence(&evidence_def("coffee"), "chapter_1", "scene_1"));
         assert_eq!(inventory.evidence.len(), 1);
+    }
+
+    #[test]
+    fn statement_reports_newly_added_then_dedupes() {
+        let mut inventory = Inventory::default();
+        let mut ctx = AcquisitionCtx {
+            inventory: &mut inventory,
+        };
+        assert!(ctx.statement(&statement_def("alibi"), "chapter_1", "scene_1"));
+        assert!(!ctx.statement(&statement_def("alibi"), "chapter_1", "scene_1"));
+        assert_eq!(inventory.statements.len(), 1);
     }
 }
