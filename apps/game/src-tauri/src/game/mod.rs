@@ -426,12 +426,39 @@ impl GameEngine {
         }
     }
 
-    fn install_investigation_queue(
+    /// Install `items` as the active dialogue queue, or run the exhausted-queue
+    /// machinery when there is nothing to play.
+    fn install_or_exhaust(&mut self, items: Vec<DialogueItem>) -> Result<(), GameError> {
+        if items.is_empty() {
+            return self.on_queue_exhausted();
+        }
+        let queue_gen = self.alloc_queue_gen();
+        self.install_scene_queue(items, queue_gen)
+    }
+
+    /// As `install_or_exhaust`, then mark where challengeable testimony line
+    /// content begins in the installed queue.
+    ///
+    /// Order matters: `install_scene_queue` sets `line_content_start` to
+    /// `items.len()` (the "nothing here is challengeable" default), so the
+    /// override must come after the install or it is silently discarded and the
+    /// inline 反駁 control never appears. The variant guard is retained rather
+    /// than assumed, because installation can drain to empty and reach
+    /// `on_queue_exhausted`, which may transition the scene.
+    fn install_or_exhaust_line_content(
         &mut self,
         items: Vec<DialogueItem>,
-        queue_gen: u64,
+        line_content_start: usize,
     ) -> Result<(), GameError> {
-        self.install_scene_queue(items, queue_gen)
+        if items.is_empty() {
+            return self.on_queue_exhausted();
+        }
+        let queue_gen = self.alloc_queue_gen();
+        self.install_scene_queue(items, queue_gen)?;
+        if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+            scene.line_content_start = line_content_start;
+        }
+        Ok(())
     }
 
     fn install_scene_queue(
@@ -590,11 +617,7 @@ impl GameEngine {
                 self.advance_scene()?;
             }
         } else {
-            let queue_gen = self.alloc_queue_gen();
-            self.install_scene_queue(queue_items, queue_gen)?;
-            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
-                scene.line_content_start = line_content_start;
-            }
+            self.install_or_exhaust_line_content(queue_items, line_content_start)?;
         }
         Ok(())
     }
@@ -639,7 +662,7 @@ impl GameEngine {
             if let SceneRuntime::Investigation(inv) = &mut self.scene {
                 inv.outro_played = true;
             }
-            self.install_investigation_queue(outro_dialogue, queue_gen)?;
+            self.install_scene_queue(outro_dialogue, queue_gen)?;
             return Ok(false);
         }
 
@@ -809,12 +832,7 @@ impl GameEngine {
             )
         };
         self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
-        if queue_items.is_empty() {
-            self.on_queue_exhausted()?;
-        } else {
-            let queue_gen = self.alloc_queue_gen();
-            self.install_scene_queue(queue_items, queue_gen)?;
-        }
+        self.install_or_exhaust(queue_items)?;
         Ok(true)
     }
 
@@ -865,14 +883,8 @@ impl GameEngine {
             }
         };
 
-        if queue_items.is_empty() {
-            self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
-            self.on_queue_exhausted()?;
-        } else {
-            let queue_gen = self.alloc_queue_gen();
-            self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
-            self.install_investigation_queue(queue_items, queue_gen)?;
-        }
+        self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
+        self.install_or_exhaust(queue_items)?;
         Ok(())
     }
 
@@ -993,12 +1005,7 @@ impl GameEngine {
             };
 
             // Phase 3 — write: attach the queue.
-            if queue_items.is_empty() {
-                engine.on_queue_exhausted()?;
-            } else {
-                let queue_gen = engine.alloc_queue_gen();
-                engine.install_investigation_queue(queue_items, queue_gen)?;
-            }
+            engine.install_or_exhaust(queue_items)?;
             Ok(())
         })
     }
@@ -1087,12 +1094,7 @@ impl GameEngine {
                 }
             };
 
-            if queue_items.is_empty() {
-                engine.on_queue_exhausted()?;
-            } else {
-                let queue_gen = engine.alloc_queue_gen();
-                engine.install_investigation_queue(queue_items, queue_gen)?;
-            }
+            engine.install_or_exhaust(queue_items)?;
             Ok(())
         })
     }
@@ -1170,16 +1172,8 @@ impl GameEngine {
                 Vec::new()
             };
 
-            if queue_items.is_empty() {
-                engine
-                    .last_visual_cue
-                    .set_scene_tag(scene_tag.clone(), asset_cue.clone());
-                engine.on_queue_exhausted()?;
-            } else {
-                let queue_gen = engine.alloc_queue_gen();
-                engine.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
-                engine.install_investigation_queue(queue_items, queue_gen)?;
-            }
+            engine.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
+            engine.install_or_exhaust(queue_items)?;
             Ok(())
         })
     }
@@ -1371,15 +1365,7 @@ impl GameEngine {
                 }
             };
 
-            if queue_items.is_empty() {
-                engine.on_queue_exhausted()?;
-            } else {
-                let queue_gen = engine.alloc_queue_gen();
-                engine.install_scene_queue(queue_items, queue_gen)?;
-                if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
-                    scene.line_content_start = line_content_start;
-                }
-            }
+            engine.install_or_exhaust_line_content(queue_items, line_content_start)?;
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.refresh_phase_completion(&engine.inventory);
             }
@@ -1465,12 +1451,7 @@ impl GameEngine {
                 challenge
             };
 
-            if queue_items.is_empty() {
-                engine.on_queue_exhausted()?;
-            } else {
-                let queue_gen = engine.alloc_queue_gen();
-                engine.install_scene_queue(queue_items, queue_gen)?;
-            }
+            engine.install_or_exhaust(queue_items)?;
             Ok(())
         })
     }
@@ -1599,12 +1580,7 @@ impl GameEngine {
                 }
             };
 
-            if queue_items.is_empty() {
-                engine.on_queue_exhausted()?;
-            } else {
-                let queue_gen = engine.alloc_queue_gen();
-                engine.install_scene_queue(queue_items, queue_gen)?;
-            }
+            engine.install_or_exhaust(queue_items)?;
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.refresh_phase_completion(&engine.inventory);
             }
@@ -1709,17 +1685,9 @@ impl GameEngine {
                     .unwrap_or_default()
             };
 
-            if queue_items.is_empty() {
-                engine.on_queue_exhausted()?;
-            } else {
-                let queue_gen = engine.alloc_queue_gen();
-                engine.install_scene_queue(queue_items, queue_gen)?;
-                // Resuming installs the challenged line's pure content —
-                // challengeable from the first item.
-                if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
-                    scene.line_content_start = 0;
-                }
-            }
+            // Resuming installs the challenged line's pure content —
+            // challengeable from the first item.
+            engine.install_or_exhaust_line_content(queue_items, 0)?;
             Ok(())
         })
     }
@@ -7143,6 +7111,84 @@ mod tests {
         };
         assert!(matches!(scene.cross_exam(), CrossExam::Idle));
         assert!(scene.is_question_broken("q1"));
+    }
+
+    #[test]
+    fn degenerate_testimony_returns_to_menu_without_recursing() {
+        // An UNBROKEN question whose only testimony line has empty content and
+        // whose testimony has no on_loop / loop_prompt bridge. Asking it
+        // installs nothing, so advance_playing_testimony reaches its degenerate
+        // branch. That branch must withdraw first and then run the phase/outro
+        // checks. It must NOT call on_queue_exhausted: that function's
+        // interrogation arm dispatches straight back into
+        // advance_playing_testimony while is_playing_unbroken() holds, which
+        // recurses without bound.
+        let scene = InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "inquiry".into(),
+                label: "Inquiry".into(),
+                subject: subject(),
+                required: false,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: VisualAssetCueJson::default(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![InquiryQuestionJson {
+                    id: "q_degenerate".into(),
+                    label: "Degenerate".into(),
+                    status: LockStatus::Unlocked,
+                    required: false,
+                    unlock: None,
+                    reveals: vec![],
+                    testimony: TestimonyJson {
+                        on_loop: vec![],
+                        loop_prompt: vec![],
+                        default_challenge: vec![],
+                        default_wrong: vec![],
+                        wrong_reply: vec![],
+                        lines: vec![TestimonyLineJson {
+                            id: "l_empty".into(),
+                            label: "Empty".into(),
+                            // Empty content plus an empty loop bridge is what
+                            // makes the queue degenerate.
+                            content: vec![],
+                            // A contradiction keeps the question unbroken, so
+                            // the engine enters the Playing loop rather than
+                            // the honest-question path.
+                            contradiction: Some(InventoryTarget::Evidence {
+                                id: "never_held".into(),
+                            }),
+                            challenge: vec![],
+                            on_correct: vec![],
+                            on_wrong_evidence: vec![],
+                            reveals: vec![],
+                        }],
+                    },
+                }],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
+
+        let view = engine.ask_interrogation_question("q_degenerate").unwrap();
+
+        assert!(
+            !matches!(view.mode, ModeView::Dialogue { .. }),
+            "degenerate testimony left the engine in dialogue mode: {:?}",
+            view.mode
+        );
     }
 
     #[test]
