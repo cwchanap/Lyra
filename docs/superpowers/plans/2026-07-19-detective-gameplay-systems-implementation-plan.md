@@ -1,30 +1,35 @@
 # Detective Gameplay Systems Implementation Plan
 
-> **For agentic workers:** This is the umbrella delivery plan, not a single executable coding plan. Before implementing an epic, write and approve its focused specification and a task-by-task plan using `superpowers:writing-plans`; execute with `superpowers:subagent-driven-development` or `superpowers:executing-plans`.
+> **For agentic workers:** This is an umbrella delivery plan, not a single executable coding plan. Before implementing an epic, write and approve its focused specification and task-by-task TDD plan using `superpowers:writing-plans`; execute with `superpowers:subagent-driven-development` or `superpowers:executing-plans`.
 
-**Goal:** Deliver the detective-reasoning program defined by `docs/superpowers/specs/2026-07-19-detective-gameplay-systems-design.md` through independently reviewable, testable milestones.
+**Goal:** Deliver the additive detective-reasoning program defined by `docs/superpowers/specs/2026-07-19-detective-gameplay-systems-design.md` through independently reviewable and testable milestones.
 
 **Architecture:** The design specification is the sole normative contract. This plan owns sequencing, repository boundaries, ticket mapping, and verification gates. It does not redefine gameplay behavior.
 
 **Tech Stack:** Rust, Tauri 2, SvelteKit static SPA, Svelte 5, TypeScript, Bun 1.3.1, Turborepo, Vitest, Testing Library for Svelte, WebdriverIO/Tauri e2e, compiler-authored Markdown/YAML/JSON.
 
+This is a **multi-milestone platform program**, expected to land through many focused pull requests and potentially multiple release cycles. It must not be estimated, scheduled, or implemented as one feature branch.
+
+The HPA mappings below are an execution snapshot as of 2026-07-21. Ticket identifiers may change; repository paths and design section references remain authoritative.
+
 ## 1. Execution rules
 
 - Read the canonical design before each epic.
-- Do not infer a behavior from this plan when the design is more specific.
-- Every epic receives a focused spec and executable TDD plan before code changes.
+- Existing approved investigation/interrogation specifications remain authoritative for shipped behavior unless the design explicitly changes an integration point.
+- Do not infer behavior from this plan when the design is more specific.
+- Every epic receives a focused specification and executable TDD plan before code changes.
 - Every epic lands as an independently reviewable PR.
 - Existing generated Tauri resources remain untracked and are regenerated through `bun run scenes:compile`.
 - Chapter 2 implementation remains blocked until the packaged Chapter 1 acceptance gate passes.
 - External ticket IDs organize execution but do not define architecture.
 
-## 2. Current repository baseline
+## 2. Repository ownership map
 
-### 2.1 Engine debt that changes sequencing
+### 2.1 Engine sequencing baseline
 
-`apps/game/src-tauri/src/game/mod.rs` is currently roughly 7,350 lines / 288 KB. It already owns substantial command, transaction, dialogue, navigation, history, reveal, and view behavior.
+See design §6.2 for the dated repository baseline and the reason P0.0 is required. This plan intentionally does not repeat volatile line counts or file-size measurements.
 
-The program must therefore begin with a scoped seam extraction rather than merely promising not to grow this file further.
+The program begins with a scoped seam extraction rather than merely promising that `game/mod.rs` will not grow further.
 
 ### 2.2 Existing versus new Rust paths
 
@@ -40,10 +45,10 @@ apps/game/src-tauri/src/game/
   scenes/mod.rs              [existing — add Analysis variant]
   scenes/linear.rs           [existing]
   scenes/investigation.rs    [existing — share extracted dialogue infrastructure]
-  scenes/interrogation/      [existing — share extracted dialogue infrastructure]
+  scenes/interrogation.rs    [existing — share extracted dialogue infrastructure]
 
-  command_tx.rs              [new — EngineRollbackSnapshot and transactional delegate]
-  dialogue.rs                [new — ordered segment queue lifecycle/history]
+  command_tx.rs              [new — EngineRollbackSnapshot and transaction delegate]
+  dialogue.rs                [new — ordered segment lifecycle/history]
   navigation.rs              [new — chapter/scene transition helpers]
   story_catalog.rs           [new]
   story_state.rs             [new]
@@ -71,9 +76,11 @@ apps/game/src-tauri/src/game/
     chain.rs                 [new in P4]
 ```
 
-The focused P0.0 spec may refine names, but it must preserve the design’s ownership boundaries and distinguish `EngineRollbackSnapshot` from persistent `SaveSnapshot`.
+The P0.0 focused spec may refine module names, but it must preserve the design’s ownership boundaries and distinguish `EngineRollbackSnapshot` from persistent `SaveSnapshot`.
 
-### 2.3 Compiler/shared type boundary
+If a focused refactor later splits `scenes/interrogation.rs` into a directory module, that change belongs to its own reviewed implementation plan; this ownership map describes the current tree.
+
+### 2.3 Compiler and shared-type boundary
 
 ```text
 packages/scene-types/src/index.ts
@@ -91,7 +98,7 @@ packages/scripts/compile-scenes/
   definition-hash.ts         [new]
 ```
 
-`DialogueItem` remains outside `@lyra/scene-types`. The compiler, Rust runtime, editor layout, public view, and save state use the type split defined in design §8.
+`DialogueItem` remains outside `@lyra/scene-types`. Compiler AST, runtime JSON, editor layout, public view, and save state use the split defined in design §8.
 
 ### 2.4 Frontend ownership
 
@@ -108,7 +115,7 @@ apps/game/src/lib/components/
   InvestigationMap.svelte            [new in P3]
   MediaEvidenceViewer.svelte         [new in P3]
   InvestigationSceneSurface.svelte   [existing — extend in P3]
-  InterrogationView.svelte           [existing — extend as required]
+  InterrogationView.svelte           [existing — extend only at explicit integration points]
   analysis/                           [new focused components]
 
 apps/game/src/routes/+page.svelte     [existing — route modes/mount overlays]
@@ -134,10 +141,10 @@ Do not create a duplicate `chapter_1` under `static/stories_plan/`.
 | Milestone | Outcome | Entry gate | Exit gate |
 |---|---|---|---|
 | P0.0 — Engine Seam Extraction | Existing monolith exposes safe transaction/dialogue/navigation seams | Design approved | Existing gameplay tests pass through delegated modules |
-| P0 — Persistence and Story State | Exact saves; catalog/state/provenance/unlocks/case file | P0.0 required seams stable | Existing Chapter 1 regression plus save/dialogue/acquisition round trips pass |
+| P0 — Persistence and Story State | Exact saves; catalog/state/provenance/unlocks/case file | Required P0.0 seams stable | Chapter 1 regression plus save/dialogue/acquisition round trips pass |
 | P1 — Analysis Scene MVP | `analysis` compiles/runs with classify/order/threshold | P0 contracts stable | Compiler/Rust/UI fixture e2e and accessibility pass |
 | P2 — Chapter 1 Vertical Slice | Beat 8.5 prepares request; hearing grants export | P1 complete | Full packaged Chapter 1 save/resume path passes |
-| P3 — Chapter 2 Expansion | Map, media, compare, route, record use, reaction board | P2 accepted | Five-board Chapter 2 golden path passes |
+| P3 — Chapter 2 Expansion | Map, media, compare, route, record use, response board | P2 accepted | Five-board Chapter 2 golden path passes |
 | P4 — Later-Chapter Platform | Chain, richer archive, authoring/editor, migration hardening | P3 stable | Later-chapter fixtures use shared runtime only |
 
 ## 4. Dependency map
@@ -155,7 +162,7 @@ P0
 HPA-255 Global catalog/story state ───────┐
 HPA-256 Provenance/support lineage ───────┼─ HPA-257 Unlock/reveal/reachability
 HPA-129 Save/dialogue/acquisition ─────────┼─ HPA-258 Case file/recap
-                                            └─ P1
+                                             └─ P1
 
 P1
 HPA-259 Analysis compiler contract
@@ -186,7 +193,7 @@ HPA-273 Authoring/editor support
 HPA-274 Archive/migration hardening
 ```
 
-Linear relations are the execution source for current blockers. This diagram records intended sequencing.
+Linear relations are the execution source for current blockers. This diagram records intended sequencing only.
 
 ---
 
@@ -200,11 +207,11 @@ Linear relations are the execution source for current blockers. This diagram rec
 
 - Rename the private rollback concept to `EngineRollbackSnapshot`.
 - Extract a command-transaction delegate that snapshots, commits, and restores on failure.
-- Extract ordered dialogue-segment queue lifecycle and dialogue-history finalization.
+- Extract ordered dialogue-segment lifecycle and dialogue-history finalization.
 - Extract chapter/scene navigation and transition helpers.
-- Establish acquisition-event and save integration entry points without implementing the full P0 features prematurely.
+- Establish acquisition-event and save integration entry points without implementing full P0 features prematurely.
 - Keep `GameEngine` ownership and public command behavior stable.
-- Reduce `game/mod.rs` to façade/orchestration for the extracted concerns.
+- Reduce `game/mod.rs` to façade/orchestration for extracted concerns.
 
 **Non-goals**
 
@@ -215,11 +222,11 @@ Linear relations are the execution source for current blockers. This diagram rec
 
 **Verification gate**
 
-- Existing Rust unit/integration tests pass unchanged or with equivalent moved-test coverage.
-- Existing Chapter 1 full-playthrough behavior remains identical.
-- Dialogue history cannot be skipped by a new command path because history finalization is centralized.
+- Existing Rust unit/integration tests pass unchanged or with equivalent moved coverage.
+- Existing Chapter 1 behavior remains identical.
+- Dialogue history cannot be skipped by a new command path.
 - Transaction rollback tests cover investigation and interrogation commands.
-- Navigation/debug scene selection behavior remains unchanged.
+- Navigation/debug scene-selection behavior remains unchanged.
 - `cargo fmt`, `cargo clippy`, and `cargo test` pass.
 
 ---
@@ -237,12 +244,12 @@ Linear relations are the execution source for current blockers. This diagram rec
 - Fact/question/objective/authorization definitions and progress.
 - Structural `activePrimaryObjectiveId` representation.
 - Atomic `setPrimaryObjective` reveal.
-- Assertion origin and support lineage hooks.
+- Assertion origin and support-lineage hooks.
 - Empty defaults for legacy chapters.
 
 **Verification gate**
 
-- Duplicate and ambiguous-reference compiler fixtures.
+- Duplicate and ambiguous-reference fixtures.
 - Invalid primary-objective target diagnostics.
 - Existing Chapter 1 compiles unchanged.
 - Cross-scene/chapter state tests.
@@ -292,9 +299,9 @@ Linear relations are the execution source for current blockers. This diagram rec
 **Deliverables**
 
 - `SaveEnvelope` and persistent `SaveSnapshot`.
-- Ordered dialogue segment origins, per-segment hashes, active segment and cursor.
+- Ordered dialogue segment origins, per-segment hashes, active segment, and cursor.
 - Rust-owned acquisition events and acknowledgement.
-- Atomic storage, backup rotation, Continue, manual slots.
+- Atomic storage, backup rotation, Continue, and manual slots.
 - Active-definition hashes and explicit migrations.
 
 **Verification gate**
@@ -336,9 +343,9 @@ Linear relations are the execution source for current blockers. This diagram rec
 **Deliverables**
 
 - `analysis_scene_<K>.md` recognition.
-- Explicit split between compiler AST, runtime JSON, shared layout, public view, and save state.
-- Typed board union and sources.
-- Catalog references, definition hashes, source-line diagnostics.
+- Explicit compiler AST/runtime JSON/shared layout/public view/save-state split.
+- Typed board union and card sources.
+- Catalog references, hashes, and source-line diagnostics.
 - Fixed-point validation for boards/cards/reveals/grants.
 
 **Verification gate**
@@ -355,11 +362,11 @@ Linear relations are the execution source for current blockers. This diagram rec
 
 **Deliverables**
 
-- `AnalysisSceneState`, board availability, `activeBoardId`, durable drafts.
-- Explicit selection and solved-board review.
+- `AnalysisSceneState`, availability, `activeBoardId`, and durable drafts.
+- Explicit board selection and solved-board review.
 - Generation-token protection.
 - Atomic correct-resolution transaction.
-- Ordered result dialogue segments.
+- Ordered result-dialogue segments.
 - Save integration through P0 contracts.
 
 **Verification gate**
@@ -368,6 +375,7 @@ Linear relations are the execution source for current blockers. This diagram rec
 - Full rollback on reveal failure.
 - Re-enter/save exact draft restoration.
 - Public views contain no solution.
+- New commands use extracted transaction/dialogue delegates.
 
 ### Epic P1.3 — HPA-261: Accessible workbench
 
@@ -377,7 +385,7 @@ Linear relations are the execution source for current blockers. This diagram rec
 
 - Shared host, board selector, progress, submit, hint, review, feedback.
 - Pointer/keyboard parity.
-- Focus/live region/Escape/reduced-motion/1280×720 support.
+- Focus/live-region/Escape/reduced-motion/1280×720 support.
 - Typed semantic commands and page routing.
 
 **Verification gate**
@@ -416,32 +424,34 @@ Linear relations are the execution source for current blockers. This diagram rec
 **Verification gate**
 
 - Overlapping-rule precedence tests.
-- Accessible announcements/focus return.
+- Accessible announcements and focus return.
 - No hint mutates facts or solutions.
 
-### Epic P1.6 — HPA-264: Request and authorization gates
+### Epic P1.6 — HPA-264: Request readiness and authority grants
 
 **Design reference:** §§11.4, 19.
 
 **Deliverables**
 
-- Request readiness distinct from institutional authorization.
-- Granting authority in catalog/view.
-- Authority-event grants and positive authorization gates.
+- Request-preparation objective/facts.
+- Named authorizations and granting authority.
+- Unlocks through `authorization_granted`.
+- Reachable authority-grant validation.
 
 **Verification gate**
 
-- Request and grant are separate state transitions.
-- Repeated ruling is idempotent.
-- Compiler rejects missing authority-grant path.
+- Request readiness and authorization are distinct.
+- Wrong request remains retryable.
+- Repeated rulings do not duplicate grants.
+- Chapter 1 workbench cannot self-grant export.
 
 ---
 
-## 8. P2 — Chapter 1 Vertical Slice
+## 8. P2 — Chapter 1 vertical slice
 
-### Epic P2.1 — HPA-265: Beat 8.5 integration
+### Epic P2.1 — HPA-265: Beat 8.5 content integration
 
-**Design reference:** §22 and Chapter 1 V3.7.
+**Design reference:** §22.
 
 **Files**
 
@@ -453,143 +463,196 @@ Create:  docs/stories_plan/chapter_1/analysis_scene_8_5.md
 
 **Deliverables**
 
-- Classify evidence packages.
-- Order `Event-1841` through `Event-1844`.
-- Select two independent lock contradictions.
-- Assert the four design facts.
-- Complete `prepare_narrow_lock_request`.
-- Hearing grants `narrow_lock_export`.
-- Required provenance metadata on referenced records.
+- Classify/order/threshold boards from Chapter 1 V3.7.
+- Required provenance/capability metadata.
+- Facts and `prepare_narrow_lock_request` output.
+- Existing hearing grants `narrow_lock_export`.
+- Existing dialogue moved into analysis intro/outro.
 
 **Verification gate**
 
-- No duplicate chapter source root.
-- Scene compile succeeds without required-metadata warnings.
-- Same-source pair fails.
-- Hearing, not workbench, grants export.
-- Existing culprit, timeline, audio, assets, and proof order remain intact.
+- One Chapter 1 source root only.
+- Same-source threshold fails clearly.
+- Incorrect submissions reveal nothing.
+- Incomplete boards and result dialogue resume exactly.
+- Existing hearing/ending remain intact.
 
-### Epic P2.2 — HPA-266: Packaged acceptance gate
+### Epic P2.2 — HPA-266: Packaged Chapter 1 acceptance gate
 
 **Design reference:** §§22, 26.
 
-**Deliverables**
+**Required checks**
 
-- Rust full playthrough through analysis and hearing.
-- Packaged Tauri e2e for all boards.
-- Save/Continue from each incomplete draft.
-- Resume multi-segment result/acquisition dialogue.
-- Verify feedback, hint, case file, history, audio, focus, Escape, menus.
+- `bun run scenes:compile`
+- `bun run test`
+- `bun run check`
+- `bun run check:scripts`
+- `bun run lint:all`
+- full Rust test suite
+- `bun run test:e2e`
+- desktop smoke test using real Tauri IPC/resources/save path
 
-**Exit commands**
+**Acceptance scenarios**
 
-```bash
-bun run scenes:compile
-bun run test
-bun run check
-bun run check:scripts
-bun run lint:all
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml
-bun run test:e2e
-```
+- Save in every incomplete board and Continue exact draft.
+- Save during multi-segment result/acquisition dialogue.
+- Pending acquisition acknowledgement appears once.
+- Request readiness is established in analysis.
+- `narrow_lock_export` is granted only by the hearing.
+- Case file, hints, history, audio, focus, Escape, and menu integration pass.
 
-Also perform a desktop smoke test using real Tauri IPC/resources/save storage.
-
-P3 remains blocked until this gate is accepted.
+P3 cannot begin until this gate is accepted.
 
 ---
 
-## 9. P3 — Chapter 2 Expansion
+## 9. P3 — Chapter 2 expansion
 
-### HPA-267 — Investigation-time record use
+### Epic P3.1 — HPA-267: Investigation-time record use
 
-Design §18. Add compiler/Rust/UI support for authored record interactions on characters, topics, hotspots, and sublocation points.
+**Design reference:** §18.
 
-### HPA-268 — Compare and route templates
+- Compiler/runtime/public-view contract for authored target interactions.
+- Evidence/statement selection and contextual feedback.
+- Atomic correct reveals and non-destructive wrong use.
+- Keyboard/pointer/focus coverage.
 
-Design §13.2. Add reusable compare/route schemas, evaluators, public views, accessible UI, feedback, and save support.
+### Epic P3.2 — HPA-268: Compare and route templates
 
-### HPA-269 — Derived-state staged map
+**Design reference:** §13.2.
 
-Design §21.2. Author only map presentation metadata; derive visible/current/completed state from investigation sublocations.
+- Compare authored layers/sources without spreadsheet editing.
+- Route authored nodes/edges with access and time constraints.
+- Outbound and return paths may differ.
+- No freehand pathfinding.
 
-### HPA-270 — Static frame strips and dual time
+### Epic P3.3 — HPA-269: Derived-state staged map
 
-Design §21.1. Preserve `S+` as authored relative labels distinct from clock time; no video codec/seek dependency.
+**Design reference:** §21.2.
 
-### HPA-271 — Five-board Chapter 2 integration
+- Map owns only layout metadata.
+- Visibility/current/completion derive from investigation sublocation state.
+- No duplicate map progress.
+- Existing sublocation navigation remains fallback.
 
-Design §23 and Chapter 2 V0.7. Integrate sightline, image source, control-room order, outbound/return route, and person/capability boards with ≤8 mandatory locations.
+### Epic P3.4 — HPA-270: Frame strip and dual timecode
 
-**P3 exit gate**
+**Design reference:** §21.1.
 
-- Source-group independence works.
-- Control-room reaction is reconstructed without collective dishonesty/stupidity.
-- Outbound and return routes are distinct and constrained.
-- Access/control/motive facts remain separate.
-- Lead material is reacquired before hearing use.
+- Authored still-frame sets.
+- Absolute time and `S+` displayed distinctly.
+- Selected frame can source analysis cards.
+- No video decoding or arbitrary seek.
+
+### Epic P3.5 — HPA-271: Chapter 2 five-board integration
+
+**Design reference:** §23.
+
+**Required boards**
+
+1. sightline classification,
+2. image-source comparison,
+3. control-room reaction order,
+4. outbound/return route,
+5. person/capability resolution.
+
+**Verification gate**
+
+- ≤8 mandatory locations.
+- Optional content is never the only mandatory source.
+- Fan clips do not count as independent witnesses.
+- QA proves route, not identity.
+- Expired pass cannot explain return.
+- Access, response control, and motive remain separate facts.
+- All five boards resume exactly.
+- Final hearing retains planned proof order.
 - No Chapter 2-specific evaluator code.
-- Compiler/Rust/frontend/save/accessibility/Tauri tests pass.
 
 ---
 
-## 10. P4 — Later-Chapter Platform
+## 10. P4 — Later-chapter platform
 
-### HPA-272 — Chain and later fixtures
+### Epic P4.1 — HPA-272: Chain and later-chapter fixtures
 
-Add the `chain` template and Chapters 3/6/7 readiness fixtures without bespoke scene modes.
+**Design reference:** §13.2.
 
-### HPA-273 — Authoring/editor support
+- Reusable responsibility/causation chain template.
+- Chapter 3 and Chapter 7 fixtures validate multiple contributors and omissions.
+- No forced single-culprit model.
 
-Add writer skills and read-only editor previews after the runtime contracts prove stable. Keep `DialogueItem` out of shared layout types.
+### Epic P4.2 — HPA-273: Authoring and editor support
 
-### HPA-274 — Archive and migration hardening
+- Repository-local analysis authoring skill after schema stability.
+- Valid/invalid examples and audit guidance.
+- Read-only editor preview before editing support.
+- No duplicated answer-key logic in editor code.
 
-Expand the archive only where usability supports it; commit historical save fixtures and explicit released-schema/content migrations.
+### Epic P4.3 — HPA-274: Archive and migration hardening
+
+- People, locations, chronology, and social-response archive views as justified.
+- Explicit migration registry and compatibility documentation.
+- Golden save fixtures across supported schema/content revisions.
+- No silent lossy migration of required state.
 
 ---
 
-## 11. Cross-program risks and gates
+## 11. Cross-cutting verification
 
-| Risk | Gate |
+Every implementation PR runs the checks relevant to its layer and preserves existing subsystem behavior.
+
+### Compiler changes
+
+- `bun run scenes:compile`
+- `bun run check:scripts`
+- compiler fixture suite
+- emitted JSON/Rust serde snapshots
+
+### Rust changes
+
+- `cargo fmt --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo test`
+- transaction and exact-resume tests where applicable
+
+### Frontend changes
+
+- `bun run check`
+- `bun run test`
+- `bun run lint:all`
+- keyboard/focus/Escape/reduced-motion coverage
+
+### Acceptance slices
+
+- packaged Tauri e2e,
+- production resource compilation,
+- stable production anchors,
+- no browser-only substitute for desktop IPC behavior.
+
+## 12. Program risks and mitigations
+
+| Risk | Mitigation |
 |---|---|
-| Existing `game/mod.rs` monolith absorbs new behavior | P0.0 extraction blocks Rust-heavy P0/P1 work |
-| Compiler/runtime/editor type drift | Explicit five-shape analysis type boundary + serde snapshots |
-| Objective uniqueness becomes expensive model checking | Scalar `activePrimaryObjectiveId`; compiler validates transition targets only |
-| Save resumes wrong authored dialogue | Ordered segment origins + hashes + cursor + migration tests |
-| Acquisition popup lost/replayed | Rust-owned acknowledgement event + packaged resume test |
-| Facts launder duplicate sources | MVP threshold accepts evidence/statements only |
-| Optional branches hide mandatory proof | Fixed-point reachability + Chapter 2 alternate-route fixtures |
-| Chapter 2 expands framework too early | HPA-266 blocks all P3 work |
-| Frontend gains answer keys | Source tests and public-view contract |
-| Documentation contracts drift | Design is sole normative source; this plan references section numbers |
+| Existing `game/mod.rs` absorbs more responsibilities | P0.0 blocks Rust-heavy integration and extracts shared seams first |
+| Compiler/runtime/editor type drift | explicit AST/JSON/layout/view/save ownership split and serde snapshots |
+| Save incompatibility after content edits | active-definition hashes and explicit migrations |
+| Duplicate-source facts satisfy thresholds | source groups, support lineage, MVP record-only counting |
+| Objective state becomes combinatorial | scalar `activePrimaryObjectiveId` and atomic transition |
+| Optional map paths hide required facts | compiler reachability and alternate-source rules |
+| Chapter-specific evaluators appear | reusable typed templates and source tests |
+| Accessibility arrives late | acceptance requirements in every UI/template epic |
+| Ticket links rot | design paths and section references remain normative; ticket map is dated |
+| Program is treated as one feature | milestone gates, independent PRs, focused specs, multiple-release expectation |
 
-## 12. Final program verification
+## 13. Completion and handoff
 
-Before declaring the program complete:
+The umbrella documents are complete when the design is approved and the ticket dependency graph matches this plan.
 
-```bash
-bun run scenes:compile
-bun run test
-bun run check
-bun run check:scripts
-bun run lint:all
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml
-bun run test:e2e
-```
+Implementation begins with focused P0.0 and P0 specifications—not with an all-program branch.
 
-Additionally verify:
+Current organizational tracking:
 
-- packaged desktop smoke flow,
-- save migration fixtures,
-- keyboard-only analysis completion,
-- screen-reader announcements,
-- 1280×720 layouts,
-- reduced motion,
-- Chapter 1 complete proof order,
-- Chapter 2 five-board golden path,
-- at least one later-chapter shared-template fixture.
+- Program parent: HPA-254
+- Engine prerequisite: HPA-55
+- Persistence: HPA-129
+- Remaining epics: HPA-255–274
 
-## Tracking (non-normative)
-
-At the time of writing, the program is organized under Linear HPA-254 and its child issues. Tracking identifiers may change without changing this plan’s repository paths or the design contract.
+These identifiers are non-normative execution references.
