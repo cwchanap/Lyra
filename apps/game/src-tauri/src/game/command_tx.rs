@@ -4,9 +4,10 @@
 // returns a view runs inside `command_tx`, which owns snapshot → execute →
 // commit/restore and the single dialogue-history finalization point.
 
+use super::dialogue::DialogueHistory;
 use super::scenes::SceneRuntime;
 use super::state::Inventory;
-use super::view::{DialogueHistoryEntry, GameStateView, QueueToken};
+use super::view::GameStateView;
 use super::{GameEngine, GameError, LastVisualCue};
 
 /// Transient rollback state for a single in-flight command.
@@ -23,9 +24,7 @@ pub(super) struct EngineRollbackSnapshot {
     last_visual_cue: LastVisualCue,
     inventory: Inventory,
     next_queue_gen: u64,
-    dialogue_history: Vec<DialogueHistoryEntry>,
-    next_dialogue_history_id: u64,
-    last_recorded_dialogue_token: Option<QueueToken>,
+    history: DialogueHistory,
 }
 
 impl EngineRollbackSnapshot {
@@ -42,9 +41,7 @@ impl EngineRollbackSnapshot {
             last_visual_cue,
             inventory,
             next_queue_gen,
-            dialogue_history,
-            next_dialogue_history_id,
-            last_recorded_dialogue_token,
+            history,
         } = engine;
         Self {
             current_chapter_idx: *current_chapter_idx,
@@ -53,9 +50,7 @@ impl EngineRollbackSnapshot {
             last_visual_cue: last_visual_cue.clone(),
             inventory: inventory.clone(),
             next_queue_gen: *next_queue_gen,
-            dialogue_history: dialogue_history.clone(),
-            next_dialogue_history_id: *next_dialogue_history_id,
-            last_recorded_dialogue_token: last_recorded_dialogue_token.clone(),
+            history: history.clone(),
         }
     }
 
@@ -70,9 +65,7 @@ impl EngineRollbackSnapshot {
             last_visual_cue,
             inventory,
             next_queue_gen,
-            dialogue_history,
-            next_dialogue_history_id,
-            last_recorded_dialogue_token,
+            history,
         } = snapshot;
         engine.current_chapter_idx = current_chapter_idx;
         engine.current_scene_idx = current_scene_idx;
@@ -80,9 +73,7 @@ impl EngineRollbackSnapshot {
         engine.last_visual_cue = last_visual_cue;
         engine.inventory = inventory;
         engine.next_queue_gen = next_queue_gen;
-        engine.dialogue_history = dialogue_history;
-        engine.next_dialogue_history_id = next_dialogue_history_id;
-        engine.last_recorded_dialogue_token = last_recorded_dialogue_token;
+        engine.history = history;
     }
 }
 
