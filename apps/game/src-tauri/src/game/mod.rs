@@ -3,6 +3,7 @@
 // GameEngine — the single owner of mutable game state.
 
 pub mod command_tx;
+pub mod dialogue;
 pub mod error;
 pub mod loader;
 pub mod reveals;
@@ -42,9 +43,7 @@ pub struct GameEngine {
     last_visual_cue: LastVisualCue,
     inventory: Inventory,
     next_queue_gen: u64,
-    dialogue_history: Vec<DialogueHistoryEntry>,
-    next_dialogue_history_id: u64,
-    last_recorded_dialogue_token: Option<QueueToken>,
+    history: dialogue::DialogueHistory,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -56,7 +55,6 @@ struct LastVisualCue {
 }
 
 const REEXAMINE_FALLBACK_TEXT: &str = "（沒有新發現。）";
-const DIALOGUE_HISTORY_LIMIT: usize = 50;
 
 impl LastVisualCue {
     fn set_scene_tag(&mut self, text: String, asset_cue: Option<schema::VisualAssetCueJson>) {
@@ -114,9 +112,7 @@ impl GameEngine {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
-            dialogue_history: vec![],
-            next_dialogue_history_id: 1,
-            last_recorded_dialogue_token: None,
+            history: dialogue::DialogueHistory::default(),
         };
         engine.prime_initial_queue()?;
         engine.record_current_dialogue_history();
@@ -156,9 +152,7 @@ impl GameEngine {
             engine.last_visual_cue = LastVisualCue::default();
             engine.inventory = Inventory::default();
             engine.next_queue_gen = queue_gen + 1;
-            engine.dialogue_history = vec![];
-            engine.next_dialogue_history_id = 1;
-            engine.last_recorded_dialogue_token = None;
+            engine.history.reset();
 
             engine.prime_initial_queue()?;
             // Developer convenience: jumping straight into an interrogation via
@@ -274,7 +268,7 @@ impl GameEngine {
             chapter: self.chapter_view(),
             scene: self.scene_view(),
             inventory: self.inventory.clone(),
-            dialogue_history: self.dialogue_history.clone(),
+            dialogue_history: self.history.entries().to_vec(),
         }
     }
 
@@ -282,14 +276,12 @@ impl GameEngine {
         let Some(token) = self.current_queue_token() else {
             return;
         };
-        if self.last_recorded_dialogue_token.as_ref() == Some(&token) {
+        if self.history.is_last_token(&token) {
             return;
         }
         let Some(item) = self.current_dialogue_item() else {
             return;
         };
-
-        let id = self.next_dialogue_history_id;
         // Indexing with a clamp silently masks an out-of-range chapter index
         // and panics (usize underflow) when `chapters` is empty. Both states
         // are engine invariants — surface them with a clear expect instead.
@@ -300,37 +292,7 @@ impl GameEngine {
             .title
             .clone();
         let scene_title = self.current_scene_title();
-        let entry = match item {
-            DialogueItem::Line {
-                speaker,
-                text,
-                portrait: _,
-            } => DialogueHistoryEntry::Line {
-                id,
-                speaker,
-                text,
-                chapter_title,
-                scene_title,
-            },
-            DialogueItem::Action { text } => DialogueHistoryEntry::Action {
-                id,
-                text,
-                chapter_title,
-                scene_title,
-            },
-            DialogueItem::SceneTag { .. } => return,
-        };
-
-        self.next_dialogue_history_id += 1;
-        self.last_recorded_dialogue_token = Some(token);
-        self.dialogue_history.push(entry);
-        let overflow = self
-            .dialogue_history
-            .len()
-            .saturating_sub(DIALOGUE_HISTORY_LIMIT);
-        if overflow > 0 {
-            self.dialogue_history.drain(0..overflow);
-        }
+        self.history.record(token, item, chapter_title, scene_title);
     }
 
     fn current_dialogue_item(&self) -> Option<DialogueItem> {
@@ -2393,9 +2355,7 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: intro_queue_gen + 1,
-            dialogue_history: vec![],
-            next_dialogue_history_id: 1,
-            last_recorded_dialogue_token: None,
+            history: dialogue::DialogueHistory::default(),
         }
     }
 
@@ -2721,6 +2681,7 @@ mod tests {
         let sources: &[(&str, &str)] = &[
             ("mod.rs", include_str!("mod.rs")),
             ("command_tx.rs", include_str!("command_tx.rs")),
+            ("dialogue.rs", include_str!("dialogue.rs")),
         ];
         // Functions allow-listed for invariant B (a bare `Ok(self.view())`
         // return). Each entry must have a documented reason here. Invariant A
@@ -3525,9 +3486,7 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
-            dialogue_history: vec![],
-            next_dialogue_history_id: 1,
-            last_recorded_dialogue_token: None,
+            history: dialogue::DialogueHistory::default(),
         };
 
         engine.prime_initial_queue().unwrap();
@@ -3989,9 +3948,7 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: intro_queue_gen + 1,
-            dialogue_history: vec![],
-            next_dialogue_history_id: 1,
-            last_recorded_dialogue_token: None,
+            history: dialogue::DialogueHistory::default(),
         }
     }
 
@@ -4028,9 +3985,7 @@ mod tests {
             },
             inventory,
             next_queue_gen: 7,
-            dialogue_history: vec![],
-            next_dialogue_history_id: 1,
-            last_recorded_dialogue_token: None,
+            history: dialogue::DialogueHistory::default(),
         }
     }
 
@@ -4403,9 +4358,9 @@ mod tests {
         // The fixture starts with empty history; the failed reexamine records
         // nothing on the success path, so rollback should leave it empty.
         assert!(
-            engine.dialogue_history.is_empty(),
+            engine.history.entries().is_empty(),
             "dialogue history must be restored to its pre-command state after rollback, got {:?}",
-            engine.dialogue_history
+            engine.history.entries()
         );
         let _ = fs::remove_dir_all(d);
     }
@@ -5012,9 +4967,7 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
-            dialogue_history: vec![],
-            next_dialogue_history_id: 1,
-            last_recorded_dialogue_token: None,
+            history: dialogue::DialogueHistory::default(),
         };
         engine.prime_initial_queue().unwrap();
 
@@ -5081,9 +5034,7 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
-            dialogue_history: vec![],
-            next_dialogue_history_id: 1,
-            last_recorded_dialogue_token: None,
+            history: dialogue::DialogueHistory::default(),
         };
         // prime_initial_queue: no leading tags, cursor at 0 (first Line)
         engine.prime_initial_queue().unwrap();
@@ -5747,9 +5698,7 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
-            dialogue_history: vec![],
-            next_dialogue_history_id: 1,
-            last_recorded_dialogue_token: None,
+            history: dialogue::DialogueHistory::default(),
         };
         engine.prime_initial_queue().unwrap();
         let token = token_from(&engine.view());
@@ -5880,9 +5829,7 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
-            dialogue_history: vec![],
-            next_dialogue_history_id: 1,
-            last_recorded_dialogue_token: None,
+            history: dialogue::DialogueHistory::default(),
         };
         engine.prime_initial_queue().unwrap();
         let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();
@@ -6066,9 +6013,7 @@ mod tests {
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
-            dialogue_history: vec![],
-            next_dialogue_history_id: 1,
-            last_recorded_dialogue_token: None,
+            history: dialogue::DialogueHistory::default(),
         };
         engine.prime_initial_queue().unwrap();
 
