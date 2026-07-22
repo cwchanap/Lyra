@@ -2659,6 +2659,98 @@ mod tests {
         let _ = std::fs::remove_dir_all(d);
     }
 
+    #[test]
+    fn new_focused_token_records_exactly_one_history_entry() {
+        let d = dialogue_history_fixture_resources(3);
+        let mut engine = GameEngine::new_started(d).unwrap();
+        let before = engine.view().dialogue_history.len();
+
+        let view = engine.advance_dialogue(token_from(&engine.view())).unwrap();
+
+        assert_eq!(
+            view.dialogue_history.len(),
+            before + 1,
+            "a new focused token must append exactly one entry"
+        );
+    }
+
+    #[test]
+    fn unchanged_focused_token_records_nothing() {
+        let d = dialogue_history_fixture_resources(3);
+        let mut engine = GameEngine::new_started(d).unwrap();
+        let token = token_from(&engine.view());
+        let after_first = engine.advance_dialogue(token.clone()).unwrap();
+        let count = after_first.dialogue_history.len();
+
+        // Replaying the now-stale token does not advance, so the focused token
+        // is unchanged and nothing is recorded.
+        let view = engine.advance_dialogue(token).unwrap();
+
+        assert_eq!(view.dialogue_history.len(), count);
+    }
+
+    #[test]
+    fn installing_command_records_despite_advancing_nothing() {
+        // inspect_hotspot installs a fresh queue at cursor 0. It advances no
+        // existing dialogue, but it does produce a new focused token, so its
+        // first item must be logged. Phrasing this contract as "advances" would
+        // leave this path — most of the commands — untested.
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Room".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                label: "Room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: VisualAssetCueJson::default(),
+                transition_dialogue: vec![],
+                hotspots: vec![HotspotJson {
+                    id: "desk".into(),
+                    label: "Desk".into(),
+                    description: "A desk.".into(),
+                    status: LockStatus::Unlocked,
+                    unlock: None,
+                    reveals: vec![],
+                    layout: None,
+                    inspect_dialogue: vec![DialogueItem::Line {
+                        speaker: "A".into(),
+                        text: "a drawer is ajar".into(),
+                        portrait: None,
+                    }],
+                    on_reexamine: None,
+                }],
+                characters: vec![],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                // Never satisfied, so inspecting cannot end the scene and the
+                // installed queue stays the focused dialogue.
+                unlock: OutroUnlock::Expr(UnlockExpr::HotspotInvestigated {
+                    _predicate: crate::game::schema::PredicateHotspotInvestigated::X,
+                    id: "absent".into(),
+                }),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.prime_initial_queue().unwrap();
+        let before = engine.view().dialogue_history.len();
+
+        let view = engine.inspect_hotspot("desk").unwrap();
+
+        assert_eq!(
+            view.dialogue_history.len(),
+            before + 1,
+            "an installing command must log its first item"
+        );
+    }
+
     /// Source-contract guard. `command_tx` guarantees history finalization only
     /// for commands that use it, and `GameEngine::view` must stay `pub` for
     /// lib.rs, so nothing structurally prevents a new command from returning
