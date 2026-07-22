@@ -360,6 +360,8 @@ impl GameEngine {
             Some(t) => t,
             None => return Err(GameError::no_active_dialogue()),
         };
+        // Stale token: the frontend acted on a view we have already replaced.
+        // Not a transaction, and deliberately records no history.
         if current_token != expected {
             return Ok(self.view());
         }
@@ -2703,6 +2705,16 @@ mod tests {
     /// `Ok(self.view())` and skipping the log. This scans the engine modules
     /// for that mistake.
     ///
+    /// The scan enforces two invariants per tracked function:
+    /// 1. Invariant A — the body contains `command_tx(` at least once. Checked
+    ///    for every tracked command; `command_tx` is the only mechanism that
+    ///    finalizes dialogue history, so there are no exemptions.
+    /// 2. Invariant B — the body contains no bare `Ok(self.view())`. A command
+    ///    whose advancing branch returns `Ok(self.view())` would silently drop
+    ///    dialogue history even if `command_tx(` happens to appear on a side
+    ///    branch or in a comment. Checked for every tracked command except
+    ///    those listed in `allowed_bare_view` below.
+    ///
     /// Weaker than a type guarantee, and deliberately kept until one exists.
     #[test]
     fn every_view_returning_command_routes_through_command_tx() {
@@ -2710,17 +2722,22 @@ mod tests {
             ("mod.rs", include_str!("mod.rs")),
             ("command_tx.rs", include_str!("command_tx.rs")),
         ];
-        // Documented exemptions. Each needs a justification here.
+        // Functions allow-listed for invariant B (a bare `Ok(self.view())`
+        // return). Each entry must have a documented reason here. Invariant A
+        // (calling `command_tx(`) has no exemptions — every tracked command
+        // must call it.
         //   advance_dialogue — stale-token early return is not a transaction
         //                      and deliberately records no history.
-        let allowed: &[&str] = &["advance_dialogue"];
+        let allowed_bare_view: &[&str] = &["advance_dialogue"];
 
         let mut seen: Vec<String> = Vec::new();
-        let mut missing: Vec<String> = Vec::new();
+        let mut missing_tx: Vec<String> = Vec::new();
+        let mut bare_view: Vec<String> = Vec::new();
 
         for (file, source) in sources {
             let mut current: Option<String> = None;
             let mut body_has_tx = false;
+            let mut body_has_bare_view = false;
             let mut signature = String::new();
             let mut in_signature = false;
 
@@ -2731,10 +2748,14 @@ mod tests {
                 }
                 if trimmed.starts_with("pub fn ") {
                     if let Some(name) = current.take() {
-                        if !body_has_tx && !allowed.contains(&name.as_str()) {
-                            missing.push(format!("{file}::{name}"));
+                        if !body_has_tx {
+                            missing_tx.push(format!("{file}::{name}"));
+                        }
+                        if body_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
+                            bare_view.push(format!("{file}::{name}"));
                         }
                         body_has_tx = false;
+                        body_has_bare_view = false;
                     }
                     signature.clear();
                     signature.push_str(trimmed);
@@ -2759,26 +2780,57 @@ mod tests {
                     }
                     continue;
                 }
-                if current.is_some() && trimmed.contains("command_tx(") {
-                    body_has_tx = true;
+                if current.is_some() {
+                    if trimmed.contains("command_tx(") {
+                        body_has_tx = true;
+                    }
+                    if trimmed.contains("Ok(self.view())") {
+                        body_has_bare_view = true;
+                    }
                 }
             }
             if let Some(name) = current.take() {
-                if !body_has_tx && !allowed.contains(&name.as_str()) {
-                    missing.push(format!("{file}::{name}"));
+                if !body_has_tx {
+                    missing_tx.push(format!("{file}::{name}"));
+                }
+                if body_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
+                    bare_view.push(format!("{file}::{name}"));
                 }
             }
         }
 
+        // A floor, not an emptiness check: a single tracked command would
+        // satisfy `!seen.is_empty()` while thirteen others silently dropped
+        // out of `seen` (a command deleted, or a module moved out of
+        // `sources` above without being re-added — see Task 6, which moves
+        // `jump_to_scene` into `navigation.rs`). In that failure mode
+        // `missing_tx`/`bare_view` both stay empty because the dropped
+        // command is never scanned at all, so only this count catches it.
+        // Update the constant — with a comment explaining why — if the true
+        // number of tracked commands changes.
+        const EXPECTED_TRACKED_COMMAND_COUNT: usize = 13;
         assert!(
-            !seen.is_empty(),
-            "scanner found no Result<GameStateView, GameError> commands; it is broken"
+            seen.len() >= EXPECTED_TRACKED_COMMAND_COUNT,
+            "scanner tracked only {} Result<GameStateView, GameError> command(s), expected at \
+             least {EXPECTED_TRACKED_COMMAND_COUNT}; a command was deleted, or a module was \
+             moved out of `sources` above without being re-added, and silently stopped being \
+             checked: {seen:?}",
+            seen.len()
         );
         assert!(
-            missing.is_empty(),
+            missing_tx.is_empty(),
             "these commands return Result<GameStateView, GameError> but never call \
-             command_tx(), so they can silently skip dialogue history: {missing:?} \
-             (tracked: {seen:?})"
+             command_tx(), so they can silently skip dialogue history (invariant A): \
+             {missing_tx:?} (tracked: {seen:?})"
+        );
+        assert!(
+            bare_view.is_empty(),
+            "these commands return Result<GameStateView, GameError> and contain a bare \
+             `Ok(self.view())` — an advancing path returning this silently drops dialogue \
+             history, even if command_tx() also appears elsewhere in the body (invariant B). \
+             If this is a documented non-advancing early return (e.g. a stale-token guard), \
+             add the function name to `allowed_bare_view` above with a justification: \
+             {bare_view:?} (tracked: {seen:?})"
         );
     }
 
