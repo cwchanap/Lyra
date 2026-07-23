@@ -1709,6 +1709,24 @@ mod tests {
     /// `Ok(self.view())` and skipping the log. This scans the engine modules
     /// for that mistake.
     ///
+    /// The source list is not hardcoded. The test walks `src/game/` on disk at
+    /// test time — recursing into subdirectories such as `scenes/` — rooted at
+    /// `concat!(env!("CARGO_MANIFEST_DIR"), "/src/game")`, which is resolved
+    /// at compile time and so is independent of the working directory the
+    /// test happens to run from. A view-returning command added in a brand
+    /// new module under `src/game/` is therefore found automatically; the
+    /// previous hardcoded four-file list had to be updated by hand for every
+    /// new module, and forgetting to do so meant the new module was silently
+    /// never scanned while the tracked-command floor below still passed (the
+    /// floor guards against shrinkage, not against unscanned growth).
+    ///
+    /// The walk is scoped to `src/game/` and must never widen to all of
+    /// `src/`. `lib.rs`, one level up, declares 16 `#[tauri::command]`
+    /// wrapper functions that also return `Result<GameStateView, GameError>`;
+    /// they delegate to engine methods and legitimately do not call
+    /// `command_tx` themselves. Sweeping `lib.rs` into the walk would fail
+    /// invariant A on all 16 of them.
+    ///
     /// The scan enforces two invariants per tracked function:
     /// 1. Invariant A — the body contains `command_tx(` at least once. Checked
     ///    for every tracked command; `command_tx` is the only mechanism that
@@ -1722,12 +1740,23 @@ mod tests {
     /// Weaker than a type guarantee, and deliberately kept until one exists.
     #[test]
     fn every_view_returning_command_routes_through_command_tx() {
-        let sources: &[(&str, &str)] = &[
-            ("mod.rs", include_str!("mod.rs")),
-            ("command_tx.rs", include_str!("command_tx.rs")),
-            ("dialogue.rs", include_str!("dialogue.rs")),
-            ("navigation.rs", include_str!("navigation.rs")),
-        ];
+        let game_dir_str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/game");
+        let game_dir = std::path::Path::new(game_dir_str);
+        let mut sources: Vec<(String, String)> = Vec::new();
+        collect_game_sources(game_dir, game_dir, &mut sources).unwrap_or_else(|err| {
+            panic!(
+                "failed to walk {game_dir_str} while collecting sources for the command_tx \
+                 scanner — a guard that silently scans zero files is worse than no guard: {err}"
+            )
+        });
+        sources.sort();
+        assert!(
+            !sources.is_empty(),
+            "walked {game_dir_str} and found zero .rs files to scan; a guard that silently \
+             scans nothing is worse than no guard at all — check the walk logic and the \
+             CARGO_MANIFEST_DIR-relative path above"
+        );
+
         // Functions allow-listed for invariant B (a bare `Ok(self.view())`
         // return). Each entry must have a documented reason here. Invariant A
         // (calling `command_tx(`) has no exemptions — every tracked command
@@ -1806,22 +1835,27 @@ mod tests {
         }
 
         // A floor, not an emptiness check: a single tracked command would
-        // satisfy `!seen.is_empty()` while thirteen others silently dropped
-        // out of `seen` (a command deleted, or a module moved out of
-        // `sources` above without being re-added — see Task 6, which moves
-        // `jump_to_scene` into `navigation.rs`). In that failure mode
-        // `missing_tx`/`bare_view` both stay empty because the dropped
-        // command is never scanned at all, so only this count catches it.
-        // Update the constant — with a comment explaining why — if the true
-        // number of tracked commands changes.
+        // satisfy `!seen.is_empty()` while twelve others silently dropped out
+        // of `seen`. The walk above is self-extending — it reads whatever
+        // `.rs` files exist under `src/game/` at test time — so the old
+        // failure mode (a hand-maintained file list falling out of sync with
+        // new modules) no longer applies. The floor still guards a different
+        // shrinkage: a tracked command deleted outright, or a command moved
+        // out of `src/game/` entirely (e.g. inlined into `lib.rs`), which the
+        // walk — deliberately scoped to `src/game/`, see the doc comment
+        // above — would then never see. `missing_tx`/`bare_view` both stay
+        // empty in that failure mode because the dropped command is never
+        // scanned at all, so only this count catches it. Update the
+        // constant — with a comment explaining why — if the true number of
+        // tracked commands changes.
         const EXPECTED_TRACKED_COMMAND_COUNT: usize = 13;
         assert!(
             seen.len() >= EXPECTED_TRACKED_COMMAND_COUNT,
             "scanner tracked only {} Result<GameStateView, GameError> command(s), expected at \
-             least {EXPECTED_TRACKED_COMMAND_COUNT}; a command was deleted, or a module was \
-             moved out of `sources` above without being re-added, and silently stopped being \
-             checked: {seen:?}. If a command was legitimately removed, lower this constant in \
-             the same commit that removes it — never to silence this failure.",
+             least {EXPECTED_TRACKED_COMMAND_COUNT}; a command was deleted, or moved out of \
+             `src/game/` entirely, and silently stopped being checked: {seen:?}. If a command \
+             was legitimately removed, lower this constant in the same commit that removes it — \
+             never to silence this failure.",
             seen.len()
         );
         assert!(
@@ -1853,6 +1887,48 @@ mod tests {
                 .next()?
                 .to_string(),
         )
+    }
+
+    /// Recursively collects `(path relative to `root`, file contents)` for
+    /// every `.rs` file found under `dir`, for the
+    /// `every_view_returning_command_routes_through_command_tx` scanner.
+    /// `dir` narrows on each recursive call as the walk descends into
+    /// subdirectories (e.g. `scenes/`); `root` stays fixed so the recorded
+    /// path is always relative to the original `src/game/` directory, not an
+    /// absolute filesystem path.
+    ///
+    /// Returns an error string instead of panicking directly so the caller
+    /// can surface one clear assertion message (naming the directory and the
+    /// underlying I/O error) instead of an unwrap panic buried inside the
+    /// recursion.
+    fn collect_game_sources(
+        dir: &std::path::Path,
+        root: &std::path::Path,
+        out: &mut Vec<(String, String)>,
+    ) -> Result<(), String> {
+        let entries = std::fs::read_dir(dir)
+            .map_err(|err| format!("could not read directory {}: {err}", dir.display()))?;
+        for entry in entries {
+            let entry = entry
+                .map_err(|err| format!("could not read an entry in {}: {err}", dir.display()))?;
+            let path = entry.path();
+            if path.is_dir() {
+                collect_game_sources(&path, root, out)?;
+                continue;
+            }
+            if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+                continue;
+            }
+            let contents = std::fs::read_to_string(&path)
+                .map_err(|err| format!("could not read {}: {err}", path.display()))?;
+            let relative = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/");
+            out.push((relative, contents));
+        }
+        Ok(())
     }
 
     #[test]
