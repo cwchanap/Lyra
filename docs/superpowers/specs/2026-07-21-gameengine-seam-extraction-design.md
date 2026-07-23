@@ -376,13 +376,23 @@ body of `advance_dialogue`.
   ) -> Result<(), GameError>;
   ```
 
-  **`install_or_exhaust_line_content` must install first, then assign.**
-  `install_scene_queue`'s interrogation arm sets
-  `scene.line_content_start = items.len()` *before* storing the queue
-  (mod.rs:534) — the "nothing here is challengeable" default. Testimony callers
-  override it afterwards. An implementation that assigns before installing has
-  its value overwritten by that default, and the inline 反駁 control silently
-  never appears. The assignment also keeps its existing
+  **`install_or_exhaust_line_content` must pass the boundary into the install,
+  not assign it afterwards.** `install_scene_queue` takes an optional
+  `line_content_start_override` and applies it to the interrogation scene's
+  `line_content_start` *before* `consume_scene_tags_at_cursor` runs (dialogue.rs
+  `install_scene_queue` doc comment). `None` uses the safe default
+  (`items.len()` — nothing here is challengeable), which is what every
+  non-testimony caller passes. Testimony callers pass `Some(line_content_start)`
+  so the challenge boundary is in place the moment the queue is live.
+
+  The ordering is load-bearing: if the installed queue drains to empty because
+  every item was a `SceneTag`, `on_queue_exhausted` may install a successor
+  queue with its own boundary. Applying the override *after* the install (as the
+  pre-refactor code did) would clobber that successor's boundary with the stale
+  value computed for the drained queue, and the inline 反駁 control would
+  silently target the wrong line. The regression
+  `successor_queue_boundary_survives_draining_predecessor` locks this ordering.
+  The override application also keeps its existing
   `if let SceneRuntime::Interrogation(scene) = &mut self.scene` guard rather
   than assuming the variant: installation can drain to empty and reach
   `on_queue_exhausted`, which may transition the scene entirely.
@@ -396,16 +406,32 @@ body of `advance_dialogue`.
   is behaviour-identical, and it removes two `.clone()` calls that exist only to
   satisfy the duplicated borrow.
 
-  `advance_playing_testimony`'s degenerate empty-testimony branch (mod.rs:656)
-  stays bespoke, and the reason must not be lost: **it deliberately does not
-  call `on_queue_exhausted()`**. That function's interrogation arm dispatches
+  `advance_playing_testimony`'s degenerate branch (dialogue.rs
+  `advance_playing_testimony`, the `!has_dialogue` arm) stays bespoke, and the
+  reason must not be lost: **it deliberately does not call
+  `on_queue_exhausted()`**. That function's interrogation arm dispatches
   straight back into `advance_playing_testimony` whenever
-  `interrogation_playing_unbroken()` holds (mod.rs:574–581), so a testimony with
-  no line content and no loop bridge would recurse without bound. The branch
-  calls `scene.withdraw()` *first* — making that predicate false — and only then
-  runs `try_advance_interrogation` / `advance_scene`. Forcing this branch into
-  `install_or_exhaust` reintroduces the recursion. Its `else` branch is an
-  ordinary `install_or_exhaust_line_content` call and does convert.
+  `interrogation_playing_unbroken()` holds (dialogue.rs `on_queue_exhausted`),
+  so two degenerate shapes would recurse without bound:
+
+  - **Empty testimony** — no line content and no loop bridge. The pre-refactor
+    code already special-cased this.
+  - **All-`SceneTag` testimony** — `line` / `on_loop` / `loop_prompt` consists
+    only of `SceneTag` items. `install_scene_queue` runs
+    `consume_scene_tags_at_cursor` before returning, which eats every item, so
+    the queue drains to empty inside the install, `on_queue_exhausted` fires,
+    and control returns here while `is_playing_unbroken()` still holds —
+    recursing until the stack overflows. This path was not handled before this
+    issue; the helper extraction would have inherited the unbounded recursion,
+    so the degenerate branch was extended to cover it (see Non-Goals for the
+    scope exception).
+
+  The branch processes the `SceneTag` items for visual continuity, then calls
+  `scene.withdraw()` *first* — making `interrogation_playing_unbroken()` false
+  — and only then runs `try_advance_interrogation` / `advance_scene`. Forcing
+  this branch into `install_or_exhaust` reintroduces the recursion. Its `else`
+  branch is an ordinary `install_or_exhaust_line_content` call and does
+  convert.
 
 **Deliberately not done.** `LinearSceneState` keeps its inline `queue` / `cursor`
 / `queue_gen`. Unifying it with `DialogueQueue` would collapse most triplicated
@@ -804,3 +830,27 @@ line-count threshold.
 - If a behaviour difference is discovered mid-implementation, the existing
   behaviour wins and the discovery is recorded — this issue is not the place to
   fix engine bugs found in passing.
+
+  **Two scoped exceptions** (commit 17a0580), each justified by being
+  load-bearing for the refactor's own correctness rather than incidental
+  cleanup:
+
+  1. **Challenge-boundary ordering.** `install_or_exhaust_line_content` passes
+     `line_content_start` into `install_scene_queue` so the boundary is applied
+     *before* `consume_scene_tags_at_cursor`, not assigned after the install.
+     The post-install assignment the pre-refactor code used would clobber a
+     successor queue's boundary when an all-`SceneTag` queue drains inside the
+     install and `on_queue_exhausted` installs a successor — which is exactly
+     the shape the extracted helpers now make reachable from more call sites.
+     Reverting to the old ordering would reintroduce the clobber under the
+     refactored control flow. Locked by the
+     `successor_queue_boundary_survives_draining_predecessor` regression.
+  2. **All-`SceneTag` degenerate testimony.** A testimony whose `line` /
+     `on_loop` / `loop_prompt` is entirely `SceneTag` items previously
+     installed a queue that drained immediately and recursed back into
+     `advance_playing_testimony` until the stack overflowed. The helper
+     extraction routes more testimony paths through
+     `install_or_exhaust_line_content`, so the unbounded recursion would have
+     been inherited by the refactored code. The degenerate branch was extended
+     to process the tags and withdraw instead (see the degenerate-branch note
+     above).
