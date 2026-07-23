@@ -611,6 +611,34 @@ frontend consumes — so the majority of history assertions need no edit at all.
 `test_support` is `#[cfg(test)] mod test_support;` declared in `game/mod.rs`, so
 sibling modules reach it as `super::test_support`.
 
+#### Relocation hazards found during execution
+
+Two hazards surfaced while this design was implemented. Both are properties of
+*moving code between modules* rather than of this refactor specifically, so
+record them for the next relocation task of this shape.
+
+1. **Moving a type's usages out of a module orphans doc links that referenced
+   it.** Relocating the `InterrogationSceneState` usages into `dialogue.rs` and
+   `navigation.rs` dropped that name from `mod.rs`'s imports, which silently
+   broke an intra-doc link on the *public* `complete_interrogation_phase`. This
+   was the only defect introduced by the branch and it survived eight task
+   reviews, because **`cargo clippy` does not run rustdoc lints** and CI has no
+   rustdoc gate — `-D warnings` is blind to it. After any relocation, run
+   `cargo doc --no-deps` and diff the warning count. Note that plain `cargo doc`
+   only resolves links on items it documents, so a link on a `pub(super)` item
+   needs `--document-private-items` to surface at all. Fix by fully qualifying
+   the path rather than re-adding the import, which would then be flagged unused.
+
+2. **Where a `#[cfg(test)]` module is *declared* changes what the source scanner
+   can see.** The scanner stops reading a file at its first `#[cfg(test)]` or
+   `mod tests {` line, so declaring `mod test_support;` beside the other module
+   declarations at the top of `mod.rs` truncates the scan immediately and hides
+   every command below it. It must be declared *after* all production code. This
+   is a case where file **organisation**, not code, disarms a guard — the
+   tracked-command floor catches it (the count collapses rather than shrinking
+   by one), but the constraint is otherwise discoverable only by failing, so
+   each scanned file carries a comment above its test module saying so.
+
 ### Enforcement after the scanner
 
 `every_view_returning_command_routes_through_view_with_history` is retired in
@@ -626,14 +654,31 @@ with a narrower and more honest predicate: every
 contain a `command_tx(` call, with a documented allow-list. Differences from the
 version being retired:
 
-- It scans the four engine files, not `include_str!("mod.rs")` alone — the
-  original could not see commands defined outside `mod.rs`, which is precisely
-  what this refactor creates.
-- It checks one token (`command_tx(`) instead of tracking both
-  `view_with_history()` presence and `Ok(self.view())` absence, because the
-  bare-view failure mode is now unreachable inside a transaction.
-- `advance_dialogue` remains allow-listed, for its documented stale-token early
-  return.
+- It scans every `.rs` file under `src/game/`, discovered by a recursive
+  directory walk at test time, not `include_str!("mod.rs")` alone — the original
+  could not see commands defined outside `mod.rs`, which is precisely what this
+  refactor creates. **As-built correction:** this shipped first as a hardcoded
+  four-file list, which had the same defect one level up — a command added in a
+  *fifth* module would never be scanned, and the tracked-command floor would not
+  catch it, because the floor guards against shrinkage, not unscanned growth. It
+  was replaced with the walk before merge. The walk is deliberately scoped to
+  `src/game/` and must stay so: `lib.rs` holds sixteen `#[tauri::command]`
+  wrappers that also return `Result<GameStateView, GameError>` and correctly do
+  not use the seam, so widening the walk to `src/` fails all sixteen.
+- It keeps **both** invariants, not one. **As-built correction:** this design
+  originally specified checking only `command_tx(` presence, on the reasoning
+  that "the bare-view failure mode is now unreachable inside a transaction."
+  That reasoning was wrong and the resulting guard was weaker than the one it
+  retired, which review caught before merge. Presence of `command_tx(` is
+  satisfiable by an incidental mention — the scanner has no brace tracking, so a
+  command's "body" runs to the next `pub fn` and can absorb a private helper's
+  text. The retired scanner carried a second, compensating assertion for exactly
+  this, and it was restored: **invariant A** is `command_tx(` present, with no
+  exemptions; **invariant B** is no bare `Ok(self.view())`, with the allow-list
+  scoped to B alone.
+- `advance_dialogue` remains allow-listed **for invariant B only**, for its
+  documented stale-token early return. It is not, and must not be, exempt from
+  invariant A.
 
 This is still a source-text test, which is a weak instrument. It is retained
 because the alternative is an unenforced convention, and because the acceptance
