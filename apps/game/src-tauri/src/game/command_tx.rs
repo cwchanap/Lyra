@@ -173,6 +173,46 @@ mod tests {
             statements: vec![],
         };
         let mut engine = completed_interrogation_engine_with_bad_next_scene(d.clone(), inventory);
+        // Seed non-empty dialogue history so the rollback assertion below can
+        // distinguish "restored to non-empty" from "nothing to restore" — the
+        // fixture starts with empty history. Companion to navigation.rs
+        // `jump_to_scene_restores_non_empty_dialogue_history_when_priming_fails`.
+        let seed_token_a = QueueToken {
+            scene_id: "interrogation_scene_1".into(),
+            queue_gen: 1,
+            cursor: 0,
+        };
+        let seed_token_b = QueueToken {
+            scene_id: "interrogation_scene_1".into(),
+            queue_gen: 1,
+            cursor: 1,
+        };
+        engine.history.record(
+            seed_token_a,
+            DialogueItem::Line {
+                speaker: "偵探".into(),
+                text: "先前的對話紀錄 A".into(),
+                portrait: None,
+            },
+            "Chapter 1".into(),
+            "Interrogation".into(),
+        );
+        engine.history.record(
+            seed_token_b,
+            DialogueItem::Line {
+                speaker: "偵探".into(),
+                text: "先前的對話紀錄 B".into(),
+                portrait: None,
+            },
+            "Chapter 1".into(),
+            "Interrogation".into(),
+        );
+        let pre_reexamine_history = engine.history.entries().to_vec();
+        assert_eq!(
+            pre_reexamine_history.len(),
+            2,
+            "history seed must take before the failing reexamine"
+        );
         let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();
         let previous_next_queue_gen = engine.next_queue_gen;
 
@@ -188,10 +228,13 @@ mod tests {
         assert!(scene.pending_queue.is_none());
         // Snapshot rollback must restore dialogue history after a failed
         // advance path (design spec: dialogue-history-design.md "Testing").
-        // The fixture starts with empty history; the failed reexamine records
-        // nothing on the success path, so rollback should leave it empty.
-        assert!(
-            engine.history.entries().is_empty(),
+        // The fixture is seeded with non-empty history above, so this asserts
+        // the entries are restored verbatim — not merely that history is empty
+        // either way (the vacuous case the original assertion could not
+        // distinguish from a real restore).
+        assert_eq!(
+            engine.history.entries(),
+            pre_reexamine_history.as_slice(),
             "dialogue history must be restored to its pre-command state after rollback, got {:?}",
             engine.history.entries()
         );
@@ -238,6 +281,46 @@ mod tests {
             }],
         };
         let mut engine = completed_interrogation_engine_with_bad_next_scene(d.clone(), inventory);
+        // Seed non-empty dialogue history so the rollback assertion below can
+        // distinguish "restored to non-empty" from "nothing to restore" — the
+        // fixture starts with empty history. Companion to navigation.rs
+        // `jump_to_scene_restores_non_empty_dialogue_history_when_priming_fails`.
+        let seed_token_a = QueueToken {
+            scene_id: "interrogation_scene_1".into(),
+            queue_gen: 1,
+            cursor: 0,
+        };
+        let seed_token_b = QueueToken {
+            scene_id: "interrogation_scene_1".into(),
+            queue_gen: 1,
+            cursor: 1,
+        };
+        engine.history.record(
+            seed_token_a,
+            DialogueItem::Line {
+                speaker: "偵探".into(),
+                text: "先前的對話紀錄 A".into(),
+                portrait: None,
+            },
+            "Chapter 1".into(),
+            "Interrogation".into(),
+        );
+        engine.history.record(
+            seed_token_b,
+            DialogueItem::Line {
+                speaker: "偵探".into(),
+                text: "先前的對話紀錄 B".into(),
+                portrait: None,
+            },
+            "Chapter 1".into(),
+            "Interrogation".into(),
+        );
+        let pre_reexamine_history = engine.history.entries().to_vec();
+        assert_eq!(
+            pre_reexamine_history.len(),
+            2,
+            "history seed must take before the failing reexamine"
+        );
         let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();
         let previous_next_queue_gen = engine.next_queue_gen;
 
@@ -253,10 +336,13 @@ mod tests {
         assert!(scene.pending_queue.is_none());
         // Snapshot rollback must restore dialogue history after a failed
         // advance path (design spec: dialogue-history-design.md "Testing").
-        // The fixture starts with empty history; the failed reexamine records
-        // nothing on the success path, so rollback should leave it empty.
-        assert!(
-            engine.history.entries().is_empty(),
+        // The fixture is seeded with non-empty history above, so this asserts
+        // the entries are restored verbatim — not merely that history is empty
+        // either way (the vacuous case the original assertion could not
+        // distinguish from a real restore).
+        assert_eq!(
+            engine.history.entries(),
+            pre_reexamine_history.as_slice(),
             "dialogue history must be restored to its pre-command state after rollback, got {:?}",
             engine.history.entries()
         );
