@@ -146,7 +146,7 @@ impl GameEngine {
             }
         };
         if let Some((items, queue_gen)) = intro_queue {
-            self.install_scene_queue(items, queue_gen)?;
+            self.install_scene_queue(items, queue_gen, None)?;
         }
         if needs_initial_sub {
             self.advance_into_first_sublocation()?;

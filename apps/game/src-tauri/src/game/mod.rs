@@ -234,7 +234,7 @@ impl GameEngine {
             if let SceneRuntime::Investigation(inv) = &mut self.scene {
                 inv.outro_played = true;
             }
-            self.install_scene_queue(outro_dialogue, queue_gen)?;
+            self.install_scene_queue(outro_dialogue, queue_gen, None)?;
             return Ok(false);
         }
 
@@ -315,7 +315,7 @@ impl GameEngine {
                 return Ok(true);
             }
             let queue_gen = self.alloc_queue_gen();
-            self.install_scene_queue(outro_dialogue, queue_gen)?;
+            self.install_scene_queue(outro_dialogue, queue_gen, None)?;
         }
         Ok(false)
     }
@@ -765,7 +765,7 @@ impl GameEngine {
         };
         self.command_tx(|engine| {
             let queue_gen = engine.alloc_queue_gen();
-            engine.install_scene_queue(queue_items, queue_gen)?;
+            engine.install_scene_queue(queue_items, queue_gen, None)?;
             Ok(())
         })
     }
@@ -812,7 +812,7 @@ impl GameEngine {
         };
         self.command_tx(|engine| {
             let queue_gen = engine.alloc_queue_gen();
-            engine.install_scene_queue(queue_items, queue_gen)?;
+            engine.install_scene_queue(queue_items, queue_gen, None)?;
             Ok(())
         })
     }
@@ -1737,6 +1737,14 @@ mod tests {
     ///    branch or in a comment. Checked for every tracked command except
     ///    those listed in `allowed_bare_view` below.
     ///
+    /// The scanner tracks function brace depth so a tracked command is
+    /// finalized at its own closing brace — a private helper containing
+    /// `command_tx(` between two public commands cannot make the earlier
+    /// command appear compliant. Test-only items (`#[cfg(test)]` and
+    /// `mod tests { … }`) are skipped by brace depth rather than terminating
+    /// the whole file, so a production command added after test-only items is
+    /// still scanned.
+    ///
     /// Weaker than a type guarantee, and deliberately kept until one exists.
     #[test]
     fn every_view_returning_command_routes_through_command_tx() {
@@ -1765,74 +1773,7 @@ mod tests {
         //                      and deliberately records no history.
         let allowed_bare_view: &[&str] = &["advance_dialogue"];
 
-        let mut seen: Vec<String> = Vec::new();
-        let mut missing_tx: Vec<String> = Vec::new();
-        let mut bare_view: Vec<String> = Vec::new();
-
-        for (file, source) in sources {
-            let mut current: Option<String> = None;
-            let mut body_has_tx = false;
-            let mut body_has_bare_view = false;
-            let mut signature = String::new();
-            let mut in_signature = false;
-
-            for line in source.lines() {
-                let trimmed = line.trim_start();
-                if trimmed.starts_with("mod tests {") || trimmed.starts_with("#[cfg(test)]") {
-                    break;
-                }
-                if trimmed.starts_with("pub fn ") {
-                    if let Some(name) = current.take() {
-                        if !body_has_tx {
-                            missing_tx.push(format!("{file}::{name}"));
-                        }
-                        if body_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
-                            bare_view.push(format!("{file}::{name}"));
-                        }
-                        body_has_tx = false;
-                        body_has_bare_view = false;
-                    }
-                    signature.clear();
-                    signature.push_str(trimmed);
-                    in_signature = !trimmed.contains('{');
-                    if !in_signature {
-                        if let Some(name) = tracked_command_name(&signature) {
-                            seen.push(format!("{file}::{name}"));
-                            current = Some(name);
-                        }
-                    }
-                    continue;
-                }
-                if in_signature {
-                    signature.push(' ');
-                    signature.push_str(trimmed);
-                    if trimmed.contains('{') {
-                        in_signature = false;
-                        if let Some(name) = tracked_command_name(&signature) {
-                            seen.push(format!("{file}::{name}"));
-                            current = Some(name);
-                        }
-                    }
-                    continue;
-                }
-                if current.is_some() {
-                    if trimmed.contains("command_tx(") {
-                        body_has_tx = true;
-                    }
-                    if trimmed.contains("Ok(self.view())") {
-                        body_has_bare_view = true;
-                    }
-                }
-            }
-            if let Some(name) = current.take() {
-                if !body_has_tx {
-                    missing_tx.push(format!("{file}::{name}"));
-                }
-                if body_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
-                    bare_view.push(format!("{file}::{name}"));
-                }
-            }
-        }
+        let (seen, missing_tx, bare_view) = scan_sources(&sources, allowed_bare_view);
 
         // A floor, not an emptiness check: a single tracked command would
         // satisfy `!seen.is_empty()` while twelve others silently dropped out
@@ -1929,6 +1870,300 @@ mod tests {
             out.push((relative, contents));
         }
         Ok(())
+    }
+
+    /// The core scanning logic, extracted from
+    /// `every_view_returning_command_routes_through_command_tx` so the
+    /// scanner self-test can exercise it with synthetic source code.
+    ///
+    /// Returns `(seen, missing_tx, bare_view)`:
+    /// - `seen` — every tracked `pub fn -> Result<GameStateView, GameError>`
+    ///   found, as `"file::name"`.
+    /// - `missing_tx` — tracked commands whose body never calls
+    ///   `command_tx(` (invariant A violation).
+    /// - `bare_view` — tracked commands whose body contains
+    ///   `Ok(self.view())` and are not in `allowed_bare_view` (invariant B
+    ///   violation).
+    fn scan_sources(
+        sources: &[(String, String)],
+        allowed_bare_view: &[&str],
+    ) -> (Vec<String>, Vec<String>, Vec<String>) {
+        let mut seen: Vec<String> = Vec::new();
+        let mut missing_tx: Vec<String> = Vec::new();
+        let mut bare_view: Vec<String> = Vec::new();
+
+        for (file, source) in sources {
+            let mut current: Option<String> = None;
+            let mut body_has_tx = false;
+            let mut body_has_bare_view = false;
+            let mut signature = String::new();
+            let mut in_signature = false;
+            // Brace depth of the currently tracked function's body. When it
+            // returns to zero the function has ended and we finalize it —
+            // this prevents a private helper containing `command_tx(` between
+            // two public commands from making the earlier command appear
+            // compliant (the earlier command is finalized at its own closing
+            // brace before the helper begins).
+            let mut fn_brace_depth: i32 = 0;
+            let mut in_fn_body = false;
+            // Skipping test-only items: `#[cfg(test)]` applies to the next
+            // item; `mod tests { … }` has a brace-delimited body. We skip
+            // these instead of abandoning the rest of the file, so a
+            // production command added after test-only items is still scanned.
+            let mut skip_next_item = false;
+            let mut skip_brace_depth: i32 = 0;
+
+            for line in source.lines() {
+                let trimmed = line.trim_start();
+
+                // Inside a skipped test-only item — track braces, continue.
+                if skip_brace_depth > 0 {
+                    for ch in trimmed.chars() {
+                        if ch == '{' {
+                            skip_brace_depth += 1;
+                        }
+                        if ch == '}' {
+                            skip_brace_depth -= 1;
+                        }
+                    }
+                    continue;
+                }
+
+                // `#[cfg(test)]` — the next item is test-only; skip it.
+                if trimmed.starts_with("#[cfg(test)]") {
+                    skip_next_item = true;
+                    continue;
+                }
+
+                // If the previous line was `#[cfg(test)]`, skip this item.
+                if skip_next_item {
+                    skip_next_item = false;
+                    let open = trimmed.chars().filter(|c| *c == '{').count() as i32;
+                    let close = trimmed.chars().filter(|c| *c == '}').count() as i32;
+                    if open > 0 {
+                        skip_brace_depth = open - close;
+                    }
+                    // No braces (e.g. `mod test_support;`) — single-line decl, done.
+                    continue;
+                }
+
+                // Inside a tracked function body — check for content and
+                // the closing brace.
+                if in_fn_body {
+                    for ch in trimmed.chars() {
+                        if ch == '{' {
+                            fn_brace_depth += 1;
+                        }
+                        if ch == '}' {
+                            fn_brace_depth -= 1;
+                        }
+                    }
+                    if current.is_some() {
+                        if trimmed.contains("command_tx(") {
+                            body_has_tx = true;
+                        }
+                        if trimmed.contains("Ok(self.view())") {
+                            body_has_bare_view = true;
+                        }
+                    }
+                    if fn_brace_depth == 0 {
+                        if let Some(name) = current.take() {
+                            if !body_has_tx {
+                                missing_tx.push(format!("{file}::{name}"));
+                            }
+                            if body_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
+                                bare_view.push(format!("{file}::{name}"));
+                            }
+                            body_has_tx = false;
+                            body_has_bare_view = false;
+                        }
+                        in_fn_body = false;
+                    }
+                    continue;
+                }
+
+                // Detect the start of a tracked function.
+                if trimmed.starts_with("pub fn ") {
+                    signature.clear();
+                    signature.push_str(trimmed);
+                    in_signature = !trimmed.contains('{');
+                    if !in_signature {
+                        if let Some(name) = tracked_command_name(&signature) {
+                            seen.push(format!("{file}::{name}"));
+                            current = Some(name);
+                            let open = trimmed.chars().filter(|c| *c == '{').count() as i32;
+                            let close = trimmed.chars().filter(|c| *c == '}').count() as i32;
+                            fn_brace_depth = open - close;
+                            in_fn_body = true;
+                            // Check the same line for one-liner bodies.
+                            if trimmed.contains("command_tx(") {
+                                body_has_tx = true;
+                            }
+                            if trimmed.contains("Ok(self.view())") {
+                                body_has_bare_view = true;
+                            }
+                            if fn_brace_depth == 0 {
+                                if let Some(name) = current.take() {
+                                    if !body_has_tx {
+                                        missing_tx.push(format!("{file}::{name}"));
+                                    }
+                                    if body_has_bare_view
+                                        && !allowed_bare_view.contains(&name.as_str())
+                                    {
+                                        bare_view.push(format!("{file}::{name}"));
+                                    }
+                                    body_has_tx = false;
+                                    body_has_bare_view = false;
+                                }
+                                in_fn_body = false;
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if in_signature {
+                    signature.push(' ');
+                    signature.push_str(trimmed);
+                    if trimmed.contains('{') {
+                        in_signature = false;
+                        if let Some(name) = tracked_command_name(&signature) {
+                            seen.push(format!("{file}::{name}"));
+                            current = Some(name);
+                            let open = trimmed.chars().filter(|c| *c == '{').count() as i32;
+                            let close = trimmed.chars().filter(|c| *c == '}').count() as i32;
+                            fn_brace_depth = open - close;
+                            in_fn_body = true;
+                            if trimmed.contains("command_tx(") {
+                                body_has_tx = true;
+                            }
+                            if trimmed.contains("Ok(self.view())") {
+                                body_has_bare_view = true;
+                            }
+                            if fn_brace_depth == 0 {
+                                if let Some(name) = current.take() {
+                                    if !body_has_tx {
+                                        missing_tx.push(format!("{file}::{name}"));
+                                    }
+                                    if body_has_bare_view
+                                        && !allowed_bare_view.contains(&name.as_str())
+                                    {
+                                        bare_view.push(format!("{file}::{name}"));
+                                    }
+                                    body_has_tx = false;
+                                    body_has_bare_view = false;
+                                }
+                                in_fn_body = false;
+                            }
+                        }
+                    }
+                    continue;
+                }
+            }
+            // Finalize the last function in the file (safety net for
+            // malformed source where brace tracking never reaches zero).
+            if let Some(name) = current.take() {
+                if !body_has_tx {
+                    missing_tx.push(format!("{file}::{name}"));
+                }
+                if body_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
+                    bare_view.push(format!("{file}::{name}"));
+                }
+            }
+        }
+
+        (seen, missing_tx, bare_view)
+    }
+
+    /// Scanner self-test: verifies that the scanner
+    /// 1. finds production commands placed **after** `#[cfg(test)]` / `mod tests`
+    ///    items (the old `break` at test items would have missed them),
+    /// 2. does not let a private helper containing `command_tx(` between two
+    ///    public commands make the earlier command appear compliant (brace
+    ///    tracking finalizes the earlier command at its own closing brace),
+    /// 3. still catches a command that never calls `command_tx(` (invariant A),
+    /// 4. still catches a command with a bare `Ok(self.view())` (invariant B).
+    #[test]
+    fn scanner_finds_commands_after_test_items_and_tracks_brace_depth() {
+        let src = r#"
+pub fn good_command(&mut self) -> Result<GameStateView, GameError> {
+    self.command_tx(|engine| {
+        Ok(())
+    })
+}
+
+fn private_helper(&self) -> Result<GameStateView, GameError> {
+    // This private helper calls command_tx but is NOT a tracked command.
+    // A scanner without brace tracking would let this leak into `good_command`.
+    self.command_tx(|engine| {
+        Ok(())
+    })
+}
+
+pub fn missing_tx_command(&mut self) -> Result<GameStateView, GameError> {
+    Ok(self.view())
+}
+
+#[cfg(test)]
+mod test_support;
+
+#[cfg(test)]
+mod tests {
+    fn not_a_command() {}
+}
+
+pub fn after_tests_command(&mut self) -> Result<GameStateView, GameError> {
+    self.command_tx(|engine| {
+        Ok(())
+    })
+}
+"#;
+        let sources = vec![("synthetic.rs".to_string(), src.to_string())];
+        let (seen, missing_tx, bare_view) = scan_sources(&sources, &[]);
+
+        // All three public view-returning commands should be tracked.
+        assert!(
+            seen.contains(&"synthetic.rs::good_command".to_string()),
+            "good_command should be tracked: {seen:?}"
+        );
+        assert!(
+            seen.contains(&"synthetic.rs::missing_tx_command".to_string()),
+            "missing_tx_command should be tracked: {seen:?}"
+        );
+        assert!(
+            seen.contains(&"synthetic.rs::after_tests_command".to_string()),
+            "after_tests_command is after #[cfg(test)] items and must still be tracked: {seen:?}"
+        );
+        // The private helper must NOT be tracked.
+        assert!(
+            !seen.iter().any(|s| s.contains("private_helper")),
+            "private helper should not be tracked: {seen:?}"
+        );
+
+        // good_command calls command_tx via the helper? No — brace tracking
+        // finalizes good_command at its own closing brace before the helper.
+        // So good_command should NOT appear in missing_tx.
+        assert!(
+            !missing_tx.iter().any(|s| s.contains("good_command")),
+            "good_command calls command_tx in its own body and must not be flagged: {missing_tx:?}"
+        );
+
+        // missing_tx_command never calls command_tx — must be flagged.
+        assert!(
+            missing_tx.iter().any(|s| s.contains("missing_tx_command")),
+            "missing_tx_command never calls command_tx and must be flagged: {missing_tx:?}"
+        );
+
+        // missing_tx_command also has a bare Ok(self.view()) — must be flagged.
+        assert!(
+            bare_view.iter().any(|s| s.contains("missing_tx_command")),
+            "missing_tx_command has a bare Ok(self.view()) and must be flagged: {bare_view:?}"
+        );
+
+        // after_tests_command calls command_tx — must NOT be in missing_tx.
+        assert!(
+            !missing_tx.iter().any(|s| s.contains("after_tests_command")),
+            "after_tests_command calls command_tx and must not be flagged: {missing_tx:?}"
+        );
     }
 
     #[test]
@@ -3883,6 +4118,98 @@ mod tests {
             !matches!(view.mode, ModeView::Dialogue { .. }),
             "degenerate testimony left the engine in dialogue mode: {:?}",
             view.mode
+        );
+    }
+
+    #[test]
+    fn all_scene_tag_testimony_terminates_without_stack_overflow() {
+        // An UNBROKEN question whose only testimony line has content consisting
+        // solely of SceneTag items, and whose on_loop / loop_prompt bridge is
+        // also all SceneTags. Before the fix, install_scene_queue consumed the
+        // leading SceneTags, exhausted the queue, and called
+        // on_queue_exhausted → advance_playing_testimony →
+        // install_or_exhaust_line_content → install_scene_queue → …
+        // recursing without bound (the degeneracy guard only checked
+        // queue_items.is_empty(), which was false). The fix extends the guard
+        // to detect all-SceneTag content and withdraw instead of installing a
+        // queue that would immediately drain.
+        let scene_tag = || DialogueItem::SceneTag {
+            text: "visual_cue".into(),
+            asset_cue: None,
+        };
+        let scene = InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "inquiry".into(),
+                label: "Inquiry".into(),
+                subject: subject(),
+                required: false,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: VisualAssetCueJson::default(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![InquiryQuestionJson {
+                    id: "q_tags_only".into(),
+                    label: "Tags Only".into(),
+                    status: LockStatus::Unlocked,
+                    required: false,
+                    unlock: None,
+                    reveals: vec![],
+                    testimony: TestimonyJson {
+                        on_loop: vec![scene_tag()],
+                        loop_prompt: vec![scene_tag()],
+                        default_challenge: vec![],
+                        default_wrong: vec![],
+                        wrong_reply: vec![],
+                        lines: vec![TestimonyLineJson {
+                            id: "l_tags".into(),
+                            label: "Tags".into(),
+                            // Non-empty but all SceneTags — the case the old
+                            // degeneracy guard missed.
+                            content: vec![scene_tag()],
+                            // A contradiction keeps the question unbroken, so
+                            // the engine enters the Playing loop rather than
+                            // the honest-question path.
+                            contradiction: Some(InventoryTarget::Evidence {
+                                id: "never_held".into(),
+                            }),
+                            challenge: vec![],
+                            on_correct: vec![],
+                            on_wrong_evidence: vec![],
+                            reveals: vec![],
+                        }],
+                    },
+                }],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
+
+        // If the fix is absent this call overflows the stack instead of
+        // returning.
+        let view = engine.ask_interrogation_question("q_tags_only").unwrap();
+
+        assert!(
+            !matches!(view.mode, ModeView::Dialogue { .. }),
+            "all-SceneTag testimony left the engine in dialogue mode: {:?}",
+            view.mode
+        );
+        // The SceneTags should have been processed for visual continuity.
+        assert_eq!(
+            engine.last_visual_cue.scene_tag,
+            Some("visual_cue".into()),
+            "all-SceneTag testimony should still apply its visual cues"
         );
     }
 
