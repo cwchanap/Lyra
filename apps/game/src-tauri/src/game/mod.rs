@@ -1244,9 +1244,9 @@ impl GameEngine {
     /// `complete_interrogation_phase` — the player manually concludes the
     /// current `Auto` inquiry phase from the question menu. Gated on every
     /// required question being broken (see
-    /// [`InterrogationSceneState::current_phase_can_complete`]); the phase then
-    /// advances (or fires the outro) via the same machinery a drained dialogue
-    /// queue drives.
+    /// [`scenes::interrogation::InterrogationSceneState::current_phase_can_complete`]);
+    /// the phase then advances (or fires the outro) via the same machinery a
+    /// drained dialogue queue drives.
     pub fn complete_interrogation_phase(&mut self) -> Result<GameStateView, GameError> {
         if self.current_chapter_idx >= self.chapters.len() {
             return Err(GameError::game_complete());
@@ -1820,7 +1820,8 @@ mod tests {
             "scanner tracked only {} Result<GameStateView, GameError> command(s), expected at \
              least {EXPECTED_TRACKED_COMMAND_COUNT}; a command was deleted, or a module was \
              moved out of `sources` above without being re-added, and silently stopped being \
-             checked: {seen:?}",
+             checked: {seen:?}. If a command was legitimately removed, lower this constant in \
+             the same commit that removes it — never to silence this failure.",
             seen.len()
         );
         assert!(
