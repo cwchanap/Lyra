@@ -200,18 +200,18 @@ impl GameEngine {
             return self.on_queue_exhausted();
         }
         let queue_gen = self.alloc_queue_gen();
-        self.install_scene_queue(items, queue_gen)
+        self.install_scene_queue(items, queue_gen, None)
     }
 
     /// As `install_or_exhaust`, then mark where challengeable testimony line
     /// content begins in the installed queue.
     ///
-    /// Order matters: `install_scene_queue` sets `line_content_start` to
-    /// `items.len()` (the "nothing here is challengeable" default), so the
-    /// override must come after the install or it is silently discarded and the
-    /// inline 反駁 control never appears. The variant guard is retained rather
-    /// than assumed, because installation can drain to empty and reach
-    /// `on_queue_exhausted`, which may transition the scene.
+    /// The `line_content_start` override is passed into `install_scene_queue`
+    /// so it is applied **before** `consume_scene_tags_at_cursor` runs. If the
+    /// queue drains to empty (all items were `SceneTag`), `on_queue_exhausted`
+    /// may install a new queue with its own boundary — applying the override
+    /// after the install (as the previous code did) would clobber that new
+    /// queue's boundary with the stale value from the drained one.
     pub(super) fn install_or_exhaust_line_content(
         &mut self,
         items: Vec<DialogueItem>,
@@ -221,19 +221,22 @@ impl GameEngine {
             return self.on_queue_exhausted();
         }
         let queue_gen = self.alloc_queue_gen();
-        self.install_scene_queue(items, queue_gen)?;
-        if let SceneRuntime::Interrogation(scene) = &mut self.scene {
-            scene.line_content_start = line_content_start;
-        }
-        Ok(())
+        self.install_scene_queue(items, queue_gen, Some(line_content_start))
     }
 
     /// Scene-entry sequencing lives in `navigation.rs` (`prime_initial_queue`),
     /// which calls into these primitives.
+    ///
+    /// `line_content_start_override` is applied to the interrogation scene's
+    /// `line_content_start` **before** `consume_scene_tags_at_cursor` runs, so
+    /// the correct challenge boundary is in place even if the queue immediately
+    /// exhausts and `on_queue_exhausted` installs a successor queue. `None`
+    /// uses the safe default (`items.len()` — nothing challengeable).
     pub(super) fn install_scene_queue(
         &mut self,
         items: Vec<DialogueItem>,
         queue_gen: u64,
+        line_content_start_override: Option<usize>,
     ) -> Result<(), GameError> {
         match &mut self.scene {
             SceneRuntime::Investigation(inv) => {
@@ -250,10 +253,12 @@ impl GameEngine {
             }
             SceneRuntime::Interrogation(scene) => {
                 // Default: nothing in this queue is challengeable testimony
-                // line content. Testimony-line installers override this after
-                // the call so the inline 反駁 control only surfaces when the
-                // cursor is on actual line content.
-                scene.line_content_start = items.len();
+                // line content. Testimony-line installers pass an override so
+                // the inline 反駁 control only surfaces when the cursor is on
+                // actual line content. Applied before tag consumption so a
+                // draining queue does not leave a stale boundary for a
+                // successor queue installed by `on_queue_exhausted`.
+                scene.line_content_start = line_content_start_override.unwrap_or(items.len());
                 scene.pending_queue = Some(DialogueQueue {
                     items,
                     cursor: 0,
@@ -375,12 +380,27 @@ impl GameEngine {
             }
         };
 
-        if queue_items.is_empty() {
-            // Degenerate testimony (no line content and no loop bridge): return
-            // to the menu rather than leaving the player stuck on an empty
-            // Playing state.
+        let has_dialogue = queue_items
+            .iter()
+            .any(|item| !matches!(item, DialogueItem::SceneTag { .. }));
+
+        if !has_dialogue {
+            // Degenerate testimony (no line content and no loop bridge, or all
+            // items are SceneTags): return to the menu rather than leaving the
+            // player stuck on an empty Playing state.
             // Must not use install_or_exhaust_line_content: on_queue_exhausted
-            // dispatches back here while is_playing_unbroken() holds.
+            // dispatches back here while is_playing_unbroken() holds. An
+            // all-SceneTag queue would drain immediately inside
+            // install_scene_queue (consume_scene_tags_at_cursor eats every
+            // item), trigger on_queue_exhausted, and recurse back here —
+            // eventually overflowing the stack. Process the tags for visual
+            // continuity, then withdraw.
+            for item in &queue_items {
+                if let DialogueItem::SceneTag { text, asset_cue } = item {
+                    self.last_visual_cue
+                        .set_scene_tag(text.clone(), asset_cue.clone());
+                }
+            }
             if let SceneRuntime::Interrogation(scene) = &mut self.scene {
                 scene.withdraw();
             }
