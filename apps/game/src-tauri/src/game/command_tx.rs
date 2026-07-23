@@ -117,6 +117,9 @@ impl GameEngine {
     }
 }
 
+// Must stay below all production `pub fn`s in this file: the
+// every_view_returning_command_routes_through_command_tx scanner stops at the
+// first #[cfg(test)] line.
 #[cfg(test)]
 mod tests {
     use super::*;

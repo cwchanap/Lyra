@@ -1,6 +1,11 @@
 // src-tauri/src/game/dialogue.rs
 //
-// Dialogue history and queue lifecycle.
+// Dialogue history and queue lifecycle, plus interrogation testimony
+// playback (advance_playing_testimony / finish_broken_playing /
+// interrogation_playing_unbroken over CrossExam / AdvanceOutcome / testimony
+// fields). The cut from mod.rs's phase machine (try_advance_interrogation,
+// try_enter_current_interrogation_phase) is queue-driven vs menu-driven: this
+// module drives the dialogue queue, mod.rs drives the question menu.
 
 use super::scenes::interrogation::{AdvanceOutcome, CrossExam};
 use super::scenes::investigation::DialogueQueue;
@@ -13,7 +18,7 @@ const DIALOGUE_HISTORY_LIMIT: usize = 50;
 
 /// The engine's rolling dialogue log. Owns dedup-by-token, the entry cap, and
 /// the rule that scene tags are not logged.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(super) struct DialogueHistory {
     entries: Vec<DialogueHistoryEntry>,
     next_id: u64,
@@ -92,6 +97,9 @@ impl GameEngine {
         let Some(token) = self.current_queue_token() else {
             return;
         };
+        // Checked here as well as inside DialogueHistory::record: this
+        // short-circuit must precede the chapter .expect() below, or a repeated
+        // token would panic instead of returning quietly.
         if self.history.is_last_token(&token) {
             return;
         }
