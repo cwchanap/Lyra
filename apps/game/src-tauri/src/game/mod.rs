@@ -4214,6 +4214,131 @@ pub fn after_tests_command(&mut self) -> Result<GameStateView, GameError> {
     }
 
     #[test]
+    fn successor_queue_boundary_survives_draining_predecessor() {
+        // Fix for the successor-queue boundary clobber: when
+        // `install_or_exhaust_line_content` installs a queue whose items are
+        // all SceneTags, `install_scene_queue` consumes them, the queue
+        // drains, and `on_queue_exhausted` → `advance_playing_testimony`
+        // installs a successor queue (the loop bridge + line 0 content) with
+        // its own `line_content_start`. The old code applied the predecessor's
+        // `line_content_start` *after* `install_scene_queue` returned,
+        // clobbering the successor's boundary. The fix passes the override
+        // *into* `install_scene_queue` so it is applied before tag consumption
+        // and the successor's boundary is preserved.
+        //
+        // Scenario: 1 unbroken question, 1 testimony line whose content is a
+        // single SceneTag, with a 2-item dialogue bridge (on_loop + loop_prompt).
+        // Asking the question installs the line content (all SceneTags → drains),
+        // triggers the Loop path, and installs [on_loop, loop_prompt, SceneTag]
+        // with line_content_start = 2. The old code would clobber that to 0,
+        // exposing the challenge target during bridge dialogue.
+        let scene_tag = || DialogueItem::SceneTag {
+            text: "visual_cue".into(),
+            asset_cue: None,
+        };
+        let bridge_line = |text: &str| DialogueItem::Line {
+            speaker: "A".into(),
+            text: text.into(),
+            portrait: None,
+        };
+        let scene = InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "inquiry".into(),
+                label: "Inquiry".into(),
+                subject: subject(),
+                required: false,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: VisualAssetCueJson::default(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![InquiryQuestionJson {
+                    id: "q_tags_then_loop".into(),
+                    label: "Tags Then Loop".into(),
+                    status: LockStatus::Unlocked,
+                    required: false,
+                    unlock: None,
+                    reveals: vec![],
+                    testimony: TestimonyJson {
+                        on_loop: vec![bridge_line("on_loop")],
+                        loop_prompt: vec![bridge_line("loop_prompt")],
+                        default_challenge: vec![],
+                        default_wrong: vec![],
+                        wrong_reply: vec![],
+                        lines: vec![TestimonyLineJson {
+                            id: "l_tags".into(),
+                            label: "Tags".into(),
+                            // All-SceneTag content — the queue drains on install.
+                            content: vec![scene_tag()],
+                            // Contradiction keeps the question unbroken, so
+                            // the engine enters the Playing loop.
+                            contradiction: Some(InventoryTarget::Evidence {
+                                id: "never_held".into(),
+                            }),
+                            challenge: vec![],
+                            on_correct: vec![],
+                            on_wrong_evidence: vec![],
+                            reveals: vec![],
+                        }],
+                    },
+                }],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
+
+        // Asking the question installs the all-SceneTag line content, which
+        // drains and triggers the Loop successor install. The view should
+        // show the loop bridge dialogue, not the question menu.
+        let view = engine
+            .ask_interrogation_question("q_tags_then_loop")
+            .unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                current,
+                cross_exam_line_id,
+                ..
+            } => {
+                // The successor queue's first item is the on_loop bridge.
+                assert!(
+                    matches!(current, DialogueItem::Line { text, .. } if text == "on_loop"),
+                    "expected the on_loop bridge after the draining predecessor, got {current:?}"
+                );
+                // The challenge target must stay hidden during bridge dialogue.
+                // With the old clobber (line_content_start = 0), the cursor
+                // (0) >= 0 would expose it.
+                assert_eq!(
+                    cross_exam_line_id.as_deref(),
+                    None,
+                    "反駁 must stay hidden during the loop bridge — successor boundary was clobbered"
+                );
+            }
+            other => panic!("expected Dialogue mode after successor install, got {other:?}"),
+        }
+
+        // The successor queue's boundary must be 2 (on_loop + loop_prompt),
+        // not 0 (the stale predecessor value).
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert_eq!(
+            scene.line_content_start, 2,
+            "successor queue boundary must be 2 (on_loop + loop_prompt), not clobbered to 0"
+        );
+    }
+
+    #[test]
     fn resume_interrogation_testimony_returns_to_the_challenged_line() {
         let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
         engine.prime_initial_queue().unwrap();

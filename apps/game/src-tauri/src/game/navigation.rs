@@ -667,8 +667,8 @@ mod tests {
         // That test starts with empty dialogue_history, so it cannot
         // distinguish "rollback restored empty" from "nothing to restore."
         // This test populates history by advancing dialogue on scene_0 before
-        // the failing jump, then asserts restore_snapshot put the non-empty
-        // history back exactly as it was.
+        // the failing jump, then asserts EngineRollbackSnapshot::restore put
+        // the non-empty history back exactly as it was.
         use std::fs;
         use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -789,7 +789,8 @@ mod tests {
         assert_eq!(after_scene_id, "scene_0");
 
         // The non-empty dialogue history must be restored verbatim, proving
-        // restore_snapshot copied the history fields (not just left them empty).
+        // EngineRollbackSnapshot::restore copied the history fields (not just
+        // left them empty).
         assert_eq!(
             history_labels(&after),
             pre_jump_history,
