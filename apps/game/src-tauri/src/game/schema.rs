@@ -183,7 +183,7 @@ pub enum AutoMarker {
 }
 
 /// Per-block (non-Outro) Unlock JSON: null or UnlockExpr.
-/// Represented in Rust as Option<UnlockExpr>.
+/// Represented in Rust as `Option<UnlockExpr>`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged, rename_all_fields = "camelCase")]
 pub enum UnlockExpr {

@@ -75,6 +75,21 @@ jobs:
       - name: Clippy editor
         run: cargo clippy --manifest-path apps/layout-editor/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 
+      # rustdoc with --document-private-items resolves intra-doc links to
+      # pub(super)/private items, so broken doc links (e.g. a `[`Self::foo`]`
+      # whose target was relocated out of scope) surface as warnings. -D
+      # warnings fails CI on them. Catches the orphaned-intra-doc-link defect
+      # class that survived review of HPA-55 (commit f429a95).
+      - name: Rustdoc game (deny broken intra-doc links)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --document-private-items --manifest-path apps/game/src-tauri/Cargo.toml
+
+      - name: Rustdoc editor (deny broken intra-doc links)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --no-deps --document-private-items --manifest-path apps/layout-editor/src-tauri/Cargo.toml
+
   unit-tests-frontend:
     name: Frontend Unit Tests
     runs-on: ubuntu-latest

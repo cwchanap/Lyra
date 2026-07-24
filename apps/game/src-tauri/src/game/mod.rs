@@ -127,6 +127,19 @@ impl GameEngine {
         scene_navigation_index_from_chapters(&resources_dir, &chapters)
     }
 
+    /// One-line delegation to `navigation.rs::jump_to_scene_inner`. The body
+    /// lives in the navigation module (Task 6 relocation); this shim keeps the
+    /// public surface in `mod.rs`. The `command_tx` call is inside the inner
+    /// fn, and the `every_view_returning_command_routes_through_command_tx`
+    /// scanner follows the delegation to verify it.
+    pub fn jump_to_scene(
+        &mut self,
+        chapter_id: &str,
+        scene_id: &str,
+    ) -> Result<GameStateView, GameError> {
+        self.jump_to_scene_inner(chapter_id, scene_id)
+    }
+
     pub fn view(&self) -> GameStateView {
         GameStateView {
             mode: self.mode_view(),
@@ -1816,18 +1829,277 @@ mod tests {
         );
     }
 
-    /// Extracts the fn name from an accumulated signature if it returns a view.
-    fn tracked_command_name(signature: &str) -> Option<String> {
+    /// Visibility of a view-returning fn definition. `Pub` fns are tracked
+    /// commands; `PubSuper` fns are delegation targets only (not tracked
+    /// themselves, but a `Pub` command that delegates to one is excused from
+    /// invariant A if the target reaches `command_tx`).
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum FnVisibility {
+        Pub,
+        PubSuper,
+    }
+
+    /// Parses an accumulated signature like
+    /// `pub fn name(...) -> Result<GameStateView, GameError>` or
+    /// `pub(super) fn name(...) -> Result<GameStateView, GameError>` and
+    /// returns `(visibility, name)` if it returns the view type. Returns
+    /// `None` for private `fn`, for `pub fn view` (returns `GameStateView`,
+    /// not the `Result` type), and for any signature not returning the view
+    /// `Result` — so a private helper between two public commands is never
+    /// collected as a delegation target (the same guarantee brace tracking
+    /// gives in the non-delegation case).
+    fn parse_view_fn_signature(signature: &str) -> Option<(FnVisibility, String)> {
         if !signature.contains("-> Result<GameStateView, GameError>") {
             return None;
         }
-        let after = signature.strip_prefix("pub fn ")?;
-        Some(
-            after
-                .split(|c: char| c == '(' || c.is_whitespace())
-                .next()?
-                .to_string(),
-        )
+        let (vis, after) = if let Some(rest) = signature.strip_prefix("pub(super) fn ") {
+            (FnVisibility::PubSuper, rest)
+        } else if let Some(rest) = signature.strip_prefix("pub fn ") {
+            (FnVisibility::Pub, rest)
+        } else {
+            return None;
+        };
+        let name = after
+            .split(|c: char| c == '(' || c.is_whitespace())
+            .next()?;
+        if name.is_empty() {
+            return None;
+        }
+        Some((vis, name.to_string()))
+    }
+
+    /// Walks `source` and returns `(visibility, name, body_text)` for every
+    /// `pub fn` / `pub(super) fn` returning `Result<GameStateView, GameError>`.
+    /// `body_text` is the trimmed source lines from the opening-brace line
+    /// through the closing brace; substring checks (`command_tx(`,
+    /// `Ok(self.view())`) on it are equivalent to the pre-refactor per-line
+    /// `contains` OR because neither marker spans a newline. Test-only items
+    /// (`#[cfg(test)]` / `mod tests { … }`) are skipped by brace depth, so a
+    /// production command after them is still collected.
+    fn view_fn_definitions(source: &str) -> Vec<(FnVisibility, String, String)> {
+        let mut out: Vec<(FnVisibility, String, String)> = Vec::new();
+        let mut signature = String::new();
+        let mut in_signature = false;
+        let mut skip_next_item = false;
+        let mut skip_brace_depth: i32 = 0;
+        let mut current: Option<(FnVisibility, String)> = None;
+        let mut body = String::new();
+        let mut fn_brace_depth: i32 = 0;
+
+        for line in source.lines() {
+            let trimmed = line.trim_start();
+
+            if skip_brace_depth > 0 {
+                for ch in trimmed.chars() {
+                    if ch == '{' {
+                        skip_brace_depth += 1;
+                    }
+                    if ch == '}' {
+                        skip_brace_depth -= 1;
+                    }
+                }
+                continue;
+            }
+            if trimmed.starts_with("#[cfg(test)]") {
+                skip_next_item = true;
+                continue;
+            }
+            if skip_next_item {
+                skip_next_item = false;
+                let open = trimmed.chars().filter(|c| *c == '{').count() as i32;
+                let close = trimmed.chars().filter(|c| *c == '}').count() as i32;
+                if open > 0 {
+                    skip_brace_depth = open - close;
+                }
+                continue;
+            }
+
+            if current.is_some() {
+                body.push_str(trimmed);
+                body.push('\n');
+                for ch in trimmed.chars() {
+                    if ch == '{' {
+                        fn_brace_depth += 1;
+                    }
+                    if ch == '}' {
+                        fn_brace_depth -= 1;
+                    }
+                }
+                if fn_brace_depth == 0 {
+                    if let Some((vis, name)) = current.take() {
+                        out.push((vis, name, std::mem::take(&mut body)));
+                    }
+                }
+                continue;
+            }
+
+            if trimmed.starts_with("pub fn ") || trimmed.starts_with("pub(super) fn ") {
+                signature.clear();
+                signature.push_str(trimmed);
+                in_signature = !trimmed.contains('{');
+                if !in_signature {
+                    if let Some((vis, name)) = parse_view_fn_signature(&signature) {
+                        let open = trimmed.chars().filter(|c| *c == '{').count() as i32;
+                        let close = trimmed.chars().filter(|c| *c == '}').count() as i32;
+                        fn_brace_depth = open - close;
+                        body.clear();
+                        body.push_str(trimmed);
+                        body.push('\n');
+                        current = Some((vis, name));
+                        if fn_brace_depth == 0 {
+                            if let Some((vis, name)) = current.take() {
+                                out.push((vis, name, std::mem::take(&mut body)));
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+            if in_signature {
+                signature.push(' ');
+                signature.push_str(trimmed);
+                if trimmed.contains('{') {
+                    in_signature = false;
+                    if let Some((vis, name)) = parse_view_fn_signature(&signature) {
+                        let open = trimmed.chars().filter(|c| *c == '{').count() as i32;
+                        let close = trimmed.chars().filter(|c| *c == '}').count() as i32;
+                        fn_brace_depth = open - close;
+                        body.clear();
+                        body.push_str(trimmed);
+                        body.push('\n');
+                        current = Some((vis, name));
+                        if fn_brace_depth == 0 {
+                            if let Some((vis, name)) = current.take() {
+                                out.push((vis, name, std::mem::take(&mut body)));
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+        }
+        // Safety net for malformed source where brace tracking never reaches
+        // zero — finalize the last fn rather than silently dropping it.
+        if let Some((vis, name)) = current.take() {
+            out.push((vis, name, std::mem::take(&mut body)));
+        }
+        out
+    }
+
+    /// Extracts `self.<name>(` delegation call targets from a fn body, excluding
+    /// `command_tx` (whose trailing `Ok(self.view())` is the seam's design, not
+    /// a silent drop — the chain never enters it). Safe across multi-byte
+    /// source: positions come from `char_indices`.
+    fn extract_delegation_targets(body: &str) -> Vec<String> {
+        let mut targets: Vec<String> = Vec::new();
+        let mut chars = body.char_indices().peekable();
+        while let Some((i, c)) = chars.next() {
+            if c == 's' && body[i..].starts_with("self.") {
+                // Consume "elf." (the 's' was already consumed above).
+                for _ in 0..4 {
+                    chars.next();
+                }
+                let mut name = String::new();
+                while let Some(&(_, c)) = chars.peek() {
+                    if c.is_ascii_alphanumeric() || c == '_' {
+                        name.push(c);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                if !name.is_empty()
+                    && chars.peek().map(|(_, c)| *c == '(').unwrap_or(false)
+                    && name != "command_tx"
+                {
+                    targets.push(name);
+                }
+            }
+        }
+        targets
+    }
+
+    /// Invariant A with delegation: a tracked command whose own body lacks
+    /// `command_tx(` is excused if any `self.<target>(` it calls (transitively,
+    /// cycle-safe) reaches a fn whose body contains `command_tx(`.
+    fn delegation_reaches_command_tx(
+        own_body: &str,
+        fn_bodies: &std::collections::HashMap<String, String>,
+    ) -> bool {
+        for target in extract_delegation_targets(own_body) {
+            if fn_reaches_command_tx(&target, fn_bodies, &mut std::collections::HashSet::new()) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn fn_reaches_command_tx(
+        name: &str,
+        fn_bodies: &std::collections::HashMap<String, String>,
+        visited: &mut std::collections::HashSet<String>,
+    ) -> bool {
+        if !visited.insert(name.to_string()) {
+            return false;
+        }
+        let Some(body) = fn_bodies.get(name) else {
+            return false;
+        };
+        if body.contains("command_tx(") {
+            return true;
+        }
+        for target in extract_delegation_targets(body) {
+            if fn_reaches_command_tx(&target, fn_bodies, visited) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Invariant B with delegation: a bare `Ok(self.view())` in the command's
+    /// own body or in any fn it delegates to (stopping at any fn that itself
+    /// routes through `command_tx`, whose bare-view risk is governed by the
+    /// seam — mirroring the non-delegation check that flags a command with both
+    /// `command_tx` and a bare view on a side branch).
+    fn delegation_chain_has_bare_view(
+        own_body: &str,
+        fn_bodies: &std::collections::HashMap<String, String>,
+    ) -> bool {
+        if own_body.contains("Ok(self.view())") {
+            return true;
+        }
+        let mut visited = std::collections::HashSet::new();
+        for target in extract_delegation_targets(own_body) {
+            if chain_has_bare_view_rec(&target, fn_bodies, &mut visited) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn chain_has_bare_view_rec(
+        name: &str,
+        fn_bodies: &std::collections::HashMap<String, String>,
+        visited: &mut std::collections::HashSet<String>,
+    ) -> bool {
+        if !visited.insert(name.to_string()) {
+            return false;
+        }
+        let Some(body) = fn_bodies.get(name) else {
+            return false;
+        };
+        if body.contains("Ok(self.view())") {
+            return true;
+        }
+        if body.contains("command_tx(") {
+            return false;
+        }
+        for target in extract_delegation_targets(body) {
+            if chain_has_bare_view_rec(&target, fn_bodies, visited) {
+                return true;
+            }
+        }
+        false
     }
 
     /// Recursively collects `(path relative to `root`, file contents)` for
@@ -1878,194 +2150,69 @@ mod tests {
     ///
     /// Returns `(seen, missing_tx, bare_view)`:
     /// - `seen` — every tracked `pub fn -> Result<GameStateView, GameError>`
-    ///   found, as `"file::name"`.
-    /// - `missing_tx` — tracked commands whose body never calls
-    ///   `command_tx(` (invariant A violation).
-    /// - `bare_view` — tracked commands whose body contains
-    ///   `Ok(self.view())` and are not in `allowed_bare_view` (invariant B
-    ///   violation).
+    ///   found, as `"file::name"`. `pub(super) fn` definitions are NOT tracked
+    ///   commands, but their bodies are collected as delegation targets.
+    /// - `missing_tx` — tracked commands whose body never calls `command_tx(`
+    ///   and whose `self.<target>(` delegations (transitively) never reach a
+    ///   fn containing `command_tx(` (invariant A violation).
+    /// - `bare_view` — tracked commands whose body (or delegation chain, not
+    ///   entering `command_tx`) contains `Ok(self.view())` and are not in
+    ///   `allowed_bare_view` (invariant B violation).
+    ///
+    /// Two passes. Pass 1 collects every `pub fn` / `pub(super) fn` returning
+    /// the view `Result` and its body text, keyed by fn name (method names on
+    /// a single type are unique in Rust, so name-keying is unambiguous for the
+    /// `impl GameEngine` blocks this scanner covers). Pass 2 walks the tracked
+    /// `pub fn` commands and checks invariants, following one-line delegations
+    /// to `pub(super)` inner fns so a command like `jump_to_scene` that
+    /// delegates to `jump_to_scene_inner` is not falsely flagged when the
+    /// inner fn routes through `command_tx`. A command that calls `command_tx`
+    /// directly is checked on its own body only — matching the pre-delegation
+    /// behavior — so the delegation path never weakens the direct-call check.
     fn scan_sources(
         sources: &[(String, String)],
         allowed_bare_view: &[&str],
     ) -> (Vec<String>, Vec<String>, Vec<String>) {
+        // Pass 1: collect view-returning fn bodies (pub and pub(super)).
+        // Private `fn` is deliberately excluded so a private helper between two
+        // public commands cannot make the earlier command appear compliant.
+        let mut fn_bodies: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        for (_file, source) in sources {
+            for (_vis, name, body) in view_fn_definitions(source) {
+                fn_bodies.insert(name, body);
+            }
+        }
+
         let mut seen: Vec<String> = Vec::new();
         let mut missing_tx: Vec<String> = Vec::new();
         let mut bare_view: Vec<String> = Vec::new();
 
+        // Pass 2: check invariants for each tracked pub fn command.
         for (file, source) in sources {
-            let mut current: Option<String> = None;
-            let mut body_has_tx = false;
-            let mut body_has_bare_view = false;
-            let mut signature = String::new();
-            let mut in_signature = false;
-            // Brace depth of the currently tracked function's body. When it
-            // returns to zero the function has ended and we finalize it —
-            // this prevents a private helper containing `command_tx(` between
-            // two public commands from making the earlier command appear
-            // compliant (the earlier command is finalized at its own closing
-            // brace before the helper begins).
-            let mut fn_brace_depth: i32 = 0;
-            let mut in_fn_body = false;
-            // Skipping test-only items: `#[cfg(test)]` applies to the next
-            // item; `mod tests { … }` has a brace-delimited body. We skip
-            // these instead of abandoning the rest of the file, so a
-            // production command added after test-only items is still scanned.
-            let mut skip_next_item = false;
-            let mut skip_brace_depth: i32 = 0;
-
-            for line in source.lines() {
-                let trimmed = line.trim_start();
-
-                // Inside a skipped test-only item — track braces, continue.
-                if skip_brace_depth > 0 {
-                    for ch in trimmed.chars() {
-                        if ch == '{' {
-                            skip_brace_depth += 1;
-                        }
-                        if ch == '}' {
-                            skip_brace_depth -= 1;
-                        }
-                    }
+            for (vis, name, body) in view_fn_definitions(source) {
+                if vis != FnVisibility::Pub {
                     continue;
                 }
+                seen.push(format!("{file}::{name}"));
 
-                // `#[cfg(test)]` — the next item is test-only; skip it.
-                if trimmed.starts_with("#[cfg(test)]") {
-                    skip_next_item = true;
-                    continue;
-                }
-
-                // If the previous line was `#[cfg(test)]`, skip this item.
-                if skip_next_item {
-                    skip_next_item = false;
-                    let open = trimmed.chars().filter(|c| *c == '{').count() as i32;
-                    let close = trimmed.chars().filter(|c| *c == '}').count() as i32;
-                    if open > 0 {
-                        skip_brace_depth = open - close;
-                    }
-                    // No braces (e.g. `mod test_support;`) — single-line decl, done.
-                    continue;
-                }
-
-                // Inside a tracked function body — check for content and
-                // the closing brace.
-                if in_fn_body {
-                    for ch in trimmed.chars() {
-                        if ch == '{' {
-                            fn_brace_depth += 1;
-                        }
-                        if ch == '}' {
-                            fn_brace_depth -= 1;
-                        }
-                    }
-                    if current.is_some() {
-                        if trimmed.contains("command_tx(") {
-                            body_has_tx = true;
-                        }
-                        if trimmed.contains("Ok(self.view())") {
-                            body_has_bare_view = true;
-                        }
-                    }
-                    if fn_brace_depth == 0 {
-                        if let Some(name) = current.take() {
-                            if !body_has_tx {
-                                missing_tx.push(format!("{file}::{name}"));
-                            }
-                            if body_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
-                                bare_view.push(format!("{file}::{name}"));
-                            }
-                            body_has_tx = false;
-                            body_has_bare_view = false;
-                        }
-                        in_fn_body = false;
-                    }
-                    continue;
-                }
-
-                // Detect the start of a tracked function.
-                if trimmed.starts_with("pub fn ") {
-                    signature.clear();
-                    signature.push_str(trimmed);
-                    in_signature = !trimmed.contains('{');
-                    if !in_signature {
-                        if let Some(name) = tracked_command_name(&signature) {
-                            seen.push(format!("{file}::{name}"));
-                            current = Some(name);
-                            let open = trimmed.chars().filter(|c| *c == '{').count() as i32;
-                            let close = trimmed.chars().filter(|c| *c == '}').count() as i32;
-                            fn_brace_depth = open - close;
-                            in_fn_body = true;
-                            // Check the same line for one-liner bodies.
-                            if trimmed.contains("command_tx(") {
-                                body_has_tx = true;
-                            }
-                            if trimmed.contains("Ok(self.view())") {
-                                body_has_bare_view = true;
-                            }
-                            if fn_brace_depth == 0 {
-                                if let Some(name) = current.take() {
-                                    if !body_has_tx {
-                                        missing_tx.push(format!("{file}::{name}"));
-                                    }
-                                    if body_has_bare_view
-                                        && !allowed_bare_view.contains(&name.as_str())
-                                    {
-                                        bare_view.push(format!("{file}::{name}"));
-                                    }
-                                    body_has_tx = false;
-                                    body_has_bare_view = false;
-                                }
-                                in_fn_body = false;
-                            }
-                        }
-                    }
-                    continue;
-                }
-                if in_signature {
-                    signature.push(' ');
-                    signature.push_str(trimmed);
-                    if trimmed.contains('{') {
-                        in_signature = false;
-                        if let Some(name) = tracked_command_name(&signature) {
-                            seen.push(format!("{file}::{name}"));
-                            current = Some(name);
-                            let open = trimmed.chars().filter(|c| *c == '{').count() as i32;
-                            let close = trimmed.chars().filter(|c| *c == '}').count() as i32;
-                            fn_brace_depth = open - close;
-                            in_fn_body = true;
-                            if trimmed.contains("command_tx(") {
-                                body_has_tx = true;
-                            }
-                            if trimmed.contains("Ok(self.view())") {
-                                body_has_bare_view = true;
-                            }
-                            if fn_brace_depth == 0 {
-                                if let Some(name) = current.take() {
-                                    if !body_has_tx {
-                                        missing_tx.push(format!("{file}::{name}"));
-                                    }
-                                    if body_has_bare_view
-                                        && !allowed_bare_view.contains(&name.as_str())
-                                    {
-                                        bare_view.push(format!("{file}::{name}"));
-                                    }
-                                    body_has_tx = false;
-                                    body_has_bare_view = false;
-                                }
-                                in_fn_body = false;
-                            }
-                        }
-                    }
-                    continue;
-                }
-            }
-            // Finalize the last function in the file (safety net for
-            // malformed source where brace tracking never reaches zero).
-            if let Some(name) = current.take() {
-                if !body_has_tx {
+                // Invariant A: the command reaches `command_tx` either directly
+                // (own body) or via a one-line delegation chain.
+                let reaches_tx = body.contains("command_tx(")
+                    || delegation_reaches_command_tx(&body, &fn_bodies);
+                if !reaches_tx {
                     missing_tx.push(format!("{file}::{name}"));
                 }
-                if body_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
+
+                // Invariant B: a bare `Ok(self.view())` in the own body (direct
+                // case) or anywhere in the delegation chain (delegation case,
+                // stopping at any fn that itself routes through `command_tx`).
+                let chain_has_bare_view = if body.contains("command_tx(") {
+                    body.contains("Ok(self.view())")
+                } else {
+                    delegation_chain_has_bare_view(&body, &fn_bodies)
+                };
+                if chain_has_bare_view && !allowed_bare_view.contains(&name.as_str()) {
                     bare_view.push(format!("{file}::{name}"));
                 }
             }
@@ -2163,6 +2310,77 @@ pub fn after_tests_command(&mut self) -> Result<GameStateView, GameError> {
         assert!(
             !missing_tx.iter().any(|s| s.contains("after_tests_command")),
             "after_tests_command calls command_tx and must not be flagged: {missing_tx:?}"
+        );
+    }
+
+    /// Delegation-following self-test: a `pub fn` that delegates to a
+    /// `pub(super) fn <name>_inner` which routes through `command_tx` is
+    /// excused from invariant A (and not flagged for invariant B), while a
+    /// delegation to an inner fn that neither calls `command_tx` nor
+    /// delegates further is still flagged for both invariants. Locks in the
+    /// `jump_to_scene` → `jump_to_scene_inner` shape this scanner exists to
+    /// permit.
+    #[test]
+    fn scanner_follows_one_line_delegation_to_inner() {
+        let src = r#"
+pub fn delegating_command(&mut self) -> Result<GameStateView, GameError> {
+    self.delegating_command_inner()
+}
+
+pub(super) fn delegating_command_inner(&mut self) -> Result<GameStateView, GameError> {
+    self.command_tx(|engine| {
+        Ok(())
+    })
+}
+
+pub fn delegating_to_bad_inner(&mut self) -> Result<GameStateView, GameError> {
+    self.bad_inner()
+}
+
+pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
+    Ok(self.view())
+}
+"#;
+        let sources = vec![("synthetic.rs".to_string(), src.to_string())];
+        let (seen, missing_tx, bare_view) = scan_sources(&sources, &[]);
+
+        // Both pub fn commands are tracked; the pub(super) inners are not.
+        assert!(
+            seen.contains(&"synthetic.rs::delegating_command".to_string()),
+            "delegating_command should be tracked: {seen:?}"
+        );
+        assert!(
+            seen.contains(&"synthetic.rs::delegating_to_bad_inner".to_string()),
+            "delegating_to_bad_inner should be tracked: {seen:?}"
+        );
+        assert!(
+            !seen
+                .iter()
+                .any(|s| s.ends_with("::delegating_command_inner") || s.ends_with("::bad_inner")),
+            "pub(super) inner fns must not be tracked as commands: {seen:?}"
+        );
+
+        // delegating_command -> delegating_command_inner -> command_tx: A ok.
+        assert!(
+            !missing_tx.iter().any(|s| s.contains("delegating_command")),
+            "delegating_command reaches command_tx via _inner and must not be flagged: {missing_tx:?}"
+        );
+        assert!(
+            !bare_view.iter().any(|s| s.contains("delegating_command")),
+            "delegating_command's chain has no bare Ok(self.view()) and must not be flagged: {bare_view:?}"
+        );
+
+        // delegating_to_bad_inner -> bad_inner has a bare view and no
+        // command_tx anywhere in the chain: A and B both fail.
+        assert!(
+            missing_tx
+                .iter()
+                .any(|s| s.contains("delegating_to_bad_inner")),
+            "delegating_to_bad_inner never reaches command_tx and must be flagged: {missing_tx:?}"
+        );
+        assert!(
+            bare_view.iter().any(|s| s.contains("delegating_to_bad_inner")),
+            "delegating_to_bad_inner's chain has a bare Ok(self.view()) and must be flagged: {bare_view:?}"
         );
     }
 
