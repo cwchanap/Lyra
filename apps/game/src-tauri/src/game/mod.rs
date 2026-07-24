@@ -1854,11 +1854,10 @@ mod tests {
         }
         let (vis, after) = if let Some(rest) = signature.strip_prefix("pub(super) fn ") {
             (FnVisibility::PubSuper, rest)
-        } else if let Some(rest) = signature.strip_prefix("pub fn ") {
-            (FnVisibility::Pub, rest)
         } else {
-            return None;
-        };
+    let rest = signature.strip_prefix("pub fn ")?;
+    (FnVisibility::Pub, rest)
+};
         let name = after
             .split(|c: char| c == '(' || c.is_whitespace())
             .next()?;
