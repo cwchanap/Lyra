@@ -347,15 +347,29 @@ impl GameEngine {
     /// would skip any visible lines that follow it), the tags are applied for
     /// visual continuity and the next line is advanced to in-place. Only when a
     /// complete testimony cycle (ending in `AdvanceOutcome::Loop`) contains no
-    /// visible dialogue anywhere is the testimony degenerate and withdrawing
-    /// appropriate. Iterating here — instead of recursing through
-    /// `on_queue_exhausted` → `install_or_exhaust_line_content` →
-    /// `install_scene_queue` — avoids the stack overflow an all-`SceneTag`
-    /// testimony would otherwise cause, because `consume_scene_tags_at_cursor`
-    /// eats every tag and re-enters `on_queue_exhausted` immediately.
+    /// visible dialogue in its **lines** is the testimony degenerate and
+    /// withdrawing appropriate.
+    ///
+    /// Degeneracy is determined from the testimony lines themselves, not from
+    /// the composite `on_loop + loop_prompt + first line` bridge queue. A
+    /// testimony whose lines are all `SceneTag` but whose bridge carries
+    /// visible dialogue is still degenerate: the bridge drains, the tag-only
+    /// line content is consumed silently, and `on_queue_exhausted` re-enters
+    /// this function at the `Loop` path, which would re-install the same
+    /// bridge indefinitely. Because `playing_unbroken_line_id` returns `None`
+    /// while the bridge plays (the cursor sits before `line_content_start`),
+    /// the UI exposes no challenge or withdraw control during the bridge, so
+    /// the player cannot escape — a soft lock. Withdrawing instead of
+    /// installing the bridge breaks the cycle.
+    ///
+    /// Iterating here — instead of recursing through `on_queue_exhausted` →
+    /// `install_or_exhaust_line_content` → `install_scene_queue` — avoids the
+    /// stack overflow an all-`SceneTag` testimony would otherwise cause,
+    /// because `consume_scene_tags_at_cursor` eats every tag and re-enters
+    /// `on_queue_exhausted` immediately.
     pub(super) fn advance_playing_testimony(&mut self) -> Result<(), GameError> {
         loop {
-            let (queue_items, line_content_start, is_loop) = {
+            let (queue_items, line_content_start, is_loop, has_dialogue) = {
                 let scene = match &mut self.scene {
                     SceneRuntime::Interrogation(scene) => scene,
                     _ => return Ok(()),
@@ -364,48 +378,64 @@ impl GameEngine {
                     return Ok(());
                 };
                 match scene.advance_line() {
-                    AdvanceOutcome::NextLine(index) => (
-                        scene
+                    AdvanceOutcome::NextLine(index) => {
+                        let content = scene
                             .question(&question_id)
                             .and_then(|question| question.testimony.lines.get(index))
                             .map(|line| line.content.clone())
-                            .unwrap_or_default(),
-                        // Pure line content — challengeable from the first item.
-                        0,
-                        false,
-                    ),
+                            .unwrap_or_default();
+                        // Pure line content — challengeable from the first
+                        // item. Degeneracy is per-line here: a tag-only
+                        // intermediate line is skipped, not withdrawn from.
+                        let has_dialogue = content
+                            .iter()
+                            .any(|item| !matches!(item, DialogueItem::SceneTag { .. }));
+                        (content, 0, false, has_dialogue)
+                    }
                     AdvanceOutcome::Loop => {
-                        let (items, start) =
-                            scene
-                                .question(&question_id)
-                                .map_or((Vec::new(), 0), |question| {
-                                    let on_loop_len = question.testimony.on_loop.len();
-                                    let loop_prompt_len = question.testimony.loop_prompt.len();
-                                    let mut items = question.testimony.on_loop.clone();
-                                    items.extend(question.testimony.loop_prompt.iter().cloned());
-                                    if let Some(first) = question.testimony.lines.first() {
-                                        items.extend(first.content.iter().cloned());
-                                    }
-                                    // The on_loop + loop_prompt bridge plays first; line 0
-                                    // content follows, so the challenge target only surfaces
-                                    // once the cursor reaches the line content.
-                                    (items, on_loop_len + loop_prompt_len)
-                                });
-                        (items, start, true)
+                        let (items, start, lines_have_dialogue) = scene
+                            .question(&question_id)
+                            .map_or((Vec::new(), 0, false), |question| {
+                                let on_loop_len = question.testimony.on_loop.len();
+                                let loop_prompt_len = question.testimony.loop_prompt.len();
+                                let mut items = question.testimony.on_loop.clone();
+                                items.extend(question.testimony.loop_prompt.iter().cloned());
+                                if let Some(first) = question.testimony.lines.first() {
+                                    items.extend(first.content.iter().cloned());
+                                }
+                                // The on_loop + loop_prompt bridge plays first;
+                                // line 0 content follows, so the challenge
+                                // target only surfaces once the cursor reaches
+                                // the line content.
+                                //
+                                // Degeneracy is decided by whether the testimony
+                                // **lines** carry any visible dialogue — not by
+                                // the composite bridge queue. A visible bridge
+                                // with all-tag lines must still withdraw; see
+                                // the doc comment above.
+                                let lines_have_dialogue =
+                                    question.testimony.lines.iter().any(|line| {
+                                        line.content.iter().any(|item| {
+                                            !matches!(item, DialogueItem::SceneTag { .. })
+                                        })
+                                    });
+                                (items, on_loop_len + loop_prompt_len, lines_have_dialogue)
+                            });
+                        (items, start, true, lines_have_dialogue)
                     }
                 }
             };
-
-            let has_dialogue = queue_items
-                .iter()
-                .any(|item| !matches!(item, DialogueItem::SceneTag { .. }));
 
             if has_dialogue {
                 self.install_or_exhaust_line_content(queue_items, line_content_start)?;
                 return Ok(());
             }
 
-            // Tag-only (or empty) line: apply its visual cues for continuity.
+            // Tag-only (or empty) queue: apply its visual cues for continuity.
+            // On the Loop path this includes any SceneTag items from the
+            // bridge; visible bridge dialogue is intentionally not played
+            // because the testimony is degenerate (no visible lines to loop
+            // back to).
             for item in &queue_items {
                 if let DialogueItem::SceneTag { text, asset_cue } = item {
                     self.last_visual_cue
@@ -414,14 +444,14 @@ impl GameEngine {
             }
 
             if is_loop {
-                // A complete testimony cycle contained no visible dialogue —
-                // the testimony is degenerate. Withdraw to the menu rather than
-                // looping forever. Must not use install_or_exhaust_line_content:
-                // on_queue_exhausted dispatches back here while
-                // is_playing_unbroken() holds, and an all-SceneTag queue would
-                // drain immediately inside install_scene_queue
-                // (consume_scene_tags_at_cursor eats every item), recurse, and
-                // eventually overflow the stack.
+                // A complete testimony cycle contained no visible dialogue in
+                // its lines — the testimony is degenerate. Withdraw to the
+                // menu rather than installing another loop bridge. Must not
+                // use install_or_exhaust_line_content: on_queue_exhausted
+                // dispatches back here while is_playing_unbroken() holds, and
+                // an all-SceneTag queue would drain immediately inside
+                // install_scene_queue (consume_scene_tags_at_cursor eats every
+                // item), recurse, and eventually overflow the stack.
                 if let SceneRuntime::Interrogation(scene) = &mut self.scene {
                     scene.withdraw();
                 }

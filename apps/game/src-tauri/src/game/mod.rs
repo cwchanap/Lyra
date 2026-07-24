@@ -4436,19 +4436,171 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
         // `install_or_exhaust_line_content` installs a queue whose items are
         // all SceneTags, `install_scene_queue` consumes them, the queue
         // drains, and `on_queue_exhausted` → `advance_playing_testimony`
-        // installs a successor queue (the loop bridge + line 0 content) with
-        // its own `line_content_start`. The old code applied the predecessor's
-        // `line_content_start` *after* `install_scene_queue` returned,
-        // clobbering the successor's boundary. The fix passes the override
-        // *into* `install_scene_queue` so it is applied before tag consumption
-        // and the successor's boundary is preserved.
+        // installs a successor queue with its own `line_content_start`. The
+        // old code applied the predecessor's `line_content_start` *after*
+        // `install_scene_queue` returned, clobbering the successor's boundary.
+        // The fix passes the override *into* `install_scene_queue` so it is
+        // applied before tag consumption and the successor's boundary is
+        // preserved.
         //
-        // Scenario: 1 unbroken question, 1 testimony line whose content is a
-        // single SceneTag, with a 2-item dialogue bridge (on_loop + loop_prompt).
-        // Asking the question installs the line content (all SceneTags → drains),
-        // triggers the Loop path, and installs [on_loop, loop_prompt, SceneTag]
-        // with line_content_start = 2. The old code would clobber that to 0,
-        // exposing the challenge target during bridge dialogue.
+        // Scenario: 2 testimony lines — l0 (tag-only, drains on install) and
+        // l1 (visible, with a contradiction so the question stays unbroken).
+        // on_loop is a single SceneTag so the loop bridge is itself all-tag
+        // and drains on install. After asking (l0 drains → l1 installs), the
+        // player advances through l1; the Loop path then installs the bridge
+        // [on_loop SceneTag, l0 SceneTag] with `line_content_start = 1`. That
+        // bridge drains, `on_queue_exhausted` installs l1 as the successor
+        // with `line_content_start = 0`. The old code would clobber that 0
+        // back to 1 (the predecessor bridge's boundary), hiding the challenge
+        // target during l1's replay. The fix preserves 0.
+        let scene_tag = || DialogueItem::SceneTag {
+            text: "visual_cue".into(),
+            asset_cue: None,
+        };
+        let line = |text: &str| DialogueItem::Line {
+            speaker: "A".into(),
+            text: text.into(),
+            portrait: None,
+        };
+        let scene = InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "inquiry".into(),
+                label: "Inquiry".into(),
+                subject: subject(),
+                required: false,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: VisualAssetCueJson::default(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![InquiryQuestionJson {
+                    id: "q_tags_then_visible".into(),
+                    label: "Tags Then Visible".into(),
+                    status: LockStatus::Unlocked,
+                    required: false,
+                    unlock: None,
+                    reveals: vec![],
+                    testimony: TestimonyJson {
+                        on_loop: vec![scene_tag()],
+                        loop_prompt: vec![],
+                        default_challenge: vec![],
+                        default_wrong: vec![],
+                        wrong_reply: vec![],
+                        lines: vec![
+                            TestimonyLineJson {
+                                id: "l_tags".into(),
+                                label: "Tags".into(),
+                                // All-SceneTag content — the queue drains on
+                                // install, triggering the successor path.
+                                content: vec![scene_tag()],
+                                contradiction: None,
+                                challenge: vec![],
+                                on_correct: vec![],
+                                on_wrong_evidence: vec![],
+                                reveals: vec![],
+                            },
+                            TestimonyLineJson {
+                                id: "l_visible".into(),
+                                label: "Visible".into(),
+                                content: vec![line("line 1 dialogue")],
+                                // Contradiction keeps the question unbroken so
+                                // the engine enters the Playing loop and the
+                                // bridge eventually installs.
+                                contradiction: Some(InventoryTarget::Evidence {
+                                    id: "never_held".into(),
+                                }),
+                                challenge: vec![],
+                                on_correct: vec![],
+                                on_wrong_evidence: vec![],
+                                reveals: vec![],
+                            },
+                        ],
+                    },
+                }],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
+
+        // Asking installs l0's all-SceneTag content, which drains and triggers
+        // the successor install of l1. The view should show l1's dialogue.
+        let view = engine
+            .ask_interrogation_question("q_tags_then_visible")
+            .unwrap();
+        match &view.mode {
+            ModeView::Dialogue { current, .. } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { text, .. } if text == "line 1 dialogue"),
+                    "expected l1 dialogue after the draining l0, got {current:?}"
+                );
+            }
+            other => panic!("expected Dialogue mode after successor install, got {other:?}"),
+        }
+
+        // Drain l1. The Loop path installs the all-tag bridge
+        // [on_loop, l0_content] with line_content_start = 1; that bridge
+        // drains and the successor (l1) installs with line_content_start = 0.
+        // The old clobber would reset that to 1, hiding the challenge target.
+        let view = engine.advance_dialogue(token_from(&view)).unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                current,
+                cross_exam_line_id,
+                ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { text, .. } if text == "line 1 dialogue"),
+                    "expected l1 dialogue after the draining bridge, got {current:?}"
+                );
+                assert_eq!(
+                    cross_exam_line_id.as_deref(),
+                    Some("l_visible"),
+                    "反駁 target must surface after the successor install — boundary was clobbered"
+                );
+            }
+            other => panic!("expected Dialogue mode with l1 after bridge drain, got {other:?}"),
+        }
+
+        // The successor queue's boundary must be 0 (l1 is challengeable from
+        // the first item), not 1 (the stale bridge predecessor value).
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert_eq!(
+            scene.line_content_start, 0,
+            "successor queue boundary must be 0 (l1 challengeable from start), not clobbered to 1"
+        );
+    }
+
+    #[test]
+    fn degenerate_testimony_with_visible_bridge_withdraws_instead_of_soft_locking() {
+        // Regression: an unbroken question whose testimony lines are all
+        // SceneTag items but whose on_loop / loop_prompt bridge carries
+        // visible dialogue. Before the fix, `advance_playing_testimony`
+        // computed `has_dialogue` across the composite bridge queue
+        // (on_loop + loop_prompt + first line content), so the visible bridge
+        // kept `has_dialogue` true, the bridge installed, and after it drained
+        // the tag-only line content was consumed silently —
+        // `on_queue_exhausted` re-entered `advance_playing_testimony` at the
+        // Loop path, which re-installed the same bridge indefinitely. Because
+        // `playing_unbroken_line_id` returns None while the bridge plays
+        // (cursor < line_content_start), the UI exposed no challenge or
+        // withdraw control, soft-locking the player.
+        //
+        // The fix determines degeneracy from the testimony lines themselves.
+        // A complete cycle with no visible line content withdraws to the
+        // question menu instead of installing another bridge.
         let scene_tag = || DialogueItem::SceneTag {
             text: "visual_cue".into(),
             asset_cue: None,
@@ -4476,8 +4628,8 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
                 entry_dialogue: vec![],
                 complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
                 questions: vec![InquiryQuestionJson {
-                    id: "q_tags_then_loop".into(),
-                    label: "Tags Then Loop".into(),
+                    id: "q_tags_with_visible_bridge".into(),
+                    label: "Tags With Visible Bridge".into(),
                     status: LockStatus::Unlocked,
                     required: false,
                     unlock: None,
@@ -4491,10 +4643,12 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
                         lines: vec![TestimonyLineJson {
                             id: "l_tags".into(),
                             label: "Tags".into(),
-                            // All-SceneTag content — the queue drains on install.
+                            // All-SceneTag line content — the testimony is
+                            // degenerate even though the bridge is visible.
                             content: vec![scene_tag()],
-                            // Contradiction keeps the question unbroken, so
-                            // the engine enters the Playing loop.
+                            // Contradiction keeps the question unbroken so
+                            // the engine enters the Playing loop rather than
+                            // the honest-question path.
                             contradiction: Some(InventoryTarget::Evidence {
                                 id: "never_held".into(),
                             }),
@@ -4515,43 +4669,23 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
         };
         let mut engine = empty_engine_with_interrogation_scene(scene, 1);
 
-        // Asking the question installs the all-SceneTag line content, which
-        // drains and triggers the Loop successor install. The view should
-        // show the loop bridge dialogue, not the question menu.
+        // Asking the question must withdraw to the interrogation menu, NOT
+        // install the visible on_loop / loop_prompt bridge. Before the fix
+        // this returned Dialogue mode showing "on_loop", trapping the player.
         let view = engine
-            .ask_interrogation_question("q_tags_then_loop")
+            .ask_interrogation_question("q_tags_with_visible_bridge")
             .unwrap();
-        match &view.mode {
-            ModeView::Dialogue {
-                current,
-                cross_exam_line_id,
-                ..
-            } => {
-                // The successor queue's first item is the on_loop bridge.
-                assert!(
-                    matches!(current, DialogueItem::Line { text, .. } if text == "on_loop"),
-                    "expected the on_loop bridge after the draining predecessor, got {current:?}"
-                );
-                // The challenge target must stay hidden during bridge dialogue.
-                // With the old clobber (line_content_start = 0), the cursor
-                // (0) >= 0 would expose it.
-                assert_eq!(
-                    cross_exam_line_id.as_deref(),
-                    None,
-                    "反駁 must stay hidden during the loop bridge — successor boundary was clobbered"
-                );
-            }
-            other => panic!("expected Dialogue mode after successor install, got {other:?}"),
-        }
-
-        // The successor queue's boundary must be 2 (on_loop + loop_prompt),
-        // not 0 (the stale predecessor value).
-        let SceneRuntime::Interrogation(scene) = &engine.scene else {
-            panic!("expected interrogation scene");
-        };
+        assert!(
+            !matches!(view.mode, ModeView::Dialogue { .. }),
+            "degenerate testimony with a visible bridge left the engine in dialogue mode (soft lock): {:?}",
+            view.mode
+        );
+        // The tag-only line's visual cue must still have been applied for
+        // continuity.
         assert_eq!(
-            scene.line_content_start, 2,
-            "successor queue boundary must be 2 (on_loop + loop_prompt), not clobbered to 0"
+            engine.last_visual_cue.scene_tag,
+            Some("visual_cue".into()),
+            "degenerate testimony should still apply its visual cues"
         );
     }
 
