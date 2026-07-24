@@ -11,6 +11,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  source-snapshot:
+    name: Temporary source snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload mod.rs source
+        uses: actions/upload-artifact@v4
+        with:
+          name: mod-rs-source
+          path: apps/game/src-tauri/src/game/mod.rs
+          retention-days: 1
+
   lint-frontend:
     name: Frontend – check & build
     runs-on: ubuntu-latest
