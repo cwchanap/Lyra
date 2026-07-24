@@ -3,7 +3,7 @@ import type {
   GameplayCommandName,
   GameplaySfxEvent,
 } from "$lib/audio/sfx-events";
-import type { GameStateView } from "./types";
+import type { GameStateView, QuestionView } from "./types";
 
 const mocks = vi.hoisted(() => ({
   acquisitionClear: vi.fn(),
@@ -65,6 +65,7 @@ function state(id: string): GameStateView {
       bgs: null,
     },
     inventory: { evidence: [], statements: [] },
+    story: { facts: [], questions: [], objectives: [], authorizations: [] },
     dialogueHistory: [],
   };
 }
@@ -100,6 +101,32 @@ afterEach(() => {
 });
 
 describe("game client audio events", () => {
+  it("accepts an applied question resolver without candidate resolver ids", async () => {
+    const resolvedQuestion: QuestionView = {
+      id: "who_sent_the_message",
+      label: "Who sent the message?",
+      summary: "The sender has been identified.",
+      status: "resolved",
+      resolvedByFactId: "fact_sender_identity",
+    };
+    type PublicQuestion = GameStateView["story"]["questions"][number];
+    type HasCandidateResolvers =
+      "resolvedByFactIds" extends keyof PublicQuestion ? true : false;
+    const hasCandidateResolvers: HasCandidateResolvers = false;
+    const previous = state("previous");
+    const next = state("next");
+    next.story.questions = [resolvedQuestion];
+    const client = await loadGameClient(previous);
+    mocks.invoke.mockResolvedValueOnce(next);
+    mocks.inferAcquisitionNotifications.mockReturnValueOnce([]);
+    mocks.inferGameplaySfxEvents.mockReturnValueOnce([]);
+
+    await client.inspectHotspot("receipt");
+
+    expect(client.gameState.value?.story.questions).toEqual([resolvedQuestion]);
+    expect(hasCandidateResolvers).toBe(false);
+  });
+
   it("does not play dialogue-click feedback from command dispatch", async () => {
     const previous = state("previous");
     const next = state("next");

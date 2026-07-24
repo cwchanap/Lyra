@@ -205,11 +205,89 @@ export type Inventory = {
   statements: StatementRecord[];
 };
 
+export type StoryStateView = {
+  facts: FactView[];
+  questions: QuestionView[];
+  objectives: ObjectiveView[];
+  authorizations: AuthorizationView[];
+};
+
+export type FactView = {
+  id: string;
+  label: string;
+  summary: string;
+  details: string;
+  category: string;
+  assertedInChapterId: string | null;
+  assertedInSceneId: string | null;
+  firstOrigin: AssertionOrigin;
+  supportingRecords: InventoryTarget[];
+  supportingFactIds: string[];
+};
+
+export type QuestionView = {
+  id: string;
+  label: string;
+  summary: string;
+  status: "open" | "resolved";
+  resolvedByFactId: string | null;
+};
+
+export type ObjectiveView = {
+  id: string;
+  label: string;
+  summary: string;
+  kind: "primary" | "secondary";
+  sortOrder: number;
+  completed: boolean;
+  activePrimary: boolean;
+};
+
+export type AuthorizationView = {
+  id: string;
+  label: string;
+  summary: string;
+  grantingAuthority: string;
+  grantedInChapterId: string | null;
+  grantedInSceneId: string | null;
+  firstOrigin: AssertionOrigin;
+};
+
+export type AssertionOrigin =
+  | {
+      type: "sceneEvent";
+      chapterId: string;
+      sceneId: string;
+      blockKind: StoryEventBlockKind;
+      blockId: string;
+    }
+  | {
+      type: "analysisBoard";
+      chapterId: string;
+      sceneId: string;
+      boardId: string;
+    }
+  | { type: "migration"; migrationId: string };
+
+export type StoryEventBlockKind =
+  | "sublocation"
+  | "hotspot"
+  | "topic"
+  | "interrogationPhase"
+  | "inquiryQuestion"
+  | "testimonyLine"
+  | "storyEvent";
+
+export type InventoryTarget =
+  | { kind: "evidence"; id: string }
+  | { kind: "statement"; id: string };
+
 export type GameStateView = {
   mode: Mode;
   chapter: ChapterView;
   scene: SceneView;
   inventory: Inventory;
+  story: StoryStateView;
   dialogueHistory: DialogueHistoryEntry[];
 };
 

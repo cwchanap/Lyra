@@ -58,6 +58,7 @@ function state(
       evidence: evidenceRecords,
       statements: statementRecords,
     },
+    story: { facts: [], questions: [], objectives: [], authorizations: [] },
     dialogueHistory: [],
   };
 }
