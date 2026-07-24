@@ -133,6 +133,43 @@ export type ASTChapter = Located<{
   sceneFiles: string[]; // ordered, raw filenames as written in the manifest
 }>;
 
+export type ASTStoryCatalog = Located<{
+  facts: ASTFactDefinition[];
+  questions: ASTQuestionDefinition[];
+  objectives: ASTObjectiveDefinition[];
+  authorizations: ASTAuthorizationDefinition[];
+}>;
+
+export type ASTFactDefinition = Located<{
+  id: string;
+  label: string;
+  summary: string;
+  details: string;
+  category: string;
+}>;
+
+export type ASTQuestionDefinition = Located<{
+  id: string;
+  label: string;
+  summary: string;
+  resolvedByFactIds: Array<Located<{ id: string }>>;
+}>;
+
+export type ASTObjectiveDefinition = Located<{
+  id: string;
+  label: string;
+  summary: string;
+  kind: "primary" | "secondary";
+  sortOrder: number;
+}>;
+
+export type ASTAuthorizationDefinition = Located<{
+  id: string;
+  label: string;
+  summary: string;
+  grantingAuthority: string;
+}>;
+
 export type ASTLinearScene = Located<{
   kind: "linearScene";
   id: string; // derived from filename without .md
@@ -462,6 +499,52 @@ export type JSONTestimonyLine = {
   onCorrect: JSONDialogueItem[];
   onWrongEvidence: JSONDialogueItem[];
   reveals: InterrogationRevealTarget[];
+};
+
+export type StoryCatalogJson = {
+  schemaVersion: 1;
+  facts: FactDefinition[];
+  questions: QuestionDefinition[];
+  objectives: ObjectiveDefinition[];
+  authorizations: AuthorizationDefinition[];
+  evidenceIndex: CaseRecordDefinitionIndex[];
+  statementsIndex: CaseRecordDefinitionIndex[];
+};
+
+export type FactDefinition = {
+  id: string;
+  label: string;
+  summary: string;
+  details: string;
+  category: string;
+};
+
+export type QuestionDefinition = {
+  id: string;
+  label: string;
+  summary: string;
+  resolvedByFactIds: string[];
+};
+
+export type ObjectiveDefinition = {
+  id: string;
+  label: string;
+  summary: string;
+  kind: "primary" | "secondary";
+  sortOrder: number;
+};
+
+export type AuthorizationDefinition = {
+  id: string;
+  label: string;
+  summary: string;
+  grantingAuthority: string;
+};
+
+export type CaseRecordDefinitionIndex = {
+  id: string;
+  chapterId: string;
+  sceneId: string;
 };
 
 // ----- Compile errors --------------------------------------------------------
