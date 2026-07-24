@@ -8,12 +8,16 @@
 // cwd=packages/scripts.
 // =============================================================================
 
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
 import { checkTauriConfig } from "./compile-scenes/config-check";
 import { withCompileLock } from "./compile-scenes/compile-lock";
-import { compileScenesWatchInputs } from "./compile-scenes/watch-inputs";
+import {
+  compileScenesWatchInputs,
+  isCompileScenesWatchPath,
+} from "./compile-scenes/watch-inputs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -53,10 +57,20 @@ async function main() {
         `[compile-scenes] Watching ${SOURCE_ROOTS.join(", ")} and ${ASSET_CONFIG_ROOT} for changes...`,
       );
       chokidar
-        .watch(compileScenesWatchInputs(SOURCE_ROOTS, ASSET_CONFIG_ROOT), {
-          ignoreInitial: true,
-        })
+        .watch(
+          compileScenesWatchInputs(SOURCE_ROOTS, ASSET_CONFIG_ROOT).filter(
+            existsSync,
+          ),
+          {
+            ignoreInitial: true,
+          },
+        )
         .on("all", async (event, path) => {
+          if (
+            !isCompileScenesWatchPath(path, SOURCE_ROOTS, ASSET_CONFIG_ROOT)
+          ) {
+            return;
+          }
           console.log(`[compile-scenes] ${event} ${path} - recompiling.`);
           try {
             await runOnce();
