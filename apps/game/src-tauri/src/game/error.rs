@@ -71,6 +71,14 @@ impl GameError {
             ),
         )
     }
+    pub fn duplicate_chapter_target(chapter_id: &str) -> Self {
+        Self::new(
+            "duplicateChapterTarget",
+            format!(
+                "Chapter '{chapter_id}' appears more than once — navigation targets must be unambiguous."
+            ),
+        )
+    }
     pub fn unknown_topic(c: &str, t: &str) -> Self {
         Self::new("unknownTopic", format!("Topic '{c}@{t}' does not exist."))
     }

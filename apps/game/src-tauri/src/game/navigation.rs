@@ -21,11 +21,24 @@ impl GameEngine {
         chapter_id: &str,
         scene_id: &str,
     ) -> Result<GameStateView, GameError> {
-        let chapter_idx = self
-            .chapters
-            .iter()
-            .position(|chapter| chapter.id == chapter_id)
-            .ok_or_else(|| GameError::unknown_chapter(chapter_id))?;
+        // Defense-in-depth: load_chapter_manifests rejects duplicate chapter
+        // ids at load time, but resolve the jump target unambiguously here too
+        // so a jump never silently lands on the "first" of two same-id
+        // chapters (e.g. if chapters are injected directly in tests or this
+        // helper is reused outside the gated load flow). Scan the whole list;
+        // if more than one chapter carries the requested id, surface a typed
+        // error rather than picking one arbitrarily. Mirrors the duplicate-scene
+        // guard in find_scene_runtime_by_id.
+        let mut chapter_idx: Option<usize> = None;
+        for (idx, chapter) in self.chapters.iter().enumerate() {
+            if chapter.id == chapter_id {
+                if chapter_idx.is_some() {
+                    return Err(GameError::duplicate_chapter_target(chapter_id));
+                }
+                chapter_idx = Some(idx);
+            }
+        }
+        let chapter_idx = chapter_idx.ok_or_else(|| GameError::unknown_chapter(chapter_id))?;
         let queue_gen = self.next_queue_gen;
         let (scene_idx, new_scene) = find_scene_runtime_by_id(
             &self.resources_dir,
@@ -217,6 +230,22 @@ pub(super) fn load_chapter_manifests(
         ));
     }
 
+    // Enforce chapter-ID uniqueness at load time. jump_to_scene resolves
+    // chapters by id (first match wins via `position`), so duplicate ids would
+    // silently target the wrong chapter. The navigation-index build also
+    // rejects duplicates, but that is a separate command (list_scenes) and
+    // does not gate jump_to_scene — rejecting here ensures the engine never
+    // holds duplicate chapters regardless of which command the frontend calls.
+    let mut seen_chapter_ids = std::collections::HashSet::new();
+    for chapter in &chapters {
+        if !seen_chapter_ids.insert(chapter.id.as_str()) {
+            return Err(GameError::chapter_load_failed(format!(
+                "duplicate chapter id \"{}\" — chapter ids must be unique for scene navigation.",
+                chapter.id
+            )));
+        }
+    }
+
     Ok(chapters)
 }
 
@@ -228,10 +257,11 @@ pub(super) fn scene_navigation_index_from_chapters(
     let mut seen_chapter_ids = std::collections::HashSet::new();
 
     for (chapter_index, chapter) in chapters.iter().enumerate() {
-        // jump_to_scene resolves chapters/scenes by id (first match wins),
-        // so duplicate ids would silently target the wrong entry. Reject
-        // ambiguous ids here — the free-navigation menu cannot render until
-        // the index builds cleanly, which gates every jump_to_scene call.
+        // jump_to_scene resolves chapters/scenes by id, so duplicate ids would
+        // target the wrong entry. load_chapter_manifests already rejects
+        // duplicates at load time and jump_to_scene_inner scans for multiple
+        // matches as defense-in-depth; this check keeps the navigation menu
+        // itself unambiguous as a third layer.
         if !seen_chapter_ids.insert(chapter.id.as_str()) {
             return Err(GameError::chapter_load_failed(format!(
                 "duplicate chapter id \"{}\" — chapter ids must be unique for scene navigation.",
@@ -1313,5 +1343,89 @@ mod tests {
         assert!(view.inventory.has_evidence("test_evidence"));
 
         let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn load_chapter_manifests_rejects_duplicate_chapter_id() {
+        // load_chapter_manifests is the root gate: if it allows duplicates,
+        // jump_to_scene_inner would silently target the first match. The
+        // navigation-index build (list_scenes) also rejects duplicates, but
+        // that is a separate command and does not gate jump_to_scene. This
+        // test verifies the load-time gate fires before the engine starts.
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-load-dup-chapter-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dup = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dup).unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [
+                    {
+                        "id": "chapter_1",
+                        "title": "First",
+                        "summary": "First",
+                        "scenes": [{ "type": "linear", "file": "chapter_1/scene_0.json" }]
+                    },
+                    {
+                        "id": "chapter_1",
+                        "title": "Second",
+                        "summary": "Second",
+                        "scenes": [{ "type": "linear", "file": "chapter_1/scene_0.json" }]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dup.join("scene_0.json"),
+            r#"{ "type": "linear", "id": "scene_0", "title": "S", "queue": [] }"#,
+        )
+        .unwrap();
+
+        let err = match GameEngine::new_started(d.clone()) {
+            Ok(_) => panic!("expected duplicate chapter id rejection, but engine started"),
+            Err(e) => e,
+        };
+        assert_eq!(err.code, "chapterLoadFailed");
+        assert!(err.message.contains("duplicate chapter id \"chapter_1\""));
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn jump_to_scene_rejects_duplicate_chapter_id_defense_in_depth() {
+        // Even if duplicate chapters somehow reach the engine's `chapters` vec
+        // (bypassing load_chapter_manifests — e.g. a test injects them
+        // directly), jump_to_scene_inner must not silently pick the first
+        // match. It scans for multiple matches and surfaces a typed error,
+        // mirroring the duplicate-scene guard in find_scene_runtime_by_id.
+        let mut engine = empty_engine_with_interrogation_scene(
+            crate::game::test_support::empty_inquiry_interrogation_scene(),
+            1,
+        );
+        // Inject a second chapter with the same id as the first.
+        engine.chapters.push(ChapterManifest {
+            id: "chapter_1".into(),
+            title: "Duplicate".into(),
+            summary: "Duplicate".into(),
+            scenes: vec![SceneRef {
+                scene_type: SceneType::Interrogation,
+                file: "chapter_1/interrogation_scene_1.json".into(),
+            }],
+        });
+
+        let err = engine
+            .jump_to_scene("chapter_1", "interrogation_scene_1")
+            .unwrap_err();
+        assert_eq!(err.code, "duplicateChapterTarget");
+        assert!(err.message.contains("chapter_1"));
     }
 }

@@ -4557,6 +4557,155 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
     }
 
     #[test]
+    fn tag_only_intermediate_testimony_line_does_not_abort_remaining_lines() {
+        // Regression: a testimony line whose content is entirely SceneTag items
+        // must not cause advance_playing_testimony to withdraw and return to the
+        // question menu. The tags should be applied for visual continuity and
+        // playback should advance to the next line with visible dialogue.
+        //
+        // Three testimony lines: l1 (dialogue), l2 (tag-only), l3 (dialogue +
+        // contradiction). Draining l1 must reach l3, not abort at l2. Before the
+        // fix, the all-SceneTag guard withdrew on the first tag-only line,
+        // silently skipping l3.
+        let scene_tag = || DialogueItem::SceneTag {
+            text: "visual_cue".into(),
+            asset_cue: None,
+        };
+        let line = |text: &str| DialogueItem::Line {
+            speaker: "suspect".into(),
+            text: text.into(),
+            portrait: None,
+        };
+        let scene = InterrogationSceneJson {
+            id: "interrogation_scene_1".into(),
+            title: "Interrogation".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            phases: vec![InterrogationPhaseJson::Inquiry {
+                id: "inquiry".into(),
+                label: "Inquiry".into(),
+                subject: subject(),
+                required: false,
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: VisualAssetCueJson::default(),
+                entry_dialogue: vec![],
+                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                questions: vec![InquiryQuestionJson {
+                    id: "q_three_lines".into(),
+                    label: "Three Lines".into(),
+                    status: LockStatus::Unlocked,
+                    required: false,
+                    unlock: None,
+                    reveals: vec![],
+                    testimony: TestimonyJson {
+                        on_loop: vec![line("loop bridge")],
+                        loop_prompt: vec![],
+                        default_challenge: vec![],
+                        default_wrong: vec![],
+                        wrong_reply: vec![],
+                        lines: vec![
+                            TestimonyLineJson {
+                                id: "l1".into(),
+                                label: "Line 1".into(),
+                                content: vec![line("line 1 dialogue")],
+                                contradiction: None,
+                                challenge: vec![],
+                                on_correct: vec![],
+                                on_wrong_evidence: vec![],
+                                reveals: vec![],
+                            },
+                            TestimonyLineJson {
+                                id: "l2".into(),
+                                label: "Line 2".into(),
+                                // Tag-only intermediate line — the regression
+                                // trigger.
+                                content: vec![scene_tag()],
+                                contradiction: None,
+                                challenge: vec![],
+                                on_correct: vec![],
+                                on_wrong_evidence: vec![],
+                                reveals: vec![],
+                            },
+                            TestimonyLineJson {
+                                id: "l3".into(),
+                                label: "Line 3".into(),
+                                content: vec![line("line 3 dialogue")],
+                                // Contradiction keeps the question unbroken so
+                                // the engine enters the Playing loop.
+                                contradiction: Some(InventoryTarget::Evidence {
+                                    id: "never_held".into(),
+                                }),
+                                challenge: vec![],
+                                on_correct: vec![],
+                                on_wrong_evidence: vec![],
+                                reveals: vec![],
+                            },
+                        ],
+                    },
+                }],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: InterrogationOutroJson {
+                unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
+
+        // Asking installs l1's content as the active dialogue queue.
+        let view = engine.ask_interrogation_question("q_three_lines").unwrap();
+        match &view.mode {
+            ModeView::Dialogue { current, .. } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { text, .. } if text == "line 1 dialogue"),
+                    "expected l1 dialogue after asking, got {current:?}"
+                );
+            }
+            other => panic!("expected Dialogue mode after asking, got {other:?}"),
+        }
+
+        // Drain l1. advance_playing_testimony must skip the tag-only l2 and
+        // install l3, not withdraw to the question menu.
+        let view = engine.advance_dialogue(token_from(&view)).unwrap();
+        match &view.mode {
+            ModeView::Dialogue {
+                current,
+                cross_exam_line_id,
+                ..
+            } => {
+                assert!(
+                    matches!(current, DialogueItem::Line { text, .. } if text == "line 3 dialogue"),
+                    "expected l3 dialogue after draining l1 through tag-only l2, got {current:?}"
+                );
+                // l3 is the contradiction line and the question is unbroken, so
+                // the challenge target must be surfaced.
+                assert_eq!(
+                    cross_exam_line_id.as_deref(),
+                    Some("l3"),
+                    "反駁 target should be l3 after advancing through the tag-only l2"
+                );
+            }
+            ModeView::Interrogation { .. } => {
+                panic!(
+                    "tag-only l2 caused premature withdrawal to the question menu — l3 was skipped"
+                );
+            }
+            other => panic!("expected Dialogue mode with l3, got {other:?}"),
+        }
+
+        // The tag-only l2's visual cue must have been applied.
+        assert_eq!(
+            engine.last_visual_cue.scene_tag,
+            Some("visual_cue".into()),
+            "tag-only l2 should still apply its visual cues"
+        );
+    }
+
+    #[test]
     fn resume_interrogation_testimony_returns_to_the_challenged_line() {
         let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
         engine.prime_initial_queue().unwrap();
