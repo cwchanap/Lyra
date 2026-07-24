@@ -154,6 +154,83 @@ ${validFact("first")}`),
     });
   });
 
+  it("reports a blank required field without also reporting it as missing", () => {
+    const errors = errorsFor(
+      catalogWithFacts(
+        `### Fact: Fact {#fact_one}
+- **Summary:** 
+- **Details:** Details.
+- **Category:** timeline`,
+      ),
+    );
+
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        code: "storyCatalogMalformed",
+        sourceFile: SOURCE_FILE,
+        line: 6,
+      }),
+    );
+    expect(errors).not.toContainEqual(
+      expect.objectContaining({ code: "storyCatalogMissingField", line: 5 }),
+    );
+  });
+
+  it("accumulates independently detectable objective semantic errors", () => {
+    const errors = errorsFor(
+      `# Story Catalog
+
+## Objectives
+
+### Objective: Objective {#objective_one}
+- **Summary:** Summary.
+- **Kind:** tertiary
+- **Sort Order:** 1.5`,
+    );
+
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        code: "storyCatalogMalformed",
+        sourceFile: SOURCE_FILE,
+        line: 7,
+      }),
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        code: "storyCatalogMalformed",
+        sourceFile: SOURCE_FILE,
+        line: 8,
+      }),
+    );
+  });
+
+  it("validates Resolved By even when its definition ID is invalid", () => {
+    const errors = errorsFor(
+      `# Story Catalog
+
+## Questions
+
+### Question: Question {#Question_One}
+- **Summary:** Summary.
+- **Resolved By:** [evidence:record]`,
+    );
+
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        code: "invalidGlobalDefinitionId",
+        sourceFile: SOURCE_FILE,
+        line: 5,
+      }),
+    );
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        code: "storyCatalogMalformed",
+        sourceFile: SOURCE_FILE,
+        line: 7,
+      }),
+    );
+  });
+
   it.each([
     ["malformed H1", "# Catalog", "storyCatalogMalformed", 1],
     [

@@ -75,11 +75,12 @@ export function parseStoryCatalog(
     if (!currentItem) return;
     const item = currentItem;
     currentItem = null;
+    let hasErrors = item.invalid;
 
     const requiredFields = FIELDS_BY_KIND[item.kind];
     for (const field of requiredFields) {
       if (!item.fields.has(field)) {
-        item.invalid = true;
+        hasErrors = true;
         report(
           item.line,
           "storyCatalogMissingField",
@@ -88,16 +89,13 @@ export function parseStoryCatalog(
       }
     }
 
-    if (item.invalid) return;
-
     const summary = item.fields.get("Summary")?.value;
-    if (!summary) return;
 
     switch (item.kind) {
       case "Fact": {
         const details = item.fields.get("Details")?.value;
         const category = item.fields.get("Category")?.value;
-        if (!details || !category) return;
+        if (hasErrors || !summary || !details || !category) return;
         catalog.facts.push({
           id: item.id,
           label: item.label,
@@ -111,14 +109,19 @@ export function parseStoryCatalog(
       }
       case "Question": {
         const resolvedBy = item.fields.get("Resolved By");
-        if (!resolvedBy) return;
-        const resolvedByFactIds = parseResolvedBy(
-          resolvedBy.value,
-          sourceFile,
-          resolvedBy.line,
-          report,
-        );
-        if (!resolvedByFactIds) return;
+        const resolvedByFactIds =
+          resolvedBy && resolvedBy.value !== ""
+            ? parseResolvedBy(
+                resolvedBy.value,
+                sourceFile,
+                resolvedBy.line,
+                report,
+              )
+            : null;
+        if (resolvedBy && resolvedBy.value !== "" && !resolvedByFactIds) {
+          hasErrors = true;
+        }
+        if (hasErrors || !summary || !resolvedByFactIds) return;
         catalog.questions.push({
           id: item.id,
           label: item.label,
@@ -132,37 +135,50 @@ export function parseStoryCatalog(
       case "Objective": {
         const kindField = item.fields.get("Kind");
         const sortOrderField = item.fields.get("Sort Order");
-        if (!kindField || !sortOrderField) return;
-        if (kindField.value !== "primary" && kindField.value !== "secondary") {
-          report(
-            kindField.line,
-            "storyCatalogMalformed",
-            `Objective ${item.id} Kind must be primary or secondary.`,
-          );
-          return;
+        let kind: "primary" | "secondary" | null = null;
+        let sortOrder: number | null = null;
+        if (kindField && kindField.value !== "") {
+          const kindValue = kindField.value;
+          if (kindValue !== "primary" && kindValue !== "secondary") {
+            hasErrors = true;
+            report(
+              kindField.line,
+              "storyCatalogMalformed",
+              `Objective ${item.id} Kind must be primary or secondary.`,
+            );
+          } else {
+            kind = kindValue;
+          }
         }
-        if (!/^-?\d+$/.test(sortOrderField.value)) {
-          report(
-            sortOrderField.line,
-            "storyCatalogMalformed",
-            `Objective ${item.id} Sort Order must be a base-10 integer.`,
-          );
-          return;
+        if (sortOrderField && sortOrderField.value !== "") {
+          if (!/^-?\d+$/.test(sortOrderField.value)) {
+            hasErrors = true;
+            report(
+              sortOrderField.line,
+              "storyCatalogMalformed",
+              `Objective ${item.id} Sort Order must be a base-10 integer.`,
+            );
+          } else {
+            const parsedSortOrder = Number(sortOrderField.value);
+            if (!Number.isFinite(parsedSortOrder)) {
+              hasErrors = true;
+              report(
+                sortOrderField.line,
+                "storyCatalogMalformed",
+                `Objective ${item.id} Sort Order must be finite.`,
+              );
+            } else {
+              sortOrder = parsedSortOrder;
+            }
+          }
         }
-        const sortOrder = Number(sortOrderField.value);
-        if (!Number.isFinite(sortOrder)) {
-          report(
-            sortOrderField.line,
-            "storyCatalogMalformed",
-            `Objective ${item.id} Sort Order must be finite.`,
-          );
+        if (hasErrors || !summary || kind === null || sortOrder === null)
           return;
-        }
         catalog.objectives.push({
           id: item.id,
           label: item.label,
           summary,
-          kind: kindField.value,
+          kind,
           sortOrder,
           sourceFile,
           line: item.line,
@@ -171,7 +187,7 @@ export function parseStoryCatalog(
       }
       case "Authorization": {
         const grantingAuthority = item.fields.get("Granting Authority")?.value;
-        if (!grantingAuthority) return;
+        if (hasErrors || !summary || !grantingAuthority) return;
         catalog.authorizations.push({
           id: item.id,
           label: item.label,
@@ -350,6 +366,7 @@ export function parseStoryCatalog(
       }
       if (value === "") {
         currentItem.invalid = true;
+        currentItem.fields.set(key, { value, line });
         report(
           line,
           "storyCatalogMalformed",
