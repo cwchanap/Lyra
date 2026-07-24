@@ -330,6 +330,7 @@ rtk git commit -m "feat: compile global story catalog"
 - Create: `apps/game/src-tauri/src/game/story/mod.rs`
 - Create: `apps/game/src-tauri/src/game/story/catalog.rs`
 - Modify: `apps/game/src-tauri/src/game/mod.rs`
+- Modify: `apps/game/src-tauri/src/game/command_tx.rs`
 - Modify: `apps/game/src-tauri/src/game/error.rs`
 - Modify: `apps/game/src-tauri/src/game/test_support.rs`
 
@@ -414,7 +415,9 @@ Call it from the central resource-fixture constructors so existing
 Register `mod story;`, add immutable `story_catalog: StoryCatalog` to
 `GameEngine`, and call `StoryCatalog::load(&resources_dir)` after loading
 chapters but before loading/priming the initial scene. A failure must prevent
-engine construction.
+engine construction. Update the exhaustive `GameEngine` destructure in
+`command_tx.rs` with `story_catalog: _` so the new field is explicitly
+classified as immutable-after-load; do not add it to `EngineRollbackSnapshot`.
 
 - [ ] **Step 6: Run focused and full Rust tests**
 
@@ -428,7 +431,7 @@ Expected: catalog tests and the pre-existing Rust suite pass.
 - [ ] **Step 7: Commit the catalog loader**
 
 ```bash
-rtk git add apps/game/src-tauri/src/game/story apps/game/src-tauri/src/game/mod.rs apps/game/src-tauri/src/game/error.rs apps/game/src-tauri/src/game/test_support.rs
+rtk git add apps/game/src-tauri/src/game/story apps/game/src-tauri/src/game/mod.rs apps/game/src-tauri/src/game/command_tx.rs apps/game/src-tauri/src/game/error.rs apps/game/src-tauri/src/game/test_support.rs
 rtk git commit -m "feat: load immutable story catalog"
 ```
 
@@ -601,7 +604,6 @@ locked definitions/rules.
 Initialize `story_state: StoryState::default()` in `GameEngine::new_started`.
 Update both exhaustive `GameEngine` destructures in `command_tx.rs`:
 
-- bind `story_catalog: _` as immutable-after-load;
 - clone `story_state` into `EngineRollbackSnapshot`;
 - restore `story_state` symmetrically.
 
@@ -630,11 +632,11 @@ started engine serializes:
 
 - [ ] **Step 6: Pin foundation-only APIs with direct tests**
 
-Ensure tests directly call all seven mutations,
-`validateSetPrimaryObjectiveTarget`, the qualified board helper, both snapshot
-directions, and serialization of every `StoryEventBlockKind`. These tests are
-required even though HPA-257/HPA-259/HPA-129 are the first production
-consumers.
+Ensure Rust tests directly call all seven mutations, both snapshot directions,
+and serialization of every `StoryEventBlockKind`. Confirm Task 2's TypeScript
+tests directly call `validateSetPrimaryObjectiveTarget` and the qualified board
+helper. These tests are required even though HPA-257/HPA-259/HPA-129 are the
+first production consumers.
 
 - [ ] **Step 7: Run Rust verification**
 
