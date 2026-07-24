@@ -1305,6 +1305,8 @@ Move all ten free functions from `mod.rs` into `navigation.rs`, with exactly thi
 
 Move `prime_initial_queue`, `advance_scene`, and `grant_all_evidence_for_testing` into an `impl GameEngine` block here as `pub(super)`, and move `jump_to_scene`'s body into `pub(super) fn jump_to_scene_inner(&mut self, chapter_id: &str, scene_id: &str) -> Result<GameStateView, GameError>`, leaving the public `jump_to_scene` in `mod.rs` as a one-line delegation.
 
+> **As-built note (scanner follow-delegation):** the `every_view_returning_command_routes_through_command_tx` scanner enforces invariant A by literal `command_tx(` substring matching with no exemptions, so a one-line `self.jump_to_scene_inner(...)` delegation in `mod.rs` would have been flagged as `missing_tx` (the `pub(super)` inner is not a tracked `pub fn`). To make this delegation shape viable, `scan_sources` was extended to follow `self.<target>(` delegations transitively (cycle-safe, excluding `command_tx` itself) and excuse a tracked command when the chain reaches a fn containing `command_tx(`. A command that calls `command_tx` directly is still checked on its own body only, so the delegation path does not weaken the direct-call check. The `scanner_follows_one_line_delegation_to_inner` self-test locks this in.
+
 Add to `prime_initial_queue`:
 
 ```rust

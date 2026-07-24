@@ -16,7 +16,7 @@ use super::view::{
 use super::{GameEngine, GameError, LastVisualCue};
 
 impl GameEngine {
-    pub fn jump_to_scene(
+    pub(super) fn jump_to_scene_inner(
         &mut self,
         chapter_id: &str,
         scene_id: &str,
