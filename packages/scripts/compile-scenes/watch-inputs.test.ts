@@ -17,6 +17,14 @@ import {
 
 type WatchEvent = "add" | "change" | "unlink";
 
+let forcedMtimeMs = Date.now() + 60_000;
+
+function advanceMtime(path: string): void {
+  forcedMtimeMs += 1_000;
+  const forcedTime = new Date(forcedMtimeMs);
+  utimesSync(path, forcedTime, forcedTime);
+}
+
 function waitForReady(
   watcher: ReturnType<typeof watch>,
   timeoutMs = 10_000,
@@ -81,13 +89,28 @@ function createEventRecorder(timeoutMs = 10_000) {
 
 async function exerciseFileLifecycle(
   path: string,
+  watchRoot: string,
   recorder: ReturnType<typeof createEventRecorder>,
 ): Promise<void> {
   mkdirSync(dirname(path), { recursive: true });
 
   const added = recorder.waitFor("add", path);
   writeFileSync(path, "initial\n");
-  await added;
+  // Chokidar's polling backend only rescans a directory when its size changes
+  // or its mtime strictly increases. Its fs.watchFile poller can also capture
+  // its baseline just after `ready`, so keep advancing both the watched root
+  // and the file's direct parent until one poll observes a later timestamp.
+  const signalAdd = () => {
+    advanceMtime(watchRoot);
+    if (dirname(path) !== watchRoot) advanceMtime(dirname(path));
+  };
+  signalAdd();
+  const addRetry = setInterval(signalAdd, 100);
+  try {
+    await added;
+  } finally {
+    clearInterval(addRetry);
+  }
 
   const changed = recorder.waitFor("change", path);
   let revision = 0;
@@ -107,7 +130,14 @@ async function exerciseFileLifecycle(
 
   const unlinked = recorder.waitFor("unlink", path);
   rmSync(path);
-  await unlinked;
+  const signalUnlink = () => advanceMtime(dirname(path));
+  signalUnlink();
+  const unlinkRetry = setInterval(signalUnlink, 100);
+  try {
+    await unlinked;
+  } finally {
+    clearInterval(unlinkRetry);
+  }
 }
 
 describe("isCompileScenesWatchPath", () => {
@@ -178,15 +208,33 @@ describe("compile scene watch integration", () => {
     try {
       await waitForReady(watcher);
 
-      const paths = [
-        resolve(sourceRoots[0]!, "story_catalog.md"),
-        resolve(sourceRoots[1]!, "story_catalog.md"),
-        resolve(sourceRoots[0]!, "chapter_1/scene_0.md"),
-        resolve(sourceRoots[1]!, "chapter_2/investigation_scene_1.layout.json"),
-        resolve(assetConfigRoot, "nested/audio.yaml"),
+      const lifecycles = [
+        {
+          path: resolve(sourceRoots[0]!, "story_catalog.md"),
+          watchRoot: sourceRoots[0]!,
+        },
+        {
+          path: resolve(sourceRoots[1]!, "story_catalog.md"),
+          watchRoot: sourceRoots[1]!,
+        },
+        {
+          path: resolve(sourceRoots[0]!, "chapter_1/scene_0.md"),
+          watchRoot: sourceRoots[0]!,
+        },
+        {
+          path: resolve(
+            sourceRoots[1]!,
+            "chapter_2/investigation_scene_1.layout.json",
+          ),
+          watchRoot: sourceRoots[1]!,
+        },
+        {
+          path: resolve(assetConfigRoot, "nested/audio.yaml"),
+          watchRoot: assetConfigRoot,
+        },
       ];
-      for (const path of paths) {
-        await exerciseFileLifecycle(path, recorder);
+      for (const { path, watchRoot } of lifecycles) {
+        await exerciseFileLifecycle(path, watchRoot, recorder);
       }
     } finally {
       recorder.dispose();
