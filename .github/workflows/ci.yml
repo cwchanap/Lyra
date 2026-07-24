@@ -26,23 +26,27 @@ jobs:
           BRANCH: ${{ github.head_ref }}
         run: |
           python3 - <<'PY'
+          import re
           from pathlib import Path
 
           path = Path("apps/game/src-tauri/src/game/mod.rs")
           source = path.read_text()
-          old = '''        } else if let Some(rest) = signature.strip_prefix("pub fn ") {
-              (FnVisibility::Pub, rest)
-          } else {
-              return None;
-          };'''
-          new = '''        } else {
+          replacement = '''        } else {
               let rest = signature.strip_prefix("pub fn ")?;
               (FnVisibility::Pub, rest)
           };'''
-          if old in source:
-              path.write_text(source.replace(old, new, 1))
-          elif new not in source:
-              raise SystemExit("expected parse_view_fn_signature block was not found")
+          if 'let rest = signature.strip_prefix("pub fn ")?;' not in source:
+              pattern = re.compile(
+                  r'(?m)^        \} else if let Some\(rest\) = signature\.strip_prefix\("pub fn "\) \{\n'
+                  r'            \(FnVisibility::Pub, rest\)\n'
+                  r'        \} else \{\n'
+                  r'            return None;\n'
+                  r'        \};'
+              )
+              source, count = pattern.subn(replacement, source, count=1)
+              if count != 1:
+                  raise SystemExit(f"expected one parse_view_fn_signature block, found {count}")
+              path.write_text(source)
           PY
           if git diff --quiet -- apps/game/src-tauri/src/game/mod.rs; then
             exit 0
