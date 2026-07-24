@@ -27,7 +27,9 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
 - `bun run editor:build` - produce the editor desktop app bundle.
 - `bun run scenes:compile` - one-shot compile. Merges scenes from both
   `static/stories_plan/` and `docs/stories_plan/` (a root that does not exist
-  is skipped) plus `static/assets/config/` into Tauri resource JSON.
+  is skipped) plus `static/assets/config/` into Tauri resource JSON. It always
+  generates the runtime-required `story_catalog.json`; repair a stale local
+  resource tree with exactly `bun run scenes:compile`.
 - `bun run scenes:watch` - watch authored scene Markdown and asset YAML while
   iterating on story content.
 - `bun run evidence-sources:audit` - audit investigation-scene evidence
@@ -164,6 +166,10 @@ Keep the ownership boundary intact:
 - Only `.gitkeep` files are tracked in those generated resource directories.
   Generated JSON may appear locally after compile/build and is intentionally
   ignored.
+- `story_catalog.json` is always compiler-generated and required at runtime,
+  including when no authored `story_catalog.md` exists. Do not hand-edit or
+  commit it; repair a stale local resource tree with exactly
+  `bun run scenes:compile`.
 - Writers author semantic intent only: dialogue, scene tags, prompts, speaker
   expression IDs, and audio IDs. Writers must not author filesystem paths.
 - Durable sound plans live under `docs/audio_plans/`; apply them through the
