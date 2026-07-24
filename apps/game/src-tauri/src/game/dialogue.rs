@@ -341,76 +341,100 @@ impl GameEngine {
     /// Past the last line the testimony loops: the `on_loop` bridge plays and
     /// then line 0 is re-shown, so the whole statement repeats without ever
     /// skipping line 0. Only called while `is_playing_unbroken()`.
+    ///
+    /// A testimony line whose content is entirely `SceneTag` items carries no
+    /// visible dialogue. Rather than withdrawing on the first such line (which
+    /// would skip any visible lines that follow it), the tags are applied for
+    /// visual continuity and the next line is advanced to in-place. Only when a
+    /// complete testimony cycle (ending in `AdvanceOutcome::Loop`) contains no
+    /// visible dialogue anywhere is the testimony degenerate and withdrawing
+    /// appropriate. Iterating here — instead of recursing through
+    /// `on_queue_exhausted` → `install_or_exhaust_line_content` →
+    /// `install_scene_queue` — avoids the stack overflow an all-`SceneTag`
+    /// testimony would otherwise cause, because `consume_scene_tags_at_cursor`
+    /// eats every tag and re-enters `on_queue_exhausted` immediately.
     pub(super) fn advance_playing_testimony(&mut self) -> Result<(), GameError> {
-        let (queue_items, line_content_start) = {
-            let scene = match &mut self.scene {
-                SceneRuntime::Interrogation(scene) => scene,
-                _ => return Ok(()),
-            };
-            let CrossExam::Playing { question_id, .. } = scene.cross_exam().clone() else {
-                return Ok(());
-            };
-            match scene.advance_line() {
-                AdvanceOutcome::NextLine(index) => (
-                    scene
-                        .question(&question_id)
-                        .and_then(|question| question.testimony.lines.get(index))
-                        .map(|line| line.content.clone())
-                        .unwrap_or_default(),
-                    // Pure line content — challengeable from the first item.
-                    0,
-                ),
-                AdvanceOutcome::Loop => {
-                    scene
-                        .question(&question_id)
-                        .map_or((Vec::new(), 0), |question| {
-                            let on_loop_len = question.testimony.on_loop.len();
-                            let loop_prompt_len = question.testimony.loop_prompt.len();
-                            let mut items = question.testimony.on_loop.clone();
-                            items.extend(question.testimony.loop_prompt.iter().cloned());
-                            if let Some(first) = question.testimony.lines.first() {
-                                items.extend(first.content.iter().cloned());
-                            }
-                            // The on_loop + loop_prompt bridge plays first; line 0
-                            // content follows, so the challenge target only surfaces
-                            // once the cursor reaches the line content.
-                            (items, on_loop_len + loop_prompt_len)
-                        })
+        loop {
+            let (queue_items, line_content_start, is_loop) = {
+                let scene = match &mut self.scene {
+                    SceneRuntime::Interrogation(scene) => scene,
+                    _ => return Ok(()),
+                };
+                let CrossExam::Playing { question_id, .. } = scene.cross_exam().clone() else {
+                    return Ok(());
+                };
+                match scene.advance_line() {
+                    AdvanceOutcome::NextLine(index) => (
+                        scene
+                            .question(&question_id)
+                            .and_then(|question| question.testimony.lines.get(index))
+                            .map(|line| line.content.clone())
+                            .unwrap_or_default(),
+                        // Pure line content — challengeable from the first item.
+                        0,
+                        false,
+                    ),
+                    AdvanceOutcome::Loop => {
+                        let (items, start) =
+                            scene
+                                .question(&question_id)
+                                .map_or((Vec::new(), 0), |question| {
+                                    let on_loop_len = question.testimony.on_loop.len();
+                                    let loop_prompt_len = question.testimony.loop_prompt.len();
+                                    let mut items = question.testimony.on_loop.clone();
+                                    items.extend(question.testimony.loop_prompt.iter().cloned());
+                                    if let Some(first) = question.testimony.lines.first() {
+                                        items.extend(first.content.iter().cloned());
+                                    }
+                                    // The on_loop + loop_prompt bridge plays first; line 0
+                                    // content follows, so the challenge target only surfaces
+                                    // once the cursor reaches the line content.
+                                    (items, on_loop_len + loop_prompt_len)
+                                });
+                        (items, start, true)
+                    }
                 }
+            };
+
+            let has_dialogue = queue_items
+                .iter()
+                .any(|item| !matches!(item, DialogueItem::SceneTag { .. }));
+
+            if has_dialogue {
+                self.install_or_exhaust_line_content(queue_items, line_content_start)?;
+                return Ok(());
             }
-        };
 
-        let has_dialogue = queue_items
-            .iter()
-            .any(|item| !matches!(item, DialogueItem::SceneTag { .. }));
-
-        if !has_dialogue {
-            // Degenerate testimony (no line content and no loop bridge, or all
-            // items are SceneTags): return to the menu rather than leaving the
-            // player stuck on an empty Playing state.
-            // Must not use install_or_exhaust_line_content: on_queue_exhausted
-            // dispatches back here while is_playing_unbroken() holds. An
-            // all-SceneTag queue would drain immediately inside
-            // install_scene_queue (consume_scene_tags_at_cursor eats every
-            // item), trigger on_queue_exhausted, and recurse back here —
-            // eventually overflowing the stack. Process the tags for visual
-            // continuity, then withdraw.
+            // Tag-only (or empty) line: apply its visual cues for continuity.
             for item in &queue_items {
                 if let DialogueItem::SceneTag { text, asset_cue } = item {
                     self.last_visual_cue
                         .set_scene_tag(text.clone(), asset_cue.clone());
                 }
             }
-            if let SceneRuntime::Interrogation(scene) = &mut self.scene {
-                scene.withdraw();
+
+            if is_loop {
+                // A complete testimony cycle contained no visible dialogue —
+                // the testimony is degenerate. Withdraw to the menu rather than
+                // looping forever. Must not use install_or_exhaust_line_content:
+                // on_queue_exhausted dispatches back here while
+                // is_playing_unbroken() holds, and an all-SceneTag queue would
+                // drain immediately inside install_scene_queue
+                // (consume_scene_tags_at_cursor eats every item), recurse, and
+                // eventually overflow the stack.
+                if let SceneRuntime::Interrogation(scene) = &mut self.scene {
+                    scene.withdraw();
+                }
+                if self.try_advance_interrogation()? {
+                    self.advance_scene()?;
+                }
+                return Ok(());
             }
-            if self.try_advance_interrogation()? {
-                self.advance_scene()?;
-            }
-        } else {
-            self.install_or_exhaust_line_content(queue_items, line_content_start)?;
+
+            // Tag-only intermediate line: advance to the next line and look for
+            // visible dialogue there. The loop continues — advance_line will be
+            // called again at the top.
         }
-        Ok(())
     }
 
     pub(super) fn alloc_queue_gen(&mut self) -> u64 {
