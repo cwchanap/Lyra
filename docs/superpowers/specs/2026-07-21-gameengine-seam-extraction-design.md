@@ -312,8 +312,16 @@ the transaction is what the closure captures, and today's read phases already
 unique borrow of `self` for the same reason.
 
 `advance_dialogue`'s stale-token early return (`Ok(self.view())` with no history
-record) happens before the transaction opens, so it needs no allow-list entry —
-it is simply not a transaction.
+record) happens before the transaction opens, so it opens no transaction — but
+it is still a bare `Ok(self.view())` return from a
+`pub fn … -> Result<GameStateView, GameError>`, so it **is** on the invariant-B
+allow-list (`no bare Ok(self.view())`, scoped to B alone). It is not, and must
+not be, exempt from invariant A: the advancing path further down the same
+function contains the `command_tx(` call that satisfies invariant A's
+textual-presence check for the whole function body. Invariant A is therefore
+mandatory for the advancing path; the stale-token early return is covered by
+the invariant-B allow-list entry documented under "Enforcement after the
+scanner" below.
 
 ### 2. Dialogue lifecycle (`dialogue.rs`)
 
