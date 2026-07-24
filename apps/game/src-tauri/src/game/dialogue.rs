@@ -842,6 +842,7 @@ mod tests {
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),
             story_catalog: StoryCatalog::empty(),
+            story_state: crate::game::story::StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
@@ -910,6 +911,7 @@ mod tests {
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),
             story_catalog: StoryCatalog::empty(),
+            story_state: crate::game::story::StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
@@ -970,6 +972,7 @@ mod tests {
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),
             story_catalog: StoryCatalog::empty(),
+            story_state: crate::game::story::StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),

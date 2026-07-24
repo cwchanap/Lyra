@@ -79,6 +79,7 @@ pub(super) fn empty_engine_with_scene(
             }],
         }],
         story_catalog: StoryCatalog::empty(),
+        story_state: StoryState::default(),
         current_chapter_idx: 0,
         current_scene_idx: 0,
         scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(
@@ -301,6 +302,97 @@ pub(super) fn scene_jump_fixture_resources() -> PathBuf {
     }"#,
     )
     .unwrap();
+    d
+}
+
+pub(super) fn story_navigation_fixture_resources() -> PathBuf {
+    use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, Ordering::Relaxed);
+    let d = std::env::temp_dir().join(format!(
+        "lyra-story-navigation-test-{}-{}",
+        std::process::id(),
+        n
+    ));
+    let chapter_1 = d.join("chapter_1");
+    let chapter_2 = d.join("chapter_2");
+    fs::create_dir_all(&chapter_1).unwrap();
+    fs::create_dir_all(&chapter_2).unwrap();
+    fs::write(
+        d.join("story_catalog.json"),
+        r#"{
+  "schemaVersion": 1,
+  "facts": [
+    {"id":"persistent_fact","label":"Persistent fact","summary":"Persists","details":"Persists across navigation","category":"timeline"}
+  ],
+  "questions": [],
+  "objectives": [],
+  "authorizations": [],
+  "evidenceIndex": [],
+  "statementsIndex": []
+}"#,
+    )
+    .unwrap();
+    fs::write(
+        d.join("chapters.json"),
+        r#"{
+  "chapters": [
+    {
+      "id": "chapter_1",
+      "title": "Chapter One",
+      "summary": "First",
+      "scenes": [
+        {"type":"linear","file":"chapter_1/scene_0.json"},
+        {"type":"linear","file":"chapter_1/scene_1.json"}
+      ]
+    },
+    {
+      "id": "chapter_2",
+      "title": "Chapter Two",
+      "summary": "Second",
+      "scenes": [
+        {"type":"linear","file":"chapter_2/scene_0.json"}
+      ]
+    }
+  ]
+}"#,
+    )
+    .unwrap();
+    for (path, id, title, speaker) in [
+        (
+            chapter_1.join("scene_0.json"),
+            "scene_0",
+            "First scene",
+            "A",
+        ),
+        (
+            chapter_1.join("scene_1.json"),
+            "scene_1",
+            "Second scene",
+            "B",
+        ),
+        (
+            chapter_2.join("scene_0.json"),
+            "scene_0",
+            "Next chapter",
+            "C",
+        ),
+    ] {
+        fs::write(
+            path,
+            format!(
+                r#"{{
+  "type": "linear",
+  "id": "{id}",
+  "title": "{title}",
+  "queue": [{{"kind":"line","speaker":"{speaker}","text":"line"}}]
+}}"#
+            ),
+        )
+        .unwrap();
+    }
     d
 }
 pub(super) fn subject() -> SubjectJson {
@@ -652,6 +744,7 @@ pub(super) fn empty_engine_with_interrogation_scene(
             }],
         }],
         story_catalog: StoryCatalog::empty(),
+        story_state: StoryState::default(),
         current_chapter_idx: 0,
         current_scene_idx: 0,
         scene: SceneRuntime::Interrogation(Box::new(InterrogationSceneState::from_json(
@@ -689,6 +782,7 @@ pub(super) fn completed_interrogation_engine_with_bad_next_scene(
             ],
         }],
         story_catalog: StoryCatalog::empty(),
+        story_state: StoryState::default(),
         current_chapter_idx: 0,
         current_scene_idx: 0,
         scene: SceneRuntime::Interrogation(Box::new(scene)),

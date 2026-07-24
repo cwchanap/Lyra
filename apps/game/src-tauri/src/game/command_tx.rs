@@ -7,6 +7,7 @@
 use super::dialogue::DialogueHistory;
 use super::scenes::SceneRuntime;
 use super::state::Inventory;
+use super::story::StoryState;
 use super::view::GameStateView;
 use super::{GameEngine, GameError, LastVisualCue};
 
@@ -23,6 +24,7 @@ pub(super) struct EngineRollbackSnapshot {
     scene: SceneRuntime,
     last_visual_cue: LastVisualCue,
     inventory: Inventory,
+    story_state: StoryState,
     next_queue_gen: u64,
     history: DialogueHistory,
 }
@@ -36,6 +38,7 @@ impl EngineRollbackSnapshot {
             resources_dir: _,
             chapters: _,
             story_catalog: _,
+            story_state,
             current_chapter_idx,
             current_scene_idx,
             scene,
@@ -50,6 +53,7 @@ impl EngineRollbackSnapshot {
             scene: scene.clone(),
             last_visual_cue: last_visual_cue.clone(),
             inventory: inventory.clone(),
+            story_state: story_state.clone(),
             next_queue_gen: *next_queue_gen,
             history: history.clone(),
         }
@@ -65,6 +69,7 @@ impl EngineRollbackSnapshot {
             scene,
             last_visual_cue,
             inventory,
+            story_state,
             next_queue_gen,
             history,
         } = snapshot;
@@ -73,6 +78,7 @@ impl EngineRollbackSnapshot {
         engine.scene = scene;
         engine.last_visual_cue = last_visual_cue;
         engine.inventory = inventory;
+        engine.story_state = story_state;
         engine.next_queue_gen = next_queue_gen;
         engine.history = history;
     }
@@ -604,6 +610,7 @@ mod tests {
         let mut engine = GameEngine {
             resources_dir: d.clone(),
             story_catalog: StoryCatalog::empty(),
+            story_state: StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
@@ -736,6 +743,7 @@ mod tests {
         let mut engine = GameEngine {
             resources_dir: d.clone(),
             story_catalog: StoryCatalog::empty(),
+            story_state: StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
@@ -846,6 +854,38 @@ mod tests {
             "inventory not restored"
         );
         assert_eq!(engine.current_scene_idx, 0, "scene index not restored");
+    }
+
+    #[test]
+    fn rollback_scope_restores_story_state_and_filtered_view_on_error() {
+        use crate::game::story::{AssertionOrigin, StoryState};
+
+        let d = story_navigation_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let snapshot_before = engine.story_state.snapshot();
+        let view_before = serde_json::to_value(&engine.view().story).unwrap();
+
+        let result: Result<(), GameError> = engine.rollback_scope(|engine| {
+            engine.story_state.assert_fact(
+                &engine.story_catalog,
+                "persistent_fact",
+                AssertionOrigin::Migration {
+                    migration_id: "failed_command".into(),
+                },
+                &[],
+                &[],
+            )?;
+            Err(GameError::internal("forced rollback".into()))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(engine.story_state.snapshot(), snapshot_before);
+        assert_eq!(
+            serde_json::to_value(&engine.view().story).unwrap(),
+            view_before
+        );
+        assert_eq!(engine.story_state, StoryState::default());
+        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
