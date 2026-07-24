@@ -9,8 +9,10 @@ import type {
   ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
+  ASTStoryCatalog,
   ASTTestimony,
   ASTTestimonyLine,
+  CaseRecordDefinitionIndex,
   DialogueItem,
   JSONChaptersIndex,
   JSONDialogueItem,
@@ -20,8 +22,88 @@ import type {
   JSONTestimony,
   JSONTestimonyLine,
   JSONVisualAssetCue,
+  StoryCatalogJson,
   VisualAssetCue,
 } from "./types";
+import type { SceneRecord } from "./validator";
+
+export function emitStoryCatalog(
+  catalog: ASTStoryCatalog,
+  scenes: SceneRecord[],
+): StoryCatalogJson {
+  const evidenceIndex: CaseRecordDefinitionIndex[] = [];
+  const statementsIndex: CaseRecordDefinitionIndex[] = [];
+
+  for (const record of scenes) {
+    if (
+      record.ast.kind !== "investigationScene" &&
+      record.ast.kind !== "interrogationScene"
+    ) {
+      continue;
+    }
+    for (const evidence of record.ast.evidenceManifest) {
+      evidenceIndex.push({
+        id: evidence.id,
+        chapterId: record.chapterId,
+        sceneId: record.ast.id,
+      });
+    }
+    for (const statement of record.ast.statementManifest) {
+      statementsIndex.push({
+        id: statement.id,
+        chapterId: record.chapterId,
+        sceneId: record.ast.id,
+      });
+    }
+  }
+
+  const byId = (
+    left: CaseRecordDefinitionIndex,
+    right: CaseRecordDefinitionIndex,
+  ) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
+
+  return {
+    schemaVersion: 1,
+    facts: catalog.facts.map(({ id, label, summary, details, category }) => ({
+      id,
+      label,
+      summary,
+      details,
+      category,
+    })),
+    questions: catalog.questions.map(
+      ({ id, label, summary, resolvedByFactIds }) => ({
+        id,
+        label,
+        summary,
+        resolvedByFactIds: resolvedByFactIds.map((reference) => reference.id),
+      }),
+    ),
+    objectives: [...catalog.objectives]
+      .sort(
+        (left, right) =>
+          left.sortOrder - right.sortOrder ||
+          (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
+      )
+      .map(({ id, label, summary, kind, sortOrder }) => ({
+        id,
+        label,
+        summary,
+        kind,
+        sortOrder,
+      })),
+    authorizations: catalog.authorizations.map(
+      ({ id, label, summary, grantingAuthority }) => ({
+        id,
+        label,
+        summary,
+        grantingAuthority,
+      }),
+    ),
+    evidenceIndex: evidenceIndex.sort(byId),
+    statementsIndex: statementsIndex.sort(byId),
+  };
+}
 
 export function emitLinearScene(ast: ASTLinearScene): JSONLinearScene {
   return {
