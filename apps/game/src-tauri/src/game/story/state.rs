@@ -4,7 +4,6 @@ use crate::game::GameError;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::game) struct FactProgress {
     pub(super) asserted_in_chapter_id: Option<String>,
@@ -14,19 +13,16 @@ pub(in crate::game) struct FactProgress {
     pub(super) supporting_fact_ids: BTreeSet<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::game) struct QuestionProgress {
     pub(super) resolved_by_fact_id: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::game) struct ObjectiveProgress {
     pub(super) completed: bool,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::game) struct AuthorizationProgress {
     pub(super) granted_in_chapter_id: Option<String>,
@@ -34,7 +30,6 @@ pub(in crate::game) struct AuthorizationProgress {
     pub(super) first_origin: AssertionOrigin,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StoryState {
     pub(super) facts: BTreeMap<String, FactProgress>,
@@ -89,7 +84,6 @@ pub(crate) struct AuthorizationProgressSnapshot {
     pub first_origin: AssertionOrigin,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     tag = "type",
@@ -113,7 +107,6 @@ pub enum AssertionOrigin {
     },
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum StoryEventBlockKind {

@@ -182,22 +182,18 @@ impl StoryCatalog {
         }
     }
 
-    #[allow(dead_code)]
     pub(in crate::game) fn facts(&self) -> impl Iterator<Item = &FactDefinition> {
         self.facts.iter()
     }
 
-    #[allow(dead_code)]
     pub(in crate::game) fn questions(&self) -> impl Iterator<Item = &QuestionDefinition> {
         self.questions.iter()
     }
 
-    #[allow(dead_code)]
     pub(in crate::game) fn objectives(&self) -> impl Iterator<Item = &ObjectiveDefinition> {
         self.objectives.iter()
     }
 
-    #[allow(dead_code)]
     pub(in crate::game) fn authorizations(&self) -> impl Iterator<Item = &AuthorizationDefinition> {
         self.authorizations.iter()
     }

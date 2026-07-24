@@ -31,7 +31,7 @@ use scenes::SceneRuntime;
 use schema::{DialogueItem, InterrogationPhaseJson, InventoryTarget, LockStatus};
 use state::{ChapterManifest, Inventory};
 use std::path::PathBuf;
-use story::StoryCatalog;
+use story::{StoryCatalog, StoryState, StoryStateView};
 use view::{
     AudioCueView, ChapterView, CharacterView, CrossExamView, HotspotView, InquiryQuestionView,
     InterrogationPhaseView, SceneView, SubjectView, SublocationView, TopicView,
@@ -40,9 +40,8 @@ use view::{
 pub struct GameEngine {
     resources_dir: PathBuf,
     chapters: Vec<ChapterManifest>,
-    // Loaded now; consumed by the story-state mutation/view tasks that follow.
-    #[allow(dead_code)]
     story_catalog: StoryCatalog,
+    story_state: StoryState,
     current_chapter_idx: usize,
     current_scene_idx: usize,
     scene: SceneRuntime,
@@ -114,6 +113,7 @@ impl GameEngine {
             resources_dir,
             chapters,
             story_catalog,
+            story_state: StoryState::default(),
             current_chapter_idx: 0,
             current_scene_idx: 0,
             scene: initial_scene,
@@ -153,6 +153,7 @@ impl GameEngine {
             chapter: self.chapter_view(),
             scene: self.scene_view(),
             inventory: self.inventory.clone(),
+            story: StoryStateView::from_catalog_state(&self.story_catalog, &self.story_state),
             dialogue_history: self.history.entries().to_vec(),
         }
     }
@@ -1631,6 +1632,25 @@ mod tests {
     use crate::game::state::{EvidenceRecord, SceneRef, StatementRecord};
 
     use crate::game::test_support::*;
+
+    #[test]
+    fn newly_started_engine_serializes_an_empty_story_view() {
+        let d = dialogue_history_fixture_resources(1);
+        let engine = GameEngine::new_started(d.clone()).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(engine.view()).unwrap()["story"],
+            serde_json::json!({
+                "facts": [],
+                "questions": [],
+                "objectives": [],
+                "authorizations": []
+            })
+        );
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
     #[test]
     fn new_focused_token_records_exactly_one_history_entry() {
         let d = dialogue_history_fixture_resources(3);
@@ -2497,6 +2517,7 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),
             story_catalog: StoryCatalog::empty(),
+            story_state: StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),

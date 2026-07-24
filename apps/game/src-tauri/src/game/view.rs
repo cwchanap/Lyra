@@ -3,6 +3,7 @@ use crate::game::schema::{
     AudioChannelJson, CharacterLayoutJson, DialogueItem, HotspotLayoutJson, SceneType,
 };
 use crate::game::state::Inventory;
+use crate::game::story::StoryStateView;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize)]
@@ -12,6 +13,7 @@ pub struct GameStateView {
     pub chapter: ChapterView,
     pub scene: SceneView,
     pub inventory: Inventory,
+    pub story: StoryStateView,
     pub dialogue_history: Vec<DialogueHistoryEntry>,
 }
 

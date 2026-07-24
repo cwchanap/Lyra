@@ -535,6 +535,41 @@ mod tests {
     }
 
     #[test]
+    fn story_state_persists_across_scene_and_chapter_navigation() {
+        use crate::game::story::AssertionOrigin;
+
+        let d = story_navigation_fixture_resources();
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        engine
+            .story_state
+            .assert_fact(
+                &engine.story_catalog,
+                "persistent_fact",
+                AssertionOrigin::Migration {
+                    migration_id: "legacy_case".into(),
+                },
+                &[],
+                &[],
+            )
+            .unwrap();
+        let expected = engine.story_state.snapshot();
+
+        let same_chapter = engine
+            .jump_to_scene("chapter_1", "scene_1")
+            .expect("jump within chapter");
+        assert_eq!(engine.story_state.snapshot(), expected);
+        assert_eq!(same_chapter.story.facts[0].id, "persistent_fact");
+
+        let next_chapter = engine
+            .jump_to_scene("chapter_2", "scene_0")
+            .expect("jump across chapters");
+        assert_eq!(engine.story_state.snapshot(), expected);
+        assert_eq!(next_chapter.story.facts[0].id, "persistent_fact");
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
     fn jump_to_scene_returns_typed_errors_for_unknown_ids() {
         let d = scene_jump_fixture_resources();
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
