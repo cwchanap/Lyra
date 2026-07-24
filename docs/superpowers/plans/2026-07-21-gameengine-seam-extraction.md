@@ -1535,11 +1535,16 @@ Create `apps/game/src-tauri/src/game/test_support.rs` and move these from `mod.r
 
 `investigation_scene_with_intro`, `empty_engine_with_scene`, `empty_engine_with_interrogation_scene`, `completed_interrogation_engine_with_bad_next_scene`, `token_from`, `history_labels`, `dialogue_history_fixture_resources`, `scene_jump_fixture_resources`, `subject`, `empty_testimony`, `two_line_question_scene`, `empty_inquiry_interrogation_scene`, `locked_unsatisfied_interrogation_scene`, `locked_inventory_unlocked_interrogation_scene`, `source_order_inventory_unlocked_interrogation_scene`, `single_required_question_scene`, `single_honest_question_scene`, and `break_q1`.
 
-Declare in `mod.rs`, after the other module declarations:
+Declare in `mod.rs`, **immediately before the existing `#[cfg(test)] mod tests` block, after all production declarations and code** — not beside the other `pub mod` declarations at the top of the file. The source scanner (see design §Testing, "Where a `#[cfg(test)]` module is *declared* changes what the source scanner can see") stops reading a file at its first `#[cfg(test)]` or `mod tests {` line, so a top-of-file `mod test_support;` would truncate the scan immediately and hide every command below it. Placing it just before `mod tests` keeps the production-code traversal intact and keeps both `#[cfg(test)]` items adjacent at the end of the file:
 
 ```rust
 #[cfg(test)]
 mod test_support;
+
+#[cfg(test)]
+mod tests {
+    // …
+}
 ```
 
 `pub(super)` here means "visible in `game`", which includes every descendant — so `game::dialogue::tests` reaches them as `crate::game::test_support::*`.
