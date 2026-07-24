@@ -502,6 +502,28 @@ function validateContradiction(
   guaranteedBefore: Set<string>,
 ): void {
   if (line.contradiction === null) return;
+  // A contradiction can only be challenged while the line's content is playing
+  // in the dialogue box. The runtime testimony skipper
+  // (advance_playing_testimony) treats a line whose content is entirely
+  // SceneTag items as invisible — it applies the cues and advances to the next
+  // line without ever installing the content as a queue. Such a line is never
+  // displayed, so the player can never open the evidence tray against it.
+  // Combined with begin_question's "any line with a contradiction prevents
+  // auto-break" rule, a required question whose only contradiction line has
+  // tag-only content is permanently unbreakable, soft-locking the phase.
+  // Reject this authoring error at compile time.
+  const hasVisibleContent = line.content.some(
+    (item) => item.kind !== "sceneTag",
+  );
+  if (!hasVisibleContent) {
+    errors.push({
+      code: "interrogationContradictionOnInvisibleLine",
+      message: `Line "${line.id}" has a Contradiction but no visible dialogue in its content (only scene tags). The line is never displayed, so the contradiction can never be challenged — add suspect dialogue or move the Contradiction to a line with visible content.`,
+      sourceFile: scene.sourceFile,
+      line: line.line,
+    });
+    return;
+  }
   const target = line.contradiction;
   if (target.kind === "evidence") {
     if (!knownEvidence(target.id, scene, corpusContext)) {
