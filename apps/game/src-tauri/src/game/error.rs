@@ -182,6 +182,78 @@ impl GameError {
             ),
         )
     }
+    pub fn invalid_story_state_snapshot(detail: impl Into<String>) -> Self {
+        Self::new(
+            "invalidStoryStateSnapshot",
+            format!("Story state snapshot is invalid: {}", detail.into()),
+        )
+    }
+    pub fn unknown_story_fact(id: &str) -> Self {
+        Self::new(
+            "unknownStoryFact",
+            format!("Story fact '{id}' does not exist."),
+        )
+    }
+    pub fn unknown_supporting_case_record(kind: &str, id: &str) -> Self {
+        Self::new(
+            "unknownSupportingCaseRecord",
+            format!("Supporting case record '{kind}:{id}' does not exist."),
+        )
+    }
+    pub fn invalid_supporting_fact(id: &str, detail: &str) -> Self {
+        Self::new(
+            "invalidSupportingFact",
+            format!("Supporting fact '{id}' is invalid: {detail}"),
+        )
+    }
+    pub fn invalid_assertion_origin(detail: impl Into<String>) -> Self {
+        Self::new(
+            "invalidAssertionOrigin",
+            format!("Assertion origin is invalid: {}", detail.into()),
+        )
+    }
+    pub fn unknown_story_question(id: &str) -> Self {
+        Self::new(
+            "unknownStoryQuestion",
+            format!("Story question '{id}' does not exist."),
+        )
+    }
+    pub fn invalid_question_resolution_fact(id: &str, detail: &str) -> Self {
+        Self::new(
+            "invalidQuestionResolutionFact",
+            format!("Question resolution fact '{id}' is invalid: {detail}"),
+        )
+    }
+    pub fn invalid_question_resolver_replacement(
+        question_id: &str,
+        current_fact_id: &str,
+        requested_fact_id: &str,
+    ) -> Self {
+        Self::new(
+            "invalidQuestionResolverReplacement",
+            format!(
+                "Question '{question_id}' is already resolved by '{current_fact_id}' and cannot be replaced by '{requested_fact_id}'."
+            ),
+        )
+    }
+    pub fn unknown_story_objective(id: &str) -> Self {
+        Self::new(
+            "unknownStoryObjective",
+            format!("Story objective '{id}' does not exist."),
+        )
+    }
+    pub fn invalid_primary_objective_transition(detail: impl Into<String>) -> Self {
+        Self::new(
+            "invalidPrimaryObjectiveTransition",
+            format!("Primary objective transition is invalid: {}", detail.into()),
+        )
+    }
+    pub fn unknown_story_authorization(id: &str) -> Self {
+        Self::new(
+            "unknownStoryAuthorization",
+            format!("Story authorization '{id}' does not exist."),
+        )
+    }
     pub fn parse_failure(detail: String) -> Self {
         Self::new("parseFailure", detail)
     }

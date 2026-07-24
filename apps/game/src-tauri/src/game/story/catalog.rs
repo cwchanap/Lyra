@@ -10,13 +10,9 @@ const STORY_CATALOG_SCHEMA_VERSION: i64 = 1;
 pub(in crate::game) struct StoryCatalog {
     // These immutable arrays and indexes are consumed by the mutation and
     // public-view tasks that follow this loader task.
-    #[allow(dead_code)]
     facts: Vec<FactDefinition>,
-    #[allow(dead_code)]
     questions: Vec<QuestionDefinition>,
-    #[allow(dead_code)]
     objectives: Vec<ObjectiveDefinition>,
-    #[allow(dead_code)]
     authorizations: Vec<AuthorizationDefinition>,
     #[allow(dead_code)]
     fact_by_id: HashMap<String, usize>,
