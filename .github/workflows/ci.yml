@@ -11,17 +11,47 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  source-snapshot:
-    name: Temporary source snapshot
+  apply-clippy-fix:
+    name: Temporary apply Clippy fix
+    if: github.event_name == 'pull_request' && github.head_ref == 'jack65786656/hpa-55-extract-gameengine-transaction-dialogue-and-navigation-seams'
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Upload mod.rs source
-        uses: actions/upload-artifact@v4
         with:
-          name: mod-rs-source
-          path: apps/game/src-tauri/src/game/mod.rs
-          retention-days: 1
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Apply question-mark lint fix
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("apps/game/src-tauri/src/game/mod.rs")
+          source = path.read_text()
+          old = '''        } else if let Some(rest) = signature.strip_prefix("pub fn ") {
+              (FnVisibility::Pub, rest)
+          } else {
+              return None;
+          };'''
+          new = '''        } else {
+              let rest = signature.strip_prefix("pub fn ")?;
+              (FnVisibility::Pub, rest)
+          };'''
+          if old in source:
+              path.write_text(source.replace(old, new, 1))
+          elif new not in source:
+              raise SystemExit("expected parse_view_fn_signature block was not found")
+          PY
+          if git diff --quiet -- apps/game/src-tauri/src/game/mod.rs; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/game/src-tauri/src/game/mod.rs
+          git commit -m "fix(engine): satisfy Clippy question_mark lint"
+          git push origin "HEAD:${BRANCH}"
 
   lint-frontend:
     name: Frontend – check & build
@@ -82,18 +112,7 @@ jobs:
         run: cargo check --manifest-path apps/layout-editor/src-tauri/Cargo.toml
 
       - name: Clippy game
-        shell: bash
-        run: |
-          set -o pipefail
-          cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings 2>&1 | tee clippy-game.log
-
-      - name: Upload Clippy game diagnostics
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: clippy-game-log
-          path: clippy-game.log
-          retention-days: 1
+        run: cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: Clippy editor
         run: cargo clippy --manifest-path apps/layout-editor/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
