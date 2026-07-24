@@ -11,6 +11,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  format-clippy-fix:
+    name: Temporary format Clippy fix
+    if: github.event_name == 'pull_request' && github.head_ref == 'jack65786656/hpa-55-extract-gameengine-transaction-dialogue-and-navigation-seams'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Install rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Format and commit
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          rustfmt --edition 2021 apps/game/src-tauri/src/game/mod.rs
+          if git diff --quiet -- apps/game/src-tauri/src/game/mod.rs; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/game/src-tauri/src/game/mod.rs
+          git commit -m "style(engine): format Clippy lint fix"
+          git push origin "HEAD:${BRANCH}"
+
   lint-frontend:
     name: Frontend – check & build
     runs-on: ubuntu-latest
