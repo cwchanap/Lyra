@@ -519,7 +519,7 @@ mod tests {
     use crate::game::state::{ChapterManifest, SceneRef};
     use crate::game::test_support::*;
     use crate::game::view::{DialogueHistoryEntry, ModeView, QueueToken};
-    use crate::game::{GameEngine, Inventory, LastVisualCue};
+    use crate::game::{GameEngine, Inventory, LastVisualCue, StoryCatalog};
     use std::path::PathBuf;
 
     fn token(cursor: usize) -> QueueToken {
@@ -841,6 +841,7 @@ mod tests {
         };
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),
+            story_catalog: StoryCatalog::empty(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
@@ -908,6 +909,7 @@ mod tests {
         };
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),
+            story_catalog: StoryCatalog::empty(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
@@ -967,6 +969,7 @@ mod tests {
         };
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),
+            story_catalog: StoryCatalog::empty(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
