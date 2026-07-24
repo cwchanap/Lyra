@@ -47,6 +47,17 @@ function catalogWithFacts(facts: string): string {
 ${facts}`;
 }
 
+function catalogWithObjectiveSortOrder(sortOrder: string): string {
+  return `# Story Catalog
+
+## Objectives
+
+### Objective: Objective {#objective_one}
+- **Summary:** Summary.
+- **Kind:** primary
+- **Sort Order:** ${sortOrder}`;
+}
+
 function errorsFor(source: string) {
   const result = parseStoryCatalog(source, SOURCE_FILE);
   expect(result.ok).toBe(false);
@@ -202,6 +213,44 @@ ${validFact("first")}`),
         line: 8,
       }),
     );
+  });
+
+  it.each([
+    [String(Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER],
+    [String(Number.MIN_SAFE_INTEGER), Number.MIN_SAFE_INTEGER],
+  ])("accepts safe-integer Sort Order boundary %s", (source, expected) => {
+    const result = parseStoryCatalog(
+      catalogWithObjectiveSortOrder(source),
+      SOURCE_FILE,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: { objectives: [{ sortOrder: expected }] },
+    });
+  });
+
+  it.each(["9007199254740992", "-9007199254740992", "1e100"])(
+    "rejects unsafe or exponent Sort Order %s at the metadata line",
+    (sortOrder) => {
+      expect(errorsFor(catalogWithObjectiveSortOrder(sortOrder))).toEqual([
+        expect.objectContaining({
+          code: "storyCatalogMalformed",
+          sourceFile: SOURCE_FILE,
+          line: 8,
+        }),
+      ]);
+    },
+  );
+
+  it("reports one accurate diagnostic for a malformed first nonblank H1", () => {
+    expect(errorsFor("\n\n# Catalog")).toEqual([
+      expect.objectContaining({
+        code: "storyCatalogMalformed",
+        sourceFile: SOURCE_FILE,
+        line: 3,
+      }),
+    ]);
   });
 
   it("validates Resolved By even when its definition ID is invalid", () => {

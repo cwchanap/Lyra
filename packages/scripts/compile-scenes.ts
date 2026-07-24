@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
 import { checkTauriConfig } from "./compile-scenes/config-check";
 import { withCompileLock } from "./compile-scenes/compile-lock";
+import { compileScenesWatchInputs } from "./compile-scenes/watch-inputs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -52,16 +53,9 @@ async function main() {
         `[compile-scenes] Watching ${SOURCE_ROOTS.join(", ")} and ${ASSET_CONFIG_ROOT} for changes...`,
       );
       chokidar
-        .watch(
-          [
-            ...SOURCE_ROOTS.map((root) => `${root}/chapter_*/*.md`),
-            ...SOURCE_ROOTS.map((root) => `${root}/chapter_*/*.layout.json`),
-            `${ASSET_CONFIG_ROOT}/**/*.yaml`,
-          ],
-          {
-            ignoreInitial: true,
-          },
-        )
+        .watch(compileScenesWatchInputs(SOURCE_ROOTS, ASSET_CONFIG_ROOT), {
+          ignoreInitial: true,
+        })
         .on("all", async (event, path) => {
           console.log(`[compile-scenes] ${event} ${path} - recompiling.`);
           try {
