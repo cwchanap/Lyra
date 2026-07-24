@@ -1,7 +1,3 @@
-// The immutable lookup surface is introduced before the mutation and public-view
-// consumers in the following HPA-255 tasks.
-#![allow(dead_code)]
-
 use crate::game::schema::InventoryTarget;
 use crate::game::GameError;
 use serde::Deserialize;
@@ -12,15 +8,27 @@ const STORY_CATALOG_SCHEMA_VERSION: i64 = 1;
 
 #[derive(Debug)]
 pub(in crate::game) struct StoryCatalog {
+    // These immutable arrays and indexes are consumed by the mutation and
+    // public-view tasks that follow this loader task.
+    #[allow(dead_code)]
     facts: Vec<FactDefinition>,
+    #[allow(dead_code)]
     questions: Vec<QuestionDefinition>,
+    #[allow(dead_code)]
     objectives: Vec<ObjectiveDefinition>,
+    #[allow(dead_code)]
     authorizations: Vec<AuthorizationDefinition>,
+    #[allow(dead_code)]
     fact_by_id: HashMap<String, usize>,
+    #[allow(dead_code)]
     question_by_id: HashMap<String, usize>,
+    #[allow(dead_code)]
     objective_by_id: HashMap<String, usize>,
+    #[allow(dead_code)]
     authorization_by_id: HashMap<String, usize>,
+    #[allow(dead_code)]
     evidence_by_id: BTreeMap<String, CaseRecordDefinitionIndex>,
+    #[allow(dead_code)]
     statement_by_id: BTreeMap<String, CaseRecordDefinitionIndex>,
 }
 
@@ -93,7 +101,10 @@ struct ObjectiveDefinitionJson {
 #[serde(rename_all = "camelCase")]
 struct CaseRecordDefinitionIndex {
     id: String,
+    // Retained immutable origin metadata for downstream story-state consumers.
+    #[allow(dead_code)]
     chapter_id: String,
+    #[allow(dead_code)]
     scene_id: String,
 }
 
@@ -123,6 +134,7 @@ impl StoryCatalog {
         Self::from_json(&path, json)
     }
 
+    #[allow(dead_code)]
     pub(in crate::game) fn empty() -> Self {
         Self {
             facts: Vec::new(),
@@ -138,28 +150,35 @@ impl StoryCatalog {
         }
     }
 
+    // The following read-only API is consumed by the mutation and public-view
+    // tasks that follow this loader task.
+    #[allow(dead_code)]
     pub(in crate::game) fn fact(&self, id: &str) -> Option<&FactDefinition> {
         self.fact_by_id.get(id).map(|index| &self.facts[*index])
     }
 
+    #[allow(dead_code)]
     pub(in crate::game) fn question(&self, id: &str) -> Option<&QuestionDefinition> {
         self.question_by_id
             .get(id)
             .map(|index| &self.questions[*index])
     }
 
+    #[allow(dead_code)]
     pub(in crate::game) fn objective(&self, id: &str) -> Option<&ObjectiveDefinition> {
         self.objective_by_id
             .get(id)
             .map(|index| &self.objectives[*index])
     }
 
+    #[allow(dead_code)]
     pub(in crate::game) fn authorization(&self, id: &str) -> Option<&AuthorizationDefinition> {
         self.authorization_by_id
             .get(id)
             .map(|index| &self.authorizations[*index])
     }
 
+    #[allow(dead_code)]
     pub(in crate::game) fn contains_inventory_target(&self, target: &InventoryTarget) -> bool {
         match target {
             InventoryTarget::Evidence { id } => self.evidence_by_id.contains_key(id),
@@ -167,18 +186,22 @@ impl StoryCatalog {
         }
     }
 
+    #[allow(dead_code)]
     pub(in crate::game) fn facts(&self) -> impl Iterator<Item = &FactDefinition> {
         self.facts.iter()
     }
 
+    #[allow(dead_code)]
     pub(in crate::game) fn questions(&self) -> impl Iterator<Item = &QuestionDefinition> {
         self.questions.iter()
     }
 
+    #[allow(dead_code)]
     pub(in crate::game) fn objectives(&self) -> impl Iterator<Item = &ObjectiveDefinition> {
         self.objectives.iter()
     }
 
+    #[allow(dead_code)]
     pub(in crate::game) fn authorizations(&self) -> impl Iterator<Item = &AuthorizationDefinition> {
         self.authorizations.iter()
     }
