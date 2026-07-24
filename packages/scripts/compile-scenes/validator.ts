@@ -72,9 +72,32 @@ export function validate(input: ValidatorInput): CompileError[] {
     string,
     { chapterId: string; sourceFile: string; line: number }
   >();
+  const sceneIdsByChapter = new Map<
+    string,
+    Map<string, { sourceFile: string; line: number }>
+  >();
 
   // ---- Pass 1: build global registries. ----
   for (const rec of input.scenes) {
+    const chapterSceneIds =
+      sceneIdsByChapter.get(rec.chapterId) ??
+      new Map<string, { sourceFile: string; line: number }>();
+    sceneIdsByChapter.set(rec.chapterId, chapterSceneIds);
+    const previousScene = chapterSceneIds.get(rec.ast.id);
+    if (previousScene) {
+      errors.push({
+        code: "duplicateSceneId",
+        message: `Scene id "${rec.ast.id}" declared twice in ${rec.chapterId}: ${previousScene.sourceFile}:${previousScene.line} and ${rec.ast.sourceFile}:${rec.ast.line}.`,
+        sourceFile: rec.ast.sourceFile,
+        line: rec.ast.line,
+      });
+    } else {
+      chapterSceneIds.set(rec.ast.id, {
+        sourceFile: rec.ast.sourceFile,
+        line: rec.ast.line,
+      });
+    }
+
     if (
       rec.ast.kind !== "investigationScene" &&
       rec.ast.kind !== "interrogationScene"

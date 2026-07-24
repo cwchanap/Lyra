@@ -4,16 +4,20 @@ import {
   emitInterrogationScene,
   emitInvestigationScene,
   emitLinearScene,
+  emitStoryCatalog,
 } from "./emitter";
 import { parseInterrogationScene } from "./parser-interrogation";
+import { emptyStoryCatalog } from "./parser-story-catalog";
 import type {
   ASTChapter,
   ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
+  ASTStoryCatalog,
   JSONChaptersIndex,
   JSONInterrogationScene,
 } from "./types";
+import type { SceneRecord } from "./validator";
 
 // Mirrors XEXAM_SRC from parser-interrogation.test.ts (Task-2 grammar
 // fixture): a question/testimony/line scene with one honest line and one
@@ -78,6 +82,242 @@ function emitInterrogationFixture(): JSONInterrogationScene {
 }
 
 describe("emitter", () => {
+  it("emits an empty version-1 story catalog", () => {
+    expect(emitStoryCatalog(emptyStoryCatalog("story_catalog.md"), [])).toEqual(
+      {
+        schemaVersion: 1,
+        facts: [],
+        questions: [],
+        objectives: [],
+        authorizations: [],
+        evidenceIndex: [],
+        statementsIndex: [],
+      },
+    );
+  });
+
+  it("preserves authored definition order except objectives and derives sorted case-record origins", () => {
+    const catalog: ASTStoryCatalog = {
+      facts: [
+        {
+          id: "fact_z",
+          label: "Fact Z",
+          summary: "Z.",
+          details: "Z details.",
+          category: "timeline",
+          sourceFile: "story_catalog.md",
+          line: 3,
+        },
+        {
+          id: "fact_a",
+          label: "Fact A",
+          summary: "A.",
+          details: "A details.",
+          category: "identity",
+          sourceFile: "story_catalog.md",
+          line: 8,
+        },
+      ],
+      questions: [
+        {
+          id: "question_z",
+          label: "Question Z",
+          summary: "Z?",
+          resolvedByFactIds: [
+            {
+              id: "fact_a",
+              sourceFile: "story_catalog.md",
+              line: 15,
+            },
+          ],
+          sourceFile: "story_catalog.md",
+          line: 13,
+        },
+        {
+          id: "question_a",
+          label: "Question A",
+          summary: "A?",
+          resolvedByFactIds: [],
+          sourceFile: "story_catalog.md",
+          line: 17,
+        },
+      ],
+      objectives: [
+        {
+          id: "objective_z",
+          label: "Objective Z",
+          summary: "Later tie.",
+          kind: "secondary",
+          sortOrder: 2,
+          sourceFile: "story_catalog.md",
+          line: 22,
+        },
+        {
+          id: "objective_late",
+          label: "Objective Late",
+          summary: "Last.",
+          kind: "primary",
+          sortOrder: 9,
+          sourceFile: "story_catalog.md",
+          line: 27,
+        },
+        {
+          id: "objective_a",
+          label: "Objective A",
+          summary: "Earlier tie.",
+          kind: "primary",
+          sortOrder: 2,
+          sourceFile: "story_catalog.md",
+          line: 32,
+        },
+      ],
+      authorizations: [
+        {
+          id: "authorization_z",
+          label: "Authorization Z",
+          summary: "Z.",
+          grantingAuthority: "Authority Z",
+          sourceFile: "story_catalog.md",
+          line: 38,
+        },
+        {
+          id: "authorization_a",
+          label: "Authorization A",
+          summary: "A.",
+          grantingAuthority: "Authority A",
+          sourceFile: "story_catalog.md",
+          line: 43,
+        },
+      ],
+      sourceFile: "story_catalog.md",
+      line: 1,
+    };
+    const scenes: SceneRecord[] = [
+      {
+        chapterId: "chapter_2",
+        file: "investigation_scene_4.md",
+        ast: {
+          kind: "investigationScene",
+          id: "investigation_scene_4",
+          title: "Investigation",
+          intro: [],
+          sublocations: [],
+          evidenceManifest: [
+            {
+              id: "evidence_z",
+              name: "Evidence Z",
+              description: "Z.",
+              details: "Z details.",
+              imageCue: { imagePrompt: null, imageAssetId: null },
+              sourceSublocationId: null,
+              onCollect: [],
+              onReexamine: null,
+              sourceFile: "chapter_2/investigation_scene_4.md",
+              line: 10,
+            },
+          ],
+          statementManifest: [
+            {
+              id: "statement_a",
+              speaker: "Witness",
+              content: "A.",
+              onAcquire: [],
+              onReexamine: null,
+              sourceFile: "chapter_2/investigation_scene_4.md",
+              line: 20,
+            },
+          ],
+          outro: { unlock: "auto", dialogue: [] },
+          assetRefs: [],
+          sourceFile: "chapter_2/investigation_scene_4.md",
+          line: 1,
+        },
+      },
+      {
+        chapterId: "chapter_1",
+        file: "interrogation_scene_3.md",
+        ast: {
+          kind: "interrogationScene",
+          id: "interrogation_scene_3",
+          title: "Interrogation",
+          intro: [],
+          phases: [],
+          evidenceManifest: [
+            {
+              id: "evidence_a",
+              name: "Evidence A",
+              description: "A.",
+              details: "A details.",
+              imageCue: { imagePrompt: null, imageAssetId: null },
+              sourceSublocationId: null,
+              onCollect: [],
+              onReexamine: null,
+              sourceFile: "chapter_1/interrogation_scene_3.md",
+              line: 10,
+            },
+          ],
+          statementManifest: [
+            {
+              id: "statement_z",
+              speaker: "Suspect",
+              content: "Z.",
+              onAcquire: [],
+              onReexamine: null,
+              sourceFile: "chapter_1/interrogation_scene_3.md",
+              line: 20,
+            },
+          ],
+          outro: { unlock: "auto", dialogue: [] },
+          assetRefs: [],
+          sourceFile: "chapter_1/interrogation_scene_3.md",
+          line: 1,
+        },
+      },
+    ];
+
+    const emitted = emitStoryCatalog(catalog, scenes);
+
+    expect(emitted.facts.map(({ id }) => id)).toEqual(["fact_z", "fact_a"]);
+    expect(emitted.questions.map(({ id }) => id)).toEqual([
+      "question_z",
+      "question_a",
+    ]);
+    expect(emitted.objectives.map(({ id }) => id)).toEqual([
+      "objective_a",
+      "objective_z",
+      "objective_late",
+    ]);
+    expect(emitted.authorizations.map(({ id }) => id)).toEqual([
+      "authorization_z",
+      "authorization_a",
+    ]);
+    expect(emitted.questions[0]?.resolvedByFactIds).toEqual(["fact_a"]);
+    expect(emitted.evidenceIndex).toEqual([
+      {
+        id: "evidence_a",
+        chapterId: "chapter_1",
+        sceneId: "interrogation_scene_3",
+      },
+      {
+        id: "evidence_z",
+        chapterId: "chapter_2",
+        sceneId: "investigation_scene_4",
+      },
+    ]);
+    expect(emitted.statementsIndex).toEqual([
+      {
+        id: "statement_a",
+        chapterId: "chapter_2",
+        sceneId: "investigation_scene_4",
+      },
+      {
+        id: "statement_z",
+        chapterId: "chapter_1",
+        sceneId: "interrogation_scene_3",
+      },
+    ]);
+  });
+
   it("emits a linear scene JSON", () => {
     const ast: ASTLinearScene = {
       kind: "linearScene",

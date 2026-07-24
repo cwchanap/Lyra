@@ -14,7 +14,8 @@
 // Surgical delete: never blanket-rmSync the outputRoot. The output root may
 // contain a tracked .gitkeep placeholder (so Tauri's bundle.resources glob
 // matches even before any scenes have been compiled). Only delete entries
-// the orchestrator owns: chapters.json and chapter_*/ subdirectories.
+// the orchestrator owns: chapters.json, story_catalog.json, and chapter_*/
+// subdirectories.
 // =============================================================================
 
 import {
@@ -31,19 +32,22 @@ import { parseChapter } from "./parser-chapter";
 import { parseLinearScene } from "./parser-linear";
 import { parseInvestigationScene } from "./parser-investigation";
 import { parseInterrogationScene } from "./parser-interrogation";
+import { emptyStoryCatalog, parseStoryCatalog } from "./parser-story-catalog";
 import {
   applyInvestigationLayout,
   detectLayoutOverlaps,
   parseInvestigationLayoutJson,
 } from "./layout";
 import { validate, type SceneRecord } from "./validator";
+import { validateStoryCatalog } from "./story-catalog";
 import {
   emitChaptersIndex,
   emitInterrogationScene,
   emitInvestigationScene,
   emitLinearScene,
+  emitStoryCatalog,
 } from "./emitter";
-import type { ASTChapter, CompileError } from "./types";
+import type { ASTChapter, ASTStoryCatalog, CompileError } from "./types";
 import { loadAssetConfig } from "./assets/config";
 import { enrichScenesWithAssets } from "./assets/enrich";
 import type { AssetManifest } from "./assets/manifest";
@@ -97,6 +101,8 @@ export function compile(opts: CompileOptions): CompileResult {
   const warnings: CompileError[] = [];
   const skippedReservedFiles = new Set<string>();
   const failedParseFiles = new Set<string>();
+  let storyCatalog: ASTStoryCatalog = emptyStoryCatalog("story_catalog.md");
+  let storyCatalogPath: string | null = null;
 
   const sourceRoots = Array.isArray(opts.sourceRoot)
     ? opts.sourceRoot
@@ -113,6 +119,20 @@ export function compile(opts: CompileOptions): CompileResult {
   const claimedBy = new Map<string, string>(); // dirName -> root that owns it
   for (const root of sourceRoots) {
     if (!existsSync(root)) continue;
+    const candidateCatalogPath = resolve(root, "story_catalog.md");
+    if (existsSync(candidateCatalogPath)) {
+      if (storyCatalogPath === null) {
+        storyCatalogPath = candidateCatalogPath;
+      } else {
+        errors.push({
+          code: "duplicateStoryCatalog",
+          message: `Story catalog found in multiple source roots (${storyCatalogPath} and ${candidateCatalogPath}); exactly one global catalog may be authored.`,
+          sourceFile: candidateCatalogPath,
+          line: 1,
+        });
+      }
+    }
+
     let entries: string[];
     try {
       entries = readdirSync(root).filter(
@@ -144,6 +164,27 @@ export function compile(opts: CompileOptions): CompileResult {
     }
   }
   discovered.sort((a, b) => byChapterNumber(a.dirName, b.dirName));
+
+  if (storyCatalogPath !== null) {
+    try {
+      const parsedCatalog = parseStoryCatalog(
+        readFileSync(storyCatalogPath, "utf-8"),
+        storyCatalogPath,
+      );
+      if (parsedCatalog.ok) {
+        storyCatalog = parsedCatalog.value;
+      } else {
+        errors.push(...parsedCatalog.errors);
+      }
+    } catch (e) {
+      errors.push({
+        code: "storyCatalogUnreadable",
+        message: `${storyCatalogPath}: ${(e as Error).message}`,
+        sourceFile: storyCatalogPath,
+        line: 1,
+      });
+    }
+  }
 
   // 2 & 3. For each chapter, parse the manifest then each scene.
   if (discovered.length === 0 && errors.length === 0) {
@@ -310,6 +351,7 @@ export function compile(opts: CompileOptions): CompileResult {
   errors.push(
     ...validate({ chapters, scenes, skippedReservedFiles, failedParseFiles }),
   );
+  errors.push(...validateStoryCatalog(storyCatalog, scenes));
 
   if (errors.length > 0) return { ok: false, errors };
 
@@ -317,10 +359,14 @@ export function compile(opts: CompileOptions): CompileResult {
   //
   // Do NOT rmSync the entire outputRoot — it may contain a tracked .gitkeep
   // placeholder that must be preserved. Delete only entries this orchestrator
-  // is responsible for: chapters.json and chapter_*/ subdirectories.
+  // is responsible for: chapters.json, story_catalog.json, and chapter_*/
+  // subdirectories.
   mkdirSync(opts.outputRoot, { recursive: true });
   const oldChaptersJson = resolve(opts.outputRoot, "chapters.json");
   if (existsSync(oldChaptersJson)) rmSync(oldChaptersJson, { force: true });
+  const oldStoryCatalogJson = resolve(opts.outputRoot, "story_catalog.json");
+  if (existsSync(oldStoryCatalogJson))
+    rmSync(oldStoryCatalogJson, { force: true });
   for (const entry of readdirSync(opts.outputRoot)) {
     if (/^chapter_\d+$/.test(entry)) {
       rmSync(resolve(opts.outputRoot, entry), { recursive: true, force: true });
@@ -347,6 +393,10 @@ export function compile(opts: CompileOptions): CompileResult {
   writeFileSync(
     resolve(opts.outputRoot, "chapters.json"),
     JSON.stringify(idx, null, 2) + "\n",
+  );
+  writeFileSync(
+    resolve(opts.outputRoot, "story_catalog.json"),
+    JSON.stringify(emitStoryCatalog(storyCatalog, scenes), null, 2) + "\n",
   );
 
   if (opts.assetOutputRoot && manifestToWrite) {

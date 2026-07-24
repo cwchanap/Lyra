@@ -254,6 +254,65 @@ const mkChapter = (number: number, sceneFiles: string[]): ASTChapter => ({
 });
 
 describe("validator", () => {
+  it("rejects duplicate scene IDs within one chapter at the second scene", () => {
+    const errors = validate({
+      chapters: [mkChapter(1, ["scene_a.md", "scene_b.md"])],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "scene_a.md",
+          ast: {
+            ...mkLinearScene("shared_scene"),
+            sourceFile: "chapter_1/scene_a.md",
+          },
+        },
+        {
+          chapterId: "chapter_1",
+          file: "scene_b.md",
+          ast: {
+            ...mkLinearScene("shared_scene"),
+            sourceFile: "chapter_1/scene_b.md",
+            line: 7,
+          },
+        },
+      ],
+    });
+
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        code: "duplicateSceneId",
+        sourceFile: "chapter_1/scene_b.md",
+        line: 7,
+      }),
+    );
+  });
+
+  it("allows the same scene ID in different chapters", () => {
+    expect(
+      validate({
+        chapters: [mkChapter(1, ["scene_a.md"]), mkChapter(2, ["scene_b.md"])],
+        scenes: [
+          {
+            chapterId: "chapter_1",
+            file: "scene_a.md",
+            ast: {
+              ...mkLinearScene("shared_scene"),
+              sourceFile: "chapter_1/scene_a.md",
+            },
+          },
+          {
+            chapterId: "chapter_2",
+            file: "scene_b.md",
+            ast: {
+              ...mkLinearScene("shared_scene"),
+              sourceFile: "chapter_2/scene_b.md",
+            },
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
   it("accepts a valid minimal corpus", () => {
     const errors = validate({
       chapters: [mkChapter(1, ["scene_0.md", "investigation_scene_1.md"])],

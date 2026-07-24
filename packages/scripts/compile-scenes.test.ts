@@ -16,6 +16,35 @@ import { enrichScenesWithAssets } from "./compile-scenes/assets/enrich";
 import type { AssetConfig } from "./compile-scenes/assets/config";
 import type { SceneRecord } from "./compile-scenes/validator";
 
+const VALID_STORY_CATALOG = `# Story Catalog
+
+## Facts
+
+### Fact: The visitor signed in {#visitor_signed_in}
+- **Summary:** The visitor signed the register.
+- **Details:** The register contains a timestamped signature.
+- **Category:** timeline
+
+## Questions
+
+### Question: Who was the visitor? {#visitor_identity}
+- **Summary:** Identify the visitor.
+- **Resolved By:** [fact:visitor_signed_in]
+
+## Objectives
+
+### Objective: Check the register {#check_register}
+- **Summary:** Inspect the register.
+- **Kind:** primary
+- **Sort Order:** 1
+
+## Authorizations
+
+### Authorization: Archive access {#archive_access}
+- **Summary:** Permission to inspect the archive.
+- **Granting Authority:** Metropolitan Police
+`;
+
 describe("compile (end-to-end against valid fixture)", () => {
   it("compiles the valid fixture without errors and emits expected files", () => {
     const outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-"));
@@ -600,6 +629,265 @@ describe("compile (multiple source roots)", () => {
       expect(result.errors.some((e) => e.code === "duplicateChapter")).toBe(
         true,
       );
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("compile (global story catalog)", () => {
+  it("emits the exact empty version-1 artifact when no catalog is authored", () => {
+    const sourceRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-empty-catalog-source-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-empty-catalog-out-"),
+    );
+    try {
+      const chapterRoot = resolve(sourceRoot, "chapter_1");
+      mkdirSync(chapterRoot);
+      writeFileSync(
+        resolve(chapterRoot, "chapter.md"),
+        "# Chapter 1: Empty Catalog\n\n**Summary:** No records.\n\n## Scenes\n1. scene_0.md\n",
+      );
+      writeFileSync(
+        resolve(chapterRoot, "scene_0.md"),
+        readFileSync(
+          "packages/scripts/__fixtures__/valid/chapter_1/scene_0.md",
+          "utf-8",
+        ),
+      );
+
+      const result = compile({
+        sourceRoot,
+        outputRoot: outRoot,
+      });
+      if (!result.ok) throw new Error(formatErrors(result.errors));
+
+      expect(
+        JSON.parse(
+          readFileSync(resolve(outRoot, "story_catalog.json"), "utf-8"),
+        ),
+      ).toEqual({
+        schemaVersion: 1,
+        facts: [],
+        questions: [],
+        objectives: [],
+        authorizations: [],
+        evidenceIndex: [],
+        statementsIndex: [],
+      });
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["first", "second"] as const)(
+    "compiles one catalog discovered in the %s configured root",
+    (position) => {
+      const catalogRoot = mkdtempSync(
+        resolve(tmpdir(), `scene-compile-catalog-${position}-`),
+      );
+      const outRoot = mkdtempSync(
+        resolve(tmpdir(), `scene-compile-catalog-${position}-out-`),
+      );
+      try {
+        writeFileSync(
+          resolve(catalogRoot, "story_catalog.md"),
+          VALID_STORY_CATALOG,
+        );
+        const fixtureRoot = "packages/scripts/__fixtures__/valid";
+        const sourceRoot =
+          position === "first"
+            ? [catalogRoot, fixtureRoot]
+            : [fixtureRoot, catalogRoot];
+
+        const result = compile({ sourceRoot, outputRoot: outRoot });
+        if (!result.ok) throw new Error(formatErrors(result.errors));
+
+        const emitted = JSON.parse(
+          readFileSync(resolve(outRoot, "story_catalog.json"), "utf-8"),
+        );
+        expect(emitted.facts).toContainEqual(
+          expect.objectContaining({ id: "visitor_signed_in" }),
+        );
+        expect(emitted.questions[0]?.resolvedByFactIds).toEqual([
+          "visitor_signed_in",
+        ]);
+      } finally {
+        rmSync(catalogRoot, { recursive: true, force: true });
+        rmSync(outRoot, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("rejects two catalogs at the second path and writes no catalog artifact", () => {
+    const firstRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-catalog-duplicate-first-"),
+    );
+    const secondRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-catalog-duplicate-second-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-catalog-duplicate-out-"),
+    );
+    try {
+      writeFileSync(
+        resolve(firstRoot, "story_catalog.md"),
+        VALID_STORY_CATALOG,
+      );
+      writeFileSync(
+        resolve(secondRoot, "story_catalog.md"),
+        VALID_STORY_CATALOG,
+      );
+
+      const result = compile({
+        sourceRoot: [
+          firstRoot,
+          secondRoot,
+          "packages/scripts/__fixtures__/valid",
+        ],
+        outputRoot: outRoot,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          code: "duplicateStoryCatalog",
+          sourceFile: resolve(secondRoot, "story_catalog.md"),
+        }),
+      );
+      expect(existsSync(resolve(outRoot, "story_catalog.json"))).toBe(false);
+    } finally {
+      rmSync(firstRoot, { recursive: true, force: true });
+      rmSync(secondRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("reports an unreadable discovered catalog", () => {
+    const catalogRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-catalog-unreadable-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-catalog-unreadable-out-"),
+    );
+    const catalogPath = resolve(catalogRoot, "story_catalog.md");
+    try {
+      mkdirSync(catalogPath);
+
+      const result = compile({
+        sourceRoot: ["packages/scripts/__fixtures__/valid", catalogRoot],
+        outputRoot: outRoot,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          code: "storyCatalogUnreadable",
+          sourceFile: catalogPath,
+        }),
+      );
+    } finally {
+      rmSync(catalogRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves a pre-existing catalog artifact unchanged on validation failure", () => {
+    const catalogRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-catalog-invalid-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-catalog-invalid-out-"),
+    );
+    const sentinel = '{"sentinel":"keep exactly"}\n';
+    try {
+      writeFileSync(
+        resolve(catalogRoot, "story_catalog.md"),
+        `# Story Catalog
+
+## Facts
+
+### Fact: The visitor signed in {#visitor_signed_in}
+- **Summary:** The visitor signed the register.
+- **Details:** The register contains a timestamped signature.
+- **Category:** timeline
+
+### Fact: Duplicate visitor fact {#visitor_signed_in}
+- **Summary:** Duplicate.
+- **Details:** Duplicate details.
+- **Category:** timeline
+`,
+      );
+      writeFileSync(resolve(outRoot, "story_catalog.json"), sentinel);
+
+      const result = compile({
+        sourceRoot: ["packages/scripts/__fixtures__/valid", catalogRoot],
+        outputRoot: outRoot,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({ code: "duplicateGlobalDefinitionId" }),
+      );
+      expect(
+        readFileSync(resolve(outRoot, "story_catalog.json"), "utf-8"),
+      ).toBe(sentinel);
+    } finally {
+      rmSync(catalogRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("replaces only compiler-owned scene outputs on successful compilation", () => {
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-catalog-surgical-out-"),
+    );
+    try {
+      writeFileSync(resolve(outRoot, "chapters.json"), "old chapters\n");
+      writeFileSync(resolve(outRoot, "story_catalog.json"), "old catalog\n");
+      mkdirSync(resolve(outRoot, "chapter_99"));
+      writeFileSync(
+        resolve(outRoot, "chapter_99/stale.json"),
+        "stale chapter\n",
+      );
+      writeFileSync(resolve(outRoot, "keep.txt"), "keep file\n");
+      mkdirSync(resolve(outRoot, "future_data"));
+      writeFileSync(
+        resolve(outRoot, "future_data/keep.json"),
+        "keep directory\n",
+      );
+
+      const result = compile({
+        sourceRoot: "packages/scripts/__fixtures__/valid",
+        outputRoot: outRoot,
+      });
+      if (!result.ok) throw new Error(formatErrors(result.errors));
+
+      expect(readdirSync(outRoot).sort()).toEqual([
+        "chapter_1",
+        "chapters.json",
+        "future_data",
+        "keep.txt",
+        "story_catalog.json",
+      ]);
+      expect(readFileSync(resolve(outRoot, "keep.txt"), "utf-8")).toBe(
+        "keep file\n",
+      );
+      expect(
+        readFileSync(resolve(outRoot, "future_data/keep.json"), "utf-8"),
+      ).toBe("keep directory\n");
+      expect(existsSync(resolve(outRoot, "chapter_99"))).toBe(false);
+      expect(
+        JSON.parse(
+          readFileSync(resolve(outRoot, "story_catalog.json"), "utf-8"),
+        ).schemaVersion,
+      ).toBe(1);
     } finally {
       rmSync(outRoot, { recursive: true, force: true });
     }
