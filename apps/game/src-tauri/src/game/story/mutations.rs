@@ -1,0 +1,944 @@
+use super::catalog::{ObjectiveKind, StoryCatalog};
+use super::state::{
+    inventory_target_id, inventory_target_kind, AssertionOrigin, AuthorizationProgress,
+    FactProgress, ObjectiveProgress, QuestionProgress, StoryState,
+};
+use crate::game::schema::InventoryTarget;
+use crate::game::GameError;
+use std::collections::BTreeSet;
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::game) enum MutationOutcome {
+    Changed,
+    Unchanged,
+}
+
+#[allow(dead_code)]
+impl StoryState {
+    pub(in crate::game) fn assert_fact(
+        &mut self,
+        catalog: &StoryCatalog,
+        fact_id: &str,
+        origin: AssertionOrigin,
+        supporting_records: &[InventoryTarget],
+        supporting_fact_ids: &[String],
+    ) -> Result<MutationOutcome, GameError> {
+        if catalog.fact(fact_id).is_none() {
+            return Err(GameError::unknown_story_fact(fact_id));
+        }
+        let (chapter_id, scene_id) = origin
+            .derived_location()
+            .map_err(GameError::invalid_assertion_origin)?;
+
+        let supporting_records = supporting_records.iter().cloned().collect::<BTreeSet<_>>();
+        for target in &supporting_records {
+            if !catalog.contains_inventory_target(target) {
+                return Err(GameError::unknown_supporting_case_record(
+                    inventory_target_kind(target),
+                    inventory_target_id(target),
+                ));
+            }
+        }
+
+        let supporting_fact_ids = supporting_fact_ids.iter().cloned().collect::<BTreeSet<_>>();
+        for supporting_fact_id in &supporting_fact_ids {
+            if catalog.fact(supporting_fact_id).is_none() {
+                return Err(GameError::invalid_supporting_fact(
+                    supporting_fact_id,
+                    "the definition does not exist",
+                ));
+            }
+            if !self.facts.contains_key(supporting_fact_id) {
+                return Err(GameError::invalid_supporting_fact(
+                    supporting_fact_id,
+                    "the fact has not been asserted",
+                ));
+            }
+        }
+
+        let mut candidate = self.facts.clone();
+        match candidate.get_mut(fact_id) {
+            Some(progress) => {
+                progress.supporting_records.extend(supporting_records);
+                progress.supporting_fact_ids.extend(supporting_fact_ids);
+            }
+            None => {
+                candidate.insert(
+                    fact_id.to_owned(),
+                    FactProgress {
+                        asserted_in_chapter_id: chapter_id,
+                        asserted_in_scene_id: scene_id,
+                        first_origin: origin,
+                        supporting_records,
+                        supporting_fact_ids,
+                    },
+                );
+            }
+        }
+
+        if candidate == self.facts {
+            Ok(MutationOutcome::Unchanged)
+        } else {
+            self.facts = candidate;
+            Ok(MutationOutcome::Changed)
+        }
+    }
+
+    pub(in crate::game) fn reveal_question(
+        &mut self,
+        catalog: &StoryCatalog,
+        question_id: &str,
+    ) -> Result<MutationOutcome, GameError> {
+        if catalog.question(question_id).is_none() {
+            return Err(GameError::unknown_story_question(question_id));
+        }
+
+        let mut candidate = self.questions.clone();
+        candidate
+            .entry(question_id.to_owned())
+            .or_insert(QuestionProgress {
+                resolved_by_fact_id: None,
+            });
+        if candidate == self.questions {
+            Ok(MutationOutcome::Unchanged)
+        } else {
+            self.questions = candidate;
+            Ok(MutationOutcome::Changed)
+        }
+    }
+
+    pub(in crate::game) fn resolve_question(
+        &mut self,
+        catalog: &StoryCatalog,
+        question_id: &str,
+        fact_id: &str,
+    ) -> Result<MutationOutcome, GameError> {
+        let Some(definition) = catalog.question(question_id) else {
+            return Err(GameError::unknown_story_question(question_id));
+        };
+        if catalog.fact(fact_id).is_none() {
+            return Err(GameError::invalid_question_resolution_fact(
+                fact_id,
+                "the definition does not exist",
+            ));
+        }
+        if !self.facts.contains_key(fact_id) {
+            return Err(GameError::invalid_question_resolution_fact(
+                fact_id,
+                "the fact has not been asserted",
+            ));
+        }
+        if !definition
+            .resolved_by_fact_ids
+            .iter()
+            .any(|candidate| candidate == fact_id)
+        {
+            return Err(GameError::invalid_question_resolution_fact(
+                fact_id,
+                "the fact is not a resolver candidate for this question",
+            ));
+        }
+        if let Some(current_fact_id) = self
+            .questions
+            .get(question_id)
+            .and_then(|progress| progress.resolved_by_fact_id.as_deref())
+        {
+            if current_fact_id == fact_id {
+                return Ok(MutationOutcome::Unchanged);
+            }
+            return Err(GameError::invalid_question_resolver_replacement(
+                question_id,
+                current_fact_id,
+                fact_id,
+            ));
+        }
+
+        let mut candidate = self.questions.clone();
+        candidate.insert(
+            question_id.to_owned(),
+            QuestionProgress {
+                resolved_by_fact_id: Some(fact_id.to_owned()),
+            },
+        );
+        self.questions = candidate;
+        Ok(MutationOutcome::Changed)
+    }
+
+    pub(in crate::game) fn reveal_objective(
+        &mut self,
+        catalog: &StoryCatalog,
+        objective_id: &str,
+    ) -> Result<MutationOutcome, GameError> {
+        if catalog.objective(objective_id).is_none() {
+            return Err(GameError::unknown_story_objective(objective_id));
+        }
+
+        let mut candidate = self.objectives.clone();
+        candidate
+            .entry(objective_id.to_owned())
+            .or_insert(ObjectiveProgress { completed: false });
+        if candidate == self.objectives {
+            Ok(MutationOutcome::Unchanged)
+        } else {
+            self.objectives = candidate;
+            Ok(MutationOutcome::Changed)
+        }
+    }
+
+    pub(in crate::game) fn complete_objective(
+        &mut self,
+        catalog: &StoryCatalog,
+        objective_id: &str,
+    ) -> Result<MutationOutcome, GameError> {
+        if catalog.objective(objective_id).is_none() {
+            return Err(GameError::unknown_story_objective(objective_id));
+        }
+
+        let mut candidate_objectives = self.objectives.clone();
+        candidate_objectives.insert(
+            objective_id.to_owned(),
+            ObjectiveProgress { completed: true },
+        );
+        let candidate_active = if self.active_primary_objective_id.as_deref() == Some(objective_id)
+        {
+            None
+        } else {
+            self.active_primary_objective_id.clone()
+        };
+
+        if candidate_objectives == self.objectives
+            && candidate_active == self.active_primary_objective_id
+        {
+            Ok(MutationOutcome::Unchanged)
+        } else {
+            self.objectives = candidate_objectives;
+            self.active_primary_objective_id = candidate_active;
+            Ok(MutationOutcome::Changed)
+        }
+    }
+
+    pub(in crate::game) fn set_primary_objective(
+        &mut self,
+        catalog: &StoryCatalog,
+        complete_current: bool,
+        next_objective_id: Option<&str>,
+    ) -> Result<MutationOutcome, GameError> {
+        if let Some(next_id) = next_objective_id {
+            let Some(definition) = catalog.objective(next_id) else {
+                return Err(GameError::unknown_story_objective(next_id));
+            };
+            if definition.kind != ObjectiveKind::Primary {
+                return Err(GameError::invalid_primary_objective_transition(format!(
+                    "objective '{next_id}' is secondary"
+                )));
+            }
+            if self
+                .objectives
+                .get(next_id)
+                .is_some_and(|progress| progress.completed)
+            {
+                return Err(GameError::invalid_primary_objective_transition(format!(
+                    "objective '{next_id}' is already completed"
+                )));
+            }
+        }
+
+        let current_id = self.active_primary_objective_id.as_deref();
+        if complete_current && current_id.is_some() && current_id == next_objective_id {
+            return Err(GameError::invalid_primary_objective_transition(
+                "the current objective cannot be completed and remain active",
+            ));
+        }
+
+        let mut candidate_objectives = self.objectives.clone();
+        if complete_current {
+            if let Some(current_id) = current_id {
+                let Some(current) = candidate_objectives.get_mut(current_id) else {
+                    return Err(GameError::invalid_primary_objective_transition(format!(
+                        "active objective '{current_id}' has not been revealed"
+                    )));
+                };
+                current.completed = true;
+            }
+        }
+        if let Some(next_id) = next_objective_id {
+            candidate_objectives
+                .entry(next_id.to_owned())
+                .or_insert(ObjectiveProgress { completed: false });
+        }
+        let candidate_active = next_objective_id.map(str::to_owned);
+
+        if candidate_objectives == self.objectives
+            && candidate_active == self.active_primary_objective_id
+        {
+            Ok(MutationOutcome::Unchanged)
+        } else {
+            self.objectives = candidate_objectives;
+            self.active_primary_objective_id = candidate_active;
+            Ok(MutationOutcome::Changed)
+        }
+    }
+
+    pub(in crate::game) fn grant_authorization(
+        &mut self,
+        catalog: &StoryCatalog,
+        authorization_id: &str,
+        origin: AssertionOrigin,
+    ) -> Result<MutationOutcome, GameError> {
+        if catalog.authorization(authorization_id).is_none() {
+            return Err(GameError::unknown_story_authorization(authorization_id));
+        }
+        let (chapter_id, scene_id) = origin
+            .derived_location()
+            .map_err(GameError::invalid_assertion_origin)?;
+
+        let mut candidate = self.authorizations.clone();
+        candidate
+            .entry(authorization_id.to_owned())
+            .or_insert(AuthorizationProgress {
+                granted_in_chapter_id: chapter_id,
+                granted_in_scene_id: scene_id,
+                first_origin: origin,
+            });
+        if candidate == self.authorizations {
+            Ok(MutationOutcome::Unchanged)
+        } else {
+            self.authorizations = candidate;
+            Ok(MutationOutcome::Changed)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::schema::InventoryTarget;
+    use crate::game::story::StoryEventBlockKind;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn catalog() -> StoryCatalog {
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "lyra-story-mutations-{}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(
+            path.join("story_catalog.json"),
+            r#"{
+  "schemaVersion": 1,
+  "facts": [
+    {"id":"fact_alpha","label":"Alpha","summary":"Alpha","details":"Alpha details","category":"timeline"},
+    {"id":"fact_beta","label":"Beta","summary":"Beta","details":"Beta details","category":"motive"},
+    {"id":"fact_gamma","label":"Gamma","summary":"Gamma","details":"Gamma details","category":"identity"}
+  ],
+  "questions": [
+    {"id":"question_main","label":"Main","summary":"Main","resolvedByFactIds":["fact_alpha","fact_beta"]}
+  ],
+  "objectives": [
+    {"id":"primary_a","label":"Primary A","summary":"A","kind":"primary","sortOrder":1},
+    {"id":"primary_b","label":"Primary B","summary":"B","kind":"primary","sortOrder":2},
+    {"id":"secondary_a","label":"Secondary A","summary":"S","kind":"secondary","sortOrder":3}
+  ],
+  "authorizations": [
+    {"id":"authorization_a","label":"Authorization A","summary":"A","grantingAuthority":"Police"}
+  ],
+  "evidenceIndex": [
+    {"id":"evidence_a","chapterId":"chapter_1","sceneId":"scene_1"}
+  ],
+  "statementsIndex": [
+    {"id":"statement_a","chapterId":"chapter_1","sceneId":"scene_1"}
+  ]
+}"#,
+        )
+        .unwrap();
+        let catalog = StoryCatalog::load(&path).unwrap();
+        std::fs::remove_dir_all(path).unwrap();
+        catalog
+    }
+
+    fn scene_origin(chapter_id: &str, scene_id: &str, block_id: &str) -> AssertionOrigin {
+        AssertionOrigin::SceneEvent {
+            chapter_id: chapter_id.into(),
+            scene_id: scene_id.into(),
+            block_kind: StoryEventBlockKind::StoryEvent,
+            block_id: block_id.into(),
+        }
+    }
+
+    #[test]
+    fn fact_assertion_unions_direct_support_and_preserves_first_origin() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+        let first_origin = scene_origin("chapter_1", "scene_1", "event_1");
+
+        assert_eq!(
+            state
+                .assert_fact(
+                    &catalog,
+                    "fact_beta",
+                    AssertionOrigin::Migration {
+                        migration_id: "legacy_import".into(),
+                    },
+                    &[],
+                    &[],
+                )
+                .unwrap(),
+            MutationOutcome::Changed
+        );
+        assert_eq!(
+            state
+                .assert_fact(
+                    &catalog,
+                    "fact_alpha",
+                    first_origin.clone(),
+                    &[InventoryTarget::Evidence {
+                        id: "evidence_a".into(),
+                    }],
+                    &["fact_beta".into()],
+                )
+                .unwrap(),
+            MutationOutcome::Changed
+        );
+        assert_eq!(
+            state
+                .assert_fact(
+                    &catalog,
+                    "fact_alpha",
+                    AssertionOrigin::AnalysisBoard {
+                        chapter_id: "chapter_2".into(),
+                        scene_id: "scene_2".into(),
+                        board_id: "board_1".into(),
+                    },
+                    &[InventoryTarget::Statement {
+                        id: "statement_a".into(),
+                    }],
+                    &["fact_beta".into()],
+                )
+                .unwrap(),
+            MutationOutcome::Changed
+        );
+
+        let progress = &state.snapshot().facts["fact_alpha"];
+        assert_eq!(
+            progress.asserted_in_chapter_id.as_deref(),
+            Some("chapter_1")
+        );
+        assert_eq!(progress.asserted_in_scene_id.as_deref(), Some("scene_1"));
+        assert_eq!(progress.first_origin, first_origin);
+        assert_eq!(
+            progress.supporting_records,
+            [
+                InventoryTarget::Evidence {
+                    id: "evidence_a".into()
+                },
+                InventoryTarget::Statement {
+                    id: "statement_a".into()
+                }
+            ]
+            .into_iter()
+            .collect()
+        );
+        assert_eq!(
+            progress.supporting_fact_ids,
+            ["fact_beta".into()].into_iter().collect()
+        );
+
+        let before = state.snapshot();
+        assert_eq!(
+            state
+                .assert_fact(
+                    &catalog,
+                    "fact_alpha",
+                    scene_origin("chapter_9", "scene_9", "event_9"),
+                    &[InventoryTarget::Evidence {
+                        id: "evidence_a".into(),
+                    }],
+                    &["fact_beta".into()],
+                )
+                .unwrap(),
+            MutationOutcome::Unchanged
+        );
+        assert_eq!(state.snapshot(), before);
+    }
+
+    #[test]
+    fn fact_assertion_validates_every_definition_support_and_origin_before_write() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+
+        let before = state.snapshot();
+        let error = state
+            .assert_fact(
+                &catalog,
+                "missing",
+                scene_origin("chapter_1", "scene_1", "event_1"),
+                &[],
+                &[],
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "unknownStoryFact");
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        let error = state
+            .assert_fact(
+                &catalog,
+                "fact_alpha",
+                scene_origin("chapter_1", "scene_1", "event_1"),
+                &[
+                    InventoryTarget::Evidence {
+                        id: "evidence_a".into(),
+                    },
+                    InventoryTarget::Evidence {
+                        id: "missing".into(),
+                    },
+                ],
+                &[],
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "unknownSupportingCaseRecord");
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        let error = state
+            .assert_fact(
+                &catalog,
+                "fact_alpha",
+                scene_origin("chapter_1", "scene_1", "event_1"),
+                &[InventoryTarget::Evidence {
+                    id: "statement_a".into(),
+                }],
+                &[],
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "unknownSupportingCaseRecord");
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        let error = state
+            .assert_fact(
+                &catalog,
+                "fact_alpha",
+                scene_origin("chapter_1", "scene_1", "event_1"),
+                &[],
+                &["missing".into()],
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "invalidSupportingFact");
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        let error = state
+            .assert_fact(
+                &catalog,
+                "fact_alpha",
+                scene_origin("chapter_1", "scene_1", "event_1"),
+                &[],
+                &["fact_beta".into()],
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "invalidSupportingFact");
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        let error = state
+            .assert_fact(
+                &catalog,
+                "fact_alpha",
+                scene_origin("bad-chapter", "scene_1", "event_1"),
+                &[],
+                &[],
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "invalidAssertionOrigin");
+        assert_eq!(state.snapshot(), before);
+    }
+
+    #[test]
+    fn question_reveal_resolution_and_monotonic_repeats() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+
+        assert_eq!(
+            state.reveal_question(&catalog, "question_main").unwrap(),
+            MutationOutcome::Changed
+        );
+        assert_eq!(
+            state.reveal_question(&catalog, "question_main").unwrap(),
+            MutationOutcome::Unchanged
+        );
+        assert_eq!(
+            state.snapshot().questions["question_main"].resolved_by_fact_id,
+            None
+        );
+
+        state
+            .assert_fact(
+                &catalog,
+                "fact_alpha",
+                scene_origin("chapter_1", "scene_1", "event_1"),
+                &[],
+                &[],
+            )
+            .unwrap();
+        assert_eq!(
+            state
+                .resolve_question(&catalog, "question_main", "fact_alpha")
+                .unwrap(),
+            MutationOutcome::Changed
+        );
+        let before = state.snapshot();
+        assert_eq!(
+            state
+                .resolve_question(&catalog, "question_main", "fact_alpha")
+                .unwrap(),
+            MutationOutcome::Unchanged
+        );
+        assert_eq!(state.snapshot(), before);
+
+        state
+            .assert_fact(
+                &catalog,
+                "fact_beta",
+                scene_origin("chapter_1", "scene_1", "event_2"),
+                &[],
+                &[],
+            )
+            .unwrap();
+        let before = state.snapshot();
+        let error = state
+            .resolve_question(&catalog, "question_main", "fact_beta")
+            .unwrap_err();
+        assert_eq!(error.code, "invalidQuestionResolverReplacement");
+        assert_eq!(state.snapshot(), before);
+    }
+
+    #[test]
+    fn question_mutations_validate_all_definition_and_resolver_inputs_before_write() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+
+        let before = state.snapshot();
+        let error = state.reveal_question(&catalog, "missing").unwrap_err();
+        assert_eq!(error.code, "unknownStoryQuestion");
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        let error = state
+            .resolve_question(&catalog, "missing", "fact_alpha")
+            .unwrap_err();
+        assert_eq!(error.code, "unknownStoryQuestion");
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        let error = state
+            .resolve_question(&catalog, "question_main", "missing")
+            .unwrap_err();
+        assert_eq!(error.code, "invalidQuestionResolutionFact");
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        let error = state
+            .resolve_question(&catalog, "question_main", "fact_alpha")
+            .unwrap_err();
+        assert_eq!(error.code, "invalidQuestionResolutionFact");
+        assert_eq!(state.snapshot(), before);
+
+        state
+            .assert_fact(
+                &catalog,
+                "fact_gamma",
+                scene_origin("chapter_1", "scene_1", "event_3"),
+                &[],
+                &[],
+            )
+            .unwrap();
+        let before = state.snapshot();
+        let error = state
+            .resolve_question(&catalog, "question_main", "fact_gamma")
+            .unwrap_err();
+        assert_eq!(error.code, "invalidQuestionResolutionFact");
+        assert_eq!(state.snapshot(), before);
+    }
+
+    #[test]
+    fn objective_reveal_and_completion_are_monotonic_and_completion_clears_active() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+
+        assert_eq!(
+            state.reveal_objective(&catalog, "secondary_a").unwrap(),
+            MutationOutcome::Changed
+        );
+        assert_eq!(
+            state.reveal_objective(&catalog, "secondary_a").unwrap(),
+            MutationOutcome::Unchanged
+        );
+        assert_eq!(
+            state.complete_objective(&catalog, "secondary_a").unwrap(),
+            MutationOutcome::Changed
+        );
+        assert_eq!(
+            state.complete_objective(&catalog, "secondary_a").unwrap(),
+            MutationOutcome::Unchanged
+        );
+
+        state
+            .set_primary_objective(&catalog, false, Some("primary_a"))
+            .unwrap();
+        assert_eq!(
+            state.complete_objective(&catalog, "primary_a").unwrap(),
+            MutationOutcome::Changed
+        );
+        let snapshot = state.snapshot();
+        assert!(snapshot.objectives["primary_a"].completed);
+        assert_eq!(snapshot.active_primary_objective_id, None);
+
+        let before = state.snapshot();
+        let error = state.reveal_objective(&catalog, "missing").unwrap_err();
+        assert_eq!(error.code, "unknownStoryObjective");
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        let error = state.complete_objective(&catalog, "missing").unwrap_err();
+        assert_eq!(error.code, "unknownStoryObjective");
+        assert_eq!(state.snapshot(), before);
+    }
+
+    #[test]
+    fn primary_objective_transition_table_is_exact() {
+        let catalog = catalog();
+
+        for complete_current in [false, true] {
+            let mut state = StoryState::default();
+            assert_eq!(
+                state
+                    .set_primary_objective(&catalog, complete_current, None)
+                    .unwrap(),
+                MutationOutcome::Unchanged
+            );
+            assert_eq!(state.snapshot(), StoryState::default().snapshot());
+        }
+
+        for complete_current in [false, true] {
+            let mut state = StoryState::default();
+            assert_eq!(
+                state
+                    .set_primary_objective(&catalog, complete_current, Some("primary_b"))
+                    .unwrap(),
+                MutationOutcome::Changed
+            );
+            let snapshot = state.snapshot();
+            assert_eq!(
+                snapshot.active_primary_objective_id.as_deref(),
+                Some("primary_b")
+            );
+            assert!(!snapshot.objectives["primary_b"].completed);
+        }
+
+        let mut state = StoryState::default();
+        state
+            .set_primary_objective(&catalog, false, Some("primary_a"))
+            .unwrap();
+        assert_eq!(
+            state.set_primary_objective(&catalog, false, None).unwrap(),
+            MutationOutcome::Changed
+        );
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.active_primary_objective_id, None);
+        assert!(!snapshot.objectives["primary_a"].completed);
+
+        let mut state = StoryState::default();
+        state
+            .set_primary_objective(&catalog, false, Some("primary_a"))
+            .unwrap();
+        assert_eq!(
+            state.set_primary_objective(&catalog, true, None).unwrap(),
+            MutationOutcome::Changed
+        );
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.active_primary_objective_id, None);
+        assert!(snapshot.objectives["primary_a"].completed);
+
+        let mut state = StoryState::default();
+        state
+            .set_primary_objective(&catalog, false, Some("primary_a"))
+            .unwrap();
+        let before = state.snapshot();
+        assert_eq!(
+            state
+                .set_primary_objective(&catalog, false, Some("primary_a"))
+                .unwrap(),
+            MutationOutcome::Unchanged
+        );
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        let error = state
+            .set_primary_objective(&catalog, true, Some("primary_a"))
+            .unwrap_err();
+        assert_eq!(error.code, "invalidPrimaryObjectiveTransition");
+        assert_eq!(state.snapshot(), before);
+
+        let mut state = StoryState::default();
+        state
+            .set_primary_objective(&catalog, false, Some("primary_a"))
+            .unwrap();
+        assert_eq!(
+            state
+                .set_primary_objective(&catalog, false, Some("primary_b"))
+                .unwrap(),
+            MutationOutcome::Changed
+        );
+        let snapshot = state.snapshot();
+        assert_eq!(
+            snapshot.active_primary_objective_id.as_deref(),
+            Some("primary_b")
+        );
+        assert!(!snapshot.objectives["primary_a"].completed);
+        assert!(!snapshot.objectives["primary_b"].completed);
+
+        let mut state = StoryState::default();
+        state
+            .set_primary_objective(&catalog, false, Some("primary_a"))
+            .unwrap();
+        assert_eq!(
+            state
+                .set_primary_objective(&catalog, true, Some("primary_b"))
+                .unwrap(),
+            MutationOutcome::Changed
+        );
+        let snapshot = state.snapshot();
+        assert_eq!(
+            snapshot.active_primary_objective_id.as_deref(),
+            Some("primary_b")
+        );
+        assert!(snapshot.objectives["primary_a"].completed);
+        assert!(!snapshot.objectives["primary_b"].completed);
+    }
+
+    #[test]
+    fn primary_selection_validates_unknown_secondary_and_completed_next_before_write() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+        state
+            .set_primary_objective(&catalog, false, Some("primary_a"))
+            .unwrap();
+
+        let before = state.snapshot();
+        let error = state
+            .set_primary_objective(&catalog, true, Some("missing"))
+            .unwrap_err();
+        assert_eq!(error.code, "unknownStoryObjective");
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        let error = state
+            .set_primary_objective(&catalog, true, Some("secondary_a"))
+            .unwrap_err();
+        assert_eq!(error.code, "invalidPrimaryObjectiveTransition");
+        assert_eq!(state.snapshot(), before);
+
+        state.complete_objective(&catalog, "primary_b").unwrap();
+        let before = state.snapshot();
+        let error = state
+            .set_primary_objective(&catalog, true, Some("primary_b"))
+            .unwrap_err();
+        assert_eq!(error.code, "invalidPrimaryObjectiveTransition");
+        assert_eq!(state.snapshot(), before);
+    }
+
+    #[test]
+    fn authorization_grant_is_idempotent_and_preserves_first_origin() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+        let first_origin = scene_origin("chapter_1", "scene_1", "event_1");
+
+        assert_eq!(
+            state
+                .grant_authorization(&catalog, "authorization_a", first_origin.clone())
+                .unwrap(),
+            MutationOutcome::Changed
+        );
+        let snapshot = state.snapshot();
+        let progress = &snapshot.authorizations["authorization_a"];
+        assert_eq!(progress.granted_in_chapter_id.as_deref(), Some("chapter_1"));
+        assert_eq!(progress.granted_in_scene_id.as_deref(), Some("scene_1"));
+        assert_eq!(progress.first_origin, first_origin.clone());
+
+        let before = state.snapshot();
+        assert_eq!(
+            state
+                .grant_authorization(&catalog, "authorization_a", first_origin)
+                .unwrap(),
+            MutationOutcome::Unchanged
+        );
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        assert_eq!(
+            state
+                .grant_authorization(
+                    &catalog,
+                    "authorization_a",
+                    AssertionOrigin::AnalysisBoard {
+                        chapter_id: "chapter_2".into(),
+                        scene_id: "scene_2".into(),
+                        board_id: "board_2".into(),
+                    },
+                )
+                .unwrap(),
+            MutationOutcome::Unchanged
+        );
+        assert_eq!(state.snapshot(), before);
+    }
+
+    #[test]
+    fn authorization_migration_has_null_location_and_failures_preserve_state() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+
+        assert_eq!(
+            state
+                .grant_authorization(
+                    &catalog,
+                    "authorization_a",
+                    AssertionOrigin::Migration {
+                        migration_id: "legacy_import".into(),
+                    },
+                )
+                .unwrap(),
+            MutationOutcome::Changed
+        );
+        let progress = &state.snapshot().authorizations["authorization_a"];
+        assert_eq!(progress.granted_in_chapter_id, None);
+        assert_eq!(progress.granted_in_scene_id, None);
+
+        let before = state.snapshot();
+        let error = state
+            .grant_authorization(
+                &catalog,
+                "missing",
+                scene_origin("chapter_1", "scene_1", "event_1"),
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "unknownStoryAuthorization");
+        assert_eq!(state.snapshot(), before);
+
+        let before = state.snapshot();
+        let error = state
+            .grant_authorization(
+                &catalog,
+                "authorization_a",
+                AssertionOrigin::Migration {
+                    migration_id: "Bad Migration".into(),
+                },
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "invalidAssertionOrigin");
+        assert_eq!(state.snapshot(), before);
+    }
+}

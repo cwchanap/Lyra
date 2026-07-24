@@ -143,7 +143,7 @@ pub enum RevealTarget {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum InventoryTarget {
     Evidence { id: String },
@@ -577,6 +577,31 @@ pub struct InterrogationOutroJson {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn inventory_target_orders_without_changing_its_wire_shape() {
+        let evidence = InventoryTarget::Evidence {
+            id: "record_1".into(),
+        };
+        let statement = InventoryTarget::Statement {
+            id: "record_1".into(),
+        };
+
+        let ordered = BTreeSet::from([statement.clone(), evidence.clone()]);
+        assert_eq!(
+            ordered.into_iter().collect::<Vec<_>>(),
+            [evidence.clone(), statement.clone()]
+        );
+        assert_eq!(
+            serde_json::to_value(evidence).unwrap(),
+            serde_json::json!({"kind": "evidence", "id": "record_1"})
+        );
+        assert_eq!(
+            serde_json::to_value(statement).unwrap(),
+            serde_json::json!({"kind": "statement", "id": "record_1"})
+        );
+    }
 
     #[test]
     fn deserializes_linear_scene() {
