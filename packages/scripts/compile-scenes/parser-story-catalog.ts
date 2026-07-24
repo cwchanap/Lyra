@@ -64,7 +64,6 @@ export function parseStoryCatalog(
   const seenSections = new Set<Section>();
   let currentSection: Section | null = null;
   let currentItem: Item | null = null;
-  let sawH1 = false;
   let firstContentSeen = false;
 
   const report = (line: number, code: string, message: string) => {
@@ -151,25 +150,19 @@ export function parseStoryCatalog(
           }
         }
         if (sortOrderField && sortOrderField.value !== "") {
-          if (!/^-?\d+$/.test(sortOrderField.value)) {
+          const parsedSortOrder = Number(sortOrderField.value);
+          if (
+            !/^-?\d+$/.test(sortOrderField.value) ||
+            !Number.isSafeInteger(parsedSortOrder)
+          ) {
             hasErrors = true;
             report(
               sortOrderField.line,
               "storyCatalogMalformed",
-              `Objective ${item.id} Sort Order must be a base-10 integer.`,
+              `Objective ${item.id} Sort Order must be a safe base-10 integer.`,
             );
           } else {
-            const parsedSortOrder = Number(sortOrderField.value);
-            if (!Number.isFinite(parsedSortOrder)) {
-              hasErrors = true;
-              report(
-                sortOrderField.line,
-                "storyCatalogMalformed",
-                `Objective ${item.id} Sort Order must be finite.`,
-              );
-            } else {
-              sortOrder = parsedSortOrder;
-            }
+            sortOrder = parsedSortOrder;
           }
         }
         if (hasErrors || !summary || kind === null || sortOrder === null)
@@ -213,8 +206,6 @@ export function parseStoryCatalog(
           "storyCatalogMalformed",
           'Story catalog must start with exactly "# Story Catalog".',
         );
-      } else {
-        sawH1 = true;
       }
       continue;
     }
@@ -386,7 +377,7 @@ export function parseStoryCatalog(
   }
 
   finalizeItem();
-  if (!sawH1 && !errors.some((error) => error.line === 1)) {
+  if (!firstContentSeen) {
     report(
       1,
       "storyCatalogMalformed",

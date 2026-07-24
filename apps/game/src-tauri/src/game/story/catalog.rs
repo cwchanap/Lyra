@@ -472,6 +472,30 @@ mod tests {
     }
 
     #[test]
+    fn loads_compiler_safe_integer_sort_order_boundaries() {
+        let dir = TestDir::new("safe-sort-order-boundaries");
+        let json = empty_json().replace(
+            "\"objectives\": []",
+            r#""objectives": [
+  {"id":"objective_min","label":"Minimum","summary":"Minimum safe integer","kind":"primary","sortOrder":-9007199254740991},
+  {"id":"objective_max","label":"Maximum","summary":"Maximum safe integer","kind":"secondary","sortOrder":9007199254740991}
+]"#,
+        );
+        write_catalog(dir.path(), &json);
+
+        let catalog = StoryCatalog::load(dir.path()).unwrap();
+
+        assert_eq!(
+            catalog.objective("objective_min").unwrap().sort_order,
+            -9_007_199_254_740_991
+        );
+        assert_eq!(
+            catalog.objective("objective_max").unwrap().sort_order,
+            9_007_199_254_740_991
+        );
+    }
+
+    #[test]
     fn rejects_missing_catalog_as_load_failure() {
         let dir = TestDir::new("missing");
 
