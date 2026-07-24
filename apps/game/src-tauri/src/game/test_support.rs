@@ -15,6 +15,24 @@ use crate::game::schema::{
 };
 use crate::game::state::SceneRef;
 use crate::game::view::DialogueHistoryEntry;
+use std::path::Path;
+
+pub fn write_empty_story_catalog(dir: &Path) {
+    std::fs::write(
+        dir.join("story_catalog.json"),
+        r#"{
+  "schemaVersion": 1,
+  "facts": [],
+  "questions": [],
+  "objectives": [],
+  "authorizations": [],
+  "evidenceIndex": [],
+  "statementsIndex": []
+}
+"#,
+    )
+    .unwrap();
+}
 
 pub(super) fn investigation_scene_with_intro(
     id: &str,
@@ -60,6 +78,7 @@ pub(super) fn empty_engine_with_scene(
                 file: "chapter_1/investigation_scene_1.json".into(),
             }],
         }],
+        story_catalog: StoryCatalog::empty(),
         current_chapter_idx: 0,
         current_scene_idx: 0,
         scene: SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(
@@ -102,6 +121,7 @@ pub(super) fn dialogue_history_fixture_resources(line_count: usize) -> PathBuf {
     ));
     let chapter_dir = d.join("chapter_1");
     fs::create_dir_all(&chapter_dir).unwrap();
+    write_empty_story_catalog(&d);
     fs::write(
         d.join("chapters.json"),
         r#"{
@@ -165,6 +185,7 @@ pub(super) fn scene_jump_fixture_resources() -> PathBuf {
     let d = std::env::temp_dir().join(format!("lyra-scene-jump-test-{}-{}", std::process::id(), n));
     let chapter_1 = d.join("chapter_1");
     fs::create_dir_all(&chapter_1).unwrap();
+    write_empty_story_catalog(&d);
     fs::write(
         d.join("chapters.json"),
         r#"{
@@ -630,6 +651,7 @@ pub(super) fn empty_engine_with_interrogation_scene(
                 file: "chapter_1/interrogation_scene_1.json".into(),
             }],
         }],
+        story_catalog: StoryCatalog::empty(),
         current_chapter_idx: 0,
         current_scene_idx: 0,
         scene: SceneRuntime::Interrogation(Box::new(InterrogationSceneState::from_json(
@@ -666,6 +688,7 @@ pub(super) fn completed_interrogation_engine_with_bad_next_scene(
                 },
             ],
         }],
+        story_catalog: StoryCatalog::empty(),
         current_chapter_idx: 0,
         current_scene_idx: 0,
         scene: SceneRuntime::Interrogation(Box::new(scene)),

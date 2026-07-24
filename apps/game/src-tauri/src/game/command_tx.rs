@@ -35,6 +35,7 @@ impl EngineRollbackSnapshot {
         let GameEngine {
             resources_dir: _,
             chapters: _,
+            story_catalog: _,
             current_chapter_idx,
             current_scene_idx,
             scene,
@@ -360,6 +361,7 @@ mod tests {
             std::env::temp_dir().join(format!("lyra-advance-test-{}-{}", std::process::id(), n));
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
+        write_empty_story_catalog(&d);
         fs::write(
             d.join("chapters.json"),
             r#"{
@@ -440,6 +442,7 @@ mod tests {
         ));
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
+        write_empty_story_catalog(&d);
         fs::write(
             d.join("chapters.json"),
             r#"{
@@ -600,6 +603,7 @@ mod tests {
         };
         let mut engine = GameEngine {
             resources_dir: d.clone(),
+            story_catalog: StoryCatalog::empty(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
@@ -731,6 +735,7 @@ mod tests {
         };
         let mut engine = GameEngine {
             resources_dir: d.clone(),
+            story_catalog: StoryCatalog::empty(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),

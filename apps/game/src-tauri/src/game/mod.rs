@@ -12,6 +12,7 @@ pub mod reveals;
 pub mod scenes;
 pub mod schema;
 pub mod state;
+mod story;
 pub mod unlock;
 pub mod view;
 
@@ -30,6 +31,7 @@ use scenes::SceneRuntime;
 use schema::{DialogueItem, InterrogationPhaseJson, InventoryTarget, LockStatus};
 use state::{ChapterManifest, Inventory};
 use std::path::PathBuf;
+use story::StoryCatalog;
 use view::{
     AudioCueView, ChapterView, CharacterView, CrossExamView, HotspotView, InquiryQuestionView,
     InterrogationPhaseView, SceneView, SubjectView, SublocationView, TopicView,
@@ -38,6 +40,9 @@ use view::{
 pub struct GameEngine {
     resources_dir: PathBuf,
     chapters: Vec<ChapterManifest>,
+    // Loaded now; consumed by the story-state mutation/view tasks that follow.
+    #[allow(dead_code)]
+    story_catalog: StoryCatalog,
     current_chapter_idx: usize,
     current_scene_idx: usize,
     scene: SceneRuntime,
@@ -97,6 +102,7 @@ fn audio_cue_view(cue: &schema::AudioCueJson) -> AudioCueView {
 impl GameEngine {
     pub fn new_started(resources_dir: PathBuf) -> Result<Self, GameError> {
         let chapters = load_chapter_manifests(&resources_dir)?;
+        let story_catalog = StoryCatalog::load(&resources_dir)?;
 
         let first_scene_ref = chapters[0]
             .scenes
@@ -107,6 +113,7 @@ impl GameEngine {
         let mut engine = Self {
             resources_dir,
             chapters,
+            story_catalog,
             current_chapter_idx: 0,
             current_scene_idx: 0,
             scene: initial_scene,
@@ -2489,6 +2496,7 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
         };
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),
+            story_catalog: StoryCatalog::empty(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),

@@ -1,5 +1,6 @@
 // src-tauri/src/game/error.rs
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -153,6 +154,33 @@ impl GameError {
     }
     pub fn chapter_load_failed(detail: String) -> Self {
         Self::new("chapterLoadFailed", detail)
+    }
+    pub fn story_catalog_load_failed(path: &Path, detail: String) -> Self {
+        Self::new(
+            "storyCatalogLoadFailed",
+            format!(
+                "Failed to load story catalog '{}': {detail}",
+                path.display()
+            ),
+        )
+    }
+    pub fn unsupported_story_catalog_version(path: &Path, version: i64) -> Self {
+        Self::new(
+            "unsupportedStoryCatalogVersion",
+            format!(
+                "Story catalog '{}' uses unsupported schema version {version}; expected version 1.",
+                path.display()
+            ),
+        )
+    }
+    pub fn story_catalog_validation_failed(path: &Path, detail: String) -> Self {
+        Self::new(
+            "storyCatalogValidationFailed",
+            format!(
+                "Story catalog '{}' failed runtime validation: {detail}",
+                path.display()
+            ),
+        )
     }
     pub fn parse_failure(detail: String) -> Self {
         Self::new("parseFailure", detail)
