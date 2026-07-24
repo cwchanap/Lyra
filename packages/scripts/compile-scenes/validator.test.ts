@@ -2392,6 +2392,88 @@ describe("validator", () => {
     ).toBeDefined();
   });
 
+  // ---- Contradiction on an invisible (tag-only) line ----
+
+  it("rejects a contradiction on a line whose content is only scene tags", () => {
+    // The runtime testimony skipper (advance_playing_testimony) never
+    // displays a line whose content is entirely SceneTag items — it applies
+    // the cues and advances. Such a line can never be challenged, so a
+    // required question whose only contradiction sits on it is permanently
+    // unbreakable (begin_question sees the contradiction and refuses to
+    // auto-break). The target here is valid and guaranteed, and On Correct
+    // is non-empty, so the ONLY reason for rejection is the tag-only
+    // content — proving the check fires independently of target resolution.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "p",
+          required: true,
+          questions: [
+            mkQuestion({
+              id: "q",
+              required: true,
+              testimony: mkTestimony([
+                mkContradictionLine("l", {
+                  kind: "evidence",
+                  id: "prior_ev",
+                }),
+              ]),
+            }),
+          ],
+        }),
+      ],
+    });
+    // Replace the contradiction line's visible content with scene tags only.
+    scene.phases[0]!.questions[0]!.testimony.lines[0]!.content = [
+      { kind: "sceneTag", text: "[場景：暗房]" },
+    ];
+    const errors = validateInterrogation(scene, [
+      mkGuaranteeingInvestigation("prior_ev"),
+    ]);
+    expect(
+      errors.find(
+        (e) => e.code === "interrogationContradictionOnInvisibleLine",
+      ),
+    ).toBeDefined();
+  });
+
+  it("accepts a contradiction on a line whose content has visible dialogue", () => {
+    // Sanity check: the new check does not false-positive on a normal
+    // contradiction line that mixes a scene tag with suspect dialogue.
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "p",
+          required: true,
+          questions: [
+            mkQuestion({
+              id: "q",
+              required: true,
+              testimony: mkTestimony([
+                mkContradictionLine("l", {
+                  kind: "evidence",
+                  id: "prior_ev",
+                }),
+              ]),
+            }),
+          ],
+        }),
+      ],
+    });
+    scene.phases[0]!.questions[0]!.testimony.lines[0]!.content = [
+      { kind: "sceneTag", text: "[場景：暗房]" },
+      line("我那天沒去。"),
+    ];
+    const errors = validateInterrogation(scene, [
+      mkGuaranteeingInvestigation("prior_ev"),
+    ]);
+    expect(
+      errors.find(
+        (e) => e.code === "interrogationContradictionOnInvisibleLine",
+      ),
+    ).toBeUndefined();
+  });
+
   // ---- The contradiction guarantee (core) ----
 
   it("accepts a contradiction satisfied by guaranteed prior-scene evidence", () => {

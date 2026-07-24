@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use crate::game::scenes::investigation::DialogueQueue;
 use crate::game::schema::{
-    InquiryQuestionJson, InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationSceneJson,
-    InterrogationUnlockExpr, LockStatus, TestimonyLineJson,
+    DialogueItem, InquiryQuestionJson, InterrogationOutroUnlock, InterrogationPhaseJson,
+    InterrogationSceneJson, InterrogationUnlockExpr, LockStatus, TestimonyLineJson,
 };
 use crate::game::state::Inventory;
 use crate::game::unlock::{self, InterrogationUnlockContext};
@@ -205,17 +205,30 @@ impl InterrogationSceneState {
     /// cross-examination begins: this is the simplest rule consistent with
     /// `broken_questions` being the single source of truth `phase_complete`
     /// consults for "has this question been dealt with".
+    ///
+    /// Only a contradiction on a **visible** line counts. The runtime
+    /// testimony skipper (`advance_playing_testimony`) never displays a line
+    /// whose content is entirely `SceneTag` items — it applies the cues and
+    /// advances without installing the content as a queue, so the player can
+    /// never open the evidence tray against it. Counting a tag-only
+    /// contradiction here would refuse the auto-break while making the line
+    /// unchallengeable, permanently soft-locking the phase. The compiler
+    /// rejects this authoring error (`interrogationContradictionOnInvisibleLine`);
+    /// this guard keeps the runtime safe if a malformed scene is loaded
+    /// directly.
     pub fn begin_question(&mut self, question_id: &str) {
         self.cross_exam = CrossExam::Playing {
             question_id: question_id.to_string(),
             line_index: 0,
         };
         let has_contradiction = self.question(question_id).is_some_and(|question| {
-            question
-                .testimony
-                .lines
-                .iter()
-                .any(|line| line.contradiction.is_some())
+            question.testimony.lines.iter().any(|line| {
+                line.contradiction.is_some()
+                    && line
+                        .content
+                        .iter()
+                        .any(|item| !matches!(item, DialogueItem::SceneTag { .. }))
+            })
         });
         if !has_contradiction {
             self.broken_questions.insert(question_id.to_string());
@@ -1233,6 +1246,32 @@ mod tests {
             CrossExam::Playing { question_id, .. } if question_id == "reason"
         ));
         assert!(scene.playing_unbroken_line_id().is_none());
+    }
+
+    #[test]
+    fn begin_question_auto_breaks_when_contradiction_is_on_tag_only_line() {
+        // Regression: a contradiction on a line whose content is entirely
+        // SceneTag items is never displayed by advance_playing_testimony (it
+        // applies the cues and advances without installing the content), so
+        // the player can never challenge it. begin_question must therefore
+        // treat such a question as having no challengeable contradiction and
+        // auto-break it — otherwise the required question is permanently
+        // unbreakable and the phase soft-locks.
+        let mut scene = two_line_question_scene();
+        // Replace l_deny's visible content with scene tags only.
+        let deny_phase = &mut scene.phases[0];
+        let InterrogationPhaseJson::Inquiry { questions, .. } = deny_phase;
+        questions[0].testimony.lines[1].content = vec![DialogueItem::SceneTag {
+            text: "[場景：暗房]".into(),
+            asset_cue: None,
+        }];
+
+        let mut scene = InterrogationSceneState::from_json(scene, 1);
+        scene.begin_question("alibi");
+        // The contradiction exists on l_deny but is on an invisible line, so
+        // the question is auto-broken rather than left permanently unbroken.
+        assert!(scene.is_question_broken("alibi"));
+        assert!(!scene.is_playing_unbroken());
     }
 
     #[test]
