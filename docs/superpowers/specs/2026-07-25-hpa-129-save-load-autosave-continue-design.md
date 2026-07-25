@@ -4,6 +4,11 @@
 **Issue:** HPA-129 — Save/load, autosave, and Continue  
 **Date:** 2026-07-25
 
+**Compatibility amendment:** Approved in conversation on 2026-07-25. Released
+static content is immutable. Saves contain mutable state only and require one
+exact package-wide `contentRevision`; any static semantic content change
+invalidates pre-release/development saves.
+
 ## 1. References and scope
 
 This focused design refines:
@@ -28,7 +33,7 @@ HPA-129 makes current Lyra sessions safe to leave and resume. It delivers:
 - title-screen Continue and Load Game;
 - in-game Save/Load and Return to Title;
 - explicit second-confirmation escape paths when persistence is unavailable;
-- explicit schema and content migrations;
+- explicit save-schema migrations and exact packaged-content compatibility;
 - atomic storage and actionable compatibility diagnostics;
 - a P0-owned generic resumable-state fixture that does not depend on the
   analysis runtime.
@@ -78,9 +83,10 @@ The user approved both refinements during HPA-129 design.
 19. A normal gameplay autosave rotates the five-slot ring. Acquisition
     acknowledgement refreshes that session's current autosave slot in place so
     acknowledgements cannot consume the recovery history.
-20. Structural definition hashes are load compatibility gates. Prose, labels,
-    and descriptions have separate diagnostic content hashes and may change
-    without invalidating an otherwise structurally compatible save.
+20. One package-wide `contentRevision` is the load compatibility gate. Any
+    emitted static semantic-content change, including prose or ordering,
+    invalidates existing saves. This is acceptable before release; released
+    static content is treated as immutable.
 
 ## 3. Current constraints
 
@@ -144,10 +150,10 @@ Responsibilities:
 
 | Module | Responsibility |
 | --- | --- |
-| `schema.rs` | Serializable envelope, snapshot, slot metadata, definition references, dialogue origins, acquisition events, and typed load diagnostics |
+| `schema.rs` | Serializable envelope, mutable snapshot, slot metadata, dialogue origins, acquisition events, and typed load diagnostics |
 | `capture.rs` | Convert one stable committed `GameEngine` into a persistent snapshot containing IDs and mutable progress |
-| `restore.rs` | Resolve current packaged definitions, validate dependencies, reconstruct a complete candidate engine, and return it without touching the live engine |
-| `migrations.rs` | Sequential save-schema migrations and explicit content/definition migrations |
+| `restore.rs` | Verify the exact packaged-content revision, resolve stable IDs against current definitions, reconstruct a complete candidate engine, and return it without touching the live engine |
+| `migrations.rs` | Sequential save-schema migrations |
 | `storage.rs` | App-data paths, discovery, five-autosave rotation, in-place acknowledgement refresh, three manual slots, atomic writes, reads, and deletion |
 | `coordinator.rs` | Debounced autosave scheduling, current-session autosave targeting, durable-revision tracking, flushes, write serialization, and save-health state |
 
@@ -178,123 +184,83 @@ game, or loaded another save.
 
 ## 5. Compiled content identity
 
-### 5.1 Hash ownership
+### 5.1 Revision ownership
 
-The scene compiler owns definition hashes because it already owns the canonical
-generated wire representations. Runtime code must not try to reproduce hashes
-from authored Markdown or filesystem paths.
+The scene compiler owns the package revision because it already owns the
+canonical generated wire representations. Runtime code must not reproduce the
+revision from authored Markdown, filesystem paths, or Rust lookup structures.
 
-The compiler emits one standalone runtime artifact:
+The compiler emits one standalone runtime artifact alongside
+`story_catalog.json`, including for minimal fixture bundles:
 
 ```text
 apps/game/src-tauri/resources/scenes/save_content_manifest.json
 ```
 
-The manifest has its own format version, one bundle-level `contentRevision`,
-and a canonically sorted array of entries. Every entry contains one closed,
-typed definition reference, one `structuralHash`, and one `contentHash`.
-Entries cover every resumable scene and dialogue segment plus individual story
-definitions that can remain active or incomplete across a save. Rust loads the
-manifest once per discovery batch and indexes the typed entries by
-`DefinitionRefV1`; JSON does not encode an ad hoc composite-string key grammar.
-The compiler always emits it alongside `story_catalog.json`, including for
-minimal fixture bundles.
-
-Conceptually:
+Version 1 is deliberately small:
 
 ```rust
 struct SaveContentManifestV1 {
     manifest_version: u32,
     content_revision: String,
-    definitions: Vec<DefinitionManifestEntryV1>,
-}
-
-struct DefinitionManifestEntryV1 {
-    reference: DefinitionRefV1,
-    structural_hash: String,
-    content_hash: String,
 }
 ```
 
-This is a compiler/runtime contract, not an editor scene-graph contract. The
-layout editor never reads it, so HPA-129 does not add save-only hash fields to
-`@lyra/scene-types`.
+`contentRevision` is SHA-256 over one deterministic canonical JSON projection
+of the complete emitted static semantic bundle:
 
-Hashes use SHA-256 over deterministic canonical JSON and are encoded as
-`sha256:<lowercase hex>`. Canonicalization:
+- ordered chapters with stable IDs, titles, summaries, and ordered scene
+  identities;
+- every emitted linear, investigation, and interrogation scene value;
+- the emitted story catalog, including record indexes and global definitions.
+
+The projection includes all emitted semantic copy, IDs, kinds, order, cues,
+unlock/reveal/progression rules, and authored static definitions. Therefore any
+static semantic edit—including prose, labels, descriptions, dialogue order,
+scene order, or progression structure—changes the revision.
+
+Canonicalization:
 
 - sorts object keys recursively;
-- preserves array order where order is semantic;
-- excludes source locations, absolute paths, generated timestamps, and the
-  hash field itself;
-- uses the generated semantic wire values rather than raw Markdown bytes.
+- preserves every semantically ordered array;
+- uses emitted semantic values rather than raw Markdown bytes;
+- excludes source locations, source formatting, absolute paths, generated
+  timestamps, and compiler/runtime `Map`, `Set`, or `HashMap` iteration.
 
-The structural hash includes everything needed to interpret durable progress:
+The encoded value is `sha256:<lowercase hex>`. Repeated compilation of
+semantically identical inputs produces the same revision. One shared canonical
+serializer owns this calculation; feature code does not hand-roll alternate
+`JSON.stringify` hash paths.
 
-- stable IDs, definition kinds, semantic array order, and item counts;
-- dialogue segment boundaries and item kinds;
-- speaker, expression, portrait, scene-tag, asset-cue, and audio-cue identity;
-- hotspot/topic/sublocation, phase/question/testimony, reveal, unlock, and
-  contradiction graph structure;
-- fields that affect cursor meaning, progression, inventory/story outputs, or
-  restoration invariants.
+This artifact is a compiler/runtime contract, not an editor scene-graph
+contract. HPA-129 adds no save-only fields to `@lyra/scene-types`.
 
-The content hash includes presentation copy that may safely flow from the
-currently packaged definition: dialogue prose, labels, descriptions, summaries,
-and equivalent non-structural text. Moving an item, changing its kind, changing
-its speaker/presentation cue, or changing any progression edge remains a
-structural change even if the visible prose is unchanged.
+### 5.2 Exact compatibility gate
 
-`contentRevision` covers both structural and content hashes. It identifies the
-exact whole bundle but remains diagnostic rather than a global compatibility
-gate.
+The save envelope records the package `contentRevision`. Discovery and load
+require it to equal the currently packaged manifest exactly after any
+save-schema migration. A mismatch makes that slot incompatible with an
+actionable diagnostic; the loader does not attempt partial per-definition
+compatibility, copy-only compatibility, or best-effort progress recovery.
 
-Repeated compilation of semantically identical inputs produces identical
-hashes and the same bundle revision.
+This is an explicit product assumption:
 
-Canonical hashing is the highest-risk compiler portion of HPA-129. The current
-TypeScript emitter primarily builds plain objects and arrays, while some
-compiler-only indexes use `Map`/`Set` and the Rust loader later builds
-`HashMap` indexes. Hash input must be restricted to the emitted semantic JSON
-boundary: compiler-only indexes are normalized into explicitly sorted arrays
-or excluded, and Rust lookup-map iteration never participates. One shared
-canonical serializer must produce both hash classes and the bundle revision;
-feature code must not hand-roll local `JSON.stringify` hash paths.
-The implementation plan schedules this canonicalizer and determinism fixtures
-before runtime save work depends on the hashes.
+- pre-release and development content edits may invalidate existing test saves;
+- released static content is immutable for that release line;
+- if a future shipped release must change static content while retaining saves,
+  that release must introduce an explicit new migration design rather than
+  relying on HPA-129 version 1 heuristics.
 
-### 5.2 Bundle revision versus required definitions
+The revision is a fingerprint, not a snapshot of static content. Saves still
+serialize only mutable authoritative state plus stable IDs and dialogue origins
+needed to resolve the unchanged packaged definitions. Static scenes, dialogue
+items, catalog definitions, answer keys, labels, and descriptions remain in
+the packaged resources.
 
-`contentRevision` identifies the entire packaged story bundle, but a changed
-bundle revision does not automatically invalidate every save. The loader
-validates the concrete definition dependencies recorded by the snapshot.
-
-Examples:
-
-- changing an unrelated future scene changes the bundle revision but does not
-  reject a save whose dependencies still have matching structural hashes;
-- correcting prose in an active dialogue segment changes its content hash but
-  not its structural hash, so the save remains valid;
-- changing an active segment's structure rejects the load unless an explicit
-  migration maps the old segment state;
-- removing the current scene, an acquired required record, or an active
-  objective rejects the load transactionally;
-- completed historical state may survive only when an explicit migration or a
-  dependency rule proves that no surviving mutable state depends on the
-  changed definition.
-
-The snapshot never treats matching IDs alone as compatibility proof.
-
-Operationally, an active-scene structural edit is a save-compatibility change
-even when the edited hotspot, topic, question, or line is not currently visible
-to the player. Writers and release tooling must either ship an explicit
-content migration for affected active saves or accept a player-visible
-incompatibility diagnostic; active progress is never silently reset.
-
-On a content-only mismatch, restore uses current packaged copy for current and
-future presentation. The bounded dialogue history keeps the historical copy
-already shown to the player. Discovery records the mismatch as non-fatal
-diagnostic metadata rather than rejecting the slot.
+After the revision matches, restore still validates every referenced stable ID,
+cursor, and invariant. Those checks detect save corruption; they are not a
+substitute for the package compatibility gate. The bounded dialogue transcript
+continues to store already-rendered historical copy as described in §7.3.
 
 ## 6. Save envelope
 
@@ -368,66 +334,16 @@ struct SaveSnapshotV1 {
     next_queue_gen: u64,
     next_command_id: u64,
     durable_revision: u64,
-    dependencies: Vec<DefinitionDependencyV1>,
 }
 ```
 
 This is a conceptual field list; planning may group fields into nested structs
 without changing their meaning.
 
-Definition identity and dependency roles are closed, typed contracts:
-
-```rust
-enum DefinitionRefV1 {
-    Scene {
-        chapter_id: String,
-        scene_id: String,
-        scene_kind: SceneType,
-    },
-    DialogueSegment {
-        origin: DialogueSegmentOriginV1,
-    },
-    InventoryRecord {
-        record_kind: RecordKind,
-        record_id: String,
-    },
-    Fact { id: String },
-    Question { id: String },
-    Objective { id: String },
-    Authorization { id: String },
-    #[cfg(test)]
-    Fixture { id: String },
-}
-
-struct DefinitionIdentityV1 {
-    reference: DefinitionRefV1,
-    structural_hash: String,
-    content_hash: String,
-}
-
-enum DefinitionDependencyRoleV1 {
-    CurrentScene,
-    ActiveDialogue,
-    InventoryRecord,
-    ActiveStoryState,
-    IncompleteStoryState,
-    #[cfg(test)]
-    GenericResumableState,
-}
-
-struct DefinitionDependencyV1 {
-    definition: DefinitionIdentityV1,
-    role: DefinitionDependencyRoleV1,
-}
-```
-
-The typed reference is the migration key; `role` explains why the save still
-depends on it and therefore which migration/drop rules are legal. The stored
-structural hash is a compatibility requirement. The stored content hash is a
-non-fatal diagnostic tripwire. Capture deduplicates identical
-`(reference, role)` pairs and sorts dependencies by a canonical reference
-order. Fixture variants exist only in Rust test builds and are not part of the
-production version-1 wire contract.
+The snapshot does not repeat static definition hashes or authored definitions.
+Its closed scene-progress, inventory, story-state, and dialogue-origin types
+carry only the stable IDs needed to resolve the exact packaged bundle selected
+by `SaveEnvelopeV1.content_revision`.
 
 ### 7.1 Scene progress
 
@@ -435,11 +351,8 @@ production version-1 wire contract.
 
 ```rust
 enum SceneProgressSnapshotV1 {
-    Linear {
-        definition: DefinitionIdentityV1,
-    },
+    Linear,
     Investigation {
-        definition: DefinitionIdentityV1,
         intro_played: bool,
         outro_played: bool,
         current_sublocation_id: Option<String>,
@@ -449,7 +362,6 @@ enum SceneProgressSnapshotV1 {
         unlocked_overrides: Vec<InvestigationOverrideRefV1>,
     },
     Interrogation {
-        definition: DefinitionIdentityV1,
         intro_played: bool,
         outro_played: bool,
         current_phase_id: Option<String>,
@@ -512,7 +424,8 @@ serialization for deterministic fixtures and diagnostics.
 
 The current runtime's `CrossExam::Playing` stores a line array index. Persistent
 state deliberately stores the stable line ID instead. Restore resolves that ID
-to the current index only after the question/line definitions and hashes pass.
+to the current index only after the package revision and question/line IDs
+validate.
 The line-content boundary uses segment/item coordinates rather than a flattened
 queue offset and must agree with the reconstructed active queue.
 
@@ -543,7 +456,7 @@ The loader rejects:
   testimony lines, or override targets;
 - mutually inconsistent progress, such as a cross-exam line outside its
   restored question;
-- any active definition-hash mismatch without a migration.
+- any package `contentRevision` mismatch.
 
 Captures occur only after a durable command and all synchronous navigation
 triggered by that command have completed. Therefore:
@@ -598,9 +511,6 @@ questions, objectives, and authorizations. Restore continues to use
 - active-primary uniqueness remains structural;
 - mutable state does not acquire copies of authored answer keys or prose.
 
-Active or incomplete story definitions also appear in the snapshot dependency
-list with their individual hashes.
-
 ### 7.3 Visual/audio cues and history
 
 The snapshot stores the current semantic scene tag, background asset ID, and
@@ -642,11 +552,11 @@ and its last recorded queue token. The transcript is a deliberate narrow
 exception to the general no-authored-prose rule: it is already-realized,
 player-visible historical output, not a source used to reconstruct an active
 queue or replay mutations. Keeping the rendered speaker/text/title copy
-preserves the exact log the player saw even when later packaged copy changes.
+preserves the exact log the player saw across process restart.
 
 Restoring the bounded entries, counter, and last token prevents duplicate
 history entries on the first post-load view. Historical transcript copy is not
-an active definition dependency and cannot affect authoritative gameplay.
+an authoritative static-definition reference and cannot affect gameplay state.
 
 ## 8. Ordered dialogue segments
 
@@ -664,8 +574,6 @@ struct ActiveDialogueQueue {
 
 struct DialogueSegment {
     origin: DialogueSegmentOrigin,
-    structural_hash: String,
-    content_hash: String,
     items: Vec<DialogueItem>,
 }
 ```
@@ -781,26 +689,18 @@ HPA-129 does not pre-implement those runtimes.
 
 ```rust
 struct ActiveDialogueStateV1 {
-    segments: Vec<DialogueSegmentIdentityV1>,
+    segment_origins: Vec<DialogueSegmentOriginV1>,
     active_segment_index: usize,
     item_cursor: usize,
     queue_gen: u64,
 }
-
-struct DialogueSegmentIdentityV1 {
-    origin: DialogueSegmentOriginV1,
-    structural_hash: String,
-    content_hash: String,
-}
 ```
 
-It does not store `items`. Restore requires the current structural hash to
-match, records a content-only mismatch diagnostically, and rebuilds the items
-from the current packaged definition.
-
-Restore resolves every origin in order, verifies its current structural hash,
-rebuilds its items, verifies cursor bounds, and then installs the reconstructed
-queue. It does not replay reveals or inventory mutations to rebuild the queue.
+It does not store `items`. The envelope's exact `contentRevision` match proves
+the packaged static dialogue bundle is unchanged. Restore resolves every
+origin in order, rebuilds its items, verifies cursor bounds, and then installs
+the reconstructed queue. It does not replay reveals or inventory mutations to
+rebuild the queue.
 
 This preserves composite ordering when several authored `onCollect`,
 `onAcquire`, result, or reveal blocks were installed by one command.
@@ -888,7 +788,6 @@ trait ResumableStateAdapter {
     type Snapshot;
 
     fn capture(&self) -> Self::Snapshot;
-    fn dependencies(snapshot: &Self::Snapshot) -> Vec<DefinitionDependencyV1>;
     fn restore(
         definitions: &CurrentDefinitions,
         snapshot: Self::Snapshot,
@@ -908,16 +807,16 @@ typed enums in §7.
 
 A test-only P0 fixture implements the same contract with:
 
-- a stable definition reference and hash;
+- a stable definition ID resolved from the exact current package revision;
 - an incomplete boolean/small-enum mutable state;
 - a cursor;
 - a required referenced definition;
 - a public value that proves the cursor/state restored exactly.
 
-The fixture passes through JSON serialization, dependency validation, candidate
-construction, and transactional replacement in the test harness. It is not a
-production scene type, does not add an arbitrary JSON bag to `SaveSnapshot`,
-and does not depend on HPA-260's analysis runtime.
+The fixture passes through JSON serialization, exact revision validation,
+stable-ID resolution, candidate construction, and transactional replacement in
+the test harness. It is not a production scene type, does not add an arbitrary
+JSON bag to `SaveSnapshot`, and does not depend on HPA-260's analysis runtime.
 
 ## 11. Durable revision and autosave scheduling
 
@@ -1131,7 +1030,6 @@ struct SaveMetadataView {
     save_type: SaveType,
     schema_version: u32,
     content_revision: String,
-    required_content_changed: bool,
     saved_at: String,
     summary: SaveSummaryView,
 }
@@ -1157,24 +1055,19 @@ merely that its JSON was readable. Discovery:
 
 1. reads the file and source modification time;
 2. parses the minimal version envelope and applies schema migrations in memory;
-3. applies any explicit content migrations in memory;
-4. validates path/slot/envelope identity and summary shape;
-5. loads packaged definition/hash metadata once for the discovery batch;
-6. resolves every required dependency and definition hash;
+3. validates path/slot/envelope identity and summary shape;
+4. loads the packaged content manifest once for the discovery batch;
+5. requires the save's `contentRevision` to match the packaged revision exactly;
+6. resolves every saved stable ID against the packaged definitions;
 7. reconstructs dialogue lengths and validates all scene progress, set
    references, cross-exam state, queue coordinates, history token, counter
    invariants, and summary references without replacing the live engine.
 
-A failure to load the shared packaged hash/definition metadata makes discovery
-globally unavailable. A dependency mismatch found while validating one save
-makes only that slot invalid.
-
-A differing bundle `contentRevision` is diagnostic metadata, not automatic
-invalidity. The slot remains valid when every required dependency is compatible
-under §5.2. A content-hash mismatch with matching structure sets
-`required_content_changed` without invalidating the slot. Discovery returns the
-same typed schema, migration, dependency, content, cursor, and progress
-diagnostics that a load would return.
+A failure to load the shared packaged manifest/definitions makes discovery
+globally unavailable. A revision mismatch or invalid stable reference found
+while validating one save makes only that slot invalid. Discovery returns the
+same typed schema, content-revision, cursor, and progress diagnostics that a
+load would return.
 
 Load still re-reads the selected file, verifies the observed `save_id`, and
 repeats all validation before building/swapping the candidate engine. This
@@ -1219,10 +1112,10 @@ Load Game lets the player choose any valid older file. It never interprets
 Deletion is an explicit typed command and requires frontend confirmation.
 Deleting a slot does not renumber or rewrite other files.
 
-Parse, migration, definition, and I/O failures do not delete or modify the
-source save. Successful migration happens in memory; the original file is not
-rewritten during load. A later manual save or autosave creates a new current
-envelope through normal policy.
+Parse, migration, content-revision, definition, and I/O failures do not delete
+or modify the source save. Successful schema migration happens in memory; the
+original file is not rewritten during load. A later manual save or autosave
+creates a new current envelope through normal policy.
 
 ## 13. Transactional load
 
@@ -1231,10 +1124,10 @@ Load never mutates the live engine incrementally:
 1. read the selected file;
 2. parse a minimal version envelope;
 3. run sequential schema migrations in memory;
-4. run explicit content migrations in memory;
-5. validate slot/envelope consistency;
-6. load current packaged chapters, scenes, catalog, and hash metadata;
-7. resolve all snapshot dependencies;
+4. validate slot/envelope consistency;
+5. load the packaged content manifest and require an exact revision match;
+6. load current packaged chapters, scenes, and catalog;
+7. resolve all saved stable IDs;
 8. reconstruct dialogue segments and scene progress;
 9. build a complete candidate `GameEngine`;
 10. build its public view and validate summary invariants;
@@ -1294,28 +1187,18 @@ Rules:
 
 Version 1 has no legacy importer. Existing Lyra releases have no save contract.
 
-### 14.2 Content migrations
+### 14.2 Content compatibility
 
-Content migrations are keyed by old content revision plus stable definition
-identity/structural hash. They are required for structural changes, not
-content-only copy changes. They may:
+Version 1 has no per-definition content-migration registry. The package
+`contentRevision` must match exactly or the save is incompatible. The loader
+does not guess by label, prose, array position, similar ID, or partial
+dependency matching, and it never silently resets progress.
 
-- rename a stable definition ID;
-- map an old cursor to a changed segment;
-- transform mutable progress;
-- prove that a completed historical definition may be dropped while preserving
-  every surviving durable output.
-
-They may not:
-
-- guess by label, prose, array position, or similar ID;
-- silently reset active/incomplete progress;
-- invent evidence, facts, objective completion, or acknowledgement;
-- rewrite the source save during load.
-
-The initial implementation includes the registry and rejection behavior but no
-production content migration because there is no prior HPA-129 save schema.
-Tests use explicit old/current fixture revisions.
+This keeps the initial contract aligned with the release assumption in §5.2:
+pre-release content changes may invalidate development saves, while released
+static content is immutable. A future shipped release that must retain saves
+across a static-content change requires a separately designed, explicit
+whole-revision migration; it is not pre-generalized by HPA-129.
 
 ## 15. Tauri command surface
 
@@ -1371,7 +1254,6 @@ type SaveMetadataView = {
   saveType: "auto" | "manual";
   schemaVersion: number;
   contentRevision: string;
-  requiredContentChanged: boolean;
   savedAt: string;
   summary: {
     chapterId: string;
@@ -1539,9 +1421,8 @@ diagnostics for:
 - slot/envelope mismatch;
 - unsupported schema version;
 - missing schema migration;
-- missing content migration;
+- incompatible package content revision;
 - missing required definition;
-- changed required structural definition hash;
 - invalid runtime progress or cursor;
 - stale manual-overwrite confirmation;
 - stale session generation;
@@ -1570,23 +1451,21 @@ may be lost and that acquisition acknowledgement may reappear after restart.
 
 ### 18.1 Compiler tests
 
-- Structural hashes, content hashes, and `contentRevision` are deterministic
-  across repeated compilation.
+- `contentRevision` is deterministic across repeated compilation.
 - The compiler emits one complete, versioned
-  `save_content_manifest.json` with canonically sorted typed references and
-  rejects duplicate references.
-- A prose/label/description edit changes only the content hash and bundle
-  revision; a cursor, identity, cue, or progression change also changes the
-  structural hash.
-- Semantic array order affects hashes where required.
-- Object/source ordering that is not semantic does not affect hashes.
-- Source locations, paths, and timestamps do not affect hashes.
-- Every resumable scene/dialogue block receives one stable origin/hash.
+  `save_content_manifest.json` containing the exact package revision.
+- Any emitted static semantic change—including prose, labels, descriptions,
+  dialogue order, scene order, cues, IDs, or progression—changes the revision.
+- Object/source ordering that is not emitted semantics does not affect the
+  revision.
+- Source locations, raw Markdown formatting, absolute paths, and timestamps do
+  not affect the revision.
+- Every resumable dialogue block receives one stable origin.
 - Reordering or inserting sibling hotspots, topics, phases, questions, or
   testimony lines leaves every unaffected segment origin unchanged.
 - Every dialogue-bearing field maps to one derived role key, and any
   derived-origin collision fails with source locations.
-- Existing Chapter 1 compiles and produces loadable hash metadata.
+- Existing Chapter 1 compiles and produces a loadable content manifest.
 
 ### 18.2 Rust schema, capture, and restore tests
 
@@ -1612,18 +1491,18 @@ may be lost and that acquisition acknowledgement may reappear after restart.
 - Reject past-end linear mid-transition state and preserve active investigation
   outro/interrogation phase-entry queues at their committed boundaries.
 - Sort set-backed fields deterministically.
-- Reject missing current/required definitions.
-- Reject active structural-hash changes without migration.
-- Accept content-only changes, report the non-fatal mismatch, rebuild pending
-  dialogue from current copy, and preserve already-recorded historical copy.
+- Reject a package `contentRevision` mismatch before candidate construction.
+- Reject missing current/required stable IDs even after the revision matches.
+- Rebuild pending dialogue from unchanged packaged copy and preserve
+  already-recorded historical transcript copy.
 - Reject malformed snapshot override references and round-trip every closed
   investigation/interrogation override variant.
-- Apply an explicit definition/cursor migration fixture.
 - Reject inconsistent scene/runtime/cursor combinations.
 - Prove a failed load leaves the live engine's public view and coordinator
   generation unchanged.
-- Pass the generic resumable-state fixture through JSON, dependency validation,
-  candidate construction, and transactional replacement.
+- Pass the generic resumable-state fixture through JSON, exact revision
+  validation, stable-ID resolution, candidate construction, and transactional
+  replacement.
 
 ### 18.3 Dialogue and acquisition tests
 
@@ -1651,11 +1530,10 @@ and a controllable writer:
 - prefer empty autosave slots in numeric order;
 - never rotate into manual slots;
 - list five autosaves and three manual slots in stable groups;
-- mark a slot `Valid` only after non-mutating schema/content migration,
-  dependency/hash resolution, and structural snapshot validation;
-- keep a differing `contentRevision` valid when all required definition hashes
-  remain structurally compatible, setting `required_content_changed` only when
-  a required content hash differs;
+- mark a slot `Valid` only after non-mutating schema migration, exact
+  `contentRevision` validation, stable-ID resolution, and snapshot validation;
+- mark a differing `contentRevision` incompatible without attempting partial
+  definition matching;
 - repeat validation and reject a changed `save_id` between discovery and load;
 - select Continue by filesystem recency across both save types;
 - resolve equal-mtime Continue candidates by valid `saved_at`, then the fixed
@@ -1664,7 +1542,7 @@ and a controllable writer:
 - manually load an older valid file;
 - preserve existing files on temporary-write, sync, and replacement failure;
 - ignore stale temporary files during discovery;
-- preserve corrupt/incompatible source files after failed reads/migrations;
+- preserve corrupt/incompatible source files after failed reads or migrations;
 - mark `manual-2.json` invalid when its envelope claims another type/slot;
 - delete only the explicitly selected slot;
 - reject stale manual overwrite confirmation;
@@ -1688,8 +1566,8 @@ and a controllable writer:
 - prove gameplay commands remain responsive during temporary-file writes and a
   stale generation cannot pass the replacement gate;
 - return one global discovery error rather than eight fabricated invalid slots
-  when directory enumeration or shared packaged metadata fails, while keeping
-  file-specific mismatches per-slot.
+  when directory enumeration or the shared packaged manifest fails, while
+  keeping file-specific revision/reference mismatches per-slot.
 
 ### 18.5 Svelte tests
 
@@ -1699,10 +1577,8 @@ and a controllable writer:
   behind a second confirmation.
 - Continue diagnostic opens Load Game on the failed newest slot.
 - Shared browser renders valid, invalid, and empty states.
-- Valid rows render the complete save metadata contract; structural
+- Valid rows render the complete save metadata contract; package-revision
   incompatibilities render the discovery diagnostic before Load is selected.
-- Content-only drift keeps the row valid and renders its non-fatal
-  updated-content indication.
 - Browser renders all five autosaves and all three manual slots.
 - Manual overwrite and deletion require confirmation.
 - In-game Load requires confirmation; title Load does not.
@@ -1767,8 +1643,8 @@ Before HPA-129 implementation is complete:
 
 Planning must respect this dependency order:
 
-1. add the shared canonicalizer, compiler-owned segment origins, per-definition
-   hashes, bundle revision, and determinism/collision fixtures;
+1. add the shared canonicalizer, compiler-owned segment origins, exact bundle
+   revision, and determinism/collision fixtures;
 2. replace flat queued-scene dialogue with `ActiveDialogueQueue`, preserving
    the public flattened token, then add the closed capture/restore adapters and
    round-trip tests;
@@ -1840,7 +1716,7 @@ HPA-129 does not add:
 - HPA-258's case-file or Continue recap screen beyond save summary metadata;
 - HPA-256 provenance/supersession behavior;
 - arbitrary generic JSON flags or a generic production scene type;
-- a production content migration from a pre-HPA-129 format.
+- a generic per-definition content-migration mechanism.
 
 Analysis-specific draft resume remains owned by HPA-260, with packaged
 board/result-dialogue resume accepted by HPA-266.
@@ -1858,7 +1734,7 @@ board/result-dialogue resume accepted by HPA-266.
 | Invalid newest blocks Continue | §§2, 12.4, 16.1, 18.4 |
 | Slot validity includes compatibility/progress checks | §§12.4, 13, 18.4–18.5 |
 | Stable compiler-owned segment identity | §§5.1, 8.2, 18.1 |
-| Structural changes reject without migration; copy changes remain loadable | §§5, 13, 14, 18.1–18.2 |
+| Any static semantic content change invalidates older saves | §§5, 13, 14, 18.1–18.2 |
 | Missing definitions reject transactionally | §§7, 13, 17, 18.2 |
 | Degraded-storage warning and explicit escape | §§11.3, 15–17, 18.4–18.5 |
 | Manual overwrite confirmation | §§15, 16.2, 18.4–18.6 |
