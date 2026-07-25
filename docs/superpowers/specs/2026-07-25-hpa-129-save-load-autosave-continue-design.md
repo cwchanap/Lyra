@@ -689,6 +689,15 @@ The compiler rejects any derived-origin collision as an internal contract
 error. `segment_id` is never a vector index and never depends on label or
 dialogue copy.
 
+The four closed re-examination roles—hotspot, topic, evidence, and
+statement—have deterministic engine-owned behavior when their authored
+`onReexamine` target is missing or empty: the resolver produces the exact
+action `（沒有新發現。）` under the same authored origin role. Other missing or
+empty dialogue targets remain invalid. This fallback is schema-owned behavior
+outside the package bundle; an incompatible change to its copy or semantics
+requires a save-schema or compatibility revision even though it does not
+change the package content revision.
+
 Future analysis/story-event origins require new schema variants or migrations;
 HPA-129 does not pre-implement those runtimes.
 

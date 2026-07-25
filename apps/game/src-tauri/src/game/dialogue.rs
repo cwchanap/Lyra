@@ -8,11 +8,11 @@
 // module drives the dialogue queue, mod.rs drives the question menu.
 
 use super::scenes::interrogation::{AdvanceOutcome, CrossExam};
-use super::scenes::investigation::DialogueQueue;
 use super::scenes::SceneRuntime;
 use super::schema::DialogueItem;
 use super::view::{DialogueHistoryEntry, QueueToken};
-use super::{GameEngine, GameError};
+use super::{interrogation_segment, GameEngine, GameError};
+use crate::game::dialogue_queue::{ActiveDialogueQueue, DialogueSegment};
 
 const DIALOGUE_HISTORY_LIMIT: usize = 50;
 
@@ -125,11 +125,11 @@ impl GameEngine {
             SceneRuntime::Investigation(inv) => inv
                 .pending_queue
                 .as_ref()
-                .and_then(|q| q.items.get(q.cursor).cloned()),
+                .and_then(|queue| queue.current().cloned()),
             SceneRuntime::Interrogation(scene) => scene
                 .pending_queue
                 .as_ref()
-                .and_then(|q| q.items.get(q.cursor).cloned()),
+                .and_then(|queue| queue.current().cloned()),
         }
     }
 
@@ -141,66 +141,63 @@ impl GameEngine {
         }
     }
 
-    pub(super) fn peek_just_consumed(&self) -> Option<DialogueItem> {
-        match &self.scene {
-            SceneRuntime::Linear(s) => s.queue.get(s.cursor.saturating_sub(1)).cloned(),
-            SceneRuntime::Investigation(inv) => inv
-                .pending_queue
-                .as_ref()
-                .and_then(|q| q.items.get(q.cursor.saturating_sub(1)).cloned()),
-            SceneRuntime::Interrogation(scene) => scene
-                .pending_queue
-                .as_ref()
-                .and_then(|q| q.items.get(q.cursor.saturating_sub(1)).cloned()),
-        }
-    }
-
     /// Advance past any consecutive SceneTag items at the current cursor,
     /// updating `last_visual_cue` for each. Leaves the cursor positioned on
     /// the first non-SceneTag item (or at the end of the queue).
-    pub(super) fn consume_scene_tags_at_cursor(&mut self) {
+    /// Returns true when consuming tags exhausts the active queue.
+    pub(super) fn consume_scene_tags_at_cursor(&mut self) -> bool {
         loop {
-            let tag = match &mut self.scene {
-                SceneRuntime::Linear(s) => s.queue.get(s.cursor).cloned(),
+            let tag = match &self.scene {
+                SceneRuntime::Linear(scene) => scene
+                    .queue
+                    .as_ref()
+                    .and_then(|queue| queue.current().cloned()),
                 SceneRuntime::Investigation(inv) => inv
                     .pending_queue
                     .as_ref()
-                    .and_then(|q| q.items.get(q.cursor).cloned()),
+                    .and_then(|queue| queue.current().cloned()),
                 SceneRuntime::Interrogation(scene) => scene
                     .pending_queue
                     .as_ref()
-                    .and_then(|q| q.items.get(q.cursor).cloned()),
+                    .and_then(|queue| queue.current().cloned()),
             };
             match tag {
                 Some(DialogueItem::SceneTag { text, asset_cue }) => {
                     self.last_visual_cue.set_scene_tag(text, asset_cue);
-                    match &mut self.scene {
-                        SceneRuntime::Linear(s) => s.cursor += 1,
-                        SceneRuntime::Investigation(inv) => {
-                            if let Some(q) = inv.pending_queue.as_mut() {
-                                q.cursor += 1;
-                            }
-                        }
-                        SceneRuntime::Interrogation(scene) => {
-                            if let Some(q) = scene.pending_queue.as_mut() {
-                                q.cursor += 1;
-                            }
-                        }
+                    let exhausted = match &mut self.scene {
+                        SceneRuntime::Linear(scene) => scene
+                            .queue
+                            .as_mut()
+                            .is_none_or(ActiveDialogueQueue::advance),
+                        SceneRuntime::Investigation(inv) => inv
+                            .pending_queue
+                            .as_mut()
+                            .is_none_or(|queue| queue.advance()),
+                        SceneRuntime::Interrogation(scene) => scene
+                            .pending_queue
+                            .as_mut()
+                            .is_none_or(|queue| queue.advance()),
+                    };
+                    if exhausted {
+                        return true;
                     }
                 }
-                _ => break,
+                _ => return false,
             }
         }
     }
 
-    /// Install `items` as the active dialogue queue, or run the exhausted-queue
-    /// machinery when there is nothing to play.
-    pub(super) fn install_or_exhaust(&mut self, items: Vec<DialogueItem>) -> Result<(), GameError> {
-        if items.is_empty() {
+    /// Install `segments` as the active dialogue queue, or run the
+    /// exhausted-queue machinery when there is nothing to play.
+    pub(super) fn install_or_exhaust(
+        &mut self,
+        segments: Vec<DialogueSegment>,
+    ) -> Result<(), GameError> {
+        if segments.is_empty() {
             return self.on_queue_exhausted();
         }
         let queue_gen = self.alloc_queue_gen();
-        self.install_scene_queue(items, queue_gen, None)
+        self.install_scene_queue(segments, queue_gen, None)
     }
 
     /// As `install_or_exhaust`, then mark where challengeable testimony line
@@ -214,14 +211,14 @@ impl GameEngine {
     /// queue's boundary with the stale value from the drained one.
     pub(super) fn install_or_exhaust_line_content(
         &mut self,
-        items: Vec<DialogueItem>,
+        segments: Vec<DialogueSegment>,
         line_content_start: usize,
     ) -> Result<(), GameError> {
-        if items.is_empty() {
+        if segments.is_empty() {
             return self.on_queue_exhausted();
         }
         let queue_gen = self.alloc_queue_gen();
-        self.install_scene_queue(items, queue_gen, Some(line_content_start))
+        self.install_scene_queue(segments, queue_gen, Some(line_content_start))
     }
 
     /// Scene-entry sequencing lives in `navigation.rs` (`prime_initial_queue`),
@@ -234,17 +231,15 @@ impl GameEngine {
     /// uses the safe default (`items.len()` — nothing challengeable).
     pub(super) fn install_scene_queue(
         &mut self,
-        items: Vec<DialogueItem>,
+        segments: Vec<DialogueSegment>,
         queue_gen: u64,
         line_content_start_override: Option<usize>,
     ) -> Result<(), GameError> {
+        let queue = ActiveDialogueQueue::new(segments, queue_gen)
+            .ok_or_else(|| GameError::internal("empty dialogue queue installation".into()))?;
         match &mut self.scene {
             SceneRuntime::Investigation(inv) => {
-                inv.pending_queue = Some(DialogueQueue {
-                    items,
-                    cursor: 0,
-                    queue_gen,
-                });
+                inv.pending_queue = Some(queue);
             }
             SceneRuntime::Linear(_) => {
                 return Err(GameError::internal(
@@ -258,30 +253,12 @@ impl GameEngine {
                 // actual line content. Applied before tag consumption so a
                 // draining queue does not leave a stale boundary for a
                 // successor queue installed by `on_queue_exhausted`.
-                scene.line_content_start = line_content_start_override.unwrap_or(items.len());
-                scene.pending_queue = Some(DialogueQueue {
-                    items,
-                    cursor: 0,
-                    queue_gen,
-                });
+                scene.line_content_start =
+                    line_content_start_override.unwrap_or_else(|| queue.queue_remaining() + 1);
+                scene.pending_queue = Some(queue);
             }
         }
-        self.consume_scene_tags_at_cursor();
-        let exhausted = match &self.scene {
-            SceneRuntime::Investigation(inv) => inv
-                .pending_queue
-                .as_ref()
-                .is_none_or(|q| q.cursor >= q.items.len()),
-            SceneRuntime::Linear(_) => {
-                return Err(GameError::internal(
-                    "dialogue queue installed outside queued scene".into(),
-                ));
-            }
-            SceneRuntime::Interrogation(scene) => scene
-                .pending_queue
-                .as_ref()
-                .is_none_or(|q| q.cursor >= q.items.len()),
-        };
+        let exhausted = self.consume_scene_tags_at_cursor();
         if exhausted {
             self.on_queue_exhausted()?;
         }
@@ -368,8 +345,9 @@ impl GameEngine {
     /// because `consume_scene_tags_at_cursor` eats every tag and re-enters
     /// `on_queue_exhausted` immediately.
     pub(super) fn advance_playing_testimony(&mut self) -> Result<(), GameError> {
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
         loop {
-            let (queue_items, line_content_start, is_loop, has_dialogue) = {
+            let (segments, line_content_start, is_loop, has_dialogue) = {
                 let scene = match &mut self.scene {
                     SceneRuntime::Interrogation(scene) => scene,
                     _ => return Ok(()),
@@ -377,11 +355,18 @@ impl GameEngine {
                 let CrossExam::Playing { question_id, .. } = scene.cross_exam().clone() else {
                     return Ok(());
                 };
+                let phase_id = scene.current_phase_id.clone().ok_or_else(|| {
+                    GameError::internal("testimony advanced without a current phase".into())
+                })?;
+                let scene_id = scene.def.id.clone();
                 match scene.advance_line() {
                     AdvanceOutcome::NextLine(index) => {
-                        let content = scene
+                        let line = scene
                             .question(&question_id)
                             .and_then(|question| question.testimony.lines.get(index))
+                            .cloned();
+                        let content = line
+                            .as_ref()
                             .map(|line| line.content.clone())
                             .unwrap_or_default();
                         // Pure line content — challengeable from the first
@@ -390,18 +375,50 @@ impl GameEngine {
                         let has_dialogue = content
                             .iter()
                             .any(|item| !matches!(item, DialogueItem::SceneTag { .. }));
-                        (content, 0, false, has_dialogue)
+                        let segments = line
+                            .and_then(|line| {
+                                interrogation_segment(
+                                    &chapter_id,
+                                    &scene_id,
+                                    &phase_id,
+                                    format!("question:{question_id}:line:{}:content", line.id),
+                                    line.content,
+                                )
+                            })
+                            .into_iter()
+                            .collect();
+                        (segments, 0, false, has_dialogue)
                     }
                     AdvanceOutcome::Loop => {
-                        let (items, start, lines_have_dialogue) = scene
+                        let (segments, start, lines_have_dialogue) = scene
                             .question(&question_id)
-                            .map_or((Vec::new(), 0, false), |question| {
-                                let on_loop_len = question.testimony.on_loop.len();
-                                let loop_prompt_len = question.testimony.loop_prompt.len();
-                                let mut items = question.testimony.on_loop.clone();
-                                items.extend(question.testimony.loop_prompt.iter().cloned());
+                            .map_or(
+                            Ok((Vec::new(), 0, false)),
+                            |question| {
+                                let mut segments = Vec::new();
+                                segments.extend(interrogation_segment(
+                                    &chapter_id,
+                                    &scene_id,
+                                    &phase_id,
+                                    format!("question:{question_id}:onLoop"),
+                                    question.testimony.on_loop.clone(),
+                                ));
+                                segments.extend(interrogation_segment(
+                                    &chapter_id,
+                                    &scene_id,
+                                    &phase_id,
+                                    format!("question:{question_id}:loopPrompt"),
+                                    question.testimony.loop_prompt.clone(),
+                                ));
+                                let line_segment_index = segments.len();
                                 if let Some(first) = question.testimony.lines.first() {
-                                    items.extend(first.content.iter().cloned());
+                                    segments.extend(interrogation_segment(
+                                        &chapter_id,
+                                        &scene_id,
+                                        &phase_id,
+                                        format!("question:{question_id}:line:{}:content", first.id),
+                                        first.content.clone(),
+                                    ));
                                 }
                                 // The on_loop + loop_prompt bridge plays first;
                                 // line 0 content follows, so the challenge
@@ -419,15 +436,20 @@ impl GameEngine {
                                             !matches!(item, DialogueItem::SceneTag { .. })
                                         })
                                     });
-                                (items, on_loop_len + loop_prompt_len, lines_have_dialogue)
-                            });
-                        (items, start, true, lines_have_dialogue)
+                                let start = ActiveDialogueQueue::flattened_segment_start(
+                                    &segments,
+                                    line_segment_index,
+                                )?;
+                                Ok((segments, start, lines_have_dialogue))
+                            },
+                        )?;
+                        (segments, start, true, lines_have_dialogue)
                     }
                 }
             };
 
             if has_dialogue {
-                self.install_or_exhaust_line_content(queue_items, line_content_start)?;
+                self.install_or_exhaust_line_content(segments, line_content_start)?;
                 return Ok(());
             }
 
@@ -436,10 +458,12 @@ impl GameEngine {
             // bridge; visible bridge dialogue is intentionally not played
             // because the testimony is degenerate (no visible lines to loop
             // back to).
-            for item in &queue_items {
-                if let DialogueItem::SceneTag { text, asset_cue } = item {
-                    self.last_visual_cue
-                        .set_scene_tag(text.clone(), asset_cue.clone());
+            for segment in &segments {
+                for item in &segment.items {
+                    if let DialogueItem::SceneTag { text, asset_cue } = item {
+                        self.last_visual_cue
+                            .set_scene_tag(text.clone(), asset_cue.clone());
+                    }
                 }
             }
 
@@ -475,33 +499,27 @@ impl GameEngine {
 
     pub(super) fn current_queue_token(&self) -> Option<QueueToken> {
         match &self.scene {
-            SceneRuntime::Linear(s) => {
-                if s.cursor < s.queue.len() {
-                    Some(QueueToken {
-                        scene_id: s.id.clone(),
-                        queue_gen: s.queue_gen,
-                        cursor: s.cursor,
-                    })
-                } else {
-                    None
-                }
-            }
-            SceneRuntime::Investigation(inv) => match &inv.pending_queue {
-                Some(q) if q.cursor < q.items.len() => Some(QueueToken {
+            SceneRuntime::Linear(scene) => scene.queue.as_ref().and_then(|queue| {
+                Some(QueueToken {
+                    scene_id: scene.id.clone(),
+                    queue_gen: queue.queue_gen(),
+                    cursor: queue.flattened_cursor().ok()?,
+                })
+            }),
+            SceneRuntime::Investigation(inv) => inv.pending_queue.as_ref().and_then(|queue| {
+                Some(QueueToken {
                     scene_id: inv.def.id.clone(),
-                    queue_gen: q.queue_gen,
-                    cursor: q.cursor,
-                }),
-                _ => None,
-            },
-            SceneRuntime::Interrogation(scene) => match &scene.pending_queue {
-                Some(q) if q.cursor < q.items.len() => Some(QueueToken {
+                    queue_gen: queue.queue_gen(),
+                    cursor: queue.flattened_cursor().ok()?,
+                })
+            }),
+            SceneRuntime::Interrogation(scene) => scene.pending_queue.as_ref().and_then(|queue| {
+                Some(QueueToken {
                     scene_id: scene.def.id.clone(),
-                    queue_gen: q.queue_gen,
-                    cursor: q.cursor,
-                }),
-                _ => None,
-            },
+                    queue_gen: queue.queue_gen(),
+                    cursor: queue.flattened_cursor().ok()?,
+                })
+            }),
         }
     }
 }
@@ -536,6 +554,164 @@ mod tests {
             text: text.into(),
             portrait: None,
         }
+    }
+
+    fn assert_dialogue_frame(
+        view: &crate::game::view::GameStateView,
+        expected_text: &str,
+        expected_token: QueueToken,
+        expected_remaining: usize,
+        expected_cross_exam_line_id: Option<&str>,
+    ) {
+        match &view.mode {
+            ModeView::Dialogue {
+                current,
+                queue_remaining,
+                queue_token,
+                cross_exam_line_id,
+                ..
+            } => {
+                let text = match current {
+                    DialogueItem::Line { text, .. } | DialogueItem::Action { text } => text,
+                    other => panic!("expected a visible dialogue item, got {other:?}"),
+                };
+                assert_eq!(text, expected_text);
+                assert_eq!(queue_token, &expected_token);
+                assert_eq!(*queue_remaining, expected_remaining);
+                assert_eq!(cross_exam_line_id.as_deref(), expected_cross_exam_line_id);
+            }
+            other => panic!("expected dialogue mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn linear_public_dialogue_frames_keep_raw_flattened_cursor_and_history() {
+        let resources = dialogue_history_fixture_resources(2);
+        std::fs::write(
+            resources.join("save_content_manifest.json"),
+            r#"{"manifestVersion":1,"contentRevision":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}"#,
+        )
+        .unwrap();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        assert_dialogue_frame(
+            &engine.view(),
+            "line 0",
+            QueueToken {
+                scene_id: "scene_0".into(),
+                queue_gen: 1,
+                cursor: 1,
+            },
+            1,
+            None,
+        );
+        assert_eq!(history_labels(&engine.view()), vec!["A: line 0"]);
+
+        let next = engine.advance_dialogue(token_from(&engine.view())).unwrap();
+        assert_dialogue_frame(
+            &next,
+            "action 1",
+            QueueToken {
+                scene_id: "scene_0".into(),
+                queue_gen: 1,
+                cursor: 2,
+            },
+            0,
+            None,
+        );
+        assert_eq!(
+            history_labels(&next),
+            vec!["A: line 0", "narration: action 1"]
+        );
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn investigation_public_dialogue_frames_keep_raw_flattened_cursor_and_history() {
+        let scene = investigation_scene_with_intro(
+            "investigation_scene_1",
+            vec![
+                DialogueItem::SceneTag {
+                    text: "rain".into(),
+                    asset_cue: None,
+                },
+                line("intro"),
+                DialogueItem::Action {
+                    text: "follow-up".into(),
+                },
+            ],
+        );
+        let mut engine = empty_engine_with_scene(scene, 7);
+        engine.prime_initial_queue().unwrap();
+        engine.record_current_dialogue_history();
+
+        assert_dialogue_frame(
+            &engine.view(),
+            "intro",
+            QueueToken {
+                scene_id: "investigation_scene_1".into(),
+                queue_gen: 7,
+                cursor: 1,
+            },
+            1,
+            None,
+        );
+        assert_eq!(history_labels(&engine.view()), vec!["A: intro"]);
+
+        let next = engine.advance_dialogue(token_from(&engine.view())).unwrap();
+        assert_dialogue_frame(
+            &next,
+            "follow-up",
+            QueueToken {
+                scene_id: "investigation_scene_1".into(),
+                queue_gen: 7,
+                cursor: 2,
+            },
+            0,
+            None,
+        );
+        assert_eq!(
+            history_labels(&next),
+            vec!["A: intro", "narration: follow-up"]
+        );
+    }
+
+    #[test]
+    fn interrogation_public_dialogue_frames_keep_generation_boundary_and_history() {
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 11);
+        engine.prime_initial_queue().unwrap();
+
+        let first = engine.ask_interrogation_question("alibi").unwrap();
+        assert_dialogue_frame(
+            &first,
+            "我那天沒去。",
+            QueueToken {
+                scene_id: "interrogation_scene_1".into(),
+                queue_gen: 12,
+                cursor: 0,
+            },
+            0,
+            Some("l_off"),
+        );
+        assert_eq!(history_labels(&first), vec!["suspect: 我那天沒去。"]);
+
+        let second = engine.advance_dialogue(token_from(&first)).unwrap();
+        assert_dialogue_frame(
+            &second,
+            "我從沒打掃過那裡。",
+            QueueToken {
+                scene_id: "interrogation_scene_1".into(),
+                queue_gen: 13,
+                cursor: 0,
+            },
+            0,
+            Some("l_deny"),
+        );
+        assert_eq!(
+            history_labels(&second),
+            vec!["suspect: 我那天沒去。", "suspect: 我從沒打掃過那裡。"]
+        );
     }
 
     #[test]
@@ -854,7 +1030,7 @@ mod tests {
             }],
             current_chapter_idx: 0,
             current_scene_idx: 0,
-            scene: SceneRuntime::Linear(LinearSceneState::from_json(scene_json, 1)),
+            scene: SceneRuntime::Linear(LinearSceneState::from_json(scene_json, "chapter_1", 1)),
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
@@ -923,7 +1099,7 @@ mod tests {
             }],
             current_chapter_idx: 0,
             current_scene_idx: 0,
-            scene: SceneRuntime::Linear(LinearSceneState::from_json(scene_json, 1)),
+            scene: SceneRuntime::Linear(LinearSceneState::from_json(scene_json, "chapter_1", 1)),
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,
@@ -984,7 +1160,7 @@ mod tests {
             }],
             current_chapter_idx: 0,
             current_scene_idx: 0,
-            scene: SceneRuntime::Linear(LinearSceneState::from_json(tag_only_json, 1)),
+            scene: SceneRuntime::Linear(LinearSceneState::from_json(tag_only_json, "chapter_1", 1)),
             last_visual_cue: LastVisualCue::default(),
             inventory: Inventory::default(),
             next_queue_gen: 2,

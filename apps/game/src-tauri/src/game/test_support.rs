@@ -32,6 +32,15 @@ pub fn write_empty_story_catalog(dir: &Path) {
 "#,
     )
     .unwrap();
+    std::fs::write(
+        dir.join("save_content_manifest.json"),
+        r#"{
+  "manifestVersion": 1,
+  "contentRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+}
+"#,
+    )
+    .unwrap();
 }
 
 pub(super) fn investigation_scene_with_intro(
@@ -320,6 +329,11 @@ pub(super) fn story_navigation_fixture_resources() -> PathBuf {
     let chapter_2 = d.join("chapter_2");
     fs::create_dir_all(&chapter_1).unwrap();
     fs::create_dir_all(&chapter_2).unwrap();
+    fs::write(
+        d.join("save_content_manifest.json"),
+        r#"{"manifestVersion":1,"contentRevision":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}"#,
+    )
+    .unwrap();
     fs::write(
         d.join("story_catalog.json"),
         r#"{

@@ -263,6 +263,13 @@ sequence. Preserve transaction rollback and history deduplication. Add focused
 runtime tests for normal advancement, scene tags, composite acquisition/reveal
 queues, phase entry, and cross-examination line boundaries.
 
+Missing or empty authored `onReexamine` content for the four closed hotspot,
+topic, evidence, and statement roles resolves through the shared Task 5 helper
+to the deterministic engine-owned action `（沒有新發現。）`, retaining the same
+origin. No other empty target receives this behavior. Because that fallback is
+outside the hashed package bundle, changing it incompatibly requires a
+save-schema or compatibility revision.
+
 ## Task 7 — persistence-facing capture prerequisites
 
 Expose crate-private capture/restore adapters for active dialogue origins and

@@ -1,7 +1,6 @@
 // src-tauri/src/game/scenes/investigation.rs
-use crate::game::schema::{
-    DialogueItem, InvestigationSceneJson, LockStatus, OutroUnlock, UnlockExpr,
-};
+use crate::game::dialogue_queue::ActiveDialogueQueue;
+use crate::game::schema::{InvestigationSceneJson, LockStatus, OutroUnlock, UnlockExpr};
 use crate::game::unlock::{self, UnlockContext};
 use std::collections::HashSet;
 
@@ -11,19 +10,12 @@ pub struct InvestigationSceneState {
     pub intro_played: bool,
     pub outro_played: bool,
     pub current_sublocation_id: Option<String>,
-    pub pending_queue: Option<DialogueQueue>,
+    pub(crate) pending_queue: Option<ActiveDialogueQueue>,
     pub intro_queue_gen: u64,
     pub inspected_hotspots: HashSet<String>,
     pub discussed_topics: HashSet<(String, String)>,
     pub entered_sublocations: HashSet<String>,
     pub unlocked_overrides: HashSet<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct DialogueQueue {
-    pub items: Vec<DialogueItem>,
-    pub cursor: usize,
-    pub queue_gen: u64,
 }
 
 impl InvestigationSceneState {

@@ -3,12 +3,13 @@
 // Chapter/scene loading and the navigation paths that move between scenes.
 
 use super::acquisition::AcquisitionCtx;
+use super::dialogue_queue::{DialogueSegment, DialogueSegmentOriginV1};
 use super::loader;
 use super::scenes::interrogation::InterrogationSceneState;
 use super::scenes::investigation::InvestigationSceneState;
 use super::scenes::linear::LinearSceneState;
 use super::scenes::SceneRuntime;
-use super::schema::{DialogueItem, SceneJson, SceneType};
+use super::schema::{SceneJson, SceneType};
 use super::state::{ChapterManifest, Inventory, SceneRef};
 use super::view::{
     GameStateView, SceneNavigationChapter, SceneNavigationIndex, SceneNavigationScene,
@@ -115,29 +116,25 @@ impl GameEngine {
     /// (`new_started`, `jump_to_scene`, `advance_scene`) are all navigation
     /// paths.
     pub(super) fn prime_initial_queue(&mut self) -> Result<(), GameError> {
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
         let mut intro_queue = None;
+        let mut needs_linear_prime = false;
         let mut needs_interrogation_advance = false;
         let needs_initial_sub = match &mut self.scene {
-            SceneRuntime::Linear(s) => {
-                // Consume leading SceneTag items so the first visible frame
-                // has the correct backdrop tag.
-                while let Some(DialogueItem::SceneTag { text, asset_cue }) =
-                    s.queue.get(s.cursor).cloned()
-                {
-                    self.last_visual_cue.set_scene_tag(text, asset_cue);
-                    s.cursor += 1;
-                }
-                // If the entire scene is tag-only (or empty), advance to the
-                // next scene so we don't stall on GameComplete.
-                if s.cursor >= s.queue.len() {
-                    self.advance_scene()?;
-                    return Ok(());
-                }
+            SceneRuntime::Linear(_) => {
+                needs_linear_prime = true;
                 false
             }
             SceneRuntime::Investigation(inv) => {
                 if !inv.intro_played && !inv.def.intro.is_empty() {
-                    intro_queue = Some((inv.def.intro.clone(), inv.intro_queue_gen));
+                    intro_queue = DialogueSegment::new(
+                        DialogueSegmentOriginV1::InvestigationIntro {
+                            chapter_id: chapter_id.clone(),
+                            scene_id: inv.def.id.clone(),
+                        },
+                        inv.def.intro.clone(),
+                    )
+                    .map(|segment| (vec![segment], inv.intro_queue_gen));
                     inv.intro_played = true;
                     false
                 } else {
@@ -146,7 +143,14 @@ impl GameEngine {
             }
             SceneRuntime::Interrogation(scene) => {
                 if !scene.intro_played && !scene.def.intro.is_empty() {
-                    intro_queue = Some((scene.def.intro.clone(), scene.intro_queue_gen));
+                    intro_queue = DialogueSegment::new(
+                        DialogueSegmentOriginV1::InterrogationIntro {
+                            chapter_id: chapter_id.clone(),
+                            scene_id: scene.def.id.clone(),
+                        },
+                        scene.def.intro.clone(),
+                    )
+                    .map(|segment| (vec![segment], scene.intro_queue_gen));
                     scene.intro_played = true;
                     false
                 } else {
@@ -158,8 +162,18 @@ impl GameEngine {
                 }
             }
         };
-        if let Some((items, queue_gen)) = intro_queue {
-            self.install_scene_queue(items, queue_gen, None)?;
+        if needs_linear_prime {
+            let exhausted = matches!(
+                &self.scene,
+                SceneRuntime::Linear(scene) if scene.queue.is_none()
+            ) || self.consume_scene_tags_at_cursor();
+            if exhausted {
+                self.advance_scene()?;
+            }
+            return Ok(());
+        }
+        if let Some((segments, queue_gen)) = intro_queue {
+            self.install_scene_queue(segments, queue_gen, None)?;
         }
         if needs_initial_sub {
             self.advance_into_first_sublocation()?;
@@ -189,7 +203,9 @@ impl GameEngine {
             .get(next_scene_idx)
             .ok_or_else(|| GameError::chapter_load_failed("scene index out of bounds".into()))?
             .clone();
-        let new_scene = load_scene_runtime(&self.resources_dir, &scene_ref, queue_gen)?;
+        let chapter_id = self.chapters[next_chapter_idx].id.clone();
+        let new_scene =
+            load_scene_runtime(&self.resources_dir, &chapter_id, &scene_ref, queue_gen)?;
 
         self.rollback_scope(|engine| {
             engine.current_chapter_idx = next_chapter_idx;
@@ -310,6 +326,15 @@ fn find_scene_runtime_by_id(
     scene_id: &str,
     queue_gen: u64,
 ) -> Result<Option<(usize, SceneRuntime)>, GameError> {
+    Ok(find_scene_json_by_id(resources_dir, chapter, scene_id)?
+        .map(|(idx, json)| (idx, scene_runtime_from_json(json, &chapter.id, queue_gen))))
+}
+
+pub(super) fn find_scene_json_by_id(
+    resources_dir: &std::path::Path,
+    chapter: &ChapterManifest,
+    scene_id: &str,
+) -> Result<Option<(usize, SceneJson)>, GameError> {
     // Defense-in-depth: the navigation index build rejects duplicate scene
     // ids per chapter, but resolve the jump target unambiguously here too so a
     // jump never silently lands on the "first" of two same-id scenes (e.g. if
@@ -328,16 +353,17 @@ fn find_scene_runtime_by_id(
             found = Some((idx, json));
         }
     }
-    Ok(found.map(|(idx, json)| (idx, scene_runtime_from_json(json, queue_gen))))
+    Ok(found)
 }
 
 pub(super) fn load_scene_runtime(
     resources_dir: &std::path::Path,
+    chapter_id: &str,
     scene_ref: &SceneRef,
     queue_gen: u64,
 ) -> Result<SceneRuntime, GameError> {
     let json = load_scene_json_for_ref(resources_dir, scene_ref)?;
-    Ok(scene_runtime_from_json(json, queue_gen))
+    Ok(scene_runtime_from_json(json, chapter_id, queue_gen))
 }
 
 fn load_scene_json_for_ref(
@@ -350,9 +376,11 @@ fn load_scene_json_for_ref(
     Ok(json)
 }
 
-fn scene_runtime_from_json(json: SceneJson, queue_gen: u64) -> SceneRuntime {
+fn scene_runtime_from_json(json: SceneJson, chapter_id: &str, queue_gen: u64) -> SceneRuntime {
     match json {
-        SceneJson::Linear(j) => SceneRuntime::Linear(LinearSceneState::from_json(j, queue_gen)),
+        SceneJson::Linear(j) => {
+            SceneRuntime::Linear(LinearSceneState::from_json(j, chapter_id, queue_gen))
+        }
         SceneJson::Investigation(j) => {
             SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(j, queue_gen)))
         }
@@ -1036,6 +1064,7 @@ mod tests {
 
         let runtime = load_scene_runtime(
             &d,
+            "chapter_1",
             &SceneRef {
                 scene_type: SceneType::Interrogation,
                 file: "chapter_1/interrogation_scene_1.json".into(),
@@ -1075,6 +1104,7 @@ mod tests {
 
         let err = load_scene_runtime(
             &d,
+            "chapter_1",
             &SceneRef {
                 scene_type: SceneType::Interrogation,
                 file: "chapter_1/interrogation_scene_1.json".into(),
