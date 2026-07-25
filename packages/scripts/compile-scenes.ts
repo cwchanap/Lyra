@@ -8,7 +8,6 @@
 // cwd=packages/scripts.
 // =============================================================================
 
-import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
@@ -17,6 +16,7 @@ import { withCompileLock } from "./compile-scenes/compile-lock";
 import {
   compileScenesWatchInputs,
   isCompileScenesWatchPath,
+  resolveWatchRoots,
 } from "./compile-scenes/watch-inputs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -58,8 +58,8 @@ async function main() {
       );
       chokidar
         .watch(
-          compileScenesWatchInputs(SOURCE_ROOTS, ASSET_CONFIG_ROOT).filter(
-            existsSync,
+          resolveWatchRoots(
+            compileScenesWatchInputs(SOURCE_ROOTS, ASSET_CONFIG_ROOT),
           ),
           {
             ignoreInitial: true,
