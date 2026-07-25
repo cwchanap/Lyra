@@ -1,72 +1,32 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { emitInvestigationScene } from "./emitter";
-import { parseInvestigationScene } from "./parser-investigation";
 import {
   buildSaveContentManifest,
-  definitionRefKey,
-  type DefinitionManifestEntryV1,
-  type DefinitionRefV1,
-  type EmittedSceneRecordV1,
-  type SaveContentManifestV1,
+  type BuildSaveContentManifestInput,
+  type SaveContentBundleV1,
 } from "./save-content-manifest";
-import type {
-  JSONDialogueItem,
-  JSONInvestigationScene,
-  JSONLinearScene,
-} from "./types";
+import type { JSONDialogueItem, JSONLinearScene } from "./types";
 
-const line = (text: string, speaker = "detective"): JSONDialogueItem => ({
+const line = (text: string): JSONDialogueItem => ({
   kind: "line",
-  speaker,
+  speaker: "detective",
   text,
   expression: null,
   portrait: null,
 });
 
-const linear = (
-  queue: JSONDialogueItem[],
-): EmittedSceneRecordV1<JSONLinearScene> => ({
-  chapterId: "chapter_1",
-  file: "scene_0.md",
-  json: {
-    type: "linear",
-    id: "scene_0",
-    title: "Opening",
-    queue,
-    assetRefs: [],
-  },
+const linear = (id: string, title: string, queue: JSONDialogueItem[]) => ({
+  type: "linear" as const,
+  id,
+  title,
+  queue,
+  assetRefs: [],
 });
 
-function investigation(): JSONInvestigationScene {
-  const path =
-    "packages/scripts/__fixtures__/valid/chapter_1/investigation_scene_1.md";
-  const parsed = parseInvestigationScene(
-    readFileSync(resolve(path), "utf8"),
-    path,
-    "investigation_scene_1",
-  );
-  if (!parsed.ok) throw new Error(parsed.error.message);
-  return emitInvestigationScene(parsed.value);
-}
-
-function manifestFor(scenes: EmittedSceneRecordV1[]): SaveContentManifestV1 {
-  return buildSaveContentManifest({
-    chapters: {
-      chapters: [
-        {
-          id: "chapter_1",
-          title: "Chapter 1",
-          summary: "Summary",
-          scenes: scenes.map(({ file, json }) => ({
-            type: json.type,
-            file: `chapter_1/${file.replace(/\\.md$/, ".json")}`,
-          })),
-        },
-      ],
-    },
-    scenes,
+function bundle(
+  chapters: SaveContentBundleV1["chapters"],
+): SaveContentBundleV1 {
+  return {
+    chapters,
     storyCatalog: {
       schemaVersion: 1,
       facts: [],
@@ -76,116 +36,159 @@ function manifestFor(scenes: EmittedSceneRecordV1[]): SaveContentManifestV1 {
       evidenceIndex: [],
       statementsIndex: [],
     },
-  });
+  };
 }
 
-function entry(
-  manifest: SaveContentManifestV1,
-  reference: DefinitionRefV1,
-): DefinitionManifestEntryV1 {
-  const key = definitionRefKey(reference);
-  const found = manifest.definitions.find(
-    (candidate) => definitionRefKey(candidate.reference) === key,
-  );
-  if (!found) throw new Error(`missing test entry ${key}`);
-  return found;
+function chapter(id: string, title: string, scenes: JSONLinearScene[]) {
+  return { id, title, summary: `${title} summary`, scenes };
+}
+
+function manifest(input: BuildSaveContentManifestInput) {
+  return buildSaveContentManifest(input);
 }
 
 describe("buildSaveContentManifest", () => {
-  it("keeps prose changes structurally compatible", () => {
-    const before = linear([line("Original copy")]);
-    const after = linear([line("Corrected copy")]);
-
-    const beforeManifest = manifestFor([before]);
-    const afterManifest = manifestFor([after]);
-    const beforeScene = entry(beforeManifest, {
-      type: "scene",
-      chapterId: "chapter_1",
-      sceneId: "scene_0",
-      sceneKind: "linear",
-    });
-    const afterScene = entry(afterManifest, beforeScene.reference);
-
-    expect(afterScene.structuralHash).toBe(beforeScene.structuralHash);
-    expect(afterScene.contentHash).not.toBe(beforeScene.contentHash);
-    expect(afterManifest.contentRevision).not.toBe(
-      beforeManifest.contentRevision,
-    );
-  });
-
-  it("changes structure for speaker, cue, order, and progression edits", () => {
-    const baseline = entry(manifestFor([linear([line("A"), line("B")])]), {
-      type: "scene",
-      chapterId: "chapter_1",
-      sceneId: "scene_0",
-      sceneKind: "linear",
-    });
-    const speakerEdit = entry(
-      manifestFor([linear([line("A", "other"), line("B")])]),
-      baseline.reference,
-    );
-    const orderEdit = entry(
-      manifestFor([linear([{ kind: "action", text: "B" }, line("A")])]),
-      baseline.reference,
-    );
-    const cueEdit = entry(
-      manifestFor([
-        linear([
-          {
-            kind: "sceneTag",
-            text: "same copy",
-            assetCue: {
-              backgroundAssetId: "background.changed",
-              bgm: null,
-              bgs: null,
-            },
-          },
-          line("B"),
+  it("has the exact minimal manifest shape", () => {
+    expect(
+      manifest({
+        bundle: bundle([
+          chapter("chapter_1", "Chapter 1", [
+            linear("scene_0", "Opening", [line("A")]),
+          ]),
         ]),
-      ]),
-      baseline.reference,
-    );
-
-    expect(speakerEdit.structuralHash).not.toBe(baseline.structuralHash);
-    expect(orderEdit.structuralHash).not.toBe(baseline.structuralHash);
-    expect(cueEdit.structuralHash).not.toBe(baseline.structuralHash);
-
-    const beforeInvestigation = investigation();
-    const afterInvestigation = structuredClone(beforeInvestigation);
-    afterInvestigation.sublocations[0]!.hotspots[0]!.reveals = [
-      { kind: "evidence", id: "changed_record" },
-    ];
-    const beforeEntry = entry(
-      manifestFor([
-        {
-          chapterId: "chapter_1",
-          file: "investigation_scene_1.md",
-          json: beforeInvestigation,
-        },
-      ]),
-      {
-        type: "scene",
-        chapterId: "chapter_1",
-        sceneId: "investigation_scene_1",
-        sceneKind: "investigation",
-      },
-    );
-    const afterEntry = entry(
-      manifestFor([
-        {
-          chapterId: "chapter_1",
-          file: "investigation_scene_1.md",
-          json: afterInvestigation,
-        },
-      ]),
-      beforeEntry.reference,
-    );
-    expect(afterEntry.structuralHash).not.toBe(beforeEntry.structuralHash);
+      }),
+    ).toEqual({
+      manifestVersion: 1,
+      contentRevision: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    });
   });
 
-  it("rejects duplicate typed references", () => {
-    expect(() =>
-      manifestFor([linear([line("First")]), linear([line("Duplicate ID")])]),
-    ).toThrow("duplicate save-content definition reference");
+  it("is deterministic for semantically identical object-key ordering", () => {
+    const left = bundle([
+      chapter("chapter_1", "Chapter 1", [
+        linear("scene_0", "Opening", [line("A")]),
+      ]),
+    ]);
+    const right: SaveContentBundleV1 = {
+      storyCatalog: {
+        statementsIndex: [],
+        evidenceIndex: [],
+        authorizations: [],
+        objectives: [],
+        questions: [],
+        facts: [],
+        schemaVersion: 1,
+      },
+      chapters: [
+        {
+          scenes: [
+            {
+              assetRefs: [],
+              queue: [
+                {
+                  portrait: null,
+                  expression: null,
+                  text: "A",
+                  speaker: "detective",
+                  kind: "line",
+                },
+              ],
+              title: "Opening",
+              id: "scene_0",
+              type: "linear",
+            },
+          ],
+          summary: "Chapter 1 summary",
+          title: "Chapter 1",
+          id: "chapter_1",
+        },
+      ],
+    };
+
+    expect(manifest({ bundle: right }).contentRevision).toBe(
+      manifest({ bundle: left }).contentRevision,
+    );
+  });
+
+  it("changes for same-kind dialogue order and prose or label edits", () => {
+    const baseline = bundle([
+      chapter("chapter_1", "Chapter 1", [
+        linear("scene_0", "Opening", [line("A"), line("B")]),
+      ]),
+    ]);
+    const reordered = structuredClone(baseline);
+    (reordered.chapters[0]!.scenes[0]! as JSONLinearScene).queue.reverse();
+    const edited = structuredClone(baseline);
+    edited.chapters[0]!.title = "Corrected title";
+    (edited.chapters[0]!.scenes[0]! as JSONLinearScene).queue[0]!.text =
+      "Corrected copy";
+
+    const baselineRevision = manifest({ bundle: baseline }).contentRevision;
+    expect(manifest({ bundle: reordered }).contentRevision).not.toBe(
+      baselineRevision,
+    );
+    expect(manifest({ bundle: edited }).contentRevision).not.toBe(
+      baselineRevision,
+    );
+  });
+
+  it("changes for chapter or scene reordering", () => {
+    const baseline = bundle([
+      chapter("chapter_1", "Chapter 1", [
+        linear("scene_0", "Opening", [line("A")]),
+        linear("scene_1", "Second", [line("B")]),
+      ]),
+      chapter("chapter_2", "Chapter 2", [
+        linear("scene_2", "Third", [line("C")]),
+      ]),
+    ]);
+    const reorderedScenes = structuredClone(baseline);
+    reorderedScenes.chapters[0]!.scenes.reverse();
+    const reorderedChapters = structuredClone(baseline);
+    reorderedChapters.chapters.reverse();
+
+    const baselineRevision = manifest({ bundle: baseline }).contentRevision;
+    expect(manifest({ bundle: reorderedScenes }).contentRevision).not.toBe(
+      baselineRevision,
+    );
+    expect(manifest({ bundle: reorderedChapters }).contentRevision).not.toBe(
+      baselineRevision,
+    );
+  });
+
+  it("includes newly emitted static fields without an allowlist update", () => {
+    const baseline = bundle([
+      chapter("chapter_1", "Chapter 1", [
+        linear("scene_0", "Opening", [line("A")]),
+      ]),
+    ]);
+    const withNewField = structuredClone(baseline);
+    Object.assign(withNewField.chapters[0]!.scenes[0]!, {
+      futureStaticField: "new emitted semantic value",
+    });
+
+    expect(manifest({ bundle: withNewField }).contentRevision).not.toBe(
+      manifest({ bundle: baseline }).contentRevision,
+    );
+  });
+
+  it("ignores source filename and path-only input metadata", () => {
+    const semanticBundle = bundle([
+      chapter("chapter_1", "Chapter 1", [
+        linear("scene_0", "Opening", [line("A")]),
+      ]),
+    ]);
+    const fromFirstPath = {
+      bundle: semanticBundle,
+      sourcePath: "/one/source/chapter_1/scene_0.md",
+    } as BuildSaveContentManifestInput & { sourcePath: string };
+    const fromSecondPath = {
+      bundle: semanticBundle,
+      sourcePath: "/another/source/chapter_1/scene_0.md",
+    } as BuildSaveContentManifestInput & { sourcePath: string };
+
+    expect(manifest(fromSecondPath).contentRevision).toBe(
+      manifest(fromFirstPath).contentRevision,
+    );
   });
 });
