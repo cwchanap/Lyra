@@ -182,6 +182,33 @@ impl GameError {
             ),
         )
     }
+    pub fn content_manifest_load_failed(path: &Path, detail: String) -> Self {
+        Self::new(
+            "contentManifestLoadFailed",
+            format!(
+                "Failed to load content manifest '{}': {detail}",
+                path.display()
+            ),
+        )
+    }
+    pub fn unsupported_content_manifest_version(path: &Path, version: u32) -> Self {
+        Self::new(
+            "unsupportedContentManifestVersion",
+            format!(
+                "Content manifest '{}' uses unsupported manifest version {version}; expected version 1.",
+                path.display()
+            ),
+        )
+    }
+    pub fn content_manifest_validation_failed(path: &Path, detail: String) -> Self {
+        Self::new(
+            "contentManifestValidationFailed",
+            format!(
+                "Content manifest '{}' failed runtime validation: {detail}",
+                path.display()
+            ),
+        )
+    }
     pub fn invalid_story_state_snapshot(detail: impl Into<String>) -> Self {
         Self::new(
             "invalidStoryStateSnapshot",
