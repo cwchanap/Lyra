@@ -55,6 +55,18 @@ impl StoryState {
                     "the fact has not been asserted",
                 ));
             }
+            if supporting_fact_id == fact_id {
+                return Err(GameError::invalid_supporting_fact(
+                    supporting_fact_id,
+                    "a fact cannot support itself",
+                ));
+            }
+            if super::state::support_chain_reaches(supporting_fact_id, fact_id, &self.facts) {
+                return Err(GameError::invalid_supporting_fact(
+                    supporting_fact_id,
+                    "the supporting fact transitively depends on this fact",
+                ));
+            }
         }
 
         let mut candidate = self.facts.clone();
@@ -554,6 +566,64 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(error.code, "invalidAssertionOrigin");
+        assert_eq!(state.snapshot(), before);
+    }
+
+    #[test]
+    fn fact_assertion_rejects_self_support_and_transitive_support_cycles() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+
+        // fact_alpha is asserted on its own, then fact_beta is asserted with
+        // fact_alpha as a supporter, so the live graph is fact_beta -> fact_alpha.
+        state
+            .assert_fact(
+                &catalog,
+                "fact_alpha",
+                scene_origin("chapter_1", "scene_1", "event_1"),
+                &[],
+                &[],
+            )
+            .unwrap();
+        state
+            .assert_fact(
+                &catalog,
+                "fact_beta",
+                scene_origin("chapter_1", "scene_1", "event_2"),
+                &[],
+                &["fact_alpha".into()],
+            )
+            .unwrap();
+
+        // Self-support on re-assertion: fact_alpha is already asserted, so the
+        // "has not been asserted" guard would otherwise let it support itself.
+        let before = state.snapshot();
+        let error = state
+            .assert_fact(
+                &catalog,
+                "fact_alpha",
+                scene_origin("chapter_1", "scene_1", "event_3"),
+                &[],
+                &["fact_alpha".into()],
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "invalidSupportingFact");
+        assert_eq!(state.snapshot(), before);
+
+        // Transitive cycle: fact_alpha -> fact_beta -> fact_alpha. Adding
+        // fact_beta as a supporter of fact_alpha must be rejected because
+        // fact_beta already depends on fact_alpha.
+        let before = state.snapshot();
+        let error = state
+            .assert_fact(
+                &catalog,
+                "fact_alpha",
+                scene_origin("chapter_1", "scene_1", "event_4"),
+                &[],
+                &["fact_beta".into()],
+            )
+            .unwrap_err();
+        assert_eq!(error.code, "invalidSupportingFact");
         assert_eq!(state.snapshot(), before);
     }
 

@@ -348,6 +348,16 @@ fn validate_snapshot(
                     "fact '{fact_id}' references unasserted supporting fact '{supporting_fact_id}'"
                 )));
             }
+            if supporting_fact_id == fact_id {
+                return Err(invalid_snapshot(format!(
+                    "fact '{fact_id}' supports itself"
+                )));
+            }
+            if support_chain_reaches(supporting_fact_id, fact_id, &snapshot.facts) {
+                return Err(invalid_snapshot(format!(
+                    "fact '{fact_id}' forms a supporting-fact cycle through '{supporting_fact_id}'"
+                )));
+            }
         }
     }
 
@@ -438,6 +448,60 @@ fn validate_snapshot(
 #[allow(dead_code)]
 fn invalid_snapshot(detail: impl Into<String>) -> GameError {
     GameError::invalid_story_state_snapshot(detail)
+}
+
+// Shared acyclicity check for supporting-fact edges. Both the live mutation
+// path (`assert_fact`) and the snapshot rehydration path (`validate_snapshot`)
+// need to reject a supporting fact that transitively depends on the fact being
+// asserted. The `SupportFacts` trait lets one traversal serve both
+// `FactProgress` (live) and `FactProgressSnapshot` (rehydrated) shapes.
+pub(super) trait SupportFacts {
+    fn supporting_fact_ids(&self) -> &BTreeSet<String>;
+}
+
+impl SupportFacts for FactProgress {
+    fn supporting_fact_ids(&self) -> &BTreeSet<String> {
+        &self.supporting_fact_ids
+    }
+}
+
+impl SupportFacts for FactProgressSnapshot {
+    fn supporting_fact_ids(&self) -> &BTreeSet<String> {
+        &self.supporting_fact_ids
+    }
+}
+
+/// Returns true when `start`'s supporting-fact chain reaches `target`.
+///
+/// `start` is a supporting fact already present in `facts`; the walk follows
+/// each node's `supporting_fact_ids` and reports whether `target` appears
+/// anywhere downstream. Visited tracking keeps the traversal linear in the
+/// number of facts even when the existing graph already contains its own
+/// (prevented) cycles.
+pub(super) fn support_chain_reaches<T: SupportFacts>(
+    start: &str,
+    target: &str,
+    facts: &BTreeMap<String, T>,
+) -> bool {
+    let mut stack: Vec<&str> = vec![start];
+    let mut visited: BTreeSet<String> = BTreeSet::new();
+    while let Some(current) = stack.pop() {
+        if !visited.insert(current.to_owned()) {
+            continue;
+        }
+        let Some(progress) = facts.get(current) else {
+            continue;
+        };
+        for next in progress.supporting_fact_ids() {
+            if next == target {
+                return true;
+            }
+            if !visited.contains(next.as_str()) {
+                stack.push(next);
+            }
+        }
+    }
+    false
 }
 
 #[allow(dead_code)]
@@ -599,10 +663,8 @@ mod tests {
     }
 
     fn reject(snapshot: StoryStateSnapshot) -> GameError {
-        let retained = snapshot.clone();
-        let result = StoryState::from_snapshot(&catalog(), snapshot.clone());
+        let result = StoryState::from_snapshot(&catalog(), snapshot);
         assert!(result.is_err());
-        assert_eq!(snapshot, retained);
         result.unwrap_err()
     }
 
@@ -764,6 +826,23 @@ mod tests {
         progress.supporting_fact_ids.insert("fact_beta".into());
         unasserted_fact.facts.insert("fact_alpha".into(), progress);
         assert_eq!(reject(unasserted_fact).code, "invalidStoryStateSnapshot");
+    }
+
+    #[test]
+    fn rejects_self_support_and_transitive_support_cycles() {
+        // Self-support: fact_alpha lists itself as a supporter.
+        let mut self_support = valid_snapshot();
+        let fact_alpha = self_support.facts.get_mut("fact_alpha").unwrap();
+        fact_alpha.supporting_fact_ids.insert("fact_alpha".into());
+        assert_eq!(reject(self_support).code, "invalidStoryStateSnapshot");
+
+        // valid_snapshot already has fact_alpha -> fact_beta. Adding
+        // fact_alpha to fact_beta's supporters closes the cycle
+        // fact_alpha -> fact_beta -> fact_alpha.
+        let mut cycle = valid_snapshot();
+        let fact_beta = cycle.facts.get_mut("fact_beta").unwrap();
+        fact_beta.supporting_fact_ids.insert("fact_alpha".into());
+        assert_eq!(reject(cycle).code, "invalidStoryStateSnapshot");
     }
 
     #[test]

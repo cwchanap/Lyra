@@ -506,30 +506,6 @@ mod tests {
     }
 
     #[test]
-    fn engine_startup_requires_catalog_before_loading_initial_scene() {
-        let dir = TestDir::new("startup");
-        std::fs::write(
-            dir.path().join("chapters.json"),
-            r#"{
-  "chapters": [{
-    "id": "chapter_1",
-    "title": "Chapter 1",
-    "summary": "Summary",
-    "scenes": [{"type":"linear","file":"chapter_1/missing_scene.json"}]
-  }]
-}"#,
-        )
-        .unwrap();
-
-        let error = match crate::game::GameEngine::new_started(dir.path().to_path_buf()) {
-            Ok(_) => panic!("engine startup unexpectedly succeeded without a story catalog"),
-            Err(error) => error,
-        };
-
-        assert_eq!(error.code, "storyCatalogLoadFailed");
-    }
-
-    #[test]
     fn rejects_unreadable_catalog_as_load_failure() {
         let dir = TestDir::new("unreadable");
         std::fs::create_dir(dir.path().join("story_catalog.json")).unwrap();

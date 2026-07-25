@@ -16,34 +16,10 @@ import { enrichScenesWithAssets } from "./compile-scenes/assets/enrich";
 import type { AssetConfig } from "./compile-scenes/assets/config";
 import type { SceneRecord } from "./compile-scenes/validator";
 
-const VALID_STORY_CATALOG = `# Story Catalog
-
-## Facts
-
-### Fact: The visitor signed in {#visitor_signed_in}
-- **Summary:** The visitor signed the register.
-- **Details:** The register contains a timestamped signature.
-- **Category:** timeline
-
-## Questions
-
-### Question: Who was the visitor? {#visitor_identity}
-- **Summary:** Identify the visitor.
-- **Resolved By:** [fact:visitor_signed_in]
-
-## Objectives
-
-### Objective: Check the register {#check_register}
-- **Summary:** Inspect the register.
-- **Kind:** primary
-- **Sort Order:** 1
-
-## Authorizations
-
-### Authorization: Archive access {#archive_access}
-- **Summary:** Permission to inspect the archive.
-- **Granting Authority:** Metropolitan Police
-`;
+const VALID_STORY_CATALOG = readFileSync(
+  resolve("packages/scripts/__fixtures__/story_catalog/valid/story_catalog.md"),
+  "utf-8",
+);
 
 describe("compile (end-to-end against valid fixture)", () => {
   it("compiles the valid fixture without errors and emits expected files", () => {
@@ -808,20 +784,10 @@ describe("compile (global story catalog)", () => {
     try {
       writeFileSync(
         resolve(catalogRoot, "story_catalog.md"),
-        `# Story Catalog
-
-## Facts
-
-### Fact: The visitor signed in {#visitor_signed_in}
-- **Summary:** The visitor signed the register.
-- **Details:** The register contains a timestamped signature.
-- **Category:** timeline
-
-### Fact: Duplicate visitor fact {#visitor_signed_in}
-- **Summary:** Duplicate.
-- **Details:** Duplicate details.
-- **Category:** timeline
-`,
+        readFileSync(
+          "packages/scripts/__fixtures__/story_catalog/invalid_duplicate_fact/story_catalog.md",
+          "utf-8",
+        ),
       );
       writeFileSync(resolve(outRoot, "story_catalog.json"), sentinel);
 
