@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_scene_advance_keeps_previous_dialogue_view() {
+    fn failed_scene_advance_through_tag_only_prime_keeps_previous_dialogue_view() {
         use std::fs;
         use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -377,6 +377,7 @@ mod tests {
                     "summary": "Summary",
                     "scenes": [
                         { "type": "linear", "file": "chapter_1/scene_0.json" },
+                        { "type": "linear", "file": "chapter_1/scene_tag_only.json" },
                         { "type": "interrogation", "file": "chapter_1/interrogation_scene_1.json" }
                     ]
                 }]
@@ -390,6 +391,16 @@ mod tests {
                 "id": "scene_0",
                 "title": "Opening",
                 "queue": [{ "kind": "line", "speaker": "A", "text": "before" }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("scene_tag_only.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_tag_only",
+                "title": "Silent transition",
+                "queue": [{ "kind": "sceneTag", "text": "transition" }]
             }"#,
         )
         .unwrap();
@@ -429,7 +440,7 @@ mod tests {
             } => {
                 assert_eq!(id, "scene_0");
                 assert_eq!(index, 0);
-                assert_eq!(total, 2);
+                assert_eq!(total, 3);
             }
             other => panic!("expected previous linear scene after failed advance, got {other:?}"),
         }
