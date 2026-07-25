@@ -14,6 +14,7 @@ import { resolve } from "node:path";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
 import { enrichScenesWithAssets } from "./compile-scenes/assets/enrich";
 import type { AssetConfig } from "./compile-scenes/assets/config";
+import { buildSaveContentManifest } from "./compile-scenes/save-content-manifest";
 import type { SceneRecord } from "./compile-scenes/validator";
 
 const VALID_STORY_CATALOG = readFileSync(
@@ -612,6 +613,115 @@ describe("compile (multiple source roots)", () => {
 });
 
 describe("compile (global story catalog)", () => {
+  it("emits a stable manifest for emitted chapter and scene order", () => {
+    const sourceRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-save-content-source-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-save-content-out-"),
+    );
+    const linearScene = readFileSync(
+      "packages/scripts/__fixtures__/valid/chapter_1/scene_0.md",
+      "utf-8",
+    );
+    const readJson = (path: string) =>
+      JSON.parse(readFileSync(resolve(outRoot, path), "utf-8"));
+    const readManifest = () => readJson("save_content_manifest.json");
+    try {
+      const firstChapter = resolve(sourceRoot, "chapter_1");
+      const secondChapter = resolve(sourceRoot, "chapter_2");
+      mkdirSync(firstChapter);
+      mkdirSync(secondChapter);
+      writeFileSync(
+        resolve(firstChapter, "chapter.md"),
+        "# Chapter 1: First authored chapter\n\n**Summary:** First summary.\n\n## Scenes\n1. scene_first.md\n2. scene_second.md\n",
+      );
+      writeFileSync(resolve(firstChapter, "scene_first.md"), linearScene);
+      writeFileSync(resolve(firstChapter, "scene_second.md"), linearScene);
+      writeFileSync(
+        resolve(secondChapter, "chapter.md"),
+        "# Chapter 2: Second authored chapter\n\n**Summary:** Second summary.\n\n## Scenes\n1. scene_third.md\n",
+      );
+      writeFileSync(resolve(secondChapter, "scene_third.md"), linearScene);
+
+      const first = compile({ sourceRoot, outputRoot: outRoot });
+      if (!first.ok) throw new Error(formatErrors(first.errors));
+
+      const chapterOne = {
+        id: "chapter_1",
+        title: "First authored chapter",
+        summary: "First summary.",
+        scenes: [
+          readJson("chapter_1/scene_first.json"),
+          readJson("chapter_1/scene_second.json"),
+        ],
+      };
+      const chapterTwo = {
+        id: "chapter_2",
+        title: "Second authored chapter",
+        summary: "Second summary.",
+        scenes: [readJson("chapter_2/scene_third.json")],
+      };
+      const storyCatalog = readJson("story_catalog.json");
+      const emitted = readManifest();
+
+      // Regression: hashing chapters or scene filenames in a different order
+      // would silently invalidate existing saves for unchanged authored content.
+      expect(emitted).toEqual(
+        buildSaveContentManifest({
+          bundle: {
+            chapters: [chapterOne, chapterTwo],
+            storyCatalog,
+          },
+        }),
+      );
+      expect(emitted).not.toEqual(
+        buildSaveContentManifest({
+          bundle: {
+            chapters: [chapterTwo, chapterOne],
+            storyCatalog,
+          },
+        }),
+      );
+      expect(emitted).not.toEqual(
+        buildSaveContentManifest({
+          bundle: {
+            chapters: [
+              { ...chapterOne, scenes: [...chapterOne.scenes].reverse() },
+              chapterTwo,
+            ],
+            storyCatalog,
+          },
+        }),
+      );
+      expect(Object.keys(emitted).sort()).toEqual([
+        "contentRevision",
+        "manifestVersion",
+      ]);
+
+      const firstManifestText = readFileSync(
+        resolve(outRoot, "save_content_manifest.json"),
+        "utf-8",
+      );
+      const second = compile({ sourceRoot, outputRoot: outRoot });
+      if (!second.ok) throw new Error(formatErrors(second.errors));
+      expect(
+        readFileSync(resolve(outRoot, "save_content_manifest.json"), "utf-8"),
+      ).toBe(firstManifestText);
+
+      writeFileSync(
+        resolve(firstChapter, "chapter.md"),
+        "# Chapter 1: First authored chapter\n\n**Summary:** First summary.\n\n## Scenes\n1. scene_second.md\n2. scene_first.md\n",
+      );
+      const reordered = compile({ sourceRoot, outputRoot: outRoot });
+      if (!reordered.ok) throw new Error(formatErrors(reordered.errors));
+      expect(readManifest().contentRevision).not.toBe(emitted.contentRevision);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
   it("emits the exact empty version-1 artifact when no catalog is authored", () => {
     const sourceRoot = mkdtempSync(
       resolve(tmpdir(), "scene-compile-empty-catalog-source-"),
@@ -773,7 +883,7 @@ describe("compile (global story catalog)", () => {
     }
   });
 
-  it("leaves a pre-existing catalog artifact unchanged on validation failure", () => {
+  it("leaves pre-existing catalog and save manifest artifacts unchanged on validation failure", () => {
     const catalogRoot = mkdtempSync(
       resolve(tmpdir(), "scene-compile-catalog-invalid-"),
     );
@@ -781,6 +891,7 @@ describe("compile (global story catalog)", () => {
       resolve(tmpdir(), "scene-compile-catalog-invalid-out-"),
     );
     const sentinel = '{"sentinel":"keep exactly"}\n';
+    const manifestSentinel = '{"save":"keep exactly"}\n';
     try {
       writeFileSync(
         resolve(catalogRoot, "story_catalog.md"),
@@ -790,6 +901,10 @@ describe("compile (global story catalog)", () => {
         ),
       );
       writeFileSync(resolve(outRoot, "story_catalog.json"), sentinel);
+      writeFileSync(
+        resolve(outRoot, "save_content_manifest.json"),
+        manifestSentinel,
+      );
 
       const result = compile({
         sourceRoot: ["packages/scripts/__fixtures__/valid", catalogRoot],
@@ -804,6 +919,9 @@ describe("compile (global story catalog)", () => {
       expect(
         readFileSync(resolve(outRoot, "story_catalog.json"), "utf-8"),
       ).toBe(sentinel);
+      expect(
+        readFileSync(resolve(outRoot, "save_content_manifest.json"), "utf-8"),
+      ).toBe(manifestSentinel);
     } finally {
       rmSync(catalogRoot, { recursive: true, force: true });
       rmSync(outRoot, { recursive: true, force: true });
@@ -817,6 +935,10 @@ describe("compile (global story catalog)", () => {
     try {
       writeFileSync(resolve(outRoot, "chapters.json"), "old chapters\n");
       writeFileSync(resolve(outRoot, "story_catalog.json"), "old catalog\n");
+      writeFileSync(
+        resolve(outRoot, "save_content_manifest.json"),
+        "old save content manifest\n",
+      );
       mkdirSync(resolve(outRoot, "chapter_99"));
       writeFileSync(
         resolve(outRoot, "chapter_99/stale.json"),
@@ -840,6 +962,7 @@ describe("compile (global story catalog)", () => {
         "chapters.json",
         "future_data",
         "keep.txt",
+        "save_content_manifest.json",
         "story_catalog.json",
       ]);
       expect(readFileSync(resolve(outRoot, "keep.txt"), "utf-8")).toBe(
@@ -854,6 +977,14 @@ describe("compile (global story catalog)", () => {
           readFileSync(resolve(outRoot, "story_catalog.json"), "utf-8"),
         ).schemaVersion,
       ).toBe(1);
+      expect(
+        JSON.parse(
+          readFileSync(resolve(outRoot, "save_content_manifest.json"), "utf-8"),
+        ),
+      ).toMatchObject({
+        manifestVersion: 1,
+        contentRevision: expect.any(String),
+      });
     } finally {
       rmSync(outRoot, { recursive: true, force: true });
     }
