@@ -1,24 +1,32 @@
 // src-tauri/src/game/reveals.rs
 use crate::game::acquisition::AcquisitionCtx;
+use crate::game::dialogue_queue::{DialogueSegment, DialogueSegmentOriginV1};
 use crate::game::scenes::interrogation::InterrogationSceneState;
 use crate::game::scenes::investigation::InvestigationSceneState;
-use crate::game::schema::{DialogueItem, InterrogationRevealTarget, RevealTarget};
+use crate::game::schema::{InterrogationRevealTarget, RevealTarget};
 
 pub(super) fn apply_reveals_and_build_queue(
     scene: &mut InvestigationSceneState,
     acq: &mut AcquisitionCtx,
-    trigger_body: Vec<DialogueItem>,
+    trigger_segment: Option<DialogueSegment>,
     reveals: &[RevealTarget],
     chapter_id: &str,
-) -> Vec<DialogueItem> {
-    let mut queue = trigger_body;
+) -> Vec<DialogueSegment> {
+    let mut segments: Vec<DialogueSegment> = trigger_segment.into_iter().collect();
     for r in reveals {
         match r {
             RevealTarget::Evidence { id } => {
                 if let Some(def) = scene.def.evidence_manifest.iter().find(|e| e.id == *id) {
                     let newly_added = acq.evidence(def, chapter_id, &scene.def.id);
                     if newly_added {
-                        queue.extend(def.on_collect.iter().cloned());
+                        segments.extend(DialogueSegment::new(
+                            DialogueSegmentOriginV1::InvestigationInteraction {
+                                chapter_id: chapter_id.into(),
+                                scene_id: scene.def.id.clone(),
+                                segment_id: format!("evidence:{id}:onCollect"),
+                            },
+                            def.on_collect.clone(),
+                        ));
                     }
                 }
             }
@@ -26,7 +34,14 @@ pub(super) fn apply_reveals_and_build_queue(
                 if let Some(def) = scene.def.statement_manifest.iter().find(|s| s.id == *id) {
                     let newly_added = acq.statement(def, chapter_id, &scene.def.id);
                     if newly_added {
-                        queue.extend(def.on_acquire.iter().cloned());
+                        segments.extend(DialogueSegment::new(
+                            DialogueSegmentOriginV1::InvestigationInteraction {
+                                chapter_id: chapter_id.into(),
+                                scene_id: scene.def.id.clone(),
+                                segment_id: format!("statement:{id}:onAcquire"),
+                            },
+                            def.on_acquire.clone(),
+                        ));
                     }
                 }
             }
@@ -44,24 +59,32 @@ pub(super) fn apply_reveals_and_build_queue(
             }
         }
     }
-    queue
+    segments
 }
 
 pub(super) fn apply_interrogation_reveals_and_build_queue(
     scene: &mut InterrogationSceneState,
     acq: &mut AcquisitionCtx,
-    trigger_body: Vec<DialogueItem>,
+    trigger_segment: Option<DialogueSegment>,
     reveals: &[InterrogationRevealTarget],
     chapter_id: &str,
-) -> Vec<DialogueItem> {
-    let mut queue = trigger_body;
+) -> Vec<DialogueSegment> {
+    let mut segments: Vec<DialogueSegment> = trigger_segment.into_iter().collect();
     for r in reveals {
         match r {
             InterrogationRevealTarget::Evidence { id } => {
                 if let Some(def) = scene.def.evidence_manifest.iter().find(|e| e.id == *id) {
                     let newly_added = acq.evidence(def, chapter_id, &scene.def.id);
                     if newly_added {
-                        queue.extend(def.on_collect.iter().cloned());
+                        segments.extend(DialogueSegment::new(
+                            DialogueSegmentOriginV1::InterrogationPhase {
+                                chapter_id: chapter_id.into(),
+                                scene_id: scene.def.id.clone(),
+                                phase_id: "inventory".into(),
+                                segment_id: format!("evidence:{id}:onCollect"),
+                            },
+                            def.on_collect.clone(),
+                        ));
                     }
                 }
             }
@@ -69,7 +92,15 @@ pub(super) fn apply_interrogation_reveals_and_build_queue(
                 if let Some(def) = scene.def.statement_manifest.iter().find(|s| s.id == *id) {
                     let newly_added = acq.statement(def, chapter_id, &scene.def.id);
                     if newly_added {
-                        queue.extend(def.on_acquire.iter().cloned());
+                        segments.extend(DialogueSegment::new(
+                            DialogueSegmentOriginV1::InterrogationPhase {
+                                chapter_id: chapter_id.into(),
+                                scene_id: scene.def.id.clone(),
+                                phase_id: "inventory".into(),
+                                segment_id: format!("statement:{id}:onAcquire"),
+                            },
+                            def.on_acquire.clone(),
+                        ));
                     }
                 }
             }
@@ -81,14 +112,14 @@ pub(super) fn apply_interrogation_reveals_and_build_queue(
             }
         }
     }
-    queue
+    segments
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::game::schema::{
-        AutoMarker, EvidenceJson, InterrogationOutroJson, InterrogationOutroUnlock,
+        AutoMarker, DialogueItem, EvidenceJson, InterrogationOutroJson, InterrogationOutroUnlock,
         InterrogationSceneJson, InvestigationSceneJson, OutroJson, OutroUnlock,
     };
     use crate::game::state::Inventory;
@@ -147,6 +178,29 @@ mod tests {
         )
     }
 
+    fn investigation_trigger(items: Vec<DialogueItem>) -> Option<DialogueSegment> {
+        DialogueSegment::new(
+            DialogueSegmentOriginV1::InvestigationInteraction {
+                chapter_id: "chapter_1".into(),
+                scene_id: "i".into(),
+                segment_id: "hotspot:desk:inspect".into(),
+            },
+            items,
+        )
+    }
+
+    fn interrogation_trigger(items: Vec<DialogueItem>) -> Option<DialogueSegment> {
+        DialogueSegment::new(
+            DialogueSegmentOriginV1::InterrogationPhase {
+                chapter_id: "chapter_1".into(),
+                scene_id: "interrogation".into(),
+                phase_id: "phase".into(),
+                segment_id: "phase:phase:entry".into(),
+            },
+            items,
+        )
+    }
+
     #[test]
     fn reveals_evidence_appends_on_collect_to_queue() {
         let mut scene = empty_scene_with_evidence(vec![evidence_def("coffee")]);
@@ -157,11 +211,11 @@ mod tests {
         let queue = apply_reveals_and_build_queue(
             &mut scene,
             &mut acq,
-            vec![DialogueItem::Line {
+            investigation_trigger(vec![DialogueItem::Line {
                 speaker: "A".into(),
                 text: "trigger".into(),
                 portrait: None,
-            }],
+            }]),
             &[RevealTarget::Evidence {
                 id: "coffee".into(),
             }],
@@ -182,11 +236,11 @@ mod tests {
         let queue = apply_reveals_and_build_queue(
             &mut scene,
             &mut acq,
-            vec![DialogueItem::Line {
+            investigation_trigger(vec![DialogueItem::Line {
                 speaker: "A".into(),
                 text: "trigger".into(),
                 portrait: None,
-            }],
+            }]),
             &[
                 RevealTarget::Evidence {
                     id: "receipt".into(),
@@ -201,6 +255,7 @@ mod tests {
         assert_eq!(
             queue
                 .iter()
+                .flat_map(|segment| &segment.items)
                 .filter_map(|item| match item {
                     DialogueItem::Line { text, .. } => Some(text.as_str()),
                     _ => None,
@@ -220,7 +275,7 @@ mod tests {
         let _ = apply_reveals_and_build_queue(
             &mut scene,
             &mut acq,
-            vec![],
+            None,
             &[RevealTarget::Evidence {
                 id: "coffee".into(),
             }],
@@ -229,7 +284,7 @@ mod tests {
         let queue2 = apply_reveals_and_build_queue(
             &mut scene,
             &mut acq,
-            vec![],
+            None,
             &[RevealTarget::Evidence {
                 id: "coffee".into(),
             }],
@@ -248,7 +303,7 @@ mod tests {
         let queue = apply_reveals_and_build_queue(
             &mut scene,
             &mut acq,
-            vec![],
+            None,
             &[RevealTarget::Sublocation {
                 id: "back_room".into(),
             }],
@@ -268,11 +323,11 @@ mod tests {
         let queue = apply_interrogation_reveals_and_build_queue(
             &mut scene,
             &mut acq,
-            vec![DialogueItem::Line {
+            interrogation_trigger(vec![DialogueItem::Line {
                 speaker: "A".into(),
                 text: "trigger".into(),
                 portrait: None,
-            }],
+            }]),
             &[InterrogationRevealTarget::Evidence {
                 id: "receipt".into(),
             }],
@@ -292,7 +347,7 @@ mod tests {
         let queue = apply_interrogation_reveals_and_build_queue(
             &mut scene,
             &mut acq,
-            vec![],
+            None,
             &[
                 InterrogationRevealTarget::Question {
                     id: "hidden".into(),

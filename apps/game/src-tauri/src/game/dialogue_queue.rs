@@ -1,13 +1,11 @@
-// Task 6 consumes this prerequisite module; Task 5 deliberately leaves the
-// live scene runtimes on their existing flat queues.
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 
 use crate::game::schema::{
     DialogueItem, InterrogationPhaseJson, InterrogationSceneJson, InvestigationSceneJson, SceneJson,
 };
 use crate::game::GameError;
+
+pub(super) const REEXAMINE_FALLBACK_TEXT: &str = "（沒有新發現。）";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -51,6 +49,7 @@ pub(super) enum DialogueSegmentOriginV1 {
 }
 
 impl DialogueSegmentOriginV1 {
+    #[allow(dead_code)] // Task 7 reconstruction validates the persisted chapter coordinate.
     fn chapter_id(&self) -> &str {
         match self {
             Self::LinearScene { chapter_id, .. }
@@ -63,6 +62,7 @@ impl DialogueSegmentOriginV1 {
         }
     }
 
+    #[allow(dead_code)] // Task 7 reconstruction validates the persisted scene coordinate.
     fn scene_id(&self) -> &str {
         match self {
             Self::LinearScene { scene_id, .. }
@@ -82,15 +82,37 @@ pub(super) struct DialogueSegment {
     pub(super) items: Vec<DialogueItem>,
 }
 
+impl DialogueSegment {
+    /// Builds one live/static segment while keeping empty authored carriers out
+    /// of the active queue. The four closed re-examination roles are the one
+    /// exception: their missing/empty authored blocks deterministically render
+    /// the engine-owned fallback so live installation and later reconstruction
+    /// share exactly the same items.
+    pub(super) fn new(
+        origin: DialogueSegmentOriginV1,
+        mut items: Vec<DialogueItem>,
+    ) -> Option<Self> {
+        if items.is_empty() && is_reexamine_origin(&origin) {
+            items.push(DialogueItem::Action {
+                text: REEXAMINE_FALLBACK_TEXT.into(),
+            });
+        }
+        (!items.is_empty()).then_some(Self { origin, items })
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.items.len()
+    }
+}
+
 #[derive(Debug, Clone)]
-pub(super) struct ActiveDialogueQueue {
+pub(crate) struct ActiveDialogueQueue {
     segments: Vec<DialogueSegment>,
     active_segment_index: usize,
     item_cursor: usize,
     queue_gen: u64,
 }
 
-#[allow(dead_code)]
 impl ActiveDialogueQueue {
     pub(super) fn new(mut segments: Vec<DialogueSegment>, queue_gen: u64) -> Option<Self> {
         segments.retain(|segment| !segment.items.is_empty());
@@ -102,6 +124,7 @@ impl ActiveDialogueQueue {
         })
     }
 
+    #[allow(dead_code)] // Task 7 restores the exact segmented queue coordinates.
     pub(super) fn from_position(
         segments: Vec<DialogueSegment>,
         active_segment_index: usize,
@@ -129,6 +152,7 @@ impl ActiveDialogueQueue {
         })
     }
 
+    #[allow(dead_code)] // Task 7 migrates the legacy flattened cursor through this constructor.
     pub(super) fn from_flattened_cursor(
         segments: Vec<DialogueSegment>,
         flattened_cursor: usize,
@@ -173,6 +197,7 @@ impl ActiveDialogueQueue {
         true
     }
 
+    #[allow(dead_code)] // Task 7 persists segmented active coordinates.
     pub(super) fn active_coordinates(&self) -> (usize, usize) {
         (self.active_segment_index, self.item_cursor)
     }
@@ -198,14 +223,57 @@ impl ActiveDialogueQueue {
         self.queue_gen
     }
 
+    #[allow(dead_code)] // Task 7 persists the closed ordered origin list.
     pub(super) fn segment_origins(&self) -> Vec<DialogueSegmentOriginV1> {
         self.segments
             .iter()
             .map(|segment| segment.origin.clone())
             .collect()
     }
+
+    pub(super) fn flattened_segment_start(
+        segments: &[DialogueSegment],
+        segment_index: usize,
+    ) -> Result<usize, GameError> {
+        if segment_index > segments.len() {
+            return Err(queue_error(format!(
+                "Segment boundary index {segment_index} is out of range for {} segments.",
+                segments.len()
+            )));
+        }
+        segments[..segment_index]
+            .iter()
+            .try_fold(0usize, |cursor, segment| cursor.checked_add(segment.len()))
+            .ok_or_else(|| queue_error("Flattened dialogue boundary overflowed usize."))
+    }
 }
 
+fn is_reexamine_origin(origin: &DialogueSegmentOriginV1) -> bool {
+    match origin {
+        DialogueSegmentOriginV1::InvestigationInteraction { segment_id, .. } => {
+            role_id(segment_id, "hotspot:", ":reexamine").is_some()
+                || role_id(segment_id, "topic:", ":reexamine")
+                    .and_then(|ids| ids.split_once(':'))
+                    .is_some_and(|(character_id, topic_id)| {
+                        !character_id.is_empty() && !topic_id.is_empty()
+                    })
+                || role_id(segment_id, "evidence:", ":onReexamine").is_some()
+                || role_id(segment_id, "statement:", ":onReexamine").is_some()
+        }
+        DialogueSegmentOriginV1::InterrogationPhase {
+            phase_id,
+            segment_id,
+            ..
+        } => {
+            phase_id == "inventory"
+                && (role_id(segment_id, "evidence:", ":onReexamine").is_some()
+                    || role_id(segment_id, "statement:", ":onReexamine").is_some())
+        }
+        _ => false,
+    }
+}
+
+#[allow(dead_code)] // Task 7 validates restored segment lists before activation.
 fn validate_segments(segments: &[DialogueSegment]) -> Result<(), GameError> {
     if segments.is_empty() {
         return Err(queue_error("An active dialogue queue must have a segment."));
@@ -245,6 +313,7 @@ fn queue_error(detail: impl Into<String>) -> GameError {
     GameError::new("invalidDialogueQueue", detail)
 }
 
+#[allow(dead_code)] // Task 7 reconstructs static items from these closed origins.
 pub(super) fn resolve_dialogue_segments(
     chapter_id: &str,
     scene: &SceneJson,
@@ -273,20 +342,17 @@ pub(super) fn resolve_dialogue_segments(
                 )));
             }
 
-            let items = resolve_origin_items(scene, origin)?;
-            if items.is_empty() {
-                return Err(resolution_error(format!(
+            let items = resolve_origin_items(scene, origin)?.to_vec();
+            DialogueSegment::new(origin.clone(), items).ok_or_else(|| {
+                resolution_error(format!(
                     "Dialogue origin {origin:?} resolved to an empty target."
-                )));
-            }
-            Ok(DialogueSegment {
-                origin: origin.clone(),
-                items: items.to_vec(),
+                ))
             })
         })
         .collect()
 }
 
+#[allow(dead_code)] // Used by Task 7's closed origin resolver.
 fn scene_id(scene: &SceneJson) -> &str {
     match scene {
         SceneJson::Linear(scene) => &scene.id,
@@ -295,6 +361,7 @@ fn scene_id(scene: &SceneJson) -> &str {
     }
 }
 
+#[allow(dead_code)] // Used by Task 7's closed origin resolver.
 fn resolve_origin_items<'a>(
     scene: &'a SceneJson,
     origin: &DialogueSegmentOriginV1,
@@ -331,6 +398,7 @@ fn resolve_origin_items<'a>(
     }
 }
 
+#[allow(dead_code)] // Used by Task 7's closed origin resolver.
 fn resolve_investigation_interaction<'a>(
     scene: &'a InvestigationSceneJson,
     segment_id: &str,
@@ -353,10 +421,7 @@ fn resolve_investigation_interaction<'a>(
                 .find(|hotspot| hotspot.id == id)
                 .ok_or_else(|| unresolved_segment(segment_id))?;
             return if reexamine {
-                hotspot
-                    .on_reexamine
-                    .as_deref()
-                    .ok_or_else(|| unresolved_segment(segment_id))
+                Ok(hotspot.on_reexamine.as_deref().unwrap_or_default())
             } else {
                 Ok(&hotspot.inspect_dialogue)
             };
@@ -377,10 +442,7 @@ fn resolve_investigation_interaction<'a>(
                 .and_then(|character| character.topics.iter().find(|topic| topic.id == topic_id))
                 .ok_or_else(|| unresolved_segment(segment_id))?;
             return if reexamine {
-                topic
-                    .on_reexamine
-                    .as_deref()
-                    .ok_or_else(|| unresolved_segment(segment_id))
+                Ok(topic.on_reexamine.as_deref().unwrap_or_default())
             } else {
                 Ok(&topic.topic_dialogue)
             };
@@ -398,10 +460,7 @@ fn resolve_investigation_interaction<'a>(
                 .find(|evidence| evidence.id == id)
                 .ok_or_else(|| unresolved_segment(segment_id))?;
             return if reexamine {
-                evidence
-                    .on_reexamine
-                    .as_deref()
-                    .ok_or_else(|| unresolved_segment(segment_id))
+                Ok(evidence.on_reexamine.as_deref().unwrap_or_default())
             } else {
                 Ok(&evidence.on_collect)
             };
@@ -419,10 +478,7 @@ fn resolve_investigation_interaction<'a>(
                 .find(|statement| statement.id == id)
                 .ok_or_else(|| unresolved_segment(segment_id))?;
             return if reexamine {
-                statement
-                    .on_reexamine
-                    .as_deref()
-                    .ok_or_else(|| unresolved_segment(segment_id))
+                Ok(statement.on_reexamine.as_deref().unwrap_or_default())
             } else {
                 Ok(&statement.on_acquire)
             };
@@ -432,6 +488,7 @@ fn resolve_investigation_interaction<'a>(
     Err(unresolved_segment(segment_id))
 }
 
+#[allow(dead_code)] // Used by Task 7's closed origin resolver.
 fn resolve_interrogation_phase<'a>(
     scene: &'a InterrogationSceneJson,
     phase_id: &str,
@@ -504,6 +561,7 @@ fn resolve_interrogation_phase<'a>(
     }
 }
 
+#[allow(dead_code)] // Used by Task 7's closed origin resolver.
 fn resolve_interrogation_inventory<'a>(
     scene: &'a InterrogationSceneJson,
     segment_id: &str,
@@ -519,10 +577,7 @@ fn resolve_interrogation_inventory<'a>(
                 .find(|evidence| evidence.id == id)
                 .ok_or_else(|| unresolved_segment(segment_id))?;
             return if reexamine {
-                evidence
-                    .on_reexamine
-                    .as_deref()
-                    .ok_or_else(|| unresolved_segment(segment_id))
+                Ok(evidence.on_reexamine.as_deref().unwrap_or_default())
             } else {
                 Ok(&evidence.on_collect)
             };
@@ -539,10 +594,7 @@ fn resolve_interrogation_inventory<'a>(
                 .find(|statement| statement.id == id)
                 .ok_or_else(|| unresolved_segment(segment_id))?;
             return if reexamine {
-                statement
-                    .on_reexamine
-                    .as_deref()
-                    .ok_or_else(|| unresolved_segment(segment_id))
+                Ok(statement.on_reexamine.as_deref().unwrap_or_default())
             } else {
                 Ok(&statement.on_acquire)
             };
@@ -551,11 +603,13 @@ fn resolve_interrogation_inventory<'a>(
     Err(unresolved_segment(segment_id))
 }
 
+#[allow(dead_code)] // Used by Task 7's closed origin resolver.
 fn interrogation_phase_id(phase: &InterrogationPhaseJson) -> &str {
     let InterrogationPhaseJson::Inquiry { id, .. } = phase;
     id
 }
 
+#[allow(dead_code)] // Used by Task 7's closed origin resolver and fallback classifier.
 fn role_id<'a>(segment_id: &'a str, prefix: &str, suffix: &str) -> Option<&'a str> {
     segment_id
         .strip_prefix(prefix)
@@ -563,12 +617,14 @@ fn role_id<'a>(segment_id: &'a str, prefix: &str, suffix: &str) -> Option<&'a st
         .filter(|id| !id.is_empty())
 }
 
+#[allow(dead_code)] // Used by Task 7's closed origin resolver.
 fn unresolved_segment(segment_id: &str) -> GameError {
     resolution_error(format!(
         "Dialogue segment role '{segment_id}' does not resolve in the packaged scene."
     ))
 }
 
+#[allow(dead_code)] // Used by Task 7's closed origin resolver.
 fn resolution_error(detail: impl Into<String>) -> GameError {
     GameError::new("dialogueSegmentResolutionFailed", detail)
 }
@@ -1380,6 +1436,123 @@ mod tests {
                 .expect_err("unknown semantic identity must be rejected");
             assert_eq!(error.code, "dialogueSegmentResolutionFailed");
         }
+    }
+
+    #[test]
+    fn empty_or_missing_reexamine_roles_resolve_to_the_engine_fallback() {
+        let mut investigation = investigation_scene();
+        let SceneJson::Investigation(scene) = &mut investigation else {
+            panic!("expected investigation scene");
+        };
+        scene.sublocations[0].hotspots[0].on_reexamine = None;
+        scene.sublocations[0].characters[0].topics[0].on_reexamine = Some(vec![]);
+        scene.evidence_manifest[0].on_reexamine = None;
+        scene.statement_manifest[0].on_reexamine = Some(vec![]);
+
+        let investigation_segments = resolve_dialogue_segments(
+            CHAPTER_ID,
+            &investigation,
+            &[
+                investigation_interaction("hotspot:desk:reexamine"),
+                investigation_interaction("topic:witness:alibi:reexamine"),
+                investigation_interaction("evidence:receipt:onReexamine"),
+                investigation_interaction("statement:alibi_statement:onReexamine"),
+            ],
+        )
+        .expect("closed reexamine roles should resolve to the deterministic fallback");
+        assert_eq!(
+            investigation_segments
+                .iter()
+                .flat_map(|segment| action_text(&segment.items))
+                .collect::<Vec<_>>(),
+            vec![
+                "（沒有新發現。）",
+                "（沒有新發現。）",
+                "（沒有新發現。）",
+                "（沒有新發現。）",
+            ]
+        );
+
+        let mut interrogation = interrogation_scene();
+        let SceneJson::Interrogation(scene) = &mut interrogation else {
+            panic!("expected interrogation scene");
+        };
+        scene.evidence_manifest[0].on_reexamine = Some(vec![]);
+        scene.statement_manifest[0].on_reexamine = None;
+        let interrogation_segments = resolve_dialogue_segments(
+            CHAPTER_ID,
+            &interrogation,
+            &[
+                DialogueSegmentOriginV1::InterrogationPhase {
+                    chapter_id: CHAPTER_ID.into(),
+                    scene_id: INTERROGATION_SCENE_ID.into(),
+                    phase_id: "inventory".into(),
+                    segment_id: "evidence:camera:onReexamine".into(),
+                },
+                DialogueSegmentOriginV1::InterrogationPhase {
+                    chapter_id: CHAPTER_ID.into(),
+                    scene_id: INTERROGATION_SCENE_ID.into(),
+                    phase_id: "inventory".into(),
+                    segment_id: "statement:denial:onReexamine".into(),
+                },
+            ],
+        )
+        .expect("interrogation inventory reexamine roles should share the fallback");
+        assert_eq!(
+            interrogation_segments
+                .iter()
+                .flat_map(|segment| action_text(&segment.items))
+                .collect::<Vec<_>>(),
+            vec!["（沒有新發現。）", "（沒有新發現。）"]
+        );
+    }
+
+    #[test]
+    fn empty_non_reexamine_targets_remain_rejected() {
+        let mut investigation = investigation_scene();
+        let SceneJson::Investigation(scene) = &mut investigation else {
+            panic!("expected investigation scene");
+        };
+        scene.intro.clear();
+        let error = resolve_dialogue_segments(
+            CHAPTER_ID,
+            &investigation,
+            &[DialogueSegmentOriginV1::InvestigationIntro {
+                chapter_id: CHAPTER_ID.into(),
+                scene_id: INVESTIGATION_SCENE_ID.into(),
+            }],
+        )
+        .expect_err("an empty authored intro must not become a segment");
+        assert_eq!(error.code, "dialogueSegmentResolutionFailed");
+
+        let mut interrogation = interrogation_scene();
+        let SceneJson::Interrogation(scene) = &mut interrogation else {
+            panic!("expected interrogation scene");
+        };
+        let InterrogationPhaseJson::Inquiry { questions, .. } = &mut scene.phases[0];
+        questions[0].testimony.lines[0].content.clear();
+        let error = resolve_dialogue_segments(
+            CHAPTER_ID,
+            &interrogation,
+            &[interrogation_phase(
+                "question:whereabouts:line:timeline:content",
+            )],
+        )
+        .expect_err("empty testimony line content must not become a segment");
+        assert_eq!(error.code, "dialogueSegmentResolutionFailed");
+
+        assert!(
+            DialogueSegment::new(
+                DialogueSegmentOriginV1::InvestigationInteraction {
+                    chapter_id: CHAPTER_ID.into(),
+                    scene_id: INVESTIGATION_SCENE_ID.into(),
+                    segment_id: "storyEvent:fake:onReexamine".into(),
+                },
+                vec![],
+            )
+            .is_none(),
+            "an arbitrary role ending in onReexamine must not receive the closed-role fallback"
+        );
     }
 
     #[test]

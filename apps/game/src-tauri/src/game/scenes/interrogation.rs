@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::game::scenes::investigation::DialogueQueue;
+use crate::game::dialogue_queue::ActiveDialogueQueue;
 use crate::game::schema::{
     DialogueItem, InquiryQuestionJson, InterrogationOutroUnlock, InterrogationPhaseJson,
     InterrogationSceneJson, InterrogationUnlockExpr, LockStatus, TestimonyLineJson,
@@ -47,7 +47,7 @@ pub struct InterrogationSceneState {
     pub intro_played: bool,
     pub outro_played: bool,
     pub current_phase_id: Option<String>,
-    pub pending_queue: Option<DialogueQueue>,
+    pub(crate) pending_queue: Option<ActiveDialogueQueue>,
     pub intro_queue_gen: u64,
     pub cross_exam: CrossExam,
     pub broken_questions: HashSet<String>,
@@ -146,7 +146,11 @@ impl InterrogationSceneState {
         // challengeable index; a cursor before it means bridge/feedback
         // dialogue is still playing and the inline 反駁 control must stay
         // hidden so the player cannot challenge a line that isn't shown.
-        let cursor = self.pending_queue.as_ref().map(|q| q.cursor).unwrap_or(0);
+        let cursor = self
+            .pending_queue
+            .as_ref()
+            .and_then(|queue| queue.flattened_cursor().ok())
+            .unwrap_or(0);
         if cursor < self.line_content_start {
             return None;
         }
