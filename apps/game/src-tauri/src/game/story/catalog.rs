@@ -74,13 +74,24 @@ pub(in crate::game) struct AuthorizationDefinition {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StoryCatalogJson {
-    schema_version: i64,
+    // schemaVersion is gated by StoryCatalogVersionEnvelope before this
+    // struct is deserialized, so it is intentionally not a field here.
     facts: Vec<FactDefinition>,
     questions: Vec<QuestionDefinition>,
     objectives: Vec<ObjectiveDefinitionJson>,
     authorizations: Vec<AuthorizationDefinition>,
     evidence_index: Vec<CaseRecordDefinitionIndex>,
     statements_index: Vec<CaseRecordDefinitionIndex>,
+}
+
+// Minimal envelope used to gate the version before deserializing the
+// version-specific payload. A future schema version that drops or renames v1
+// fields would otherwise fail full deserialization first and surface as a
+// generic "malformed" load failure instead of unsupportedStoryCatalogVersion.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoryCatalogVersionEnvelope {
+    schema_version: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -113,19 +124,32 @@ impl StoryCatalog {
                 format!("could not read catalog resource: {error}"),
             )
         })?;
+        // Check schemaVersion from a minimal envelope before deserializing
+        // the version-specific payload. A future schema that drops or renames
+        // v1 fields would otherwise fail full deserialization first and
+        // surface as a generic "malformed" load failure instead of
+        // unsupportedStoryCatalogVersion.
+        let envelope: StoryCatalogVersionEnvelope =
+            serde_json::from_str(&source).map_err(|error| {
+                GameError::story_catalog_load_failed(
+                    &path,
+                    format!("catalog resource is malformed: {error}"),
+                )
+            })?;
+
+        if envelope.schema_version != STORY_CATALOG_SCHEMA_VERSION {
+            return Err(GameError::unsupported_story_catalog_version(
+                &path,
+                envelope.schema_version,
+            ));
+        }
+
         let json: StoryCatalogJson = serde_json::from_str(&source).map_err(|error| {
             GameError::story_catalog_load_failed(
                 &path,
                 format!("catalog resource is malformed: {error}"),
             )
         })?;
-
-        if json.schema_version != STORY_CATALOG_SCHEMA_VERSION {
-            return Err(GameError::unsupported_story_catalog_version(
-                &path,
-                json.schema_version,
-            ));
-        }
 
         Self::from_json(&path, json)
     }
@@ -200,7 +224,6 @@ impl StoryCatalog {
 
     fn from_json(path: &Path, json: StoryCatalogJson) -> Result<Self, GameError> {
         let StoryCatalogJson {
-            schema_version: _,
             facts,
             questions,
             objectives: objective_json,
@@ -534,6 +557,23 @@ mod tests {
             dir.path(),
             &empty_json().replace("\"schemaVersion\": 1", "\"schemaVersion\": 2"),
         );
+
+        let error = StoryCatalog::load(dir.path()).unwrap_err();
+
+        assert_eq!(error.code, "unsupportedStoryCatalogVersion");
+        assert!(error.message.contains("story_catalog.json"));
+        assert!(error.message.contains('2'));
+    }
+
+    #[test]
+    fn rejects_unsupported_schema_version_before_v1_field_validation() {
+        // A future schema may drop or rename v1 fields. The loader must check
+        // schemaVersion from a minimal envelope before attempting to
+        // deserialize the version-specific payload, otherwise a v2 (or later)
+        // document that omits v1 fields would surface as a generic
+        // "malformed" load failure instead of unsupportedStoryCatalogVersion.
+        let dir = TestDir::new("version-envelope");
+        write_catalog(dir.path(), r#"{ "schemaVersion": 2 }"#);
 
         let error = StoryCatalog::load(dir.path()).unwrap_err();
 
