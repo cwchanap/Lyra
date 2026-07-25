@@ -1164,7 +1164,37 @@ mod tests {
     }
 
     #[test]
-    fn tag_only_linear_scene_advances_to_game_complete() {
+    fn nonterminal_tag_only_linear_scene_primes_the_next_scene() {
+        let d = dialogue_history_fixture_resources(0);
+        let engine = GameEngine::new_started(d.clone()).unwrap();
+
+        assert_eq!(engine.current_chapter_idx, 0);
+        assert_eq!(engine.current_scene_idx, 1);
+        let view = engine.view();
+        assert!(matches!(
+            view.mode,
+            ModeView::Dialogue {
+                current: DialogueItem::Line {
+                    ref speaker,
+                    ref text,
+                    ..
+                },
+                ..
+            } if speaker == "B" && text == "next scene"
+        ));
+        assert_eq!(
+            engine
+                .current_queue_token()
+                .expect("the next scene must have an active queue")
+                .scene_id,
+            "scene_1"
+        );
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn terminal_tag_only_linear_scene_has_no_replayable_queue() {
         use crate::game::schema::LinearSceneJson;
         // A chapter with a single tag-only scene should advance to GameComplete
         // instead of stalling with the cursor at the end of the queue.
@@ -1203,5 +1233,23 @@ mod tests {
         // Scene was tag-only → advance_scene ran → past last chapter → GameComplete.
         assert!(matches!(engine.view().mode, ModeView::GameComplete));
         assert_eq!(engine.last_visual_cue.scene_tag, Some("吉祥寺街道".into()));
+        assert!(
+            engine.current_queue_token().is_none(),
+            "priming must invalidate the exhausted terminal queue"
+        );
+
+        let completed_chapter_idx = engine.current_chapter_idx;
+        let completed_scene_idx = engine.current_scene_idx;
+        let error = engine
+            .advance_dialogue(QueueToken {
+                scene_id: "scene_0".into(),
+                queue_gen: 1,
+                cursor: 0,
+            })
+            .expect_err("an exhausted tag-only queue must not accept a former token");
+        assert_eq!(error.code, "noActiveDialogue");
+        assert_eq!(engine.current_chapter_idx, completed_chapter_idx);
+        assert_eq!(engine.current_scene_idx, completed_scene_idx);
+        assert!(matches!(engine.view().mode, ModeView::GameComplete));
     }
 }

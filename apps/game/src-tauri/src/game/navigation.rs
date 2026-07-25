@@ -168,7 +168,7 @@ impl GameEngine {
                 SceneRuntime::Linear(scene) if scene.queue.is_none()
             ) || self.consume_scene_tags_at_cursor();
             if exhausted {
-                self.advance_scene()?;
+                self.on_queue_exhausted()?;
             }
             return Ok(());
         }
