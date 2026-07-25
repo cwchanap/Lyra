@@ -34,7 +34,6 @@ describe("deriveDialogueSegments", () => {
   it("derives stable semantic origins without vector indices or copy", () => {
     const origins = deriveDialogueSegments({
       chapterId: "chapter_1",
-      file: "interrogation_scene_1.md",
       json: interrogation(),
     }).map(({ origin }) => origin);
 
@@ -48,6 +47,19 @@ describe("deriveDialogueSegments", () => {
     expect(JSON.stringify(origins)).not.toContain("Original copy");
   });
 
+  it("uses only the semantic segment id for investigation interactions", () => {
+    const origins = deriveDialogueSegments({
+      chapterId: "chapter_1",
+      json: investigation(),
+    }).map(({ origin }) => origin);
+
+    const interaction = origins.find(
+      (origin) => origin.type === "investigationInteraction",
+    );
+    expect(interaction).toBeDefined();
+    expect(interaction).not.toHaveProperty("interactionId");
+  });
+
   it("omits empty emitted dialogue blocks", () => {
     const scene = investigation();
     scene.intro = [];
@@ -57,7 +69,6 @@ describe("deriveDialogueSegments", () => {
     expect(
       deriveDialogueSegments({
         chapterId: "chapter_1",
-        file: "investigation_scene_1.md",
         json: scene,
       }).map(({ origin }) => origin),
     ).not.toContainEqual({

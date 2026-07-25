@@ -332,7 +332,6 @@ struct SaveSnapshotV1 {
     story_state: StoryStateSnapshot,
     dialogue_history: DialogueHistorySnapshotV1,
     next_queue_gen: u64,
-    next_command_id: u64,
     durable_revision: u64,
 }
 ```
@@ -352,6 +351,10 @@ by `SaveEnvelopeV1.content_revision`.
 ```rust
 enum SceneProgressSnapshotV1 {
     Linear,
+    GameComplete {
+        final_chapter_id: String,
+        final_scene_id: String,
+    },
     Investigation {
         intro_played: bool,
         outro_played: bool,
@@ -457,6 +460,13 @@ The loader rejects:
 - mutually inconsistent progress, such as a cross-exam line outside its
   restored question;
 - any package `contentRevision` mismatch.
+
+`GameComplete` is captured rather than excluded. It retains the final entered
+chapter/scene IDs for summary and validation. Restore resolves those final
+packaged definitions, restores all saved mutable state, and then reinstalls the
+existing completion sentinel (`current_chapter_idx == chapters.len()` while the
+final scene remains retained). Continue therefore returns to Game Complete
+rather than attempting to enter a nonexistent successor scene.
 
 Captures occur only after a durable command and all synchronous navigation
 triggered by that command have completed. Therefore:
@@ -619,7 +629,6 @@ enum DialogueSegmentOriginV1 {
     InvestigationInteraction {
         chapter_id: String,
         scene_id: String,
-        interaction_id: String,
         segment_id: String,
     },
     InterrogationIntro {
@@ -718,7 +727,6 @@ struct AcquisitionEventStateV1 {
     record_id: String,
     created_by_command_id: u64,
     ordinal: u32,
-    acknowledged: bool,
 }
 ```
 
@@ -732,14 +740,15 @@ The persisted `id` is intentionally redundant. The numeric command/ordinal
 pair is canonical, and the recomputed-ID equality check is a corruption
 tripwire rather than a second source of identity.
 
-The command transaction allocates command IDs inside rollback-tracked state.
-A failed command restores the counter, inventory, and pending events together.
+Pending events exist only until acknowledgement. The command transaction
+derives its command ID from the rollback-tracked durable revision; a failed
+command restores the revision, inventory, and pending events together.
 
 ### 9.2 Presentation
 
 `GameStateView` exposes at most one `pendingAcquisition`:
 
-- only unacknowledged events are eligible;
+- only pending events are eligible;
 - authored dialogue always drains first;
 - event ordering follows command ID then ordinal;
 - the view resolves the current record presentation from packaged definitions.
@@ -754,10 +763,10 @@ prevents a successfully acknowledged event from reappearing after a process
 exit between dismissal and the normal debounce.
 
 If that flush fails, the popup first remains open with Retry and Cancel. A
-second explicit confirmation may choose Continue Without Saving. Rust keeps
-the event acknowledged in the live engine and marks persistence degraded, but
-allows the popup to close. A later successful autosave persists the
-acknowledgement; if the process exits first, the event may correctly reappear
+second explicit confirmation may choose Continue Without Saving. Rust removes
+the event from live pending state transactionally and marks persistence
+degraded, but allows the popup to close. A later successful autosave persists
+the removal; if the process exits first, the event may correctly reappear
 because the player explicitly accepted that durability loss.
 
 If the process exits before acknowledgement commits, the event appears again
@@ -778,6 +787,11 @@ Several acquisition events acknowledged in sequence therefore refresh one
 autosave and consume no additional recovery points. A failed refresh leaves the
 previous slot file intact; the existing Retry/Cancel/Continue Without Saving
 behavior still applies. Manual slots are never refresh targets.
+
+Loading an autosave adopts that autosave as the session target. If it contains
+a pending acquisition event, acknowledging it intentionally refreshes and
+overwrites that adopted autosave slot with the newer durable checkpoint; loading
+it alone never writes the file.
 
 ## 10. Generic resumable-state fixture
 
@@ -822,37 +836,20 @@ JSON bag to `SaveSnapshot`, and does not depend on HPA-260's analysis runtime.
 
 ### 11.1 Commit signal
 
-`GameEngine` adds rollback-tracked `next_command_id` and persistent
-`durable_revision` counters.
-
-Fresh version-1 state starts with `durable_revision = 0` and
-`next_command_id = 1`. Every command entering the durable mutation seam reserves
-the current command ID inside rollback-tracked state. On success, the command ID
-and any acquisition events commit, `next_command_id` advances once, and
-`durable_revision` advances once. On failure, both counters and all events roll
-back. The stable-state invariant is therefore:
-
-```text
-next_command_id == durable_revision + 1
-```
-
-Acquisition events use the command identity; the coordinator uses the durable
-revision as its monotonic dirty/written version. They are not interchangeable
-types despite the invariant. Acquisition acknowledgement is a durable command
-and advances both. Read-only commands, discovery, flush-only work, manual save,
-and load construction do not advance either counter.
-
-`next_command_id` is persisted despite being derivable from
-`durable_revision`. The revision is canonical; equality after migration is a
-corruption tripwire, and restore rejects a mismatch rather than choosing one
-stored counter arbitrarily.
+`GameEngine` persists one rollback-tracked `durable_revision` counter. Fresh
+version-1 state starts at `0`. A durable command derives its ID as
+`durable_revision + 1`; on success it commits that same value as the new
+`durable_revision`, and on failure the rollback restores the prior revision and
+all pending events. Acquisition event IDs use that derived command ID. Read-only
+commands, discovery, flush-only work, manual save, and load construction do not
+advance the revision.
 
 For every successful durable command:
 
 1. the command mutates inside the existing rollback scope;
 2. dialogue history finalizes;
-3. the command ID and acquisition events finalize;
-4. `durable_revision` increments once;
+3. the derived command ID and acquisition events finalize;
+4. `durable_revision` becomes that command ID;
 5. the public view is built;
 6. the application-level command wrapper notifies `SaveCoordinator`.
 
@@ -911,6 +908,11 @@ continuing:
 - Return to Title;
 - acquisition acknowledgement response, using the in-place session autosave
   target from §9.2.
+
+Flush idempotence is global: whenever `written_revision >= durable_revision`,
+a flush performs no write, replacement, rotation, or timestamp change. This
+applies to manual-save preflush, confirmed load, Return to Title, and
+acquisition acknowledgement as well as ordinary debounced flushes.
 
 The first flush failure blocks the requested operation with an actionable error
 and Retry/Cancel. Manual Save has no bypass because bypassing it would perform
@@ -1056,18 +1058,22 @@ merely that its JSON was readable. Discovery:
 1. reads the file and source modification time;
 2. parses the minimal version envelope and applies schema migrations in memory;
 3. validates path/slot/envelope identity and summary shape;
-4. loads the packaged content manifest once for the discovery batch;
+4. loads the packaged manifest and definitions once for the discovery batch;
 5. requires the save's `contentRevision` to match the packaged revision exactly;
-6. resolves every saved stable ID against the packaged definitions;
+6. resolves every saved stable ID against those shared packaged definitions;
 7. reconstructs dialogue lengths and validates all scene progress, set
    references, cross-exam state, queue coordinates, history token, counter
    invariants, and summary references without replacing the live engine.
 
-A failure to load the shared packaged manifest/definitions makes discovery
-globally unavailable. A revision mismatch or invalid stable reference found
-while validating one save makes only that slot invalid. Discovery returns the
-same typed schema, content-revision, cursor, and progress diagnostics that a
-load would return.
+A discovery batch performs bounded work outside the engine/session lock: one
+shared packaged manifest/definitions load and at most eight slot-file reads.
+It parses the shared definitions once and does not reread packaged scenes per
+slot. The UI exposes a visible loading state while the batch runs. A failure to
+load the shared packaged manifest/definitions makes discovery globally
+unavailable. A revision mismatch or invalid stable reference found while
+validating one save makes only that slot invalid. Discovery returns the same
+typed schema, content-revision, cursor, and progress diagnostics that a load
+would return.
 
 Load still re-reads the selected file, verifies the observed `save_id`, and
 repeats all validation before building/swapping the candidate engine. This
@@ -1278,6 +1284,7 @@ type SaveSlotView = {
 
 type SaveBrowserView = {
   discovery:
+    | { type: "loading" }
     | { type: "available" }
     | { type: "unavailable"; diagnostic: SaveDiagnosticView };
   slots: SaveSlotView[];
@@ -1299,7 +1306,7 @@ workflow state only. Rust still validates:
 - whether a manual slot is occupied before overwrite;
 - session generation;
 - save/load availability;
-- event identity and acknowledgement state.
+- event identity and pending-state.
 
 The overwrite command carries the slot plus the save ID observed by the
 confirmation screen. If another write changes the slot before confirmation,
@@ -1427,7 +1434,7 @@ diagnostics for:
 - stale manual-overwrite confirmation;
 - stale session generation;
 - unavailable or stale persistence-bypass confirmation;
-- unknown/already-acknowledged acquisition event.
+- unknown/non-pending acquisition event.
 
 Messages name the affected slot and give a user action where one exists. They
 do not expose arbitrary absolute filesystem paths in the normal UI.
@@ -1471,6 +1478,8 @@ may be lost and that acquisition acknowledgement may reappear after restart.
 
 - Serialize and deserialize schema version 1.
 - Round-trip linear dialogue at a nonzero cursor.
+- Round-trip `GameComplete` with final chapter/scene IDs, validate those final
+  definitions, and reinstate the completion sentinel after restore.
 - Round-trip investigation progress and active dialogue.
 - Round-trip interrogation phase, cross-exam, line-content boundary, and active
   dialogue.
@@ -1482,12 +1491,13 @@ may be lost and that acquisition acknowledgement may reappear after restart.
   chapter/scene provenance without authored record copy.
 - Preserve HPA-255 story state and active-primary uniqueness.
 - Preserve the bounded dialogue transcript, next ID, last token, visual/audio
-  cue IDs, queue generation, command ID, and durable revision.
+  cue IDs, queue generation, and durable revision.
 - Round-trip a fresh engine's non-optional default `last_visual_cue` object.
 - Restart restored BGM/BGS assets from the beginning, preserve carried
   cross-scene cues, and restore explicit silence without changing preferences.
-- Enforce `next_command_id == durable_revision + 1`; prove failed commands roll
-  both back while acknowledgement advances both and flush/manual-save do not.
+- Derive each command ID as `durable_revision + 1`; prove failed commands roll
+  the revision and pending events back while acknowledgement advances the
+  revision and flush/manual-save do not.
 - Reject past-end linear mid-transition state and preserve active investigation
   outro/interrogation phase-entry queues at their committed boundaries.
 - Sort set-backed fields deterministically.
@@ -1515,9 +1525,10 @@ may be lost and that acquisition acknowledgement may reappear after restart.
 - Create one acquisition event per newly acquired record.
 - Roll back command IDs and events when a command fails.
 - Hide pending acquisition until authored dialogue drains.
-- Persist an unacknowledged event and present it after resume.
+- Persist a pending event and present it after resume.
 - Flush acknowledgement before popup dismissal succeeds.
-- Never present an acknowledged event after resume.
+- Remove an acknowledged event from pending state and never present it after a
+  successful checkpointed resume.
 - Treat stored event IDs as corruption tripwires and reject a value that does
   not match its command ID and ordinal.
 
@@ -1553,10 +1564,14 @@ and a controllable writer:
   after their session generation becomes stale;
 - flush before manual save, in-game load, Return to Title, and acquisition
   acknowledgement;
+- prove every idempotent flush (`written_revision >= durable_revision`) makes
+  no write, replacement, rotation, or timestamp change;
 - rotate at most once for an acquisition checkpoint plus its acknowledgement,
   then refresh that same autosave for sequential acknowledgements;
 - allocate one autosave target when acknowledgement has none, adopt a loaded
   autosave's slot, and never refresh a manual slot;
+- after loading an autosave with a pending event, acknowledge it and prove the
+  adopted autosave is intentionally refreshed in place;
 - preserve the prior autosave file when an acknowledgement refresh fails;
 - prove an older high-revision session does not outrank a newer low-revision
   session merely because of `durable_revision`;
@@ -1568,6 +1583,9 @@ and a controllable writer:
 - return one global discovery error rather than eight fabricated invalid slots
   when directory enumeration or the shared packaged manifest fails, while
   keeping file-specific revision/reference mismatches per-slot.
+- count one shared packaged manifest/definitions load, one definitions parse,
+  and at most eight slot-file reads per discovery batch without holding the
+  engine/session lock; assert visible loading state rather than timing.
 
 ### 18.5 Svelte tests
 

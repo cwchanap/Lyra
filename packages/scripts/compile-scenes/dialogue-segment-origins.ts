@@ -4,10 +4,12 @@ import type {
   JSONInvestigationScene,
   JSONLinearScene,
 } from "./types";
-import type {
-  DialogueSegmentOriginV1,
-  EmittedSceneRecordV1,
-} from "./save-content-manifest";
+import type { DialogueSegmentOriginV1 } from "./save-content-manifest";
+
+export type EmittedSceneRecordV1 = {
+  chapterId: string;
+  json: JSONLinearScene | JSONInvestigationScene | JSONInterrogationScene;
+};
 
 export type DerivedDialogueSegment = {
   origin: DialogueSegmentOriginV1;
@@ -17,14 +19,12 @@ export type DerivedDialogueSegment = {
 export function investigationInteractionOrigin(
   chapterId: string,
   sceneId: string,
-  interactionId: string,
   segmentId: string,
 ): DialogueSegmentOriginV1 {
   return {
     type: "investigationInteraction",
     chapterId,
     sceneId,
-    interactionId,
     segmentId,
   };
 }
@@ -93,19 +93,16 @@ function deriveInvestigationSegments(
       origin: investigationInteractionOrigin(
         chapterId,
         scene.id,
-        `sublocation:${sublocation.id}`,
         `sublocation:${sublocation.id}:transition`,
       ),
       items: sublocation.transitionDialogue,
     });
     for (const hotspot of sublocation.hotspots) {
-      const interactionId = `hotspot:${hotspot.id}`;
       segments.push(
         {
           origin: investigationInteractionOrigin(
             chapterId,
             scene.id,
-            interactionId,
             `hotspot:${hotspot.id}:inspect`,
           ),
           items: hotspot.inspectDialogue,
@@ -114,7 +111,6 @@ function deriveInvestigationSegments(
           origin: investigationInteractionOrigin(
             chapterId,
             scene.id,
-            interactionId,
             `hotspot:${hotspot.id}:reexamine`,
           ),
           items: hotspot.onReexamine ?? [],
@@ -123,13 +119,11 @@ function deriveInvestigationSegments(
     }
     for (const character of sublocation.characters) {
       for (const topic of character.topics) {
-        const interactionId = `topic:${character.id}:${topic.id}`;
         segments.push(
           {
             origin: investigationInteractionOrigin(
               chapterId,
               scene.id,
-              interactionId,
               `topic:${character.id}:${topic.id}:dialogue`,
             ),
             items: topic.topicDialogue,
@@ -138,7 +132,6 @@ function deriveInvestigationSegments(
             origin: investigationInteractionOrigin(
               chapterId,
               scene.id,
-              interactionId,
               `topic:${character.id}:${topic.id}:reexamine`,
             ),
             items: topic.onReexamine ?? [],
@@ -148,13 +141,11 @@ function deriveInvestigationSegments(
     }
   }
   for (const evidence of scene.evidenceManifest) {
-    const interactionId = `evidence:${evidence.id}`;
     segments.push(
       {
         origin: investigationInteractionOrigin(
           chapterId,
           scene.id,
-          interactionId,
           `evidence:${evidence.id}:onCollect`,
         ),
         items: evidence.onCollect,
@@ -163,7 +154,6 @@ function deriveInvestigationSegments(
         origin: investigationInteractionOrigin(
           chapterId,
           scene.id,
-          interactionId,
           `evidence:${evidence.id}:onReexamine`,
         ),
         items: evidence.onReexamine ?? [],
@@ -171,13 +161,11 @@ function deriveInvestigationSegments(
     );
   }
   for (const statement of scene.statementManifest) {
-    const interactionId = `statement:${statement.id}`;
     segments.push(
       {
         origin: investigationInteractionOrigin(
           chapterId,
           scene.id,
-          interactionId,
           `statement:${statement.id}:onAcquire`,
         ),
         items: statement.onAcquire,
@@ -186,7 +174,6 @@ function deriveInvestigationSegments(
         origin: investigationInteractionOrigin(
           chapterId,
           scene.id,
-          interactionId,
           `statement:${statement.id}:onReexamine`,
         ),
         items: statement.onReexamine ?? [],
