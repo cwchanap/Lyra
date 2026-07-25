@@ -31,7 +31,7 @@ pub(in crate::game) struct AuthorizationProgress {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct StoryState {
+pub(in crate::game) struct StoryState {
     pub(super) facts: BTreeMap<String, FactProgress>,
     pub(super) questions: BTreeMap<String, QuestionProgress>,
     pub(super) objectives: BTreeMap<String, ObjectiveProgress>,
