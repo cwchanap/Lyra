@@ -47,6 +47,11 @@ import {
   emitLinearScene,
   emitStoryCatalog,
 } from "./emitter";
+import {
+  buildSaveContentManifest,
+  type EmittedSceneJsonV1,
+  type SaveContentBundleV1,
+} from "./save-content-manifest";
 import type { ASTChapter, ASTStoryCatalog, CompileError } from "./types";
 import { loadAssetConfig } from "./assets/config";
 import { enrichScenesWithAssets } from "./assets/enrich";
@@ -359,34 +364,52 @@ export function compile(opts: CompileOptions): CompileResult {
   //
   // Do NOT rmSync the entire outputRoot — it may contain a tracked .gitkeep
   // placeholder that must be preserved. Delete only entries this orchestrator
-  // is responsible for: chapters.json, story_catalog.json, and chapter_*/
-  // subdirectories.
+  // is responsible for: chapters.json, story_catalog.json,
+  // save_content_manifest.json, and chapter_*/ subdirectories.
   mkdirSync(opts.outputRoot, { recursive: true });
   const oldChaptersJson = resolve(opts.outputRoot, "chapters.json");
   if (existsSync(oldChaptersJson)) rmSync(oldChaptersJson, { force: true });
   const oldStoryCatalogJson = resolve(opts.outputRoot, "story_catalog.json");
   if (existsSync(oldStoryCatalogJson))
     rmSync(oldStoryCatalogJson, { force: true });
+  const oldSaveContentManifestJson = resolve(
+    opts.outputRoot,
+    "save_content_manifest.json",
+  );
+  if (existsSync(oldSaveContentManifestJson))
+    rmSync(oldSaveContentManifestJson, { force: true });
   for (const entry of readdirSync(opts.outputRoot)) {
     if (/^chapter_\d+$/.test(entry)) {
       rmSync(resolve(opts.outputRoot, entry), { recursive: true, force: true });
     }
   }
 
-  for (const rec of scenes) {
-    const json =
-      rec.ast.kind === "linearScene"
-        ? emitLinearScene(rec.ast)
-        : rec.ast.kind === "investigationScene"
-          ? emitInvestigationScene(rec.ast)
-          : emitInterrogationScene(rec.ast);
-    const outFile = resolve(
-      opts.outputRoot,
-      rec.chapterId,
-      rec.file.replace(/\.md$/, ".json"),
-    );
-    mkdirSync(dirname(outFile), { recursive: true });
-    writeFileSync(outFile, JSON.stringify(json, null, 2) + "\n");
+  const emittedChapters: SaveContentBundleV1["chapters"] = [];
+  for (const chapter of chapters) {
+    const emittedScenes: EmittedSceneJsonV1[] = [];
+    for (const rec of scenes) {
+      if (rec.chapterId !== chapter.dirName) continue;
+      const json =
+        rec.ast.kind === "linearScene"
+          ? emitLinearScene(rec.ast)
+          : rec.ast.kind === "investigationScene"
+            ? emitInvestigationScene(rec.ast)
+            : emitInterrogationScene(rec.ast);
+      const outFile = resolve(
+        opts.outputRoot,
+        rec.chapterId,
+        rec.file.replace(/\.md$/, ".json"),
+      );
+      mkdirSync(dirname(outFile), { recursive: true });
+      writeFileSync(outFile, JSON.stringify(json, null, 2) + "\n");
+      emittedScenes.push(json);
+    }
+    emittedChapters.push({
+      id: chapter.dirName,
+      title: chapter.title,
+      summary: chapter.summary,
+      scenes: emittedScenes,
+    });
   }
 
   const idx = emitChaptersIndex(chapters);
@@ -394,9 +417,23 @@ export function compile(opts: CompileOptions): CompileResult {
     resolve(opts.outputRoot, "chapters.json"),
     JSON.stringify(idx, null, 2) + "\n",
   );
+  const emittedStoryCatalog = emitStoryCatalog(storyCatalog, scenes);
   writeFileSync(
     resolve(opts.outputRoot, "story_catalog.json"),
-    JSON.stringify(emitStoryCatalog(storyCatalog, scenes), null, 2) + "\n",
+    JSON.stringify(emittedStoryCatalog, null, 2) + "\n",
+  );
+  writeFileSync(
+    resolve(opts.outputRoot, "save_content_manifest.json"),
+    JSON.stringify(
+      buildSaveContentManifest({
+        bundle: {
+          chapters: emittedChapters,
+          storyCatalog: emittedStoryCatalog,
+        },
+      }),
+      null,
+      2,
+    ) + "\n",
   );
 
   if (opts.assetOutputRoot && manifestToWrite) {
