@@ -27,6 +27,7 @@ HPA-129 makes current Lyra sessions safe to leave and resume. It delivers:
 - three visible manual slots with overwrite confirmation;
 - title-screen Continue and Load Game;
 - in-game Save/Load and Return to Title;
+- explicit second-confirmation escape paths when persistence is unavailable;
 - explicit schema and content migrations;
 - atomic storage and actionable compatibility diagnostics;
 - a P0-owned generic resumable-state fixture that does not depend on the
@@ -67,6 +68,12 @@ The user approved both refinements during HPA-129 design.
     definitions.
 16. Invalid files remain on disk until the player deletes them or normal,
     deliberate slot replacement overwrites them.
+17. A failed durability action first offers Retry/Cancel. Load, Return to
+    Title, acquisition-popup dismissal, and New Game after global discovery
+    failure may then proceed without saving only after a second explicit
+    data-loss confirmation.
+18. Persistence health is application/session state exposed separately from
+    engine-owned `GameStateView`.
 
 ## 3. Current constraints
 
@@ -188,6 +195,17 @@ Hashes use SHA-256 over deterministic canonical JSON and are encoded as
 Repeated compilation of semantically identical inputs produces identical
 hashes and the same bundle revision.
 
+Canonical hashing is the highest-risk compiler portion of HPA-129. The current
+TypeScript emitter primarily builds plain objects and arrays, while some
+compiler-only indexes use `Map`/`Set` and the Rust loader later builds
+`HashMap` indexes. Hash input must be restricted to the emitted semantic JSON
+boundary: compiler-only indexes are normalized into explicitly sorted arrays
+or excluded, and Rust lookup-map iteration never participates. One shared
+canonical serializer must produce both per-definition hashes and the bundle
+revision; feature code must not hand-roll local `JSON.stringify` hash paths.
+The implementation plan schedules this canonicalizer and determinism fixtures
+before runtime save work depends on the hashes.
+
 ### 5.2 Bundle revision versus required definitions
 
 `contentRevision` identifies the entire packaged story bundle, but a changed
@@ -219,8 +237,7 @@ struct SaveEnvelopeV1 {
     save_id: String,
     save_type: SaveType,
     slot: u8,
-    created_at: String,
-    updated_at: String,
+    saved_at: String,
     summary: SaveSummary,
     snapshot: SaveSnapshotV1,
 }
@@ -235,12 +252,16 @@ enum SaveType {
 comes from the storage target as well as the envelope. A mismatch is a corrupt
 file, not a request to load a different slot.
 
-`save_id` identifies the logical saved checkpoint. It changes whenever any
-slot receives a new snapshot and remains stable only when an explicit migration
-reads that same checkpoint in memory. `created_at` and `updated_at` are
-RFC 3339 UTC timestamps. They are display/audit metadata; filesystem write
-metadata determines Continue and rotation ordering so even an unparseable
-newest file can block Continue correctly.
+`save_id` identifies the logical saved checkpoint and is generated as a
+cryptographically random UUID v4. It changes whenever any slot receives a new
+snapshot and remains stable only when an explicit migration reads that same
+checkpoint in memory. It is an optimistic-concurrency token, not an
+authorization secret.
+
+`saved_at` is one RFC 3339 UTC timestamp for the checkpoint. There is no
+separate creation timestamp because every disk write creates a new checkpoint
+and save ID. Filesystem write metadata determines Continue and rotation
+ordering so even an unparseable newest file can block Continue correctly.
 
 `SaveSummary` stores presentation metadata only:
 
@@ -284,6 +305,57 @@ struct SaveSnapshotV1 {
 This is a conceptual field list; planning may group fields into nested structs
 without changing their meaning.
 
+Definition identity and dependency roles are closed, typed contracts:
+
+```rust
+enum DefinitionRefV1 {
+    Scene {
+        chapter_id: String,
+        scene_id: String,
+        scene_kind: SceneType,
+    },
+    DialogueSegment {
+        origin: DialogueSegmentOriginV1,
+    },
+    InventoryRecord {
+        record_kind: RecordKind,
+        record_id: String,
+    },
+    Fact { id: String },
+    Question { id: String },
+    Objective { id: String },
+    Authorization { id: String },
+    #[cfg(test)]
+    Fixture { id: String },
+}
+
+struct DefinitionIdentityV1 {
+    reference: DefinitionRefV1,
+    definition_hash: String,
+}
+
+enum DefinitionDependencyRoleV1 {
+    CurrentScene,
+    ActiveDialogue,
+    InventoryRecord,
+    ActiveStoryState,
+    IncompleteStoryState,
+    #[cfg(test)]
+    GenericResumableState,
+}
+
+struct DefinitionDependencyV1 {
+    definition: DefinitionIdentityV1,
+    role: DefinitionDependencyRoleV1,
+}
+```
+
+The typed reference is the migration key; `role` explains why the save still
+depends on it and therefore which migration/drop rules are legal. Capture
+deduplicates identical `(reference, role)` pairs and sorts dependencies by a
+canonical reference order. Fixture variants exist only in Rust test builds and
+are not part of the production version-1 wire contract.
+
 ### 7.1 Scene progress
 
 `SceneProgressSnapshotV1` is a closed tagged enum:
@@ -313,7 +385,29 @@ enum SceneProgressSnapshotV1 {
         completed_phase_ids: Vec<String>,
         unlocked_override_ids: Vec<String>,
         entered_phase_ids: Vec<String>,
-        line_content_start: usize,
+        line_content_boundary: Option<DialogueCursorV1>,
+    },
+}
+
+struct CharacterTopicRefV1 {
+    character_id: String,
+    topic_id: String,
+}
+
+struct DialogueCursorV1 {
+    segment_index: usize,
+    item_cursor: usize,
+}
+
+enum CrossExamSnapshotV1 {
+    Idle,
+    Playing {
+        question_id: String,
+        line_id: String,
+    },
+    Presenting {
+        question_id: String,
+        line_id: String,
     },
 }
 ```
@@ -321,6 +415,12 @@ enum SceneProgressSnapshotV1 {
 Definitions themselves remain packaged content. Capture serializes stable IDs,
 sets, scalars, and progress only. Unordered runtime sets are sorted before
 serialization for deterministic fixtures and diagnostics.
+
+The current runtime's `CrossExam::Playing` stores a line array index. Persistent
+state deliberately stores the stable line ID instead. Restore resolves that ID
+to the current index only after the question/line definitions and hashes pass.
+The line-content boundary uses segment/item coordinates rather than a flattened
+queue offset and must agree with the reconstructed active queue.
 
 The loader rejects:
 
@@ -359,6 +459,21 @@ The snapshot stores the current semantic scene tag, background asset ID, and
 audio cue IDs/state needed to produce the same public view after resume. It
 does not store decoded media, filesystem paths, playback position, volume, or
 mute preferences.
+
+`last_visual_cue` is non-optional because the engine always owns
+`LastVisualCue::default()`. Its snapshot mirrors that defaultable shape:
+
+```rust
+struct LastVisualCueSnapshotV1 {
+    scene_tag: Option<String>,
+    background_asset_id: Option<String>,
+    bgm: Option<AudioCueSnapshotV1>,
+    bgs: Option<AudioCueSnapshotV1>,
+}
+```
+
+A fresh game therefore stores one empty/default cue object rather than omitting
+the field.
 
 Dialogue history stores the bounded Rust-owned transcript, its next entry ID,
 and its last recorded queue token. The transcript is a deliberate narrow
@@ -441,10 +556,46 @@ enum DialogueSegmentOriginV1 {
 }
 ```
 
-`segment_id` is a compiler-owned stable semantic key for authored blocks such
-as question replies, testimony lines, challenge lead-ins, wrong/correct
-feedback, `onCollect`, and `onAcquire`. It is not a vector index and does not
-depend on display copy.
+`segment_id` is derived by the compiler from existing stable semantic IDs and
+the dialogue field's closed role. Writers do not author an additional segment
+ID. Reordering siblings or inserting a new sibling therefore does not rename
+existing segments.
+
+Representative keys:
+
+```text
+linear:body
+investigation:intro
+investigation:outro
+sublocation:<sublocationId>:transition
+hotspot:<hotspotId>:inspect
+hotspot:<hotspotId>:reexamine
+topic:<characterId>:<topicId>:dialogue
+topic:<characterId>:<topicId>:reexamine
+evidence:<evidenceId>:onCollect
+evidence:<evidenceId>:onReexamine
+statement:<statementId>:onAcquire
+statement:<statementId>:onReexamine
+interrogation:intro
+interrogation:outro
+phase:<phaseId>:entry
+question:<questionId>:onLoop
+question:<questionId>:loopPrompt
+question:<questionId>:defaultChallenge
+question:<questionId>:defaultWrong
+question:<questionId>:wrongReply
+question:<questionId>:line:<lineId>:content
+question:<questionId>:line:<lineId>:challenge
+question:<questionId>:line:<lineId>:onCorrect
+question:<questionId>:line:<lineId>:onWrongEvidence
+```
+
+The compiler owns one exhaustive mapping from each dialogue-bearing wire field
+to its role key. Parent semantic IDs are already authoring-contract IDs;
+existing compiler uniqueness checks keep their structural paths unambiguous.
+The compiler rejects any derived-origin collision as an internal contract
+error. `segment_id` is never a vector index and never depends on label or
+dialogue copy.
 
 Future analysis/story-event origins require new schema variants or migrations;
 HPA-129 does not pre-implement those runtimes.
@@ -517,6 +668,13 @@ Acknowledgement is a durable Rust command. The frontend does not close the
 popup until the command succeeds and its resulting autosave is flushed. This
 prevents a successfully acknowledged event from reappearing after a process
 exit between dismissal and the normal debounce.
+
+If that flush fails, the popup first remains open with Retry and Cancel. A
+second explicit confirmation may choose Continue Without Saving. Rust keeps
+the event acknowledged in the live engine and marks persistence degraded, but
+allows the popup to close. A later successful autosave persists the
+acknowledgement; if the process exits first, the event may correctly reappear
+because the player explicitly accepted that durability loss.
 
 If the process exits before acknowledgement commits, the event appears again
 after resume. That is correct because acknowledgement was never durable.
@@ -604,9 +762,27 @@ continuing:
 - Return to Title;
 - acquisition acknowledgement response.
 
-Flush failure blocks manual save, in-game load, Return to Title, or popup
-dismissal with an actionable error. Ordinary gameplay commands remain
-committed when a background autosave fails.
+The first flush failure blocks the requested operation with an actionable error
+and Retry/Cancel. Manual Save has no bypass because bypassing it would perform
+no useful action. In-game Load, Return to Title, and acquisition-popup
+dismissal additionally offer Continue Without Saving behind a second explicit
+data-loss confirmation.
+
+Those bypasses use distinct typed Rust commands tied to the current session
+generation and persistence failure. They are not an `allowDataLoss` boolean on
+the ordinary command and cannot be invoked before a real flush failure. An
+approved bypass records degraded persistence health and then discards or
+continues the affected in-memory state as described by the UI flow. Ordinary
+gameplay commands remain committed when a background autosave fails.
+
+The actionable error returns an opaque `failureToken`. Rust stores the
+corresponding one-shot challenge in the coordinator, bound to the failed
+operation and all relevant identity: session/discovery generation, durable
+revision, selected save ID, or acquisition event ID. The token is a UUID v4
+correlation value, not an authorization boundary; the frontend cannot inspect
+or manufacture the stored challenge. A successful retry, any superseding
+session/discovery transition, a changed selected save/event, or one bypass use
+invalidates it. Every without-saving command requires the matching live token.
 
 ## 12. Storage contract
 
@@ -655,7 +831,7 @@ Autosave selects:
 
 1. the lowest-numbered empty autosave slot, otherwise
 2. the autosave slot with the oldest filesystem modification time, with slot
-   number as deterministic tie-breaker.
+   number ascending as the deterministic tie-breaker.
 
 Valid, corrupt, and incompatible autosaves all participate in the same
 five-slot rotation. Rotation is the deliberate replacement policy for
@@ -669,6 +845,14 @@ committed mutation produces an autosave through normal rotation.
 Discovery returns all eight positions as one of:
 
 ```rust
+#[serde(rename_all = "camelCase")]
+struct SaveSlotView {
+    reference: SaveSlotRef,
+    modified_at: Option<String>,
+    status: SaveSlotStatusView,
+}
+
+#[serde(tag = "type", rename_all = "camelCase")]
 enum SaveSlotStatusView {
     Empty,
     Valid { metadata: SaveMetadataView },
@@ -678,8 +862,18 @@ enum SaveSlotStatusView {
 
 Filesystem modification time is the authoritative recency key for rotation
 and Continue. This allows an unparseable newest file to remain newest and block
-Continue as approved. A valid envelope's `updated_at` remains the user-facing
+Continue as approved. A valid envelope's `saved_at` remains the user-facing
 timestamp.
+
+Continue uses one total newest-first ordering:
+
+1. filesystem modification time;
+2. when both tied files are valid, envelope `saved_at`;
+3. a fixed storage-key fallback: manual before auto, then higher slot number.
+
+The last rule is only a deterministic fallback for filesystems whose timestamp
+resolution cannot distinguish writes, including ties involving an invalid file.
+It does not permit skipping a higher-ranked invalid file.
 
 Continue:
 
@@ -731,10 +925,18 @@ lists slots. This protects the current position and prevents a pending
 autosave rotation from changing a listed slot during selection. The menu is
 inert to gameplay commands while it is open.
 
+If that opening flush fails, Retry/Cancel is shown first. The approved second
+confirmation may open the browser without saving the current revision when
+slot discovery itself is still available. The resulting failure token/session
+generation is carried into `load_save_discarding_current`; ordinary
+`load_save` remains unavailable until a flush succeeds.
+
 The Load command carries the selected slot and the `save_id` observed by the
 browser. Rust rejects a stale selection if the slot changed. After confirmation
-it builds the candidate from that exact checkpoint, performs an idempotent
-flush check, and swaps engines only after both succeed.
+it builds the candidate from that exact checkpoint. Ordinary Load performs an
+idempotent flush check; Load and Discard Current Unsaved Progress instead
+validates the matching persistence failure/session generation. Rust swaps
+engines only after the selected path and candidate validation both succeed.
 
 Return to Title flushes the current revision, cancels its session generation,
 sets the engine to `None`, and returns a freshly discovered save list. Continue
@@ -791,17 +993,39 @@ The Rust shell exposes narrow typed commands:
 
 ```text
 list_saves
+get_persistence_status
 start_game
+start_game_without_saving
 save_manual
 load_save
+load_save_discarding_current
 continue_game
 delete_save
 return_to_title
+return_to_title_without_saving
 acknowledge_acquisition_event
+confirm_acquisition_without_saving
 ```
 
 Existing gameplay commands continue to return `GameStateView`. Their shared
 application wrapper schedules autosave after a successful durable revision.
+`GameStateView` remains engine-owned and does not absorb coordinator health.
+
+The coordinator exposes:
+
+```rust
+#[serde(tag = "type", rename_all = "camelCase")]
+enum PersistenceHealthView {
+    Healthy,
+    Pending,
+    Degraded { diagnostic: SaveDiagnosticView },
+}
+```
+
+`get_persistence_status` supplies the initial/current value. Rust emits one
+`persistence-status-changed` Tauri event whenever background persistence
+transitions between these states; the frontend store subscribes and owns only
+the rendered copy.
 
 Conceptual public save types:
 
@@ -810,15 +1034,32 @@ type SaveSlotRef =
   | { type: "auto"; slot: 1 | 2 | 3 | 4 | 5 }
   | { type: "manual"; slot: 1 | 2 | 3 };
 
+type SaveSlotStatusView =
+  | { type: "empty" }
+  | { type: "valid"; metadata: SaveMetadataView }
+  | { type: "invalid"; diagnostic: SaveDiagnosticView };
+
 type SaveSlotView = {
-  ref: SaveSlotRef;
+  reference: SaveSlotRef;
   modifiedAt: string | null;
-  status:
-    | { type: "empty" }
-    | { type: "valid"; metadata: SaveMetadata }
-    | { type: "invalid"; diagnostic: SaveDiagnostic };
+  status: SaveSlotStatusView;
+};
+
+type SaveBrowserView = {
+  discovery:
+    | { type: "available" }
+    | { type: "unavailable"; diagnostic: SaveDiagnosticView };
+  slots: SaveSlotView[];
 };
 ```
+
+Rust uses the same `SaveSlotView`, `SaveMetadataView`, and
+`SaveDiagnosticView` concept names. Every Rust save-view struct/enum uses
+`#[serde(rename_all = "camelCase")]` (and `rename_all_fields` for tagged-enum
+fields) so these TypeScript types mirror the IPC wire contract directly.
+
+When save-directory resolution or enumeration fails globally, `list_saves`
+returns `discovery: unavailable` and no fabricated per-slot statuses.
 
 Frontend booleans are not trusted for overwrite/load confirmation. They are UI
 workflow state only. Rust still validates:
@@ -844,9 +1085,16 @@ The title menu contains:
 - New Game;
 - the existing remaining entries.
 
-Continue and Load Game are disabled only when all eight files are absent.
-They remain enabled when files exist but are invalid, so the player can see
-their diagnostics.
+When discovery succeeds, Continue and Load Game are disabled only when all
+eight files are absent. They remain enabled when files exist but are invalid,
+so the player can see their diagnostics.
+
+If save discovery fails globally, Continue and Load Game are disabled and the
+title shows the global diagnostic with Retry. New Game first returns the same
+persistence-unavailable error. The player may then confirm Play Without Saving
+through the distinct `start_game_without_saving` path; the new session starts
+with degraded persistence health and later durable revisions may retry normal
+autosave.
 
 Continue shows a blocking diagnostic when the newest file fails. The action
 from that diagnostic opens Load Game with the failed slot selected.
@@ -872,7 +1120,7 @@ Each valid entry shows:
 - scene title;
 - active primary objective label, or a localized no-active-objective state;
 - Autosave or Manual Save;
-- local update date/time.
+- local saved date/time.
 
 An invalid entry shows its slot identity and typed diagnostic. It is disabled
 for Load but remains selectable for details and deletion. Empty entries use a
@@ -902,8 +1150,15 @@ Loading from an active game always opens confirmation. On confirmation, Rust
 flushes the current autosave, transactionally loads the selected file, and
 returns the replacement state.
 
-Return to Title flushes pending autosave work. A flush failure keeps the game
-open and reports the error.
+If the pre-load flush fails, the first dialog offers Retry/Cancel. A second
+confirmation may choose Load and Discard Current Unsaved Progress through
+`load_save_discarding_current`; Rust still transactionally validates the target
+before replacing the engine.
+
+Return to Title flushes pending autosave work. A first failure keeps the game
+open with Retry/Cancel. A second confirmation may invoke
+`return_to_title_without_saving`, clear the live engine, and retain the degraded
+health diagnostic on the title screen.
 
 ### 16.4 Post-load frontend reset
 
@@ -930,6 +1185,7 @@ diagnostics for:
 
 - save directory/path resolution failure;
 - save read/write/sync/replace failure;
+- global save discovery unavailable;
 - malformed JSON;
 - slot/envelope mismatch;
 - unsupported schema version;
@@ -940,6 +1196,7 @@ diagnostics for:
 - invalid runtime progress or cursor;
 - stale manual-overwrite confirmation;
 - stale session generation;
+- unavailable or stale persistence-bypass confirmation;
 - unknown/already-acknowledged acquisition event.
 
 Messages name the affected slot and give a user action where one exists. They
@@ -949,12 +1206,16 @@ Background autosave failure:
 
 - does not roll back the committed gameplay command;
 - records persistent save-health state;
+- updates `get_persistence_status` and emits `persistence-status-changed`;
 - exposes a visible warning in the in-game system menu/HUD;
 - retries only after a later durable revision or an explicit flush/save action;
 - never loops continuously on an unchanged failed revision.
 
-Manual-save, load, Return-to-Title flush, and acquisition-acknowledgement flush
-failures are blocking because the requested durability boundary was not met.
+Manual Save remains blocked on failure because there is no meaningful
+without-saving result. Load, Return to Title, acquisition acknowledgement, and
+New Game after global discovery failure first block, then offer the approved
+second-confirmation bypass. The bypass warning states exactly which progress
+may be lost and that acquisition acknowledgement may reappear after restart.
 
 ## 18. Verification
 
@@ -965,7 +1226,10 @@ failures are blocking because the requested durability boundary was not met.
 - Object/source ordering that is not semantic does not affect hashes.
 - Source locations, paths, and timestamps do not affect hashes.
 - Every resumable scene/dialogue block receives one stable origin/hash.
-- Missing and duplicate segment IDs fail with source locations.
+- Reordering or inserting sibling hotspots, topics, phases, questions, or
+  testimony lines leaves every unaffected segment origin unchanged.
+- Every dialogue-bearing field maps to one derived role key, and any
+  derived-origin collision fails with source locations.
 - Existing Chapter 1 compiles and produces loadable hash metadata.
 
 ### 18.2 Rust schema, capture, and restore tests
@@ -979,6 +1243,7 @@ failures are blocking because the requested durability boundary was not met.
 - Preserve HPA-255 story state and active-primary uniqueness.
 - Preserve the bounded dialogue transcript, next ID, last token, visual/audio
   cue IDs, queue generation, command ID, and durable revision.
+- Round-trip a fresh engine's non-optional default `last_visual_cue` object.
 - Sort set-backed fields deterministically.
 - Reject missing current/required definitions.
 - Reject active definition-hash changes without migration.
@@ -1012,6 +1277,8 @@ and a controllable writer:
 - never rotate into manual slots;
 - list five autosaves and three manual slots in stable groups;
 - select Continue by filesystem recency across both save types;
+- resolve equal-mtime Continue candidates by valid `saved_at`, then the fixed
+  manual/auto and slot-number fallback;
 - let an unparseable newest file block Continue;
 - manually load an older valid file;
 - preserve existing files on temporary-write, sync, and replacement failure;
@@ -1022,23 +1289,37 @@ and a controllable writer:
 - coalesce rapid revisions into one 500 ms autosave;
 - schedule a follow-up write when a revision commits during a write;
 - prevent stale session generations from replacing slots;
+- reject without-saving commands before a matching persistence failure and
+  after their session generation becomes stale;
 - flush before manual save, in-game load, Return to Title, and acquisition
   acknowledgement;
-- retain committed gameplay and expose save health on background failure.
+- retain committed gameplay and expose save health on background failure;
+- publish Healthy/Pending/Degraded status transitions without putting
+  coordinator state in `GameStateView`;
+- return one global discovery error rather than eight fabricated invalid slots.
 
 ### 18.5 Svelte tests
 
-- Title Continue/Load disabled only when no files exist.
+- When discovery succeeds, title Continue/Load is disabled only when no files
+  exist.
+- Global discovery failure disables Continue/Load and gates Play Without Saving
+  behind a second confirmation.
 - Continue diagnostic opens Load Game on the failed newest slot.
 - Shared browser renders valid, invalid, and empty states.
 - Browser renders all five autosaves and all three manual slots.
 - Manual overwrite and deletion require confirmation.
 - In-game Load requires confirmation; title Load does not.
+- Flush failures require Retry/Cancel before the distinct without-saving
+  confirmation becomes available.
 - New Game starts without an existing-save warning.
 - Escape steps back through confirmation/browser/root menu.
 - Successful load clears transient overlays and restores focus.
 - Save-health warning persists until a successful save/flush clears it.
+- Persistence status events update the warning after background writes without
+  a gameplay command.
 - Acquisition popup renders Rust event state rather than inventory diffs.
+- Acquisition Continue Without Saving warns that acknowledgement may reappear
+  after restart.
 
 ### 18.6 Packaged Tauri E2E
 
@@ -1136,8 +1417,10 @@ board/result-dialogue resume accepted by HPA-266.
 | Generic incomplete resumable fixture | §10, §18.2 |
 | Five visible latest autosaves | §§2, 12.3–12.4, 16.2, 18.4 |
 | Invalid newest blocks Continue | §§2, 12.4, 16.1, 18.4 |
+| Stable compiler-owned segment identity | §§5.1, 8.2, 18.1 |
 | Definition changes reject without migration | §§5, 13, 14, 18.2 |
 | Missing definitions reject transactionally | §§7, 13, 17, 18.2 |
+| Degraded-storage warning and explicit escape | §§11.3, 15–17, 18.4–18.5 |
 | Manual overwrite confirmation | §§15, 16.2, 18.4–18.6 |
 | Save to title to Continue | §§13, 16.1, 18.6 |
 
