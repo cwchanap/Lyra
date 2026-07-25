@@ -4,6 +4,7 @@
 
 pub mod acquisition;
 pub mod command_tx;
+mod content_manifest;
 pub mod dialogue;
 pub mod error;
 pub mod loader;
@@ -20,6 +21,7 @@ pub use error::GameError;
 pub use view::{DialogueHistoryEntry, GameStateView, ModeView, QueueToken, SceneNavigationIndex};
 
 use acquisition::AcquisitionCtx;
+use content_manifest::ContentManifest;
 use navigation::{
     load_chapter_manifests, load_scene_runtime, scene_navigation_index_from_chapters,
 };
@@ -102,6 +104,7 @@ impl GameEngine {
     pub fn new_started(resources_dir: PathBuf) -> Result<Self, GameError> {
         let chapters = load_chapter_manifests(&resources_dir)?;
         let story_catalog = StoryCatalog::load(&resources_dir)?;
+        ContentManifest::load(&resources_dir)?;
 
         let first_scene_ref = chapters[0]
             .scenes
