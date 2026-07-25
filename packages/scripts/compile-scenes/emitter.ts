@@ -80,10 +80,16 @@ export function emitStoryCatalog(
       }),
     ),
     objectives: [...catalog.objectives]
-      .sort(
-        (left, right) =>
-          left.sortOrder - right.sortOrder ||
-          (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
+      .sort((left, right) =>
+        left.sortOrder < right.sortOrder
+          ? -1
+          : left.sortOrder > right.sortOrder
+            ? 1
+            : left.id < right.id
+              ? -1
+              : left.id > right.id
+                ? 1
+                : 0,
       )
       .map(({ id, label, summary, kind, sortOrder }) => ({
         id,
