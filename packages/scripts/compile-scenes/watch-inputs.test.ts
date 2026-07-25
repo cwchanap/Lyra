@@ -225,6 +225,34 @@ describe("resolveWatchRoots", () => {
       rmSync(tempRoot, { recursive: true, force: true });
     }
   });
+
+  it("drops an input whose nearest existing ancestor is the filesystem root", () => {
+    // Walk up from an absolute path whose first segment under the filesystem
+    // root does not exist. On POSIX this reaches "/" (which exists), so the
+    // old loop exited via `existsSync` and returned "/" to chokidar; on
+    // Windows this reaches the current drive root (e.g. "C:\\"). Either way
+    // the filesystem root must never be handed to chokidar.watch(...). The
+    // pid-qualified segment keeps this from colliding with a real directory.
+    const unique = `lyra-resolve-watch-fsroot-${process.pid}`;
+    const missing = resolve("/", unique, "foo/bar");
+    expect(resolveWatchRoots([missing])).toEqual([]);
+  });
+
+  it("still resolves valid existing ancestors when a fs-root input is mixed in", () => {
+    const tempRoot = mkdtempSync(resolve(tmpdir(), "lyra-resolve-watch-"));
+    try {
+      const existing = resolve(tempRoot, "assets/config");
+      mkdirSync(existing, { recursive: true });
+      const fsRootMissing = resolve(
+        "/",
+        `lyra-resolve-watch-fsroot-${process.pid}`,
+        "foo/bar",
+      );
+      expect(resolveWatchRoots([fsRootMissing, existing])).toEqual([existing]);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("compile scene watch integration", () => {

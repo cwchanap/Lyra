@@ -16,17 +16,26 @@ export function compileScenesWatchInputs(
  * session triggers a recompile. `isCompileScenesWatchPath` still gates which
  * events actually recompile, so watching a broader ancestor is safe.
  * Returns a de-duplicated list; inputs that have no existing ancestor (e.g.
- * on a path whose parents are all missing) are dropped.
+ * on a path whose parents are all missing) are dropped. An input whose nearest
+ * existing ancestor is the filesystem root (`/` on POSIX, a drive root on
+ * Windows) is also dropped — watching the filesystem root is never the intent
+ * for compile-scenes inputs and would flood Chokidar.
  */
 export function resolveWatchRoots(inputs: readonly string[]): string[] {
   const resolved: string[] = [];
   const seen = new Set<string>();
   for (const input of inputs) {
     let root = input;
-    while (!existsSync(root) && root !== dirname(root)) {
+    while (!existsSync(root) && dirname(root) !== root) {
       root = dirname(root);
     }
-    if (existsSync(root) && !seen.has(root)) {
+    // Drop when the resolved root is the filesystem root itself. On POSIX `/`
+    // always exists, so the loop above exits via `existsSync` before the
+    // `dirname(root) !== root` guard fires; without this check `/` would be
+    // handed to chokidar.watch(...). On Windows the same applies to drive
+    // roots, and a missing drive falls through here too.
+    if (dirname(root) === root) continue;
+    if (!seen.has(root)) {
       seen.add(root);
       resolved.push(root);
     }
