@@ -153,6 +153,7 @@ definitions through the IPC layer.
 ```rust
 struct AppState {
     session: Mutex<AppSession>,
+    replacement_gate: Mutex<()>,
 }
 
 struct AppSession {
@@ -161,11 +162,12 @@ struct AppSession {
 }
 ```
 
-The exact synchronization primitive may be refined during planning, but the
-invariant is fixed: engine replacement, session-generation changes, and
-autosave scheduling share one ordering boundary. No timer may write a snapshot
-from a session that has already returned to title, started a new game, or
-loaded another save.
+The exact synchronization primitives may be refined during planning.
+`replacement_gate` is a narrow ordering gate, not the gameplay mutex described
+in §11.2. The invariant is fixed: engine replacement, session-generation
+changes, and autosave scheduling share one ordering boundary. No timer may
+replace a slot from a session that has already returned to title, started a new
+game, or loaded another save.
 
 ## 5. Compiled content identity
 
@@ -225,6 +227,12 @@ Examples:
   changed definition.
 
 The snapshot never treats matching IDs alone as compatibility proof.
+
+Operationally, this makes an active-scene edit a save-compatibility change even
+when the edited hotspot, topic, question, line, or copy is not currently
+visible to the player. Writers and release tooling must either ship an explicit
+content migration for affected active saves or accept a player-visible
+incompatibility diagnostic; active progress is never silently reset.
 
 ## 6. Save envelope
 
@@ -422,6 +430,25 @@ to the current index only after the question/line definitions and hashes pass.
 The line-content boundary uses segment/item coordinates rather than a flattened
 queue offset and must agree with the reconstructed active queue.
 
+`intro_queue_gen` is derived runtime bookkeeping and is not serialized as a
+separate scene-progress field. Capture is allowed only after initial scene
+priming completes. When an intro segment is active, restore uses
+`active_dialogue.queue_gen` for both the reconstructed queue and the runtime
+intro generation. Otherwise it initializes the now-unused runtime field from
+`next_queue_gen`; restore does not re-run `prime_initial_queue`. Capture rejects
+a non-empty, unplayed intro with no matching active intro segment as an
+impossible stable state.
+
+For interrogation restore, `line_content_boundary` maps back to the runtime's
+flattened `line_content_start` only after every segment has been reconstructed.
+`None` maps to the reconstructed queue length, meaning nothing is
+challengeable; when there is no active queue, the runtime field resets to `0`.
+A non-`None` boundary must identify the first item of the active testimony-line
+content segment and fall within that segment. Any boundary outside the
+reconstructed line content rejects the load. `CrossExamSnapshotV1::Playing`
+likewise maps its stable line ID to exactly one runtime line index; capture and
+restore never persist both formats.
+
 The loader rejects:
 
 - a missing chapter or scene;
@@ -432,11 +459,46 @@ The loader rejects:
   restored question;
 - any active definition-hash mismatch without a migration.
 
+Captures occur only after a durable command and all synchronous navigation
+triggered by that command have completed. Therefore:
+
+- a linear cursor past its final item is never saved as a mid-transition
+  linear scene; the snapshot contains the fully entered next scene;
+- an investigation outro that is still playing has `outro_played = true` and
+  `active_dialogue = Some(...)` with the outro segment;
+- an interrogation phase-entry queue is captured only after the phase is
+  current/entered and its atomic reveals have committed, with
+  `active_dialogue = Some(...)`;
+- an empty successor queue is exhausted synchronously before capture instead
+  of producing a persistent empty active queue.
+
 ### 7.2 Inventory and story state
 
-Inventory snapshots store record kind, stable record ID, and mutable acquisition
-metadata. They do not copy evidence/statement labels, descriptions, authored
-dialogue, or asset paths.
+Inventory snapshots preserve the current per-kind acquisition order and contain
+only:
+
+```rust
+struct InventorySnapshotV1 {
+    evidence: Vec<EvidenceInventoryEntryV1>,
+    statements: Vec<StatementInventoryEntryV1>,
+}
+
+struct EvidenceInventoryEntryV1 {
+    record_id: String,
+    collected_in_chapter_id: String,
+    collected_in_scene_id: String,
+}
+
+struct StatementInventoryEntryV1 {
+    record_id: String,
+    acquired_in_chapter_id: String,
+    acquired_in_scene_id: String,
+}
+```
+
+The entry type is the closed record-kind discriminator. Snapshots do not copy
+evidence/statement labels, descriptions, details, speaker/content, authored
+re-examination dialogue, image asset IDs, or paths.
 
 Restore resolves each record through the current packaged catalog/scene
 definitions and validates record kind. A missing record rejects the load.
@@ -470,10 +532,24 @@ struct LastVisualCueSnapshotV1 {
     bgm: Option<AudioCueSnapshotV1>,
     bgs: Option<AudioCueSnapshotV1>,
 }
+
+struct AudioCueSnapshotV1 {
+    channel: AudioChannelJson,
+    asset_id: Option<String>,
+}
 ```
 
 A fresh game therefore stores one empty/default cue object rather than omitting
-the field.
+the field. The loader validates that the `bgm` field carries the BGM channel and
+the `bgs` field carries the BGS channel.
+
+Restored audio is authoritative current channel state, not an incremental scene
+cue. An `asset_id` restarts that BGM/BGS asset from the beginning; playback
+position is deliberately not saved. An absent channel or an explicit
+`asset_id: None` produces silence after the frontend resets presentation.
+Existing “keep previous audio across a scene boundary” behavior is preserved
+because the already-carried cue is present in `last_visual_cue` before capture.
+Mute and volume preferences remain unchanged.
 
 Dialogue history stores the bounded Rust-owned transcript, its next entry ID,
 and its last recorded queue token. The transcript is a deliberate narrow
@@ -511,9 +587,21 @@ A linear scene uses one segment. Investigation and interrogation commands may
 install several ordered segments in one queue. Empty authored segments are
 omitted before queue installation; a queue with no remaining items is `None`.
 
-The public `QueueToken` may retain its existing flattened `cursor` for frontend
-compatibility. Rust derives that cursor from the active segment and item cursor.
-Persistent state always records both coordinates.
+The public `QueueToken` retains its existing flattened `cursor` for frontend
+compatibility. Its value is normative:
+
+```text
+flattened_cursor =
+  sum(segments[0..active_segment_index].items.len()) + item_cursor
+```
+
+The sum includes every raw dialogue item, including scene tags already consumed
+within earlier positions. Persistent state records both segment/item
+coordinates and preserves `queue_gen` exactly. Capture and restore must prove
+that the token for the same logical visible item is identical before and after
+load; this preserves stale-action rejection and `DialogueHistory.last_token`
+deduplication. Overflow, an out-of-range segment, or an out-of-range item cursor
+rejects capture/load rather than saturating.
 
 ### 8.2 Stable origins
 
@@ -644,9 +732,11 @@ struct AcquisitionEventStateV1 {
 }
 ```
 
-An event ID is derived from the committed command ID and acquisition ordinal.
-One command acquiring several records produces distinct events in deterministic
-order. Re-acquiring an already-owned record produces no event.
+An event ID uses the fixed format `acq:<command_id>:<ordinal>`, where ordinal
+starts at `0` within that command. The loader recomputes and validates the ID
+from the stored numeric fields. One command acquiring several records produces
+distinct events in deterministic reveal order. Re-acquiring an already-owned
+record produces no event.
 
 The command transaction allocates command IDs inside rollback-tracked state.
 A failed command restores the counter, inventory, and pending events together.
@@ -701,6 +791,11 @@ trait ResumableStateAdapter {
 Current linear, investigation, and interrogation restoration use this contract
 or an equivalent closed dispatcher.
 
+This adapter is crate-internal and may remain test-facing if a trait adds no
+production reuse. It does not introduce a trait tag, erased payload, or generic
+JSON bag into the disk schema; the production wire contract remains the closed
+typed enums in §7.
+
 A test-only P0 fixture implements the same contract with:
 
 - a stable definition reference and hash;
@@ -720,6 +815,23 @@ and does not depend on HPA-260's analysis runtime.
 
 `GameEngine` adds rollback-tracked `next_command_id` and persistent
 `durable_revision` counters.
+
+Fresh version-1 state starts with `durable_revision = 0` and
+`next_command_id = 1`. Every command entering the durable mutation seam reserves
+the current command ID inside rollback-tracked state. On success, the command ID
+and any acquisition events commit, `next_command_id` advances once, and
+`durable_revision` advances once. On failure, both counters and all events roll
+back. The stable-state invariant is therefore:
+
+```text
+next_command_id == durable_revision + 1
+```
+
+Acquisition events use the command identity; the coordinator uses the durable
+revision as its monotonic dirty/written version. They are not interchangeable
+types despite the invariant. Acquisition acknowledgement is a durable command
+and advances both. Read-only commands, discovery, flush-only work, manual save,
+and load construction do not advance either counter.
 
 For every successful durable command:
 
@@ -746,6 +858,29 @@ Autosave uses a 500 ms trailing debounce:
 
 The value is fixed in one named constant and covered with a fake-clock test.
 It is not user-configurable.
+
+Bulk serialization and file I/O must not hold the gameplay/session mutex.
+Writes use this ordering:
+
+1. under the session lock, verify the session generation, capture one immutable
+   envelope plus revision, and register its target/write intent;
+2. release the session lock, serialize, write, flush, and sync a unique
+   temporary file;
+3. acquire a narrow replacement gate shared with New Game, Load, and Return to
+   Title session-generation transitions;
+4. under the session lock, revalidate the generation and registered
+   target/revision intent, note whether a newer revision now exists, then
+   release the session lock while retaining the replacement gate;
+5. if stale, skip replacement and clean the temporary file; otherwise perform
+   the atomic replace and parent-directory sync without holding the gameplay
+   mutex;
+6. under the session lock, record success/health for the written revision and
+   schedule a follow-up when the same session has a newer committed revision;
+7. release the session lock and replacement gate.
+
+All users acquire the replacement gate before the session lock when both are
+needed. This prevents a stale session from replacing a slot while keeping
+gameplay responsive during the long temporary-file write.
 
 ### 11.3 Session generations and flushes
 
@@ -839,6 +974,9 @@ autosaves. Manual files are never selected by autosave.
 
 Starting New Game does not pre-delete saves and shows no warning. The first
 committed mutation produces an autosave through normal rotation.
+This intentionally means repeated new prologue sessions can rotate out older
+autosaves after six writes; manual slots remain untouched. QA covers that
+accepted retention behavior explicitly.
 
 ### 12.4 Discovery and ordering
 
@@ -858,7 +996,59 @@ enum SaveSlotStatusView {
     Valid { metadata: SaveMetadataView },
     Invalid { diagnostic: SaveDiagnosticView },
 }
+
+#[serde(rename_all = "camelCase")]
+struct SaveMetadataView {
+    save_id: String,
+    save_type: SaveType,
+    schema_version: u32,
+    content_revision: String,
+    saved_at: String,
+    summary: SaveSummaryView,
+}
+
+#[serde(rename_all = "camelCase")]
+struct SaveSummaryView {
+    chapter_id: String,
+    chapter_title: String,
+    scene_id: String,
+    scene_title: String,
+    active_primary_objective_id: Option<String>,
+    active_primary_objective_label: Option<String>,
+}
 ```
+
+`schema_version` and `content_revision` report the source checkpoint's on-disk
+values even when discovery applies migrations in memory. `SaveSlotView.reference`
+remains the authoritative storage position; `metadata.save_type` must agree
+with it.
+
+`Valid` means the file passed current non-mutating discovery validation, not
+merely that its JSON was readable. Discovery:
+
+1. reads the file and source modification time;
+2. parses the minimal version envelope and applies schema migrations in memory;
+3. applies any explicit content migrations in memory;
+4. validates path/slot/envelope identity and summary shape;
+5. loads packaged definition/hash metadata once for the discovery batch;
+6. resolves every required dependency and definition hash;
+7. reconstructs dialogue lengths and validates all scene progress, set
+   references, cross-exam state, queue coordinates, history token, counter
+   invariants, and summary references without replacing the live engine.
+
+A failure to load the shared packaged hash/definition metadata makes discovery
+globally unavailable. A dependency mismatch found while validating one save
+makes only that slot invalid.
+
+A differing bundle `contentRevision` is diagnostic metadata, not automatic
+invalidity. The slot remains valid when every required dependency is compatible
+under §5.2. Discovery returns the same typed schema, migration, dependency,
+content, cursor, and progress diagnostics that a load would return.
+
+Load still re-reads the selected file, verifies the observed `save_id`, and
+repeats all validation before building/swapping the candidate engine. This
+closes the discovery-to-load race; a prior `Valid` result is not permission to
+trust a file that changed afterward.
 
 Filesystem modification time is the authoritative recency key for rotation
 and Continue. This allows an unparseable newest file to remain newest and block
@@ -1025,7 +1215,9 @@ enum PersistenceHealthView {
 `get_persistence_status` supplies the initial/current value. Rust emits one
 `persistence-status-changed` Tauri event whenever background persistence
 transitions between these states; the frontend store subscribes and owns only
-the rendered copy.
+the rendered copy. Every event payload is the complete current
+`PersistenceHealthView`, never a delta, so a missed or duplicated event cannot
+require frontend state reconstruction.
 
 Conceptual public save types:
 
@@ -1033,6 +1225,22 @@ Conceptual public save types:
 type SaveSlotRef =
   | { type: "auto"; slot: 1 | 2 | 3 | 4 | 5 }
   | { type: "manual"; slot: 1 | 2 | 3 };
+
+type SaveMetadataView = {
+  saveId: string;
+  saveType: "auto" | "manual";
+  schemaVersion: number;
+  contentRevision: string;
+  savedAt: string;
+  summary: {
+    chapterId: string;
+    chapterTitle: string;
+    sceneId: string;
+    sceneTitle: string;
+    activePrimaryObjectiveId: string | null;
+    activePrimaryObjectiveLabel: string | null;
+  };
+};
 
 type SaveSlotStatusView =
   | { type: "empty" }
@@ -1239,11 +1447,22 @@ may be lost and that acquisition acknowledgement may reappear after restart.
 - Round-trip investigation progress and active dialogue.
 - Round-trip interrogation phase, cross-exam, line-content boundary, and active
   dialogue.
-- Preserve inventory acquisition metadata.
+- Derive `intro_queue_gen` from active intro state and reject an impossible
+  unplayed non-empty intro without its active segment.
+- Restore `line_content_start` only from a validated testimony-content boundary
+  and restore `CrossExam::Playing` from one stable line ID.
+- Preserve inventory per-kind order, record IDs, and collected/acquired
+  chapter/scene provenance without authored record copy.
 - Preserve HPA-255 story state and active-primary uniqueness.
 - Preserve the bounded dialogue transcript, next ID, last token, visual/audio
   cue IDs, queue generation, command ID, and durable revision.
 - Round-trip a fresh engine's non-optional default `last_visual_cue` object.
+- Restart restored BGM/BGS assets from the beginning, preserve carried
+  cross-scene cues, and restore explicit silence without changing preferences.
+- Enforce `next_command_id == durable_revision + 1`; prove failed commands roll
+  both back while acknowledgement advances both and flush/manual-save do not.
+- Reject past-end linear mid-transition state and preserve active investigation
+  outro/interrogation phase-entry queues at their committed boundaries.
 - Sort set-backed fields deterministically.
 - Reject missing current/required definitions.
 - Reject active definition-hash changes without migration.
@@ -1258,6 +1477,8 @@ may be lost and that acquisition acknowledgement may reappear after restart.
 
 - Reconstruct one linear segment at the same item.
 - Reconstruct composite multi-segment queues at the same segment and item.
+- Derive the public flattened cursor from segment lengths and prove the
+  pre-load/post-load `QueueToken` and history last token are identical.
 - Preserve order across `onCollect`, `onAcquire`, result, and reveal segments.
 - Reject stale queue tokens after normal advancement.
 - Create one acquisition event per newly acquired record.
@@ -1276,6 +1497,11 @@ and a controllable writer:
 - prefer empty autosave slots in numeric order;
 - never rotate into manual slots;
 - list five autosaves and three manual slots in stable groups;
+- mark a slot `Valid` only after non-mutating schema/content migration,
+  dependency/hash resolution, and structural snapshot validation;
+- keep a differing `contentRevision` valid when all required definition hashes
+  remain compatible;
+- repeat validation and reject a changed `save_id` between discovery and load;
 - select Continue by filesystem recency across both save types;
 - resolve equal-mtime Continue candidates by valid `saved_at`, then the fixed
   manual/auto and slot-number fallback;
@@ -1284,6 +1510,7 @@ and a controllable writer:
 - preserve existing files on temporary-write, sync, and replacement failure;
 - ignore stale temporary files during discovery;
 - preserve corrupt/incompatible source files after failed reads/migrations;
+- mark `manual-2.json` invalid when its envelope claims another type/slot;
 - delete only the explicitly selected slot;
 - reject stale manual overwrite confirmation;
 - coalesce rapid revisions into one 500 ms autosave;
@@ -1294,9 +1521,13 @@ and a controllable writer:
 - flush before manual save, in-game load, Return to Title, and acquisition
   acknowledgement;
 - retain committed gameplay and expose save health on background failure;
-- publish Healthy/Pending/Degraded status transitions without putting
+- publish full Healthy/Pending/Degraded status payloads without putting
   coordinator state in `GameStateView`;
-- return one global discovery error rather than eight fabricated invalid slots.
+- prove gameplay commands remain responsive during temporary-file writes and a
+  stale generation cannot pass the replacement gate;
+- return one global discovery error rather than eight fabricated invalid slots
+  when directory enumeration or shared packaged metadata fails, while keeping
+  file-specific mismatches per-slot.
 
 ### 18.5 Svelte tests
 
@@ -1306,6 +1537,8 @@ and a controllable writer:
   behind a second confirmation.
 - Continue diagnostic opens Load Game on the failed newest slot.
 - Shared browser renders valid, invalid, and empty states.
+- Valid rows render the complete save metadata contract; structural
+  incompatibilities render the discovery diagnostic before Load is selected.
 - Browser renders all five autosaves and all three manual slots.
 - Manual overwrite and deletion require confirmation.
 - In-game Load requires confirmation; title Load does not.
@@ -1340,7 +1573,10 @@ The debug e2e build proves real app-data storage and process boundaries:
    in-memory engine.
 
 E2E tests use an isolated app-data directory and clean only that test-owned
-directory.
+directory. The harness requires an explicit temporary HPA-129 app-data path and
+refuses to start or clean when it resolves to the production application-data
+directory, the user's home directory, or a non-test Tauri identifier. CI never
+discovers or mutates real user saves.
 
 ### 18.7 Final gates
 
@@ -1359,6 +1595,24 @@ Before HPA-129 implementation is complete:
 - packaged Tauri HPA-129 E2E scenarios pass.
 
 ## 19. Expected implementation areas
+
+Planning must respect this dependency order:
+
+1. add the shared canonicalizer, compiler-owned segment origins, per-definition
+   hashes, bundle revision, and determinism/collision fixtures;
+2. replace flat queued-scene dialogue with `ActiveDialogueQueue`, preserving
+   the public flattened token, then add the closed capture/restore adapters and
+   round-trip tests;
+3. add Rust acquisition events/durable acknowledgement and complete the
+   dedicated Svelte acquisition-controller/game-client rewrite with its own
+   focused tests;
+4. implement the versioned schema, migrations, discovery validation, candidate
+   restoration, storage, and coordinator/replacement gate;
+5. add typed IPC, persistence health, title/in-game save UI, and packaged Tauri
+   E2E coverage.
+
+The implementation must not first serialize the current flat queue and then
+refactor it; exact composite resume depends on the segment runtime from step 2.
 
 Likely implementation touches:
 
@@ -1417,6 +1671,7 @@ board/result-dialogue resume accepted by HPA-266.
 | Generic incomplete resumable fixture | §10, §18.2 |
 | Five visible latest autosaves | §§2, 12.3–12.4, 16.2, 18.4 |
 | Invalid newest blocks Continue | §§2, 12.4, 16.1, 18.4 |
+| Slot validity includes compatibility/progress checks | §§12.4, 13, 18.4–18.5 |
 | Stable compiler-owned segment identity | §§5.1, 8.2, 18.1 |
 | Definition changes reject without migration | §§5, 13, 14, 18.2 |
 | Missing definitions reject transactionally | §§7, 13, 17, 18.2 |

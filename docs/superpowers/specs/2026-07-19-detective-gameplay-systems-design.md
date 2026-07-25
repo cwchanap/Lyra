@@ -7,11 +7,19 @@
 
 ## 1. Normative source and narrative precedence
 
-This file is the **sole normative architecture and gameplay contract** for the additive detective-gameplay systems program:
+This file is the **program-level normative architecture and gameplay contract**
+for the additive detective-gameplay systems program:
 
 ```text
 docs/superpowers/specs/2026-07-19-detective-gameplay-systems-design.md
 ```
+
+The approved focused HPA-129 design at
+`docs/superpowers/specs/2026-07-25-hpa-129-save-load-autosave-continue-design.md`
+is the incorporated normative refinement of §§7.4 and 16. Where the two
+documents differ on persistence behavior, HPA-129 controls: five visible
+rotating autosaves replace the current-plus-backup model, and Continue targets
+the newest written save without silently falling back when it is invalid.
 
 The companion implementation plan defines sequencing, repository ownership, ticket mapping, and verification gates. It may summarize requirements for execution context, but it must not create a competing behavioral contract.
 
@@ -631,6 +639,12 @@ It also validates:
 It does **not** promise exhaustive combinatorial proof of every possible objective-transition ordering.
 
 ## 16. Save, load, autosave, and Continue
+
+> **Normative HPA-129 refinement:** Follow
+> `docs/superpowers/specs/2026-07-25-hpa-129-save-load-autosave-continue-design.md`
+> for implementation. Its five visible rotating autosaves and
+> newest-written-save/no-fallback Continue behavior supersede the baseline
+> autosave, backup, and “newest valid” bullets below.
 
 ### 16.1 User-facing behavior
 
