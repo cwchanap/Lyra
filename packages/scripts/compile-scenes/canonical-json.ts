@@ -29,7 +29,7 @@ function normalize(value: unknown, path: string): CanonicalJsonValue {
     if (Object.getPrototypeOf(value) !== Object.prototype) {
       throw new TypeError(`${path}: expected a plain JSON object`);
     }
-    const result: Record<string, CanonicalJsonValue> = {};
+    const result: Record<string, CanonicalJsonValue> = Object.create(null);
     for (const key of Object.keys(value).sort()) {
       const child = (value as Record<string, unknown>)[key];
       if (child === undefined) {

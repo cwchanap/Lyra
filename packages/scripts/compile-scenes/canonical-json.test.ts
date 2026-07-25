@@ -22,6 +22,12 @@ describe("canonicalJson", () => {
     expect(() => canonicalJson(value)).toThrow(message);
   });
 
+  it("preserves an own __proto__ JSON key", () => {
+    expect(canonicalJson(JSON.parse('{"__proto__":{"x":1}}'))).toBe(
+      '{"__proto__":{"x":1}}',
+    );
+  });
+
   it("returns a stable lowercase SHA-256 tag", () => {
     const hash = sha256CanonicalJson({ b: 2, a: 1 });
     expect(hash).toMatch(/^sha256:[0-9a-f]{64}$/);
