@@ -687,6 +687,56 @@ mod tests {
     }
 
     #[test]
+    fn resolve_question_reveals_question_without_prior_reveal_question() {
+        // Design §8.2: "Resolution also reveals the question." resolve_question
+        // must insert the question progress entry on a fresh state without a
+        // prior reveal_question call.
+        let catalog = catalog();
+        let mut state = StoryState::default();
+
+        state
+            .assert_fact(
+                &catalog,
+                "fact_alpha",
+                scene_origin("chapter_1", "scene_1", "event_1"),
+                &[],
+                &[],
+            )
+            .unwrap();
+
+        let before = state.snapshot();
+        assert_eq!(
+            state
+                .resolve_question(&catalog, "question_main", "fact_alpha")
+                .unwrap(),
+            MutationOutcome::Changed
+        );
+        let snapshot = state.snapshot();
+        assert!(snapshot.questions.contains_key("question_main"));
+        assert_eq!(
+            snapshot.questions["question_main"]
+                .resolved_by_fact_id
+                .as_deref(),
+            Some("fact_alpha")
+        );
+
+        // Repeating resolve_question with the same fact is Unchanged, matching
+        // the monotonic behavior exercised by the combined reveal-then-resolve
+        // test.
+        let before_repeat = state.snapshot();
+        assert_eq!(
+            state
+                .resolve_question(&catalog, "question_main", "fact_alpha")
+                .unwrap(),
+            MutationOutcome::Unchanged
+        );
+        assert_eq!(state.snapshot(), before_repeat);
+
+        // Guard: ensure the test actually mutated state from `before`.
+        assert_ne!(before.questions, snapshot.questions);
+    }
+
+    #[test]
     fn question_mutations_validate_all_definition_and_resolver_inputs_before_write() {
         let catalog = catalog();
         let mut state = StoryState::default();
