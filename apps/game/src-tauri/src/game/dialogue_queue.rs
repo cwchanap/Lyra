@@ -13,7 +13,8 @@ use crate::game::GameError;
 #[serde(
     tag = "type",
     rename_all = "camelCase",
-    rename_all_fields = "camelCase"
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
 )]
 pub(super) enum DialogueSegmentOriginV1 {
     LinearScene {
@@ -873,6 +874,74 @@ mod tests {
             .map(|value| serde_json::from_value(value).expect("origin should deserialize"))
             .collect();
         assert_eq!(decoded, origins);
+    }
+
+    #[test]
+    fn origin_deserialization_rejects_redundant_interaction_identity() {
+        let value = json!({
+            "type": "investigationInteraction",
+            "chapterId": "chapter_1",
+            "sceneId": "scene_2",
+            "segmentId": "hotspot:desk:inspect",
+            "interactionId": "desk"
+        });
+
+        assert!(
+            serde_json::from_value::<DialogueSegmentOriginV1>(value).is_err(),
+            "redundant interaction identity must not be silently accepted"
+        );
+    }
+
+    #[test]
+    fn origin_deserialization_rejects_revision_fields() {
+        let values = [
+            json!({
+                "type": "linearScene",
+                "chapterId": "chapter_1",
+                "sceneId": "scene_1",
+                "contentRevision": "sha256:stale"
+            }),
+            json!({
+                "type": "interrogationIntro",
+                "chapterId": "chapter_1",
+                "sceneId": "scene_3",
+                "packageRevision": "revision-2"
+            }),
+        ];
+
+        for value in values {
+            assert!(
+                serde_json::from_value::<DialogueSegmentOriginV1>(value).is_err(),
+                "revision fields must not be silently accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn origin_deserialization_rejects_structural_and_content_hash_fields() {
+        let values = [
+            json!({
+                "type": "investigationOutro",
+                "chapterId": "chapter_1",
+                "sceneId": "scene_2",
+                "structuralHash": "sha256:structure"
+            }),
+            json!({
+                "type": "interrogationPhase",
+                "chapterId": "chapter_1",
+                "sceneId": "scene_3",
+                "phaseId": "phase_1",
+                "segmentId": "question:q1:onLoop",
+                "contentHash": "sha256:content"
+            }),
+        ];
+
+        for value in values {
+            assert!(
+                serde_json::from_value::<DialogueSegmentOriginV1>(value).is_err(),
+                "hash fields must not be silently accepted"
+            );
+        }
     }
 
     #[test]
