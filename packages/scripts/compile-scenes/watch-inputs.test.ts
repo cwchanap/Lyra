@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   compileScenesWatchInputs,
   isCompileScenesWatchPath,
+  resolveWatchRoots,
 } from "./watch-inputs";
 
 type WatchEvent = "add" | "change" | "unlink";
@@ -173,6 +174,56 @@ describe("isCompileScenesWatchPath", () => {
     expect(isCompileScenesWatchPath(path, sourceRoots, assetConfigRoot)).toBe(
       false,
     );
+  });
+});
+
+describe("resolveWatchRoots", () => {
+  it("returns existing inputs unchanged", () => {
+    const tempRoot = mkdtempSync(resolve(tmpdir(), "lyra-resolve-watch-"));
+    try {
+      const existing = resolve(tempRoot, "a");
+      mkdirSync(existing);
+      expect(resolveWatchRoots([existing])).toEqual([existing]);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("replaces a missing root with its nearest existing ancestor", () => {
+    const tempRoot = mkdtempSync(resolve(tmpdir(), "lyra-resolve-watch-"));
+    try {
+      // tempRoot exists, but tempRoot/static/stories_plan does not.
+      const missing = resolve(tempRoot, "static/stories_plan");
+      expect(resolveWatchRoots([missing])).toEqual([tempRoot]);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("walks up through multiple missing ancestors", () => {
+    const tempRoot = mkdtempSync(resolve(tmpdir(), "lyra-resolve-watch-"));
+    try {
+      const missing = resolve(tempRoot, "a/b/c/d");
+      expect(resolveWatchRoots([missing])).toEqual([tempRoot]);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("de-duplicates ancestors shared by multiple missing roots", () => {
+    const tempRoot = mkdtempSync(resolve(tmpdir(), "lyra-resolve-watch-"));
+    try {
+      const missingA = resolve(tempRoot, "static/stories_plan");
+      const missingB = resolve(tempRoot, "docs/stories_plan");
+      const existing = resolve(tempRoot, "assets/config");
+      mkdirSync(existing, { recursive: true });
+      expect(resolveWatchRoots([missingA, missingB, existing])).toEqual([
+        tempRoot,
+        existing,
+      ]);
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 });
 
