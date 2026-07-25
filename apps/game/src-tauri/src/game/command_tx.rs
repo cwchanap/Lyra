@@ -408,11 +408,13 @@ mod tests {
         let before = engine.view();
         assert_eq!(history_labels(&before), vec!["A: before"]);
         let token = token_from(&before);
+        let expected_token_after_rollback = token.clone();
         let err = engine.advance_dialogue(token).unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
 
         let after = engine.view();
         assert_eq!(history_labels(&after), vec!["A: before"]);
+        assert_eq!(token_from(&after), expected_token_after_rollback);
         match after.mode {
             ModeView::Dialogue { current, .. } => {
                 assert!(

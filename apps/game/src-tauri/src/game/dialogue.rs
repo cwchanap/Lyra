@@ -266,10 +266,12 @@ impl GameEngine {
     }
 
     pub(super) fn on_queue_exhausted(&mut self) -> Result<(), GameError> {
+        if let SceneRuntime::Linear(scene) = &mut self.scene {
+            scene.queue = None;
+            self.advance_scene()?;
+            return Ok(());
+        }
         match &self.scene {
-            SceneRuntime::Linear(_) => {
-                self.advance_scene()?;
-            }
             SceneRuntime::Investigation(_) => {
                 if self.try_advance_investigation()? {
                     self.advance_scene()?;
@@ -293,6 +295,7 @@ impl GameEngine {
                     }
                 }
             }
+            SceneRuntime::Linear(_) => unreachable!("linear exhaustion returned above"),
         }
         Ok(())
     }
@@ -837,6 +840,35 @@ mod tests {
             history_labels(&after_stale),
             vec!["A: line 0", "narration: action 1"]
         );
+
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn duplicate_final_linear_token_is_rejected_after_game_complete() {
+        let d = dialogue_history_fixture_resources(1);
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+
+        let first_scene_token = token_from(&engine.view());
+        let second_scene = engine.advance_dialogue(first_scene_token).unwrap();
+        let final_token = token_from(&second_scene);
+
+        let completed = engine.advance_dialogue(final_token.clone()).unwrap();
+        assert!(matches!(completed.mode, ModeView::GameComplete));
+        let completed_chapter_idx = engine.current_chapter_idx;
+        let completed_scene_idx = engine.current_scene_idx;
+        let completed_history = history_labels(&completed);
+
+        let error = engine
+            .advance_dialogue(final_token)
+            .expect_err("the exhausted final queue must not accept its former token");
+
+        assert_eq!(error.code, "noActiveDialogue");
+        assert_eq!(engine.current_chapter_idx, completed_chapter_idx);
+        assert_eq!(engine.current_scene_idx, completed_scene_idx);
+        let after_replay = engine.view();
+        assert!(matches!(after_replay.mode, ModeView::GameComplete));
+        assert_eq!(history_labels(&after_replay), completed_history);
 
         let _ = std::fs::remove_dir_all(d);
     }
