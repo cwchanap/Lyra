@@ -6,6 +6,7 @@ pub mod acquisition;
 pub mod command_tx;
 mod content_manifest;
 pub mod dialogue;
+mod dialogue_queue;
 pub mod error;
 pub mod loader;
 pub mod navigation;
