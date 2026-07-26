@@ -1103,13 +1103,21 @@ fn resolve_investigation_interaction<'a>(
                 .split_once(':')
                 .filter(|(character_id, topic_id)| !character_id.is_empty() && !topic_id.is_empty())
                 .ok_or_else(|| unresolved_segment(segment_id))?;
-            let topic = scene
+            let mut matching_topics = scene
                 .sublocations
                 .iter()
                 .flat_map(|sublocation| &sublocation.characters)
-                .find(|character| character.id == character_id)
-                .and_then(|character| character.topics.iter().find(|topic| topic.id == topic_id))
+                .filter(|character| character.id == character_id)
+                .flat_map(|character| &character.topics)
+                .filter(|topic| topic.id == topic_id);
+            let topic = matching_topics
+                .next()
                 .ok_or_else(|| unresolved_segment(segment_id))?;
+            if matching_topics.next().is_some() {
+                return Err(resolution_error(format!(
+                    "Dialogue segment role '{segment_id}' ambiguously resolves to more than one packaged topic."
+                )));
+            }
             return if reexamine {
                 Ok(topic.on_reexamine.as_deref().unwrap_or_default())
             } else {
@@ -1163,7 +1171,7 @@ fn resolve_interrogation_phase<'a>(
     phase_id: &str,
     segment_id: &str,
 ) -> Result<&'a [DialogueItem], GameError> {
-    if phase_id == "inventory" {
+    if phase_id == "inventory" && is_interrogation_inventory_role(segment_id) {
         return resolve_interrogation_inventory(scene, segment_id);
     }
 
@@ -1270,6 +1278,17 @@ fn resolve_interrogation_inventory<'a>(
         }
     }
     Err(unresolved_segment(segment_id))
+}
+
+fn is_interrogation_inventory_role(segment_id: &str) -> bool {
+    [
+        ("evidence:", ":onCollect"),
+        ("evidence:", ":onReexamine"),
+        ("statement:", ":onAcquire"),
+        ("statement:", ":onReexamine"),
+    ]
+    .into_iter()
+    .any(|(prefix, suffix)| role_id(segment_id, prefix, suffix).is_some())
 }
 
 #[allow(dead_code)] // Used by Task 7's closed origin resolver.
@@ -1889,6 +1908,71 @@ mod tests {
     }
 
     #[test]
+    fn investigation_topic_resolution_finds_the_matching_pair_in_a_later_sublocation() {
+        let mut scene = investigation_scene();
+        let SceneJson::Investigation(scene_json) = &mut scene else {
+            panic!("expected investigation scene");
+        };
+        let mut later = scene_json.sublocations[0].clone();
+        later.id = "hallway".into();
+        later.characters[0].topics[0].topic_dialogue = vec![action("topic:witness:alibi:later")];
+        scene_json.sublocations[0].characters[0].topics[0].id = "weather".into();
+        scene_json.sublocations.push(later);
+
+        assert_eq!(
+            resolved_text(
+                &scene,
+                investigation_interaction("topic:witness:alibi:dialogue"),
+            ),
+            "topic:witness:alibi:later"
+        );
+    }
+
+    #[test]
+    fn investigation_topic_resolution_rejects_a_missing_pair_across_sublocations() {
+        let mut scene = investigation_scene();
+        let SceneJson::Investigation(scene_json) = &mut scene else {
+            panic!("expected investigation scene");
+        };
+        let mut later = scene_json.sublocations[0].clone();
+        later.id = "hallway".into();
+        later.characters[0].topics[0].id = "motive".into();
+        scene_json.sublocations[0].characters[0].topics[0].id = "weather".into();
+        scene_json.sublocations.push(later);
+
+        let error = resolve_dialogue_segments(
+            CHAPTER_ID,
+            &scene,
+            &[investigation_interaction("topic:witness:alibi:dialogue")],
+        )
+        .expect_err("a missing character/topic pair must be rejected");
+
+        assert_eq!(error.code, "dialogueSegmentResolutionFailed");
+    }
+
+    #[test]
+    fn investigation_topic_resolution_rejects_an_ambiguous_pair_across_sublocations() {
+        let mut scene = investigation_scene();
+        let SceneJson::Investigation(scene_json) = &mut scene else {
+            panic!("expected investigation scene");
+        };
+        let mut duplicate = scene_json.sublocations[0].clone();
+        duplicate.id = "hallway".into();
+        duplicate.characters[0].topics[0].topic_dialogue =
+            vec![action("topic:witness:alibi:duplicate")];
+        scene_json.sublocations.push(duplicate);
+
+        let error = resolve_dialogue_segments(
+            CHAPTER_ID,
+            &scene,
+            &[investigation_interaction("topic:witness:alibi:dialogue")],
+        )
+        .expect_err("an ambiguous character/topic pair must be rejected");
+
+        assert_eq!(error.code, "dialogueSegmentResolutionFailed");
+    }
+
+    #[test]
     fn resolves_every_interrogation_role() {
         let scene = interrogation_scene();
         let inventory_origin = |segment_id: &str| DialogueSegmentOriginV1::InterrogationPhase {
@@ -1971,6 +2055,52 @@ mod tests {
         ];
 
         for (origin, expected) in cases {
+            assert_eq!(resolved_text(&scene, origin), expected);
+        }
+    }
+
+    #[test]
+    fn authored_inventory_phase_and_synthetic_inventory_carriers_resolve_by_role() {
+        let mut scene = interrogation_scene();
+        let SceneJson::Interrogation(scene_json) = &mut scene else {
+            panic!("expected interrogation scene");
+        };
+        let InterrogationPhaseJson::Inquiry {
+            id, entry_dialogue, ..
+        } = &mut scene_json.phases[0];
+        *id = "inventory".into();
+        *entry_dialogue = vec![action("phase:inventory:entry")];
+        let authored_entry = DialogueSegmentOriginV1::InterrogationPhase {
+            chapter_id: CHAPTER_ID.into(),
+            scene_id: INTERROGATION_SCENE_ID.into(),
+            phase_id: "inventory".into(),
+            segment_id: "phase:inventory:entry".into(),
+        };
+        let authored_question = DialogueSegmentOriginV1::InterrogationPhase {
+            chapter_id: CHAPTER_ID.into(),
+            scene_id: INTERROGATION_SCENE_ID.into(),
+            phase_id: "inventory".into(),
+            segment_id: "question:whereabouts:onLoop".into(),
+        };
+        let synthetic_evidence = DialogueSegmentOriginV1::InterrogationPhase {
+            chapter_id: CHAPTER_ID.into(),
+            scene_id: INTERROGATION_SCENE_ID.into(),
+            phase_id: "inventory".into(),
+            segment_id: "evidence:camera:onCollect".into(),
+        };
+        let synthetic_statement = DialogueSegmentOriginV1::InterrogationPhase {
+            chapter_id: CHAPTER_ID.into(),
+            scene_id: INTERROGATION_SCENE_ID.into(),
+            phase_id: "inventory".into(),
+            segment_id: "statement:denial:onAcquire".into(),
+        };
+
+        for (origin, expected) in [
+            (authored_entry, "phase:inventory:entry"),
+            (authored_question, "question:whereabouts:onLoop"),
+            (synthetic_evidence, "evidence:camera:onCollect"),
+            (synthetic_statement, "statement:denial:onAcquire"),
+        ] {
             assert_eq!(resolved_text(&scene, origin), expected);
         }
     }

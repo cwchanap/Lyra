@@ -12,6 +12,7 @@ import type {
   ASTStoryCatalog,
   ASTTestimony,
   ASTTestimonyLine,
+  AssetRef,
   CaseRecordDefinitionIndex,
   DialogueItem,
   JSONChaptersIndex,
@@ -117,7 +118,7 @@ export function emitLinearScene(ast: ASTLinearScene): JSONLinearScene {
     id: ast.id,
     title: ast.title,
     queue: emitDialogueItems(ast.queue),
-    assetRefs: ast.assetRefs,
+    assetRefs: emitAssetRefs(ast.assetRefs),
   };
 }
 
@@ -129,7 +130,7 @@ export function emitInvestigationScene(
     id: ast.id,
     title: ast.title,
     intro: emitDialogueItems(ast.intro),
-    assetRefs: ast.assetRefs,
+    assetRefs: emitAssetRefs(ast.assetRefs),
     sublocations: ast.sublocations.map((sub) => ({
       id: sub.id,
       label: sub.label,
@@ -201,7 +202,7 @@ export function emitInterrogationScene(
     id: ast.id,
     title: ast.title,
     intro: emitDialogueItems(ast.intro),
-    assetRefs: ast.assetRefs,
+    assetRefs: emitAssetRefs(ast.assetRefs),
     phases: ast.phases.map((phase) => ({
       kind: "inquiry",
       id: phase.id,
@@ -251,6 +252,19 @@ export function emitInterrogationScene(
       dialogue: emitDialogueItems(ast.outro.dialogue),
     },
   };
+}
+
+function emitAssetRefs(assetRefs: AssetRef[]): AssetRef[] {
+  return [...assetRefs].sort((left, right) => {
+    const byType = left.type < right.type ? -1 : left.type > right.type ? 1 : 0;
+    return byType !== 0
+      ? byType
+      : left.assetId < right.assetId
+        ? -1
+        : left.assetId > right.assetId
+          ? 1
+          : 0;
+  });
 }
 
 function emitDialogueItems(items: DialogueItem[]): JSONDialogueItem[] {

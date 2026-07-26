@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -613,6 +614,66 @@ describe("compile (multiple source roots)", () => {
 });
 
 describe("compile (global story catalog)", () => {
+  it("rejects colliding derived dialogue origins with both carrier locations", () => {
+    const sourceRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-origin-collision-source-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-origin-collision-out-"),
+    );
+    try {
+      cpSync("packages/scripts/__fixtures__/valid", sourceRoot, {
+        recursive: true,
+      });
+      const scenePath = resolve(
+        sourceRoot,
+        "chapter_1/investigation_scene_1.md",
+      );
+      const original = readFileSync(scenePath, "utf8");
+      const duplicateCarrier = [
+        "### Character: 第二證人 {#witness}",
+        "",
+        "- **Role:** 證人",
+        "- **Bio:** 在另一個地點重複同一個話題。",
+        "",
+        "#### Topic: 重複的案發時間 {#timeline}",
+        "",
+        "- **Status:** unlocked",
+        "",
+        "**證人**：這是第二個衝突的話題。",
+        "",
+      ].join("\n");
+      writeFileSync(
+        scenePath,
+        original.replace(
+          "## Evidence Manifest",
+          `${duplicateCarrier}\n## Evidence Manifest`,
+        ),
+      );
+
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      const collision = result.errors.find(
+        (error) => error.code === "derivedDialogueOriginCollision",
+      );
+      expect(collision).toMatchObject({
+        sourceFile: "chapter_1/investigation_scene_1.md",
+        line: 87,
+      });
+      expect(collision?.message).toContain(
+        "chapter_1/investigation_scene_1.md:45",
+      );
+      expect(collision?.message).toContain(
+        "chapter_1/investigation_scene_1.md:87",
+      );
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
   it("emits a stable manifest for emitted chapter and scene order", () => {
     const sourceRoot = mkdtempSync(
       resolve(tmpdir(), "scene-compile-save-content-source-"),

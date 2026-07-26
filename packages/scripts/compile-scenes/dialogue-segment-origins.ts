@@ -1,4 +1,8 @@
 import type {
+  ASTInterrogationScene,
+  ASTInvestigationScene,
+  ASTLinearScene,
+  CompileError,
   JSONDialogueItem,
   JSONInterrogationScene,
   JSONInvestigationScene,
@@ -9,11 +13,16 @@ import type { DialogueSegmentOriginV1 } from "./save-content-manifest";
 export type EmittedSceneRecordV1 = {
   chapterId: string;
   json: JSONLinearScene | JSONInvestigationScene | JSONInterrogationScene;
+  sourceAst?: ASTLinearScene | ASTInvestigationScene | ASTInterrogationScene;
 };
 
 export type DerivedDialogueSegment = {
   origin: DialogueSegmentOriginV1;
   items: JSONDialogueItem[];
+  source?: {
+    sourceFile: string;
+    line: number;
+  };
 };
 
 export function investigationInteractionOrigin(
@@ -49,17 +58,34 @@ export function deriveDialogueSegments(
 ): DerivedDialogueSegment[] {
   switch (scene.json.type) {
     case "linear":
-      return deriveLinearSegments(scene.chapterId, scene.json);
+      return deriveLinearSegments(
+        scene.chapterId,
+        scene.json,
+        scene.sourceAst?.kind === "linearScene" ? scene.sourceAst : undefined,
+      );
     case "investigation":
-      return deriveInvestigationSegments(scene.chapterId, scene.json);
+      return deriveInvestigationSegments(
+        scene.chapterId,
+        scene.json,
+        scene.sourceAst?.kind === "investigationScene"
+          ? scene.sourceAst
+          : undefined,
+      );
     case "interrogation":
-      return deriveInterrogationSegments(scene.chapterId, scene.json);
+      return deriveInterrogationSegments(
+        scene.chapterId,
+        scene.json,
+        scene.sourceAst?.kind === "interrogationScene"
+          ? scene.sourceAst
+          : undefined,
+      );
   }
 }
 
 function deriveLinearSegments(
   chapterId: string,
   scene: JSONLinearScene,
+  sourceAst?: ASTLinearScene,
 ): DerivedDialogueSegment[] {
   return nonEmptySegments([
     {
@@ -69,6 +95,7 @@ function deriveLinearSegments(
         sceneId: scene.id,
       },
       items: scene.queue,
+      ...sourceFields(sourceAst),
     },
   ]);
 }
@@ -76,19 +103,23 @@ function deriveLinearSegments(
 function deriveInvestigationSegments(
   chapterId: string,
   scene: JSONInvestigationScene,
+  sourceAst?: ASTInvestigationScene,
 ): DerivedDialogueSegment[] {
   const segments: DerivedDialogueSegment[] = [
     {
       origin: { type: "investigationIntro", chapterId, sceneId: scene.id },
       items: scene.intro,
+      ...sourceFields(sourceAst),
     },
     {
       origin: { type: "investigationOutro", chapterId, sceneId: scene.id },
       items: scene.outro.dialogue,
+      ...sourceFields(sourceAst),
     },
   ];
 
-  for (const sublocation of scene.sublocations) {
+  for (const [sublocationIndex, sublocation] of scene.sublocations.entries()) {
+    const sourceSublocation = sourceAst?.sublocations[sublocationIndex];
     segments.push({
       origin: investigationInteractionOrigin(
         chapterId,
@@ -96,8 +127,10 @@ function deriveInvestigationSegments(
         `sublocation:${sublocation.id}:transition`,
       ),
       items: sublocation.transitionDialogue,
+      ...sourceFields(sourceSublocation),
     });
-    for (const hotspot of sublocation.hotspots) {
+    for (const [hotspotIndex, hotspot] of sublocation.hotspots.entries()) {
+      const sourceHotspot = sourceSublocation?.hotspots[hotspotIndex];
       segments.push(
         {
           origin: investigationInteractionOrigin(
@@ -106,6 +139,7 @@ function deriveInvestigationSegments(
             `hotspot:${hotspot.id}:inspect`,
           ),
           items: hotspot.inspectDialogue,
+          ...sourceFields(sourceHotspot),
         },
         {
           origin: investigationInteractionOrigin(
@@ -114,11 +148,17 @@ function deriveInvestigationSegments(
             `hotspot:${hotspot.id}:reexamine`,
           ),
           items: hotspot.onReexamine ?? [],
+          ...sourceFields(sourceHotspot),
         },
       );
     }
-    for (const character of sublocation.characters) {
-      for (const topic of character.topics) {
+    for (const [
+      characterIndex,
+      character,
+    ] of sublocation.characters.entries()) {
+      const sourceCharacter = sourceSublocation?.characters[characterIndex];
+      for (const [topicIndex, topic] of character.topics.entries()) {
+        const sourceTopic = sourceCharacter?.topics[topicIndex];
         segments.push(
           {
             origin: investigationInteractionOrigin(
@@ -127,6 +167,7 @@ function deriveInvestigationSegments(
               `topic:${character.id}:${topic.id}:dialogue`,
             ),
             items: topic.topicDialogue,
+            ...sourceFields(sourceTopic),
           },
           {
             origin: investigationInteractionOrigin(
@@ -135,12 +176,14 @@ function deriveInvestigationSegments(
               `topic:${character.id}:${topic.id}:reexamine`,
             ),
             items: topic.onReexamine ?? [],
+            ...sourceFields(sourceTopic),
           },
         );
       }
     }
   }
-  for (const evidence of scene.evidenceManifest) {
+  for (const [evidenceIndex, evidence] of scene.evidenceManifest.entries()) {
+    const sourceEvidence = sourceAst?.evidenceManifest[evidenceIndex];
     segments.push(
       {
         origin: investigationInteractionOrigin(
@@ -149,6 +192,7 @@ function deriveInvestigationSegments(
           `evidence:${evidence.id}:onCollect`,
         ),
         items: evidence.onCollect,
+        ...sourceFields(sourceEvidence),
       },
       {
         origin: investigationInteractionOrigin(
@@ -157,10 +201,12 @@ function deriveInvestigationSegments(
           `evidence:${evidence.id}:onReexamine`,
         ),
         items: evidence.onReexamine ?? [],
+        ...sourceFields(sourceEvidence),
       },
     );
   }
-  for (const statement of scene.statementManifest) {
+  for (const [statementIndex, statement] of scene.statementManifest.entries()) {
+    const sourceStatement = sourceAst?.statementManifest[statementIndex];
     segments.push(
       {
         origin: investigationInteractionOrigin(
@@ -169,6 +215,7 @@ function deriveInvestigationSegments(
           `statement:${statement.id}:onAcquire`,
         ),
         items: statement.onAcquire,
+        ...sourceFields(sourceStatement),
       },
       {
         origin: investigationInteractionOrigin(
@@ -177,6 +224,7 @@ function deriveInvestigationSegments(
           `statement:${statement.id}:onReexamine`,
         ),
         items: statement.onReexamine ?? [],
+        ...sourceFields(sourceStatement),
       },
     );
   }
@@ -186,19 +234,23 @@ function deriveInvestigationSegments(
 function deriveInterrogationSegments(
   chapterId: string,
   scene: JSONInterrogationScene,
+  sourceAst?: ASTInterrogationScene,
 ): DerivedDialogueSegment[] {
   const segments: DerivedDialogueSegment[] = [
     {
       origin: { type: "interrogationIntro", chapterId, sceneId: scene.id },
       items: scene.intro,
+      ...sourceFields(sourceAst),
     },
     {
       origin: { type: "interrogationOutro", chapterId, sceneId: scene.id },
       items: scene.outro.dialogue,
+      ...sourceFields(sourceAst),
     },
   ];
 
-  for (const phase of scene.phases) {
+  for (const [phaseIndex, phase] of scene.phases.entries()) {
+    const sourcePhase = sourceAst?.phases[phaseIndex];
     segments.push({
       origin: interrogationPhaseOrigin(
         chapterId,
@@ -207,8 +259,10 @@ function deriveInterrogationSegments(
         `phase:${phase.id}:entry`,
       ),
       items: phase.entryDialogue,
+      ...sourceFields(sourcePhase),
     });
-    for (const question of phase.questions) {
+    for (const [questionIndex, question] of phase.questions.entries()) {
+      const sourceQuestion = sourcePhase?.questions[questionIndex];
       const testimony = question.testimony;
       for (const [role, items] of [
         ["onLoop", testimony.onLoop],
@@ -225,9 +279,11 @@ function deriveInterrogationSegments(
             `question:${question.id}:${role}`,
           ),
           items,
+          ...sourceFields(sourceQuestion?.testimony),
         });
       }
-      for (const line of testimony.lines) {
+      for (const [lineIndex, line] of testimony.lines.entries()) {
+        const sourceLine = sourceQuestion?.testimony.lines[lineIndex];
         for (const [role, items] of [
           ["content", line.content],
           ["challenge", line.challenge],
@@ -242,12 +298,14 @@ function deriveInterrogationSegments(
               `question:${question.id}:line:${line.id}:${role}`,
             ),
             items,
+            ...sourceFields(sourceLine),
           });
         }
       }
     }
   }
-  for (const evidence of scene.evidenceManifest) {
+  for (const [evidenceIndex, evidence] of scene.evidenceManifest.entries()) {
+    const sourceEvidence = sourceAst?.evidenceManifest[evidenceIndex];
     const phaseId = "inventory";
     segments.push(
       {
@@ -258,6 +316,7 @@ function deriveInterrogationSegments(
           `evidence:${evidence.id}:onCollect`,
         ),
         items: evidence.onCollect,
+        ...sourceFields(sourceEvidence),
       },
       {
         origin: interrogationPhaseOrigin(
@@ -267,10 +326,12 @@ function deriveInterrogationSegments(
           `evidence:${evidence.id}:onReexamine`,
         ),
         items: evidence.onReexamine ?? [],
+        ...sourceFields(sourceEvidence),
       },
     );
   }
-  for (const statement of scene.statementManifest) {
+  for (const [statementIndex, statement] of scene.statementManifest.entries()) {
+    const sourceStatement = sourceAst?.statementManifest[statementIndex];
     const phaseId = "inventory";
     segments.push(
       {
@@ -281,6 +342,7 @@ function deriveInterrogationSegments(
           `statement:${statement.id}:onAcquire`,
         ),
         items: statement.onAcquire,
+        ...sourceFields(sourceStatement),
       },
       {
         origin: interrogationPhaseOrigin(
@@ -290,6 +352,7 @@ function deriveInterrogationSegments(
           `statement:${statement.id}:onReexamine`,
         ),
         items: statement.onReexamine ?? [],
+        ...sourceFields(sourceStatement),
       },
     );
   }
@@ -300,4 +363,44 @@ function nonEmptySegments(
   segments: DerivedDialogueSegment[],
 ): DerivedDialogueSegment[] {
   return segments.filter(({ items }) => items.length > 0);
+}
+
+function sourceFields(
+  source: { sourceFile: string; line: number } | undefined,
+): Pick<DerivedDialogueSegment, "source"> | Record<string, never> {
+  return source
+    ? { source: { sourceFile: source.sourceFile, line: source.line } }
+    : {};
+}
+
+export function validateDerivedDialogueOriginCollisions(
+  scenes: EmittedSceneRecordV1[],
+): CompileError[] {
+  const firstByOrigin = new Map<string, DerivedDialogueSegment>();
+  const errors: CompileError[] = [];
+
+  for (const scene of scenes) {
+    for (const segment of deriveDialogueSegments(scene)) {
+      if (!segment.source) continue;
+      const originKey = JSON.stringify(segment.origin);
+      const first = firstByOrigin.get(originKey);
+      if (!first) {
+        firstByOrigin.set(originKey, segment);
+        continue;
+      }
+      if (!first.source) continue;
+
+      errors.push({
+        code: "derivedDialogueOriginCollision",
+        message:
+          `Internal contract error: derived dialogue origin ${originKey} collides between ` +
+          `${first.source.sourceFile}:${first.source.line} and ` +
+          `${segment.source.sourceFile}:${segment.source.line}.`,
+        sourceFile: segment.source.sourceFile,
+        line: segment.source.line,
+      });
+    }
+  }
+
+  return errors;
 }
