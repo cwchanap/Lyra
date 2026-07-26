@@ -451,7 +451,7 @@ fn validate_manifest_scene_type(
     Ok(())
 }
 
-fn scene_json_identity(json: &SceneJson) -> (&str, &str) {
+pub(super) fn scene_json_identity(json: &SceneJson) -> (&str, &str) {
     match json {
         SceneJson::Linear(scene) => (&scene.id, &scene.title),
         SceneJson::Investigation(scene) => (&scene.id, &scene.title),

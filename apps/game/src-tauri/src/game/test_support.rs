@@ -421,6 +421,221 @@ pub(super) fn scene_jump_fixture_resources() -> PathBuf {
     d
 }
 
+pub(super) fn save_capture_fixture_resources() -> PathBuf {
+    let resources = scene_jump_fixture_resources();
+    std::fs::write(
+        resources.join("story_catalog.json"),
+        r#"{
+  "schemaVersion": 1,
+  "facts": [],
+  "questions": [],
+  "objectives": [{
+    "id": "objective_truth",
+    "label": "Find the truth",
+    "summary": "Resolve the contradiction.",
+    "kind": "primary",
+    "sortOrder": 1
+  }],
+  "authorizations": [],
+  "evidenceIndex": [{
+    "id":"test_evidence",
+    "chapterId":"chapter_1",
+    "sceneId":"investigation_scene_1"
+  }],
+  "statementsIndex": [{
+    "id":"alibi_statement",
+    "chapterId":"chapter_1",
+    "sceneId":"investigation_scene_1"
+  }]
+}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        resources.join("chapter_1/investigation_scene_1.json"),
+        r#"{
+  "type": "investigation",
+  "id": "investigation_scene_1",
+  "title": "Investigation",
+  "intro": [{"kind":"line","speaker":"B","text":"investigation intro"}],
+  "sublocations": [{
+    "id": "room",
+    "label": "Room",
+    "status": "unlocked",
+    "unlock": null,
+    "reveals": [],
+    "sceneTag": "room",
+    "transitionDialogue": [{"kind":"action","text":"room transition"}],
+    "hotspots": [{
+      "id": "desk",
+      "label": "Desk",
+      "description": "Desk",
+      "status": "unlocked",
+      "unlock": null,
+      "reveals": [],
+      "inspectDialogue": [{"kind":"action","text":"result"}],
+      "onReexamine": null
+    }, {
+      "id": "lamp",
+      "label": "Lamp",
+      "description": "Lamp",
+      "status": "unlocked",
+      "unlock": null,
+      "reveals": [],
+      "inspectDialogue": [],
+      "onReexamine": null
+    }],
+    "characters": [{
+      "id": "witness",
+      "name": "Witness",
+      "role": "Clerk",
+      "bio": "Nervous.",
+      "topics": [{
+        "id": "alibi",
+        "label": "Alibi",
+        "status": "unlocked",
+        "unlock": null,
+        "reveals": [],
+        "topicDialogue": [{"kind":"action","text":"reveal"}],
+        "onReexamine": null
+      }]
+    }, {
+      "id": "clerk",
+      "name": "Clerk",
+      "role": "Clerk",
+      "bio": "Quiet.",
+      "topics": [{
+        "id": "rain",
+        "label": "Rain",
+        "status": "unlocked",
+        "unlock": null,
+        "reveals": [],
+        "topicDialogue": [],
+        "onReexamine": null
+      }]
+    }]
+  }, {
+    "id": "archive",
+    "label": "Archive",
+    "status": "locked",
+    "unlock": null,
+    "reveals": [],
+    "sceneTag": "archive",
+    "transitionDialogue": [],
+    "hotspots": [],
+    "characters": []
+  }],
+  "evidenceManifest": [{
+    "id": "test_evidence",
+    "name": "Test Evidence",
+    "description": "Evidence",
+    "details": "Details",
+    "imageAssetId": null,
+    "onCollect": [{"kind":"action","text":"onCollect"}],
+    "onReexamine": null
+  }],
+  "statementManifest": [{
+    "id": "alibi_statement",
+    "speaker": "Witness",
+    "content": "Alibi",
+    "onAcquire": [{"kind":"action","text":"onAcquire"}],
+    "onReexamine": null
+  }],
+  "outro": {
+    "unlock": {"predicate":"hotspot_investigated","id":"desk"},
+    "dialogue": [{"kind":"action","text":"outro"}]
+  }
+}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        resources.join("chapter_1/interrogation_scene_2.json"),
+        r#"{
+  "type": "interrogation",
+  "id": "interrogation_scene_2",
+  "title": "Interrogation",
+  "intro": [{"kind":"action","text":"interrogation intro"}],
+  "phases": [{
+    "kind": "inquiry",
+    "id": "phase_zero",
+    "label": "Earlier phase",
+    "subject": {"id":"witness","name":"Witness","role":"Witness","bio":"Quiet."},
+    "required": false,
+    "status": "unlocked",
+    "unlock": null,
+    "reveals": [],
+    "sceneTag": "interrogation room",
+    "entryDialogue": [],
+    "complete": "auto",
+    "questions": [{
+      "id": "resolved_question",
+      "label": "Resolved",
+      "status": "unlocked",
+      "required": false,
+      "unlock": null,
+      "reveals": [],
+      "testimony": {
+        "onLoop": [],
+        "lines": [{
+          "id": "resolved_line",
+          "label": "Resolved line",
+          "content": [{"kind":"action","text":"resolved"}],
+          "contradiction": null
+        }]
+      }
+    }]
+  }, {
+    "kind": "inquiry",
+    "id": "phase_1",
+    "label": "證言",
+    "subject": {"id":"witness","name":"Witness","role":"Witness","bio":"Quiet."},
+    "required": true,
+    "status": "unlocked",
+    "unlock": null,
+    "reveals": [],
+    "sceneTag": "interrogation room",
+    "entryDialogue": [{"kind":"action","text":"phase entry"}],
+    "complete": "auto",
+    "questions": [{
+      "id": "q1",
+      "label": "問題一",
+      "status": "unlocked",
+      "required": true,
+      "unlock": null,
+      "reveals": [],
+      "testimony": {
+        "onLoop": [{"kind":"action","text":"onLoop"}],
+        "loopPrompt": [{"kind":"action","text":"prompt"}],
+        "lines": [{
+          "id": "l1",
+          "label": "行1",
+          "content": [{"kind":"line","speaker":"witness","text":"line"}],
+          "contradiction": {"kind":"evidence","id":"test_evidence"}
+        }]
+      }
+    }]
+  }, {
+    "kind": "inquiry",
+    "id": "phase_two",
+    "label": "Follow-up",
+    "subject": {"id":"witness","name":"Witness","role":"Witness","bio":"Quiet."},
+    "required": false,
+    "status": "locked",
+    "unlock": null,
+    "reveals": [],
+    "sceneTag": "interrogation room",
+    "entryDialogue": [{"kind":"action","text":"follow-up entry"}],
+    "complete": "auto",
+    "questions": []
+  }],
+  "evidenceManifest": [],
+  "statementManifest": [],
+  "outro": {"unlock":"auto","dialogue":[{"kind":"action","text":"outro"}]}
+}"#,
+    )
+    .unwrap();
+    resources
+}
+
 pub(super) fn story_navigation_fixture_resources() -> PathBuf {
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};

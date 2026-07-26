@@ -8,6 +8,8 @@ use crate::game::schema::{
 use crate::game::state::Inventory;
 use crate::game::unlock::{self, InterrogationUnlockContext};
 
+pub(crate) const RESTORED_CONSUMED_INTRO_QUEUE_GEN: u64 = 0;
+
 /// Cross-examination sub-state for the currently active inquiry question.
 ///
 /// This is deliberately separate from `current_phase_id`/`completed_phases`:
@@ -333,6 +335,10 @@ impl InterrogationSceneState {
 
     pub fn phase_entered(&self, phase_id: &str) -> bool {
         self.entered_phases.contains(phase_id)
+    }
+
+    pub(crate) fn entered_phase_ids(&self) -> &HashSet<String> {
+        &self.entered_phases
     }
 
     pub fn refresh_phase_completion(&mut self, inventory: &Inventory) {
