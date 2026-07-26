@@ -530,7 +530,10 @@ pub(super) fn save_capture_fixture_resources() -> PathBuf {
     "description": "Evidence",
     "details": "Details",
     "imageAssetId": null,
-    "onCollect": [{"kind":"action","text":"onCollect"}],
+    "onCollect": [
+      {"kind":"action","text":"onCollect one"},
+      {"kind":"action","text":"onCollect two"}
+    ],
     "onReexamine": null
   }],
   "statementManifest": [{
@@ -603,7 +606,10 @@ pub(super) fn save_capture_fixture_resources() -> PathBuf {
       "unlock": null,
       "reveals": [],
       "testimony": {
-        "onLoop": [{"kind":"action","text":"onLoop"}],
+        "onLoop": [
+          {"kind":"action","text":"onLoop one"},
+          {"kind":"action","text":"onLoop two"}
+        ],
         "loopPrompt": [{"kind":"action","text":"prompt"}],
         "lines": [{
           "id": "l1",

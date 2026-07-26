@@ -663,7 +663,7 @@ impl DialogueSegment {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ActiveDialogueQueue {
     segments: Vec<DialogueSegment>,
     active_segment_index: usize,
@@ -779,6 +779,10 @@ impl ActiveDialogueQueue {
 
     pub(super) fn queue_gen(&self) -> u64 {
         self.queue_gen
+    }
+
+    pub(super) fn same_persisted_shape(&self, other: &Self) -> bool {
+        self == other
     }
 
     #[allow(dead_code)] // Task 7 persists the closed ordered origin list.
@@ -927,7 +931,7 @@ impl crate::game::GameEngine {
     }
 
     #[allow(dead_code)] // Used by Task 7's crate-private capture adapter.
-    fn active_dialogue_queue(&self) -> Option<&ActiveDialogueQueue> {
+    pub(super) fn active_dialogue_queue(&self) -> Option<&ActiveDialogueQueue> {
         match &self.scene {
             crate::game::scenes::SceneRuntime::Linear(scene) => scene.queue.as_ref(),
             crate::game::scenes::SceneRuntime::Investigation(scene) => scene.pending_queue.as_ref(),
