@@ -17,11 +17,12 @@ pub struct GameStateView {
     pub dialogue_history: Vec<DialogueHistoryEntry>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
-    rename_all_fields = "camelCase"
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
 )]
 pub enum DialogueHistoryEntry {
     Line {
@@ -83,7 +84,7 @@ pub struct AudioCueView {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueueToken {
     pub scene_id: String,
     pub queue_gen: u64,

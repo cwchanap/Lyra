@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
-    rename_all_fields = "camelCase"
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
 )]
 pub enum DialogueItem {
     SceneTag {
@@ -144,7 +145,7 @@ pub enum RevealTarget {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum InventoryTarget {
     Evidence { id: String },
     Statement { id: String },

@@ -10,6 +10,138 @@ pub struct GameError {
 }
 
 impl GameError {
+    pub fn save_directory_unavailable() -> Self {
+        Self::new("saveDirectoryUnavailable", "Save directory is unavailable.")
+    }
+    pub fn save_read_failed() -> Self {
+        Self::new("saveReadFailed", "Save could not be read.")
+    }
+    pub fn save_write_failed() -> Self {
+        Self::new("saveWriteFailed", "Save could not be written.")
+    }
+    pub fn save_sync_failed() -> Self {
+        Self::new("saveSyncFailed", "Save could not be synchronized.")
+    }
+    pub fn save_replace_failed() -> Self {
+        Self::new(
+            "saveReplaceFailed",
+            "Save could not replace its previous checkpoint.",
+        )
+    }
+    pub fn save_discovery_unavailable() -> Self {
+        Self::new("saveDiscoveryUnavailable", "Save discovery is unavailable.")
+    }
+    pub fn malformed_save_json() -> Self {
+        Self::new("malformedSaveJson", "Save JSON is malformed.")
+    }
+    pub fn save_slot_mismatch() -> Self {
+        Self::new(
+            "saveSlotMismatch",
+            "Save slot does not match its storage target.",
+        )
+    }
+    pub fn unsupported_save_schema_version() -> Self {
+        Self::new(
+            "unsupportedSaveSchemaVersion",
+            "Save schema version is unsupported.",
+        )
+    }
+    pub fn missing_save_schema_migration() -> Self {
+        Self::new(
+            "missingSaveSchemaMigration",
+            "Save schema migration is missing.",
+        )
+    }
+    pub fn missing_save_definition() -> Self {
+        Self::new(
+            "missingSaveDefinition",
+            "A saved definition is missing from packaged content.",
+        )
+    }
+    pub fn invalid_save_progress() -> Self {
+        Self::new("invalidSaveProgress", "Save progress is invalid.")
+    }
+    pub fn invalid_save_cursor() -> Self {
+        Self::new("invalidSaveCursor", "Save dialogue cursor is invalid.")
+    }
+    pub fn invalid_save_checkpoint_id() -> Self {
+        Self::new("invalidSaveCheckpointId", "Save checkpoint ID is invalid.")
+    }
+    pub fn manual_save_name_empty() -> Self {
+        Self::new("manualSaveNameEmpty", "Save name cannot be empty.")
+    }
+    pub fn manual_save_name_too_long() -> Self {
+        Self::new(
+            "manualSaveNameTooLong",
+            "Save name cannot exceed 40 grapheme clusters.",
+        )
+    }
+    pub fn manual_save_name_forbidden() -> Self {
+        Self::new(
+            "manualSaveNameForbidden",
+            "Save name contains a forbidden character.",
+        )
+    }
+    pub fn thumbnail_png_malformed() -> Self {
+        Self::new("thumbnailPngMalformed", "Thumbnail PNG is malformed.")
+    }
+    pub fn thumbnail_png_too_large() -> Self {
+        Self::new("thumbnailPngTooLarge", "Thumbnail PNG is too large.")
+    }
+    pub fn thumbnail_dimensions_out_of_bounds() -> Self {
+        Self::new(
+            "thumbnailDimensionsOutOfBounds",
+            "Thumbnail dimensions are outside the allowed range.",
+        )
+    }
+    pub fn stale_thumbnail_ticket() -> Self {
+        Self::new("staleThumbnailTicket", "Thumbnail ticket is stale.")
+    }
+    pub fn thumbnail_ticket_purpose_mismatch() -> Self {
+        Self::new(
+            "thumbnailTicketPurposeMismatch",
+            "Thumbnail ticket purpose does not match.",
+        )
+    }
+    pub fn acquisition_thumbnail_ticket_mismatch() -> Self {
+        Self::new(
+            "acquisitionThumbnailTicketMismatch",
+            "Acquisition thumbnail ticket does not match.",
+        )
+    }
+    pub fn persistence_operation_in_progress() -> Self {
+        Self::new(
+            "persistenceOperationInProgress",
+            "A persistence operation is already in progress.",
+        )
+    }
+    pub fn stale_manual_overwrite_confirmation() -> Self {
+        Self::new(
+            "staleManualOverwriteConfirmation",
+            "Manual overwrite confirmation is stale.",
+        )
+    }
+    pub fn stale_save_selection() -> Self {
+        Self::new("staleSaveSelection", "Save selection is stale.")
+    }
+    pub fn stale_session_generation() -> Self {
+        Self::new("staleSessionGeneration", "Session generation is stale.")
+    }
+    pub fn persistence_bypass_unavailable() -> Self {
+        Self::new(
+            "persistenceBypassUnavailable",
+            "Persistence bypass is unavailable.",
+        )
+    }
+    pub fn stale_persistence_failure_token() -> Self {
+        Self::new(
+            "stalePersistenceFailureToken",
+            "Persistence failure token is stale.",
+        )
+    }
+    pub fn unknown_acquisition_event() -> Self {
+        Self::new("unknownAcquisitionEvent", "Acquisition event is unknown.")
+    }
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
