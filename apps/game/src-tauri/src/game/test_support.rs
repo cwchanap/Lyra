@@ -21,7 +21,19 @@ pub(super) fn test_content_manifest() -> crate::game::content_manifest::ContentM
     crate::game::content_manifest::ContentManifest::for_test()
 }
 
-pub fn write_empty_story_catalog(dir: &Path) {
+pub(super) fn write_content_manifest(dir: &Path) {
+    std::fs::write(
+        dir.join("save_content_manifest.json"),
+        r#"{
+  "manifestVersion": 1,
+  "contentRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+}
+"#,
+    )
+    .unwrap();
+}
+
+pub fn write_empty_story_catalog_and_content_manifest(dir: &Path) {
     std::fs::write(
         dir.join("story_catalog.json"),
         r#"{
@@ -36,15 +48,7 @@ pub fn write_empty_story_catalog(dir: &Path) {
 "#,
     )
     .unwrap();
-    std::fs::write(
-        dir.join("save_content_manifest.json"),
-        r#"{
-  "manifestVersion": 1,
-  "contentRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-}
-"#,
-    )
-    .unwrap();
+    write_content_manifest(dir);
 }
 
 pub(super) fn investigation_scene_with_intro(
@@ -136,7 +140,7 @@ pub(super) fn dialogue_history_fixture_resources(line_count: usize) -> PathBuf {
     ));
     let chapter_dir = d.join("chapter_1");
     fs::create_dir_all(&chapter_dir).unwrap();
-    write_empty_story_catalog(&d);
+    write_empty_story_catalog_and_content_manifest(&d);
     fs::write(
         d.join("chapters.json"),
         r#"{
@@ -200,7 +204,7 @@ pub(super) fn scene_jump_fixture_resources() -> PathBuf {
     let d = std::env::temp_dir().join(format!("lyra-scene-jump-test-{}-{}", std::process::id(), n));
     let chapter_1 = d.join("chapter_1");
     fs::create_dir_all(&chapter_1).unwrap();
-    write_empty_story_catalog(&d);
+    write_empty_story_catalog_and_content_manifest(&d);
     fs::write(
         d.join("chapters.json"),
         r#"{
@@ -334,11 +338,7 @@ pub(super) fn story_navigation_fixture_resources() -> PathBuf {
     let chapter_2 = d.join("chapter_2");
     fs::create_dir_all(&chapter_1).unwrap();
     fs::create_dir_all(&chapter_2).unwrap();
-    fs::write(
-        d.join("save_content_manifest.json"),
-        r#"{"manifestVersion":1,"contentRevision":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}"#,
-    )
-    .unwrap();
+    write_content_manifest(&d);
     fs::write(
         d.join("story_catalog.json"),
         r#"{

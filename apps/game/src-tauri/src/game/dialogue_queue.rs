@@ -66,7 +66,7 @@ mod persistence_adapter_tests {
     use crate::game::scenes::SceneRuntime;
     use crate::game::GameEngine;
     use serde_json::json;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     const CONTENT_REVISION: &str =
@@ -109,24 +109,44 @@ mod persistence_adapter_tests {
         }
     }
 
-    fn fixture() -> (PathBuf, GameEngine) {
-        static SEQ: AtomicU64 = AtomicU64::new(0);
-        let sequence = SEQ.fetch_add(1, Ordering::Relaxed);
-        let resources = std::env::temp_dir().join(format!(
-            "lyra-active-dialogue-persistence-{}-{sequence}",
-            std::process::id()
-        ));
-        let source_dir = resources.join(SOURCE_CHAPTER_ID);
-        let current_dir = resources.join(CURRENT_CHAPTER_ID);
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            static SEQ: AtomicU64 = AtomicU64::new(0);
+            let sequence = SEQ.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "lyra-active-dialogue-persistence-{}-{sequence}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn fixture() -> (TestDir, GameEngine) {
+        let resources = TestDir::new();
+        let source_dir = resources.path().join(SOURCE_CHAPTER_ID);
+        let current_dir = resources.path().join(CURRENT_CHAPTER_ID);
         std::fs::create_dir_all(&source_dir).unwrap();
         std::fs::create_dir_all(&current_dir).unwrap();
         std::fs::write(
-            resources.join("save_content_manifest.json"),
+            resources.path().join("save_content_manifest.json"),
             format!(r#"{{"manifestVersion":1,"contentRevision":"{CONTENT_REVISION}"}}"#),
         )
         .unwrap();
         std::fs::write(
-            resources.join("story_catalog.json"),
+            resources.path().join("story_catalog.json"),
             r#"{
                 "schemaVersion": 1,
                 "facts": [],
@@ -139,7 +159,7 @@ mod persistence_adapter_tests {
         )
         .unwrap();
         std::fs::write(
-            resources.join("chapters.json"),
+            resources.path().join("chapters.json"),
             format!(
                 r#"{{
                     "chapters": [
@@ -240,7 +260,7 @@ mod persistence_adapter_tests {
         )
         .unwrap();
 
-        let engine = GameEngine::new_started(resources.clone()).unwrap();
+        let engine = GameEngine::new_started(resources.path().to_path_buf()).unwrap();
         (resources, engine)
     }
 
@@ -294,7 +314,7 @@ mod persistence_adapter_tests {
 
     #[test]
     fn capture_preserves_composite_origin_order_and_segment_coordinates() {
-        let (resources, mut engine) = fixture();
+        let (_resources, mut engine) = fixture();
         let origins = vec![
             source_interaction("hotspot:desk:inspect"),
             source_interaction("evidence:note:onCollect"),
@@ -320,12 +340,11 @@ mod persistence_adapter_tests {
         let captured = engine.capture_active_dialogue().unwrap().unwrap();
 
         assert_eq!(captured, state(origins, 1, 1, 41));
-        std::fs::remove_dir_all(resources).unwrap();
     }
 
     #[test]
     fn restore_resolves_each_origin_from_its_own_scene_and_preserves_the_queue_token() {
-        let (resources, mut engine) = fixture();
+        let (_resources, mut engine) = fixture();
         engine
             .jump_to_scene(CURRENT_CHAPTER_ID, CURRENT_SCENE_ID)
             .unwrap();
@@ -355,7 +374,6 @@ mod persistence_adapter_tests {
         assert_eq!(restored.queue_gen(), 77);
         assert_eq!(restored.flattened_cursor().unwrap(), 2);
         assert_action(restored.current(), REEXAMINE_FALLBACK_TEXT);
-        std::fs::remove_dir_all(resources).unwrap();
     }
 
     #[test]
@@ -363,6 +381,7 @@ mod persistence_adapter_tests {
         let (resources, engine) = fixture();
         std::fs::remove_file(
             resources
+                .path()
                 .join(SOURCE_CHAPTER_ID)
                 .join(format!("{SOURCE_SCENE_ID}.json")),
         )
@@ -375,12 +394,11 @@ mod persistence_adapter_tests {
             &saved,
             "incompatibleContentRevision",
         );
-        std::fs::remove_dir_all(resources).unwrap();
     }
 
     #[test]
     fn restore_rejects_unknown_mixed_empty_and_out_of_bounds_state_without_mutation() {
-        let (resources, mut engine) = fixture();
+        let (_resources, mut engine) = fixture();
         engine
             .jump_to_scene(CURRENT_CHAPTER_ID, CURRENT_SCENE_ID)
             .unwrap();
@@ -448,7 +466,6 @@ mod persistence_adapter_tests {
                 expected_code,
             );
         }
-        std::fs::remove_dir_all(resources).unwrap();
     }
 
     #[test]
@@ -459,6 +476,7 @@ mod persistence_adapter_tests {
             .unwrap();
         std::fs::remove_file(
             resources
+                .path()
                 .join(SOURCE_CHAPTER_ID)
                 .join(format!("{SOURCE_SCENE_ID}.json")),
         )
@@ -471,14 +489,13 @@ mod persistence_adapter_tests {
             &saved,
             "sceneLoadFailed",
         );
-        std::fs::remove_dir_all(resources).unwrap();
     }
 
     #[test]
     fn repeated_origins_load_their_packaged_scene_definition_once() {
         let (resources, engine) = fixture();
         let definition = crate::game::loader::load_scene(
-            &resources,
+            resources.path(),
             &format!("{CURRENT_CHAPTER_ID}/{CURRENT_SCENE_ID}.json"),
         )
         .unwrap();
@@ -498,19 +515,18 @@ mod persistence_adapter_tests {
             restored.segment_origins(),
             [linear_origin(), linear_origin()]
         );
-        std::fs::remove_dir_all(resources).unwrap();
     }
 
     #[test]
     fn distinct_origin_scenes_load_once_each_and_keep_saved_order() {
         let (resources, engine) = fixture();
         let source_definition = crate::game::loader::load_scene(
-            &resources,
+            resources.path(),
             &format!("{SOURCE_CHAPTER_ID}/{SOURCE_SCENE_ID}.json"),
         )
         .unwrap();
         let current_definition = crate::game::loader::load_scene(
-            &resources,
+            resources.path(),
             &format!("{CURRENT_CHAPTER_ID}/{CURRENT_SCENE_ID}.json"),
         )
         .unwrap();
@@ -544,14 +560,13 @@ mod persistence_adapter_tests {
         );
         assert_eq!(restored.segment_origins(), origins);
         assert_action(restored.current(), REEXAMINE_FALLBACK_TEXT);
-        std::fs::remove_dir_all(resources).unwrap();
     }
 
     #[test]
     fn a_second_same_scene_loader_value_cannot_mix_the_candidate() {
         let (resources, engine) = fixture();
         let stable_definition = crate::game::loader::load_scene(
-            &resources,
+            resources.path(),
             &format!("{CURRENT_CHAPTER_ID}/{CURRENT_SCENE_ID}.json"),
         )
         .unwrap();
@@ -577,12 +592,11 @@ mod persistence_adapter_tests {
         assert_eq!(load_calls, 1);
         assert_action(restored.current(), "current-0");
         assert_eq!(restored.flattened_cursor().unwrap(), 2);
-        std::fs::remove_dir_all(resources).unwrap();
     }
 
     #[test]
     fn revision_mismatch_performs_zero_injected_definition_loads() {
-        let (resources, engine) = fixture();
+        let (_resources, engine) = fixture();
         let saved = state(vec![linear_origin()], 0, 0, 18);
         let mut load_calls = 0;
 
@@ -599,7 +613,6 @@ mod persistence_adapter_tests {
 
         assert_eq!(error.code, "incompatibleContentRevision");
         assert_eq!(load_calls, 0);
-        std::fs::remove_dir_all(resources).unwrap();
     }
 }
 

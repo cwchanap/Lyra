@@ -649,7 +649,7 @@ mod tests {
         ));
         let chapter_1 = d.join("chapter_1");
         fs::create_dir_all(&chapter_1).unwrap();
-        write_empty_story_catalog(&d);
+        write_empty_story_catalog_and_content_manifest(&d);
         fs::write(
             d.join("chapters.json"),
             r#"{
@@ -788,7 +788,7 @@ mod tests {
         ));
         let chapter_1 = d.join("chapter_1");
         fs::create_dir_all(&chapter_1).unwrap();
-        write_empty_story_catalog(&d);
+        write_empty_story_catalog_and_content_manifest(&d);
         fs::write(
             d.join("chapters.json"),
             r#"{
@@ -972,7 +972,7 @@ mod tests {
         ));
         let chapter_1 = d.join("chapter_1");
         fs::create_dir_all(&chapter_1).unwrap();
-        write_empty_story_catalog(&d);
+        write_empty_story_catalog_and_content_manifest(&d);
         fs::write(
             d.join("chapters.json"),
             r#"{

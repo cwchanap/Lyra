@@ -590,11 +590,7 @@ mod tests {
     #[test]
     fn linear_public_dialogue_frames_keep_raw_flattened_cursor_and_history() {
         let resources = dialogue_history_fixture_resources(2);
-        std::fs::write(
-            resources.join("save_content_manifest.json"),
-            r#"{"manifestVersion":1,"contentRevision":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}"#,
-        )
-        .unwrap();
+        write_content_manifest(&resources);
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
 
         assert_dialogue_frame(

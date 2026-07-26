@@ -368,7 +368,7 @@ mod tests {
             std::env::temp_dir().join(format!("lyra-advance-test-{}-{}", std::process::id(), n));
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
-        write_empty_story_catalog(&d);
+        write_empty_story_catalog_and_content_manifest(&d);
         fs::write(
             d.join("chapters.json"),
             r#"{
@@ -462,7 +462,7 @@ mod tests {
         ));
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
-        write_empty_story_catalog(&d);
+        write_empty_story_catalog_and_content_manifest(&d);
         fs::write(
             d.join("chapters.json"),
             r#"{
