@@ -10,6 +10,12 @@ pub struct GameError {
 }
 
 impl GameError {
+    pub fn unsafe_e2e_app_data_root() -> Self {
+        Self::new(
+            "unsafeE2eAppDataRoot",
+            "The E2E app-data override is missing or unsafe.",
+        )
+    }
     pub fn save_directory_unavailable() -> Self {
         Self::new("saveDirectoryUnavailable", "Save directory is unavailable.")
     }

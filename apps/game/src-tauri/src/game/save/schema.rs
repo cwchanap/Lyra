@@ -412,7 +412,7 @@ pub(crate) fn parse_current_envelope(bytes: &[u8]) -> Result<SaveEnvelopeV1, Gam
     Ok(envelope)
 }
 
-fn validate_envelope(envelope: &SaveEnvelopeV1) -> Result<(), GameError> {
+pub(crate) fn validate_envelope(envelope: &SaveEnvelopeV1) -> Result<(), GameError> {
     if envelope.schema_version != SAVE_SCHEMA_VERSION {
         return Err(GameError::new(
             "unsupportedSaveSchemaVersion",

@@ -21,6 +21,13 @@ pub(super) fn test_content_manifest() -> crate::game::content_manifest::ContentM
     crate::game::content_manifest::ContentManifest::for_test()
 }
 
+pub(super) fn representative_save_envelope() -> crate::game::save::schema::SaveEnvelopeV1 {
+    serde_json::from_str(include_str!(
+        "../../tests/fixtures/saves/v1-representative.json"
+    ))
+    .unwrap()
+}
+
 pub(super) fn write_content_manifest(dir: &Path) {
     std::fs::write(
         dir.join("save_content_manifest.json"),
