@@ -619,7 +619,7 @@ mod persistence_adapter_tests {
 }
 
 impl DialogueSegmentOriginV1 {
-    fn chapter_id(&self) -> &str {
+    pub(super) fn chapter_id(&self) -> &str {
         match self {
             Self::LinearScene { chapter_id, .. }
             | Self::InvestigationIntro { chapter_id, .. }
@@ -631,7 +631,7 @@ impl DialogueSegmentOriginV1 {
         }
     }
 
-    fn scene_id(&self) -> &str {
+    pub(super) fn scene_id(&self) -> &str {
         match self {
             Self::LinearScene { scene_id, .. }
             | Self::InvestigationIntro { scene_id, .. }
@@ -821,6 +821,17 @@ impl ActiveDialogueQueue {
         Err(queue_error(format!(
             "Flattened dialogue boundary {flattened_boundary} does not name a segment boundary."
         )))
+    }
+
+    pub(crate) fn flattened_segment_boundary(
+        &self,
+        segment_index: usize,
+    ) -> Result<usize, GameError> {
+        Self::flattened_segment_start(&self.segments, segment_index)
+    }
+
+    pub(crate) fn flattened_len(&self) -> Result<usize, GameError> {
+        Self::flattened_segment_start(&self.segments, self.segments.len())
     }
 
     #[allow(dead_code)] // Used by Task 7's crate-private capture adapter.

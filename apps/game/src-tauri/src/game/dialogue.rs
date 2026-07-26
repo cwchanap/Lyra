@@ -52,8 +52,7 @@ impl DialogueHistory {
         (&self.entries, self.next_id, self.last_token.as_ref())
     }
 
-    #[cfg(test)]
-    pub(crate) fn from_persistence_parts_for_test(
+    pub(crate) fn from_persistence_parts(
         entries: Vec<DialogueHistoryEntry>,
         next_id: u64,
         last_token: Option<QueueToken>,
@@ -63,6 +62,15 @@ impl DialogueHistory {
             next_id,
             last_token,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_persistence_parts_for_test(
+        entries: Vec<DialogueHistoryEntry>,
+        next_id: u64,
+        last_token: Option<QueueToken>,
+    ) -> Self {
+        Self::from_persistence_parts(entries, next_id, last_token)
     }
 
     pub(super) fn record(

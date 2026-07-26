@@ -4,9 +4,9 @@ use std::path::Path;
 
 const CONTENT_MANIFEST_VERSION: u32 = 1;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(in crate::game) struct ContentManifest {
+pub(crate) struct ContentManifest {
     manifest_version: u32,
     content_revision: String,
 }
