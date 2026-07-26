@@ -124,6 +124,21 @@ fn engine_startup_rejects_a_content_manifest_with_missing_required_fields() {
 }
 
 #[test]
+fn engine_startup_rejects_a_content_manifest_with_unknown_fields() {
+    let dir = TestDir::new("unknown-fields");
+    write_startup_resources(dir.path());
+    write_manifest(
+        dir.path(),
+        r#"{"manifestVersion":1,"contentRevision":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","futureField":"oops"}"#,
+    );
+
+    let error = startup_error(&dir);
+
+    assert_eq!(error.code, "contentManifestLoadFailed");
+    assert!(error.message.contains("save_content_manifest.json"));
+}
+
+#[test]
 fn engine_startup_rejects_an_unsupported_content_manifest_version() {
     let dir = TestDir::new("unsupported-version");
     write_startup_resources(dir.path());

@@ -1829,11 +1829,7 @@ mod tests {
     #[test]
     fn linear_runtime_queue_retains_stable_origin_after_leading_scene_tag() {
         let resources = dialogue_history_fixture_resources(1);
-        std::fs::write(
-            resources.join("save_content_manifest.json"),
-            r#"{"manifestVersion":1,"contentRevision":"sha256:0000000000000000000000000000000000000000000000000000000000000000"}"#,
-        )
-        .unwrap();
+        write_content_manifest(&resources);
         let engine = GameEngine::new_started(resources.clone()).unwrap();
 
         let SceneRuntime::Linear(scene) = &engine.scene else {
