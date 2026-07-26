@@ -7,7 +7,7 @@ use super::schema::{
     SceneProgressSnapshotV1, StoryStateSnapshotV1,
 };
 use crate::game::content_manifest::ContentManifest;
-use crate::game::dialogue::DialogueHistory;
+use crate::game::dialogue::{DialogueHistory, DIALOGUE_HISTORY_LIMIT};
 use crate::game::dialogue_queue::{
     resolve_dialogue_segments, ActiveDialogueQueue, ActiveDialogueStateV1, DialogueSegment,
     DialogueSegmentOriginV1,
@@ -29,7 +29,7 @@ use crate::game::story::{
     ObjectiveProgressSnapshot, QuestionProgressSnapshot, StoryCatalog, StoryEventBlockKind,
     StoryState, StoryStateSnapshot,
 };
-use crate::game::view::DialogueHistoryEntry;
+use crate::game::view::{DialogueHistoryEntry, QueueToken};
 use crate::game::{GameEngine, GameError, LastVisualCue};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
@@ -187,12 +187,27 @@ pub(crate) fn build_restore_candidate(
         &snapshot.pending_acquisition_events,
         snapshot.durable_revision,
     )?;
-    let history = restore_history(&snapshot.dialogue_history);
     let active_queue = snapshot
         .active_dialogue
         .as_ref()
         .map(|active| restore_active_queue(definitions, active, snapshot.next_queue_gen))
         .transpose()?;
+    let active_token = active_queue
+        .as_ref()
+        .map(|queue| {
+            Ok(QueueToken {
+                scene_id: snapshot.scene_id.clone(),
+                queue_gen: queue.queue_gen(),
+                cursor: queue.flattened_cursor()?,
+            })
+        })
+        .transpose()?;
+    let history = restore_history(
+        definitions,
+        &snapshot.dialogue_history,
+        snapshot.next_queue_gen,
+        active_token.as_ref(),
+    )?;
     let scene = restore_scene(
         &snapshot.chapter_id,
         packaged_scene,
@@ -444,9 +459,12 @@ fn restore_scene(
                 scene.mark_phase_entered(phase_id);
             }
             scene.line_content_start = match (&active_queue, line_content_segment_index) {
-                (Some(queue), Some(index)) => queue
-                    .flattened_segment_boundary(*index)
-                    .map_err(|_| GameError::invalid_save_cursor())?,
+                (Some(queue), Some(index)) => {
+                    validate_testimony_boundary_origin(definition, cross_exam, queue, *index)?;
+                    queue
+                        .flattened_segment_boundary(*index)
+                        .map_err(|_| GameError::invalid_save_cursor())?
+                }
                 (Some(queue), None) => queue
                     .flattened_len()
                     .map_err(|_| GameError::invalid_save_cursor())?,
@@ -692,6 +710,52 @@ fn exactly_one_testimony_line(
     Ok(index)
 }
 
+fn validate_testimony_boundary_origin(
+    definition: &InterrogationSceneJson,
+    cross_exam: &CrossExamSnapshotV1,
+    queue: &ActiveDialogueQueue,
+    line_content_segment_index: usize,
+) -> Result<(), GameError> {
+    let (question_id, line_id) = match cross_exam {
+        CrossExamSnapshotV1::Playing {
+            question_id,
+            line_id,
+        }
+        | CrossExamSnapshotV1::Presenting {
+            question_id,
+            line_id,
+        } => (question_id, line_id),
+        CrossExamSnapshotV1::Idle => {
+            return Err(invalid_progress(
+                "A testimony content boundary requires a current cross-exam line.",
+            ));
+        }
+    };
+    let origins = queue.segment_origins();
+    let origin = origins
+        .get(line_content_segment_index)
+        .ok_or_else(GameError::invalid_save_cursor)?;
+    let DialogueSegmentOriginV1::InterrogationPhase {
+        scene_id,
+        phase_id,
+        segment_id,
+        ..
+    } = origin
+    else {
+        return Err(invalid_progress(
+            "A testimony content boundary has a non-interrogation origin.",
+        ));
+    };
+    exactly_one_testimony_line(definition, Some(phase_id), question_id, line_id)?;
+    let expected_segment_id = format!("question:{question_id}:line:{line_id}:content");
+    if scene_id != &definition.id || segment_id != &expected_segment_id {
+        return Err(invalid_progress(format!(
+            "Saved testimony content origin '{segment_id}' does not match current line '{question_id}/{line_id}'."
+        )));
+    }
+    Ok(())
+}
+
 fn restore_inventory(
     definitions: &CurrentDefinitions,
     snapshot: &InventorySnapshotV1,
@@ -801,7 +865,13 @@ fn validate_pending_events(
     Ok(())
 }
 
-fn restore_history(snapshot: &DialogueHistorySnapshotV1) -> DialogueHistory {
+fn restore_history(
+    definitions: &CurrentDefinitions,
+    snapshot: &DialogueHistorySnapshotV1,
+    next_queue_gen: u64,
+    active_token: Option<&QueueToken>,
+) -> Result<DialogueHistory, GameError> {
+    validate_history_snapshot(definitions, snapshot, next_queue_gen, active_token)?;
     let entries = snapshot
         .entries
         .iter()
@@ -832,7 +902,195 @@ fn restore_history(snapshot: &DialogueHistorySnapshotV1) -> DialogueHistory {
             },
         })
         .collect();
-    DialogueHistory::from_persistence_parts(entries, snapshot.next_id, snapshot.last_token.clone())
+    Ok(DialogueHistory::from_persistence_parts(
+        entries,
+        snapshot.next_id,
+        snapshot.last_token.clone(),
+    ))
+}
+
+fn validate_history_snapshot(
+    definitions: &CurrentDefinitions,
+    snapshot: &DialogueHistorySnapshotV1,
+    next_queue_gen: u64,
+    active_token: Option<&QueueToken>,
+) -> Result<(), GameError> {
+    if snapshot.entries.len() > DIALOGUE_HISTORY_LIMIT {
+        return Err(invalid_progress(format!(
+            "Dialogue history has {} entries; limit is {DIALOGUE_HISTORY_LIMIT}.",
+            snapshot.entries.len()
+        )));
+    }
+
+    let mut prior_id = None;
+    for entry in &snapshot.entries {
+        let id = match entry {
+            DialogueHistoryEntryV1::Line { id, .. } | DialogueHistoryEntryV1::Action { id, .. } => {
+                *id
+            }
+        };
+        if id == 0 || id >= snapshot.next_id || prior_id.is_some_and(|prior| id != prior + 1) {
+            return Err(invalid_progress(
+                "Dialogue history IDs are not structurally valid.",
+            ));
+        }
+        prior_id = Some(id);
+    }
+    if snapshot.next_id == 0 {
+        return Err(invalid_progress("Dialogue history next ID cannot be zero."));
+    }
+    if snapshot.entries.is_empty() && snapshot.next_id != 1 {
+        return Err(invalid_progress(
+            "Empty dialogue history must retain the initial next ID.",
+        ));
+    }
+    if let Some(last_id) = prior_id {
+        let starts_at_initial_id = matches!(
+            snapshot.entries.first(),
+            Some(DialogueHistoryEntryV1::Line { id: 1, .. })
+                | Some(DialogueHistoryEntryV1::Action { id: 1, .. })
+        );
+        if last_id.checked_add(1) != Some(snapshot.next_id)
+            || (snapshot.entries.len() < DIALOGUE_HISTORY_LIMIT && !starts_at_initial_id)
+        {
+            return Err(invalid_progress(
+                "Dialogue history counter does not follow its retained entries.",
+            ));
+        }
+    }
+    if snapshot.last_token.is_some() == snapshot.entries.is_empty() {
+        return Err(invalid_progress(
+            "Dialogue history token presence does not match retained entries.",
+        ));
+    }
+    if let Some(token) = &snapshot.last_token {
+        if token.queue_gen == 0 || token.queue_gen >= next_queue_gen {
+            return Err(invalid_progress(format!(
+                "Dialogue history queue generation {} is outside 1..{next_queue_gen}.",
+                token.queue_gen
+            )));
+        }
+        let maxima = packaged_history_cursor_maxima(definitions, &token.scene_id)?;
+        if !maxima.iter().any(|maximum| token.cursor < *maximum) {
+            return Err(invalid_progress(format!(
+                "Dialogue history cursor {} is outside every packaged scene '{}' bound.",
+                token.cursor, token.scene_id
+            )));
+        }
+        if active_token.is_some_and(|active| {
+            active.scene_id == token.scene_id
+                && active.queue_gen == token.queue_gen
+                && active != token
+        }) {
+            return Err(invalid_progress(
+                "Dialogue history token disagrees with the same active queue.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn packaged_history_cursor_maxima(
+    definitions: &CurrentDefinitions,
+    target_scene_id: &str,
+) -> Result<Vec<usize>, GameError> {
+    let mut maxima = definitions
+        .scenes_by_key
+        .iter()
+        .filter(|((_, scene_id), _)| scene_id == target_scene_id)
+        .map(|(_, scene)| maximum_scene_dialogue_items(scene))
+        .collect::<Result<Vec<_>, _>>()?;
+    maxima.retain(|maximum| *maximum > 0);
+    if maxima.is_empty() {
+        return Err(GameError::missing_save_definition());
+    }
+    Ok(maxima)
+}
+
+fn maximum_scene_dialogue_items(scene: &SceneJson) -> Result<usize, GameError> {
+    let groups: Vec<&[crate::game::schema::DialogueItem]> = match scene {
+        SceneJson::Linear(scene) => vec![&scene.queue],
+        SceneJson::Investigation(scene) => {
+            let mut groups = vec![scene.intro.as_slice(), scene.outro.dialogue.as_slice()];
+            for sublocation in &scene.sublocations {
+                groups.push(&sublocation.transition_dialogue);
+                for hotspot in &sublocation.hotspots {
+                    groups.push(&hotspot.inspect_dialogue);
+                    if let Some(items) = hotspot.on_reexamine.as_deref() {
+                        groups.push(items);
+                    }
+                }
+                for character in &sublocation.characters {
+                    for topic in &character.topics {
+                        groups.push(&topic.topic_dialogue);
+                        if let Some(items) = topic.on_reexamine.as_deref() {
+                            groups.push(items);
+                        }
+                    }
+                }
+            }
+            append_record_dialogue_groups(
+                &mut groups,
+                &scene.evidence_manifest,
+                &scene.statement_manifest,
+            );
+            groups
+        }
+        SceneJson::Interrogation(scene) => {
+            let mut groups = vec![scene.intro.as_slice(), scene.outro.dialogue.as_slice()];
+            for phase in &scene.phases {
+                let InterrogationPhaseJson::Inquiry {
+                    entry_dialogue,
+                    questions,
+                    ..
+                } = phase;
+                groups.push(entry_dialogue);
+                for question in questions {
+                    groups.push(&question.testimony.on_loop);
+                    groups.push(&question.testimony.loop_prompt);
+                    groups.push(&question.testimony.default_challenge);
+                    groups.push(&question.testimony.default_wrong);
+                    groups.push(&question.testimony.wrong_reply);
+                    for line in &question.testimony.lines {
+                        groups.push(&line.content);
+                        groups.push(&line.challenge);
+                        groups.push(&line.on_correct);
+                        groups.push(&line.on_wrong_evidence);
+                    }
+                }
+            }
+            append_record_dialogue_groups(
+                &mut groups,
+                &scene.evidence_manifest,
+                &scene.statement_manifest,
+            );
+            groups
+        }
+    };
+    groups.into_iter().try_fold(0usize, |total, items| {
+        total
+            .checked_add(items.len())
+            .ok_or_else(|| invalid_progress("Packaged dialogue item count overflowed usize."))
+    })
+}
+
+fn append_record_dialogue_groups<'a>(
+    groups: &mut Vec<&'a [crate::game::schema::DialogueItem]>,
+    evidence: &'a [crate::game::schema::EvidenceJson],
+    statements: &'a [crate::game::schema::StatementJson],
+) {
+    for record in evidence {
+        groups.push(&record.on_collect);
+        if let Some(items) = record.on_reexamine.as_deref() {
+            groups.push(items);
+        }
+    }
+    for record in statements {
+        groups.push(&record.on_acquire);
+        if let Some(items) = record.on_reexamine.as_deref() {
+            groups.push(items);
+        }
+    }
 }
 
 fn validate_visual_cues(
@@ -919,13 +1177,20 @@ fn validate_story_origins(
         );
     for origin in origins {
         match origin {
-            AssertionOrigin::Migration { .. } => {}
+            AssertionOrigin::Migration { migration_id } => {
+                return Err(GameError::invalid_story_state_snapshot(format!(
+                    "migration origin '{migration_id}' is unsupported because the current package has no migration registry"
+                )));
+            }
             AssertionOrigin::AnalysisBoard {
                 chapter_id,
                 scene_id,
-                ..
+                board_id,
             } => {
                 require_story_scene(definitions, chapter_id, scene_id)?;
+                return Err(GameError::invalid_story_state_snapshot(format!(
+                    "analysis board origin '{board_id}' in '{chapter_id}/{scene_id}' is unsupported because the current package has no board registry"
+                )));
             }
             AssertionOrigin::SceneEvent {
                 chapter_id,
@@ -998,7 +1263,10 @@ fn story_block_exists(scene: &SceneJson, kind: StoryEventBlockKind, block_id: &s
                     .any(|line| line.id == block_id)
             })
         }
-        (_, StoryEventBlockKind::StoryEvent) => true,
+        // StoryEvent is retained in the wire enum for producers outside the
+        // current authored-scene pipeline. No concrete StoryEvent block
+        // registry is packaged today, so persisted IDs cannot be resolved.
+        (_, StoryEventBlockKind::StoryEvent) => false,
         _ => false,
     }
 }
@@ -1514,6 +1782,66 @@ mod tests {
     }
 
     #[test]
+    fn story_origins_require_package_backed_ids() {
+        let (resources, engine) = resources_and_engine();
+        let mutations: Vec<SaveMutation> = vec![
+            Box::new(|save| {
+                save.snapshot.story_state.facts.insert(
+                    "fact_origin".into(),
+                    FactProgressSnapshotV1 {
+                        asserted_in_chapter_id: None,
+                        asserted_in_scene_id: None,
+                        first_origin: AssertionOrigin::Migration {
+                            migration_id: "missing_migration".into(),
+                        },
+                        supporting_records: BTreeSet::new(),
+                        supporting_fact_ids: BTreeSet::new(),
+                    },
+                );
+            }),
+            Box::new(|save| {
+                save.snapshot.story_state.facts.insert(
+                    "fact_origin".into(),
+                    FactProgressSnapshotV1 {
+                        asserted_in_chapter_id: Some("chapter_1".into()),
+                        asserted_in_scene_id: Some("scene_0".into()),
+                        first_origin: AssertionOrigin::AnalysisBoard {
+                            chapter_id: "chapter_1".into(),
+                            scene_id: "scene_0".into(),
+                            board_id: "missing_board".into(),
+                        },
+                        supporting_records: BTreeSet::new(),
+                        supporting_fact_ids: BTreeSet::new(),
+                    },
+                );
+            }),
+            Box::new(|save| {
+                save.snapshot.story_state.facts.insert(
+                    "fact_origin".into(),
+                    FactProgressSnapshotV1 {
+                        asserted_in_chapter_id: Some("chapter_1".into()),
+                        asserted_in_scene_id: Some("scene_0".into()),
+                        first_origin: AssertionOrigin::SceneEvent {
+                            chapter_id: "chapter_1".into(),
+                            scene_id: "scene_0".into(),
+                            block_kind: StoryEventBlockKind::StoryEvent,
+                            block_id: "missing_story_event".into(),
+                        },
+                        supporting_records: BTreeSet::new(),
+                        supporting_fact_ids: BTreeSet::new(),
+                    },
+                );
+            }),
+        ];
+        for mutate in mutations {
+            assert_eq!(
+                assert_rejected_without_live_mutation(&resources, &engine, mutate),
+                "invalidStoryStateSnapshot"
+            );
+        }
+    }
+
+    #[test]
     fn pending_acquisitions_require_canonical_monotonic_event_identity() {
         let (resources, mut engine) = investigation_engine();
         engine.inventory.evidence.push(EvidenceRecord {
@@ -1588,6 +1916,110 @@ mod tests {
                 ""
             );
         }
+    }
+
+    #[test]
+    fn restore_validates_untrusted_history_before_reconstruction() {
+        let (resources, engine) = resources_and_engine();
+        let definitions = load_current_definitions(&resources).unwrap();
+        let baseline = envelope(&engine);
+        let active_token = engine.current_queue_token();
+        let mutations: Vec<SaveMutation> = vec![
+            Box::new(|save| {
+                save.snapshot.dialogue_history.entries = (1
+                    ..=(crate::game::dialogue::DIALOGUE_HISTORY_LIMIT as u64 + 1))
+                    .map(|id| DialogueHistoryEntryV1::Action {
+                        id,
+                        text: "overflow".into(),
+                        chapter_title: "Chapter".into(),
+                        scene_title: "Scene".into(),
+                    })
+                    .collect();
+                save.snapshot.dialogue_history.next_id =
+                    crate::game::dialogue::DIALOGUE_HISTORY_LIMIT as u64 + 2;
+            }),
+            Box::new(
+                |save| match save.snapshot.dialogue_history.entries.first_mut().unwrap() {
+                    DialogueHistoryEntryV1::Line { id, .. }
+                    | DialogueHistoryEntryV1::Action { id, .. } => *id = 0,
+                },
+            ),
+            Box::new(|save| save.snapshot.dialogue_history.next_id += 1),
+            Box::new(|save| save.snapshot.dialogue_history.last_token = None),
+            Box::new(|save| {
+                save.snapshot
+                    .dialogue_history
+                    .last_token
+                    .as_mut()
+                    .unwrap()
+                    .queue_gen = 0;
+            }),
+            Box::new(|save| {
+                save.snapshot
+                    .dialogue_history
+                    .last_token
+                    .as_mut()
+                    .unwrap()
+                    .cursor = usize::MAX;
+            }),
+        ];
+
+        for mutate in mutations {
+            let mut save = baseline.clone();
+            mutate(&mut save);
+            assert!(
+                validate_history_snapshot(
+                    &definitions,
+                    &save.snapshot.dialogue_history,
+                    save.snapshot.next_queue_gen,
+                    active_token.as_ref(),
+                )
+                .is_err(),
+                "corrupt history passed restore-side validation"
+            );
+        }
+    }
+
+    #[test]
+    fn restore_validates_testimony_boundary_origin_before_installing_it() {
+        let (resources, _) = interrogation_engine();
+        let definitions = load_current_definitions(&resources).unwrap();
+        let SceneJson::Interrogation(definition) = definitions
+            .scenes_by_key
+            .get(&("chapter_1".into(), "interrogation_scene_2".into()))
+            .unwrap()
+        else {
+            panic!()
+        };
+        let queue = ActiveDialogueQueue::from_position(
+            vec![
+                DialogueSegment::new(
+                    interrogation_origin("question:q1:onLoop"),
+                    vec![action("loop")],
+                )
+                .unwrap(),
+                DialogueSegment::new(
+                    interrogation_origin("question:q1:line:l1:content"),
+                    vec![action("line")],
+                )
+                .unwrap(),
+            ],
+            1,
+            0,
+            6,
+        )
+        .unwrap();
+
+        assert!(validate_testimony_boundary_origin(
+            definition,
+            &CrossExamSnapshotV1::Playing {
+                question_id: "q1".into(),
+                line_id: "l1".into(),
+            },
+            &queue,
+            0,
+        )
+        .is_err());
     }
 
     #[test]
@@ -1911,14 +2343,16 @@ mod tests {
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     struct GenericSnapshot {
+        content_revision: String,
         definition_id: String,
         incomplete: bool,
         cursor: usize,
         required_definition_id: String,
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
     struct GenericResumable {
+        content_revision: String,
         definition_id: String,
         incomplete: bool,
         cursor: usize,
@@ -1930,6 +2364,7 @@ mod tests {
 
         fn capture(&self) -> Self::Snapshot {
             GenericSnapshot {
+                content_revision: self.content_revision.clone(),
                 definition_id: self.definition_id.clone(),
                 incomplete: self.incomplete,
                 cursor: self.cursor,
@@ -1941,6 +2376,12 @@ mod tests {
             definitions: &CurrentDefinitions,
             snapshot: Self::Snapshot,
         ) -> Result<Self, crate::game::GameError> {
+            if snapshot.content_revision != definitions.content_manifest.content_revision() {
+                return Err(crate::game::GameError::incompatible_content_revision(
+                    &snapshot.content_revision,
+                    definitions.content_manifest.content_revision(),
+                ));
+            }
             if !definitions
                 .scenes_by_key
                 .contains_key(&("chapter_1".into(), snapshot.definition_id.clone()))
@@ -1955,6 +2396,7 @@ mod tests {
                     "{}:{}:{}",
                     snapshot.definition_id, snapshot.incomplete, snapshot.cursor
                 ),
+                content_revision: snapshot.content_revision,
                 definition_id: snapshot.definition_id,
                 incomplete: snapshot.incomplete,
                 cursor: snapshot.cursor,
@@ -1962,8 +2404,29 @@ mod tests {
         }
     }
 
+    #[derive(Serialize)]
+    struct GenericHarness {
+        live: GenericResumable,
+    }
+
+    impl GenericHarness {
+        fn try_restore(
+            &mut self,
+            definitions: &CurrentDefinitions,
+            snapshot: GenericSnapshot,
+        ) -> Result<(), crate::game::GameError> {
+            let candidate = GenericResumable::restore(definitions, snapshot)?;
+            self.live = candidate;
+            Ok(())
+        }
+
+        fn bytes(&self) -> Vec<u8> {
+            serde_json::to_vec(self).unwrap()
+        }
+    }
+
     #[test]
-    fn generic_resumable_incomplete_state_survives_json_and_harness_swap() {
+    fn generic_resumable_rejects_revision_and_definition_drift_without_live_mutation() {
         let (resources, engine) = resources_and_engine();
         let definitions = load_current_definitions(&resources).unwrap();
         let save_bytes = serde_json::to_vec(&envelope(&engine)).unwrap();
@@ -1973,18 +2436,53 @@ mod tests {
             package_candidate.engine.content_revision(),
             engine.content_revision()
         );
-        let live = GenericResumable {
-            definition_id: "scene_0".into(),
-            incomplete: true,
-            cursor: 7,
-            public_value: "old".into(),
+        let mut harness = GenericHarness {
+            live: GenericResumable {
+                content_revision: definitions.content_manifest.content_revision().into(),
+                definition_id: "scene_0".into(),
+                incomplete: true,
+                cursor: 7,
+                public_value: "old".into(),
+            },
         };
-        let encoded = serde_json::to_vec(&live.capture()).unwrap();
+        let valid = harness.live.capture();
+        let invalid = [
+            GenericSnapshot {
+                content_revision:
+                    "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".into(),
+                ..valid.clone()
+            },
+            GenericSnapshot {
+                definition_id: "missing_primary".into(),
+                ..valid.clone()
+            },
+            GenericSnapshot {
+                required_definition_id: "missing_required".into(),
+                ..valid.clone()
+            },
+        ];
+        for snapshot in invalid {
+            let before = harness.bytes();
+            assert!(harness.try_restore(&definitions, snapshot).is_err());
+            assert_eq!(
+                harness.bytes(),
+                before,
+                "failed generic restore mutated the live harness"
+            );
+        }
+
+        let encoded = serde_json::to_vec(&valid).unwrap();
         let snapshot: GenericSnapshot = serde_json::from_slice(&encoded).unwrap();
-        let candidate = GenericResumable::restore(&definitions, snapshot).unwrap();
-        let mut harness = live;
-        assert_eq!(harness.public_value, "old");
-        harness = candidate;
-        assert_eq!(harness.public_value, "scene_0:true:7");
+        harness.try_restore(&definitions, snapshot).unwrap();
+        assert_eq!(
+            harness.live,
+            GenericResumable {
+                content_revision: definitions.content_manifest.content_revision().into(),
+                definition_id: "scene_0".into(),
+                incomplete: true,
+                cursor: 7,
+                public_value: "scene_0:true:7".into(),
+            }
+        );
     }
 }

@@ -432,7 +432,13 @@ pub(super) fn save_capture_fixture_resources() -> PathBuf {
         resources.join("story_catalog.json"),
         r#"{
   "schemaVersion": 1,
-  "facts": [],
+  "facts": [{
+    "id": "fact_origin",
+    "label": "Origin fact",
+    "summary": "Exercises persisted assertion origins.",
+    "details": "Only used by save/restore fixtures.",
+    "category": "timeline"
+  }],
   "questions": [],
   "objectives": [{
     "id": "objective_truth",
