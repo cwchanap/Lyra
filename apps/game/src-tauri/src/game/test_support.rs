@@ -108,6 +108,8 @@ pub(super) fn empty_engine_with_scene(
         inventory: Inventory::default(),
         next_queue_gen: intro_queue_gen + 1,
         history: dialogue::DialogueHistory::default(),
+        durable_revision: 0,
+        pending_acquisition_events: Vec::new(),
     }
 }
 pub(super) fn token_from(view: &GameStateView) -> QueueToken {
@@ -775,6 +777,8 @@ pub(super) fn empty_engine_with_interrogation_scene(
         inventory: Inventory::default(),
         next_queue_gen: intro_queue_gen + 1,
         history: dialogue::DialogueHistory::default(),
+        durable_revision: 0,
+        pending_acquisition_events: Vec::new(),
     }
 }
 pub(super) fn completed_interrogation_engine_with_bad_next_scene(
@@ -814,6 +818,8 @@ pub(super) fn completed_interrogation_engine_with_bad_next_scene(
         inventory,
         next_queue_gen: 7,
         history: dialogue::DialogueHistory::default(),
+        durable_revision: 0,
+        pending_acquisition_events: Vec::new(),
     }
 }
 /// Builds a single required `Auto` inquiry phase with one required

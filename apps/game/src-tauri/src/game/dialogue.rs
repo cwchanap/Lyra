@@ -1064,6 +1064,8 @@ mod tests {
             inventory: Inventory::default(),
             next_queue_gen: 2,
             history: dialogue::DialogueHistory::default(),
+            durable_revision: 0,
+            pending_acquisition_events: Vec::new(),
         };
         engine.prime_initial_queue().unwrap();
 
@@ -1134,6 +1136,8 @@ mod tests {
             inventory: Inventory::default(),
             next_queue_gen: 2,
             history: dialogue::DialogueHistory::default(),
+            durable_revision: 0,
+            pending_acquisition_events: Vec::new(),
         };
         // prime_initial_queue: no leading tags, cursor at 0 (first Line)
         engine.prime_initial_queue().unwrap();
@@ -1226,6 +1230,8 @@ mod tests {
             inventory: Inventory::default(),
             next_queue_gen: 2,
             history: dialogue::DialogueHistory::default(),
+            durable_revision: 0,
+            pending_acquisition_events: Vec::new(),
         };
         engine.prime_initial_queue().unwrap();
 

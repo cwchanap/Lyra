@@ -5,6 +5,7 @@
 // commit/restore and the single dialogue-history finalization point.
 
 use super::dialogue::DialogueHistory;
+use super::save::schema::AcquisitionEventStateV1;
 use super::scenes::SceneRuntime;
 use super::state::Inventory;
 use super::story::StoryState;
@@ -18,7 +19,7 @@ use super::{GameEngine, GameError, LastVisualCue};
 /// persistent saves store stable IDs and mutable progress. HPA-129's save
 /// capture reads the same field enumeration below, but into a different
 /// contract.
-pub(super) struct EngineRollbackSnapshot {
+pub(in crate::game) struct EngineRollbackSnapshot {
     current_chapter_idx: usize,
     current_scene_idx: usize,
     scene: SceneRuntime,
@@ -27,10 +28,17 @@ pub(super) struct EngineRollbackSnapshot {
     story_state: StoryState,
     next_queue_gen: u64,
     history: DialogueHistory,
+    durable_revision: u64,
+    pending_acquisition_events: Vec<AcquisitionEventStateV1>,
+}
+
+pub(super) enum CommandMutation {
+    Changed,
+    Unchanged,
 }
 
 impl EngineRollbackSnapshot {
-    pub(super) fn capture(engine: &GameEngine) -> Self {
+    pub(in crate::game) fn capture(engine: &GameEngine) -> Self {
         // Exhaustive destructuring, no `..`: a field added to GameEngine fails
         // to compile here until it is classified as rollback-tracked or as
         // immutable-after-load.
@@ -47,6 +55,8 @@ impl EngineRollbackSnapshot {
             inventory,
             next_queue_gen,
             history,
+            durable_revision,
+            pending_acquisition_events,
         } = engine;
         Self {
             current_chapter_idx: *current_chapter_idx,
@@ -57,10 +67,12 @@ impl EngineRollbackSnapshot {
             story_state: story_state.clone(),
             next_queue_gen: *next_queue_gen,
             history: history.clone(),
+            durable_revision: *durable_revision,
+            pending_acquisition_events: pending_acquisition_events.clone(),
         }
     }
 
-    pub(super) fn restore(engine: &mut GameEngine, snapshot: EngineRollbackSnapshot) {
+    pub(in crate::game) fn restore(engine: &mut GameEngine, snapshot: EngineRollbackSnapshot) {
         // Exhaustive destructuring by value, no `..`: a field added to the
         // snapshot must be named here, and an unused binding is an error under
         // clippy's -D warnings, so it cannot be named and silently dropped.
@@ -73,6 +85,8 @@ impl EngineRollbackSnapshot {
             story_state,
             next_queue_gen,
             history,
+            durable_revision,
+            pending_acquisition_events,
         } = snapshot;
         engine.current_chapter_idx = current_chapter_idx;
         engine.current_scene_idx = current_scene_idx;
@@ -82,6 +96,21 @@ impl EngineRollbackSnapshot {
         engine.story_state = story_state;
         engine.next_queue_gen = next_queue_gen;
         engine.history = history;
+        engine.durable_revision = durable_revision;
+        engine.pending_acquisition_events = pending_acquisition_events;
+    }
+
+    fn matches_engine(&self, engine: &GameEngine) -> bool {
+        self.current_chapter_idx == engine.current_chapter_idx
+            && self.current_scene_idx == engine.current_scene_idx
+            && format!("{:?}", self.scene) == format!("{:?}", engine.scene)
+            && format!("{:?}", self.last_visual_cue) == format!("{:?}", engine.last_visual_cue)
+            && format!("{:?}", self.inventory) == format!("{:?}", engine.inventory)
+            && self.story_state == engine.story_state
+            && self.next_queue_gen == engine.next_queue_gen
+            && format!("{:?}", self.history) == format!("{:?}", engine.history)
+            && self.durable_revision == engine.durable_revision
+            && self.pending_acquisition_events == engine.pending_acquisition_events
     }
 }
 
@@ -108,20 +137,49 @@ impl GameEngine {
     }
 
     /// The command seam. Runs `f` under rollback, then finalizes dialogue
-    /// history and builds the view.
+    /// history and builds the view for state-changing commands.
     ///
-    /// The closure returns `()`, so no command can produce a `GameStateView`
-    /// from inside a transaction without history being recorded first. Note
+    /// The closure returns an explicit mutation outcome, so no command can
+    /// produce a `GameStateView` from inside a transaction without history
+    /// being recorded first. Note
     /// the limit of that guarantee: `GameEngine::view` is `pub` (lib.rs needs
     /// it), so a command that bypasses `command_tx` entirely can still skip
     /// history. The source-contract test in mod.rs covers that residual gap.
     pub(super) fn command_tx(
         &mut self,
-        f: impl FnOnce(&mut Self) -> Result<(), GameError>,
+        f: impl FnOnce(&mut Self, u64) -> Result<CommandMutation, GameError>,
     ) -> Result<GameStateView, GameError> {
-        self.rollback_scope(f)?;
-        self.record_current_dialogue_history();
-        Ok(self.view())
+        let snapshot = EngineRollbackSnapshot::capture(self);
+        let command_id = self
+            .durable_revision
+            .checked_add(1)
+            .ok_or_else(|| GameError::internal("durable revision overflow".into()))?;
+        match f(self, command_id) {
+            Ok(CommandMutation::Changed) => {
+                self.record_current_dialogue_history();
+                self.durable_revision = command_id;
+                if let Err(error) = self.pending_acquisition_view() {
+                    EngineRollbackSnapshot::restore(self, snapshot);
+                    return Err(error);
+                }
+                Ok(self.view())
+            }
+            Ok(CommandMutation::Unchanged) => {
+                let was_unchanged = snapshot.matches_engine(self);
+                EngineRollbackSnapshot::restore(self, snapshot);
+                if was_unchanged {
+                    Ok(self.view())
+                } else {
+                    Err(GameError::internal(
+                        "unchanged command mutated rollback-tracked state".into(),
+                    ))
+                }
+            }
+            Err(error) => {
+                EngineRollbackSnapshot::restore(self, snapshot);
+                Err(error)
+            }
+        }
     }
 }
 
@@ -138,6 +196,112 @@ mod tests {
     use crate::game::state::{EvidenceRecord, SceneRef, StatementRecord};
     use crate::game::test_support::*;
     use crate::game::*;
+
+    // Break caught: a successful state-changing command that does not commit
+    // its first durable revision (or derives a command id from another source).
+    #[test]
+    fn changed_command_commits_first_durable_revision() {
+        let mut engine =
+            empty_engine_with_scene(investigation_scene_with_intro("scene_1", vec![]), 1);
+
+        engine
+            .command_tx(|_engine, command_id| {
+                assert_eq!(command_id, 1);
+                Ok(CommandMutation::Changed)
+            })
+            .unwrap();
+
+        assert_eq!(engine.durable_revision, 1);
+    }
+
+    // Break caught: an explicit non-mutating result leaks transaction-local
+    // state into the live engine or consumes a durable revision.
+    #[test]
+    fn unchanged_command_restores_revision_history_and_events() {
+        let mut engine =
+            empty_engine_with_scene(investigation_scene_with_intro("scene_1", vec![]), 1);
+        engine.durable_revision = 4;
+        engine.pending_acquisition_events.push(
+            crate::game::save::schema::AcquisitionEventStateV1 {
+                id: "acq:4:0".into(),
+                record_kind: crate::game::save::schema::RecordKind::Evidence,
+                record_id: "before".into(),
+                created_by_command_id: 4,
+                ordinal: 0,
+            },
+        );
+        let before_history = engine.history.entries().to_vec();
+
+        let error = engine
+            .command_tx(|engine, command_id| {
+                assert_eq!(command_id, 5);
+                engine.durable_revision = 99;
+                engine.pending_acquisition_events.clear();
+                Ok(CommandMutation::Unchanged)
+            })
+            .unwrap_err();
+
+        assert_eq!(error.code, "internalError");
+        assert_eq!(engine.durable_revision, 4);
+        assert_eq!(engine.pending_acquisition_events.len(), 1);
+        assert_eq!(engine.history.entries(), before_history.as_slice());
+    }
+
+    // Break caught: acquisition presentation leaks over authored dialogue or
+    // exposes insertion order instead of the earliest durable event.
+    #[test]
+    fn pending_acquisition_hides_during_dialogue_then_resolves_earliest_record() {
+        let mut engine =
+            empty_engine_with_scene(investigation_scene_with_intro("scene_1", vec![]), 1);
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "receipt".into(),
+            name: "Receipt".into(),
+            description: "A receipt".into(),
+            details: "Timestamp 22:10".into(),
+            image_asset_id: Some("evidence.receipt".into()),
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "scene_1".into(),
+        });
+        engine.pending_acquisition_events = vec![
+            crate::game::save::schema::AcquisitionEventStateV1 {
+                id: "acq:7:1".into(),
+                record_kind: crate::game::save::schema::RecordKind::Evidence,
+                record_id: "receipt".into(),
+                created_by_command_id: 7,
+                ordinal: 1,
+            },
+            crate::game::save::schema::AcquisitionEventStateV1 {
+                id: "acq:7:0".into(),
+                record_kind: crate::game::save::schema::RecordKind::Evidence,
+                record_id: "receipt".into(),
+                created_by_command_id: 7,
+                ordinal: 0,
+            },
+        ];
+
+        let pending = engine.pending_acquisition_view().unwrap().unwrap();
+        assert_eq!(pending.id, "acq:7:0");
+        assert_eq!(pending.title, "Receipt");
+        assert_eq!(pending.image_asset_id.as_deref(), Some("evidence.receipt"));
+
+        let mut dialogue_engine = empty_engine_with_scene(
+            investigation_scene_with_intro(
+                "scene_1",
+                vec![DialogueItem::Action {
+                    text: "authored".into(),
+                }],
+            ),
+            1,
+        );
+        dialogue_engine.prime_initial_queue().unwrap();
+        dialogue_engine.pending_acquisition_events = engine.pending_acquisition_events;
+        dialogue_engine.inventory = engine.inventory;
+        assert!(dialogue_engine
+            .pending_acquisition_view()
+            .unwrap()
+            .is_none());
+    }
 
     #[test]
     fn reexamine_evidence_rolls_back_tag_only_queue_when_scene_advance_fails() {
@@ -650,6 +814,8 @@ mod tests {
             inventory: Inventory::default(),
             next_queue_gen: 2,
             history: dialogue::DialogueHistory::default(),
+            durable_revision: 0,
+            pending_acquisition_events: Vec::new(),
         };
         engine.prime_initial_queue().unwrap();
         let token = token_from(&engine.view());
@@ -784,6 +950,8 @@ mod tests {
             inventory: Inventory::default(),
             next_queue_gen: 2,
             history: dialogue::DialogueHistory::default(),
+            durable_revision: 0,
+            pending_acquisition_events: Vec::new(),
         };
         engine.prime_initial_queue().unwrap();
         let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();
