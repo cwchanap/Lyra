@@ -52,6 +52,20 @@ impl ContentManifest {
         Ok(manifest)
     }
 
+    #[allow(dead_code)] // Task 7's crate-private save adapters consume this before HPA-129 lands.
+    pub(in crate::game) fn content_revision(&self) -> &str {
+        &self.content_revision
+    }
+
+    #[cfg(test)]
+    pub(in crate::game) fn for_test() -> Self {
+        Self {
+            manifest_version: CONTENT_MANIFEST_VERSION,
+            content_revision:
+                "sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
+        }
+    }
+
     fn validate(&self, path: &Path) -> Result<(), GameError> {
         if self.manifest_version != CONTENT_MANIFEST_VERSION {
             return Err(GameError::unsupported_content_manifest_version(

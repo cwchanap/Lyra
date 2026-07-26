@@ -209,6 +209,14 @@ impl GameError {
             ),
         )
     }
+    pub fn incompatible_content_revision(saved: &str, packaged: &str) -> Self {
+        Self::new(
+            "incompatibleContentRevision",
+            format!(
+                "Saved content revision '{saved}' does not match packaged revision '{packaged}'."
+            ),
+        )
+    }
     pub fn invalid_story_state_snapshot(detail: impl Into<String>) -> Self {
         Self::new(
             "invalidStoryStateSnapshot",

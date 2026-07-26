@@ -36,6 +36,7 @@ impl EngineRollbackSnapshot {
         // immutable-after-load.
         let GameEngine {
             resources_dir: _,
+            content_manifest: _,
             chapters: _,
             story_catalog: _,
             story_state,
@@ -622,6 +623,7 @@ mod tests {
         };
         let mut engine = GameEngine {
             resources_dir: d.clone(),
+            content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
             story_state: StoryState::default(),
             chapters: vec![ChapterManifest {
@@ -755,6 +757,7 @@ mod tests {
         };
         let mut engine = GameEngine {
             resources_dir: d.clone(),
+            content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
             story_state: StoryState::default(),
             chapters: vec![ChapterManifest {

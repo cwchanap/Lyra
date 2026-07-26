@@ -17,6 +17,10 @@ use crate::game::state::SceneRef;
 use crate::game::view::DialogueHistoryEntry;
 use std::path::Path;
 
+pub(super) fn test_content_manifest() -> crate::game::content_manifest::ContentManifest {
+    crate::game::content_manifest::ContentManifest::for_test()
+}
+
 pub fn write_empty_story_catalog(dir: &Path) {
     std::fs::write(
         dir.join("story_catalog.json"),
@@ -78,6 +82,7 @@ pub(super) fn empty_engine_with_scene(
 ) -> GameEngine {
     GameEngine {
         resources_dir: PathBuf::new(),
+        content_manifest: test_content_manifest(),
         chapters: vec![ChapterManifest {
             id: "chapter_1".into(),
             title: "Chapter 1".into(),
@@ -748,6 +753,7 @@ pub(super) fn empty_engine_with_interrogation_scene(
 ) -> GameEngine {
     GameEngine {
         resources_dir: PathBuf::new(),
+        content_manifest: test_content_manifest(),
         chapters: vec![ChapterManifest {
             id: "chapter_1".into(),
             title: "Chapter 1".into(),
@@ -780,6 +786,7 @@ pub(super) fn completed_interrogation_engine_with_bad_next_scene(
     scene.outro_played = true;
     GameEngine {
         resources_dir,
+        content_manifest: test_content_manifest(),
         chapters: vec![ChapterManifest {
             id: "chapter_1".into(),
             title: "Chapter 1".into(),
