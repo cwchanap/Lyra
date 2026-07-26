@@ -1049,6 +1049,7 @@ mod tests {
         };
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),
+            content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
             story_state: crate::game::story::StoryState::default(),
             chapters: vec![ChapterManifest {
@@ -1118,6 +1119,7 @@ mod tests {
         };
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),
+            content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
             story_state: crate::game::story::StoryState::default(),
             chapters: vec![ChapterManifest {
@@ -1209,6 +1211,7 @@ mod tests {
         };
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),
+            content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
             story_state: crate::game::story::StoryState::default(),
             chapters: vec![ChapterManifest {

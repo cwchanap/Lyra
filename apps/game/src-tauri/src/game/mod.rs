@@ -46,6 +46,9 @@ use view::{
 
 pub struct GameEngine {
     resources_dir: PathBuf,
+    #[allow(dead_code)]
+    // Task 7 retains the validated package identity for future save capture/restore.
+    content_manifest: ContentManifest,
     chapters: Vec<ChapterManifest>,
     story_catalog: StoryCatalog,
     story_state: StoryState,
@@ -204,7 +207,7 @@ impl GameEngine {
     pub fn new_started(resources_dir: PathBuf) -> Result<Self, GameError> {
         let chapters = load_chapter_manifests(&resources_dir)?;
         let story_catalog = StoryCatalog::load(&resources_dir)?;
-        ContentManifest::load(&resources_dir)?;
+        let content_manifest = ContentManifest::load(&resources_dir)?;
 
         let first_scene_ref = chapters[0]
             .scenes
@@ -215,6 +218,7 @@ impl GameEngine {
             load_scene_runtime(&resources_dir, &chapters[0].id, &first_scene_ref, 1)?;
         let mut engine = Self {
             resources_dir,
+            content_manifest,
             chapters,
             story_catalog,
             story_state: StoryState::default(),
@@ -2951,6 +2955,7 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
         };
         let mut engine = GameEngine {
             resources_dir: PathBuf::new(),
+            content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
             story_state: StoryState::default(),
             chapters: vec![ChapterManifest {

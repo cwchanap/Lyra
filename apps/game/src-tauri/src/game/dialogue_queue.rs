@@ -48,8 +48,432 @@ pub(super) enum DialogueSegmentOriginV1 {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[allow(dead_code)] // Task 7 exposes this wire boundary before the full save schema consumes it.
+pub(super) struct ActiveDialogueStateV1 {
+    pub(super) segment_origins: Vec<DialogueSegmentOriginV1>,
+    pub(super) active_segment_index: usize,
+    pub(super) item_cursor: usize,
+    pub(super) queue_gen: u64,
+}
+
+#[cfg(test)]
+mod persistence_adapter_tests {
+    use super::*;
+    use crate::game::scenes::SceneRuntime;
+    use crate::game::GameEngine;
+    use serde_json::json;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    const CONTENT_REVISION: &str =
+        "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    const SOURCE_CHAPTER_ID: &str = "chapter_source";
+    const SOURCE_SCENE_ID: &str = "source_investigation";
+    const CURRENT_CHAPTER_ID: &str = "chapter_current";
+    const CURRENT_SCENE_ID: &str = "current_linear";
+
+    fn action(text: &str) -> DialogueItem {
+        DialogueItem::Action { text: text.into() }
+    }
+
+    fn linear_origin() -> DialogueSegmentOriginV1 {
+        DialogueSegmentOriginV1::LinearScene {
+            chapter_id: CURRENT_CHAPTER_ID.into(),
+            scene_id: CURRENT_SCENE_ID.into(),
+        }
+    }
+
+    fn source_interaction(segment_id: &str) -> DialogueSegmentOriginV1 {
+        DialogueSegmentOriginV1::InvestigationInteraction {
+            chapter_id: SOURCE_CHAPTER_ID.into(),
+            scene_id: SOURCE_SCENE_ID.into(),
+            segment_id: segment_id.into(),
+        }
+    }
+
+    fn state(
+        segment_origins: Vec<DialogueSegmentOriginV1>,
+        active_segment_index: usize,
+        item_cursor: usize,
+        queue_gen: u64,
+    ) -> ActiveDialogueStateV1 {
+        ActiveDialogueStateV1 {
+            segment_origins,
+            active_segment_index,
+            item_cursor,
+            queue_gen,
+        }
+    }
+
+    fn fixture() -> (PathBuf, GameEngine) {
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let sequence = SEQ.fetch_add(1, Ordering::Relaxed);
+        let resources = std::env::temp_dir().join(format!(
+            "lyra-active-dialogue-persistence-{}-{sequence}",
+            std::process::id()
+        ));
+        let source_dir = resources.join(SOURCE_CHAPTER_ID);
+        let current_dir = resources.join(CURRENT_CHAPTER_ID);
+        std::fs::create_dir_all(&source_dir).unwrap();
+        std::fs::create_dir_all(&current_dir).unwrap();
+        std::fs::write(
+            resources.join("save_content_manifest.json"),
+            format!(r#"{{"manifestVersion":1,"contentRevision":"{CONTENT_REVISION}"}}"#),
+        )
+        .unwrap();
+        std::fs::write(
+            resources.join("story_catalog.json"),
+            r#"{
+                "schemaVersion": 1,
+                "facts": [],
+                "questions": [],
+                "objectives": [],
+                "authorizations": [],
+                "evidenceIndex": [],
+                "statementsIndex": []
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            resources.join("chapters.json"),
+            format!(
+                r#"{{
+                    "chapters": [
+                        {{
+                            "id": "{SOURCE_CHAPTER_ID}",
+                            "title": "Source",
+                            "summary": "Source chapter",
+                            "scenes": [
+                                {{
+                                    "type": "investigation",
+                                    "file": "{SOURCE_CHAPTER_ID}/{SOURCE_SCENE_ID}.json"
+                                }}
+                            ]
+                        }},
+                        {{
+                            "id": "{CURRENT_CHAPTER_ID}",
+                            "title": "Current",
+                            "summary": "Current chapter",
+                            "scenes": [
+                                {{
+                                    "type": "linear",
+                                    "file": "{CURRENT_CHAPTER_ID}/{CURRENT_SCENE_ID}.json"
+                                }}
+                            ]
+                        }}
+                    ]
+                }}"#
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            source_dir.join(format!("{SOURCE_SCENE_ID}.json")),
+            format!(
+                r#"{{
+                    "type": "investigation",
+                    "id": "{SOURCE_SCENE_ID}",
+                    "title": "Source investigation",
+                    "intro": [],
+                    "sublocations": [
+                        {{
+                            "id": "room",
+                            "label": "Room",
+                            "status": "unlocked",
+                            "unlock": null,
+                            "reveals": [],
+                            "sceneTag": "Room",
+                            "transitionDialogue": [],
+                            "hotspots": [
+                                {{
+                                    "id": "desk",
+                                    "label": "Desk",
+                                    "description": "A desk.",
+                                    "status": "unlocked",
+                                    "unlock": null,
+                                    "reveals": [],
+                                    "inspectDialogue": [
+                                        {{"kind":"action","text":"inspect-0"}},
+                                        {{"kind":"action","text":"inspect-1"}}
+                                    ],
+                                    "onReexamine": null
+                                }}
+                            ],
+                            "characters": []
+                        }}
+                    ],
+                    "evidenceManifest": [
+                        {{
+                            "id": "note",
+                            "name": "Note",
+                            "description": "A note.",
+                            "details": "Details.",
+                            "onCollect": [
+                                {{"kind":"action","text":"collect-0"}},
+                                {{"kind":"action","text":"collect-1"}}
+                            ],
+                            "onReexamine": null
+                        }}
+                    ],
+                    "statementManifest": [],
+                    "outro": {{"unlock":"auto","dialogue":[]}}
+                }}"#
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            current_dir.join(format!("{CURRENT_SCENE_ID}.json")),
+            format!(
+                r#"{{
+                    "type": "linear",
+                    "id": "{CURRENT_SCENE_ID}",
+                    "title": "Current linear",
+                    "queue": [
+                        {{"kind":"action","text":"current-0"}},
+                        {{"kind":"action","text":"current-1"}}
+                    ]
+                }}"#
+            ),
+        )
+        .unwrap();
+
+        let engine = GameEngine::new_started(resources.clone()).unwrap();
+        (resources, engine)
+    }
+
+    fn assert_action(item: Option<&DialogueItem>, expected: &str) {
+        assert_eq!(item, Some(&action(expected)));
+    }
+
+    fn assert_restore_error_preserves_live_dialogue(
+        engine: &GameEngine,
+        revision: &str,
+        saved: &ActiveDialogueStateV1,
+        expected_code: &str,
+    ) {
+        let before_token = engine.current_queue_token();
+        let before_item = engine.current_dialogue_item();
+
+        let error = engine
+            .restore_active_dialogue_queue(revision, saved)
+            .expect_err("invalid active dialogue must be rejected");
+
+        assert_eq!(error.code, expected_code);
+        assert_eq!(engine.current_queue_token(), before_token);
+        assert_eq!(engine.current_dialogue_item(), before_item);
+    }
+
+    #[test]
+    fn active_dialogue_state_has_the_exact_origin_and_coordinate_wire_shape() {
+        let saved = state(vec![source_interaction("hotspot:desk:inspect")], 0, 1, 41);
+
+        let encoded = serde_json::to_value(&saved).unwrap();
+
+        assert_eq!(
+            encoded,
+            json!({
+                "segmentOrigins": [{
+                    "type": "investigationInteraction",
+                    "chapterId": SOURCE_CHAPTER_ID,
+                    "sceneId": SOURCE_SCENE_ID,
+                    "segmentId": "hotspot:desk:inspect"
+                }],
+                "activeSegmentIndex": 0,
+                "itemCursor": 1,
+                "queueGen": 41
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<ActiveDialogueStateV1>(encoded).unwrap(),
+            saved
+        );
+    }
+
+    #[test]
+    fn capture_preserves_composite_origin_order_and_segment_coordinates() {
+        let (resources, mut engine) = fixture();
+        let origins = vec![
+            source_interaction("hotspot:desk:inspect"),
+            source_interaction("evidence:note:onCollect"),
+        ];
+        let segments = vec![
+            DialogueSegment::new(
+                origins[0].clone(),
+                vec![action("inspect-0"), action("inspect-1")],
+            )
+            .unwrap(),
+            DialogueSegment::new(
+                origins[1].clone(),
+                vec![action("collect-0"), action("collect-1")],
+            )
+            .unwrap(),
+        ];
+        let queue = ActiveDialogueQueue::from_position(segments, 1, 1, 41).unwrap();
+        let SceneRuntime::Investigation(scene) = &mut engine.scene else {
+            panic!("fixture must start in its source investigation");
+        };
+        scene.pending_queue = Some(queue);
+
+        let captured = engine.capture_active_dialogue().unwrap().unwrap();
+
+        assert_eq!(captured, state(origins, 1, 1, 41));
+        std::fs::remove_dir_all(resources).unwrap();
+    }
+
+    #[test]
+    fn restore_resolves_each_origin_from_its_own_scene_and_preserves_the_queue_token() {
+        let (resources, mut engine) = fixture();
+        engine
+            .jump_to_scene(CURRENT_CHAPTER_ID, CURRENT_SCENE_ID)
+            .unwrap();
+        assert_eq!(engine.content_revision(), CONTENT_REVISION);
+        let saved = state(
+            vec![
+                linear_origin(),
+                source_interaction("hotspot:desk:reexamine"),
+            ],
+            1,
+            0,
+            77,
+        );
+
+        let restored = engine
+            .restore_active_dialogue_queue(CONTENT_REVISION, &saved)
+            .unwrap();
+
+        assert_eq!(
+            restored.segment_origins(),
+            [
+                linear_origin(),
+                source_interaction("hotspot:desk:reexamine"),
+            ]
+        );
+        assert_eq!(restored.active_coordinates(), (1, 0));
+        assert_eq!(restored.queue_gen(), 77);
+        assert_eq!(restored.flattened_cursor().unwrap(), 2);
+        assert_action(restored.current(), REEXAMINE_FALLBACK_TEXT);
+        std::fs::remove_dir_all(resources).unwrap();
+    }
+
+    #[test]
+    fn revision_mismatch_is_rejected_before_any_packaged_scene_read() {
+        let (resources, engine) = fixture();
+        std::fs::remove_file(
+            resources
+                .join(SOURCE_CHAPTER_ID)
+                .join(format!("{SOURCE_SCENE_ID}.json")),
+        )
+        .unwrap();
+        let saved = state(vec![source_interaction("hotspot:desk:inspect")], 0, 0, 9);
+
+        assert_restore_error_preserves_live_dialogue(
+            &engine,
+            "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            &saved,
+            "incompatibleContentRevision",
+        );
+        std::fs::remove_dir_all(resources).unwrap();
+    }
+
+    #[test]
+    fn restore_rejects_unknown_mixed_empty_and_out_of_bounds_state_without_mutation() {
+        let (resources, mut engine) = fixture();
+        engine
+            .jump_to_scene(CURRENT_CHAPTER_ID, CURRENT_SCENE_ID)
+            .unwrap();
+        let cases = [
+            (
+                state(
+                    vec![DialogueSegmentOriginV1::LinearScene {
+                        chapter_id: "chapter_unknown".into(),
+                        scene_id: CURRENT_SCENE_ID.into(),
+                    }],
+                    0,
+                    0,
+                    1,
+                ),
+                "unknownChapter",
+            ),
+            (
+                state(
+                    vec![DialogueSegmentOriginV1::LinearScene {
+                        chapter_id: CURRENT_CHAPTER_ID.into(),
+                        scene_id: "scene_unknown".into(),
+                    }],
+                    0,
+                    0,
+                    1,
+                ),
+                "unknownScene",
+            ),
+            (
+                state(
+                    vec![DialogueSegmentOriginV1::LinearScene {
+                        chapter_id: SOURCE_CHAPTER_ID.into(),
+                        scene_id: SOURCE_SCENE_ID.into(),
+                    }],
+                    0,
+                    0,
+                    1,
+                ),
+                "dialogueSegmentResolutionFailed",
+            ),
+            (
+                state(
+                    vec![DialogueSegmentOriginV1::InvestigationIntro {
+                        chapter_id: SOURCE_CHAPTER_ID.into(),
+                        scene_id: SOURCE_SCENE_ID.into(),
+                    }],
+                    0,
+                    0,
+                    1,
+                ),
+                "dialogueSegmentResolutionFailed",
+            ),
+            (
+                state(vec![linear_origin()], 0, 2, 1),
+                "invalidDialogueQueue",
+            ),
+            (state(vec![], 0, 0, 1), "invalidDialogueQueue"),
+        ];
+
+        for (saved, expected_code) in cases {
+            assert_restore_error_preserves_live_dialogue(
+                &engine,
+                CONTENT_REVISION,
+                &saved,
+                expected_code,
+            );
+        }
+        std::fs::remove_dir_all(resources).unwrap();
+    }
+
+    #[test]
+    fn restore_rejects_missing_packaged_scene_files_without_mutation() {
+        let (resources, mut engine) = fixture();
+        engine
+            .jump_to_scene(CURRENT_CHAPTER_ID, CURRENT_SCENE_ID)
+            .unwrap();
+        std::fs::remove_file(
+            resources
+                .join(SOURCE_CHAPTER_ID)
+                .join(format!("{SOURCE_SCENE_ID}.json")),
+        )
+        .unwrap();
+        let saved = state(vec![source_interaction("hotspot:desk:inspect")], 0, 0, 9);
+
+        assert_restore_error_preserves_live_dialogue(
+            &engine,
+            CONTENT_REVISION,
+            &saved,
+            "sceneLoadFailed",
+        );
+        std::fs::remove_dir_all(resources).unwrap();
+    }
+}
+
 impl DialogueSegmentOriginV1 {
-    #[allow(dead_code)] // Task 7 reconstruction validates the persisted chapter coordinate.
     fn chapter_id(&self) -> &str {
         match self {
             Self::LinearScene { chapter_id, .. }
@@ -62,7 +486,6 @@ impl DialogueSegmentOriginV1 {
         }
     }
 
-    #[allow(dead_code)] // Task 7 reconstruction validates the persisted scene coordinate.
     fn scene_id(&self) -> &str {
         match self {
             Self::LinearScene { scene_id, .. }
@@ -245,6 +668,95 @@ impl ActiveDialogueQueue {
             .iter()
             .try_fold(0usize, |cursor, segment| cursor.checked_add(segment.len()))
             .ok_or_else(|| queue_error("Flattened dialogue boundary overflowed usize."))
+    }
+
+    #[allow(dead_code)] // Used by Task 7's crate-private capture adapter.
+    fn capture_state(&self) -> Result<ActiveDialogueStateV1, GameError> {
+        // Validate the public flattened cursor as part of capture so overflow
+        // or a broken live coordinate cannot be persisted silently.
+        self.flattened_cursor()?;
+        let (active_segment_index, item_cursor) = self.active_coordinates();
+        Ok(ActiveDialogueStateV1 {
+            segment_origins: self.segment_origins(),
+            active_segment_index,
+            item_cursor,
+            queue_gen: self.queue_gen,
+        })
+    }
+}
+
+impl crate::game::GameEngine {
+    #[allow(dead_code)] // Future full save capture records the retained package revision.
+    pub(super) fn content_revision(&self) -> &str {
+        self.content_manifest.content_revision()
+    }
+
+    #[allow(dead_code)] // Future full save capture owns the enclosing optional field.
+    pub(super) fn capture_active_dialogue(
+        &self,
+    ) -> Result<Option<ActiveDialogueStateV1>, GameError> {
+        self.active_dialogue_queue()
+            .map(ActiveDialogueQueue::capture_state)
+            .transpose()
+    }
+
+    /// Reconstructs a candidate queue without installing it into the live
+    /// engine. The future full save restore can validate its complete
+    /// candidate first and swap engines only after every field succeeds.
+    #[allow(dead_code)] // Future full save restore installs only a fully validated candidate.
+    pub(super) fn restore_active_dialogue_queue(
+        &self,
+        content_revision: &str,
+        saved: &ActiveDialogueStateV1,
+    ) -> Result<ActiveDialogueQueue, GameError> {
+        let packaged_revision = self.content_revision();
+        if content_revision != packaged_revision {
+            return Err(GameError::incompatible_content_revision(
+                content_revision,
+                packaged_revision,
+            ));
+        }
+
+        let mut segments = Vec::with_capacity(saved.segment_origins.len());
+        for origin in &saved.segment_origins {
+            let chapter_id = origin.chapter_id();
+            let scene_id = origin.scene_id();
+            let mut matching_chapters = self
+                .chapters
+                .iter()
+                .filter(|chapter| chapter.id == chapter_id);
+            let chapter = matching_chapters
+                .next()
+                .ok_or_else(|| GameError::unknown_chapter(chapter_id))?;
+            if matching_chapters.next().is_some() {
+                return Err(GameError::duplicate_chapter_target(chapter_id));
+            }
+            let (_, scene) = crate::game::navigation::find_scene_json_by_id(
+                &self.resources_dir,
+                chapter,
+                scene_id,
+            )?
+            .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
+            let mut resolved =
+                resolve_dialogue_segments(chapter_id, &scene, std::slice::from_ref(origin))?;
+            segments.append(&mut resolved);
+        }
+
+        ActiveDialogueQueue::from_position(
+            segments,
+            saved.active_segment_index,
+            saved.item_cursor,
+            saved.queue_gen,
+        )
+    }
+
+    #[allow(dead_code)] // Used by Task 7's crate-private capture adapter.
+    fn active_dialogue_queue(&self) -> Option<&ActiveDialogueQueue> {
+        match &self.scene {
+            crate::game::scenes::SceneRuntime::Linear(scene) => scene.queue.as_ref(),
+            crate::game::scenes::SceneRuntime::Investigation(scene) => scene.pending_queue.as_ref(),
+            crate::game::scenes::SceneRuntime::Interrogation(scene) => scene.pending_queue.as_ref(),
+        }
     }
 }
 
