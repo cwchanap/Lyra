@@ -53,6 +53,8 @@ import {
   type SaveContentBundleV1,
 } from "./save-content-manifest";
 import { validateDerivedDialogueOriginCollisions } from "./dialogue-segment-origins";
+import { materializeSemanticDefaults } from "./semantic-defaults";
+import { validateSaveContentReferences } from "./save-content-references";
 import type { ASTChapter, ASTStoryCatalog, CompileError } from "./types";
 import { loadAssetConfig } from "./assets/config";
 import { enrichScenesWithAssets } from "./assets/enrich";
@@ -339,6 +341,7 @@ export function compile(opts: CompileOptions): CompileResult {
   let manifestToWrite: AssetManifest | null = null;
   if (assetConfig.ok) {
     const configWarnings = assetConfig.warnings;
+    scenes.splice(0, scenes.length, ...scenes.map(materializeSemanticDefaults));
     const enriched = enrichScenesWithAssets({
       scenes,
       config: assetConfig.value,
@@ -351,6 +354,13 @@ export function compile(opts: CompileOptions): CompileResult {
       ...enriched.warnings,
     ]);
     manifestToWrite = enriched.manifest;
+    errors.push(
+      ...validateSaveContentReferences({
+        scenes,
+        config: assetConfig.value,
+        manifest: enriched.manifest,
+      }),
+    );
   }
 
   // 4. Validate.

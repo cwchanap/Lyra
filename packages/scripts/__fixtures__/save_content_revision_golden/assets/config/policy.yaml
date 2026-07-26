@@ -1,0 +1,34 @@
+assets:
+  enabled: true
+globalStyle:
+  prompt: noir
+types:
+  background:
+    {
+      dimensions: [1920, 1080],
+      format: png,
+      transparency: false,
+      prompt: background,
+    }
+  portrait:
+    {
+      dimensions: [768, 1024],
+      format: png,
+      transparency: true,
+      prompt: portrait,
+    }
+  evidence:
+    {
+      dimensions: [512, 512],
+      format: png,
+      transparency: true,
+      prompt: evidence,
+    }
+  standee:
+    {
+      dimensions: [1024, 1536],
+      format: png,
+      transparency: true,
+      prompt: standee,
+    }
+  audio: { format: ogg, loop: true }

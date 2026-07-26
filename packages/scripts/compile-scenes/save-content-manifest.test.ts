@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildSaveContentManifest,
@@ -5,6 +8,7 @@ import {
   type SaveContentBundleV1,
 } from "./save-content-manifest";
 import { emitLinearScene } from "./emitter";
+import { compile } from "./orchestrator";
 import type {
   AssetRef,
   ASTLinearScene,
@@ -244,5 +248,50 @@ describe("buildSaveContentManifest", () => {
         bundle: bundle([chapter("chapter_1", "Chapter 1", [changed])]),
       }).contentRevision,
     ).not.toBe(firstRevision);
+  });
+
+  it("emits the reviewed cross-host content revision with compiler-owned re-examination defaults", () => {
+    const fixtureRoot = resolve(
+      "packages/scripts/__fixtures__/save_content_revision_golden",
+    );
+    const outputRoot = mkdtempSync(join(tmpdir(), "lyra-content-revision-"));
+    const result = compile({
+      sourceRoot: join(fixtureRoot, "stories_plan"),
+      assetConfigRoot: join(fixtureRoot, "assets/config"),
+      outputRoot,
+      assetOutputRoot: join(outputRoot, "assets"),
+      repoRoot: fixtureRoot,
+    });
+    expect(result.ok).toBe(true);
+    const expected = readFileSync(
+      join(fixtureRoot, "expected-content-revision.txt"),
+      "utf8",
+    ).trimEnd();
+    const manifest = JSON.parse(
+      readFileSync(join(outputRoot, "save_content_manifest.json"), "utf8"),
+    ) as { manifestVersion: number; contentRevision: string };
+    expect(manifest).toEqual({ manifestVersion: 1, contentRevision: expected });
+    const investigation = JSON.parse(
+      readFileSync(
+        join(outputRoot, "chapter_1/investigation_scene_1.json"),
+        "utf8",
+      ),
+    ) as {
+      sublocations: Array<{
+        hotspots: Array<{ onReexamine: unknown }>;
+        characters: Array<{ topics: Array<{ onReexamine: unknown }> }>;
+      }>;
+      evidenceManifest: Array<{ onReexamine: unknown }>;
+      statementManifest: Array<{ onReexamine: unknown }>;
+    };
+    const fallback = [{ kind: "action", text: "（沒有新發現。）" }];
+    expect(investigation.sublocations[0]!.hotspots[0]!.onReexamine).toEqual(
+      fallback,
+    );
+    expect(
+      investigation.sublocations[0]!.characters[0]!.topics[0]!.onReexamine,
+    ).toEqual(fallback);
+    expect(investigation.evidenceManifest[0]!.onReexamine).toEqual(fallback);
+    expect(investigation.statementManifest[0]!.onReexamine).toEqual(fallback);
   });
 });

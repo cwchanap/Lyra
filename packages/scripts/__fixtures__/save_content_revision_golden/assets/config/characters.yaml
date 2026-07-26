@@ -1,0 +1,8 @@
+characters:
+  - id: detective
+    displayNames: ["偵探"]
+    portraitMode: portrait
+    visualPrompt: detective
+    expressions:
+      standard:
+        prompt: neutral

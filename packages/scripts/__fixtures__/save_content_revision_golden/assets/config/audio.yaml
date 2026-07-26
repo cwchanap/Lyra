@@ -1,0 +1,12 @@
+bgm:
+  rain:
+    prompt: rain music
+    loop: true
+bgs:
+  street:
+    prompt: street rain
+    loop: true
+sfx:
+  click:
+    prompt: click
+    loop: false
