@@ -187,6 +187,10 @@ are Traditional Chinese. IDs are English slugs anchored with `{#id}`.
 ### Phase (H2)
 
 - **Heading:** `## Phase: <label> {#phase_id}`
+- **Reserved phase id:** `inventory` is reserved by the compiler for
+  evidence/statement manifest dialogue (onCollect / onReexamine / onAcquire)
+  and cannot be used as a writer-authored phase id. The compiler rejects it
+  with `interrogationPhaseReservedId`.
 - **Required:** `Kind` — always `inquiry` (kept for forward compatibility;
   there is no other value the parser accepts).
 - **Required when assets are enabled:** `Background Prompt`

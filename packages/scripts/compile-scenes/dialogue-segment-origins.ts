@@ -10,6 +10,14 @@ import type {
 } from "./types";
 import type { DialogueSegmentOriginV1 } from "./save-content-manifest";
 
+/**
+ * Synthetic phaseId used to namespace dialogue segments that belong to the
+ * evidence/statement manifest (onCollect, onReexamine, onAcquire) rather than
+ * to any writer-authored interrogation phase. Reserved by the validator —
+ * writers must not declare a phase with this id.
+ */
+export const INVENTORY_PHASE_ID = "inventory";
+
 export type EmittedSceneRecordV1 = {
   chapterId: string;
   json: JSONLinearScene | JSONInvestigationScene | JSONInterrogationScene;
@@ -306,7 +314,7 @@ function deriveInterrogationSegments(
   }
   for (const [evidenceIndex, evidence] of scene.evidenceManifest.entries()) {
     const sourceEvidence = sourceAst?.evidenceManifest[evidenceIndex];
-    const phaseId = "inventory";
+    const phaseId = INVENTORY_PHASE_ID;
     segments.push(
       {
         origin: interrogationPhaseOrigin(
@@ -332,7 +340,7 @@ function deriveInterrogationSegments(
   }
   for (const [statementIndex, statement] of scene.statementManifest.entries()) {
     const sourceStatement = sourceAst?.statementManifest[statementIndex];
-    const phaseId = "inventory";
+    const phaseId = INVENTORY_PHASE_ID;
     segments.push(
       {
         origin: interrogationPhaseOrigin(
