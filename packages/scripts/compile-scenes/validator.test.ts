@@ -2139,6 +2139,16 @@ describe("validator", () => {
 
   // ---- ID uniqueness ----
 
+  it("rejects a reserved phase id (inventory)", () => {
+    const scene = mkInterrogationScene({
+      phases: [mkInquiryPhase({ id: "inventory" })],
+    });
+    const errors = validateInterrogation(scene);
+    expect(
+      errors.find((e) => e.code === "interrogationPhaseReservedId"),
+    ).toBeDefined();
+  });
+
   it("rejects a duplicate phase id within an interrogation scene", () => {
     const scene = mkInterrogationScene({
       phases: [mkInquiryPhase({ id: "dup" }), mkInquiryPhase({ id: "dup" })],

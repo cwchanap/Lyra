@@ -27,6 +27,7 @@ import type {
   RevealTarget,
   UnlockExpr,
 } from "./types";
+import { INVENTORY_PHASE_ID } from "./dialogue-segment-origins";
 
 export type SceneRecord = {
   chapterId: string;
@@ -256,6 +257,14 @@ function validateInterrogationScene(
   };
 
   for (const phase of scene.phases) {
+    if (phase.id === INVENTORY_PHASE_ID) {
+      errors.push({
+        code: "interrogationPhaseReservedId",
+        message: `Phase id "${phase.id}" is reserved for compiler-internal evidence/statement manifest dialogue and cannot be used by writers.`,
+        sourceFile: scene.sourceFile,
+        line: phase.line,
+      });
+    }
     checkDuplicate(localPhase, phase.id, "phase", phase.line);
     const priorSubject = subjectById.get(phase.subject.id);
     if (priorSubject) {
