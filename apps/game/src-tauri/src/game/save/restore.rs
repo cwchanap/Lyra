@@ -2447,23 +2447,34 @@ mod tests {
         };
         let valid = harness.live.capture();
         let invalid = [
-            GenericSnapshot {
-                content_revision:
-                    "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".into(),
-                ..valid.clone()
-            },
-            GenericSnapshot {
-                definition_id: "missing_primary".into(),
-                ..valid.clone()
-            },
-            GenericSnapshot {
-                required_definition_id: "missing_required".into(),
-                ..valid.clone()
-            },
+            (
+                GenericSnapshot {
+                    content_revision:
+                        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                            .into(),
+                    ..valid.clone()
+                },
+                "incompatibleContentRevision",
+            ),
+            (
+                GenericSnapshot {
+                    definition_id: "missing_primary".into(),
+                    ..valid.clone()
+                },
+                "missingSaveDefinition",
+            ),
+            (
+                GenericSnapshot {
+                    required_definition_id: "missing_required".into(),
+                    ..valid.clone()
+                },
+                "missingSaveDefinition",
+            ),
         ];
-        for snapshot in invalid {
+        for (snapshot, expected_code) in invalid {
             let before = harness.bytes();
-            assert!(harness.try_restore(&definitions, snapshot).is_err());
+            let error = harness.try_restore(&definitions, snapshot).unwrap_err();
+            assert_eq!(error.code, expected_code);
             assert_eq!(
                 harness.bytes(),
                 before,
