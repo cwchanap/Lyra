@@ -11,6 +11,7 @@ const refs = [
   ["evidence", "evidence.receipt"],
   ["audio", "audio.bgm.rain"],
   ["audio", "audio.bgs.street"],
+  ["audio", "audio.sfx.click"],
 ] as const;
 
 function config(): AssetConfig {
@@ -39,7 +40,7 @@ function config(): AssetConfig {
     audio: {
       bgm: new Map([["rain", { id: "rain", prompt: "", loop: true }]]),
       bgs: new Map([["street", { id: "street", prompt: "", loop: true }]]),
-      sfx: new Map(),
+      sfx: new Map([["click", { id: "click", prompt: "", loop: false }]]),
     },
   };
 }
@@ -79,7 +80,7 @@ function scene(): SceneRecord {
       id: "investigation_scene_1",
       title: "調查",
       intro: [],
-      assetRefs: [],
+      assetRefs: [{ type: "audio", assetId: "audio.sfx.click" }],
       sourceFile,
       line: 1,
       sublocations: [
@@ -146,7 +147,7 @@ function scene(): SceneRecord {
 }
 
 describe("validateSaveContentReferences", () => {
-  it("accepts every emitted semantic background, portrait, image, and audio reference once", () => {
+  it("accepts every emitted semantic background, portrait, image, and BGM/BGS/SFX reference once", () => {
     expect(
       validateSaveContentReferences({
         scenes: [scene()],
@@ -166,7 +167,7 @@ describe("validateSaveContentReferences", () => {
       expect.objectContaining({
         code: "saveContentReferenceMissing",
         sourceFile,
-        line: 2,
+        line: 1,
       }),
     );
   });

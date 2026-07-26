@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -166,6 +166,59 @@ describe("buildSaveContentManifest", () => {
     );
   });
 
+  it("changes for emitted description, cue, ID, and progression edits", () => {
+    const baseline = bundle([
+      chapter("chapter_1", "Chapter 1", [
+        linear("scene_0", "Opening", [
+          {
+            kind: "sceneTag",
+            text: "Rainy street",
+            assetCue: {
+              backgroundAssetId: "background.chapter_1.street",
+              bgm: { channel: "bgm", assetId: "audio.bgm.rain" },
+              bgs: null,
+            },
+          },
+          line("A"),
+        ]),
+      ]),
+    ]);
+    const descriptionEdited = structuredClone(
+      baseline,
+    ) as SaveContentBundleV1 & {
+      chapters: Array<{ scenes: Array<{ description?: string }> }>;
+    };
+    descriptionEdited.chapters[0]!.scenes[0]!.description =
+      "Corrected description";
+    const cueEdited = structuredClone(baseline);
+    const cue = (cueEdited.chapters[0]!.scenes[0] as JSONLinearScene).queue[0]!;
+    if (cue.kind !== "sceneTag" || !cue.assetCue)
+      throw new Error("expected cue");
+    cue.assetCue.bgm = { channel: "bgm", assetId: "audio.bgm.wind" };
+    const idEdited = structuredClone(baseline);
+    idEdited.chapters[0]!.scenes[0]!.id = "scene_renamed";
+    const progressionEdited = structuredClone(baseline);
+    progressionEdited.storyCatalog.objectives.push({
+      id: "find_truth",
+      label: "Find the truth",
+      summary: "Progress the investigation.",
+      kind: "primary",
+      sortOrder: 1,
+    });
+
+    const baselineRevision = manifest({ bundle: baseline }).contentRevision;
+    for (const edited of [
+      descriptionEdited as SaveContentBundleV1,
+      cueEdited,
+      idEdited,
+      progressionEdited,
+    ]) {
+      expect(manifest({ bundle: edited }).contentRevision).not.toBe(
+        baselineRevision,
+      );
+    }
+  });
+
   it("includes newly emitted static fields without an allowlist update", () => {
     const baseline = bundle([
       chapter("chapter_1", "Chapter 1", [
@@ -182,7 +235,7 @@ describe("buildSaveContentManifest", () => {
     );
   });
 
-  it("ignores source filename and path-only input metadata", () => {
+  it("ignores source locations, raw Markdown, absolute paths, and timestamps", () => {
     const semanticBundle = bundle([
       chapter("chapter_1", "Chapter 1", [
         linear("scene_0", "Opening", [line("A")]),
@@ -191,11 +244,28 @@ describe("buildSaveContentManifest", () => {
     const fromFirstPath = {
       bundle: semanticBundle,
       sourcePath: "/one/source/chapter_1/scene_0.md",
-    } as BuildSaveContentManifestInput & { sourcePath: string };
+      rawMarkdown: "# Scene\n\n**Detective**：A",
+      sourceLocation: {
+        sourceFile: "/one/source/chapter_1/scene_0.md",
+        line: 1,
+      },
+      compiledAt: "2026-07-26T00:00:00.000Z",
+    } as BuildSaveContentManifestInput & {
+      sourcePath: string;
+      rawMarkdown: string;
+      sourceLocation: { sourceFile: string; line: number };
+      compiledAt: string;
+    };
     const fromSecondPath = {
       bundle: semanticBundle,
       sourcePath: "/another/source/chapter_1/scene_0.md",
-    } as BuildSaveContentManifestInput & { sourcePath: string };
+      rawMarkdown: "# Scene\n\n[旁白：A]",
+      sourceLocation: {
+        sourceFile: "/another/source/chapter_1/scene_0.md",
+        line: 99,
+      },
+      compiledAt: "2099-01-01T00:00:00.000Z",
+    } as typeof fromFirstPath;
 
     expect(manifest(fromSecondPath).contentRevision).toBe(
       manifest(fromFirstPath).contentRevision,
@@ -293,5 +363,42 @@ describe("buildSaveContentManifest", () => {
     ).toEqual(fallback);
     expect(investigation.evidenceManifest[0]!.onReexamine).toEqual(fallback);
     expect(investigation.statementManifest[0]!.onReexamine).toEqual(fallback);
+
+    const physicalRoot = mkdtempSync(join(tmpdir(), "lyra-physical-assets-"));
+    const physicalFile = join(physicalRoot, "static/assets/audio/bgm/rain.ogg");
+    mkdirSync(resolve(physicalFile, ".."), { recursive: true });
+    writeFileSync(physicalFile, "first physical bytes");
+    const physicalOutputOne = mkdtempSync(
+      join(tmpdir(), "lyra-content-revision-"),
+    );
+    const firstPhysical = compile({
+      sourceRoot: join(fixtureRoot, "stories_plan"),
+      assetConfigRoot: join(fixtureRoot, "assets/config"),
+      outputRoot: physicalOutputOne,
+      assetOutputRoot: join(physicalOutputOne, "assets"),
+      repoRoot: physicalRoot,
+    });
+    expect(firstPhysical.ok).toBe(true);
+    writeFileSync(physicalFile, "different physical bytes and mapping root");
+    const physicalOutputTwo = mkdtempSync(
+      join(tmpdir(), "lyra-content-revision-"),
+    );
+    const secondPhysical = compile({
+      sourceRoot: join(fixtureRoot, "stories_plan"),
+      assetConfigRoot: join(fixtureRoot, "assets/config"),
+      outputRoot: physicalOutputTwo,
+      assetOutputRoot: join(physicalOutputTwo, "assets"),
+      repoRoot: physicalRoot,
+    });
+    expect(secondPhysical.ok).toBe(true);
+    for (const output of [physicalOutputOne, physicalOutputTwo]) {
+      expect(
+        (
+          JSON.parse(
+            readFileSync(join(output, "save_content_manifest.json"), "utf8"),
+          ) as { contentRevision: string }
+        ).contentRevision,
+      ).toBe(expected);
+    }
   });
 });
