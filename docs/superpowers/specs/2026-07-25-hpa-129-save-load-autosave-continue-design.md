@@ -108,9 +108,10 @@ two during HPA-392 design.
     acknowledgement refreshes that session's current autosave slot in place so
     acknowledgements cannot consume the recovery history.
 20. One package-wide `contentRevision` is the load compatibility gate. Any
-    emitted static semantic-content change, including prose or ordering,
-    invalidates existing saves. This is acceptable before release; released
-    static content is treated as immutable.
+    emitted static semantic-content change, including prose, ordering, or a
+    compiler-materialized default needed for reconstruction, invalidates
+    existing saves. This is acceptable before release; released static content
+    is treated as immutable.
 21. Manual saves store one player-authored display name. An occupied slot keeps
     its existing name by default; the player may edit it before overwrite.
 22. Manual names are trimmed, contain 1–40 Unicode grapheme clusters, reject
@@ -130,6 +131,18 @@ two during HPA-392 design.
 27. Missing, corrupt, timed-out, or failed thumbnail capture produces a
     deterministic placeholder and a non-blocking presentation warning. It does
     not change compatibility, ordering, Continue, or Load behavior.
+28. Acquisition acknowledgement prepares and submits its clean-frame thumbnail
+    before the durable acknowledgement command. The command consumes that
+    event-bound ticket, advances the revision, flushes the refreshed autosave,
+    and returns only after the durability result is known.
+29. When both filesystem modification time and valid `saved_at` are exactly
+    tied, Continue prefers a manual save because it is the explicit
+    player-authored checkpoint; this fallback never outranks a measurably newer
+    autosave.
+30. The packaged thumbnail proof is an architecture gate. If clean DOM capture
+    cannot meet the approved frame contract in Tauri's packaged WebView,
+    implementation stops and returns to design; systematically unavailable
+    thumbnails do not satisfy HPA-392.
 
 ## 3. Current constraints
 
@@ -260,12 +273,15 @@ of the complete emitted static semantic bundle:
 - ordered chapters with stable IDs, titles, summaries, and ordered scene
   identities;
 - every emitted linear, investigation, and interrogation scene value;
+- compiler-materialized dialogue defaults required to reconstruct a resumable
+  runtime queue;
 - the emitted story catalog, including record indexes and global definitions.
 
 The projection includes all emitted semantic copy, IDs, kinds, order, cues,
-unlock/reveal/progression rules, and authored static definitions. Therefore any
-static semantic edit—including prose, labels, descriptions, dialogue order,
-scene order, or progression structure—changes the revision.
+unlock/reveal/progression rules, authored static definitions, and deterministic
+compiler defaults. Therefore any static semantic edit—including prose, labels,
+descriptions, dialogue order, scene order, progression structure, or fallback
+copy—changes the revision.
 
 Canonicalization:
 
@@ -279,6 +295,14 @@ The encoded value is `sha256:<lowercase hex>`. Repeated compilation of
 semantically identical inputs produces the same revision. One shared canonical
 serializer owns this calculation; feature code does not hand-roll alternate
 `JSON.stringify` hash paths.
+
+Before emission and hashing, the compiler materializes the exact action
+`（沒有新發現。）` for a missing or empty re-examination block on a hotspot,
+topic, evidence record, or statement record. The emitted scene wire is the
+single source used by both live queue installation and later reconstruction;
+Rust does not retain a second unhashed fallback-copy constant. Changing the
+fallback copy or its four-role applicability therefore changes
+`contentRevision` automatically.
 
 This artifact is a compiler/runtime contract, not an editor scene-graph
 contract. HPA-392 adds no save-only fields to `@lyra/scene-types`.
@@ -435,7 +459,7 @@ struct SaveSnapshotV1 {
     active_dialogue: Option<ActiveDialogueStateV1>,
     last_visual_cue: LastVisualCueSnapshotV1,
     inventory: InventorySnapshotV1,
-    acquisition_events: Vec<AcquisitionEventStateV1>,
+    pending_acquisition_events: Vec<AcquisitionEventStateV1>,
     story_state: StoryStateSnapshot,
     dialogue_history: DialogueHistorySnapshotV1,
     next_queue_gen: u64,
@@ -557,6 +581,12 @@ content segment and fall within that segment. Any boundary outside the
 reconstructed line content rejects the load. `CrossExamSnapshotV1::Playing`
 likewise maps its stable line ID to exactly one runtime line index; capture and
 restore never persist both formats.
+
+`CrossExamSnapshotV1::Presenting` validates the stable question/line pair,
+reinstates runtime `CrossExam::Presenting`, and returns an interrogation view
+with `presenting: true`. The restored frontend therefore reopens the evidence
+tray against that exact saved line; it does not silently fall back to the
+line-content or question-menu view.
 
 The loader rejects:
 
@@ -797,13 +827,13 @@ error. `segment_id` is never a vector index and never depends on label or
 dialogue copy.
 
 The four closed re-examination roles—hotspot, topic, evidence, and
-statement—have deterministic engine-owned behavior when their authored
-`onReexamine` target is missing or empty: the resolver produces the exact
-action `（沒有新發現。）` under the same authored origin role. Other missing or
-empty dialogue targets remain invalid. This fallback is schema-owned behavior
-outside the package bundle; an incompatible change to its copy or semantics
-requires a save-schema or compatibility revision even though it does not
-change the package content revision.
+statement—receive the compiler-materialized action `（沒有新發現。）` when their
+authored `onReexamine` target is missing or empty. The resolver consumes that
+emitted item under the same semantic origin used by authored content. Other
+missing or empty dialogue targets remain invalid. Because the materialized
+item is part of the canonical emitted bundle, changing its copy or
+applicability changes the package `contentRevision`; live installation and
+restoration cannot silently drift.
 
 Future analysis/story-event origins require new schema variants or migrations;
 HPA-392 does not pre-implement those runtimes.
@@ -871,12 +901,50 @@ command restores the revision, inventory, and pending events together.
 
 The Svelte acquisition controller stops inferring inventory differences. It
 renders the Rust-provided event and invokes
-`acknowledge_acquisition_event(eventId)` when the player dismisses the popup.
+`prepare_save_thumbnail({ type: "acquisitionAcknowledgement", eventId })` when
+the player chooses to dismiss the popup. The returned ticket is bound to the
+current session generation, current durable revision, and exact pending event.
+While the popup remains visible, Svelte captures the marked gameplay root
+beneath it and submits either the PNG or a terminal capture failure.
 
-Acknowledgement is a durable Rust command. The frontend does not close the
-popup until the command succeeds and its resulting autosave is flushed. This
-prevents a successfully acknowledged event from reappearing after a process
-exit between dismissal and the normal debounce.
+The frontend then invokes
+`acknowledge_acquisition_event(eventId, preparedThumbnailTicket)`.
+Acknowledgement is a durable Rust command. It atomically verifies and consumes
+the event-bound ticket, advances the revision, refreshes the session autosave
+with the accepted image or `Unavailable`, and returns success only after the
+authoritative slot replacement. A post-commit sidecar cleanup failure follows
+§12.2's cleanup-pending/degraded result but does not undo the durable
+acknowledgement. The post-command wrapper carries no second capture request.
+The frontend does not close the popup until this command returns a committed
+result, preventing a successfully acknowledged event from reappearing after a
+process exit between dismissal and the normal debounce.
+
+Until the slot replacement succeeds, the acknowledgement mutation remains
+rollback-capable behind the replacement gate. An authoritative write failure
+before JSON replacement restores the prior durable revision and pending event
+before returning its typed failure, so Retry begins from the same visible popup
+and prepares a fresh capture ticket. This synchronous durability path is the
+deliberate exception to background autosave failure leaving an ordinary
+gameplay mutation committed.
+
+The command acquires the replacement gate before the session lock, retains an
+`EngineRollbackSnapshot`, and registers an exclusive acknowledgement intent
+that makes every other gameplay state command—including `get_state`—fail fast
+until resolution, so no caller can observe the provisional acknowledged view.
+It applies and captures the acknowledgement checkpoint, then releases the
+session lock while retaining the gate for file I/O. Success finalizes the
+mutation and checkpoint together; failure reacquires the session lock under the
+already-held gate, verifies the intent and unchanged generation, restores the
+snapshot, and then releases both. It never holds the gameplay/session mutex
+during serialization, PNG/JSON writes, flushes, or directory sync.
+
+This preflight capture is valid for the resulting checkpoint because the
+acquisition popup is a filtered sibling outside the gameplay root, and removing
+the pending event changes only that excluded presentation. Any intervening
+durable mutation, different pending event, session change, expired ticket, or
+already-consumed ticket rejects acknowledgement as stale. Capture failure or
+timeout still supplies a terminal `Unavailable` result and never blocks the
+authoritative acknowledgement merely because no preview could be produced.
 
 If that flush fails, the popup first remains open with Retry and Cancel. A
 second explicit confirmation may choose Continue Without Saving. Rust removes
@@ -987,32 +1055,45 @@ struct ThumbnailCaptureRequestView {
 }
 ```
 
-The wrapper issues a request only when the durable revision advanced. Stale
-queue-token no-ops and read-only commands return no request. `ticket` is an
-opaque UUID v4 correlation value bound inside the coordinator to the exact
-session generation and durable revision; it is neither a path nor an
-authorization secret.
+The wrapper issues a request only when the durable revision advanced, except
+for acquisition acknowledgement's explicit preflight path below. Stale
+queue-token no-ops, read-only commands, and a successfully acknowledged event
+return no post-command request. `ticket` is an opaque UUID v4 correlation value
+bound inside the coordinator to a typed capture purpose and exact session
+identity; it is neither a path nor an authorization secret.
 
-Manual Save requests a ticket through `prepare_save_thumbnail` after gameplay
-input is isolated by the save browser. It does not advance the durable
-revision. The subsequent `save_manual` command consumes that exact ticket and
-rejects it if the session or revision changed. The request exposes the fixed
-relative timeout so the frontend can bound capture without owning the
-coordinator's clock.
+`prepare_save_thumbnail` accepts one closed purpose:
 
-After Svelte applies `state` and the gameplay root renders, it submits either:
+- `ManualSave`, bound to the current session generation and durable revision;
+- `AcquisitionAcknowledgement { event_id }`, additionally bound to the exact
+  pending event and the one expected next durable revision.
+
+Manual Save requests its ticket after gameplay input is isolated by the save
+browser. It does not advance the durable revision. The subsequent
+`save_manual` command consumes that exact ticket and rejects it if the session
+or revision changed. Acquisition acknowledgement follows the preflight sequence
+in §9.2; only that successful command may promote its prepared frame from the
+source revision to the bound next revision. Any intervening mutation
+supersedes the ticket.
+
+For ordinary gameplay mutations, Svelte first applies the returned `state`,
+lets the gameplay root render, and then handles the wrapper's request. For
+Manual Save and acquisition acknowledgement, it captures the already-current
+root before invoking the consuming command. Every path submits either:
 
 - `submit_save_thumbnail(ticket, png_bytes)`, or
 - `report_save_thumbnail_failure(ticket)`.
 
-Rust validates and retains at most one latest candidate/result per revision.
-Older or superseded ticket results are discarded without altering gameplay.
-Thumbnail results are bounded before retention; arbitrary frontend bytes are
-never written directly to a caller-selected path. Every prepared ticket reaches
-one bounded terminal state: accepted bytes, reported failure, expiry, or
-supersession. `save_manual` may wait only for the remainder of that ticket's
-1,000 ms deadline without holding the gameplay/session mutex; expiry is consumed
-as `Unavailable`, so preview failure cannot strand the authoritative save.
+Rust validates and retains at most one latest candidate/result per typed capture
+intent. Older or superseded ticket results are discarded without altering
+gameplay. Thumbnail results are bounded before retention; arbitrary frontend
+bytes are never written directly to a caller-selected path. Every prepared
+ticket reaches one bounded terminal state: accepted bytes, reported failure,
+expiry, or supersession. `save_manual` and
+`acknowledge_acquisition_event` may wait only for the remainder of that
+ticket's 1,000 ms deadline without holding the gameplay/session mutex; expiry
+is consumed as `Unavailable`, so preview failure cannot strand the
+authoritative operation.
 
 ### 11.2 Thumbnail capture and debounce
 
@@ -1087,10 +1168,14 @@ continuing:
 - acquisition acknowledgement response, using the in-place session autosave
   target from §9.2.
 
-Flush idempotence is global: whenever `written_revision >= durable_revision`,
-a flush performs no write, replacement, rotation, or timestamp change. This
-applies to manual-save preflush, confirmed load, Return to Title, and
-acquisition acknowledgement as well as ordinary debounced flushes.
+Flush idempotence is operation-independent but scoped to one session
+generation. The coordinator records the written `(session_generation,
+durable_revision)` pair; a flush performs no write, replacement, rotation, or
+timestamp change only when the written generation equals the current generation
+and its revision is at least the current durable revision. This applies to
+manual-save preflush, confirmed load, Return to Title, and acquisition
+acknowledgement as well as ordinary debounced flushes. A high revision from an
+older generation can never satisfy or suppress a new session's flush.
 
 The first flush failure blocks the requested operation with an actionable error
 and Retry/Cancel. Manual Save has no bypass because bypassing it would perform
@@ -1347,7 +1432,10 @@ Continue uses one total newest-first ordering:
 
 The last rule is only a deterministic fallback for filesystems whose timestamp
 resolution cannot distinguish writes, including ties involving an invalid file.
-It does not permit skipping a higher-ranked invalid file.
+It does not permit skipping a higher-ranked invalid file. When both comparable
+timestamps are exactly equal, manual-before-auto intentionally prefers the
+explicit player-authored checkpoint. A later autosave still wins whenever
+either filesystem modification time or valid `saved_at` distinguishes it.
 
 Continue:
 
@@ -1388,12 +1476,14 @@ Load never mutates the live engine incrementally:
 8. reconstruct dialogue segments and scene progress;
 9. build a complete candidate `GameEngine`;
 10. build its public view and validate summary invariants;
-11. under the session lock, verify that the requested session generation is
+11. acquire the replacement gate without holding the session lock;
+12. under the session lock, verify that the requested session generation is
     still current;
-12. replace the live engine, reset the persistence generation, and return the
-    candidate view.
+13. replace the live engine and reset the persistence generation;
+14. release the session lock and replacement gate, then return the already
+    validated candidate view.
 
-Any failure before step 12 leaves the existing engine, autosave coordinator,
+Any failure before step 13 leaves the existing engine, autosave coordinator,
 and frontend state unchanged.
 
 Loading a save does not itself update that file or immediately create an
@@ -1417,10 +1507,13 @@ idempotent flush check; Load and Discard Current Unsaved Progress instead
 validates the matching persistence failure/session generation. Rust swaps
 engines only after the selected path and candidate validation both succeed.
 
-Return to Title flushes the current revision, cancels its session generation,
-sets the engine to `None`, and returns a freshly discovered save list. Continue
-therefore proves the disk restoration path instead of reusing an in-memory
-engine.
+Return to Title first flushes the current revision, then acquires the
+replacement gate before the session lock, cancels its session generation, sets
+the engine to `None`, and returns a freshly discovered save list. New Game and
+title-screen Continue likewise construct their candidate outside both locks,
+then acquire the replacement gate before the session lock for the generation
+transition. Continue therefore proves the disk restoration path instead of
+reusing an in-memory engine.
 
 ## 14. Migration policy
 
@@ -1485,12 +1578,25 @@ confirm_acquisition_without_saving
 Existing engine methods continue to return `GameStateView`; mutating Tauri
 handlers wrap that view in `GameplayCommandResultView` (§11.1), schedule
 autosave after a successful durable revision, and issue a thumbnail ticket only
-for an advanced revision. `GameStateView` remains engine-owned and does not
-absorb coordinator health or capture coordination.
+for an advanced revision other than preflight-backed acquisition
+acknowledgement. `GameStateView` remains engine-owned and does not absorb
+coordinator health or capture coordination.
 
-`save_manual` accepts a bounded manual slot, the display-name input, the
-observed prior `save_id` for overwrite (or an explicit empty expectation), and
-the prepared thumbnail ticket. `read_save_thumbnail` accepts only a typed slot
+This wrapper is an intentional breaking change to the app's internal mutating
+IPC response shape. The frontend updates the central `dispatchGameCommand` and
+`dispatchStateCommand` boundaries to unwrap `.state`, schedule any
+`.thumbnailCapture`, and keep all downstream game-state consumers on
+`GameStateView`. The development HTTP bridge must mirror the Tauri wire shape.
+Read-only commands retain their existing result types. Focused contract tests
+cover both dispatch boundaries so a mutating command cannot accidentally be
+treated as a bare state.
+
+`prepare_save_thumbnail` accepts only the closed Manual Save or
+Acquisition Acknowledgement purpose from §11.1. `save_manual` accepts a bounded
+manual slot, the display-name input, the observed prior `save_id` for overwrite
+(or an explicit empty expectation), and the prepared Manual Save ticket.
+`acknowledge_acquisition_event` accepts the exact event ID and its prepared
+acknowledgement ticket. `read_save_thumbnail` accepts only a typed slot
 reference plus observed save ID. No command accepts an application-data path
 or thumbnail object ID.
 
@@ -1605,7 +1711,7 @@ workflow state only. Rust still validates:
 - manual display-name trimming, grapheme count, and forbidden characters;
 - session generation;
 - save/load availability;
-- thumbnail-ticket session/revision ownership and PNG bounds;
+- thumbnail-ticket purpose/session/revision/event ownership and PNG bounds;
 - event identity and pending-state.
 
 The overwrite command carries the slot plus the save ID observed by the
@@ -1755,6 +1861,9 @@ diagnostics for:
 - empty, over-limit, or forbidden-character manual display name;
 - malformed, oversized, or out-of-bounds submitted PNG;
 - stale/superseded thumbnail ticket;
+- mismatched acquisition-acknowledgement ticket purpose or event;
+- gameplay state command attempted while acknowledgement persistence is
+  unresolved;
 - stale manual-overwrite confirmation;
 - stale session generation;
 - unavailable or stale persistence-bypass confirmation;
@@ -1817,8 +1926,14 @@ a save-envelope write failure is never hidden behind a thumbnail warning.
 ### 18.1 Compiler tests
 
 - `contentRevision` is deterministic across repeated compilation.
+- One canonical fixture has a checked-in exact golden revision, and the focused
+  test produces that same digest on macOS and Linux rather than checking only a
+  hash-shaped string on one host.
 - The compiler emits one complete, versioned
   `save_content_manifest.json` containing the exact package revision.
+- Missing/empty re-examination blocks for all four supported roles emit the
+  exact fallback action before hashing; changing that copy or applicability
+  changes the golden/content revision.
 - Any emitted static semantic change—including prose, labels, descriptions,
   dialogue order, scene order, cues, IDs, or progression—changes the revision.
 - Object/source ordering that is not emitted semantics does not affect the
@@ -1849,6 +1964,9 @@ a save-envelope write failure is never hidden behind a thumbnail warning.
   unplayed non-empty intro without its active segment.
 - Restore `line_content_start` only from a validated testimony-content boundary
   and restore `CrossExam::Playing` from one stable line ID.
+- Restore `CrossExam::Presenting` to the exact stable line with
+  `presenting: true`, causing the evidence tray—not the line-content or
+  question-menu view—to reappear.
 - Preserve inventory per-kind order, record IDs, and collected/acquired
   chapter/scene provenance without authored record copy.
 - Preserve HPA-255 story state and active-primary uniqueness.
@@ -1888,7 +2006,15 @@ a save-envelope write failure is never hidden behind a thumbnail warning.
 - Roll back command IDs and events when a command fails.
 - Hide pending acquisition until authored dialogue drains.
 - Persist a pending event and present it after resume.
-- Flush acknowledgement before popup dismissal succeeds.
+- Bind acknowledgement preflight capture to the exact session/revision/event,
+  reject intervening mutation or event drift, and emit no post-command ticket.
+- Flush acknowledgement before popup dismissal succeeds; on pre-replacement
+  authoritative failure, roll back the revision/event, retain the popup, and
+  require Retry to prepare a fresh ticket; after replacement, preserve the
+  acknowledgement through any cleanup-pending degradation.
+- While acknowledgement persistence is unresolved, reject every other gameplay
+  state command and prove no read can observe its provisional acknowledged
+  view.
 - Remove an acknowledged event from pending state and never present it after a
   successful checkpointed resume.
 - Treat stored event IDs as corruption tripwires and reject a value that does
@@ -1913,8 +2039,9 @@ and a controllable writer:
   dimensions, byte length, and digest;
 - reject a noncanonical checkpoint/object-ID pair before resolving any
   thumbnail path;
-- reject stale/superseded thumbnail tickets and bind accepted candidates to one
-  session generation plus durable revision;
+- reject stale/superseded thumbnail tickets; bind ordinary candidates to one
+  session generation plus durable revision and acknowledgement preflight
+  candidates additionally to one event plus expected next revision;
 - reach one terminal result for every prepared ticket; time out thumbnail
   capture after 1,000 ms and still commit a valid envelope with
   `thumbnailUnavailable`;
@@ -1947,8 +2074,10 @@ and a controllable writer:
   after their session generation becomes stale;
 - flush before manual save, in-game load, Return to Title, and acquisition
   acknowledgement;
-- prove every idempotent flush (`written_revision >= durable_revision`) makes
-  no write, replacement, rotation, or timestamp change;
+- prove every same-generation idempotent flush
+  (`written_revision >= durable_revision`) makes no write, replacement,
+  rotation, or timestamp change, while an older generation can never suppress
+  a new session's flush;
 - rotate at most once for an acquisition checkpoint plus its acknowledgement,
   then refresh that same autosave for sequential acknowledgements;
 - allocate one autosave target when acknowledgement has none, adopt a loaded
@@ -1963,6 +2092,9 @@ and a controllable writer:
   coordinator state in `GameStateView`;
 - prove gameplay commands remain responsive during temporary-file writes and a
   stale generation cannot pass the replacement gate;
+- prove Load, Continue, New Game, and Return to Title acquire the replacement
+  gate before the session lock and cannot deadlock with a writer holding the
+  gate;
 - return one global discovery error rather than eight fabricated invalid slots
   when directory enumeration or the shared packaged manifest fails, while
   keeping file-specific revision/reference mismatches per-slot;
@@ -2006,6 +2138,12 @@ and a controllable writer:
   through gameplay dispatch.
 - Mutating command results trigger capture only after the new Svelte view
   renders; stale capture responses cannot attach to a newer revision.
+- Both central mutating dispatch boundaries unwrap
+  `GameplayCommandResultView.state`, handle optional capture requests, and
+  preserve bare result types for read-only commands and HTTP/Tauri parity.
+- Acquisition acknowledgement captures the gameplay root beneath the still-open
+  excluded popup before invoking the event-bound consuming command; a failed
+  flush leaves that popup visible.
 - Save-health warning persists until a successful save/flush clears it.
 - Persistence status events update the warning after background writes without
   a gameplay command.
@@ -2023,8 +2161,10 @@ The debug e2e build proves real app-data storage and process boundaries:
 2. Save during a composite queue and resume the same segment/item.
 3. Save after one command acquires two records while its authored dialogue is
    active, resume, drain dialogue, acknowledge both popups, and prove the
-   acknowledgements refresh one autosave target without rotating twice; return
-   to title and prove neither popup reappears.
+   preflight thumbnails belong to the resulting acknowledgement checkpoints,
+   the acknowledgements refresh one autosave target without rotating twice,
+   and no post-command capture deadlocks; return to title and prove neither
+   popup reappears.
 4. Exercise incomplete investigation and interrogation state.
 5. Create six autosaves and prove only the latest five remain, each card's
    thumbnail ownership matching its JSON checkpoint after restart.
@@ -2064,25 +2204,38 @@ Before HPA-392 implementation is complete:
 - `bun run check` passes;
 - `bun run test` passes;
 - `bun run --cwd apps/game check:e2e` passes;
+- the canonical content-revision fixture produces its checked-in digest on
+  macOS and Linux;
 - a packaged Tauri `html-to-image` proof captures Lyra backgrounds, portraits,
   fonts, dialogue, gradients, and clipped UI correctly;
 - packaged Tauri HPA-392 E2E scenarios pass.
+
+The packaged capture proof runs before save-browser UI implementation becomes
+the committed direction. If it fails the approved visual contract, work stops
+at that gate and returns to design to select and prove another implementation
+behind `GameplayThumbnailCapture`. The feature may not be declared complete by
+turning every thumbnail into `Unavailable`.
 
 ## 19. Expected implementation areas
 
 Planning must respect this dependency order:
 
-1. add the versioned envelope/snapshot, exhaustive capture/restore adapters,
-   durable revision, and Rust-owned acquisition events with focused round-trip
-   tests;
-2. add manual-name validation, storage, migrations, bounded discovery,
+1. materialize the four-role re-examination fallback in emitted content, remove
+   the unhashed runtime fallback copy, and pin the package revision with a
+   cross-host golden fixture;
+2. add the versioned envelope/snapshot, exhaustive capture/restore adapters,
+   durable revision, and Rust-owned pending acquisition events with focused
+   round-trip tests;
+3. add manual-name validation, storage, migrations, bounded discovery,
    autosave coordinator/replacement gate, thumbnail tickets, PNG validation,
    atomic sidecar ownership, and failure-injection tests;
-3. add typed Tauri command wrappers, persistence/thumbnail client state, and the
-   Rust-event-backed acquisition-controller rewrite;
-4. prove `html-to-image` in the packaged Tauri WebView, then add the shared
+4. add typed Tauri/HTTP command wrappers, update both central frontend dispatch
+   boundaries, add persistence/thumbnail client state, and complete the
+   Rust-event-backed acquisition-controller rewrite with acknowledgement
+   preflight capture;
+5. prove `html-to-image` in the packaged Tauri WebView, then add the shared
    save browser/cards/name prompt/confirmations and title/Escape-menu flows;
-5. add packaged HPA-392 E2E coverage and run the full cross-stack verification
+6. add packaged HPA-392 E2E coverage and run the full cross-stack verification
    gates.
 
 PR #27 already delivered compiler-owned content identity,
@@ -2093,6 +2246,8 @@ per-definition hashes, queue identities, or a second static-definition store.
 Likely implementation touches:
 
 ```text
+packages/scripts/compile-scenes/
+packages/scripts/compile-scenes/save-content-manifest.test.ts
 apps/game/src-tauri/src/game/save/
 apps/game/src-tauri/src/game/acquisition.rs
 apps/game/src-tauri/src/game/command_tx.rs
@@ -2104,6 +2259,7 @@ apps/game/src-tauri/src/game/story/
 apps/game/src-tauri/src/game/view.rs
 apps/game/src-tauri/src/game/mod.rs
 apps/game/src-tauri/src/lib.rs
+apps/game/src-tauri/examples/dev_engine_server.rs
 apps/game/src-tauri/Cargo.toml
 apps/game/src/lib/state/
 apps/game/src/lib/persistence/
@@ -2118,6 +2274,7 @@ apps/game/e2e-tauri/
 apps/game/scripts/build-e2e.mjs
 apps/game/wdio.conf.ts
 apps/game/package.json
+.github/workflows/ci.yml
 bun.lock
 ```
 
@@ -2158,19 +2315,21 @@ board/result-dialogue resume accepted by HPA-266.
 | Round-trip every current runtime | §§7, 8, 13, 18.2 |
 | Resume one dialogue segment exactly | §§8.1–8.3, 18.3 |
 | Resume composite dialogue exactly | §§8.1–8.3, 18.3 |
-| Acquisition acknowledgement appears once without consuming recovery depth | §9, §11.3, §12.3, §§18.3–18.4 |
+| Acquisition acknowledgement appears once without consuming recovery depth | §§2, 9, 11.1–11.3, 12.3, 18.3–18.6 |
+| Acknowledgement thumbnail and durable refresh complete before the popup closes | §§2, 9, 11.1, 18.3–18.6 |
 | Generic incomplete resumable fixture | §10, §18.2 |
 | Five visible latest autosaves | §§2, 12.3–12.4, 16.2, 18.4 |
 | Invalid newest blocks Continue | §§2, 12.4, 16.1, 18.4 |
 | Slot validity includes compatibility/progress checks | §§12.4, 13, 18.4–18.5 |
 | Stable compiler-owned segment identity | §§5.1, 8.2, 18.1 |
-| Any static semantic content change invalidates older saves | §§5, 13, 14, 18.1–18.2 |
+| Compiler-owned reexamine defaults cannot drift between live play and resume | §§5, 8.2, 18.1 |
+| Any static semantic content change invalidates older saves | §§5, 8.2, 13, 14, 18.1–18.2 |
 | Missing definitions reject transactionally | §§7, 13, 17, 18.2 |
 | Degraded-storage warning and explicit escape | §§11.3, 15–17, 18.4–18.5 |
 | Manual overwrite confirmation | §§15, 16.2, 18.4–18.6 |
 | Unicode named manual saves survive restart/overwrite/load | §§2, 6, 12.4, 15–16, 18.4–18.6 |
 | Names never affect filesystem paths | §§2, 6, 12.1, 15, 18.4 |
-| Clean, aspect-ratio-preserving thumbnails | §§2, 6, 11.2, 16.2–16.3, 18.4–18.6 |
+| Clean, aspect-ratio-preserving thumbnails | §§2, 6, 9, 11.1–11.2, 16.2–16.3, 18.4–18.6 |
 | Save/thumbnail rotation, overwrite, and deletion stay aligned | §§12.2–12.5, 18.4, 18.6 |
 | Thumbnail failure leaves a loadable save with placeholder | §§6, 11.2, 12.4, 17, 18.4–18.6 |
 | Missing/corrupt thumbnail does not affect compatibility | §§12.4, 17, 18.4–18.6 |
