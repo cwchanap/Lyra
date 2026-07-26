@@ -6,8 +6,8 @@ use std::path::Path;
 
 const STORY_CATALOG_SCHEMA_VERSION: i64 = 1;
 
-#[derive(Debug)]
-pub(in crate::game) struct StoryCatalog {
+#[derive(Clone, Debug)]
+pub(crate) struct StoryCatalog {
     // These immutable arrays and indexes are consumed by the mutation and
     // public-view tasks that follow this loader task.
     facts: Vec<FactDefinition>,

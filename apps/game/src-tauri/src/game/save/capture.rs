@@ -1,10 +1,9 @@
+use super::restore::ResumableStateAdapter;
 use super::schema::{
-    AudioCueSnapshotV1, AuthorizationProgressSnapshotV1, CharacterTopicRefV1, CrossExamSnapshotV1,
-    DialogueHistoryEntryV1, DialogueHistorySnapshotV1, EvidenceInventoryEntryV1,
-    FactProgressSnapshotV1, InterrogationOverrideRefV1, InventorySnapshotV1, InventoryTargetV1,
-    InvestigationOverrideRefV1, LastVisualCueSnapshotV1, ObjectiveProgressSnapshotV1,
-    QuestionProgressSnapshotV1, SaveSnapshotV1, SaveSummary, SceneProgressSnapshotV1,
-    StatementInventoryEntryV1, StoryStateSnapshotV1,
+    AudioCueSnapshotV1, CharacterTopicRefV1, CrossExamSnapshotV1, DialogueHistoryEntryV1,
+    DialogueHistorySnapshotV1, EvidenceInventoryEntryV1, InterrogationOverrideRefV1,
+    InventorySnapshotV1, InvestigationOverrideRefV1, LastVisualCueSnapshotV1, SaveSnapshotV1,
+    SaveSummary, SceneProgressSnapshotV1, StatementInventoryEntryV1,
 };
 use crate::game::dialogue::DIALOGUE_HISTORY_LIMIT;
 use crate::game::dialogue_queue::{
@@ -15,10 +14,9 @@ use crate::game::scenes::interrogation::{CrossExam, InterrogationSceneState};
 use crate::game::scenes::investigation::InvestigationSceneState;
 use crate::game::scenes::SceneRuntime;
 use crate::game::schema::{
-    DialogueItem, InterrogationPhaseJson, InterrogationSceneJson, InventoryTarget,
-    InvestigationSceneJson, SceneJson,
+    DialogueItem, InterrogationPhaseJson, InterrogationSceneJson, InvestigationSceneJson, SceneJson,
 };
-use crate::game::story::{StoryState, StoryStateSnapshot};
+use crate::game::story::StoryState;
 use crate::game::view::{DialogueHistoryEntry, QueueToken};
 use crate::game::{GameEngine, GameError};
 use serde::Serialize;
@@ -70,7 +68,7 @@ pub(crate) fn capture_checkpoint_v1(
     let story_snapshot = story_state.snapshot();
     StoryState::from_snapshot(&engine.story_catalog, story_snapshot.clone())
         .map_err(|error| capture_error(error.message))?;
-    let story_state = capture_story_state(story_snapshot);
+    let story_state = story_state.capture();
     let active_primary_objective_id = story_state.active_primary_objective_id.clone();
     let active_primary_objective_label = active_primary_objective_id
         .as_deref()
@@ -812,53 +810,13 @@ fn validate_outro_commit(
 fn capture_investigation_override(
     runtime_key: &str,
 ) -> Result<InvestigationOverrideRefV1, GameError> {
-    if let Some(id) = runtime_key.strip_prefix("hotspot:") {
-        validate_override_component(id, runtime_key)?;
-        return Ok(InvestigationOverrideRefV1::Hotspot { id: id.into() });
-    }
-    if let Some(id) = runtime_key.strip_prefix("sublocation:") {
-        validate_override_component(id, runtime_key)?;
-        return Ok(InvestigationOverrideRefV1::Sublocation { id: id.into() });
-    }
-    if let Some(pair) = runtime_key.strip_prefix("topic:") {
-        let (character_id, topic_id) = pair
-            .split_once('@')
-            .ok_or_else(|| capture_error(format!("Malformed override key '{runtime_key}'.")))?;
-        validate_override_component(character_id, runtime_key)?;
-        validate_override_component(topic_id, runtime_key)?;
-        return Ok(InvestigationOverrideRefV1::Topic {
-            character_id: character_id.into(),
-            topic_id: topic_id.into(),
-        });
-    }
-    Err(capture_error(format!(
-        "Unknown investigation override key '{runtime_key}'."
-    )))
+    InvestigationOverrideRefV1::parse_runtime_key(runtime_key).map_err(capture_error)
 }
 
 fn capture_interrogation_override(
     runtime_key: &str,
 ) -> Result<InterrogationOverrideRefV1, GameError> {
-    if let Some(id) = runtime_key.strip_prefix("question:") {
-        validate_override_component(id, runtime_key)?;
-        return Ok(InterrogationOverrideRefV1::Question { id: id.into() });
-    }
-    if let Some(id) = runtime_key.strip_prefix("phase:") {
-        validate_override_component(id, runtime_key)?;
-        return Ok(InterrogationOverrideRefV1::Phase { id: id.into() });
-    }
-    Err(capture_error(format!(
-        "Unknown interrogation override key '{runtime_key}'."
-    )))
-}
-
-fn validate_override_component(component: &str, runtime_key: &str) -> Result<(), GameError> {
-    if component.is_empty() || component.contains(':') || component.contains('@') {
-        return Err(capture_error(format!(
-            "Malformed override key '{runtime_key}'."
-        )));
-    }
-    Ok(())
+    InterrogationOverrideRefV1::parse_runtime_key(runtime_key).map_err(capture_error)
 }
 
 fn investigation_override_key(value: &InvestigationOverrideRefV1) -> (u8, &str, &str) {
@@ -876,77 +834,6 @@ fn interrogation_override_key(value: &InterrogationOverrideRefV1) -> (u8, &str) 
     match value {
         InterrogationOverrideRefV1::Question { id } => (0, id),
         InterrogationOverrideRefV1::Phase { id } => (1, id),
-    }
-}
-
-fn capture_story_state(snapshot: StoryStateSnapshot) -> StoryStateSnapshotV1 {
-    StoryStateSnapshotV1 {
-        facts: snapshot
-            .facts
-            .into_iter()
-            .map(|(id, progress)| {
-                (
-                    id,
-                    FactProgressSnapshotV1 {
-                        asserted_in_chapter_id: progress.asserted_in_chapter_id,
-                        asserted_in_scene_id: progress.asserted_in_scene_id,
-                        first_origin: progress.first_origin,
-                        supporting_records: progress
-                            .supporting_records
-                            .into_iter()
-                            .map(|target| match target {
-                                InventoryTarget::Evidence { id } => {
-                                    InventoryTargetV1::Evidence { id }
-                                }
-                                InventoryTarget::Statement { id } => {
-                                    InventoryTargetV1::Statement { id }
-                                }
-                            })
-                            .collect(),
-                        supporting_fact_ids: progress.supporting_fact_ids,
-                    },
-                )
-            })
-            .collect(),
-        questions: snapshot
-            .questions
-            .into_iter()
-            .map(|(id, progress)| {
-                (
-                    id,
-                    QuestionProgressSnapshotV1 {
-                        resolved_by_fact_id: progress.resolved_by_fact_id,
-                    },
-                )
-            })
-            .collect(),
-        objectives: snapshot
-            .objectives
-            .into_iter()
-            .map(|(id, progress)| {
-                (
-                    id,
-                    ObjectiveProgressSnapshotV1 {
-                        completed: progress.completed,
-                    },
-                )
-            })
-            .collect(),
-        authorizations: snapshot
-            .authorizations
-            .into_iter()
-            .map(|(id, progress)| {
-                (
-                    id,
-                    AuthorizationProgressSnapshotV1 {
-                        granted_in_chapter_id: progress.granted_in_chapter_id,
-                        granted_in_scene_id: progress.granted_in_scene_id,
-                        first_origin: progress.first_origin,
-                    },
-                )
-            })
-            .collect(),
-        active_primary_objective_id: snapshot.active_primary_objective_id,
     }
 }
 

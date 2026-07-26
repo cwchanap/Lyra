@@ -3,7 +3,7 @@ mod mutations;
 mod state;
 mod view;
 
-pub(in crate::game) use catalog::StoryCatalog;
+pub(crate) use catalog::StoryCatalog;
 #[allow(unused_imports)]
 pub(in crate::game) use mutations::MutationOutcome;
 #[allow(unused_imports)]

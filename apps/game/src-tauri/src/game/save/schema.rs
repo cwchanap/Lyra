@@ -130,14 +130,14 @@ pub(crate) enum SceneProgressSnapshotV1 {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct CharacterTopicRefV1 {
     pub(crate) character_id: String,
     pub(crate) topic_id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
@@ -157,7 +157,45 @@ pub(crate) enum InvestigationOverrideRefV1 {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl InvestigationOverrideRefV1 {
+    pub(crate) fn parse_runtime_key(runtime_key: &str) -> Result<Self, String> {
+        if let Some(id) = runtime_key.strip_prefix("hotspot:") {
+            validate_override_component(id, runtime_key)?;
+            return Ok(Self::Hotspot { id: id.into() });
+        }
+        if let Some(id) = runtime_key.strip_prefix("sublocation:") {
+            validate_override_component(id, runtime_key)?;
+            return Ok(Self::Sublocation { id: id.into() });
+        }
+        if let Some(pair) = runtime_key.strip_prefix("topic:") {
+            let (character_id, topic_id) = pair
+                .split_once('@')
+                .ok_or_else(|| format!("Malformed override key '{runtime_key}'."))?;
+            validate_override_component(character_id, runtime_key)?;
+            validate_override_component(topic_id, runtime_key)?;
+            return Ok(Self::Topic {
+                character_id: character_id.into(),
+                topic_id: topic_id.into(),
+            });
+        }
+        Err(format!(
+            "Unknown investigation override key '{runtime_key}'."
+        ))
+    }
+
+    pub(crate) fn runtime_key(&self) -> String {
+        match self {
+            Self::Hotspot { id } => format!("hotspot:{id}"),
+            Self::Sublocation { id } => format!("sublocation:{id}"),
+            Self::Topic {
+                character_id,
+                topic_id,
+            } => format!("topic:{character_id}@{topic_id}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
@@ -167,6 +205,36 @@ pub(crate) enum InvestigationOverrideRefV1 {
 pub(crate) enum InterrogationOverrideRefV1 {
     Question { id: String },
     Phase { id: String },
+}
+
+impl InterrogationOverrideRefV1 {
+    pub(crate) fn parse_runtime_key(runtime_key: &str) -> Result<Self, String> {
+        if let Some(id) = runtime_key.strip_prefix("question:") {
+            validate_override_component(id, runtime_key)?;
+            return Ok(Self::Question { id: id.into() });
+        }
+        if let Some(id) = runtime_key.strip_prefix("phase:") {
+            validate_override_component(id, runtime_key)?;
+            return Ok(Self::Phase { id: id.into() });
+        }
+        Err(format!(
+            "Unknown interrogation override key '{runtime_key}'."
+        ))
+    }
+
+    pub(crate) fn runtime_key(&self) -> String {
+        match self {
+            Self::Question { id } => format!("question:{id}"),
+            Self::Phase { id } => format!("phase:{id}"),
+        }
+    }
+}
+
+fn validate_override_component(component: &str, runtime_key: &str) -> Result<(), String> {
+    if component.is_empty() || component.contains(':') || component.contains('@') {
+        return Err(format!("Malformed override key '{runtime_key}'."));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

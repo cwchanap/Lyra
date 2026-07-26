@@ -325,6 +325,11 @@ pub(super) fn scene_jump_fixture_resources() -> PathBuf {
         "type": "linear",
         "id": "scene_0",
         "title": "Opening",
+        "assetRefs": [
+            { "type": "background", "assetId": "background.opening" },
+            { "type": "audio", "assetId": "bgm.rain" },
+            { "type": "audio", "assetId": "bgs.room" }
+        ],
         "queue": [
             { "kind": "sceneTag", "text": "opening", "assetCue": { "backgroundAssetId": "background.opening" } },
             { "kind": "line", "speaker": "A", "text": "linear start" }
