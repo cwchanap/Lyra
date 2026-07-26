@@ -166,7 +166,7 @@ describe("buildSaveContentManifest", () => {
     );
   });
 
-  it("changes for emitted description, cue, ID, and progression edits", () => {
+  it("changes for emitted description, cue, ID, label, and progression edits", () => {
     const baseline = bundle([
       chapter("chapter_1", "Chapter 1", [
         linear("scene_0", "Opening", [
@@ -217,6 +217,20 @@ describe("buildSaveContentManifest", () => {
         baselineRevision,
       );
     }
+
+    const labelledBaseline = structuredClone(baseline);
+    labelledBaseline.storyCatalog.objectives.push({
+      id: "find_truth",
+      label: "Find the truth",
+      summary: "Progress the investigation.",
+      kind: "primary",
+      sortOrder: 1,
+    });
+    const labelEdited = structuredClone(labelledBaseline);
+    labelEdited.storyCatalog.objectives[0]!.label = "Find the real truth";
+    expect(manifest({ bundle: labelEdited }).contentRevision).not.toBe(
+      manifest({ bundle: labelledBaseline }).contentRevision,
+    );
   });
 
   it("includes newly emitted static fields without an allowlist update", () => {
