@@ -2377,7 +2377,7 @@ mod tests {
     /// Source-contract guard. `command_tx` guarantees history finalization only
     /// for commands that use it, and `GameEngine::view` must stay `pub` for
     /// lib.rs, so nothing structurally prevents a new command from returning
-    /// `Ok(self.view())` and skipping the log. This scans the engine modules
+    /// `self.view()` and skipping the log. This scans the engine modules
     /// for that mistake.
     ///
     /// The source list is not hardcoded. The test walks `src/game/` on disk at
@@ -2404,11 +2404,10 @@ mod tests {
     /// 1. Invariant A — the body contains `command_tx(` at least once. Checked
     ///    for every tracked command; `command_tx` is the only mechanism that
     ///    finalizes dialogue history, so there are no exemptions.
-    /// 2. Invariant B — the body contains no bare `Ok(self.view())`. A command
-    ///    whose advancing branch returns `Ok(self.view())` would silently drop
-    ///    dialogue history even if `command_tx(` happens to appear on a side
-    ///    branch or in a comment. Checked for every tracked command except
-    ///    those listed in `allowed_bare_view` below.
+    /// 2. Invariant B — the body contains no direct `self.view()`. A command
+    ///    whose advancing branch returns either `self.view()` or the legacy
+    ///    `Ok(self.view())` would silently drop dialogue history even if
+    ///    `command_tx(` happens to appear on another branch or in a comment.
     ///
     /// The scanner tracks function brace depth so a tracked command is
     /// finalized at its own closing brace — a private helper containing
@@ -2438,13 +2437,9 @@ mod tests {
              CARGO_MANIFEST_DIR-relative path above"
         );
 
-        // Functions allow-listed for invariant B (a bare `Ok(self.view())`
-        // return). Each entry must have a documented reason here. Invariant A
-        // (calling `command_tx(`) has no exemptions — every tracked command
-        // must call it.
-        //   advance_dialogue — stale-token early return is not a transaction
-        //                      and deliberately records no history.
-        let allowed_bare_view: &[&str] = &["advance_dialogue"];
+        // No command may bypass the transaction seam through a direct view.
+        // Stale dialogue tokens use command_tx's explicit Unchanged branch.
+        let allowed_bare_view: &[&str] = &[];
 
         let (seen, missing_tx, bare_view) = scan_sources(&sources, allowed_bare_view);
 
@@ -2480,11 +2475,9 @@ mod tests {
         );
         assert!(
             bare_view.is_empty(),
-            "these commands return Result<GameStateView, GameError> and contain a bare \
-             `Ok(self.view())` — an advancing path returning this silently drops dialogue \
-             history, even if command_tx() also appears elsewhere in the body (invariant B). \
-             If this is a documented non-advancing early return (e.g. a stale-token guard), \
-             add the function name to `allowed_bare_view` above with a justification: \
+            "these commands return Result<GameStateView, GameError> and contain a direct \
+             `self.view()` — a path returning it silently drops dialogue history, even if \
+             command_tx() also appears elsewhere in the body (invariant B): \
              {bare_view:?} (tracked: {seen:?})"
         );
     }
@@ -2503,11 +2496,11 @@ mod tests {
     /// `pub fn name(...) -> Result<GameStateView, GameError>` or
     /// `pub(super) fn name(...) -> Result<GameStateView, GameError>` and
     /// returns `(visibility, name)` if it returns the view type. Returns
-    /// `None` for private `fn`, for `pub fn view` (returns `GameStateView`,
-    /// not the `Result` type), and for any signature not returning the view
+    /// `None` for private `fn` and for any signature not returning the view
     /// `Result` — so a private helper between two public commands is never
     /// collected as a delegation target (the same guarantee brace tracking
-    /// gives in the non-delegation case).
+    /// gives in the non-delegation case). `scan_sources` later exempts only
+    /// `mod.rs::view`, the exact read-only GameEngine state builder.
     fn parse_view_fn_signature(signature: &str) -> Option<(FnVisibility, String)> {
         if !signature.contains("-> Result<GameStateView, GameError>") {
             return None;
@@ -2531,7 +2524,7 @@ mod tests {
     /// `pub fn` / `pub(super) fn` returning `Result<GameStateView, GameError>`.
     /// `body_text` is the trimmed source lines from the opening-brace line
     /// through the closing brace; substring checks (`command_tx(`,
-    /// `Ok(self.view())`) on it are equivalent to the pre-refactor per-line
+    /// `self.view()`) on it are equivalent to the pre-refactor per-line
     /// `contains` OR because neither marker spans a newline. Test-only items
     /// (`#[cfg(test)]` / `mod tests { … }`) are skipped by brace depth, so a
     /// production command after them is still collected.
@@ -2646,8 +2639,8 @@ mod tests {
     }
 
     /// Extracts `self.<name>(` delegation call targets from a fn body, excluding
-    /// `command_tx` (whose trailing `Ok(self.view())` is the seam's design, not
-    /// a silent drop — the chain never enters it). Safe across multi-byte
+    /// `command_tx` (whose internal view build is the seam's design, not a
+    /// silent drop — the chain never enters it). Safe across multi-byte
     /// source: positions come from `char_indices`.
     fn extract_delegation_targets(body: &str) -> Vec<String> {
         let mut targets: Vec<String> = Vec::new();
@@ -2715,16 +2708,16 @@ mod tests {
         false
     }
 
-    /// Invariant B with delegation: a bare `Ok(self.view())` in the command's
-    /// own body or in any fn it delegates to (stopping at any fn that itself
-    /// routes through `command_tx`, whose bare-view risk is governed by the
-    /// seam — mirroring the non-delegation check that flags a command with both
-    /// `command_tx` and a bare view on a side branch).
+    /// Invariant B with delegation: a direct `self.view()` in the command's own
+    /// body or in any fn it delegates to (stopping at any fn that itself routes
+    /// through `command_tx`, whose view build is governed by the seam —
+    /// mirroring the non-delegation check that flags a command with both
+    /// `command_tx` and a direct view on a side branch).
     fn delegation_chain_has_bare_view(
         own_body: &str,
         fn_bodies: &std::collections::HashMap<String, String>,
     ) -> bool {
-        if own_body.contains("Ok(self.view())") {
+        if own_body.contains("self.view()") {
             return true;
         }
         let mut visited = std::collections::HashSet::new();
@@ -2747,7 +2740,7 @@ mod tests {
         let Some(body) = fn_bodies.get(name) else {
             return false;
         };
-        if body.contains("Ok(self.view())") {
+        if body.contains("self.view()") {
             return true;
         }
         if body.contains("command_tx(") {
@@ -2815,7 +2808,7 @@ mod tests {
     ///   and whose `self.<target>(` delegations (transitively) never reach a
     ///   fn containing `command_tx(` (invariant A violation).
     /// - `bare_view` — tracked commands whose body (or delegation chain, not
-    ///   entering `command_tx`) contains `Ok(self.view())` and are not in
+    ///   entering `command_tx`) contains `self.view()` and are not in
     ///   `allowed_bare_view` (invariant B violation).
     ///
     /// Two passes. Pass 1 collects every `pub fn` / `pub(super) fn` returning
@@ -2850,7 +2843,7 @@ mod tests {
         // Pass 2: check invariants for each tracked pub fn command.
         for (file, source) in sources {
             for (vis, name, body) in view_fn_definitions(source) {
-                if vis != FnVisibility::Pub || name == "view" {
+                if vis != FnVisibility::Pub || (file == "mod.rs" && name == "view") {
                     continue;
                 }
                 seen.push(format!("{file}::{name}"));
@@ -2863,11 +2856,11 @@ mod tests {
                     missing_tx.push(format!("{file}::{name}"));
                 }
 
-                // Invariant B: a bare `Ok(self.view())` in the own body (direct
+                // Invariant B: a direct `self.view()` in the own body (direct
                 // case) or anywhere in the delegation chain (delegation case,
                 // stopping at any fn that itself routes through `command_tx`).
                 let chain_has_bare_view = if body.contains("command_tx(") {
-                    body.contains("Ok(self.view())")
+                    body.contains("self.view()")
                 } else {
                     delegation_chain_has_bare_view(&body, &fn_bodies)
                 };
@@ -2887,7 +2880,7 @@ mod tests {
     ///    public commands make the earlier command appear compliant (brace
     ///    tracking finalizes the earlier command at its own closing brace),
     /// 3. still catches a command that never calls `command_tx(` (invariant A),
-    /// 4. still catches a command with a bare `Ok(self.view())` (invariant B).
+    /// 4. still catches a command with a direct `self.view()` (invariant B).
     #[test]
     fn scanner_finds_commands_after_test_items_and_tracks_brace_depth() {
         let src = r#"
@@ -2906,7 +2899,16 @@ fn private_helper(&self) -> Result<GameStateView, GameError> {
 }
 
 pub fn missing_tx_command(&mut self) -> Result<GameStateView, GameError> {
-    Ok(self.view())
+    self.view()
+}
+
+pub fn mixed_branch_command(&mut self, bypass: bool) -> Result<GameStateView, GameError> {
+    if bypass {
+        return self.view();
+    }
+    self.command_tx(|engine| {
+        Ok(())
+    })
 }
 
 #[cfg(test)]
@@ -2939,6 +2941,10 @@ pub fn after_tests_command(&mut self) -> Result<GameStateView, GameError> {
             seen.contains(&"synthetic.rs::after_tests_command".to_string()),
             "after_tests_command is after #[cfg(test)] items and must still be tracked: {seen:?}"
         );
+        assert!(
+            seen.contains(&"synthetic.rs::mixed_branch_command".to_string()),
+            "mixed_branch_command should be tracked: {seen:?}"
+        );
         // The private helper must NOT be tracked.
         assert!(
             !seen.iter().any(|s| s.contains("private_helper")),
@@ -2959,10 +2965,17 @@ pub fn after_tests_command(&mut self) -> Result<GameStateView, GameError> {
             "missing_tx_command never calls command_tx and must be flagged: {missing_tx:?}"
         );
 
-        // missing_tx_command also has a bare Ok(self.view()) — must be flagged.
+        // A direct fallible self.view() return is also a transaction bypass.
         assert!(
             bare_view.iter().any(|s| s.contains("missing_tx_command")),
-            "missing_tx_command has a bare Ok(self.view()) and must be flagged: {bare_view:?}"
+            "missing_tx_command has a direct self.view() and must be flagged: {bare_view:?}"
+        );
+
+        // Seeing command_tx on one branch must not excuse a direct fallible
+        // view return on another branch.
+        assert!(
+            bare_view.iter().any(|s| s.contains("mixed_branch_command")),
+            "mixed_branch_command has a fallible self.view() bypass and must be flagged: {bare_view:?}"
         );
 
         // after_tests_command calls command_tx — must NOT be in missing_tx.
@@ -2997,7 +3010,7 @@ pub fn delegating_to_bad_inner(&mut self) -> Result<GameStateView, GameError> {
 }
 
 pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
-    Ok(self.view())
+    self.view()
 }
 "#;
         let sources = vec![("synthetic.rs".to_string(), src.to_string())];
@@ -3026,7 +3039,7 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
         );
         assert!(
             !bare_view.iter().any(|s| s.contains("delegating_command")),
-            "delegating_command's chain has no bare Ok(self.view()) and must not be flagged: {bare_view:?}"
+            "delegating_command's chain has no direct self.view() and must not be flagged: {bare_view:?}"
         );
 
         // delegating_to_bad_inner -> bad_inner has a bare view and no
@@ -3039,7 +3052,43 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
         );
         assert!(
             bare_view.iter().any(|s| s.contains("delegating_to_bad_inner")),
-            "delegating_to_bad_inner's chain has a bare Ok(self.view()) and must be flagged: {bare_view:?}"
+            "delegating_to_bad_inner's chain has a direct self.view() and must be flagged: {bare_view:?}"
+        );
+    }
+
+    #[test]
+    fn scanner_exempts_only_the_engine_read_only_view() {
+        let engine_src = r#"
+pub fn view(&self) -> Result<GameStateView, GameError> {
+    Ok(GameStateView::default())
+}
+"#;
+        let other_src = r#"
+pub fn view(&mut self) -> Result<GameStateView, GameError> {
+    self.view()
+}
+"#;
+        let sources = vec![
+            ("mod.rs".to_string(), engine_src.to_string()),
+            ("other.rs".to_string(), other_src.to_string()),
+        ];
+        let (seen, missing_tx, bare_view) = scan_sources(&sources, &[]);
+
+        assert!(
+            !seen.contains(&"mod.rs::view".to_string()),
+            "the exact read-only GameEngine view must be exempt: {seen:?}"
+        );
+        assert!(
+            seen.contains(&"other.rs::view".to_string()),
+            "a same-named fallible method outside the engine module must still be tracked: {seen:?}"
+        );
+        assert!(
+            missing_tx.contains(&"other.rs::view".to_string()),
+            "the other view method does not reach command_tx: {missing_tx:?}"
+        );
+        assert!(
+            bare_view.contains(&"other.rs::view".to_string()),
+            "the other view method directly bypasses through self.view(): {bare_view:?}"
         );
     }
 
