@@ -1,9 +1,10 @@
 use crate::game::dialogue_queue::ActiveDialogueStateV1;
 use crate::game::schema::AudioChannelJson;
-use crate::game::story::StoryStateSnapshot;
-use crate::game::{DialogueHistoryEntry, GameError, QueueToken};
+use crate::game::story::AssertionOrigin;
+use crate::game::{GameError, QueueToken};
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(crate) const SAVE_SCHEMA_VERSION: u32 = 1;
@@ -91,7 +92,7 @@ pub(crate) struct SaveSnapshotV1 {
     pub(crate) last_visual_cue: LastVisualCueSnapshotV1,
     pub(crate) inventory: InventorySnapshotV1,
     pub(crate) pending_acquisition_events: Vec<AcquisitionEventStateV1>,
-    pub(crate) story_state: StoryStateSnapshot,
+    pub(crate) story_state: StoryStateSnapshotV1,
     pub(crate) dialogue_history: DialogueHistorySnapshotV1,
     pub(crate) next_queue_gen: u64,
     pub(crate) durable_revision: u64,
@@ -246,9 +247,84 @@ pub(crate) struct AudioCueSnapshotV1 {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct DialogueHistorySnapshotV1 {
-    pub(crate) entries: Vec<DialogueHistoryEntry>,
+    pub(crate) entries: Vec<DialogueHistoryEntryV1>,
     pub(crate) next_id: u64,
     pub(crate) last_token: Option<QueueToken>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct StoryStateSnapshotV1 {
+    pub(crate) facts: BTreeMap<String, FactProgressSnapshotV1>,
+    pub(crate) questions: BTreeMap<String, QuestionProgressSnapshotV1>,
+    pub(crate) objectives: BTreeMap<String, ObjectiveProgressSnapshotV1>,
+    pub(crate) authorizations: BTreeMap<String, AuthorizationProgressSnapshotV1>,
+    pub(crate) active_primary_objective_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct FactProgressSnapshotV1 {
+    pub(crate) asserted_in_chapter_id: Option<String>,
+    pub(crate) asserted_in_scene_id: Option<String>,
+    pub(crate) first_origin: AssertionOrigin,
+    pub(crate) supporting_records: BTreeSet<InventoryTargetV1>,
+    pub(crate) supporting_fact_ids: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct QuestionProgressSnapshotV1 {
+    pub(crate) resolved_by_fact_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ObjectiveProgressSnapshotV1 {
+    pub(crate) completed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AuthorizationProgressSnapshotV1 {
+    pub(crate) granted_in_chapter_id: Option<String>,
+    pub(crate) granted_in_scene_id: Option<String>,
+    pub(crate) first_origin: AssertionOrigin,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub(crate) enum InventoryTargetV1 {
+    Evidence { id: String },
+    Statement { id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub(crate) enum DialogueHistoryEntryV1 {
+    Line {
+        id: u64,
+        speaker: String,
+        text: String,
+        chapter_title: String,
+        scene_title: String,
+    },
+    Action {
+        id: u64,
+        text: String,
+        chapter_title: String,
+        scene_title: String,
+    },
 }
 
 #[derive(Deserialize)]
@@ -261,12 +337,7 @@ pub(crate) fn parse_current_envelope(bytes: &[u8]) -> Result<SaveEnvelopeV1, Gam
     let version = serde_json::from_slice::<VersionOnly>(bytes)
         .map_err(|error| GameError::new("malformedSaveJson", error.to_string()))?
         .schema_version;
-    if version != SAVE_SCHEMA_VERSION {
-        return Err(GameError::new(
-            "unsupportedSaveSchemaVersion",
-            format!("Save schema version {version} is unsupported."),
-        ));
-    }
+    super::migrations::dispatch_current(version)?;
     let envelope = serde_json::from_slice::<SaveEnvelopeV1>(bytes)
         .map_err(|error| GameError::new("malformedSaveJson", error.to_string()))?;
     validate_envelope(&envelope)?;
@@ -310,13 +381,10 @@ fn validate_envelope(envelope: &SaveEnvelopeV1) -> Result<(), GameError> {
 }
 
 pub(crate) fn canonical_uuid_v4(input: &str) -> Result<uuid::Uuid, GameError> {
-    let parsed = uuid::Uuid::parse_str(input)
-        .map_err(|_| GameError::new("malformedSaveJson", "Save ID is not a UUID."))?;
+    let parsed =
+        uuid::Uuid::parse_str(input).map_err(|_| GameError::invalid_save_checkpoint_id())?;
     if parsed.get_version_num() != 4 || parsed.hyphenated().to_string() != input {
-        return Err(GameError::new(
-            "malformedSaveJson",
-            "Save ID is not a canonical UUID v4.",
-        ));
+        return Err(GameError::invalid_save_checkpoint_id());
     }
     Ok(parsed)
 }
@@ -380,14 +448,36 @@ mod tests {
 
     #[test]
     fn current_dispatch_rejects_unknown_and_wrong_dialect_fields() {
-        for input in [
-            r#"{\"schemaVersion\":1,\"unexpected\":true}"#,
-            r#"{\"schema_version\":1}"#,
-            r#"{\"schemaVersion\":2}"#,
-            r#"{}"#,
-        ] {
-            assert!(parse_current_envelope(input.as_bytes()).is_err(), "{input}");
-        }
+        let mut unknown_top_level: serde_json::Value =
+            serde_json::from_str(REPRESENTATIVE).unwrap();
+        unknown_top_level["unexpected"] = serde_json::json!(true);
+        assert_eq!(
+            parse_current_envelope(unknown_top_level.to_string().as_bytes())
+                .unwrap_err()
+                .code,
+            "malformedSaveJson"
+        );
+
+        let snake_case = REPRESENTATIVE.replace("\"schemaVersion\"", "\"schema_version\"");
+        assert_eq!(
+            parse_current_envelope(snake_case.as_bytes())
+                .unwrap_err()
+                .code,
+            "malformedSaveJson"
+        );
+
+        let mut future_version: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();
+        future_version["schemaVersion"] = serde_json::json!(2);
+        assert_eq!(
+            parse_current_envelope(future_version.to_string().as_bytes())
+                .unwrap_err()
+                .code,
+            "unsupportedSaveSchemaVersion"
+        );
+        assert_eq!(
+            parse_current_envelope(br#"{}"#).unwrap_err().code,
+            "malformedSaveJson"
+        );
     }
 
     #[test]
@@ -425,7 +515,11 @@ mod tests {
             "550e8400-e29b-11d4-a716-446655440000",
             "not-a-uuid",
         ] {
-            assert!(canonical_uuid_v4(invalid).is_err(), "{invalid}");
+            assert_eq!(
+                canonical_uuid_v4(invalid).unwrap_err().code,
+                "invalidSaveCheckpointId",
+                "{invalid}"
+            );
         }
     }
 
@@ -500,5 +594,30 @@ mod tests {
                 .code,
             "thumbnailPngMalformed"
         );
+    }
+
+    #[test]
+    fn envelope_validation_accepts_each_slot_range_boundary() {
+        for (save_type, slot) in [("auto", 1), ("auto", 5), ("manual", 1), ("manual", 3)] {
+            let mut candidate: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();
+            candidate["saveType"] = serde_json::json!(save_type);
+            candidate["slot"] = serde_json::json!(slot);
+            assert!(parse_current_envelope(candidate.to_string().as_bytes()).is_ok());
+        }
+    }
+
+    #[test]
+    fn envelope_validation_rejects_each_slot_range_overflow() {
+        for (save_type, slot) in [("auto", 0), ("auto", 6), ("manual", 0), ("manual", 4)] {
+            let mut candidate: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();
+            candidate["saveType"] = serde_json::json!(save_type);
+            candidate["slot"] = serde_json::json!(slot);
+            assert_eq!(
+                parse_current_envelope(candidate.to_string().as_bytes())
+                    .unwrap_err()
+                    .code,
+                "saveSlotMismatch"
+            );
+        }
     }
 }
