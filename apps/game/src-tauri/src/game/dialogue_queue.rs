@@ -805,6 +805,20 @@ impl ActiveDialogueQueue {
             .ok_or_else(|| queue_error("Flattened dialogue boundary overflowed usize."))
     }
 
+    pub(crate) fn segment_index_at_flattened_boundary(
+        &self,
+        flattened_boundary: usize,
+    ) -> Result<usize, GameError> {
+        for segment_index in 0..=self.segments.len() {
+            if Self::flattened_segment_start(&self.segments, segment_index)? == flattened_boundary {
+                return Ok(segment_index);
+            }
+        }
+        Err(queue_error(format!(
+            "Flattened dialogue boundary {flattened_boundary} does not name a segment boundary."
+        )))
+    }
+
     #[allow(dead_code)] // Used by Task 7's crate-private capture adapter.
     fn capture_state(&self) -> Result<ActiveDialogueStateV1, GameError> {
         // Validate the public flattened cursor as part of capture so overflow

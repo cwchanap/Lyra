@@ -14,7 +14,7 @@ use super::view::{DialogueHistoryEntry, QueueToken};
 use super::{interrogation_segment, GameEngine, GameError};
 use crate::game::dialogue_queue::{ActiveDialogueQueue, DialogueSegment};
 
-const DIALOGUE_HISTORY_LIMIT: usize = 50;
+pub(crate) const DIALOGUE_HISTORY_LIMIT: usize = 50;
 
 /// The engine's rolling dialogue log. Owns dedup-by-token, the entry cap, and
 /// the rule that scene tags are not logged.
@@ -46,6 +46,23 @@ impl DialogueHistory {
 
     pub(super) fn is_last_token(&self, token: &QueueToken) -> bool {
         self.last_token.as_ref() == Some(token)
+    }
+
+    pub(crate) fn persistence_parts(&self) -> (&[DialogueHistoryEntry], u64, Option<&QueueToken>) {
+        (&self.entries, self.next_id, self.last_token.as_ref())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_persistence_parts_for_test(
+        entries: Vec<DialogueHistoryEntry>,
+        next_id: u64,
+        last_token: Option<QueueToken>,
+    ) -> Self {
+        Self {
+            entries,
+            next_id,
+            last_token,
+        }
     }
 
     pub(super) fn record(

@@ -4,6 +4,8 @@ use crate::game::schema::{InvestigationSceneJson, LockStatus, OutroUnlock, Unloc
 use crate::game::unlock::{self, UnlockContext};
 use std::collections::HashSet;
 
+pub(crate) const RESTORED_CONSUMED_INTRO_QUEUE_GEN: u64 = 0;
+
 #[derive(Debug, Clone)]
 pub struct InvestigationSceneState {
     pub def: InvestigationSceneJson,
