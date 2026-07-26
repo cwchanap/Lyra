@@ -341,10 +341,10 @@ impl GameEngine {
         // Explicitly non-mutating: it must neither record history nor consume a
         // durable revision.
         if current_token != expected {
-            return self.command_tx(|_, _| Ok(CommandMutation::Unchanged));
+            return self.command_tx(|_, _, _| Ok(CommandMutation::Unchanged));
         }
 
-        self.command_tx(|engine, _command_id| {
+        self.command_tx(|engine, command_id, next_ordinal| {
             let consumed = engine.current_dialogue_item();
             let mut exhausted = match &mut engine.scene {
                 SceneRuntime::Linear(scene) => scene.advance(),
@@ -374,13 +374,17 @@ impl GameEngine {
                 exhausted = engine.consume_scene_tags_at_cursor();
             }
             if exhausted {
-                engine.on_queue_exhausted()?;
+                engine.on_queue_exhausted(command_id, next_ordinal)?;
             }
             Ok(CommandMutation::Changed)
         })
     }
 
-    fn try_advance_investigation(&mut self) -> Result<bool, GameError> {
+    fn try_advance_investigation(
+        &mut self,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) -> Result<bool, GameError> {
         // Phase 1 — read: extract everything we need from the scene + inventory.
         let (outro_satisfied, outro_already_played, outro_dialogue, no_current_sublocation) = {
             let inv = match &mut self.scene {
@@ -402,7 +406,7 @@ impl GameEngine {
         };
 
         if no_current_sublocation {
-            self.advance_into_first_sublocation()?;
+            self.advance_into_first_sublocation(command_id, next_ordinal)?;
             return Ok(false);
         }
 
@@ -430,7 +434,7 @@ impl GameEngine {
             )
             .into_iter()
             .collect();
-            self.install_scene_queue(segments, queue_gen, None)?;
+            self.install_scene_queue(segments, queue_gen, None, command_id, next_ordinal)?;
             return Ok(false);
         }
 
@@ -440,7 +444,11 @@ impl GameEngine {
         Ok(false)
     }
 
-    fn try_advance_interrogation(&mut self) -> Result<bool, GameError> {
+    fn try_advance_interrogation(
+        &mut self,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) -> Result<bool, GameError> {
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
         {
@@ -456,7 +464,7 @@ impl GameEngine {
         }
 
         if self.should_enter_current_interrogation_phase()
-            && self.try_enter_current_interrogation_phase(&chapter_id)?
+            && self.try_enter_current_interrogation_phase(&chapter_id, command_id, next_ordinal)?
         {
             return Ok(false);
         }
@@ -470,7 +478,7 @@ impl GameEngine {
         }
 
         if self.should_enter_current_interrogation_phase()
-            && self.try_enter_current_interrogation_phase(&chapter_id)?
+            && self.try_enter_current_interrogation_phase(&chapter_id, command_id, next_ordinal)?
         {
             return Ok(false);
         }
@@ -521,7 +529,7 @@ impl GameEngine {
             )
             .into_iter()
             .collect();
-            self.install_scene_queue(segments, queue_gen, None)?;
+            self.install_scene_queue(segments, queue_gen, None, command_id, next_ordinal)?;
         }
         Ok(false)
     }
@@ -555,6 +563,8 @@ impl GameEngine {
     fn try_enter_current_interrogation_phase(
         &mut self,
         chapter_id: &str,
+        command_id: u64,
+        next_ordinal: &mut u32,
     ) -> Result<bool, GameError> {
         let phase_to_enter = {
             let scene = match &self.scene {
@@ -613,8 +623,8 @@ impl GameEngine {
                 &mut AcquisitionCtx {
                     inventory: &mut self.inventory,
                     pending_events: &mut self.pending_acquisition_events,
-                    command_id: self.durable_revision.saturating_add(1),
-                    next_ordinal: &mut 0,
+                    command_id,
+                    next_ordinal,
                 },
                 trigger_segment,
                 &reveals,
@@ -622,11 +632,15 @@ impl GameEngine {
             )
         };
         self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
-        self.install_or_exhaust(queue_items)?;
+        self.install_or_exhaust(queue_items, command_id, next_ordinal)?;
         Ok(true)
     }
 
-    fn advance_into_first_sublocation(&mut self) -> Result<(), GameError> {
+    fn advance_into_first_sublocation(
+        &mut self,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) -> Result<(), GameError> {
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
         // Phase 1 — read out the data we need without holding a mutable borrow into self.scene.
@@ -672,8 +686,8 @@ impl GameEngine {
                     &mut AcquisitionCtx {
                         inventory: &mut self.inventory,
                         pending_events: &mut self.pending_acquisition_events,
-                        command_id: self.durable_revision.saturating_add(1),
-                        next_ordinal: &mut 0,
+                        command_id,
+                        next_ordinal,
                     },
                     trigger_segment,
                     &sub_reveals,
@@ -685,7 +699,7 @@ impl GameEngine {
         };
 
         self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
-        self.install_or_exhaust(queue_items)?;
+        self.install_or_exhaust(queue_items, command_id, next_ordinal)?;
         Ok(())
     }
 
@@ -735,7 +749,7 @@ impl GameEngine {
             (hot_def, first_time)
         };
 
-        self.command_tx(|engine, _command_id| {
+        self.command_tx(|engine, command_id, next_ordinal| {
             // Phase 2 — compute: build queue (mutates scene + inventory together).
             let queue_items = if first_time {
                 let inv = match &mut engine.scene {
@@ -758,8 +772,8 @@ impl GameEngine {
                     &mut AcquisitionCtx {
                         inventory: &mut engine.inventory,
                         pending_events: &mut engine.pending_acquisition_events,
-                        command_id: engine.durable_revision.saturating_add(1),
-                        next_ordinal: &mut 0,
+                        command_id,
+                        next_ordinal,
                     },
                     trigger_segment,
                     &hot_def.reveals,
@@ -777,7 +791,7 @@ impl GameEngine {
             };
 
             // Phase 3 — write: attach the queue.
-            engine.install_or_exhaust(queue_items)?;
+            engine.install_or_exhaust(queue_items, command_id, next_ordinal)?;
             Ok(CommandMutation::Changed)
         })
     }
@@ -834,7 +848,7 @@ impl GameEngine {
             (topic, first_time)
         };
 
-        self.command_tx(|engine, _command_id| {
+        self.command_tx(|engine, command_id, next_ordinal| {
             let queue_items = if first_time {
                 let inv = match &mut engine.scene {
                     SceneRuntime::Investigation(i) => i,
@@ -856,8 +870,8 @@ impl GameEngine {
                     &mut AcquisitionCtx {
                         inventory: &mut engine.inventory,
                         pending_events: &mut engine.pending_acquisition_events,
-                        command_id: engine.durable_revision.saturating_add(1),
-                        next_ordinal: &mut 0,
+                        command_id,
+                        next_ordinal,
                     },
                     trigger_segment,
                     &topic.reveals,
@@ -874,7 +888,7 @@ impl GameEngine {
                 .collect()
             };
 
-            engine.install_or_exhaust(queue_items)?;
+            engine.install_or_exhaust(queue_items, command_id, next_ordinal)?;
             Ok(CommandMutation::Changed)
         })
     }
@@ -922,7 +936,7 @@ impl GameEngine {
             )
         };
 
-        self.command_tx(|engine, _command_id| {
+        self.command_tx(|engine, command_id, next_ordinal| {
             let queue_items = if first_entry {
                 let inv = match &mut engine.scene {
                     SceneRuntime::Investigation(i) => i,
@@ -945,8 +959,8 @@ impl GameEngine {
                     &mut AcquisitionCtx {
                         inventory: &mut engine.inventory,
                         pending_events: &mut engine.pending_acquisition_events,
-                        command_id: engine.durable_revision.saturating_add(1),
-                        next_ordinal: &mut 0,
+                        command_id,
+                        next_ordinal,
                     },
                     trigger_segment,
                     &sub_reveals,
@@ -960,7 +974,7 @@ impl GameEngine {
             };
 
             engine.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
-            engine.install_or_exhaust(queue_items)?;
+            engine.install_or_exhaust(queue_items, command_id, next_ordinal)?;
             Ok(CommandMutation::Changed)
         })
     }
@@ -997,9 +1011,9 @@ impl GameEngine {
             format!("evidence:{id}:onReexamine"),
             rec.on_reexamine.clone().unwrap_or_default(),
         )?;
-        self.command_tx(|engine, _command_id| {
+        self.command_tx(|engine, command_id, next_ordinal| {
             let queue_gen = engine.alloc_queue_gen();
-            engine.install_scene_queue(vec![segment], queue_gen, None)?;
+            engine.install_scene_queue(vec![segment], queue_gen, None, command_id, next_ordinal)?;
             Ok(CommandMutation::Changed)
         })
     }
@@ -1036,9 +1050,9 @@ impl GameEngine {
             format!("statement:{id}:onReexamine"),
             rec.on_reexamine.clone().unwrap_or_default(),
         )?;
-        self.command_tx(|engine, _command_id| {
+        self.command_tx(|engine, command_id, next_ordinal| {
             let queue_gen = engine.alloc_queue_gen();
-            engine.install_scene_queue(vec![segment], queue_gen, None)?;
+            engine.install_scene_queue(vec![segment], queue_gen, None, command_id, next_ordinal)?;
             Ok(CommandMutation::Changed)
         })
     }
@@ -1089,7 +1103,7 @@ impl GameEngine {
             }
         }
 
-        self.command_tx(|engine, _command_id| {
+        self.command_tx(|engine, command_id, next_ordinal| {
             let (segments, line_content_start) = {
                 let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
@@ -1129,8 +1143,8 @@ impl GameEngine {
                         &mut AcquisitionCtx {
                             inventory: &mut engine.inventory,
                             pending_events: &mut engine.pending_acquisition_events,
-                            command_id: engine.durable_revision.saturating_add(1),
-                            next_ordinal: &mut 0,
+                            command_id,
+                            next_ordinal,
                         },
                         line_segment,
                         &reveals,
@@ -1148,7 +1162,12 @@ impl GameEngine {
                 }
             };
 
-            engine.install_or_exhaust_line_content(segments, line_content_start)?;
+            engine.install_or_exhaust_line_content(
+                segments,
+                line_content_start,
+                command_id,
+                next_ordinal,
+            )?;
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.refresh_phase_completion(&engine.inventory);
             }
@@ -1193,7 +1212,7 @@ impl GameEngine {
             }
         }
 
-        self.command_tx(|engine, _command_id| {
+        self.command_tx(|engine, command_id, next_ordinal| {
             let segments = {
                 let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
@@ -1254,7 +1273,7 @@ impl GameEngine {
                 .collect()
             };
 
-            engine.install_or_exhaust(segments)?;
+            engine.install_or_exhaust(segments, command_id, next_ordinal)?;
             Ok(CommandMutation::Changed)
         })
     }
@@ -1311,7 +1330,7 @@ impl GameEngine {
             (question_id.clone(), line_id.clone())
         };
 
-        self.command_tx(|engine, _command_id| {
+        self.command_tx(|engine, command_id, next_ordinal| {
             let segments = {
                 let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
@@ -1358,8 +1377,8 @@ impl GameEngine {
                         &mut AcquisitionCtx {
                             inventory: &mut engine.inventory,
                             pending_events: &mut engine.pending_acquisition_events,
-                            command_id: engine.durable_revision.saturating_add(1),
-                            next_ordinal: &mut 0,
+                            command_id,
+                            next_ordinal,
                         },
                         trigger_segment,
                         &reveals,
@@ -1420,7 +1439,7 @@ impl GameEngine {
                 }
             };
 
-            engine.install_or_exhaust(segments)?;
+            engine.install_or_exhaust(segments, command_id, next_ordinal)?;
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.refresh_phase_completion(&engine.inventory);
             }
@@ -1459,7 +1478,7 @@ impl GameEngine {
             }
         }
 
-        self.command_tx(|engine, _command_id| {
+        self.command_tx(|engine, command_id, next_ordinal| {
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.withdraw();
                 // A testimony content queue may still be active (withdrawing
@@ -1467,7 +1486,7 @@ impl GameEngine {
                 // the queue had just drained.
                 scene.pending_queue = None;
             }
-            engine.on_queue_exhausted()?;
+            engine.on_queue_exhausted(command_id, next_ordinal)?;
             Ok(CommandMutation::Changed)
         })
     }
@@ -1499,7 +1518,7 @@ impl GameEngine {
             }
         }
 
-        self.command_tx(|engine, _command_id| {
+        self.command_tx(|engine, command_id, next_ordinal| {
             let segments = {
                 let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
@@ -1542,7 +1561,7 @@ impl GameEngine {
 
             // Resuming installs the challenged line's pure content —
             // challengeable from the first item.
-            engine.install_or_exhaust_line_content(segments, 0)?;
+            engine.install_or_exhaust_line_content(segments, 0, command_id, next_ordinal)?;
             Ok(CommandMutation::Changed)
         })
     }
@@ -1576,13 +1595,13 @@ impl GameEngine {
             }
         }
 
-        self.command_tx(|engine, _command_id| {
+        self.command_tx(|engine, command_id, next_ordinal| {
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.complete_current_phase();
             }
             // The guard ensured no dialogue queue is active; drive the scene
             // machinery (phase-advance / outro) as if a queue had just drained.
-            engine.on_queue_exhausted()?;
+            engine.on_queue_exhausted(command_id, next_ordinal)?;
             Ok(CommandMutation::Changed)
         })
     }

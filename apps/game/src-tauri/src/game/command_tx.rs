@@ -147,14 +147,15 @@ impl GameEngine {
     /// history. The source-contract test in mod.rs covers that residual gap.
     pub(super) fn command_tx(
         &mut self,
-        f: impl FnOnce(&mut Self, u64) -> Result<CommandMutation, GameError>,
+        f: impl FnOnce(&mut Self, u64, &mut u32) -> Result<CommandMutation, GameError>,
     ) -> Result<GameStateView, GameError> {
         let snapshot = EngineRollbackSnapshot::capture(self);
         let command_id = self
             .durable_revision
             .checked_add(1)
             .ok_or_else(|| GameError::internal("durable revision overflow".into()))?;
-        match f(self, command_id) {
+        let mut next_ordinal = 0;
+        match f(self, command_id, &mut next_ordinal) {
             Ok(CommandMutation::Changed) => {
                 self.record_current_dialogue_history();
                 self.durable_revision = command_id;
@@ -205,7 +206,7 @@ mod tests {
             empty_engine_with_scene(investigation_scene_with_intro("scene_1", vec![]), 1);
 
         engine
-            .command_tx(|_engine, command_id| {
+            .command_tx(|_engine, command_id, _next_ordinal| {
                 assert_eq!(command_id, 1);
                 Ok(CommandMutation::Changed)
             })
@@ -233,7 +234,7 @@ mod tests {
         let before_history = engine.history.entries().to_vec();
 
         let error = engine
-            .command_tx(|engine, command_id| {
+            .command_tx(|engine, command_id, _next_ordinal| {
                 assert_eq!(command_id, 5);
                 engine.durable_revision = 99;
                 engine.pending_acquisition_events.clear();

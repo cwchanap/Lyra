@@ -192,12 +192,14 @@ impl GameEngine {
     pub(super) fn install_or_exhaust(
         &mut self,
         segments: Vec<DialogueSegment>,
+        command_id: u64,
+        next_ordinal: &mut u32,
     ) -> Result<(), GameError> {
         if segments.is_empty() {
-            return self.on_queue_exhausted();
+            return self.on_queue_exhausted(command_id, next_ordinal);
         }
         let queue_gen = self.alloc_queue_gen();
-        self.install_scene_queue(segments, queue_gen, None)
+        self.install_scene_queue(segments, queue_gen, None, command_id, next_ordinal)
     }
 
     /// As `install_or_exhaust`, then mark where challengeable testimony line
@@ -213,12 +215,20 @@ impl GameEngine {
         &mut self,
         segments: Vec<DialogueSegment>,
         line_content_start: usize,
+        command_id: u64,
+        next_ordinal: &mut u32,
     ) -> Result<(), GameError> {
         if segments.is_empty() {
-            return self.on_queue_exhausted();
+            return self.on_queue_exhausted(command_id, next_ordinal);
         }
         let queue_gen = self.alloc_queue_gen();
-        self.install_scene_queue(segments, queue_gen, Some(line_content_start))
+        self.install_scene_queue(
+            segments,
+            queue_gen,
+            Some(line_content_start),
+            command_id,
+            next_ordinal,
+        )
     }
 
     /// Scene-entry sequencing lives in `navigation.rs` (`prime_initial_queue`),
@@ -234,6 +244,8 @@ impl GameEngine {
         segments: Vec<DialogueSegment>,
         queue_gen: u64,
         line_content_start_override: Option<usize>,
+        command_id: u64,
+        next_ordinal: &mut u32,
     ) -> Result<(), GameError> {
         let queue = ActiveDialogueQueue::new(segments, queue_gen)
             .ok_or_else(|| GameError::internal("empty dialogue queue installation".into()))?;
@@ -260,21 +272,25 @@ impl GameEngine {
         }
         let exhausted = self.consume_scene_tags_at_cursor();
         if exhausted {
-            self.on_queue_exhausted()?;
+            self.on_queue_exhausted(command_id, next_ordinal)?;
         }
         Ok(())
     }
 
-    pub(super) fn on_queue_exhausted(&mut self) -> Result<(), GameError> {
+    pub(super) fn on_queue_exhausted(
+        &mut self,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) -> Result<(), GameError> {
         if let SceneRuntime::Linear(scene) = &mut self.scene {
             scene.queue = None;
-            self.advance_scene()?;
+            self.advance_scene(command_id, next_ordinal)?;
             return Ok(());
         }
         match &self.scene {
             SceneRuntime::Investigation(_) => {
-                if self.try_advance_investigation()? {
-                    self.advance_scene()?;
+                if self.try_advance_investigation(command_id, next_ordinal)? {
+                    self.advance_scene(command_id, next_ordinal)?;
                 }
             }
             SceneRuntime::Interrogation(_) => {
@@ -283,15 +299,15 @@ impl GameEngine {
                     // one line's content drains, auto-advance to the next line
                     // instead of ending the phase. The player leaves this loop
                     // only by challenging (反駁) or withdrawing (退下).
-                    self.advance_playing_testimony()?;
+                    self.advance_playing_testimony(command_id, next_ordinal)?;
                 } else {
                     // An honest (auto-broken) question has nothing left to
                     // challenge; drop back to the question menu before running
                     // the phase/outro checks so the menu (not an empty Playing
                     // state) is shown.
                     self.finish_broken_playing();
-                    if self.try_advance_interrogation()? {
-                        self.advance_scene()?;
+                    if self.try_advance_interrogation(command_id, next_ordinal)? {
+                        self.advance_scene(command_id, next_ordinal)?;
                     }
                 }
             }
@@ -347,7 +363,11 @@ impl GameEngine {
     /// stack overflow an all-`SceneTag` testimony would otherwise cause,
     /// because `consume_scene_tags_at_cursor` eats every tag and re-enters
     /// `on_queue_exhausted` immediately.
-    pub(super) fn advance_playing_testimony(&mut self) -> Result<(), GameError> {
+    pub(super) fn advance_playing_testimony(
+        &mut self,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) -> Result<(), GameError> {
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
         loop {
             let (segments, line_content_start, is_loop, has_dialogue) = {
@@ -452,7 +472,12 @@ impl GameEngine {
             };
 
             if has_dialogue {
-                self.install_or_exhaust_line_content(segments, line_content_start)?;
+                self.install_or_exhaust_line_content(
+                    segments,
+                    line_content_start,
+                    command_id,
+                    next_ordinal,
+                )?;
                 return Ok(());
             }
 
@@ -482,8 +507,8 @@ impl GameEngine {
                 if let SceneRuntime::Interrogation(scene) = &mut self.scene {
                     scene.withdraw();
                 }
-                if self.try_advance_interrogation()? {
-                    self.advance_scene()?;
+                if self.try_advance_interrogation(command_id, next_ordinal)? {
+                    self.advance_scene(command_id, next_ordinal)?;
                 }
                 return Ok(());
             }
