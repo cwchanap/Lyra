@@ -1,7 +1,55 @@
 use super::schema::{
-    ThumbnailDescriptorV1, MAX_THUMBNAIL_BYTES, MAX_THUMBNAIL_HEIGHT, MAX_THUMBNAIL_WIDTH,
+    canonical_uuid_v4, ThumbnailDescriptorV1, ThumbnailFormat, MAX_THUMBNAIL_BYTES,
+    MAX_THUMBNAIL_HEIGHT, MAX_THUMBNAIL_WIDTH,
 };
 use crate::game::GameError;
+use sha2::{Digest, Sha256};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // Task 7/10 consume validated thumbnail candidates through storage.
+pub(crate) struct ValidatedThumbnail {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) descriptor: ThumbnailDescriptorV1,
+}
+
+impl ValidatedThumbnail {
+    #[allow(dead_code)] // Task 7/10 construct thumbnails before save command wiring lands.
+    pub(crate) fn from_png(bytes: Vec<u8>, object_id: &str) -> Result<Self, GameError> {
+        canonical_uuid_v4(object_id)?;
+        if bytes.len() > MAX_THUMBNAIL_BYTES {
+            return Err(GameError::thumbnail_png_too_large());
+        }
+        if bytes.len() < 33
+            || bytes[..8] != *b"\x89PNG\r\n\x1a\n"
+            || bytes[8..12] != 13u32.to_be_bytes()
+            || bytes[12..16] != *b"IHDR"
+        {
+            return Err(GameError::thumbnail_png_malformed());
+        }
+
+        let width = u32::from_be_bytes(bytes[16..20].try_into().expect("fixed IHDR width"));
+        let height = u32::from_be_bytes(bytes[20..24].try_into().expect("fixed IHDR height"));
+        let digest = Sha256::digest(&bytes);
+        let descriptor = ThumbnailDescriptorV1::Available {
+            object_id: object_id.into(),
+            format: ThumbnailFormat::Png,
+            width,
+            height,
+            byte_length: bytes.len() as u32,
+            sha256: format!("sha256:{digest:x}"),
+        };
+        validate_descriptor(object_id, &descriptor)?;
+        Ok(Self { bytes, descriptor })
+    }
+
+    pub(super) fn validate_for(&self, save_id: &str) -> Result<(), GameError> {
+        let rebuilt = Self::from_png(self.bytes.clone(), save_id)?;
+        if rebuilt.descriptor != self.descriptor {
+            return Err(GameError::thumbnail_png_malformed());
+        }
+        Ok(())
+    }
+}
 
 pub(crate) fn validate_descriptor(
     save_id: &str,
@@ -74,6 +122,70 @@ mod tests {
             height,
             byte_length,
             sha256: sha256.into(),
+        }
+    }
+
+    fn png(width: u32, height: u32) -> Vec<u8> {
+        let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        bytes.extend_from_slice(&width.to_be_bytes());
+        bytes.extend_from_slice(&height.to_be_bytes());
+        bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+        bytes.extend_from_slice(&[0, 0, 0, 0]);
+        bytes
+    }
+
+    #[test]
+    fn validated_thumbnail_parses_only_png_signature_and_ihdr_metadata() {
+        let bytes = png(320, 180);
+        let thumbnail = ValidatedThumbnail::from_png(bytes.clone(), SAVE_ID).unwrap();
+
+        assert_eq!(thumbnail.bytes, bytes);
+        assert_eq!(
+            thumbnail.descriptor,
+            ThumbnailDescriptorV1::Available {
+                object_id: SAVE_ID.into(),
+                format: ThumbnailFormat::Png,
+                width: 320,
+                height: 180,
+                byte_length: 33,
+                sha256: "sha256:e81cedab8eba5b6a45d358fcd8809fc6b31a95f2641daf5060a41513a932476f"
+                    .into(),
+            }
+        );
+    }
+
+    #[test]
+    fn validated_thumbnail_rejects_bad_signature_truncated_ihdr_and_bad_object_id() {
+        let mut bad_signature = png(1, 1);
+        bad_signature[0] = 0;
+        let truncated = png(1, 1)[..24].to_vec();
+
+        for error in [
+            ValidatedThumbnail::from_png(bad_signature, SAVE_ID).unwrap_err(),
+            ValidatedThumbnail::from_png(truncated, SAVE_ID).unwrap_err(),
+            ValidatedThumbnail::from_png(png(1, 1), "not-a-uuid").unwrap_err(),
+        ] {
+            assert!(matches!(
+                error.code.as_str(),
+                "thumbnailPngMalformed" | "invalidSaveCheckpointId"
+            ));
+        }
+    }
+
+    #[test]
+    fn validated_thumbnail_rejects_zero_and_oversized_ihdr_dimensions() {
+        for (width, height) in [
+            (0, 1),
+            (1, 0),
+            (MAX_THUMBNAIL_WIDTH + 1, 1),
+            (1, MAX_THUMBNAIL_HEIGHT + 1),
+        ] {
+            assert_eq!(
+                ValidatedThumbnail::from_png(png(width, height), SAVE_ID)
+                    .unwrap_err()
+                    .code,
+                "thumbnailDimensionsOutOfBounds"
+            );
         }
     }
 
