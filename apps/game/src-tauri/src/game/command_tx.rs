@@ -159,17 +159,19 @@ impl GameEngine {
             Ok(CommandMutation::Changed) => {
                 self.record_current_dialogue_history();
                 self.durable_revision = command_id;
-                if let Err(error) = self.pending_acquisition_view() {
-                    EngineRollbackSnapshot::restore(self, snapshot);
-                    return Err(error);
+                match self.view() {
+                    Ok(view) => Ok(view),
+                    Err(error) => {
+                        EngineRollbackSnapshot::restore(self, snapshot);
+                        Err(error)
+                    }
                 }
-                Ok(self.view())
             }
             Ok(CommandMutation::Unchanged) => {
                 let was_unchanged = snapshot.matches_engine(self);
                 EngineRollbackSnapshot::restore(self, snapshot);
                 if was_unchanged {
-                    Ok(self.view())
+                    self.view()
                 } else {
                     Err(GameError::internal(
                         "unchanged command mutated rollback-tracked state".into(),
@@ -198,6 +200,52 @@ mod tests {
     use crate::game::test_support::*;
     use crate::game::*;
 
+    fn acquisition_event(
+        record_kind: crate::game::save::schema::RecordKind,
+        record_id: &str,
+        command_id: u64,
+        ordinal: u32,
+    ) -> crate::game::save::schema::AcquisitionEventStateV1 {
+        crate::game::save::schema::AcquisitionEventStateV1 {
+            id: format!("acq:{command_id}:{ordinal}"),
+            record_kind,
+            record_id: record_id.into(),
+            created_by_command_id: command_id,
+            ordinal,
+        }
+    }
+
+    fn mutable_evidence_record(id: &str) -> EvidenceRecord {
+        EvidenceRecord {
+            id: id.into(),
+            name: "Mutable inventory name".into(),
+            description: "Mutable inventory description".into(),
+            details: "Mutable inventory details".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "investigation_scene_1".into(),
+        }
+    }
+
+    fn mutable_statement_record(id: &str) -> StatementRecord {
+        StatementRecord {
+            id: id.into(),
+            speaker: "Mutable inventory speaker".into(),
+            content: "Mutable inventory content".into(),
+            on_reexamine: None,
+            acquired_in_chapter_id: "chapter_1".into(),
+            acquired_in_scene_id: "investigation_scene_1".into(),
+        }
+    }
+
+    fn clear_active_fixture_dialogue(engine: &mut GameEngine) {
+        let SceneRuntime::Investigation(scene) = &mut engine.scene else {
+            panic!("expected investigation fixture");
+        };
+        scene.pending_queue = None;
+    }
+
     // Break caught: a successful state-changing command that does not commit
     // its first durable revision (or derives a command id from another source).
     #[test]
@@ -213,6 +261,96 @@ mod tests {
             .unwrap();
 
         assert_eq!(engine.durable_revision, 1);
+    }
+
+    // Break caught: command ids are reused after one successful command
+    // instead of advancing exactly once per committed public command.
+    #[test]
+    fn consecutive_changed_commands_increment_durable_revision_once_each() {
+        let resources = dialogue_history_fixture_resources(3);
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        let first_token = token_from(&engine.view().unwrap());
+        let first = engine.advance_dialogue(first_token).unwrap();
+        assert_eq!(engine.durable_revision, 1);
+
+        let second = engine.advance_dialogue(token_from(&first)).unwrap();
+        assert_eq!(engine.durable_revision, 2);
+        assert_eq!(second.dialogue_history.len(), 3);
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // Break caught: replaying a real stale queue token consumes a revision or
+    // disturbs durable history/event state on the public command path.
+    #[test]
+    fn stale_dialogue_token_leaves_revision_history_and_events_untouched() {
+        let resources = dialogue_history_fixture_resources(3);
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        let stale_token = token_from(&engine.view().unwrap());
+
+        engine.advance_dialogue(stale_token.clone()).unwrap();
+        let revision_before = engine.durable_revision;
+        let history_before = serde_json::to_vec(engine.history.entries()).unwrap();
+        let events_before = serde_json::to_vec(&engine.pending_acquisition_events).unwrap();
+
+        engine.advance_dialogue(stale_token).unwrap();
+
+        assert_eq!(engine.durable_revision, revision_before);
+        assert_eq!(
+            serde_json::to_vec(engine.history.entries()).unwrap(),
+            history_before
+        );
+        assert_eq!(
+            serde_json::to_vec(&engine.pending_acquisition_events).unwrap(),
+            events_before
+        );
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // Break caught: the explicit successful no-op branch consumes a revision
+    // or changes rollback-tracked durable state even when its closure is pure.
+    #[test]
+    fn explicit_unchanged_command_keeps_revision_history_and_events() {
+        let mut engine =
+            empty_engine_with_scene(investigation_scene_with_intro("scene_1", vec![]), 1);
+        engine.durable_revision = 4;
+        let history_before = serde_json::to_vec(engine.history.entries()).unwrap();
+        let events_before = serde_json::to_vec(&engine.pending_acquisition_events).unwrap();
+
+        engine
+            .command_tx(|_engine, command_id, _next_ordinal| {
+                assert_eq!(command_id, 5);
+                Ok(CommandMutation::Unchanged)
+            })
+            .unwrap();
+
+        assert_eq!(engine.durable_revision, 4);
+        assert_eq!(
+            serde_json::to_vec(engine.history.entries()).unwrap(),
+            history_before
+        );
+        assert_eq!(
+            serde_json::to_vec(&engine.pending_acquisition_events).unwrap(),
+            events_before
+        );
+    }
+
+    // Break caught: a state/read helper accidentally routes through the
+    // command seam and advances the durable revision.
+    #[test]
+    fn read_only_state_helpers_do_not_increment_durable_revision() {
+        let resources = dialogue_history_fixture_resources(2);
+        let engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        let revision_before = engine.durable_revision;
+        let _ = engine.view().unwrap();
+        let _ = engine.pending_acquisition_view().unwrap();
+        let _ = engine.current_queue_token();
+        assert_eq!(engine.durable_revision, revision_before);
+
+        let _ = std::fs::remove_dir_all(resources);
     }
 
     // Break caught: an explicit non-mutating result leaks transaction-local
@@ -252,56 +390,161 @@ mod tests {
     // exposes insertion order instead of the earliest durable event.
     #[test]
     fn pending_acquisition_hides_during_dialogue_then_resolves_earliest_record() {
-        let mut engine =
-            empty_engine_with_scene(investigation_scene_with_intro("scene_1", vec![]), 1);
-        engine.inventory.evidence.push(EvidenceRecord {
-            id: "receipt".into(),
-            name: "Receipt".into(),
-            description: "A receipt".into(),
-            details: "Timestamp 22:10".into(),
-            image_asset_id: Some("evidence.receipt".into()),
-            on_reexamine: None,
-            collected_in_chapter_id: "chapter_1".into(),
-            collected_in_scene_id: "scene_1".into(),
-        });
+        use crate::game::save::schema::RecordKind;
+
+        let resources = packaged_acquisition_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine.inventory.evidence = vec![mutable_evidence_record("receipt")];
         engine.pending_acquisition_events = vec![
-            crate::game::save::schema::AcquisitionEventStateV1 {
-                id: "acq:7:1".into(),
-                record_kind: crate::game::save::schema::RecordKind::Evidence,
-                record_id: "receipt".into(),
-                created_by_command_id: 7,
-                ordinal: 1,
-            },
-            crate::game::save::schema::AcquisitionEventStateV1 {
-                id: "acq:7:0".into(),
-                record_kind: crate::game::save::schema::RecordKind::Evidence,
-                record_id: "receipt".into(),
-                created_by_command_id: 7,
-                ordinal: 0,
-            },
+            acquisition_event(RecordKind::Evidence, "receipt", 7, 1),
+            acquisition_event(RecordKind::Evidence, "receipt", 7, 0),
         ];
 
+        assert!(engine.pending_acquisition_view().unwrap().is_none());
+
+        clear_active_fixture_dialogue(&mut engine);
         let pending = engine.pending_acquisition_view().unwrap().unwrap();
         assert_eq!(pending.id, "acq:7:0");
-        assert_eq!(pending.title, "Receipt");
+        assert_eq!(pending.title, "Packaged Receipt");
         assert_eq!(pending.image_asset_id.as_deref(), Some("evidence.receipt"));
 
-        let mut dialogue_engine = empty_engine_with_scene(
-            investigation_scene_with_intro(
-                "scene_1",
-                vec![DialogueItem::Action {
-                    text: "authored".into(),
-                }],
-            ),
-            1,
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // Break caught: pending presentation trusts mutable inventory display
+    // fields instead of resolving the immutable definition identified by the
+    // record's stored chapter/scene provenance.
+    #[test]
+    fn pending_acquisition_resolves_packaged_definitions_in_event_order() {
+        use crate::game::save::schema::RecordKind;
+
+        let resources = packaged_acquisition_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        clear_active_fixture_dialogue(&mut engine);
+        engine.inventory.evidence = vec![
+            mutable_evidence_record("receipt"),
+            mutable_evidence_record("second_note"),
+        ];
+        engine.inventory.statements = vec![mutable_statement_record("alibi")];
+        engine.pending_acquisition_events = vec![
+            acquisition_event(RecordKind::Statement, "alibi", 8, 1),
+            acquisition_event(RecordKind::Evidence, "second_note", 9, 0),
+            acquisition_event(RecordKind::Evidence, "receipt", 8, 0),
+        ];
+
+        let first = engine.pending_acquisition_view().unwrap().unwrap();
+        assert_eq!(first.id, "acq:8:0");
+        assert_eq!(first.title, "Packaged Receipt");
+        assert_eq!(first.description, "Packaged description");
+        assert_eq!(first.details, "Packaged details");
+        assert_eq!(first.image_asset_id.as_deref(), Some("evidence.receipt"));
+        assert_eq!(
+            engine.pending_acquisition_view().unwrap().unwrap().id,
+            first.id,
+            "presenting a pending acquisition must not acknowledge or consume it"
         );
-        dialogue_engine.prime_initial_queue().unwrap();
-        dialogue_engine.pending_acquisition_events = engine.pending_acquisition_events;
-        dialogue_engine.inventory = engine.inventory;
-        assert!(dialogue_engine
-            .pending_acquisition_view()
-            .unwrap()
-            .is_none());
+        assert_eq!(engine.pending_acquisition_events.len(), 3);
+
+        // Task 3 deliberately has no acknowledgement command. Remove the
+        // displayed event as the later coordinator will, then verify ordering
+        // advances to the next durable event rather than insertion order.
+        engine
+            .pending_acquisition_events
+            .retain(|event| event.id != first.id);
+        let second = engine.pending_acquisition_view().unwrap().unwrap();
+        assert_eq!(second.id, "acq:8:1");
+        assert_eq!(second.title, "Packaged Witness");
+        assert_eq!(second.description, "Packaged alibi");
+        assert_eq!(second.details, "Packaged alibi");
+
+        engine
+            .pending_acquisition_events
+            .retain(|event| event.id != second.id);
+        let third = engine.pending_acquisition_view().unwrap().unwrap();
+        assert_eq!(third.id, "acq:9:0");
+        assert_eq!(third.title, "Packaged Second Note");
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // Break caught: an event can present an inventory copy whose ID exists
+    // nowhere in packaged content, or whose packaged definition has another
+    // record kind.
+    #[test]
+    fn pending_acquisition_rejects_missing_and_wrong_kind_definitions() {
+        use crate::game::save::schema::RecordKind;
+
+        let resources = packaged_acquisition_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        clear_active_fixture_dialogue(&mut engine);
+
+        engine.inventory.evidence = vec![mutable_evidence_record("ghost")];
+        engine.pending_acquisition_events =
+            vec![acquisition_event(RecordKind::Evidence, "ghost", 3, 0)];
+        let missing = engine.pending_acquisition_view().unwrap_err();
+        assert_eq!(missing.code, "missingAcquisitionDefinition");
+
+        let mut wrong_provenance = mutable_evidence_record("receipt");
+        wrong_provenance.collected_in_scene_id = "missing_scene".into();
+        engine.inventory.evidence = vec![wrong_provenance];
+        engine.pending_acquisition_events =
+            vec![acquisition_event(RecordKind::Evidence, "receipt", 4, 0)];
+        let provenance_error = engine.pending_acquisition_view().unwrap_err();
+        assert_eq!(provenance_error.code, "missingAcquisitionDefinition");
+
+        engine.inventory.evidence = vec![mutable_evidence_record("alibi")];
+        engine.pending_acquisition_events =
+            vec![acquisition_event(RecordKind::Evidence, "alibi", 5, 0)];
+        let mismatch = engine.pending_acquisition_view().unwrap_err();
+        assert_eq!(mismatch.code, "acquisitionDefinitionMismatch");
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // Break caught: authored dialogue returns None before a malformed event is
+    // validated, allowing corrupt live state to escape public error handling.
+    #[test]
+    fn malformed_pending_acquisition_errors_before_dialogue_hiding() {
+        use crate::game::save::schema::RecordKind;
+
+        let resources = packaged_acquisition_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine.inventory.evidence = vec![mutable_evidence_record("receipt")];
+        let mut malformed = acquisition_event(RecordKind::Evidence, "receipt", 2, 0);
+        malformed.id = "malformed".into();
+        engine.pending_acquisition_events = vec![malformed];
+
+        let error = engine.pending_acquisition_view().unwrap_err();
+        assert_eq!(error.code, "unknownAcquisitionEvent");
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // Break caught: the public state builder absorbs pending-event errors into
+    // `pendingAcquisition: null`, preventing Tauri state commands from
+    // returning the typed engine error.
+    #[test]
+    fn public_view_propagates_malformed_and_unknown_pending_events() {
+        use crate::game::save::schema::RecordKind;
+
+        let resources = packaged_acquisition_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine.inventory.evidence = vec![mutable_evidence_record("receipt")];
+        let mut malformed = acquisition_event(RecordKind::Evidence, "receipt", 2, 0);
+        malformed.id = "malformed".into();
+        engine.pending_acquisition_events = vec![malformed];
+
+        let malformed_error = engine.view().unwrap_err();
+        assert_eq!(malformed_error.code, "unknownAcquisitionEvent");
+
+        clear_active_fixture_dialogue(&mut engine);
+        engine.inventory.evidence.clear();
+        engine.pending_acquisition_events =
+            vec![acquisition_event(RecordKind::Evidence, "receipt", 3, 0)];
+        let unknown_error = engine.view().unwrap_err();
+        assert_eq!(unknown_error.code, "unknownAcquisitionEvent");
+
+        let _ = std::fs::remove_dir_all(resources);
     }
 
     #[test]
@@ -582,14 +825,14 @@ mod tests {
         .unwrap();
 
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
-        let before = engine.view();
+        let before = engine.view().unwrap();
         assert_eq!(history_labels(&before), vec!["A: before"]);
         let token = token_from(&before);
         let expected_token_after_rollback = token.clone();
         let err = engine.advance_dialogue(token).unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
 
-        let after = engine.view();
+        let after = engine.view().unwrap();
         assert_eq!(history_labels(&after), vec!["A: before"]);
         assert_eq!(token_from(&after), expected_token_after_rollback);
         match after.mode {
@@ -700,7 +943,7 @@ mod tests {
         .unwrap();
 
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
-        let token = token_from(&engine.view());
+        let token = token_from(&engine.view().unwrap());
 
         let err = engine.advance_dialogue(token).unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
@@ -708,7 +951,7 @@ mod tests {
         assert!(engine.inventory.evidence.is_empty());
         assert_eq!(engine.current_chapter_idx, 0);
         assert_eq!(engine.current_scene_idx, 0);
-        match engine.view().scene {
+        match engine.view().unwrap().scene {
             SceneView::Linear {
                 id, index, total, ..
             } => {
@@ -819,7 +1062,7 @@ mod tests {
             pending_acquisition_events: Vec::new(),
         };
         engine.prime_initial_queue().unwrap();
-        let token = token_from(&engine.view());
+        let token = token_from(&engine.view().unwrap());
 
         let err = engine.advance_dialogue(token).unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
@@ -827,7 +1070,7 @@ mod tests {
         assert!(engine.inventory.evidence.is_empty());
         assert_eq!(engine.current_chapter_idx, 0);
         assert_eq!(engine.current_scene_idx, 0);
-        let view = engine.view();
+        let view = engine.view().unwrap();
         match view.mode {
             ModeView::Dialogue { current, .. } => {
                 assert!(
@@ -974,7 +1217,7 @@ mod tests {
         assert!(inv.inspected_hotspots.is_empty());
         assert!(!inv.outro_played);
 
-        let view = engine.view();
+        let view = engine.view().unwrap();
         assert!(
             matches!(view.mode, ModeView::Explore { sublocation_id, .. } if sublocation_id == "room")
         );
@@ -1041,6 +1284,96 @@ mod tests {
         assert_eq!(engine.current_scene_idx, 0, "scene index not restored");
     }
 
+    // Break caught: a failed transaction restores legacy runtime fields but
+    // loses a non-zero revision, pending events, inventory, or history bytes.
+    #[test]
+    fn failed_transaction_restores_nonzero_durable_fields_byte_for_byte() {
+        use crate::game::save::schema::RecordKind;
+
+        let mut engine =
+            empty_engine_with_scene(investigation_scene_with_intro("scene_1", vec![]), 1);
+        engine.durable_revision = 7;
+        engine.inventory.evidence = vec![mutable_evidence_record("receipt")];
+        engine.pending_acquisition_events =
+            vec![acquisition_event(RecordKind::Evidence, "receipt", 7, 0)];
+        engine.history.record(
+            QueueToken {
+                scene_id: "scene_1".into(),
+                queue_gen: 1,
+                cursor: 0,
+            },
+            DialogueItem::Action {
+                text: "before".into(),
+            },
+            "Chapter 1".into(),
+            "Scene 1".into(),
+        );
+
+        let revision_before = engine.durable_revision;
+        let inventory_before = serde_json::to_vec(&engine.inventory).unwrap();
+        let events_before = serde_json::to_vec(&engine.pending_acquisition_events).unwrap();
+        let history_before = serde_json::to_vec(engine.history.entries()).unwrap();
+
+        let error = engine
+            .command_tx(|engine, command_id, _next_ordinal| {
+                assert_eq!(command_id, 8);
+                engine.durable_revision = 99;
+                engine.inventory.evidence.clear();
+                engine.pending_acquisition_events.clear();
+                engine.history.record(
+                    QueueToken {
+                        scene_id: "scene_1".into(),
+                        queue_gen: 9,
+                        cursor: 9,
+                    },
+                    DialogueItem::Action {
+                        text: "mutated".into(),
+                    },
+                    "Mutated".into(),
+                    "Mutated".into(),
+                );
+                Err(GameError::internal("forced rollback".into()))
+            })
+            .unwrap_err();
+
+        assert_eq!(error.code, "internalError");
+        assert_eq!(engine.durable_revision, revision_before);
+        assert_eq!(
+            serde_json::to_vec(&engine.inventory).unwrap(),
+            inventory_before
+        );
+        assert_eq!(
+            serde_json::to_vec(&engine.pending_acquisition_events).unwrap(),
+            events_before
+        );
+        assert_eq!(
+            serde_json::to_vec(engine.history.entries()).unwrap(),
+            history_before
+        );
+    }
+
+    // Break caught: direct snapshot capture/restore omits the two durable
+    // fields introduced for save/load command identity and notifications.
+    #[test]
+    fn rollback_snapshot_explicitly_restores_revision_and_pending_events() {
+        use crate::game::save::schema::RecordKind;
+
+        let mut engine =
+            empty_engine_with_scene(investigation_scene_with_intro("scene_1", vec![]), 1);
+        engine.durable_revision = 6;
+        engine.pending_acquisition_events =
+            vec![acquisition_event(RecordKind::Statement, "alibi", 6, 0)];
+        let expected_events = engine.pending_acquisition_events.clone();
+        let snapshot = EngineRollbackSnapshot::capture(&engine);
+
+        engine.durable_revision = 44;
+        engine.pending_acquisition_events.clear();
+        EngineRollbackSnapshot::restore(&mut engine, snapshot);
+
+        assert_eq!(engine.durable_revision, 6);
+        assert_eq!(engine.pending_acquisition_events, expected_events);
+    }
+
     #[test]
     fn rollback_scope_restores_story_state_and_filtered_view_on_error() {
         use crate::game::story::{AssertionOrigin, StoryState};
@@ -1048,7 +1381,7 @@ mod tests {
         let d = story_navigation_fixture_resources();
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
         let snapshot_before = engine.story_state.snapshot();
-        let view_before = serde_json::to_value(&engine.view().story).unwrap();
+        let view_before = serde_json::to_value(&engine.view().unwrap().story).unwrap();
 
         let result: Result<(), GameError> = engine.rollback_scope(|engine| {
             engine.story_state.assert_fact(
@@ -1066,7 +1399,7 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(engine.story_state.snapshot(), snapshot_before);
         assert_eq!(
-            serde_json::to_value(&engine.view().story).unwrap(),
+            serde_json::to_value(&engine.view().unwrap().story).unwrap(),
             view_before
         );
         assert_eq!(engine.story_state, StoryState::default());

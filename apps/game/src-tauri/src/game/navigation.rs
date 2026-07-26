@@ -683,7 +683,7 @@ mod tests {
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
 
         let advanced = engine
-            .advance_dialogue(token_from(&engine.view()))
+            .advance_dialogue(token_from(&engine.view().unwrap()))
             .expect("one durable command should traverse both reveal scenes");
 
         assert_eq!(engine.durable_revision, 1);
@@ -1036,7 +1036,7 @@ mod tests {
 
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
         // Sanity: engine started on scene_0.
-        let before = engine.view();
+        let before = engine.view().unwrap();
         let before_scene_id = match &before.scene {
             SceneView::Linear { id, .. } => id.clone(),
             other => panic!("expected linear scene at startup, got {other:?}"),
@@ -1050,7 +1050,7 @@ mod tests {
 
         // Snapshot restored: the engine is still on scene_0 with the
         // original queue generation sequence intact.
-        let after = engine.view();
+        let after = engine.view().unwrap();
         let after_scene_id = match &after.scene {
             SceneView::Linear { id, .. } => id.clone(),
             other => panic!("expected linear scene after restore, got {other:?}"),
@@ -1175,7 +1175,7 @@ mod tests {
 
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
         // Startup records the first visible line ("start") into history.
-        let started = engine.view();
+        let started = engine.view().unwrap();
         assert_eq!(
             history_labels(&started),
             vec!["A: start".to_string()],
@@ -1202,7 +1202,7 @@ mod tests {
         assert_eq!(err.code, "sceneValidationFailed");
 
         // Scene identity restored.
-        let after = engine.view();
+        let after = engine.view().unwrap();
         let after_scene_id = match &after.scene {
             SceneView::Linear { id, .. } => id.clone(),
             other => panic!("expected linear scene after restore, got {other:?}"),
@@ -1350,7 +1350,7 @@ mod tests {
         assert_eq!(err.code, "duplicateSceneTarget");
         // The engine is untouched (no snapshot/restore needed since the
         // ambiguity is detected before any state mutation).
-        let after_scene_id = match &engine.view().scene {
+        let after_scene_id = match &engine.view().unwrap().scene {
             SceneView::Linear { id, .. } => id.clone(),
             other => panic!("expected linear scene, got {other:?}"),
         };

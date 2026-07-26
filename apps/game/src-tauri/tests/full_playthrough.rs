@@ -33,7 +33,7 @@ fn advance_all_dialogue(engine: &mut GameEngine, mut view: GameStateView) -> Gam
 
 fn advance_until_explore(engine: &mut GameEngine) -> GameStateView {
     for _ in 0..100 {
-        let view = engine.view();
+        let view = engine.view().unwrap();
         match &view.mode {
             ModeView::Dialogue { queue_token, .. } => {
                 engine.advance_dialogue(queue_token.clone()).unwrap();
@@ -65,7 +65,7 @@ fn enter_sublocation_and_advance(engine: &mut GameEngine, sublocation_id: &str) 
 }
 
 fn advance_project_investigation_to_interrogation(engine: &mut GameEngine) -> GameStateView {
-    let initial = engine.view();
+    let initial = engine.view().unwrap();
     let view = advance_all_dialogue(engine, initial);
     assert!(matches!(view.mode, ModeView::Explore { .. }));
 
@@ -123,7 +123,7 @@ fn advance_project_investigation_to_interrogation(engine: &mut GameEngine) -> Ga
 #[test]
 fn full_playthrough_starts_at_dialogue_with_intro() {
     let engine = GameEngine::new_started(fixture_resources()).unwrap();
-    let view = engine.view();
+    let view = engine.view().unwrap();
     assert!(
         matches!(view.mode, ModeView::Dialogue { .. }),
         "expected Dialogue mode, got {:?}",
@@ -134,7 +134,7 @@ fn full_playthrough_starts_at_dialogue_with_intro() {
 #[test]
 fn advance_dialogue_is_idempotent_under_stale_token() {
     let mut engine = GameEngine::new_started(fixture_resources()).unwrap();
-    let initial = engine.view();
+    let initial = engine.view().unwrap();
     let token = token_from(&initial);
 
     let v1 = engine.advance_dialogue(token.clone()).unwrap();
@@ -154,7 +154,7 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
     // We advance dialogue repeatedly until the mode transitions away from the
     // initial linear scene, through the investigation scene, and into completion.
     for _ in 0..200 {
-        let view = engine.view();
+        let view = engine.view().unwrap();
         match &view.mode {
             ModeView::Dialogue {
                 queue_token,
@@ -167,7 +167,7 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
                 if remaining == 0 {
                     // The advance may have triggered a scene transition or completion.
                     // Check the new mode before continuing.
-                    let new_view = engine.view();
+                    let new_view = engine.view().unwrap();
                     if matches!(new_view.mode, ModeView::GameComplete) {
                         break;
                     }
@@ -177,7 +177,7 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
                 // Can't easily complete investigation scene in unit test without
                 // full game logic, so we just verify the chapter view structure
                 // is valid (index < total) at this point.
-                let view = engine.view();
+                let view = engine.view().unwrap();
                 assert!(
                     view.chapter.index < view.chapter.total,
                     "chapter index ({}) should be < total ({})",
@@ -187,7 +187,7 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
                 return;
             }
             ModeView::Interrogation { .. } => {
-                let view = engine.view();
+                let view = engine.view().unwrap();
                 assert!(
                     view.chapter.index < view.chapter.total,
                     "chapter index ({}) should be < total ({})",
@@ -198,7 +198,7 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
             }
             ModeView::GameComplete => {
                 // Verify chapter index is clamped.
-                let view = engine.view();
+                let view = engine.view().unwrap();
                 assert!(
                     view.chapter.index < view.chapter.total,
                     "chapter index should be clamped: got index={}, total={}",
@@ -342,8 +342,8 @@ fn actions_are_rejected_while_dialogue_is_active() {
     let err = engine.inspect_hotspot("table").unwrap_err();
     assert_eq!(err.code, "wrongMode");
 
-    while !matches!(engine.view().mode, ModeView::Explore { .. }) {
-        let token = token_from(&engine.view());
+    while !matches!(engine.view().unwrap().mode, ModeView::Explore { .. }) {
+        let token = token_from(&engine.view().unwrap());
         engine.advance_dialogue(token).unwrap();
     }
 
