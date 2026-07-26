@@ -3,7 +3,11 @@ import {
   materializeSemanticDefaults,
   NO_NEW_FINDINGS_DIALOGUE,
 } from "./semantic-defaults";
-import type { ASTInvestigationScene, DialogueItem } from "./types";
+import type {
+  ASTInterrogationScene,
+  ASTInvestigationScene,
+  DialogueItem,
+} from "./types";
 import type { SceneRecord } from "./validator";
 
 const FALLBACK = [{ kind: "action", text: "（沒有新發現。）" }];
@@ -179,6 +183,97 @@ describe("materializeSemanticDefaults", () => {
   it("does not add a fallback to unrelated empty intro or outro dialogue", () => {
     const actual = defaults(scene());
     expect(actual.intro).toEqual([]);
+    const ast = materializeSemanticDefaults(scene()).ast;
+    if (ast.kind !== "investigationScene")
+      throw new Error("expected investigation");
+    expect(ast.outro.dialogue).toEqual([]);
     expect(NO_NEW_FINDINGS_DIALOGUE).toEqual(FALLBACK);
+  });
+
+  it("does not add a fallback to an unrelated empty interrogation testimony", () => {
+    const record: SceneRecord = {
+      chapterId: "chapter_1",
+      file: "interrogation_scene_2.md",
+      ast: {
+        kind: "interrogationScene",
+        id: "interrogation_scene_2",
+        title: "詢問",
+        intro: [],
+        assetRefs: [],
+        evidenceManifest: [],
+        statementManifest: [],
+        outro: { unlock: "auto", dialogue: [] },
+        sourceFile: "chapter_1/interrogation_scene_2.md",
+        line: 1,
+        phases: [
+          {
+            kind: "inquiry",
+            id: "inquiry",
+            label: "詢問",
+            required: true,
+            status: "unlocked",
+            unlock: null,
+            reveals: [],
+            sceneTag: "詢問室",
+            assetCue: null,
+            entryDialogue: [],
+            complete: "auto",
+            sourceFile: "chapter_1/interrogation_scene_2.md",
+            line: 2,
+            subject: {
+              id: "witness",
+              name: "證人",
+              role: "證人",
+              bio: "",
+              sourceFile: "chapter_1/interrogation_scene_2.md",
+              line: 3,
+            },
+            questions: [
+              {
+                id: "whereabouts",
+                label: "去向",
+                required: true,
+                status: "unlocked",
+                unlock: null,
+                reveals: [],
+                sourceFile: "chapter_1/interrogation_scene_2.md",
+                line: 4,
+                testimony: {
+                  onLoop: [],
+                  loopPrompt: null,
+                  defaultChallenge: null,
+                  defaultWrong: null,
+                  wrongReply: null,
+                  sourceFile: "chapter_1/interrogation_scene_2.md",
+                  line: 5,
+                  lines: [
+                    {
+                      id: "line_1",
+                      label: "證詞",
+                      content: [],
+                      contradiction: null,
+                      challenge: null,
+                      onCorrect: null,
+                      onWrongEvidence: null,
+                      reveals: [],
+                      sourceFile: "chapter_1/interrogation_scene_2.md",
+                      line: 6,
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      } satisfies ASTInterrogationScene,
+    };
+    const ast = materializeSemanticDefaults(record).ast;
+    if (ast.kind !== "interrogationScene")
+      throw new Error("expected interrogation");
+    expect(ast.intro).toEqual([]);
+    expect(ast.outro.dialogue).toEqual([]);
+    expect(ast.phases[0]!.questions[0]!.testimony.lines[0]!.content).toEqual(
+      [],
+    );
   });
 });
