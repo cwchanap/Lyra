@@ -1,13 +1,21 @@
-# HPA-129 Save, Load, Autosave, and Continue Design
+# HPA-392 Save/Load Persistence, Named Saves, Thumbnails, and Continue Design
 
 **Status:** Approved in conversation  
-**Issue:** HPA-129 — Save/load, autosave, and Continue  
-**Date:** 2026-07-25
+**Issue:** HPA-392 — Complete HPA-129 save/load persistence, named saves,
+thumbnails, Continue, and UI  
+**Parent:** HPA-129 — Save/load, autosave, and Continue  
+**Date:** 2026-07-26
 
 **Compatibility amendment:** Approved in conversation on 2026-07-25. Released
 static content is immutable. Saves contain mutable state only and require one
 exact package-wide `contentRevision`; any static semantic content change
 invalidates pre-release/development saves.
+
+**HPA-392 expansion:** Approved in conversation on 2026-07-26. This revision
+keeps HPA-129's authoritative persistence contract and adds player-authored
+manual-save names plus aspect-ratio-preserving screenshot thumbnails. The
+previous statements that thumbnails and user-authored names were non-goals are
+superseded by this document.
 
 ## 1. References and scope
 
@@ -22,14 +30,26 @@ This focused design refines:
 - the HPA-255 global story catalog and durable story state now present under
   `apps/game/src-tauri/src/game/story/`.
 
-HPA-129 makes current Lyra sessions safe to leave and resume. It delivers:
+It also consumes the content-identity and dialogue-reconstruction prerequisite
+merged in PR #27:
+
+- one compiler-owned package `contentRevision` and minimal content manifest;
+- stable semantic segmented-dialogue origins;
+- live `ActiveDialogueQueue` state with existing flattened token/history
+  semantics;
+- crate-private active-dialogue capture and transactional reconstruction
+  adapters.
+
+HPA-392 completes the player-visible HPA-129 feature. It delivers:
 
 - a versioned, Rust-owned persistent save contract;
 - exact capture and transactional restoration for every current runtime;
 - ordered, definition-backed dialogue segments;
 - Rust-owned durable acquisition acknowledgement;
 - five visible rotating autosaves;
-- three visible manual slots with overwrite confirmation;
+- three visible named manual slots with overwrite confirmation;
+- one clean gameplay screenshot thumbnail per successful save when capture is
+  available, with deterministic placeholders when it is not;
 - title-screen Continue and Load Game;
 - in-game Save/Load and Return to Title;
 - explicit second-confirmation escape paths when persistence is unavailable;
@@ -38,7 +58,7 @@ HPA-129 makes current Lyra sessions safe to leave and resume. It delivers:
 - a P0-owned generic resumable-state fixture that does not depend on the
   analysis runtime.
 
-This design deliberately refines two requirements from the parent design and
+This design deliberately refines four requirements from the parent design and
 the current Linear issue:
 
 1. Five visible rotating autosaves replace the original one current autosave
@@ -46,8 +66,12 @@ the current Linear issue:
 2. Continue targets the newest written save only. If that file is corrupt or
    incompatible, Continue stops with a diagnostic and directs the player to
    Load Game. It does not silently select an older save.
+3. Manual saves carry validated, player-authored Unicode display names.
+4. Every save attempts a clean gameplay-frame PNG thumbnail. Thumbnail failure
+   is presentation-only and never invalidates authoritative save state.
 
-The user approved both refinements during HPA-129 design.
+The user approved the first two refinements during HPA-129 design and the latter
+two during HPA-392 design.
 
 ## 2. Approved product decisions
 
@@ -87,6 +111,25 @@ The user approved both refinements during HPA-129 design.
     emitted static semantic-content change, including prose or ordering,
     invalidates existing saves. This is acceptable before release; released
     static content is treated as immutable.
+21. Manual saves store one player-authored display name. An occupied slot keeps
+    its existing name by default; the player may edit it before overwrite.
+22. Manual names are trimmed, contain 1–40 Unicode grapheme clusters, reject
+    control/line-separator characters, and otherwise preserve Unicode and
+    internal spacing verbatim.
+23. New manual slots and autosaves use a Rust-generated
+    `<chapter title> · <scene title>` suggestion, shortened by grapheme cluster
+    when required. Autosave names are read-only.
+24. Thumbnails are clean gameplay-frame PNGs fitted inside 480×360 without
+    cropping, non-uniform scaling, padding, or upscaling.
+25. Save menus, confirmations, errors, acquisition popups, and other transient
+    overlays never appear in thumbnails; the ordinary gameplay scene,
+    dialogue, and HUD may appear.
+26. Thumbnail bytes are presentation sidecars owned through opaque save IDs,
+    never embedded in `SaveSnapshot` and never addressed through a display
+    name.
+27. Missing, corrupt, timed-out, or failed thumbnail capture produces a
+    deterministic placeholder and a non-blocking presentation warning. It does
+    not change compatibility, ordering, Continue, or Load behavior.
 
 ## 3. Current constraints
 
@@ -102,8 +145,10 @@ The current Rust runtime:
   packaged Tauri resources;
 - owns mutable chapter/scene position, scene runtime, visual/audio cues,
   inventory, story state, queue generation, and dialogue history;
-- represents linear dialogue as one flat queue and investigation/interrogation
-  dialogue as an optional flat `DialogueQueue`;
+- represents active dialogue through ordered `ActiveDialogueQueue` segments
+  while preserving the public flattened cursor;
+- exposes crate-private active-dialogue capture and definition-backed
+  reconstruction adapters;
 - exposes stale-action protection through `QueueToken`;
 - has no persistent save schema, disk storage, content migrations, or
   Rust-owned acquisition-event collection.
@@ -120,9 +165,10 @@ The current Svelte frontend:
 - owns the Escape-menu panel stack;
 - infers acquisition notifications by diffing public inventory views;
 - keeps transient presentation state such as open menus, dialogue history,
-  popup focus, and audio controllers outside Rust.
+  popup focus, and audio controllers outside Rust;
+- has no DOM-to-image capture dependency or save-browser state.
 
-HPA-129 removes inventory-diff inference for acquisition acknowledgement but
+HPA-392 removes inventory-diff inference for acquisition acknowledgement but
 does not move transient visual animation state into Rust.
 
 ### 3.3 Packaged-content boundary
@@ -144,18 +190,20 @@ apps/game/src-tauri/src/game/save/
   migrations.rs
   storage.rs
   coordinator.rs
+  thumbnail.rs
 ```
 
 Responsibilities:
 
 | Module | Responsibility |
 | --- | --- |
-| `schema.rs` | Serializable envelope, mutable snapshot, slot metadata, dialogue origins, acquisition events, and typed load diagnostics |
+| `schema.rs` | Serializable envelope, mutable snapshot, names, thumbnail descriptors, slot metadata, dialogue origins, acquisition events, and typed load diagnostics |
 | `capture.rs` | Convert one stable committed `GameEngine` into a persistent snapshot containing IDs and mutable progress |
 | `restore.rs` | Verify the exact packaged-content revision, resolve stable IDs against current definitions, reconstruct a complete candidate engine, and return it without touching the live engine |
 | `migrations.rs` | Sequential save-schema migrations |
-| `storage.rs` | App-data paths, discovery, five-autosave rotation, in-place acknowledgement refresh, three manual slots, atomic writes, reads, and deletion |
-| `coordinator.rs` | Debounced autosave scheduling, current-session autosave targeting, durable-revision tracking, flushes, write serialization, and save-health state |
+| `storage.rs` | App-data paths, discovery, five-autosave rotation, in-place acknowledgement refresh, three manual slots, atomic envelope/sidecar writes, reads, orphan cleanup, and deletion |
+| `coordinator.rs` | Debounced autosave scheduling, current-session autosave targeting, durable-revision tracking, opaque thumbnail-ticket coordination, flushes, write serialization, and save-health state |
+| `thumbnail.rs` | Validate bounded PNG submissions, bind them to an exact session/revision, derive opaque sidecar identities, inspect sidecars without eager decode, and expose typed thumbnail availability |
 
 `GameEngine` remains the gameplay authority. The save subsystem may use
 crate-private capture/restore accessors, but it does not expose authored
@@ -233,7 +281,7 @@ serializer owns this calculation; feature code does not hand-roll alternate
 `JSON.stringify` hash paths.
 
 This artifact is a compiler/runtime contract, not an editor scene-graph
-contract. HPA-129 adds no save-only fields to `@lyra/scene-types`.
+contract. HPA-392 adds no save-only fields to `@lyra/scene-types`.
 
 ### 5.2 Exact compatibility gate
 
@@ -249,7 +297,7 @@ This is an explicit product assumption:
 - released static content is immutable for that release line;
 - if a future shipped release must change static content while retaining saves,
   that release must introduce an explicit new migration design rather than
-  relying on HPA-129 version 1 heuristics.
+  relying on HPA-392 version 1 heuristics.
 
 The revision is a fingerprint, not a snapshot of static content. Saves still
 serialize only mutable authoritative state plus stable IDs and dialogue origins
@@ -274,6 +322,8 @@ struct SaveEnvelopeV1 {
     save_type: SaveType,
     slot: u8,
     saved_at: String,
+    display_name: String,
+    thumbnail: ThumbnailDescriptorV1,
     summary: SaveSummary,
     snapshot: SaveSnapshotV1,
 }
@@ -299,6 +349,61 @@ separate creation timestamp because every disk write creates a new checkpoint
 and save ID. Filesystem write metadata determines Continue and rotation
 ordering so even an unparseable newest file can block Continue correctly.
 
+`display_name` is presentation metadata. Rust owns its final value:
+
+- manual input is trimmed using Unicode whitespace;
+- the stored result must contain 1–40 extended grapheme clusters;
+- control characters plus U+2028 LINE SEPARATOR and U+2029 PARAGRAPH SEPARATOR
+  are rejected;
+- remaining Unicode code points and internal spacing are stored verbatim,
+  without normalization, collapsing, slugification, or path conversion;
+- a new manual slot is prefilled with
+  `<chapter title> · <scene title>`, shortened by complete grapheme clusters
+  when required: a value over 40 clusters retains its first 39 clusters and
+  uses `…` as the fortieth;
+- an occupied manual slot is prefilled with its existing name when that field is
+  independently readable and still passes the current name rules; otherwise it
+  uses the generated chapter/scene suggestion;
+- autosaves use the same generated chapter/scene form and cannot be renamed.
+
+The frontend mirrors these checks for immediate feedback, but the Rust command
+is authoritative and returns a typed name diagnostic on failure.
+
+Thumbnail metadata is presentation-only:
+
+```rust
+#[serde(tag = "type", rename_all = "camelCase")]
+enum ThumbnailDescriptorV1 {
+    Available {
+        object_id: String,
+        format: ThumbnailFormat,
+        width: u32,
+        height: u32,
+        byte_length: u32,
+        sha256: String,
+    },
+    Unavailable,
+}
+
+enum ThumbnailFormat {
+    Png,
+}
+```
+
+`object_id` is derived from the opaque checkpoint `save_id`, never from
+`display_name`, chapter/scene copy, or a frontend path. Accepted images must be
+PNG, non-empty, at most 1 MiB encoded, and no larger than 480×360. Width and
+height retain the captured ratio; capture never crops, stretches, pads, or
+upscales. Rust validates the PNG signature/IHDR, byte length, dimensions, and
+digest before retaining a candidate. The digest wire format is
+`sha256:<lowercase hex>`.
+
+On every read, Rust validates the checkpoint ID as a canonical UUID, recomputes
+the one expected object ID, and requires the descriptor to match before
+resolving a bounded child path under `thumbnails/`. A mismatch is presentation
+corruption. An object ID parsed from an envelope is never joined directly to an
+application-data path.
+
 `SaveSummary` stores presentation metadata only:
 
 ```rust
@@ -313,7 +418,9 @@ struct SaveSummary {
 ```
 
 Summary copy is not authoritative gameplay state. Restore derives gameplay
-state from `snapshot`; summary mismatches are reported as corruption.
+state from `snapshot`; summary mismatches are reported as corruption. Display
+names and thumbnail descriptors are not compared with engine state and cannot
+affect restoration.
 
 ## 7. Persistent snapshot
 
@@ -699,7 +806,7 @@ requires a save-schema or compatibility revision even though it does not
 change the package content revision.
 
 Future analysis/story-event origins require new schema variants or migrations;
-HPA-129 does not pre-implement those runtimes.
+HPA-392 does not pre-implement those runtimes.
 
 ### 8.3 Capture and reconstruction
 
@@ -865,35 +972,97 @@ For every successful durable command:
 A failed command restores all mutable state and produces no autosave signal.
 Read-only commands and save-list discovery do not increment the revision.
 
-### 11.2 Debounce
+Mutating Tauri commands return an application wrapper without putting
+persistence state into engine-owned `GameStateView`:
+
+```rust
+struct GameplayCommandResultView {
+    state: GameStateView,
+    thumbnail_capture: Option<ThumbnailCaptureRequestView>,
+}
+
+struct ThumbnailCaptureRequestView {
+    ticket: String,
+    timeout_ms: u32,
+}
+```
+
+The wrapper issues a request only when the durable revision advanced. Stale
+queue-token no-ops and read-only commands return no request. `ticket` is an
+opaque UUID v4 correlation value bound inside the coordinator to the exact
+session generation and durable revision; it is neither a path nor an
+authorization secret.
+
+Manual Save requests a ticket through `prepare_save_thumbnail` after gameplay
+input is isolated by the save browser. It does not advance the durable
+revision. The subsequent `save_manual` command consumes that exact ticket and
+rejects it if the session or revision changed. The request exposes the fixed
+relative timeout so the frontend can bound capture without owning the
+coordinator's clock.
+
+After Svelte applies `state` and the gameplay root renders, it submits either:
+
+- `submit_save_thumbnail(ticket, png_bytes)`, or
+- `report_save_thumbnail_failure(ticket)`.
+
+Rust validates and retains at most one latest candidate/result per revision.
+Older or superseded ticket results are discarded without altering gameplay.
+Thumbnail results are bounded before retention; arbitrary frontend bytes are
+never written directly to a caller-selected path. Every prepared ticket reaches
+one bounded terminal state: accepted bytes, reported failure, expiry, or
+supersession. `save_manual` may wait only for the remainder of that ticket's
+1,000 ms deadline without holding the gameplay/session mutex; expiry is consumed
+as `Unavailable`, so preview failure cannot strand the authoritative save.
+
+### 11.2 Thumbnail capture and debounce
 
 Autosave uses a 500 ms trailing debounce:
 
 - rapid committed commands coalesce;
 - the coordinator captures the latest stable revision after the quiet period;
+- it waits at most 1,000 ms for that revision's thumbnail result;
 - at most one disk write runs at a time;
 - if a newer revision commits during a write, the coordinator schedules one
   follow-up write for the newest revision;
 - completed writes record the revision and session generation they contain.
 
-The value is fixed in one named constant and covered with a fake-clock test.
-It is not user-configurable.
+Both time values are fixed in named constants and covered with fake-clock
+tests. They are not user-configurable. Thumbnail timeout records
+`ThumbnailDescriptorV1::Unavailable` and proceeds with the authoritative save.
+It does not hold the gameplay/session mutex or prevent later gameplay commands.
+
+The frontend capture adapter is `GameplayThumbnailCapture`, backed initially by
+`html-to-image` behind that narrow interface. It targets the marked gameplay
+root after Svelte `tick()`, filters `data-save-thumbnail-exclude` descendants,
+sets `pixelRatio: 1`, and calculates one uniform scale that fits the rendered
+root inside 480×360 without upscaling. It returns a PNG `Blob` or a typed
+capture failure. Within the same deadline it waits for fonts and currently
+referenced images under that root to become ready; a timeout produces the normal
+unavailable result rather than a partially rendered preview. Menus and modals
+are siblings outside the root, so capture requires no visibility flicker.
+
+HPA-392 does not use OS/window screenshot capture, a community Tauri screenshot
+plugin, or a duplicate semantic thumbnail renderer. The former would capture
+the wrong presentation boundary and may require system recording permission;
+the latter would drift from the real Svelte gameplay frame.
 
 Bulk serialization and file I/O must not hold the gameplay/session mutex.
 Writes use this ordering:
 
 1. under the session lock, verify the session generation, capture one immutable
-   envelope plus revision, and register its target/write intent;
-2. release the session lock, serialize, write, flush, and sync a unique
-   temporary file;
+   envelope plus revision and matching thumbnail result, and register its
+   target/write intent;
+2. release the session lock, serialize, write, flush, and sync unique
+   same-filesystem temporary sidecar/envelope files in the detailed §12.2
+   order;
 3. acquire a narrow replacement gate shared with New Game, Load, and Return to
    Title session-generation transitions;
 4. under the session lock, revalidate the generation and registered
    target/revision intent, note whether a newer revision now exists, then
    release the session lock while retaining the replacement gate;
-5. if stale, skip replacement and clean the temporary file; otherwise perform
-   the atomic replace and parent-directory sync without holding the gameplay
-   mutex;
+5. if stale, skip replacement and clean the temporary files; otherwise commit
+   the sidecar, then atomically replace the envelope and sync both parent
+   directories without holding the gameplay mutex;
 6. under the session lock, record success/health for the written revision and
    schedule a follow-up when the same session has a newer committed revision;
 7. release the session lock and replacement gate.
@@ -961,14 +1130,18 @@ The Rust shell resolves:
   manual-1.json
   manual-2.json
   manual-3.json
+  thumbnails/
+    <opaque-save-id>.png
 ```
 
-Temporary files use unique names in the same directory and are removed after a
-successful replacement. Stale temporary files are ignored during discovery
-and may be cleaned only after age/type checks.
+Envelope and thumbnail temporary files use unique names in their respective
+target directories, keeping every final rename on one filesystem. They are
+removed after success or failure where possible. Discovery ignores them and
+performs bounded cleanup only after age, filename-shape, and reference checks.
 
 No save path is accepted from the frontend. IPC selects a typed save kind and
-bounded slot number.
+bounded slot number. Thumbnail object IDs and paths are Rust-derived from the
+opaque checkpoint save ID; display names never participate.
 
 Only builds compiled with `#[cfg(feature = "e2e")]` resolve saves from
 `LYRA_E2E_APP_DATA_DIR`. The e2e harness must provide an explicit absolute
@@ -978,19 +1151,41 @@ non-e2e Tauri identifier. Non-e2e builds do not read this environment variable.
 
 ### 12.2 Atomic write
 
-For every save:
+For a save with an available thumbnail:
 
-1. serialize the complete envelope in memory;
-2. write a uniquely named temporary file in the save directory;
-3. flush and sync the temporary file;
-4. atomically replace the chosen slot using the platform storage adapter;
-5. sync the parent directory where supported;
-6. only then report success/update coordinator health.
+1. retain the authoritative snapshot/metadata and validated PNG in memory;
+2. write a unique PNG temporary file under `thumbnails/`, flush, and sync it;
+3. atomically install `<save_id>.png` and sync `thumbnails/`;
+4. construct/serialize the envelope with the descriptor that actually
+   succeeded;
+5. write a unique JSON temporary file under `saves/`, flush, and sync it;
+6. atomically replace the chosen slot through the platform storage adapter;
+7. sync `saves/`;
+8. remove the sidecar referenced by the previously committed envelope;
+9. sync `thumbnails/`, then report success/update coordinator health.
 
-Failure before replacement leaves the existing slot intact. The implementation
-must use a replacement mechanism with verified macOS, Windows, and Linux
-semantics; plain `std::fs::rename` overwrite behavior is not assumed to be
-portable.
+When capture/validation is unavailable, the sequence skips steps 2–3 and
+commits an unavailable descriptor normally. A PNG temporary-write, sync, or
+install failure is likewise converted to `Unavailable` after cleaning any new
+temporary/object file, then the authoritative JSON write proceeds. A JSON
+temporary-write, sync, or replacement failure remains an authoritative
+persistence failure and leaves the existing slot and sidecar intact. A newly
+installed but not-yet-referenced PNG is removed immediately where possible and
+is safe for later orphan cleanup. Failure after JSON replacement but before
+old-sidecar deletion leaves only an orphan; the new save always points to its
+own sidecar.
+
+Old-sidecar deletion and final directory sync are part of successful
+finalization. If either fails after JSON replacement, the new authoritative
+save remains committed but persistence health becomes a typed
+cleanup-pending/degraded state rather than reporting a fully healthy success.
+Retry performs idempotent reference-aware cleanup; discovery may also complete
+it after proving the object is unreferenced. A fully successful replacement,
+rotation, overwrite, or deletion therefore retains no orphan.
+
+The implementation must use replacement mechanisms with verified macOS,
+Windows, and Linux semantics; plain `std::fs::rename` overwrite behavior is not
+assumed portable.
 
 ### 12.3 Autosave rotation
 
@@ -1016,6 +1211,12 @@ This intentionally means repeated new prologue sessions can rotate out older
 autosaves after six writes; manual slots remain untouched. QA covers that
 accepted retention behavior explicitly.
 
+Normal replacement gives every checkpoint a new opaque `save_id` and therefore
+a new sidecar object. Acquisition acknowledgement refreshes the adopted/current
+autosave in place at the slot level but still creates a new checkpoint ID and
+thumbnail attempt. Manual overwrite likewise never reuses the prior sidecar
+identity.
+
 ### 12.4 Discovery and ordering
 
 Discovery returns all eight positions as one of:
@@ -1032,7 +1233,10 @@ struct SaveSlotView {
 enum SaveSlotStatusView {
     Empty,
     Valid { metadata: SaveMetadataView },
-    Invalid { diagnostic: SaveDiagnosticView },
+    Invalid {
+        metadata: Option<ReadableSaveMetadataView>,
+        diagnostic: SaveDiagnosticView,
+    },
 }
 
 #[serde(rename_all = "camelCase")]
@@ -1042,7 +1246,24 @@ struct SaveMetadataView {
     schema_version: u32,
     content_revision: String,
     saved_at: String,
+    display_name: String,
+    thumbnail: ThumbnailAvailabilityView,
     summary: SaveSummaryView,
+}
+
+#[serde(rename_all = "camelCase")]
+struct ReadableSaveMetadataView {
+    save_id: Option<String>,
+    saved_at: Option<String>,
+    display_name: Option<String>,
+    thumbnail: ThumbnailAvailabilityView,
+    summary: Option<SaveSummaryView>,
+}
+
+#[serde(tag = "type", rename_all = "camelCase")]
+enum ThumbnailAvailabilityView {
+    Available { width: u32, height: u32 },
+    Unavailable { reason: ThumbnailUnavailableReason },
 }
 
 #[serde(rename_all = "camelCase")]
@@ -1059,7 +1280,10 @@ struct SaveSummaryView {
 `schema_version` and `content_revision` report the source checkpoint's on-disk
 values even when discovery applies migrations in memory. `SaveSlotView.reference`
 remains the authoritative storage position; `metadata.save_type` must agree
-with it.
+with it. An invalid slot carries best-effort readable presentation metadata
+only when the relevant envelope fields parsed independently of snapshot
+validation. This preserves an incompatible/corrupt manual save's display name
+when readable without treating partial metadata as load permission.
 
 `Valid` means the file passed current non-mutating discovery validation, not
 merely that its JSON was readable. Discovery:
@@ -1072,17 +1296,30 @@ merely that its JSON was readable. Discovery:
 6. resolves every saved stable ID against those shared packaged definitions;
 7. reconstructs dialogue lengths and validates all scene progress, set
    references, cross-exam state, queue coordinates, history token, counter
-   invariants, and summary references without replacing the live engine.
+   invariants, and summary references without replacing the live engine;
+8. for an available thumbnail descriptor, reads at most 1 MiB of encoded
+   sidecar data, verifies byte length/digest/signature/IHDR, and reports missing,
+   corrupt, or unreadable presentation state without changing slot validity.
 
 A discovery batch performs bounded work outside the engine/session lock: one
-shared packaged manifest/definitions load and at most eight slot-file reads.
-It parses the shared definitions once and does not reread packaged scenes per
-slot. The UI exposes a visible loading state while the batch runs. A failure to
-load the shared packaged manifest/definitions makes discovery globally
-unavailable. A revision mismatch or invalid stable reference found while
-validating one save makes only that slot invalid. Discovery returns the same
-typed schema, content-revision, cursor, and progress diagnostics that a load
-would return.
+shared packaged manifest/definitions load, at most eight slot-file reads, and
+at most eight bounded sidecar reads. It parses the shared definitions once,
+does not reread packaged scenes per slot, and never decodes thumbnail pixels.
+The UI exposes a visible loading state while the batch runs. A failure to load
+the save-envelope directory or shared packaged manifest/definitions makes
+discovery globally unavailable. A revision mismatch or invalid stable
+reference found while validating one save makes only that slot invalid. A
+missing/corrupt thumbnail—or an unavailable thumbnail directory—makes only the
+affected thumbnail presentation unavailable. Discovery returns the same typed
+schema, content-revision, cursor, and progress diagnostics that a load would
+return.
+
+Thumbnail image bytes are loaded lazily through
+`read_save_thumbnail(reference, observed_save_id)`. Rust rereads the slot
+envelope, verifies the observed save ID and sidecar descriptor, and returns
+bytes only when ownership still matches. Svelte creates a Blob URL and revokes
+it when the card changes or unmounts. Filesystem paths and object IDs do not
+cross IPC.
 
 Load still re-reads the selected file, verifies the observed `save_id`, and
 repeats all validation before building/swapping the candidate engine. This
@@ -1099,7 +1336,7 @@ cross-device clock. `durable_revision` cannot rank files across sessions
 because it restarts at New Game, and `saved_at` is also wall-clock based.
 External backup restoration, cloud synchronization, manual mtime mutation, and
 system-clock rollback may therefore alter the perceived order and are outside
-HPA-129's guarantees. Adding a transactional global write ledger solely to
+HPA-392's guarantees. Adding a transactional global write ledger solely to
 cover those external mutations is out of scope.
 
 Continue uses one total newest-first ordering:
@@ -1131,6 +1368,11 @@ Parse, migration, content-revision, definition, and I/O failures do not delete
 or modify the source save. Successful schema migration happens in memory; the
 original file is not rewritten during load. A later manual save or autosave
 creates a new current envelope through normal policy.
+
+Confirmed deletion removes the slot JSON first and its referenced thumbnail
+second. A crash can therefore leave only an unreferenced sidecar, never a
+remaining save that deletion itself stripped of its image. Orphan cleanup never
+deletes a sidecar still referenced by any of the eight slot envelopes.
 
 ## 13. Transactional load
 
@@ -1213,7 +1455,7 @@ This keeps the initial contract aligned with the release assumption in §5.2:
 pre-release content changes may invalidate development saves, while released
 static content is immutable. A future shipped release that must retain saves
 across a static-content change requires a separately designed, explicit
-whole-revision migration; it is not pre-generalized by HPA-129.
+whole-revision migration; it is not pre-generalized by HPA-392.
 
 ## 15. Tauri command surface
 
@@ -1222,8 +1464,13 @@ The Rust shell exposes narrow typed commands:
 ```text
 list_saves
 get_persistence_status
+get_thumbnail_activity
 start_game
 start_game_without_saving
+prepare_save_thumbnail
+submit_save_thumbnail
+report_save_thumbnail_failure
+read_save_thumbnail
 save_manual
 load_save
 load_save_discarding_current
@@ -1235,9 +1482,17 @@ acknowledge_acquisition_event
 confirm_acquisition_without_saving
 ```
 
-Existing gameplay commands continue to return `GameStateView`. Their shared
-application wrapper schedules autosave after a successful durable revision.
-`GameStateView` remains engine-owned and does not absorb coordinator health.
+Existing engine methods continue to return `GameStateView`; mutating Tauri
+handlers wrap that view in `GameplayCommandResultView` (§11.1), schedule
+autosave after a successful durable revision, and issue a thumbnail ticket only
+for an advanced revision. `GameStateView` remains engine-owned and does not
+absorb coordinator health or capture coordination.
+
+`save_manual` accepts a bounded manual slot, the display-name input, the
+observed prior `save_id` for overwrite (or an explicit empty expectation), and
+the prepared thumbnail ticket. `read_save_thumbnail` accepts only a typed slot
+reference plus observed save ID. No command accepts an application-data path
+or thumbnail object ID.
 
 The coordinator exposes:
 
@@ -1257,6 +1512,23 @@ the rendered copy. Every event payload is the complete current
 `PersistenceHealthView`, never a delta, so a missed or duplicated event cannot
 require frontend state reconstruction.
 
+Thumbnail presentation is separate:
+
+```rust
+#[serde(tag = "type", rename_all = "camelCase")]
+enum ThumbnailActivityView {
+    Idle,
+    Capturing,
+    Unavailable { diagnostic: ThumbnailDiagnosticView },
+}
+```
+
+Capture activity may be returned with a save result or emitted as a complete
+`thumbnail-activity-changed` payload; `get_thumbnail_activity` supplies the
+initial/current value. It never changes
+`PersistenceHealthView::Healthy` into `Degraded`, because a valid authoritative
+save exists without a thumbnail.
+
 Conceptual public save types:
 
 ```ts
@@ -1270,6 +1542,13 @@ type SaveMetadataView = {
   schemaVersion: number;
   contentRevision: string;
   savedAt: string;
+  displayName: string;
+  thumbnail:
+    | { type: "available"; width: number; height: number }
+    | {
+        type: "unavailable";
+        reason: "captureUnavailable" | "missing" | "corrupt" | "readFailed";
+      };
   summary: {
     chapterId: string;
     chapterTitle: string;
@@ -1283,7 +1562,17 @@ type SaveMetadataView = {
 type SaveSlotStatusView =
   | { type: "empty" }
   | { type: "valid"; metadata: SaveMetadataView }
-  | { type: "invalid"; diagnostic: SaveDiagnosticView };
+  | {
+      type: "invalid";
+      metadata: {
+        saveId: string | null;
+        savedAt: string | null;
+        displayName: string | null;
+        thumbnail: SaveMetadataView["thumbnail"];
+        summary: SaveMetadataView["summary"] | null;
+      } | null;
+      diagnostic: SaveDiagnosticView;
+    };
 
 type SaveSlotView = {
   reference: SaveSlotRef;
@@ -1313,8 +1602,10 @@ workflow state only. Rust still validates:
 
 - slot bounds and type;
 - whether a manual slot is occupied before overwrite;
+- manual display-name trimming, grapheme count, and forbidden characters;
 - session generation;
 - save/load availability;
+- thumbnail-ticket session/revision ownership and PNG bounds;
 - event identity and pending-state.
 
 The overwrite command carries the slot plus the save ID observed by the
@@ -1363,35 +1654,55 @@ Load mode shows:
 
 Each valid entry shows:
 
+- its thumbnail at the captured natural aspect ratio, or a deterministic
+  placeholder;
+- its display name;
 - chapter title;
 - scene title;
 - active primary objective label, or a localized no-active-objective state;
 - Autosave or Manual Save;
 - local saved date/time.
 
-An invalid entry shows its slot identity and typed diagnostic. It is disabled
-for Load but remains selectable for details and deletion. Empty entries use a
-clear empty-slot state.
+An invalid entry shows its slot identity, any independently readable display
+name/summary, and its typed diagnostic. It is disabled for Load but remains
+selectable for details and deletion. Empty entries use a clear empty-slot state.
+A missing/corrupt/unreadable thumbnail changes only the image to the
+deterministic placeholder with `Preview unavailable`; it does not make the
+slot invalid.
 
-Save mode shows only the three manual slots. Choosing an empty slot writes
-immediately. Choosing an occupied slot opens overwrite confirmation containing
-the old slot metadata and the current-game metadata.
+Save mode shows only the three manual slots. Choosing any slot opens a name
+prompt before capture/write. An empty slot is prefilled with the generated
+chapter/scene suggestion. An occupied slot is prefilled with its independently
+readable valid existing name, or the generated suggestion when that name cannot
+be safely reused; after name validation it opens overwrite confirmation
+containing the old slot metadata/thumbnail and current-game metadata. Rust
+repeats name and stale slot validation at commit.
+
+Thumbnail bytes load lazily through `read_save_thumbnail`; each card owns and
+revokes its Blob URL. Images use their intrinsic dimensions and `object-fit:
+contain`, never non-uniform scaling. Cards do not receive or construct
+filesystem URLs.
 
 ### 16.3 Escape menu
 
 The root Escape menu adds:
 
-- Save/Load;
+- Save Game;
+- Load Game;
 - Return to Title.
 
-The Save/Load submenu preserves existing Escape layering: Escape closes a
-confirmation first, then returns from the save browser to the root menu, then
-closes the menu.
+The two browser modes share components but remain distinct root actions. Escape
+closes the topmost confirmation, then the name dialog, then returns from the
+save browser to the root menu, then closes the menu. Focus returns to the
+control that opened each dismissed layer.
 
 Saving is allowed during stable dialogue, investigation, and interrogation
 views. Frontend-only typewriter or fade animation does not make the Rust engine
 unstable. A command already holding the session mutation boundary serializes
-before save capture.
+before save capture. Save Game isolates gameplay input, obtains an opaque
+thumbnail ticket, captures the marked gameplay root beneath the menu, and
+submits success/failure before `save_manual` consumes the ticket. The menu never
+needs to hide or flicker because it is outside the capture root.
 
 Loading from an active game always opens confirmation. On confirmation, Rust
 flushes the current autosave, transactionally loads the selected file, and
@@ -1420,6 +1731,7 @@ After load succeeds, the frontend:
 - resets focus to the active gameplay control;
 - resynchronizes background/portrait/audio presentation from restored semantic
   cue IDs;
+- clears pending thumbnail requests and revokes all save-card Blob URLs;
 - keeps audio preferences unchanged.
 
 Frontend animation progress is not saved. Dialogue resumes at the exact current
@@ -1440,6 +1752,9 @@ diagnostics for:
 - incompatible package content revision;
 - missing required definition;
 - invalid runtime progress or cursor;
+- empty, over-limit, or forbidden-character manual display name;
+- malformed, oversized, or out-of-bounds submitted PNG;
+- stale/superseded thumbnail ticket;
 - stale manual-overwrite confirmation;
 - stale session generation;
 - unavailable or stale persistence-bypass confirmation;
@@ -1447,6 +1762,36 @@ diagnostics for:
 
 Messages name the affected slot and give a user action where one exists. They
 do not expose arbitrary absolute filesystem paths in the normal UI.
+
+Thumbnail presentation diagnostics use a separate closed reason:
+
+```rust
+enum ThumbnailUnavailableReason {
+    CaptureUnavailable,
+    Missing,
+    Corrupt,
+    ReadFailed,
+}
+
+struct ThumbnailDiagnosticView {
+    reason: ThumbnailUnavailableReason,
+    message: String,
+    retryable: bool,
+}
+```
+
+Capture/encoding failure, the 1,000 ms timeout, or a rejected PNG records
+`CaptureUnavailable` in the newly written envelope. A missing, digest-mismatched,
+malformed, or unreadable sidecar maps to the other discovery reasons. None
+changes the slot's authoritative valid/invalid classification.
+
+`ThumbnailActivityView::Unavailable` exposes a non-blocking `Preview
+unavailable` warning. Before envelope commit, the capture adapter may retry on
+the same ticket only while the exact session/revision and rendered gameplay
+frame remain current and the 1,000 ms window has not elapsed. After envelope
+commit, gameplay advance, or process restart, the application keeps the
+placeholder rather than rewriting checkpoint recency or capturing a newer
+frame for an older checkpoint.
 
 Background autosave failure:
 
@@ -1462,6 +1807,10 @@ without-saving result. Load, Return to Title, acquisition acknowledgement, and
 New Game after global discovery failure first block, then offer the approved
 second-confirmation bypass. The bypass warning states exactly which progress
 may be lost and that acquisition acknowledgement may reappear after restart.
+
+A thumbnail failure is not a Manual Save failure: the authoritative envelope
+still commits and the success result identifies the missing preview. Conversely,
+a save-envelope write failure is never hidden behind a thumbnail warning.
 
 ## 18. Verification
 
@@ -1486,6 +1835,10 @@ may be lost and that acquisition acknowledgement may reappear after restart.
 ### 18.2 Rust schema, capture, and restore tests
 
 - Serialize and deserialize schema version 1.
+- Round-trip display-name and thumbnail descriptors without placing either in
+  `SaveSnapshotV1`.
+- Prove exhaustive `GameEngine` field classification fails to compile when a
+  new field is neither persistent, immutable, derived, nor rollback-only.
 - Round-trip linear dialogue at a nonzero cursor.
 - Round-trip `GameComplete` with final chapter/scene IDs, validate those final
   definitions, and reinstate the completion sentinel after restore.
@@ -1550,6 +1903,21 @@ and a controllable writer:
 - prefer empty autosave slots in numeric order;
 - never rotate into manual slots;
 - list five autosaves and three manual slots in stable groups;
+- validate manual names at 0, 1, 40, and 41 grapheme clusters; preserve composed
+  and decomposed Unicode, emoji sequences, and internal whitespace; reject
+  controls and Unicode line separators;
+- generate deterministic chapter/scene suggestions, shorten only at grapheme
+  boundaries, preserve a readable valid occupied manual name by default, fall
+  back for an unusable name, and prevent all display-name influence on paths;
+- accept only bounded PNG submissions with matching signature, IHDR,
+  dimensions, byte length, and digest;
+- reject a noncanonical checkpoint/object-ID pair before resolving any
+  thumbnail path;
+- reject stale/superseded thumbnail tickets and bind accepted candidates to one
+  session generation plus durable revision;
+- reach one terminal result for every prepared ticket; time out thumbnail
+  capture after 1,000 ms and still commit a valid envelope with
+  `thumbnailUnavailable`;
 - mark a slot `Valid` only after non-mutating schema migration, exact
   `contentRevision` validation, stable-ID resolution, and snapshot validation;
 - mark a differing `contentRevision` incompatible without attempting partial
@@ -1561,10 +1929,16 @@ and a controllable writer:
 - let an unparseable newest file block Continue;
 - manually load an older valid file;
 - preserve existing files on temporary-write, sync, and replacement failure;
+- inject failure before/after PNG install, JSON replacement, and old-sidecar
+  deletion; prove the committed envelope never points at another checkpoint's
+  thumbnail;
 - ignore stale temporary files during discovery;
+- remove unreferenced temporary/thumbnail files without deleting any sidecar
+  referenced by the eight slot envelopes;
 - preserve corrupt/incompatible source files after failed reads or migrations;
 - mark `manual-2.json` invalid when its envelope claims another type/slot;
-- delete only the explicitly selected slot;
+- delete only the explicitly selected slot and its referenced sidecar, JSON
+  first;
 - reject stale manual overwrite confirmation;
 - coalesce rapid revisions into one 500 ms autosave;
 - schedule a follow-up write when a revision commits during a write;
@@ -1591,10 +1965,15 @@ and a controllable writer:
   stale generation cannot pass the replacement gate;
 - return one global discovery error rather than eight fabricated invalid slots
   when directory enumeration or the shared packaged manifest fails, while
-  keeping file-specific revision/reference mismatches per-slot.
+  keeping file-specific revision/reference mismatches per-slot;
+- preserve readable display-name/summary metadata on incompatible or
+  snapshot-corrupt slots;
+- treat missing, malformed, digest-mismatched, and unreadable thumbnails as
+  presentation-only unavailable states;
 - count one shared packaged manifest/definitions load, one definitions parse,
-  and at most eight slot-file reads per discovery batch without holding the
-  engine/session lock; assert visible loading state rather than timing.
+  at most eight slot-file reads, and at most eight bounded sidecar reads per
+  discovery batch without holding the engine/session lock or decoding pixels;
+  assert visible loading state rather than timing.
 
 ### 18.5 Svelte tests
 
@@ -1606,14 +1985,27 @@ and a controllable writer:
 - Shared browser renders valid, invalid, and empty states.
 - Valid rows render the complete save metadata contract; package-revision
   incompatibilities render the discovery diagnostic before Load is selected.
+- Cards render intrinsic-ratio thumbnails, deterministic placeholders, and
+  readable invalid-slot names without constructing filesystem URLs.
+- Lazy thumbnail loads pass slot plus observed save ID, revoke stale Blob URLs,
+  and fall back on image decode failure.
 - Browser renders all five autosaves and all three manual slots.
+- Empty manual slots prefill the generated name; occupied slots retain a
+  readable valid name or fall back to the suggestion; mirrored
+  1–40-grapheme validation blocks submission before Rust.
 - Manual overwrite and deletion require confirmation.
 - In-game Load requires confirmation; title Load does not.
 - Flush failures require Retry/Cancel before the distinct without-saving
   confirmation becomes available.
 - New Game starts without an existing-save warning.
-- Escape steps back through confirmation/browser/root menu.
+- Escape steps back through confirmation/name dialog/browser/root menu.
 - Successful load clears transient overlays and restores focus.
+- The capture adapter targets only the marked gameplay root, filters excluded
+  descendants, waits boundedly for current fonts/images, calculates uniform
+  480×360 bounds, avoids upscaling, and reports capture failure without throwing
+  through gameplay dispatch.
+- Mutating command results trigger capture only after the new Svelte view
+  renders; stale capture responses cannot attach to a newer revision.
 - Save-health warning persists until a successful save/flush clears it.
 - Persistence status events update the warning after background writes without
   a gameplay command.
@@ -1625,23 +2017,31 @@ and a controllable writer:
 
 The debug e2e build proves real app-data storage and process boundaries:
 
-1. Save during single-segment dialogue, Return to Title, and Continue at the
-   same dialogue item.
+1. Create a Unicode-named manual save with its own thumbnail during
+   single-segment dialogue, Return to Title, and Continue at the same dialogue
+   item after process-boundary discovery.
 2. Save during a composite queue and resume the same segment/item.
 3. Save after one command acquires two records while its authored dialogue is
    active, resume, drain dialogue, acknowledge both popups, and prove the
    acknowledgements refresh one autosave target without rotating twice; return
    to title and prove neither popup reappears.
 4. Exercise incomplete investigation and interrogation state.
-5. Create six autosaves and prove only the latest five remain.
-6. Overwrite a manual slot only after confirmation.
+5. Create six autosaves and prove only the latest five remain, each card's
+   thumbnail ownership matching its JSON checkpoint after restart.
+6. Overwrite a manual slot only after name prompt plus confirmation, preserve
+   the old name by default, replace its thumbnail, and leave no prior sidecar.
 7. Corrupt the newest file, prove Continue stops with its diagnostic, then load
    an older valid file manually.
 8. Return to Title and prove Continue reconstructs from disk rather than a live
    in-memory engine.
+9. Force thumbnail capture failure, prove the save remains loadable with a
+   deterministic placeholder, then prove a missing/corrupt sidecar likewise
+   does not affect compatibility.
+10. Delete a manual save and prove both its card and owned thumbnail disappear
+    without affecting any other slot.
 
 E2E tests use an isolated app-data directory and clean only that test-owned
-directory. The harness requires an explicit temporary HPA-129 app-data path and
+directory. The harness requires an explicit temporary HPA-392 app-data path and
 refuses to start or clean when it resolves to the production application-data
 directory, the user's home directory, or a non-test Tauri identifier. CI never
 discovers or mutates real user saves.
@@ -1652,7 +2052,7 @@ missing, relative, production, home, or non-e2e-identifier path.
 
 ### 18.7 Final gates
 
-Before HPA-129 implementation is complete:
+Before HPA-392 implementation is complete:
 
 - focused compiler Vitest files pass;
 - `bun run scenes:compile` passes;
@@ -1664,40 +2064,35 @@ Before HPA-129 implementation is complete:
 - `bun run check` passes;
 - `bun run test` passes;
 - `bun run --cwd apps/game check:e2e` passes;
-- packaged Tauri HPA-129 E2E scenarios pass.
+- a packaged Tauri `html-to-image` proof captures Lyra backgrounds, portraits,
+  fonts, dialogue, gradients, and clipped UI correctly;
+- packaged Tauri HPA-392 E2E scenarios pass.
 
 ## 19. Expected implementation areas
 
 Planning must respect this dependency order:
 
-1. add the shared canonicalizer, compiler-owned segment origins, exact bundle
-   revision, and determinism/collision fixtures;
-2. replace flat queued-scene dialogue with `ActiveDialogueQueue`, preserving
-   the public flattened token, then add the closed capture/restore adapters and
-   round-trip tests;
-3. add Rust acquisition events/durable acknowledgement and complete the
-   dedicated Svelte acquisition-controller/game-client rewrite with its own
-   focused tests;
-4. implement the versioned schema, migrations, discovery validation, candidate
-   restoration, storage, and coordinator/replacement gate;
-5. add typed IPC, persistence health, title/in-game save UI, and packaged Tauri
-   E2E coverage.
+1. add the versioned envelope/snapshot, exhaustive capture/restore adapters,
+   durable revision, and Rust-owned acquisition events with focused round-trip
+   tests;
+2. add manual-name validation, storage, migrations, bounded discovery,
+   autosave coordinator/replacement gate, thumbnail tickets, PNG validation,
+   atomic sidecar ownership, and failure-injection tests;
+3. add typed Tauri command wrappers, persistence/thumbnail client state, and the
+   Rust-event-backed acquisition-controller rewrite;
+4. prove `html-to-image` in the packaged Tauri WebView, then add the shared
+   save browser/cards/name prompt/confirmations and title/Escape-menu flows;
+5. add packaged HPA-392 E2E coverage and run the full cross-stack verification
+   gates.
 
-The implementation must not first serialize the current flat queue and then
-refactor it; exact composite resume depends on the segment runtime from step 2.
-
-Steps 1–2 are a prerequisite work package and should be tracked and landed
-separately before disk-format implementation begins. HPA-129 remains dependent
-on that work, but this boundary gives the compiler/dialogue refactor an
-independent review and rollback surface.
+PR #27 already delivered compiler-owned content identity,
+`ActiveDialogueQueue`, stable origins, and capture/reconstruction seams. HPA-392
+must consume those boundaries rather than reimplementing canonicalization,
+per-definition hashes, queue identities, or a second static-definition store.
 
 Likely implementation touches:
 
 ```text
-packages/scripts/compile-scenes/
-packages/scripts/compile-scenes/save-content-manifest.ts
-packages/scripts/__tests__/
-packages/scripts/__fixtures__/
 apps/game/src-tauri/src/game/save/
 apps/game/src-tauri/src/game/acquisition.rs
 apps/game/src-tauri/src/game/command_tx.rs
@@ -1711,12 +2106,19 @@ apps/game/src-tauri/src/game/mod.rs
 apps/game/src-tauri/src/lib.rs
 apps/game/src-tauri/Cargo.toml
 apps/game/src/lib/state/
+apps/game/src/lib/persistence/
+apps/game/src/lib/components/SaveBrowser.svelte
+apps/game/src/lib/components/SaveCard.svelte
+apps/game/src/lib/components/SaveNameDialog.svelte
+apps/game/src/lib/components/SaveConfirmationDialog.svelte
 apps/game/src/lib/components/MainMenu.svelte
 apps/game/src/lib/components/GameShell.svelte
 apps/game/src/routes/+page.svelte
 apps/game/e2e-tauri/
 apps/game/scripts/build-e2e.mjs
 apps/game/wdio.conf.ts
+apps/game/package.json
+bun.lock
 ```
 
 `packages/scene-types/` is intentionally absent: the standalone save-content
@@ -1729,16 +2131,17 @@ browser must not duplicate title and in-game slot rendering.
 
 ## 20. Non-goals
 
-HPA-129 does not add:
+HPA-392 does not add:
 
 - cloud sync, cross-device saves, or ordering repair after external mtime/clock
   manipulation;
 - accounts or server storage;
-- save screenshots/thumbnails;
 - quicksave/quickload hotkeys;
 - more than one local run/profile namespace;
-- user-authored save names;
 - audio preference persistence changes;
+- thumbnail cropping, filters, galleries, user-selected images, manual retakes
+  after the saved revision is no longer current, or full-resolution screenshot
+  archival;
 - analysis runtime, board drafts, or analysis result restoration;
 - HPA-258's case-file or Continue recap screen beyond save summary metadata;
 - HPA-256 provenance/supersession behavior;
@@ -1750,7 +2153,7 @@ board/result-dialogue resume accepted by HPA-266.
 
 ## 21. Acceptance traceability
 
-| HPA-129 outcome | Design coverage |
+| HPA-392 outcome | Design coverage |
 | --- | --- |
 | Round-trip every current runtime | §§7, 8, 13, 18.2 |
 | Resume one dialogue segment exactly | §§8.1–8.3, 18.3 |
@@ -1765,6 +2168,12 @@ board/result-dialogue resume accepted by HPA-266.
 | Missing definitions reject transactionally | §§7, 13, 17, 18.2 |
 | Degraded-storage warning and explicit escape | §§11.3, 15–17, 18.4–18.5 |
 | Manual overwrite confirmation | §§15, 16.2, 18.4–18.6 |
+| Unicode named manual saves survive restart/overwrite/load | §§2, 6, 12.4, 15–16, 18.4–18.6 |
+| Names never affect filesystem paths | §§2, 6, 12.1, 15, 18.4 |
+| Clean, aspect-ratio-preserving thumbnails | §§2, 6, 11.2, 16.2–16.3, 18.4–18.6 |
+| Save/thumbnail rotation, overwrite, and deletion stay aligned | §§12.2–12.5, 18.4, 18.6 |
+| Thumbnail failure leaves a loadable save with placeholder | §§6, 11.2, 12.4, 17, 18.4–18.6 |
+| Missing/corrupt thumbnail does not affect compatibility | §§12.4, 17, 18.4–18.6 |
 | Save to title to Continue | §§13, 16.1, 18.6 |
 
 The original corrupt-primary automatic fallback criterion is intentionally
