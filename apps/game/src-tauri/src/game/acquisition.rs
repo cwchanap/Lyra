@@ -1,7 +1,9 @@
 // src-tauri/src/game/acquisition.rs
 
+use super::save::schema::{AcquisitionEventStateV1, RecordKind};
 use super::schema::{EvidenceJson, StatementJson};
 use super::state::Inventory;
+use super::GameError;
 
 /// The engine's named entry point for adding records to the inventory.
 ///
@@ -18,7 +20,9 @@ use super::state::Inventory;
 /// borrows of the engine; a `&mut self` call from inside would not compile.
 pub(super) struct AcquisitionCtx<'a> {
     pub(super) inventory: &'a mut Inventory,
-    // HPA-129 adds: events: &'a mut AcquisitionLog, command_id: &'a str
+    pub(super) pending_events: &'a mut Vec<AcquisitionEventStateV1>,
+    pub(super) command_id: u64,
+    pub(super) next_ordinal: &'a mut u32,
 }
 
 impl AcquisitionCtx<'_> {
@@ -29,8 +33,13 @@ impl AcquisitionCtx<'_> {
         chapter_id: &str,
         scene_id: &str,
     ) -> bool {
-        self.inventory
-            .add_evidence_from_def(def, chapter_id, scene_id)
+        let added = self
+            .inventory
+            .add_evidence_from_def(def, chapter_id, scene_id);
+        if added {
+            self.record(RecordKind::Evidence, &def.id);
+        }
+        added
     }
 
     /// Returns true when the record was newly acquired.
@@ -40,14 +49,50 @@ impl AcquisitionCtx<'_> {
         chapter_id: &str,
         scene_id: &str,
     ) -> bool {
-        self.inventory
-            .add_statement_from_def(def, chapter_id, scene_id)
+        let added = self
+            .inventory
+            .add_statement_from_def(def, chapter_id, scene_id);
+        if added {
+            self.record(RecordKind::Statement, &def.id);
+        }
+        added
     }
+
+    fn record(&mut self, record_kind: RecordKind, record_id: &str) {
+        let ordinal = u32::try_from(
+            self.pending_events
+                .iter()
+                .filter(|event| event.created_by_command_id == self.command_id)
+                .count(),
+        )
+        .expect("acquisition event ordinal overflowed u32");
+        self.pending_events.push(AcquisitionEventStateV1 {
+            id: acquisition_event_id(self.command_id, ordinal),
+            record_kind,
+            record_id: record_id.into(),
+            created_by_command_id: self.command_id,
+            ordinal,
+        });
+        *self.next_ordinal = ordinal
+            .checked_add(1)
+            .expect("acquisition event ordinal overflowed u32");
+    }
+}
+
+pub(in crate::game) fn acquisition_event_id(command_id: u64, ordinal: u32) -> String {
+    format!("acq:{command_id}:{ordinal}")
+}
+
+pub(in crate::game) fn validate_event_id(event: &AcquisitionEventStateV1) -> Result<(), GameError> {
+    (event.id == acquisition_event_id(event.created_by_command_id, event.ordinal))
+        .then_some(())
+        .ok_or_else(GameError::unknown_acquisition_event)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::save::schema::{AcquisitionEventStateV1, RecordKind};
     use crate::game::schema::{EvidenceJson, StatementJson};
     use crate::game::state::Inventory;
 
@@ -76,8 +121,13 @@ mod tests {
     #[test]
     fn evidence_reports_newly_added_then_dedupes() {
         let mut inventory = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
         let mut ctx = AcquisitionCtx {
             inventory: &mut inventory,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
         };
         assert!(ctx.evidence(&evidence_def("coffee"), "chapter_1", "scene_1"));
         assert!(!ctx.evidence(&evidence_def("coffee"), "chapter_1", "scene_1"));
@@ -87,11 +137,88 @@ mod tests {
     #[test]
     fn statement_reports_newly_added_then_dedupes() {
         let mut inventory = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
         let mut ctx = AcquisitionCtx {
             inventory: &mut inventory,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
         };
         assert!(ctx.statement(&statement_def("alibi"), "chapter_1", "scene_1"));
         assert!(!ctx.statement(&statement_def("alibi"), "chapter_1", "scene_1"));
         assert_eq!(inventory.statements.len(), 1);
+    }
+
+    // Break caught: new records fail to emit ordered, durable command events,
+    // or re-acquisition consumes an ordinal despite adding no record.
+    #[test]
+    fn new_records_emit_reveal_ordered_events_without_dedupe_gaps() {
+        let mut inventory = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
+        let mut ctx = AcquisitionCtx {
+            inventory: &mut inventory,
+            pending_events: &mut events,
+            command_id: 7,
+            next_ordinal: &mut next_ordinal,
+        };
+
+        assert!(ctx.evidence(&evidence_def("receipt"), "chapter_1", "scene_1"));
+        assert!(ctx.statement(&statement_def("alibi"), "chapter_1", "scene_1"));
+        assert!(!ctx.evidence(&evidence_def("receipt"), "chapter_1", "scene_1"));
+
+        assert_eq!(
+            events,
+            vec![
+                AcquisitionEventStateV1 {
+                    id: "acq:7:0".into(),
+                    record_kind: RecordKind::Evidence,
+                    record_id: "receipt".into(),
+                    created_by_command_id: 7,
+                    ordinal: 0,
+                },
+                AcquisitionEventStateV1 {
+                    id: "acq:7:1".into(),
+                    record_kind: RecordKind::Statement,
+                    record_id: "alibi".into(),
+                    created_by_command_id: 7,
+                    ordinal: 1,
+                },
+            ]
+        );
+        assert_eq!(next_ordinal, 2);
+    }
+
+    // Break caught: disk events lose their numeric command ID or grow an
+    // acknowledgement field that does not belong to the closed save contract.
+    #[test]
+    fn acquisition_event_json_uses_numeric_command_id_without_acknowledgement() {
+        let value = serde_json::to_value(AcquisitionEventStateV1 {
+            id: "acq:7:0".into(),
+            record_kind: RecordKind::Evidence,
+            record_id: "receipt".into(),
+            created_by_command_id: 7,
+            ordinal: 0,
+        })
+        .unwrap();
+
+        assert_eq!(value["createdByCommandId"], serde_json::json!(7));
+        assert!(value.get("acknowledged").is_none());
+    }
+
+    // Break caught: a stored event whose textual ID disagrees with its numeric
+    // command/ordinal pair reaches the view or save boundary as a real event.
+    #[test]
+    fn malformed_event_id_is_rejected_against_numeric_fields() {
+        let event = AcquisitionEventStateV1 {
+            id: "acq:7:9".into(),
+            record_kind: RecordKind::Evidence,
+            record_id: "receipt".into(),
+            created_by_command_id: 7,
+            ordinal: 1,
+        };
+
+        assert!(validate_event_id(&event).is_err());
     }
 }

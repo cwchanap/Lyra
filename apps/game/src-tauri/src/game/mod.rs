@@ -20,6 +20,7 @@ mod story;
 pub mod unlock;
 pub mod view;
 
+use command_tx::CommandMutation;
 pub use error::GameError;
 pub use view::{DialogueHistoryEntry, GameStateView, ModeView, QueueToken, SceneNavigationIndex};
 
@@ -43,7 +44,8 @@ use std::path::PathBuf;
 use story::{StoryCatalog, StoryState, StoryStateView};
 use view::{
     AudioCueView, ChapterView, CharacterView, CrossExamView, HotspotView, InquiryQuestionView,
-    InterrogationPhaseView, SceneView, SubjectView, SublocationView, TopicView,
+    InterrogationPhaseView, PendingAcquisitionView, SceneView, SubjectView, SublocationView,
+    TopicView,
 };
 
 pub struct GameEngine {
@@ -61,6 +63,8 @@ pub struct GameEngine {
     inventory: Inventory,
     next_queue_gen: u64,
     history: dialogue::DialogueHistory,
+    durable_revision: u64,
+    pending_acquisition_events: Vec<save::schema::AcquisitionEventStateV1>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -231,6 +235,8 @@ impl GameEngine {
             inventory: Inventory::default(),
             next_queue_gen: 2,
             history: dialogue::DialogueHistory::default(),
+            durable_revision: 0,
+            pending_acquisition_events: Vec::new(),
         };
         engine.prime_initial_queue()?;
         engine.record_current_dialogue_history();
@@ -265,7 +271,65 @@ impl GameEngine {
             inventory: self.inventory.clone(),
             story: StoryStateView::from_catalog_state(&self.story_catalog, &self.story_state),
             dialogue_history: self.history.entries().to_vec(),
+            pending_acquisition: self.pending_acquisition_view().ok().flatten(),
         }
+    }
+
+    pub(in crate::game) fn pending_acquisition_view(
+        &self,
+    ) -> Result<Option<PendingAcquisitionView>, GameError> {
+        if self.current_dialogue_item().is_some() {
+            return Ok(None);
+        }
+        let Some(event) = self
+            .pending_acquisition_events
+            .iter()
+            .min_by_key(|event| (event.created_by_command_id, event.ordinal))
+        else {
+            return Ok(None);
+        };
+        acquisition::validate_event_id(event)?;
+        let view = match event.record_kind {
+            save::schema::RecordKind::Evidence => {
+                let record = self
+                    .inventory
+                    .evidence
+                    .iter()
+                    .find(|record| record.id == event.record_id)
+                    .ok_or_else(GameError::unknown_acquisition_event)?;
+                PendingAcquisitionView {
+                    id: event.id.clone(),
+                    record_kind: "evidence".into(),
+                    record_id: record.id.clone(),
+                    title: record.name.clone(),
+                    description: record.description.clone(),
+                    details: record.details.clone(),
+                    image_asset_id: record.image_asset_id.clone(),
+                    created_by_command_id: event.created_by_command_id,
+                    ordinal: event.ordinal,
+                }
+            }
+            save::schema::RecordKind::Statement => {
+                let record = self
+                    .inventory
+                    .statements
+                    .iter()
+                    .find(|record| record.id == event.record_id)
+                    .ok_or_else(GameError::unknown_acquisition_event)?;
+                PendingAcquisitionView {
+                    id: event.id.clone(),
+                    record_kind: "statement".into(),
+                    record_id: record.id.clone(),
+                    title: record.speaker.clone(),
+                    description: record.content.clone(),
+                    details: record.content.clone(),
+                    image_asset_id: None,
+                    created_by_command_id: event.created_by_command_id,
+                    ordinal: event.ordinal,
+                }
+            }
+        };
+        Ok(Some(view))
     }
 
     pub fn advance_dialogue(&mut self, expected: QueueToken) -> Result<GameStateView, GameError> {
@@ -274,12 +338,13 @@ impl GameEngine {
             None => return Err(GameError::no_active_dialogue()),
         };
         // Stale token: the frontend acted on a view we have already replaced.
-        // Not a transaction, and deliberately records no history.
+        // Explicitly non-mutating: it must neither record history nor consume a
+        // durable revision.
         if current_token != expected {
-            return Ok(self.view());
+            return self.command_tx(|_, _| Ok(CommandMutation::Unchanged));
         }
 
-        self.command_tx(|engine| {
+        self.command_tx(|engine, _command_id| {
             let consumed = engine.current_dialogue_item();
             let mut exhausted = match &mut engine.scene {
                 SceneRuntime::Linear(scene) => scene.advance(),
@@ -311,7 +376,7 @@ impl GameEngine {
             if exhausted {
                 engine.on_queue_exhausted()?;
             }
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -547,6 +612,9 @@ impl GameEngine {
                 scene,
                 &mut AcquisitionCtx {
                     inventory: &mut self.inventory,
+                    pending_events: &mut self.pending_acquisition_events,
+                    command_id: self.durable_revision.saturating_add(1),
+                    next_ordinal: &mut 0,
                 },
                 trigger_segment,
                 &reveals,
@@ -603,6 +671,9 @@ impl GameEngine {
                     inv,
                     &mut AcquisitionCtx {
                         inventory: &mut self.inventory,
+                        pending_events: &mut self.pending_acquisition_events,
+                        command_id: self.durable_revision.saturating_add(1),
+                        next_ordinal: &mut 0,
                     },
                     trigger_segment,
                     &sub_reveals,
@@ -664,7 +735,7 @@ impl GameEngine {
             (hot_def, first_time)
         };
 
-        self.command_tx(|engine| {
+        self.command_tx(|engine, _command_id| {
             // Phase 2 — compute: build queue (mutates scene + inventory together).
             let queue_items = if first_time {
                 let inv = match &mut engine.scene {
@@ -686,6 +757,9 @@ impl GameEngine {
                     inv,
                     &mut AcquisitionCtx {
                         inventory: &mut engine.inventory,
+                        pending_events: &mut engine.pending_acquisition_events,
+                        command_id: engine.durable_revision.saturating_add(1),
+                        next_ordinal: &mut 0,
                     },
                     trigger_segment,
                     &hot_def.reveals,
@@ -704,7 +778,7 @@ impl GameEngine {
 
             // Phase 3 — write: attach the queue.
             engine.install_or_exhaust(queue_items)?;
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -760,7 +834,7 @@ impl GameEngine {
             (topic, first_time)
         };
 
-        self.command_tx(|engine| {
+        self.command_tx(|engine, _command_id| {
             let queue_items = if first_time {
                 let inv = match &mut engine.scene {
                     SceneRuntime::Investigation(i) => i,
@@ -781,6 +855,9 @@ impl GameEngine {
                     inv,
                     &mut AcquisitionCtx {
                         inventory: &mut engine.inventory,
+                        pending_events: &mut engine.pending_acquisition_events,
+                        command_id: engine.durable_revision.saturating_add(1),
+                        next_ordinal: &mut 0,
                     },
                     trigger_segment,
                     &topic.reveals,
@@ -798,7 +875,7 @@ impl GameEngine {
             };
 
             engine.install_or_exhaust(queue_items)?;
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -845,7 +922,7 @@ impl GameEngine {
             )
         };
 
-        self.command_tx(|engine| {
+        self.command_tx(|engine, _command_id| {
             let queue_items = if first_entry {
                 let inv = match &mut engine.scene {
                     SceneRuntime::Investigation(i) => i,
@@ -867,6 +944,9 @@ impl GameEngine {
                     inv,
                     &mut AcquisitionCtx {
                         inventory: &mut engine.inventory,
+                        pending_events: &mut engine.pending_acquisition_events,
+                        command_id: engine.durable_revision.saturating_add(1),
+                        next_ordinal: &mut 0,
                     },
                     trigger_segment,
                     &sub_reveals,
@@ -881,7 +961,7 @@ impl GameEngine {
 
             engine.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
             engine.install_or_exhaust(queue_items)?;
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -917,10 +997,10 @@ impl GameEngine {
             format!("evidence:{id}:onReexamine"),
             rec.on_reexamine.clone().unwrap_or_default(),
         )?;
-        self.command_tx(|engine| {
+        self.command_tx(|engine, _command_id| {
             let queue_gen = engine.alloc_queue_gen();
             engine.install_scene_queue(vec![segment], queue_gen, None)?;
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -956,10 +1036,10 @@ impl GameEngine {
             format!("statement:{id}:onReexamine"),
             rec.on_reexamine.clone().unwrap_or_default(),
         )?;
-        self.command_tx(|engine| {
+        self.command_tx(|engine, _command_id| {
             let queue_gen = engine.alloc_queue_gen();
             engine.install_scene_queue(vec![segment], queue_gen, None)?;
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -1009,7 +1089,7 @@ impl GameEngine {
             }
         }
 
-        self.command_tx(|engine| {
+        self.command_tx(|engine, _command_id| {
             let (segments, line_content_start) = {
                 let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
@@ -1048,6 +1128,9 @@ impl GameEngine {
                         scene,
                         &mut AcquisitionCtx {
                             inventory: &mut engine.inventory,
+                            pending_events: &mut engine.pending_acquisition_events,
+                            command_id: engine.durable_revision.saturating_add(1),
+                            next_ordinal: &mut 0,
                         },
                         line_segment,
                         &reveals,
@@ -1069,7 +1152,7 @@ impl GameEngine {
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.refresh_phase_completion(&engine.inventory);
             }
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -1110,7 +1193,7 @@ impl GameEngine {
             }
         }
 
-        self.command_tx(|engine| {
+        self.command_tx(|engine, _command_id| {
             let segments = {
                 let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
@@ -1172,7 +1255,7 @@ impl GameEngine {
             };
 
             engine.install_or_exhaust(segments)?;
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -1228,7 +1311,7 @@ impl GameEngine {
             (question_id.clone(), line_id.clone())
         };
 
-        self.command_tx(|engine| {
+        self.command_tx(|engine, _command_id| {
             let segments = {
                 let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
@@ -1274,6 +1357,9 @@ impl GameEngine {
                         scene,
                         &mut AcquisitionCtx {
                             inventory: &mut engine.inventory,
+                            pending_events: &mut engine.pending_acquisition_events,
+                            command_id: engine.durable_revision.saturating_add(1),
+                            next_ordinal: &mut 0,
                         },
                         trigger_segment,
                         &reveals,
@@ -1338,7 +1424,7 @@ impl GameEngine {
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.refresh_phase_completion(&engine.inventory);
             }
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -1373,7 +1459,7 @@ impl GameEngine {
             }
         }
 
-        self.command_tx(|engine| {
+        self.command_tx(|engine, _command_id| {
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.withdraw();
                 // A testimony content queue may still be active (withdrawing
@@ -1382,7 +1468,7 @@ impl GameEngine {
                 scene.pending_queue = None;
             }
             engine.on_queue_exhausted()?;
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -1413,7 +1499,7 @@ impl GameEngine {
             }
         }
 
-        self.command_tx(|engine| {
+        self.command_tx(|engine, _command_id| {
             let segments = {
                 let scene = match &mut engine.scene {
                     SceneRuntime::Interrogation(scene) => scene,
@@ -1457,7 +1543,7 @@ impl GameEngine {
             // Resuming installs the challenged line's pure content —
             // challengeable from the first item.
             engine.install_or_exhaust_line_content(segments, 0)?;
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -1490,14 +1576,14 @@ impl GameEngine {
             }
         }
 
-        self.command_tx(|engine| {
+        self.command_tx(|engine, _command_id| {
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
                 scene.complete_current_phase();
             }
             // The guard ensured no dialogue queue is active; drive the scene
             // machinery (phase-advance / outro) as if a queue had just drained.
             engine.on_queue_exhausted()?;
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -2974,6 +3060,8 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
             inventory: Inventory::default(),
             next_queue_gen: 2,
             history: dialogue::DialogueHistory::default(),
+            durable_revision: 0,
+            pending_acquisition_events: Vec::new(),
         };
 
         engine.prime_initial_queue().unwrap();

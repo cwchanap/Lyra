@@ -3,6 +3,7 @@
 // Chapter/scene loading and the navigation paths that move between scenes.
 
 use super::acquisition::AcquisitionCtx;
+use super::command_tx::CommandMutation;
 use super::dialogue_queue::{DialogueSegment, DialogueSegmentOriginV1};
 use super::loader;
 use super::scenes::interrogation::InterrogationSceneState;
@@ -49,7 +50,7 @@ impl GameEngine {
         )?
         .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
 
-        self.command_tx(move |engine| {
+        self.command_tx(move |engine, _command_id| {
             engine.current_chapter_idx = chapter_idx;
             engine.current_scene_idx = scene_idx;
             engine.scene = new_scene;
@@ -70,7 +71,7 @@ impl GameEngine {
             if cfg!(debug_assertions) && matches!(engine.scene, SceneRuntime::Interrogation(_)) {
                 engine.grant_all_evidence_for_testing();
             }
-            Ok(())
+            Ok(CommandMutation::Changed)
         })
     }
 
@@ -100,6 +101,9 @@ impl GameEngine {
                 };
                 let mut acq = AcquisitionCtx {
                     inventory: &mut self.inventory,
+                    pending_events: &mut self.pending_acquisition_events,
+                    command_id: self.durable_revision.saturating_add(1),
+                    next_ordinal: &mut 0,
                 };
                 for def in evidence {
                     acq.evidence(def, &chapter.id, &scene_id);

@@ -205,8 +205,13 @@ mod tests {
     fn reveals_evidence_appends_on_collect_to_queue() {
         let mut scene = empty_scene_with_evidence(vec![evidence_def("coffee")]);
         let mut inv = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
         let mut acq = AcquisitionCtx {
             inventory: &mut inv,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
         };
         let queue = apply_reveals_and_build_queue(
             &mut scene,
@@ -230,8 +235,13 @@ mod tests {
         let mut scene =
             empty_scene_with_evidence(vec![evidence_def("receipt"), evidence_def("cctv")]);
         let mut inv = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
         let mut acq = AcquisitionCtx {
             inventory: &mut inv,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
         };
         let queue = apply_reveals_and_build_queue(
             &mut scene,
@@ -269,8 +279,13 @@ mod tests {
     fn double_reveal_of_same_evidence_does_not_double_append() {
         let mut scene = empty_scene_with_evidence(vec![evidence_def("coffee")]);
         let mut inv = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
         let mut acq = AcquisitionCtx {
             inventory: &mut inv,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
         };
         let _ = apply_reveals_and_build_queue(
             &mut scene,
@@ -297,8 +312,13 @@ mod tests {
     fn reveals_sublocation_silently_unlocks_it() {
         let mut scene = empty_scene_with_evidence(vec![]);
         let mut inv = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
         let mut acq = AcquisitionCtx {
             inventory: &mut inv,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
         };
         let queue = apply_reveals_and_build_queue(
             &mut scene,
@@ -317,8 +337,13 @@ mod tests {
     fn interrogation_reveals_evidence_appends_on_collect_to_queue() {
         let mut scene = empty_interrogation_scene_with_evidence(vec![evidence_def("receipt")]);
         let mut inv = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
         let mut acq = AcquisitionCtx {
             inventory: &mut inv,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
         };
         let queue = apply_interrogation_reveals_and_build_queue(
             &mut scene,
@@ -341,8 +366,13 @@ mod tests {
     fn interrogation_reveals_question_and_phase_unlock_overrides() {
         let mut scene = empty_interrogation_scene_with_evidence(vec![]);
         let mut inv = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
         let mut acq = AcquisitionCtx {
             inventory: &mut inv,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
         };
         let queue = apply_interrogation_reveals_and_build_queue(
             &mut scene,

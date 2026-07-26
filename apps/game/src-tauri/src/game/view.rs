@@ -15,6 +15,21 @@ pub struct GameStateView {
     pub inventory: Inventory,
     pub story: StoryStateView,
     pub dialogue_history: Vec<DialogueHistoryEntry>,
+    pub pending_acquisition: Option<PendingAcquisitionView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingAcquisitionView {
+    pub id: String,
+    pub record_kind: String,
+    pub record_id: String,
+    pub title: String,
+    pub description: String,
+    pub details: String,
+    pub image_asset_id: Option<String>,
+    pub created_by_command_id: u64,
+    pub ordinal: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
