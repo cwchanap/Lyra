@@ -276,7 +276,7 @@ impl GameEngine {
         })
     }
 
-    fn packaged_acquisition_scene(
+    pub(in crate::game) fn packaged_acquisition_scene(
         &self,
         chapter_id: &str,
         scene_id: &str,

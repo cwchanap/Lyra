@@ -16,7 +16,7 @@ use crate::game::schema::{
     DialogueItem, InterrogationPhaseJson, InterrogationSceneJson, InventoryTarget,
     InvestigationSceneJson, SceneJson,
 };
-use crate::game::story::StoryStateSnapshot;
+use crate::game::story::{StoryState, StoryStateSnapshot};
 use crate::game::view::{DialogueHistoryEntry, QueueToken};
 use crate::game::{GameEngine, GameError};
 use serde::Serialize;
@@ -52,6 +52,11 @@ pub(crate) fn capture_checkpoint_v1(
 
     let active_dialogue = engine.capture_active_dialogue()?;
     validate_active_dialogue(active_dialogue.as_ref(), *next_queue_gen)?;
+    if let Some(active) = active_dialogue.as_ref() {
+        engine
+            .restore_active_dialogue_queue(engine.content_revision(), active)
+            .map_err(|error| capture_error(error.message))?;
+    }
     let (chapter_id, chapter_title, scene_id, scene_title, game_complete) =
         capture_location(engine)?;
     if game_complete && active_dialogue.is_some() {
@@ -60,7 +65,10 @@ pub(crate) fn capture_checkpoint_v1(
         ));
     }
     let scene = capture_scene_progress_with_active(engine, active_dialogue.as_ref())?;
-    let story_state = capture_story_state(story_state.snapshot());
+    let story_snapshot = story_state.snapshot();
+    StoryState::from_snapshot(&engine.story_catalog, story_snapshot.clone())
+        .map_err(|error| capture_error(error.message))?;
+    let story_state = capture_story_state(story_snapshot);
     let active_primary_objective_id = story_state.active_primary_objective_id.clone();
     let active_primary_objective_label = active_primary_objective_id
         .as_deref()
@@ -76,6 +84,7 @@ pub(crate) fn capture_checkpoint_v1(
                 })
         })
         .transpose()?;
+    validate_inventory(engine)?;
     for event in pending_acquisition_events {
         crate::game::acquisition::validate_event_id(event)
             .map_err(|error| capture_error(error.message))?;
@@ -83,6 +92,22 @@ pub(crate) fn capture_checkpoint_v1(
             return Err(capture_error(format!(
                 "Pending acquisition '{}' names impossible command revision {}.",
                 event.id, event.created_by_command_id
+            )));
+        }
+        let record_exists = match event.record_kind {
+            super::schema::RecordKind::Evidence => inventory
+                .evidence
+                .iter()
+                .any(|record| record.id == event.record_id),
+            super::schema::RecordKind::Statement => inventory
+                .statements
+                .iter()
+                .any(|record| record.id == event.record_id),
+        };
+        if !record_exists {
+            return Err(capture_error(format!(
+                "Pending acquisition '{}' disagrees with inventory kind or record ID.",
+                event.id
             )));
         }
     }
@@ -149,6 +174,11 @@ pub(crate) fn capture_scene_progress_v1(
     let (_, _, _, _, game_complete) = capture_location(engine)?;
     let active_dialogue = engine.capture_active_dialogue()?;
     validate_active_dialogue(active_dialogue.as_ref(), engine.next_queue_gen)?;
+    if let Some(active) = active_dialogue.as_ref() {
+        engine
+            .restore_active_dialogue_queue(engine.content_revision(), active)
+            .map_err(|error| capture_error(error.message))?;
+    }
     if game_complete && active_dialogue.is_some() {
         return Err(capture_error(
             "A completed game cannot retain an active dialogue queue.",
@@ -170,8 +200,9 @@ fn capture_scene_progress_with_active(
         ));
     }
 
-    match &engine.scene {
-        SceneRuntime::Linear(scene) => {
+    let packaged_scene = current_packaged_scene(engine)?;
+    match (&engine.scene, &packaged_scene) {
+        (SceneRuntime::Linear(scene), SceneJson::Linear(_)) => {
             if scene.queue.is_none() {
                 return Err(capture_error(
                     "A linear scene exhausted without entering its successor.",
@@ -179,7 +210,8 @@ fn capture_scene_progress_with_active(
             }
             Ok(SceneProgressSnapshotV1::Linear)
         }
-        SceneRuntime::Investigation(scene) => {
+        (SceneRuntime::Investigation(scene), SceneJson::Investigation(packaged)) => {
+            validate_investigation_progress(scene, packaged)?;
             validate_investigation_intro(scene, active_dialogue, engine.next_queue_gen)?;
             validate_outro_commit(
                 scene.outro_played,
@@ -222,7 +254,8 @@ fn capture_scene_progress_with_active(
                 unlocked_overrides,
             })
         }
-        SceneRuntime::Interrogation(scene) => {
+        (SceneRuntime::Interrogation(scene), SceneJson::Interrogation(packaged)) => {
+            validate_interrogation_progress(scene, packaged)?;
             validate_interrogation_intro(scene, active_dialogue, engine.next_queue_gen)?;
             validate_interrogation_phase_entry_commit(scene, active_dialogue)?;
             validate_outro_commit(
@@ -237,8 +270,13 @@ fn capture_scene_progress_with_active(
                     question_id,
                     line_index,
                 } => {
-                    let line_id = scene
-                        .question(question_id)
+                    let line_id = packaged
+                        .phases
+                        .iter()
+                        .find_map(|phase| {
+                            let InterrogationPhaseJson::Inquiry { questions, .. } = phase;
+                            questions.iter().find(|question| question.id == *question_id)
+                        })
                         .and_then(|question| question.testimony.lines.get(*line_index))
                         .map(|line| line.id.clone())
                         .ok_or_else(|| {
@@ -255,7 +293,7 @@ fn capture_scene_progress_with_active(
                     question_id,
                     line_id,
                 } => {
-                    if scene.line(question_id, line_id).is_none() {
+                    if packaged_line(packaged, question_id, line_id).is_none() {
                         return Err(capture_error(format!(
                             "Presenting cross-exam coordinate '{question_id}'/'{line_id}' is invalid."
                         )));
@@ -280,11 +318,8 @@ fn capture_scene_progress_with_active(
             });
             let mut entered_phase_ids: Vec<_> = scene.entered_phase_ids().iter().cloned().collect();
             entered_phase_ids.sort();
-            let line_content_segment_index = scene
-                .pending_queue
-                .as_ref()
-                .map(|queue| queue.segment_index_at_flattened_boundary(scene.line_content_start))
-                .transpose()?;
+            let line_content_segment_index =
+                capture_line_content_segment_index(scene, &cross_exam)?;
             Ok(SceneProgressSnapshotV1::Interrogation {
                 intro_played: scene.intro_played,
                 outro_played: scene.outro_played,
@@ -297,7 +332,294 @@ fn capture_scene_progress_with_active(
                 line_content_segment_index,
             })
         }
+        _ => Err(capture_error(
+            "Current runtime scene kind does not match its packaged definition.",
+        )),
     }
+}
+
+fn current_packaged_scene(engine: &GameEngine) -> Result<SceneJson, GameError> {
+    if engine.current_chapter_idx >= engine.chapters.len() {
+        return Err(capture_error(
+            "A completed or invalid location has no current progress definition.",
+        ));
+    }
+    let chapter = &engine.chapters[engine.current_chapter_idx];
+    load_chapter_scene_jsons(&engine.resources_dir, chapter)?
+        .into_iter()
+        .nth(engine.current_scene_idx)
+        .ok_or_else(|| capture_error("Current packaged scene is missing."))
+}
+
+fn validate_investigation_progress(
+    scene: &InvestigationSceneState,
+    packaged: &InvestigationSceneJson,
+) -> Result<(), GameError> {
+    let sublocation_exists =
+        |target: &str| packaged.sublocations.iter().any(|item| item.id == target);
+    let hotspot_exists = |target: &str| {
+        packaged
+            .sublocations
+            .iter()
+            .flat_map(|item| &item.hotspots)
+            .any(|item| item.id == target)
+    };
+    let topic_exists = |character_id: &str, topic_id: &str| {
+        packaged
+            .sublocations
+            .iter()
+            .flat_map(|item| &item.characters)
+            .any(|character| {
+                character.id == character_id
+                    && character.topics.iter().any(|topic| topic.id == topic_id)
+            })
+    };
+    if scene
+        .current_sublocation_id
+        .as_deref()
+        .is_some_and(|id| !sublocation_exists(id))
+    {
+        return Err(capture_error(
+            "Current investigation sublocation is unknown.",
+        ));
+    }
+    for id in &scene.entered_sublocations {
+        if !sublocation_exists(id) {
+            return Err(capture_error(format!(
+                "Entered investigation sublocation '{id}' is unknown."
+            )));
+        }
+    }
+    for id in &scene.inspected_hotspots {
+        if !hotspot_exists(id) {
+            return Err(capture_error(format!(
+                "Inspected investigation hotspot '{id}' is unknown."
+            )));
+        }
+    }
+    for (character_id, topic_id) in &scene.discussed_topics {
+        if !topic_exists(character_id, topic_id) {
+            return Err(capture_error(format!(
+                "Discussed investigation topic '{character_id}/{topic_id}' is unknown."
+            )));
+        }
+    }
+    for key in &scene.unlocked_overrides {
+        match capture_investigation_override(key)? {
+            InvestigationOverrideRefV1::Hotspot { id } if !hotspot_exists(&id) => {
+                return Err(capture_error(format!(
+                    "Investigation override hotspot '{id}' is unknown."
+                )));
+            }
+            InvestigationOverrideRefV1::Sublocation { id } if !sublocation_exists(&id) => {
+                return Err(capture_error(format!(
+                    "Investigation override sublocation '{id}' is unknown."
+                )));
+            }
+            InvestigationOverrideRefV1::Topic {
+                character_id,
+                topic_id,
+            } if !topic_exists(&character_id, &topic_id) => {
+                return Err(capture_error(format!(
+                    "Investigation override topic '{character_id}/{topic_id}' is unknown."
+                )));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_interrogation_progress(
+    scene: &InterrogationSceneState,
+    packaged: &InterrogationSceneJson,
+) -> Result<(), GameError> {
+    let phase_exists = |target: &str| {
+        packaged.phases.iter().any(|phase| {
+            let InterrogationPhaseJson::Inquiry { id, .. } = phase;
+            id == target
+        })
+    };
+    let question_exists = |target: &str| {
+        packaged.phases.iter().any(|phase| {
+            let InterrogationPhaseJson::Inquiry { questions, .. } = phase;
+            questions.iter().any(|question| question.id == target)
+        })
+    };
+    if scene
+        .current_phase_id
+        .as_deref()
+        .is_some_and(|id| !phase_exists(id))
+    {
+        return Err(capture_error("Current interrogation phase is unknown."));
+    }
+    for id in scene
+        .completed_phases
+        .iter()
+        .chain(scene.entered_phase_ids().iter())
+    {
+        if !phase_exists(id) {
+            return Err(capture_error(format!(
+                "Interrogation phase progress '{id}' is unknown."
+            )));
+        }
+    }
+    for id in &scene.broken_questions {
+        if !question_exists(id) {
+            return Err(capture_error(format!(
+                "Broken interrogation question '{id}' is unknown."
+            )));
+        }
+    }
+    for key in &scene.unlocked_overrides {
+        match capture_interrogation_override(key)? {
+            InterrogationOverrideRefV1::Question { id } if !question_exists(&id) => {
+                return Err(capture_error(format!(
+                    "Interrogation override question '{id}' is unknown."
+                )));
+            }
+            InterrogationOverrideRefV1::Phase { id } if !phase_exists(&id) => {
+                return Err(capture_error(format!(
+                    "Interrogation override phase '{id}' is unknown."
+                )));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn packaged_line<'a>(
+    packaged: &'a InterrogationSceneJson,
+    question_id: &str,
+    line_id: &str,
+) -> Option<&'a crate::game::schema::TestimonyLineJson> {
+    packaged.phases.iter().find_map(|phase| {
+        let InterrogationPhaseJson::Inquiry { questions, .. } = phase;
+        questions
+            .iter()
+            .find(|question| question.id == question_id)?
+            .testimony
+            .lines
+            .iter()
+            .find(|line| line.id == line_id)
+    })
+}
+
+fn capture_line_content_segment_index(
+    scene: &InterrogationSceneState,
+    cross_exam: &CrossExamSnapshotV1,
+) -> Result<Option<usize>, GameError> {
+    let Some(queue) = scene.pending_queue.as_ref() else {
+        return Ok(None);
+    };
+    let segment_index = queue.segment_index_at_flattened_boundary(scene.line_content_start)?;
+    let origins = queue.segment_origins();
+    let Some(origin) = origins.get(segment_index) else {
+        return Ok(None);
+    };
+    let (question_id, line_id) = match cross_exam {
+        CrossExamSnapshotV1::Playing {
+            question_id,
+            line_id,
+        }
+        | CrossExamSnapshotV1::Presenting {
+            question_id,
+            line_id,
+        } => (question_id, line_id),
+        CrossExamSnapshotV1::Idle => {
+            return Err(capture_error(
+                "A testimony content boundary requires a current cross-exam line.",
+            ));
+        }
+    };
+    let DialogueSegmentOriginV1::InterrogationPhase {
+        scene_id,
+        segment_id,
+        ..
+    } = origin
+    else {
+        return Err(capture_error(
+            "A testimony content boundary has a non-interrogation origin.",
+        ));
+    };
+    let expected = format!("question:{question_id}:line:{line_id}:content");
+    if scene_id != scene.id() || segment_id != &expected {
+        return Err(capture_error(format!(
+            "Testimony content origin '{segment_id}' does not match current line '{question_id}/{line_id}'."
+        )));
+    }
+    Ok(Some(segment_index))
+}
+
+fn validate_inventory(engine: &GameEngine) -> Result<(), GameError> {
+    for record in &engine.inventory.evidence {
+        validate_inventory_record(
+            engine,
+            &record.id,
+            &record.collected_in_chapter_id,
+            &record.collected_in_scene_id,
+            true,
+        )?;
+    }
+    for record in &engine.inventory.statements {
+        validate_inventory_record(
+            engine,
+            &record.id,
+            &record.acquired_in_chapter_id,
+            &record.acquired_in_scene_id,
+            false,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_inventory_record(
+    engine: &GameEngine,
+    record_id: &str,
+    chapter_id: &str,
+    scene_id: &str,
+    evidence: bool,
+) -> Result<(), GameError> {
+    let scene = engine
+        .packaged_acquisition_scene(chapter_id, scene_id)
+        .map_err(|error| capture_error(error.message))?;
+    let found = match scene {
+        SceneJson::Investigation(scene) => {
+            if evidence {
+                scene
+                    .evidence_manifest
+                    .iter()
+                    .any(|item| item.id == record_id)
+            } else {
+                scene
+                    .statement_manifest
+                    .iter()
+                    .any(|item| item.id == record_id)
+            }
+        }
+        SceneJson::Interrogation(scene) => {
+            if evidence {
+                scene
+                    .evidence_manifest
+                    .iter()
+                    .any(|item| item.id == record_id)
+            } else {
+                scene
+                    .statement_manifest
+                    .iter()
+                    .any(|item| item.id == record_id)
+            }
+        }
+        SceneJson::Linear(_) => false,
+    };
+    if !found {
+        return Err(capture_error(format!(
+            "Inventory {} '{record_id}' has invalid packaged provenance '{chapter_id}/{scene_id}'.",
+            if evidence { "evidence" } else { "statement" }
+        )));
+    }
+    Ok(())
 }
 
 fn validate_interrogation_phase_entry_commit(
@@ -613,6 +935,11 @@ fn capture_history(
     if next_id == 0 {
         return Err(capture_error("Dialogue history next ID cannot be zero."));
     }
+    if entries.is_empty() && next_id != 1 {
+        return Err(capture_error(
+            "Empty dialogue history must retain the initial next ID.",
+        ));
+    }
     if let Some(last_id) = prior_id {
         if last_id.checked_add(1) != Some(next_id)
             || (entries.len() < DIALOGUE_HISTORY_LIMIT
@@ -681,10 +1008,10 @@ fn validate_history_token(
             token.queue_gen
         )));
     }
-    let maximum = packaged_scene_cursor_exclusive(engine, &token.scene_id)?;
-    if token.cursor >= maximum {
+    let maxima = packaged_scene_cursor_exclusive(engine, &token.scene_id)?;
+    if !maxima.iter().any(|maximum| token.cursor < *maximum) {
         return Err(capture_error(format!(
-            "Dialogue history cursor {} is outside packaged scene '{}' bound {maximum}.",
+            "Dialogue history cursor {} is outside every packaged scene '{}' bound.",
             token.cursor, token.scene_id
         )));
     }
@@ -704,25 +1031,22 @@ fn validate_history_token(
 fn packaged_scene_cursor_exclusive(
     engine: &GameEngine,
     target_scene_id: &str,
-) -> Result<usize, GameError> {
-    let mut found = None;
+) -> Result<Vec<usize>, GameError> {
+    let mut found = Vec::new();
     for chapter in &engine.chapters {
         for scene in load_chapter_scene_jsons(&engine.resources_dir, chapter)? {
             if scene_json_identity(&scene).0 == target_scene_id {
-                if found.is_some() {
-                    return Err(capture_error(format!(
-                        "Dialogue history scene ID '{target_scene_id}' is ambiguous."
-                    )));
-                }
-                found = Some(maximum_scene_dialogue_items(&scene)?);
+                found.push(maximum_scene_dialogue_items(&scene)?);
             }
         }
     }
-    found.filter(|maximum| *maximum > 0).ok_or_else(|| {
-        capture_error(format!(
+    found.retain(|maximum| *maximum > 0);
+    if found.is_empty() {
+        return Err(capture_error(format!(
             "Unknown dialogue history scene '{target_scene_id}'."
-        ))
-    })
+        )));
+    }
+    Ok(found)
 }
 
 fn maximum_scene_dialogue_items(scene: &SceneJson) -> Result<usize, GameError> {
@@ -1076,10 +1400,11 @@ mod tests {
             "sublocation:archive".into(),
         ]);
         let segments = vec![
-            segment(
+            DialogueSegment::new(
                 investigation_origin("evidence:test_evidence:onCollect"),
-                "onCollect",
-            ),
+                vec![action("onCollect one"), action("onCollect two")],
+            )
+            .unwrap(),
             segment(
                 investigation_origin("statement:alibi_statement:onAcquire"),
                 "onAcquire",
@@ -1171,18 +1496,39 @@ mod tests {
         assert_eq!(
             active.segment_origins,
             vec![
-                investigation_origin("evidence:test_evidence:onCollect"),
-                investigation_origin("statement:alibi_statement:onAcquire"),
-                investigation_origin("hotspot:desk:inspect"),
-                investigation_origin("topic:witness:alibi:dialogue"),
+                DialogueSegmentOriginV1::InvestigationInteraction {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    segment_id: "evidence:test_evidence:onCollect".into(),
+                },
+                DialogueSegmentOriginV1::InvestigationInteraction {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    segment_id: "statement:alibi_statement:onAcquire".into(),
+                },
+                DialogueSegmentOriginV1::InvestigationInteraction {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    segment_id: "hotspot:desk:inspect".into(),
+                },
+                DialogueSegmentOriginV1::InvestigationInteraction {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    segment_id: "topic:witness:alibi:dialogue".into(),
+                },
             ]
         );
+        let captured_segment_lengths = [2usize, 1, 1, 1];
+        let reconstructed_cursor = captured_segment_lengths[..active.active_segment_index]
+            .iter()
+            .sum::<usize>()
+            + active.item_cursor;
         assert_eq!(
             live_token,
             QueueToken {
                 scene_id: "investigation_scene_1".into(),
                 queue_gen: active.queue_gen,
-                cursor: active.active_segment_index + active.item_cursor,
+                cursor: reconstructed_cursor,
             }
         );
     }
@@ -1211,12 +1557,16 @@ mod tests {
             .extend(["phase:phase_two".into(), "question:q1".into()]);
         scene.mark_phase_entered("phase_1");
         let segments = vec![
-            segment(interrogation_origin("question:q1:onLoop"), "onLoop"),
+            DialogueSegment::new(
+                interrogation_origin("question:q1:onLoop"),
+                vec![action("onLoop one"), action("onLoop two")],
+            )
+            .unwrap(),
             segment(interrogation_origin("question:q1:loopPrompt"), "prompt"),
             segment(interrogation_origin("question:q1:line:l1:content"), "line"),
         ];
         scene.pending_queue = Some(ActiveDialogueQueue::from_position(segments, 1, 0, 12).unwrap());
-        scene.line_content_start = 2;
+        scene.line_content_start = 3;
         engine.next_queue_gen = 13;
 
         let live_token = engine.current_queue_token().unwrap();
@@ -1273,11 +1623,39 @@ mod tests {
         );
         let active = presenting.snapshot.active_dialogue.as_ref().unwrap();
         assert_eq!(
+            active.segment_origins,
+            vec![
+                DialogueSegmentOriginV1::InterrogationPhase {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "interrogation_scene_2".into(),
+                    phase_id: "phase_1".into(),
+                    segment_id: "question:q1:onLoop".into(),
+                },
+                DialogueSegmentOriginV1::InterrogationPhase {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "interrogation_scene_2".into(),
+                    phase_id: "phase_1".into(),
+                    segment_id: "question:q1:loopPrompt".into(),
+                },
+                DialogueSegmentOriginV1::InterrogationPhase {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "interrogation_scene_2".into(),
+                    phase_id: "phase_1".into(),
+                    segment_id: "question:q1:line:l1:content".into(),
+                },
+            ]
+        );
+        let captured_segment_lengths = [2usize, 1, 1];
+        let reconstructed_cursor = captured_segment_lengths[..active.active_segment_index]
+            .iter()
+            .sum::<usize>()
+            + active.item_cursor;
+        assert_eq!(
             live_token,
             QueueToken {
                 scene_id: "interrogation_scene_2".into(),
                 queue_gen: active.queue_gen,
-                cursor: active.active_segment_index + active.item_cursor,
+                cursor: reconstructed_cursor,
             }
         );
     }
@@ -1665,5 +2043,333 @@ mod tests {
         };
         scene.outro_played = true;
         assert!(capture_checkpoint_v1(&engine).is_ok());
+    }
+
+    #[test]
+    fn omits_non_testimony_line_content_boundaries_and_validates_testimony_origin() {
+        let mut engine = fixture_engine();
+        engine
+            .jump_to_scene("chapter_1", "interrogation_scene_2")
+            .unwrap();
+        engine.history = DialogueHistory::default();
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            panic!("expected interrogation");
+        };
+        scene.intro_played = true;
+        scene.mark_phase_entered("phase_1");
+        scene.pending_queue = Some(
+            ActiveDialogueQueue::from_position(
+                vec![segment(
+                    DialogueSegmentOriginV1::InterrogationPhase {
+                        chapter_id: "chapter_1".into(),
+                        scene_id: "interrogation_scene_2".into(),
+                        phase_id: "phase_1".into(),
+                        segment_id: "phase:phase_1:entry".into(),
+                    },
+                    "phase entry",
+                )],
+                0,
+                0,
+                6,
+            )
+            .unwrap(),
+        );
+        scene.line_content_start = 1;
+        engine.next_queue_gen = 7;
+
+        let captured = capture_checkpoint_v1(&engine).unwrap();
+        let SceneProgressSnapshotV1::Interrogation {
+            line_content_segment_index,
+            ..
+        } = captured.snapshot.scene
+        else {
+            panic!("expected interrogation snapshot");
+        };
+        assert_eq!(line_content_segment_index, None);
+
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            unreachable!();
+        };
+        scene.cross_exam = CrossExam::Playing {
+            question_id: "q1".into(),
+            line_index: 0,
+        };
+        scene.pending_queue = Some(
+            ActiveDialogueQueue::from_position(
+                vec![
+                    DialogueSegment::new(
+                        DialogueSegmentOriginV1::InterrogationPhase {
+                            chapter_id: "chapter_1".into(),
+                            scene_id: "interrogation_scene_2".into(),
+                            phase_id: "phase_1".into(),
+                            segment_id: "question:q1:onLoop".into(),
+                        },
+                        vec![action("bridge one"), action("bridge two")],
+                    )
+                    .unwrap(),
+                    segment(
+                        DialogueSegmentOriginV1::InterrogationPhase {
+                            chapter_id: "chapter_1".into(),
+                            scene_id: "interrogation_scene_2".into(),
+                            phase_id: "phase_1".into(),
+                            segment_id: "question:q1:line:l1:content".into(),
+                        },
+                        "content",
+                    ),
+                ],
+                1,
+                0,
+                6,
+            )
+            .unwrap(),
+        );
+        scene.line_content_start = 2;
+
+        let captured = capture_checkpoint_v1(&engine).unwrap();
+        let SceneProgressSnapshotV1::Interrogation {
+            line_content_segment_index,
+            ..
+        } = captured.snapshot.scene
+        else {
+            panic!("expected interrogation snapshot");
+        };
+        assert_eq!(line_content_segment_index, Some(1));
+        assert_eq!(
+            captured
+                .snapshot
+                .active_dialogue
+                .unwrap()
+                .active_segment_index,
+            1
+        );
+
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            unreachable!();
+        };
+        scene.pending_queue = Some(
+            ActiveDialogueQueue::from_position(
+                vec![segment(
+                    DialogueSegmentOriginV1::InterrogationPhase {
+                        chapter_id: "chapter_1".into(),
+                        scene_id: "interrogation_scene_2".into(),
+                        phase_id: "phase_1".into(),
+                        segment_id: "question:q1:line:wrong:content".into(),
+                    },
+                    "wrong content",
+                )],
+                0,
+                0,
+                6,
+            )
+            .unwrap(),
+        );
+        scene.line_content_start = 0;
+        assert_eq!(
+            capture_checkpoint_v1(&engine).unwrap_err().code,
+            "invalidSaveCapture"
+        );
+    }
+
+    #[test]
+    fn rejects_live_stable_ids_missing_from_packaged_definitions() {
+        let mut engine = fixture_engine();
+        engine
+            .jump_to_scene("chapter_1", "investigation_scene_1")
+            .unwrap();
+        engine.history = DialogueHistory::default();
+        let SceneRuntime::Investigation(scene) = &mut engine.scene else {
+            panic!("expected investigation");
+        };
+        scene.intro_played = true;
+        scene.current_sublocation_id = Some("missing_room".into());
+        assert_eq!(
+            capture_checkpoint_v1(&engine).unwrap_err().code,
+            "invalidSaveCapture"
+        );
+
+        let mut engine = fixture_engine();
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "test_evidence".into(),
+            name: "copy".into(),
+            description: "copy".into(),
+            details: "copy".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "interrogation_scene_2".into(),
+        });
+        assert_eq!(
+            capture_checkpoint_v1(&engine).unwrap_err().code,
+            "invalidSaveCapture"
+        );
+
+        let mut engine = fixture_engine();
+        engine
+            .story_state
+            .insert_unknown_objective_for_test("missing");
+        assert_eq!(
+            capture_checkpoint_v1(&engine).unwrap_err().code,
+            "invalidSaveCapture"
+        );
+
+        let mut engine = fixture_engine();
+        let SceneRuntime::Linear(scene) = &mut engine.scene else {
+            panic!("expected linear");
+        };
+        scene.queue = Some(
+            ActiveDialogueQueue::from_position(
+                vec![segment(
+                    DialogueSegmentOriginV1::LinearScene {
+                        chapter_id: "chapter_1".into(),
+                        scene_id: "missing".into(),
+                    },
+                    "bad",
+                )],
+                0,
+                0,
+                1,
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            capture_checkpoint_v1(&engine).unwrap_err().code,
+            "invalidSaveCapture"
+        );
+    }
+
+    #[test]
+    fn rejects_pending_acquisition_that_disagrees_with_inventory_kind() {
+        let mut engine = fixture_engine();
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "test_evidence".into(),
+            name: "copy".into(),
+            description: "copy".into(),
+            details: "copy".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "investigation_scene_1".into(),
+        });
+        engine.pending_acquisition_events = vec![AcquisitionEventStateV1 {
+            id: "acq:1:0".into(),
+            record_kind: RecordKind::Statement,
+            record_id: "test_evidence".into(),
+            created_by_command_id: 1,
+            ordinal: 0,
+        }];
+        engine.durable_revision = 1;
+
+        assert_eq!(
+            capture_checkpoint_v1(&engine).unwrap_err().code,
+            "invalidSaveCapture"
+        );
+    }
+
+    #[test]
+    fn empty_history_requires_initial_next_id() {
+        let mut engine = fixture_engine();
+        engine.history = DialogueHistory::from_persistence_parts_for_test(Vec::new(), 2, None);
+
+        assert_eq!(
+            capture_checkpoint_v1(&engine).unwrap_err().code,
+            "invalidSaveCapture"
+        );
+    }
+
+    #[test]
+    fn history_scene_ids_are_resolved_within_each_chapter_package() {
+        let mut engine = fixture_engine();
+        let mut repeated_id_chapter = engine.chapters[0].clone();
+        repeated_id_chapter.id = "chapter_2".into();
+        repeated_id_chapter.title = "Chapter Two".into();
+        engine.chapters.push(repeated_id_chapter);
+
+        let captured = capture_checkpoint_v1(&engine).unwrap();
+
+        assert_eq!(
+            captured.snapshot.dialogue_history.last_token,
+            Some(QueueToken {
+                scene_id: "scene_0".into(),
+                queue_gen: 1,
+                cursor: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn captures_active_investigation_and_interrogation_intro_and_outro_origins() {
+        let mut investigation = fixture_engine();
+        investigation
+            .jump_to_scene("chapter_1", "investigation_scene_1")
+            .unwrap();
+        let captured = capture_checkpoint_v1(&investigation).unwrap();
+        assert_eq!(
+            captured.snapshot.active_dialogue.unwrap().segment_origins,
+            vec![DialogueSegmentOriginV1::InvestigationIntro {
+                chapter_id: "chapter_1".into(),
+                scene_id: "investigation_scene_1".into(),
+            }]
+        );
+
+        let mut interrogation = fixture_engine();
+        interrogation
+            .jump_to_scene("chapter_1", "interrogation_scene_2")
+            .unwrap();
+        let intro = capture_checkpoint_v1(&interrogation).unwrap();
+        assert_eq!(
+            intro.snapshot.active_dialogue.unwrap().segment_origins,
+            vec![DialogueSegmentOriginV1::InterrogationIntro {
+                chapter_id: "chapter_1".into(),
+                scene_id: "interrogation_scene_2".into(),
+            }]
+        );
+        let SceneProgressSnapshotV1::Interrogation {
+            line_content_segment_index,
+            ..
+        } = intro.snapshot.scene
+        else {
+            panic!("expected interrogation");
+        };
+        assert_eq!(line_content_segment_index, None);
+
+        interrogation.history = DialogueHistory::default();
+        let SceneRuntime::Interrogation(scene) = &mut interrogation.scene else {
+            panic!("expected interrogation");
+        };
+        scene.intro_played = true;
+        scene.outro_played = true;
+        scene.pending_queue = Some(
+            ActiveDialogueQueue::from_position(
+                vec![segment(
+                    DialogueSegmentOriginV1::InterrogationOutro {
+                        chapter_id: "chapter_1".into(),
+                        scene_id: "interrogation_scene_2".into(),
+                    },
+                    "outro",
+                )],
+                0,
+                0,
+                6,
+            )
+            .unwrap(),
+        );
+        scene.line_content_start = 1;
+        interrogation.next_queue_gen = 7;
+        let outro = capture_checkpoint_v1(&interrogation).unwrap();
+        assert_eq!(
+            outro.snapshot.active_dialogue.unwrap().segment_origins,
+            vec![DialogueSegmentOriginV1::InterrogationOutro {
+                chapter_id: "chapter_1".into(),
+                scene_id: "interrogation_scene_2".into(),
+            }]
+        );
+        let SceneProgressSnapshotV1::Interrogation {
+            line_content_segment_index,
+            ..
+        } = outro.snapshot.scene
+        else {
+            panic!("expected interrogation");
+        };
+        assert_eq!(line_content_segment_index, None);
     }
 }

@@ -303,6 +303,12 @@ impl StoryState {
             active_primary_objective_id: snapshot.active_primary_objective_id,
         })
     }
+
+    #[cfg(test)]
+    pub(crate) fn insert_unknown_objective_for_test(&mut self, id: &str) {
+        self.objectives
+            .insert(id.into(), ObjectiveProgress { completed: false });
+    }
 }
 
 #[allow(dead_code)]
