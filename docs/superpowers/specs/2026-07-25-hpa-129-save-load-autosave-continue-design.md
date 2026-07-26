@@ -73,6 +73,17 @@ the current Linear issue:
 The user approved the first two refinements during HPA-129 design and the latter
 two during HPA-392 design.
 
+Other persistence shapes retained in the broader parent document are
+historical context rather than alternate implementation choices:
+
+| Parent baseline | Normative HPA-392 contract |
+| --- | --- |
+| One autosave plus one hidden backup | Five visible rotating autosaves and no hidden backup |
+| Continue selects the newest valid save or falls back from a corrupt primary | Continue selects the newest written save and stops on its diagnostic when invalid |
+| Active definitions carry per-segment hashes | One compiler-owned package `contentRevision` gates all static semantics; stable origins locate dialogue |
+| Analysis/story-event dialogue origins are part of the initial save union | Only current linear, investigation, and interrogation origins ship in v1; later runtimes require schema variants or migrations |
+| Acquisition command IDs are strings and acknowledged events remain stored | Command IDs are `u64` values derived from `durable_revision`; only pending events are stored and durable acknowledgement removes them |
+
 ## 2. Approved product decisions
 
 1. Rust owns schemas, capture, restoration, migrations, storage, autosave
@@ -339,6 +350,7 @@ continues to store already-rendered historical copy as described in §7.3.
 The initial disk contract is schema version 1:
 
 ```rust
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SaveEnvelopeV1 {
     schema_version: u32,
     content_revision: String,
@@ -352,21 +364,33 @@ struct SaveEnvelopeV1 {
     snapshot: SaveSnapshotV1,
 }
 
+#[serde(rename_all = "camelCase")]
 enum SaveType {
     Auto,
     Manual,
 }
 ```
 
+Every concrete versioned type persisted inside the save envelope uses
+camelCase JSON field names. Tagged enums use a `type` discriminator whose
+variant names and variant fields are also lower camel case; unit enums such as
+`SaveType` encode as `"auto"` and `"manual"`. Version dispatch first parses
+the minimal `schemaVersion` envelope, then the selected concrete version
+rejects unknown fields. This disk policy is independent of—but intentionally
+matches—the existing camelCase content-manifest and IPC conventions. Exact-byte
+fixtures pin representative nested keys so migrations, discovery, Rust tests,
+and packaged E2E cannot invent a snake_case save dialect.
+
 `slot` is `1..=5` for autosaves and `1..=3` for manual saves. Slot identity
 comes from the storage target as well as the envelope. A mismatch is a corrupt
 file, not a request to load a different slot.
 
 `save_id` identifies the logical saved checkpoint and is generated as a
-cryptographically random UUID v4. It changes whenever any slot receives a new
-snapshot and remains stable only when an explicit migration reads that same
-checkpoint in memory. It is an optimistic-concurrency token, not an
-authorization secret.
+cryptographically random UUID v4 in canonical lowercase hyphenated form. Rust
+accepts it only when parsing and formatting the UUID round-trips to the exact
+stored string. It changes whenever any slot receives a new snapshot and remains
+stable only when an explicit migration reads that same checkpoint in memory.
+It is an optimistic-concurrency token, not an authorization secret.
 
 `saved_at` is one RFC 3339 UTC timestamp for the checkpoint. There is no
 separate creation timestamp because every disk write creates a new checkpoint
@@ -396,7 +420,11 @@ is authoritative and returns a typed name diagnostic on failure.
 Thumbnail metadata is presentation-only:
 
 ```rust
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 enum ThumbnailDescriptorV1 {
     Available {
         object_id: String,
@@ -409,24 +437,32 @@ enum ThumbnailDescriptorV1 {
     Unavailable,
 }
 
+#[serde(rename_all = "camelCase")]
 enum ThumbnailFormat {
     Png,
 }
 ```
 
-`object_id` is derived from the opaque checkpoint `save_id`, never from
-`display_name`, chapter/scene copy, or a frontend path. Accepted images must be
-PNG, non-empty, at most 1 MiB encoded, and no larger than 480×360. Width and
-height retain the captured ratio; capture never crops, stretches, pads, or
-upscales. Rust validates the PNG signature/IHDR, byte length, dimensions, and
-digest before retaining a candidate. The digest wire format is
-`sha256:<lowercase hex>`.
+The pure derivation is `object_id = save_id`; v1 adds no prefix, alternate
+encoding, or second hash. It is therefore the same canonical lowercase
+hyphenated UUID string, derived from the opaque checkpoint and never from
+`display_name`, chapter/scene copy, or a frontend path. The only final sidecar
+path is `<tauri-app-data>/saves/thumbnails/{object_id}.png`, constructed after
+UUID validation. Accepted images must be PNG, non-empty, at most 1 MiB encoded,
+and no larger than 480×360. Width and height retain the captured ratio; capture
+never crops, stretches, pads, or upscales. Rust validates the PNG
+signature/IHDR, byte length, dimensions, and digest before retaining a
+candidate. The digest wire format is `sha256:<lowercase hex>`.
 
 On every read, Rust validates the checkpoint ID as a canonical UUID, recomputes
-the one expected object ID, and requires the descriptor to match before
-resolving a bounded child path under `thumbnails/`. A mismatch is presentation
-corruption. An object ID parsed from an envelope is never joined directly to an
-application-data path.
+the expected object ID by identity, and requires the descriptor to match before
+joining that validated value beneath the fixed `thumbnails/` directory. A
+mismatch is presentation corruption. An object ID parsed from an envelope is
+never joined directly to an application-data path.
+
+Encoded PNG bytes contain only the fitted gameplay pixels. Any empty space
+needed to present a non-4:3 image in a save card is letterboxing supplied by
+the card's CSS chrome; padding is never baked into the PNG.
 
 `SaveSummary` stores presentation metadata only:
 
@@ -452,6 +488,7 @@ affect restoration.
 resume:
 
 ```rust
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SaveSnapshotV1 {
     chapter_id: String,
     scene_id: String,
@@ -480,12 +517,14 @@ by `SaveEnvelopeV1.content_revision`.
 `SceneProgressSnapshotV1` is a closed tagged enum:
 
 ```rust
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 enum SceneProgressSnapshotV1 {
     Linear,
-    GameComplete {
-        final_chapter_id: String,
-        final_scene_id: String,
-    },
+    GameComplete,
     Investigation {
         intro_played: bool,
         outro_played: bool,
@@ -552,6 +591,20 @@ snapshot enums; restore validates every referenced ID and reconstructs the
 runtime key through the same central adapter. Unknown prefixes or malformed
 internal keys fail capture rather than leaking into the save wire format.
 
+The adapter table is exhaustive:
+
+| Snapshot reference | Current runtime key | Restore validation |
+| --- | --- | --- |
+| `InvestigationOverrideRefV1::Hotspot { id }` | `hotspot:{id}` | `id` resolves to exactly one hotspot in the current investigation scene |
+| `InvestigationOverrideRefV1::Sublocation { id }` | `sublocation:{id}` | `id` resolves to exactly one sublocation in the current investigation scene |
+| `InvestigationOverrideRefV1::Topic { character_id, topic_id }` | `topic:{character_id}@{topic_id}` | the exact character/topic pair resolves in the current investigation scene |
+| `InterrogationOverrideRefV1::Question { id }` | `question:{id}` | `id` resolves to exactly one question in the current interrogation scene |
+| `InterrogationOverrideRefV1::Phase { id }` | `phase:{id}` | `id` resolves to exactly one phase in the current interrogation scene |
+
+Compiler slug validation excludes the runtime separators from each component
+ID. Capture and restore call one shared adapter implementation; no scene
+capture path formats or parses these keys independently.
+
 Definitions themselves remain packaged content. Capture serializes stable IDs,
 sets, scalars, and progress only. Unordered runtime sets are sorted before
 serialization for deterministic fixtures and diagnostics.
@@ -598,12 +651,16 @@ The loader rejects:
   restored question;
 - any package `contentRevision` mismatch.
 
-`GameComplete` is captured rather than excluded. It retains the final entered
-chapter/scene IDs for summary and validation. Restore resolves those final
-packaged definitions, restores all saved mutable state, and then reinstalls the
-existing completion sentinel (`current_chapter_idx == chapters.len()` while the
-final scene remains retained). Continue therefore returns to Game Complete
-rather than attempting to enter a nonexistent successor scene.
+`GameComplete` is captured rather than excluded. It has no duplicate identity
+fields: `SaveSnapshotV1.chapter_id` and `.scene_id` are the sole final-location
+authority for this variant. Capture requires those IDs to equal the final
+packaged chapter and its final scene and requires the retained `SceneRuntime`
+to have that scene ID. Restore resolves those top-level IDs, restores all saved
+mutable state, and then reinstalls the existing completion sentinel
+(`current_chapter_idx == chapters.len()` while the final scene remains
+retained). Continue therefore returns to Game Complete rather than attempting
+to enter a nonexistent successor scene. For non-complete variants, the same
+top-level fields identify the ordinary current chapter and scene.
 
 Captures occur only after a durable command and all synchronous navigation
 triggered by that command have completed. Therefore:
@@ -695,15 +752,20 @@ because the already-carried cue is present in `last_visual_cue` before capture.
 Mute and volume preferences remain unchanged.
 
 Dialogue history stores the bounded Rust-owned transcript, its next entry ID,
-and its last recorded queue token. The transcript is a deliberate narrow
-exception to the general no-authored-prose rule: it is already-realized,
+and its last recorded queue token. Version 1 uses the existing
+`DIALOGUE_HISTORY_LIMIT = 50`; save capture shares that runtime constant rather
+than duplicating a number in the save module. The transcript is a deliberate
+narrow exception to the general no-authored-prose rule: it is already-realized,
 player-visible historical output, not a source used to reconstruct an active
 queue or replay mutations. Keeping the rendered speaker/text/title copy
 preserves the exact log the player saw across process restart.
 
 Restoring the bounded entries, counter, and last token prevents duplicate
-history entries on the first post-load view. Historical transcript copy is not
-an authoritative static-definition reference and cannot affect gameplay state.
+history entries on the first post-load view. The loader rejects more than 50
+entries instead of silently truncating them, and validates that entry IDs,
+`next_id`, and `last_token` form a possible rolling history. Historical
+transcript copy is not an authoritative static-definition reference and cannot
+affect gameplay state.
 
 ## 8. Ordered dialogue segments
 
@@ -889,6 +951,15 @@ tripwire rather than a second source of identity.
 Pending events exist only until acknowledgement. The command transaction
 derives its command ID from the rollback-tracked durable revision; a failed
 command restores the revision, inventory, and pending events together.
+`durable_revision` and `pending_acquisition_events` are therefore
+rollback-tracked `GameEngine` fields and must be added to both sides of the
+existing exhaustive `EngineRollbackSnapshot` capture/restore destructuring in
+the same implementation task.
+
+Version 1 has no acquisition-event legacy importer. The disk field
+`createdByCommandId` is a JSON number backed by `u64`; the parent design's
+string command IDs and retained `acknowledged` flag are neither accepted nor
+silently converted.
 
 ### 9.2 Presentation
 
@@ -909,8 +980,17 @@ beneath it and submits either the PNG or a terminal capture failure.
 
 The frontend then invokes
 `acknowledge_acquisition_event(eventId, preparedThumbnailTicket)`.
-Acknowledgement is a durable Rust command. It atomically verifies and consumes
-the event-bound ticket, advances the revision, refreshes the session autosave
+That invocation is the popup's only state request: it does not poll
+`get_state`. The Continue control immediately becomes disabled, the popup
+announces `Saving…`, and one async handler awaits the consuming command. After
+2,000 ms the still-open popup changes its status to `Still saving…`; completion
+over that named threshold writes one local slow-operation warning with elapsed
+time but introduces no metrics service. A typed failure moves the same popup
+to its Retry/Cancel flow.
+
+Acknowledgement is a durable Rust command. It first atomically verifies and
+claims the event-bound ticket under an exclusive intent; after obtaining its
+reserved writer turn, it advances the revision, refreshes the session autosave
 with the accepted image or `Unavailable`, and returns success only after the
 authoritative slot replacement. A post-commit sidecar cleanup failure follows
 §12.2's cleanup-pending/degraded result but does not undo the durable
@@ -927,16 +1007,51 @@ and prepares a fresh capture ticket. This synchronous durability path is the
 deliberate exception to background autosave failure leaving an ordinary
 gameplay mutation committed.
 
-The command acquires the replacement gate before the session lock, retains an
-`EngineRollbackSnapshot`, and registers an exclusive acknowledgement intent
-that makes every other gameplay state command—including `get_state`—fail fast
-until resolution, so no caller can observe the provisional acknowledged view.
-It applies and captures the acknowledgement checkpoint, then releases the
-session lock while retaining the gate for file I/O. Success finalizes the
-mutation and checkpoint together; failure reacquires the session lock under the
-already-held gate, verifies the intent and unchanged generation, restores the
-snapshot, and then releases both. It never holds the gameplay/session mutex
-during serialization, PNG/JSON writes, flushes, or directory sync.
+Acknowledgement uses the following normative ordering, including when the
+normal revision-N autosave is already in flight:
+
+1. under short-lived coordinator/session access, verify and claim the
+   ticket's terminal capture result, register the exclusive acknowledgement
+   intent, and reserve the coordinator's next serialized writer turn;
+2. release those locks and wait for the current writer to finish without
+   holding the writer turn, replacement gate, or session lock; the claimed
+   terminal capture result does not expire while waiting;
+3. take the reserved writer turn, then acquire the replacement gate, then the
+   session lock;
+4. revalidate the unchanged session generation, source revision, and exact
+   event; retain an `EngineRollbackSnapshot`, apply acknowledgement as revision
+   N+1, capture its immutable envelope/target, and release the session lock;
+5. retain the writer turn and replacement gate while writing N+1 into the same
+   session autosave target, without holding the session lock;
+6. on authoritative success, reacquire the session lock under the gate and
+   finalize the mutation/checkpoint; on failure before JSON replacement,
+   reacquire it, verify the intent/generation, and restore the rollback
+   snapshot;
+7. release the session lock, replacement gate, writer turn, and exclusive
+   intent.
+
+The revision-N attempt may replace the chosen slot before acknowledgement gets
+its turn. The N+1 acknowledgement then replaces that same target. Thus the
+pair can perform two sequential physical replacements but selects/rotates only
+one autosave slot, consumes one recovery-depth position, and leaves N+1 as the
+final successful checkpoint. A process exit between those replacements
+correctly leaves revision N with its still-pending event. If the N attempt
+fails, its already-selected session target remains the acknowledgement target;
+acknowledgement does not rotate again. The registered acknowledgement intent
+also suppresses any redundant debounced follow-up for N.
+
+If revision N is only debounce/capture pending and has not taken the writer
+turn, acknowledgement supersedes that pending intent and writes N+1 directly;
+it performs the one required target selection when the session has none. A
+superseded N intent cannot later enter the writer queue.
+
+Every other gameplay state command—including `get_state`—and every session
+transition command, including New Game, Load, Continue, and Return to Title,
+fails fast with the typed persistence-operation-in-progress error from intent
+registration until resolution, so no caller can observe or replace the
+provisional acknowledged view. The coordinator's own in-flight writer
+completion remains allowed. Serialization, PNG/JSON writes, flushes, and
+directory sync never hold the gameplay/session mutex.
 
 This preflight capture is valid for the resulting checkpoint because the
 acquisition popup is a filtered sibling outside the gameplay root, and removing
@@ -1071,10 +1186,13 @@ identity; it is neither a path nor an authorization secret.
 Manual Save requests its ticket after gameplay input is isolated by the save
 browser. It does not advance the durable revision. The subsequent
 `save_manual` command consumes that exact ticket and rejects it if the session
-or revision changed. Acquisition acknowledgement follows the preflight sequence
-in §9.2; only that successful command may promote its prepared frame from the
-source revision to the bound next revision. Any intervening mutation
-supersedes the ticket.
+or revision changed. The same durable revision may be saved into several
+manual slots intentionally; every successful command still creates a distinct
+`save_id`, `saved_at`, display name, and thumbnail attempt, and it never adopts
+a manual slot as the session autosave target. Acquisition acknowledgement
+follows the preflight sequence in §9.2; only that successful command may
+promote its prepared frame from the source revision to the bound next revision.
+Any intervening mutation supersedes the ticket.
 
 For ordinary gameplay mutations, Svelte first applies the returned `state`,
 lets the gameplay root render, and then handles the wrapper's request. For
@@ -1089,11 +1207,13 @@ intent. Older or superseded ticket results are discarded without altering
 gameplay. Thumbnail results are bounded before retention; arbitrary frontend
 bytes are never written directly to a caller-selected path. Every prepared
 ticket reaches one bounded terminal state: accepted bytes, reported failure,
-expiry, or supersession. `save_manual` and
-`acknowledge_acquisition_event` may wait only for the remainder of that
-ticket's 1,000 ms deadline without holding the gameplay/session mutex; expiry
+expiry, or supersession. `save_manual` and the acknowledgement command's
+initial ticket-claim phase may wait only for the remainder of that ticket's
+1,000 ms capture deadline without holding the gameplay/session mutex. Expiry
 is consumed as `Unavailable`, so preview failure cannot strand the
-authoritative operation.
+authoritative operation. Once acknowledgement claims a terminal result and
+reserves the next writer turn as specified in §9.2, time spent behind the
+current writer does not expire or detach that result.
 
 ### 11.2 Thumbnail capture and debounce
 
@@ -1130,27 +1250,33 @@ the latter would drift from the real Svelte gameplay frame.
 Bulk serialization and file I/O must not hold the gameplay/session mutex.
 Writes use this ordering:
 
-1. under the session lock, verify the session generation, capture one immutable
+1. after the thumbnail intent reaches a terminal result, take the coordinator's
+   serialized writer turn without holding the replacement gate or session lock;
+2. under the session lock, verify the session generation, capture one immutable
    envelope plus revision and matching thumbnail result, and register its
    target/write intent;
-2. release the session lock, serialize, write, flush, and sync unique
+3. release the session lock, serialize, write, flush, and sync unique
    same-filesystem temporary sidecar/envelope files in the detailed §12.2
    order;
-3. acquire a narrow replacement gate shared with New Game, Load, and Return to
+4. acquire a narrow replacement gate shared with New Game, Load, and Return to
    Title session-generation transitions;
-4. under the session lock, revalidate the generation and registered
+5. under the session lock, revalidate the generation and registered
    target/revision intent, note whether a newer revision now exists, then
    release the session lock while retaining the replacement gate;
-5. if stale, skip replacement and clean the temporary files; otherwise commit
+6. if stale, skip replacement and clean the temporary files; otherwise commit
    the sidecar, then atomically replace the envelope and sync both parent
    directories without holding the gameplay mutex;
-6. under the session lock, record success/health for the written revision and
+7. under the session lock, record success/health for the written revision and
    schedule a follow-up when the same session has a newer committed revision;
-7. release the session lock and replacement gate.
+8. release the session lock, replacement gate, and writer turn.
 
-All users acquire the replacement gate before the session lock when both are
-needed. This prevents a stale session from replacing a slot while keeping
-gameplay responsive during the long temporary-file write.
+The writer-turn queue gives a registered acknowledgement the next turn after
+the current writer, ahead of later debounced work. No path acquires a writer
+turn while holding the replacement gate or session lock. All users acquire the
+replacement gate before the session lock when both are needed. This prevents a
+stale session from replacing a slot, removes the acknowledgement/write
+deadlock cycle, and keeps gameplay responsive during long temporary-file
+writes.
 
 ### 11.3 Session generations and flushes
 
@@ -1289,6 +1415,9 @@ autosave target. Acquisition acknowledgement is the sole in-place refresh
 operation: it replaces that target without another selection. If no target
 exists, it performs one normal selection. Loading an autosave adopts its slot
 as the new session target; loading a manual save starts with no autosave target.
+Target selection is registered with the normal checkpoint's write intent and
+is retained across an attempt failure for retry or following acknowledgement;
+selection alone does not claim that the slot replacement succeeded.
 
 Starting New Game does not pre-delete saves and shows no warning. The first
 committed mutation produces an autosave through normal rotation.
@@ -1398,6 +1527,13 @@ missing/corrupt thumbnail—or an unavailable thumbnail directory—makes only t
 affected thumbnail presentation unavailable. Discovery returns the same typed
 schema, content-revision, cursor, and progress diagnostics that a load would
 return.
+
+Discovery steps 5–7 and transactional load call the same pure
+definition-resolution, dialogue-reconstruction, and snapshot-invariant
+validators. Discovery runs them in validate-only mode and never installs the
+candidate into a live engine; load may construct/install only after those same
+functions succeed. There is no lighter duplicate discovery validator whose
+notion of `Valid` can drift from load.
 
 Thumbnail image bytes are loaded lazily through
 `read_save_thumbnail(reference, observed_save_id)`. Rust rereads the slot
@@ -1758,6 +1894,10 @@ Load mode shows:
 1. five autosave positions, newest visually marked;
 2. three manual positions.
 
+The autosave group includes unobtrusive helper copy:
+`Autosaves replace the oldest automatically.` This explains repeated New Game
+rotation without adding a warning or confirmation to the approved start flow.
+
 Each valid entry shows:
 
 - its thumbnail at the captured natural aspect ratio, or a deterministic
@@ -1862,8 +2002,8 @@ diagnostics for:
 - malformed, oversized, or out-of-bounds submitted PNG;
 - stale/superseded thumbnail ticket;
 - mismatched acquisition-acknowledgement ticket purpose or event;
-- gameplay state command attempted while acknowledgement persistence is
-  unresolved;
+- `persistenceOperationInProgress` when a gameplay state or session-transition
+  command is attempted while acknowledgement persistence is unresolved;
 - stale manual-overwrite confirmation;
 - stale session generation;
 - unavailable or stale persistence-bypass confirmation;
@@ -1950,13 +2090,22 @@ a save-envelope write failure is never hidden behind a thumbnail warning.
 ### 18.2 Rust schema, capture, and restore tests
 
 - Serialize and deserialize schema version 1.
+- Pin an exact representative envelope JSON fixture with `schemaVersion`,
+  `contentRevision`, `saveId`, `saveType`, `createdByCommandId`, and nested
+  lower-camel tagged-enum fields; reject an otherwise equivalent snake_case
+  v1 payload.
 - Round-trip display-name and thumbnail descriptors without placing either in
   `SaveSnapshotV1`.
 - Prove exhaustive `GameEngine` field classification fails to compile when a
   new field is neither persistent, immutable, derived, nor rollback-only.
+- Capture and restore an `EngineRollbackSnapshot` with a nonzero durable
+  revision and pending acquisition events, proving both fields participate in
+  the exhaustive rollback contract.
 - Round-trip linear dialogue at a nonzero cursor.
-- Round-trip `GameComplete` with final chapter/scene IDs, validate those final
-  definitions, and reinstate the completion sentinel after restore.
+- Round-trip unit `GameComplete` using only the snapshot's top-level final
+  chapter/scene IDs, reject any retained-scene/final-definition mismatch, and
+  reinstate `current_chapter_idx == chapters.len()` with the final scene
+  retained.
 - Round-trip investigation progress and active dialogue.
 - Round-trip interrogation phase, cross-exam, line-content boundary, and active
   dialogue.
@@ -1971,7 +2120,8 @@ a save-envelope write failure is never hidden behind a thumbnail warning.
   chapter/scene provenance without authored record copy.
 - Preserve HPA-255 story state and active-primary uniqueness.
 - Preserve the bounded dialogue transcript, next ID, last token, visual/audio
-  cue IDs, queue generation, and durable revision.
+  cue IDs, queue generation, and durable revision; accept exactly 50 history
+  entries and reject 51 rather than truncating during load.
 - Round-trip a fresh engine's non-optional default `last_visual_cue` object.
 - Restart restored BGM/BGS assets from the beginning, preserve carried
   cross-scene cues, and restore explicit silence without changing preferences.
@@ -1985,8 +2135,9 @@ a save-envelope write failure is never hidden behind a thumbnail warning.
 - Reject missing current/required stable IDs even after the revision matches.
 - Rebuild pending dialogue from unchanged packaged copy and preserve
   already-recorded historical transcript copy.
-- Reject malformed snapshot override references and round-trip every closed
-  investigation/interrogation override variant.
+- Round-trip every row in the exhaustive override adapter table—including the
+  topic `@` runtime form—and reject malformed prefixes, separators, and
+  definition references.
 - Reject inconsistent scene/runtime/cursor combinations.
 - Prove a failed load leaves the live engine's public view and coordinator
   generation unchanged.
@@ -2037,6 +2188,9 @@ and a controllable writer:
   back for an unusable name, and prevent all display-name influence on paths;
 - accept only bounded PNG submissions with matching signature, IHDR,
   dimensions, byte length, and digest;
+- require canonical lowercase hyphenated UUID v4 save IDs, derive
+  `object_id == save_id`, and resolve only the corresponding fixed
+  `thumbnails/{object_id}.png` child;
 - reject a noncanonical checkpoint/object-ID pair before resolving any
   thumbnail path;
 - reject stale/superseded thumbnail tickets; bind ordinary candidates to one
@@ -2045,8 +2199,14 @@ and a controllable writer:
 - reach one terminal result for every prepared ticket; time out thumbnail
   capture after 1,000 ms and still commit a valid envelope with
   `thumbnailUnavailable`;
+- serialize the same durable revision into multiple manual slots with distinct
+  save IDs/timestamps/thumbnail attempts and prove none becomes the session
+  autosave target;
 - mark a slot `Valid` only after non-mutating schema migration, exact
   `contentRevision` validation, stable-ID resolution, and snapshot validation;
+- run a shared table of malformed IDs, dialogue coordinates, history
+  invariants, and scene progress through discovery and load and require the
+  same pure validator/diagnostic outcome;
 - mark a differing `contentRevision` incompatible without attempting partial
   definition matching;
 - repeat validation and reject a changed `save_id` between discovery and load;
@@ -2069,6 +2229,17 @@ and a controllable writer:
 - reject stale manual overwrite confirmation;
 - coalesce rapid revisions into one 500 ms autosave;
 - schedule a follow-up write when a revision commits during a write;
+- acknowledge while revision N is still debounce/capture pending and prove N
+  is superseded before the writer queue while N+1 selects/writes one target;
+- start revision N's normal autosave, reserve acknowledgement while N is
+  writing, let N finish, then commit N+1 into the same target; prove the pair
+  selects one slot, leaves N+1 final, schedules no redundant N follow-up, and
+  never holds the replacement gate while waiting for the writer turn;
+- repeat that race with N failing before replacement and prove N+1 uses the
+  already-selected target without a second rotation;
+- reject New Game, Load, Continue, and Return to Title while acknowledgement
+  is queued or active, while still allowing the coordinator's current writer
+  to finish;
 - prevent stale session generations from replacing slots;
 - reject without-saving commands before a matching persistence failure and
   after their session generation becomes stale;
@@ -2095,6 +2266,9 @@ and a controllable writer:
 - prove Load, Continue, New Game, and Return to Title acquire the replacement
   gate before the session lock and cannot deadlock with a writer holding the
   gate;
+- prove every writer takes the serialized writer turn before the replacement
+  gate and session lock, while acknowledgement intent registration and waiting
+  hold neither gate;
 - return one global discovery error rather than eight fabricated invalid slots
   when directory enumeration or the shared packaged manifest fails, while
   keeping file-specific revision/reference mismatches per-slot;
@@ -2118,10 +2292,12 @@ and a controllable writer:
 - Valid rows render the complete save metadata contract; package-revision
   incompatibilities render the discovery diagnostic before Load is selected.
 - Cards render intrinsic-ratio thumbnails, deterministic placeholders, and
-  readable invalid-slot names without constructing filesystem URLs.
+  readable invalid-slot names without constructing filesystem URLs; any
+  letterboxing comes from CSS chrome rather than encoded PNG padding.
 - Lazy thumbnail loads pass slot plus observed save ID, revoke stale Blob URLs,
   and fall back on image decode failure.
 - Browser renders all five autosaves and all three manual slots.
+- The autosave group explains that autosaves replace the oldest automatically.
 - Empty manual slots prefill the generated name; occupied slots retain a
   readable valid name or fall back to the suggestion; mirrored
   1–40-grapheme validation blocks submission before Rust.
@@ -2144,6 +2320,9 @@ and a controllable writer:
 - Acquisition acknowledgement captures the gameplay root beneath the still-open
   excluded popup before invoking the event-bound consuming command; a failed
   flush leaves that popup visible.
+- During acknowledgement, the popup disables dismissal, announces `Saving…`
+  then `Still saving…` after 2,000 ms, performs one awaited consuming command,
+  never polls `get_state`, and exposes typed Retry/Cancel recovery.
 - Save-health warning persists until a successful save/flush clears it.
 - Persistence status events update the warning after background writes without
   a gameplay command.
@@ -2238,6 +2417,15 @@ Planning must respect this dependency order:
 6. add packaged HPA-392 E2E coverage and run the full cross-stack verification
    gates.
 
+The implementation plan must include one coordinator state diagram or
+transition table covering `Idle`, `DebouncePending`, `WriteInFlight`,
+`AcknowledgementExclusiveQueued`, `AcknowledgementExclusiveActive`,
+`FlushRequested`, `DegradedWithFailureToken`, and
+`SessionGenerationTransition`. It must show the serialized writer-turn,
+replacement-gate, and session-lock acquisition order on every transition,
+including acknowledgement arriving during an in-flight write and New
+Game/Load/Return to Title arriving during pending work.
+
 PR #27 already delivered compiler-owned content identity,
 `ActiveDialogueQueue`, stable origins, and capture/reconstruction seams. HPA-392
 must consume those boundaries rather than reimplementing canonicalization,
@@ -2316,7 +2504,7 @@ board/result-dialogue resume accepted by HPA-266.
 | Resume one dialogue segment exactly | §§8.1–8.3, 18.3 |
 | Resume composite dialogue exactly | §§8.1–8.3, 18.3 |
 | Acquisition acknowledgement appears once without consuming recovery depth | §§2, 9, 11.1–11.3, 12.3, 18.3–18.6 |
-| Acknowledgement thumbnail and durable refresh complete before the popup closes | §§2, 9, 11.1, 18.3–18.6 |
+| Acknowledgement thumbnail and durable refresh complete before the popup closes | §§2, 9, 11.1–11.3, 18.3–18.6 |
 | Generic incomplete resumable fixture | §10, §18.2 |
 | Five visible latest autosaves | §§2, 12.3–12.4, 16.2, 18.4 |
 | Invalid newest blocks Continue | §§2, 12.4, 16.1, 18.4 |
