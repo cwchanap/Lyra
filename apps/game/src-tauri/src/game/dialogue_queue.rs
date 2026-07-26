@@ -7,8 +7,6 @@ use crate::game::schema::{
 use crate::game::state::ChapterManifest;
 use crate::game::GameError;
 
-pub(super) const REEXAMINE_FALLBACK_TEXT: &str = "（沒有新發現。）";
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
     tag = "type",
@@ -219,7 +217,9 @@ mod persistence_adapter_tests {
                                         {{"kind":"action","text":"inspect-0"}},
                                         {{"kind":"action","text":"inspect-1"}}
                                     ],
-                                    "onReexamine": null
+                                    "onReexamine": [
+                                        {{"kind":"action","text":"（沒有新發現。）"}}
+                                    ]
                                 }}
                             ],
                             "characters": []
@@ -235,7 +235,9 @@ mod persistence_adapter_tests {
                                 {{"kind":"action","text":"collect-0"}},
                                 {{"kind":"action","text":"collect-1"}}
                             ],
-                            "onReexamine": null
+                            "onReexamine": [
+                                {{"kind":"action","text":"（沒有新發現。）"}}
+                            ]
                         }}
                     ],
                     "statementManifest": [],
@@ -373,7 +375,7 @@ mod persistence_adapter_tests {
         assert_eq!(restored.active_coordinates(), (1, 0));
         assert_eq!(restored.queue_gen(), 77);
         assert_eq!(restored.flattened_cursor().unwrap(), 2);
-        assert_action(restored.current(), REEXAMINE_FALLBACK_TEXT);
+        assert_action(restored.current(), "（沒有新發現。）");
     }
 
     #[test]
@@ -559,7 +561,7 @@ mod persistence_adapter_tests {
             [SOURCE_SCENE_ID.to_string(), CURRENT_SCENE_ID.to_string()]
         );
         assert_eq!(restored.segment_origins(), origins);
-        assert_action(restored.current(), REEXAMINE_FALLBACK_TEXT);
+        assert_action(restored.current(), "（沒有新發現。）");
     }
 
     #[test]
@@ -650,19 +652,9 @@ pub(super) struct DialogueSegment {
 
 impl DialogueSegment {
     /// Builds one live/static segment while keeping empty authored carriers out
-    /// of the active queue. The four closed re-examination roles are the one
-    /// exception: their missing/empty authored blocks deterministically render
-    /// the engine-owned fallback so live installation and later reconstruction
-    /// share exactly the same items.
-    pub(super) fn new(
-        origin: DialogueSegmentOriginV1,
-        mut items: Vec<DialogueItem>,
-    ) -> Option<Self> {
-        if items.is_empty() && is_reexamine_origin(&origin) {
-            items.push(DialogueItem::Action {
-                text: REEXAMINE_FALLBACK_TEXT.into(),
-            });
-        }
+    /// of the active queue. Semantic re-examination defaults are materialized
+    /// by the compiler before JSON reaches this runtime boundary.
+    pub(super) fn new(origin: DialogueSegmentOriginV1, items: Vec<DialogueItem>) -> Option<Self> {
         (!items.is_empty()).then_some(Self { origin, items })
     }
 
@@ -927,31 +919,6 @@ impl crate::game::GameEngine {
             crate::game::scenes::SceneRuntime::Investigation(scene) => scene.pending_queue.as_ref(),
             crate::game::scenes::SceneRuntime::Interrogation(scene) => scene.pending_queue.as_ref(),
         }
-    }
-}
-
-fn is_reexamine_origin(origin: &DialogueSegmentOriginV1) -> bool {
-    match origin {
-        DialogueSegmentOriginV1::InvestigationInteraction { segment_id, .. } => {
-            role_id(segment_id, "hotspot:", ":reexamine").is_some()
-                || role_id(segment_id, "topic:", ":reexamine")
-                    .and_then(|ids| ids.split_once(':'))
-                    .is_some_and(|(character_id, topic_id)| {
-                        !character_id.is_empty() && !topic_id.is_empty()
-                    })
-                || role_id(segment_id, "evidence:", ":onReexamine").is_some()
-                || role_id(segment_id, "statement:", ":onReexamine").is_some()
-        }
-        DialogueSegmentOriginV1::InterrogationPhase {
-            phase_id,
-            segment_id,
-            ..
-        } => {
-            phase_id == "inventory"
-                && (role_id(segment_id, "evidence:", ":onReexamine").is_some()
-                    || role_id(segment_id, "statement:", ":onReexamine").is_some())
-        }
-        _ => false,
     }
 }
 
@@ -2251,15 +2218,22 @@ mod tests {
     }
 
     #[test]
-    fn empty_or_missing_reexamine_roles_resolve_to_the_engine_fallback() {
+    fn empty_reexamine_segments_are_rejected_while_explicit_compiler_defaults_resolve() {
+        assert!(
+            DialogueSegment::new(investigation_interaction("hotspot:desk:reexamine"), vec![],)
+                .is_none(),
+            "all empty dialogue segments must remain absent from the runtime queue"
+        );
+
         let mut investigation = investigation_scene();
         let SceneJson::Investigation(scene) = &mut investigation else {
             panic!("expected investigation scene");
         };
-        scene.sublocations[0].hotspots[0].on_reexamine = None;
-        scene.sublocations[0].characters[0].topics[0].on_reexamine = Some(vec![]);
-        scene.evidence_manifest[0].on_reexamine = None;
-        scene.statement_manifest[0].on_reexamine = Some(vec![]);
+        scene.sublocations[0].hotspots[0].on_reexamine = Some(vec![action("（沒有新發現。）")]);
+        scene.sublocations[0].characters[0].topics[0].on_reexamine =
+            Some(vec![action("（沒有新發現。）")]);
+        scene.evidence_manifest[0].on_reexamine = Some(vec![action("（沒有新發現。）")]);
+        scene.statement_manifest[0].on_reexamine = Some(vec![action("（沒有新發現。）")]);
 
         let investigation_segments = resolve_dialogue_segments(
             CHAPTER_ID,
@@ -2271,7 +2245,7 @@ mod tests {
                 investigation_interaction("statement:alibi_statement:onReexamine"),
             ],
         )
-        .expect("closed reexamine roles should resolve to the deterministic fallback");
+        .expect("compiler-materialized reexamine roles should resolve by their stable origins");
         assert_eq!(
             investigation_segments
                 .iter()
@@ -2289,8 +2263,8 @@ mod tests {
         let SceneJson::Interrogation(scene) = &mut interrogation else {
             panic!("expected interrogation scene");
         };
-        scene.evidence_manifest[0].on_reexamine = Some(vec![]);
-        scene.statement_manifest[0].on_reexamine = None;
+        scene.evidence_manifest[0].on_reexamine = Some(vec![action("（沒有新發現。）")]);
+        scene.statement_manifest[0].on_reexamine = Some(vec![action("（沒有新發現。）")]);
         let interrogation_segments = resolve_dialogue_segments(
             CHAPTER_ID,
             &interrogation,
@@ -2309,7 +2283,9 @@ mod tests {
                 },
             ],
         )
-        .expect("interrogation inventory reexamine roles should share the fallback");
+        .expect(
+            "compiler-materialized interrogation inventory roles should resolve by stable origin",
+        );
         assert_eq!(
             interrogation_segments
                 .iter()
