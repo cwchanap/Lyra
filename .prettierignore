@@ -17,3 +17,4 @@ docs
 node_modules
 scripts/__fixtures__
 static/stories_plan
+apps/game/src-tauri/tests/fixtures/saves/v1-representative.json

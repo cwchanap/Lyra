@@ -41,7 +41,7 @@ pub(in crate::game) struct StoryState {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct StoryStateSnapshot {
     pub facts: BTreeMap<String, FactProgressSnapshot>,
     pub questions: BTreeMap<String, QuestionProgressSnapshot>,
@@ -52,7 +52,7 @@ pub(crate) struct StoryStateSnapshot {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct FactProgressSnapshot {
     pub asserted_in_chapter_id: Option<String>,
     pub asserted_in_scene_id: Option<String>,
@@ -63,21 +63,21 @@ pub(crate) struct FactProgressSnapshot {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct QuestionProgressSnapshot {
     pub resolved_by_fact_id: Option<String>,
 }
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ObjectiveProgressSnapshot {
     pub completed: bool,
 }
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct AuthorizationProgressSnapshot {
     pub granted_in_chapter_id: Option<String>,
     pub granted_in_scene_id: Option<String>,
@@ -88,7 +88,8 @@ pub(crate) struct AuthorizationProgressSnapshot {
 #[serde(
     tag = "type",
     rename_all = "camelCase",
-    rename_all_fields = "camelCase"
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
 )]
 pub enum AssertionOrigin {
     SceneEvent {

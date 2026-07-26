@@ -11,6 +11,8 @@ pub mod error;
 pub mod loader;
 pub mod navigation;
 pub mod reveals;
+#[allow(dead_code)] // Later save tasks consume this standalone v1 wire boundary.
+pub(crate) mod save;
 pub mod scenes;
 pub mod schema;
 pub mod state;

@@ -14,7 +14,7 @@ use crate::game::GameError;
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
-pub(super) enum DialogueSegmentOriginV1 {
+pub(crate) enum DialogueSegmentOriginV1 {
     LinearScene {
         chapter_id: String,
         scene_id: String,
@@ -51,11 +51,11 @@ pub(super) enum DialogueSegmentOriginV1 {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[allow(dead_code)] // Task 7 exposes this wire boundary before the full save schema consumes it.
-pub(super) struct ActiveDialogueStateV1 {
-    pub(super) segment_origins: Vec<DialogueSegmentOriginV1>,
-    pub(super) active_segment_index: usize,
-    pub(super) item_cursor: usize,
-    pub(super) queue_gen: u64,
+pub(crate) struct ActiveDialogueStateV1 {
+    pub(crate) segment_origins: Vec<DialogueSegmentOriginV1>,
+    pub(crate) active_segment_index: usize,
+    pub(crate) item_cursor: usize,
+    pub(crate) queue_gen: u64,
 }
 
 #[cfg(test)]
