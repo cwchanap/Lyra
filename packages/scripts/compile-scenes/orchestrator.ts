@@ -52,6 +52,7 @@ import {
   type EmittedSceneJsonV1,
   type SaveContentBundleV1,
 } from "./save-content-manifest";
+import { validateDerivedDialogueOriginCollisions } from "./dialogue-segment-origins";
 import type { ASTChapter, ASTStoryCatalog, CompileError } from "./types";
 import { loadAssetConfig } from "./assets/config";
 import { enrichScenesWithAssets } from "./assets/enrich";
@@ -357,6 +358,15 @@ export function compile(opts: CompileOptions): CompileResult {
     ...validate({ chapters, scenes, skippedReservedFiles, failedParseFiles }),
   );
   errors.push(...validateStoryCatalog(storyCatalog, scenes));
+  errors.push(
+    ...validateDerivedDialogueOriginCollisions(
+      scenes.map((rec) => ({
+        chapterId: rec.chapterId,
+        json: emitSceneRecord(rec),
+        sourceAst: rec.ast,
+      })),
+    ),
+  );
 
   if (errors.length > 0) return { ok: false, errors };
 
@@ -389,12 +399,7 @@ export function compile(opts: CompileOptions): CompileResult {
     const emittedScenes: EmittedSceneJsonV1[] = [];
     for (const rec of scenes) {
       if (rec.chapterId !== chapter.dirName) continue;
-      const json =
-        rec.ast.kind === "linearScene"
-          ? emitLinearScene(rec.ast)
-          : rec.ast.kind === "investigationScene"
-            ? emitInvestigationScene(rec.ast)
-            : emitInterrogationScene(rec.ast);
+      const json = emitSceneRecord(rec);
       const outFile = resolve(
         opts.outputRoot,
         rec.chapterId,
@@ -455,6 +460,14 @@ export function compile(opts: CompileOptions): CompileResult {
     assetReport,
     warnings,
   };
+}
+
+function emitSceneRecord(rec: SceneRecord): EmittedSceneJsonV1 {
+  return rec.ast.kind === "linearScene"
+    ? emitLinearScene(rec.ast)
+    : rec.ast.kind === "investigationScene"
+      ? emitInvestigationScene(rec.ast)
+      : emitInterrogationScene(rec.ast);
 }
 
 function makeAssetReport(

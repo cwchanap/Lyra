@@ -4,7 +4,13 @@ import {
   type BuildSaveContentManifestInput,
   type SaveContentBundleV1,
 } from "./save-content-manifest";
-import type { JSONDialogueItem, JSONLinearScene } from "./types";
+import { emitLinearScene } from "./emitter";
+import type {
+  AssetRef,
+  ASTLinearScene,
+  JSONDialogueItem,
+  JSONLinearScene,
+} from "./types";
 
 const line = (text: string): JSONDialogueItem => ({
   kind: "line",
@@ -190,5 +196,53 @@ describe("buildSaveContentManifest", () => {
     expect(manifest(fromSecondPath).contentRevision).toBe(
       manifest(fromFirstPath).contentRevision,
     );
+  });
+
+  it("normalizes unordered emitted asset refs before package hashing", () => {
+    const audio = {
+      type: "audio",
+      assetId: "audio.bgs.rain",
+    } satisfies AssetRef;
+    const background = {
+      type: "background",
+      assetId: "background.chapter_1.street",
+    } satisfies AssetRef;
+    const portrait = {
+      type: "portrait",
+      assetId: "portrait.detective.standard",
+    } satisfies AssetRef;
+    const emit = (assetRefs: AssetRef[]) =>
+      emitLinearScene({
+        kind: "linearScene",
+        id: "scene_0",
+        title: "Opening",
+        queue: [],
+        assetRefs,
+        sourceFile: "chapter_1/scene_0.md",
+        line: 1,
+      } satisfies ASTLinearScene);
+    const first = emit([portrait, audio, background]);
+    const second = emit([background, portrait, audio]);
+    const changed = emit([
+      background,
+      portrait,
+      { type: "audio", assetId: "audio.bgs.wind" },
+    ]);
+
+    expect(first.assetRefs).toEqual([audio, background, portrait]);
+    expect(second.assetRefs).toEqual(first.assetRefs);
+    const firstRevision = manifest({
+      bundle: bundle([chapter("chapter_1", "Chapter 1", [first])]),
+    }).contentRevision;
+    expect(
+      manifest({
+        bundle: bundle([chapter("chapter_1", "Chapter 1", [second])]),
+      }).contentRevision,
+    ).toBe(firstRevision);
+    expect(
+      manifest({
+        bundle: bundle([chapter("chapter_1", "Chapter 1", [changed])]),
+      }).contentRevision,
+    ).not.toBe(firstRevision);
   });
 });
