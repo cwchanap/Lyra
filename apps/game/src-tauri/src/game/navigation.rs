@@ -50,16 +50,17 @@ impl GameEngine {
         )?
         .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
 
-        self.command_tx(move |engine, _command_id| {
+        self.command_tx(move |engine, command_id, next_ordinal| {
             engine.current_chapter_idx = chapter_idx;
             engine.current_scene_idx = scene_idx;
             engine.scene = new_scene;
             engine.last_visual_cue = LastVisualCue::default();
             engine.inventory = Inventory::default();
+            engine.pending_acquisition_events.clear();
             engine.next_queue_gen = queue_gen + 1;
             engine.history.reset();
 
-            engine.prime_initial_queue()?;
+            engine.prime_initial_queue_for_command(command_id, next_ordinal)?;
             // Developer convenience: jumping straight into an interrogation via
             // scene-navigation skips the investigation where its contradiction
             // evidence is normally collected. Grant everything so every
@@ -69,7 +70,7 @@ impl GameEngine {
             // inventory there would spoil every scene's evidence and bypass
             // the intended inventory gating.
             if cfg!(debug_assertions) && matches!(engine.scene, SceneRuntime::Interrogation(_)) {
-                engine.grant_all_evidence_for_testing();
+                engine.grant_all_evidence_for_testing(command_id, next_ordinal);
             }
             Ok(CommandMutation::Changed)
         })
@@ -81,7 +82,11 @@ impl GameEngine {
     /// in debug builds (`cfg!(debug_assertions)`). Scenes that fail to load are
     /// skipped — this is a best-effort convenience, not a correctness path, so
     /// a single bad scene must not abort the grant.
-    pub(super) fn grant_all_evidence_for_testing(&mut self) {
+    pub(super) fn grant_all_evidence_for_testing(
+        &mut self,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) {
         let chapters = self.chapters.clone();
         for chapter in &chapters {
             for scene_ref in &chapter.scenes {
@@ -102,8 +107,8 @@ impl GameEngine {
                 let mut acq = AcquisitionCtx {
                     inventory: &mut self.inventory,
                     pending_events: &mut self.pending_acquisition_events,
-                    command_id: self.durable_revision.saturating_add(1),
-                    next_ordinal: &mut 0,
+                    command_id,
+                    next_ordinal,
                 };
                 for def in evidence {
                     acq.evidence(def, &chapter.id, &scene_id);
@@ -120,6 +125,23 @@ impl GameEngine {
     /// (`new_started`, `jump_to_scene`, `advance_scene`) are all navigation
     /// paths.
     pub(super) fn prime_initial_queue(&mut self) -> Result<(), GameError> {
+        // Startup and in-memory fixture construction establish baseline state,
+        // not a durable player command. Run the same reveal pipeline against
+        // the current committed revision, then discard only events created
+        // while constructing that baseline. Command-driven navigation uses
+        // `prime_initial_queue_for_command` with `command_tx`'s checked ID.
+        let event_count = self.pending_acquisition_events.len();
+        let mut next_ordinal = 0;
+        let result = self.prime_initial_queue_for_command(self.durable_revision, &mut next_ordinal);
+        self.pending_acquisition_events.truncate(event_count);
+        result
+    }
+
+    pub(super) fn prime_initial_queue_for_command(
+        &mut self,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) -> Result<(), GameError> {
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
         let mut intro_queue = None;
         let mut needs_linear_prime = false;
@@ -172,23 +194,29 @@ impl GameEngine {
                 SceneRuntime::Linear(scene) if scene.queue.is_none()
             ) || self.consume_scene_tags_at_cursor();
             if exhausted {
-                self.on_queue_exhausted()?;
+                self.on_queue_exhausted(command_id, next_ordinal)?;
             }
             return Ok(());
         }
         if let Some((segments, queue_gen)) = intro_queue {
-            self.install_scene_queue(segments, queue_gen, None)?;
+            self.install_scene_queue(segments, queue_gen, None, command_id, next_ordinal)?;
         }
         if needs_initial_sub {
-            self.advance_into_first_sublocation()?;
+            self.advance_into_first_sublocation(command_id, next_ordinal)?;
         }
-        if needs_interrogation_advance && self.try_advance_interrogation()? {
-            self.advance_scene()?;
+        if needs_interrogation_advance
+            && self.try_advance_interrogation(command_id, next_ordinal)?
+        {
+            self.advance_scene(command_id, next_ordinal)?;
         }
         Ok(())
     }
 
-    pub(super) fn advance_scene(&mut self) -> Result<(), GameError> {
+    pub(super) fn advance_scene(
+        &mut self,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) -> Result<(), GameError> {
         let mut next_chapter_idx = self.current_chapter_idx;
         let mut next_scene_idx = self.current_scene_idx + 1;
         let chapter = &self.chapters[next_chapter_idx];
@@ -217,7 +245,7 @@ impl GameEngine {
             engine.scene = new_scene;
             engine.last_visual_cue.reset_for_new_scene();
             engine.next_queue_gen += 1;
-            engine.prime_initial_queue()
+            engine.prime_initial_queue_for_command(command_id, next_ordinal)
         })
     }
 }
@@ -456,6 +484,287 @@ mod tests {
     use crate::game::state::{EvidenceRecord, SceneRef};
     use crate::game::test_support::*;
     use crate::game::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn acquisition_navigation_resources(
+        label: &str,
+        chapters: &str,
+        scenes: &[(&str, String)],
+    ) -> std::path::PathBuf {
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let resources =
+            std::env::temp_dir().join(format!("lyra-{label}-{}-{n}", std::process::id()));
+        let chapter_dir = resources.join("chapter_1");
+        std::fs::create_dir_all(&chapter_dir).unwrap();
+        write_empty_story_catalog_and_content_manifest(&resources);
+        std::fs::write(resources.join("chapters.json"), chapters).unwrap();
+        for (file, body) in scenes {
+            std::fs::write(chapter_dir.join(file), body).unwrap();
+        }
+        resources
+    }
+
+    fn linear_scene_json(id: &str, text: &str) -> String {
+        serde_json::json!({
+            "type": "linear",
+            "id": id,
+            "title": id,
+            "queue": [{ "kind": "line", "speaker": "A", "text": text }]
+        })
+        .to_string()
+    }
+
+    fn investigation_scene_json(
+        id: &str,
+        entry_evidence: Option<&str>,
+        hotspot_evidence: Option<(&str, &str)>,
+        outro_unlock: serde_json::Value,
+    ) -> String {
+        let entry_reveals = entry_evidence
+            .into_iter()
+            .map(|id| serde_json::json!({ "kind": "evidence", "id": id }))
+            .collect::<Vec<_>>();
+        let mut evidence_ids = entry_evidence.into_iter().collect::<Vec<_>>();
+        let mut hotspots = vec![serde_json::json!({
+            "id": "never",
+            "label": "Never",
+            "description": "Never",
+            "status": "unlocked",
+            "unlock": null,
+            "reveals": [],
+            "inspectDialogue": [],
+            "onReexamine": null
+        })];
+        if let Some((hotspot_id, evidence_id)) = hotspot_evidence {
+            evidence_ids.push(evidence_id);
+            hotspots.push(serde_json::json!({
+                "id": hotspot_id,
+                "label": hotspot_id,
+                "description": hotspot_id,
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [{ "kind": "evidence", "id": evidence_id }],
+                "inspectDialogue": [],
+                "onReexamine": null
+            }));
+        }
+        let evidence_manifest = evidence_ids
+            .into_iter()
+            .map(|id| {
+                serde_json::json!({
+                    "id": id,
+                    "name": id,
+                    "description": id,
+                    "details": id,
+                    "imageAssetId": null,
+                    "onCollect": [],
+                    "onReexamine": null
+                })
+            })
+            .collect::<Vec<_>>();
+
+        serde_json::json!({
+            "type": "investigation",
+            "id": id,
+            "title": id,
+            "intro": [],
+            "sublocations": [{
+                "id": "room",
+                "label": "Room",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": entry_reveals,
+                "sceneTag": "room",
+                "transitionDialogue": [],
+                "hotspots": hotspots,
+                "characters": []
+            }],
+            "evidenceManifest": evidence_manifest,
+            "statementManifest": [],
+            "outro": { "unlock": outro_unlock, "dialogue": [] }
+        })
+        .to_string()
+    }
+
+    // Break caught: startup priming treats baseline inventory as command 1
+    // even though no durable command has committed revision 1.
+    #[test]
+    fn startup_baseline_acquisition_keeps_revision_zero_and_events_empty() {
+        let resources = acquisition_navigation_resources(
+            "startup-baseline-acquisition",
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [{
+                        "type": "investigation",
+                        "file": "chapter_1/investigation_scene_0.json"
+                    }]
+                }]
+            }"#,
+            &[(
+                "investigation_scene_0.json",
+                investigation_scene_json(
+                    "investigation_scene_0",
+                    Some("baseline_note"),
+                    None,
+                    serde_json::json!({
+                        "predicate": "hotspot_investigated",
+                        "id": "never"
+                    }),
+                ),
+            )],
+        );
+
+        let engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        assert_eq!(engine.durable_revision, 0);
+        assert!(engine.pending_acquisition_events.is_empty());
+        assert_eq!(engine.inventory.evidence[0].id, "baseline_note");
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // Break caught: nested queue exhaustion/navigation creates a fresh local
+    // ordinal for each reveal-bearing scene instead of sharing the ordinal
+    // owned by the outer checked command transaction.
+    #[test]
+    fn nested_navigation_acquisitions_share_checked_command_id_and_local_ordinal() {
+        let resources = acquisition_navigation_resources(
+            "nested-navigation-acquisition",
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_0.json" },
+                        {
+                            "type": "investigation",
+                            "file": "chapter_1/investigation_scene_1.json"
+                        },
+                        {
+                            "type": "investigation",
+                            "file": "chapter_1/investigation_scene_2.json"
+                        }
+                    ]
+                }]
+            }"#,
+            &[
+                ("scene_0.json", linear_scene_json("scene_0", "advance")),
+                (
+                    "investigation_scene_1.json",
+                    investigation_scene_json(
+                        "investigation_scene_1",
+                        Some("first_note"),
+                        None,
+                        serde_json::json!({
+                            "predicate": "evidence_collected",
+                            "id": "first_note"
+                        }),
+                    ),
+                ),
+                (
+                    "investigation_scene_2.json",
+                    investigation_scene_json(
+                        "investigation_scene_2",
+                        Some("second_note"),
+                        None,
+                        serde_json::json!({
+                            "predicate": "hotspot_investigated",
+                            "id": "never"
+                        }),
+                    ),
+                ),
+            ],
+        );
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        let advanced = engine
+            .advance_dialogue(token_from(&engine.view()))
+            .expect("one durable command should traverse both reveal scenes");
+
+        assert_eq!(engine.durable_revision, 1);
+        assert!(
+            matches!(&advanced.scene, SceneView::Investigation { id, .. } if id == "investigation_scene_2"),
+            "expected the command to land in the second investigation, got {:?}",
+            advanced.scene
+        );
+        assert_eq!(
+            engine
+                .pending_acquisition_events
+                .iter()
+                .map(|event| {
+                    (
+                        event.id.as_str(),
+                        event.record_id.as_str(),
+                        event.created_by_command_id,
+                        event.ordinal,
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                ("acq:1:0", "first_note", 1, 0),
+                ("acq:1:1", "second_note", 1, 1),
+            ]
+        );
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // Break caught: a scene jump resets inventory but leaves an event that
+    // points at the removed record, causing commit-time presentation to fail
+    // and roll back the entire jump.
+    #[test]
+    fn jump_clears_pending_acquisitions_with_inventory_in_one_transaction() {
+        let resources = acquisition_navigation_resources(
+            "jump-clears-acquisition",
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        {
+                            "type": "investigation",
+                            "file": "chapter_1/investigation_scene_0.json"
+                        },
+                        { "type": "linear", "file": "chapter_1/scene_1.json" }
+                    ]
+                }]
+            }"#,
+            &[
+                (
+                    "investigation_scene_0.json",
+                    investigation_scene_json(
+                        "investigation_scene_0",
+                        None,
+                        Some(("desk", "receipt")),
+                        serde_json::json!({
+                            "predicate": "hotspot_investigated",
+                            "id": "never"
+                        }),
+                    ),
+                ),
+                ("scene_1.json", linear_scene_json("scene_1", "arrived")),
+            ],
+        );
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine.inspect_hotspot("desk").unwrap();
+        assert_eq!(engine.pending_acquisition_events.len(), 1);
+
+        let jumped = engine
+            .jump_to_scene("chapter_1", "scene_1")
+            .expect("jump should atomically reset acquisition state");
+
+        assert!(jumped.inventory.evidence.is_empty());
+        assert!(engine.pending_acquisition_events.is_empty());
+        assert_eq!(engine.durable_revision, 2);
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
 
     #[test]
     fn jump_to_scene_starts_linear_scene_fresh() {

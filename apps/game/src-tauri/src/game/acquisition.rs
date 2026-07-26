@@ -59,13 +59,7 @@ impl AcquisitionCtx<'_> {
     }
 
     fn record(&mut self, record_kind: RecordKind, record_id: &str) {
-        let ordinal = u32::try_from(
-            self.pending_events
-                .iter()
-                .filter(|event| event.created_by_command_id == self.command_id)
-                .count(),
-        )
-        .expect("acquisition event ordinal overflowed u32");
+        let ordinal = *self.next_ordinal;
         self.pending_events.push(AcquisitionEventStateV1 {
             id: acquisition_event_id(self.command_id, ordinal),
             record_kind,
@@ -188,6 +182,33 @@ mod tests {
             ]
         );
         assert_eq!(next_ordinal, 2);
+    }
+
+    // Break caught: a nested acquisition ignores the command-local ordinal
+    // supplied by its owning transaction and instead derives an ordinal from
+    // unrelated global pending events.
+    #[test]
+    fn acquisition_uses_the_supplied_command_local_ordinal() {
+        let mut inventory = Inventory::default();
+        let mut events = vec![AcquisitionEventStateV1 {
+            id: "acq:7:0".into(),
+            record_kind: RecordKind::Evidence,
+            record_id: "earlier".into(),
+            created_by_command_id: 7,
+            ordinal: 0,
+        }];
+        let mut next_ordinal = 3;
+        let mut ctx = AcquisitionCtx {
+            inventory: &mut inventory,
+            pending_events: &mut events,
+            command_id: 7,
+            next_ordinal: &mut next_ordinal,
+        };
+
+        assert!(ctx.evidence(&evidence_def("receipt"), "chapter_1", "scene_1"));
+        assert_eq!(events[1].id, "acq:7:3");
+        assert_eq!(events[1].ordinal, 3);
+        assert_eq!(next_ordinal, 4);
     }
 
     // Break caught: disk events lose their numeric command ID or grow an
