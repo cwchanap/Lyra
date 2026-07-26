@@ -71,7 +71,7 @@ fn start_game(
     let resources_dir = resolve_scenes_dir(&app)?;
     let engine = GameEngine::new_started(resources_dir)?;
     let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let view = engine.view();
+    let view = engine.view()?;
     *guard = Some(engine);
     Ok(view)
 }
@@ -89,8 +89,8 @@ fn get_state(state: tauri::State<'_, AppState>) -> Result<GameStateView, GameErr
     let guard = state.engine.lock().map_err(|_| unavailable_error())?;
     guard
         .as_ref()
-        .map(|e| e.view())
-        .ok_or_else(GameError::game_not_started)
+        .ok_or_else(GameError::game_not_started)?
+        .view()
 }
 
 #[tauri::command]

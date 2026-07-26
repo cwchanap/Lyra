@@ -142,6 +142,18 @@ impl GameError {
     pub fn unknown_acquisition_event() -> Self {
         Self::new("unknownAcquisitionEvent", "Acquisition event is unknown.")
     }
+    pub fn missing_acquisition_definition() -> Self {
+        Self::new(
+            "missingAcquisitionDefinition",
+            "Acquisition definition is missing from packaged content.",
+        )
+    }
+    pub fn acquisition_definition_mismatch() -> Self {
+        Self::new(
+            "acquisitionDefinitionMismatch",
+            "Acquisition definition does not match the stored record kind or provenance.",
+        )
+    }
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),

@@ -174,11 +174,11 @@ fn dispatch(state: &ServerState, command: &str, body: &[u8]) -> Result<String, G
         "start_game" | "reset_game" => {
             let engine = GameEngine::new_started(resources_dir())?;
             let mut guard = state.engine.lock().map_err(|_| GameError::unavailable())?;
-            let view = engine.view();
+            let view = engine.view()?;
             *guard = Some(engine);
             serialize(view)
         }
-        "get_state" => with_engine(state, |e| Ok(e.view())),
+        "get_state" => with_engine(state, |e| e.view()),
         "list_scenes" => {
             let index: SceneNavigationIndex = GameEngine::scene_navigation_index(resources_dir())?;
             serialize_value(index)

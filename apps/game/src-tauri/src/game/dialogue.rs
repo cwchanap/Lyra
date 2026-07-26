@@ -619,7 +619,7 @@ mod tests {
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
 
         assert_dialogue_frame(
-            &engine.view(),
+            &engine.view().unwrap(),
             "line 0",
             QueueToken {
                 scene_id: "scene_0".into(),
@@ -629,9 +629,11 @@ mod tests {
             1,
             None,
         );
-        assert_eq!(history_labels(&engine.view()), vec!["A: line 0"]);
+        assert_eq!(history_labels(&engine.view().unwrap()), vec!["A: line 0"]);
 
-        let next = engine.advance_dialogue(token_from(&engine.view())).unwrap();
+        let next = engine
+            .advance_dialogue(token_from(&engine.view().unwrap()))
+            .unwrap();
         assert_dialogue_frame(
             &next,
             "action 1",
@@ -671,7 +673,7 @@ mod tests {
         engine.record_current_dialogue_history();
 
         assert_dialogue_frame(
-            &engine.view(),
+            &engine.view().unwrap(),
             "intro",
             QueueToken {
                 scene_id: "investigation_scene_1".into(),
@@ -681,9 +683,11 @@ mod tests {
             1,
             None,
         );
-        assert_eq!(history_labels(&engine.view()), vec!["A: intro"]);
+        assert_eq!(history_labels(&engine.view().unwrap()), vec!["A: intro"]);
 
-        let next = engine.advance_dialogue(token_from(&engine.view())).unwrap();
+        let next = engine
+            .advance_dialogue(token_from(&engine.view().unwrap()))
+            .unwrap();
         assert_dialogue_frame(
             &next,
             "follow-up",
@@ -799,7 +803,7 @@ mod tests {
     fn dialogue_history_records_initial_visible_item_and_skips_scene_tags() {
         let d = dialogue_history_fixture_resources(2);
         let engine = GameEngine::new_started(d.clone()).unwrap();
-        let view = engine.view();
+        let view = engine.view().unwrap();
 
         assert_eq!(history_labels(&view), vec!["A: line 0"]);
         assert_eq!(view.dialogue_history.len(), 1);
@@ -828,15 +832,15 @@ mod tests {
         let d = dialogue_history_fixture_resources(55);
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
 
-        while matches!(engine.view().mode, ModeView::Dialogue { .. }) {
-            let token = token_from(&engine.view());
+        while matches!(engine.view().unwrap().mode, ModeView::Dialogue { .. }) {
+            let token = token_from(&engine.view().unwrap());
             engine.advance_dialogue(token).unwrap();
-            if matches!(engine.view().mode, ModeView::GameComplete) {
+            if matches!(engine.view().unwrap().mode, ModeView::GameComplete) {
                 break;
             }
         }
 
-        let view = engine.view();
+        let view = engine.view().unwrap();
         assert_eq!(view.dialogue_history.len(), 50);
         assert_eq!(history_labels(&view).first().unwrap(), "A: line 6");
         assert_eq!(history_labels(&view).last().unwrap(), "B: next scene");
@@ -848,7 +852,7 @@ mod tests {
     fn dialogue_history_ignores_stale_queue_tokens() {
         let d = dialogue_history_fixture_resources(3);
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
-        let stale = token_from(&engine.view());
+        let stale = token_from(&engine.view().unwrap());
 
         let after_first = engine.advance_dialogue(stale.clone()).unwrap();
         assert_eq!(
@@ -870,7 +874,7 @@ mod tests {
         let d = dialogue_history_fixture_resources(1);
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
 
-        let first_scene_token = token_from(&engine.view());
+        let first_scene_token = token_from(&engine.view().unwrap());
         let second_scene = engine.advance_dialogue(first_scene_token).unwrap();
         let final_token = token_from(&second_scene);
 
@@ -887,7 +891,7 @@ mod tests {
         assert_eq!(error.code, "noActiveDialogue");
         assert_eq!(engine.current_chapter_idx, completed_chapter_idx);
         assert_eq!(engine.current_scene_idx, completed_scene_idx);
-        let after_replay = engine.view();
+        let after_replay = engine.view().unwrap();
         assert!(matches!(after_replay.mode, ModeView::GameComplete));
         assert_eq!(history_labels(&after_replay), completed_history);
 
@@ -898,7 +902,10 @@ mod tests {
     fn dialogue_history_resets_on_scene_jump() {
         let d = scene_jump_fixture_resources();
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
-        assert_eq!(history_labels(&engine.view()), vec!["A: linear start"]);
+        assert_eq!(
+            history_labels(&engine.view().unwrap()),
+            vec!["A: linear start"]
+        );
 
         let view = engine
             .jump_to_scene("chapter_1", "investigation_scene_1")
@@ -921,7 +928,7 @@ mod tests {
         );
         let mut engine = empty_engine_with_scene(first_scene, 3);
         engine.prime_initial_queue().unwrap();
-        let stale_token = token_from(&engine.view());
+        let stale_token = token_from(&engine.view().unwrap());
 
         let next_scene = investigation_scene_with_intro(
             "investigation_scene_1",
@@ -937,7 +944,7 @@ mod tests {
         engine.last_visual_cue.scene_tag = None;
         engine.prime_initial_queue().unwrap();
 
-        let before = token_from(&engine.view());
+        let before = token_from(&engine.view().unwrap());
         assert_ne!(stale_token, before);
 
         let after = token_from(&engine.advance_dialogue(stale_token).unwrap());
@@ -968,7 +975,7 @@ mod tests {
         engine.prime_initial_queue().unwrap();
 
         assert_eq!(engine.last_visual_cue.scene_tag, Some("雨中".into()));
-        let view = engine.view();
+        let view = engine.view().unwrap();
         match &view.mode {
             ModeView::Dialogue {
                 current, scene_tag, ..
@@ -1097,7 +1104,7 @@ mod tests {
         // Both leading SceneTags should be consumed; last_visual_cue.scene_tag holds the
         // most recent tag text and the cursor points at the first real item.
         assert_eq!(engine.last_visual_cue.scene_tag, Some("雨中".into()));
-        let view = engine.view();
+        let view = engine.view().unwrap();
         match &view.mode {
             ModeView::Dialogue {
                 current, scene_tag, ..
@@ -1168,7 +1175,7 @@ mod tests {
         engine.prime_initial_queue().unwrap();
         assert_eq!(engine.last_visual_cue.scene_tag, None);
 
-        let view = engine.view();
+        let view = engine.view().unwrap();
         let token = match &view.mode {
             ModeView::Dialogue { queue_token, .. } => queue_token.clone(),
             other => panic!("expected Dialogue, got {other:?}"),
@@ -1197,7 +1204,7 @@ mod tests {
 
         assert_eq!(engine.current_chapter_idx, 0);
         assert_eq!(engine.current_scene_idx, 1);
-        let view = engine.view();
+        let view = engine.view().unwrap();
         assert!(matches!(
             view.mode,
             ModeView::Dialogue {
@@ -1261,7 +1268,10 @@ mod tests {
         engine.prime_initial_queue().unwrap();
 
         // Scene was tag-only → advance_scene ran → past last chapter → GameComplete.
-        assert!(matches!(engine.view().mode, ModeView::GameComplete));
+        assert!(matches!(
+            engine.view().unwrap().mode,
+            ModeView::GameComplete
+        ));
         assert_eq!(engine.last_visual_cue.scene_tag, Some("吉祥寺街道".into()));
         assert!(
             engine.current_queue_token().is_none(),
@@ -1280,6 +1290,9 @@ mod tests {
         assert_eq!(error.code, "noActiveDialogue");
         assert_eq!(engine.current_chapter_idx, completed_chapter_idx);
         assert_eq!(engine.current_scene_idx, completed_scene_idx);
-        assert!(matches!(engine.view().mode, ModeView::GameComplete));
+        assert!(matches!(
+            engine.view().unwrap().mode,
+            ModeView::GameComplete
+        ));
     }
 }

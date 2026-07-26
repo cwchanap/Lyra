@@ -197,6 +197,102 @@ pub(super) fn dialogue_history_fixture_resources(line_count: usize) -> PathBuf {
     .unwrap();
     d
 }
+
+pub(super) fn packaged_acquisition_fixture_resources() -> PathBuf {
+    use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, Ordering::Relaxed);
+    let resources = std::env::temp_dir().join(format!(
+        "lyra-packaged-acquisition-test-{}-{n}",
+        std::process::id()
+    ));
+    let chapter_dir = resources.join("chapter_1");
+    fs::create_dir_all(&chapter_dir).unwrap();
+    write_empty_story_catalog_and_content_manifest(&resources);
+    fs::write(
+        resources.join("chapters.json"),
+        r#"{
+            "chapters": [{
+                "id": "chapter_1",
+                "title": "Chapter One",
+                "summary": "First",
+                "scenes": [{
+                    "type": "investigation",
+                    "file": "chapter_1/investigation_scene_1.json"
+                }]
+            }]
+        }"#,
+    )
+    .unwrap();
+    fs::write(
+        chapter_dir.join("investigation_scene_1.json"),
+        r#"{
+            "type": "investigation",
+            "id": "investigation_scene_1",
+            "title": "Packaged Definitions",
+            "intro": [{ "kind": "action", "text": "authored dialogue" }],
+            "sublocations": [{
+                "id": "room",
+                "label": "Room",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "room",
+                "transitionDialogue": [],
+                "hotspots": [{
+                    "id": "never",
+                    "label": "Never",
+                    "description": "Never",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "inspectDialogue": [],
+                    "onReexamine": null
+                }],
+                "characters": []
+            }],
+            "evidenceManifest": [
+                {
+                    "id": "receipt",
+                    "name": "Packaged Receipt",
+                    "description": "Packaged description",
+                    "details": "Packaged details",
+                    "imageAssetId": "evidence.receipt",
+                    "onCollect": [],
+                    "onReexamine": null
+                },
+                {
+                    "id": "second_note",
+                    "name": "Packaged Second Note",
+                    "description": "Second description",
+                    "details": "Second details",
+                    "imageAssetId": null,
+                    "onCollect": [],
+                    "onReexamine": null
+                }
+            ],
+            "statementManifest": [{
+                "id": "alibi",
+                "speaker": "Packaged Witness",
+                "content": "Packaged alibi",
+                "onAcquire": [],
+                "onReexamine": null
+            }],
+            "outro": {
+                "unlock": {
+                    "predicate": "hotspot_investigated",
+                    "id": "never"
+                },
+                "dialogue": []
+            }
+        }"#,
+    )
+    .unwrap();
+    resources
+}
+
 pub(super) fn scene_jump_fixture_resources() -> PathBuf {
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};

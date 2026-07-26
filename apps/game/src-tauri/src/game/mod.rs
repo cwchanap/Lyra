@@ -263,24 +263,55 @@ impl GameEngine {
         self.jump_to_scene_inner(chapter_id, scene_id)
     }
 
-    pub fn view(&self) -> GameStateView {
-        GameStateView {
+    pub fn view(&self) -> Result<GameStateView, GameError> {
+        let pending_acquisition = self.pending_acquisition_view()?;
+        Ok(GameStateView {
             mode: self.mode_view(),
             chapter: self.chapter_view(),
             scene: self.scene_view(),
             inventory: self.inventory.clone(),
             story: StoryStateView::from_catalog_state(&self.story_catalog, &self.story_state),
             dialogue_history: self.history.entries().to_vec(),
-            pending_acquisition: self.pending_acquisition_view().ok().flatten(),
+            pending_acquisition,
+        })
+    }
+
+    fn packaged_acquisition_scene(
+        &self,
+        chapter_id: &str,
+        scene_id: &str,
+    ) -> Result<SceneJson, GameError> {
+        let mut matching_chapters = self
+            .chapters
+            .iter()
+            .filter(|chapter| chapter.id == chapter_id);
+        let chapter = matching_chapters
+            .next()
+            .ok_or_else(GameError::missing_acquisition_definition)?;
+        if matching_chapters.next().is_some() {
+            return Err(GameError::acquisition_definition_mismatch());
         }
+        #[cfg(test)]
+        if self.resources_dir.as_os_str().is_empty() {
+            return match &self.scene {
+                SceneRuntime::Investigation(scene) if scene.def.id == scene_id => {
+                    Ok(SceneJson::Investigation(scene.def.clone()))
+                }
+                SceneRuntime::Interrogation(scene) if scene.def.id == scene_id => {
+                    Ok(SceneJson::Interrogation(scene.def.clone()))
+                }
+                _ => Err(GameError::missing_acquisition_definition()),
+            };
+        }
+        find_scene_json_by_id(&self.resources_dir, chapter, scene_id)
+            .map_err(|_| GameError::missing_acquisition_definition())?
+            .map(|(_, scene)| scene)
+            .ok_or_else(GameError::missing_acquisition_definition)
     }
 
     pub(in crate::game) fn pending_acquisition_view(
         &self,
     ) -> Result<Option<PendingAcquisitionView>, GameError> {
-        if self.current_dialogue_item().is_some() {
-            return Ok(None);
-        }
         let Some(event) = self
             .pending_acquisition_events
             .iter()
@@ -297,14 +328,40 @@ impl GameEngine {
                     .iter()
                     .find(|record| record.id == event.record_id)
                     .ok_or_else(GameError::unknown_acquisition_event)?;
+                let scene = self.packaged_acquisition_scene(
+                    &record.collected_in_chapter_id,
+                    &record.collected_in_scene_id,
+                )?;
+                let (evidence, statements) = match &scene {
+                    SceneJson::Investigation(scene) => {
+                        (&scene.evidence_manifest, &scene.statement_manifest)
+                    }
+                    SceneJson::Interrogation(scene) => {
+                        (&scene.evidence_manifest, &scene.statement_manifest)
+                    }
+                    SceneJson::Linear(_) => return Err(GameError::missing_acquisition_definition()),
+                };
+                let definition = evidence
+                    .iter()
+                    .find(|definition| definition.id == event.record_id)
+                    .ok_or_else(|| {
+                        if statements
+                            .iter()
+                            .any(|definition| definition.id == event.record_id)
+                        {
+                            GameError::acquisition_definition_mismatch()
+                        } else {
+                            GameError::missing_acquisition_definition()
+                        }
+                    })?;
                 PendingAcquisitionView {
                     id: event.id.clone(),
                     record_kind: "evidence".into(),
-                    record_id: record.id.clone(),
-                    title: record.name.clone(),
-                    description: record.description.clone(),
-                    details: record.details.clone(),
-                    image_asset_id: record.image_asset_id.clone(),
+                    record_id: definition.id.clone(),
+                    title: definition.name.clone(),
+                    description: definition.description.clone(),
+                    details: definition.details.clone(),
+                    image_asset_id: definition.image_asset_id.clone(),
                     created_by_command_id: event.created_by_command_id,
                     ordinal: event.ordinal,
                 }
@@ -316,20 +373,50 @@ impl GameEngine {
                     .iter()
                     .find(|record| record.id == event.record_id)
                     .ok_or_else(GameError::unknown_acquisition_event)?;
+                let scene = self.packaged_acquisition_scene(
+                    &record.acquired_in_chapter_id,
+                    &record.acquired_in_scene_id,
+                )?;
+                let (evidence, statements) = match &scene {
+                    SceneJson::Investigation(scene) => {
+                        (&scene.evidence_manifest, &scene.statement_manifest)
+                    }
+                    SceneJson::Interrogation(scene) => {
+                        (&scene.evidence_manifest, &scene.statement_manifest)
+                    }
+                    SceneJson::Linear(_) => return Err(GameError::missing_acquisition_definition()),
+                };
+                let definition = statements
+                    .iter()
+                    .find(|definition| definition.id == event.record_id)
+                    .ok_or_else(|| {
+                        if evidence
+                            .iter()
+                            .any(|definition| definition.id == event.record_id)
+                        {
+                            GameError::acquisition_definition_mismatch()
+                        } else {
+                            GameError::missing_acquisition_definition()
+                        }
+                    })?;
                 PendingAcquisitionView {
                     id: event.id.clone(),
                     record_kind: "statement".into(),
-                    record_id: record.id.clone(),
-                    title: record.speaker.clone(),
-                    description: record.content.clone(),
-                    details: record.content.clone(),
+                    record_id: definition.id.clone(),
+                    title: definition.speaker.clone(),
+                    description: definition.content.clone(),
+                    details: definition.content.clone(),
                     image_asset_id: None,
                     created_by_command_id: event.created_by_command_id,
                     ordinal: event.ordinal,
                 }
             }
         };
-        Ok(Some(view))
+        if self.current_dialogue_item().is_some() {
+            Ok(None)
+        } else {
+            Ok(Some(view))
+        }
     }
 
     pub fn advance_dialogue(&mut self, expected: QueueToken) -> Result<GameStateView, GameError> {
@@ -2127,7 +2214,7 @@ mod tests {
             }]
         );
 
-        let entry = engine.view();
+        let entry = engine.view().unwrap();
         engine.advance_dialogue(token_from(&entry)).unwrap();
         let first_line = engine.ask_interrogation_question("alibi").unwrap();
         let second_line = engine.advance_dialogue(token_from(&first_line)).unwrap();
@@ -2181,7 +2268,7 @@ mod tests {
         let engine = GameEngine::new_started(d.clone()).unwrap();
 
         assert_eq!(
-            serde_json::to_value(engine.view()).unwrap()["story"],
+            serde_json::to_value(engine.view().unwrap()).unwrap()["story"],
             serde_json::json!({
                 "facts": [],
                 "questions": [],
@@ -2197,9 +2284,11 @@ mod tests {
     fn new_focused_token_records_exactly_one_history_entry() {
         let d = dialogue_history_fixture_resources(3);
         let mut engine = GameEngine::new_started(d).unwrap();
-        let before = engine.view().dialogue_history.len();
+        let before = engine.view().unwrap().dialogue_history.len();
 
-        let view = engine.advance_dialogue(token_from(&engine.view())).unwrap();
+        let view = engine
+            .advance_dialogue(token_from(&engine.view().unwrap()))
+            .unwrap();
 
         assert_eq!(
             view.dialogue_history.len(),
@@ -2212,7 +2301,7 @@ mod tests {
     fn unchanged_focused_token_records_nothing() {
         let d = dialogue_history_fixture_resources(3);
         let mut engine = GameEngine::new_started(d).unwrap();
-        let token = token_from(&engine.view());
+        let token = token_from(&engine.view().unwrap());
         let after_first = engine.advance_dialogue(token.clone()).unwrap();
         let count = after_first.dialogue_history.len();
 
@@ -2274,7 +2363,7 @@ mod tests {
         };
         let mut engine = empty_engine_with_scene(scene, 1);
         engine.prime_initial_queue().unwrap();
-        let before = engine.view().dialogue_history.len();
+        let before = engine.view().unwrap().dialogue_history.len();
 
         let view = engine.inspect_hotspot("desk").unwrap();
 
@@ -2309,7 +2398,9 @@ mod tests {
     /// `command_tx` themselves. Sweeping `lib.rs` into the walk would fail
     /// invariant A on all 16 of them.
     ///
-    /// The scan enforces two invariants per tracked function:
+    /// The scan enforces two invariants per tracked command. The read-only
+    /// `view` method is excluded explicitly now that pending-acquisition
+    /// validation makes its return type fallible:
     /// 1. Invariant A — the body contains `command_tx(` at least once. Checked
     ///    for every tracked command; `command_tx` is the only mechanism that
     ///    finalizes dialogue history, so there are no exemptions.
@@ -2759,7 +2850,7 @@ mod tests {
         // Pass 2: check invariants for each tracked pub fn command.
         for (file, source) in sources {
             for (vis, name, body) in view_fn_definitions(source) {
-                if vis != FnVisibility::Pub {
+                if vis != FnVisibility::Pub || name == "view" {
                     continue;
                 }
                 seen.push(format!("{file}::{name}"));
@@ -2985,7 +3076,7 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
 
         engine.prime_initial_queue().unwrap();
 
-        match engine.view().mode {
+        match engine.view().unwrap().mode {
             ModeView::Explore {
                 sublocation_id,
                 background_asset_id,
@@ -3085,7 +3176,7 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
 
         engine.prime_initial_queue().unwrap();
 
-        match engine.view().mode {
+        match engine.view().unwrap().mode {
             ModeView::Interrogation {
                 phase_id,
                 background_asset_id,
@@ -3149,7 +3240,7 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
             _ => panic!("expected interrogation scene"),
         }
 
-        match engine.view().scene {
+        match engine.view().unwrap().scene {
             SceneView::Interrogation { visible_phases, .. } => {
                 let phase = visible_phases
                     .iter()
@@ -3188,7 +3279,7 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
             engine.last_visual_cue.scene_tag.as_deref(),
             Some("interrogation_room")
         );
-        let view = engine.view();
+        let view = engine.view().unwrap();
         match view.mode {
             ModeView::Dialogue {
                 current, scene_tag, ..
@@ -3236,7 +3327,7 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
             engine.last_visual_cue.scene_tag.as_deref(),
             Some("interrogation_room")
         );
-        let token = token_from(&engine.view());
+        let token = token_from(&engine.view().unwrap());
         let view = engine.advance_dialogue(token).unwrap();
         match view.mode {
             ModeView::Interrogation { phase_id, .. } => {
@@ -3271,7 +3362,7 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
             engine.last_visual_cue.scene_tag.as_deref(),
             Some("early_room")
         );
-        let view = engine.view();
+        let view = engine.view().unwrap();
         match view.mode {
             ModeView::Dialogue {
                 current, scene_tag, ..
@@ -3359,7 +3450,7 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
 
         engine.prime_initial_queue().unwrap();
         assert!(matches!(
-            engine.view().mode,
+            engine.view().unwrap().mode,
             ModeView::Interrogation { ref phase_id, .. } if phase_id == "required_inquiry"
         ));
 
@@ -3459,7 +3550,7 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
         let mut engine = empty_engine_with_interrogation_scene(scene, 1);
         engine.prime_initial_queue().unwrap();
         assert!(matches!(
-            engine.view().mode,
+            engine.view().unwrap().mode,
             ModeView::Interrogation { ref phase_id, .. } if phase_id == "required_inquiry"
         ));
 
@@ -4040,7 +4131,10 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
 
         // The initial entry reveal collected "note" which satisfies the outro.
         // on_queue_exhausted should fire, advancing to GameComplete.
-        assert!(matches!(engine.view().mode, ModeView::GameComplete));
+        assert!(matches!(
+            engine.view().unwrap().mode,
+            ModeView::GameComplete
+        ));
     }
 
     #[test]
@@ -4150,7 +4244,10 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
         });
 
         engine.prime_initial_queue().unwrap();
-        assert!(matches!(engine.view().mode, ModeView::Interrogation { .. }));
+        assert!(matches!(
+            engine.view().unwrap().mode,
+            ModeView::Interrogation { .. }
+        ));
 
         // Ask the question, drain its testimony-line content, then challenge
         // to reach Presenting.
@@ -4572,7 +4669,9 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
         engine.ask_interrogation_question("alibi").unwrap();
         // Drain line 0 -> line 1, drain line 1 -> loop installs
         // on_loop ++ loop_prompt ++ line0.
-        let view = engine.advance_dialogue(token_from(&engine.view())).unwrap();
+        let view = engine
+            .advance_dialogue(token_from(&engine.view().unwrap()))
+            .unwrap();
         let view = engine.advance_dialogue(token_from(&view)).unwrap();
         // The suspect's On Loop ("loop") plays first...
         match &view.mode {
@@ -4644,7 +4743,9 @@ pub(super) fn bad_inner(&mut self) -> Result<GameStateView, GameError> {
         engine.ask_interrogation_question("alibi").unwrap();
         // Drain line 0 -> line 1, drain line 1 -> loop installs
         // on_loop ++ loop_prompt ++ line0.
-        let view = engine.advance_dialogue(token_from(&engine.view())).unwrap();
+        let view = engine
+            .advance_dialogue(token_from(&engine.view().unwrap()))
+            .unwrap();
         let view = engine.advance_dialogue(token_from(&view)).unwrap();
         // Cursor on the On Loop bridge item — no challenge target.
         match &view.mode {
