@@ -344,8 +344,10 @@ pub(super) fn find_scene_json_by_id(
     // than picking one arbitrarily. The extra JSON loads are negligible for an
     // infrequent, user-driven jump.
     let mut found: Option<(usize, SceneJson)> = None;
-    for (idx, scene_ref) in chapter.scenes.iter().enumerate() {
-        let json = load_scene_json_for_ref(resources_dir, scene_ref)?;
+    for (idx, json) in load_chapter_scene_jsons(resources_dir, chapter)?
+        .into_iter()
+        .enumerate()
+    {
         if scene_json_identity(&json).0 == scene_id {
             if found.is_some() {
                 return Err(GameError::duplicate_scene_target(&chapter.id, scene_id));
@@ -354,6 +356,17 @@ pub(super) fn find_scene_json_by_id(
         }
     }
     Ok(found)
+}
+
+pub(super) fn load_chapter_scene_jsons(
+    resources_dir: &std::path::Path,
+    chapter: &ChapterManifest,
+) -> Result<Vec<SceneJson>, GameError> {
+    chapter
+        .scenes
+        .iter()
+        .map(|scene_ref| load_scene_json_for_ref(resources_dir, scene_ref))
+        .collect()
 }
 
 pub(super) fn load_scene_runtime(

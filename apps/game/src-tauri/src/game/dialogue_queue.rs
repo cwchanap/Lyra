@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::collections::{hash_map::Entry, HashMap};
 
 use crate::game::schema::{
     DialogueItem, InterrogationPhaseJson, InterrogationSceneJson, InvestigationSceneJson, SceneJson,
 };
+use crate::game::state::ChapterManifest;
 use crate::game::GameError;
 
 pub(super) const REEXAMINE_FALLBACK_TEXT: &str = "（沒有新發現。）";
@@ -471,6 +473,134 @@ mod persistence_adapter_tests {
         );
         std::fs::remove_dir_all(resources).unwrap();
     }
+
+    #[test]
+    fn repeated_origins_load_their_packaged_scene_definition_once() {
+        let (resources, engine) = fixture();
+        let definition = crate::game::loader::load_scene(
+            &resources,
+            &format!("{CURRENT_CHAPTER_ID}/{CURRENT_SCENE_ID}.json"),
+        )
+        .unwrap();
+        let saved = state(vec![linear_origin(), linear_origin()], 1, 0, 15);
+        let mut load_calls = 0;
+
+        let restored = engine
+            .restore_active_dialogue_queue_with_loader(CONTENT_REVISION, &saved, |chapter| {
+                load_calls += 1;
+                assert_eq!(chapter.id, CURRENT_CHAPTER_ID);
+                Ok(vec![definition.clone()])
+            })
+            .unwrap();
+
+        assert_eq!(load_calls, 1);
+        assert_eq!(
+            restored.segment_origins(),
+            [linear_origin(), linear_origin()]
+        );
+        std::fs::remove_dir_all(resources).unwrap();
+    }
+
+    #[test]
+    fn distinct_origin_scenes_load_once_each_and_keep_saved_order() {
+        let (resources, engine) = fixture();
+        let source_definition = crate::game::loader::load_scene(
+            &resources,
+            &format!("{SOURCE_CHAPTER_ID}/{SOURCE_SCENE_ID}.json"),
+        )
+        .unwrap();
+        let current_definition = crate::game::loader::load_scene(
+            &resources,
+            &format!("{CURRENT_CHAPTER_ID}/{CURRENT_SCENE_ID}.json"),
+        )
+        .unwrap();
+        let origins = vec![
+            source_interaction("hotspot:desk:inspect"),
+            linear_origin(),
+            source_interaction("hotspot:desk:reexamine"),
+        ];
+        let saved = state(origins.clone(), 2, 0, 16);
+        let mut loaded_scene_ids = Vec::new();
+
+        let restored = engine
+            .restore_active_dialogue_queue_with_loader(CONTENT_REVISION, &saved, |chapter| {
+                match chapter.id.as_str() {
+                    SOURCE_CHAPTER_ID => {
+                        loaded_scene_ids.push(SOURCE_SCENE_ID.to_string());
+                        Ok(vec![source_definition.clone()])
+                    }
+                    CURRENT_CHAPTER_ID => {
+                        loaded_scene_ids.push(CURRENT_SCENE_ID.to_string());
+                        Ok(vec![current_definition.clone()])
+                    }
+                    other => panic!("unexpected chapter load: {other}"),
+                }
+            })
+            .unwrap();
+
+        assert_eq!(
+            loaded_scene_ids,
+            [SOURCE_SCENE_ID.to_string(), CURRENT_SCENE_ID.to_string()]
+        );
+        assert_eq!(restored.segment_origins(), origins);
+        assert_action(restored.current(), REEXAMINE_FALLBACK_TEXT);
+        std::fs::remove_dir_all(resources).unwrap();
+    }
+
+    #[test]
+    fn a_second_same_scene_loader_value_cannot_mix_the_candidate() {
+        let (resources, engine) = fixture();
+        let stable_definition = crate::game::loader::load_scene(
+            &resources,
+            &format!("{CURRENT_CHAPTER_ID}/{CURRENT_SCENE_ID}.json"),
+        )
+        .unwrap();
+        let mut changed_definition = stable_definition.clone();
+        let SceneJson::Linear(scene) = &mut changed_definition else {
+            panic!("fixture current scene must be linear");
+        };
+        scene.queue = vec![action("changed-on-second-load")];
+        let saved = state(vec![linear_origin(), linear_origin()], 1, 0, 17);
+        let mut load_calls = 0;
+
+        let restored = engine
+            .restore_active_dialogue_queue_with_loader(CONTENT_REVISION, &saved, |_chapter| {
+                load_calls += 1;
+                Ok(vec![if load_calls == 1 {
+                    stable_definition.clone()
+                } else {
+                    changed_definition.clone()
+                }])
+            })
+            .unwrap();
+
+        assert_eq!(load_calls, 1);
+        assert_action(restored.current(), "current-0");
+        assert_eq!(restored.flattened_cursor().unwrap(), 2);
+        std::fs::remove_dir_all(resources).unwrap();
+    }
+
+    #[test]
+    fn revision_mismatch_performs_zero_injected_definition_loads() {
+        let (resources, engine) = fixture();
+        let saved = state(vec![linear_origin()], 0, 0, 18);
+        let mut load_calls = 0;
+
+        let error = engine
+            .restore_active_dialogue_queue_with_loader(
+                "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                &saved,
+                |_chapter| {
+                    load_calls += 1;
+                    panic!("revision mismatch must return before definition loading")
+                },
+            )
+            .expect_err("revision mismatch must be rejected");
+
+        assert_eq!(error.code, "incompatibleContentRevision");
+        assert_eq!(load_calls, 0);
+        std::fs::remove_dir_all(resources).unwrap();
+    }
 }
 
 impl DialogueSegmentOriginV1 {
@@ -709,6 +839,20 @@ impl crate::game::GameEngine {
         content_revision: &str,
         saved: &ActiveDialogueStateV1,
     ) -> Result<ActiveDialogueQueue, GameError> {
+        self.restore_active_dialogue_queue_with_loader(content_revision, saved, |chapter| {
+            crate::game::navigation::load_chapter_scene_jsons(&self.resources_dir, chapter)
+        })
+    }
+
+    fn restore_active_dialogue_queue_with_loader<F>(
+        &self,
+        content_revision: &str,
+        saved: &ActiveDialogueStateV1,
+        mut load_chapter_scenes: F,
+    ) -> Result<ActiveDialogueQueue, GameError>
+    where
+        F: FnMut(&ChapterManifest) -> Result<Vec<SceneJson>, GameError>,
+    {
         let packaged_revision = self.content_revision();
         if content_revision != packaged_revision {
             return Err(GameError::incompatible_content_revision(
@@ -718,9 +862,10 @@ impl crate::game::GameEngine {
         }
 
         let mut segments = Vec::with_capacity(saved.segment_origins.len());
+        let mut loaded_chapters: HashMap<String, Vec<SceneJson>> = HashMap::new();
         for origin in &saved.segment_origins {
             let chapter_id = origin.chapter_id();
-            let scene_id = origin.scene_id();
+            let target_scene_id = origin.scene_id();
             let mut matching_chapters = self
                 .chapters
                 .iter()
@@ -731,14 +876,26 @@ impl crate::game::GameEngine {
             if matching_chapters.next().is_some() {
                 return Err(GameError::duplicate_chapter_target(chapter_id));
             }
-            let (_, scene) = crate::game::navigation::find_scene_json_by_id(
-                &self.resources_dir,
-                chapter,
-                scene_id,
-            )?
-            .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
+
+            let chapter_scenes = match loaded_chapters.entry(chapter_id.to_owned()) {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => entry.insert(load_chapter_scenes(chapter)?),
+            };
+            let mut matching_scenes = chapter_scenes
+                .iter()
+                .filter(|scene| scene_id(scene) == target_scene_id);
+            let scene = matching_scenes
+                .next()
+                .ok_or_else(|| GameError::unknown_scene(chapter_id, target_scene_id))?;
+            if matching_scenes.next().is_some() {
+                return Err(GameError::duplicate_scene_target(
+                    chapter_id,
+                    target_scene_id,
+                ));
+            }
+
             let mut resolved =
-                resolve_dialogue_segments(chapter_id, &scene, std::slice::from_ref(origin))?;
+                resolve_dialogue_segments(chapter_id, scene, std::slice::from_ref(origin))?;
             segments.append(&mut resolved);
         }
 
