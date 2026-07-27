@@ -1,18 +1,25 @@
 #![allow(dead_code)] // Task 7/10 wire these crate-private primitives into the save coordinator.
 
+use super::restore::{build_restore_candidate, CurrentDefinitions};
 use super::schema::{
-    canonical_uuid_v4, parse_current_envelope, validate_envelope, SaveEnvelopeV1, SaveSlotRef,
-    SaveType, ThumbnailDescriptorV1,
+    canonical_uuid_v4, parse_current_envelope, validate_envelope, ReadableSaveMetadataView,
+    SaveBrowserView, SaveDiscoveryStatusView, SaveEnvelopeV1, SaveMetadataView, SaveSlotRef,
+    SaveSlotStatusView, SaveSlotView, SaveSummary, SaveType, ThumbnailAvailabilityView,
+    ThumbnailDescriptorV1, ThumbnailUnavailableReason,
 };
-use super::thumbnail::ValidatedThumbnail;
+use super::thumbnail::{
+    parse_png_header, validate_png_bytes_for_descriptor, ValidatedThumbnail, PNG_HEADER_BYTES,
+};
 use crate::game::GameError;
 use atomic_write_file::AtomicWriteFile;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Deserialize;
+use serde_json::Value;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 pub(crate) const PRODUCTION_APP_IDENTIFIER: &str = "com.chanwaichan.lyra";
@@ -77,6 +84,22 @@ pub(crate) struct SaveFileMetadata {
     pub(crate) modified_at: SystemTime,
     pub(crate) byte_length: u64,
 }
+
+pub(crate) struct SaveDiscoveryContext {
+    pub(crate) resources_dir: PathBuf,
+    pub(crate) definitions: Arc<CurrentDefinitions>,
+}
+
+const ALL_SLOT_REFS: [SaveSlotRef; 8] = [
+    SaveSlotRef::Auto { slot: 1 },
+    SaveSlotRef::Auto { slot: 2 },
+    SaveSlotRef::Auto { slot: 3 },
+    SaveSlotRef::Auto { slot: 4 },
+    SaveSlotRef::Auto { slot: 5 },
+    SaveSlotRef::Manual { slot: 1 },
+    SaveSlotRef::Manual { slot: 2 },
+    SaveSlotRef::Manual { slot: 3 },
+];
 
 pub(crate) trait SaveFilesystem: Send + Sync {
     fn create_dir_all(&self, path: &Path) -> io::Result<()>;
@@ -270,6 +293,508 @@ pub(crate) fn ensure_save_layout(fs: &dyn SaveFilesystem, root: &Path) -> Result
     fs.sync_dir(parent)
         .map_err(|_| GameError::save_sync_failed())?;
     fs.sync_dir(root).map_err(|_| GameError::save_sync_failed())
+}
+
+pub(crate) fn discover_saves(
+    fs: &dyn SaveFilesystem,
+    root: &Path,
+    context: &SaveDiscoveryContext,
+) -> SaveBrowserView {
+    if context.resources_dir != context.definitions.resources_dir || fs.list_dir(root).is_err() {
+        return SaveBrowserView {
+            discovery: SaveDiscoveryStatusView::Unavailable {
+                diagnostic: GameError::save_discovery_unavailable(),
+            },
+            slots: Vec::new(),
+        };
+    }
+    SaveBrowserView {
+        discovery: SaveDiscoveryStatusView::Available,
+        slots: ALL_SLOT_REFS
+            .into_iter()
+            .map(|reference| discover_slot(fs, root, context, reference))
+            .collect(),
+    }
+}
+
+pub(crate) fn select_autosave_target(slots: &[SaveSlotView]) -> Result<SaveSlotRef, GameError> {
+    let mut autos = slots
+        .iter()
+        .filter(|slot| matches!(slot.reference, SaveSlotRef::Auto { .. }))
+        .collect::<Vec<_>>();
+    autos.sort_by_key(|slot| match slot.reference {
+        SaveSlotRef::Auto { slot } => slot,
+        SaveSlotRef::Manual { .. } => unreachable!("filtered autosaves"),
+    });
+    if let Some(empty) = autos
+        .iter()
+        .find(|slot| matches!(slot.status, SaveSlotStatusView::Empty))
+    {
+        return Ok(empty.reference);
+    }
+    autos
+        .into_iter()
+        .filter_map(|slot| {
+            let SaveSlotRef::Auto { slot: number } = slot.reference else {
+                return None;
+            };
+            slot.observed_modified_at
+                .map(|modified_at| (modified_at, number, slot.reference))
+        })
+        .min_by_key(|(modified_at, number, _)| (*modified_at, *number))
+        .map(|(_, _, reference)| reference)
+        .ok_or_else(GameError::save_discovery_unavailable)
+}
+
+pub(crate) fn select_continue_candidate(slots: &[SaveSlotView]) -> Option<SaveSlotRef> {
+    slots
+        .iter()
+        .filter(|slot| !matches!(slot.status, SaveSlotStatusView::Empty))
+        .filter(|slot| slot.observed_modified_at.is_some())
+        .max_by(|left, right| {
+            left.observed_modified_at
+                .cmp(&right.observed_modified_at)
+                .then_with(|| left.observed_saved_at.cmp(&right.observed_saved_at))
+                .then_with(|| slot_type_rank(left.reference).cmp(&slot_type_rank(right.reference)))
+                .then_with(|| slot_number(left.reference).cmp(&slot_number(right.reference)))
+        })
+        .map(|slot| slot.reference)
+}
+
+pub(crate) fn read_save_thumbnail(
+    fs: &dyn SaveFilesystem,
+    root: &Path,
+    reference: SaveSlotRef,
+    observed_save_id: &str,
+) -> Result<Vec<u8>, GameError> {
+    canonical_uuid_v4(observed_save_id).map_err(|_| GameError::stale_save_selection())?;
+    let path = slot_path(root, reference)?;
+    let envelope_bytes = fs
+        .read(&path)
+        .map_err(|_| GameError::stale_save_selection())?;
+    let envelope =
+        parse_current_envelope(&envelope_bytes).map_err(|_| GameError::thumbnail_corrupt())?;
+    if !slot_agrees_with_envelope(reference, &envelope) || envelope.save_id != observed_save_id {
+        return Err(GameError::stale_save_selection());
+    }
+    let ThumbnailDescriptorV1::Available { object_id, .. } = &envelope.thumbnail else {
+        return Err(GameError::thumbnail_missing());
+    };
+    if object_id != observed_save_id || canonical_uuid_v4(object_id).is_err() {
+        return Err(GameError::thumbnail_corrupt());
+    }
+    let thumbnail_path =
+        thumbnail_path(root, observed_save_id).map_err(|_| GameError::thumbnail_corrupt())?;
+    let bytes = match fs.read_prefix(&thumbnail_path, super::schema::MAX_THUMBNAIL_BYTES + 1) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Err(GameError::thumbnail_missing());
+        }
+        Err(_) => return Err(GameError::thumbnail_read_failed()),
+    };
+    if bytes.len() > super::schema::MAX_THUMBNAIL_BYTES {
+        return Err(GameError::thumbnail_corrupt());
+    }
+    validate_png_bytes_for_descriptor(observed_save_id, &bytes, &envelope.thumbnail)
+        .map_err(|_| GameError::thumbnail_corrupt())?;
+    Ok(bytes)
+}
+
+/// The caller owns the persistence writer turn for the full duration of this
+/// rescan and cleanup. Task 8 supplies that serialization boundary.
+pub(crate) fn clean_orphaned_save_files(
+    fs: &dyn SaveFilesystem,
+    root: &Path,
+) -> Result<(), GameError> {
+    let mut referenced_sidecars = std::collections::BTreeSet::new();
+    for reference in ALL_SLOT_REFS {
+        let path = slot_path(root, reference).expect("fixed slot references are valid");
+        match fs.read(&path) {
+            Ok(bytes) => {
+                if let Some(sidecar) = possible_sidecar_from_slot(root, &bytes) {
+                    referenced_sidecars.insert(sidecar);
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(_) => return Err(GameError::save_read_failed()),
+        }
+    }
+
+    let root_entries = fs
+        .list_dir(root)
+        .map_err(|_| GameError::save_read_failed())?;
+    let thumbnails = thumbnail_directory(root);
+    let thumbnail_entries = fs
+        .list_dir(&thumbnails)
+        .map_err(|_| GameError::save_read_failed())?;
+
+    let mut root_changed = false;
+    for path in root_entries {
+        if is_owned_slot_temporary(&path) {
+            fs.remove_file(&path)
+                .map_err(|_| GameError::save_write_failed())?;
+            root_changed = true;
+        }
+    }
+    let mut thumbnails_changed = false;
+    for path in thumbnail_entries {
+        let remove = is_owned_thumbnail_temporary(&path)
+            || (is_canonical_thumbnail_path(&path) && !referenced_sidecars.contains(&path));
+        if remove {
+            fs.remove_file(&path)
+                .map_err(|_| GameError::save_write_failed())?;
+            thumbnails_changed = true;
+        }
+    }
+    if root_changed {
+        fs.sync_dir(root)
+            .map_err(|_| GameError::save_sync_failed())?;
+    }
+    if thumbnails_changed {
+        fs.sync_dir(&thumbnails)
+            .map_err(|_| GameError::save_sync_failed())?;
+    }
+    Ok(())
+}
+
+fn possible_sidecar_from_slot(root: &Path, bytes: &[u8]) -> Option<PathBuf> {
+    let value = serde_json::from_slice::<Value>(bytes).ok()?;
+    let save_id = value.get("saveId")?.as_str()?;
+    canonical_uuid_v4(save_id).ok()?;
+    let thumbnail = value.get("thumbnail")?;
+    if thumbnail.get("type")?.as_str()? != "available" {
+        return None;
+    }
+    let object_id = thumbnail.get("objectId")?.as_str()?;
+    (object_id == save_id).then_some(())?;
+    thumbnail_path(root, save_id).ok()
+}
+
+fn is_owned_slot_temporary(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(OsStr::to_str) else {
+        return false;
+    };
+    ALL_SLOT_REFS.into_iter().any(|reference| {
+        slot_path(Path::new(""), reference)
+            .ok()
+            .and_then(|path| path.file_name().and_then(OsStr::to_str).map(str::to_owned))
+            .is_some_and(|final_name| is_atomic_temporary_name(name, &final_name))
+    })
+}
+
+fn is_owned_thumbnail_temporary(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(OsStr::to_str) else {
+        return false;
+    };
+    let Some((base, suffix)) = name.rsplit_once('.') else {
+        return false;
+    };
+    if suffix.len() != 6 || !suffix.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+        return false;
+    }
+    let Some(final_name) = base.strip_prefix('.') else {
+        return false;
+    };
+    let candidate = Path::new(final_name);
+    is_canonical_thumbnail_path(candidate)
+}
+
+fn is_atomic_temporary_name(name: &str, final_name: &str) -> bool {
+    let Some(suffix) = name.strip_prefix(&format!(".{final_name}.")) else {
+        return false;
+    };
+    suffix.len() == 6 && suffix.bytes().all(|byte| byte.is_ascii_alphanumeric())
+}
+
+fn is_canonical_thumbnail_path(path: &Path) -> bool {
+    if path.extension().and_then(OsStr::to_str) != Some("png") {
+        return false;
+    }
+    path.file_stem()
+        .and_then(OsStr::to_str)
+        .is_some_and(|stem| canonical_uuid_v4(stem).is_ok())
+}
+
+fn slot_type_rank(reference: SaveSlotRef) -> u8 {
+    match reference {
+        SaveSlotRef::Auto { .. } => 0,
+        SaveSlotRef::Manual { .. } => 1,
+    }
+}
+
+fn slot_number(reference: SaveSlotRef) -> u8 {
+    match reference {
+        SaveSlotRef::Auto { slot } | SaveSlotRef::Manual { slot } => slot,
+    }
+}
+
+fn discover_slot(
+    fs: &dyn SaveFilesystem,
+    root: &Path,
+    context: &SaveDiscoveryContext,
+    reference: SaveSlotRef,
+) -> SaveSlotView {
+    let path = slot_path(root, reference).expect("fixed slot references are valid");
+    let metadata = match fs.metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return SaveSlotView {
+                reference,
+                modified_at: None,
+                status: SaveSlotStatusView::Empty,
+                observed_modified_at: None,
+                observed_saved_at: None,
+            };
+        }
+        Err(_) => {
+            return invalid_slot(reference, None, None, None, GameError::save_read_failed());
+        }
+    };
+    let modified_at = Some(format_modified_at(metadata.modified_at));
+    let bytes = match fs.read(&path) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return invalid_slot(
+                reference,
+                modified_at,
+                Some(metadata.modified_at),
+                None,
+                GameError::save_read_failed(),
+            );
+        }
+    };
+    let observed_saved_at = independently_valid_saved_at(&bytes);
+    let envelope = match parse_current_envelope(&bytes) {
+        Ok(envelope) => envelope,
+        Err(error) => {
+            let readable = readable_metadata(fs, root, &bytes);
+            return invalid_slot(
+                reference,
+                modified_at,
+                Some(metadata.modified_at),
+                observed_saved_at,
+                error,
+            )
+            .with_readable_metadata(readable);
+        }
+    };
+    if !slot_agrees_with_envelope(reference, &envelope) {
+        let readable = readable_metadata(fs, root, &bytes);
+        return invalid_slot(
+            reference,
+            modified_at,
+            Some(metadata.modified_at),
+            observed_saved_at,
+            GameError::save_slot_mismatch(),
+        )
+        .with_readable_metadata(readable);
+    }
+    if let Err(error) = build_restore_candidate(
+        context.resources_dir.clone(),
+        &context.definitions,
+        envelope.clone(),
+    ) {
+        let readable = readable_metadata(fs, root, &bytes);
+        return invalid_slot(
+            reference,
+            modified_at,
+            Some(metadata.modified_at),
+            observed_saved_at,
+            error,
+        )
+        .with_readable_metadata(readable);
+    }
+    let thumbnail = thumbnail_availability(fs, root, &envelope.save_id, &envelope.thumbnail);
+    SaveSlotView {
+        reference,
+        modified_at,
+        observed_modified_at: Some(metadata.modified_at),
+        observed_saved_at,
+        status: SaveSlotStatusView::Valid {
+            metadata: SaveMetadataView {
+                save_id: envelope.save_id,
+                save_type: envelope.save_type,
+                schema_version: envelope.schema_version,
+                content_revision: envelope.content_revision,
+                saved_at: envelope.saved_at,
+                display_name: envelope.display_name,
+                thumbnail,
+                summary: envelope.summary,
+            },
+        },
+    }
+}
+
+trait InvalidSlotMetadata {
+    fn with_readable_metadata(self, metadata: Option<ReadableSaveMetadataView>) -> Self;
+}
+
+impl InvalidSlotMetadata for SaveSlotView {
+    fn with_readable_metadata(mut self, metadata: Option<ReadableSaveMetadataView>) -> Self {
+        if let SaveSlotStatusView::Invalid {
+            metadata: current, ..
+        } = &mut self.status
+        {
+            *current = metadata;
+        }
+        self
+    }
+}
+
+fn invalid_slot(
+    reference: SaveSlotRef,
+    modified_at: Option<String>,
+    observed_modified_at: Option<SystemTime>,
+    observed_saved_at: Option<DateTime<chrono::FixedOffset>>,
+    diagnostic: GameError,
+) -> SaveSlotView {
+    SaveSlotView {
+        reference,
+        modified_at,
+        status: SaveSlotStatusView::Invalid {
+            metadata: None,
+            diagnostic,
+        },
+        observed_modified_at,
+        observed_saved_at,
+    }
+}
+
+fn readable_metadata(
+    fs: &dyn SaveFilesystem,
+    root: &Path,
+    bytes: &[u8],
+) -> Option<ReadableSaveMetadataView> {
+    let value = serde_json::from_slice::<Value>(bytes).ok()?;
+    let object = value.as_object()?;
+    let save_id = object
+        .get("saveId")
+        .and_then(Value::as_str)
+        .filter(|id| canonical_uuid_v4(id).is_ok())
+        .map(str::to_owned);
+    let saved_at = object
+        .get("savedAt")
+        .and_then(Value::as_str)
+        .filter(|value| valid_utc_timestamp(value))
+        .map(str::to_owned);
+    let display_name = object
+        .get("displayName")
+        .and_then(Value::as_str)
+        .and_then(|value| super::schema::validate_manual_display_name(value).ok());
+    let summary = object
+        .get("summary")
+        .and_then(|value| serde_json::from_value::<SaveSummary>(value.clone()).ok());
+    let descriptor = object
+        .get("thumbnail")
+        .and_then(|value| serde_json::from_value::<ThumbnailDescriptorV1>(value.clone()).ok());
+    let thumbnail = match (save_id.as_deref(), descriptor.as_ref()) {
+        (Some(save_id), Some(descriptor)) => thumbnail_availability(fs, root, save_id, descriptor),
+        _ => ThumbnailAvailabilityView::Unavailable {
+            reason: ThumbnailUnavailableReason::Corrupt,
+        },
+    };
+    Some(ReadableSaveMetadataView {
+        save_id,
+        saved_at,
+        display_name,
+        thumbnail,
+        summary,
+    })
+}
+
+fn independently_valid_saved_at(bytes: &[u8]) -> Option<DateTime<chrono::FixedOffset>> {
+    let value = serde_json::from_slice::<Value>(bytes).ok()?;
+    let saved_at = value.get("savedAt")?.as_str()?;
+    let parsed = DateTime::parse_from_rfc3339(saved_at).ok()?;
+    (parsed.offset().local_minus_utc() == 0).then_some(parsed)
+}
+
+fn valid_utc_timestamp(value: &str) -> bool {
+    DateTime::parse_from_rfc3339(value).is_ok_and(|parsed| parsed.offset().local_minus_utc() == 0)
+}
+
+fn slot_agrees_with_envelope(reference: SaveSlotRef, envelope: &SaveEnvelopeV1) -> bool {
+    matches!(
+        (reference, envelope.save_type),
+        (SaveSlotRef::Auto { slot }, SaveType::Auto) if slot == envelope.slot
+    ) || matches!(
+        (reference, envelope.save_type),
+        (SaveSlotRef::Manual { slot }, SaveType::Manual) if slot == envelope.slot
+    )
+}
+
+fn thumbnail_availability(
+    fs: &dyn SaveFilesystem,
+    root: &Path,
+    save_id: &str,
+    descriptor: &ThumbnailDescriptorV1,
+) -> ThumbnailAvailabilityView {
+    let ThumbnailDescriptorV1::Available {
+        width,
+        height,
+        byte_length,
+        ..
+    } = descriptor
+    else {
+        return ThumbnailAvailabilityView::Unavailable {
+            reason: ThumbnailUnavailableReason::CaptureUnavailable,
+        };
+    };
+    if super::thumbnail::validate_descriptor(save_id, descriptor).is_err() {
+        return ThumbnailAvailabilityView::Unavailable {
+            reason: ThumbnailUnavailableReason::Corrupt,
+        };
+    }
+    let path = match thumbnail_path(root, save_id) {
+        Ok(path) => path,
+        Err(_) => {
+            return ThumbnailAvailabilityView::Unavailable {
+                reason: ThumbnailUnavailableReason::Corrupt,
+            };
+        }
+    };
+    match fs.metadata(&path) {
+        Ok(metadata) if metadata.byte_length != u64::from(*byte_length) => {
+            return ThumbnailAvailabilityView::Unavailable {
+                reason: ThumbnailUnavailableReason::Corrupt,
+            };
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return ThumbnailAvailabilityView::Unavailable {
+                reason: ThumbnailUnavailableReason::Missing,
+            };
+        }
+        Err(_) => {
+            return ThumbnailAvailabilityView::Unavailable {
+                reason: ThumbnailUnavailableReason::ReadFailed,
+            };
+        }
+    }
+    let header = match fs.read_prefix(&path, PNG_HEADER_BYTES) {
+        Ok(header) => header,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return ThumbnailAvailabilityView::Unavailable {
+                reason: ThumbnailUnavailableReason::Missing,
+            };
+        }
+        Err(_) => {
+            return ThumbnailAvailabilityView::Unavailable {
+                reason: ThumbnailUnavailableReason::ReadFailed,
+            };
+        }
+    };
+    match parse_png_header(&header) {
+        Ok((actual_width, actual_height)) if actual_width == *width && actual_height == *height => {
+            ThumbnailAvailabilityView::Available {
+                width: *width,
+                height: *height,
+            }
+        }
+        _ => ThumbnailAvailabilityView::Unavailable {
+            reason: ThumbnailUnavailableReason::Corrupt,
+        },
+    }
 }
 
 pub(crate) fn prepare_slot_write(
@@ -695,6 +1220,8 @@ mod tests {
         directories: BTreeSet<PathBuf>,
         staged: BTreeMap<u64, FakeStagedRecord>,
         events: Vec<String>,
+        reads: Vec<(PathBuf, Option<usize>)>,
+        read_failures: BTreeSet<PathBuf>,
         next_stage_id: u64,
         next_mtime_tick: u64,
         fault: Option<Fault>,
@@ -725,6 +1252,8 @@ mod tests {
                     directories: BTreeSet::new(),
                     staged: BTreeMap::new(),
                     events: Vec::new(),
+                    reads: Vec::new(),
+                    read_failures: BTreeSet::new(),
                     next_stage_id: 1,
                     next_mtime_tick: 1,
                     fault: None,
@@ -769,6 +1298,14 @@ mod tests {
                 .values()
                 .map(|record| record.target.clone())
                 .collect()
+        }
+
+        fn reads(&self) -> Vec<(PathBuf, Option<usize>)> {
+            self.state.lock().unwrap().reads.clone()
+        }
+
+        fn fail_reads_for(&self, path: PathBuf) {
+            self.state.lock().unwrap().read_failures.insert(path);
         }
     }
 
@@ -826,9 +1363,12 @@ mod tests {
         }
 
         fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
-            self.state
-                .lock()
-                .unwrap()
+            let mut state = self.state.lock().unwrap();
+            state.reads.push((path.to_path_buf(), None));
+            if state.read_failures.contains(path) {
+                return Err(io::Error::other("injected read failure"));
+            }
+            state
                 .files
                 .get(path)
                 .map(|file| file.bytes.clone())
@@ -836,8 +1376,16 @@ mod tests {
         }
 
         fn read_prefix(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
-            let bytes = self.read(path)?;
-            Ok(bytes[..bytes.len().min(limit)].to_vec())
+            let mut state = self.state.lock().unwrap();
+            state.reads.push((path.to_path_buf(), Some(limit)));
+            if state.read_failures.contains(path) {
+                return Err(io::Error::other("injected read failure"));
+            }
+            state
+                .files
+                .get(path)
+                .map(|file| file.bytes[..file.bytes.len().min(limit)].to_vec())
+                .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
         }
 
         fn metadata(&self, path: &Path) -> io::Result<SaveFileMetadata> {
@@ -1786,5 +2334,681 @@ mod tests {
                 .kind(),
             io::ErrorKind::NotFound
         );
+    }
+
+    fn discovery_fixture() -> (PathBuf, SaveDiscoveryContext, SaveEnvelopeV1) {
+        let resources = crate::game::test_support::save_capture_fixture_resources();
+        let engine = crate::game::GameEngine::new_started(resources.clone()).unwrap();
+        let checkpoint = crate::game::save::capture::capture_checkpoint_v1(&engine).unwrap();
+        let envelope = SaveEnvelopeV1 {
+            schema_version: crate::game::save::schema::SAVE_SCHEMA_VERSION,
+            content_revision: engine.content_revision().into(),
+            save_id: OLD_SAVE_ID.into(),
+            save_type: SaveType::Auto,
+            slot: 1,
+            saved_at: "2026-07-26T12:34:56.123456789Z".into(),
+            display_name: "Discovery fixture".into(),
+            thumbnail: ThumbnailDescriptorV1::Unavailable,
+            summary: checkpoint.summary,
+            snapshot: checkpoint.snapshot,
+        };
+        let definitions = crate::game::save::restore::load_current_definitions(&resources).unwrap();
+        (
+            resources.clone(),
+            SaveDiscoveryContext {
+                resources_dir: resources,
+                definitions: Arc::new(definitions),
+            },
+            envelope,
+        )
+    }
+
+    fn slot_reference(index: usize) -> SaveSlotRef {
+        if index < 5 {
+            SaveSlotRef::Auto {
+                slot: index as u8 + 1,
+            }
+        } else {
+            SaveSlotRef::Manual {
+                slot: index as u8 - 4,
+            }
+        }
+    }
+
+    fn envelope_for_slot(
+        template: &SaveEnvelopeV1,
+        index: usize,
+        with_thumbnail: bool,
+    ) -> (SaveEnvelopeV1, Option<Vec<u8>>) {
+        let reference = slot_reference(index);
+        let mut envelope = template.clone();
+        envelope.save_id = format!("550e8400-e29b-41d4-a716-44665544000{index}");
+        match reference {
+            SaveSlotRef::Auto { slot } => {
+                envelope.save_type = SaveType::Auto;
+                envelope.slot = slot;
+            }
+            SaveSlotRef::Manual { slot } => {
+                envelope.save_type = SaveType::Manual;
+                envelope.slot = slot;
+            }
+        }
+        if with_thumbnail {
+            let bytes = png(320, 180);
+            envelope.thumbnail = ValidatedThumbnail::from_png(bytes.clone(), &envelope.save_id)
+                .unwrap()
+                .descriptor;
+            (envelope, Some(bytes))
+        } else {
+            envelope.thumbnail = ThumbnailDescriptorV1::Unavailable;
+            (envelope, None)
+        }
+    }
+
+    #[test]
+    fn discovery_reads_only_eight_fixed_slots_and_fixed_thumbnail_headers() {
+        let (_resources, context, template) = discovery_fixture();
+        let fs = FakeFilesystem::new();
+        for index in 0..8 {
+            let reference = slot_reference(index);
+            let (envelope, thumbnail) = envelope_for_slot(&template, index, true);
+            fs.put_file(
+                slot_path(reference),
+                serde_json::to_vec(&envelope).unwrap(),
+                UNIX_EPOCH + Duration::from_secs(100 + index as u64),
+            );
+            fs.put_file(
+                sidecar_path(&envelope.save_id),
+                thumbnail.unwrap(),
+                UNIX_EPOCH + Duration::from_secs(200 + index as u64),
+            );
+        }
+
+        let view = discover_saves(&fs, &root(), &context);
+
+        assert_eq!(view.slots.len(), 8);
+        assert!(matches!(view.discovery, SaveDiscoveryStatusView::Available));
+        assert!(view
+            .slots
+            .iter()
+            .all(|slot| matches!(slot.status, SaveSlotStatusView::Valid { .. })));
+        let reads = fs.reads();
+        let slot_reads = reads
+            .iter()
+            .filter(|(path, _)| path.extension().and_then(OsStr::to_str) == Some("json"))
+            .collect::<Vec<_>>();
+        let thumbnail_reads = reads
+            .iter()
+            .filter(|(path, _)| path.extension().and_then(OsStr::to_str) == Some("png"))
+            .collect::<Vec<_>>();
+        assert_eq!(slot_reads.len(), 8);
+        assert_eq!(thumbnail_reads.len(), 8);
+        assert!(thumbnail_reads
+            .iter()
+            .all(|(_, limit)| *limit == Some(PNG_HEADER_BYTES)));
+        assert!(thumbnail_reads.iter().all(|(_, limit)| limit.is_some()));
+    }
+
+    #[test]
+    fn discovery_classifies_empty_valid_corrupt_oversize_and_incompatible_slots() {
+        let (_resources, context, template) = discovery_fixture();
+        let fs = FakeFilesystem::new();
+        let (valid, _) = envelope_for_slot(&template, 0, false);
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 1 }),
+            serde_json::to_vec(&valid).unwrap(),
+            UNIX_EPOCH + Duration::from_secs(11),
+        );
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 2 }),
+            b"{broken".to_vec(),
+            UNIX_EPOCH + Duration::from_secs(12),
+        );
+        let (mut oversize, _) = envelope_for_slot(&template, 2, false);
+        let png = png(320, 180);
+        oversize.thumbnail = ValidatedThumbnail::from_png(png, &oversize.save_id)
+            .unwrap()
+            .descriptor;
+        if let ThumbnailDescriptorV1::Available { byte_length, .. } = &mut oversize.thumbnail {
+            *byte_length = (crate::game::save::schema::MAX_THUMBNAIL_BYTES + 1) as u32;
+        }
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 3 }),
+            serde_json::to_vec(&oversize).unwrap(),
+            UNIX_EPOCH + Duration::from_secs(13),
+        );
+        let (mut incompatible, _) = envelope_for_slot(&template, 3, false);
+        incompatible.content_revision =
+            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".into();
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 4 }),
+            serde_json::to_vec(&incompatible).unwrap(),
+            UNIX_EPOCH + Duration::from_secs(14),
+        );
+        let future =
+            br#"{"schemaVersion":99,"saveId":"550e8400-e29b-41d4-a716-446655440004"}"#.to_vec();
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 5 }),
+            future.clone(),
+            UNIX_EPOCH + Duration::from_secs(15),
+        );
+
+        let view = discover_saves(&fs, &root(), &context);
+
+        assert!(matches!(
+            view.slots[0].status,
+            SaveSlotStatusView::Valid { .. }
+        ));
+        assert!(matches!(
+            view.slots[1].status,
+            SaveSlotStatusView::Invalid { ref diagnostic, .. }
+                if diagnostic.code == "malformedSaveJson"
+        ));
+        assert!(matches!(
+            view.slots[2].status,
+            SaveSlotStatusView::Invalid { ref diagnostic, .. }
+                if diagnostic.code == "thumbnailPngTooLarge"
+        ));
+        assert!(matches!(
+            view.slots[3].status,
+            SaveSlotStatusView::Invalid { ref diagnostic, .. }
+                if diagnostic.code == "incompatibleContentRevision"
+        ));
+        assert!(matches!(
+            view.slots[4].status,
+            SaveSlotStatusView::Invalid { ref diagnostic, .. }
+                if diagnostic.code == "unsupportedSaveSchemaVersion"
+        ));
+        assert!(matches!(view.slots[5].status, SaveSlotStatusView::Empty));
+        assert_eq!(
+            fs.bytes(&slot_path(SaveSlotRef::Auto { slot: 5 })).unwrap(),
+            future,
+            "discovery never modifies incompatible sources"
+        );
+    }
+
+    fn selection_slot(
+        reference: SaveSlotRef,
+        modified_at: Option<SystemTime>,
+        saved_at: Option<&str>,
+        valid: bool,
+    ) -> SaveSlotView {
+        let observed_saved_at = saved_at.and_then(|value| DateTime::parse_from_rfc3339(value).ok());
+        let status = if modified_at.is_none() {
+            SaveSlotStatusView::Empty
+        } else if valid {
+            let (save_type, slot) = match reference {
+                SaveSlotRef::Auto { slot } => (SaveType::Auto, slot),
+                SaveSlotRef::Manual { slot } => (SaveType::Manual, slot),
+            };
+            let mut envelope = representative_save_envelope();
+            envelope.save_type = save_type;
+            envelope.slot = slot;
+            envelope.saved_at = saved_at.unwrap_or("2026-01-01T00:00:00Z").into();
+            SaveSlotStatusView::Valid {
+                metadata: SaveMetadataView {
+                    save_id: envelope.save_id,
+                    save_type,
+                    schema_version: envelope.schema_version,
+                    content_revision: envelope.content_revision,
+                    saved_at: envelope.saved_at,
+                    display_name: envelope.display_name,
+                    thumbnail: ThumbnailAvailabilityView::Unavailable {
+                        reason: ThumbnailUnavailableReason::CaptureUnavailable,
+                    },
+                    summary: envelope.summary,
+                },
+            }
+        } else {
+            SaveSlotStatusView::Invalid {
+                metadata: None,
+                diagnostic: GameError::malformed_save_json(),
+            }
+        };
+        SaveSlotView {
+            reference,
+            modified_at: modified_at.map(format_modified_at),
+            status,
+            observed_modified_at: modified_at,
+            observed_saved_at,
+        }
+    }
+
+    #[test]
+    fn autosave_rotation_chooses_lowest_empty_then_oldest_occupied_with_stable_ties() {
+        let second = UNIX_EPOCH + Duration::from_secs(2);
+        let third = UNIX_EPOCH + Duration::from_secs(3);
+        let mut slots = vec![
+            selection_slot(SaveSlotRef::Auto { slot: 1 }, Some(third), None, true),
+            selection_slot(SaveSlotRef::Auto { slot: 2 }, None, None, true),
+            selection_slot(SaveSlotRef::Auto { slot: 3 }, Some(second), None, false),
+            selection_slot(SaveSlotRef::Auto { slot: 4 }, Some(third), None, true),
+            selection_slot(SaveSlotRef::Auto { slot: 5 }, Some(third), None, true),
+        ];
+        assert_eq!(
+            select_autosave_target(&slots).unwrap(),
+            SaveSlotRef::Auto { slot: 2 }
+        );
+
+        slots[1] = selection_slot(
+            SaveSlotRef::Auto { slot: 2 },
+            Some(second),
+            Some("2099-01-01T00:00:00Z"),
+            true,
+        );
+        assert_eq!(
+            select_autosave_target(&slots).unwrap(),
+            SaveSlotRef::Auto { slot: 2 },
+            "invalid/corrupt entries are occupied and savedAt cannot override mtime"
+        );
+
+        slots[1] = selection_slot(
+            SaveSlotRef::Auto { slot: 2 },
+            Some(third),
+            Some("2000-01-01T00:00:00Z"),
+            true,
+        );
+        assert_eq!(
+            select_autosave_target(&slots).unwrap(),
+            SaveSlotRef::Auto { slot: 3 }
+        );
+        slots[2] = selection_slot(SaveSlotRef::Auto { slot: 3 }, Some(third), None, false);
+        assert_eq!(
+            select_autosave_target(&slots).unwrap(),
+            SaveSlotRef::Auto { slot: 1 },
+            "equal mtimes use ascending autosave slot"
+        );
+    }
+
+    #[test]
+    fn continue_returns_newest_invalid_and_uses_all_documented_tie_breaks() {
+        let newest = UNIX_EPOCH + Duration::from_secs(9);
+        let older = UNIX_EPOCH + Duration::from_secs(8);
+        let invalid_newest =
+            selection_slot(SaveSlotRef::Auto { slot: 1 }, Some(newest), None, false);
+        let valid_older = selection_slot(
+            SaveSlotRef::Manual { slot: 3 },
+            Some(older),
+            Some("2099-01-01T00:00:00Z"),
+            true,
+        );
+        assert_eq!(
+            select_continue_candidate(&[valid_older, invalid_newest]),
+            Some(SaveSlotRef::Auto { slot: 1 })
+        );
+
+        let tied = vec![
+            selection_slot(
+                SaveSlotRef::Auto { slot: 5 },
+                Some(newest),
+                Some("2026-01-01T00:00:00Z"),
+                true,
+            ),
+            selection_slot(
+                SaveSlotRef::Manual { slot: 1 },
+                Some(newest),
+                Some("2026-01-02T00:00:00Z"),
+                false,
+            ),
+            selection_slot(
+                SaveSlotRef::Manual { slot: 3 },
+                Some(newest),
+                Some("2026-01-02T00:00:00Z"),
+                true,
+            ),
+        ];
+        assert_eq!(
+            select_continue_candidate(&tied),
+            Some(SaveSlotRef::Manual { slot: 3 }),
+            "savedAt desc, manual before auto, then higher slot"
+        );
+    }
+
+    fn thumbnail_slot(fs: &FakeFilesystem, template: &SaveEnvelopeV1) -> (SaveSlotRef, Vec<u8>) {
+        let reference = SaveSlotRef::Manual { slot: 1 };
+        let (mut envelope, _) = envelope_for_slot(template, 5, false);
+        let bytes = png(320, 180);
+        envelope.thumbnail = ValidatedThumbnail::from_png(bytes.clone(), &envelope.save_id)
+            .unwrap()
+            .descriptor;
+        fs.put_file(
+            slot_path(reference),
+            serde_json::to_vec(&envelope).unwrap(),
+            UNIX_EPOCH + Duration::from_secs(20),
+        );
+        fs.put_file(
+            sidecar_path(&envelope.save_id),
+            bytes.clone(),
+            UNIX_EPOCH + Duration::from_secs(21),
+        );
+        (reference, bytes)
+    }
+
+    #[test]
+    fn lazy_thumbnail_rereads_identity_and_validates_one_bounded_body() {
+        let (_resources, _context, template) = discovery_fixture();
+        let fs = FakeFilesystem::new();
+        let (reference, expected) = thumbnail_slot(&fs, &template);
+        let observed_save_id = match reference {
+            SaveSlotRef::Manual { .. } => "550e8400-e29b-41d4-a716-446655440005",
+            SaveSlotRef::Auto { .. } => unreachable!(),
+        };
+
+        let actual = read_save_thumbnail(&fs, &root(), reference, observed_save_id).unwrap();
+
+        assert_eq!(actual, expected);
+        let png_reads = fs
+            .reads()
+            .into_iter()
+            .filter(|(path, _)| path.extension().and_then(OsStr::to_str) == Some("png"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            png_reads,
+            vec![(
+                sidecar_path(observed_save_id),
+                Some(crate::game::save::schema::MAX_THUMBNAIL_BYTES + 1)
+            )]
+        );
+    }
+
+    #[test]
+    fn lazy_thumbnail_closes_stale_missing_corrupt_and_oversize_failures() {
+        let (_resources, _context, template) = discovery_fixture();
+        let reference = SaveSlotRef::Manual { slot: 1 };
+
+        let stale = FakeFilesystem::new();
+        thumbnail_slot(&stale, &template);
+        assert_eq!(
+            read_save_thumbnail(&stale, &root(), reference, OLD_SAVE_ID)
+                .unwrap_err()
+                .code,
+            "staleSaveSelection"
+        );
+        assert!(stale
+            .reads()
+            .iter()
+            .all(|(path, _)| path.extension().and_then(OsStr::to_str) != Some("png")));
+
+        let missing = FakeFilesystem::new();
+        thumbnail_slot(&missing, &template);
+        missing
+            .state
+            .lock()
+            .unwrap()
+            .files
+            .remove(&sidecar_path("550e8400-e29b-41d4-a716-446655440005"));
+        assert_eq!(
+            read_save_thumbnail(
+                &missing,
+                &root(),
+                reference,
+                "550e8400-e29b-41d4-a716-446655440005"
+            )
+            .unwrap_err()
+            .code,
+            "thumbnailMissing"
+        );
+
+        let unreadable = FakeFilesystem::new();
+        thumbnail_slot(&unreadable, &template);
+        unreadable.fail_reads_for(sidecar_path("550e8400-e29b-41d4-a716-446655440005"));
+        assert_eq!(
+            read_save_thumbnail(
+                &unreadable,
+                &root(),
+                reference,
+                "550e8400-e29b-41d4-a716-446655440005"
+            )
+            .unwrap_err()
+            .code,
+            "thumbnailReadFailed"
+        );
+
+        let corrupt = FakeFilesystem::new();
+        thumbnail_slot(&corrupt, &template);
+        corrupt
+            .state
+            .lock()
+            .unwrap()
+            .files
+            .get_mut(&sidecar_path("550e8400-e29b-41d4-a716-446655440005"))
+            .unwrap()
+            .bytes[20] ^= 1;
+        assert_eq!(
+            read_save_thumbnail(
+                &corrupt,
+                &root(),
+                reference,
+                "550e8400-e29b-41d4-a716-446655440005"
+            )
+            .unwrap_err()
+            .code,
+            "thumbnailCorrupt"
+        );
+
+        let oversize = FakeFilesystem::new();
+        thumbnail_slot(&oversize, &template);
+        oversize
+            .state
+            .lock()
+            .unwrap()
+            .files
+            .get_mut(&sidecar_path("550e8400-e29b-41d4-a716-446655440005"))
+            .unwrap()
+            .bytes = vec![0; crate::game::save::schema::MAX_THUMBNAIL_BYTES + 2];
+        assert_eq!(
+            read_save_thumbnail(
+                &oversize,
+                &root(),
+                reference,
+                "550e8400-e29b-41d4-a716-446655440005"
+            )
+            .unwrap_err()
+            .code,
+            "thumbnailCorrupt"
+        );
+        assert!(oversize.reads().iter().any(|(path, limit)| {
+            path.extension().and_then(OsStr::to_str) == Some("png")
+                && *limit == Some(crate::game::save::schema::MAX_THUMBNAIL_BYTES + 1)
+        }));
+    }
+
+    #[test]
+    fn browser_view_never_serializes_paths_or_thumbnail_object_ids() {
+        let (_resources, context, template) = discovery_fixture();
+        let fs = FakeFilesystem::new();
+        thumbnail_slot(&fs, &template);
+
+        let json = serde_json::to_string(&discover_saves(&fs, &root(), &context)).unwrap();
+
+        assert!(!json.contains("/virtual/app/saves"));
+        assert!(!json.contains("objectId"));
+        assert!(!json.contains("thumbnails/"));
+    }
+
+    #[test]
+    fn orphan_cleanup_removes_only_owned_temps_and_unreferenced_canonical_pngs() {
+        let (_resources, _context, template) = discovery_fixture();
+        let fs = FakeFilesystem::new();
+        let (reference, _) = thumbnail_slot(&fs, &template);
+        let referenced = sidecar_path("550e8400-e29b-41d4-a716-446655440005");
+        let orphan = sidecar_path(OTHER_SAVE_ID);
+        let owned_slot_temp = root().join(".manual-1.json.A1b2C3");
+        let owned_png_temp = root()
+            .join("thumbnails")
+            .join(format!(".{OTHER_SAVE_ID}.png.Z9y8X7"));
+        let foreign = root().join("thumbnails").join("notes.png");
+        for path in [&orphan, &owned_slot_temp, &owned_png_temp, &foreign] {
+            fs.put_file(
+                path.clone(),
+                b"orphan".to_vec(),
+                UNIX_EPOCH + Duration::from_secs(1),
+            );
+        }
+
+        clean_orphaned_save_files(&fs, &root()).unwrap();
+
+        assert!(fs.exists(&slot_path(reference)));
+        assert!(fs.exists(&referenced));
+        assert!(!fs.exists(&orphan));
+        assert!(!fs.exists(&owned_slot_temp));
+        assert!(!fs.exists(&owned_png_temp));
+        assert!(fs.exists(&foreign));
+    }
+
+    #[test]
+    fn orphan_cleanup_rescans_after_writer_turn_and_preserves_possible_corrupt_sources() {
+        let (_resources, _context, template) = discovery_fixture();
+        let fs = FakeFilesystem::new();
+        let new_sidecar = sidecar_path("550e8400-e29b-41d4-a716-446655440005");
+        fs.put_file(
+            new_sidecar.clone(),
+            png(320, 180),
+            UNIX_EPOCH + Duration::from_secs(1),
+        );
+
+        let _advisory_scan_before_waiting_for_writer = fs.list_dir(&root()).unwrap();
+        thumbnail_slot(&fs, &template);
+        clean_orphaned_save_files(&fs, &root()).unwrap();
+        assert!(fs.exists(&new_sidecar));
+
+        let corrupt_sidecar = sidecar_path(OLD_SAVE_ID);
+        let corrupt_json = format!(
+            r#"{{"schemaVersion":99,"saveId":"{OLD_SAVE_ID}","thumbnail":{{"type":"available","objectId":"{OLD_SAVE_ID}","format":"png","width":1,"height":1,"byteLength":33,"sha256":"sha256:{}"}}}}"#,
+            "a".repeat(64)
+        );
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 1 }),
+            corrupt_json.into_bytes(),
+            UNIX_EPOCH + Duration::from_secs(2),
+        );
+        fs.put_file(
+            corrupt_sidecar.clone(),
+            png(1, 1),
+            UNIX_EPOCH + Duration::from_secs(2),
+        );
+        clean_orphaned_save_files(&fs, &root()).unwrap();
+        assert!(fs.exists(&corrupt_sidecar));
+    }
+
+    #[test]
+    fn discovery_and_load_share_exact_schema_cursor_history_and_scene_diagnostics() {
+        type Mutation = Box<dyn Fn(&mut SaveEnvelopeV1)>;
+        let (_resources, context, template) = discovery_fixture();
+        let cases: Vec<(&str, Mutation)> = vec![
+            (
+                "malformed checkpoint ID",
+                Box::new(|save| save.save_id = "not-a-checkpoint".into()),
+            ),
+            (
+                "dialogue coordinates",
+                Box::new(|save| save.snapshot.next_queue_gen = 0),
+            ),
+            (
+                "history invariant",
+                Box::new(|save| save.snapshot.dialogue_history.next_id = 0),
+            ),
+            (
+                "scene progress",
+                Box::new(|save| {
+                    save.snapshot.scene =
+                        crate::game::save::schema::SceneProgressSnapshotV1::Investigation {
+                            intro_played: false,
+                            outro_played: false,
+                            current_sublocation_id: None,
+                            inspected_hotspot_ids: Vec::new(),
+                            discussed_topic_ids: Vec::new(),
+                            entered_sublocation_ids: Vec::new(),
+                            unlocked_overrides: Vec::new(),
+                        };
+                }),
+            ),
+        ];
+        for (label, mutate) in cases {
+            let mut envelope = template.clone();
+            mutate(&mut envelope);
+            let load_error = crate::game::save::restore::build_restore_candidate(
+                context.resources_dir.clone(),
+                &context.definitions,
+                envelope.clone(),
+            )
+            .unwrap_err();
+            let fs = FakeFilesystem::new();
+            fs.put_file(
+                slot_path(SaveSlotRef::Auto { slot: 1 }),
+                serde_json::to_vec(&envelope).unwrap(),
+                UNIX_EPOCH + Duration::from_secs(50),
+            );
+
+            let view = discover_saves(&fs, &root(), &context);
+            let SaveSlotStatusView::Invalid { diagnostic, .. } = &view.slots[0].status else {
+                panic!("{label}: discovery unexpectedly accepted invalid save");
+            };
+            assert_eq!(diagnostic, &load_error, "{label}");
+        }
+    }
+
+    #[test]
+    fn discovery_rejects_manual_files_claiming_auto_or_another_manual_slot() {
+        let (_resources, context, template) = discovery_fixture();
+        for (save_type, claimed_slot) in [(SaveType::Auto, 2), (SaveType::Manual, 1)] {
+            let fs = FakeFilesystem::new();
+            let mut envelope = template.clone();
+            envelope.save_type = save_type;
+            envelope.slot = claimed_slot;
+            fs.put_file(
+                slot_path(SaveSlotRef::Manual { slot: 2 }),
+                serde_json::to_vec(&envelope).unwrap(),
+                UNIX_EPOCH + Duration::from_secs(60),
+            );
+
+            let view = discover_saves(&fs, &root(), &context);
+            assert!(matches!(
+                view.slots[6].status,
+                SaveSlotStatusView::Invalid { ref diagnostic, .. }
+                    if diagnostic.code == "saveSlotMismatch"
+            ));
+        }
+    }
+
+    #[test]
+    fn discovery_rejects_a_context_detached_from_its_preloaded_definitions_globally() {
+        let (_resources, mut context, template) = discovery_fixture();
+        context.resources_dir = PathBuf::from("/different/package");
+        let fs = FakeFilesystem::new();
+        let (envelope, _) = envelope_for_slot(&template, 0, false);
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 1 }),
+            serde_json::to_vec(&envelope).unwrap(),
+            UNIX_EPOCH + Duration::from_secs(1),
+        );
+
+        let view = discover_saves(&fs, &root(), &context);
+
+        assert!(matches!(
+            view.discovery,
+            SaveDiscoveryStatusView::Unavailable { .. }
+        ));
+        assert!(view.slots.is_empty());
+    }
+
+    #[test]
+    fn six_normal_autosaves_retain_five_deep_rotation_and_reuse_the_oldest_slot() {
+        let mut slots = (1..=5)
+            .map(|slot| selection_slot(SaveSlotRef::Auto { slot }, None, None, true))
+            .collect::<Vec<_>>();
+        let mut targets = Vec::new();
+        for tick in 1..=6 {
+            let target = select_autosave_target(&slots).unwrap();
+            targets.push(slot_number(target));
+            let index = usize::from(slot_number(target) - 1);
+            slots[index] = selection_slot(
+                target,
+                Some(UNIX_EPOCH + Duration::from_secs(tick)),
+                Some("2026-07-26T00:00:00Z"),
+                true,
+            );
+        }
+        assert_eq!(targets, vec![1, 2, 3, 4, 5, 1]);
     }
 }

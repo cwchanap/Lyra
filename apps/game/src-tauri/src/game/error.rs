@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GameError {
     pub code: String,
@@ -99,6 +99,15 @@ impl GameError {
             "thumbnailDimensionsOutOfBounds",
             "Thumbnail dimensions are outside the allowed range.",
         )
+    }
+    pub fn thumbnail_missing() -> Self {
+        Self::new("thumbnailMissing", "Thumbnail is missing.")
+    }
+    pub fn thumbnail_corrupt() -> Self {
+        Self::new("thumbnailCorrupt", "Thumbnail is corrupt.")
+    }
+    pub fn thumbnail_read_failed() -> Self {
+        Self::new("thumbnailReadFailed", "Thumbnail could not be read.")
     }
     pub fn stale_thumbnail_ticket() -> Self {
         Self::new("staleThumbnailTicket", "Thumbnail ticket is stale.")

@@ -5,6 +5,7 @@ use crate::game::{GameError, QueueToken};
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::SystemTime;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(crate) const SAVE_SCHEMA_VERSION: u32 = 1;
@@ -65,6 +66,97 @@ pub(crate) struct SaveSummary {
     pub(crate) scene_title: String,
     pub(crate) active_primary_objective_id: Option<String>,
     pub(crate) active_primary_objective_label: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveBrowserView {
+    pub(crate) discovery: SaveDiscoveryStatusView,
+    pub(crate) slots: Vec<SaveSlotView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub(crate) enum SaveDiscoveryStatusView {
+    Loading,
+    Available,
+    Unavailable { diagnostic: GameError },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveSlotView {
+    pub(crate) reference: SaveSlotRef,
+    pub(crate) modified_at: Option<String>,
+    pub(crate) status: SaveSlotStatusView,
+    #[serde(skip)]
+    pub(crate) observed_modified_at: Option<SystemTime>,
+    #[serde(skip)]
+    pub(crate) observed_saved_at: Option<DateTime<FixedOffset>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub(crate) enum SaveSlotStatusView {
+    Empty,
+    Valid {
+        metadata: SaveMetadataView,
+    },
+    Invalid {
+        metadata: Option<ReadableSaveMetadataView>,
+        diagnostic: GameError,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveMetadataView {
+    pub(crate) save_id: String,
+    pub(crate) save_type: SaveType,
+    pub(crate) schema_version: u32,
+    pub(crate) content_revision: String,
+    pub(crate) saved_at: String,
+    pub(crate) display_name: String,
+    pub(crate) thumbnail: ThumbnailAvailabilityView,
+    pub(crate) summary: SaveSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReadableSaveMetadataView {
+    pub(crate) save_id: Option<String>,
+    pub(crate) saved_at: Option<String>,
+    pub(crate) display_name: Option<String>,
+    pub(crate) thumbnail: ThumbnailAvailabilityView,
+    pub(crate) summary: Option<SaveSummary>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub(crate) enum ThumbnailAvailabilityView {
+    Available { width: u32, height: u32 },
+    Unavailable { reason: ThumbnailUnavailableReason },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ThumbnailUnavailableReason {
+    CaptureUnavailable,
+    Missing,
+    Corrupt,
+    ReadFailed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
