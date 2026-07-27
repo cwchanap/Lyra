@@ -426,6 +426,17 @@ pub(crate) struct AcknowledgementOutcome {
 #[serde(transparent)]
 pub(crate) struct PersistenceFailureTokenView(String);
 
+impl PersistenceFailureTokenView {
+    #[cfg(test)]
+    pub(crate) fn from_error(error: &GameError) -> Result<Self, GameError> {
+        error
+            .failure_token
+            .clone()
+            .map(Self)
+            .ok_or_else(GameError::stale_persistence_failure_token)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum PersistenceBypassOperation {
     StartWithoutSaving,
@@ -485,6 +496,12 @@ pub(crate) enum ExclusivePersistenceIntent {
 pub(crate) struct AppSession {
     pub(crate) engine: Option<GameEngine>,
     pub(crate) persistence: SessionPersistence,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SessionTransitionIdentity {
+    pub(crate) generation: u64,
+    pub(crate) durable_revision: Option<u64>,
 }
 
 impl AppSession {
@@ -711,6 +728,7 @@ pub(crate) enum WriterJobClass {
     },
     AcquisitionAcknowledgement,
     ManualSave,
+    DeleteSave,
     OrphanCleanup,
 }
 
@@ -1010,6 +1028,43 @@ impl SaveCoordinator {
         Ok(view)
     }
 
+    pub(crate) fn transition_identity(
+        &self,
+        app: &crate::AppState,
+    ) -> Result<SessionTransitionIdentity, GameError> {
+        let session = app.session.lock().map_err(|_| GameError::unavailable())?;
+        session.ensure_persistence_available()?;
+        Ok(SessionTransitionIdentity {
+            generation: session.persistence.generation,
+            durable_revision: session.durable_revision(),
+        })
+    }
+
+    pub(crate) async fn install_session_if_current(
+        &self,
+        app: &crate::AppState,
+        engine: GameEngine,
+        autosave_target: Option<SaveSlotRef>,
+        expected: SessionTransitionIdentity,
+    ) -> Result<crate::game::GameStateView, GameError> {
+        let view = engine.view()?;
+        let _gate = app.replacement_gate.lock().await;
+        let generation = self.next_session_generation()?;
+        let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
+        session.ensure_persistence_available()?;
+        if session.persistence.generation != expected.generation
+            || session.durable_revision() != expected.durable_revision
+        {
+            return Err(GameError::stale_save_selection());
+        }
+        let autosave_target = match autosave_target {
+            Some(target @ SaveSlotRef::Auto { .. }) => Some(target),
+            Some(SaveSlotRef::Manual { .. }) | None => None,
+        };
+        *session = AppSession::installed(engine, generation, autosave_target);
+        Ok(view)
+    }
+
     pub(crate) async fn clear_session(&self, app: &crate::AppState) -> Result<u64, GameError> {
         {
             let session = app.session.lock().map_err(|_| GameError::unavailable())?;
@@ -1019,6 +1074,24 @@ impl SaveCoordinator {
         let generation = self.next_session_generation()?;
         let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
         session.ensure_persistence_available()?;
+        *session = AppSession::empty_at_generation(generation);
+        Ok(generation)
+    }
+
+    pub(crate) async fn clear_session_if_current(
+        &self,
+        app: &crate::AppState,
+        expected: SessionTransitionIdentity,
+    ) -> Result<u64, GameError> {
+        let _gate = app.replacement_gate.lock().await;
+        let generation = self.next_session_generation()?;
+        let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
+        session.ensure_persistence_available()?;
+        if session.persistence.generation != expected.generation
+            || session.durable_revision() != expected.durable_revision
+        {
+            return Err(GameError::stale_persistence_failure_token());
+        }
         *session = AppSession::empty_at_generation(generation);
         Ok(generation)
     }
@@ -1134,6 +1207,98 @@ impl SaveCoordinator {
         Ok((challenged, token))
     }
 
+    pub(crate) fn challenge_current_session_error(
+        &self,
+        app: &crate::AppState,
+        operation: PersistenceBypassOperation,
+        diagnostic: GameError,
+    ) -> Result<GameError, GameError> {
+        let identity = self.transition_identity(app)?;
+        self.challenge_persistence_failure(
+            operation,
+            FailureChallengeIdentity {
+                session_generation: identity.generation,
+                discovery_generation: None,
+                durable_revision: identity.durable_revision.unwrap_or(0),
+                selected_save_id: None,
+                acquisition_event_id: None,
+            },
+            diagnostic,
+        )
+    }
+
+    pub(crate) fn challenge_current_discovery_failure(
+        &self,
+        app: &crate::AppState,
+        operation: PersistenceBypassOperation,
+        diagnostic: GameError,
+    ) -> Result<GameError, GameError> {
+        let identity = self.transition_identity(app)?;
+        let discovery_generation = self
+            .state
+            .lock()
+            .map_err(|_| GameError::save_discovery_unavailable())?
+            .discovery_generation;
+        self.challenge_persistence_failure(
+            operation,
+            FailureChallengeIdentity {
+                session_generation: identity.generation,
+                discovery_generation: Some(discovery_generation),
+                durable_revision: identity.durable_revision.unwrap_or(0),
+                selected_save_id: None,
+                acquisition_event_id: None,
+            },
+            diagnostic,
+        )
+    }
+
+    pub(crate) fn consume_current_discovery_failure(
+        &self,
+        app: &crate::AppState,
+        token: &PersistenceFailureTokenView,
+        operation: PersistenceBypassOperation,
+    ) -> Result<SessionTransitionIdentity, GameError> {
+        let identity = self.transition_identity(app)?;
+        let discovery_generation = self
+            .state
+            .lock()
+            .map_err(|_| GameError::save_discovery_unavailable())?
+            .discovery_generation;
+        self.consume_failure_token(
+            token,
+            operation,
+            FailureChallengeIdentity {
+                session_generation: identity.generation,
+                discovery_generation: Some(discovery_generation),
+                durable_revision: identity.durable_revision.unwrap_or(0),
+                selected_save_id: None,
+                acquisition_event_id: None,
+            },
+        )?;
+        Ok(identity)
+    }
+
+    pub(crate) fn consume_current_session_failure(
+        &self,
+        app: &crate::AppState,
+        token: &PersistenceFailureTokenView,
+        operation: PersistenceBypassOperation,
+    ) -> Result<SessionTransitionIdentity, GameError> {
+        let identity = self.transition_identity(app)?;
+        self.consume_failure_token(
+            token,
+            operation,
+            FailureChallengeIdentity {
+                session_generation: identity.generation,
+                discovery_generation: None,
+                durable_revision: identity.durable_revision.unwrap_or(0),
+                selected_save_id: None,
+                acquisition_event_id: None,
+            },
+        )?;
+        Ok(identity)
+    }
+
     pub(crate) fn notify_durable_commit(
         &self,
         session_generation: u64,
@@ -1221,7 +1386,7 @@ impl SaveCoordinator {
         app: &crate::AppState,
         operation: FlushOperation,
     ) -> Result<FlushOutcome, GameError> {
-        let (session_generation, durable_revision, flush_revision) = {
+        let (session_generation, durable_revision, flush_revision, preferred_target) = {
             let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
             session.ensure_persistence_available()?;
             if let Some(receipt) = self.last_successful_write() {
@@ -1236,6 +1401,7 @@ impl SaveCoordinator {
                 session
                     .persistence
                     .flush_revision(operation, durable_revision),
+                session.persistence.autosave_target,
             )
         };
         let Some(flush_revision) = flush_revision else {
@@ -1255,7 +1421,7 @@ impl SaveCoordinator {
             },
             Box::pin(async move {
                 let result = coordinator
-                    .execute_blocking_flush(session_generation, flush_revision)
+                    .execute_blocking_flush(session_generation, flush_revision, preferred_target)
                     .await;
                 let _ = result_tx.send(result);
             }),
@@ -1661,6 +1827,7 @@ impl SaveCoordinator {
         &self,
         session_generation: u64,
         durable_revision: u64,
+        preferred_target: Option<SaveSlotRef>,
     ) -> Result<(AutosaveWriteReceipt, bool), GameError> {
         if let Some(receipt) = self.last_successful_write().filter(|receipt| {
             receipt.session_generation == session_generation
@@ -1681,7 +1848,11 @@ impl SaveCoordinator {
                     thumbnail: CaptureTerminalResult::Unavailable,
                 })
                 .await?;
-            let target = select_autosave_target(&capture.slots)?;
+            let target = match preferred_target {
+                Some(target @ SaveSlotRef::Auto { .. }) => target,
+                Some(SaveSlotRef::Manual { .. }) => return Err(GameError::save_write_failed()),
+                None => select_autosave_target(&capture.slots)?,
+            };
             let save_id = Uuid::new_v4().hyphenated().to_string();
             let expected_receipt = AutosaveWriteReceipt {
                 session_generation,
@@ -1805,6 +1976,13 @@ impl SaveCoordinator {
         run: CoordinatorFuture<'static, ()>,
     ) -> Result<(), GameError> {
         self.writer_queue.enqueue(WriterJobClass::ManualSave, run)
+    }
+
+    pub(crate) fn reserve_delete_writer(
+        &self,
+        run: CoordinatorFuture<'static, ()>,
+    ) -> Result<(), GameError> {
+        self.writer_queue.enqueue(WriterJobClass::DeleteSave, run)
     }
 
     pub(crate) fn enqueue_orphan_cleanup(&self) -> Result<(), GameError> {

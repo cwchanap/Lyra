@@ -275,3 +275,146 @@ rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml \
 - Part B2: load, Continue, delete, Return to Title, and
   start/continue/return-without-saving challenge consumption.
 - Part C: raw PNG IPC, status event binding, and development HTTP parity.
+
+## Part B2 — disk-backed session transitions and deletion
+
+### Scope
+
+Part B2 replaces the remaining Task 10 disk/session placeholders:
+`load_save`, `load_save_discarding_current`, `continue_game`, `delete_save`,
+`return_to_title`, `return_to_title_without_saving`, `start_game`, and
+`start_game_without_saving`. Raw thumbnail IPC, status events, and the
+development HTTP mirror remain Part C.
+
+### Transition ordering and atomicity
+
+- Added bounded `read_save_envelope`: it rereads only the fixed typed slot,
+  requires the browser-observed canonical UUID v4, rejects replacement ID
+  drift, validates slot/type agreement, and returns the typed envelope for the
+  existing restore boundary.
+- Normal Load with an active session completes its mandatory flush before it
+  rereads the selected slot. The immutable restore candidate is built outside
+  both `G` and `S`.
+- Continue follows the same ordering, then performs a fresh discovery and
+  uses the shared Rust `select_continue_candidate`. If the newest slot is
+  invalid it returns that slot's typed diagnostic and never falls back to an
+  older valid checkpoint.
+- A new `SessionTransitionIdentity` captures only generation and optional
+  durable revision. Candidate installation and session clearing use
+  conditional Task 9 seams: build/read happens off-lock, then `G → S`
+  revalidates the identity before the atomic replacement. Revision/generation
+  drift rejects the transition and preserves the complete live public view.
+- Installed autosaves adopt their source; installed manual saves and fresh
+  games have no autosave target. Every transition response has
+  `thumbnailCapture: null`.
+- Blocking flush now carries the briefly captured installed autosave target
+  into the writer turn. This fixes a Task 9 integration gap where a real
+  production flush rotated to a new empty slot instead of refreshing the
+  adopted source; no session guard crosses the writer wait.
+
+### Opaque failure challenges
+
+- A normal Load flush failure returns a
+  `LoadDiscardingCurrent` challenge bound to the current session and discovery
+  generation. The bypass consumes the exact opaque token, skips flush,
+  rereads/builds the caller's typed slot and observed save ID, and installs
+  only if the challenged session remains current.
+- Return to Title flushes first. Failure returns a
+  `ReturnWithoutSaving` session-bound challenge; the bypass consumes it and
+  conditionally clears under `G → S`.
+- Initial storage failure returns a discovery-bound
+  `StartWithoutSaving` challenge. The bypass builds the packaged fresh engine
+  off-lock, consumes the exact challenge, and conditionally installs it.
+- Challenge construction remains coordinator-private. Application code and
+  tests never inspect operation/generation/revision bindings, and token reuse,
+  wrong IDs, and later discovery invalidation remain rejected.
+
+### Retryable startup persistence
+
+Part B1 originally represented an ordinary `ensure_save_layout` failure by
+omitting the backend. That could start degraded play but could not satisfy the
+approved requirement that a later durable revision retry real persistence.
+Part B2 corrects the representation:
+
+- the production backend and exact shared session/gate identities are retained
+  even after initial layout failure;
+- only the opaque availability diagnostic is retained;
+- discovery and backend capture retry `ensure_save_layout`;
+- a successful retry clears availability and permits later autosave/flush;
+- unsafe E2E root validation remains startup-fatal.
+
+A recovering-filesystem regression proves Start Without Saving can install
+degraded, storage can recover, and a later exact-revision flush creates a valid
+checkpoint.
+
+### Delete and fresh browser state
+
+- Delete runs through the serialized coordinator writer queue and delegates to
+  Task 6 `delete_slot` with the exact typed reference and
+  `OccupiedSlotExpectation`.
+- Canonical-ID replacements reject stale confirmations. Corrupt ID-less files
+  require the exact observed mtime.
+- Sidecar deletion is still derived only from a valid owned envelope; an
+  application-level regression proves an unrelated thumbnail remains intact
+  when deleting a corrupt checkpoint.
+- Successful delete and Return to Title rediscover immediately, recompute
+  Continue in Rust, and return `preflight: ready`.
+
+### RED evidence
+
+Initial load phase-ordering and candidate-failure boundary:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml transition_contract_load
+  exit 101; 2 E0425 compile errors
+  missing load_save_core in the flush-before-reread and build-failure tests
+```
+
+The first runtime execution found the adopted-target integration bug:
+
+```text
+transition_contract_load_flushes_before_rereading_an_adopted_source_slot
+  expected staleSaveSelection after flush replaced source ID A with B
+  got a successful load of A because blocking flush rotated into another slot
+```
+
+After the load slice was green, the broader transition matrix failed at its
+intended API boundary:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml transition_contract
+  exit 101; 12 compile errors
+  missing load-discard, Continue, return/bypass, start/bypass, and delete cores
+  plus private token construction rejected in two tests
+```
+
+Tests were changed to extract only the opaque token already carried by
+`GameError`; the token field itself remained private.
+
+### GREEN evidence
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml transition_
+  exit 0; 14 passed, 490 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml application_command_contract
+  exit 0; 31 passed, 473 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save
+  exit 0; 202 passed, 302 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 504 passed across 6 suites
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml \
+  --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+```
+
+### Deferred after Part B2
+
+- Part C only: raw PNG request/response IPC, exact ticket-header parsing,
+  complete persistence/thumbnail status events, and development HTTP parity.
