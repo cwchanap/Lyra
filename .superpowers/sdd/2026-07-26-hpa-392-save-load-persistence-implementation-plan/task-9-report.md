@@ -162,3 +162,119 @@ rtk git diff --check
 - Task 10: concrete production backend binding, save/load/manual/title/exit
   commands, Tauri events, and development HTTP parity.
 
+## Part B: durable acquisition acknowledgement
+
+### Scope
+
+Part B implements only exclusive acquisition acknowledgement and its normative
+writer races. Failure challenges, Continue Without Saving, and the broader
+lock-order stress matrix remain Part C.
+
+### Implementation
+
+- `acknowledge_acquisition(app, event_id, ticket)` now:
+  1. verifies exactly one matching pending event and claims the terminal
+     acquisition-bound thumbnail ticket;
+  2. registers `AcquisitionAcknowledgement` as the session's exclusive intent;
+  3. cancels a covered pending debounce before it can enter the writer;
+  4. reserves the next acknowledgement-priority writer turn and waits without
+     holding the replacement gate or session mutex;
+  5. acquires `G → S`, reconciles any just-completed revision-N receipt into
+     the session target, captures `EngineRollbackSnapshot`, removes exactly the
+     requested event, and advances exactly once to N+1;
+  6. validates the resulting public view before persistence, releases `S`, and
+     performs the registered Task 8 prepare/commit path while retaining the
+     writer turn and `G`;
+  7. reacquires `S` to adopt the receipt on success or restore the rollback
+     snapshot on authoritative write failure; and
+  8. clears the exclusive intent and releases the writer reservation on every
+     returned result.
+- Successful replacement plus cleanup failure returns the committed N+1 state
+  and typed cleanup diagnostic. It does not restore the event.
+- The first successful acknowledgement allocation becomes the session
+  autosave target. Sequential events refresh it, loaded autosaves refresh their
+  source slot, and loaded manual sessions allocate a new autosave target.
+- The acknowledgement path continues to use `AutosaveRegisteredIntent`,
+  `AutosavePreparedWrite`, and the Task 8 backend phase split. Storage-backed
+  acknowledgement tests exercise real `PreparedSlotWrite` replacement and
+  cleanup behavior.
+
+### RED evidence
+
+Initial acknowledgement binding:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::acknowledgement
+  exit 101
+  unresolved AcknowledgementOutcome and missing SaveCoordinator::acknowledge_acquisition
+```
+
+The completed storage-backed cleanup case initially pinned the wrong diagnostic
+constructor:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::acknowledgement
+  7 passed, 1 failed
+  observed cleanup diagnostic saveWriteFailed; expected saveReadFailed
+```
+
+The test was corrected to the real storage contract: failure to remove the old
+sidecar after JSON replacement is a typed write-cleanup diagnostic, while the
+acknowledgement remains committed.
+
+### Race and target matrix
+
+| Case | Result |
+| --- | --- |
+| N pending before writer | pending N is cancelled; only N+1 writes; no deadline follow-up |
+| N already owns writer and commits | acknowledgement waits without `G`/`S`; N and N+1 use autosave-1 |
+| N already owns writer and fails | the registered target remains autosave-1; only N+1 receives a receipt |
+| sequential pending events | revisions 5 and 6 refresh the same autosave-1 target |
+| loaded autosave | source autosave-4 is refreshed |
+| loaded manual | no inherited target; autosave-1 is allocated |
+| failed acknowledgement replacement | engine restores revision/event and prior slot bytes remain identical |
+| cleanup-only failure | JSON replacement, revision N+1, and event removal remain committed; typed diagnostic returned |
+| exclusivity | another session/gameplay operation observes `persistenceOperationInProgress` |
+| wait lifetime | writer wait permits independent `G` and `S` acquisition |
+
+### Commands and results
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::acknowledgement
+  exit 0; 8 passed, 438 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::flush
+  exit 0; 11 passed, 435 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::ticket
+  exit 0; 11 passed, 435 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce
+  exit 0; 23 passed, 423 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::writer
+  exit 0; 4 passed, 442 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration
+  exit 0; 6 passed, 440 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 446 passed across 6 suites
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+
+rtk git diff --check
+  exit 0
+```
+
+### Remaining Part C
+
+- UUID failure-challenge registry with exact operation/generation/revision/
+  discovery identity and one-shot consumption.
+- Retry, Cancel, and operation-specific bypasses, including acquisition
+  Continue Without Saving.
+- The full fault-injected lock-order stress matrix.
