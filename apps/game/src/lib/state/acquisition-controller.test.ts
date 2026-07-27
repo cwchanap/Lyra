@@ -340,4 +340,136 @@ describe("Rust-event-backed acquisition controller", () => {
     expect(acknowledge).not.toHaveBeenCalled();
     expect(controller.current?.id).toBe("event-1");
   });
+
+  it("relinquishes a stale attempt when the event changes during prepare", async () => {
+    const { acknowledge, capture, controller, gameState, prepare } = setup();
+    const preparation = deferred<ThumbnailCaptureRequestView>();
+    prepare.mockReturnValueOnce(preparation.promise);
+
+    const staleDismissal = controller.dismissCurrent("event-1");
+    gameState.value = state(acquisition("event-2"));
+    preparation.resolve({ ticket: "ticket-stale", timeoutMs: 725 });
+    await staleDismissal;
+
+    expect(controller.phase).toEqual({ type: "idle" });
+    expect(capture).not.toHaveBeenCalled();
+    expect(acknowledge).not.toHaveBeenCalled();
+
+    await controller.dismissCurrent("event-2");
+    expect(acknowledge).toHaveBeenCalledExactlyOnceWith("event-2", "ticket-1");
+  });
+
+  it("relinquishes a stale attempt when the event changes during capture", async () => {
+    const { acknowledge, capture, controller, gameState, submit } = setup();
+    const captureResult = deferred<GameplayThumbnailCaptureResult>();
+    capture.mockReturnValueOnce(captureResult.promise);
+
+    const staleDismissal = controller.dismissCurrent("event-1");
+    await vi.waitFor(() => expect(capture).toHaveBeenCalledTimes(1));
+    gameState.value = state(acquisition("event-2"));
+    captureResult.resolve({
+      type: "available",
+      bytes: new Uint8Array([9]),
+    });
+    await staleDismissal;
+
+    expect(controller.phase).toEqual({ type: "idle" });
+    expect(submit).not.toHaveBeenCalled();
+    expect(acknowledge).not.toHaveBeenCalled();
+
+    await controller.dismissCurrent("event-2");
+    expect(acknowledge).toHaveBeenCalledExactlyOnceWith("event-2", "ticket-1");
+  });
+
+  it("does not report or acknowledge when submit rejects after the event changes", async () => {
+    const { acknowledge, controller, gameState, report, submit } = setup();
+    const submission = deferred<ThumbnailActivityView>();
+    submit.mockReturnValueOnce(submission.promise);
+
+    const staleDismissal = controller.dismissCurrent("event-1");
+    await vi.waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    gameState.value = state(acquisition("event-2"));
+    submission.reject(new Error("late submit failure"));
+    await staleDismissal;
+
+    expect(controller.phase).toEqual({ type: "idle" });
+    expect(report).not.toHaveBeenCalled();
+    expect(acknowledge).not.toHaveBeenCalled();
+
+    await controller.dismissCurrent("event-2");
+    expect(acknowledge).toHaveBeenCalledExactlyOnceWith("event-2", "ticket-1");
+  });
+
+  it("rechecks ownership after a terminal capture report", async () => {
+    const { acknowledge, capture, controller, gameState, report } = setup();
+    const reporting = deferred<ThumbnailActivityView>();
+    capture.mockResolvedValueOnce({
+      type: "unavailable",
+      reason: "capture unavailable",
+    });
+    report.mockReturnValueOnce(reporting.promise);
+
+    const staleDismissal = controller.dismissCurrent("event-1");
+    await vi.waitFor(() => expect(report).toHaveBeenCalledTimes(1));
+    gameState.value = state(acquisition("event-2"));
+    reporting.resolve({ type: "idle" });
+    await staleDismissal;
+
+    expect(controller.phase).toEqual({ type: "idle" });
+    expect(acknowledge).not.toHaveBeenCalled();
+
+    await controller.dismissCurrent("event-2");
+    expect(acknowledge).toHaveBeenCalledExactlyOnceWith("event-2", "ticket-1");
+  });
+
+  it("does not commit a stale acknowledgement response over the next event", async () => {
+    const { acknowledge, controller, gameState } = setup();
+    const acknowledgement = deferred<GameplayCommandResultView>();
+    acknowledge.mockReturnValueOnce(acknowledgement.promise);
+
+    const staleDismissal = controller.dismissCurrent("event-1");
+    await vi.waitFor(() => expect(acknowledge).toHaveBeenCalledTimes(1));
+    gameState.value = state(acquisition("event-2"));
+    acknowledgement.resolve({
+      state: state(null),
+      thumbnailCapture: null,
+    });
+    await staleDismissal;
+
+    expect(gameState.value?.pendingAcquisition?.id).toBe("event-2");
+    expect(controller.phase).toEqual({ type: "idle" });
+
+    await controller.dismissCurrent("event-2");
+    expect(acknowledge).toHaveBeenLastCalledWith("event-2", "ticket-1");
+    expect(acknowledge).toHaveBeenCalledTimes(2);
+  });
+
+  it("clear invalidates same-ID work and an old finally cannot cancel the new attempt", async () => {
+    const { acknowledge, capture, controller, prepare, submit } = setup();
+    const oldPreparation = deferred<ThumbnailCaptureRequestView>();
+    const newAcknowledgement = deferred<GameplayCommandResultView>();
+    prepare.mockReturnValueOnce(oldPreparation.promise);
+    acknowledge.mockReturnValueOnce(newAcknowledgement.promise);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const oldDismissal = controller.dismissCurrent("event-1");
+    controller.clear();
+    const newDismissal = controller.dismissCurrent("event-1");
+    await vi.waitFor(() => expect(acknowledge).toHaveBeenCalledTimes(1));
+
+    oldPreparation.resolve({ ticket: "ticket-old", timeoutMs: 725 });
+    await oldDismissal;
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(controller.phase).toEqual({ type: "saving", slow: true });
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(acknowledge).toHaveBeenCalledExactlyOnceWith("event-1", "ticket-1");
+
+    newAcknowledgement.resolve({
+      state: state(null),
+      thumbnailCapture: null,
+    });
+    await newDismissal;
+  });
 });

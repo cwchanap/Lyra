@@ -36,7 +36,9 @@
     ) => Promise<void>;
   } = $props();
 
+  let acquisitionCard: HTMLDivElement | undefined = $state();
   let continueButton: HTMLButtonElement | undefined = $state();
+  let retryButton: HTMLButtonElement | undefined = $state();
   let evidenceImage: ResolvedStoryAsset | null = $state(null);
   let focusTarget: HTMLElement | null = null;
   let fallbackTarget: HTMLElement | null = null;
@@ -97,9 +99,18 @@
   });
 
   $effect(() => {
-    void notification.id;
+    const eventId = notification.id;
+    const phaseType = phase.type;
+    const failureToken = phase.type === "failed" ? phase.failureToken : null;
     confirmWithoutSaving = false;
-    void tick().then(() => continueButton?.focus());
+    void tick().then(() => {
+      if (notification.id !== eventId || phase.type !== phaseType) return;
+      if (phase.type === "failed" && phase.failureToken === failureToken) {
+        retryButton?.focus();
+      } else if (phase.type === "idle") {
+        continueButton?.focus();
+      }
+    });
   });
 
   function dismissCurrent() {
@@ -129,19 +140,32 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key !== "Tab" && event.key !== "Enter" && event.key !== " ") {
-      return;
-    }
+    if (event.key !== "Tab" || !acquisitionCard) return;
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    if (event.key === "Enter" || event.key === " ") {
-      if (!event.repeat && phase.type === "idle") dismissCurrent();
+    const controls = Array.from(
+      acquisitionCard.querySelectorAll<HTMLButtonElement>(
+        "button:not(:disabled)",
+      ),
+    );
+    if (controls.length === 0) {
+      acquisitionCard.focus();
       return;
     }
 
-    continueButton?.focus();
+    const activeIndex = controls.findIndex(
+      (control) => control === document.activeElement,
+    );
+    const nextIndex =
+      activeIndex < 0
+        ? event.shiftKey
+          ? controls.length - 1
+          : 0
+        : (activeIndex + (event.shiftKey ? -1 : 1) + controls.length) %
+          controls.length;
+    controls[nextIndex]?.focus();
   }
 
   function handleImageError() {
@@ -184,8 +208,10 @@
 <div class="acquisition-scrim">
   {#key notification.id}
     <div
+      bind:this={acquisitionCard}
       class="acquisition-card"
       role="dialog"
+      tabindex="-1"
       aria-modal="true"
       aria-labelledby="acquisition-heading"
       aria-describedby="acquisition-description"
@@ -228,7 +254,9 @@
               此取得通知可能會在重新啟動後再次出現。
             {/if}
           </p>
-          <button type="button" onclick={retry}>重試</button>
+          <button bind:this={retryButton} type="button" onclick={retry}>
+            重試
+          </button>
           <button type="button" onclick={cancel}>取消</button>
           {#if phase.failureToken}
             <button type="button" onclick={continueWithoutSaving}>

@@ -9,7 +9,9 @@ export function pinThumbnailCaptureDeadline(
   request: ThumbnailCaptureRequestView,
   now = performance.now(),
 ): ThumbnailCaptureRequestView {
-  fixedDeadlines.set(request, now + Math.max(0, request.timeoutMs));
+  if (!fixedDeadlines.has(request)) {
+    fixedDeadlines.set(request, now + Math.max(0, request.timeoutMs));
+  }
   return request;
 }
 
