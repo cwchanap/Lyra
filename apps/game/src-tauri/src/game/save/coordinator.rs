@@ -487,6 +487,14 @@ impl PersistenceFailureChallenge {
     }
 }
 
+fn selected_save_challenge_key(reference: SaveSlotRef, observed_save_id: &str) -> String {
+    let (save_type, slot) = match reference {
+        SaveSlotRef::Auto { slot } => ("auto", slot),
+        SaveSlotRef::Manual { slot } => ("manual", slot),
+    };
+    format!("{save_type}:{slot}:{observed_save_id}")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)] // Part B activates acknowledgement intent ownership.
 pub(crate) enum ExclusivePersistenceIntent {
@@ -1149,6 +1157,16 @@ impl SaveCoordinator {
         expected: PersistenceBypassOperation,
         current: FailureChallengeIdentity<'_>,
     ) -> Result<PersistenceFailureChallenge, GameError> {
+        self.consume_failure_token_matching(token, expected, current, None)
+    }
+
+    fn consume_failure_token_matching(
+        &self,
+        token: &PersistenceFailureTokenView,
+        expected: PersistenceBypassOperation,
+        current: FailureChallengeIdentity<'_>,
+        alternate: Option<FailureChallengeIdentity<'_>>,
+    ) -> Result<PersistenceFailureChallenge, GameError> {
         let parsed = Uuid::parse_str(&token.0)
             .ok()
             .filter(|parsed| parsed.hyphenated().to_string() == token.0)
@@ -1158,7 +1176,11 @@ impl SaveCoordinator {
             .failure_challenges
             .remove(&parsed)
             .ok_or_else(GameError::stale_persistence_failure_token)?;
-        if !challenge.matches(parsed, expected, current, state.discovery_generation) {
+        if !challenge.matches(parsed, expected, current, state.discovery_generation)
+            && !alternate.is_some_and(|identity| {
+                challenge.matches(parsed, expected, identity, state.discovery_generation)
+            })
+        {
             return Err(GameError::stale_persistence_failure_token());
         }
         Ok(challenge)
@@ -1183,6 +1205,7 @@ impl SaveCoordinator {
     ) -> Result<(GameError, PersistenceFailureTokenView), GameError> {
         let (session_generation, durable_revision) = {
             let session = app.session.lock().map_err(|_| GameError::unavailable())?;
+            session.ensure_persistence_available()?;
             (
                 session.persistence.generation,
                 session.durable_revision().unwrap_or(0),
@@ -1252,6 +1275,34 @@ impl SaveCoordinator {
         )
     }
 
+    pub(crate) fn challenge_current_selected_save_failure(
+        &self,
+        app: &crate::AppState,
+        operation: PersistenceBypassOperation,
+        reference: SaveSlotRef,
+        observed_save_id: &str,
+        diagnostic: GameError,
+    ) -> Result<GameError, GameError> {
+        let identity = self.transition_identity(app)?;
+        let discovery_generation = self
+            .state
+            .lock()
+            .map_err(|_| GameError::save_discovery_unavailable())?
+            .discovery_generation;
+        let selected_save_id = selected_save_challenge_key(reference, observed_save_id);
+        self.challenge_persistence_failure(
+            operation,
+            FailureChallengeIdentity {
+                session_generation: identity.generation,
+                discovery_generation: Some(discovery_generation),
+                durable_revision: identity.durable_revision.unwrap_or(0),
+                selected_save_id: Some(&selected_save_id),
+                acquisition_event_id: None,
+            },
+            diagnostic,
+        )
+    }
+
     pub(crate) fn consume_current_discovery_failure(
         &self,
         app: &crate::AppState,
@@ -1274,6 +1325,41 @@ impl SaveCoordinator {
                 selected_save_id: None,
                 acquisition_event_id: None,
             },
+        )?;
+        Ok(identity)
+    }
+
+    pub(crate) fn consume_current_selected_save_failure(
+        &self,
+        app: &crate::AppState,
+        token: &PersistenceFailureTokenView,
+        operation: PersistenceBypassOperation,
+        reference: SaveSlotRef,
+        observed_save_id: &str,
+    ) -> Result<SessionTransitionIdentity, GameError> {
+        let identity = self.transition_identity(app)?;
+        let discovery_generation = self
+            .state
+            .lock()
+            .map_err(|_| GameError::save_discovery_unavailable())?
+            .discovery_generation;
+        let selected_save_id = selected_save_challenge_key(reference, observed_save_id);
+        let challenge_identity = FailureChallengeIdentity {
+            session_generation: identity.generation,
+            discovery_generation: Some(discovery_generation),
+            durable_revision: identity.durable_revision.unwrap_or(0),
+            selected_save_id: Some(&selected_save_id),
+            acquisition_event_id: None,
+        };
+        let generic_browser_identity = FailureChallengeIdentity {
+            selected_save_id: None,
+            ..challenge_identity
+        };
+        self.consume_failure_token_matching(
+            token,
+            operation,
+            challenge_identity,
+            Some(generic_browser_identity),
         )?;
         Ok(identity)
     }

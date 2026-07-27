@@ -553,3 +553,123 @@ rtk git diff --check
 
 - Task 11 only: `get_exit_status`, `retry_exit`, `cancel_exit`, and
   `exit_without_saving`, plus native close/quit interception.
+
+## Whole-review fix round 1 — transition races and bypass authority
+
+### Post-flush transition identity
+
+- Normal Load, Continue, and Return to Title now capture the expected session
+  generation/revision before deciding whether to flush. Their final
+  `G → S` install/clear therefore rejects any session mutation or replacement
+  that occurs after the flush instead of sampling that newer state as the
+  transition's authority.
+- Test-only hooks exercise the exact post-flush/pre-install boundary without
+  changing a production command signature.
+- Deterministic regressions prove that Load and Continue preserve a live
+  post-flush mutation, Return to Title does not clear such a mutation, and a
+  Load begun at title does not replace a session started before installation.
+  The complete generation/revision/public view observed after each injected
+  race remains unchanged.
+
+### Exact direct-load discard authority
+
+- A direct Load flush failure now binds its private failure challenge to a
+  canonical key containing the typed auto/manual slot, slot number, and the
+  browser-observed save ID.
+- `load_save_discarding_current` validates that exact binding before it rereads
+  or builds a restore candidate. A token for one slot cannot authorize another
+  slot, and a stale observed ID cannot consume authority for the current file.
+- The generic `list_saves` preflight challenge remains a distinct accepted
+  path: after the user chooses a browser result, it may authorize that selected
+  typed slot and observed ID. Token construction and challenge fields remain
+  coordinator-private.
+- Regressions cover wrong slot, wrong observed ID, exact target success,
+  single-use consumption, and replay rejection.
+
+### Busy states never mint bypasses
+
+- `list_saves` checks the session's exclusive-persistence guard before flush
+  or discovery. `persistenceOperationInProgress` propagates as the command
+  error and carries no failure token.
+- Challenge minting also rechecks the exclusive guard, closing the race in
+  which an operation becomes busy after the list entry check but before a
+  failed flush is converted into a preflight result.
+- After the simulated exclusive operation rolls back, no fabricated token is
+  usable. The ordinary durability-failure control still returns
+  `preflight: flushFailed` with an opaque challenge.
+
+### RED evidence
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  transition_race_load_preserves_mutation_after_flush_before_install
+  exit 101; E0425
+  missing load_save_core_with_post_flush_hook
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  transition_race_continue_preserves_mutation_after_flush_before_install
+  exit 101; E0425
+  missing continue_game_core_with_post_flush_hook
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  transition_race_return
+  exit 101; 2 E0425 errors
+  missing return_to_title_core_with_post_flush_hook
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  direct_load_discard_token_
+  exit 101; 2 failed, 1 passed
+  a manual-1 token loaded manual-2 successfully, and a wrong observed ID
+  reached staleSaveSelection instead of failing token validation
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  busy_active_list_saves_returns_error_without_a_bypass_token
+  exit 101; list_saves returned preflight: flushFailed for
+  persistenceOperationInProgress with an opaque failure token
+```
+
+### GREEN evidence
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml transition_race_
+  exit 0; 4 passed, 511 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  direct_load_discard_token_
+  exit 0; 3 passed, 515 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  transition_contract_load_discard_consumes_exact_token_and_skips_flush
+  exit 0; 1 passed, 517 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  busy_active_list_saves_returns_error_without_a_bypass_token
+  exit 0; 1 passed, 518 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  failed_active_list_flush_returns_separate_browser_and_opaque_preflight_challenge
+  exit 0; 1 passed, 518 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  application_command_contract
+  exit 0; 42 passed, 477 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml acknowledgement
+  exit 0; 22 passed, 497 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml game::save::
+  exit 0; 195 passed, 324 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 519 passed across 6 suites
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml \
+  --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+```
+
+Part C raw thumbnail/event/development-transport behavior is unchanged, and
+the four Task 11 exit commands remain absent.
