@@ -1090,6 +1090,25 @@ struct ExitArmSnapshot {
     exit_action_in_progress: bool,
 }
 
+struct ExitAttemptRecovery {
+    arm: ExitArmSnapshot,
+    consumed_failure_challenge: Option<PersistenceFailureChallenge>,
+}
+
+struct ExitFailureNotification {
+    status: ExitStatusView,
+    health: PersistenceHealthView,
+    exit_subscribers: Vec<ExitSubscriber>,
+    health_subscribers: Vec<HealthSubscriber>,
+}
+
+impl ExitFailureNotification {
+    fn publish(self) {
+        publish_health(&self.health_subscribers, &self.health);
+        publish_exit(&self.exit_subscribers, &self.status);
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct SaveCoordinator {
     state: Arc<Mutex<CoordinatorState>>,
@@ -1103,7 +1122,42 @@ pub(crate) struct SaveCoordinator {
     fail_next_exit_prerequisite: Arc<AtomicBool>,
     fail_next_cancel_guard_clear: Arc<AtomicBool>,
     fail_next_exit_challenge: Arc<AtomicBool>,
+    #[cfg(test)]
+    panic_next_exit_worker: Arc<AtomicBool>,
     exclusive_updates: Arc<Notify>,
+}
+
+struct ExitAttemptRecoveryGuard {
+    coordinator: SaveCoordinator,
+    recovery: Option<ExitAttemptRecovery>,
+}
+
+impl ExitAttemptRecoveryGuard {
+    fn new(coordinator: SaveCoordinator, recovery: ExitAttemptRecovery) -> Self {
+        Self {
+            coordinator,
+            recovery: Some(recovery),
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.recovery = None;
+    }
+}
+
+impl Drop for ExitAttemptRecoveryGuard {
+    fn drop(&mut self) {
+        let Some(recovery) = self.recovery.take() else {
+            return;
+        };
+        // A task cancellation or in-process panic drops this guard
+        // synchronously. Recovery obeys the same transition -> S -> state lock
+        // order as every other exit transition and never awaits.
+        let coordinator = self.coordinator.clone();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = coordinator.restore_exit_attempt(recovery);
+        }));
+    }
 }
 
 impl Default for SaveCoordinator {
@@ -1120,6 +1174,8 @@ impl Default for SaveCoordinator {
             fail_next_exit_prerequisite: Arc::new(AtomicBool::new(false)),
             fail_next_cancel_guard_clear: Arc::new(AtomicBool::new(false)),
             fail_next_exit_challenge: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            panic_next_exit_worker: Arc::new(AtomicBool::new(false)),
             exclusive_updates: Arc::new(Notify::new()),
         }
     }
@@ -1216,8 +1272,12 @@ impl SaveCoordinator {
         let Some(arm) = self.begin_exit_saving(ExitStatusView::Idle, true)? else {
             return Ok(());
         };
-        if start.send(()).is_err() {
-            self.rollback_exit_arm(arm)?;
+        let recovery = ExitAttemptRecovery {
+            arm,
+            consumed_failure_challenge: None,
+        };
+        if let Err(recovery) = start.send(recovery) {
+            self.restore_exit_attempt(recovery)?;
             return Err(GameError::save_write_failed());
         }
         Ok(())
@@ -1262,9 +1322,12 @@ impl SaveCoordinator {
                 return Err(error);
             }
         };
-        if start.send(()).is_err() {
-            self.restore_failure_challenge(challenge)?;
-            self.rollback_exit_arm(arm)?;
+        let recovery = ExitAttemptRecovery {
+            arm,
+            consumed_failure_challenge: Some(challenge),
+        };
+        if let Err(recovery) = start.send(recovery) {
+            self.restore_exit_attempt(recovery)?;
             return Err(GameError::save_write_failed());
         }
         Ok(())
@@ -1441,16 +1504,6 @@ impl SaveCoordinator {
         }
     }
 
-    fn restore_failure_challenge(
-        &self,
-        challenge: PersistenceFailureChallenge,
-    ) -> Result<(), GameError> {
-        self.lock_state()?
-            .failure_challenges
-            .insert(challenge.token, challenge);
-        Ok(())
-    }
-
     fn current_exit_status(&self) -> Result<ExitStatusView, GameError> {
         self.state
             .lock()
@@ -1517,10 +1570,21 @@ impl SaveCoordinator {
     }
 
     fn rollback_exit_arm(&self, snapshot: ExitArmSnapshot) -> Result<(), GameError> {
+        self.restore_exit_attempt(ExitAttemptRecovery {
+            arm: snapshot,
+            consumed_failure_challenge: None,
+        })
+    }
+
+    fn restore_exit_attempt(&self, recovery: ExitAttemptRecovery) -> Result<(), GameError> {
         let application = self
             .exit_application
             .as_ref()
             .ok_or_else(GameError::save_write_failed)?;
+        let ExitAttemptRecovery {
+            arm,
+            consumed_failure_challenge,
+        } = recovery;
         let subscribers = {
             let _transition = self
                 .exit_transition
@@ -1531,25 +1595,46 @@ impl SaveCoordinator {
                 .lock()
                 .map_err(|_| GameError::unavailable())?;
             let mut state = self.lock_state()?;
-            session.persistence.exit_flush_requested = snapshot.exit_flush_requested;
-            state.exit_status = snapshot.status.clone();
-            state.programmatic_exit_bypass = snapshot.programmatic_exit_bypass;
-            state.exit_action_in_progress = snapshot.exit_action_in_progress;
+            if let Some(challenge) = consumed_failure_challenge {
+                match state.failure_challenges.entry(challenge.token) {
+                    std::collections::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(challenge);
+                    }
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        // The worker owns the one consumed challenge record.
+                        // Never overwrite a challenge that another transition
+                        // has registered for the same token.
+                        return Err(GameError::stale_persistence_failure_token());
+                    }
+                }
+            }
+            session.persistence.exit_flush_requested = arm.exit_flush_requested;
+            state.exit_status = arm.status.clone();
+            state.programmatic_exit_bypass = arm.programmatic_exit_bypass;
+            state.exit_action_in_progress = arm.exit_action_in_progress;
             state.exit_subscribers.clone()
         };
-        publish_exit(&subscribers, &snapshot.status);
+        publish_exit(&subscribers, &arm.status);
         Ok(())
     }
 
     fn schedule_exit_flush(
         &self,
         exit: Arc<dyn ApplicationExit>,
-    ) -> Result<tokio::sync::oneshot::Sender<()>, GameError> {
+    ) -> Result<tokio::sync::oneshot::Sender<ExitAttemptRecovery>, GameError> {
         let coordinator = self.clone();
         let (start_tx, start_rx) = tokio::sync::oneshot::channel();
         self.exit_scheduler.spawn(Box::pin(async move {
-            if start_rx.await.is_err() {
+            let Ok(recovery) = start_rx.await else {
                 return;
+            };
+            let mut recovery = ExitAttemptRecoveryGuard::new(coordinator.clone(), recovery);
+            #[cfg(test)]
+            if coordinator
+                .panic_next_exit_worker
+                .swap(false, Ordering::SeqCst)
+            {
+                panic!("controlled post-start exit worker panic");
             }
             match coordinator.flush_for_exit().await {
                 Ok(()) => {
@@ -1559,15 +1644,21 @@ impl SaveCoordinator {
                         };
                         state.programmatic_exit_bypass = true;
                     }
-                    if let Err(error) = exit.exit(0) {
-                        if let Ok(mut state) = coordinator.state.lock() {
-                            state.programmatic_exit_bypass = false;
+                    match exit.exit(0) {
+                        Ok(()) => recovery.disarm(),
+                        Err(error) => {
+                            if let Ok(notification) = coordinator.commit_exit_failure(error) {
+                                recovery.disarm();
+                                notification.publish();
+                            }
                         }
-                        coordinator.handle_exit_worker_failure(error);
                     }
                 }
                 Err(error) => {
-                    coordinator.handle_exit_worker_failure(error);
+                    if let Ok(notification) = coordinator.commit_exit_failure(error) {
+                        recovery.disarm();
+                        notification.publish();
+                    }
                 }
             }
         }))?;
@@ -1611,7 +1702,10 @@ impl SaveCoordinator {
         .map(|_| ())
     }
 
-    fn publish_exit_failure(&self, diagnostic: GameError) -> Result<(), GameError> {
+    fn commit_exit_failure(
+        &self,
+        diagnostic: GameError,
+    ) -> Result<ExitFailureNotification, GameError> {
         if self.fail_next_exit_challenge.swap(false, Ordering::SeqCst) {
             return Err(GameError::save_write_failed());
         }
@@ -1671,40 +1765,12 @@ impl SaveCoordinator {
             let exit_subscribers = state.exit_subscribers.clone();
             (status, health, exit_subscribers, health_subscribers)
         };
-        publish_health(&health_subscribers, &health);
-        publish_exit(&exit_subscribers, &status);
-        Ok(())
-    }
-
-    fn handle_exit_worker_failure(&self, diagnostic: GameError) {
-        if self.publish_exit_failure(diagnostic).is_err() {
-            let _ = self.restore_recoverable_exit_idle();
-        }
-    }
-
-    fn restore_recoverable_exit_idle(&self) -> Result<(), GameError> {
-        let application = self
-            .exit_application
-            .as_ref()
-            .ok_or_else(GameError::save_write_failed)?;
-        let subscribers = {
-            let _transition = self
-                .exit_transition
-                .lock()
-                .map_err(|_| GameError::unavailable())?;
-            let mut session = application
-                .session
-                .lock()
-                .map_err(|_| GameError::unavailable())?;
-            let mut state = self.lock_state()?;
-            session.persistence.exit_flush_requested = false;
-            state.exit_status = ExitStatusView::Idle;
-            state.programmatic_exit_bypass = false;
-            state.exit_action_in_progress = false;
-            state.exit_subscribers.clone()
-        };
-        publish_exit(&subscribers, &ExitStatusView::Idle);
-        Ok(())
+        Ok(ExitFailureNotification {
+            status,
+            health,
+            exit_subscribers,
+            health_subscribers,
+        })
     }
 
     pub(crate) fn next_session_generation(&self) -> Result<u64, GameError> {
@@ -3651,6 +3717,11 @@ impl SaveCoordinator {
     }
 
     #[cfg(test)]
+    fn panic_next_exit_worker_for_test(&self) {
+        self.panic_next_exit_worker.store(true, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
     fn enqueue_writer_probe(
         &self,
         class: WriterJobClass,
@@ -4007,6 +4078,39 @@ mod tests {
             }
         }
 
+        struct DroppingExitScheduler;
+
+        impl ExitTaskScheduler for DroppingExitScheduler {
+            fn spawn(&self, task: ExitTask) -> Result<(), crate::game::GameError> {
+                drop(task);
+                Ok(())
+            }
+        }
+
+        #[derive(Default)]
+        struct ControllableExitScheduler {
+            worker: Mutex<Option<tokio::task::JoinHandle<()>>>,
+        }
+
+        impl ControllableExitScheduler {
+            fn take_worker(&self) -> tokio::task::JoinHandle<()> {
+                self.worker
+                    .lock()
+                    .unwrap()
+                    .take()
+                    .expect("exit worker must have been scheduled")
+            }
+        }
+
+        impl ExitTaskScheduler for ControllableExitScheduler {
+            fn spawn(&self, task: ExitTask) -> Result<(), crate::game::GameError> {
+                let mut worker = self.worker.lock().unwrap();
+                assert!(worker.is_none(), "previous exit worker must be collected");
+                *worker = Some(tokio::spawn(task));
+                Ok(())
+            }
+        }
+
         fn active_session(revision: u64) -> Arc<Mutex<AppSession>> {
             let mut engine =
                 empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
@@ -4169,6 +4273,180 @@ mod tests {
         }
 
         #[test]
+        fn exit_lifecycle_dropped_start_gate_restores_idle_synchronously() {
+            let session = active_session(1);
+            let coordinator = SaveCoordinator::for_application(
+                Arc::clone(&session),
+                Arc::new(tokio::sync::Mutex::new(())),
+            )
+            .with_exit_scheduler(Arc::new(DroppingExitScheduler));
+
+            assert_eq!(
+                coordinator
+                    .request_exit_flush(
+                        Arc::new(RecordingExit::default()),
+                        ExitRequestSource::WindowClose,
+                    )
+                    .unwrap_err()
+                    .code,
+                "saveWriteFailed"
+            );
+            assert_eq!(coordinator.exit_status(), ExitStatusView::Idle);
+            assert!(!session.lock().unwrap().persistence.exit_flush_requested);
+            assert!(session
+                .lock()
+                .unwrap()
+                .ensure_persistence_available()
+                .is_ok());
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_cancelled_initial_worker_restores_idle_and_session_admission() {
+            let backend = Arc::new(PhasedBackend::new(4));
+            backend.pause_prepare();
+            let session = active_session(1);
+            advance_revision(&session, 2);
+            let scheduler = Arc::new(ControllableExitScheduler::default());
+            let coordinator = SaveCoordinator::with_backend_for_application(
+                backend.clone(),
+                Arc::clone(&session),
+                Arc::new(tokio::sync::Mutex::new(())),
+            )
+            .with_exit_scheduler(scheduler.clone());
+            let exit = Arc::new(RecordingExit::default());
+
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
+            backend.wait_for_prepare().await;
+
+            assert!(
+                coordinator.exit_transition.try_lock().is_ok(),
+                "blocked exit worker must not hold exit_transition"
+            );
+            assert!(
+                session.try_lock().is_ok(),
+                "blocked exit worker must not hold S"
+            );
+            let worker = scheduler.take_worker();
+            worker.abort();
+            assert!(worker.await.unwrap_err().is_cancelled());
+
+            assert_eq!(coordinator.exit_status(), ExitStatusView::Idle);
+            assert!(!session.lock().unwrap().persistence.exit_flush_requested);
+            assert!(session
+                .lock()
+                .unwrap()
+                .ensure_persistence_available()
+                .is_ok());
+            assert!(exit.calls.lock().unwrap().is_empty());
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_cancelled_retry_restores_exact_failed_status_and_challenge() {
+            let backend = Arc::new(PhasedBackend::new(4));
+            backend.fail_next_commit();
+            let session = active_session(1);
+            advance_revision(&session, 2);
+            let coordinator = SaveCoordinator::with_backend_for_application(
+                backend.clone(),
+                Arc::clone(&session),
+                Arc::new(tokio::sync::Mutex::new(())),
+            );
+            let mut statuses = status_receiver(&coordinator);
+            let exit = Arc::new(RecordingExit::default());
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            backend.wait_for_failed_commits(1).await;
+            let failed = statuses.recv().await.unwrap();
+            let ExitStatusView::Failed { failure_token, .. } = &failed else {
+                panic!("initial exit attempt must publish a failed token");
+            };
+            assert_eq!(
+                coordinator.state.lock().unwrap().failure_challenges.len(),
+                1
+            );
+
+            backend.pause_prepare();
+            let scheduler = Arc::new(ControllableExitScheduler::default());
+            let retrying = coordinator.clone().with_exit_scheduler(scheduler.clone());
+            retrying
+                .retry_exit(exit.clone(), failure_token.clone())
+                .unwrap();
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            backend.wait_for_prepare_count(2).await;
+
+            assert!(
+                retrying.exit_transition.try_lock().is_ok(),
+                "blocked retry worker must not hold exit_transition"
+            );
+            assert!(
+                session.try_lock().is_ok(),
+                "blocked retry worker must not hold S"
+            );
+            let worker = scheduler.take_worker();
+            worker.abort();
+            assert!(worker.await.unwrap_err().is_cancelled());
+
+            assert_eq!(
+                serde_json::to_value(retrying.exit_status()).unwrap(),
+                serde_json::to_value(&failed).unwrap()
+            );
+            assert!(session.lock().unwrap().persistence.exit_flush_requested);
+            assert_eq!(retrying.state.lock().unwrap().failure_challenges.len(), 1);
+            assert_eq!(
+                retrying.cancel_exit(failure_token.clone()).unwrap(),
+                ExitStatusView::Idle
+            );
+            assert_eq!(
+                retrying
+                    .cancel_exit(failure_token.clone())
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+            assert!(exit.calls.lock().unwrap().is_empty());
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_panicking_initial_worker_unwinds_to_idle_and_can_retry() {
+            let session = active_session(1);
+            let scheduler = Arc::new(ControllableExitScheduler::default());
+            let coordinator = SaveCoordinator::for_application(
+                Arc::clone(&session),
+                Arc::new(tokio::sync::Mutex::new(())),
+            )
+            .with_exit_scheduler(scheduler.clone());
+            coordinator.panic_next_exit_worker_for_test();
+            let exit = Arc::new(RecordingExit::default());
+
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
+            let worker = scheduler.take_worker();
+            let panic = worker.await.unwrap_err();
+            assert!(panic.is_panic());
+            assert!(!panic.is_cancelled());
+
+            assert_eq!(coordinator.exit_status(), ExitStatusView::Idle);
+            assert!(!session.lock().unwrap().persistence.exit_flush_requested);
+            assert!(session
+                .lock()
+                .unwrap()
+                .ensure_persistence_available()
+                .is_ok());
+
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit)
+                .unwrap();
+            exit.wait_for_call().await;
+            scheduler.take_worker().await.unwrap();
+            assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+        }
+
+        #[test]
         fn exit_lifecycle_prerequisite_failure_does_not_arm_saving() {
             let engine =
                 empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
@@ -4316,7 +4594,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn exit_lifecycle_retry_scheduler_failure_preserves_exact_failed_token() {
+        async fn exit_lifecycle_retry_start_gate_failure_preserves_exact_failed_token() {
             let backend = Arc::new(PhasedBackend::new(4));
             backend.fail_next_commit();
             let session = active_session(1);
@@ -4339,7 +4617,7 @@ mod tests {
             };
             let rejecting = coordinator
                 .clone()
-                .with_exit_scheduler(Arc::new(RejectingExitScheduler));
+                .with_exit_scheduler(Arc::new(DroppingExitScheduler));
 
             let error = rejecting
                 .retry_exit(exit.clone(), failure_token.clone())
@@ -6749,6 +7027,23 @@ mod tests {
             pub(super) async fn wait_for_prepare(&self) {
                 if !self.phases.lock().unwrap().contains(&"W:prepare") {
                     self.prepare_started.notified().await;
+                }
+            }
+
+            pub(super) async fn wait_for_prepare_count(&self, count: usize) {
+                loop {
+                    let notified = self.prepare_started.notified();
+                    let prepare_count = self
+                        .phases
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .filter(|phase| **phase == "W:prepare")
+                        .count();
+                    if prepare_count >= count {
+                        return;
+                    }
+                    notified.await;
                 }
             }
 
