@@ -257,7 +257,11 @@ impl AutosavePreparedWrite {
             AutosavePreparedStorage::Simulated => return Err(GameError::save_write_failed()),
         };
         let outcome = commit_prepared_slot_write(fs, root, *prepared)?;
-        AutosaveCommittedWrite::from_envelope(self.identity, &outcome.committed_envelope)
+        AutosaveCommittedWrite::from_envelope(
+            self.identity,
+            &outcome.committed_envelope,
+            outcome.cleanup_diagnostic,
+        )
     }
 
     pub(crate) fn discard(self) -> Result<(), GameError> {
@@ -271,18 +275,21 @@ impl AutosavePreparedWrite {
     fn commit_simulated(self) -> AutosaveCommittedWrite {
         AutosaveCommittedWrite {
             receipt: self.identity,
+            cleanup_diagnostic: None,
         }
     }
 }
 
 pub(crate) struct AutosaveCommittedWrite {
     receipt: AutosaveWriteReceipt,
+    cleanup_diagnostic: Option<GameError>,
 }
 
 impl AutosaveCommittedWrite {
     fn from_envelope(
         expected: AutosaveWriteReceipt,
         envelope: &SaveEnvelopeV1,
+        cleanup_diagnostic: Option<GameError>,
     ) -> Result<Self, GameError> {
         let envelope_matches_target = match expected.slot {
             SaveSlotRef::Auto { slot } => {
@@ -298,11 +305,14 @@ impl AutosaveCommittedWrite {
         {
             return Err(GameError::save_write_failed());
         }
-        Ok(Self { receipt: expected })
+        Ok(Self {
+            receipt: expected,
+            cleanup_diagnostic,
+        })
     }
 
-    fn into_receipt(self) -> AutosaveWriteReceipt {
-        self.receipt
+    fn into_parts(self) -> (AutosaveWriteReceipt, Option<GameError>) {
+        (self.receipt, self.cleanup_diagnostic)
     }
 }
 
@@ -488,6 +498,18 @@ struct PendingAutosave {
     capture_deadline: Instant,
 }
 
+#[derive(Clone)]
+struct BackgroundWriteFailure {
+    identity: (u64, u64),
+    diagnostic: GameError,
+}
+
+#[derive(Clone)]
+struct CleanupFailure {
+    owner: AutosaveWriteReceipt,
+    diagnostic: GameError,
+}
+
 struct CoordinatorState {
     tickets: HashMap<String, TicketRecord>,
     latest_by_intent: HashMap<CaptureIntent, String>,
@@ -499,7 +521,8 @@ struct CoordinatorState {
     pending_autosave: Option<PendingAutosave>,
     last_successful_write: Option<AutosaveWriteReceipt>,
     autosave_target: Option<(u64, SaveSlotRef)>,
-    failed_revision: Option<(u64, u64)>,
+    failed_write: Option<BackgroundWriteFailure>,
+    cleanup_failure: Option<CleanupFailure>,
 }
 
 impl Default for CoordinatorState {
@@ -515,7 +538,8 @@ impl Default for CoordinatorState {
             pending_autosave: None,
             last_successful_write: None,
             autosave_target: None,
-            failed_revision: None,
+            failed_write: None,
+            cleanup_failure: None,
         }
     }
 }
@@ -601,7 +625,7 @@ impl SaveCoordinator {
             .state
             .lock()
             .ok()
-            .and_then(|state| state.failed_revision)?;
+            .and_then(|state| state.failed_write.as_ref().map(|failure| failure.identity))?;
         let purpose = ThumbnailCapturePurpose::Autosave {
             session_generation,
             durable_revision,
@@ -656,6 +680,16 @@ impl SaveCoordinator {
     }
 
     pub(crate) fn enqueue_orphan_cleanup(&self) -> Result<(), GameError> {
+        let owner = self.state.lock().ok().and_then(|state| {
+            state
+                .cleanup_failure
+                .as_ref()
+                .map(|failure| failure.owner.clone())
+        });
+        self.enqueue_cleanup_retry(owner)
+    }
+
+    fn enqueue_cleanup_retry(&self, owner: Option<AutosaveWriteReceipt>) -> Result<(), GameError> {
         let backend = self
             .backend
             .as_ref()
@@ -665,10 +699,21 @@ impl SaveCoordinator {
         self.writer_queue.enqueue(
             WriterJobClass::OrphanCleanup,
             Box::pin(async move {
-                if let Err(error) = backend.cleanup_orphans().await {
-                    coordinator.publish_persistence_health(PersistenceHealthView::Degraded {
-                        diagnostic: error,
-                    });
+                match backend.cleanup_orphans().await {
+                    Ok(()) => {
+                        if let Some(owner) = owner {
+                            coordinator.resolve_cleanup_failure(&owner);
+                        }
+                    }
+                    Err(error) if owner.is_none() => {
+                        coordinator.publish_persistence_health(PersistenceHealthView::Degraded {
+                            diagnostic: error,
+                        });
+                    }
+                    Err(_) => {
+                        // Preserve the original cleanup-owned diagnostic and
+                        // let an explicit later cleanup retry resolve it.
+                    }
                 }
             }),
         )
@@ -847,12 +892,10 @@ impl SaveCoordinator {
         let pending = {
             let mut state = self.lock_state()?;
             if !allow_unchanged_retry
-                && state
-                    .failed_revision
-                    .is_some_and(|(failed_generation, failed_revision)| {
-                        failed_generation == session_generation
-                            && durable_revision <= failed_revision
-                    })
+                && state.failed_write.as_ref().is_some_and(|failure| {
+                    let (failed_generation, failed_revision) = failure.identity;
+                    failed_generation == session_generation && durable_revision <= failed_revision
+                })
             {
                 return Err(GameError::save_write_failed());
             }
@@ -1000,9 +1043,9 @@ impl SaveCoordinator {
         };
         match backend.commit_if_current(prepared).await {
             Ok(AutosaveCommitOutcome::Committed(committed)) => {
-                let receipt = committed.into_receipt();
+                let (receipt, cleanup_diagnostic) = committed.into_parts();
                 if receipt == expected_receipt {
-                    self.record_background_success(&pending, receipt);
+                    self.record_background_success(&pending, receipt, cleanup_diagnostic);
                 } else {
                     self.record_background_failure(
                         pending.session_generation,
@@ -1083,8 +1126,9 @@ impl SaveCoordinator {
         &self,
         completed: &PendingAutosave,
         receipt: AutosaveWriteReceipt,
+        cleanup_diagnostic: Option<GameError>,
     ) {
-        let (health, subscribers) = if let Ok(mut state) = self.state.lock() {
+        let (health, subscribers, cleanup_retry) = if let Ok(mut state) = self.state.lock() {
             let completed_is_current = state
                 .pending_autosave
                 .as_ref()
@@ -1098,28 +1142,54 @@ impl SaveCoordinator {
                 })
             {
                 state.autosave_target = Some((receipt.session_generation, receipt.slot));
-                state.last_successful_write = Some(receipt);
+                state.last_successful_write = Some(receipt.clone());
             }
             if completed_is_current {
                 state.pending_autosave = None;
             }
             if completed_is_current
                 && state
-                    .failed_revision
-                    .is_some_and(|failed| failed <= receipt_identity)
+                    .failed_write
+                    .as_ref()
+                    .is_some_and(|failed| failed.identity <= receipt_identity)
             {
-                state.failed_revision = None;
+                state.failed_write = None;
             }
+            let cleanup_retry = cleanup_diagnostic.and_then(|diagnostic| {
+                let candidate = CleanupFailure {
+                    owner: receipt,
+                    diagnostic,
+                };
+                let candidate_identity = (
+                    candidate.owner.session_generation,
+                    candidate.owner.durable_revision,
+                );
+                if state.cleanup_failure.as_ref().is_none_or(|existing| {
+                    candidate_identity
+                        >= (
+                            existing.owner.session_generation,
+                            existing.owner.durable_revision,
+                        )
+                }) {
+                    state.cleanup_failure = Some(candidate.clone());
+                    Some(candidate.owner)
+                } else {
+                    None
+                }
+            });
             let health = health_after_completion(&state);
             let subscribers = set_persistence_health(&mut state, health.clone());
-            (health, subscribers)
+            (health, subscribers, cleanup_retry)
         } else {
             let health = PersistenceHealthView::Degraded {
                 diagnostic: GameError::save_write_failed(),
             };
-            (health, Vec::new())
+            (health, Vec::new(), None)
         };
         publish_health(&subscribers, &health);
+        if let Some(owner) = cleanup_retry {
+            let _ = self.enqueue_cleanup_retry(Some(owner));
+        }
     }
 
     fn record_stale_write(&self, completed: &PendingAutosave) {
@@ -1143,32 +1213,63 @@ impl SaveCoordinator {
         publish_health(&subscribers, &health);
     }
 
+    fn resolve_cleanup_failure(&self, owner: &AutosaveWriteReceipt) {
+        let publication = if let Ok(mut state) = self.state.lock() {
+            if state
+                .cleanup_failure
+                .as_ref()
+                .is_some_and(|failure| &failure.owner == owner)
+            {
+                state.cleanup_failure = None;
+                let health = health_after_completion(&state);
+                let subscribers = set_persistence_health(&mut state, health.clone());
+                Some((health, subscribers))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if let Some((health, subscribers)) = publication {
+            publish_health(&subscribers, &health);
+        }
+    }
+
     fn record_background_failure(
         &self,
         session_generation: u64,
         durable_revision: u64,
         error: GameError,
     ) {
-        let view = PersistenceHealthView::Degraded { diagnostic: error };
-        let subscribers = if let Ok(mut state) = self.state.lock() {
+        let publication = if let Ok(mut state) = self.state.lock() {
             let failed = (session_generation, durable_revision);
-            if state
-                .failed_revision
-                .is_none_or(|existing| failed >= existing)
-            {
-                state.failed_revision = Some(failed);
-            }
             if state.pending_autosave.as_ref().is_some_and(|pending| {
                 pending.session_generation == session_generation
                     && pending.durable_revision == durable_revision
             }) {
                 state.pending_autosave = None;
             }
-            set_persistence_health(&mut state, view.clone())
+            if state
+                .failed_write
+                .as_ref()
+                .is_none_or(|existing| failed >= existing.identity)
+            {
+                state.failed_write = Some(BackgroundWriteFailure {
+                    identity: failed,
+                    diagnostic: error.clone(),
+                });
+                let view = PersistenceHealthView::Degraded { diagnostic: error };
+                let subscribers = set_persistence_health(&mut state, view.clone());
+                Some((view, subscribers))
+            } else {
+                None
+            }
         } else {
-            Vec::new()
+            None
         };
-        publish_health(&subscribers, &view);
+        if let Some((view, subscribers)) = publication {
+            publish_health(&subscribers, &view);
+        }
     }
 
     fn record_schedule_failure(
@@ -1179,15 +1280,23 @@ impl SaveCoordinator {
         error: GameError,
     ) {
         let failed = (session_generation, durable_revision);
-        let health = PersistenceHealthView::Degraded { diagnostic: error };
         let activity = capture_unavailable_activity();
-        let (health_subscribers, activity_subscribers) = if let Ok(mut state) = self.state.lock() {
-            if state
-                .failed_revision
-                .is_none_or(|existing| failed >= existing)
+        let (health_publication, activity_subscribers) = if let Ok(mut state) = self.state.lock() {
+            let health_publication = if state
+                .failed_write
+                .as_ref()
+                .is_none_or(|existing| failed >= existing.identity)
             {
-                state.failed_revision = Some(failed);
-            }
+                state.failed_write = Some(BackgroundWriteFailure {
+                    identity: failed,
+                    diagnostic: error.clone(),
+                });
+                let health = PersistenceHealthView::Degraded { diagnostic: error };
+                let subscribers = set_persistence_health(&mut state, health.clone());
+                Some((health, subscribers))
+            } else {
+                None
+            };
             if state.pending_autosave.as_ref().is_some_and(|pending| {
                 (pending.session_generation, pending.durable_revision) <= failed
             }) {
@@ -1201,14 +1310,14 @@ impl SaveCoordinator {
                     }
                 }
             }
-            (
-                set_persistence_health(&mut state, health.clone()),
-                set_thumbnail_activity(&mut state, activity.clone()),
-            )
+            let activity_subscribers = set_thumbnail_activity(&mut state, activity.clone());
+            (health_publication, activity_subscribers)
         } else {
-            (Vec::new(), Vec::new())
+            (None, Vec::new())
         };
-        publish_health(&health_subscribers, &health);
+        if let Some((health, subscribers)) = health_publication {
+            publish_health(&subscribers, &health);
+        }
         publish_activity(&activity_subscribers, &activity);
         self.ticket_updates.notify_waiters();
     }
@@ -1430,14 +1539,13 @@ fn capture_unavailable_activity() -> ThumbnailActivityView {
 fn health_after_completion(state: &CoordinatorState) -> PersistenceHealthView {
     if state.pending_autosave.is_some() {
         PersistenceHealthView::Pending
-    } else if state.failed_revision.is_some() {
-        match &state.persistence_health {
-            degraded @ PersistenceHealthView::Degraded { .. } => degraded.clone(),
-            PersistenceHealthView::Healthy | PersistenceHealthView::Pending => {
-                PersistenceHealthView::Degraded {
-                    diagnostic: GameError::save_write_failed(),
-                }
-            }
+    } else if let Some(failure) = &state.failed_write {
+        PersistenceHealthView::Degraded {
+            diagnostic: failure.diagnostic.clone(),
+        }
+    } else if let Some(failure) = &state.cleanup_failure {
+        PersistenceHealthView::Degraded {
+            diagnostic: failure.diagnostic.clone(),
         }
     } else {
         PersistenceHealthView::Healthy
@@ -1639,6 +1747,8 @@ mod tests {
             release_prepare: Notify,
             current_generation: AtomicU64,
             fail_commit: AtomicBool,
+            failed_commits: AtomicU64,
+            commit_failed: Notify,
             installed: AtomicBool,
             receipts: Mutex<Vec<AutosaveWriteReceipt>>,
             committed: Notify,
@@ -1661,6 +1771,8 @@ mod tests {
                     release_prepare: Notify::new(),
                     current_generation: AtomicU64::new(generation),
                     fail_commit: AtomicBool::new(false),
+                    failed_commits: AtomicU64::new(0),
+                    commit_failed: Notify::new(),
                     installed: AtomicBool::new(false),
                     receipts: Mutex::new(Vec::new()),
                     committed: Notify::new(),
@@ -1754,6 +1866,15 @@ mod tests {
                 }
             }
 
+            async fn wait_for_failed_commits(&self, count: u64) {
+                loop {
+                    if self.failed_commits.load(Ordering::SeqCst) >= count {
+                        return;
+                    }
+                    self.commit_failed.notified().await;
+                }
+            }
+
             fn phases(&self) -> Vec<&'static str> {
                 self.phases.lock().unwrap().clone()
             }
@@ -1844,6 +1965,8 @@ mod tests {
                         return Err(GameError::save_replace_failed());
                     }
                     if self.fail_commit.swap(false, Ordering::SeqCst) {
+                        self.failed_commits.fetch_add(1, Ordering::SeqCst);
+                        self.commit_failed.notify_waiters();
                         return Err(GameError::save_replace_failed());
                     }
                     self.phases.lock().unwrap().push("W+G:commit");
@@ -2090,7 +2213,13 @@ mod tests {
                 PersistenceHealthView::Degraded { .. }
             ));
             assert_eq!(
-                coordinator.state.lock().unwrap().failed_revision,
+                coordinator
+                    .state
+                    .lock()
+                    .unwrap()
+                    .failed_write
+                    .as_ref()
+                    .map(|failure| failure.identity),
                 Some((1, 41))
             );
 
@@ -2124,6 +2253,65 @@ mod tests {
                     .collect::<Vec<_>>(),
                 [40, 41]
             );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn newer_schedule_failure_diagnostic_survives_older_writer_failure() {
+            let backend = Arc::new(PhasedBackend::new(1));
+            backend.pause_prepare();
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let older = coordinator.notify_durable_commit(1, 50).unwrap();
+            coordinator.report_thumbnail_failure(&older.ticket).unwrap();
+            tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+            backend.wait_for_prepare().await;
+
+            coordinator.fail_next_schedule_for_test();
+            assert!(coordinator.notify_durable_commit(1, 51).is_none());
+            let scheduling_failure = coordinator.persistence_health();
+            assert_eq!(
+                scheduling_failure,
+                PersistenceHealthView::Degraded {
+                    diagnostic: GameError::save_write_failed(),
+                }
+            );
+
+            backend.fail_commit.store(true, Ordering::SeqCst);
+            backend.release_prepare();
+            backend.wait_for_failed_commits(1).await;
+            tokio::task::yield_now().await;
+
+            assert_eq!(coordinator.persistence_health(), scheduling_failure);
+            assert_eq!(
+                coordinator
+                    .state
+                    .lock()
+                    .unwrap()
+                    .failed_write
+                    .as_ref()
+                    .map(|failure| failure.identity),
+                Some((1, 51))
+            );
+
+            let retry = coordinator
+                .retry_failed_background(BackgroundRetryTrigger::Flush)
+                .unwrap();
+            assert_eq!(
+                coordinator
+                    .state
+                    .lock()
+                    .unwrap()
+                    .tickets
+                    .get(&retry.ticket)
+                    .map(|record| record.purpose.clone()),
+                Some(ThumbnailCapturePurpose::Autosave {
+                    session_generation: 1,
+                    durable_revision: 51,
+                })
+            );
+            coordinator.report_thumbnail_failure(&retry.ticket).unwrap();
+            tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+            backend.wait_for_receipts(1).await;
+            assert_eq!(backend.receipts.lock().unwrap()[0].durable_revision, 51);
         }
 
         #[tokio::test(start_paused = true)]
@@ -2405,8 +2593,10 @@ mod tests {
             parse_current_envelope, SaveEnvelopeV1, SaveSlotStatusView, SaveSlotView, SaveType,
         };
         use crate::game::save::storage::{
-            ProductionSaveFilesystem, SaveFileMetadata, SaveFilesystem, StagedAtomicWrite,
+            clean_orphaned_save_files, ProductionSaveFilesystem, SaveFileMetadata, SaveFilesystem,
+            StagedAtomicWrite,
         };
+        use crate::game::save::thumbnail::ValidatedThumbnail;
         use crate::game::test_support::representative_save_envelope;
         use crate::game::GameError;
         use std::io;
@@ -2422,6 +2612,7 @@ mod tests {
             installed: Arc<AtomicUsize>,
             discarded: Arc<AtomicUsize>,
             discard_update: Arc<Notify>,
+            fail_remove_once: AtomicBool,
         }
 
         impl TrackingFilesystem {
@@ -2498,6 +2689,9 @@ mod tests {
             }
 
             fn remove_file(&self, path: &Path) -> io::Result<()> {
+                if self.fail_remove_once.swap(false, Ordering::SeqCst) {
+                    return Err(io::Error::other("injected cleanup removal failure"));
+                }
                 self.inner.remove_file(path)
             }
 
@@ -2539,6 +2733,11 @@ mod tests {
             registration_update: Notify,
             corruption: Mutex<Option<RegistrationCorruption>>,
             commit_receipt_corruption: Mutex<Option<CommitReceiptCorruption>>,
+            pause_cleanup: AtomicBool,
+            cleanup_started: AtomicBool,
+            cleanup_update: Notify,
+            cleanup_release: Notify,
+            cleanup_completions: AtomicUsize,
             register_held_session: AtomicBool,
             prepare_held_writer: AtomicBool,
             revalidate_held_gate_and_session: AtomicBool,
@@ -2572,6 +2771,11 @@ mod tests {
                     registration_update: Notify::new(),
                     corruption: Mutex::new(None),
                     commit_receipt_corruption: Mutex::new(None),
+                    pause_cleanup: AtomicBool::new(false),
+                    cleanup_started: AtomicBool::new(false),
+                    cleanup_update: Notify::new(),
+                    cleanup_release: Notify::new(),
+                    cleanup_completions: AtomicUsize::new(0),
                     register_held_session: AtomicBool::new(false),
                     prepare_held_writer: AtomicBool::new(false),
                     revalidate_held_gate_and_session: AtomicBool::new(false),
@@ -2647,6 +2851,63 @@ mod tests {
             fn corrupt_commit_receipt(&self, corruption: CommitReceiptCorruption) {
                 *self.commit_receipt_corruption.lock().unwrap() = Some(corruption);
             }
+
+            fn pause_cleanup(&self) {
+                self.pause_cleanup.store(true, Ordering::SeqCst);
+            }
+
+            async fn wait_for_cleanup_start(&self) {
+                for _ in 0..100 {
+                    if self.cleanup_started.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    tokio::task::yield_now().await;
+                }
+                panic!(
+                    "timed out waiting for cleanup start; phases={:?}",
+                    self.phases()
+                );
+            }
+
+            fn release_cleanup(&self) {
+                self.pause_cleanup.store(false, Ordering::SeqCst);
+                self.cleanup_release.notify_waiters();
+            }
+
+            async fn wait_for_cleanup_completions(&self, expected: usize) {
+                for _ in 0..100 {
+                    if self.cleanup_completions.load(Ordering::SeqCst) >= expected {
+                        return;
+                    }
+                    tokio::task::yield_now().await;
+                }
+                panic!(
+                    "timed out waiting for {expected} cleanup completions; phases={:?}",
+                    self.phases()
+                );
+            }
+
+            fn install_old_autosave_with_sidecar(&self) -> PathBuf {
+                const OLD_SAVE_ID: &str = "33333333-3333-4333-8333-333333333333";
+                let thumbnail_bytes = png(1, 1);
+                let mut envelope = autosave_envelope(
+                    OLD_SAVE_ID,
+                    SaveSlotRef::Auto { slot: 1 },
+                    self.current_revision
+                        .load(Ordering::SeqCst)
+                        .saturating_sub(1),
+                );
+                envelope.thumbnail =
+                    ValidatedThumbnail::from_png(thumbnail_bytes.clone(), OLD_SAVE_ID)
+                        .unwrap()
+                        .descriptor;
+                let thumbnails = self.root.join("thumbnails");
+                self.fs.create_dir_all(&thumbnails).unwrap();
+                std::fs::write(self.slot_path(1), serde_json::to_vec(&envelope).unwrap()).unwrap();
+                let sidecar = thumbnails.join(format!("{OLD_SAVE_ID}.png"));
+                std::fs::write(&sidecar, thumbnail_bytes).unwrap();
+                sidecar
+            }
         }
 
         fn empty_autosave_slots() -> Vec<SaveSlotView> {
@@ -2680,6 +2941,15 @@ mod tests {
                 }
             }
             envelope
+        }
+
+        fn png(width: u32, height: u32) -> Vec<u8> {
+            let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+            bytes.extend_from_slice(&width.to_be_bytes());
+            bytes.extend_from_slice(&height.to_be_bytes());
+            bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+            bytes.extend_from_slice(&[0, 0, 0, 0]);
+            bytes
         }
 
         impl AutosaveBackend for StorageBackend {
@@ -2794,6 +3064,22 @@ mod tests {
                     Ok(AutosaveCommitOutcome::Committed(committed))
                 })
             }
+
+            fn cleanup_orphans(&self) -> CoordinatorFuture<'_, Result<(), GameError>> {
+                Box::pin(async move {
+                    let _writer = self.writer.lock().await;
+                    self.phases.lock().unwrap().push("W:cleanup");
+                    self.cleanup_started.store(true, Ordering::SeqCst);
+                    self.cleanup_update.notify_waiters();
+                    while self.pause_cleanup.load(Ordering::SeqCst) {
+                        self.cleanup_release.notified().await;
+                    }
+                    let result = clean_orphaned_save_files(self.fs.as_ref(), &self.root);
+                    self.cleanup_completions.fetch_add(1, Ordering::SeqCst);
+                    self.cleanup_update.notify_waiters();
+                    result
+                })
+            }
         }
 
         #[test]
@@ -2868,6 +3154,51 @@ mod tests {
             assert_eq!(
                 coordinator.autosave_target(4),
                 Some(SaveSlotRef::Auto { slot: 1 })
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn committed_cleanup_diagnostic_adopts_receipt_and_retries_through_writer() {
+            let backend = Arc::new(StorageBackend::new(7, 22));
+            let old_sidecar = backend.install_old_autosave_with_sidecar();
+            backend.fs.fail_remove_once.store(true, Ordering::SeqCst);
+            backend.pause_cleanup();
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let request = coordinator.notify_durable_commit(7, 22).unwrap();
+            coordinator
+                .report_thumbnail_failure(&request.ticket)
+                .unwrap();
+            tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+            backend.wait_for_completions(1).await;
+            backend.wait_for_cleanup_start().await;
+
+            let envelope =
+                parse_current_envelope(&backend.fs.read(&backend.slot_path(1)).unwrap()).unwrap();
+            let receipt = coordinator.last_successful_write().unwrap();
+            assert_eq!(receipt.durable_revision, 22);
+            assert_eq!(receipt.save_id, envelope.save_id);
+            assert_eq!(
+                coordinator.autosave_target(7),
+                Some(SaveSlotRef::Auto { slot: 1 })
+            );
+            assert_eq!(
+                coordinator.persistence_health(),
+                PersistenceHealthView::Degraded {
+                    diagnostic: GameError::save_write_failed(),
+                }
+            );
+            assert!(old_sidecar.exists());
+            assert!(backend.writer.try_lock().is_err());
+            assert!(backend.phases().ends_with(&["W+G:commit", "W:cleanup"]));
+
+            backend.release_cleanup();
+            backend.wait_for_cleanup_completions(1).await;
+            tokio::task::yield_now().await;
+
+            assert!(!old_sidecar.exists());
+            assert_eq!(
+                coordinator.persistence_health(),
+                PersistenceHealthView::Healthy
             );
         }
 
