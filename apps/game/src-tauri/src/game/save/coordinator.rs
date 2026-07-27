@@ -121,7 +121,45 @@ pub(crate) enum ExitRequestSource {
 }
 
 pub(crate) trait ApplicationExit: Send + Sync {
-    fn exit(&self, code: i32);
+    fn exit(&self, code: i32) -> Result<(), GameError>;
+}
+
+pub(crate) type ExitTask = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+
+pub(crate) trait ExitTaskScheduler: Send + Sync {
+    /// Accepts ownership of `task`. Returning an error means the task was not
+    /// accepted and will never be polled.
+    fn spawn(&self, task: ExitTask) -> Result<(), GameError>;
+}
+
+struct PortableExitTaskScheduler {
+    runtime: Option<tokio::runtime::Handle>,
+}
+
+impl PortableExitTaskScheduler {
+    fn capture() -> Self {
+        Self {
+            runtime: tokio::runtime::Handle::try_current().ok(),
+        }
+    }
+}
+
+impl ExitTaskScheduler for PortableExitTaskScheduler {
+    fn spawn(&self, task: ExitTask) -> Result<(), GameError> {
+        if let Some(runtime) = &self.runtime {
+            runtime.spawn(task);
+            return Ok(());
+        }
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| GameError::save_write_failed())?;
+        std::thread::Builder::new()
+            .name("lyra-exit-flush".into())
+            .spawn(move || runtime.block_on(task))
+            .map(|_| ())
+            .map_err(|_| GameError::save_write_failed())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1010,6 +1048,7 @@ struct CoordinatorState {
     failure_challenges: HashMap<Uuid, PersistenceFailureChallenge>,
     exit_status: ExitStatusView,
     programmatic_exit_bypass: bool,
+    exit_action_in_progress: bool,
 }
 
 impl Default for CoordinatorState {
@@ -1033,6 +1072,7 @@ impl Default for CoordinatorState {
             failure_challenges: HashMap::new(),
             exit_status: ExitStatusView::Idle,
             programmatic_exit_bypass: false,
+            exit_action_in_progress: false,
         }
     }
 }
@@ -1043,6 +1083,13 @@ struct ExitApplicationContext {
     replacement_gate: Arc<tokio::sync::Mutex<()>>,
 }
 
+struct ExitArmSnapshot {
+    status: ExitStatusView,
+    exit_flush_requested: bool,
+    programmatic_exit_bypass: bool,
+    exit_action_in_progress: bool,
+}
+
 #[derive(Clone)]
 pub(crate) struct SaveCoordinator {
     state: Arc<Mutex<CoordinatorState>>,
@@ -1051,6 +1098,11 @@ pub(crate) struct SaveCoordinator {
     backend: Option<Arc<dyn AutosaveBackend>>,
     fail_next_schedule: Arc<AtomicBool>,
     exit_application: Option<ExitApplicationContext>,
+    exit_scheduler: Arc<dyn ExitTaskScheduler>,
+    exit_transition: Arc<Mutex<()>>,
+    fail_next_exit_prerequisite: Arc<AtomicBool>,
+    fail_next_cancel_guard_clear: Arc<AtomicBool>,
+    fail_next_exit_challenge: Arc<AtomicBool>,
     exclusive_updates: Arc<Notify>,
 }
 
@@ -1063,6 +1115,11 @@ impl Default for SaveCoordinator {
             backend: None,
             fail_next_schedule: Arc::new(AtomicBool::new(false)),
             exit_application: None,
+            exit_scheduler: Arc::new(PortableExitTaskScheduler::capture()),
+            exit_transition: Arc::new(Mutex::new(())),
+            fail_next_exit_prerequisite: Arc::new(AtomicBool::new(false)),
+            fail_next_cancel_guard_clear: Arc::new(AtomicBool::new(false)),
+            fail_next_exit_challenge: Arc::new(AtomicBool::new(false)),
             exclusive_updates: Arc::new(Notify::new()),
         }
     }
@@ -1113,6 +1170,11 @@ impl SaveCoordinator {
         self
     }
 
+    pub(crate) fn with_exit_scheduler(mut self, scheduler: Arc<dyn ExitTaskScheduler>) -> Self {
+        self.exit_scheduler = scheduler;
+        self
+    }
+
     pub(crate) fn exit_status(&self) -> ExitStatusView {
         self.state
             .lock()
@@ -1145,11 +1207,20 @@ impl SaveCoordinator {
         &self,
         exit: Arc<dyn ApplicationExit>,
         _source: ExitRequestSource,
-    ) {
-        if !self.begin_exit_saving(ExitStatusView::Idle) {
-            return;
+    ) -> Result<(), GameError> {
+        self.ensure_exit_prerequisites()?;
+        if self.current_exit_status()? != ExitStatusView::Idle {
+            return Ok(());
         }
-        self.spawn_exit_flush(exit);
+        let start = self.schedule_exit_flush(exit)?;
+        let Some(arm) = self.begin_exit_saving(ExitStatusView::Idle, true)? else {
+            return Ok(());
+        };
+        if start.send(()).is_err() {
+            self.rollback_exit_arm(arm)?;
+            return Err(GameError::save_write_failed());
+        }
+        Ok(())
     }
 
     pub(crate) fn retry_exit(
@@ -1157,7 +1228,8 @@ impl SaveCoordinator {
         exit: Arc<dyn ApplicationExit>,
         token: PersistenceFailureTokenView,
     ) -> Result<(), GameError> {
-        self.validate_current_exit_token(&token)?;
+        self.ensure_exit_prerequisites()?;
+        let expected = self.validate_current_exit_token(&token)?;
         let application = self
             .exit_application
             .as_ref()
@@ -1175,15 +1247,26 @@ impl SaveCoordinator {
                 acquisition_event_id: None,
             }
         };
-        self.consume_failure_token(
+        let start = self.schedule_exit_flush(exit)?;
+        let Some(arm) = self.begin_exit_saving(expected, false)? else {
+            return Err(GameError::stale_persistence_failure_token());
+        };
+        let challenge = match self.consume_failure_token(
             &token,
             PersistenceBypassOperation::ExitWithoutSaving,
             identity,
-        )?;
-        if !self.begin_exit_saving(self.exit_status()) {
-            return Err(GameError::stale_persistence_failure_token());
+        ) {
+            Ok(challenge) => challenge,
+            Err(error) => {
+                self.rollback_exit_arm(arm)?;
+                return Err(error);
+            }
+        };
+        if start.send(()).is_err() {
+            self.restore_failure_challenge(challenge)?;
+            self.rollback_exit_arm(arm)?;
+            return Err(GameError::save_write_failed());
         }
-        self.spawn_exit_flush(exit);
         Ok(())
     }
 
@@ -1196,33 +1279,57 @@ impl SaveCoordinator {
             .exit_application
             .as_ref()
             .ok_or_else(GameError::save_write_failed)?;
-        let identity = {
-            let session = application
+        if self
+            .fail_next_cancel_guard_clear
+            .swap(false, Ordering::SeqCst)
+        {
+            return Err(GameError::save_write_failed());
+        }
+        let subscribers = {
+            let _transition = self
+                .exit_transition
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
+            let mut session = application
                 .session
                 .lock()
                 .map_err(|_| GameError::unavailable())?;
-            FailureChallengeIdentity {
+            let identity = FailureChallengeIdentity {
                 session_generation: session.persistence.generation,
                 discovery_generation: None,
                 durable_revision: session.durable_revision().unwrap_or(0),
                 selected_save_id: None,
                 acquisition_event_id: None,
+            };
+            let parsed = Uuid::parse_str(&token.0)
+                .ok()
+                .filter(|parsed| parsed.hyphenated().to_string() == token.0)
+                .ok_or_else(GameError::stale_persistence_failure_token)?;
+            let mut state = self.lock_state()?;
+            match &state.exit_status {
+                ExitStatusView::Failed { failure_token, .. } if failure_token == &token => {}
+                _ => return Err(GameError::stale_persistence_failure_token()),
             }
+            let challenge = state
+                .failure_challenges
+                .get(&parsed)
+                .ok_or_else(GameError::stale_persistence_failure_token)?;
+            if !challenge.matches(
+                parsed,
+                PersistenceBypassOperation::ExitWithoutSaving,
+                identity,
+                state.discovery_generation,
+            ) {
+                return Err(GameError::stale_persistence_failure_token());
+            }
+            session.persistence.exit_flush_requested = false;
+            state.failure_challenges.remove(&parsed);
+            state.exit_status = ExitStatusView::Idle;
+            state.programmatic_exit_bypass = false;
+            state.exit_action_in_progress = false;
+            state.exit_subscribers.clone()
         };
-        self.consume_failure_token(
-            &token,
-            PersistenceBypassOperation::ExitWithoutSaving,
-            identity,
-        )?;
-        if let Some(application) = &self.exit_application {
-            application
-                .session
-                .lock()
-                .map_err(|_| GameError::unavailable())?
-                .persistence
-                .exit_flush_requested = false;
-        }
-        self.publish_exit_status(ExitStatusView::Idle);
+        publish_exit(&subscribers, &ExitStatusView::Idle);
         Ok(ExitStatusView::Idle)
     }
 
@@ -1231,78 +1338,219 @@ impl SaveCoordinator {
         exit: Arc<dyn ApplicationExit>,
         token: PersistenceFailureTokenView,
     ) -> Result<(), GameError> {
-        self.validate_current_exit_token(&token)?;
         let application = self
             .exit_application
             .as_ref()
             .ok_or_else(GameError::save_write_failed)?;
-        let identity = {
+        let parsed = Uuid::parse_str(&token.0)
+            .ok()
+            .filter(|parsed| parsed.hyphenated().to_string() == token.0)
+            .ok_or_else(GameError::stale_persistence_failure_token)?;
+        {
+            let _transition = self
+                .exit_transition
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
             let session = application
                 .session
                 .lock()
                 .map_err(|_| GameError::unavailable())?;
-            FailureChallengeIdentity {
+            let identity = FailureChallengeIdentity {
                 session_generation: session.persistence.generation,
                 discovery_generation: None,
                 durable_revision: session.durable_revision().unwrap_or(0),
                 selected_save_id: None,
                 acquisition_event_id: None,
-            }
-        };
-        self.consume_failure_token(
-            &token,
-            PersistenceBypassOperation::ExitWithoutSaving,
-            identity,
-        )?;
-        {
+            };
             let mut state = self.lock_state()?;
+            match &state.exit_status {
+                ExitStatusView::Failed { failure_token, .. }
+                    if failure_token == &token && !state.exit_action_in_progress => {}
+                _ => return Err(GameError::stale_persistence_failure_token()),
+            }
+            let challenge = state
+                .failure_challenges
+                .get(&parsed)
+                .ok_or_else(GameError::stale_persistence_failure_token)?;
+            if !challenge.matches(
+                parsed,
+                PersistenceBypassOperation::ExitWithoutSaving,
+                identity,
+                state.discovery_generation,
+            ) {
+                return Err(GameError::stale_persistence_failure_token());
+            }
             state.programmatic_exit_bypass = true;
+            state.exit_action_in_progress = true;
         }
-        exit.exit(0);
+        let action = exit.exit(0);
+        let _transition = self
+            .exit_transition
+            .lock()
+            .map_err(|_| GameError::unavailable())?;
+        let session = application
+            .session
+            .lock()
+            .map_err(|_| GameError::unavailable())?;
+        let identity = FailureChallengeIdentity {
+            session_generation: session.persistence.generation,
+            discovery_generation: None,
+            durable_revision: session.durable_revision().unwrap_or(0),
+            selected_save_id: None,
+            acquisition_event_id: None,
+        };
+        let mut state = self.lock_state()?;
+        if action.is_err() {
+            state.programmatic_exit_bypass = false;
+            state.exit_action_in_progress = false;
+            return action;
+        }
+        let valid = state
+            .failure_challenges
+            .get(&parsed)
+            .is_some_and(|challenge| {
+                challenge.matches(
+                    parsed,
+                    PersistenceBypassOperation::ExitWithoutSaving,
+                    identity,
+                    state.discovery_generation,
+                )
+            });
+        if !valid {
+            state.programmatic_exit_bypass = false;
+            state.exit_action_in_progress = false;
+            return Err(GameError::stale_persistence_failure_token());
+        }
+        state.failure_challenges.remove(&parsed);
+        state.exit_action_in_progress = false;
         Ok(())
     }
 
     fn validate_current_exit_token(
         &self,
         token: &PersistenceFailureTokenView,
-    ) -> Result<(), GameError> {
+    ) -> Result<ExitStatusView, GameError> {
         let state = self.lock_state()?;
         match &state.exit_status {
-            ExitStatusView::Failed { failure_token, .. } if failure_token == token => Ok(()),
+            status @ ExitStatusView::Failed { failure_token, .. }
+                if failure_token == token && !state.exit_action_in_progress =>
+            {
+                Ok(status.clone())
+            }
             _ => Err(GameError::stale_persistence_failure_token()),
         }
     }
 
-    fn begin_exit_saving(&self, expected: ExitStatusView) -> bool {
-        let Some(application) = &self.exit_application else {
-            return false;
-        };
-        let subscribers = {
-            let Ok(mut state) = self.state.lock() else {
-                return false;
-            };
-            if state.exit_status != expected {
-                return false;
-            }
-            state.exit_status = ExitStatusView::Saving;
-            state.programmatic_exit_bypass = false;
-            state.exit_subscribers.clone()
-        };
-        let Ok(mut session) = application.session.lock() else {
-            return false;
-        };
-        session.persistence.exit_flush_requested = true;
-        drop(session);
-        publish_exit(&subscribers, &ExitStatusView::Saving);
-        true
+    fn restore_failure_challenge(
+        &self,
+        challenge: PersistenceFailureChallenge,
+    ) -> Result<(), GameError> {
+        self.lock_state()?
+            .failure_challenges
+            .insert(challenge.token, challenge);
+        Ok(())
     }
 
-    fn spawn_exit_flush(&self, exit: Arc<dyn ApplicationExit>) {
-        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-            return;
+    fn current_exit_status(&self) -> Result<ExitStatusView, GameError> {
+        self.state
+            .lock()
+            .map(|state| state.exit_status.clone())
+            .map_err(|_| GameError::unavailable())
+    }
+
+    fn ensure_exit_prerequisites(&self) -> Result<(), GameError> {
+        self.exit_application
+            .as_ref()
+            .ok_or_else(GameError::save_write_failed)?;
+        if self
+            .fail_next_exit_prerequisite
+            .swap(false, Ordering::SeqCst)
+        {
+            return Err(GameError::save_write_failed());
+        }
+        Ok(())
+    }
+
+    /// Exit transitions take `exit_transition -> S -> coordinator state`.
+    /// They never acquire the writer gate or G and release every guard before
+    /// publishing callbacks, scheduling work, awaiting, or invoking exit.
+    fn begin_exit_saving(
+        &self,
+        expected: ExitStatusView,
+        deduplicate_mismatch: bool,
+    ) -> Result<Option<ExitArmSnapshot>, GameError> {
+        let application = self
+            .exit_application
+            .as_ref()
+            .ok_or_else(GameError::save_write_failed)?;
+        let (snapshot, subscribers) = {
+            let _transition = self
+                .exit_transition
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
+            let mut session = application
+                .session
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
+            let mut state = self.lock_state()?;
+            if state.exit_status != expected {
+                return if deduplicate_mismatch {
+                    Ok(None)
+                } else {
+                    Err(GameError::stale_persistence_failure_token())
+                };
+            }
+            let snapshot = ExitArmSnapshot {
+                status: state.exit_status.clone(),
+                exit_flush_requested: session.persistence.exit_flush_requested,
+                programmatic_exit_bypass: state.programmatic_exit_bypass,
+                exit_action_in_progress: state.exit_action_in_progress,
+            };
+            session.persistence.exit_flush_requested = true;
+            state.exit_status = ExitStatusView::Saving;
+            state.programmatic_exit_bypass = false;
+            state.exit_action_in_progress = false;
+            (snapshot, state.exit_subscribers.clone())
         };
+        publish_exit(&subscribers, &ExitStatusView::Saving);
+        Ok(Some(snapshot))
+    }
+
+    fn rollback_exit_arm(&self, snapshot: ExitArmSnapshot) -> Result<(), GameError> {
+        let application = self
+            .exit_application
+            .as_ref()
+            .ok_or_else(GameError::save_write_failed)?;
+        let subscribers = {
+            let _transition = self
+                .exit_transition
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
+            let mut session = application
+                .session
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
+            let mut state = self.lock_state()?;
+            session.persistence.exit_flush_requested = snapshot.exit_flush_requested;
+            state.exit_status = snapshot.status.clone();
+            state.programmatic_exit_bypass = snapshot.programmatic_exit_bypass;
+            state.exit_action_in_progress = snapshot.exit_action_in_progress;
+            state.exit_subscribers.clone()
+        };
+        publish_exit(&subscribers, &snapshot.status);
+        Ok(())
+    }
+
+    fn schedule_exit_flush(
+        &self,
+        exit: Arc<dyn ApplicationExit>,
+    ) -> Result<tokio::sync::oneshot::Sender<()>, GameError> {
         let coordinator = self.clone();
-        runtime.spawn(async move {
+        let (start_tx, start_rx) = tokio::sync::oneshot::channel();
+        self.exit_scheduler.spawn(Box::pin(async move {
+            if start_rx.await.is_err() {
+                return;
+            }
             match coordinator.flush_for_exit().await {
                 Ok(()) => {
                     {
@@ -1311,15 +1559,19 @@ impl SaveCoordinator {
                         };
                         state.programmatic_exit_bypass = true;
                     }
-                    exit.exit(0);
-                }
-                Err(error) => {
-                    if let Ok(status) = coordinator.challenge_exit_failure(error) {
-                        coordinator.publish_exit_status(status);
+                    if let Err(error) = exit.exit(0) {
+                        if let Ok(mut state) = coordinator.state.lock() {
+                            state.programmatic_exit_bypass = false;
+                        }
+                        coordinator.handle_exit_worker_failure(error);
                     }
                 }
+                Err(error) => {
+                    coordinator.handle_exit_worker_failure(error);
+                }
             }
-        });
+        }))?;
+        Ok(start_tx)
     }
 
     async fn flush_for_exit(&self) -> Result<(), GameError> {
@@ -1359,49 +1611,100 @@ impl SaveCoordinator {
         .map(|_| ())
     }
 
-    fn challenge_exit_failure(&self, diagnostic: GameError) -> Result<ExitStatusView, GameError> {
+    fn publish_exit_failure(&self, diagnostic: GameError) -> Result<(), GameError> {
+        if self.fail_next_exit_challenge.swap(false, Ordering::SeqCst) {
+            return Err(GameError::save_write_failed());
+        }
         let application = self
             .exit_application
             .as_ref()
             .ok_or_else(GameError::save_write_failed)?;
-        let identity = {
+        let (status, health, exit_subscribers, health_subscribers) = {
+            let _transition = self
+                .exit_transition
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
             let session = application
                 .session
                 .lock()
                 .map_err(|_| GameError::unavailable())?;
-            FailureChallengeIdentity {
+            let identity = FailureChallengeIdentity {
                 session_generation: session.persistence.generation,
                 discovery_generation: None,
                 durable_revision: session.durable_revision().unwrap_or(0),
                 selected_save_id: None,
                 acquisition_event_id: None,
+            };
+            let token = Uuid::new_v4();
+            let token_wire = token.hyphenated().to_string();
+            let challenge = PersistenceFailureChallenge {
+                token,
+                operation: PersistenceBypassOperation::ExitWithoutSaving,
+                session_generation: identity.session_generation,
+                discovery_generation: identity.discovery_generation,
+                durable_revision: identity.durable_revision,
+                selected_save_id: None,
+                acquisition_event_id: None,
+            };
+            let mut challenged = diagnostic.clone().with_failure_token(token_wire);
+            let failure_token = challenged
+                .failure_token
+                .take()
+                .map(PersistenceFailureTokenView)
+                .ok_or_else(GameError::stale_persistence_failure_token)?;
+            let status = ExitStatusView::Failed {
+                diagnostic: challenged,
+                failure_token,
+            };
+            let health = PersistenceHealthView::Degraded {
+                diagnostic: diagnostic.clone(),
+            };
+            let mut state = self.lock_state()?;
+            if state.exit_status != ExitStatusView::Saving {
+                return Err(GameError::stale_persistence_failure_token());
             }
+            state.failure_challenges.insert(token, challenge);
+            let health_subscribers = set_persistence_health(&mut state, health.clone());
+            state.exit_status = status.clone();
+            state.programmatic_exit_bypass = false;
+            state.exit_action_in_progress = false;
+            let exit_subscribers = state.exit_subscribers.clone();
+            (status, health, exit_subscribers, health_subscribers)
         };
-        let mut challenged = self.challenge_persistence_failure(
-            PersistenceBypassOperation::ExitWithoutSaving,
-            identity,
-            diagnostic,
-        )?;
-        let failure_token = challenged
-            .failure_token
-            .take()
-            .map(PersistenceFailureTokenView)
-            .ok_or_else(GameError::stale_persistence_failure_token)?;
-        Ok(ExitStatusView::Failed {
-            diagnostic: challenged,
-            failure_token,
-        })
+        publish_health(&health_subscribers, &health);
+        publish_exit(&exit_subscribers, &status);
+        Ok(())
     }
 
-    fn publish_exit_status(&self, status: ExitStatusView) {
+    fn handle_exit_worker_failure(&self, diagnostic: GameError) {
+        if self.publish_exit_failure(diagnostic).is_err() {
+            let _ = self.restore_recoverable_exit_idle();
+        }
+    }
+
+    fn restore_recoverable_exit_idle(&self) -> Result<(), GameError> {
+        let application = self
+            .exit_application
+            .as_ref()
+            .ok_or_else(GameError::save_write_failed)?;
         let subscribers = {
-            let Ok(mut state) = self.state.lock() else {
-                return;
-            };
-            state.exit_status = status.clone();
+            let _transition = self
+                .exit_transition
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
+            let mut session = application
+                .session
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
+            let mut state = self.lock_state()?;
+            session.persistence.exit_flush_requested = false;
+            state.exit_status = ExitStatusView::Idle;
+            state.programmatic_exit_bypass = false;
+            state.exit_action_in_progress = false;
             state.exit_subscribers.clone()
         };
-        publish_exit(&subscribers, &status);
+        publish_exit(&subscribers, &ExitStatusView::Idle);
+        Ok(())
     }
 
     pub(crate) fn next_session_generation(&self) -> Result<u64, GameError> {
@@ -1574,7 +1877,8 @@ impl SaveCoordinator {
         let mut state = self.lock_state()?;
         let challenge = state
             .failure_challenges
-            .remove(&parsed)
+            .get(&parsed)
+            .cloned()
             .ok_or_else(GameError::stale_persistence_failure_token)?;
         if !challenge.matches(parsed, expected, current, state.discovery_generation)
             && !alternate.is_some_and(|identity| {
@@ -1583,7 +1887,10 @@ impl SaveCoordinator {
         {
             return Err(GameError::stale_persistence_failure_token());
         }
-        Ok(challenge)
+        state
+            .failure_challenges
+            .remove(&parsed)
+            .ok_or_else(GameError::stale_persistence_failure_token)
     }
 
     pub(crate) fn cancel_failure_token(
@@ -3327,6 +3634,23 @@ impl SaveCoordinator {
     }
 
     #[cfg(test)]
+    pub(crate) fn fail_next_exit_prerequisite_for_test(&self) {
+        self.fail_next_exit_prerequisite
+            .store(true, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_next_cancel_guard_clear_for_test(&self) {
+        self.fail_next_cancel_guard_clear
+            .store(true, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_next_exit_challenge_for_test(&self) {
+        self.fail_next_exit_challenge.store(true, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
     fn enqueue_writer_probe(
         &self,
         class: WriterJobClass,
@@ -3610,13 +3934,14 @@ fn spawn_ticket_expiry(
 mod tests {
     mod exit_lifecycle {
         use super::super::{
-            AppSession, ApplicationExit, ExitRequestSource, ExitStatusView,
-            PersistenceFailureTokenView, SaveCoordinator, AUTOSAVE_DEBOUNCE,
+            AppSession, ApplicationExit, ExitRequestSource, ExitStatusView, ExitTask,
+            ExitTaskScheduler, PersistenceFailureTokenView, SaveCoordinator, AUTOSAVE_DEBOUNCE,
         };
         use super::acknowledgement::{app_with_event, terminal_acknowledgement_ticket};
         use super::debounce::{PhasedBackend, RecordingBackend};
         use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
         use std::sync::{Arc, Mutex};
+        use std::time::Duration;
         use tokio::sync::{mpsc, Notify};
 
         #[derive(Default)]
@@ -3626,9 +3951,39 @@ mod tests {
         }
 
         impl ApplicationExit for RecordingExit {
-            fn exit(&self, code: i32) {
+            fn exit(&self, code: i32) -> Result<(), crate::game::GameError> {
                 self.calls.lock().unwrap().push(code);
                 self.called.notify_waiters();
+                Ok(())
+            }
+        }
+
+        struct RejectingApplicationExit;
+
+        impl ApplicationExit for RejectingApplicationExit {
+            fn exit(&self, _code: i32) -> Result<(), crate::game::GameError> {
+                Err(crate::game::GameError::save_write_failed())
+            }
+        }
+
+        struct LockProbeApplicationExit {
+            coordinator: SaveCoordinator,
+            session: Arc<Mutex<AppSession>>,
+            called: Notify,
+        }
+
+        impl ApplicationExit for LockProbeApplicationExit {
+            fn exit(&self, _code: i32) -> Result<(), crate::game::GameError> {
+                assert!(
+                    self.coordinator.exit_transition.try_lock().is_ok(),
+                    "external exit action must not run under exit_transition"
+                );
+                assert!(
+                    self.session.try_lock().is_ok(),
+                    "external exit action must not run under S"
+                );
+                self.called.notify_one();
+                Ok(())
             }
         }
 
@@ -3641,6 +3996,14 @@ mod tests {
                     }
                     notified.await;
                 }
+            }
+        }
+
+        struct RejectingExitScheduler;
+
+        impl ExitTaskScheduler for RejectingExitScheduler {
+            fn spawn(&self, _task: ExitTask) -> Result<(), crate::game::GameError> {
+                Err(crate::game::GameError::save_write_failed())
             }
         }
 
@@ -3689,9 +4052,15 @@ mod tests {
         fn exit_lifecycle_request_without_application_context_stays_idle() {
             let coordinator = SaveCoordinator::new();
 
-            coordinator.request_exit_flush(
-                Arc::new(RecordingExit::default()),
-                ExitRequestSource::WindowClose,
+            assert_eq!(
+                coordinator
+                    .request_exit_flush(
+                        Arc::new(RecordingExit::default()),
+                        ExitRequestSource::WindowClose,
+                    )
+                    .unwrap_err()
+                    .code,
+                "saveWriteFailed"
             );
 
             assert_eq!(coordinator.exit_status(), ExitStatusView::Idle);
@@ -3708,14 +4077,116 @@ mod tests {
                 SaveCoordinator::for_application(Arc::clone(&session), replacement_gate);
             let exit = Arc::new(RecordingExit::default());
 
-            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::WindowClose);
-            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit);
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit)
+                .unwrap();
             exit.wait_for_call().await;
 
             assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
             assert_eq!(coordinator.exit_status(), ExitStatusView::Saving);
             assert!(coordinator.consume_programmatic_exit_bypass());
             assert!(!coordinator.consume_programmatic_exit_bypass());
+        }
+
+        #[tokio::test(flavor = "multi_thread")]
+        async fn exit_lifecycle_plain_thread_request_still_schedules_and_exits_once() {
+            let engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            let session = Arc::new(Mutex::new(AppSession::installed(engine, 4, None)));
+            let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let coordinator =
+                SaveCoordinator::for_application(Arc::clone(&session), replacement_gate);
+            let exit = Arc::new(RecordingExit::default());
+            let thread_coordinator = coordinator.clone();
+            let thread_exit = exit.clone();
+
+            std::thread::spawn(move || {
+                thread_coordinator
+                    .request_exit_flush(thread_exit, ExitRequestSource::WindowClose)
+                    .unwrap();
+            })
+            .join()
+            .unwrap();
+
+            tokio::time::timeout(Duration::from_secs(1), exit.wait_for_call())
+                .await
+                .expect("exit flush scheduled outside a caller-local Tokio runtime");
+            assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_releases_transition_and_session_before_external_exit_action() {
+            let engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            let session = Arc::new(Mutex::new(AppSession::installed(engine, 4, None)));
+            let coordinator = SaveCoordinator::for_application(
+                Arc::clone(&session),
+                Arc::new(tokio::sync::Mutex::new(())),
+            );
+            let exit = Arc::new(LockProbeApplicationExit {
+                coordinator: coordinator.clone(),
+                session,
+                called: Notify::new(),
+            });
+
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
+            exit.called.notified().await;
+        }
+
+        #[test]
+        fn exit_lifecycle_scheduler_rejection_restores_idle_and_session_admission() {
+            let engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            let session = Arc::new(Mutex::new(AppSession::installed(engine, 4, None)));
+            let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let coordinator =
+                SaveCoordinator::for_application(Arc::clone(&session), replacement_gate)
+                    .with_exit_scheduler(Arc::new(RejectingExitScheduler));
+
+            assert_eq!(
+                coordinator
+                    .request_exit_flush(
+                        Arc::new(RecordingExit::default()),
+                        ExitRequestSource::WindowClose,
+                    )
+                    .unwrap_err()
+                    .code,
+                "saveWriteFailed"
+            );
+
+            assert_eq!(coordinator.exit_status(), ExitStatusView::Idle);
+            assert!(!session.lock().unwrap().persistence.exit_flush_requested);
+            assert!(session
+                .lock()
+                .unwrap()
+                .ensure_persistence_available()
+                .is_ok());
+        }
+
+        #[test]
+        fn exit_lifecycle_prerequisite_failure_does_not_arm_saving() {
+            let engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            let session = Arc::new(Mutex::new(AppSession::installed(engine, 4, None)));
+            let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let coordinator =
+                SaveCoordinator::for_application(Arc::clone(&session), replacement_gate);
+            coordinator.fail_next_exit_prerequisite_for_test();
+            let exit = Arc::new(RecordingExit::default());
+
+            let error = coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap_err();
+
+            assert_eq!(error.code, "saveWriteFailed");
+            assert_eq!(coordinator.exit_status(), ExitStatusView::Idle);
+            assert!(!session.lock().unwrap().persistence.exit_flush_requested);
+            assert!(exit.calls.lock().unwrap().is_empty());
         }
 
         #[tokio::test(start_paused = true)]
@@ -3737,7 +4208,9 @@ mod tests {
             backend.wait_until_started().await;
 
             let exit = Arc::new(RecordingExit::default());
-            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::WindowClose);
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
 
             assert!(session.try_lock().is_ok());
             assert!(replacement_gate.try_lock().is_ok());
@@ -3783,7 +4256,9 @@ mod tests {
                 .unwrap();
 
             let exit = Arc::new(RecordingExit::default());
-            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit);
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit)
+                .unwrap();
             exit.wait_for_call().await;
 
             assert_eq!(backend.write_count(), 1);
@@ -3805,7 +4280,9 @@ mod tests {
             let mut statuses = status_receiver(&coordinator);
             let exit = Arc::new(RecordingExit::default());
 
-            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit);
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit)
+                .unwrap();
             assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
             backend.wait_for_failed_commits(1).await;
             let failed = statuses.recv().await.unwrap();
@@ -3839,6 +4316,179 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn exit_lifecycle_retry_scheduler_failure_preserves_exact_failed_token() {
+            let backend = Arc::new(PhasedBackend::new(4));
+            backend.fail_next_commit();
+            let session = active_session(1);
+            advance_revision(&session, 2);
+            let coordinator = SaveCoordinator::with_backend_for_application(
+                backend.clone(),
+                session,
+                Arc::new(tokio::sync::Mutex::new(())),
+            );
+            let mut statuses = status_receiver(&coordinator);
+            let exit = Arc::new(RecordingExit::default());
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit)
+                .unwrap();
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            backend.wait_for_failed_commits(1).await;
+            let failed = statuses.recv().await.unwrap();
+            let ExitStatusView::Failed { failure_token, .. } = &failed else {
+                panic!("exit flush must publish a failed token");
+            };
+            let rejecting = coordinator
+                .clone()
+                .with_exit_scheduler(Arc::new(RejectingExitScheduler));
+
+            let error = rejecting
+                .retry_exit(exit.clone(), failure_token.clone())
+                .unwrap_err();
+
+            assert_eq!(error.code, "saveWriteFailed");
+            assert_eq!(
+                serde_json::to_value(rejecting.exit_status()).unwrap(),
+                serde_json::to_value(&failed).unwrap()
+            );
+            assert_eq!(
+                rejecting.cancel_exit(failure_token.clone()).unwrap(),
+                ExitStatusView::Idle
+            );
+            assert!(exit.calls.lock().unwrap().is_empty());
+            assert_eq!(
+                rejecting
+                    .cancel_exit(failure_token.clone())
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_cancel_guard_clear_failure_preserves_exact_failed_token() {
+            let backend = Arc::new(PhasedBackend::new(4));
+            backend.fail_next_commit();
+            let session = active_session(1);
+            advance_revision(&session, 2);
+            let coordinator = SaveCoordinator::with_backend_for_application(
+                backend.clone(),
+                session,
+                Arc::new(tokio::sync::Mutex::new(())),
+            );
+            let mut statuses = status_receiver(&coordinator);
+            let exit = Arc::new(RecordingExit::default());
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            backend.wait_for_failed_commits(1).await;
+            let failed = statuses.recv().await.unwrap();
+            let ExitStatusView::Failed { failure_token, .. } = &failed else {
+                panic!("exit flush must publish a failed token");
+            };
+            coordinator.fail_next_cancel_guard_clear_for_test();
+
+            let error = coordinator.cancel_exit(failure_token.clone()).unwrap_err();
+
+            assert_eq!(error.code, "saveWriteFailed");
+            assert_eq!(
+                serde_json::to_value(coordinator.exit_status()).unwrap(),
+                serde_json::to_value(&failed).unwrap()
+            );
+            assert_eq!(
+                coordinator.cancel_exit(failure_token.clone()).unwrap(),
+                ExitStatusView::Idle
+            );
+            assert_eq!(
+                coordinator
+                    .cancel_exit(failure_token.clone())
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+            assert!(exit.calls.lock().unwrap().is_empty());
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_without_saving_action_failure_preserves_exact_failed_token() {
+            let backend = Arc::new(PhasedBackend::new(4));
+            backend.fail_next_commit();
+            let session = active_session(1);
+            advance_revision(&session, 2);
+            let coordinator = SaveCoordinator::with_backend_for_application(
+                backend.clone(),
+                session,
+                Arc::new(tokio::sync::Mutex::new(())),
+            );
+            let mut statuses = status_receiver(&coordinator);
+            let exit = Arc::new(RecordingExit::default());
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit)
+                .unwrap();
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            backend.wait_for_failed_commits(1).await;
+            let failed = statuses.recv().await.unwrap();
+            let ExitStatusView::Failed { failure_token, .. } = &failed else {
+                panic!("exit flush must publish a failed token");
+            };
+
+            let error = coordinator
+                .exit_without_saving(Arc::new(RejectingApplicationExit), failure_token.clone())
+                .unwrap_err();
+
+            assert_eq!(error.code, "saveWriteFailed");
+            assert_eq!(
+                serde_json::to_value(coordinator.exit_status()).unwrap(),
+                serde_json::to_value(&failed).unwrap()
+            );
+            assert!(!coordinator.consume_programmatic_exit_bypass());
+            coordinator
+                .exit_without_saving(exit.clone(), failure_token.clone())
+                .unwrap();
+            assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+            assert!(coordinator.consume_programmatic_exit_bypass());
+            assert_eq!(
+                coordinator
+                    .exit_without_saving(exit, failure_token.clone())
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_challenge_publication_failure_restores_recoverable_idle() {
+            let backend = Arc::new(PhasedBackend::new(4));
+            backend.fail_next_commit();
+            let session = active_session(1);
+            advance_revision(&session, 2);
+            let coordinator = SaveCoordinator::with_backend_for_application(
+                backend.clone(),
+                Arc::clone(&session),
+                Arc::new(tokio::sync::Mutex::new(())),
+            );
+            coordinator.fail_next_exit_challenge_for_test();
+            let mut statuses = status_receiver(&coordinator);
+            let exit = Arc::new(RecordingExit::default());
+
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            backend.wait_for_failed_commits(1).await;
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Idle);
+            assert!(!session.lock().unwrap().persistence.exit_flush_requested);
+            assert!(exit.calls.lock().unwrap().is_empty());
+
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            exit.wait_for_call().await;
+            assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+        }
+
+        #[tokio::test]
         async fn exit_lifecycle_retry_and_without_saving_each_consume_one_exact_challenge() {
             let retry_backend = Arc::new(PhasedBackend::new(4));
             retry_backend.fail_next_commit();
@@ -3852,7 +4502,8 @@ mod tests {
             let mut retry_statuses = status_receiver(&retry_coordinator);
             let retry_exit = Arc::new(RecordingExit::default());
             retry_coordinator
-                .request_exit_flush(retry_exit.clone(), ExitRequestSource::WindowClose);
+                .request_exit_flush(retry_exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
             assert_eq!(retry_statuses.recv().await.unwrap(), ExitStatusView::Saving);
             retry_backend.wait_for_failed_commits(1).await;
             let ExitStatusView::Failed {
@@ -3889,7 +4540,8 @@ mod tests {
             let mut bypass_statuses = status_receiver(&bypass_coordinator);
             let bypass_exit = Arc::new(RecordingExit::default());
             bypass_coordinator
-                .request_exit_flush(bypass_exit.clone(), ExitRequestSource::ApplicationQuit);
+                .request_exit_flush(bypass_exit.clone(), ExitRequestSource::ApplicationQuit)
+                .unwrap();
             assert_eq!(
                 bypass_statuses.recv().await.unwrap(),
                 ExitStatusView::Saving
@@ -3940,7 +4592,9 @@ mod tests {
             backend.wait_for_prepare().await;
 
             let exit = Arc::new(RecordingExit::default());
-            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit);
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit)
+                .unwrap();
 
             assert_eq!(coordinator.exit_status(), ExitStatusView::Saving);
             assert!(app.session.try_lock().is_ok());
@@ -4956,6 +5610,9 @@ mod tests {
                         .code,
                     "stalePersistenceFailureToken"
                 );
+                coordinator
+                    .consume_failure_token(&token, operation, exact)
+                    .expect("a failed identity check must not consume the exact token");
             }
         }
 
