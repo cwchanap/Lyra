@@ -3,8 +3,8 @@ use super::schema::{
     AcquisitionEventStateV1, AudioCueSnapshotV1, AuthorizationProgressSnapshotV1,
     CrossExamSnapshotV1, DialogueHistoryEntryV1, DialogueHistorySnapshotV1, FactProgressSnapshotV1,
     InventorySnapshotV1, InventoryTargetV1, LastVisualCueSnapshotV1, ObjectiveProgressSnapshotV1,
-    QuestionProgressSnapshotV1, RecordKind, SaveEnvelopeV1, SaveSlotRef, SaveType,
-    SceneProgressSnapshotV1, StoryStateSnapshotV1,
+    QuestionProgressSnapshotV1, RecordKind, SaveEnvelopeV1, SaveSlotRef, SaveSnapshotV1,
+    SaveSummary, SaveType, SceneProgressSnapshotV1, StoryStateSnapshotV1,
 };
 use crate::game::content_manifest::ContentManifest;
 use crate::game::dialogue::{DialogueHistory, DIALOGUE_HISTORY_LIMIT};
@@ -89,6 +89,44 @@ impl ResumableStateAdapter for StoryState {
     }
 }
 
+pub(crate) fn validate_save_summary(
+    definitions: &CurrentDefinitions,
+    snapshot: &SaveSnapshotV1,
+    summary: &SaveSummary,
+) -> Result<(), GameError> {
+    let (_, chapter) = exactly_one_chapter(definitions, &snapshot.chapter_id)?;
+    let scene = definitions
+        .scenes_by_key
+        .get(&(snapshot.chapter_id.clone(), snapshot.scene_id.clone()))
+        .ok_or_else(GameError::missing_save_definition)?;
+    let (_, scene_title) = scene_json_identity(scene);
+    let active_primary_objective_id = snapshot.story_state.active_primary_objective_id.clone();
+    let active_primary_objective_label = active_primary_objective_id
+        .as_deref()
+        .map(|id| {
+            definitions
+                .story_catalog
+                .objective(id)
+                .map(|objective| objective.label.clone())
+                .ok_or_else(GameError::missing_save_definition)
+        })
+        .transpose()?;
+    let expected = SaveSummary {
+        chapter_id: snapshot.chapter_id.clone(),
+        chapter_title: chapter.title.clone(),
+        scene_id: snapshot.scene_id.clone(),
+        scene_title: scene_title.to_owned(),
+        active_primary_objective_id,
+        active_primary_objective_label,
+    };
+    if summary != &expected {
+        return Err(invalid_progress(
+            "Save summary does not match the saved packaged state.",
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn load_current_definitions(
     resources_dir: &Path,
 ) -> Result<CurrentDefinitions, GameError> {
@@ -164,6 +202,7 @@ pub(crate) fn build_restore_candidate(
             packaged_revision,
         ));
     }
+    validate_save_summary(definitions, &envelope.snapshot, &envelope.summary)?;
 
     let source = match envelope.save_type {
         SaveType::Auto => SaveSlotRef::Auto {

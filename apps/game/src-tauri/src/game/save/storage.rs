@@ -1,11 +1,11 @@
 #![allow(dead_code)] // Task 7/10 wire these crate-private primitives into the save coordinator.
 
-use super::restore::{build_restore_candidate, CurrentDefinitions};
+use super::restore::{build_restore_candidate, validate_save_summary, CurrentDefinitions};
 use super::schema::{
-    canonical_uuid_v4, parse_current_envelope, validate_envelope, ReadableSaveMetadataView,
-    SaveBrowserView, SaveDiscoveryStatusView, SaveEnvelopeV1, SaveMetadataView, SaveSlotRef,
-    SaveSlotStatusView, SaveSlotView, SaveSummary, SaveType, ThumbnailAvailabilityView,
-    ThumbnailDescriptorV1, ThumbnailUnavailableReason,
+    canonical_uuid_v4, parse_current_envelope, parse_saved_at_utc, validate_envelope,
+    ReadableSaveMetadataView, SaveBrowserView, SaveDiscoveryStatusView, SaveEnvelopeV1,
+    SaveMetadataView, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveSnapshotV1, SaveSummary,
+    SaveType, ThumbnailAvailabilityView, ThumbnailDescriptorV1, ThumbnailUnavailableReason,
 };
 use super::thumbnail::{
     parse_png_header, validate_png_bytes_for_descriptor, ValidatedThumbnail, PNG_HEADER_BYTES,
@@ -24,6 +24,7 @@ use std::time::SystemTime;
 
 pub(crate) const PRODUCTION_APP_IDENTIFIER: &str = "com.chanwaichan.lyra";
 pub(crate) const E2E_APP_IDENTIFIER: &str = "com.chanwaichan.lyra.e2e";
+pub(crate) const MAX_SAVE_JSON_BYTES: usize = 1024 * 1024;
 const E2E_APP_DATA_ENV: &str = "LYRA_E2E_APP_DATA_DIR";
 
 #[derive(Debug, Clone, Deserialize)]
@@ -369,9 +370,14 @@ pub(crate) fn read_save_thumbnail(
 ) -> Result<Vec<u8>, GameError> {
     canonical_uuid_v4(observed_save_id).map_err(|_| GameError::stale_save_selection())?;
     let path = slot_path(root, reference)?;
-    let envelope_bytes = fs
-        .read(&path)
-        .map_err(|_| GameError::stale_save_selection())?;
+    let envelope_bytes = match read_bounded_slot_json(fs, &path) {
+        Ok(Some((_, bytes))) => bytes,
+        Ok(None) => return Err(GameError::stale_save_selection()),
+        Err(error) if error.kind() == io::ErrorKind::InvalidData => {
+            return Err(GameError::thumbnail_corrupt());
+        }
+        Err(_) => return Err(GameError::stale_save_selection()),
+    };
     let envelope =
         parse_current_envelope(&envelope_bytes).map_err(|_| GameError::thumbnail_corrupt())?;
     if !slot_agrees_with_envelope(reference, &envelope) || envelope.save_id != observed_save_id {
@@ -409,13 +415,13 @@ pub(crate) fn clean_orphaned_save_files(
     let mut referenced_sidecars = std::collections::BTreeSet::new();
     for reference in ALL_SLOT_REFS {
         let path = slot_path(root, reference).expect("fixed slot references are valid");
-        match fs.read(&path) {
-            Ok(bytes) => {
+        match read_bounded_slot_json(fs, &path) {
+            Ok(Some((_, bytes))) => {
                 if let Some(sidecar) = possible_sidecar_from_slot(root, &bytes) {
                     referenced_sidecars.insert(sidecar);
                 }
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Ok(None) => {}
             Err(_) => return Err(GameError::save_read_failed()),
         }
     }
@@ -551,8 +557,17 @@ fn discover_slot(
         }
     };
     let modified_at = Some(format_modified_at(metadata.modified_at));
-    let bytes = match fs.read(&path) {
+    let bytes = match read_bounded_slot_json_bytes(fs, &path, &metadata) {
         Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return SaveSlotView {
+                reference,
+                modified_at: None,
+                status: SaveSlotStatusView::Empty,
+                observed_modified_at: None,
+                observed_saved_at: None,
+            };
+        }
         Err(_) => {
             return invalid_slot(
                 reference,
@@ -567,7 +582,7 @@ fn discover_slot(
     let envelope = match parse_current_envelope(&bytes) {
         Ok(envelope) => envelope,
         Err(error) => {
-            let readable = readable_metadata(fs, root, &bytes);
+            let readable = readable_metadata(fs, root, &context.definitions, &bytes);
             return invalid_slot(
                 reference,
                 modified_at,
@@ -579,7 +594,7 @@ fn discover_slot(
         }
     };
     if !slot_agrees_with_envelope(reference, &envelope) {
-        let readable = readable_metadata(fs, root, &bytes);
+        let readable = readable_metadata(fs, root, &context.definitions, &bytes);
         return invalid_slot(
             reference,
             modified_at,
@@ -594,7 +609,7 @@ fn discover_slot(
         &context.definitions,
         envelope.clone(),
     ) {
-        let readable = readable_metadata(fs, root, &bytes);
+        let readable = readable_metadata(fs, root, &context.definitions, &bytes);
         return invalid_slot(
             reference,
             modified_at,
@@ -663,6 +678,7 @@ fn invalid_slot(
 fn readable_metadata(
     fs: &dyn SaveFilesystem,
     root: &Path,
+    definitions: &CurrentDefinitions,
     bytes: &[u8],
 ) -> Option<ReadableSaveMetadataView> {
     let value = serde_json::from_slice::<Value>(bytes).ok()?;
@@ -675,7 +691,7 @@ fn readable_metadata(
     let saved_at = object
         .get("savedAt")
         .and_then(Value::as_str)
-        .filter(|value| valid_utc_timestamp(value))
+        .filter(|value| parse_saved_at_utc(value).is_ok())
         .map(str::to_owned);
     let display_name = object
         .get("displayName")
@@ -683,7 +699,15 @@ fn readable_metadata(
         .and_then(|value| super::schema::validate_manual_display_name(value).ok());
     let summary = object
         .get("summary")
-        .and_then(|value| serde_json::from_value::<SaveSummary>(value.clone()).ok());
+        .and_then(|value| serde_json::from_value::<SaveSummary>(value.clone()).ok())
+        .filter(|summary| {
+            object
+                .get("snapshot")
+                .and_then(|value| serde_json::from_value::<SaveSnapshotV1>(value.clone()).ok())
+                .is_some_and(|snapshot| {
+                    validate_save_summary(definitions, &snapshot, summary).is_ok()
+                })
+        });
     let descriptor = object
         .get("thumbnail")
         .and_then(|value| serde_json::from_value::<ThumbnailDescriptorV1>(value.clone()).ok());
@@ -705,12 +729,7 @@ fn readable_metadata(
 fn independently_valid_saved_at(bytes: &[u8]) -> Option<DateTime<chrono::FixedOffset>> {
     let value = serde_json::from_slice::<Value>(bytes).ok()?;
     let saved_at = value.get("savedAt")?.as_str()?;
-    let parsed = DateTime::parse_from_rfc3339(saved_at).ok()?;
-    (parsed.offset().local_minus_utc() == 0).then_some(parsed)
-}
-
-fn valid_utc_timestamp(value: &str) -> bool {
-    DateTime::parse_from_rfc3339(value).is_ok_and(|parsed| parsed.offset().local_minus_utc() == 0)
+    parse_saved_at_utc(saved_at).ok()
 }
 
 fn slot_agrees_with_envelope(reference: SaveSlotRef, envelope: &SaveEnvelopeV1) -> bool {
@@ -1071,10 +1090,48 @@ fn serialize_envelope(envelope: &SaveEnvelopeV1) -> Result<Vec<u8>, GameError> {
     Ok(bytes)
 }
 
+fn read_bounded_slot_json(
+    fs: &dyn SaveFilesystem,
+    path: &Path,
+) -> io::Result<Option<(SaveFileMetadata, Vec<u8>)>> {
+    let metadata = match fs.metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let bytes = match read_bounded_slot_json_bytes(fs, path, &metadata) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    Ok(Some((metadata, bytes)))
+}
+
+fn read_bounded_slot_json_bytes(
+    fs: &dyn SaveFilesystem,
+    path: &Path,
+    metadata: &SaveFileMetadata,
+) -> io::Result<Vec<u8>> {
+    if metadata.byte_length > MAX_SAVE_JSON_BYTES as u64 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "save JSON exceeds the fixed byte limit",
+        ));
+    }
+    let bytes = fs.read_prefix(path, MAX_SAVE_JSON_BYTES + 1)?;
+    if bytes.len() > MAX_SAVE_JSON_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "save JSON exceeds the fixed byte limit",
+        ));
+    }
+    Ok(bytes)
+}
+
 fn read_optional(fs: &dyn SaveFilesystem, path: &Path) -> Result<Option<Vec<u8>>, GameError> {
-    match fs.read(path) {
-        Ok(bytes) => Ok(Some(bytes)),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+    match read_bounded_slot_json(fs, path) {
+        Ok(Some((_, bytes))) => Ok(Some(bytes)),
+        Ok(None) => Ok(None),
         Err(_) => Err(GameError::save_read_failed()),
     }
 }
@@ -1231,6 +1288,7 @@ mod tests {
     struct FakeFile {
         bytes: Vec<u8>,
         modified_at: SystemTime,
+        reported_byte_length: Option<u64>,
     }
 
     struct FakeStagedRecord {
@@ -1262,11 +1320,24 @@ mod tests {
         }
 
         fn put_file(&self, path: PathBuf, bytes: Vec<u8>, modified_at: SystemTime) {
+            self.state.lock().unwrap().files.insert(
+                path,
+                FakeFile {
+                    bytes,
+                    modified_at,
+                    reported_byte_length: None,
+                },
+            );
+        }
+
+        fn report_byte_length(&self, path: &Path, byte_length: u64) {
             self.state
                 .lock()
                 .unwrap()
                 .files
-                .insert(path, FakeFile { bytes, modified_at });
+                .get_mut(path)
+                .expect("fake file exists")
+                .reported_byte_length = Some(byte_length);
         }
 
         fn set_fault(&self, fault: Fault) {
@@ -1396,7 +1467,7 @@ mod tests {
                 .get(path)
                 .map(|file| SaveFileMetadata {
                     modified_at: file.modified_at,
-                    byte_length: file.bytes.len() as u64,
+                    byte_length: file.reported_byte_length.unwrap_or(file.bytes.len() as u64),
                 })
                 .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
         }
@@ -1488,6 +1559,7 @@ mod tests {
                 FakeFile {
                     bytes: staged.bytes,
                     modified_at,
+                    reported_byte_length: None,
                 },
             );
             finish_event(&state, install_event)
@@ -3010,5 +3082,214 @@ mod tests {
             );
         }
         assert_eq!(targets, vec![1, 2, 3, 4, 5, 1]);
+    }
+
+    fn oversized_slot_bytes() -> Vec<u8> {
+        vec![b' '; 1024 * 1024 + 2]
+    }
+
+    #[test]
+    fn discovery_bounds_slot_json_even_when_metadata_lies_small() {
+        let (_resources, context, _template) = discovery_fixture();
+        let fs = FakeFilesystem::new();
+        let path = slot_path(SaveSlotRef::Auto { slot: 1 });
+        fs.put_file(
+            path.clone(),
+            oversized_slot_bytes(),
+            UNIX_EPOCH + Duration::from_secs(70),
+        );
+        fs.report_byte_length(&path, 1);
+
+        let view = discover_saves(&fs, &root(), &context);
+
+        assert!(matches!(
+            view.slots[0].status,
+            SaveSlotStatusView::Invalid { ref diagnostic, .. }
+                if diagnostic.code == "saveReadFailed"
+        ));
+        assert_eq!(
+            fs.reads()
+                .into_iter()
+                .filter(|(read_path, _)| read_path == &path)
+                .collect::<Vec<_>>(),
+            vec![(path, Some(1_048_577))]
+        );
+    }
+
+    #[test]
+    fn oversized_discovery_retains_authoritative_mtime_for_continue_ordering() {
+        let (_resources, context, mut template) = discovery_fixture();
+        let fs = FakeFilesystem::new();
+        let oversized_path = slot_path(SaveSlotRef::Auto { slot: 1 });
+        let newest = UNIX_EPOCH + Duration::from_secs(90);
+        fs.put_file(oversized_path, oversized_slot_bytes(), newest);
+
+        template.save_id = NEW_SAVE_ID.into();
+        template.save_type = SaveType::Auto;
+        template.slot = 2;
+        template.content_revision =
+            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".into();
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 2 }),
+            serde_json::to_vec(&template).unwrap(),
+            UNIX_EPOCH + Duration::from_secs(89),
+        );
+
+        let view = discover_saves(&fs, &root(), &context);
+
+        assert_eq!(view.slots[0].observed_modified_at, Some(newest));
+        assert!(view.slots[0].modified_at.is_some());
+        assert_eq!(
+            select_continue_candidate(&view.slots),
+            Some(SaveSlotRef::Auto { slot: 1 })
+        );
+    }
+
+    #[test]
+    fn lazy_thumbnail_bounds_its_slot_envelope_before_parsing() {
+        let fs = FakeFilesystem::new();
+        let reference = SaveSlotRef::Manual { slot: 1 };
+        let path = slot_path(reference);
+        fs.put_file(
+            path.clone(),
+            oversized_slot_bytes(),
+            UNIX_EPOCH + Duration::from_secs(71),
+        );
+        fs.report_byte_length(&path, 1);
+
+        assert_eq!(
+            read_save_thumbnail(&fs, &root(), reference, OLD_SAVE_ID)
+                .unwrap_err()
+                .code,
+            "thumbnailCorrupt"
+        );
+        assert_eq!(
+            fs.reads()
+                .into_iter()
+                .filter(|(read_path, _)| read_path == &path)
+                .collect::<Vec<_>>(),
+            vec![(path, Some(1_048_577))]
+        );
+    }
+
+    #[test]
+    fn cleanup_aborts_without_deleting_when_a_slot_exceeds_the_json_bound() {
+        let fs = FakeFilesystem::new();
+        let slot = slot_path(SaveSlotRef::Auto { slot: 1 });
+        fs.put_file(
+            slot.clone(),
+            oversized_slot_bytes(),
+            UNIX_EPOCH + Duration::from_secs(72),
+        );
+        fs.report_byte_length(&slot, 1);
+        let orphan = sidecar_path(OTHER_SAVE_ID);
+        fs.put_file(
+            orphan.clone(),
+            png(1, 1),
+            UNIX_EPOCH + Duration::from_secs(1),
+        );
+
+        assert_eq!(
+            clean_orphaned_save_files(&fs, &root()).unwrap_err().code,
+            "saveReadFailed"
+        );
+        assert!(fs.exists(&orphan));
+        assert_eq!(
+            fs.reads()
+                .into_iter()
+                .filter(|(read_path, _)| read_path == &slot)
+                .collect::<Vec<_>>(),
+            vec![(slot, Some(1_048_577))]
+        );
+    }
+
+    #[test]
+    fn invalid_metadata_exposes_only_authoritatively_valid_timestamp_and_summary_fields() {
+        type Mutation = Box<dyn Fn(&mut SaveEnvelopeV1)>;
+        let (_resources, context, template) = discovery_fixture();
+        let cases: Vec<(&str, Mutation, bool, bool)> = vec![
+            (
+                "non-UTC timestamp",
+                Box::new(|save| save.saved_at = "2026-07-26T05:34:56-07:00".into()),
+                false,
+                true,
+            ),
+            (
+                "wrong packaged scene title",
+                Box::new(|save| save.summary.scene_title = "Structurally readable lie".into()),
+                true,
+                false,
+            ),
+            (
+                "objective ID and label disagree with snapshot",
+                Box::new(|save| {
+                    save.summary.active_primary_objective_id = Some("objective_truth".into());
+                    save.summary.active_primary_objective_label = Some("Find the truth".into());
+                }),
+                true,
+                false,
+            ),
+        ];
+
+        for (label, mutate, expose_timestamp, expose_summary) in cases {
+            let fs = FakeFilesystem::new();
+            let mut envelope = template.clone();
+            mutate(&mut envelope);
+            fs.put_file(
+                slot_path(SaveSlotRef::Auto { slot: 1 }),
+                serde_json::to_vec(&envelope).unwrap(),
+                UNIX_EPOCH + Duration::from_secs(80),
+            );
+
+            let view = discover_saves(&fs, &root(), &context);
+            let SaveSlotStatusView::Invalid {
+                metadata: Some(metadata),
+                ..
+            } = &view.slots[0].status
+            else {
+                panic!("{label}: expected readable invalid metadata");
+            };
+            assert_eq!(metadata.saved_at.is_some(), expose_timestamp, "{label}");
+            assert_eq!(metadata.summary.is_some(), expose_summary, "{label}");
+        }
+    }
+
+    #[test]
+    fn continue_does_not_use_structurally_parseable_but_non_utc_saved_at() {
+        let (_resources, context, template) = discovery_fixture();
+        let fs = FakeFilesystem::new();
+        let tied_mtime = UNIX_EPOCH + Duration::from_secs(81);
+
+        let mut non_utc = template.clone();
+        non_utc.save_type = SaveType::Auto;
+        non_utc.slot = 1;
+        non_utc.saved_at = "2099-01-01T01:00:00+01:00".into();
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 1 }),
+            serde_json::to_vec(&non_utc).unwrap(),
+            tied_mtime,
+        );
+
+        let mut authoritative = template;
+        authoritative.save_id = NEW_SAVE_ID.into();
+        authoritative.save_type = SaveType::Auto;
+        authoritative.slot = 2;
+        authoritative.saved_at = "2020-01-01T00:00:00Z".into();
+        authoritative.content_revision =
+            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".into();
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 2 }),
+            serde_json::to_vec(&authoritative).unwrap(),
+            tied_mtime,
+        );
+
+        let view = discover_saves(&fs, &root(), &context);
+
+        assert!(view.slots[0].observed_saved_at.is_none());
+        assert!(view.slots[1].observed_saved_at.is_some());
+        assert_eq!(
+            select_continue_candidate(&view.slots),
+            Some(SaveSlotRef::Auto { slot: 2 })
+        );
     }
 }
