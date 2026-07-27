@@ -143,3 +143,52 @@ rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --
 rtk git diff --check
   clean
 ```
+
+## Fix round 2
+
+Addressed the Task 6 mutation-semantics regression from the bounded-read
+hardening. The deferred minor typed-slot versus observed-ID diagnostic
+precedence remains unchanged.
+
+### Reviewer finding resolution
+
+- Replaced the mutation path's bytes-or-error view with an explicit bounded
+  slot observation: missing, readable with authoritative metadata and bounded
+  bytes, or oversized with authoritative metadata and no bytes.
+- Manual overwrite and delete treat an oversized body as occupied and
+  unparseable. An ID-less observation may match only by the exact authoritative
+  filesystem mtime; a canonical-ID expectation cannot match an oversized body.
+- Autosave replacement can overwrite an oversized invalid occupied slot
+  without parsing it. Sidecar cleanup is intentionally skipped because no
+  bounded readable envelope can authorize a sidecar path.
+- Discovery, lazy thumbnails, and cleanup retain their round-one behavior:
+  oversized slot JSON remains a read failure on those paths.
+- Lying-small metadata still produces only the exact
+  `MAX_SAVE_JSON_BYTES + 1` prefix read. No mutation path performs an unbounded
+  slot read.
+
+### RED / GREEN record
+
+| Cycle | RED evidence | GREEN evidence |
+| --- | --- | --- |
+| Oversized corrupt overwrite | The matching-mtime case failed at its success assertion because `read_optional` returned `saveReadFailed` before manual expectation matching. | Exact mtime overwrites successfully; a changed mtime returns `staleManualOverwriteConfirmation`; both cases use only `1_048_577`-byte prefix reads. |
+| Oversized corrupt delete | The matching-mtime case failed at its success assertion because the same early `saveReadFailed` prevented deletion. | Exact mtime deletes the slot; a changed mtime returns `staleSaveSelection` and preserves it; both cases perform one exact `1_048_577`-byte prefix read and no full read. |
+
+### Fresh verification after fixes
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::storage
+  46 passed
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  383 passed across 6 suites
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml --all --check
+  clean
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+  no issues
+
+rtk git diff --check
+  clean
+```
