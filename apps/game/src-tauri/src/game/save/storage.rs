@@ -431,6 +431,29 @@ pub(crate) fn read_save_thumbnail(
     Ok(bytes)
 }
 
+pub(crate) fn read_save_envelope(
+    fs: &dyn SaveFilesystem,
+    root: &Path,
+    reference: SaveSlotRef,
+    observed_save_id: &str,
+) -> Result<SaveEnvelopeV1, GameError> {
+    canonical_uuid_v4(observed_save_id).map_err(|_| GameError::stale_save_selection())?;
+    let path = slot_path(root, reference)?;
+    let bytes = match read_bounded_slot_json(fs, &path) {
+        Ok(Some((_, bytes))) => bytes,
+        Ok(None) => return Err(GameError::stale_save_selection()),
+        Err(_) => return Err(GameError::save_read_failed()),
+    };
+    let envelope = parse_current_envelope(&bytes)?;
+    if envelope.save_id != observed_save_id {
+        return Err(GameError::stale_save_selection());
+    }
+    if !slot_agrees_with_envelope(reference, &envelope) {
+        return Err(GameError::save_slot_mismatch());
+    }
+    Ok(envelope)
+}
+
 /// The caller owns the persistence writer turn for the full duration of this
 /// rescan and cleanup. Task 8 supplies that serialization boundary.
 pub(crate) fn clean_orphaned_save_files(

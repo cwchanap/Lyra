@@ -18,17 +18,20 @@ use game::save::coordinator::{
     PreparedThumbnailPurpose, SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose,
     ThumbnailCaptureRequestView,
 };
-use game::save::restore::load_current_definitions;
+use game::save::restore::{
+    build_restore_candidate, load_current_definitions, RestoredGameCandidate,
+};
 use game::save::schema::{
     suggested_display_name, validate_manual_display_name, SaveBrowserView, SaveDiagnosticView,
     SaveDiscoveryStatusView, SaveEnvelopeV1, SaveSlotRef, SaveSlotStatusView, SaveSlotView,
     SaveType, ThumbnailDescriptorV1, SAVE_SCHEMA_VERSION,
 };
 use game::save::storage::{
-    clean_orphaned_save_files, commit_prepared_slot_write, discover_saves, ensure_save_layout,
-    prepare_slot_write, resolve_save_root, select_continue_candidate, ManualSlotExpectation,
-    OccupiedSlotExpectation, ProductionSaveFilesystem, SaveDiscoveryContext, SaveFilesystem,
-    SlotWriteRequest, ThumbnailWrite, PRODUCTION_APP_IDENTIFIER,
+    clean_orphaned_save_files, commit_prepared_slot_write, delete_slot, discover_saves,
+    ensure_save_layout, prepare_slot_write, read_save_envelope, resolve_save_root,
+    select_continue_candidate, ManualSlotExpectation, OccupiedSlotExpectation,
+    ProductionSaveFilesystem, SaveDiscoveryContext, SaveFilesystem, SlotWriteRequest,
+    ThumbnailWrite, PRODUCTION_APP_IDENTIFIER,
 };
 use game::{GameEngine, GameError, GameStateView, QueueToken, SceneNavigationIndex};
 use serde::Serialize;
@@ -48,7 +51,7 @@ pub(crate) struct ManualSaveResultView {
     pub(crate) thumbnail_activity: ThumbnailActivityView,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)] // Part B fills the save-browser commands.
 pub(crate) struct SaveBrowserOpenResultView {
@@ -57,7 +60,7 @@ pub(crate) struct SaveBrowserOpenResultView {
     pub(crate) preflight: SaveBrowserPreflightView,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(
     tag = "type",
     rename_all = "camelCase",
@@ -98,11 +101,33 @@ pub(crate) struct ApplicationPersistence {
     root: PathBuf,
     discovery: SaveDiscoveryContext,
     last_saved_at: Mutex<Option<DateTime<Utc>>>,
+    availability_error: Mutex<Option<GameError>>,
 }
 
 impl ApplicationPersistence {
     fn discover(&self) -> SaveBrowserView {
-        discover_saves(self.fs.as_ref(), &self.root, &self.discovery)
+        if let Err(error) = ensure_save_layout(self.fs.as_ref(), &self.root) {
+            if let Ok(mut availability) = self.availability_error.lock() {
+                *availability = Some(error);
+            }
+            return unavailable_save_browser();
+        }
+        let browser = discover_saves(self.fs.as_ref(), &self.root, &self.discovery);
+        if let Ok(mut availability) = self.availability_error.lock() {
+            *availability = match &browser.discovery {
+                SaveDiscoveryStatusView::Available => None,
+                SaveDiscoveryStatusView::Loading => Some(GameError::save_discovery_unavailable()),
+                SaveDiscoveryStatusView::Unavailable { diagnostic } => Some(diagnostic.clone()),
+            };
+        }
+        browser
+    }
+
+    fn availability_error(&self) -> Option<GameError> {
+        self.availability_error
+            .lock()
+            .ok()
+            .and_then(|error| error.clone())
     }
 
     fn next_saved_at(&self) -> Result<String, GameError> {
@@ -259,19 +284,7 @@ fn build_app_state_with_storage(
     let definitions = Arc::new(load_current_definitions(&resources_dir)?);
     let session = Arc::new(Mutex::new(AppSession::empty()));
     let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
-    let coordinator = SaveCoordinator::new();
-    if let Err(error) = ensure_save_layout(fs.as_ref(), &save_root) {
-        coordinator
-            .publish_persistence_health(PersistenceHealthView::Degraded { diagnostic: error });
-        return Ok(AppState {
-            session,
-            replacement_gate,
-            coordinator,
-            resources_dir,
-            save_root,
-            persistence: None,
-        });
-    }
+    let initial_error = ensure_save_layout(fs.as_ref(), &save_root).err();
     let persistence = Arc::new(ApplicationPersistence {
         session: Arc::clone(&session),
         replacement_gate: Arc::clone(&replacement_gate),
@@ -282,8 +295,12 @@ fn build_app_state_with_storage(
             definitions,
         },
         last_saved_at: Mutex::new(None),
+        availability_error: Mutex::new(initial_error.clone()),
     });
     let coordinator = SaveCoordinator::with_backend(persistence.clone());
+    if let Some(diagnostic) = initial_error {
+        coordinator.publish_persistence_health(PersistenceHealthView::Degraded { diagnostic });
+    }
     Ok(AppState {
         session,
         replacement_gate,
@@ -433,12 +450,50 @@ async fn start_game_core(
     install_session_candidate(state, Ok((engine, None))).await
 }
 
+async fn start_game_with_persistence_core(
+    state: &AppState,
+) -> Result<GameplayCommandResultView, GameError> {
+    let persistence = state
+        .persistence
+        .as_ref()
+        .ok_or_else(GameError::save_discovery_unavailable)?;
+    let _ = persistence.discover();
+    if let Some(error) = persistence.availability_error() {
+        return Err(state.coordinator.challenge_current_discovery_failure(
+            state,
+            PersistenceBypassOperation::StartWithoutSaving,
+            error,
+        )?);
+    }
+    let engine = GameEngine::new_started(state.resources_dir.clone())?;
+    start_game_core(state, engine).await
+}
+
+async fn start_game_without_saving_core(
+    state: &AppState,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<GameplayCommandResultView, GameError> {
+    let engine = GameEngine::new_started(state.resources_dir.clone())?;
+    let expected = state.coordinator.consume_current_discovery_failure(
+        state,
+        &failure_token,
+        PersistenceBypassOperation::StartWithoutSaving,
+    )?;
+    let state_view = state
+        .coordinator
+        .install_session_if_current(state, engine, None, expected)
+        .await?;
+    Ok(finish_coordinator_mutation(
+        state_view,
+        MutationPersistencePolicy::CoordinatorManaged,
+    ))
+}
+
 #[tauri::command]
 async fn start_game(
     state: tauri::State<'_, AppState>,
 ) -> Result<GameplayCommandResultView, GameError> {
-    let engine = GameEngine::new_started(state.resources_dir.clone())?;
-    start_game_core(&state, engine).await
+    start_game_with_persistence_core(&state).await
 }
 
 #[tauri::command]
@@ -522,11 +577,11 @@ async fn list_saves(
 }
 
 #[tauri::command]
-fn start_game_without_saving(
+async fn start_game_without_saving(
+    state: tauri::State<'_, AppState>,
     failure_token: PersistenceFailureTokenView,
 ) -> Result<GameplayCommandResultView, GameError> {
-    let _ = failure_token;
-    Err(unavailable_error())
+    start_game_without_saving_core(&state, failure_token).await
 }
 
 #[tauri::command]
@@ -721,50 +776,300 @@ fn unavailable_save_browser() -> SaveBrowserView {
     }
 }
 
-#[tauri::command]
-fn load_save(
+fn build_selected_candidate(
+    state: &AppState,
+    reference: SaveSlotRef,
+    observed_save_id: &str,
+) -> Result<RestoredGameCandidate, GameError> {
+    let persistence = state
+        .persistence
+        .as_ref()
+        .ok_or_else(GameError::save_discovery_unavailable)?;
+    let envelope = read_save_envelope(
+        persistence.fs.as_ref(),
+        &persistence.root,
+        reference,
+        observed_save_id,
+    )?;
+    let candidate = build_restore_candidate(
+        persistence.discovery.resources_dir.clone(),
+        &persistence.discovery.definitions,
+        envelope,
+    )?;
+    if candidate.source != reference || candidate.save_id != observed_save_id {
+        return Err(GameError::stale_save_selection());
+    }
+    Ok(candidate)
+}
+
+fn fresh_ready_browser(state: &AppState) -> Result<SaveBrowserOpenResultView, GameError> {
+    let browser = state
+        .persistence
+        .as_ref()
+        .map(|persistence| persistence.discover())
+        .unwrap_or_else(unavailable_save_browser);
+    state.coordinator.complete_discovery_attempt()?;
+    Ok(SaveBrowserOpenResultView {
+        continue_candidate: select_continue_candidate(&browser.slots),
+        browser,
+        preflight: SaveBrowserPreflightView::Ready,
+    })
+}
+
+async fn load_save_core(
+    state: &AppState,
     reference: SaveSlotRef,
     observed_save_id: String,
 ) -> Result<GameplayCommandResultView, GameError> {
-    let _ = (reference, observed_save_id);
-    Err(unavailable_error())
+    let has_active_session = state
+        .session
+        .lock()
+        .map_err(|_| unavailable_error())?
+        .engine
+        .is_some();
+    if has_active_session {
+        if let Err(error) = state
+            .coordinator
+            .flush_session(state, FlushOperation::InGameLoad)
+            .await
+        {
+            return Err(state.coordinator.challenge_current_discovery_failure(
+                state,
+                PersistenceBypassOperation::LoadDiscardingCurrent,
+                error,
+            )?);
+        }
+    }
+    let expected = state.coordinator.transition_identity(state)?;
+    let candidate = build_selected_candidate(state, reference, &observed_save_id)?;
+    let state_view = state
+        .coordinator
+        .install_session_if_current(state, candidate.engine, Some(candidate.source), expected)
+        .await?;
+    Ok(finish_coordinator_mutation(
+        state_view,
+        MutationPersistencePolicy::CoordinatorManaged,
+    ))
 }
 
 #[tauri::command]
-fn load_save_discarding_current(
+async fn load_save(
+    state: tauri::State<'_, AppState>,
+    reference: SaveSlotRef,
+    observed_save_id: String,
+) -> Result<GameplayCommandResultView, GameError> {
+    load_save_core(&state, reference, observed_save_id).await
+}
+
+async fn load_save_discarding_current_core(
+    state: &AppState,
     reference: SaveSlotRef,
     observed_save_id: String,
     failure_token: PersistenceFailureTokenView,
 ) -> Result<GameplayCommandResultView, GameError> {
-    let _ = (reference, observed_save_id, failure_token);
-    Err(unavailable_error())
+    let expected = state.coordinator.consume_current_discovery_failure(
+        state,
+        &failure_token,
+        PersistenceBypassOperation::LoadDiscardingCurrent,
+    )?;
+    let candidate = build_selected_candidate(state, reference, &observed_save_id)?;
+    let state_view = state
+        .coordinator
+        .install_session_if_current(state, candidate.engine, Some(candidate.source), expected)
+        .await?;
+    Ok(finish_coordinator_mutation(
+        state_view,
+        MutationPersistencePolicy::CoordinatorManaged,
+    ))
 }
 
 #[tauri::command]
-fn continue_game() -> Result<GameplayCommandResultView, GameError> {
-    Err(unavailable_error())
+async fn load_save_discarding_current(
+    state: tauri::State<'_, AppState>,
+    reference: SaveSlotRef,
+    observed_save_id: String,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<GameplayCommandResultView, GameError> {
+    load_save_discarding_current_core(&state, reference, observed_save_id, failure_token).await
+}
+
+async fn continue_game_core(state: &AppState) -> Result<GameplayCommandResultView, GameError> {
+    let has_active_session = state
+        .session
+        .lock()
+        .map_err(|_| unavailable_error())?
+        .engine
+        .is_some();
+    if has_active_session {
+        if let Err(error) = state
+            .coordinator
+            .flush_session(state, FlushOperation::InGameLoad)
+            .await
+        {
+            return Err(state.coordinator.challenge_current_discovery_failure(
+                state,
+                PersistenceBypassOperation::LoadDiscardingCurrent,
+                error,
+            )?);
+        }
+    }
+    let expected = state.coordinator.transition_identity(state)?;
+    let persistence = state
+        .persistence
+        .as_ref()
+        .ok_or_else(GameError::save_discovery_unavailable)?;
+    let browser = persistence.discover();
+    state.coordinator.complete_discovery_attempt()?;
+    if let SaveDiscoveryStatusView::Unavailable { diagnostic } = browser.discovery {
+        return Err(diagnostic);
+    }
+    let reference =
+        select_continue_candidate(&browser.slots).ok_or_else(GameError::stale_save_selection)?;
+    let selected = browser
+        .slots
+        .iter()
+        .find(|slot| slot.reference == reference)
+        .ok_or_else(GameError::stale_save_selection)?;
+    let observed_save_id = match &selected.status {
+        SaveSlotStatusView::Valid { metadata } => metadata.save_id.clone(),
+        SaveSlotStatusView::Invalid { diagnostic, .. } => return Err(diagnostic.clone()),
+        SaveSlotStatusView::Empty => return Err(GameError::stale_save_selection()),
+    };
+    let candidate = build_selected_candidate(state, reference, &observed_save_id)?;
+    let state_view = state
+        .coordinator
+        .install_session_if_current(state, candidate.engine, Some(candidate.source), expected)
+        .await?;
+    Ok(finish_coordinator_mutation(
+        state_view,
+        MutationPersistencePolicy::CoordinatorManaged,
+    ))
 }
 
 #[tauri::command]
-fn delete_save(
+async fn continue_game(
+    state: tauri::State<'_, AppState>,
+) -> Result<GameplayCommandResultView, GameError> {
+    continue_game_core(&state).await
+}
+
+async fn delete_save_core(
+    state: &AppState,
     reference: SaveSlotRef,
     expectation: OccupiedSlotExpectation,
 ) -> Result<SaveBrowserOpenResultView, GameError> {
-    let _ = (reference, expectation);
-    Err(unavailable_error())
+    let persistence = state
+        .persistence
+        .as_ref()
+        .cloned()
+        .ok_or_else(GameError::save_discovery_unavailable)?;
+    let fs = Arc::clone(&persistence.fs);
+    let root = persistence.root.clone();
+    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+    state
+        .coordinator
+        .publish_persistence_health(PersistenceHealthView::Pending);
+    if let Err(error) = state
+        .coordinator
+        .reserve_delete_writer(Box::pin(async move {
+            let result = delete_slot(fs.as_ref(), &root, reference, expectation);
+            let _ = result_tx.send(result);
+        }))
+    {
+        state
+            .coordinator
+            .publish_persistence_health(PersistenceHealthView::Degraded {
+                diagnostic: error.clone(),
+            });
+        return Err(error);
+    }
+    let outcome = match result_rx.await {
+        Ok(Ok(outcome)) => outcome,
+        Ok(Err(error)) => {
+            state
+                .coordinator
+                .publish_persistence_health(PersistenceHealthView::Degraded {
+                    diagnostic: error.clone(),
+                });
+            return Err(error);
+        }
+        Err(_) => {
+            let error = GameError::save_write_failed();
+            state
+                .coordinator
+                .publish_persistence_health(PersistenceHealthView::Degraded {
+                    diagnostic: error.clone(),
+                });
+            return Err(error);
+        }
+    };
+    state.coordinator.publish_persistence_health(
+        outcome
+            .cleanup_diagnostic
+            .map(|diagnostic| PersistenceHealthView::Degraded { diagnostic })
+            .unwrap_or(PersistenceHealthView::Healthy),
+    );
+    fresh_ready_browser(state)
 }
 
 #[tauri::command]
-fn return_to_title() -> Result<SaveBrowserOpenResultView, GameError> {
-    Err(unavailable_error())
+async fn delete_save(
+    state: tauri::State<'_, AppState>,
+    reference: SaveSlotRef,
+    expectation: OccupiedSlotExpectation,
+) -> Result<SaveBrowserOpenResultView, GameError> {
+    delete_save_core(&state, reference, expectation).await
+}
+
+async fn return_to_title_core(state: &AppState) -> Result<SaveBrowserOpenResultView, GameError> {
+    if let Err(error) = state
+        .coordinator
+        .flush_session(state, FlushOperation::ReturnToTitle)
+        .await
+    {
+        return Err(state.coordinator.challenge_current_session_error(
+            state,
+            PersistenceBypassOperation::ReturnWithoutSaving,
+            error,
+        )?);
+    }
+    let expected = state.coordinator.transition_identity(state)?;
+    state
+        .coordinator
+        .clear_session_if_current(state, expected)
+        .await?;
+    fresh_ready_browser(state)
 }
 
 #[tauri::command]
-fn return_to_title_without_saving(
+async fn return_to_title(
+    state: tauri::State<'_, AppState>,
+) -> Result<SaveBrowserOpenResultView, GameError> {
+    return_to_title_core(&state).await
+}
+
+async fn return_to_title_without_saving_core(
+    state: &AppState,
     failure_token: PersistenceFailureTokenView,
 ) -> Result<SaveBrowserOpenResultView, GameError> {
-    let _ = failure_token;
-    Err(unavailable_error())
+    let expected = state.coordinator.consume_current_session_failure(
+        state,
+        &failure_token,
+        PersistenceBypassOperation::ReturnWithoutSaving,
+    )?;
+    state
+        .coordinator
+        .clear_session_if_current(state, expected)
+        .await?;
+    fresh_ready_browser(state)
+}
+
+#[tauri::command]
+async fn return_to_title_without_saving(
+    state: tauri::State<'_, AppState>,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<SaveBrowserOpenResultView, GameError> {
+    return_to_title_without_saving_core(&state, failure_token).await
 }
 
 #[tauri::command]
@@ -1262,7 +1567,9 @@ mod tests {
                 failed.coordinator.persistence_health(),
                 PersistenceHealthView::Degraded { .. }
             ));
-            assert!(failed.persistence.is_none());
+            let failed_persistence = failed.persistence.as_ref().unwrap();
+            assert!(Arc::ptr_eq(&failed.session, &failed_persistence.session));
+            assert!(failed_persistence.availability_error().is_some());
         }
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1352,6 +1659,540 @@ mod tests {
             let session = app.session.lock().unwrap();
             assert_eq!(session.durable_revision(), Some(revision));
             assert_eq!(session.persistence.autosave_target, Some(slot));
+        }
+
+        #[tokio::test]
+        async fn transition_contract_load_flushes_before_rereading_an_adopted_source_slot() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            advance_fixture_dialogue(&app);
+            let first = app
+                .coordinator
+                .flush_session(&app, FlushOperation::InGameLoad)
+                .await
+                .unwrap();
+            let FlushOutcome::Written { slot, .. } = first else {
+                panic!("first revision must establish the autosave source");
+            };
+            let observed_save_id = valid_save_id(
+                app.persistence
+                    .as_ref()
+                    .unwrap()
+                    .discover()
+                    .slots
+                    .iter()
+                    .find(|candidate| candidate.reference == slot)
+                    .unwrap(),
+            );
+            advance_fixture_dialogue(&app);
+            let before = session_observation(&app);
+
+            let error = load_save_core(&app, slot, observed_save_id.clone())
+                .await
+                .unwrap_err();
+
+            assert_eq!(error.code, "staleSaveSelection");
+            assert_eq!(session_observation(&app), before);
+            assert_ne!(
+                valid_save_id(
+                    app.persistence
+                        .as_ref()
+                        .unwrap()
+                        .discover()
+                        .slots
+                        .iter()
+                        .find(|candidate| candidate.reference == slot)
+                        .unwrap(),
+                ),
+                observed_save_id
+            );
+        }
+
+        #[tokio::test]
+        async fn transition_contract_load_build_failure_keeps_public_view_and_generation_unchanged()
+        {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            let ticket = app
+                .coordinator
+                .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
+                .unwrap();
+            app.coordinator
+                .report_thumbnail_failure(&ticket.ticket)
+                .unwrap();
+            let saved = save_manual_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                "Build failure".into(),
+                ManualSlotExpectation::Empty,
+                ticket.ticket,
+            )
+            .await
+            .unwrap();
+            let observed_save_id = valid_save_id(&saved.saved_slot);
+            let path = temporary.path().join("saves/manual-1.json");
+            let mut envelope: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            envelope["contentRevision"] = "incompatible-test-revision".into();
+            std::fs::write(&path, serde_json::to_vec(&envelope).unwrap()).unwrap();
+            let before = session_observation(&app);
+
+            let error = load_save_core(&app, SaveSlotRef::Manual { slot: 1 }, observed_save_id)
+                .await
+                .unwrap_err();
+
+            assert_eq!(error.code, "incompatibleContentRevision");
+            assert_eq!(session_observation(&app), before);
+        }
+
+        #[tokio::test]
+        async fn transition_contract_load_discard_consumes_exact_token_and_skips_flush() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            let saved = seed_manual(&app, 1, "Discard source").await;
+            let observed_save_id = valid_save_id(&saved.saved_slot);
+            advance_fixture_dialogue(&app);
+            let discovery_generation = app.coordinator.complete_discovery_attempt().unwrap();
+            let (_, wrong_token) = app
+                .coordinator
+                .challenge_current_session_failure(
+                    &app,
+                    PersistenceBypassOperation::LoadDiscardingCurrent,
+                    Some(discovery_generation),
+                    GameError::save_write_failed(),
+                )
+                .unwrap();
+
+            let wrong = load_save_discarding_current_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                uuid::Uuid::new_v4().hyphenated().to_string(),
+                wrong_token.clone(),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(wrong.code, "staleSaveSelection");
+            let replay = load_save_discarding_current_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                observed_save_id.clone(),
+                wrong_token,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(replay.code, "stalePersistenceFailureToken");
+
+            let (_, token) = app
+                .coordinator
+                .challenge_current_session_failure(
+                    &app,
+                    PersistenceBypassOperation::LoadDiscardingCurrent,
+                    Some(discovery_generation),
+                    GameError::save_write_failed(),
+                )
+                .unwrap();
+            let loaded = load_save_discarding_current_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                observed_save_id,
+                token,
+            )
+            .await
+            .unwrap();
+            assert!(loaded.thumbnail_capture.is_none());
+            assert_eq!(app.session.lock().unwrap().durable_revision(), Some(0));
+            assert!(app
+                .persistence
+                .as_ref()
+                .unwrap()
+                .discover()
+                .slots
+                .iter()
+                .filter(|slot| matches!(slot.reference, SaveSlotRef::Auto { .. }))
+                .all(|slot| matches!(slot.status, SaveSlotStatusView::Empty)));
+        }
+
+        #[tokio::test]
+        async fn transition_contract_continue_uses_fresh_newest_and_never_falls_back_from_invalid()
+        {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            seed_manual(&app, 1, "Older valid").await;
+            app.coordinator.clear_session(&app).await.unwrap();
+            std::fs::write(
+                temporary.path().join("saves/manual-2.json"),
+                b"{ newest but malformed",
+            )
+            .unwrap();
+            let before = app.coordinator.transition_identity(&app).unwrap();
+
+            let error = continue_game_core(&app).await.unwrap_err();
+
+            assert_eq!(error.code, "malformedSaveJson");
+            assert_eq!(app.coordinator.transition_identity(&app).unwrap(), before);
+        }
+
+        #[tokio::test]
+        async fn transition_contract_return_flushes_or_requires_exact_bypass_token() {
+            let app = mutation_app();
+            run_gameplay_mutation(
+                &app,
+                MutationPersistencePolicy::AdvanceWithoutSaving,
+                |engine| engine.enter_sublocation("room"),
+            )
+            .unwrap();
+
+            let error = return_to_title_core(&app).await.unwrap_err();
+            assert_eq!(error.code, "saveWriteFailed");
+            let token = PersistenceFailureTokenView::from_error(&error).unwrap();
+            let browser = return_to_title_without_saving_core(&app, token.clone())
+                .await
+                .unwrap();
+            assert!(matches!(browser.preflight, SaveBrowserPreflightView::Ready));
+            assert!(app.session.lock().unwrap().engine.is_none());
+            assert_eq!(
+                return_to_title_without_saving_core(&app, token)
+                    .await
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[tokio::test]
+        async fn transition_contract_start_without_saving_can_persist_after_storage_recovers() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let failing = Arc::new(AtomicBool::new(true));
+            let app = build_app_state_with_storage(
+                resources,
+                temporary.path().join("saves"),
+                Arc::new(RecoveringFilesystem {
+                    inner: ProductionSaveFilesystem,
+                    failing: failing.clone(),
+                }),
+            )
+            .unwrap();
+
+            let error = start_game_with_persistence_core(&app).await.unwrap_err();
+            let token = PersistenceFailureTokenView::from_error(&error).unwrap();
+            let started = start_game_without_saving_core(&app, token).await.unwrap();
+            assert!(started.thumbnail_capture.is_none());
+            advance_fixture_dialogue(&app);
+            failing.store(false, Ordering::SeqCst);
+            app.coordinator
+                .flush_session(&app, FlushOperation::ManualSave)
+                .await
+                .unwrap();
+
+            assert!(app
+                .persistence
+                .as_ref()
+                .unwrap()
+                .discover()
+                .slots
+                .iter()
+                .any(|slot| matches!(slot.status, SaveSlotStatusView::Valid { .. })));
+        }
+
+        #[tokio::test]
+        async fn transition_contract_delete_uses_exact_observation_and_returns_fresh_browser() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            let saved = seed_manual(&app, 1, "Delete me").await;
+            let save_id = valid_save_id(&saved.saved_slot);
+
+            let result = delete_save_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                OccupiedSlotExpectation {
+                    save_id: Some(save_id),
+                    modified_at: None,
+                },
+            )
+            .await
+            .unwrap();
+
+            assert!(matches!(result.preflight, SaveBrowserPreflightView::Ready));
+            assert!(result.continue_candidate.is_none());
+            assert!(matches!(
+                result
+                    .browser
+                    .slots
+                    .iter()
+                    .find(|slot| slot.reference == SaveSlotRef::Manual { slot: 1 })
+                    .unwrap()
+                    .status,
+                SaveSlotStatusView::Empty
+            ));
+        }
+
+        #[tokio::test]
+        async fn transition_fault_matrix_rejects_install_after_live_revision_drift() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources.clone()).unwrap())
+                .await
+                .unwrap();
+            let expected = app.coordinator.transition_identity(&app).unwrap();
+            advance_fixture_dialogue(&app);
+            let after_drift = session_observation(&app);
+
+            let error = app
+                .coordinator
+                .install_session_if_current(
+                    &app,
+                    GameEngine::new_started(resources).unwrap(),
+                    None,
+                    expected,
+                )
+                .await
+                .unwrap_err();
+
+            assert_eq!(error.code, "staleSaveSelection");
+            assert_eq!(session_observation(&app), after_drift);
+        }
+
+        #[tokio::test]
+        async fn transition_fault_matrix_normal_load_flush_failure_issues_exact_discard_challenge()
+        {
+            let app = mutation_app();
+            run_gameplay_mutation(
+                &app,
+                MutationPersistencePolicy::AdvanceWithoutSaving,
+                |engine| engine.enter_sublocation("room"),
+            )
+            .unwrap();
+            let reference = SaveSlotRef::Manual { slot: 1 };
+            let observed_save_id = uuid::Uuid::new_v4().hyphenated().to_string();
+
+            let error = load_save_core(&app, reference, observed_save_id.clone())
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, "saveWriteFailed");
+            let token = PersistenceFailureTokenView::from_error(&error).unwrap();
+            assert_eq!(
+                load_save_discarding_current_core(
+                    &app,
+                    reference,
+                    observed_save_id.clone(),
+                    token.clone(),
+                )
+                .await
+                .unwrap_err()
+                .code,
+                "saveDiscoveryUnavailable"
+            );
+            assert_eq!(
+                load_save_discarding_current_core(&app, reference, observed_save_id, token)
+                    .await
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[tokio::test]
+        async fn transition_contract_continue_and_return_success_use_fresh_disk_state() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            seed_manual(&app, 1, "Older").await;
+            advance_fixture_dialogue(&app);
+            seed_manual(&app, 2, "Newest").await;
+            let returned = return_to_title_core(&app).await.unwrap();
+            assert_eq!(
+                returned.continue_candidate,
+                Some(SaveSlotRef::Manual { slot: 2 })
+            );
+            assert!(app.session.lock().unwrap().engine.is_none());
+
+            let continued = continue_game_core(&app).await.unwrap();
+            assert!(continued.thumbnail_capture.is_none());
+            let session = app.session.lock().unwrap();
+            assert_eq!(session.durable_revision(), Some(1));
+            assert_eq!(session.persistence.autosave_target, None);
+        }
+
+        #[tokio::test]
+        async fn transition_delete_invalid_file_preserves_foreign_sidecar_and_rejects_replacement()
+        {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            let first = seed_manual(&app, 1, "First identity").await;
+            let first_id = valid_save_id(&first.saved_slot);
+            let ticket = app
+                .coordinator
+                .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
+                .unwrap();
+            app.coordinator
+                .report_thumbnail_failure(&ticket.ticket)
+                .unwrap();
+            save_manual_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                "Replacement".into(),
+                ManualSlotExpectation::Occupied {
+                    observation: OccupiedSlotExpectation {
+                        save_id: Some(first_id.clone()),
+                        modified_at: None,
+                    },
+                },
+                ticket.ticket,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                delete_save_core(
+                    &app,
+                    SaveSlotRef::Manual { slot: 1 },
+                    OccupiedSlotExpectation {
+                        save_id: Some(first_id),
+                        modified_at: None,
+                    },
+                )
+                .await
+                .unwrap_err()
+                .code,
+                "staleSaveSelection"
+            );
+
+            app.coordinator.clear_session(&app).await.unwrap();
+            let invalid_path = temporary.path().join("saves/manual-3.json");
+            std::fs::write(&invalid_path, b"{ invalid without id").unwrap();
+            let foreign = temporary.path().join("saves/thumbnails/foreign.png");
+            std::fs::write(&foreign, b"foreign").unwrap();
+            let discovered = app.persistence.as_ref().unwrap().discover();
+            let invalid = discovered
+                .slots
+                .iter()
+                .find(|slot| slot.reference == SaveSlotRef::Manual { slot: 3 })
+                .unwrap();
+            let result = delete_save_core(
+                &app,
+                SaveSlotRef::Manual { slot: 3 },
+                OccupiedSlotExpectation {
+                    save_id: None,
+                    modified_at: invalid.modified_at.clone(),
+                },
+            )
+            .await
+            .unwrap();
+            assert!(matches!(result.preflight, SaveBrowserPreflightView::Ready));
+            assert!(!invalid_path.exists());
+            assert!(foreign.exists());
+        }
+
+        async fn seed_manual(app: &AppState, slot: u8, name: &str) -> ManualSaveResultView {
+            let ticket = app
+                .coordinator
+                .prepare_application_thumbnail(app, PreparedThumbnailPurpose::ManualSave)
+                .unwrap();
+            app.coordinator
+                .report_thumbnail_failure(&ticket.ticket)
+                .unwrap();
+            save_manual_core(
+                app,
+                SaveSlotRef::Manual { slot },
+                name.into(),
+                ManualSlotExpectation::Empty,
+                ticket.ticket,
+            )
+            .await
+            .unwrap()
+        }
+
+        fn advance_fixture_dialogue(app: &AppState) {
+            let mut session = app.session.lock().unwrap();
+            let engine = session.engine.as_mut().unwrap();
+            let ModeView::Dialogue { queue_token, .. } = engine.view().unwrap().mode else {
+                panic!("fixture must expose an active dialogue queue");
+            };
+            engine.advance_dialogue(queue_token).unwrap();
+        }
+
+        fn valid_save_id(slot: &SaveSlotView) -> String {
+            let SaveSlotStatusView::Valid { metadata } = &slot.status else {
+                panic!("expected valid save slot");
+            };
+            metadata.save_id.clone()
+        }
+
+        fn session_observation(app: &AppState) -> (u64, u64, serde_json::Value) {
+            let session = app.session.lock().unwrap();
+            (
+                session.persistence.generation,
+                session.durable_revision().unwrap(),
+                serde_json::to_value(session.engine.as_ref().unwrap().view().unwrap()).unwrap(),
+            )
         }
 
         #[tokio::test]
@@ -1488,6 +2329,46 @@ mod tests {
         struct GuardProbeFilesystem {
             inner: ProductionSaveFilesystem,
             probe: Arc<GuardProbe>,
+        }
+
+        struct RecoveringFilesystem {
+            inner: ProductionSaveFilesystem,
+            failing: Arc<AtomicBool>,
+        }
+
+        impl SaveFilesystem for RecoveringFilesystem {
+            fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+                if self.failing.load(Ordering::SeqCst) {
+                    Err(io::Error::other("temporarily unavailable"))
+                } else {
+                    self.inner.create_dir_all(path)
+                }
+            }
+            fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+                self.inner.read(path)
+            }
+            fn read_prefix(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
+                self.inner.read_prefix(path, limit)
+            }
+            fn metadata(&self, path: &Path) -> io::Result<SaveFileMetadata> {
+                self.inner.metadata(path)
+            }
+            fn list_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
+                self.inner.list_dir(path)
+            }
+            fn stage_atomic(
+                &self,
+                path: &Path,
+                bytes: &[u8],
+            ) -> io::Result<Box<dyn StagedAtomicWrite>> {
+                self.inner.stage_atomic(path, bytes)
+            }
+            fn remove_file(&self, path: &Path) -> io::Result<()> {
+                self.inner.remove_file(path)
+            }
+            fn sync_dir(&self, path: &Path) -> io::Result<()> {
+                self.inner.sync_dir(path)
+            }
         }
 
         struct GuardProbe {
