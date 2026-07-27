@@ -510,7 +510,7 @@ pub(crate) enum PersistenceBypassOperation {
     ExitWithoutSaving,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PersistenceFailureChallenge {
     token: Uuid,
     operation: PersistenceBypassOperation,
@@ -1029,6 +1029,24 @@ struct CleanupFailure {
     diagnostic: GameError,
 }
 
+enum FailureTokenSource {
+    Random,
+    #[cfg(test)]
+    Deterministic(VecDeque<Uuid>),
+}
+
+impl FailureTokenSource {
+    fn next(&mut self) -> Uuid {
+        match self {
+            Self::Random => Uuid::new_v4(),
+            #[cfg(test)]
+            Self::Deterministic(tokens) => tokens
+                .pop_front()
+                .expect("deterministic failure-token source exhausted"),
+        }
+    }
+}
+
 struct CoordinatorState {
     tickets: HashMap<String, TicketRecord>,
     latest_by_intent: HashMap<CaptureIntent, String>,
@@ -1046,6 +1064,7 @@ struct CoordinatorState {
     failed_write: Option<BackgroundWriteFailure>,
     cleanup_failure: Option<CleanupFailure>,
     failure_challenges: HashMap<Uuid, PersistenceFailureChallenge>,
+    failure_token_source: FailureTokenSource,
     exit_status: ExitStatusView,
     programmatic_exit_bypass: bool,
     exit_action_in_progress: bool,
@@ -1070,9 +1089,37 @@ impl Default for CoordinatorState {
             failed_write: None,
             cleanup_failure: None,
             failure_challenges: HashMap::new(),
+            failure_token_source: FailureTokenSource::Random,
             exit_status: ExitStatusView::Idle,
             programmatic_exit_bypass: false,
             exit_action_in_progress: false,
+        }
+    }
+}
+
+impl CoordinatorState {
+    fn reserve_failure_challenge(
+        &mut self,
+        operation: PersistenceBypassOperation,
+        identity: FailureChallengeIdentity<'_>,
+    ) -> Uuid {
+        loop {
+            let token = self.failure_token_source.next();
+            match self.failure_challenges.entry(token) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(PersistenceFailureChallenge {
+                        token,
+                        operation,
+                        session_generation: identity.session_generation,
+                        discovery_generation: identity.discovery_generation,
+                        durable_revision: identity.durable_revision,
+                        selected_save_id: identity.selected_save_id.map(str::to_owned),
+                        acquisition_event_id: identity.acquisition_event_id.map(str::to_owned),
+                    });
+                    return token;
+                }
+                std::collections::hash_map::Entry::Occupied(_) => {}
+            }
         }
     }
 }
@@ -1600,11 +1647,14 @@ impl SaveCoordinator {
                     std::collections::hash_map::Entry::Vacant(entry) => {
                         entry.insert(challenge);
                     }
-                    std::collections::hash_map::Entry::Occupied(_) => {
-                        // The worker owns the one consumed challenge record.
-                        // Never overwrite a challenge that another transition
-                        // has registered for the same token.
-                        return Err(GameError::stale_persistence_failure_token());
+                    std::collections::hash_map::Entry::Occupied(mut entry) => {
+                        if entry.get() != &challenge {
+                            // The previously issued retry authority wins this
+                            // impossible UUID collision. Replace only the
+                            // conflicting key; unrelated challenges remain
+                            // untouched.
+                            entry.insert(challenge);
+                        }
                     }
                 }
             }
@@ -1729,27 +1779,6 @@ impl SaveCoordinator {
                 selected_save_id: None,
                 acquisition_event_id: None,
             };
-            let token = Uuid::new_v4();
-            let token_wire = token.hyphenated().to_string();
-            let challenge = PersistenceFailureChallenge {
-                token,
-                operation: PersistenceBypassOperation::ExitWithoutSaving,
-                session_generation: identity.session_generation,
-                discovery_generation: identity.discovery_generation,
-                durable_revision: identity.durable_revision,
-                selected_save_id: None,
-                acquisition_event_id: None,
-            };
-            let mut challenged = diagnostic.clone().with_failure_token(token_wire);
-            let failure_token = challenged
-                .failure_token
-                .take()
-                .map(PersistenceFailureTokenView)
-                .ok_or_else(GameError::stale_persistence_failure_token)?;
-            let status = ExitStatusView::Failed {
-                diagnostic: challenged,
-                failure_token,
-            };
             let health = PersistenceHealthView::Degraded {
                 diagnostic: diagnostic.clone(),
             };
@@ -1757,7 +1786,15 @@ impl SaveCoordinator {
             if state.exit_status != ExitStatusView::Saving {
                 return Err(GameError::stale_persistence_failure_token());
             }
-            state.failure_challenges.insert(token, challenge);
+            let token = state
+                .reserve_failure_challenge(PersistenceBypassOperation::ExitWithoutSaving, identity);
+            let token_wire = token.hyphenated().to_string();
+            let mut status_diagnostic = diagnostic.clone();
+            status_diagnostic.failure_token = None;
+            let status = ExitStatusView::Failed {
+                diagnostic: status_diagnostic,
+                failure_token: PersistenceFailureTokenView(token_wire),
+            };
             let health_subscribers = set_persistence_health(&mut state, health.clone());
             state.exit_status = status.clone();
             state.programmatic_exit_bypass = false;
@@ -1891,21 +1928,10 @@ impl SaveCoordinator {
         identity: FailureChallengeIdentity<'_>,
         diagnostic: GameError,
     ) -> Result<GameError, GameError> {
-        let token = Uuid::new_v4();
-        let token_wire = token.hyphenated().to_string();
-        let challenge = PersistenceFailureChallenge {
-            token,
-            operation,
-            session_generation: identity.session_generation,
-            discovery_generation: identity.discovery_generation,
-            durable_revision: identity.durable_revision,
-            selected_save_id: identity.selected_save_id.map(str::to_owned),
-            acquisition_event_id: identity.acquisition_event_id.map(str::to_owned),
-        };
         let health = PersistenceHealthView::Degraded {
             diagnostic: diagnostic.clone(),
         };
-        let subscribers = {
+        let (token_wire, subscribers) = {
             let mut state = self.lock_state()?;
             if identity
                 .discovery_generation
@@ -1913,8 +1939,11 @@ impl SaveCoordinator {
             {
                 return Err(GameError::stale_persistence_failure_token());
             }
-            state.failure_challenges.insert(token, challenge);
-            set_persistence_health(&mut state, health.clone())
+            let token = state.reserve_failure_challenge(operation, identity);
+            (
+                token.hyphenated().to_string(),
+                set_persistence_health(&mut state, health.clone()),
+            )
         };
         publish_health(&subscribers, &health);
         Ok(diagnostic.with_failure_token(token_wire))
@@ -4006,7 +4035,9 @@ mod tests {
     mod exit_lifecycle {
         use super::super::{
             AppSession, ApplicationExit, ExitRequestSource, ExitStatusView, ExitTask,
-            ExitTaskScheduler, PersistenceFailureTokenView, SaveCoordinator, AUTOSAVE_DEBOUNCE,
+            ExitTaskScheduler, FailureChallengeIdentity, FailureTokenSource,
+            PersistenceBypassOperation, PersistenceFailureChallenge, PersistenceFailureTokenView,
+            SaveCoordinator, AUTOSAVE_DEBOUNCE,
         };
         use super::acknowledgement::{app_with_event, terminal_acknowledgement_ticket};
         use super::debounce::{PhasedBackend, RecordingBackend};
@@ -4014,6 +4045,7 @@ mod tests {
         use std::sync::{Arc, Mutex};
         use std::time::Duration;
         use tokio::sync::{mpsc, Notify};
+        use uuid::Uuid;
 
         #[derive(Default)]
         struct RecordingExit {
@@ -4126,6 +4158,24 @@ mod tests {
                 .as_mut()
                 .unwrap()
                 .durable_revision = revision;
+        }
+
+        fn set_failure_tokens(coordinator: &SaveCoordinator, tokens: Vec<Uuid>) {
+            coordinator.state.lock().unwrap().failure_token_source =
+                FailureTokenSource::Deterministic(tokens.into());
+        }
+
+        fn assert_same_challenge(
+            actual: &PersistenceFailureChallenge,
+            expected: &PersistenceFailureChallenge,
+        ) {
+            assert_eq!(actual.token, expected.token);
+            assert_eq!(actual.operation, expected.operation);
+            assert_eq!(actual.session_generation, expected.session_generation);
+            assert_eq!(actual.discovery_generation, expected.discovery_generation);
+            assert_eq!(actual.durable_revision, expected.durable_revision);
+            assert_eq!(actual.selected_save_id, expected.selected_save_id);
+            assert_eq!(actual.acquisition_event_id, expected.acquisition_event_id);
         }
 
         fn status_receiver(
@@ -4411,6 +4461,132 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn exit_lifecycle_retry_recovery_collision_restores_prior_authority_only() {
+            let issued = Uuid::parse_str("00000000-0000-4000-8000-000000000011").unwrap();
+            let unrelated = Uuid::parse_str("00000000-0000-4000-8000-000000000012").unwrap();
+            let backend = Arc::new(PhasedBackend::new(4));
+            backend.fail_next_commit();
+            let session = active_session(1);
+            advance_revision(&session, 2);
+            let coordinator = SaveCoordinator::with_backend_for_application(
+                backend.clone(),
+                Arc::clone(&session),
+                Arc::new(tokio::sync::Mutex::new(())),
+            );
+            set_failure_tokens(&coordinator, vec![issued]);
+            let mut statuses = status_receiver(&coordinator);
+            let exit = Arc::new(RecordingExit::default());
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            backend.wait_for_failed_commits(1).await;
+            let failed = statuses.recv().await.unwrap();
+            let ExitStatusView::Failed { failure_token, .. } = &failed else {
+                panic!("initial exit attempt must publish a failed token");
+            };
+            assert_eq!(Uuid::parse_str(&failure_token.0).unwrap(), issued);
+
+            backend.pause_prepare();
+            let scheduler = Arc::new(ControllableExitScheduler::default());
+            let retrying = coordinator.clone().with_exit_scheduler(scheduler.clone());
+            retrying
+                .retry_exit(exit.clone(), failure_token.clone())
+                .unwrap();
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            backend.wait_for_prepare_count(2).await;
+
+            let unrelated_challenge = PersistenceFailureChallenge {
+                token: unrelated,
+                operation: PersistenceBypassOperation::StartWithoutSaving,
+                session_generation: 4,
+                discovery_generation: None,
+                durable_revision: 2,
+                selected_save_id: Some("unrelated-save".into()),
+                acquisition_event_id: Some("unrelated-event".into()),
+            };
+            {
+                let mut state = retrying.state.lock().unwrap();
+                state.failure_challenges.insert(
+                    issued,
+                    PersistenceFailureChallenge {
+                        token: issued,
+                        operation: PersistenceBypassOperation::ContinueWithoutSaving,
+                        session_generation: 900,
+                        discovery_generation: Some(901),
+                        durable_revision: 902,
+                        selected_save_id: Some("conflicting-save".into()),
+                        acquisition_event_id: Some("conflicting-event".into()),
+                    },
+                );
+                state
+                    .failure_challenges
+                    .insert(unrelated, unrelated_challenge.clone());
+            }
+
+            let worker = scheduler.take_worker();
+            worker.abort();
+            assert!(worker.await.unwrap_err().is_cancelled());
+
+            assert_eq!(
+                serde_json::to_value(retrying.exit_status()).unwrap(),
+                serde_json::to_value(&failed).unwrap()
+            );
+            assert!(session.lock().unwrap().persistence.exit_flush_requested);
+            let restored = statuses.recv().await.unwrap();
+            assert_eq!(
+                serde_json::to_value(&restored).unwrap(),
+                serde_json::to_value(&failed).unwrap()
+            );
+            {
+                let state = retrying.state.lock().unwrap();
+                assert_eq!(state.failure_challenges.len(), 2);
+                let restored_issued = state.failure_challenges.get(&issued).unwrap();
+                assert_eq!(
+                    restored_issued.operation,
+                    PersistenceBypassOperation::ExitWithoutSaving
+                );
+                assert_eq!(restored_issued.session_generation, 4);
+                assert_eq!(restored_issued.discovery_generation, None);
+                assert_eq!(restored_issued.durable_revision, 2);
+                assert_eq!(restored_issued.selected_save_id, None);
+                assert_eq!(restored_issued.acquisition_event_id, None);
+                assert_same_challenge(
+                    state.failure_challenges.get(&unrelated).unwrap(),
+                    &unrelated_challenge,
+                );
+            }
+
+            assert_eq!(
+                retrying.cancel_exit(failure_token.clone()).unwrap(),
+                ExitStatusView::Idle
+            );
+            assert_eq!(
+                retrying
+                    .cancel_exit(failure_token.clone())
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+            let unrelated_token = PersistenceFailureTokenView(unrelated.hyphenated().to_string());
+            retrying
+                .cancel_failure_token(
+                    &unrelated_token,
+                    PersistenceBypassOperation::StartWithoutSaving,
+                    FailureChallengeIdentity {
+                        session_generation: 4,
+                        discovery_generation: None,
+                        durable_revision: 2,
+                        selected_save_id: Some("unrelated-save"),
+                        acquisition_event_id: Some("unrelated-event"),
+                    },
+                )
+                .unwrap();
+            assert!(retrying.state.lock().unwrap().failure_challenges.is_empty());
+            assert!(exit.calls.lock().unwrap().is_empty());
+        }
+
+        #[tokio::test]
         async fn exit_lifecycle_panicking_initial_worker_unwinds_to_idle_and_can_retry() {
             let session = active_session(1);
             let scheduler = Arc::new(ControllableExitScheduler::default());
@@ -4588,6 +4764,91 @@ mod tests {
             assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Idle);
             assert_eq!(
                 coordinator.cancel_exit(failure_token).unwrap_err().code,
+                "stalePersistenceFailureToken"
+            );
+            assert!(exit.calls.lock().unwrap().is_empty());
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_failure_token_collision_reserves_a_new_matching_challenge() {
+            let occupied = Uuid::parse_str("00000000-0000-4000-8000-000000000001").unwrap();
+            let unique = Uuid::parse_str("00000000-0000-4000-8000-000000000002").unwrap();
+            let backend = Arc::new(PhasedBackend::new(4));
+            backend.fail_next_commit();
+            let session = active_session(1);
+            advance_revision(&session, 2);
+            let coordinator = SaveCoordinator::with_backend_for_application(
+                backend.clone(),
+                Arc::clone(&session),
+                Arc::new(tokio::sync::Mutex::new(())),
+            );
+            set_failure_tokens(&coordinator, vec![occupied, unique]);
+            let identity = FailureChallengeIdentity {
+                session_generation: 4,
+                discovery_generation: None,
+                durable_revision: 2,
+                selected_save_id: None,
+                acquisition_event_id: None,
+            };
+            let original_token = PersistenceFailureTokenView(occupied.hyphenated().to_string());
+            coordinator.state.lock().unwrap().failure_challenges.insert(
+                occupied,
+                PersistenceFailureChallenge {
+                    token: occupied,
+                    operation: PersistenceBypassOperation::StartWithoutSaving,
+                    session_generation: identity.session_generation,
+                    discovery_generation: identity.discovery_generation,
+                    durable_revision: identity.durable_revision,
+                    selected_save_id: None,
+                    acquisition_event_id: None,
+                },
+            );
+
+            let mut statuses = status_receiver(&coordinator);
+            let exit = Arc::new(RecordingExit::default());
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            backend.wait_for_failed_commits(1).await;
+            let failed = statuses.recv().await.unwrap();
+            let ExitStatusView::Failed {
+                failure_token: exit_token,
+                ..
+            } = failed
+            else {
+                panic!("exit failure must publish a complete failed status");
+            };
+
+            assert_eq!(Uuid::parse_str(&exit_token.0).unwrap(), unique);
+            assert_eq!(
+                coordinator.state.lock().unwrap().failure_challenges.len(),
+                2
+            );
+            coordinator
+                .cancel_failure_token(
+                    &original_token,
+                    PersistenceBypassOperation::StartWithoutSaving,
+                    identity,
+                )
+                .unwrap();
+            assert_eq!(
+                coordinator
+                    .cancel_failure_token(
+                        &original_token,
+                        PersistenceBypassOperation::StartWithoutSaving,
+                        identity,
+                    )
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+            assert_eq!(
+                coordinator.cancel_exit(exit_token.clone()).unwrap(),
+                ExitStatusView::Idle
+            );
+            assert_eq!(
+                coordinator.cancel_exit(exit_token).unwrap_err().code,
                 "stalePersistenceFailureToken"
             );
             assert!(exit.calls.lock().unwrap().is_empty());
