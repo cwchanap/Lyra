@@ -1,3 +1,4 @@
+use super::capture::CapturedCheckpointV1;
 use super::schema::{
     SaveDiagnosticView, SaveEnvelopeV1, SaveSlotRef, SaveSlotView, SaveType, ThumbnailDescriptorV1,
     ThumbnailDiagnosticView, ThumbnailUnavailableReason,
@@ -141,11 +142,39 @@ pub(crate) struct AutosaveWriteReceipt {
 pub(crate) struct AutosaveCapture {
     job: AutosaveWriteJob,
     slots: Vec<SaveSlotView>,
+    checkpoint: Option<CapturedCheckpointV1>,
+    content_revision: Option<String>,
 }
 
 impl AutosaveCapture {
     pub(crate) fn new(job: AutosaveWriteJob, slots: Vec<SaveSlotView>) -> Self {
-        Self { job, slots }
+        Self {
+            job,
+            slots,
+            checkpoint: None,
+            content_revision: None,
+        }
+    }
+
+    pub(crate) fn captured(
+        job: AutosaveWriteJob,
+        slots: Vec<SaveSlotView>,
+        checkpoint: CapturedCheckpointV1,
+        content_revision: String,
+    ) -> Self {
+        Self {
+            job,
+            slots,
+            checkpoint: Some(checkpoint),
+            content_revision: Some(content_revision),
+        }
+    }
+
+    pub(crate) fn captured_checkpoint(&self) -> Result<(CapturedCheckpointV1, String), GameError> {
+        self.checkpoint
+            .clone()
+            .zip(self.content_revision.clone())
+            .ok_or_else(GameError::save_write_failed)
     }
 
     pub(crate) fn register(
@@ -681,6 +710,7 @@ pub(crate) enum WriterJobClass {
         durable_revision: u64,
     },
     AcquisitionAcknowledgement,
+    ManualSave,
     OrphanCleanup,
 }
 
@@ -1069,6 +1099,39 @@ impl SaveCoordinator {
     ) -> Result<(), GameError> {
         self.consume_failure_token(token, expected, current)
             .map(|_| ())
+    }
+
+    pub(crate) fn challenge_current_session_failure(
+        &self,
+        app: &crate::AppState,
+        operation: PersistenceBypassOperation,
+        discovery_generation: Option<u64>,
+        diagnostic: GameError,
+    ) -> Result<(GameError, PersistenceFailureTokenView), GameError> {
+        let (session_generation, durable_revision) = {
+            let session = app.session.lock().map_err(|_| GameError::unavailable())?;
+            (
+                session.persistence.generation,
+                session.durable_revision().unwrap_or(0),
+            )
+        };
+        let mut challenged = self.challenge_persistence_failure(
+            operation,
+            FailureChallengeIdentity {
+                session_generation,
+                discovery_generation,
+                durable_revision,
+                selected_save_id: None,
+                acquisition_event_id: None,
+            },
+            diagnostic,
+        )?;
+        let token = challenged
+            .failure_token
+            .take()
+            .map(PersistenceFailureTokenView)
+            .ok_or_else(GameError::stale_persistence_failure_token)?;
+        Ok((challenged, token))
     }
 
     pub(crate) fn notify_durable_commit(
@@ -1737,6 +1800,13 @@ impl SaveCoordinator {
             .enqueue(WriterJobClass::AcquisitionAcknowledgement, run)
     }
 
+    pub(crate) fn reserve_manual_writer(
+        &self,
+        run: CoordinatorFuture<'static, ()>,
+    ) -> Result<(), GameError> {
+        self.writer_queue.enqueue(WriterJobClass::ManualSave, run)
+    }
+
     pub(crate) fn enqueue_orphan_cleanup(&self) -> Result<(), GameError> {
         let owner = self
             .lock_state()?
@@ -1768,6 +1838,49 @@ impl SaveCoordinator {
         purpose: ThumbnailCapturePurpose,
     ) -> Result<ThumbnailCaptureRequestView, GameError> {
         self.issue_thumbnail(purpose)
+    }
+
+    pub(crate) fn prepare_application_thumbnail(
+        &self,
+        app: &crate::AppState,
+        purpose: PreparedThumbnailPurpose,
+    ) -> Result<ThumbnailCaptureRequestView, GameError> {
+        let purpose = {
+            let session = app.session.lock().map_err(|_| GameError::unavailable())?;
+            session.ensure_persistence_available()?;
+            let engine = session
+                .engine
+                .as_ref()
+                .ok_or_else(GameError::game_not_started)?;
+            let session_generation = session.persistence.generation;
+            let durable_revision = engine.durable_revision();
+            match purpose {
+                PreparedThumbnailPurpose::ManualSave => ThumbnailCapturePurpose::ManualSave {
+                    session_generation,
+                    durable_revision,
+                },
+                PreparedThumbnailPurpose::AcquisitionAcknowledgement { event_id } => {
+                    if engine
+                        .pending_acquisition_events
+                        .iter()
+                        .filter(|event| event.id == event_id)
+                        .count()
+                        != 1
+                    {
+                        return Err(GameError::unknown_acquisition_event());
+                    }
+                    ThumbnailCapturePurpose::AcquisitionAcknowledgement {
+                        session_generation,
+                        source_revision: durable_revision,
+                        next_revision: durable_revision
+                            .checked_add(1)
+                            .ok_or_else(GameError::save_write_failed)?,
+                        event_id,
+                    }
+                }
+            }
+        };
+        self.prepare_thumbnail(purpose)
     }
 
     pub(crate) fn submit_thumbnail(
@@ -2515,7 +2628,6 @@ impl SaveCoordinator {
         Self::new()
     }
 
-    #[cfg(test)]
     pub(crate) fn with_backend(backend: Arc<dyn AutosaveBackend>) -> Self {
         Self {
             backend: Some(backend),
@@ -2833,15 +2945,16 @@ mod tests {
             autosave_target: Option<SaveSlotRef>,
         ) -> AppState {
             AppState {
-                session: Mutex::new(AppSession::installed(
+                session: Arc::new(Mutex::new(AppSession::installed(
                     engine(revision),
                     generation,
                     autosave_target,
-                )),
+                ))),
                 replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
                 coordinator,
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
+                persistence: None,
             }
         }
 
@@ -3374,11 +3487,12 @@ mod tests {
             let engine =
                 empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
             let app = AppState {
-                session: Mutex::new(AppSession::installed(engine, 1, None)),
+                session: Arc::new(Mutex::new(AppSession::installed(engine, 1, None))),
                 replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
                 coordinator: coordinator.clone(),
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
+                persistence: None,
             };
 
             assert_eq!(
@@ -3424,11 +3538,12 @@ mod tests {
             engine.durable_revision = 44;
             let source = SaveSlotRef::Auto { slot: 3 };
             let app = AppState {
-                session: Mutex::new(AppSession::installed(engine, 7, Some(source))),
+                session: Arc::new(Mutex::new(AppSession::installed(engine, 7, Some(source)))),
                 replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
                 coordinator: coordinator.clone(),
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
+                persistence: None,
             };
 
             assert!(matches!(
@@ -3562,11 +3677,12 @@ mod tests {
             let mut session = AppSession::installed(engine, 3, None);
             session.engine.as_mut().unwrap().durable_revision = 1;
             let app = AppState {
-                session: Mutex::new(session),
+                session: Arc::new(Mutex::new(session)),
                 replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
                 coordinator: coordinator.clone(),
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
+                persistence: None,
             };
 
             let first = coordinator
@@ -3616,11 +3732,12 @@ mod tests {
             let mut session = AppSession::installed(engine, 3, None);
             session.engine.as_mut().unwrap().durable_revision = 1;
             let app = AppState {
-                session: Mutex::new(session),
+                session: Arc::new(Mutex::new(session)),
                 replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
                 coordinator: coordinator.clone(),
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
+                persistence: None,
             };
 
             assert!(coordinator.notify_durable_commit(3, 1).is_some());
@@ -3952,7 +4069,8 @@ mod tests {
         use super::super::{
             AcknowledgementOutcome, AppSession, FailureChallengeIdentity,
             PersistenceBypassOperation, PersistenceFailureTokenView, PersistenceHealthView,
-            SaveCoordinator, ThumbnailCapturePurpose, THUMBNAIL_CAPTURE_TIMEOUT,
+            PreparedThumbnailPurpose, SaveCoordinator, ThumbnailCapturePurpose,
+            THUMBNAIL_CAPTURE_TIMEOUT,
         };
         use super::debounce::RecordingBackend;
         use crate::game::save::schema::{AcquisitionEventStateV1, RecordKind, SaveSlotRef};
@@ -4003,11 +4121,16 @@ mod tests {
                     ordinal: 0,
                 });
             AppState {
-                session: Mutex::new(AppSession::installed(engine, generation, autosave_target)),
+                session: Arc::new(Mutex::new(AppSession::installed(
+                    engine,
+                    generation,
+                    autosave_target,
+                ))),
                 replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
                 coordinator,
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
+                persistence: None,
             }
         }
 
@@ -4036,6 +4159,74 @@ mod tests {
                 .as_deref()
                 .expect("authoritative acknowledgement failure must carry a token")))
             .unwrap()
+        }
+
+        #[tokio::test]
+        async fn application_command_contract_prepares_authoritative_manual_and_acknowledgement_purposes(
+        ) {
+            let coordinator = SaveCoordinator::ticket_only();
+            let app = app_with_event(coordinator.clone(), 17, 41, "acq:41:0", None);
+
+            let manual = coordinator
+                .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
+                .unwrap();
+            coordinator
+                .report_thumbnail_failure(&manual.ticket)
+                .unwrap();
+            coordinator
+                .claim_thumbnail(
+                    &manual.ticket,
+                    &ThumbnailCapturePurpose::ManualSave {
+                        session_generation: 17,
+                        durable_revision: 41,
+                    },
+                )
+                .unwrap();
+
+            let acknowledgement = coordinator
+                .prepare_application_thumbnail(
+                    &app,
+                    PreparedThumbnailPurpose::AcquisitionAcknowledgement {
+                        event_id: "acq:41:0".into(),
+                    },
+                )
+                .unwrap();
+            coordinator
+                .report_thumbnail_failure(&acknowledgement.ticket)
+                .unwrap();
+            coordinator
+                .claim_thumbnail(
+                    &acknowledgement.ticket,
+                    &ThumbnailCapturePurpose::AcquisitionAcknowledgement {
+                        session_generation: 17,
+                        source_revision: 41,
+                        next_revision: 42,
+                        event_id: "acq:41:0".into(),
+                    },
+                )
+                .unwrap();
+        }
+
+        #[tokio::test]
+        async fn application_command_contract_rejects_acknowledgement_event_drift_before_issuing_ticket(
+        ) {
+            let coordinator = SaveCoordinator::ticket_only();
+            let app = app_with_event(coordinator.clone(), 17, 41, "acq:41:0", None);
+
+            let error = coordinator
+                .prepare_application_thumbnail(
+                    &app,
+                    PreparedThumbnailPurpose::AcquisitionAcknowledgement {
+                        event_id: "acq:stale".into(),
+                    },
+                )
+                .unwrap_err();
+
+            assert_eq!(error.code, "unknownAcquisitionEvent");
+            assert!(matches!(
+                coordinator.thumbnail_activity(),
+                super::super::ThumbnailActivityView::Idle
+            ));
         }
 
         #[tokio::test]
