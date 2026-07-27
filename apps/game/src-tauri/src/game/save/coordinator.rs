@@ -7,7 +7,7 @@ use super::storage::{
     select_autosave_target, PreparedSlotWrite, SaveFilesystem, SlotWriteRequest, ThumbnailWrite,
 };
 use super::thumbnail::ValidatedThumbnailCandidate;
-use crate::game::GameError;
+use crate::game::{GameEngine, GameError};
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
@@ -361,9 +361,130 @@ pub(crate) struct CommittedNotification<T> {
     pub(crate) thumbnail_capture: Option<ThumbnailCaptureRequestView>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FlushOperation {
+    ManualSave,
+    InGameLoad,
+    ReturnToTitle,
+    AcquisitionAcknowledgement,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FlushOutcome {
+    Noop {
+        session_generation: u64,
+        durable_revision: u64,
+    },
+    Written {
+        session_generation: u64,
+        durable_revision: u64,
+        slot: SaveSlotRef,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Part B activates acknowledgement intent ownership.
+pub(crate) enum ExclusivePersistenceIntent {
+    AcquisitionAcknowledgement,
+}
+
+pub(crate) struct AppSession {
+    pub(crate) engine: Option<GameEngine>,
+    pub(crate) persistence: SessionPersistence,
+}
+
+impl AppSession {
+    pub(crate) fn installed(
+        engine: GameEngine,
+        generation: u64,
+        autosave_target: Option<SaveSlotRef>,
+    ) -> Self {
+        let installed_revision = engine.durable_revision();
+        Self {
+            engine: Some(engine),
+            persistence: SessionPersistence::for_installed_engine(
+                generation,
+                installed_revision,
+                autosave_target,
+            ),
+        }
+    }
+
+    pub(crate) fn empty() -> Self {
+        Self {
+            engine: None,
+            persistence: SessionPersistence::for_installed_engine(0, 0, None),
+        }
+    }
+
+    pub(crate) fn durable_revision(&self) -> Option<u64> {
+        self.engine.as_ref().map(GameEngine::durable_revision)
+    }
+
+    pub(crate) fn ensure_persistence_available(&self) -> Result<(), GameError> {
+        if self.persistence.exclusive_intent.is_some() {
+            Err(GameError::persistence_operation_in_progress())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+pub(crate) struct SessionPersistence {
+    pub(crate) generation: u64,
+    pub(crate) flush_baseline_revision: u64,
+    pub(crate) written_revision: Option<u64>,
+    pub(crate) autosave_target: Option<SaveSlotRef>,
+    pub(crate) exclusive_intent: Option<ExclusivePersistenceIntent>,
+}
+
+impl SessionPersistence {
+    pub(crate) fn for_installed_engine(
+        generation: u64,
+        installed_revision: u64,
+        autosave_target: Option<SaveSlotRef>,
+    ) -> Self {
+        Self {
+            generation,
+            flush_baseline_revision: installed_revision,
+            written_revision: None,
+            autosave_target,
+            exclusive_intent: None,
+        }
+    }
+
+    pub(crate) fn flush_revision(
+        &self,
+        _operation: FlushOperation,
+        live_revision: u64,
+    ) -> Option<u64> {
+        let covered_revision = self
+            .written_revision
+            .unwrap_or(self.flush_baseline_revision)
+            .max(self.flush_baseline_revision);
+        (live_revision > covered_revision).then_some(live_revision)
+    }
+
+    pub(crate) fn record_written(&mut self, receipt: &AutosaveWriteReceipt) {
+        if receipt.session_generation != self.generation {
+            return;
+        }
+        self.written_revision = Some(
+            self.written_revision
+                .unwrap_or(self.flush_baseline_revision)
+                .max(receipt.durable_revision),
+        );
+        self.autosave_target = Some(receipt.slot);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum WriterJobClass {
     Debounced {
+        session_generation: u64,
+        durable_revision: u64,
+    },
+    BlockingFlush {
         session_generation: u64,
         durable_revision: u64,
     },
@@ -576,10 +697,10 @@ struct CoordinatorState {
     thumbnail_activity: ThumbnailActivityView,
     health_subscribers: Vec<HealthSubscriber>,
     activity_subscribers: Vec<ActivitySubscriber>,
+    next_session_generation: u64,
     next_autosave_serial: u64,
     pending_autosave: Option<PendingAutosave>,
     last_successful_write: Option<AutosaveWriteReceipt>,
-    autosave_target: Option<(u64, SaveSlotRef)>,
     failed_write: Option<BackgroundWriteFailure>,
     cleanup_failure: Option<CleanupFailure>,
 }
@@ -593,10 +714,10 @@ impl Default for CoordinatorState {
             thumbnail_activity: ThumbnailActivityView::Idle,
             health_subscribers: Vec::new(),
             activity_subscribers: Vec::new(),
+            next_session_generation: 0,
             next_autosave_serial: 0,
             pending_autosave: None,
             last_successful_write: None,
-            autosave_target: None,
             failed_write: None,
             cleanup_failure: None,
         }
@@ -627,6 +748,15 @@ impl Default for SaveCoordinator {
 impl SaveCoordinator {
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn next_session_generation(&self) -> Result<u64, GameError> {
+        let mut state = self.lock_state()?;
+        state.next_session_generation = state
+            .next_session_generation
+            .checked_add(1)
+            .ok_or_else(GameError::save_write_failed)?;
+        Ok(state.next_session_generation)
     }
 
     pub(crate) fn notify_durable_commit(
@@ -711,6 +841,164 @@ impl SaveCoordinator {
         }
     }
 
+    pub(crate) async fn flush_session(
+        &self,
+        app: &crate::AppState,
+        operation: FlushOperation,
+    ) -> Result<FlushOutcome, GameError> {
+        let (session_generation, durable_revision, flush_revision) = {
+            let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
+            session.ensure_persistence_available()?;
+            if let Some(receipt) = self.last_successful_write() {
+                session.persistence.record_written(&receipt);
+            }
+            let durable_revision = session
+                .durable_revision()
+                .ok_or_else(GameError::game_not_started)?;
+            (
+                session.persistence.generation,
+                durable_revision,
+                session
+                    .persistence
+                    .flush_revision(operation, durable_revision),
+            )
+        };
+        let Some(flush_revision) = flush_revision else {
+            return Ok(FlushOutcome::Noop {
+                session_generation,
+                durable_revision,
+            });
+        };
+        self.cancel_pending_autosave_covered_by_flush(session_generation, flush_revision)?;
+
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+        let coordinator = self.clone();
+        if let Err(error) = self.writer_queue.enqueue(
+            WriterJobClass::BlockingFlush {
+                session_generation,
+                durable_revision: flush_revision,
+            },
+            Box::pin(async move {
+                let result = coordinator
+                    .execute_blocking_flush(session_generation, flush_revision)
+                    .await;
+                let _ = result_tx.send(result);
+            }),
+        ) {
+            self.record_background_failure(session_generation, flush_revision, error.clone());
+            return Err(error);
+        }
+        let (receipt, wrote) = result_rx
+            .await
+            .map_err(|_| GameError::save_write_failed())??;
+
+        let _gate = app.replacement_gate.lock().await;
+        let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
+        session.ensure_persistence_available()?;
+        if session.persistence.generation != session_generation
+            || session.durable_revision() != Some(durable_revision)
+        {
+            return Err(GameError::save_write_failed());
+        }
+        session.persistence.record_written(&receipt);
+        if wrote {
+            Ok(FlushOutcome::Written {
+                session_generation,
+                durable_revision,
+                slot: receipt.slot,
+            })
+        } else {
+            Ok(FlushOutcome::Noop {
+                session_generation,
+                durable_revision,
+            })
+        }
+    }
+
+    async fn execute_blocking_flush(
+        &self,
+        session_generation: u64,
+        durable_revision: u64,
+    ) -> Result<(AutosaveWriteReceipt, bool), GameError> {
+        if let Some(receipt) = self.last_successful_write().filter(|receipt| {
+            receipt.session_generation == session_generation
+                && receipt.durable_revision >= durable_revision
+        }) {
+            return Ok((receipt, false));
+        }
+        let backend = self
+            .backend
+            .as_ref()
+            .cloned()
+            .ok_or_else(GameError::save_write_failed)?;
+        let write_result = async {
+            let capture = backend
+                .capture(AutosaveWriteJob {
+                    session_generation,
+                    durable_revision,
+                    thumbnail: CaptureTerminalResult::Unavailable,
+                })
+                .await?;
+            let target = select_autosave_target(&capture.slots)?;
+            let save_id = Uuid::new_v4().hyphenated().to_string();
+            let expected_receipt = AutosaveWriteReceipt {
+                session_generation,
+                durable_revision,
+                slot: target,
+                save_id: save_id.clone(),
+            };
+            let registered = backend.register(capture, target, save_id).await?;
+            let prepared = backend.prepare(registered).await?;
+            let committed = match backend.commit_if_current(prepared).await? {
+                AutosaveCommitOutcome::Committed(committed) => committed,
+                AutosaveCommitOutcome::Stale(prepared) => {
+                    prepared.discard()?;
+                    return Err(GameError::save_write_failed());
+                }
+            };
+            let (receipt, cleanup_diagnostic) = committed.into_parts();
+            if receipt != expected_receipt {
+                return Err(GameError::save_write_failed());
+            }
+            self.record_blocking_success(receipt.clone(), cleanup_diagnostic);
+            Ok((receipt, true))
+        }
+        .await;
+        if let Err(error) = &write_result {
+            self.record_background_failure(session_generation, durable_revision, error.clone());
+        }
+        write_result
+    }
+
+    fn cancel_pending_autosave_covered_by_flush(
+        &self,
+        session_generation: u64,
+        durable_revision: u64,
+    ) -> Result<(), GameError> {
+        let subscribers = {
+            let mut state = self.lock_state()?;
+            let covered = state.pending_autosave.as_ref().is_some_and(|pending| {
+                pending.session_generation == session_generation
+                    && pending.durable_revision <= durable_revision
+            });
+            if !covered {
+                return Ok(());
+            }
+            let pending = state
+                .pending_autosave
+                .take()
+                .ok_or_else(GameError::save_write_failed)?;
+            state.tickets.remove(&pending.ticket);
+            if state.latest_by_intent.get(&CaptureIntent::Autosave) == Some(&pending.ticket) {
+                state.latest_by_intent.remove(&CaptureIntent::Autosave);
+            }
+            set_thumbnail_activity(&mut state, ThumbnailActivityView::Idle)
+        };
+        publish_activity(&subscribers, &ThumbnailActivityView::Idle);
+        self.ticket_updates.notify_waiters();
+        Ok(())
+    }
+
     pub(crate) fn last_successful_write(&self) -> Option<AutosaveWriteReceipt> {
         self.state
             .lock()
@@ -722,12 +1010,9 @@ impl SaveCoordinator {
         self.state
             .lock()
             .ok()
-            .and_then(|state| match state.autosave_target {
-                Some((target_generation, target)) if target_generation == session_generation => {
-                    Some(target)
-                }
-                Some(_) | None => None,
-            })
+            .and_then(|state| state.last_successful_write.clone())
+            .filter(|receipt| receipt.session_generation == session_generation)
+            .map(|receipt| receipt.slot)
     }
 
     pub(crate) fn reserve_acknowledgement_writer(
@@ -1186,7 +1471,6 @@ impl SaveCoordinator {
                     receipt_identity >= (successful.session_generation, successful.durable_revision)
                 })
             {
-                state.autosave_target = Some((receipt.session_generation, receipt.slot));
                 state.last_successful_write = Some(receipt.clone());
             }
             if completed_is_current {
@@ -1226,6 +1510,60 @@ impl SaveCoordinator {
         publish_health(&subscribers, &health);
         if let Some(owner) = cleanup_retry {
             let _ = self.enqueue_cleanup_retry(Some(owner));
+        }
+    }
+
+    fn record_blocking_success(
+        &self,
+        receipt: AutosaveWriteReceipt,
+        cleanup_diagnostic: Option<GameError>,
+    ) {
+        let (health, subscribers, cleanup_retry) = if let Ok(mut state) = self.state.lock() {
+            let receipt_identity = (receipt.session_generation, receipt.durable_revision);
+            if state
+                .last_successful_write
+                .as_ref()
+                .is_none_or(|successful| {
+                    receipt_identity >= (successful.session_generation, successful.durable_revision)
+                })
+            {
+                state.last_successful_write = Some(receipt.clone());
+            }
+            if state
+                .failed_write
+                .as_ref()
+                .is_some_and(|failed| failed.identity <= receipt_identity)
+            {
+                state.failed_write = None;
+            }
+            let cleanup_retry = cleanup_diagnostic.and_then(|diagnostic| {
+                let candidate = CleanupFailure {
+                    owner: CleanupOwner::Receipt(receipt),
+                    diagnostic,
+                };
+                if state.cleanup_failure.as_ref().is_none_or(|existing| {
+                    cleanup_owner_replaces(&candidate.owner, &existing.owner)
+                }) {
+                    state.cleanup_failure = Some(candidate.clone());
+                    Some(candidate.owner)
+                } else {
+                    None
+                }
+            });
+            let health = health_after_completion(&state);
+            let subscribers = set_persistence_health(&mut state, health.clone());
+            (health, subscribers, cleanup_retry)
+        } else {
+            let health = PersistenceHealthView::Degraded {
+                diagnostic: GameError::save_write_failed(),
+            };
+            (health, Vec::new(), None)
+        };
+        publish_health(&subscribers, &health);
+        if let Some(owner) = cleanup_retry {
+            if let Err(error) = self.enqueue_cleanup_retry(Some(owner.clone())) {
+                self.record_cleanup_failure(owner, error);
+            }
         }
     }
 
@@ -1702,6 +2040,304 @@ fn spawn_ticket_expiry(
 
 #[cfg(test)]
 mod tests {
+    mod flush {
+        use super::super::{
+            AppSession, AutosaveWriteReceipt, FlushOperation, FlushOutcome, SaveCoordinator,
+            SessionPersistence,
+        };
+        use super::debounce::RecordingBackend;
+        use crate::game::save::schema::SaveSlotRef;
+        use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
+        use crate::AppState;
+        use std::path::PathBuf;
+        use std::sync::{Arc, Mutex};
+
+        #[test]
+        fn fresh_revision_zero_baseline_is_a_physical_no_op() {
+            let persistence = SessionPersistence::for_installed_engine(1, 0, None);
+
+            assert_eq!(
+                persistence.flush_revision(FlushOperation::ReturnToTitle, 0),
+                None
+            );
+            assert_eq!(persistence.written_revision, None);
+            assert_eq!(persistence.autosave_target, None);
+        }
+
+        #[tokio::test]
+        async fn fresh_revision_zero_flush_never_enters_the_writer() {
+            let backend = Arc::new(RecordingBackend::default());
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            let app = AppState {
+                session: Mutex::new(AppSession::installed(engine, 1, None)),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator: coordinator.clone(),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+            };
+
+            assert_eq!(
+                coordinator
+                    .flush_session(&app, FlushOperation::ReturnToTitle)
+                    .await
+                    .unwrap(),
+                FlushOutcome::Noop {
+                    session_generation: 1,
+                    durable_revision: 0,
+                }
+            );
+            assert_eq!(backend.write_count(), 0);
+            assert_eq!(coordinator.last_successful_write(), None);
+            assert_eq!(
+                app.session.lock().unwrap().persistence.autosave_target,
+                None
+            );
+        }
+
+        #[test]
+        fn loaded_revision_44_baseline_does_not_write_until_revision_45() {
+            let source = SaveSlotRef::Auto { slot: 3 };
+            let persistence = SessionPersistence::for_installed_engine(7, 44, Some(source));
+
+            assert_eq!(
+                persistence.flush_revision(FlushOperation::InGameLoad, 44),
+                None
+            );
+            assert_eq!(
+                persistence.flush_revision(FlushOperation::InGameLoad, 45),
+                Some(45)
+            );
+            assert_eq!(persistence.autosave_target, Some(source));
+        }
+
+        #[tokio::test]
+        async fn loaded_revision_44_flushes_only_after_revision_45() {
+            let backend = Arc::new(RecordingBackend::default());
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let mut engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            engine.durable_revision = 44;
+            let source = SaveSlotRef::Auto { slot: 3 };
+            let app = AppState {
+                session: Mutex::new(AppSession::installed(engine, 7, Some(source))),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator: coordinator.clone(),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+            };
+
+            assert!(matches!(
+                coordinator
+                    .flush_session(&app, FlushOperation::InGameLoad)
+                    .await
+                    .unwrap(),
+                FlushOutcome::Noop {
+                    session_generation: 7,
+                    durable_revision: 44
+                }
+            ));
+            assert_eq!(backend.write_count(), 0);
+
+            app.session
+                .lock()
+                .unwrap()
+                .engine
+                .as_mut()
+                .unwrap()
+                .durable_revision = 45;
+            assert!(matches!(
+                coordinator
+                    .flush_session(&app, FlushOperation::InGameLoad)
+                    .await
+                    .unwrap(),
+                FlushOutcome::Written {
+                    session_generation: 7,
+                    durable_revision: 45,
+                    ..
+                }
+            ));
+            assert_eq!(backend.write_count(), 1);
+            assert_eq!(app.session.lock().unwrap().durable_revision(), Some(45));
+        }
+
+        #[test]
+        fn same_generation_baseline_or_written_revision_covers_every_flush_boundary() {
+            let mut persistence = SessionPersistence::for_installed_engine(9, 12, None);
+            persistence.record_written(&AutosaveWriteReceipt {
+                session_generation: 9,
+                durable_revision: 18,
+                slot: SaveSlotRef::Auto { slot: 2 },
+                save_id: "550e8400-e29b-41d4-a716-446655440001".into(),
+            });
+
+            for operation in [
+                FlushOperation::ManualSave,
+                FlushOperation::InGameLoad,
+                FlushOperation::ReturnToTitle,
+                FlushOperation::AcquisitionAcknowledgement,
+            ] {
+                assert_eq!(persistence.flush_revision(operation, 12), None);
+                assert_eq!(persistence.flush_revision(operation, 18), None);
+                assert_eq!(persistence.flush_revision(operation, 19), Some(19));
+            }
+        }
+
+        #[test]
+        fn prior_generation_revision_900_cannot_suppress_new_generation_revision_1() {
+            let prior = AutosaveWriteReceipt {
+                session_generation: 1,
+                durable_revision: 900,
+                slot: SaveSlotRef::Auto { slot: 5 },
+                save_id: "550e8400-e29b-41d4-a716-446655440002".into(),
+            };
+            let mut persistence = SessionPersistence::for_installed_engine(2, 0, None);
+
+            persistence.record_written(&prior);
+
+            assert_eq!(persistence.written_revision, None);
+            assert_eq!(
+                persistence.flush_revision(FlushOperation::ReturnToTitle, 1),
+                Some(1)
+            );
+            assert_eq!(persistence.autosave_target, None);
+        }
+
+        #[test]
+        fn installed_sessions_receive_monotonic_generations() {
+            let coordinator = super::super::SaveCoordinator::new();
+
+            assert_eq!(coordinator.next_session_generation().unwrap(), 1);
+            assert_eq!(coordinator.next_session_generation().unwrap(), 2);
+            assert_eq!(coordinator.next_session_generation().unwrap(), 3);
+        }
+
+        #[test]
+        fn installed_session_baseline_and_target_come_from_the_installed_engine() {
+            let mut engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            engine.durable_revision = 44;
+            let source = SaveSlotRef::Auto { slot: 4 };
+
+            let session = AppSession::installed(engine, 8, Some(source));
+
+            assert_eq!(session.durable_revision(), Some(44));
+            assert_eq!(session.persistence.generation, 8);
+            assert_eq!(session.persistence.flush_baseline_revision, 44);
+            assert_eq!(session.persistence.autosave_target, Some(source));
+            assert_eq!(session.persistence.exclusive_intent, None);
+        }
+
+        #[test]
+        fn flush_and_manual_save_decisions_do_not_advance_durable_revision() {
+            let mut durable_revision = 27;
+            let persistence = SessionPersistence::for_installed_engine(4, 0, None);
+
+            assert_eq!(
+                persistence.flush_revision(FlushOperation::ReturnToTitle, durable_revision),
+                Some(27)
+            );
+            assert_eq!(durable_revision, 27);
+
+            assert_eq!(
+                persistence.flush_revision(FlushOperation::ManualSave, durable_revision),
+                Some(27)
+            );
+            assert_eq!(durable_revision, 27);
+
+            durable_revision += 1;
+            assert_eq!(durable_revision, 28);
+        }
+
+        #[tokio::test]
+        async fn blocking_flush_writes_once_then_becomes_idempotent_without_advancing_revision() {
+            let backend = Arc::new(RecordingBackend::default());
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            let mut session = AppSession::installed(engine, 3, None);
+            session.engine.as_mut().unwrap().durable_revision = 1;
+            let app = AppState {
+                session: Mutex::new(session),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator: coordinator.clone(),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+            };
+
+            let first = coordinator
+                .flush_session(&app, FlushOperation::ReturnToTitle)
+                .await
+                .unwrap();
+            assert!(matches!(
+                first,
+                FlushOutcome::Written {
+                    session_generation: 3,
+                    durable_revision: 1,
+                    ..
+                }
+            ));
+            assert_eq!(backend.write_count(), 1);
+
+            {
+                let session = app.session.lock().unwrap();
+                assert_eq!(session.durable_revision(), Some(1));
+                assert_eq!(session.persistence.written_revision, Some(1));
+                assert_eq!(
+                    session.persistence.autosave_target,
+                    Some(SaveSlotRef::Auto { slot: 1 })
+                );
+            }
+
+            assert_eq!(
+                coordinator
+                    .flush_session(&app, FlushOperation::ManualSave)
+                    .await
+                    .unwrap(),
+                FlushOutcome::Noop {
+                    session_generation: 3,
+                    durable_revision: 1,
+                }
+            );
+            assert_eq!(backend.write_count(), 1);
+            assert_eq!(app.session.lock().unwrap().durable_revision(), Some(1));
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn blocking_flush_cancels_same_revision_debounce_before_it_enters_writer() {
+            let backend = Arc::new(RecordingBackend::default());
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            let mut session = AppSession::installed(engine, 3, None);
+            session.engine.as_mut().unwrap().durable_revision = 1;
+            let app = AppState {
+                session: Mutex::new(session),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator: coordinator.clone(),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+            };
+
+            assert!(coordinator.notify_durable_commit(3, 1).is_some());
+            assert!(matches!(
+                coordinator
+                    .flush_session(&app, FlushOperation::ReturnToTitle)
+                    .await
+                    .unwrap(),
+                FlushOutcome::Written { .. }
+            ));
+            assert_eq!(backend.write_count(), 1);
+
+            tokio::time::advance(super::super::THUMBNAIL_CAPTURE_TIMEOUT).await;
+            for _ in 0..5 {
+                tokio::task::yield_now().await;
+            }
+            assert_eq!(backend.write_count(), 1);
+        }
+    }
+
     mod debounce {
         use super::super::{
             AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome, AutosavePreparedWrite,
@@ -1729,7 +2365,7 @@ mod tests {
         }
 
         #[derive(Default)]
-        struct RecordingBackend {
+        pub(super) struct RecordingBackend {
             writes: Mutex<Vec<WriteObservation>>,
             pause_writes: AtomicBool,
             started: Notify,
@@ -1761,6 +2397,10 @@ mod tests {
 
             fn observations(&self) -> Vec<WriteObservation> {
                 self.writes.lock().unwrap().clone()
+            }
+
+            pub(super) fn write_count(&self) -> usize {
+                self.writes.lock().unwrap().len()
             }
 
             async fn wait_until_started(&self) {
