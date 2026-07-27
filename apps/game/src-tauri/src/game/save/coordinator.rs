@@ -7,6 +7,7 @@ use super::storage::{
     select_autosave_target, PreparedSlotWrite, SaveFilesystem, SlotWriteRequest, ThumbnailWrite,
 };
 use super::thumbnail::ValidatedThumbnailCandidate;
+use crate::game::command_tx::EngineRollbackSnapshot;
 use crate::game::{GameEngine, GameError};
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, VecDeque};
@@ -382,6 +383,11 @@ pub(crate) enum FlushOutcome {
     },
 }
 
+pub(crate) struct AcknowledgementOutcome {
+    pub(crate) state: crate::game::GameStateView,
+    pub(crate) cleanup_diagnostic: Option<SaveDiagnosticView>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)] // Part B activates acknowledgement intent ownership.
 pub(crate) enum ExclusivePersistenceIntent {
@@ -427,6 +433,17 @@ impl AppSession {
         } else {
             Ok(())
         }
+    }
+
+    fn begin_acknowledgement(&mut self) -> Result<(), GameError> {
+        self.ensure_persistence_available()?;
+        self.persistence.exclusive_intent =
+            Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+        Ok(())
+    }
+
+    fn end_acknowledgement(&mut self) {
+        self.persistence.exclusive_intent = None;
     }
 }
 
@@ -912,6 +929,230 @@ impl SaveCoordinator {
                 session_generation,
                 durable_revision,
             })
+        }
+    }
+
+    pub(crate) async fn acknowledge_acquisition(
+        &self,
+        app: &crate::AppState,
+        event_id: String,
+        ticket: String,
+    ) -> Result<AcknowledgementOutcome, GameError> {
+        let (session_generation, source_revision, next_revision, thumbnail) = {
+            let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
+            session.ensure_persistence_available()?;
+            let engine = session
+                .engine
+                .as_ref()
+                .ok_or_else(GameError::game_not_started)?;
+            let source_revision = engine.durable_revision();
+            let next_revision = source_revision
+                .checked_add(1)
+                .ok_or_else(GameError::save_write_failed)?;
+            let matching_events = engine
+                .pending_acquisition_events
+                .iter()
+                .filter(|event| event.id == event_id)
+                .count();
+            if matching_events != 1 {
+                return Err(GameError::unknown_acquisition_event());
+            }
+            let session_generation = session.persistence.generation;
+            let purpose = ThumbnailCapturePurpose::AcquisitionAcknowledgement {
+                session_generation,
+                source_revision,
+                next_revision,
+                event_id: event_id.clone(),
+            };
+            let thumbnail = self.claim_thumbnail(&ticket, &purpose)?;
+            session.begin_acknowledgement()?;
+            (
+                session_generation,
+                source_revision,
+                next_revision,
+                thumbnail,
+            )
+        };
+
+        if let Err(error) =
+            self.cancel_pending_autosave_covered_by_flush(session_generation, source_revision)
+        {
+            self.clear_acknowledgement_intent(app, session_generation);
+            return Err(error);
+        }
+
+        let (turn_tx, turn_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        if let Err(error) = self.writer_queue.enqueue(
+            WriterJobClass::AcquisitionAcknowledgement,
+            Box::pin(async move {
+                let _ = turn_tx.send(());
+                let _ = release_rx.await;
+            }),
+        ) {
+            self.clear_acknowledgement_intent(app, session_generation);
+            return Err(error);
+        }
+        if turn_rx.await.is_err() {
+            self.clear_acknowledgement_intent(app, session_generation);
+            return Err(GameError::save_write_failed());
+        }
+
+        let gate = app.replacement_gate.lock().await;
+        let result = self
+            .acknowledge_acquisition_with_writer_and_gate(
+                app,
+                session_generation,
+                source_revision,
+                next_revision,
+                &event_id,
+                thumbnail,
+            )
+            .await;
+        self.clear_acknowledgement_intent(app, session_generation);
+        drop(gate);
+        let _ = release_tx.send(());
+        result
+    }
+
+    async fn acknowledge_acquisition_with_writer_and_gate(
+        &self,
+        app: &crate::AppState,
+        session_generation: u64,
+        source_revision: u64,
+        next_revision: u64,
+        event_id: &str,
+        thumbnail: CaptureTerminalResult,
+    ) -> Result<AcknowledgementOutcome, GameError> {
+        let prepared_mutation = {
+            let prepare = || -> Result<_, GameError> {
+                let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
+                if session.persistence.generation != session_generation
+                    || session.persistence.exclusive_intent
+                        != Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement)
+                {
+                    return Err(GameError::persistence_operation_in_progress());
+                }
+                if let Some(receipt) = self.last_successful_write() {
+                    session.persistence.record_written(&receipt);
+                }
+                let preferred_target = session.persistence.autosave_target;
+                let engine = session
+                    .engine
+                    .as_mut()
+                    .ok_or_else(GameError::game_not_started)?;
+                if engine.durable_revision() != source_revision {
+                    return Err(GameError::save_write_failed());
+                }
+                let rollback = EngineRollbackSnapshot::capture(engine);
+                let matching_events: Vec<usize> = engine
+                    .pending_acquisition_events
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, event)| (event.id == event_id).then_some(index))
+                    .collect();
+                if matching_events.len() != 1 {
+                    return Err(GameError::unknown_acquisition_event());
+                }
+                engine.pending_acquisition_events.remove(matching_events[0]);
+                engine.durable_revision = next_revision;
+                match engine.view() {
+                    Ok(state) => Ok((rollback, preferred_target, state)),
+                    Err(error) => {
+                        EngineRollbackSnapshot::restore(engine, rollback);
+                        Err(error)
+                    }
+                }
+            };
+            prepare()
+        };
+
+        match prepared_mutation {
+            Ok((rollback, preferred_target, state)) => {
+                let write_result = self
+                    .execute_acknowledgement_write(
+                        session_generation,
+                        next_revision,
+                        preferred_target,
+                        thumbnail,
+                    )
+                    .await;
+                let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
+                match write_result {
+                    Ok((receipt, cleanup_diagnostic)) => {
+                        session.persistence.record_written(&receipt);
+                        self.record_blocking_success(receipt, cleanup_diagnostic.clone());
+                        Ok(AcknowledgementOutcome {
+                            state,
+                            cleanup_diagnostic,
+                        })
+                    }
+                    Err(error) => {
+                        let engine = session
+                            .engine
+                            .as_mut()
+                            .ok_or_else(GameError::game_not_started)?;
+                        EngineRollbackSnapshot::restore(engine, rollback);
+                        Err(error)
+                    }
+                }
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn execute_acknowledgement_write(
+        &self,
+        session_generation: u64,
+        durable_revision: u64,
+        preferred_target: Option<SaveSlotRef>,
+        thumbnail: CaptureTerminalResult,
+    ) -> Result<(AutosaveWriteReceipt, Option<GameError>), GameError> {
+        let backend = self
+            .backend
+            .as_ref()
+            .cloned()
+            .ok_or_else(GameError::save_write_failed)?;
+        let capture = backend
+            .capture(AutosaveWriteJob {
+                session_generation,
+                durable_revision,
+                thumbnail,
+            })
+            .await?;
+        let target = match preferred_target {
+            Some(target @ SaveSlotRef::Auto { .. }) => target,
+            Some(SaveSlotRef::Manual { .. }) => return Err(GameError::save_write_failed()),
+            None => select_autosave_target(&capture.slots)?,
+        };
+        let save_id = Uuid::new_v4().hyphenated().to_string();
+        let expected_receipt = AutosaveWriteReceipt {
+            session_generation,
+            durable_revision,
+            slot: target,
+            save_id: save_id.clone(),
+        };
+        let registered = backend.register(capture, target, save_id).await?;
+        let prepared = backend.prepare(registered).await?;
+        let committed = match backend.commit_if_current(prepared).await? {
+            AutosaveCommitOutcome::Committed(committed) => committed,
+            AutosaveCommitOutcome::Stale(prepared) => {
+                prepared.discard()?;
+                return Err(GameError::save_write_failed());
+            }
+        };
+        let (receipt, cleanup_diagnostic) = committed.into_parts();
+        if receipt != expected_receipt {
+            return Err(GameError::save_write_failed());
+        }
+        Ok((receipt, cleanup_diagnostic))
+    }
+
+    fn clear_acknowledgement_intent(&self, app: &crate::AppState, session_generation: u64) {
+        if let Ok(mut session) = app.session.lock() {
+            if session.persistence.generation == session_generation {
+                session.end_acknowledgement();
+            }
         }
     }
 
@@ -2338,6 +2579,424 @@ mod tests {
         }
     }
 
+    mod acknowledgement {
+        use super::super::{
+            AcknowledgementOutcome, AppSession, SaveCoordinator, ThumbnailCapturePurpose,
+            THUMBNAIL_CAPTURE_TIMEOUT,
+        };
+        use super::debounce::RecordingBackend;
+        use crate::game::save::schema::{AcquisitionEventStateV1, RecordKind, SaveSlotRef};
+        use crate::game::schema::EvidenceJson;
+        use crate::game::state::EvidenceRecord;
+        use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
+        use crate::AppState;
+        use std::path::PathBuf;
+        use std::sync::{Arc, Mutex};
+
+        fn app_with_event(
+            coordinator: SaveCoordinator,
+            generation: u64,
+            revision: u64,
+            event_id: &str,
+            autosave_target: Option<SaveSlotRef>,
+        ) -> AppState {
+            let mut scene = investigation_scene_with_intro("scene", vec![]);
+            scene.evidence_manifest.push(EvidenceJson {
+                id: "evidence-1".into(),
+                name: "Evidence One".into(),
+                description: "Description".into(),
+                details: "Details".into(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            });
+            let mut engine = empty_engine_with_scene(scene, 1);
+            engine.durable_revision = revision;
+            engine.inventory.evidence.push(EvidenceRecord {
+                id: "evidence-1".into(),
+                name: "Evidence One".into(),
+                description: "Description".into(),
+                details: "Details".into(),
+                image_asset_id: None,
+                on_reexamine: None,
+                collected_in_chapter_id: "chapter_1".into(),
+                collected_in_scene_id: "scene".into(),
+            });
+            engine
+                .pending_acquisition_events
+                .push(AcquisitionEventStateV1 {
+                    id: event_id.into(),
+                    record_kind: RecordKind::Evidence,
+                    record_id: "evidence-1".into(),
+                    created_by_command_id: revision,
+                    ordinal: 0,
+                });
+            AppState {
+                session: Mutex::new(AppSession::installed(engine, generation, autosave_target)),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator,
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+            }
+        }
+
+        fn terminal_acknowledgement_ticket(
+            coordinator: &SaveCoordinator,
+            generation: u64,
+            source_revision: u64,
+            event_id: &str,
+        ) -> String {
+            let purpose = ThumbnailCapturePurpose::AcquisitionAcknowledgement {
+                session_generation: generation,
+                source_revision,
+                next_revision: source_revision + 1,
+                event_id: event_id.into(),
+            };
+            let request = coordinator.prepare_thumbnail(purpose).unwrap();
+            coordinator
+                .report_thumbnail_failure(&request.ticket)
+                .unwrap();
+            request.ticket
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn pending_revision_is_cancelled_before_acknowledgement_writes_only_n_plus_one() {
+            let backend = Arc::new(RecordingBackend::default());
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let event_id = "acq:1:0";
+            let app = app_with_event(coordinator.clone(), 3, 1, event_id, None);
+
+            assert!(coordinator.notify_durable_commit(3, 1).is_some());
+            let ticket = terminal_acknowledgement_ticket(&coordinator, 3, 1, event_id);
+
+            let AcknowledgementOutcome {
+                state,
+                cleanup_diagnostic,
+            } = coordinator
+                .acknowledge_acquisition(&app, event_id.into(), ticket)
+                .await
+                .unwrap();
+
+            assert!(state.pending_acquisition.is_none());
+            assert_eq!(cleanup_diagnostic, None);
+            assert_eq!(backend.write_count(), 1);
+            assert_eq!(
+                coordinator.last_successful_write().map(|receipt| (
+                    receipt.session_generation,
+                    receipt.durable_revision,
+                    receipt.slot
+                )),
+                Some((3, 2, SaveSlotRef::Auto { slot: 1 }))
+            );
+            {
+                let session = app.session.lock().unwrap();
+                assert_eq!(session.durable_revision(), Some(2));
+                assert!(session
+                    .engine
+                    .as_ref()
+                    .unwrap()
+                    .pending_acquisition_events
+                    .is_empty());
+                assert_eq!(session.persistence.written_revision, Some(2));
+                assert_eq!(
+                    session.persistence.autosave_target,
+                    Some(SaveSlotRef::Auto { slot: 1 })
+                );
+                assert_eq!(session.persistence.exclusive_intent, None);
+            }
+
+            tokio::time::advance(THUMBNAIL_CAPTURE_TIMEOUT).await;
+            for _ in 0..5 {
+                tokio::task::yield_now().await;
+            }
+            assert_eq!(backend.write_count(), 1);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn acknowledgement_waits_next_without_locks_and_reuses_inflight_target() {
+            let backend = Arc::new(super::debounce::PhasedBackend::new(3));
+            backend.pause_prepare();
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let event_id = "acq:1:0";
+            let app = Arc::new(app_with_event(coordinator.clone(), 3, 1, event_id, None));
+
+            let request = coordinator.notify_durable_commit(3, 1).unwrap();
+            coordinator
+                .report_thumbnail_failure(&request.ticket)
+                .unwrap();
+            tokio::time::advance(super::super::AUTOSAVE_DEBOUNCE).await;
+            backend.wait_for_prepare().await;
+
+            let ticket = terminal_acknowledgement_ticket(&coordinator, 3, 1, event_id);
+            let acknowledge = {
+                let coordinator = coordinator.clone();
+                let app = Arc::clone(&app);
+                let event_id = event_id.to_string();
+                tokio::spawn(async move {
+                    coordinator
+                        .acknowledge_acquisition(&app, event_id, ticket)
+                        .await
+                })
+            };
+            for _ in 0..5 {
+                tokio::task::yield_now().await;
+            }
+
+            assert!(app.replacement_gate.try_lock().is_ok());
+            {
+                let session = app.session.try_lock().unwrap();
+                assert_eq!(
+                    session.ensure_persistence_available().unwrap_err().code,
+                    "persistenceOperationInProgress"
+                );
+            }
+
+            backend.release_prepare();
+            let outcome = acknowledge.await.unwrap().unwrap();
+
+            assert!(outcome.state.pending_acquisition.is_none());
+            assert_eq!(
+                backend.targets(),
+                vec![SaveSlotRef::Auto { slot: 1 }, SaveSlotRef::Auto { slot: 1 }]
+            );
+            assert_eq!(backend.receipt_revisions(), vec![1, 2]);
+            assert_eq!(app.session.lock().unwrap().durable_revision(), Some(2));
+            assert_eq!(
+                app.session.lock().unwrap().persistence.autosave_target,
+                Some(SaveSlotRef::Auto { slot: 1 })
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn in_flight_failure_keeps_selected_target_for_acknowledgement_without_follow_up() {
+            let backend = Arc::new(super::debounce::PhasedBackend::new(3));
+            backend.pause_prepare();
+            backend.fail_next_commit();
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let event_id = "acq:1:0";
+            let app = Arc::new(app_with_event(coordinator.clone(), 3, 1, event_id, None));
+
+            let request = coordinator.notify_durable_commit(3, 1).unwrap();
+            coordinator
+                .report_thumbnail_failure(&request.ticket)
+                .unwrap();
+            tokio::time::advance(super::super::AUTOSAVE_DEBOUNCE).await;
+            backend.wait_for_prepare().await;
+
+            let ticket = terminal_acknowledgement_ticket(&coordinator, 3, 1, event_id);
+            let acknowledge = {
+                let coordinator = coordinator.clone();
+                let app = Arc::clone(&app);
+                let event_id = event_id.to_string();
+                tokio::spawn(async move {
+                    coordinator
+                        .acknowledge_acquisition(&app, event_id, ticket)
+                        .await
+                })
+            };
+
+            backend.release_prepare();
+            let outcome = acknowledge.await.unwrap().unwrap();
+
+            assert!(outcome.state.pending_acquisition.is_none());
+            assert_eq!(
+                backend.registered_targets(),
+                vec![SaveSlotRef::Auto { slot: 1 }, SaveSlotRef::Auto { slot: 1 }]
+            );
+            assert_eq!(backend.receipt_revisions(), vec![2]);
+            assert_eq!(backend.targets(), vec![SaveSlotRef::Auto { slot: 1 }]);
+            tokio::time::advance(THUMBNAIL_CAPTURE_TIMEOUT).await;
+            for _ in 0..5 {
+                tokio::task::yield_now().await;
+            }
+            assert_eq!(backend.receipt_revisions(), vec![2]);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn sequential_acquisition_events_refresh_the_same_autosave_target() {
+            let backend = Arc::new(super::debounce::PhasedBackend::new(8));
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let first_event = "acq:4:0";
+            let second_event = "acq:4:1";
+            let app = app_with_event(coordinator.clone(), 8, 4, first_event, None);
+            app.session
+                .lock()
+                .unwrap()
+                .engine
+                .as_mut()
+                .unwrap()
+                .pending_acquisition_events
+                .push(AcquisitionEventStateV1 {
+                    id: second_event.into(),
+                    record_kind: RecordKind::Evidence,
+                    record_id: "evidence-1".into(),
+                    created_by_command_id: 4,
+                    ordinal: 1,
+                });
+
+            let first_ticket = terminal_acknowledgement_ticket(&coordinator, 8, 4, first_event);
+            let first = coordinator
+                .acknowledge_acquisition(&app, first_event.into(), first_ticket)
+                .await
+                .unwrap();
+            assert_eq!(
+                first
+                    .state
+                    .pending_acquisition
+                    .as_ref()
+                    .map(|event| event.id.as_str()),
+                Some(second_event)
+            );
+
+            let second_ticket = terminal_acknowledgement_ticket(&coordinator, 8, 5, second_event);
+            let second = coordinator
+                .acknowledge_acquisition(&app, second_event.into(), second_ticket)
+                .await
+                .unwrap();
+
+            assert!(second.state.pending_acquisition.is_none());
+            assert_eq!(
+                backend.targets(),
+                vec![SaveSlotRef::Auto { slot: 1 }, SaveSlotRef::Auto { slot: 1 }]
+            );
+            assert_eq!(backend.receipt_revisions(), vec![5, 6]);
+            assert_eq!(
+                app.session.lock().unwrap().persistence.autosave_target,
+                Some(SaveSlotRef::Auto { slot: 1 })
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn loaded_autosave_acknowledgement_refreshes_its_source_slot() {
+            let backend = Arc::new(super::debounce::PhasedBackend::new(13));
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let event_id = "acq:9:0";
+            let app = app_with_event(
+                coordinator.clone(),
+                13,
+                9,
+                event_id,
+                Some(SaveSlotRef::Auto { slot: 4 }),
+            );
+            let ticket = terminal_acknowledgement_ticket(&coordinator, 13, 9, event_id);
+
+            coordinator
+                .acknowledge_acquisition(&app, event_id.into(), ticket)
+                .await
+                .unwrap();
+
+            assert_eq!(backend.targets(), vec![SaveSlotRef::Auto { slot: 4 }]);
+            assert_eq!(
+                app.session.lock().unwrap().persistence.autosave_target,
+                Some(SaveSlotRef::Auto { slot: 4 })
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn loaded_manual_acknowledgement_allocates_an_autosave_target() {
+            let backend = Arc::new(super::debounce::PhasedBackend::new(21));
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let event_id = "acq:12:0";
+            let app = app_with_event(coordinator.clone(), 21, 12, event_id, None);
+            let ticket = terminal_acknowledgement_ticket(&coordinator, 21, 12, event_id);
+
+            coordinator
+                .acknowledge_acquisition(&app, event_id.into(), ticket)
+                .await
+                .unwrap();
+
+            assert_eq!(backend.targets(), vec![SaveSlotRef::Auto { slot: 1 }]);
+            assert_eq!(
+                app.session.lock().unwrap().persistence.autosave_target,
+                Some(SaveSlotRef::Auto { slot: 1 })
+            );
+        }
+
+        #[tokio::test]
+        async fn failed_acknowledgement_restores_event_and_preserves_prior_slot_file() {
+            let backend = Arc::new(super::storage_integration::StorageBackend::new(34, 2));
+            backend.install_old_autosave_with_sidecar();
+            let prior_slot = backend.slot_bytes(1);
+            backend.fail_next_install();
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let event_id = "acq:1:0";
+            let app = app_with_event(
+                coordinator.clone(),
+                34,
+                1,
+                event_id,
+                Some(SaveSlotRef::Auto { slot: 1 }),
+            );
+            let ticket = terminal_acknowledgement_ticket(&coordinator, 34, 1, event_id);
+
+            let error = match coordinator
+                .acknowledge_acquisition(&app, event_id.into(), ticket)
+                .await
+            {
+                Ok(_) => panic!("failed acknowledgement unexpectedly committed"),
+                Err(error) => error,
+            };
+
+            assert_eq!(error.code, "saveReplaceFailed");
+            assert_eq!(backend.slot_bytes(1), prior_slot);
+            let session = app.session.lock().unwrap();
+            assert_eq!(session.durable_revision(), Some(1));
+            assert_eq!(session.persistence.exclusive_intent, None);
+            assert_eq!(
+                session
+                    .engine
+                    .as_ref()
+                    .unwrap()
+                    .pending_acquisition_events
+                    .iter()
+                    .map(|event| event.id.as_str())
+                    .collect::<Vec<_>>(),
+                [event_id]
+            );
+        }
+
+        #[tokio::test]
+        async fn cleanup_only_failure_returns_committed_state_and_typed_diagnostic() {
+            let backend = Arc::new(super::storage_integration::StorageBackend::new(55, 2));
+            backend.install_old_autosave_with_sidecar();
+            backend.fail_next_cleanup_removal();
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let event_id = "acq:1:0";
+            let app = app_with_event(
+                coordinator.clone(),
+                55,
+                1,
+                event_id,
+                Some(SaveSlotRef::Auto { slot: 1 }),
+            );
+            let ticket = terminal_acknowledgement_ticket(&coordinator, 55, 1, event_id);
+
+            let outcome = coordinator
+                .acknowledge_acquisition(&app, event_id.into(), ticket)
+                .await
+                .unwrap();
+
+            assert!(outcome.state.pending_acquisition.is_none());
+            assert_eq!(
+                outcome
+                    .cleanup_diagnostic
+                    .as_ref()
+                    .map(|diagnostic| diagnostic.code.as_str()),
+                Some("saveWriteFailed")
+            );
+            let session = app.session.lock().unwrap();
+            assert_eq!(session.durable_revision(), Some(2));
+            assert!(session
+                .engine
+                .as_ref()
+                .unwrap()
+                .pending_acquisition_events
+                .is_empty());
+            assert_eq!(session.persistence.written_revision, Some(2));
+            assert_eq!(session.persistence.exclusive_intent, None);
+        }
+    }
+
     mod debounce {
         use super::super::{
             AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome, AutosavePreparedWrite,
@@ -2467,7 +3126,7 @@ mod tests {
             }
         }
 
-        struct PhasedBackend {
+        pub(super) struct PhasedBackend {
             phases: Mutex<Vec<&'static str>>,
             slots: Mutex<Vec<SaveSlotView>>,
             pause_prepare: AtomicBool,
@@ -2478,6 +3137,7 @@ mod tests {
             failed_commits: AtomicU64,
             commit_failed: Notify,
             installed: AtomicBool,
+            registered_targets: Mutex<Vec<SaveSlotRef>>,
             receipts: Mutex<Vec<AutosaveWriteReceipt>>,
             committed: Notify,
             fail_cleanup: AtomicBool,
@@ -2492,7 +3152,7 @@ mod tests {
         }
 
         impl PhasedBackend {
-            fn new(generation: u64) -> Self {
+            pub(super) fn new(generation: u64) -> Self {
                 Self {
                     phases: Mutex::new(Vec::new()),
                     slots: Mutex::new(empty_autosave_slots()),
@@ -2504,6 +3164,7 @@ mod tests {
                     failed_commits: AtomicU64::new(0),
                     commit_failed: Notify::new(),
                     installed: AtomicBool::new(false),
+                    registered_targets: Mutex::new(Vec::new()),
                     receipts: Mutex::new(Vec::new()),
                     committed: Notify::new(),
                     fail_cleanup: AtomicBool::new(false),
@@ -2518,19 +3179,23 @@ mod tests {
                 }
             }
 
-            fn pause_prepare(&self) {
+            pub(super) fn pause_prepare(&self) {
                 self.pause_prepare.store(true, Ordering::SeqCst);
             }
 
-            async fn wait_for_prepare(&self) {
+            pub(super) async fn wait_for_prepare(&self) {
                 if !self.phases.lock().unwrap().contains(&"W:prepare") {
                     self.prepare_started.notified().await;
                 }
             }
 
-            fn release_prepare(&self) {
+            pub(super) fn release_prepare(&self) {
                 self.pause_prepare.store(false, Ordering::SeqCst);
                 self.release_prepare.notify_waiters();
+            }
+
+            pub(super) fn fail_next_commit(&self) {
+                self.fail_commit.store(true, Ordering::SeqCst);
             }
 
             fn pause_at(&self, point: PausePoint) {
@@ -2589,7 +3254,7 @@ mod tests {
                 }
             }
 
-            async fn wait_for_receipts(&self, count: usize) {
+            pub(super) async fn wait_for_receipts(&self, count: usize) {
                 loop {
                     if self.receipts.lock().unwrap().len() >= count {
                         return;
@@ -2620,12 +3285,25 @@ mod tests {
                 self.phases.lock().unwrap().clone()
             }
 
-            fn targets(&self) -> Vec<SaveSlotRef> {
+            pub(super) fn targets(&self) -> Vec<SaveSlotRef> {
                 self.receipts
                     .lock()
                     .unwrap()
                     .iter()
                     .map(|receipt| receipt.slot)
+                    .collect()
+            }
+
+            pub(super) fn registered_targets(&self) -> Vec<SaveSlotRef> {
+                self.registered_targets.lock().unwrap().clone()
+            }
+
+            pub(super) fn receipt_revisions(&self) -> Vec<u64> {
+                self.receipts
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|receipt| receipt.durable_revision)
                     .collect()
             }
         }
@@ -2657,6 +3335,7 @@ mod tests {
                 Box::pin(async move {
                     let _session = self.gameplay_lock.lock().unwrap();
                     self.phases.lock().unwrap().push("S:register");
+                    self.registered_targets.lock().unwrap().push(target);
                     let revision = capture.job.durable_revision;
                     capture.register(
                         target,
@@ -3544,6 +4223,7 @@ mod tests {
             installed: Arc<AtomicUsize>,
             discarded: Arc<AtomicUsize>,
             discard_update: Arc<Notify>,
+            fail_install_once: Arc<AtomicBool>,
             fail_remove_once: AtomicBool,
         }
 
@@ -3567,10 +4247,14 @@ mod tests {
             installed: Arc<AtomicUsize>,
             discarded: Arc<AtomicUsize>,
             discard_update: Arc<Notify>,
+            fail_install_once: Arc<AtomicBool>,
         }
 
         impl StagedAtomicWrite for TrackingStagedWrite {
             fn install(self: Box<Self>) -> io::Result<()> {
+                if self.fail_install_once.swap(false, Ordering::SeqCst) {
+                    return Err(io::Error::other("injected replacement failure"));
+                }
                 self.inner.install()?;
                 self.installed.fetch_add(1, Ordering::SeqCst);
                 Ok(())
@@ -3617,6 +4301,7 @@ mod tests {
                     installed: Arc::clone(&self.installed),
                     discarded: Arc::clone(&self.discarded),
                     discard_update: Arc::clone(&self.discard_update),
+                    fail_install_once: Arc::clone(&self.fail_install_once),
                 }))
             }
 
@@ -3644,7 +4329,7 @@ mod tests {
             Slot,
         }
 
-        struct StorageBackend {
+        pub(super) struct StorageBackend {
             _temp: tempfile::TempDir,
             root: PathBuf,
             fs: Arc<TrackingFilesystem>,
@@ -3677,7 +4362,7 @@ mod tests {
         }
 
         impl StorageBackend {
-            fn new(session_generation: u64, durable_revision: u64) -> Self {
+            pub(super) fn new(session_generation: u64, durable_revision: u64) -> Self {
                 let temp = tempfile::tempdir().unwrap();
                 let root = temp.path().join("saves");
                 let fs = Arc::new(TrackingFilesystem::default());
@@ -3776,6 +4461,18 @@ mod tests {
                 self.root.join(format!("autosave-{slot}.json"))
             }
 
+            pub(super) fn slot_bytes(&self, slot: u8) -> Vec<u8> {
+                self.fs.read(&self.slot_path(slot)).unwrap()
+            }
+
+            pub(super) fn fail_next_install(&self) {
+                self.fs.fail_install_once.store(true, Ordering::SeqCst);
+            }
+
+            pub(super) fn fail_next_cleanup_removal(&self) {
+                self.fs.fail_remove_once.store(true, Ordering::SeqCst);
+            }
+
             fn corrupt_registration(&self, corruption: RegistrationCorruption) {
                 *self.corruption.lock().unwrap() = Some(corruption);
             }
@@ -3819,7 +4516,7 @@ mod tests {
                 );
             }
 
-            fn install_old_autosave_with_sidecar(&self) -> PathBuf {
+            pub(super) fn install_old_autosave_with_sidecar(&self) -> PathBuf {
                 const OLD_SAVE_ID: &str = "33333333-3333-4333-8333-333333333333";
                 let thumbnail_bytes = png(1, 1);
                 let mut envelope = autosave_envelope(
