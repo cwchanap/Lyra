@@ -433,7 +433,7 @@ pub(super) fn scene_jump_fixture_resources() -> PathBuf {
     d
 }
 
-pub(super) fn save_capture_fixture_resources() -> PathBuf {
+pub(crate) fn save_capture_fixture_resources() -> PathBuf {
     let resources = scene_jump_fixture_resources();
     std::fs::write(
         resources.join("story_catalog.json"),

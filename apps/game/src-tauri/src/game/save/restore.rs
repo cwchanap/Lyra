@@ -63,6 +63,12 @@ pub(crate) struct CurrentDefinitions {
     pub(crate) semantic_audio_ids: BTreeSet<String>,
 }
 
+impl CurrentDefinitions {
+    pub(crate) fn content_revision(&self) -> &str {
+        self.content_manifest.content_revision()
+    }
+}
+
 pub(crate) trait ResumableStateAdapter: Sized {
     type Snapshot;
 
