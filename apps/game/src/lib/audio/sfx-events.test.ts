@@ -140,6 +140,7 @@ function state(overrides: Partial<GameStateView> = {}): GameStateView {
     story: { facts: [], questions: [], objectives: [], authorizations: [] },
     dialogueHistory: [],
     ...overrides,
+    pendingAcquisition: overrides.pendingAcquisition ?? null,
   };
 }
 

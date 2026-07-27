@@ -18,7 +18,6 @@
     completeInterrogationPhase,
     listScenes,
     jumpToScene,
-    clearPendingAcquisitionsOnTeardown,
   } from "$lib/state/game-client.svelte";
   import {
     canReexamineInventory,
@@ -113,15 +112,10 @@
 
   onDestroy(() => {
     acquisitionController.clear();
-    // The pending buffer is module-scoped and outlives this mount; clear it so
-    // a later mount that resumes the shared game state does not flush stale
-    // buffered notifications as popups.
-    clearPendingAcquisitionsOnTeardown();
   });
 
-  function handleAcquisitionContinue(key: string) {
-    acquisitionController.dismissCurrent(key);
-    return acquisitionController.blocking;
+  async function handleAcquisitionContinue(eventId: string) {
+    await acquisitionController.dismissCurrent(eventId);
   }
 
   $effect(() => {
@@ -345,9 +339,13 @@
   {#if acquisitionController.current}
     <AcquisitionPopup
       notification={acquisitionController.current}
+      phase={acquisitionController.phase}
       returnFocusTo={acquisitionReturnFocus}
       fallbackFocusTarget={gameplayRoot}
       onContinue={handleAcquisitionContinue}
+      onRetry={acquisitionController.retry}
+      onCancel={acquisitionController.cancel}
+      onContinueWithoutSaving={acquisitionController.continueWithoutSaving}
     />
   {/if}
 {:else if gameState.loading}

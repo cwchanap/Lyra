@@ -65,6 +65,7 @@ function state(
     inventory: { evidence: [], statements: [] },
     story: { facts: [], questions: [], objectives: [], authorizations: [] },
     dialogueHistory: [],
+    pendingAcquisition: null,
   };
 }
 

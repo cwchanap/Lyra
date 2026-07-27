@@ -15,14 +15,13 @@ import {
   type MockInstance,
   vi,
 } from "vitest";
-import type { GameStateView, SceneNavigationIndex } from "$lib/state/types";
-import {
-  __clearPendingAcquisitionsForTest,
-  advanceDialogue,
-  gameState,
-} from "$lib/state/game-client.svelte";
+import type {
+  GameStateView,
+  PendingAcquisitionView,
+  SceneNavigationIndex,
+} from "$lib/state/types";
+import { advanceDialogue, gameState } from "$lib/state/game-client.svelte";
 import { acquisitionController } from "$lib/state/acquisition-controller.svelte";
-import type { AcquisitionNotification } from "$lib/state/acquisition-notifications";
 import {
   STORY_CLEARED_STORAGE_KEY,
   __resetStoryClearanceWarningLatches,
@@ -71,12 +70,10 @@ vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
 
 beforeEach(() => {
   acquisitionController.clear();
-  __clearPendingAcquisitionsForTest();
 });
 
 afterEach(() => {
   acquisitionController.clear();
-  __clearPendingAcquisitionsForTest();
 });
 
 function currentState(): GameStateView {
@@ -103,6 +100,7 @@ function currentState(): GameStateView {
     inventory: { evidence: [], statements: [] },
     story: { facts: [], questions: [], objectives: [], authorizations: [] },
     dialogueHistory: [],
+    pendingAcquisition: null,
   };
 }
 
@@ -127,6 +125,7 @@ function gameCompleteState(): GameStateView {
     inventory: { evidence: [], statements: [] },
     story: { facts: [], questions: [], objectives: [], authorizations: [] },
     dialogueHistory: [],
+    pendingAcquisition: null,
   };
 }
 
@@ -160,6 +159,7 @@ function jumpedState(): GameStateView {
     inventory: { evidence: [], statements: [] },
     story: { facts: [], questions: [], objectives: [], authorizations: [] },
     dialogueHistory: [],
+    pendingAcquisition: null,
   };
 }
 
@@ -174,32 +174,16 @@ const sceneNavigationIndex: SceneNavigationIndex = {
   ],
 };
 
-const acquiredEvidence: AcquisitionNotification = {
-  key: "evidence:receipt",
-  kind: "evidence",
-  record: {
-    id: "receipt",
-    name: "咖啡收據",
-    description: "收據上的時間被圈起。",
-    details: "",
-    imageAssetId: null,
-    onReexamine: null,
-    collectedInChapterId: "chapter_1",
-    collectedInSceneId: "scene_1",
-  },
-};
-
-const acquiredStatement: AcquisitionNotification = {
-  key: "statement:alibi",
-  kind: "statement",
-  record: {
-    id: "alibi",
-    speaker: "若月",
-    content: "我一直在店內。",
-    onReexamine: null,
-    acquiredInChapterId: "chapter_1",
-    acquiredInSceneId: "scene_1",
-  },
+const acquiredEvidence: PendingAcquisitionView = {
+  id: "event-evidence",
+  recordKind: "evidence",
+  recordId: "receipt",
+  title: "咖啡收據",
+  description: "收據上的時間被圈起。",
+  details: "",
+  imageAssetId: null,
+  createdByCommandId: 7,
+  ordinal: 0,
 };
 
 // `httpInvoke` (the non-Tauri dev fallback used in tests, since
@@ -217,29 +201,33 @@ function stubFetchForSceneNavigation() {
   mocks.fetch.mockImplementation(async (url: string) => {
     const path = String(url).replace("http://127.0.0.1:1421/", "");
     if (path === "list_scenes") return jsonResponse(sceneNavigationIndex);
-    if (path === "jump_to_scene") return jsonResponse(jumpedState());
+    if (path === "jump_to_scene") {
+      return jsonResponse({
+        state: jumpedState(),
+        thumbnailCapture: null,
+      });
+    }
     return jsonResponse({});
   });
 }
 
-function stateWithAcquiredEvidence(): GameStateView {
-  const next = currentState();
-  if (acquiredEvidence.kind !== "evidence") {
-    throw new Error("Acquisition fixture must be evidence");
-  }
-  next.inventory.evidence = [acquiredEvidence.record];
-  next.mode = {
-    type: "dialogue",
-    crossExamLineId: null,
-    current: { kind: "action", text: "還是熱的。" },
-    queueRemaining: 0,
-    sceneTag: null,
-    queueToken: { sceneId: "scene_1", queueGen: 1, cursor: 1 },
-    backgroundAssetId: null,
-    bgm: null,
-    bgs: null,
-  };
-  return next;
+function stubAcquisitionAcknowledgement() {
+  mocks.fetch.mockImplementation(async (url: string) => {
+    const path = String(url).replace("http://127.0.0.1:1421/", "");
+    if (path === "prepare_save_thumbnail") {
+      return jsonResponse({ ticket: "ticket-1", timeoutMs: 1_000 });
+    }
+    if (path === "report_save_thumbnail_failure") {
+      return jsonResponse({ type: "idle" });
+    }
+    if (path === "acknowledge_acquisition_event") {
+      return jsonResponse({
+        state: currentState(),
+        thumbnailCapture: null,
+      });
+    }
+    return jsonResponse({});
+  });
 }
 
 describe("+page acquisition popup integration", () => {
@@ -270,11 +258,15 @@ describe("+page acquisition popup integration", () => {
 
   it("inerts gameplay and restores focus after the final acknowledgement", async () => {
     const user = userEvent.setup();
+    stubAcquisitionAcknowledgement();
     const { container } = render(Page);
     const advanceButton = screen.getByRole("button", { name: "推進對話" });
     advanceButton.focus();
 
-    acquisitionController.enqueue([acquiredEvidence]);
+    gameState.value = {
+      ...currentState(),
+      pendingAcquisition: acquiredEvidence,
+    };
 
     const popup = await screen.findByRole("dialog", { name: "物證取得" });
     const gameplayRoot = container.querySelector("[data-gameplay-root]")!;
@@ -295,132 +287,6 @@ describe("+page acquisition popup integration", () => {
         String(url).endsWith("/advance_dialogue"),
       ),
     ).toBe(false);
-  });
-
-  it("keeps Escape on the popup until a multi-item queue is empty", async () => {
-    const user = userEvent.setup();
-    render(Page);
-    acquisitionController.enqueue([acquiredEvidence, acquiredStatement]);
-
-    await screen.findByRole("dialog", { name: "物證取得" });
-    await user.keyboard("{Escape}");
-
-    expect(
-      await screen.findByRole("dialog", { name: "證言取得" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
-
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "證言取得" })).toBeNull();
-    });
-    expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
-
-    await user.keyboard("{Escape}");
-    expect(
-      await screen.findByRole("dialog", { name: "遊戲選單" }),
-    ).toBeInTheDocument();
-  });
-
-  it("acknowledges backdrop and card keyboard input without advancing dialogue", async () => {
-    const user = userEvent.setup();
-    const { container } = render(Page);
-    acquisitionController.enqueue([acquiredEvidence, acquiredStatement]);
-
-    const evidencePopup = await screen.findByRole("dialog", {
-      name: "物證取得",
-    });
-    const evidenceContinue = within(evidencePopup).getByRole("button", {
-      name: "CONTINUE / 繼續",
-    });
-    document.body.focus();
-    await user.tab();
-    expect(evidenceContinue).toHaveFocus();
-
-    await user.click(evidencePopup);
-    await user.keyboard("{Enter}");
-
-    const statementPopup = await screen.findByRole("dialog", {
-      name: "證言取得",
-    });
-    const scrim = container.querySelector<HTMLElement>(".acquisition-scrim");
-    expect(scrim).not.toBeNull();
-    await user.click(scrim!);
-    document.body.focus();
-    expect(document.body).toHaveFocus();
-    await user.keyboard(" ");
-
-    await waitFor(() => {
-      expect(statementPopup).not.toBeInTheDocument();
-    });
-    expect(
-      mocks.fetch.mock.calls.some(([url]) =>
-        String(url).endsWith("/advance_dialogue"),
-      ),
-    ).toBe(false);
-  });
-
-  it("closes a menu before showing a delayed acquisition after its dialogue", async () => {
-    const user = userEvent.setup();
-    let resolveAdvance!: (response: Response) => void;
-    let advanceCallCount = 0;
-    const delayedAdvance = new Promise<Response>((resolve) => {
-      resolveAdvance = resolve;
-    });
-    mocks.fetch.mockImplementation(async (url: string) => {
-      if (String(url).endsWith("/advance_dialogue")) {
-        advanceCallCount += 1;
-        return advanceCallCount === 1
-          ? delayedAdvance
-          : // The finishing advance exhausts the linear scene's queue: Rust
-            // runs on_queue_exhausted -> advance_scene and, this being the last
-            // scene, returns mode gameComplete (not the same dialogue queue
-            // rewound). The flush logic detects exhaustion via the mode/queue
-            // transition (non-dialogue next), not previous.queueRemaining.
-            jsonResponse(gameCompleteState());
-      }
-      if (String(url).endsWith("/list_scenes")) {
-        return jsonResponse(sceneNavigationIndex);
-      }
-      return jsonResponse({});
-    });
-    render(Page);
-
-    await user.keyboard("{Escape}");
-    expect(
-      await screen.findByRole("dialog", { name: "遊戲選單" }),
-    ).toBeInTheDocument();
-
-    const command = advanceDialogue({
-      sceneId: "scene_1",
-      queueGen: 1,
-      cursor: 0,
-    });
-    await waitFor(() => expect(gameState.inFlight).toBe(true));
-    resolveAdvance(jsonResponse(stateWithAcquiredEvidence()));
-    await command;
-
-    expect(screen.queryByRole("dialog", { name: "物證取得" })).toBeNull();
-
-    const finishDialogue = advanceDialogue({
-      sceneId: "scene_1",
-      queueGen: 1,
-      cursor: 1,
-    });
-    await finishDialogue;
-
-    expect(
-      await screen.findByRole("dialog", { name: "物證取得" }),
-    ).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
-    });
-
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "物證取得" })).toBeNull();
-    });
-    expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
   });
 
   it("does not open the game menu while a command is in flight", async () => {
@@ -447,7 +313,9 @@ describe("+page acquisition popup integration", () => {
     await user.keyboard("{Escape}");
 
     expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
-    resolveAdvance(jsonResponse(currentState()));
+    resolveAdvance(
+      jsonResponse({ state: currentState(), thumbnailCapture: null }),
+    );
     await command;
   });
 
@@ -475,17 +343,6 @@ describe("+page acquisition popup integration", () => {
 
     expect(gameState.inFlight).toBe(false);
     expect(gameState.error).not.toBeNull();
-  });
-
-  it("clears queued acquisitions when the page unmounts", () => {
-    const result = render(Page);
-    acquisitionController.enqueue([acquiredEvidence, acquiredStatement]);
-    expect(acquisitionController.blocking).toBe(true);
-
-    result.unmount();
-
-    expect(acquisitionController.blocking).toBe(false);
-    expect(acquisitionController.size).toBe(0);
   });
 });
 

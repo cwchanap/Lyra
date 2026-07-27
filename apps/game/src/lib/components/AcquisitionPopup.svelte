@@ -6,27 +6,34 @@
     resolveStoryAsset,
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
-  import type { AcquisitionNotification } from "$lib/state/acquisition-notifications";
+  import type {
+    AcquisitionAcknowledgementPhase,
+    PersistenceFailureTokenView,
+  } from "$lib/persistence/types";
   import { claimEscape } from "$lib/state/escape-coordinator";
+  import type { PendingAcquisitionView } from "$lib/state/types";
 
   let {
     notification,
+    phase,
     returnFocusTo = null,
     fallbackFocusTarget = null,
     onContinue,
+    onRetry,
+    onCancel,
+    onContinueWithoutSaving,
   }: {
-    notification: AcquisitionNotification;
+    notification: PendingAcquisitionView;
+    phase: AcquisitionAcknowledgementPhase;
     returnFocusTo?: HTMLElement | null;
-    // When the return-focus target is captured from a component that unmounts
-    // in the same render as the popup appearing (e.g. the SR advance button
-    // inside DialogueBox, which unmounts when an on_collect queue empties and
-    // the mode flips to explore), the target is disconnected by the time the
-    // popup dismisses. Without a connected fallback, focus falls through to
-    // <body> and keyboard/SR users lose their place in gameplay. The gameplay
-    // root is a stable, always-mounted (while a session is active) container
-    // with tabindex=-1, so it is a safe restoration point.
     fallbackFocusTarget?: HTMLElement | null;
-    onContinue: (key: string) => boolean;
+    onContinue: (eventId: string) => Promise<void>;
+    onRetry: (eventId: string) => Promise<void>;
+    onCancel: (eventId: string) => void;
+    onContinueWithoutSaving: (
+      eventId: string,
+      failureToken: PersistenceFailureTokenView,
+    ) => Promise<void>;
   } = $props();
 
   let continueButton: HTMLButtonElement | undefined = $state();
@@ -34,24 +41,23 @@
   let focusTarget: HTMLElement | null = null;
   let fallbackTarget: HTMLElement | null = null;
   let releaseEscapeClaim: (() => void) | null = null;
+  let confirmWithoutSaving = $state(false);
 
   const heading = $derived(
-    notification.kind === "evidence" ? "物證取得" : "證言取得",
+    notification.recordKind === "evidence" ? "物證取得" : "證言取得",
   );
   const eyebrow = $derived(
-    notification.kind === "evidence"
+    notification.recordKind === "evidence"
       ? "EVIDENCE ACQUIRED"
       : "STATEMENT ACQUIRED",
   );
-  const title = $derived(
-    notification.kind === "evidence"
-      ? notification.record.name
-      : notification.record.speaker,
+  const savingLabel = $derived(
+    phase.type === "saving" && phase.slow ? "仍在儲存，請稍候…" : "儲存中…",
   );
-  const description = $derived(
-    notification.kind === "evidence"
-      ? notification.record.description
-      : notification.record.content,
+  const saving = $derived(
+    phase.type === "preparing" ||
+      phase.type === "capturing" ||
+      phase.type === "saving",
   );
 
   // Guard against stale async results: if the notification changes (via
@@ -59,14 +65,14 @@
   // sets `cancelled` and the key check prevents the old promise from
   // overwriting `evidenceImage` with the previous item's asset.
   $effect(() => {
-    const key = notification.key;
+    const eventId = notification.id;
     let cancelled = false;
-    if (notification.kind !== "evidence") {
+    if (notification.recordKind !== "evidence") {
       evidenceImage = null;
       return;
     }
 
-    const assetId = notification.record.imageAssetId;
+    const assetId = notification.imageAssetId;
     if (!assetId) {
       evidenceImage = placeholderForStoryAsset("evidence");
       return;
@@ -75,12 +81,12 @@
     evidenceImage = null;
     resolveStoryAsset(assetId, "evidence")
       .then((asset) => {
-        if (!cancelled && notification.key === key) {
+        if (!cancelled && notification.id === eventId) {
           evidenceImage = asset;
         }
       })
       .catch(() => {
-        if (!cancelled && notification.key === key) {
+        if (!cancelled && notification.id === eventId) {
           evidenceImage = placeholderForMissingStoryAsset(assetId, "evidence");
         }
       });
@@ -91,21 +97,35 @@
   });
 
   $effect(() => {
-    void notification.key;
+    void notification.id;
+    confirmWithoutSaving = false;
     void tick().then(() => continueButton?.focus());
   });
 
-  // Shared by the Continue button, Enter/Space, and the Escape claim.
-  // Reads `notification.key` as a live reactive prop at call time, not a
-  // captured value — after a `{#key}` remount the closure sees the new
-  // notification, so it dismisses the *current* item, not the one that was
-  // mounted when the handler was bound.
   function dismissCurrent() {
-    const remainsOpen = onContinue(notification.key);
-    if (!remainsOpen) {
-      releaseEscapeClaim?.();
-      releaseEscapeClaim = null;
+    if (phase.type !== "idle") return;
+    void onContinue(notification.id);
+  }
+
+  function retry() {
+    if (phase.type !== "failed") return;
+    confirmWithoutSaving = false;
+    void onRetry(notification.id);
+  }
+
+  function cancel() {
+    if (phase.type !== "failed") return;
+    confirmWithoutSaving = false;
+    onCancel(notification.id);
+  }
+
+  function continueWithoutSaving() {
+    if (phase.type !== "failed" || !phase.failureToken) return;
+    if (!confirmWithoutSaving) {
+      confirmWithoutSaving = true;
+      return;
     }
+    void onContinueWithoutSaving(notification.id, phase.failureToken);
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -117,7 +137,7 @@
     event.stopImmediatePropagation();
 
     if (event.key === "Enter" || event.key === " ") {
-      if (!event.repeat) dismissCurrent();
+      if (!event.repeat && phase.type === "idle") dismissCurrent();
       return;
     }
 
@@ -162,7 +182,7 @@
 </script>
 
 <div class="acquisition-scrim">
-  {#key notification.key}
+  {#key notification.id}
     <div
       class="acquisition-card"
       role="dialog"
@@ -177,37 +197,56 @@
 
       <div class="acquisition-body">
         <div class="visual" aria-hidden="true">
-          {#if notification.kind === "evidence" && evidenceImage}
+          {#if notification.recordKind === "evidence" && evidenceImage}
             <img
               class="evidence-image"
               src={evidenceImage.url}
               alt=""
               onerror={handleImageError}
             />
-          {:else if notification.kind === "statement"}
+          {:else if notification.recordKind === "statement"}
             <div class="statement-seal">證</div>
           {/if}
         </div>
 
         <div class="copy">
-          <p class="item-title">{title}</p>
+          <p class="item-title">{notification.title}</p>
           <p
             id="acquisition-description"
-            class:statement-content={notification.kind === "statement"}
+            class:statement-content={notification.recordKind === "statement"}
           >
-            {description}
+            {notification.description}
           </p>
         </div>
       </div>
 
-      <button
-        bind:this={continueButton}
-        class="continue-button"
-        type="button"
-        onclick={dismissCurrent}
-      >
-        CONTINUE / 繼續
-      </button>
+      {#if phase.type === "failed"}
+        <div class="failure-actions">
+          <p class="failure-message" role="alert">
+            {phase.diagnostic.message}
+            {#if confirmWithoutSaving}
+              此取得通知可能會在重新啟動後再次出現。
+            {/if}
+          </p>
+          <button type="button" onclick={retry}>重試</button>
+          <button type="button" onclick={cancel}>取消</button>
+          {#if phase.failureToken}
+            <button type="button" onclick={continueWithoutSaving}>
+              {confirmWithoutSaving ? "確認不儲存並繼續" : "不儲存並繼續"}
+            </button>
+          {/if}
+        </div>
+      {:else}
+        <button
+          bind:this={continueButton}
+          class="continue-button"
+          type="button"
+          disabled={saving}
+          onclick={dismissCurrent}
+        >
+          {saving ? savingLabel : "CONTINUE / 繼續"}
+        </button>
+      {/if}
     </div>
   {/key}
 </div>
