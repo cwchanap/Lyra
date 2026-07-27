@@ -33,6 +33,19 @@ does not add the Task 12 frontend overlay.
   fallible exit action succeeds. Failed actions preserve the exact Failed view
   and token. Wrong, stale, and replayed tokens retain the existing typed
   stale-token error.
+- The gated exit worker receives an `ExitAttemptRecovery` that owns the exact
+  pre-attempt lifecycle snapshot and, for retries, the one consumed challenge.
+  It arms a synchronous RAII drop guard immediately after the start gate and
+  before its first await. Task cancellation or an in-process panic therefore
+  restores an initial attempt to Idle, or a retry to the structurally identical
+  Failed view and exact challenge/token. A restored token succeeds once and
+  replay remains stale.
+- The guard disarms only after a successful external exit action returns with
+  the programmatic bypass committed, or after Failed status and its newly
+  registered challenge have committed atomically. Subscriber notification is
+  deliberately separated from that commit. Scheduler rejection and a dropped
+  start-gate receiver remain synchronous recovery paths with one recovery
+  owner.
 - A coordinator without application session/gate context leaves exit status
   Idle rather than publishing Saving for work it cannot schedule.
 
@@ -90,6 +103,14 @@ commit takes `S` before coordinator state. Scheduler calls, subscriber
 callbacks, awaits, and external exit actions all run after those guards are
 released. A lock-probe exit driver verifies both exit-transition and `S` are
 available inside the external action.
+
+Cancellation recovery uses that same `exit-transition -> S ->
+coordinator-state` order synchronously from `Drop`, without awaiting. The
+worker's inner futures and any of their temporary guards drop before the
+recovery guard. Controlled prepare-await tests prove `exit-transition` and `S`
+are both acquirable while initial and retry workers are blocked. The retry
+guard moves one consumed challenge record rather than cloning it; recovery
+uses vacant-entry insertion and never overwrites a replacement challenge.
 
 The scheduler is transport-neutral and coordinator-owned. Test/development
 construction captures its Tokio handle once, with a dedicated Tokio-thread
@@ -200,16 +221,35 @@ exit_lifecycle_without_saving_action_failure_preserves_exact_failed_token
 exit_lifecycle_saving_rejects_delete_before_health_writer_or_filesystem_side_effects
   RED: delete completed while exit Saving
   GREEN: 1 passed, 541 filtered
+
+# Detached-worker cancellation recovery
+exit_lifecycle_cancelled_initial_worker_restores_idle_and_session_admission
+  RED: 0 passed, 1 failed, 524 filtered; abort left status Saving
+  GREEN: included in 2 passed, 544 filtered for cancelled-worker tests
+exit_lifecycle_cancelled_retry_restores_exact_failed_status_and_challenge
+  RED: 0 passed, 1 failed, 525 filtered; Failed view restored without the
+       consumed challenge, so the exact token was stale
+  GREEN: included in 2 passed, 544 filtered for cancelled-worker tests;
+         exact Failed JSON and one challenge restored, token succeeded once,
+         replay returned stalePersistenceFailureToken
+
+# Start-gate ownership and in-process panic
+exit_lifecycle_dropped_start_gate_restores_idle_synchronously
+exit_lifecycle_retry_start_gate_failure_preserves_exact_failed_token
+  GREEN: each 1 passed, 546 filtered
+exit_lifecycle_panicking_initial_worker_unwinds_to_idle_and_can_retry
+  GREEN: 1 passed, 526 filtered; JoinError was panic, not cancellation, and
+         a fresh exit request succeeded
 ```
 
 ## Final verification
 
 ```text
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml exit_lifecycle
-  cargo test: 22 passed, 521 filtered out (5 suites, 0.09s)
+  cargo test: 26 passed, 521 filtered out (5 suites, 0.06s)
 
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator
-  cargo test: 106 passed, 437 filtered out (5 suites, 0.11s)
+  cargo test: 110 passed, 437 filtered out (5 suites, 0.11s)
 
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
   --example dev_engine_server
@@ -217,10 +257,10 @@ rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
 
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
   application_command_contract
-  cargo test: 45 passed, 498 filtered out (5 suites, 0.42s)
+  cargo test: 45 passed, 502 filtered out (5 suites, 0.43s)
 
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
-  cargo test: 543 passed (6 suites, 1.52s)
+  cargo test: 547 passed (6 suites, 1.49s)
 
 rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
   exit 0
