@@ -14,9 +14,10 @@ use game::save::capture::{capture_checkpoint_v1, CapturedCheckpointV1};
 use game::save::coordinator::{
     AppSession, ApplicationExit, AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome,
     AutosavePreparedWrite, AutosaveRegisteredIntent, AutosaveWriteJob, CoordinatorFuture,
-    ExitRequestSource, ExitStatusView, FlushOperation, PersistenceBypassOperation,
-    PersistenceFailureTokenView, PersistenceHealthView, PreparedThumbnailPurpose, SaveCoordinator,
-    ThumbnailActivityView, ThumbnailCapturePurpose, ThumbnailCaptureRequestView,
+    ExitRequestSource, ExitStatusView, ExitTask, ExitTaskScheduler, FlushOperation,
+    PersistenceBypassOperation, PersistenceFailureTokenView, PersistenceHealthView,
+    PreparedThumbnailPurpose, SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose,
+    ThumbnailCaptureRequestView,
 };
 use game::save::restore::{
     build_restore_candidate, load_current_definitions, RestoredGameCandidate,
@@ -346,25 +347,26 @@ fn read_game_state(state: &AppState) -> Result<GameStateView, GameError> {
 fn handle_close_requested(
     label: &str,
     prevent_close: impl FnOnce(),
-    schedule: impl FnOnce(ExitRequestSource),
-) {
+    schedule: impl FnOnce(ExitRequestSource) -> Result<(), GameError>,
+) -> Result<(), GameError> {
     if label == MAIN_WINDOW_LABEL {
         prevent_close();
-        schedule(ExitRequestSource::WindowClose);
+        schedule(ExitRequestSource::WindowClose)?;
     }
+    Ok(())
 }
 
 fn handle_exit_requested(
     code: Option<i32>,
     coordinator: &SaveCoordinator,
     prevent_exit: impl FnOnce(),
-    schedule: impl FnOnce(ExitRequestSource),
-) {
+    schedule: impl FnOnce(ExitRequestSource) -> Result<(), GameError>,
+) -> Result<(), GameError> {
     if code.is_some() && coordinator.consume_programmatic_exit_bypass() {
-        return;
+        return Ok(());
     }
     prevent_exit();
-    schedule(ExitRequestSource::ApplicationQuit);
+    schedule(ExitRequestSource::ApplicationQuit)
 }
 
 fn run_gameplay_mutation(
@@ -1244,6 +1246,11 @@ async fn delete_save_core(
     reference: SaveSlotRef,
     expectation: OccupiedSlotExpectation,
 ) -> Result<SaveBrowserOpenResultView, GameError> {
+    state
+        .session
+        .lock()
+        .map_err(|_| unavailable_error())?
+        .ensure_persistence_available()?;
     let persistence = state
         .persistence
         .as_ref()
@@ -1445,10 +1452,11 @@ pub struct DevelopmentExitDriver {
 }
 
 impl ApplicationExit for DevelopmentExitDriver {
-    fn exit(&self, code: i32) {
+    fn exit(&self, code: i32) -> Result<(), GameError> {
         if let Ok(mut codes) = self.codes.lock() {
             codes.push(code);
         }
+        Ok(())
     }
 }
 
@@ -2027,8 +2035,18 @@ struct TauriApplicationExit {
 }
 
 impl ApplicationExit for TauriApplicationExit {
-    fn exit(&self, code: i32) {
+    fn exit(&self, code: i32) -> Result<(), GameError> {
         self.app.exit(code);
+        Ok(())
+    }
+}
+
+struct TauriExitTaskScheduler;
+
+impl ExitTaskScheduler for TauriExitTaskScheduler {
+    fn spawn(&self, task: ExitTask) -> Result<(), GameError> {
+        tauri::async_runtime::spawn(task);
+        Ok(())
     }
 }
 
@@ -2052,12 +2070,16 @@ pub fn run() {
                 &app.config().identifier,
             )
             .map_err(|error| std::io::Error::other(error.message))?;
-            let state = build_app_state_with_storage(
+            let mut state = build_app_state_with_storage(
                 resources_dir,
                 save_root,
                 Arc::new(ProductionSaveFilesystem),
             )
             .map_err(|error| std::io::Error::other(error.message))?;
+            state.coordinator = state
+                .coordinator
+                .clone()
+                .with_exit_scheduler(Arc::new(TauriExitTaskScheduler));
             let app_handle = app.handle().clone();
             bind_persistence_status_events(&state.coordinator, move |event, payload| {
                 if let Err(error) = app_handle.emit(event, payload) {
@@ -2121,22 +2143,26 @@ pub fn run() {
                 let exit: Arc<dyn ApplicationExit> = Arc::new(TauriApplicationExit {
                     app: app_handle.clone(),
                 });
-                handle_close_requested(
+                if let Err(error) = handle_close_requested(
                     &label,
                     || api.prevent_close(),
                     |source| state.coordinator.request_exit_flush(exit, source),
-                );
+                ) {
+                    eprintln!("failed to schedule exit flush: {}", error.message);
+                }
             }
             tauri::RunEvent::ExitRequested { code, api, .. } => {
                 let exit: Arc<dyn ApplicationExit> = Arc::new(TauriApplicationExit {
                     app: app_handle.clone(),
                 });
-                handle_exit_requested(
+                if let Err(error) = handle_exit_requested(
                     code,
                     &state.coordinator,
                     || api.prevent_exit(),
                     |source| state.coordinator.request_exit_flush(exit, source),
-                );
+                ) {
+                    eprintln!("failed to schedule exit flush: {}", error.message);
+                }
             }
             _ => {}
         }
@@ -2314,9 +2340,10 @@ mod tests {
         }
 
         impl ApplicationExit for RecordingExit {
-            fn exit(&self, code: i32) {
+            fn exit(&self, code: i32) -> Result<(), GameError> {
                 self.calls.lock().unwrap().push(code);
                 self.called.notify_waiters();
+                Ok(())
             }
         }
 
@@ -2340,13 +2367,21 @@ mod tests {
             handle_close_requested(
                 "main",
                 || prevented.set(prevented.get() + 1),
-                |source| scheduled.borrow_mut().push(source),
-            );
+                |source| {
+                    scheduled.borrow_mut().push(source);
+                    Ok(())
+                },
+            )
+            .unwrap();
             handle_close_requested(
                 "secondary",
                 || prevented.set(prevented.get() + 1),
-                |source| scheduled.borrow_mut().push(source),
-            );
+                |source| {
+                    scheduled.borrow_mut().push(source);
+                    Ok(())
+                },
+            )
+            .unwrap();
 
             assert_eq!(prevented.get(), 1);
             assert_eq!(*scheduled.borrow(), vec![ExitRequestSource::WindowClose]);
@@ -2358,7 +2393,9 @@ mod tests {
             let coordinator =
                 SaveCoordinator::for_application(session, Arc::new(tokio::sync::Mutex::new(())));
             let exit = Arc::new(RecordingExit::default());
-            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::WindowClose);
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
             exit.wait_for_call().await;
 
             let prevented = Cell::new(0);
@@ -2367,8 +2404,12 @@ mod tests {
                 Some(0),
                 &coordinator,
                 || prevented.set(prevented.get() + 1),
-                |source| scheduled.borrow_mut().push(source),
-            );
+                |source| {
+                    scheduled.borrow_mut().push(source);
+                    Ok(())
+                },
+            )
+            .unwrap();
             assert_eq!(prevented.get(), 0);
             assert!(scheduled.borrow().is_empty());
 
@@ -2376,14 +2417,22 @@ mod tests {
                 Some(0),
                 &coordinator,
                 || prevented.set(prevented.get() + 1),
-                |source| scheduled.borrow_mut().push(source),
-            );
+                |source| {
+                    scheduled.borrow_mut().push(source);
+                    Ok(())
+                },
+            )
+            .unwrap();
             handle_exit_requested(
                 None,
                 &coordinator,
                 || prevented.set(prevented.get() + 1),
-                |source| scheduled.borrow_mut().push(source),
-            );
+                |source| {
+                    scheduled.borrow_mut().push(source);
+                    Ok(())
+                },
+            )
+            .unwrap();
 
             assert_eq!(prevented.get(), 2);
             assert_eq!(
@@ -2414,10 +2463,12 @@ mod tests {
                 save_root: PathBuf::new(),
                 persistence: None,
             };
-            coordinator.request_exit_flush(
-                Arc::new(RecordingExit::default()),
-                ExitRequestSource::WindowClose,
-            );
+            coordinator
+                .request_exit_flush(
+                    Arc::new(RecordingExit::default()),
+                    ExitRequestSource::WindowClose,
+                )
+                .unwrap();
 
             assert_eq!(
                 serde_json::to_value(read_game_state(&app).unwrap()).unwrap(),
@@ -2484,7 +2535,9 @@ mod tests {
                 recorded.lock().unwrap().push((name.into(), payload));
             });
             let exit = Arc::new(RecordingExit::default());
-            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::WindowClose);
+            coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
 
             let getter = serde_json::to_value(get_exit_status_core(&app)).unwrap();
             let latest_exit_event = events
@@ -2562,7 +2615,8 @@ mod tests {
             let exit = Arc::new(RecordingExit::default());
 
             app.coordinator
-                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose);
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+                .unwrap();
             tokio::select! {
                 _ = exit.wait_for_call() => {}
                 failed = failed_rx.recv() => panic!("production exit flush failed: {failed:?}"),
@@ -2595,11 +2649,72 @@ mod tests {
         use std::cell::Cell;
         use std::io;
         use std::path::Path;
-        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
         use std::sync::Condvar;
         use std::time::{Duration as StdDuration, SystemTime};
 
         struct PassiveBackend;
+
+        struct NoopApplicationExit;
+
+        impl ApplicationExit for NoopApplicationExit {
+            fn exit(&self, _code: i32) -> Result<(), GameError> {
+                Ok(())
+            }
+        }
+
+        struct RemoveCountingFilesystem {
+            inner: ProductionSaveFilesystem,
+            removes: AtomicUsize,
+        }
+
+        impl RemoveCountingFilesystem {
+            fn new() -> Self {
+                Self {
+                    inner: ProductionSaveFilesystem,
+                    removes: AtomicUsize::new(0),
+                }
+            }
+        }
+
+        impl SaveFilesystem for RemoveCountingFilesystem {
+            fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+                self.inner.create_dir_all(path)
+            }
+
+            fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+                self.inner.read(path)
+            }
+
+            fn read_prefix(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
+                self.inner.read_prefix(path, limit)
+            }
+
+            fn metadata(&self, path: &Path) -> io::Result<SaveFileMetadata> {
+                self.inner.metadata(path)
+            }
+
+            fn list_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
+                self.inner.list_dir(path)
+            }
+
+            fn stage_atomic(
+                &self,
+                path: &Path,
+                bytes: &[u8],
+            ) -> io::Result<Box<dyn StagedAtomicWrite>> {
+                self.inner.stage_atomic(path, bytes)
+            }
+
+            fn remove_file(&self, path: &Path) -> io::Result<()> {
+                self.removes.fetch_add(1, Ordering::SeqCst);
+                self.inner.remove_file(path)
+            }
+
+            fn sync_dir(&self, path: &Path) -> io::Result<()> {
+                self.inner.sync_dir(path)
+            }
+        }
 
         impl AutosaveBackend for PassiveBackend {
             fn capture(
@@ -3286,6 +3401,57 @@ mod tests {
                     .status,
                 SaveSlotStatusView::Empty
             ));
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_saving_rejects_delete_before_health_writer_or_filesystem_side_effects(
+        ) {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let fs = Arc::new(RemoveCountingFilesystem::new());
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                fs.clone(),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            let saved = seed_manual(&app, 1, "Keep me").await;
+            let save_id = valid_save_id(&saved.saved_slot);
+            let browser_before =
+                serde_json::to_value(app.persistence.as_ref().unwrap().discover()).unwrap();
+            let health_before = app.coordinator.persistence_health();
+            let removes_before = fs.removes.load(Ordering::SeqCst);
+            app.session.lock().unwrap().persistence.exclusive_intent =
+                Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+            app.coordinator
+                .request_exit_flush(
+                    Arc::new(NoopApplicationExit),
+                    ExitRequestSource::WindowClose,
+                )
+                .unwrap();
+            assert_eq!(app.coordinator.exit_status(), ExitStatusView::Saving);
+
+            let error = delete_save_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                OccupiedSlotExpectation {
+                    save_id: Some(save_id),
+                    modified_at: None,
+                },
+            )
+            .await
+            .unwrap_err();
+
+            assert_eq!(error.code, "persistenceOperationInProgress");
+            assert_eq!(app.coordinator.persistence_health(), health_before);
+            assert_eq!(fs.removes.load(Ordering::SeqCst), removes_before);
+            assert_eq!(
+                serde_json::to_value(app.persistence.as_ref().unwrap().discover()).unwrap(),
+                browser_before
+            );
         }
 
         #[tokio::test]

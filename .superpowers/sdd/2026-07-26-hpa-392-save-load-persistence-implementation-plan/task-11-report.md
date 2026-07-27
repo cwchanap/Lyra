@@ -11,9 +11,10 @@ does not add the Task 12 frontend overlay.
 
 - Added the complete tagged `ExitStatusView` wire contract:
   `idle`, `saving`, and `failed { diagnostic, failureToken }`.
-- Added the `ApplicationExit: Send + Sync` boundary. Production delegates to
-  `AppHandle::exit(0)`; the development adapter records exit codes without
-  terminating the server or test process.
+- Added the fallible `ApplicationExit: Send + Sync` boundary. Production
+  delegates to `AppHandle::exit(0)` and reports successful scheduling; the
+  development adapter records exit codes without terminating the server or
+  test process, while test drivers can reject an action deterministically.
 - A first main-window close or user-originated application quit transitions
   Idle to Saving, installs session-level exit exclusivity, and schedules one
   asynchronous flush.
@@ -26,10 +27,12 @@ does not add the Task 12 frontend overlay.
   `ExitWithoutSaving` persistence challenge, and publishes a complete Failed
   status carrying the registered opaque token. No synthetic or unregistered
   failure token is emitted.
-- Retry consumes the matching challenge and starts a fresh exit flush. Cancel
-  consumes it, clears exit exclusivity, and returns Idle. Exit Without Saving
-  consumes it, arms the same one-shot bypass, and exits. Wrong, stale, and
-  replayed tokens retain the existing typed stale-token error.
+- Retry tentatively transitions and consumes the matching challenge only after
+  its scheduler accepts the gated task. Cancel consumes it in the same commit
+  that clears exit exclusivity. Exit Without Saving consumes it only after the
+  fallible exit action succeeds. Failed actions preserve the exact Failed view
+  and token. Wrong, stale, and replayed tokens retain the existing typed
+  stale-token error.
 - A coordinator without application session/gate context leaves exit status
   Idle rather than publishing Saving for work it cannot schedule.
 
@@ -77,6 +80,27 @@ serialization, prepared-write/receipt handling, the replacement gate, session
 generation checks, durable-revision checks, or commit-time stale-write
 revalidation. A production-filesystem regression proves an exit flush can
 commit while exit exclusivity is active.
+
+Whole-review hardening makes lifecycle transitions use the documented
+`exit-transition -> S -> coordinator-state` order. The writer path retains
+`writer gate -> G -> S`; lifecycle code never owns the writer gate or `G`.
+There is no lifecycle inverse (`coordinator-state -> S`): status prechecks
+release coordinator state before taking `S`, and every multi-lock lifecycle
+commit takes `S` before coordinator state. Scheduler calls, subscriber
+callbacks, awaits, and external exit actions all run after those guards are
+released. A lock-probe exit driver verifies both exit-transition and `S` are
+available inside the external action.
+
+The scheduler is transport-neutral and coordinator-owned. Test/development
+construction captures its Tokio handle once, with a dedicated Tokio-thread
+fallback when constructed outside a runtime, so a later plain `std::thread`
+request does not depend on caller-local runtime context. Production explicitly
+injects a scheduler backed by `tauri::async_runtime::spawn`.
+
+`delete_save_core` now applies the centralized session admission guard before
+publishing Pending, reserving writer work, or touching the filesystem. Its
+Saving-state regression proves the typed busy error leaves persistence health,
+the discovered browser, and filesystem remove count unchanged.
 
 ## TDD evidence
 
@@ -135,14 +159,57 @@ rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
 cargo test: 1 passed, 533 filtered out (5 suites, 0.00s)
 ```
 
+Whole-review RED/GREEN evidence:
+
+```text
+# Caller-local runtime dependency
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  exit_lifecycle_plain_thread_request_still_schedules_and_exits_once
+  RED: 0 passed, 1 failed, 515 filtered; exit timed out after 1.01s
+  GREEN: 1 passed, 534 filtered
+
+# Scheduler rejection stranded Saving
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  exit_lifecycle_scheduler_rejection_restores_idle_and_session_admission
+  RED: 0 passed, 1 failed, 516 filtered
+  GREEN: 1 passed, 535 filtered
+
+# Prerequisite, cancel, and challenge-publication failpoints
+exit_lifecycle_prerequisite_failure_does_not_arm_saving
+  RED: missing deterministic prerequisite failpoint
+  GREEN: 1 passed, 536 filtered
+exit_lifecycle_cancel_guard_clear_failure_preserves_exact_failed_token
+  RED: missing deterministic guard-clear failpoint
+  GREEN: 1 passed, 538 filtered
+exit_lifecycle_challenge_publication_failure_restores_recoverable_idle
+  RED: missing deterministic challenge-publication failpoint
+  GREEN: 1 passed, 540 filtered
+
+# Token/action atomicity
+exact_identity_rejects_stale_session_revision_discovery_save_and_event
+  RED: stale identity consumed the otherwise exact token
+  GREEN: 1 passed, 536 filtered
+exit_lifecycle_retry_scheduler_failure_preserves_exact_failed_token
+  RED: retry rejection consumed the exact token
+  GREEN: 1 passed, 537 filtered
+exit_lifecycle_without_saving_action_failure_preserves_exact_failed_token
+  RED: ApplicationExit could not report action failure
+  GREEN: 1 passed, 539 filtered
+
+# Delete admission
+exit_lifecycle_saving_rejects_delete_before_health_writer_or_filesystem_side_effects
+  RED: delete completed while exit Saving
+  GREEN: 1 passed, 541 filtered
+```
+
 ## Final verification
 
 ```text
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml exit_lifecycle
-  cargo test: 13 passed, 521 filtered out (5 suites, 0.06s)
+  cargo test: 22 passed, 521 filtered out (5 suites, 0.09s)
 
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator
-  cargo test: 98 passed, 436 filtered out (5 suites, 0.10s)
+  cargo test: 106 passed, 437 filtered out (5 suites, 0.11s)
 
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
   --example dev_engine_server
@@ -150,10 +217,10 @@ rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
 
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
   application_command_contract
-  cargo test: 44 passed, 490 filtered out (5 suites, 0.40s)
+  cargo test: 45 passed, 498 filtered out (5 suites, 0.42s)
 
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
-  cargo test: 534 passed (6 suites, 1.46s)
+  cargo test: 543 passed (6 suites, 1.52s)
 
 rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
   exit 0
@@ -166,7 +233,7 @@ rtk git diff --check
   exit 0
 ```
 
-The exact local Tauri 2.11.5 crate source was used to verify the callback
+The exact resolved Tauri 2.11.0 crate source was used to verify the callback
 shapes and semantics for `App::run`, `RunEvent::ExitRequested`,
 `WindowEvent::CloseRequested`, `prevent_exit`, and `prevent_close`.
 
@@ -176,4 +243,3 @@ shapes and semantics for `App::run`, `RunEvent::ExitRequested`,
 - `apps/game/src-tauri/src/lib.rs`
 - `apps/game/src-tauri/examples/dev_engine_server.rs`
 - this report
-
