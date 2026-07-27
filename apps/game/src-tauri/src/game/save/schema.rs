@@ -159,6 +159,16 @@ pub(crate) enum ThumbnailUnavailableReason {
     ReadFailed,
 }
 
+pub(crate) type SaveDiagnosticView = GameError;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ThumbnailDiagnosticView {
+    pub(crate) reason: ThumbnailUnavailableReason,
+    pub(crate) message: String,
+    pub(crate) retryable: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct SaveEnvelopeV1 {
