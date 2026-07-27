@@ -447,3 +447,116 @@ rtk git diff --check
   checkpoint pin/reuse behavior, and failure-challenge semantics.
 - The separately recorded lost-wakeup and pre-clone-size-check minor findings
   remain deferred by scope for a later review round.
+
+## Fix round 2 — preserved persistence diagnostics
+
+### Review mapping
+
+| Finding | Fix |
+| --- | --- |
+| Important: committed cleanup diagnostic was dropped | `AutosaveCommittedWrite` now carries Task 7's `SlotWriteOutcome.cleanup_diagnostic` alongside its envelope-derived receipt. A committed JSON replacement still adopts the receipt/target, while a receipt-owned cleanup failure publishes Degraded and automatically queues cleanup through the same writer. Exact-owner cleanup success clears that cleanup state and recomputes health without hiding pending work or a retained write failure. |
+| Important: older writer failure replaced newer failure diagnostic | The coordinator now stores one atomic `BackgroundWriteFailure { identity, diagnostic }`. Only an incoming failure whose identity wins ownership may replace or publish the diagnostic. Older completion may finish bookkeeping but cannot mutate the newer complete health payload. |
+
+The recorded lost-wakeup and pre-clone-size-check minor findings remain
+unchanged and deferred.
+
+### Files
+
+- `apps/game/src-tauri/src/game/save/coordinator.rs`
+  - atomic write-failure identity/diagnostic ownership;
+  - committed cleanup diagnostic propagation and receipt-owned cleanup state;
+  - same-writer cleanup retry and exact-owner resolution;
+  - deterministic failure-race and real-storage cleanup tests.
+- `.superpowers/sdd/2026-07-26-hpa-392-save-load-persistence-implementation-plan/task-8-report.md`
+  - this fix-round evidence.
+
+### RED evidence
+
+Failure diagnostic ownership:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce::newer_schedule_failure_diagnostic_survives_older_writer_failure
+```
+
+Exited 101. Revision 51's scheduling failure first published
+`saveWriteFailed`; after paused revision 50 resumed and failed replacement, the
+health payload incorrectly changed to `saveReplaceFailed`. The test also binds
+explicit Flush retry to revision 51.
+
+Committed cleanup diagnostic:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration::committed_cleanup_diagnostic_adopts_receipt_and_retries_through_writer
+```
+
+Exited 101 after timing out waiting for cleanup start. The real phase log had
+reached `W+G:commit`, proving Task 7 had committed the replacement, but the
+cleanup diagnostic was dropped and no retry entered the writer queue.
+
+### State and ownership decisions
+
+- Write failure identity and diagnostic are one state value. Tuple ordering is
+  used only to select the retained owner; non-owning failures do not republish
+  health.
+- Cleanup failure is owned by the exact successful receipt, including
+  generation, revision, slot, and save ID.
+- Health recomputation precedence is: pending autosave, retained write failure,
+  retained cleanup failure, then Healthy.
+- A cleanup diagnostic never invalidates the successful receipt or target.
+  Replacement is already durable and remains authoritative.
+- Automatic cleanup retry uses `WriterJobClass::OrphanCleanup`. If it fails, the
+  original receipt-owned diagnostic remains retained for a later explicit
+  `enqueue_orphan_cleanup` retry.
+- Cleanup success clears state only when its owner still matches. Health is then
+  recomputed, so it cannot clear a newer pending write or write-failure
+  diagnostic.
+
+### Real-storage cleanup matrix
+
+| Boundary | Deterministic evidence | Result |
+| --- | --- | --- |
+| prior sidecar | install a valid occupied autosave JSON plus canonical PNG sidecar | next real autosave has an obsolete sidecar to clean |
+| post-replacement cleanup fault | fail exactly the first sidecar removal | new JSON commits; Task 7 returns `saveWriteFailed` only as `cleanup_diagnostic` |
+| receipt/target authority | parse installed JSON and inspect coordinator | revision 22 receipt/save ID and autosave-1 target are adopted |
+| cleanup health | pause queued cleanup immediately after writer entry | complete health is Degraded with the original Task 7 cleanup diagnostic |
+| same writer | while cleanup is paused, probe the backend writer mutex and phase log | writer is held and log ends `W+G:commit`, `W:cleanup` |
+| retained cleanup work | inspect obsolete sidecar while retry is paused | old PNG still exists and cleanup degradation remains owned by the committed receipt |
+| exact-owner resolution | release the queued retry after one-shot removal fault is consumed | real orphan scan removes old sidecar; health becomes Healthy because no pending/write failure exists |
+
+### GREEN evidence and final gates
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::ticket
+  11 passed, 411 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce
+  18 passed, 404 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::writer
+  4 passed, 418 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration
+  6 passed, 416 filtered out
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 422 passed across 6 suites
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+
+rtk git diff --check
+  exit 0
+```
+
+### Remaining risks and deferred work
+
+- Task 10's concrete backend must surface the real
+  `SlotWriteOutcome.cleanup_diagnostic` through this committed outcome and use
+  the same serialized cleanup callback.
+- Task 9 still owns blocking flush, acquisition acknowledgement mutation,
+  checkpoint pin/reuse behavior, and failure-challenge semantics.
+- The separate lost-wakeup and pre-clone-size-check minor findings remain
+  deferred by explicit round-2 scope.
