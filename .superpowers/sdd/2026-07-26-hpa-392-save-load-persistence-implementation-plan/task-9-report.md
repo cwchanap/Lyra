@@ -278,3 +278,156 @@ rtk git diff --check
 - Retry, Cancel, and operation-specific bypasses, including acquisition
   Continue Without Saving.
 - The full fault-injected lock-order stress matrix.
+
+## Part C1: typed persistence failure challenges
+
+### Scope
+
+Part C1 adds the opaque one-shot failure registry and acquisition
+Continue Without Saving. The final fault-injected lock-order stress sweep and
+Task 9 report completion remain Part C2.
+
+### Failure challenge contract
+
+- `PersistenceFailureTokenView` is a transparent opaque string on the wire.
+  Issued values are canonical hyphenated UUID v4 strings.
+- `PersistenceFailureChallenge` remains Rust-owned and binds:
+  operation, session generation, optional discovery generation, durable
+  revision, optional selected save ID, and optional acquisition event ID.
+- `PersistenceBypassOperation` has distinct variants for Start Without Saving,
+  Load Discarding Current, Return Without Saving, Continue Without Saving, and
+  Exit Without Saving. A token issued for one cannot be consumed by another.
+- Consumption removes the registry entry before returning. Wrong identity,
+  wrong operation, malformed/unknown UUID, and replay all return
+  `stalePersistenceFailureToken`.
+- A failed retry consumes the old challenge. A subsequent authoritative
+  failure creates a new UUID rather than reviving the old entry.
+- Discovery completion owns a monotonic generation. Each completed attempt
+  increments it and removes older global-discovery challenges; the counter is
+  never serialized.
+- Cancel consumes the exact challenge without clearing degraded persistence
+  health.
+- The command/coordinator contract exposes no `force`, `skip`,
+  `allow_data_loss`, or boolean data-loss bypass parameter.
+
+### GameError wire contract
+
+`GameError` now has:
+
+```rust
+#[serde(skip_serializing_if = "Option::is_none")]
+pub failure_token: Option<String>,
+```
+
+`GameError::new` initializes it to `None`, so every existing constructor keeps
+the prior two-field JSON shape. Only `SaveCoordinator` challenge creation
+attaches `failureToken`.
+
+### Acquisition failure flow
+
+- An authoritative acknowledgement replacement failure restores the rollback
+  snapshot, keeps the event/popup pending at revision N, records degraded
+  health, and returns a Continue Without Saving challenge.
+- Retry first consumes that challenge, then issues a fresh event-bound capture
+  ticket. If the retried acknowledgement fails, its error carries a distinct
+  new token.
+- Cancel consumes the challenge and returns the unchanged pending-event view.
+- `confirm_acquisition_without_saving` reads current identity, consumes the
+  exact challenge before action, then acquires `G → S`, revalidates the
+  generation/revision/event, removes exactly that event, advances exactly once
+  to N+1, and returns the committed in-memory view.
+- The bypass deliberately does not issue a capture, enqueue a writer, adopt a
+  receipt, or mark revision N+1 written. A later durable mutation may therefore
+  persist the removal; without one, restart may show the event again.
+- Reusing the consumed acknowledgement challenge returns
+  `stalePersistenceFailureToken`.
+
+### RED evidence
+
+Failure-token foundation:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::failure_token
+  exit 101; 14 compile errors, 0 warnings
+  missing token/operation/identity types, challenge registry APIs,
+  discovery completion, and GameError.failure_token
+```
+
+Acknowledgement retry/cancel/bypass:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::acknowledgement
+  exit 101; 5 compile errors
+  missing retry_acquisition_acknowledgement,
+  cancel_acquisition_failure, and confirm_acquisition_without_saving
+```
+
+Command-specific replay:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  save::coordinator::tests::acknowledgement::continue_without_saving_removes_event_once_without_scheduling_its_revision
+  exit 101; observed unknownAcquisitionEvent, expected stalePersistenceFailureToken
+```
+
+The replay path now maps a missing/changed acquisition identity to the stale
+one-shot challenge diagnostic.
+
+### Token and bypass matrix
+
+| Case | Result |
+| --- | --- |
+| issued token | canonical UUID v4; only opaque `failureToken` is serialized |
+| ordinary GameError | `failureToken` omitted |
+| matching Retry | consumes token and permits a fresh capture ticket |
+| failed Retry | returns a distinct replacement token |
+| wrong operation | stale-token error; no typed bypass crossover |
+| stale session/revision | stale-token error |
+| stale discovery | completed attempt increments generation and invalidates old global token |
+| wrong selected save/event | stale-token error |
+| wrong UUID/replay | stale-token error |
+| Cancel | token consumed; degradation and pending event retained |
+| Continue Without Saving | event removed, revision N+1, degraded health retained, zero new writes |
+
+### Commands and results
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::failure_token
+  exit 0; 8 passed, 449 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::acknowledgement
+  exit 0; 11 passed, 446 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::flush
+  exit 0; 11 passed, 446 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::ticket
+  exit 0; 11 passed, 446 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce
+  exit 0; 23 passed, 434 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::writer
+  exit 0; 4 passed, 453 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration
+  exit 0; 6 passed, 451 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 457 passed across 6 suites
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+
+rtk git diff --check
+  exit 0
+```
+
+### Remaining Part C2
+
+- Run and extend the final deterministic fault-injected lock-order stress
+  matrix for writer/gate/session acquisition and stale generations.
+- Re-run all Task 9 gates and complete the report.

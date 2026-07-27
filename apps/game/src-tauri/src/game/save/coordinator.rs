@@ -388,6 +388,60 @@ pub(crate) struct AcknowledgementOutcome {
     pub(crate) cleanup_diagnostic: Option<SaveDiagnosticView>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct PersistenceFailureTokenView(String);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum PersistenceBypassOperation {
+    StartWithoutSaving,
+    LoadDiscardingCurrent,
+    ReturnWithoutSaving,
+    ContinueWithoutSaving,
+    ExitWithoutSaving,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PersistenceFailureChallenge {
+    token: Uuid,
+    operation: PersistenceBypassOperation,
+    session_generation: u64,
+    discovery_generation: Option<u64>,
+    durable_revision: u64,
+    selected_save_id: Option<String>,
+    acquisition_event_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FailureChallengeIdentity<'a> {
+    session_generation: u64,
+    discovery_generation: Option<u64>,
+    durable_revision: u64,
+    selected_save_id: Option<&'a str>,
+    acquisition_event_id: Option<&'a str>,
+}
+
+impl PersistenceFailureChallenge {
+    fn matches(
+        &self,
+        token: Uuid,
+        expected: PersistenceBypassOperation,
+        current: FailureChallengeIdentity<'_>,
+        current_discovery_generation: u64,
+    ) -> bool {
+        self.token == token
+            && self.operation == expected
+            && self.session_generation == current.session_generation
+            && self.discovery_generation == current.discovery_generation
+            && self
+                .discovery_generation
+                .is_none_or(|generation| generation == current_discovery_generation)
+            && self.durable_revision == current.durable_revision
+            && self.selected_save_id.as_deref() == current.selected_save_id
+            && self.acquisition_event_id.as_deref() == current.acquisition_event_id
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)] // Part B activates acknowledgement intent ownership.
 pub(crate) enum ExclusivePersistenceIntent {
@@ -715,11 +769,13 @@ struct CoordinatorState {
     health_subscribers: Vec<HealthSubscriber>,
     activity_subscribers: Vec<ActivitySubscriber>,
     next_session_generation: u64,
+    discovery_generation: u64,
     next_autosave_serial: u64,
     pending_autosave: Option<PendingAutosave>,
     last_successful_write: Option<AutosaveWriteReceipt>,
     failed_write: Option<BackgroundWriteFailure>,
     cleanup_failure: Option<CleanupFailure>,
+    failure_challenges: HashMap<Uuid, PersistenceFailureChallenge>,
 }
 
 impl Default for CoordinatorState {
@@ -732,11 +788,13 @@ impl Default for CoordinatorState {
             health_subscribers: Vec::new(),
             activity_subscribers: Vec::new(),
             next_session_generation: 0,
+            discovery_generation: 0,
             next_autosave_serial: 0,
             pending_autosave: None,
             last_successful_write: None,
             failed_write: None,
             cleanup_failure: None,
+            failure_challenges: HashMap::new(),
         }
     }
 }
@@ -774,6 +832,84 @@ impl SaveCoordinator {
             .checked_add(1)
             .ok_or_else(GameError::save_write_failed)?;
         Ok(state.next_session_generation)
+    }
+
+    pub(crate) fn complete_discovery_attempt(&self) -> Result<u64, GameError> {
+        let mut state = self.lock_state()?;
+        state.discovery_generation = state
+            .discovery_generation
+            .checked_add(1)
+            .ok_or_else(GameError::save_discovery_unavailable)?;
+        state
+            .failure_challenges
+            .retain(|_, challenge| challenge.discovery_generation.is_none());
+        Ok(state.discovery_generation)
+    }
+
+    pub(crate) fn challenge_persistence_failure(
+        &self,
+        operation: PersistenceBypassOperation,
+        identity: FailureChallengeIdentity<'_>,
+        diagnostic: GameError,
+    ) -> Result<GameError, GameError> {
+        let token = Uuid::new_v4();
+        let token_wire = token.hyphenated().to_string();
+        let challenge = PersistenceFailureChallenge {
+            token,
+            operation,
+            session_generation: identity.session_generation,
+            discovery_generation: identity.discovery_generation,
+            durable_revision: identity.durable_revision,
+            selected_save_id: identity.selected_save_id.map(str::to_owned),
+            acquisition_event_id: identity.acquisition_event_id.map(str::to_owned),
+        };
+        let health = PersistenceHealthView::Degraded {
+            diagnostic: diagnostic.clone(),
+        };
+        let subscribers = {
+            let mut state = self.lock_state()?;
+            if identity
+                .discovery_generation
+                .is_some_and(|generation| generation != state.discovery_generation)
+            {
+                return Err(GameError::stale_persistence_failure_token());
+            }
+            state.failure_challenges.insert(token, challenge);
+            set_persistence_health(&mut state, health.clone())
+        };
+        publish_health(&subscribers, &health);
+        Ok(diagnostic.with_failure_token(token_wire))
+    }
+
+    pub(crate) fn consume_failure_token(
+        &self,
+        token: &PersistenceFailureTokenView,
+        expected: PersistenceBypassOperation,
+        current: FailureChallengeIdentity<'_>,
+    ) -> Result<PersistenceFailureChallenge, GameError> {
+        let parsed = Uuid::parse_str(&token.0)
+            .ok()
+            .filter(|parsed| parsed.hyphenated().to_string() == token.0)
+            .ok_or_else(GameError::stale_persistence_failure_token)?;
+        let mut state = self.lock_state()?;
+        let challenge = state
+            .failure_challenges
+            .remove(&parsed)
+            .ok_or_else(GameError::stale_persistence_failure_token)?;
+        if !challenge.matches(parsed, expected, current, state.discovery_generation) {
+            return Err(GameError::stale_persistence_failure_token());
+        }
+        Ok(challenge)
+    }
+
+    pub(crate) fn cancel_failure_token(
+        &self,
+        token: &PersistenceFailureTokenView,
+        expected: PersistenceBypassOperation,
+        current: FailureChallengeIdentity<'_>,
+    ) -> Result<(), GameError> {
+        self.consume_failure_token(token, expected, current)
+            .map(|_| ())
     }
 
     pub(crate) fn notify_durable_commit(
@@ -1093,12 +1229,160 @@ impl SaveCoordinator {
                             .as_mut()
                             .ok_or_else(GameError::game_not_started)?;
                         EngineRollbackSnapshot::restore(engine, rollback);
-                        Err(error)
+                        drop(session);
+                        let challenged = self.challenge_persistence_failure(
+                            PersistenceBypassOperation::ContinueWithoutSaving,
+                            FailureChallengeIdentity {
+                                session_generation,
+                                discovery_generation: None,
+                                durable_revision: source_revision,
+                                selected_save_id: None,
+                                acquisition_event_id: Some(event_id),
+                            },
+                            error.clone(),
+                        );
+                        Err(challenged.unwrap_or(error))
                     }
                 }
             }
             Err(error) => Err(error),
         }
+    }
+
+    pub(crate) fn retry_acquisition_acknowledgement(
+        &self,
+        app: &crate::AppState,
+        event_id: String,
+        token: PersistenceFailureTokenView,
+    ) -> Result<ThumbnailCaptureRequestView, GameError> {
+        let (session_generation, source_revision) =
+            current_acquisition_failure_identity(app, &event_id)?;
+        let current = FailureChallengeIdentity {
+            session_generation,
+            discovery_generation: None,
+            durable_revision: source_revision,
+            selected_save_id: None,
+            acquisition_event_id: Some(&event_id),
+        };
+        self.consume_failure_token(
+            &token,
+            PersistenceBypassOperation::ContinueWithoutSaving,
+            current,
+        )?;
+        let next_revision = source_revision
+            .checked_add(1)
+            .ok_or_else(GameError::save_write_failed)?;
+        let purpose = ThumbnailCapturePurpose::AcquisitionAcknowledgement {
+            session_generation,
+            source_revision,
+            next_revision,
+            event_id: event_id.clone(),
+        };
+        match self.prepare_thumbnail(purpose) {
+            Ok(request) => Ok(request),
+            Err(error) => {
+                let challenged = self.challenge_persistence_failure(
+                    PersistenceBypassOperation::ContinueWithoutSaving,
+                    current,
+                    error.clone(),
+                );
+                Err(challenged.unwrap_or(error))
+            }
+        }
+    }
+
+    pub(crate) fn cancel_acquisition_failure(
+        &self,
+        app: &crate::AppState,
+        event_id: String,
+        token: PersistenceFailureTokenView,
+    ) -> Result<crate::game::GameStateView, GameError> {
+        let (session_generation, source_revision) =
+            current_acquisition_failure_identity(app, &event_id)?;
+        self.cancel_failure_token(
+            &token,
+            PersistenceBypassOperation::ContinueWithoutSaving,
+            FailureChallengeIdentity {
+                session_generation,
+                discovery_generation: None,
+                durable_revision: source_revision,
+                selected_save_id: None,
+                acquisition_event_id: Some(&event_id),
+            },
+        )?;
+        let session = app.session.lock().map_err(|_| GameError::unavailable())?;
+        session.ensure_persistence_available()?;
+        if session.persistence.generation != session_generation
+            || session.durable_revision() != Some(source_revision)
+        {
+            return Err(GameError::stale_persistence_failure_token());
+        }
+        session
+            .engine
+            .as_ref()
+            .ok_or_else(GameError::game_not_started)?
+            .view()
+    }
+
+    pub(crate) async fn confirm_acquisition_without_saving(
+        &self,
+        app: &crate::AppState,
+        event_id: String,
+        token: PersistenceFailureTokenView,
+    ) -> Result<crate::game::GameStateView, GameError> {
+        let (session_generation, source_revision) =
+            current_acquisition_failure_identity(app, &event_id)?;
+        self.consume_failure_token(
+            &token,
+            PersistenceBypassOperation::ContinueWithoutSaving,
+            FailureChallengeIdentity {
+                session_generation,
+                discovery_generation: None,
+                durable_revision: source_revision,
+                selected_save_id: None,
+                acquisition_event_id: Some(&event_id),
+            },
+        )?;
+
+        let _gate = app.replacement_gate.lock().await;
+        let state = {
+            let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
+            session.ensure_persistence_available()?;
+            if session.persistence.generation != session_generation {
+                return Err(GameError::stale_persistence_failure_token());
+            }
+            let engine = session
+                .engine
+                .as_mut()
+                .ok_or_else(GameError::game_not_started)?;
+            if engine.durable_revision() != source_revision {
+                return Err(GameError::stale_persistence_failure_token());
+            }
+            let matching_events: Vec<usize> = engine
+                .pending_acquisition_events
+                .iter()
+                .enumerate()
+                .filter_map(|(index, event)| (event.id == event_id).then_some(index))
+                .collect();
+            if matching_events.len() != 1 {
+                return Err(GameError::unknown_acquisition_event());
+            }
+            let next_revision = source_revision
+                .checked_add(1)
+                .ok_or_else(GameError::save_write_failed)?;
+            let rollback = EngineRollbackSnapshot::capture(engine);
+            engine.pending_acquisition_events.remove(matching_events[0]);
+            engine.durable_revision = next_revision;
+            match engine.view() {
+                Ok(state) => state,
+                Err(error) => {
+                    EngineRollbackSnapshot::restore(engine, rollback);
+                    return Err(error);
+                }
+            }
+        };
+        self.mark_persistence_degraded(GameError::save_write_failed())?;
+        Ok(state)
     }
 
     async fn execute_acknowledgement_write(
@@ -2003,6 +2287,16 @@ impl SaveCoordinator {
         })
     }
 
+    fn mark_persistence_degraded(&self, diagnostic: GameError) -> Result<(), GameError> {
+        let health = PersistenceHealthView::Degraded { diagnostic };
+        let subscribers = {
+            let mut state = self.lock_state()?;
+            set_persistence_health(&mut state, health.clone())
+        };
+        publish_health(&subscribers, &health);
+        Ok(())
+    }
+
     fn lock_state(&self) -> Result<MutexGuard<'_, CoordinatorState>, GameError> {
         self.state
             .lock()
@@ -2061,6 +2355,28 @@ impl SaveCoordinator {
             .map(|record| record.issued_at)
             .ok_or_else(GameError::stale_thumbnail_ticket)
     }
+}
+
+fn current_acquisition_failure_identity(
+    app: &crate::AppState,
+    event_id: &str,
+) -> Result<(u64, u64), GameError> {
+    let session = app.session.lock().map_err(|_| GameError::unavailable())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_ref()
+        .ok_or_else(GameError::game_not_started)?;
+    if engine
+        .pending_acquisition_events
+        .iter()
+        .filter(|event| event.id == event_id)
+        .count()
+        != 1
+    {
+        return Err(GameError::stale_persistence_failure_token());
+    }
+    Ok((session.persistence.generation, engine.durable_revision()))
 }
 
 #[cfg(test)]
@@ -2579,10 +2895,295 @@ mod tests {
         }
     }
 
+    mod failure_token {
+        use super::super::{
+            FailureChallengeIdentity, PersistenceBypassOperation, PersistenceFailureTokenView,
+            PersistenceHealthView, SaveCoordinator,
+        };
+        use crate::game::GameError;
+        use serde_json::json;
+        use uuid::Uuid;
+
+        fn identity<'a>(
+            session_generation: u64,
+            discovery_generation: Option<u64>,
+            durable_revision: u64,
+            selected_save_id: Option<&'a str>,
+            acquisition_event_id: Option<&'a str>,
+        ) -> FailureChallengeIdentity<'a> {
+            FailureChallengeIdentity {
+                session_generation,
+                discovery_generation,
+                durable_revision,
+                selected_save_id,
+                acquisition_event_id,
+            }
+        }
+
+        fn issue(
+            coordinator: &SaveCoordinator,
+            operation: PersistenceBypassOperation,
+            identity: FailureChallengeIdentity<'_>,
+        ) -> (GameError, PersistenceFailureTokenView) {
+            let error = coordinator
+                .challenge_persistence_failure(operation, identity, GameError::save_write_failed())
+                .unwrap();
+            let token = serde_json::from_value(json!(error
+                .failure_token
+                .as_deref()
+                .expect("challenge error must carry its opaque token")))
+            .unwrap();
+            (error, token)
+        }
+
+        #[test]
+        fn challenge_error_exposes_only_a_canonical_uuid_v4_token_on_the_wire() {
+            let coordinator = SaveCoordinator::new();
+            let (error, token) = issue(
+                &coordinator,
+                PersistenceBypassOperation::ReturnWithoutSaving,
+                identity(7, None, 11, None, None),
+            );
+            let value = serde_json::to_value(&error).unwrap();
+            let token_wire = value["failureToken"].as_str().unwrap();
+            let uuid = Uuid::parse_str(token_wire).unwrap();
+
+            assert_eq!(uuid.get_version_num(), 4);
+            assert_eq!(uuid.hyphenated().to_string(), token_wire);
+            assert_eq!(serde_json::to_value(&token).unwrap(), json!(token_wire));
+            assert_eq!(
+                value,
+                json!({
+                    "code": "saveWriteFailed",
+                    "message": "Save could not be written.",
+                    "failureToken": token_wire,
+                })
+            );
+
+            assert_eq!(
+                serde_json::to_value(GameError::save_write_failed()).unwrap(),
+                json!({
+                    "code": "saveWriteFailed",
+                    "message": "Save could not be written.",
+                })
+            );
+        }
+
+        #[test]
+        fn matching_retry_claim_is_one_shot_and_a_failed_retry_gets_a_new_token() {
+            let coordinator = SaveCoordinator::new();
+            let current = identity(9, None, 14, Some("save-a"), None);
+            let (_, token) = issue(
+                &coordinator,
+                PersistenceBypassOperation::LoadDiscardingCurrent,
+                current,
+            );
+
+            let consumed = coordinator
+                .consume_failure_token(
+                    &token,
+                    PersistenceBypassOperation::LoadDiscardingCurrent,
+                    current,
+                )
+                .unwrap();
+            assert_eq!(
+                consumed.operation,
+                PersistenceBypassOperation::LoadDiscardingCurrent
+            );
+            assert_eq!(
+                coordinator
+                    .consume_failure_token(
+                        &token,
+                        PersistenceBypassOperation::LoadDiscardingCurrent,
+                        current,
+                    )
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+
+            let (retry_error, replacement) = issue(
+                &coordinator,
+                PersistenceBypassOperation::LoadDiscardingCurrent,
+                current,
+            );
+            assert_ne!(
+                retry_error.failure_token.as_deref(),
+                serde_json::to_value(&token).unwrap().as_str()
+            );
+            coordinator
+                .consume_failure_token(
+                    &replacement,
+                    PersistenceBypassOperation::LoadDiscardingCurrent,
+                    current,
+                )
+                .unwrap();
+        }
+
+        #[test]
+        fn exact_identity_rejects_stale_session_revision_discovery_save_and_event() {
+            let coordinator = SaveCoordinator::new();
+            assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 1);
+            assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 2);
+            assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 3);
+            let operation = PersistenceBypassOperation::ContinueWithoutSaving;
+            let exact = identity(5, Some(3), 8, Some("save-a"), Some("acq:8:0"));
+            let stale_identities = [
+                identity(6, Some(3), 8, Some("save-a"), Some("acq:8:0")),
+                identity(5, Some(3), 9, Some("save-a"), Some("acq:8:0")),
+                identity(5, Some(4), 8, Some("save-a"), Some("acq:8:0")),
+                identity(5, Some(3), 8, Some("save-b"), Some("acq:8:0")),
+                identity(5, Some(3), 8, Some("save-a"), Some("acq:8:1")),
+            ];
+
+            for stale in stale_identities {
+                let (_, token) = issue(&coordinator, operation, exact);
+                assert_eq!(
+                    coordinator
+                        .consume_failure_token(&token, operation, stale)
+                        .unwrap_err()
+                        .code,
+                    "stalePersistenceFailureToken"
+                );
+            }
+        }
+
+        #[test]
+        fn wrong_uuid_is_rejected_without_exposing_challenge_fields() {
+            let coordinator = SaveCoordinator::new();
+            let current = identity(2, None, 4, None, None);
+            let (_, issued) = issue(
+                &coordinator,
+                PersistenceBypassOperation::ExitWithoutSaving,
+                current,
+            );
+            let wrong: PersistenceFailureTokenView =
+                serde_json::from_value(json!(Uuid::new_v4().hyphenated().to_string())).unwrap();
+
+            assert_ne!(
+                serde_json::to_value(&issued).unwrap(),
+                serde_json::to_value(&wrong).unwrap()
+            );
+            assert_eq!(
+                coordinator
+                    .consume_failure_token(
+                        &wrong,
+                        PersistenceBypassOperation::ExitWithoutSaving,
+                        current,
+                    )
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[test]
+        fn completed_discovery_is_monotonic_and_invalidates_older_global_challenges() {
+            let coordinator = SaveCoordinator::new();
+            let first = coordinator.complete_discovery_attempt().unwrap();
+            let (_, token) = issue(
+                &coordinator,
+                PersistenceBypassOperation::StartWithoutSaving,
+                identity(0, Some(first), 0, None, None),
+            );
+            let second = coordinator.complete_discovery_attempt().unwrap();
+
+            assert_eq!((first, second), (1, 2));
+            assert_eq!(
+                coordinator
+                    .consume_failure_token(
+                        &token,
+                        PersistenceBypassOperation::StartWithoutSaving,
+                        identity(0, Some(second), 0, None, None),
+                    )
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[test]
+        fn typed_without_saving_operations_cannot_consume_each_others_challenges() {
+            let coordinator = SaveCoordinator::new();
+            assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 1);
+            assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 2);
+            let current = identity(3, Some(2), 7, Some("save-a"), Some("acq:7:0"));
+            let operations = [
+                PersistenceBypassOperation::StartWithoutSaving,
+                PersistenceBypassOperation::LoadDiscardingCurrent,
+                PersistenceBypassOperation::ReturnWithoutSaving,
+                PersistenceBypassOperation::ContinueWithoutSaving,
+                PersistenceBypassOperation::ExitWithoutSaving,
+            ];
+
+            for (index, operation) in operations.into_iter().enumerate() {
+                let wrong = operations[(index + 1) % operations.len()];
+                let (_, token) = issue(&coordinator, operation, current);
+                assert_eq!(
+                    coordinator
+                        .consume_failure_token(&token, wrong, current)
+                        .unwrap_err()
+                        .code,
+                    "stalePersistenceFailureToken"
+                );
+            }
+        }
+
+        #[test]
+        fn cancel_consumes_the_exact_challenge_and_retains_degraded_health() {
+            let coordinator = SaveCoordinator::new();
+            let operation = PersistenceBypassOperation::ReturnWithoutSaving;
+            let current = identity(12, None, 22, None, None);
+            let (_, token) = issue(&coordinator, operation, current);
+
+            coordinator
+                .cancel_failure_token(&token, operation, current)
+                .unwrap();
+
+            assert!(matches!(
+                coordinator.persistence_health(),
+                PersistenceHealthView::Degraded { .. }
+            ));
+            assert_eq!(
+                coordinator
+                    .consume_failure_token(&token, operation, current)
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[test]
+        fn public_commands_and_coordinator_api_expose_no_boolean_data_loss_bypass() {
+            let public_commands = include_str!("../../lib.rs");
+            let coordinator_api = include_str!("coordinator.rs")
+                .split("\n#[cfg(test)]\nmod tests")
+                .next()
+                .unwrap();
+
+            for forbidden in [
+                "force: bool",
+                "skip: bool",
+                "allow_data_loss: bool",
+                "allowDataLoss: bool",
+            ] {
+                assert!(
+                    !public_commands.contains(forbidden),
+                    "public Tauri command exposed forbidden bypass `{forbidden}`"
+                );
+                assert!(
+                    !coordinator_api.contains(forbidden),
+                    "coordinator API exposed forbidden bypass `{forbidden}`"
+                );
+            }
+        }
+    }
+
     mod acknowledgement {
         use super::super::{
-            AcknowledgementOutcome, AppSession, SaveCoordinator, ThumbnailCapturePurpose,
-            THUMBNAIL_CAPTURE_TIMEOUT,
+            AcknowledgementOutcome, AppSession, FailureChallengeIdentity,
+            PersistenceBypassOperation, PersistenceFailureTokenView, PersistenceHealthView,
+            SaveCoordinator, ThumbnailCapturePurpose, THUMBNAIL_CAPTURE_TIMEOUT,
         };
         use super::debounce::RecordingBackend;
         use crate::game::save::schema::{AcquisitionEventStateV1, RecordKind, SaveSlotRef};
@@ -2657,6 +3258,14 @@ mod tests {
                 .report_thumbnail_failure(&request.ticket)
                 .unwrap();
             request.ticket
+        }
+
+        fn failure_token(error: &crate::game::GameError) -> PersistenceFailureTokenView {
+            serde_json::from_value(serde_json::json!(error
+                .failure_token
+                .as_deref()
+                .expect("authoritative acknowledgement failure must carry a token")))
+            .unwrap()
         }
 
         #[tokio::test(start_paused = true)]
@@ -2994,6 +3603,173 @@ mod tests {
                 .is_empty());
             assert_eq!(session.persistence.written_revision, Some(2));
             assert_eq!(session.persistence.exclusive_intent, None);
+        }
+
+        #[tokio::test]
+        async fn failed_retry_consumes_old_challenge_and_returns_a_fresh_ticket_and_token() {
+            let backend = Arc::new(super::debounce::PhasedBackend::new(71));
+            backend.fail_next_commit();
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let event_id = "acq:4:0";
+            let app = app_with_event(coordinator.clone(), 71, 4, event_id, None);
+            let first_ticket = terminal_acknowledgement_ticket(&coordinator, 71, 4, event_id);
+
+            let first_error = match coordinator
+                .acknowledge_acquisition(&app, event_id.into(), first_ticket)
+                .await
+            {
+                Ok(_) => panic!("first acknowledgement unexpectedly committed"),
+                Err(error) => error,
+            };
+            let first_token = failure_token(&first_error);
+            assert!(matches!(
+                coordinator.persistence_health(),
+                PersistenceHealthView::Degraded { .. }
+            ));
+            {
+                let session = app.session.lock().unwrap();
+                assert_eq!(session.durable_revision(), Some(4));
+                assert_eq!(
+                    session
+                        .engine
+                        .as_ref()
+                        .unwrap()
+                        .pending_acquisition_events
+                        .len(),
+                    1
+                );
+            }
+
+            let retry = coordinator
+                .retry_acquisition_acknowledgement(&app, event_id.into(), first_token.clone())
+                .unwrap();
+            coordinator.report_thumbnail_failure(&retry.ticket).unwrap();
+            backend.fail_next_commit();
+            let second_error = match coordinator
+                .acknowledge_acquisition(&app, event_id.into(), retry.ticket)
+                .await
+            {
+                Ok(_) => panic!("retried acknowledgement unexpectedly committed"),
+                Err(error) => error,
+            };
+            let second_token = failure_token(&second_error);
+
+            assert_ne!(
+                serde_json::to_value(&first_token).unwrap(),
+                serde_json::to_value(&second_token).unwrap()
+            );
+            assert_eq!(
+                coordinator
+                    .consume_failure_token(
+                        &first_token,
+                        PersistenceBypassOperation::ContinueWithoutSaving,
+                        FailureChallengeIdentity {
+                            session_generation: 71,
+                            discovery_generation: None,
+                            durable_revision: 4,
+                            selected_save_id: None,
+                            acquisition_event_id: Some(event_id),
+                        },
+                    )
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[tokio::test]
+        async fn cancel_consumes_acknowledgement_challenge_and_keeps_event_pending() {
+            let backend = Arc::new(super::debounce::PhasedBackend::new(72));
+            backend.fail_next_commit();
+            let coordinator = SaveCoordinator::with_backend(backend);
+            let event_id = "acq:5:0";
+            let app = app_with_event(coordinator.clone(), 72, 5, event_id, None);
+            let ticket = terminal_acknowledgement_ticket(&coordinator, 72, 5, event_id);
+            let error = match coordinator
+                .acknowledge_acquisition(&app, event_id.into(), ticket)
+                .await
+            {
+                Ok(_) => panic!("acknowledgement unexpectedly committed"),
+                Err(error) => error,
+            };
+            let token = failure_token(&error);
+
+            let state = coordinator
+                .cancel_acquisition_failure(&app, event_id.into(), token.clone())
+                .unwrap();
+
+            assert_eq!(
+                state
+                    .pending_acquisition
+                    .as_ref()
+                    .map(|event| event.id.as_str()),
+                Some(event_id)
+            );
+            assert_eq!(app.session.lock().unwrap().durable_revision(), Some(5));
+            assert!(matches!(
+                coordinator.persistence_health(),
+                PersistenceHealthView::Degraded { .. }
+            ));
+            assert_eq!(
+                coordinator
+                    .cancel_acquisition_failure(&app, event_id.into(), token)
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn continue_without_saving_removes_event_once_without_scheduling_its_revision() {
+            let backend = Arc::new(super::debounce::PhasedBackend::new(73));
+            backend.fail_next_commit();
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let event_id = "acq:6:0";
+            let app = app_with_event(coordinator.clone(), 73, 6, event_id, None);
+            let ticket = terminal_acknowledgement_ticket(&coordinator, 73, 6, event_id);
+            let error = match coordinator
+                .acknowledge_acquisition(&app, event_id.into(), ticket)
+                .await
+            {
+                Ok(_) => panic!("acknowledgement unexpectedly committed"),
+                Err(error) => error,
+            };
+            let token = failure_token(&error);
+            let writes_before_bypass = backend.registered_targets().len();
+
+            let state = coordinator
+                .confirm_acquisition_without_saving(&app, event_id.into(), token.clone())
+                .await
+                .unwrap();
+
+            assert!(state.pending_acquisition.is_none());
+            {
+                let session = app.session.lock().unwrap();
+                assert_eq!(session.durable_revision(), Some(7));
+                assert!(session
+                    .engine
+                    .as_ref()
+                    .unwrap()
+                    .pending_acquisition_events
+                    .is_empty());
+            }
+            assert!(matches!(
+                coordinator.persistence_health(),
+                PersistenceHealthView::Degraded { .. }
+            ));
+            tokio::time::advance(THUMBNAIL_CAPTURE_TIMEOUT).await;
+            for _ in 0..5 {
+                tokio::task::yield_now().await;
+            }
+            assert_eq!(backend.registered_targets().len(), writes_before_bypass);
+            assert_eq!(
+                coordinator
+                    .confirm_acquisition_without_saving(&app, event_id.into(), token)
+                    .await
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
         }
     }
 
