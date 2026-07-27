@@ -560,3 +560,107 @@ rtk git diff --check
   checkpoint pin/reuse behavior, and failure-challenge semantics.
 - The separate lost-wakeup and pre-clone-size-check minor findings remain
   deferred by explicit round-2 scope.
+
+## Fix round 3 — receipt-less cleanup retry ownership
+
+### Review mapping
+
+| Finding | Fix |
+| --- | --- |
+| Important: an owner-less explicit cleanup failure only published a transient Degraded health value | Every cleanup attempt now has structured ownership. A cleanup with no committed receipt receives a monotonically increasing `CleanupOwner::Attempt` token, and its backend failure is retained in coordinator state rather than only published. An explicit retry reuses that exact token. |
+| Important: unrelated autosave completion recomputed Healthy over that transient failure | Health recomputation includes the retained attempt-owned cleanup failure. Autosave success, stale completion, or non-owning failure cannot erase or replace its diagnostic; the normal pending/write/cleanup precedence still applies. |
+| Important: successful explicit retry could not resolve receipt-less cleanup degradation | Cleanup success now resolves only the exact `CleanupOwner`, whether receipt- or attempt-owned. A matching retry success removes the retained cleanup failure and recomputes health. |
+
+The separately recorded lost-wakeup and pre-clone-size-check minor findings
+remain unchanged and deferred by this round's explicit scope.
+
+### Files
+
+- `apps/game/src-tauri/src/game/save/coordinator.rs`
+  - receipt- and attempt-owned cleanup identity;
+  - monotonic attempt-token allocation and exact-owner retry resolution;
+  - deterministic retained-diagnostic regression coverage.
+- `.superpowers/sdd/2026-07-26-hpa-392-save-load-persistence-implementation-plan/task-8-report.md`
+  - this fix-round evidence.
+
+### RED evidence
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce::receipt_less_cleanup_failure_survives_autosave_until_matching_retry_succeeds
+```
+
+Exited 101 after the unrelated autosave completed:
+
+```text
+left: Healthy
+right: Degraded { diagnostic: GameError { code: "saveReadFailed", ... } }
+```
+
+The first `W:cleanup` failure had published Degraded without retaining
+structured ownership, so normal autosave completion recomputed Healthy before
+the matching explicit cleanup retry.
+
+### State and ownership decisions
+
+- `CleanupOwner::Receipt` preserves the committed-write cleanup contract from
+  fix round 2; `CleanupOwner::Attempt` covers receipt-less explicit cleanup.
+- When no cleanup failure is retained, an explicit cleanup receives the next
+  wrapping monotonic token. When cleanup degradation already exists, the retry
+  carries the retained owner exactly.
+- A receipt-owned cleanup failure outranks an attempt-owned failure. Among
+  attempt owners, only a newer token can replace an older owner. Among receipt
+  owners, generation, revision, and save ID determine the newer owner.
+- A same-owner retry failure preserves the original diagnostic. A matching
+  success alone clears the cleanup state and recomputes complete health.
+- Health precedence remains: pending autosave, retained write failure,
+  retained cleanup failure, then Healthy.
+
+### Deterministic regression matrix
+
+| Boundary | Deterministic evidence | Result |
+| --- | --- | --- |
+| receipt-less ownership | first `enqueue_orphan_cleanup` allocates an attempt token | cleanup work has a structured owner before entering the backend |
+| first cleanup failure | phased backend fails its first cleanup call | complete health is retained as `Degraded(saveReadFailed)` |
+| unrelated autosave | generation 1/revision 1 autosave completes successfully | cleanup-owned Degraded health remains unchanged |
+| matching retry | second explicit cleanup reuses the retained attempt token | success resolves the exact owner and health becomes Healthy |
+| serialized writer path | phase log is filtered for `W:cleanup` | exactly two cleanup jobs ran through writer W |
+
+### GREEN evidence and final gates
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce::receipt_less_cleanup_failure_survives_autosave_until_matching_retry_succeeds
+  1 passed, 422 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::ticket
+  11 passed, 412 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce
+  19 passed, 404 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::writer
+  4 passed, 419 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration
+  6 passed, 417 filtered out
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 423 passed across 6 suites
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+
+rtk git diff --check
+  exit 0
+```
+
+### Remaining risks and deferred work
+
+- Task 10's concrete backend must preserve this exact cleanup outcome and
+  same-writer retry contract when replacing the test backend.
+- Task 9 still owns blocking flush, acquisition acknowledgement mutation,
+  checkpoint pin/reuse behavior, and failure-challenge semantics.
+- The separate lost-wakeup and pre-clone-size-check minor findings remain
+  deferred by explicit round-3 scope.
