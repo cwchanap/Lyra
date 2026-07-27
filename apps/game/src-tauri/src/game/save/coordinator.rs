@@ -2516,7 +2516,7 @@ impl SaveCoordinator {
     }
 
     #[cfg(test)]
-    fn with_backend(backend: Arc<dyn AutosaveBackend>) -> Self {
+    pub(crate) fn with_backend(backend: Arc<dyn AutosaveBackend>) -> Self {
         Self {
             backend: Some(backend),
             ..Self::default()
@@ -2524,7 +2524,7 @@ impl SaveCoordinator {
     }
 
     #[cfg(test)]
-    fn fail_next_schedule_for_test(&self) {
+    pub(crate) fn fail_next_schedule_for_test(&self) {
         self.fail_next_schedule.store(true, Ordering::SeqCst);
     }
 
