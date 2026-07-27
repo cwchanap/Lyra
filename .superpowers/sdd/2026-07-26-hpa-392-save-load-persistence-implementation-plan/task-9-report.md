@@ -431,3 +431,131 @@ rtk git diff --check
 - Run and extend the final deterministic fault-injected lock-order stress
   matrix for writer/gate/session acquisition and stale generations.
 - Re-run all Task 9 gates and complete the report.
+
+## Part C2: binding lock-order and transition audit
+
+### Core transition seam
+
+Task 9 now provides coordinator-owned, crate-private session transition
+methods for Task 10 to wire:
+
+- `install_session` performs a short exclusive-intent preflight, then acquires
+  `G → S`, allocates the generation in installation order, revalidates the
+  intent, and installs the engine.
+- Installed auto saves adopt their auto slot as the next autosave target.
+  Fresh games and manual-save loads install with no autosave target.
+- `clear_session` performs the same preflight and `G → S` ordering, advances
+  the monotonic session generation, and clears the engine.
+- Neither method exposes a force, skip, boolean bypass, or public IPC command.
+  Task 10 remains responsible for command wiring and for calling the reserved
+  flush boundary before load/return transitions.
+
+### Deterministic lock-order matrix
+
+| Binding case | Proof |
+| --- | --- |
+| queued exclusive acknowledgement | owns neither S nor G while waiting for W; gameplay probe, install, and clear fail immediately with `persistenceOperationInProgress` |
+| active exclusive acknowledgement | owns G but not S during the authoritative write; the same competing operations fail immediately rather than waiting |
+| writer already owns G | install and clear remain outside S while waiting; both finish after G is released |
+| flush waiting for W | owns neither S nor G |
+| real staged temporary write | AppState S and G remain responsive while the temp file exists; observed backend sequence is S capture, S register, W prepare, G, G+S revalidate, W+G replace |
+| stale generation after prepare | final G+S revalidation returns stale, discards the staged file, records no successful receipt, and performs no replacement |
+
+The real-storage instrumentation additionally proves registration held S,
+preparation held W, final revalidation held G and S together, and replacement
+held W and G. No path requests W while retaining S or G, and every path that
+needs both G and S acquires G first.
+
+### Flush and transition audit
+
+- Fresh revision-zero baselines are physical no-ops.
+- Loaded baselines are no-ops until the durable revision advances.
+- Manual Save, In-Game Load, Return to Title, and Acquisition
+  Acknowledgement are all explicit `FlushOperation` variants and share the
+  same baseline/written-revision decision table.
+- Acknowledgement reserves W before acquiring G and its N+1 write is durable
+  before the in-memory mutation becomes authoritative.
+- Successful receipts update the same-generation written revision and
+  autosave target; prior-generation high revisions cannot suppress a new
+  generation's low revision.
+- Session installation is monotonic, auto-load target adoption is explicit,
+  fresh/manual installs have no target, and clearing the engine also advances
+  the generation.
+
+Task 10 command wiring is intentionally not part of this task.
+
+### Static/API guards
+
+- Public commands and the production coordinator surface contain no
+  `force: bool`, `skip: bool`, `allow_data_loss: bool`, or
+  `allowDataLoss: bool` bypass.
+- `PersistenceFailureChallenge` has private fields and derives neither
+  `Serialize` nor `Deserialize`; only the opaque token view crosses the wire.
+- Clippy with all targets/features and warnings denied passed, including the
+  `await_holding_lock` guard against retaining a standard `MutexGuard` across
+  an await.
+
+### RED evidence
+
+Core transition seam:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  save::coordinator::tests::lock_order -- --nocapture
+  exit 101; 4 E0599 errors
+  SaveCoordinator lacked install_session and clear_session
+```
+
+Target normalization:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  save::coordinator::tests::lock_order -- --nocapture
+  exit 101; 3 passed, 1 failed
+  a manual-load source was incorrectly retained as the autosave target
+```
+
+### Final commands and results
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  save::coordinator::tests::lock_order -- --nocapture
+  exit 0; 8 passed, 458 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::flush
+  exit 0; 11 passed, 455 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::acknowledgement
+  exit 0; 11 passed, 455 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::failure_token
+  exit 0; 9 passed, 457 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::ticket
+  exit 0; 11 passed, 455 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce
+  exit 0; 23 passed, 443 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::writer
+  exit 0; 4 passed, 462 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration
+  exit 0; 6 passed, 460 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 466 passed across 6 suites
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml \
+  --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+
+rtk git diff --check
+  exit 0
+```
+
+Task 9 is complete. Task 10 may now wire the core transition, flush,
+discovery, manual-save/load, and failure-challenge APIs into Tauri commands.
