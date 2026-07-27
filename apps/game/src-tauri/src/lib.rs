@@ -8,7 +8,7 @@ use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::path::BaseDirectory;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use game::save::capture::{capture_checkpoint_v1, CapturedCheckpointV1};
 use game::save::coordinator::{
@@ -24,11 +24,12 @@ use game::save::restore::{
 use game::save::schema::{
     suggested_display_name, validate_manual_display_name, SaveBrowserView, SaveDiagnosticView,
     SaveDiscoveryStatusView, SaveEnvelopeV1, SaveSlotRef, SaveSlotStatusView, SaveSlotView,
-    SaveType, ThumbnailDescriptorV1, SAVE_SCHEMA_VERSION,
+    SaveType, ThumbnailDescriptorV1, MAX_THUMBNAIL_BYTES, SAVE_SCHEMA_VERSION,
 };
 use game::save::storage::{
     clean_orphaned_save_files, commit_prepared_slot_write, delete_slot, discover_saves,
-    ensure_save_layout, prepare_slot_write, read_save_envelope, resolve_save_root,
+    ensure_save_layout, prepare_slot_write, read_save_envelope,
+    read_save_thumbnail as read_save_thumbnail_from_storage, resolve_save_root,
     select_continue_candidate, ManualSlotExpectation, OccupiedSlotExpectation,
     ProductionSaveFilesystem, SaveDiscoveryContext, SaveFilesystem, SlotWriteRequest,
     ThumbnailWrite, PRODUCTION_APP_IDENTIFIER,
@@ -60,6 +61,11 @@ pub(crate) struct SaveBrowserOpenResultView {
     pub(crate) preflight: SaveBrowserPreflightView,
 }
 
+const PERSISTENCE_STATUS_CHANGED_EVENT: &str = "persistence-status-changed";
+const THUMBNAIL_ACTIVITY_CHANGED_EVENT: &str = "thumbnail-activity-changed";
+#[doc(hidden)]
+pub const MAX_THUMBNAIL_SUBMISSION_BYTES: usize = MAX_THUMBNAIL_BYTES;
+
 #[derive(Debug, Serialize)]
 #[serde(
     tag = "type",
@@ -82,7 +88,8 @@ pub(crate) enum MutationPersistencePolicy {
     AdvanceWithoutSaving,
 }
 
-pub(crate) struct AppState {
+#[doc(hidden)]
+pub struct AppState {
     // Task 9 exposed one session mutex. Task 10 wraps that exact mutex in Arc
     // so the disk backend can share it without introducing duplicate state.
     pub(crate) session: Arc<Mutex<AppSession>>,
@@ -508,14 +515,43 @@ fn get_state(state: tauri::State<'_, AppState>) -> Result<GameStateView, GameErr
     read_game_state(&state)
 }
 
+fn persistence_status_snapshot(coordinator: &SaveCoordinator) -> PersistenceHealthView {
+    coordinator.persistence_health()
+}
+
+fn thumbnail_activity_snapshot(coordinator: &SaveCoordinator) -> ThumbnailActivityView {
+    coordinator.thumbnail_activity()
+}
+
+fn bind_persistence_status_events(
+    coordinator: &SaveCoordinator,
+    emit: impl Fn(&'static str, serde_json::Value) + Send + Sync + 'static,
+) {
+    let emit = Arc::new(emit);
+    let health_emitter = Arc::clone(&emit);
+    let activity_emitter = emit;
+    coordinator.subscribe(
+        move |view| {
+            if let Ok(payload) = serde_json::to_value(view) {
+                health_emitter(PERSISTENCE_STATUS_CHANGED_EVENT, payload);
+            }
+        },
+        move |view| {
+            if let Ok(payload) = serde_json::to_value(view) {
+                activity_emitter(THUMBNAIL_ACTIVITY_CHANGED_EVENT, payload);
+            }
+        },
+    );
+}
+
 #[tauri::command]
 fn get_persistence_status(state: tauri::State<'_, AppState>) -> PersistenceHealthView {
-    state.coordinator.persistence_health()
+    persistence_status_snapshot(&state.coordinator)
 }
 
 #[tauri::command]
 fn get_thumbnail_activity(state: tauri::State<'_, AppState>) -> ThumbnailActivityView {
-    state.coordinator.thumbnail_activity()
+    thumbnail_activity_snapshot(&state.coordinator)
 }
 
 async fn list_saves_core(
@@ -594,9 +630,65 @@ fn prepare_save_thumbnail(
         .prepare_application_thumbnail(&state, purpose)
 }
 
+pub struct RawThumbnailHeader<'a> {
+    name: &'a [u8],
+    value: &'a [u8],
+}
+
+impl<'a> RawThumbnailHeader<'a> {
+    pub fn new(name: &'a [u8], value: &'a [u8]) -> Self {
+        Self { name, value }
+    }
+}
+
+pub fn validate_thumbnail_submission<'a>(
+    headers: &'a [RawThumbnailHeader<'a>],
+    body: &[u8],
+) -> Result<&'a str, GameError> {
+    const TICKET_HEADER: &[u8] = b"x-lyra-thumbnail-ticket";
+    let mut matches = headers
+        .iter()
+        .filter(|header| header.name.eq_ignore_ascii_case(TICKET_HEADER));
+    let ticket_header = matches
+        .next()
+        .filter(|_| matches.next().is_none())
+        .ok_or_else(GameError::stale_thumbnail_ticket)?;
+    let ticket = std::str::from_utf8(ticket_header.value)
+        .map_err(|_| GameError::stale_thumbnail_ticket())?;
+    let parsed = uuid::Uuid::parse_str(ticket).map_err(|_| GameError::stale_thumbnail_ticket())?;
+    if parsed.get_version_num() != 4 || parsed.hyphenated().to_string() != ticket {
+        return Err(GameError::stale_thumbnail_ticket());
+    }
+    if body.len() > MAX_THUMBNAIL_BYTES {
+        return Err(GameError::thumbnail_png_too_large());
+    }
+    Ok(ticket)
+}
+
+pub(crate) fn submit_save_thumbnail_core(
+    coordinator: &SaveCoordinator,
+    headers: &[RawThumbnailHeader<'_>],
+    body: &[u8],
+) -> Result<ThumbnailActivityView, GameError> {
+    let ticket = validate_thumbnail_submission(headers, body)?;
+    coordinator.submit_thumbnail(ticket, body)
+}
+
 #[tauri::command]
-fn submit_save_thumbnail() -> Result<ThumbnailActivityView, GameError> {
-    Err(unavailable_error())
+fn submit_save_thumbnail(
+    state: tauri::State<'_, AppState>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<ThumbnailActivityView, GameError> {
+    let ticket_headers = request
+        .headers()
+        .get_all("x-lyra-thumbnail-ticket")
+        .iter()
+        .map(|value| RawThumbnailHeader::new(b"x-lyra-thumbnail-ticket", value.as_bytes()))
+        .collect::<Vec<_>>();
+    let tauri::ipc::InvokeBody::Raw(body) = request.body() else {
+        return Err(GameError::thumbnail_png_malformed());
+    };
+    submit_save_thumbnail_core(&state.coordinator, &ticket_headers, body)
 }
 
 #[tauri::command]
@@ -607,13 +699,30 @@ fn report_save_thumbnail_failure(
     state.coordinator.report_thumbnail_failure(&ticket)
 }
 
+fn read_save_thumbnail_core(
+    state: &AppState,
+    reference: SaveSlotRef,
+    observed_save_id: &str,
+) -> Result<Vec<u8>, GameError> {
+    let persistence = state
+        .persistence
+        .as_ref()
+        .ok_or_else(GameError::save_discovery_unavailable)?;
+    read_save_thumbnail_from_storage(
+        persistence.fs.as_ref(),
+        &persistence.root,
+        reference,
+        observed_save_id,
+    )
+}
+
 #[tauri::command]
 fn read_save_thumbnail(
+    state: tauri::State<'_, AppState>,
     reference: SaveSlotRef,
     observed_save_id: String,
-) -> Result<Vec<u8>, GameError> {
-    let _ = (reference, observed_save_id);
-    Err(unavailable_error())
+) -> Result<tauri::ipc::Response, GameError> {
+    read_save_thumbnail_core(&state, reference, &observed_save_id).map(tauri::ipc::Response::new)
 }
 
 #[tauri::command]
@@ -1104,6 +1213,382 @@ async fn confirm_acquisition_without_saving(
     ))
 }
 
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct DevelopmentCommandResponse {
+    pub content_type: &'static str,
+    pub body: Vec<u8>,
+}
+
+#[doc(hidden)]
+pub fn build_development_app_state(
+    resources_dir: PathBuf,
+    save_root: PathBuf,
+) -> Result<AppState, GameError> {
+    build_app_state_with_storage(resources_dir, save_root, Arc::new(ProductionSaveFilesystem))
+}
+
+fn development_json<T: Serialize>(value: T) -> Result<DevelopmentCommandResponse, GameError> {
+    serde_json::to_vec(&value)
+        .map(|body| DevelopmentCommandResponse {
+            content_type: "application/json",
+            body,
+        })
+        .map_err(|error| GameError::parse_failure(format!("serialize response: {error}")))
+}
+
+fn parse_development_body<T: for<'de> serde::Deserialize<'de>>(
+    body: &[u8],
+) -> Result<T, GameError> {
+    serde_json::from_slice(body)
+        .map_err(|error| GameError::parse_failure(format!("body json: {error}")))
+}
+
+#[doc(hidden)]
+pub async fn dispatch_development_command(
+    state: &AppState,
+    command: &str,
+    headers: &[RawThumbnailHeader<'_>],
+    body: &[u8],
+) -> Result<DevelopmentCommandResponse, GameError> {
+    match command {
+        "list_saves" => {
+            let persistence = state.persistence.clone();
+            development_json(
+                list_saves_core(state, move || {
+                    persistence
+                        .as_ref()
+                        .map(|persistence| persistence.discover())
+                        .unwrap_or_else(unavailable_save_browser)
+                })
+                .await?,
+            )
+        }
+        "get_state" => development_json(read_game_state(state)?),
+        "get_persistence_status" => {
+            development_json(persistence_status_snapshot(&state.coordinator))
+        }
+        "get_thumbnail_activity" => {
+            development_json(thumbnail_activity_snapshot(&state.coordinator))
+        }
+        "start_game" | "reset_game" => {
+            development_json(start_game_with_persistence_core(state).await?)
+        }
+        "start_game_without_saving" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                failure_token: PersistenceFailureTokenView,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(start_game_without_saving_core(state, args.failure_token).await?)
+        }
+        "prepare_save_thumbnail" => {
+            #[derive(serde::Deserialize)]
+            struct Args {
+                purpose: PreparedThumbnailPurpose,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(
+                state
+                    .coordinator
+                    .prepare_application_thumbnail(state, args.purpose)?,
+            )
+        }
+        "submit_save_thumbnail" => development_json(submit_save_thumbnail_core(
+            &state.coordinator,
+            headers,
+            body,
+        )?),
+        "report_save_thumbnail_failure" => {
+            #[derive(serde::Deserialize)]
+            struct Args {
+                ticket: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(state.coordinator.report_thumbnail_failure(&args.ticket)?)
+        }
+        "read_save_thumbnail" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                reference: SaveSlotRef,
+                observed_save_id: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            Ok(DevelopmentCommandResponse {
+                content_type: "image/png",
+                body: read_save_thumbnail_core(state, args.reference, &args.observed_save_id)?,
+            })
+        }
+        "save_manual" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                reference: SaveSlotRef,
+                display_name: String,
+                expectation: ManualSlotExpectation,
+                prepared_thumbnail_ticket: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(
+                save_manual_core(
+                    state,
+                    args.reference,
+                    args.display_name,
+                    args.expectation,
+                    args.prepared_thumbnail_ticket,
+                )
+                .await?,
+            )
+        }
+        "load_save" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                reference: SaveSlotRef,
+                observed_save_id: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(load_save_core(state, args.reference, args.observed_save_id).await?)
+        }
+        "load_save_discarding_current" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                reference: SaveSlotRef,
+                observed_save_id: String,
+                failure_token: PersistenceFailureTokenView,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(
+                load_save_discarding_current_core(
+                    state,
+                    args.reference,
+                    args.observed_save_id,
+                    args.failure_token,
+                )
+                .await?,
+            )
+        }
+        "continue_game" => development_json(continue_game_core(state).await?),
+        "delete_save" => {
+            #[derive(serde::Deserialize)]
+            struct Args {
+                reference: SaveSlotRef,
+                expectation: OccupiedSlotExpectation,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(delete_save_core(state, args.reference, args.expectation).await?)
+        }
+        "return_to_title" => development_json(return_to_title_core(state).await?),
+        "return_to_title_without_saving" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                failure_token: PersistenceFailureTokenView,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(return_to_title_without_saving_core(state, args.failure_token).await?)
+        }
+        "acknowledge_acquisition_event" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                event_id: String,
+                prepared_thumbnail_ticket: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            let outcome = state
+                .coordinator
+                .acknowledge_acquisition(state, args.event_id, args.prepared_thumbnail_ticket)
+                .await?;
+            development_json(finish_coordinator_mutation(
+                outcome.state,
+                MutationPersistencePolicy::CoordinatorManaged,
+            ))
+        }
+        "confirm_acquisition_without_saving" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                event_id: String,
+                failure_token: PersistenceFailureTokenView,
+            }
+            let args: Args = parse_development_body(body)?;
+            let state_view = state
+                .coordinator
+                .confirm_acquisition_without_saving(state, args.event_id, args.failure_token)
+                .await?;
+            development_json(finish_coordinator_mutation(
+                state_view,
+                MutationPersistencePolicy::AdvanceWithoutSaving,
+            ))
+        }
+        "list_scenes" => development_json(GameEngine::scene_navigation_index(
+            state.resources_dir.clone(),
+        )?),
+        "jump_to_scene" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                chapter_id: String,
+                scene_id: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvanced,
+                |engine| engine.jump_to_scene(&args.chapter_id, &args.scene_id),
+            )?)
+        }
+        "advance_dialogue" => {
+            #[derive(serde::Deserialize)]
+            struct Args {
+                expected: QueueToken,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvanced,
+                |engine| engine.advance_dialogue(args.expected),
+            )?)
+        }
+        "inspect_hotspot" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                hotspot_id: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvanced,
+                |engine| engine.inspect_hotspot(&args.hotspot_id),
+            )?)
+        }
+        "interview_topic" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                character_id: String,
+                topic_id: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvanced,
+                |engine| engine.interview_topic(&args.character_id, &args.topic_id),
+            )?)
+        }
+        "enter_sublocation" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                sublocation_id: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvanced,
+                |engine| engine.enter_sublocation(&args.sublocation_id),
+            )?)
+        }
+        "reexamine_evidence" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                evidence_id: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvanced,
+                |engine| engine.reexamine_evidence(&args.evidence_id),
+            )?)
+        }
+        "reexamine_statement" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                statement_id: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvanced,
+                |engine| engine.reexamine_statement(&args.statement_id),
+            )?)
+        }
+        "ask_interrogation_question" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                question_id: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvanced,
+                |engine| engine.ask_interrogation_question(&args.question_id),
+            )?)
+        }
+        "challenge_interrogation_line" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                line_id: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvanced,
+                |engine| engine.challenge_interrogation_line(&args.line_id),
+            )?)
+        }
+        "present_interrogation_evidence" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                line_id: String,
+                item_kind: String,
+                item_id: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvanced,
+                |engine| {
+                    engine.present_interrogation_evidence(
+                        &args.line_id,
+                        &args.item_kind,
+                        &args.item_id,
+                    )
+                },
+            )?)
+        }
+        "withdraw_interrogation" => development_json(run_gameplay_mutation(
+            state,
+            MutationPersistencePolicy::AutosaveIfAdvanced,
+            GameEngine::withdraw_interrogation,
+        )?),
+        "resume_interrogation_testimony" => development_json(run_gameplay_mutation(
+            state,
+            MutationPersistencePolicy::AutosaveIfAdvanced,
+            GameEngine::resume_interrogation_testimony,
+        )?),
+        "complete_interrogation_phase" => development_json(run_gameplay_mutation(
+            state,
+            MutationPersistencePolicy::AutosaveIfAdvanced,
+            GameEngine::complete_interrogation_phase,
+        )?),
+        _ => Err(GameError::new(
+            "unknownCommand",
+            format!("Unknown command: {command}"),
+        )),
+    }
+}
+
 #[tauri::command]
 fn list_scenes(app: tauri::AppHandle) -> Result<SceneNavigationIndex, GameError> {
     let resources_dir = resolve_scenes_dir(&app)?;
@@ -1296,6 +1781,12 @@ pub fn run() {
                 Arc::new(ProductionSaveFilesystem),
             )
             .map_err(|error| std::io::Error::other(error.message))?;
+            let app_handle = app.handle().clone();
+            bind_persistence_status_events(&state.coordinator, move |event, payload| {
+                if let Err(error) = app_handle.emit(event, payload) {
+                    eprintln!("failed to emit {event}: {error}");
+                }
+            });
             app.manage(state);
             Ok(())
         })
@@ -1345,6 +1836,150 @@ mod tests {
     use crate::game::save::coordinator::ExclusivePersistenceIntent;
     use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
     use std::time::Duration;
+
+    mod raw_thumbnail_command_contract {
+        use super::*;
+        use crate::game::save::schema::MAX_THUMBNAIL_BYTES;
+
+        fn manual_purpose() -> ThumbnailCapturePurpose {
+            ThumbnailCapturePurpose::ManualSave {
+                session_generation: 7,
+                durable_revision: 11,
+            }
+        }
+
+        #[tokio::test]
+        async fn missing_duplicate_non_utf8_and_malformed_tickets_stop_before_the_coordinator() {
+            let malformed_headers = [
+                vec![],
+                vec![
+                    RawThumbnailHeader::new(b"x-lyra-thumbnail-ticket", b"ticket"),
+                    RawThumbnailHeader::new(b"X-Lyra-Thumbnail-Ticket", b"ticket"),
+                ],
+                vec![RawThumbnailHeader::new(b"x-lyra-thumbnail-ticket", b"\xff")],
+                vec![RawThumbnailHeader::new(
+                    b"x-lyra-thumbnail-ticket",
+                    b"not-a-canonical-ticket",
+                )],
+            ];
+
+            for headers in malformed_headers {
+                let coordinator = SaveCoordinator::new();
+                let request = coordinator.prepare_thumbnail(manual_purpose()).unwrap();
+
+                let error =
+                    submit_save_thumbnail_core(&coordinator, &headers, b"not-a-png").unwrap_err();
+
+                assert_eq!(error.code, "staleThumbnailTicket");
+                assert_eq!(
+                    coordinator.thumbnail_activity(),
+                    ThumbnailActivityView::Capturing,
+                    "the request parser must fail before coordinator submission"
+                );
+                coordinator
+                    .report_thumbnail_failure(&request.ticket)
+                    .unwrap();
+            }
+        }
+
+        #[tokio::test]
+        async fn oversized_raw_body_stops_before_clone_or_coordinator_submission() {
+            let coordinator = SaveCoordinator::new();
+            let request = coordinator.prepare_thumbnail(manual_purpose()).unwrap();
+            let headers = [RawThumbnailHeader::new(
+                b"x-lyra-thumbnail-ticket",
+                request.ticket.as_bytes(),
+            )];
+            let oversized = vec![0; MAX_THUMBNAIL_BYTES + 1];
+
+            let error = submit_save_thumbnail_core(&coordinator, &headers, &oversized).unwrap_err();
+
+            assert_eq!(error.code, "thumbnailPngTooLarge");
+            assert_eq!(
+                coordinator.thumbnail_activity(),
+                ThumbnailActivityView::Capturing,
+                "the ingress cap must fail before coordinator submission"
+            );
+            coordinator
+                .report_thumbnail_failure(&request.ticket)
+                .unwrap();
+        }
+
+        #[tokio::test]
+        async fn status_events_are_named_complete_snapshots_matching_the_getters() {
+            let coordinator = SaveCoordinator::new();
+            let events = Arc::new(Mutex::new(Vec::<(String, serde_json::Value)>::new()));
+            let recorded = Arc::clone(&events);
+
+            bind_persistence_status_events(&coordinator, move |name, payload| {
+                recorded.lock().unwrap().push((name.into(), payload));
+            });
+
+            let initial = events.lock().unwrap().clone();
+            assert_eq!(
+                initial,
+                [
+                    (
+                        PERSISTENCE_STATUS_CHANGED_EVENT.into(),
+                        serde_json::to_value(coordinator.persistence_health()).unwrap(),
+                    ),
+                    (
+                        THUMBNAIL_ACTIVITY_CHANGED_EVENT.into(),
+                        serde_json::to_value(coordinator.thumbnail_activity()).unwrap(),
+                    ),
+                ]
+            );
+
+            coordinator.publish_persistence_health(PersistenceHealthView::Degraded {
+                diagnostic: GameError::save_write_failed(),
+            });
+            coordinator.prepare_thumbnail(manual_purpose()).unwrap();
+
+            let published = events.lock().unwrap().clone();
+            assert_eq!(
+                published[published.len() - 2],
+                (
+                    PERSISTENCE_STATUS_CHANGED_EVENT.into(),
+                    serde_json::to_value(coordinator.persistence_health()).unwrap(),
+                )
+            );
+            assert_eq!(
+                published[published.len() - 1],
+                (
+                    THUMBNAIL_ACTIVITY_CHANGED_EVENT.into(),
+                    serde_json::to_value(coordinator.thumbnail_activity()).unwrap(),
+                )
+            );
+        }
+
+        #[tokio::test]
+        async fn tauri_core_and_http_adapter_return_identical_raw_request_errors() {
+            let coordinator = SaveCoordinator::new();
+            let app = AppState {
+                session: Arc::new(Mutex::new(AppSession::empty())),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator: coordinator.clone(),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+                persistence: None,
+            };
+            let ticket = uuid::Uuid::new_v4().hyphenated().to_string();
+            let duplicate = [
+                RawThumbnailHeader::new(b"x-lyra-thumbnail-ticket", ticket.as_bytes()),
+                RawThumbnailHeader::new(b"X-Lyra-Thumbnail-Ticket", ticket.as_bytes()),
+            ];
+
+            for headers in [&[][..], &duplicate[..]] {
+                let tauri_error =
+                    submit_save_thumbnail_core(&coordinator, headers, b"png").unwrap_err();
+                let http_error =
+                    dispatch_development_command(&app, "submit_save_thumbnail", headers, b"png")
+                        .await
+                        .unwrap_err();
+                assert_eq!(http_error, tauri_error);
+            }
+        }
+    }
 
     mod application_command_contract {
         use super::*;
@@ -2186,6 +2821,15 @@ mod tests {
             metadata.save_id.clone()
         }
 
+        fn png(width: u32, height: u32) -> Vec<u8> {
+            let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+            bytes.extend_from_slice(&width.to_be_bytes());
+            bytes.extend_from_slice(&height.to_be_bytes());
+            bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+            bytes.extend_from_slice(&[0, 0, 0, 0]);
+            bytes
+        }
+
         fn session_observation(app: &AppState) -> (u64, u64, serde_json::Value) {
             let session = app.session.lock().unwrap();
             (
@@ -2193,6 +2837,130 @@ mod tests {
                 session.durable_revision().unwrap(),
                 serde_json::to_value(session.engine.as_ref().unwrap().view().unwrap()).unwrap(),
             )
+        }
+
+        #[tokio::test]
+        async fn thumbnail_read_returns_exact_bytes_and_rejects_stale_observed_identity() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            let request = app
+                .coordinator
+                .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
+                .unwrap();
+            let expected = png(320, 180);
+            app.coordinator
+                .submit_thumbnail(&request.ticket, &expected)
+                .unwrap();
+            let saved = save_manual_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                "Thumbnail".into(),
+                ManualSlotExpectation::Empty,
+                request.ticket,
+            )
+            .await
+            .unwrap();
+            let save_id = valid_save_id(&saved.saved_slot);
+
+            assert_eq!(
+                read_save_thumbnail_core(&app, SaveSlotRef::Manual { slot: 1 }, &save_id).unwrap(),
+                expected
+            );
+            assert_eq!(
+                read_save_thumbnail_core(
+                    &app,
+                    SaveSlotRef::Manual { slot: 1 },
+                    &uuid::Uuid::new_v4().hyphenated().to_string(),
+                )
+                .unwrap_err()
+                .code,
+                "staleSaveSelection"
+            );
+
+            let response = dispatch_development_command(
+                &app,
+                "read_save_thumbnail",
+                &[],
+                &serde_json::to_vec(&serde_json::json!({
+                    "reference": { "type": "manual", "slot": 1 },
+                    "observedSaveId": save_id,
+                }))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(response.content_type, "image/png");
+            assert_eq!(response.body, expected);
+        }
+
+        #[tokio::test]
+        async fn development_http_adapter_serializes_the_shared_wrapper_and_save_views() {
+            let resources = save_capture_fixture_resources();
+            let direct_temp = tempfile::tempdir().unwrap();
+            let http_temp = tempfile::tempdir().unwrap();
+            let direct = build_app_state_with_storage(
+                resources.clone(),
+                direct_temp.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            let http =
+                build_development_app_state(resources.clone(), http_temp.path().join("saves"))
+                    .unwrap();
+
+            let expected_start =
+                serde_json::to_value(start_game_with_persistence_core(&direct).await.unwrap())
+                    .unwrap();
+            let actual_start = dispatch_development_command(&http, "start_game", &[], b"{}")
+                .await
+                .unwrap();
+            assert_eq!(actual_start.content_type, "application/json");
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&actual_start.body).unwrap(),
+                expected_start
+            );
+
+            let expected_browser = serde_json::to_value(
+                list_saves_core(&direct, || direct.persistence.as_ref().unwrap().discover())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+            let actual_browser = dispatch_development_command(&http, "list_saves", &[], b"{}")
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&actual_browser.body).unwrap(),
+                expected_browser
+            );
+
+            for (command, expected) in [
+                (
+                    "get_persistence_status",
+                    serde_json::to_value(persistence_status_snapshot(&http.coordinator)).unwrap(),
+                ),
+                (
+                    "get_thumbnail_activity",
+                    serde_json::to_value(thumbnail_activity_snapshot(&http.coordinator)).unwrap(),
+                ),
+            ] {
+                let response = dispatch_development_command(&http, command, &[], b"{}")
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&response.body).unwrap(),
+                    expected
+                );
+            }
         }
 
         #[tokio::test]
@@ -2688,6 +3456,52 @@ mod tests {
                 !production_source.contains(&old_engine_mutex),
                 "production handlers must use AppSession, not the old engine mutex"
             );
+        }
+
+        #[test]
+        fn development_http_dispatch_registers_task_10_and_defers_task_11() {
+            let body = function_body(include_str!("lib.rs"), "dispatch_development_command");
+
+            for command in [
+                "list_saves",
+                "get_state",
+                "get_persistence_status",
+                "get_thumbnail_activity",
+                "start_game",
+                "start_game_without_saving",
+                "prepare_save_thumbnail",
+                "submit_save_thumbnail",
+                "report_save_thumbnail_failure",
+                "read_save_thumbnail",
+                "save_manual",
+                "load_save",
+                "load_save_discarding_current",
+                "continue_game",
+                "delete_save",
+                "return_to_title",
+                "return_to_title_without_saving",
+                "acknowledge_acquisition_event",
+                "confirm_acquisition_without_saving",
+                "reset_game",
+            ] {
+                assert_eq!(
+                    body.matches(&format!("\"{command}\"")).count(),
+                    1,
+                    "{command} must have exactly one HTTP dispatch arm"
+                );
+            }
+            for command in [
+                "get_exit_status",
+                "retry_exit",
+                "cancel_exit",
+                "exit_without_saving",
+            ] {
+                assert_eq!(
+                    body.matches(&format!("\"{command}\"")).count(),
+                    0,
+                    "{command} belongs to Task 11"
+                );
+            }
         }
 
         fn registered_command_count(handler: &str, command: &str) -> usize {
