@@ -697,3 +697,101 @@ rtk git diff --check
 
 Task 10 still owns the remaining discovery, manual-save/load, return/title,
 and failure-challenge IPC wiring.
+
+## Fix round 2: cancellation rollback and failed-target precedence
+
+This round addresses the review's remaining Critical and Important findings.
+The two recorded Task 9 Minor findings remain explicitly deferred.
+
+### Cancellation rollback after acknowledgement mutation
+
+- `AcknowledgementRollbackGuard` owns the exact `EngineRollbackSnapshot`
+  together with its session generation, source revision N, and expected
+  revision N+1 while acknowledgement storage work is awaited.
+- If the acknowledgement future is cancelled while armed, `Drop`
+  synchronously reacquires S while the caller still owns the real AppState G.
+  It restores only when generation, acknowledgement intent, and revision N+1
+  still match. The guard does not update a receipt or autosave target.
+- Ordinary write failure uses `restore_now` under the same exact checks before
+  issuing the persistence-failure challenge.
+- The guard is disarmed only after replacement has committed, the exact
+  session is revalidated, and both session and coordinator persistence success
+  have been recorded.
+- The active-abort test now pauses a real storage backend after prepare,
+  cancels there, and proves source revision N, the acquisition event,
+  `written_revision`, autosave target, slot bytes, commit counters, and
+  successful receipt state are unchanged. It then proves persistence access,
+  install, clear, G, and W are usable. The queued-abort test also proves its
+  engine and persistence state were never mutated before the same lifecycle
+  checks.
+
+### Exact failed-N target precedence
+
+- Acknowledgement now prefers the retained target registered for exact
+  `(session generation, source revision)` N before the older successful target
+  stored in `SessionPersistence`.
+- The regression test seeds a successful session target at auto slot 1, forces
+  the failed N registration to auto slot 2, then changes the current ranking
+  so fresh selection would choose auto slot 3. Acknowledgement reuses slot 2
+  without running another selector probe.
+
+### RED evidence
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  save::coordinator::tests::lock_order::aborting_active_acknowledgement_clears_intent_and_releases_g_and_w
+  exit 101; 0 passed, 1 failed, 453 filtered out; abort left revision N+1 and removed event
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  save::coordinator::tests::acknowledgement::failed_revision_retains_its_registered_target_after_slot_ranking_changes
+  exit 101; 0 passed, 1 failed, 453 filtered out; older session slot 1 overrode exact failed-N slot 2
+```
+
+### Final commands and results
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  tests::start_core_rejects_queued_ack_before_allocating_or_installing
+  exit 0; 1 passed, 472 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  tests::reset_core_rejects_active_ack_without_waiting_for_its_gate
+  exit 0; 1 passed, 472 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::acknowledgement
+  exit 0; 14 passed, 459 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::lock_order
+  exit 0; 10 passed, 463 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::flush
+  exit 0; 11 passed, 462 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::failure_token
+  exit 0; 9 passed, 464 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::ticket
+  exit 0; 11 passed, 462 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce
+  exit 0; 23 passed, 450 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::writer
+  exit 0; 4 passed, 469 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration
+  exit 0; 6 passed, 467 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 473 passed across 6 suites
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml \
+  --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+
+rtk git diff --check
+  exit 0
+```

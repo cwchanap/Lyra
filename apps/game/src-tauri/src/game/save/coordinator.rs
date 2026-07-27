@@ -537,6 +537,91 @@ impl Drop for AcknowledgementIntentGuard<'_> {
     }
 }
 
+struct AcknowledgementRollbackGuard<'a> {
+    app: &'a crate::AppState,
+    rollback: Option<EngineRollbackSnapshot>,
+    session_generation: u64,
+    source_revision: u64,
+    next_revision: u64,
+}
+
+impl<'a> AcknowledgementRollbackGuard<'a> {
+    fn new(
+        app: &'a crate::AppState,
+        rollback: EngineRollbackSnapshot,
+        session_generation: u64,
+        source_revision: u64,
+        next_revision: u64,
+    ) -> Self {
+        Self {
+            app,
+            rollback: Some(rollback),
+            session_generation,
+            source_revision,
+            next_revision,
+        }
+    }
+
+    fn restore_now(&mut self) -> Result<(), GameError> {
+        let mut session = self
+            .app
+            .session
+            .lock()
+            .map_err(|_| GameError::unavailable())?;
+        if session.persistence.generation != self.session_generation
+            || session.persistence.exclusive_intent
+                != Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement)
+        {
+            return Err(GameError::save_write_failed());
+        }
+        let engine = session
+            .engine
+            .as_mut()
+            .ok_or_else(GameError::game_not_started)?;
+        if engine.durable_revision() != self.next_revision {
+            return Err(GameError::save_write_failed());
+        }
+        let rollback = self
+            .rollback
+            .take()
+            .ok_or_else(GameError::save_write_failed)?;
+        EngineRollbackSnapshot::restore(engine, rollback);
+        if engine.durable_revision() != self.source_revision {
+            return Err(GameError::save_write_failed());
+        }
+        Ok(())
+    }
+
+    fn disarm(&mut self) {
+        self.rollback = None;
+    }
+}
+
+impl Drop for AcknowledgementRollbackGuard<'_> {
+    fn drop(&mut self) {
+        let Some(rollback) = self.rollback.take() else {
+            return;
+        };
+        let Ok(mut session) = self.app.session.lock() else {
+            return;
+        };
+        if session.persistence.generation != self.session_generation
+            || session.persistence.exclusive_intent
+                != Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement)
+        {
+            return;
+        }
+        let Some(engine) = session.engine.as_mut() else {
+            return;
+        };
+        if engine.durable_revision() != self.next_revision {
+            return;
+        }
+        EngineRollbackSnapshot::restore(engine, rollback);
+        debug_assert_eq!(engine.durable_revision(), self.source_revision);
+    }
+}
+
 pub(crate) struct SessionPersistence {
     pub(crate) generation: u64,
     pub(crate) flush_baseline_revision: u64,
@@ -1238,7 +1323,7 @@ impl SaveCoordinator {
                 if let Some(receipt) = self.last_successful_write() {
                     session.persistence.record_written(&receipt);
                 }
-                let preferred_target = session.persistence.autosave_target.or(retained_target);
+                let preferred_target = retained_target.or(session.persistence.autosave_target);
                 let engine = session
                     .engine
                     .as_mut()
@@ -1271,6 +1356,13 @@ impl SaveCoordinator {
 
         match prepared_mutation {
             Ok((rollback, preferred_target, state)) => {
+                let mut rollback_guard = AcknowledgementRollbackGuard::new(
+                    app,
+                    rollback,
+                    session_generation,
+                    source_revision,
+                    next_revision,
+                );
                 let write_result = self
                     .execute_acknowledgement_write(
                         session_generation,
@@ -1279,23 +1371,27 @@ impl SaveCoordinator {
                         thumbnail,
                     )
                     .await;
-                let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
                 match write_result {
                     Ok((receipt, cleanup_diagnostic)) => {
+                        let mut session =
+                            app.session.lock().map_err(|_| GameError::unavailable())?;
+                        if session.persistence.generation != session_generation
+                            || session.persistence.exclusive_intent
+                                != Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement)
+                            || session.durable_revision() != Some(next_revision)
+                        {
+                            return Err(GameError::save_write_failed());
+                        }
                         session.persistence.record_written(&receipt);
                         self.record_blocking_success(receipt, cleanup_diagnostic.clone());
+                        rollback_guard.disarm();
                         Ok(AcknowledgementOutcome {
                             state,
                             cleanup_diagnostic,
                         })
                     }
                     Err(error) => {
-                        let engine = session
-                            .engine
-                            .as_mut()
-                            .ok_or_else(GameError::game_not_started)?;
-                        EngineRollbackSnapshot::restore(engine, rollback);
-                        drop(session);
+                        rollback_guard.restore_now()?;
                         let challenged = self.challenge_persistence_failure(
                             PersistenceBypassOperation::ContinueWithoutSaving,
                             FailureChallengeIdentity {
@@ -3047,6 +3143,24 @@ mod tests {
                 acknowledgement.await,
                 Err(error) if error.is_cancelled()
             ));
+            {
+                let session = app.session.lock().unwrap();
+                assert_eq!(session.durable_revision(), Some(5));
+                assert_eq!(session.persistence.written_revision, None);
+                assert_eq!(session.persistence.autosave_target, None);
+                assert_eq!(
+                    session
+                        .engine
+                        .as_ref()
+                        .unwrap()
+                        .pending_acquisition_events
+                        .iter()
+                        .map(|event| event.id.as_str())
+                        .collect::<Vec<_>>(),
+                    [event_id]
+                );
+            }
+            assert!(coordinator.last_successful_write().is_none());
             app.session
                 .lock()
                 .unwrap()
@@ -3073,11 +3187,21 @@ mod tests {
 
         #[tokio::test]
         async fn aborting_active_acknowledgement_clears_intent_and_releases_g_and_w() {
-            let backend = Arc::new(PhasedBackend::new(14));
-            backend.pause_prepare();
+            let backend = Arc::new(StorageBackend::new(14, 7));
+            backend.install_old_autosave_with_sidecar();
+            let slot_before = backend.slot_bytes(1);
+            backend.pause_after_prepare();
             let coordinator = SaveCoordinator::with_backend(backend.clone());
             let event_id = "acq:6:0";
-            let app = Arc::new(app_with_event(coordinator.clone(), 14, 6, event_id, None));
+            let mut app = app_with_event(
+                coordinator.clone(),
+                14,
+                6,
+                event_id,
+                Some(SaveSlotRef::Auto { slot: 1 }),
+            );
+            app.replacement_gate = backend.replacement_gate();
+            let app = Arc::new(app);
             let ticket = terminal_acknowledgement_ticket(&coordinator, 14, 6, event_id);
             let acknowledgement = {
                 let app = Arc::clone(&app);
@@ -3097,6 +3221,30 @@ mod tests {
                 Err(error) if error.is_cancelled()
             ));
             assert!(app.replacement_gate.try_lock().is_ok());
+            {
+                let session = app.session.lock().unwrap();
+                assert_eq!(session.durable_revision(), Some(6));
+                assert_eq!(session.persistence.written_revision, None);
+                assert_eq!(
+                    session.persistence.autosave_target,
+                    Some(SaveSlotRef::Auto { slot: 1 })
+                );
+                assert_eq!(
+                    session
+                        .engine
+                        .as_ref()
+                        .unwrap()
+                        .pending_acquisition_events
+                        .iter()
+                        .map(|event| event.id.as_str())
+                        .collect::<Vec<_>>(),
+                    [event_id]
+                );
+            }
+            assert_eq!(backend.slot_bytes(1), slot_before);
+            assert_eq!(backend.normal_commit_calls(), 0);
+            assert_eq!(backend.held_gate_commit_calls(), 0);
+            assert!(coordinator.last_successful_write().is_none());
             app.session
                 .lock()
                 .unwrap()
@@ -4023,10 +4171,17 @@ mod tests {
         #[tokio::test(start_paused = true)]
         async fn failed_revision_retains_its_registered_target_after_slot_ranking_changes() {
             let backend = Arc::new(super::debounce::PhasedBackend::new(3));
+            backend.mark_slot_used(1);
             backend.fail_next_commit();
             let coordinator = SaveCoordinator::with_backend(backend.clone());
             let event_id = "acq:1:0";
-            let app = app_with_event(coordinator.clone(), 3, 1, event_id, None);
+            let app = app_with_event(
+                coordinator.clone(),
+                3,
+                1,
+                event_id,
+                Some(SaveSlotRef::Auto { slot: 1 }),
+            );
 
             let request = coordinator.notify_durable_commit(3, 1).unwrap();
             coordinator
@@ -4034,10 +4189,10 @@ mod tests {
                 .unwrap();
             tokio::time::advance(super::super::AUTOSAVE_DEBOUNCE).await;
             backend.wait_for_failed_commits(1).await;
-            backend.mark_first_slot_used();
+            backend.mark_slot_used(2);
             assert_eq!(
                 backend.probe_selected_target(),
-                SaveSlotRef::Auto { slot: 2 }
+                SaveSlotRef::Auto { slot: 3 }
             );
 
             let ticket = terminal_acknowledgement_ticket(&coordinator, 3, 1, event_id);
@@ -4048,7 +4203,7 @@ mod tests {
 
             assert_eq!(
                 backend.registered_targets(),
-                [SaveSlotRef::Auto { slot: 1 }, SaveSlotRef::Auto { slot: 1 }]
+                [SaveSlotRef::Auto { slot: 2 }, SaveSlotRef::Auto { slot: 2 }]
             );
             assert_eq!(backend.selection_probe_count(), 1);
         }
@@ -4784,11 +4939,11 @@ mod tests {
                 }
             }
 
-            pub(super) fn mark_first_slot_used(&self) {
+            pub(super) fn mark_slot_used(&self, slot_number: u8) {
                 let mut slots = self.slots.lock().unwrap();
                 let slot = slots
                     .iter_mut()
-                    .find(|slot| slot.reference == SaveSlotRef::Auto { slot: 1 })
+                    .find(|slot| slot.reference == SaveSlotRef::Auto { slot: slot_number })
                     .unwrap();
                 slot.status = SaveSlotStatusView::Invalid {
                     metadata: None,
