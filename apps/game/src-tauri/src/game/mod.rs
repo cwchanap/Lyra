@@ -276,6 +276,10 @@ impl GameEngine {
         })
     }
 
+    pub(crate) fn durable_revision(&self) -> u64 {
+        self.durable_revision
+    }
+
     pub(in crate::game) fn packaged_acquisition_scene(
         &self,
         chapter_id: &str,

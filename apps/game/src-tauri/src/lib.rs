@@ -5,14 +5,20 @@
 pub mod game;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::path::BaseDirectory;
 use tauri::Manager;
 
+use game::save::coordinator::{AppSession, SaveCoordinator};
 use game::{GameEngine, GameError, GameStateView, QueueToken, SceneNavigationIndex};
 
-struct AppState {
-    engine: Mutex<Option<GameEngine>>,
+pub(crate) struct AppState {
+    pub(crate) session: Mutex<AppSession>,
+    pub(crate) replacement_gate: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) coordinator: SaveCoordinator,
+    pub(crate) resources_dir: PathBuf,
+    #[allow(dead_code)] // Task 9 Part B/C and Task 10 consume the configured storage root.
+    pub(crate) save_root: PathBuf,
 }
 
 fn unavailable_error() -> GameError {
@@ -64,30 +70,28 @@ fn resolve_scenes_dir(app: &tauri::AppHandle) -> Result<PathBuf, GameError> {
 }
 
 #[tauri::command]
-fn start_game(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<GameStateView, GameError> {
-    let resources_dir = resolve_scenes_dir(&app)?;
-    let engine = GameEngine::new_started(resources_dir)?;
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
+async fn start_game(state: tauri::State<'_, AppState>) -> Result<GameStateView, GameError> {
+    let engine = GameEngine::new_started(state.resources_dir.clone())?;
+    let generation = state.coordinator.next_session_generation()?;
     let view = engine.view()?;
-    *guard = Some(engine);
+    let _gate = state.replacement_gate.lock().await;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    *session = AppSession::installed(engine, generation, None);
     Ok(view)
 }
 
 #[tauri::command]
-fn reset_game(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<GameStateView, GameError> {
-    start_game(app, state)
+async fn reset_game(state: tauri::State<'_, AppState>) -> Result<GameStateView, GameError> {
+    start_game(state).await
 }
 
 #[tauri::command]
 fn get_state(state: tauri::State<'_, AppState>) -> Result<GameStateView, GameError> {
-    let guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    guard
+    let session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    session
+        .engine
         .as_ref()
         .ok_or_else(GameError::game_not_started)?
         .view()
@@ -105,8 +109,12 @@ fn jump_to_scene(
     chapter_id: String,
     scene_id: String,
 ) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.jump_to_scene(&chapter_id, &scene_id)
 }
 
@@ -115,8 +123,12 @@ fn advance_dialogue(
     state: tauri::State<'_, AppState>,
     expected: QueueToken,
 ) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.advance_dialogue(expected)
 }
 
@@ -125,8 +137,12 @@ fn inspect_hotspot(
     state: tauri::State<'_, AppState>,
     hotspot_id: String,
 ) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.inspect_hotspot(&hotspot_id)
 }
 
@@ -136,8 +152,12 @@ fn interview_topic(
     character_id: String,
     topic_id: String,
 ) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.interview_topic(&character_id, &topic_id)
 }
 
@@ -146,8 +166,12 @@ fn enter_sublocation(
     state: tauri::State<'_, AppState>,
     sublocation_id: String,
 ) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.enter_sublocation(&sublocation_id)
 }
 
@@ -156,8 +180,12 @@ fn reexamine_evidence(
     state: tauri::State<'_, AppState>,
     evidence_id: String,
 ) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.reexamine_evidence(&evidence_id)
 }
 
@@ -166,8 +194,12 @@ fn reexamine_statement(
     state: tauri::State<'_, AppState>,
     statement_id: String,
 ) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.reexamine_statement(&statement_id)
 }
 
@@ -176,8 +208,12 @@ fn ask_interrogation_question(
     state: tauri::State<'_, AppState>,
     question_id: String,
 ) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.ask_interrogation_question(&question_id)
 }
 
@@ -186,8 +222,12 @@ fn challenge_interrogation_line(
     state: tauri::State<'_, AppState>,
     line_id: String,
 ) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.challenge_interrogation_line(&line_id)
 }
 
@@ -198,15 +238,23 @@ fn present_interrogation_evidence(
     item_kind: String,
     item_id: String,
 ) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.present_interrogation_evidence(&line_id, &item_kind, &item_id)
 }
 
 #[tauri::command]
 fn withdraw_interrogation(state: tauri::State<'_, AppState>) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.withdraw_interrogation()
 }
 
@@ -214,8 +262,12 @@ fn withdraw_interrogation(state: tauri::State<'_, AppState>) -> Result<GameState
 fn resume_interrogation_testimony(
     state: tauri::State<'_, AppState>,
 ) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.resume_interrogation_testimony()
 }
 
@@ -223,8 +275,12 @@ fn resume_interrogation_testimony(
 fn complete_interrogation_phase(
     state: tauri::State<'_, AppState>,
 ) -> Result<GameStateView, GameError> {
-    let mut guard = state.engine.lock().map_err(|_| unavailable_error())?;
-    let engine = guard.as_mut().ok_or_else(GameError::game_not_started)?;
+    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
+    session.ensure_persistence_available()?;
+    let engine = session
+        .engine
+        .as_mut()
+        .ok_or_else(GameError::game_not_started)?;
     engine.complete_interrogation_phase()
 }
 
@@ -240,8 +296,18 @@ pub fn run() {
         .plugin(tauri_plugin_wdio_webdriver::init());
 
     builder
-        .manage(AppState {
-            engine: Mutex::new(None),
+        .setup(|app| {
+            let resources_dir = resolve_scenes_dir(app.handle())
+                .map_err(|error| std::io::Error::other(error.message))?;
+            let save_root = app.path().app_data_dir()?.join("saves");
+            app.manage(AppState {
+                session: Mutex::new(AppSession::empty()),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator: SaveCoordinator::new(),
+                resources_dir,
+                save_root,
+            });
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             start_game,
