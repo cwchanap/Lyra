@@ -53,10 +53,12 @@ impl std::fmt::Debug for RestoredGameCandidate {
 }
 
 pub(crate) struct CurrentDefinitions {
+    pub(crate) resources_dir: PathBuf,
     pub(crate) content_manifest: ContentManifest,
     pub(crate) chapters: Vec<ChapterManifest>,
     pub(crate) story_catalog: StoryCatalog,
     pub(crate) scenes_by_key: BTreeMap<(String, String), SceneJson>,
+    pub(crate) scene_indices_by_key: BTreeMap<(String, String), usize>,
     pub(crate) semantic_asset_ids: BTreeSet<String>,
     pub(crate) semantic_audio_ids: BTreeSet<String>,
 }
@@ -94,6 +96,7 @@ pub(crate) fn load_current_definitions(
     let chapters = load_chapter_manifests(resources_dir)?;
     let story_catalog = StoryCatalog::load(resources_dir)?;
     let mut scenes_by_key = BTreeMap::new();
+    let mut scene_indices_by_key = BTreeMap::new();
     let mut semantic_asset_ids = BTreeSet::new();
     let mut semantic_audio_ids = BTreeSet::new();
 
@@ -102,7 +105,7 @@ pub(crate) fn load_current_definitions(
         if scenes.len() != chapter.scenes.len() {
             return Err(GameError::missing_save_definition());
         }
-        for scene in scenes {
+        for (scene_index, scene) in scenes.into_iter().enumerate() {
             let (scene_id, _) = scene_json_identity(&scene);
             let key = (chapter.id.clone(), scene_id.to_owned());
             if scenes_by_key.contains_key(&key) {
@@ -114,6 +117,7 @@ pub(crate) fn load_current_definitions(
                     ),
                 ));
             }
+            scene_indices_by_key.insert(key.clone(), scene_index);
             for asset_ref in scene_asset_refs(&scene) {
                 match asset_ref.asset_type {
                     AssetTypeJson::Audio => {
@@ -129,10 +133,12 @@ pub(crate) fn load_current_definitions(
     }
 
     Ok(CurrentDefinitions {
+        resources_dir: resources_dir.to_path_buf(),
         content_manifest,
         chapters,
         story_catalog,
         scenes_by_key,
+        scene_indices_by_key,
         semantic_asset_ids,
         semantic_audio_ids,
     })
@@ -143,19 +149,15 @@ pub(crate) fn build_restore_candidate(
     definitions: &CurrentDefinitions,
     envelope: SaveEnvelopeV1,
 ) -> Result<RestoredGameCandidate, GameError> {
+    if resources_dir != definitions.resources_dir {
+        return Err(GameError::save_discovery_unavailable());
+    }
     // The caller normally obtained this value through version dispatch, but a
     // typed Rust value is not trusted either: validate the complete envelope
     // boundary again before using any field.
     let encoded = serde_json::to_vec(&envelope).map_err(|_| GameError::malformed_save_json())?;
     let envelope = super::schema::parse_current_envelope(&encoded)?;
     let packaged_revision = definitions.content_manifest.content_revision();
-    let resources_revision = ContentManifest::load(&resources_dir)?;
-    if resources_revision.content_revision() != packaged_revision {
-        return Err(GameError::incompatible_content_revision(
-            resources_revision.content_revision(),
-            packaged_revision,
-        ));
-    }
     if envelope.content_revision != packaged_revision {
         return Err(GameError::incompatible_content_revision(
             &envelope.content_revision,
@@ -177,7 +179,10 @@ pub(crate) fn build_restore_candidate(
         .scenes_by_key
         .get(&(snapshot.chapter_id.clone(), snapshot.scene_id.clone()))
         .ok_or_else(GameError::missing_save_definition)?;
-    let scene_index = packaged_scene_index(&resources_dir, chapter, &snapshot.scene_id)?;
+    let scene_index = *definitions
+        .scene_indices_by_key
+        .get(&(snapshot.chapter_id.clone(), snapshot.scene_id.clone()))
+        .ok_or_else(GameError::missing_save_definition)?;
 
     validate_visual_cues(definitions, &snapshot.last_visual_cue)?;
     let story_state = StoryState::restore(definitions, snapshot.story_state.clone())?;
@@ -302,29 +307,6 @@ fn exactly_one_chapter<'a>(
         )));
     }
     Ok(found)
-}
-
-fn packaged_scene_index(
-    resources_dir: &Path,
-    chapter: &ChapterManifest,
-    scene_id: &str,
-) -> Result<usize, GameError> {
-    let mut found = None;
-    for (index, scene) in load_chapter_scene_jsons(resources_dir, chapter)?
-        .iter()
-        .enumerate()
-    {
-        if scene_json_identity(scene).0 == scene_id {
-            if found.is_some() {
-                return Err(invalid_progress(format!(
-                    "Packaged scene identity '{}/{}' is ambiguous.",
-                    chapter.id, scene_id
-                )));
-            }
-            found = Some(index);
-        }
-    }
-    found.ok_or_else(GameError::missing_save_definition)
 }
 
 fn restore_active_queue(

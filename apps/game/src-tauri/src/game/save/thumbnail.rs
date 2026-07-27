@@ -5,6 +5,8 @@ use super::schema::{
 use crate::game::GameError;
 use sha2::{Digest, Sha256};
 
+pub(crate) const PNG_HEADER_BYTES: usize = 33;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)] // Task 7/10 consume validated thumbnail candidates through storage.
 pub(crate) struct ValidatedThumbnail {
@@ -19,16 +21,7 @@ impl ValidatedThumbnail {
         if bytes.len() > MAX_THUMBNAIL_BYTES {
             return Err(GameError::thumbnail_png_too_large());
         }
-        if bytes.len() < 33
-            || bytes[..8] != *b"\x89PNG\r\n\x1a\n"
-            || bytes[8..12] != 13u32.to_be_bytes()
-            || bytes[12..16] != *b"IHDR"
-        {
-            return Err(GameError::thumbnail_png_malformed());
-        }
-
-        let width = u32::from_be_bytes(bytes[16..20].try_into().expect("fixed IHDR width"));
-        let height = u32::from_be_bytes(bytes[20..24].try_into().expect("fixed IHDR height"));
+        let (width, height) = parse_png_header(&bytes)?;
         let digest = Sha256::digest(&bytes);
         let descriptor = ThumbnailDescriptorV1::Available {
             object_id: object_id.into(),
@@ -49,6 +42,52 @@ impl ValidatedThumbnail {
         }
         Ok(())
     }
+}
+
+pub(crate) fn parse_png_header(bytes: &[u8]) -> Result<(u32, u32), GameError> {
+    if bytes.len() < PNG_HEADER_BYTES
+        || bytes[..8] != *b"\x89PNG\r\n\x1a\n"
+        || bytes[8..12] != 13u32.to_be_bytes()
+        || bytes[12..16] != *b"IHDR"
+    {
+        return Err(GameError::thumbnail_png_malformed());
+    }
+    let width = u32::from_be_bytes(bytes[16..20].try_into().expect("fixed IHDR width"));
+    let height = u32::from_be_bytes(bytes[20..24].try_into().expect("fixed IHDR height"));
+    Ok((width, height))
+}
+
+pub(crate) fn validate_png_bytes_for_descriptor(
+    save_id: &str,
+    bytes: &[u8],
+    descriptor: &ThumbnailDescriptorV1,
+) -> Result<(), GameError> {
+    validate_descriptor(save_id, descriptor)?;
+    let ThumbnailDescriptorV1::Available {
+        width,
+        height,
+        byte_length,
+        sha256,
+        ..
+    } = descriptor
+    else {
+        return Err(GameError::thumbnail_png_malformed());
+    };
+    if bytes.len() > MAX_THUMBNAIL_BYTES {
+        return Err(GameError::thumbnail_png_too_large());
+    }
+    if bytes.len() != *byte_length as usize {
+        return Err(GameError::thumbnail_png_malformed());
+    }
+    let (actual_width, actual_height) = parse_png_header(bytes)?;
+    if actual_width != *width || actual_height != *height {
+        return Err(GameError::thumbnail_png_malformed());
+    }
+    let digest = Sha256::digest(bytes);
+    if format!("sha256:{digest:x}") != *sha256 {
+        return Err(GameError::thumbnail_png_malformed());
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_descriptor(
