@@ -310,3 +310,140 @@ rtk git diff --check
   checkpoint pin/reuse behavior, and failure-challenge semantics.
 - Task 10 still owns IPC/event wiring and conversion of coordinator
   subscriptions into complete Tauri payloads.
+
+## Fix round 1 — hardened autosave coordination
+
+### Review mapping
+
+| Finding | Fix |
+| --- | --- |
+| Critical: newer committed revision can be masked by older writer completion | Scheduling failure now atomically records the exact failed `(generation, revision)`, supersedes older pending work, removes the failed ticket, publishes complete Unavailable thumbnail activity and Degraded persistence health, and preserves newer failure identity across older success/stale/failure completion. Explicit retry reads that retained exact identity. |
+| Important: label-only storage/intent seam | Added an S-held backend registration phase that consumes the immutable capture and binds the selected target/save ID into one private `AutosaveRegisteredIntent`. Preparation consumes its concrete `SlotWriteRequest` through Task 7 and owns the resulting boxed `PreparedSlotWrite`; revalidation reads the same private identity, and commit/discard consumes that exact staged value. The committed receipt is derived from the committed envelope and compared against the coordinator's exact selected identity before adoption. |
+| Important: target not generation-scoped | Current target is stored as `(session_generation, slot)`, and `autosave_target(generation)` returns it only for an exact generation match. |
+
+The recorded lost-wakeup and pre-clone-size-check minor findings were not
+changed in this round.
+
+### Files
+
+- `apps/game/src-tauri/src/game/save/coordinator.rs`
+  - atomic scheduling-failure state transition and monotonic failure ownership;
+  - generation-owned target storage/access;
+  - registered intent, real Task 7 prepared-write ownership, envelope-derived
+    receipt, and exact receipt-adoption check;
+  - deterministic race, target-scope, and real-storage integration tests.
+- `.superpowers/sdd/2026-07-26-hpa-392-save-load-persistence-implementation-plan/task-8-report.md`
+  - this review-fix evidence.
+
+### RED evidence
+
+Critical race:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce::newer_schedule_failure_survives_older_writer_success_and_retries_exact_revision
+```
+
+Exited 101. The first runtime assertion showed
+`ThumbnailActivityView::Capturing` after revision 41 scheduling failed while
+revision 40 was already in the writer. The same test also requires no remaining
+autosave ticket, Degraded health after the older success, retained failure
+identity `(1, 41)`, and explicit retry of revision 41.
+
+Generation target:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce::prior_generation_target_is_not_visible_to_new_generation_before_first_success
+```
+
+Exited 101 with E0061 because the target accessor accepted no generation. The
+test requires generation 1's target to exist while a newly observed generation
+2 sees no target before its first successful write.
+
+Typed storage:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration::registered_intent_rejects_mismatched_save_id_before_storage_preparation
+```
+
+Exited 101 with E0599 because `AutosaveCapture::register` did not exist. During
+the migration the first compiler error was E0407 from the old backend discard
+callback; all old capture/prepare/receipt callbacks were then migrated to the
+owned registration/prepared-write contract.
+
+Exact receipt adoption:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration::mismatched_committed_slot_or_save_id_receipt_cannot_be_adopted
+```
+
+Exited 101 because a test-only corrupted committed save ID was adopted. The
+coordinator now compares the outcome with the exact generation, revision,
+selected slot, and generated save ID before recording success.
+
+### GREEN evidence
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::ticket
+  11 passed, 409 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce
+  17 passed, 403 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::writer
+  4 passed, 416 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration
+  5 passed, 415 filtered out
+```
+
+### Race, ownership, lock, and storage matrix
+
+| Boundary or rule | Deterministic evidence | Result |
+| --- | --- | --- |
+| N+1 schedule failure while N is under W | pause revision 40 after real writer entry, fail revision 41 scheduling, then release 40 | revision 41 remains the failed identity; health remains Degraded after 40 succeeds |
+| failed scheduling ticket | inspect ticket registry and complete activity immediately after failure | no live autosave ticket; activity is Unavailable rather than Capturing |
+| exact retry identity | invoke ManualSave retry after older completion | new ticket purpose and eventual receipt both name revision 41 |
+| older completion isolation | complete older success after newer failure | older completion cannot clear failure or publish Healthy |
+| generation-owned target | complete generation 1, observe generation 2 before its first write | generation 2 target lookup returns None; generation 1 slot is not reused/exposed as generation 2 |
+| selected intent binding | actual backend acquires Tokio S during register | registered target/save ID and immutable capture are consumed into one private `SlotWriteRequest` |
+| preparation ownership | actual backend holds Tokio W and calls Task 7 `prepare_slot_write` | returned coordinator handle owns the real boxed `PreparedSlotWrite`; gate and session remain available |
+| exact revalidation token | actual backend holds Tokio G then S and reads identity from the same prepared handle | G and S are both observed held; generation and revision match the registered token |
+| replacement ownership | actual backend holds Tokio W plus G and calls `commit_prepared_slot_write` | committed envelope becomes durable; handle is consumed |
+| real stale discard | change generation after real staging and before G→S revalidation | same staged handle returns Stale, is consumed by `discard_prepared_slot_write`, staged discard count increases, and slot file is absent |
+| committed-envelope receipt | read the actual installed autosave JSON | receipt revision, slot, and save ID exactly match the committed envelope |
+| malformed registration identity | inject mismatched slot or save ID before preparation | registration fails; no files stage and no target/success is adopted |
+| malformed committed receipt | test-only corrupt slot or save ID after real commit returns | exact coordinator comparison rejects adoption and leaves health Degraded |
+| actual phase order | integration phase log plus held-lock probes | `S:capture`, `S:register`, `W:prepare`, `G`, `G:S:revalidate`, `W+G:commit` |
+
+The production-like integration backend implements the `SaveFilesystem` seam
+with a tracking wrapper around the production atomic writer. It therefore uses
+the actual Task 7 prepare/commit/discard functions while exposing deterministic
+stage/install/discard counters. Its W/G/S locks are real Tokio mutexes.
+
+### Final commands and results
+
+```text
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 420 passed across 6 suites
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+  intermediate: large-enum and infallible-match diagnostics for the owned PreparedSlotWrite
+  final: exit 0; no issues found after boxing that same owned handle
+
+rtk git diff --check
+  exit 0
+```
+
+### Remaining risks and deferred work
+
+- Task 10 must implement the same S-held registration and G→S revalidation
+  contract against the real engine/session facade. The coordinator API no
+  longer permits production construction of a label-only prepared write or an
+  arbitrary receipt.
+- Task 9 still owns blocking flush, acquisition acknowledgement mutation,
+  checkpoint pin/reuse behavior, and failure-challenge semantics.
+- The separately recorded lost-wakeup and pre-clone-size-check minor findings
+  remain deferred by scope for a later review round.
