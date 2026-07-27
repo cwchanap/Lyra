@@ -1213,7 +1213,7 @@ impl SaveCoordinator {
             if state
                 .cleanup_failure
                 .as_ref()
-                .is_some_and(|failure| &failure.owner == owner)
+                .is_some_and(|failure| cleanup_success_resolves(owner, &failure.owner))
             {
                 state.cleanup_failure = None;
                 let health = health_after_completion(&state);
@@ -1575,6 +1575,13 @@ fn cleanup_owner_replaces(candidate: &CleanupOwner, existing: &CleanupOwner) -> 
     }
 }
 
+fn cleanup_success_resolves(success: &CleanupOwner, failure: &CleanupOwner) -> bool {
+    match (success, failure) {
+        (CleanupOwner::Attempt(success), CleanupOwner::Attempt(failure)) => failure <= success,
+        _ => success == failure,
+    }
+}
+
 fn health_after_completion(state: &CoordinatorState) -> PersistenceHealthView {
     if state.pending_autosave.is_some() {
         PersistenceHealthView::Pending
@@ -1657,9 +1664,9 @@ mod tests {
         use super::super::{
             AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome, AutosavePreparedWrite,
             AutosaveRegisteredIntent, AutosaveWriteJob, AutosaveWriteReceipt,
-            BackgroundRetryTrigger, CaptureIntent, CoordinatorFuture, PersistenceHealthView,
-            SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose, AUTOSAVE_DEBOUNCE,
-            THUMBNAIL_CAPTURE_TIMEOUT,
+            BackgroundRetryTrigger, CaptureIntent, CleanupOwner, CoordinatorFuture,
+            PersistenceHealthView, SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose,
+            AUTOSAVE_DEBOUNCE, THUMBNAIL_CAPTURE_TIMEOUT,
         };
         use crate::game::save::schema::{
             SaveEnvelopeV1, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveType,
@@ -2629,6 +2636,87 @@ mod tests {
                     .count(),
                 2
             );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn later_queued_receipt_less_cleanup_success_resolves_earlier_failure() {
+            let backend = Arc::new(PhasedBackend::new(1));
+            backend.fail_cleanup.store(true, Ordering::SeqCst);
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+
+            coordinator.enqueue_orphan_cleanup().unwrap();
+            coordinator.enqueue_orphan_cleanup().unwrap();
+            backend.wait_for_cleanup_attempts(2).await;
+            tokio::task::yield_now().await;
+
+            assert_eq!(
+                backend
+                    .phases()
+                    .into_iter()
+                    .filter(|phase| *phase == "W:cleanup")
+                    .count(),
+                2
+            );
+            assert_eq!(
+                coordinator.persistence_health(),
+                PersistenceHealthView::Healthy
+            );
+            assert!(coordinator.state.lock().unwrap().cleanup_failure.is_none());
+        }
+
+        #[test]
+        fn older_receipt_less_cleanup_success_does_not_clear_later_failure() {
+            let coordinator = SaveCoordinator::new();
+            coordinator
+                .record_cleanup_failure(CleanupOwner::Attempt(2), GameError::save_read_failed());
+
+            coordinator.resolve_cleanup_failure(&CleanupOwner::Attempt(1));
+
+            assert_eq!(
+                coordinator.persistence_health(),
+                PersistenceHealthView::Degraded {
+                    diagnostic: GameError::save_read_failed(),
+                }
+            );
+            assert!(matches!(
+                coordinator
+                    .state
+                    .lock()
+                    .unwrap()
+                    .cleanup_failure
+                    .as_ref()
+                    .map(|failure| &failure.owner),
+                Some(CleanupOwner::Attempt(2))
+            ));
+        }
+
+        #[test]
+        fn receipt_less_cleanup_success_does_not_clear_receipt_owned_failure() {
+            let coordinator = SaveCoordinator::new();
+            let receipt_owner = CleanupOwner::Receipt(AutosaveWriteReceipt {
+                session_generation: 1,
+                durable_revision: 7,
+                slot: SaveSlotRef::Auto { slot: 2 },
+                save_id: "receipt-owned".into(),
+            });
+            coordinator
+                .record_cleanup_failure(receipt_owner.clone(), GameError::save_write_failed());
+
+            coordinator.resolve_cleanup_failure(&CleanupOwner::Attempt(u64::MAX));
+
+            assert_eq!(
+                coordinator.persistence_health(),
+                PersistenceHealthView::Degraded {
+                    diagnostic: GameError::save_write_failed(),
+                }
+            );
+            assert!(coordinator
+                .state
+                .lock()
+                .unwrap()
+                .cleanup_failure
+                .as_ref()
+                .is_some_and(|failure| failure.owner == receipt_owner));
         }
 
         #[tokio::test(start_paused = true)]

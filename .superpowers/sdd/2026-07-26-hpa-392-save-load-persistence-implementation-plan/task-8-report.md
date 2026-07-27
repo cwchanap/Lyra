@@ -664,3 +664,110 @@ rtk git diff --check
   checkpoint pin/reuse behavior, and failure-challenge semantics.
 - The separate lost-wakeup and pre-clone-size-check minor findings remain
   deferred by explicit round-3 scope.
+
+## Fix round 4 — ordered cleanup attempt resolution
+
+### Review mapping
+
+| Finding | Fix |
+| --- | --- |
+| Important: back-to-back receipt-less cleanup attempts could leave the first failure stale after the second completed a newer successful scan | Cleanup success now applies ordered resolution only within `CleanupOwner::Attempt`: successful attempt `k` resolves a retained attempt `j` when `j <= k`. Because both jobs use the serialized writer queue, the later enqueued successful scan subsumes the earlier failed scan. |
+| Safety: an older attempt success must not clear a later attempt failure | Attempt `k` cannot resolve retained attempt `j` when `j > k`; a direct state regression protects this boundary. |
+| Safety: receipt-less success must not clear receipt-owned cleanup failure | Cross-kind cleanup resolution remains false. Receipt-owned failures still require the exact successful receipt owner. |
+
+The separately recorded lost-wakeup and pre-clone-size-check minor findings
+remain unchanged and deferred by this round's explicit scope.
+
+### Files
+
+- `apps/game/src-tauri/src/game/save/coordinator.rs`
+  - ordered receipt-less cleanup success resolution;
+  - deterministic overlapping writer jobs and owner-order safety tests.
+- `.superpowers/sdd/2026-07-26-hpa-392-save-load-persistence-implementation-plan/task-8-report.md`
+  - this fix-round evidence.
+
+### RED evidence
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml later_queued_receipt_less_cleanup_success_resolves_earlier_failure
+```
+
+Exited 101 after both serialized cleanup jobs ran:
+
+```text
+left: Degraded { diagnostic: GameError { code: "saveReadFailed", ... } }
+right: Healthy
+```
+
+Attempt 1 failed and retained its cleanup diagnostic. Attempt 2 then completed
+a newer successful orphan scan, but exact-equality resolution could not remove
+Attempt 1's stale owner.
+
+### State and ordering decisions
+
+- Attempt tokens preserve writer enqueue order. Cleanup success uses ordering
+  only when both the success and retained failure are receipt-less attempts.
+- Successful Attempt `k` resolves retained Attempt `j` exactly when `j <= k`.
+  This covers the same-owner explicit retry and a later queued scan that
+  subsumes an earlier failed scan.
+- Successful Attempt `k` cannot resolve a later retained Attempt `j > k`.
+- Attempt success cannot resolve a receipt-owned failure. Receipt success
+  remains exact-owner only.
+- Failure replacement and health precedence from fix rounds 2 and 3 are
+  unchanged.
+
+### Deterministic regression matrix
+
+| Boundary | Deterministic evidence | Result |
+| --- | --- | --- |
+| overlapping enqueue | queue two receipt-less cleanups back-to-back before attempt 1 records its failure | owners are Attempt 1 and Attempt 2 in enqueue order |
+| serialized failure/success | one-shot backend fault fails the first call and the second call succeeds | phase log contains exactly two `W:cleanup` entries |
+| newer success resolution | wait for both writer jobs and inspect complete state | final health is Healthy and no cleanup failure remains |
+| older success guard | retain Attempt 2 failure, then resolve with Attempt 1 success | Degraded health and Attempt 2 owner remain |
+| receipt guard | retain a receipt-owned failure, then resolve with the maximum attempt token | receipt-owned Degraded health remains |
+
+### GREEN evidence and final gates
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml later_queued_receipt_less_cleanup_success_resolves_earlier_failure
+  1 passed, 425 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml older_receipt_less_cleanup_success_does_not_clear_later_failure
+  1 passed, 425 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml receipt_less_cleanup_success_does_not_clear_receipt_owned_failure
+  1 passed, 425 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::ticket
+  11 passed, 415 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce
+  22 passed, 404 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::writer
+  4 passed, 422 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration
+  6 passed, 420 filtered out
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 426 passed across 6 suites
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+
+rtk git diff --check
+  exit 0
+```
+
+### Remaining risks and deferred work
+
+- Task 10's concrete backend must continue submitting cleanup work through the
+  same serialized writer so attempt enqueue order remains completion order.
+- Task 9 still owns blocking flush, acquisition acknowledgement mutation,
+  checkpoint pin/reuse behavior, and failure-challenge semantics.
+- The separate lost-wakeup and pre-clone-size-check minor findings remain
+  deferred by explicit round-4 scope.
