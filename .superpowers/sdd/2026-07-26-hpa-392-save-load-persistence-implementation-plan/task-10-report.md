@@ -673,3 +673,96 @@ rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml \
 
 Part C raw thumbnail/event/development-transport behavior is unchanged, and
 the four Task 11 exit commands remain absent.
+
+## Whole-review fix round 2 — original busy-error classification
+
+### Cause-bound bypass policy
+
+- Challenge authority is now classified from the exact error returned by
+  `flush_session`, before discovery or challenge creation. The typed
+  `persistenceOperationInProgress` error is non-bypassable and propagates
+  unchanged with no token.
+- One shared `challengeable_flush_failure` policy is used by `list_saves`,
+  direct Load, Continue, and Return to Title. The policy delegates the
+  error-code identity check to `GameError`, avoiding four drifting command
+  comparisons.
+- This closes the remaining race where acknowledgement exclusivity could make
+  flush return busy, then roll back before the later coordinator availability
+  guard. The original busy cause remains non-bypassable even though the
+  coordinator is available again by challenge time.
+- The later coordinator exclusivity check remains defense-in-depth. Genuine
+  write, sync, and replace failures remain challengeable, including the
+  generic browser preflight and exact direct-load paths.
+
+### Deterministic interleaving
+
+A test-only `list_saves` boundary hook starts with an available session, sets
+acknowledgement exclusivity immediately before the flush, observes the exact
+busy result, and clears exclusivity before error handling resumes. The command
+must still return the original `GameError` with no failure token. A shared
+policy table separately proves busy propagation and durability-failure
+challenge eligibility.
+
+### RED evidence
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  busy_flush_cannot_mint_token_after_exclusive_intent_rolls_back
+  exit 101; E0425
+  missing list_saves_core_with_flush_hooks
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  busy_flush_cannot_mint_token_after_exclusive_intent_rolls_back
+  exit 101; runtime assertion failed
+  after the hook cleared exclusivity, list_saves returned preflight:
+  flushFailed with persistenceOperationInProgress and a newly minted UUID token
+```
+
+### GREEN evidence
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  busy_flush_cannot_mint_token_after_exclusive_intent_rolls_back
+  exit 0; 1 passed, 520 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  flush_failure_bypass_policy_only_propagates_busy_errors
+  exit 0; 1 passed, 520 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  failed_active_list_flush_returns_separate_browser_and_opaque_preflight_challenge
+  exit 0; 1 passed, 520 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml transition_race_
+  exit 0; 4 passed, 517 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  direct_load_discard_token_
+  exit 0; 3 passed, 518 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  application_command_contract
+  exit 0; 44 passed, 477 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml transition_
+  exit 0; 18 passed, 503 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml acknowledgement
+  exit 0; 22 passed, 499 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml game::save::
+  exit 0; 195 passed, 326 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 521 passed across 6 suites
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml \
+  --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+```
+
+Part C transport behavior and Task 9 acknowledgement semantics remain
+unchanged; the four Task 11 exit commands remain absent.
