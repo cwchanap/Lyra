@@ -27,6 +27,12 @@ does not add the Task 12 frontend overlay.
   `ExitWithoutSaving` persistence challenge, and publishes a complete Failed
   status carrying the registered opaque token. No synthetic or unregistered
   failure token is emitted.
+- Failure-token generation and challenge reservation are coordinator-state
+  owned. Production candidates remain canonical random UUID v4 values. Each
+  candidate is checked through `HashMap::entry` while the state lock is held;
+  an occupied candidate is retried, so generic and exit challenges never
+  overwrite an existing authority. Exit Failed status and its matching
+  challenge are committed together before subscribers are notified.
 - Retry tentatively transitions and consumes the matching challenge only after
   its scheduler accepts the gated task. Cancel consumes it in the same commit
   that clears exit exclusivity. Exit Without Saving consumes it only after the
@@ -110,7 +116,11 @@ worker's inner futures and any of their temporary guards drop before the
 recovery guard. Controlled prepare-await tests prove `exit-transition` and `S`
 are both acquirable while initial and retry workers are blocked. The retry
 guard moves one consumed challenge record rather than cloning it; recovery
-uses vacant-entry insertion and never overwrites a replacement challenge.
+keeps a semantically identical record already present at that token. For the
+impossible case where a different record collides with the previously issued
+retry token, the prior issued authority wins at that key and the conflicting
+record is invalidated. Lifecycle/session restoration completes in the same
+commit, and unrelated challenge entries remain untouched.
 
 The scheduler is transport-neutral and coordinator-owned. Test/development
 construction captures its Tokio handle once, with a dedicated Tokio-thread
@@ -240,16 +250,37 @@ exit_lifecycle_retry_start_gate_failure_preserves_exact_failed_token
 exit_lifecycle_panicking_initial_worker_unwinds_to_idle_and_can_retry
   GREEN: 1 passed, 526 filtered; JoinError was panic, not cancellation, and
          a fresh exit request succeeded
+
+# Failure-token collision ownership
+exit_lifecycle_failure_token_collision_reserves_a_new_matching_challenge
+  RED: 0 passed, 1 failed, 528 filtered; exit failure reused occupied
+       00000000-0000-4000-8000-000000000001 instead of reserving fresh
+       00000000-0000-4000-8000-000000000002
+  GREEN: 1 passed, 547 filtered; original and exit authorities each consumed
+         once and neither replayed
+exit_lifecycle_retry_recovery_collision_restores_prior_authority_only
+  RED: 0 passed, 1 failed, 529 filtered; occupied recovery entry returned
+       early and left lifecycle Saving
+  GREEN: 1 passed, 548 filtered; exact Failed JSON/token and session guard
+         restored, only the colliding record replaced, unrelated record
+         remained structurally identical and consumable
 ```
 
 ## Final verification
 
 ```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml collision
+  cargo test: 2 passed, 547 filtered out (5 suites, 0.01s)
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  exit_lifecycle_cancelled_
+  cargo test: 2 passed, 547 filtered out (5 suites, 0.01s)
+
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml exit_lifecycle
-  cargo test: 26 passed, 521 filtered out (5 suites, 0.06s)
+  cargo test: 28 passed, 521 filtered out (5 suites, 0.05s)
 
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator
-  cargo test: 110 passed, 437 filtered out (5 suites, 0.11s)
+  cargo test: 112 passed, 437 filtered out (5 suites, 0.10s)
 
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
   --example dev_engine_server
@@ -257,10 +288,10 @@ rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
 
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
   application_command_contract
-  cargo test: 45 passed, 502 filtered out (5 suites, 0.43s)
+  cargo test: 45 passed, 504 filtered out (5 suites, 0.42s)
 
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
-  cargo test: 547 passed (6 suites, 1.49s)
+  cargo test: 549 passed (6 suites, 1.49s)
 
 rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
   exit 0
