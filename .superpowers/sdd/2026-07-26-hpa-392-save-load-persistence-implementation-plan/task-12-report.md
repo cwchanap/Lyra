@@ -105,8 +105,8 @@ font, image, and crossfade work without serializing a new wire field. The
 deadline accessor also pins an unregistered request on first observation, so
 even a future consumer cannot reset the timeout by reading it repeatedly.
 
-Two dedicated tests prove explicit receipt pinning and first-observation
-pinning without deadline reset.
+Three dedicated tests prove explicit receipt pinning, repeated receipt pinning,
+and first-observation pinning without deadline reset.
 
 ## Event-backed persistence store
 
@@ -125,6 +125,13 @@ It then subscribes to:
 Each complete event payload replaces its store value wholesale. Teardown
 attempts every unlisten handler even when one handler rejects, so no reducer
 history or partial-event reconstruction is required.
+
+After all three listeners are installed, startup reconciles each getter again
+and applies the returned snapshot only if that channel's event version did not
+change while the getter was pending. This closes the getter/listener gap
+without allowing a late getter to overwrite a newer event. Listener setup and
+reconciliation are transactional: any failure awaits idempotent, all-settled
+cleanup of every listener already installed.
 
 ## Rust-authoritative acquisition acknowledgement
 
@@ -146,11 +153,20 @@ history or partial-event reconstruction is required.
 - Continue Without Saving requires two user actions and sends the exact opaque
   token to `confirm_acquisition_without_saving`. Its warning explains that the
   acknowledgement may reappear after restart.
-- Stale event IDs and stale tokens do not issue persistence work.
+- Every async boundary, slow timer, error path, and `finally` belongs to one
+  monotonic attempt generation. Stale attempts cannot mutate a newer attempt,
+  clear its timer, report its failure, or acknowledge its event.
+- Stale event IDs and stale tokens do not issue persistence work. Clearing the
+  controller invalidates the current generation, including when the same Rust
+  event ID later reappears after remount.
 - The retained popup suite still covers evidence/statement rendering,
   placeholder and image-error fallback, Tab trapping, pointer/Space/Escape
   behavior, backdrop behavior, all focus-restoration paths, reduced motion, and
   bounded overflow.
+- Popup actions retain native keyboard activation. The dialog traps Tab and
+  Shift+Tab over its current enabled controls, focuses Retry on failure, and
+  resets the two-step confirmation when the failure token changes or the
+  controller leaves the failed phase.
 
 ## Narrow `get_state` suppression
 
@@ -213,6 +229,45 @@ Obsolete inventory-diff acquisition cases were removed with their production
 source and replaced by controller tests over the authoritative Rust pending
 event. No test was left skipped.
 
+## Whole-review fix round 1
+
+All five Important review findings were reproduced before the production fixes:
+
+```text
+attempt ownership and stale async branches
+  RED: controller 15 cases, 6 failed / 9 passed
+  GREEN: controller 15/15
+
+store bootstrap race and partial-listener cleanup
+  RED: store 8 cases, 7 failed / 1 passed
+  GREEN: store 8/8
+
+popup native keyboard, focus trap, and confirmation lifecycle
+  RED: popup 24 cases, 4 failed / 20 passed
+  GREEN: popup 24/24
+
+repeated deadline pinning
+  RED: deadline 3 cases, 1 failed / 2 passed
+  GREEN: deadline 3/3
+```
+
+The controller regressions change the Rust pending event during prepare,
+capture, submit, failure report, and acknowledgement. Each stale branch is
+inert, and the replacement event remains actionable. The submit-rejection
+audit is explicit: when the event changes while submit is pending and the old
+submit then rejects, the old attempt performs zero failure reports and zero
+acknowledgements; acknowledging the next event succeeds normally.
+
+The same-ID clear/remount regression also proves that an old attempt's
+`finally` cannot clear the new attempt's timer or phase, and that only the new
+attempt submits and acknowledges.
+
+The store regressions cover a state change in the getter/listener gap, an event
+that arrives while its reconciliation getter is pending, listener failures at
+positions two and three, a reconciliation failure after all listeners are
+installed, cleanup rejection, and repeated teardown. Every acquired unlistener
+is attempted exactly once.
+
 ## Source-contract and final gates
 
 Source-contract results:
@@ -227,7 +282,7 @@ Source-contract results:
 - raw `Uint8Array` body and exact ticket header: pass
 - binary read validation and typed malformed-response error: pass
 
-Final verification:
+Initial Task 12 verification:
 
 ```text
 Focused Task 12 and page integration:
@@ -252,6 +307,36 @@ Scoped ESLint:
   pass, no diagnostics
 
 rtk git diff --cached --check:
+  pass
+```
+
+Whole-review fix round 1 final verification:
+
+```text
+Focused Task 12 and page integration:
+  8 files passed
+  105 tests passed
+  0 failed
+  0 skipped
+
+Full game Vitest:
+  33 files passed
+  515 tests passed
+  0 failed
+  0 skipped
+
+rtk bun run check:
+  initial fix-round run found one acquisition phase literal inference error
+  literal return narrowed to the existing phase union
+  final run found 0 errors and 0 warnings
+
+Scoped Prettier:
+  All matched files use Prettier code style
+
+Scoped ESLint:
+  pass, no diagnostics
+
+rtk git diff --check:
   pass
 ```
 
@@ -285,5 +370,7 @@ Transport tests pin the resulting raw-body/header call.
 
 ## Commit
 
-`f42ccfb feat: connect persistence client state` (amended to include this
-report).
+Base Task 12 commit: `59fa09b feat: connect persistence client state`.
+
+Whole-review fix round 1 commit subject:
+`fix: harden persistence client races`.

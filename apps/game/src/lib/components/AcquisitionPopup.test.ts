@@ -65,6 +65,20 @@ const statement: PendingAcquisitionView = {
 
 const idle = { type: "idle" } satisfies AcquisitionAcknowledgementPhase;
 
+function failedPhase(
+  failureToken = "failure-token-1",
+): AcquisitionAcknowledgementPhase {
+  return {
+    type: "failed",
+    diagnostic: {
+      code: "saveWriteFailed",
+      message: "無法寫入存檔。",
+      failureToken,
+    },
+    failureToken,
+  };
+}
+
 function props(
   notification: PendingAcquisitionView = evidence,
   phase: AcquisitionAcknowledgementPhase = idle,
@@ -213,6 +227,110 @@ describe("AcquisitionPopup", () => {
       "event-evidence",
       failureToken,
     );
+  });
+
+  it("focuses Retry on failure and lets native Enter activate it once", async () => {
+    const user = userEvent.setup();
+    const input = props(evidence, failedPhase());
+    render(AcquisitionPopup, input);
+    const retry = screen.getByRole("button", { name: "重試" });
+
+    await waitFor(() => expect(retry).toHaveFocus());
+    await user.keyboard("{Enter}");
+
+    expect(input.onRetry).toHaveBeenCalledExactlyOnceWith("event-evidence");
+  });
+
+  it("lets native Space activate Cancel once", async () => {
+    const user = userEvent.setup();
+    const input = props(evidence, failedPhase());
+    render(AcquisitionPopup, input);
+    const retry = screen.getByRole("button", { name: "重試" });
+    const cancel = screen.getByRole("button", { name: "取消" });
+    await waitFor(() => expect(retry).toHaveFocus());
+    cancel.focus();
+
+    await user.keyboard(" ");
+
+    expect(input.onCancel).toHaveBeenCalledExactlyOnceWith("event-evidence");
+  });
+
+  it("lets native Space and Enter drive the two-step continue action", async () => {
+    const user = userEvent.setup();
+    const input = props(evidence, failedPhase());
+    render(AcquisitionPopup, input);
+    const firstStep = screen.getByRole("button", {
+      name: "不儲存並繼續",
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "重試" })).toHaveFocus(),
+    );
+    firstStep.focus();
+
+    await user.keyboard(" ");
+    expect(input.onContinueWithoutSaving).not.toHaveBeenCalled();
+    const confirmation = screen.getByRole("button", {
+      name: "確認不儲存並繼續",
+    });
+    expect(confirmation).toHaveFocus();
+    await user.keyboard("{Enter}");
+
+    expect(input.onContinueWithoutSaving).toHaveBeenCalledExactlyOnceWith(
+      "event-evidence",
+      "failure-token-1",
+    );
+  });
+
+  it("cycles Tab and Shift+Tab over the currently mounted failure controls", async () => {
+    const user = userEvent.setup();
+    render(AcquisitionPopup, props(evidence, failedPhase()));
+    const retry = screen.getByRole("button", { name: "重試" });
+    const cancel = screen.getByRole("button", { name: "取消" });
+    const continueWithoutSaving = screen.getByRole("button", {
+      name: "不儲存並繼續",
+    });
+
+    await waitFor(() => expect(retry).toHaveFocus());
+    await user.tab();
+    expect(cancel).toHaveFocus();
+    await user.tab();
+    expect(continueWithoutSaving).toHaveFocus();
+    await user.tab();
+    expect(retry).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(continueWithoutSaving).toHaveFocus();
+  });
+
+  it("resets the two-step confirmation when the token changes or failure ends", async () => {
+    const user = userEvent.setup();
+    const input = props(evidence, failedPhase("failure-token-1"));
+    const result = render(AcquisitionPopup, input);
+
+    await user.click(screen.getByRole("button", { name: "不儲存並繼續" }));
+    expect(
+      screen.getByRole("button", { name: "確認不儲存並繼續" }),
+    ).toBeInTheDocument();
+
+    await result.rerender({
+      ...input,
+      phase: failedPhase("failure-token-2"),
+    });
+    expect(
+      screen.getByRole("button", { name: "不儲存並繼續" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).not.toHaveTextContent(
+      "此取得通知可能會在重新啟動後再次出現。",
+    );
+
+    await user.click(screen.getByRole("button", { name: "不儲存並繼續" }));
+    await result.rerender({ ...input, phase: idle });
+    await result.rerender({
+      ...input,
+      phase: failedPhase("failure-token-2"),
+    });
+    expect(
+      screen.getByRole("button", { name: "不儲存並繼續" }),
+    ).toBeInTheDocument();
   });
 
   it("restores focus to the stable gameplay fallback after authoritative closure", async () => {

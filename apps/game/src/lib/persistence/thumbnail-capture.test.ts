@@ -26,4 +26,15 @@ describe("thumbnail capture deadline", () => {
     expect(thumbnailCaptureDeadline(request)).toBe(825);
     expect(thumbnailCaptureDeadline(request)).toBe(825);
   });
+
+  it("never extends or shortens an already pinned request", () => {
+    const request = { ticket: "ticket-3", timeoutMs: 725 };
+
+    pinThumbnailCaptureDeadline(request, 100);
+    pinThumbnailCaptureDeadline(request, 10_000);
+    expect(thumbnailCaptureDeadline(request)).toBe(825);
+
+    pinThumbnailCaptureDeadline(request, -10_000);
+    expect(thumbnailCaptureDeadline(request)).toBe(825);
+  });
 });

@@ -64,37 +64,62 @@ export type AcquisitionController = {
 
 const slowAcknowledgementMs = 2_000;
 
+type AcquisitionAttempt = {
+  generation: number;
+  eventId: string;
+  slowTimer: ReturnType<typeof setTimeout> | null;
+  slowWarningElapsed: boolean;
+};
+
 export function createAcquisitionController(
   dependencies: AcquisitionControllerDependencies,
 ): AcquisitionController {
   let phase = $state<AcquisitionAcknowledgementPhase>({ type: "idle" });
-  let expectedEventId: string | null = null;
-  let slowTimer: ReturnType<typeof setTimeout> | null = null;
-  let slowWarningElapsed = false;
+  let generation = 0;
+  let activeAttempt: AcquisitionAttempt | null = null;
 
   function current(): PendingAcquisitionView | null {
     return dependencies.gameState.value?.pendingAcquisition ?? null;
   }
 
-  function clearSlowTimer(): void {
-    if (slowTimer !== null) {
-      clearTimeout(slowTimer);
-      slowTimer = null;
+  function owns(attempt: AcquisitionAttempt): boolean {
+    return activeAttempt === attempt && attempt.generation === generation;
+  }
+
+  function clearAttemptTimer(attempt: AcquisitionAttempt): void {
+    if (attempt.slowTimer !== null) {
+      clearTimeout(attempt.slowTimer);
+      attempt.slowTimer = null;
     }
   }
 
-  function startSlowTimer(eventId: string): void {
-    clearSlowTimer();
-    slowWarningElapsed = false;
-    slowTimer = setTimeout(() => {
-      slowTimer = null;
-      if (
-        expectedEventId !== eventId ||
-        !["preparing", "capturing", "saving"].includes(phase.type)
-      ) {
-        return;
-      }
-      slowWarningElapsed = true;
+  function releaseAttempt(attempt: AcquisitionAttempt): void {
+    if (!owns(attempt)) return;
+    clearAttemptTimer(attempt);
+    activeAttempt = null;
+    generation += 1;
+    phase = { type: "idle" };
+  }
+
+  function ownsCurrent(attempt: AcquisitionAttempt): boolean {
+    if (
+      owns(attempt) &&
+      dependencies.gameState.value?.pendingAcquisition?.id === attempt.eventId
+    ) {
+      return true;
+    }
+    releaseAttempt(attempt);
+    return false;
+  }
+
+  function startSlowTimer(attempt: AcquisitionAttempt): void {
+    clearAttemptTimer(attempt);
+    attempt.slowWarningElapsed = false;
+    attempt.slowTimer = setTimeout(() => {
+      attempt.slowTimer = null;
+      if (!ownsCurrent(attempt)) return;
+      if (!["preparing", "capturing", "saving"].includes(phase.type)) return;
+      attempt.slowWarningElapsed = true;
       phase = { type: "saving", slow: true };
       console.warn(
         "[Persistence] Acquisition acknowledgement is still saving.",
@@ -102,77 +127,101 @@ export function createAcquisitionController(
     }, slowAcknowledgementMs);
   }
 
-  function stillCurrent(eventId: string): boolean {
-    return (
-      expectedEventId === eventId &&
-      dependencies.gameState.value?.pendingAcquisition?.id === eventId
-    );
-  }
-
-  function setActivePhase(type: "preparing" | "capturing" | "saving"): void {
+  function setActivePhase(
+    attempt: AcquisitionAttempt,
+    type: "preparing" | "capturing" | "saving",
+  ): void {
+    if (!owns(attempt)) return;
     phase =
-      slowWarningElapsed || type === "saving"
-        ? { type: "saving", slow: slowWarningElapsed }
+      attempt.slowWarningElapsed || type === "saving"
+        ? { type: "saving", slow: attempt.slowWarningElapsed }
         : { type };
   }
 
-  async function reportCaptureFailure(ticket: string): Promise<void> {
+  function beginAttempt(
+    eventId: string,
+    initialPhase: "preparing" | "saving",
+  ): AcquisitionAttempt | null {
+    if (current()?.id !== eventId) return null;
+    if (activeAttempt && activeAttempt.eventId !== eventId) {
+      releaseAttempt(activeAttempt);
+    }
+    if (activeAttempt || phase.type !== "idle") return null;
+    generation += 1;
+    const attempt: AcquisitionAttempt = {
+      generation,
+      eventId,
+      slowTimer: null,
+      slowWarningElapsed: false,
+    };
+    activeAttempt = attempt;
+    setActivePhase(attempt, initialPhase);
+    startSlowTimer(attempt);
+    return attempt;
+  }
+
+  async function reportCaptureFailure(
+    attempt: AcquisitionAttempt,
+    ticket: string,
+  ): Promise<boolean> {
+    if (!ownsCurrent(attempt)) return false;
     try {
       await dependencies.report(ticket);
     } catch (error) {
+      if (!ownsCurrent(attempt)) return false;
       console.warn(
         "[Persistence] Acquisition thumbnail failure report failed",
         error,
       );
     }
+    return ownsCurrent(attempt);
   }
 
   async function capturePreparedThumbnail(
     request: ThumbnailCaptureRequestView,
-    eventId: string,
-  ): Promise<void> {
+    attempt: AcquisitionAttempt,
+  ): Promise<boolean> {
     dependencies.pinDeadline(request);
-    setActivePhase("capturing");
+    setActivePhase(attempt, "capturing");
     await tick();
-    if (!stillCurrent(eventId)) return;
+    if (!ownsCurrent(attempt)) return false;
+
+    let capture;
+    try {
+      capture = await dependencies.capture.capture(request);
+    } catch {
+      if (!ownsCurrent(attempt)) return false;
+      return reportCaptureFailure(attempt, request.ticket);
+    }
+    if (!ownsCurrent(attempt)) return false;
+
+    if (capture.type === "unavailable") {
+      return reportCaptureFailure(attempt, request.ticket);
+    }
 
     try {
-      const capture = await dependencies.capture.capture(request);
-      if (!stillCurrent(eventId)) return;
-      if (capture.type === "available") {
-        try {
-          await dependencies.submit(request.ticket, capture.bytes);
-        } catch {
-          await reportCaptureFailure(request.ticket);
-        }
-      } else {
-        await reportCaptureFailure(request.ticket);
-      }
+      await dependencies.submit(request.ticket, capture.bytes);
     } catch {
-      if (stillCurrent(eventId)) {
-        await reportCaptureFailure(request.ticket);
-      }
+      if (!ownsCurrent(attempt)) return false;
+      return reportCaptureFailure(attempt, request.ticket);
     }
+    return ownsCurrent(attempt);
   }
 
   function commitResult(
     result: GameplayCommandResultView,
-    eventId: string,
+    attempt: AcquisitionAttempt,
   ): void {
+    if (!ownsCurrent(attempt)) return;
     dependencies.gameState.value = result.state;
-    if (result.state.pendingAcquisition?.id !== eventId) {
-      phase = { type: "idle" };
-      expectedEventId = null;
+    if (result.state.pendingAcquisition?.id !== attempt.eventId) {
+      releaseAttempt(attempt);
     }
   }
 
-  function fail(error: unknown, eventId: string): void {
+  function fail(error: unknown, attempt: AcquisitionAttempt): void {
+    if (!ownsCurrent(attempt)) return;
     const diagnostic = asGameError(error);
-    if (!stillCurrent(eventId)) {
-      phase = { type: "idle" };
-      expectedEventId = null;
-      return;
-    }
     phase = {
       type: "failed",
       diagnostic,
@@ -181,26 +230,24 @@ export function createAcquisitionController(
   }
 
   async function acknowledge(eventId: string): Promise<void> {
-    if (current()?.id !== eventId || phase.type !== "idle") return;
-    expectedEventId = eventId;
-    setActivePhase("preparing");
-    startSlowTimer(eventId);
+    const attempt = beginAttempt(eventId, "preparing");
+    if (!attempt) return;
     try {
       const request = await dependencies.prepare({
         type: "acquisitionAcknowledgement",
         eventId,
       });
-      if (!stillCurrent(eventId)) return;
-      await capturePreparedThumbnail(request, eventId);
-      if (!stillCurrent(eventId)) return;
-      setActivePhase("saving");
+      if (!ownsCurrent(attempt)) return;
+      if (!(await capturePreparedThumbnail(request, attempt))) return;
+      if (!ownsCurrent(attempt)) return;
+      setActivePhase(attempt, "saving");
       const result = await dependencies.acknowledge(eventId, request.ticket);
-      if (!stillCurrent(eventId)) return;
-      commitResult(result, eventId);
+      if (!ownsCurrent(attempt)) return;
+      commitResult(result, attempt);
     } catch (error) {
-      fail(error, eventId);
+      fail(error, attempt);
     } finally {
-      clearSlowTimer();
+      if (owns(attempt)) clearAttemptTimer(attempt);
     }
   }
 
@@ -215,6 +262,9 @@ export function createAcquisitionController(
       return current() ? 1 : 0;
     },
     get phase() {
+      if (activeAttempt && current()?.id !== activeAttempt.eventId) {
+        return { type: "idle" } as const;
+      }
       return phase;
     },
     dismissCurrent(expectedEventId) {
@@ -223,55 +273,53 @@ export function createAcquisitionController(
     async retry(eventId) {
       if (
         current()?.id !== eventId ||
-        expectedEventId !== eventId ||
+        activeAttempt?.eventId !== eventId ||
         phase.type !== "failed"
       ) {
         return;
       }
-      phase = { type: "idle" };
+      releaseAttempt(activeAttempt);
       await acknowledge(eventId);
     },
     cancel(eventId) {
       if (
         current()?.id !== eventId ||
-        expectedEventId !== eventId ||
+        activeAttempt?.eventId !== eventId ||
         phase.type !== "failed"
       ) {
         return;
       }
-      clearSlowTimer();
-      expectedEventId = null;
-      slowWarningElapsed = false;
-      phase = { type: "idle" };
+      releaseAttempt(activeAttempt);
     },
     async continueWithoutSaving(eventId, failureToken) {
       if (
         current()?.id !== eventId ||
-        expectedEventId !== eventId ||
+        activeAttempt?.eventId !== eventId ||
         phase.type !== "failed" ||
         phase.failureToken !== failureToken
       ) {
         return;
       }
-      phase = { type: "saving", slow: false };
-      startSlowTimer(eventId);
+      releaseAttempt(activeAttempt);
+      const attempt = beginAttempt(eventId, "saving");
+      if (!attempt) return;
       try {
         const result = await dependencies.confirmWithoutSaving(
           eventId,
           failureToken,
         );
-        if (!stillCurrent(eventId)) return;
-        commitResult(result, eventId);
+        if (!ownsCurrent(attempt)) return;
+        commitResult(result, attempt);
       } catch (error) {
-        fail(error, eventId);
+        fail(error, attempt);
       } finally {
-        clearSlowTimer();
+        if (owns(attempt)) clearAttemptTimer(attempt);
       }
     },
     clear() {
-      clearSlowTimer();
-      expectedEventId = null;
-      slowWarningElapsed = false;
+      generation += 1;
+      if (activeAttempt) clearAttemptTimer(activeAttempt);
+      activeAttempt = null;
       phase = { type: "idle" };
     },
   };
