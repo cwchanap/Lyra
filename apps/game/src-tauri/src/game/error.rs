@@ -7,6 +7,8 @@ use std::path::Path;
 pub struct GameError {
     pub code: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_token: Option<String>,
 }
 
 impl GameError {
@@ -173,7 +175,13 @@ impl GameError {
         Self {
             code: code.into(),
             message: message.into(),
+            failure_token: None,
         }
+    }
+
+    pub(crate) fn with_failure_token(mut self, failure_token: String) -> Self {
+        self.failure_token = Some(failure_token);
+        self
     }
 }
 
