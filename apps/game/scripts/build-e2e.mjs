@@ -19,6 +19,9 @@ const env = {
   // @wdio/tauri-plugin frontend import. Tree-shaken out of ordinary builds
   // where this var is absent (import.meta.env.VITE_E2E is undefined).
   VITE_E2E: "true",
+  // Compile the closed HPA-392 packaged capture probe only into this debug
+  // E2E bundle. Ordinary production builds never receive this flag.
+  VITE_LYRA_E2E_CAPTURE_PROOF: "1",
 };
 
 const args = [

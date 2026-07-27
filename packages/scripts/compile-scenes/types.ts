@@ -89,7 +89,6 @@ export type JSONDialogueItem =
       kind: "line";
       speaker: string;
       text: string;
-      expression: string | null;
       portrait: PortraitRef | null;
     };
 

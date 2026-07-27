@@ -124,19 +124,19 @@ pub(crate) trait ApplicationExit: Send + Sync {
     fn exit(&self, code: i32) -> Result<(), GameError>;
 }
 
-pub(crate) type ExitTask = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+pub(crate) type CoordinatorTask = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
 
-pub(crate) trait ExitTaskScheduler: Send + Sync {
+pub(crate) trait CoordinatorTaskScheduler: Send + Sync {
     /// Accepts ownership of `task`. Returning an error means the task was not
     /// accepted and will never be polled.
-    fn spawn(&self, task: ExitTask) -> Result<(), GameError>;
+    fn spawn(&self, task: CoordinatorTask) -> Result<(), GameError>;
 }
 
-struct PortableExitTaskScheduler {
+struct PortableCoordinatorTaskScheduler {
     runtime: Option<tokio::runtime::Handle>,
 }
 
-impl PortableExitTaskScheduler {
+impl PortableCoordinatorTaskScheduler {
     fn capture() -> Self {
         Self {
             runtime: tokio::runtime::Handle::try_current().ok(),
@@ -144,8 +144,8 @@ impl PortableExitTaskScheduler {
     }
 }
 
-impl ExitTaskScheduler for PortableExitTaskScheduler {
-    fn spawn(&self, task: ExitTask) -> Result<(), GameError> {
+impl CoordinatorTaskScheduler for PortableCoordinatorTaskScheduler {
+    fn spawn(&self, task: CoordinatorTask) -> Result<(), GameError> {
         if let Some(runtime) = &self.runtime {
             runtime.spawn(task);
             return Ok(());
@@ -155,7 +155,7 @@ impl ExitTaskScheduler for PortableExitTaskScheduler {
             .build()
             .map_err(|_| GameError::save_write_failed())?;
         std::thread::Builder::new()
-            .name("lyra-exit-flush".into())
+            .name("lyra-save-coordinator".into())
             .spawn(move || runtime.block_on(task))
             .map(|_| ())
             .map_err(|_| GameError::save_write_failed())
@@ -853,31 +853,42 @@ struct WriterQueue {
 impl WriterQueue {
     fn enqueue(
         self: &Arc<Self>,
+        scheduler: Arc<dyn CoordinatorTaskScheduler>,
         class: WriterJobClass,
         run: CoordinatorFuture<'static, ()>,
     ) -> Result<(), GameError> {
-        let runtime =
-            tokio::runtime::Handle::try_current().map_err(|_| GameError::save_write_failed())?;
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| GameError::save_write_failed())?;
+            if state.running {
+                Self::enqueue_locked(&mut state, class, run);
+                return Ok(());
+            }
+        }
+        let start = self.schedule_worker_candidate(scheduler)?;
         let mut state = self
             .state
             .lock()
             .map_err(|_| GameError::save_write_failed())?;
         let start_worker = Self::enqueue_locked(&mut state, class, run);
         drop(state);
-        self.start_worker(runtime, start_worker);
+        if start_worker {
+            start.send(()).map_err(|_| GameError::save_write_failed())?;
+        }
         Ok(())
     }
 
     fn enqueue_cleanup<F>(
         self: &Arc<Self>,
+        scheduler: Arc<dyn CoordinatorTaskScheduler>,
         owner: Option<CleanupOwner>,
         make_run: F,
     ) -> Result<(), GameError>
     where
         F: FnOnce(CleanupOwner) -> CoordinatorFuture<'static, ()>,
     {
-        let runtime =
-            tokio::runtime::Handle::try_current().map_err(|_| GameError::save_write_failed())?;
         #[cfg(test)]
         {
             let hook = self.cleanup_before_lock.lock().unwrap().take();
@@ -885,6 +896,21 @@ impl WriterQueue {
                 hook();
             }
         }
+        {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| GameError::save_write_failed())?;
+            if state.running {
+                let owner = owner.unwrap_or_else(|| {
+                    state.next_cleanup_attempt = state.next_cleanup_attempt.wrapping_add(1);
+                    CleanupOwner::Attempt(state.next_cleanup_attempt)
+                });
+                Self::enqueue_locked(&mut state, WriterJobClass::OrphanCleanup, make_run(owner));
+                return Ok(());
+            }
+        }
+        let start = self.schedule_worker_candidate(scheduler)?;
         let mut state = self
             .state
             .lock()
@@ -896,7 +922,9 @@ impl WriterQueue {
         let start_worker =
             Self::enqueue_locked(&mut state, WriterJobClass::OrphanCleanup, make_run(owner));
         drop(state);
-        self.start_worker(runtime, start_worker);
+        if start_worker {
+            start.send(()).map_err(|_| GameError::save_write_failed())?;
+        }
         Ok(())
     }
 
@@ -935,13 +963,18 @@ impl WriterQueue {
         start_worker
     }
 
-    fn start_worker(self: &Arc<Self>, runtime: tokio::runtime::Handle, start_worker: bool) {
-        if start_worker {
-            let queue = Arc::clone(self);
-            runtime.spawn(async move {
+    fn schedule_worker_candidate(
+        self: &Arc<Self>,
+        scheduler: Arc<dyn CoordinatorTaskScheduler>,
+    ) -> Result<tokio::sync::oneshot::Sender<()>, GameError> {
+        let queue = Arc::clone(self);
+        let (start_tx, start_rx) = tokio::sync::oneshot::channel();
+        scheduler.spawn(Box::pin(async move {
+            if start_rx.await.is_ok() {
                 queue.run().await;
-            });
-        }
+            }
+        }))?;
+        Ok(start_tx)
     }
 
     #[cfg(test)]
@@ -1164,7 +1197,7 @@ pub(crate) struct SaveCoordinator {
     backend: Option<Arc<dyn AutosaveBackend>>,
     fail_next_schedule: Arc<AtomicBool>,
     exit_application: Option<ExitApplicationContext>,
-    exit_scheduler: Arc<dyn ExitTaskScheduler>,
+    task_scheduler: Arc<dyn CoordinatorTaskScheduler>,
     exit_transition: Arc<Mutex<()>>,
     fail_next_exit_prerequisite: Arc<AtomicBool>,
     fail_next_cancel_guard_clear: Arc<AtomicBool>,
@@ -1216,7 +1249,7 @@ impl Default for SaveCoordinator {
             backend: None,
             fail_next_schedule: Arc::new(AtomicBool::new(false)),
             exit_application: None,
-            exit_scheduler: Arc::new(PortableExitTaskScheduler::capture()),
+            task_scheduler: Arc::new(PortableCoordinatorTaskScheduler::capture()),
             exit_transition: Arc::new(Mutex::new(())),
             fail_next_exit_prerequisite: Arc::new(AtomicBool::new(false)),
             fail_next_cancel_guard_clear: Arc::new(AtomicBool::new(false)),
@@ -1273,8 +1306,11 @@ impl SaveCoordinator {
         self
     }
 
-    pub(crate) fn with_exit_scheduler(mut self, scheduler: Arc<dyn ExitTaskScheduler>) -> Self {
-        self.exit_scheduler = scheduler;
+    pub(crate) fn with_task_scheduler(
+        mut self,
+        scheduler: Arc<dyn CoordinatorTaskScheduler>,
+    ) -> Self {
+        self.task_scheduler = scheduler;
         self
     }
 
@@ -1674,7 +1710,7 @@ impl SaveCoordinator {
     ) -> Result<tokio::sync::oneshot::Sender<ExitAttemptRecovery>, GameError> {
         let coordinator = self.clone();
         let (start_tx, start_rx) = tokio::sync::oneshot::channel();
-        self.exit_scheduler.spawn(Box::pin(async move {
+        self.task_scheduler.spawn(Box::pin(async move {
             let Ok(recovery) = start_rx.await else {
                 return;
             };
@@ -2317,6 +2353,7 @@ impl SaveCoordinator {
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
         let coordinator = self.clone();
         if let Err(error) = self.writer_queue.enqueue(
+            Arc::clone(&self.task_scheduler),
             WriterJobClass::BlockingFlush {
                 session_generation,
                 durable_revision: flush_revision,
@@ -2414,6 +2451,7 @@ impl SaveCoordinator {
         let (turn_tx, turn_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = tokio::sync::oneshot::channel();
         self.writer_queue.enqueue(
+            Arc::clone(&self.task_scheduler),
             WriterJobClass::AcquisitionAcknowledgement,
             Box::pin(async move {
                 let _ = turn_tx.send(());
@@ -2877,22 +2915,33 @@ impl SaveCoordinator {
         &self,
         run: CoordinatorFuture<'static, ()>,
     ) -> Result<(), GameError> {
-        self.writer_queue
-            .enqueue(WriterJobClass::AcquisitionAcknowledgement, run)
+        self.writer_queue.enqueue(
+            Arc::clone(&self.task_scheduler),
+            WriterJobClass::AcquisitionAcknowledgement,
+            run,
+        )
     }
 
     pub(crate) fn reserve_manual_writer(
         &self,
         run: CoordinatorFuture<'static, ()>,
     ) -> Result<(), GameError> {
-        self.writer_queue.enqueue(WriterJobClass::ManualSave, run)
+        self.writer_queue.enqueue(
+            Arc::clone(&self.task_scheduler),
+            WriterJobClass::ManualSave,
+            run,
+        )
     }
 
     pub(crate) fn reserve_delete_writer(
         &self,
         run: CoordinatorFuture<'static, ()>,
     ) -> Result<(), GameError> {
-        self.writer_queue.enqueue(WriterJobClass::DeleteSave, run)
+        self.writer_queue.enqueue(
+            Arc::clone(&self.task_scheduler),
+            WriterJobClass::DeleteSave,
+            run,
+        )
     }
 
     pub(crate) fn enqueue_orphan_cleanup(&self) -> Result<(), GameError> {
@@ -2911,14 +2960,15 @@ impl SaveCoordinator {
             .cloned()
             .ok_or_else(GameError::save_write_failed)?;
         let coordinator = self.clone();
-        self.writer_queue.enqueue_cleanup(owner, move |owner| {
-            Box::pin(async move {
-                match backend.cleanup_orphans().await {
-                    Ok(()) => coordinator.resolve_cleanup_failure(&owner),
-                    Err(error) => coordinator.record_cleanup_failure(owner, error),
-                }
+        self.writer_queue
+            .enqueue_cleanup(Arc::clone(&self.task_scheduler), owner, move |owner| {
+                Box::pin(async move {
+                    match backend.cleanup_orphans().await {
+                        Ok(()) => coordinator.resolve_cleanup_failure(&owner),
+                        Err(error) => coordinator.record_cleanup_failure(owner, error),
+                    }
+                })
             })
-        })
     }
 
     pub(crate) fn prepare_thumbnail(
@@ -3159,12 +3209,10 @@ impl SaveCoordinator {
         };
         self.publish_persistence_health(PersistenceHealthView::Pending);
         let coordinator = self.clone();
-        tokio::runtime::Handle::try_current()
-            .map_err(|_| GameError::save_write_failed())?
-            .spawn(async move {
-                tokio::time::sleep_until(pending.debounce_deadline).await;
-                coordinator.run_pending_autosave(pending).await;
-            });
+        self.task_scheduler.spawn(Box::pin(async move {
+            tokio::time::sleep_until(pending.debounce_deadline).await;
+            coordinator.run_pending_autosave(pending).await;
+        }))?;
         Ok(())
     }
 
@@ -3201,6 +3249,7 @@ impl SaveCoordinator {
         };
         let failed_identity = (pending.session_generation, pending.durable_revision);
         if let Err(error) = self.writer_queue.enqueue(
+            Arc::clone(&self.task_scheduler),
             class,
             Box::pin(async move {
                 coordinator
@@ -3659,8 +3708,6 @@ impl SaveCoordinator {
         &self,
         purpose: ThumbnailCapturePurpose,
     ) -> Result<ThumbnailCaptureRequestView, GameError> {
-        let runtime =
-            tokio::runtime::Handle::try_current().map_err(|_| GameError::save_write_failed())?;
         let issued_at = Instant::now();
         let deadline_at = issued_at + THUMBNAIL_CAPTURE_TIMEOUT;
         let ticket = Uuid::new_v4().hyphenated().to_string();
@@ -3682,13 +3729,22 @@ impl SaveCoordinator {
         let subscribers = set_thumbnail_activity(&mut state, view.clone());
         drop(state);
         publish_activity(&subscribers, &view);
-        spawn_ticket_expiry(
-            &runtime,
+        if let Err(error) = self.task_scheduler.spawn(thumbnail_ticket_expiry_task(
             Arc::downgrade(&self.state),
             ticket.clone(),
             deadline_at,
             Arc::downgrade(&self.ticket_updates),
-        );
+        )) {
+            if let Ok(mut state) = self.state.lock() {
+                if let Some(record) = state.tickets.remove(&ticket) {
+                    let intent = record.purpose.intent();
+                    if state.latest_by_intent.get(&intent) == Some(&ticket) {
+                        state.latest_by_intent.remove(&intent);
+                    }
+                }
+            }
+            return Err(error);
+        }
         Ok(ThumbnailCaptureRequestView {
             ticket,
             deadline_at,
@@ -3759,6 +3815,7 @@ impl SaveCoordinator {
     ) {
         self.writer_queue
             .enqueue(
+                Arc::clone(&self.task_scheduler),
                 class,
                 Box::pin(async move {
                     probe.run(label).await;
@@ -3998,14 +4055,13 @@ fn publish_exit(subscribers: &[ExitSubscriber], view: &ExitStatusView) {
     }
 }
 
-fn spawn_ticket_expiry(
-    runtime: &tokio::runtime::Handle,
+fn thumbnail_ticket_expiry_task(
     state: Weak<Mutex<CoordinatorState>>,
     ticket: String,
     deadline_at: Instant,
     updates: Weak<Notify>,
-) {
-    runtime.spawn(async move {
+) -> CoordinatorTask {
+    Box::pin(async move {
         tokio::time::sleep_until(deadline_at).await;
         let Some(state) = state.upgrade() else {
             return;
@@ -4027,15 +4083,15 @@ fn spawn_ticket_expiry(
         if let Some(updates) = updates.upgrade() {
             updates.notify_waiters();
         }
-    });
+    })
 }
 
 #[cfg(test)]
 mod tests {
     mod exit_lifecycle {
         use super::super::{
-            AppSession, ApplicationExit, ExitRequestSource, ExitStatusView, ExitTask,
-            ExitTaskScheduler, FailureChallengeIdentity, FailureTokenSource,
+            AppSession, ApplicationExit, CoordinatorTask, CoordinatorTaskScheduler,
+            ExitRequestSource, ExitStatusView, FailureChallengeIdentity, FailureTokenSource,
             PersistenceBypassOperation, PersistenceFailureChallenge, PersistenceFailureTokenView,
             SaveCoordinator, AUTOSAVE_DEBOUNCE,
         };
@@ -4104,16 +4160,16 @@ mod tests {
 
         struct RejectingExitScheduler;
 
-        impl ExitTaskScheduler for RejectingExitScheduler {
-            fn spawn(&self, _task: ExitTask) -> Result<(), crate::game::GameError> {
+        impl CoordinatorTaskScheduler for RejectingExitScheduler {
+            fn spawn(&self, _task: CoordinatorTask) -> Result<(), crate::game::GameError> {
                 Err(crate::game::GameError::save_write_failed())
             }
         }
 
         struct DroppingExitScheduler;
 
-        impl ExitTaskScheduler for DroppingExitScheduler {
-            fn spawn(&self, task: ExitTask) -> Result<(), crate::game::GameError> {
+        impl CoordinatorTaskScheduler for DroppingExitScheduler {
+            fn spawn(&self, task: CoordinatorTask) -> Result<(), crate::game::GameError> {
                 drop(task);
                 Ok(())
             }
@@ -4134,11 +4190,19 @@ mod tests {
             }
         }
 
-        impl ExitTaskScheduler for ControllableExitScheduler {
-            fn spawn(&self, task: ExitTask) -> Result<(), crate::game::GameError> {
+        impl CoordinatorTaskScheduler for ControllableExitScheduler {
+            fn spawn(&self, task: CoordinatorTask) -> Result<(), crate::game::GameError> {
                 let mut worker = self.worker.lock().unwrap();
-                assert!(worker.is_none(), "previous exit worker must be collected");
-                *worker = Some(tokio::spawn(task));
+                let scheduled = tokio::spawn(task);
+                if worker.is_none() {
+                    *worker = Some(scheduled);
+                } else {
+                    // The generalized coordinator scheduler also receives
+                    // writer work nested beneath the controlled exit task.
+                    // Dropping its handle detaches it while retaining the
+                    // first task for the cancellation assertion.
+                    drop(scheduled);
+                }
                 Ok(())
             }
         }
@@ -4300,7 +4364,7 @@ mod tests {
             let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
             let coordinator =
                 SaveCoordinator::for_application(Arc::clone(&session), replacement_gate)
-                    .with_exit_scheduler(Arc::new(RejectingExitScheduler));
+                    .with_task_scheduler(Arc::new(RejectingExitScheduler));
 
             assert_eq!(
                 coordinator
@@ -4329,7 +4393,7 @@ mod tests {
                 Arc::clone(&session),
                 Arc::new(tokio::sync::Mutex::new(())),
             )
-            .with_exit_scheduler(Arc::new(DroppingExitScheduler));
+            .with_task_scheduler(Arc::new(DroppingExitScheduler));
 
             assert_eq!(
                 coordinator
@@ -4362,7 +4426,7 @@ mod tests {
                 Arc::clone(&session),
                 Arc::new(tokio::sync::Mutex::new(())),
             )
-            .with_exit_scheduler(scheduler.clone());
+            .with_task_scheduler(scheduler.clone());
             let exit = Arc::new(RecordingExit::default());
 
             coordinator
@@ -4421,7 +4485,7 @@ mod tests {
 
             backend.pause_prepare();
             let scheduler = Arc::new(ControllableExitScheduler::default());
-            let retrying = coordinator.clone().with_exit_scheduler(scheduler.clone());
+            let retrying = coordinator.clone().with_task_scheduler(scheduler.clone());
             retrying
                 .retry_exit(exit.clone(), failure_token.clone())
                 .unwrap();
@@ -4489,7 +4553,7 @@ mod tests {
 
             backend.pause_prepare();
             let scheduler = Arc::new(ControllableExitScheduler::default());
-            let retrying = coordinator.clone().with_exit_scheduler(scheduler.clone());
+            let retrying = coordinator.clone().with_task_scheduler(scheduler.clone());
             retrying
                 .retry_exit(exit.clone(), failure_token.clone())
                 .unwrap();
@@ -4594,7 +4658,7 @@ mod tests {
                 Arc::clone(&session),
                 Arc::new(tokio::sync::Mutex::new(())),
             )
-            .with_exit_scheduler(scheduler.clone());
+            .with_task_scheduler(scheduler.clone());
             coordinator.panic_next_exit_worker_for_test();
             let exit = Arc::new(RecordingExit::default());
 
@@ -4878,7 +4942,7 @@ mod tests {
             };
             let rejecting = coordinator
                 .clone()
-                .with_exit_scheduler(Arc::new(DroppingExitScheduler));
+                .with_task_scheduler(Arc::new(DroppingExitScheduler));
 
             let error = rejecting
                 .retry_exit(exit.clone(), failure_token.clone())
@@ -7091,7 +7155,7 @@ mod tests {
         use crate::game::test_support::representative_save_envelope;
         use crate::game::GameError;
         use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-        use std::sync::{Arc, Barrier, Mutex};
+        use std::sync::{Arc, Barrier, Condvar, Mutex};
         use std::time::Duration;
         use std::time::SystemTime;
         use tokio::sync::Notify;
@@ -7106,6 +7170,7 @@ mod tests {
         #[derive(Default)]
         pub(super) struct RecordingBackend {
             writes: Mutex<Vec<WriteObservation>>,
+            write_committed: Condvar,
             pause_writes: AtomicBool,
             started: Notify,
             release: Notify,
@@ -7140,6 +7205,13 @@ mod tests {
 
             pub(super) fn write_count(&self) -> usize {
                 self.writes.lock().unwrap().len()
+            }
+
+            fn wait_for_write_count_blocking(&self, expected: usize) {
+                let mut writes = self.writes.lock().unwrap();
+                while writes.len() < expected {
+                    writes = self.write_committed.wait(writes).unwrap();
+                }
             }
 
             pub(super) async fn wait_until_started(&self) {
@@ -7195,6 +7267,7 @@ mod tests {
                         revision: prepared.durable_revision(),
                         thumbnail_available: prepared.thumbnail_available(),
                     });
+                    self.write_committed.notify_all();
                     self.started.notify_waiters();
                     while self.pause_writes.load(Ordering::SeqCst) {
                         self.release.notified().await;
@@ -7215,6 +7288,7 @@ mod tests {
                         revision: prepared.durable_revision(),
                         thumbnail_available: prepared.thumbnail_available(),
                     });
+                    self.write_committed.notify_all();
                     self.started.notify_waiters();
                     while self.pause_writes.load(Ordering::SeqCst) {
                         self.release.notified().await;
@@ -7653,6 +7727,33 @@ mod tests {
                 }
             }
             envelope
+        }
+
+        #[test]
+        fn plain_thread_issues_a_ticket_and_eventually_runs_the_debounced_writer() {
+            let backend = Arc::new(RecordingBackend::default());
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+
+            let request = coordinator
+                .notify_durable_commit(1, 1)
+                .expect("a synchronous command must receive its capture ticket");
+            coordinator
+                .report_thumbnail_failure(&request.ticket)
+                .unwrap();
+
+            backend.wait_for_write_count_blocking(1);
+
+            assert_eq!(
+                backend.observations(),
+                [WriteObservation {
+                    generation: 1,
+                    revision: 1,
+                    thumbnail_available: false,
+                }],
+                "health={:?} activity={:?}",
+                coordinator.persistence_health(),
+                coordinator.thumbnail_activity(),
+            );
         }
 
         #[tokio::test(start_paused = true)]
@@ -9212,9 +9313,40 @@ mod tests {
     }
 
     mod writer {
-        use super::super::{SaveCoordinator, WriterJobClass, WriterQueueProbe};
+        use super::super::{
+            CoordinatorTask, CoordinatorTaskScheduler, SaveCoordinator, WriterJobClass,
+            WriterQueueProbe,
+        };
+        use crate::game::GameError;
         use std::sync::Arc;
         use tokio::sync::Mutex;
+
+        struct RejectingTaskScheduler;
+
+        impl CoordinatorTaskScheduler for RejectingTaskScheduler {
+            fn spawn(&self, _task: CoordinatorTask) -> Result<(), GameError> {
+                Err(GameError::save_write_failed())
+            }
+        }
+
+        #[test]
+        fn scheduler_rejection_does_not_retain_an_unstarted_writer_job() {
+            let coordinator =
+                SaveCoordinator::new().with_task_scheduler(Arc::new(RejectingTaskScheduler));
+
+            assert_eq!(
+                coordinator
+                    .reserve_manual_writer(Box::pin(async {}))
+                    .unwrap_err()
+                    .code,
+                "saveWriteFailed"
+            );
+
+            let state = coordinator.writer_queue.state.lock().unwrap();
+            assert!(!state.running);
+            assert!(state.acknowledgements.is_empty());
+            assert!(state.ordinary.is_empty());
+        }
 
         #[tokio::test]
         async fn one_writer_runs_at_a_time_and_acknowledgement_is_reserved_next() {

@@ -792,8 +792,8 @@ describe("InvestigationSceneSurface", () => {
       const backgrounds = container.querySelectorAll(
         ".surface-shell > img.background-image",
       );
-      expect(backgrounds).toHaveLength(2);
-      expect(backgrounds[1]?.getAttribute("src")).toContain(
+      expect(backgrounds).toHaveLength(1);
+      expect(backgrounds[0]?.getAttribute("src")).toContain(
         "data:image/svg+xml",
       );
     });
@@ -1321,17 +1321,22 @@ describe("InvestigationSceneSurface", () => {
 
     await waitFor(() => {
       const backgrounds = container.querySelectorAll("img.background-image");
-      expect(backgrounds).toHaveLength(2);
-      expect(backgrounds[1]?.getAttribute("src")).toContain(
+      expect(backgrounds).toHaveLength(1);
+      expect(backgrounds[0]?.getAttribute("src")).toContain(
         "data:image/svg+xml",
       );
     });
 
     warnSpy.mockClear();
-    const placeholder = container.querySelectorAll(
+    const placeholder = container.querySelector(
       "img.background-image",
-    )[1] as HTMLImageElement;
+    ) as HTMLImageElement;
     placeholder.dispatchEvent(new Event("error"));
+    await waitFor(() => {
+      expect(container.querySelectorAll("img.background-image")).toHaveLength(
+        0,
+      );
+    });
     expect(warnSpy).not.toHaveBeenCalled();
 
     warnSpy.mockRestore();
@@ -1359,15 +1364,20 @@ describe("InvestigationSceneSurface", () => {
 
     await waitFor(() => {
       const portraits = container.querySelectorAll(".character-target img");
-      expect(portraits).toHaveLength(2);
-      expect(portraits[1]?.getAttribute("src")).toContain("data:image/svg+xml");
+      expect(portraits).toHaveLength(1);
+      expect(portraits[0]?.getAttribute("src")).toContain("data:image/svg+xml");
     });
 
     warnSpy.mockClear();
-    const placeholder = container.querySelectorAll(
+    const placeholder = container.querySelector(
       ".character-target img",
-    )[1] as HTMLImageElement;
+    ) as HTMLImageElement;
     placeholder.dispatchEvent(new Event("error"));
+    await waitFor(() => {
+      expect(container.querySelectorAll(".character-target img")).toHaveLength(
+        0,
+      );
+    });
     expect(warnSpy).not.toHaveBeenCalled();
 
     warnSpy.mockRestore();

@@ -134,22 +134,22 @@ describe("DialogueBox", () => {
 
     await waitFor(() => {
       const portraits = container.querySelectorAll("img.portrait");
-      expect(portraits).toHaveLength(2);
-      expect(portraits[1]).toHaveAttribute(
+      expect(portraits).toHaveLength(1);
+      expect(portraits[0]).toHaveAttribute(
         "src",
         expect.stringContaining("data:image/svg+xml"),
       );
     });
 
-    const placeholder = container.querySelectorAll(
+    const placeholder = container.querySelector(
       "img.portrait",
-    )[1] as HTMLImageElement;
+    ) as HTMLImageElement;
     placeholder.dispatchEvent(new Event("load"));
 
     await waitFor(() => {
       const portraits = container.querySelectorAll("img.portrait");
-      expect(portraits[1]).toHaveClass("visible");
-      expect(portraits[0]).toHaveClass("leaving");
+      expect(portraits).toHaveLength(1);
+      expect(portraits[0]).toHaveClass("visible");
     });
   });
 

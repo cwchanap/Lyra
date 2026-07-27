@@ -468,6 +468,32 @@ describe("get_state persistence exclusivity", () => {
 });
 
 describe("game client persistence response boundary", () => {
+  it("captures the autosave ticket returned by an advancing dialogue command", async () => {
+    const next = state("next");
+    const client = await loadGameClient(state("previous"));
+    const request = { ticket: "ticket-dialogue-autosave", timeoutMs: 725 };
+    mocks.invoke.mockResolvedValueOnce(wrapped(next, request));
+
+    await client.advanceDialogue({
+      sceneId: "scene_previous",
+      queueGen: 1,
+      cursor: 0,
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("advance_dialogue", {
+      expected: {
+        sceneId: "scene_previous",
+        queueGen: 1,
+        cursor: 0,
+      },
+    });
+    expect(mocks.capture).toHaveBeenCalledExactlyOnceWith(request);
+    expect(mocks.submitSaveThumbnail).toHaveBeenCalledExactlyOnceWith(
+      "ticket-dialogue-autosave",
+      new Uint8Array([1, 2, 3]),
+    );
+  });
+
   it("unwraps the gameplay-command result before state and SFX consumers see it", async () => {
     const previous = state("previous");
     const next = state("next");

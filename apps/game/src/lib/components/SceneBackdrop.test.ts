@@ -67,22 +67,22 @@ describe("SceneBackdrop", () => {
 
     await waitFor(() => {
       const images = container.querySelectorAll("img.background-image");
-      expect(images).toHaveLength(2);
-      expect(images[1]).toHaveAttribute(
+      expect(images).toHaveLength(1);
+      expect(images[0]).toHaveAttribute(
         "src",
         expect.stringContaining("data:image/svg+xml"),
       );
     });
 
-    const placeholder = container.querySelectorAll(
+    const placeholder = container.querySelector(
       "img.background-image",
-    )[1] as HTMLImageElement;
+    ) as HTMLImageElement;
     placeholder.dispatchEvent(new Event("load"));
 
     await waitFor(() => {
       const images = container.querySelectorAll("img.background-image");
-      expect(images[1]).toHaveClass("visible");
-      expect(images[0]).toHaveClass("leaving");
+      expect(images).toHaveLength(1);
+      expect(images[0]).toHaveClass("visible");
     });
   });
 

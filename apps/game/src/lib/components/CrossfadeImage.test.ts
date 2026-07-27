@@ -875,6 +875,159 @@ describe("CrossfadeImage", () => {
     expect(incoming).not.toHaveAttribute("aria-hidden", "true");
   });
 
+  it("exposes the current request, order, and pending/visible/leaving capture states", async () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/old.png",
+      transitionKey: "old",
+      imageClass: "portrait left",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 1500,
+    });
+
+    const initial = firstImage(container);
+    expect(initial).toHaveAttribute("data-save-crossfade-layer", "");
+    expect(initial).toHaveAttribute("data-save-crossfade-request", "1");
+    expect(initial).toHaveAttribute("data-save-crossfade-order", "1");
+    expect(initial).toHaveAttribute("data-save-crossfade-state", "pending");
+
+    await fireEvent.load(initial);
+    expect(initial).toHaveAttribute("data-save-crossfade-state", "visible");
+
+    await rerender({
+      src: "/new.png",
+      transitionKey: "new",
+      imageClass: "portrait left",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 1500,
+    });
+
+    const [oldImage, pendingImage] = Array.from(
+      container.querySelectorAll("img"),
+    );
+    expect(oldImage).toHaveAttribute("data-save-crossfade-request", "2");
+    expect(oldImage).toHaveAttribute("data-save-crossfade-order", "1");
+    expect(oldImage).toHaveAttribute("data-save-crossfade-state", "visible");
+    expect(pendingImage).toHaveAttribute("data-save-crossfade-request", "2");
+    expect(pendingImage).toHaveAttribute("data-save-crossfade-order", "2");
+    expect(pendingImage).toHaveAttribute(
+      "data-save-crossfade-state",
+      "pending",
+    );
+
+    await fireEvent.load(pendingImage);
+    expect(oldImage).toHaveAttribute("data-save-crossfade-state", "leaving");
+    expect(pendingImage).toHaveAttribute(
+      "data-save-crossfade-state",
+      "visible",
+    );
+  });
+
+  it("keeps one monotonic current request through rapid A to B to C changes", async () => {
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+    await fireEvent.load(firstImage(container));
+
+    await rerender({
+      src: "/b.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+    await rerender({
+      src: "/c.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+
+    const [aImage, cImage] = Array.from(container.querySelectorAll("img"));
+    expect(imageSources(container)).toEqual(["/a.png", "/c.png"]);
+    expect(aImage).toHaveAttribute("data-save-crossfade-request", "3");
+    expect(aImage).toHaveAttribute("data-save-crossfade-order", "1");
+    expect(cImage).toHaveAttribute("data-save-crossfade-request", "3");
+    expect(cImage).toHaveAttribute("data-save-crossfade-order", "3");
+    expect(cImage).toHaveAttribute("data-save-crossfade-state", "pending");
+
+    await fireEvent.load(cImage);
+    expect(aImage).toHaveAttribute("data-save-crossfade-state", "leaving");
+    expect(cImage).toHaveAttribute("data-save-crossfade-state", "visible");
+  });
+
+  it("keeps a re-requested not-yet-loaded layer pending instead of promoting stale pixels", async () => {
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+
+    await rerender({
+      src: "/b.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+    await rerender({
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+
+    expect(imageSources(container)).toEqual(["/a.png", "/b.png"]);
+    const current = firstImage(container);
+    expect(current).toHaveAttribute("data-save-crossfade-request", "3");
+    expect(current).toHaveAttribute("data-save-crossfade-order", "3");
+    expect(current).toHaveAttribute("data-save-crossfade-state", "pending");
+    expect(container.querySelectorAll("img")[1]).toHaveAttribute(
+      "data-save-crossfade-state",
+      "leaving",
+    );
+
+    await fireEvent.load(current);
+    expect(current).toHaveAttribute("data-save-crossfade-state", "visible");
+  });
+
+  it("treats duplicate load and error notifications as idempotent", async () => {
+    const onImageLoad = vi.fn();
+    const onImageError = vi.fn();
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      onImageLoad,
+      onImageError,
+    });
+    const first = firstImage(container);
+    await fireEvent.load(first);
+    await fireEvent.load(first);
+    await fireEvent.error(first);
+    expect(onImageLoad).toHaveBeenCalledTimes(1);
+    expect(onImageError).not.toHaveBeenCalled();
+
+    await rerender({
+      src: "/b.png",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+      onImageLoad,
+      onImageError,
+    });
+    const pending = container.querySelectorAll("img")[1] as HTMLImageElement;
+    await fireEvent.error(pending);
+    await fireEvent.error(pending);
+    expect(onImageError).toHaveBeenCalledTimes(1);
+    expect(imageSources(container)).toEqual(["/a.png"]);
+  });
+
   it("defines the transition and reduced-motion CSS contract", () => {
     const source = readFileSync(
       resolve(import.meta.dirname!, "CrossfadeImage.svelte"),
@@ -882,12 +1035,33 @@ describe("CrossfadeImage", () => {
     );
 
     expect(source).toContain(".crossfade-image-layer");
-    expect(source).toContain(
-      "transition: opacity var(--crossfade-duration, 300ms)",
-    );
-    expect(source).toContain("opacity: var(--crossfade-visible-opacity, 1)");
+    expect(source).toContain("--save-crossfade-transition");
+    expect(source).toContain("opacity var(--crossfade-duration, 300ms) ease");
+    expect(source).toContain("--save-crossfade-opacity");
+    expect(source).toContain("var(--crossfade-visible-opacity, 1)");
     expect(source).toContain("@media (prefers-reduced-motion: reduce)");
     expect(source).toContain("transition-duration: 1ms");
     expect(source).not.toContain("--crossfade-duration: 1ms");
+
+    const pageSource = readFileSync(
+      resolve(import.meta.dirname!, "../../routes/+page.svelte"),
+      "utf8",
+    );
+    expect(pageSource).not.toContain("--save-crossfade-opacity");
+    expect(pageSource).not.toContain("--save-crossfade-transition");
+  });
+
+  it("retains the real 1500ms live duration when capture-only variables are absent", async () => {
+    const { container } = render(CrossfadeImage, {
+      src: "/portrait.png",
+      imageClass: "portrait left",
+      alt: "",
+      ariaHidden: true,
+      durationMs: 1500,
+    });
+
+    expect(
+      firstImage(container).style.getPropertyValue("--crossfade-duration"),
+    ).toBe("1500ms");
   });
 });

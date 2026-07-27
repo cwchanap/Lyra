@@ -463,6 +463,7 @@
     imageClass={`portrait ${portraitPlacement}`}
     dataAttributes={{
       placement: portraitPlacement,
+      "save-thumbnail-asset-role": "portrait",
       // Stable hook for tests/e2e to locate the dialogue portrait layer
       // (asserted in DialogueBox.test.ts and app.spec.ts). Not consumed by
       // production CSS, which keys off the .portrait/.left/.right classes.
@@ -485,7 +486,12 @@
   />
 {/if}
 
-<div class="wrapper" class:line={current.kind === "line"} bind:this={wrapper}>
+<div
+  class="wrapper"
+  class:line={current.kind === "line"}
+  data-save-thumbnail-layer="over-portrait"
+  bind:this={wrapper}
+>
   <button
     bind:this={logButton}
     class="log-button"

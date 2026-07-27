@@ -10,9 +10,19 @@
   function swap() {
     src = "/new.png";
   }
+
+  function rapidSwap() {
+    src = "/middle.png";
+    queueMicrotask(() => {
+      src = "/newest.png";
+    });
+  }
 </script>
 
-<button type="button" onclick={swap}>swap</button>
+<button type="button" data-crossfade-action="swap" onclick={swap}>swap</button>
+<button type="button" data-crossfade-action="rapid" onclick={rapidSwap}>
+  rapid swap
+</button>
 
 <CrossfadeImage
   {src}

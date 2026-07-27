@@ -40,7 +40,13 @@
   import GameplayAudio from "$lib/components/GameplayAudio.svelte";
   import InterrogationView from "$lib/components/InterrogationView.svelte";
   import MainMenu from "$lib/components/MainMenu.svelte";
+  import PackagedCaptureProofProbe from "$lib/test-harnesses/PackagedCaptureProofProbe.svelte";
   import { playGameplaySfxEvent } from "$lib/audio/gameplay-audio-runtime.svelte";
+  import {
+    forceNextPackagedCaptureUnavailable,
+    packagedCaptureProofStatus,
+    packagedCaptureUnavailableReason,
+  } from "$lib/persistence/thumbnail-capture";
   import { acquisitionController } from "$lib/state/acquisition-controller.svelte";
   import { onDestroy, untrack } from "svelte";
 
@@ -245,6 +251,7 @@
   <div
     bind:this={gameplayRoot}
     data-gameplay-root=""
+    data-save-thumbnail-root=""
     tabindex="-1"
     inert={acquisitionController.blocking}
   >
@@ -286,7 +293,9 @@
       {/snippet}
 
       {#if gameState.error}
-        <ErrorBanner message={gameState.error} />
+        <div data-save-thumbnail-exclude="">
+          <ErrorBanner message={gameState.error} />
+        </div>
       {/if}
       {#if gameState.value.mode.type === "dialogue"}
         <SceneBackdrop
@@ -336,6 +345,14 @@
       {/if}
     </GameShell>
   </div>
+  {#if import.meta.env.VITE_LYRA_E2E_CAPTURE_PROOF === "1"}
+    <PackagedCaptureProofProbe
+      onForceNextCaptureUnavailable={forceNextPackagedCaptureUnavailable}
+      captureUnavailableReason={packagedCaptureUnavailableReason}
+      captureStatus={packagedCaptureProofStatus}
+      captureCommandInFlight={gameState.inFlight}
+    />
+  {/if}
   {#if acquisitionController.current}
     <AcquisitionPopup
       notification={acquisitionController.current}
@@ -357,7 +374,7 @@
     disabled={gameState.inFlight}
   />
   {#if gameState.error}
-    <div class="menu-error">
+    <div class="menu-error" data-save-thumbnail-exclude="">
       <ErrorBanner message={gameState.error} />
     </div>
   {/if}

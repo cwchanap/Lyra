@@ -20,7 +20,6 @@ const line = (text: string): JSONDialogueItem => ({
   kind: "line",
   speaker: "detective",
   text,
-  expression: null,
   portrait: null,
 });
 
@@ -97,7 +96,6 @@ describe("buildSaveContentManifest", () => {
               queue: [
                 {
                   portrait: null,
-                  expression: null,
                   text: "A",
                   speaker: "detective",
                   kind: "line",
