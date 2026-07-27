@@ -771,3 +771,120 @@ rtk git diff --check
   checkpoint pin/reuse behavior, and failure-challenge semantics.
 - The separate lost-wakeup and pre-clone-size-check minor findings remain
   deferred by explicit round-4 scope.
+
+## Fix round 5 — serialized cleanup attempt identity
+
+### Review mapping
+
+| Finding | Fix |
+| --- | --- |
+| Important: cleanup attempt allocation and writer enqueue used different mutexes, so concurrent callers could receive Attempt 1 then Attempt 2 but enter writer order as Attempt 2 then Attempt 1 | `next_cleanup_attempt` now belongs to `WriterQueueState`. `WriterQueue::enqueue_cleanup` allocates a new receipt-less attempt, constructs its owner-bound job, and inserts that job while holding the one writer queue mutex. Attempt sequence is therefore authoritative writer enqueue order. |
+| Regression risk: a dedicated cleanup path could drift from acknowledgement priority or debounce replacement | Generic and cleanup enqueue paths both use one `enqueue_locked` implementation for debounce coalescing, acknowledgement priority, ordinary FIFO insertion, and worker-start state. |
+
+The separately recorded lost-wakeup and pre-clone-size-check minor findings
+remain unchanged and deferred by this final bounded round.
+
+### Files
+
+- `apps/game/src-tauri/src/game/save/coordinator.rs`
+  - writer-owned cleanup attempt counter and atomic identity/job enqueue;
+  - shared locked enqueue implementation;
+  - deterministic concurrent-caller ordering seam and regression.
+- `.superpowers/sdd/2026-07-26-hpa-392-save-load-persistence-implementation-plan/task-8-report.md`
+  - this fix-round evidence.
+
+### RED evidence
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml cleanup_attempt_identity_follows_concurrent_writer_enqueue_order
+```
+
+Exited 101 after the deterministic seam paused caller 1 before the writer
+queue lock, caller 2 enqueued and failed first, and caller 1 then enqueued and
+succeeded:
+
+```text
+assertion failed:
+matches!(first_failure_owner, Some(CleanupOwner::Attempt(1)))
+```
+
+The first executed writer job retained Attempt 2, proving token order reflected
+the earlier coordinator-state allocation rather than actual writer enqueue
+order. Its later Attempt 1 success also could not resolve that failure.
+
+### Locking and ownership decisions
+
+- New receipt-less Attempt identity is allocated only while holding
+  `WriterQueueState`.
+- The owner-bound future is constructed and its `OrphanCleanup` job is pushed
+  before that mutex is released.
+- An explicit retry keeps its existing `CleanupOwner`; it does not consume a
+  new attempt sequence.
+- Runtime-handle validation happens before locking, so a call that cannot
+  enqueue consumes no attempt identity.
+- The coordinator no longer owns or mutates a cleanup attempt counter.
+- Round-4 ordered resolution remains sound because Attempt order now exactly
+  matches ordinary writer FIFO order.
+
+### Deterministic concurrency matrix
+
+| Boundary | Deterministic evidence | Result |
+| --- | --- | --- |
+| caller inversion | one-shot test hook pauses caller 1 immediately before the writer queue mutex | caller 2 obtains the queue first |
+| first queue identity | caller 2 runs through `W:cleanup` and consumes the one-shot backend fault | retained first failure is Attempt 1 |
+| second queue identity | release and join caller 1, then wait for its cleanup | later successful scan owns Attempt 2 |
+| ordered resolution | inspect complete coordinator state | Attempt 2 success resolves Attempt 1; final health is Healthy with no retained cleanup owner |
+| writer serialization | count phased backend entries | exactly two `W:cleanup` jobs ran |
+| prior guards | rerun older-success/later-failure and attempt-vs-receipt tests | later attempt and receipt-owned failures remain protected |
+
+### GREEN evidence and final gates
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml cleanup_attempt_identity_follows_concurrent_writer_enqueue_order
+  1 passed, 426 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml later_queued_receipt_less_cleanup_success_resolves_earlier_failure
+  1 passed, 426 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml older_receipt_less_cleanup_success_does_not_clear_later_failure
+  1 passed, 426 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml receipt_less_cleanup_success_does_not_clear_receipt_owned_failure
+  1 passed, 426 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml receipt_less_cleanup_failure_survives_autosave_until_matching_retry_succeeds
+  1 passed, 426 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::ticket
+  11 passed, 416 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce
+  23 passed, 404 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::writer
+  4 passed, 423 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration
+  6 passed, 421 filtered out
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 427 passed across 6 suites
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+
+rtk git diff --check
+  exit 0
+```
+
+### Remaining risks and deferred work
+
+- Task 10's concrete backend must continue submitting cleanup work through this
+  same serialized writer path.
+- Task 9 still owns blocking flush, acquisition acknowledgement mutation,
+  checkpoint pin/reuse behavior, and failure-challenge semantics.
+- The separate lost-wakeup and pre-clone-size-check minor findings remain
+  deferred by explicit round-5 scope.
