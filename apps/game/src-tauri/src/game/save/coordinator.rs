@@ -379,6 +379,7 @@ struct QueuedWriterJob {
 #[derive(Default)]
 struct WriterQueueState {
     running: bool,
+    next_cleanup_attempt: u64,
     acknowledgements: VecDeque<QueuedWriterJob>,
     ordinary: VecDeque<QueuedWriterJob>,
 }
@@ -386,6 +387,8 @@ struct WriterQueueState {
 #[derive(Default)]
 struct WriterQueue {
     state: Mutex<WriterQueueState>,
+    #[cfg(test)]
+    cleanup_before_lock: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 impl WriterQueue {
@@ -400,6 +403,49 @@ impl WriterQueue {
             .state
             .lock()
             .map_err(|_| GameError::save_write_failed())?;
+        let start_worker = Self::enqueue_locked(&mut state, class, run);
+        drop(state);
+        self.start_worker(runtime, start_worker);
+        Ok(())
+    }
+
+    fn enqueue_cleanup<F>(
+        self: &Arc<Self>,
+        owner: Option<CleanupOwner>,
+        make_run: F,
+    ) -> Result<(), GameError>
+    where
+        F: FnOnce(CleanupOwner) -> CoordinatorFuture<'static, ()>,
+    {
+        let runtime =
+            tokio::runtime::Handle::try_current().map_err(|_| GameError::save_write_failed())?;
+        #[cfg(test)]
+        {
+            let hook = self.cleanup_before_lock.lock().unwrap().take();
+            if let Some(hook) = hook {
+                hook();
+            }
+        }
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| GameError::save_write_failed())?;
+        let owner = owner.unwrap_or_else(|| {
+            state.next_cleanup_attempt = state.next_cleanup_attempt.wrapping_add(1);
+            CleanupOwner::Attempt(state.next_cleanup_attempt)
+        });
+        let start_worker =
+            Self::enqueue_locked(&mut state, WriterJobClass::OrphanCleanup, make_run(owner));
+        drop(state);
+        self.start_worker(runtime, start_worker);
+        Ok(())
+    }
+
+    fn enqueue_locked(
+        state: &mut WriterQueueState,
+        class: WriterJobClass,
+        run: CoordinatorFuture<'static, ()>,
+    ) -> bool {
         if let WriterJobClass::Debounced {
             session_generation, ..
         } = class
@@ -427,14 +473,21 @@ impl WriterQueue {
         if start_worker {
             state.running = true;
         }
-        drop(state);
+        start_worker
+    }
+
+    fn start_worker(self: &Arc<Self>, runtime: tokio::runtime::Handle, start_worker: bool) {
         if start_worker {
             let queue = Arc::clone(self);
             runtime.spawn(async move {
                 queue.run().await;
             });
         }
-        Ok(())
+    }
+
+    #[cfg(test)]
+    fn set_cleanup_before_lock_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
+        *self.cleanup_before_lock.lock().unwrap() = Some(hook);
     }
 
     async fn run(self: Arc<Self>) {
@@ -524,7 +577,6 @@ struct CoordinatorState {
     health_subscribers: Vec<HealthSubscriber>,
     activity_subscribers: Vec<ActivitySubscriber>,
     next_autosave_serial: u64,
-    next_cleanup_attempt: u64,
     pending_autosave: Option<PendingAutosave>,
     last_successful_write: Option<AutosaveWriteReceipt>,
     autosave_target: Option<(u64, SaveSlotRef)>,
@@ -542,7 +594,6 @@ impl Default for CoordinatorState {
             health_subscribers: Vec::new(),
             activity_subscribers: Vec::new(),
             next_autosave_serial: 0,
-            next_cleanup_attempt: 0,
             pending_autosave: None,
             last_successful_write: None,
             autosave_target: None,
@@ -688,38 +739,29 @@ impl SaveCoordinator {
     }
 
     pub(crate) fn enqueue_orphan_cleanup(&self) -> Result<(), GameError> {
-        let owner = {
-            let mut state = self.lock_state()?;
-            if let Some(owner) = state
-                .cleanup_failure
-                .as_ref()
-                .map(|failure| failure.owner.clone())
-            {
-                owner
-            } else {
-                state.next_cleanup_attempt = state.next_cleanup_attempt.wrapping_add(1);
-                CleanupOwner::Attempt(state.next_cleanup_attempt)
-            }
-        };
+        let owner = self
+            .lock_state()?
+            .cleanup_failure
+            .as_ref()
+            .map(|failure| failure.owner.clone());
         self.enqueue_cleanup_retry(owner)
     }
 
-    fn enqueue_cleanup_retry(&self, owner: CleanupOwner) -> Result<(), GameError> {
+    fn enqueue_cleanup_retry(&self, owner: Option<CleanupOwner>) -> Result<(), GameError> {
         let backend = self
             .backend
             .as_ref()
             .cloned()
             .ok_or_else(GameError::save_write_failed)?;
         let coordinator = self.clone();
-        self.writer_queue.enqueue(
-            WriterJobClass::OrphanCleanup,
+        self.writer_queue.enqueue_cleanup(owner, move |owner| {
             Box::pin(async move {
                 match backend.cleanup_orphans().await {
                     Ok(()) => coordinator.resolve_cleanup_failure(&owner),
                     Err(error) => coordinator.record_cleanup_failure(owner, error),
                 }
-            }),
-        )
+            })
+        })
     }
 
     pub(crate) fn prepare_thumbnail(
@@ -1183,7 +1225,7 @@ impl SaveCoordinator {
         };
         publish_health(&subscribers, &health);
         if let Some(owner) = cleanup_retry {
-            let _ = self.enqueue_cleanup_retry(owner);
+            let _ = self.enqueue_cleanup_retry(Some(owner));
         }
     }
 
@@ -1674,7 +1716,7 @@ mod tests {
         use crate::game::test_support::representative_save_envelope;
         use crate::game::GameError;
         use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-        use std::sync::{Arc, Mutex};
+        use std::sync::{Arc, Barrier, Mutex};
         use std::time::Duration;
         use std::time::SystemTime;
         use tokio::sync::Notify;
@@ -2649,6 +2691,65 @@ mod tests {
             backend.wait_for_cleanup_attempts(2).await;
             tokio::task::yield_now().await;
 
+            assert_eq!(
+                backend
+                    .phases()
+                    .into_iter()
+                    .filter(|phase| *phase == "W:cleanup")
+                    .count(),
+                2
+            );
+            assert_eq!(
+                coordinator.persistence_health(),
+                PersistenceHealthView::Healthy
+            );
+            assert!(coordinator.state.lock().unwrap().cleanup_failure.is_none());
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn cleanup_attempt_identity_follows_concurrent_writer_enqueue_order() {
+            let backend = Arc::new(PhasedBackend::new(1));
+            backend.fail_cleanup.store(true, Ordering::SeqCst);
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let before_lock = Arc::new(Barrier::new(2));
+            let release = Arc::new(Barrier::new(2));
+            let hook_before_lock = Arc::clone(&before_lock);
+            let hook_release = Arc::clone(&release);
+            coordinator
+                .writer_queue
+                .set_cleanup_before_lock_hook(Arc::new(move || {
+                    hook_before_lock.wait();
+                    hook_release.wait();
+                }));
+
+            let runtime = tokio::runtime::Handle::current();
+            let first_coordinator = coordinator.clone();
+            let first_caller = std::thread::spawn(move || {
+                let _runtime_guard = runtime.enter();
+                first_coordinator.enqueue_orphan_cleanup()
+            });
+            before_lock.wait();
+
+            coordinator.enqueue_orphan_cleanup().unwrap();
+            backend.wait_for_cleanup_attempts(1).await;
+            tokio::task::yield_now().await;
+            let first_failure_owner = coordinator
+                .state
+                .lock()
+                .unwrap()
+                .cleanup_failure
+                .as_ref()
+                .map(|failure| failure.owner.clone());
+
+            release.wait();
+            first_caller.join().unwrap().unwrap();
+            backend.wait_for_cleanup_attempts(2).await;
+            tokio::task::yield_now().await;
+
+            assert!(matches!(
+                first_failure_owner,
+                Some(CleanupOwner::Attempt(1))
+            ));
             assert_eq!(
                 backend
                     .phases()
