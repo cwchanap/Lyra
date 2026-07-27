@@ -1,26 +1,31 @@
 import { invoke } from "@tauri-apps/api/core";
+import { tick } from "svelte";
 import { playGameplaySfxEvent } from "$lib/audio/gameplay-audio-runtime.svelte";
 import {
   inferGameplaySfxEvents,
   type GameplayCommandName,
 } from "$lib/audio/sfx-events";
-import { acquisitionController } from "./acquisition-controller.svelte";
-import { inferAcquisitionNotifications } from "./acquisition-notifications";
-import type { AcquisitionNotification } from "./acquisition-notifications";
+import {
+  asGameError,
+  invokePersistenceCommand,
+  reportSaveThumbnailFailure,
+  submitSaveThumbnail,
+} from "$lib/persistence/commands";
+import {
+  gameplayThumbnailCapture,
+  pinThumbnailCaptureDeadline,
+} from "$lib/persistence/thumbnail-capture";
+import type {
+  AcquisitionAcknowledgementPhase,
+  ExitStatusView,
+  GameplayCommandResultView,
+} from "$lib/persistence/types";
 import type {
   GameError,
   GameStateView,
   QueueToken,
   SceneNavigationIndex,
 } from "./types";
-
-// Module-level buffer for acquisition notifications deferred while an authored
-// item-dialogue queue is playing. Deliberately a plain (non-$state) array: it
-// is an internal implementation detail of enqueueAcquisitions/flushPendingAcquisitions,
-// not something the UI binds to. Reactivity is driven by acquisitionController,
-// which this buffer feeds into via enqueue() — making this $state would cause
-// spurious reactivity with no consumer.
-let pendingAcquisitionNotifications: AcquisitionNotification[] = [];
 
 const isTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -93,111 +98,82 @@ async function runCommand<T>(
   }
 }
 
-// Detect that an advance_dialogue command exhausted the previous dialogue
-// queue (and possibly installed a new one), by checking the returned
-// mode/queue transition — NOT previous.queueRemaining. The queueRemaining
-// heuristic is unsound for two reasons:
-//  1. Rust advance_dialogue returns the UNCHANGED view for a stale
-//     QueueToken (mod.rs: current_token != expected -> Ok(self.view())),
-//     so queueRemaining === 0 on the previous frame would false-positive
-//     and flush the popup while the same item is still displayed.
-//  2. Queues ending in auto-skipped SceneTags have queueRemaining > 0 at
-//     the last real line (the trailing tags are counted). advance_dialogue
-//     skips them (consume_scene_tags_at_cursor) and on_queue_exhausted may
-//     install a NEW dialogue queue (e.g. an investigation outro) with a
-//     fresh queueGen — deferring the popup through that whole dialogue.
-//
-// alloc_queue_gen is monotonic and every queue installation calls it, so a
-// queueGen or sceneId change in `next` reliably signals the previous queue
-// exhausted and a new one was installed. A normal in-queue advance keeps
-// the same queueGen/sceneId and only increments cursor.
-function dialogueQueueExhausted(
-  previous: GameStateView | null,
-  next: GameStateView,
-): boolean {
-  if (!previous || previous.mode.type !== "dialogue") return false;
-  if (next.mode.type !== "dialogue") return true;
-  return (
-    next.mode.queueToken.sceneId !== previous.mode.queueToken.sceneId ||
-    next.mode.queueToken.queueGen !== previous.mode.queueToken.queueGen
-  );
-}
-
-function enqueueAcquisitions(
-  previous: GameStateView | null,
-  next: GameStateView,
-  command: GameplayCommandName,
-) {
+export async function refreshGameState(context: {
+  acquisitionPhase: AcquisitionAcknowledgementPhase;
+  exitStatus: ExitStatusView;
+}): Promise<GameStateView | null> {
   try {
-    // Flush any pending acquisition notifications BEFORE inferring new ones
-    // whenever a command leaves dialogue. This ordering matters: the same
-    // command that empties the queue (or otherwise exits dialogue) may also
-    // produce new notifications (e.g. an on_collect dialogue queues more
-    // items, or an interrogation resolution both exits dialogue and acquires),
-    // and we want the previously-buffered popups to surface first so the
-    // player sees acquisitions in the order they were earned, not interleaved
-    // with — or reordered after — the new batch.
-    const advancedFromDialogue =
-      command === "advance_dialogue" && previous?.mode.type === "dialogue";
-    const leavingDialogue =
-      (advancedFromDialogue && dialogueQueueExhausted(previous, next)) ||
-      (previous?.mode.type === "dialogue" && next.mode.type !== "dialogue");
-    if (leavingDialogue) {
-      flushPendingAcquisitions();
-    }
-
-    const notifications = inferAcquisitionNotifications(previous, next);
-    if (notifications.length > 0) {
-      // Rust adds an item's authored on_collect/on_acquire dialogue to the
-      // same queue that is returned with the inventory update. Keep the
-      // notification pending while that queue is visible so the popup comes
-      // after the player finishes the authored item dialogue.
-      if (next.mode.type === "dialogue") {
-        pendingAcquisitionNotifications.push(...notifications);
-      } else {
-        acquisitionController.enqueue(notifications);
-      }
-    }
+    const next = await invokePersistenceCommand<GameStateView>("get_state");
+    gameState.value = next;
+    gameState.error = null;
+    return next;
   } catch (error) {
-    console.warn(`[AcquisitionPopup] inference failed for ${command}`, error);
+    const diagnostic = asGameError(error);
+    const acquisitionIsSaving = context.acquisitionPhase.type === "saving";
+    const exitIsSaving = context.exitStatus.type === "saving";
+    if (
+      diagnostic.code === "persistenceOperationInProgress" &&
+      (acquisitionIsSaving || exitIsSaving)
+    ) {
+      return gameState.value;
+    }
+    gameState.error = normalizeError(diagnostic);
+    return null;
   }
 }
 
-function flushPendingAcquisitions() {
-  if (pendingAcquisitionNotifications.length === 0) return;
-  const pending = pendingAcquisitionNotifications;
-  acquisitionController.enqueue(pending);
-  pendingAcquisitionNotifications = [];
+async function finishThumbnailCapture(
+  result: GameplayCommandResultView,
+  committedIdentity: GameStateView,
+): Promise<void> {
+  const request = result.thumbnailCapture;
+  if (!request) return;
+  await tick();
+  if (gameState.value !== committedIdentity) return;
+
+  let captureResult;
+  try {
+    captureResult = await gameplayThumbnailCapture.capture(request);
+  } catch (error) {
+    console.warn("[Persistence] Thumbnail capture failed", error);
+    if (gameState.value !== committedIdentity) return;
+    try {
+      await reportSaveThumbnailFailure(request.ticket);
+    } catch (reportError) {
+      console.warn(
+        "[Persistence] Thumbnail failure report failed",
+        reportError,
+      );
+    }
+    return;
+  }
+
+  if (gameState.value !== committedIdentity) return;
+  try {
+    if (captureResult.type === "available") {
+      await submitSaveThumbnail(request.ticket, captureResult.bytes);
+    } else {
+      await reportSaveThumbnailFailure(request.ticket);
+    }
+  } catch (error) {
+    console.warn("[Persistence] Thumbnail submission failed", error);
+  }
 }
 
-// Silently DISCARDS (does not flush) any acquisition notifications buffered
-// while an authored item-dialogue queue was playing. Navigation commands
-// (startGame/resetGame/returnToMainMenu/jumpToScene) reset the game state to a
-// different scene/mode, so previously-buffered popups no longer belong to the
-// context the player is leaving — they are dropped intentionally, not surfaced.
-// Contrast flushPendingAcquisitions, which drains the same buffer into
-// acquisitionController so the popups are shown.
-function clearPendingAcquisitions() {
-  pendingAcquisitionNotifications = [];
-}
-
-// Page teardown: drains the module-level pending buffer so a later mount that
-// resumes the shared game state does not flush stale buffered notifications as
-// popups. The buffer is module-scoped (it outlives any single page mount), and
-// navigation commands already clear it on success — but a teardown without a
-// navigation command (e.g. the gameplay root unmounting while an authored
-// item-dialogue queue is still playing) would otherwise leave the buffer
-// populated for the next session. Mirrors the acquisitionController.clear()
-// call in +page.svelte's onDestroy.
-export function clearPendingAcquisitionsOnTeardown(): void {
-  clearPendingAcquisitions();
-}
-
-// Test-only: drains the module-level pending buffer so tests don't leak
-// buffered acquisition notifications across cases. Mirrors the
-// __resetStoryClearanceWarningLatches pattern in story-clearance.ts.
-export function __clearPendingAcquisitionsForTest(): void {
-  clearPendingAcquisitions();
+async function applyGameplayCommandResult(
+  result: GameplayCommandResultView,
+  onApplied?: (state: GameStateView) => void,
+): Promise<GameStateView> {
+  const request = result.thumbnailCapture;
+  if (request) pinThumbnailCaptureDeadline(request);
+  gameState.value = result.state;
+  const committedIdentity = gameState.value;
+  onApplied?.(result.state);
+  await finishThumbnailCapture(
+    { ...result, thumbnailCapture: request },
+    committedIdentity,
+  );
+  return result.state;
 }
 
 async function dispatchGameCommand(
@@ -211,41 +187,31 @@ async function dispatchGameCommand(
   let result: GameStateView | null = null;
   try {
     const previous = gameState.value;
-    const v = await runCommand<GameStateView>(command, args);
+    const v = await runCommand<GameplayCommandResultView>(command, args);
     if (v) {
-      gameState.value = v;
-      enqueueAcquisitions(previous, v, command);
-      // Audio is a non-essential side effect of a successful game-state update:
-      // the new state is already committed. An unexpected throw from SFX
-      // inference/playback must not propagate to the caller and break the game
-      // flow, so isolate it from the dispatch path.
-      //
-      // Inference and playback are isolated separately: inference is pure logic
-      // over the Rust GameStateView, so a throw there signals a contract bug
-      // (e.g. a field shape changed on the Rust side — note inferGameplaySfxEvents
-      // reads next.inventory.evidence.length with only `state?` guarded, not
-      // `inventory`). Absorbing inference into the same catch as playback would
-      // hide that drift behind a generic playback warning that is effectively
-      // invisible in a packaged WKWebView build. Log inference failures
-      // distinctly with the command so the drift is diagnosable.
-      let events: ReturnType<typeof inferGameplaySfxEvents>;
-      try {
-        events = inferGameplaySfxEvents(previous, v, command);
-      } catch (inferenceError) {
-        console.warn(
-          `[GameplayAudio] SFX inference failed for ${command}`,
-          inferenceError,
-        );
-        events = [];
-      }
-      for (const event of events) {
+      result = await applyGameplayCommandResult(v, (next) => {
+        // Audio is a non-essential side effect of a successful game-state update:
+        // the new state is already committed. An unexpected throw from SFX
+        // inference/playback must not propagate to the caller and break the game
+        // flow, so isolate it from the dispatch path.
+        let events: ReturnType<typeof inferGameplaySfxEvents>;
         try {
-          playGameplaySfxEvent(event);
-        } catch (playbackError) {
-          console.warn("[GameplayAudio] SFX playback failed", playbackError);
+          events = inferGameplaySfxEvents(previous, next, command);
+        } catch (inferenceError) {
+          console.warn(
+            `[GameplayAudio] SFX inference failed for ${command}`,
+            inferenceError,
+          );
+          events = [];
         }
-      }
-      result = v;
+        for (const event of events) {
+          try {
+            playGameplaySfxEvent(event);
+          } catch (playbackError) {
+            console.warn("[GameplayAudio] SFX playback failed", playbackError);
+          }
+        }
+      });
     }
   } finally {
     if (loading) gameState.loading = false;
@@ -263,11 +229,11 @@ async function dispatchStateCommand(
   gameState.inFlight = true;
   if (loading) gameState.loading = true;
   try {
-    const v = await runCommand<GameStateView>(command, args);
+    const v = await runCommand<GameplayCommandResultView>(command, args);
     if (v) {
-      gameState.value = v;
+      return await applyGameplayCommandResult(v);
     }
-    return v;
+    return null;
   } finally {
     if (loading) gameState.loading = false;
     gameState.inFlight = false;
@@ -276,39 +242,16 @@ async function dispatchStateCommand(
 
 export async function startGame() {
   if (gameState.inFlight) return;
-  // Clear buffered acquisition popups and the controller only after the
-  // navigation command succeeds (see jumpToScene). If start_game fails, the
-  // player remains in the previous state and both the pending buffer and any
-  // visible popup must survive so they surface when the current dialogue
-  // exhausts. dispatchGameCommand calls enqueueAcquisitions, which may flush
-  // the pending buffer into the controller if the previous state was dialogue
-  // — the post-success acquisitionController.clear() wipes those too, so no
-  // old popups leak into the new state.
-  const v = await dispatchGameCommand("start_game", undefined, true);
-  if (v) {
-    clearPendingAcquisitions();
-    acquisitionController.clear();
-  }
+  await dispatchGameCommand("start_game", undefined, true);
 }
 
 export async function resetGame() {
   if (gameState.inFlight) return;
-  // Same post-success clear pattern as startGame/jumpToScene: on failure the
-  // player remains in the previous state and both the pending buffer and any
-  // visible popup must survive.
-  const v = await dispatchGameCommand("reset_game", undefined, true);
-  if (v) {
-    clearPendingAcquisitions();
-    acquisitionController.clear();
-  }
+  await dispatchGameCommand("reset_game", undefined, true);
 }
 
 export function returnToMainMenu() {
   if (gameState.inFlight) return;
-  // Navigation resets context: drop buffered acquisition popups (see
-  // clearPendingAcquisitions) rather than surfacing them in the new state.
-  clearPendingAcquisitions();
-  acquisitionController.clear();
   gameState.value = null;
   gameState.error = null;
   gameState.loading = false;
@@ -333,21 +276,7 @@ export async function listScenes(): Promise<SceneNavigationIndex | null> {
 
 export async function jumpToScene(chapterId: string, sceneId: string) {
   if (gameState.inFlight) return;
-  // Clear buffered acquisition popups only after the jump succeeds. If the
-  // jump fails, gameState.value is unchanged (the player remains in the
-  // previous dialogue) and the buffered popups must survive so they surface
-  // when the current dialogue exhausts. dispatchStateCommand does not call
-  // enqueueAcquisitions, so there are no new notifications to preserve on
-  // success — clearing after the dispatch is safe.
-  const v = await dispatchStateCommand(
-    "jump_to_scene",
-    { chapterId, sceneId },
-    true,
-  );
-  if (v) {
-    clearPendingAcquisitions();
-    acquisitionController.clear();
-  }
+  await dispatchStateCommand("jump_to_scene", { chapterId, sceneId }, true);
 }
 
 export async function advanceDialogue(expected: QueueToken) {

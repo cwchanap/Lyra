@@ -282,6 +282,18 @@ export type InventoryTarget =
   | { kind: "evidence"; id: string }
   | { kind: "statement"; id: string };
 
+export type PendingAcquisitionView = {
+  id: string;
+  recordKind: "evidence" | "statement";
+  recordId: string;
+  title: string;
+  description: string;
+  details: string;
+  imageAssetId: string | null;
+  createdByCommandId: number;
+  ordinal: number;
+};
+
 export type GameStateView = {
   mode: Mode;
   chapter: ChapterView;
@@ -289,9 +301,7 @@ export type GameStateView = {
   inventory: Inventory;
   story: StoryStateView;
   dialogueHistory: DialogueHistoryEntry[];
+  pendingAcquisition: PendingAcquisitionView | null;
 };
 
-export type GameError = {
-  code: string;
-  message: string;
-};
+export type { GameError } from "$lib/persistence/types";

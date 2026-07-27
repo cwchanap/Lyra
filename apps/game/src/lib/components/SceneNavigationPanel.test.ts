@@ -64,6 +64,7 @@ function currentState(): GameStateView {
     inventory: { evidence: [], statements: [] },
     story: { facts: [], questions: [], objectives: [], authorizations: [] },
     dialogueHistory: [],
+    pendingAcquisition: null,
   };
 }
 
@@ -206,6 +207,7 @@ describe("SceneNavigationPanel", () => {
       inventory: { evidence: [], statements: [] },
       story: { facts: [], questions: [], objectives: [], authorizations: [] },
       dialogueHistory: [],
+      pendingAcquisition: null,
     };
 
     render(SceneNavigationPanel, {
@@ -278,6 +280,7 @@ describe("SceneNavigationPanel", () => {
       inventory: { evidence: [], statements: [] },
       story: { facts: [], questions: [], objectives: [], authorizations: [] },
       dialogueHistory: [],
+      pendingAcquisition: null,
     };
 
     render(SceneNavigationPanel, {

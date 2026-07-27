@@ -4,12 +4,18 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type {
+  AcquisitionAcknowledgementPhase,
+  PersistenceFailureTokenView,
+} from "$lib/persistence/types";
 import {
   closeTopmostEscapeClaim,
   resetEscapeCoordinator,
 } from "$lib/state/escape-coordinator";
-import type { AcquisitionNotification } from "$lib/state/acquisition-notifications";
+import type { PendingAcquisitionView } from "$lib/state/types";
 import AcquisitionPopup from "./AcquisitionPopup.svelte";
+
+const testDir = dirname(fileURLToPath(import.meta.url));
 
 const storyAssetMocks = vi.hoisted(() => ({
   placeholderForMissingStoryAsset: vi.fn(),
@@ -33,35 +39,54 @@ vi.mock("$lib/assets/story-assets", async (importOriginal) => {
   };
 });
 
-const testDir = dirname(fileURLToPath(import.meta.url));
-
-const evidenceNotification: AcquisitionNotification = {
-  key: "evidence:receipt",
-  kind: "evidence",
-  record: {
-    id: "receipt",
-    name: "咖啡收據",
-    description: "收據上的時間被圈起。",
-    details: "不應顯示的詳細資料",
-    imageAssetId: "evidence.receipt_component_test",
-    onReexamine: null,
-    collectedInChapterId: "chapter_1",
-    collectedInSceneId: "investigation_scene_1",
-  },
+const evidence: PendingAcquisitionView = {
+  id: "event-evidence",
+  recordKind: "evidence",
+  recordId: "receipt",
+  title: "咖啡收據",
+  description: "收據上的時間被圈起。",
+  details: "不應顯示的詳細資料",
+  imageAssetId: "evidence.receipt_component_test",
+  createdByCommandId: 7,
+  ordinal: 0,
 };
 
-const statementNotification: AcquisitionNotification = {
-  key: "statement:alibi",
-  kind: "statement",
-  record: {
-    id: "alibi",
-    speaker: "若月",
-    content: "我一直在店內。",
-    onReexamine: null,
-    acquiredInChapterId: "chapter_1",
-    acquiredInSceneId: "investigation_scene_1",
-  },
+const statement: PendingAcquisitionView = {
+  id: "event-statement",
+  recordKind: "statement",
+  recordId: "alibi",
+  title: "若月",
+  description: "我一直在店內。",
+  details: "我一直在店內。",
+  imageAssetId: null,
+  createdByCommandId: 8,
+  ordinal: 0,
 };
+
+const idle = { type: "idle" } satisfies AcquisitionAcknowledgementPhase;
+
+function props(
+  notification: PendingAcquisitionView = evidence,
+  phase: AcquisitionAcknowledgementPhase = idle,
+) {
+  return {
+    notification,
+    phase,
+    returnFocusTo: null,
+    fallbackFocusTarget: null,
+    onContinue: vi.fn<(eventId: string) => Promise<void>>(
+      async () => undefined,
+    ),
+    onRetry: vi.fn<(eventId: string) => Promise<void>>(async () => undefined),
+    onCancel: vi.fn<(eventId: string) => void>(),
+    onContinueWithoutSaving: vi.fn<
+      (
+        eventId: string,
+        failureToken: PersistenceFailureTokenView,
+      ) => Promise<void>
+    >(async () => undefined),
+  };
+}
 
 afterEach(() => {
   cleanup();
@@ -70,12 +95,8 @@ afterEach(() => {
 });
 
 describe("AcquisitionPopup", () => {
-  it("renders evidence copy, description, and resolved image without details", async () => {
-    const { container } = render(AcquisitionPopup, {
-      notification: evidenceNotification,
-      returnFocusTo: null,
-      onContinue: vi.fn(() => false),
-    });
+  it("renders Rust-provided evidence presentation without details", async () => {
+    const { container } = render(AcquisitionPopup, props());
 
     expect(screen.getByRole("dialog", { name: "物證取得" })).toHaveAttribute(
       "aria-modal",
@@ -93,16 +114,135 @@ describe("AcquisitionPopup", () => {
     });
   });
 
-  it("uses a generic evidence placeholder for a null image ID", async () => {
-    const noImage = {
-      ...evidenceNotification,
-      record: { ...evidenceNotification.record, imageAssetId: null },
-    };
-    const { container } = render(AcquisitionPopup, {
-      notification: noImage,
-      returnFocusTo: null,
-      onContinue: vi.fn(() => false),
+  it("renders Rust-provided statement presentation without a raster image", () => {
+    const { container } = render(AcquisitionPopup, props(statement));
+
+    expect(
+      screen.getByRole("dialog", { name: "證言取得" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("STATEMENT ACQUIRED")).toBeInTheDocument();
+    expect(screen.getByText("若月")).toBeInTheDocument();
+    expect(screen.getByText("我一直在店內。")).toBeInTheDocument();
+    expect(container.querySelector("img")).not.toBeInTheDocument();
+    expect(container.querySelector(".statement-seal")).toBeInTheDocument();
+  });
+
+  it("focuses Continue and forwards only the exact Rust event ID", async () => {
+    const user = userEvent.setup();
+    const input = props();
+    render(AcquisitionPopup, input);
+    const button = screen.getByRole("button", { name: "CONTINUE / 繼續" });
+
+    await waitFor(() => expect(button).toHaveFocus());
+    await user.click(button);
+
+    expect(input.onContinue).toHaveBeenCalledExactlyOnceWith("event-evidence");
+  });
+
+  it("shows saving immediately and the slow-saving message after the controller threshold", () => {
+    const input = props(evidence, { type: "saving", slow: false });
+    const result = render(AcquisitionPopup, input);
+
+    expect(screen.getByRole("button", { name: "儲存中…" })).toBeDisabled();
+
+    result.rerender({
+      ...input,
+      phase: { type: "saving", slow: true },
     });
+
+    expect(
+      screen.getByRole("button", { name: "仍在儲存，請稍候…" }),
+    ).toBeDisabled();
+  });
+
+  it("disables button, keyboard, and Escape dismissal while saving", async () => {
+    const user = userEvent.setup();
+    const input = props(evidence, { type: "capturing" });
+    render(AcquisitionPopup, input);
+    const button = screen.getByRole("button", { name: "儲存中…" });
+
+    expect(button).toBeDisabled();
+    await user.keyboard("{Enter} ");
+    expect(closeTopmostEscapeClaim()).toBe(true);
+    expect(input.onContinue).not.toHaveBeenCalled();
+  });
+
+  it("renders typed failure actions and keeps Cancel on the same event", async () => {
+    const user = userEvent.setup();
+    const failureToken = "failure-token-1";
+    const input = props(evidence, {
+      type: "failed",
+      diagnostic: {
+        code: "saveWriteFailed",
+        message: "無法寫入存檔。",
+        failureToken,
+      },
+      failureToken,
+    });
+    render(AcquisitionPopup, input);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("無法寫入存檔。");
+    await user.click(screen.getByRole("button", { name: "重試" }));
+    expect(input.onRetry).toHaveBeenCalledExactlyOnceWith("event-evidence");
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    expect(input.onCancel).toHaveBeenCalledExactlyOnceWith("event-evidence");
+  });
+
+  it("requires a second confirmation before continuing with the exact token", async () => {
+    const user = userEvent.setup();
+    const failureToken = "failure-token-1";
+    const input = props(evidence, {
+      type: "failed",
+      diagnostic: {
+        code: "saveWriteFailed",
+        message: "無法寫入存檔。",
+        failureToken,
+      },
+      failureToken,
+    });
+    render(AcquisitionPopup, input);
+
+    await user.click(screen.getByRole("button", { name: "不儲存並繼續" }));
+    expect(input.onContinueWithoutSaving).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "此取得通知可能會在重新啟動後再次出現。",
+    );
+    await user.click(screen.getByRole("button", { name: "確認不儲存並繼續" }));
+
+    expect(input.onContinueWithoutSaving).toHaveBeenCalledExactlyOnceWith(
+      "event-evidence",
+      failureToken,
+    );
+  });
+
+  it("restores focus to the stable gameplay fallback after authoritative closure", async () => {
+    const primary = document.createElement("button");
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.append(primary, fallback);
+    const result = render(AcquisitionPopup, {
+      ...props(),
+      returnFocusTo: primary,
+      fallbackFocusTarget: fallback,
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "CONTINUE / 繼續" }),
+      ).toHaveFocus(),
+    );
+    primary.remove();
+
+    result.unmount();
+
+    await waitFor(() => expect(fallback).toHaveFocus());
+    fallback.remove();
+  });
+
+  it("uses a generic evidence placeholder for a null image ID", async () => {
+    const { container } = render(
+      AcquisitionPopup,
+      props({ ...evidence, imageAssetId: null }),
+    );
 
     await waitFor(() => {
       expect(container.querySelector("img.evidence-image")).toHaveAttribute(
@@ -113,11 +253,7 @@ describe("AcquisitionPopup", () => {
   });
 
   it("falls back when a resolved evidence image emits an error", async () => {
-    const { container } = render(AcquisitionPopup, {
-      notification: evidenceNotification,
-      returnFocusTo: null,
-      onContinue: vi.fn(() => false),
-    });
+    const { container } = render(AcquisitionPopup, props());
     const image = await waitFor(() => {
       const result = container.querySelector("img.evidence-image");
       expect(result).toBeInTheDocument();
@@ -134,112 +270,70 @@ describe("AcquisitionPopup", () => {
     });
   });
 
-  it("renders statement copy, speaker, content, and no raster image", () => {
-    const { container } = render(AcquisitionPopup, {
-      notification: statementNotification,
-      returnFocusTo: null,
-      onContinue: vi.fn(() => false),
-    });
-
-    expect(
-      screen.getByRole("dialog", { name: "證言取得" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("STATEMENT ACQUIRED")).toBeInTheDocument();
-    expect(screen.getByText("若月")).toBeInTheDocument();
-    expect(screen.getByText("我一直在店內。")).toBeInTheDocument();
-    expect(container.querySelector("img")).not.toBeInTheDocument();
-    expect(container.querySelector(".statement-seal")).toBeInTheDocument();
-  });
-
   it("focuses Continue, traps Tab, and forwards the current key", async () => {
     const user = userEvent.setup();
-    const onContinue = vi.fn(() => false);
-    render(AcquisitionPopup, {
-      notification: evidenceNotification,
-      returnFocusTo: null,
-      onContinue,
-    });
+    const input = props();
+    render(AcquisitionPopup, input);
     const button = screen.getByRole("button", { name: "CONTINUE / 繼續" });
 
     await waitFor(() => expect(button).toHaveFocus());
     await user.tab();
     expect(button).toHaveFocus();
     await user.keyboard("{Enter}");
-    expect(onContinue).toHaveBeenCalledExactlyOnceWith("evidence:receipt");
+    expect(input.onContinue).toHaveBeenCalledExactlyOnceWith("event-evidence");
   });
 
   it("dismisses from a pointer click", async () => {
     const user = userEvent.setup();
-    const onContinue = vi.fn(() => false);
-    render(AcquisitionPopup, {
-      notification: evidenceNotification,
-      returnFocusTo: null,
-      onContinue,
-    });
+    const input = props();
+    render(AcquisitionPopup, input);
 
     await user.click(screen.getByRole("button", { name: "CONTINUE / 繼續" }));
 
-    expect(onContinue).toHaveBeenCalledExactlyOnceWith("evidence:receipt");
+    expect(input.onContinue).toHaveBeenCalledExactlyOnceWith("event-evidence");
   });
 
   it("dismisses from Space on the focused native button", async () => {
     const user = userEvent.setup();
-    const onContinue = vi.fn(() => false);
-    render(AcquisitionPopup, {
-      notification: evidenceNotification,
-      returnFocusTo: null,
-      onContinue,
-    });
+    const input = props();
+    render(AcquisitionPopup, input);
     const button = screen.getByRole("button", { name: "CONTINUE / 繼續" });
 
     await waitFor(() => expect(button).toHaveFocus());
     await user.keyboard(" ");
 
-    expect(onContinue).toHaveBeenCalledExactlyOnceWith("evidence:receipt");
+    expect(input.onContinue).toHaveBeenCalledExactlyOnceWith("event-evidence");
   });
 
-  it("does not double-dismiss when Space fires on a non-final item", async () => {
+  it("does not double-dismiss when Space fires while the save begins", async () => {
     const user = userEvent.setup();
-    const onContinue = vi.fn(() => true);
-    render(AcquisitionPopup, {
-      notification: evidenceNotification,
-      returnFocusTo: null,
-      onContinue,
-    });
+    const input = props();
+    render(AcquisitionPopup, input);
     const button = screen.getByRole("button", { name: "CONTINUE / 繼續" });
 
     await waitFor(() => expect(button).toHaveFocus());
     await user.keyboard(" ");
 
-    expect(onContinue).toHaveBeenCalledExactlyOnceWith("evidence:receipt");
+    expect(input.onContinue).toHaveBeenCalledExactlyOnceWith("event-evidence");
   });
 
-  it("routes Escape through the coordinator and releases on the final item", async () => {
-    const onContinue = vi.fn(() => false);
-    render(AcquisitionPopup, {
-      notification: evidenceNotification,
-      returnFocusTo: null,
-      onContinue,
-    });
+  it("routes Escape through the coordinator while idle", async () => {
+    const input = props();
+    render(AcquisitionPopup, input);
 
     await waitFor(() => {
       expect(closeTopmostEscapeClaim()).toBe(true);
     });
-    expect(onContinue).toHaveBeenCalledExactlyOnceWith("evidence:receipt");
-    expect(closeTopmostEscapeClaim()).toBe(false);
+    expect(input.onContinue).toHaveBeenCalledExactlyOnceWith("event-evidence");
   });
 
   it("does not dismiss from a backdrop click", async () => {
     const user = userEvent.setup();
-    const onContinue = vi.fn(() => false);
-    const { container } = render(AcquisitionPopup, {
-      notification: evidenceNotification,
-      returnFocusTo: null,
-      onContinue,
-    });
+    const input = props();
+    const { container } = render(AcquisitionPopup, input);
 
     await user.click(container.querySelector(".acquisition-scrim")!);
-    expect(onContinue).not.toHaveBeenCalled();
+    expect(input.onContinue).not.toHaveBeenCalled();
   });
 
   it("restores a connected focus target after unmount", async () => {
@@ -247,9 +341,8 @@ describe("AcquisitionPopup", () => {
     document.body.append(target);
     target.focus();
     const result = render(AcquisitionPopup, {
-      notification: evidenceNotification,
+      ...props(),
       returnFocusTo: target,
-      onContinue: vi.fn(() => false),
     });
 
     await waitFor(() => {
@@ -262,46 +355,14 @@ describe("AcquisitionPopup", () => {
     target.remove();
   });
 
-  it("falls back to fallbackFocusTarget when returnFocusTo is disconnected", async () => {
-    const target = document.createElement("button");
-    document.body.append(target);
-    const fallback = document.createElement("div");
-    fallback.tabIndex = -1;
-    document.body.append(fallback);
-    const result = render(AcquisitionPopup, {
-      notification: evidenceNotification,
-      returnFocusTo: target,
-      fallbackFocusTarget: fallback,
-      onContinue: vi.fn(() => false),
-    });
-
-    await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: "CONTINUE / 繼續" }),
-      ).toHaveFocus();
-    });
-    // Disconnect the primary target (simulates DialogueBox unmounting when
-    // an on_collect queue empties and the mode flips to explore).
-    target.remove();
-    result.unmount();
-    await waitFor(() => expect(fallback).toHaveFocus());
-    fallback.remove();
-  });
-
   it("falls back to fallbackFocusTarget when returnFocusTo is document.body", async () => {
-    // When the popup is advanced by a pointer click on the click-only .box,
-    // document.activeElement can be document.body. The page stores that as
-    // returnFocusTo. body.isConnected is true, so without treating body as a
-    // non-target the popup would focus body and never reach fallbackFocusTarget,
-    // leaving keyboard/SR users without a gameplay focus target after dismiss.
     const fallback = document.createElement("div");
     fallback.tabIndex = -1;
     document.body.append(fallback);
     const result = render(AcquisitionPopup, {
-      notification: evidenceNotification,
+      ...props(),
       returnFocusTo: document.body,
       fallbackFocusTarget: fallback,
-      onContinue: vi.fn(() => false),
     });
 
     await waitFor(() => {
@@ -328,6 +389,6 @@ describe("AcquisitionPopup", () => {
     expect(source).toContain("animation: none");
     expect(source).toContain("max-height: min(220px, 32dvh)");
     expect(source).toContain("overflow-y: auto");
-    expect(source).toContain("!cancelled && notification.key === key");
+    expect(source).toContain("!cancelled && notification.id === eventId");
   });
 });
