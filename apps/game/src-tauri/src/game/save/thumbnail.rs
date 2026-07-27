@@ -8,6 +8,50 @@ use sha2::{Digest, Sha256};
 pub(crate) const PNG_HEADER_BYTES: usize = 33;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ValidatedThumbnailCandidate {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) byte_length: u32,
+    pub(crate) sha256: String,
+}
+
+impl ValidatedThumbnailCandidate {
+    pub(crate) fn from_png(bytes: Vec<u8>) -> Result<Self, GameError> {
+        if bytes.len() > MAX_THUMBNAIL_BYTES {
+            return Err(GameError::thumbnail_png_too_large());
+        }
+        let (width, height) = parse_png_header(&bytes)?;
+        validate_dimensions(width, height)?;
+        let digest = Sha256::digest(&bytes);
+        Ok(Self {
+            byte_length: bytes.len() as u32,
+            bytes,
+            width,
+            height,
+            sha256: format!("sha256:{digest:x}"),
+        })
+    }
+
+    pub(crate) fn bind(self, object_id: &str) -> Result<ValidatedThumbnail, GameError> {
+        canonical_uuid_v4(object_id)?;
+        let descriptor = ThumbnailDescriptorV1::Available {
+            object_id: object_id.into(),
+            format: ThumbnailFormat::Png,
+            width: self.width,
+            height: self.height,
+            byte_length: self.byte_length,
+            sha256: self.sha256,
+        };
+        validate_descriptor(object_id, &descriptor)?;
+        Ok(ValidatedThumbnail {
+            bytes: self.bytes,
+            descriptor,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(dead_code)] // Task 7/10 consume validated thumbnail candidates through storage.
 pub(crate) struct ValidatedThumbnail {
     pub(crate) bytes: Vec<u8>,
@@ -17,22 +61,7 @@ pub(crate) struct ValidatedThumbnail {
 impl ValidatedThumbnail {
     #[allow(dead_code)] // Task 7/10 construct thumbnails before save command wiring lands.
     pub(crate) fn from_png(bytes: Vec<u8>, object_id: &str) -> Result<Self, GameError> {
-        canonical_uuid_v4(object_id)?;
-        if bytes.len() > MAX_THUMBNAIL_BYTES {
-            return Err(GameError::thumbnail_png_too_large());
-        }
-        let (width, height) = parse_png_header(&bytes)?;
-        let digest = Sha256::digest(&bytes);
-        let descriptor = ThumbnailDescriptorV1::Available {
-            object_id: object_id.into(),
-            format: ThumbnailFormat::Png,
-            width,
-            height,
-            byte_length: bytes.len() as u32,
-            sha256: format!("sha256:{digest:x}"),
-        };
-        validate_descriptor(object_id, &descriptor)?;
-        Ok(Self { bytes, descriptor })
+        ValidatedThumbnailCandidate::from_png(bytes)?.bind(object_id)
     }
 
     pub(super) fn validate_for(&self, save_id: &str) -> Result<(), GameError> {
@@ -54,7 +83,15 @@ pub(crate) fn parse_png_header(bytes: &[u8]) -> Result<(u32, u32), GameError> {
     }
     let width = u32::from_be_bytes(bytes[16..20].try_into().expect("fixed IHDR width"));
     let height = u32::from_be_bytes(bytes[20..24].try_into().expect("fixed IHDR height"));
+    validate_dimensions(width, height)?;
     Ok((width, height))
+}
+
+fn validate_dimensions(width: u32, height: u32) -> Result<(), GameError> {
+    if width == 0 || height == 0 || width > MAX_THUMBNAIL_WIDTH || height > MAX_THUMBNAIL_HEIGHT {
+        return Err(GameError::thumbnail_dimensions_out_of_bounds());
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_png_bytes_for_descriptor(
