@@ -554,9 +554,26 @@ fn get_thumbnail_activity(state: tauri::State<'_, AppState>) -> ThumbnailActivit
     thumbnail_activity_snapshot(&state.coordinator)
 }
 
+fn challengeable_flush_failure(error: GameError) -> Result<GameError, GameError> {
+    if error.is_persistence_operation_in_progress() {
+        Err(error)
+    } else {
+        Ok(error)
+    }
+}
+
 async fn list_saves_core(
     state: &AppState,
     discover: impl FnOnce() -> SaveBrowserView,
+) -> Result<SaveBrowserOpenResultView, GameError> {
+    list_saves_core_impl(state, discover, |_| Ok(()), |_, _| Ok(())).await
+}
+
+async fn list_saves_core_impl(
+    state: &AppState,
+    discover: impl FnOnce() -> SaveBrowserView,
+    before_flush: impl FnOnce(&AppState) -> Result<(), GameError>,
+    after_flush_error: impl FnOnce(&AppState, &GameError) -> Result<(), GameError>,
 ) -> Result<SaveBrowserOpenResultView, GameError> {
     let has_active_session = {
         let session = state.session.lock().map_err(|_| unavailable_error())?;
@@ -564,11 +581,22 @@ async fn list_saves_core(
         session.engine.is_some()
     };
     let flush_error = if has_active_session {
-        state
+        before_flush(state)?;
+        match state
             .coordinator
             .flush_session(state, FlushOperation::InGameLoad)
             .await
-            .err()
+        {
+            Ok(_) => None,
+            Err(error) => {
+                let classified = challengeable_flush_failure(error);
+                let original = match &classified {
+                    Ok(error) | Err(error) => error,
+                };
+                after_flush_error(state, original)?;
+                Some(classified?)
+            }
+        }
     } else {
         None
     };
@@ -595,6 +623,16 @@ async fn list_saves_core(
         continue_candidate,
         preflight,
     })
+}
+
+#[cfg(test)]
+async fn list_saves_core_with_flush_hooks(
+    state: &AppState,
+    discover: impl FnOnce() -> SaveBrowserView,
+    before_flush: impl FnOnce(&AppState) -> Result<(), GameError>,
+    after_flush_error: impl FnOnce(&AppState, &GameError) -> Result<(), GameError>,
+) -> Result<SaveBrowserOpenResultView, GameError> {
+    list_saves_core_impl(state, discover, before_flush, after_flush_error).await
 }
 
 #[tauri::command]
@@ -946,6 +984,7 @@ async fn load_save_core_impl(
             .flush_session(state, FlushOperation::InGameLoad)
             .await
         {
+            let error = challengeable_flush_failure(error)?;
             return Err(state.coordinator.challenge_current_selected_save_failure(
                 state,
                 PersistenceBypassOperation::LoadDiscardingCurrent,
@@ -1036,6 +1075,7 @@ async fn continue_game_core_impl(
             .flush_session(state, FlushOperation::InGameLoad)
             .await
         {
+            let error = challengeable_flush_failure(error)?;
             return Err(state.coordinator.challenge_current_discovery_failure(
                 state,
                 PersistenceBypassOperation::LoadDiscardingCurrent,
@@ -1173,6 +1213,7 @@ async fn return_to_title_core_impl(
         .flush_session(state, FlushOperation::ReturnToTitle)
         .await
     {
+        let error = challengeable_flush_failure(error)?;
         return Err(state.coordinator.challenge_current_session_error(
             state,
             PersistenceBypassOperation::ReturnWithoutSaving,
@@ -2243,6 +2284,63 @@ mod tests {
             .unwrap_err();
             assert_eq!(bypass.code, "stalePersistenceFailureToken");
             assert_eq!(session_observation(&app), before);
+        }
+
+        #[tokio::test]
+        async fn busy_flush_cannot_mint_token_after_exclusive_intent_rolls_back() {
+            let app = mutation_app();
+            app.session
+                .lock()
+                .unwrap()
+                .ensure_persistence_available()
+                .unwrap();
+
+            let error = list_saves_core_with_flush_hooks(
+                &app,
+                discovered_browser,
+                |app| {
+                    app.session.lock().unwrap().persistence.exclusive_intent =
+                        Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+                    Ok(())
+                },
+                |app, error| {
+                    assert_eq!(error, &GameError::persistence_operation_in_progress());
+                    app.session.lock().unwrap().persistence.exclusive_intent = None;
+                    Ok(())
+                },
+            )
+            .await
+            .unwrap_err();
+
+            assert_eq!(error, GameError::persistence_operation_in_progress());
+            assert!(error.failure_token.is_none());
+            app.session
+                .lock()
+                .unwrap()
+                .ensure_persistence_available()
+                .unwrap();
+        }
+
+        #[test]
+        fn flush_failure_bypass_policy_only_propagates_busy_errors() {
+            let busy = GameError::persistence_operation_in_progress();
+            assert_eq!(
+                challengeable_flush_failure(busy.clone()),
+                Err(busy),
+                "exclusive-operation failures are never bypassable"
+            );
+
+            for challengeable in [
+                GameError::save_write_failed(),
+                GameError::save_sync_failed(),
+                GameError::save_replace_failed(),
+            ] {
+                assert_eq!(
+                    challengeable_flush_failure(challengeable.clone()),
+                    Ok(challengeable),
+                    "genuine durability failures retain challenge authority"
+                );
+            }
         }
 
         #[test]

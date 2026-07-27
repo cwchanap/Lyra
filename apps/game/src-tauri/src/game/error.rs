@@ -132,6 +132,9 @@ impl GameError {
             "A persistence operation is already in progress.",
         )
     }
+    pub fn is_persistence_operation_in_progress(&self) -> bool {
+        self.code == "persistenceOperationInProgress"
+    }
     pub fn stale_manual_overwrite_confirmation() -> Self {
         Self::new(
             "staleManualOverwriteConfirmation",
