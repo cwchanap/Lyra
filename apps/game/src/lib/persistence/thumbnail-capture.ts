@@ -640,6 +640,15 @@ function currentCrossfadeLayers(root: HTMLElement): {
         layer.getAttribute("data-save-crossfade-request"),
     );
     if (
+      current.length === 0 &&
+      layers.every(
+        (layer) =>
+          layer.getAttribute("data-save-crossfade-state") === "leaving",
+      )
+    ) {
+      continue;
+    }
+    if (
       current.some(
         (layer) =>
           layer.getAttribute("data-save-crossfade-state") === "pending",
@@ -927,10 +936,7 @@ export function createHtmlToImageGameplayCapture(input: {
           sourceHeight,
           winners,
         );
-        const renderOptions =
-          import.meta.env.VITE_LYRA_E2E_CAPTURE_PROOF === "1"
-            ? curatedCaptureOptions(baseRenderOptions)
-            : baseRenderOptions;
+        const renderOptions = curatedCaptureOptions(baseRenderOptions);
         const assetLayers = gameplayCaptureAssetLayers(
           root,
           winners,
@@ -1025,7 +1031,7 @@ export function createPackagedCaptureProofCapture(
   };
 }
 
-const PACKAGED_CAPTURE_CURATED_STYLE_PROPERTIES = [
+const GAMEPLAY_CAPTURE_CURATED_STYLE_PROPERTIES = [
   "display",
   "position",
   "inset",
@@ -1172,7 +1178,7 @@ function curatedCaptureOptions(
 ): HtmlToImageOptions {
   return {
     ...options,
-    includeStyleProperties: [...PACKAGED_CAPTURE_CURATED_STYLE_PROPERTIES],
+    includeStyleProperties: [...GAMEPLAY_CAPTURE_CURATED_STYLE_PROPERTIES],
   };
 }
 

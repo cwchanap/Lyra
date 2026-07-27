@@ -663,6 +663,40 @@ function installFontsReady(ready: Promise<unknown> = Promise.resolve()): void {
 }
 
 describe("html-to-image gameplay capture", () => {
+  it("passes the curated WebKit style properties to the ordinary renderer", async () => {
+    const root = captureRoot();
+    root.append(loadedImage());
+    installFontsReady();
+    const png = new Blob([new Uint8Array([137, 80, 78, 71])], {
+      type: "image/png",
+    });
+    const renderToBlob = vi.fn(async (..._args: unknown[]) => png);
+    const request = { ticket: "capture-curated-styles", timeoutMs: 725 };
+    pinThumbnailCaptureDeadline(request, 0);
+    const capture = createHtmlToImageGameplayCapture({
+      root: () => root,
+      now: () => 0,
+      renderToBlob,
+    });
+
+    await expect(capture.capture(request)).resolves.toMatchObject({
+      type: "available",
+    });
+
+    const [, options] = renderToBlob.mock.calls[0] ?? [];
+    expect((options as Options).includeStyleProperties).toEqual(
+      expect.arrayContaining([
+        "display",
+        "grid-template-columns",
+        "clip-path",
+        "background-image",
+        "font-family",
+        "--save-crossfade-opacity",
+        "--save-crossfade-transition",
+      ]),
+    );
+  });
+
   it("waits for fonts and images, filters the cloned tree, and returns fitted PNG bytes", async () => {
     const root = captureRoot();
     const ordinary = loadedImage();
@@ -866,6 +900,41 @@ describe("html-to-image gameplay capture", () => {
         destination: { x: 300, y: 0, width: 120, height: 180 },
       },
     ]);
+  });
+
+  it("captures an immediate no-image state while excluding every leaving asset", async () => {
+    const root = captureRoot();
+    const portraitGroup = document.createElement("div");
+    const leavingPortrait = loadedImage({
+      "data-save-crossfade-layer": "",
+      "data-save-crossfade-request": "2",
+      "data-save-crossfade-order": "1",
+      "data-save-crossfade-state": "leaving",
+      "data-save-thumbnail-asset-role": "portrait",
+    });
+    portraitGroup.append(leavingPortrait);
+    root.append(portraitGroup);
+    installFontsReady();
+
+    const png = new Blob([new Uint8Array([137, 80, 78, 71])], {
+      type: "image/png",
+    });
+    const renderToBlob = vi.fn(async (..._args: unknown[]) => png);
+    const request = { ticket: "capture-no-image", timeoutMs: 725 };
+    pinThumbnailCaptureDeadline(request, 0);
+    const capture = createHtmlToImageGameplayCapture({
+      root: () => root,
+      now: () => 0,
+      renderToBlob,
+    });
+
+    await expect(capture.capture(request)).resolves.toMatchObject({
+      type: "available",
+    });
+
+    const [, options, assets] = renderToBlob.mock.calls[0] ?? [];
+    expect((options as Options).filter?.(leavingPortrait)).toBe(false);
+    expect(assets).toEqual([]);
   });
 
   it("returns unavailable when the current crossfade request stays pending until the fixed deadline", async () => {
