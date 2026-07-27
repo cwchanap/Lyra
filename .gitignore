@@ -36,3 +36,4 @@ packages/scripts/.audio-cache/
 coverage/
 test-results/
 apps/game/logs/
+apps/game/e2e-artifacts/

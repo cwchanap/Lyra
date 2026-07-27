@@ -44,6 +44,7 @@ export const config: WebdriverIO.Config = {
       {
         driverProvider: "embedded",
         appBinaryPath,
+        captureBackendLogs: process.env.LYRA_E2E_CAPTURE_BACKEND_LOGS === "1",
       },
     ],
   ],

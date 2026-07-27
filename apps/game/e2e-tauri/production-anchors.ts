@@ -36,6 +36,19 @@ export const anchors = {
   },
   // InvestigationSceneSurface: aria-label={`${activeCharacter.name}詢問項目`}
   topicPopoverName: "早坂茜詢問項目",
+  captureProof: {
+    root: "[data-save-thumbnail-root]",
+    probe: "[data-hpa-392-capture-proof]",
+    refresh: "[data-hpa-392-capture-proof-refresh]",
+    forceUnavailable: "[data-hpa-392-capture-proof-force-unavailable]",
+    thumbnail: "[data-hpa-392-capture-proof-thumbnail]",
+    sceneId: "scene_2",
+    sceneEntryDialogue: "三宅蒼太的母親",
+    preSwapDialogue: "我胃不好",
+    leavingPortrait: "portraits/miyake_mother/standard.png",
+    newestPortrait: "portraits/soma_ritsu/standard.png",
+    recoveryPortraitDialogue: "他在店裡",
+  },
 } as const;
 
 /** Dialogs use aria-labelledby (not aria-label). Match via heading text. */

@@ -36,11 +36,12 @@
 </script>
 
 {#if sceneTag || backgroundAssetId || resolved}
-  <div class="backdrop">
+  <div class="backdrop" data-save-thumbnail-layout="backdrop">
     <CrossfadeImage
       src={resolved?.url ?? null}
       imageClass="background-image"
       imageStyle="--crossfade-visible-opacity: 0.52;"
+      dataAttributes={{ "save-thumbnail-asset-role": "background" }}
       alt=""
       ariaHidden={true}
       onImageError={handleBackgroundError}

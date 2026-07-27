@@ -14,6 +14,7 @@
   type ImageLayer = {
     id: number;
     key: string;
+    requestOrder: number;
     src: string;
     visible: boolean;
     leaving: boolean;
@@ -47,6 +48,8 @@
 
   let layers = $state<ImageLayer[]>([]);
   let layerSequence = 0;
+  let requestSequence = 0;
+  let currentRequestOrder = $state(0);
   // Intentionally a plain `let`, not `$state`: this tracks the last requested
   // transition key inside untrack() so it must NOT trigger reactivity. Making
   // it reactive would re-run the $effect on every assignment and re-enter the
@@ -86,6 +89,7 @@
       }
 
       lastRequestedKey = desiredKey;
+      currentRequestOrder = ++requestSequence;
 
       if (!desiredSrc || !desiredKey) {
         fadeOutAllLayers();
@@ -96,7 +100,21 @@
         (layer) => layer.key === desiredKey && !layer.leaving,
       );
       if (existing) {
-        activateLayer(existing.id);
+        if (existing.pending) {
+          const leavingIds = layers
+            .filter((layer) => layer.id !== existing.id)
+            .map((layer) => layer.id);
+          layers = layers.map((layer) =>
+            layer.id === existing.id
+              ? { ...layer, requestOrder: currentRequestOrder }
+              : { ...layer, visible: false, pending: false, leaving: true },
+          );
+          for (const id of leavingIds) {
+            scheduleRemoval(id);
+          }
+          return;
+        }
+        activateLayer(existing.id, currentRequestOrder);
         return;
       }
 
@@ -111,10 +129,11 @@
       const nextLayer: ImageLayer = {
         id: ++layerSequence,
         key: desiredKey,
+        requestOrder: currentRequestOrder,
         src: desiredSrc,
         visible: !hasVisibleLayer,
         leaving: false,
-        pending: hasVisibleLayer,
+        pending: true,
         presentation,
       };
       layers = [...retainedLayers, nextLayer];
@@ -180,7 +199,7 @@
     }
   }
 
-  function activateLayer(layerId: number) {
+  function activateLayer(layerId: number, requestOrder?: number) {
     const target = layers.find((layer) => layer.id === layerId);
     if (!target || target.leaving) {
       return;
@@ -192,7 +211,13 @@
 
     layers = layers.map((layer) =>
       layer.id === layerId
-        ? { ...layer, visible: true, pending: false, leaving: false }
+        ? {
+            ...layer,
+            requestOrder: requestOrder ?? layer.requestOrder,
+            visible: true,
+            pending: false,
+            leaving: false,
+          }
         : { ...layer, visible: false, pending: false, leaving: true },
     );
 
@@ -257,6 +282,9 @@
       }
       return;
     }
+    if (!layer.pending) {
+      return;
+    }
     onImageLoad?.(event);
     activateLayer(layer.id);
   }
@@ -272,10 +300,11 @@
       }
       return;
     }
-    onImageError?.(event);
-    if (layer.pending) {
-      removeLayer(layer.id);
+    if (!layer.pending) {
+      return;
     }
+    onImageError?.(event);
+    removeLayer(layer.id);
   }
 
   $effect(() => {
@@ -297,6 +326,14 @@
     {alt}
     aria-hidden={layer.leaving ? "true" : layer.presentation.ariaHidden}
     style={layer.presentation.style}
+    data-save-crossfade-layer=""
+    data-save-crossfade-request={currentRequestOrder}
+    data-save-crossfade-order={layer.requestOrder}
+    data-save-crossfade-state={layer.leaving
+      ? "leaving"
+      : layer.pending
+        ? "pending"
+        : "visible"}
     {...layer.presentation.dataProps}
     onload={(event) => handleLoad(layer.id, event)}
     onerror={(event) => handleError(layer.id, event)}
@@ -306,11 +343,14 @@
 <style>
   .crossfade-image-layer {
     opacity: 0;
-    transition: opacity var(--crossfade-duration, 300ms) ease;
+    transition: var(
+      --save-crossfade-transition,
+      opacity var(--crossfade-duration, 300ms) ease
+    );
   }
 
   .crossfade-image-layer.visible {
-    opacity: var(--crossfade-visible-opacity, 1);
+    opacity: var(--save-crossfade-opacity, var(--crossfade-visible-opacity, 1));
   }
 
   .crossfade-image-layer.leaving {

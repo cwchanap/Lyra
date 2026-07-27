@@ -323,13 +323,14 @@
     <div class="rule"></div>
   {/if}
 
-  <main inert={open}>
+  <main data-save-thumbnail-layout="main" inert={open}>
     {@render children()}
   </main>
 
   {#if open}
     <div
       class="game-menu-scrim"
+      data-save-thumbnail-exclude=""
       role="dialog"
       aria-modal="true"
       aria-labelledby="game-menu-title"

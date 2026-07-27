@@ -348,18 +348,51 @@ describe("emitter", () => {
           kind: "line",
           speaker: "A",
           text: "hi",
-          expression: null,
           portrait: null,
         },
         {
           kind: "line",
           speaker: "B",
           text: "worried",
-          expression: "concerned",
           portrait: null,
         },
       ],
       assetRefs: [{ type: "background", assetId: "bg_street" }],
+    });
+  });
+
+  it("omits the legacy line expression while preserving portrait.expression", () => {
+    const ast: ASTLinearScene = {
+      kind: "linearScene",
+      id: "scene_portrait",
+      title: "Portrait",
+      queue: [
+        {
+          kind: "line",
+          speaker: "A",
+          text: "hi",
+          expression: "concerned",
+          portrait: {
+            characterId: "a",
+            expression: "concerned",
+            assetId: "portrait.a.concerned",
+          },
+        },
+      ],
+      assetRefs: [],
+      sourceFile: "scene_portrait.md",
+      line: 1,
+    };
+
+    expect(emitLinearScene(ast).queue[0]).toEqual({
+      kind: "line",
+      speaker: "A",
+      text: "hi",
+      portrait: {
+        characterId: "a",
+        expression: "concerned",
+        assetId: "portrait.a.concerned",
+      },
     });
   });
 

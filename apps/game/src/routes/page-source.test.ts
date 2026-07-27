@@ -66,6 +66,221 @@ describe("+page acquisition popup ownership", () => {
   });
 });
 
+describe("+page save-thumbnail boundary", () => {
+  it("marks exactly one real gameplay root and keeps page overlays outside or excluded", () => {
+    const source = pageSource();
+
+    expect(source.match(/data-save-thumbnail-root/g)).toHaveLength(1);
+    expect(source).toContain('data-save-thumbnail-root=""');
+    expect(source.indexOf('data-save-thumbnail-root=""')).toBeLessThan(
+      source.indexOf("<GameShell"),
+    );
+    expect(source.indexOf("</GameShell>")).toBeLessThan(
+      source.indexOf("<AcquisitionPopup"),
+    );
+    expect(source).toContain(
+      '<div data-save-thumbnail-exclude="">\n          <ErrorBanner',
+    );
+    expect(source).toContain(
+      '<div class="menu-error" data-save-thumbnail-exclude="">',
+    );
+  });
+
+  it("excludes the Escape menu while retaining the shell HUD in the capture root", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/lib/components/GameShell.svelte"),
+      "utf8",
+    );
+
+    expect(source).toContain('class="game-menu-scrim"');
+    expect(source).toContain('data-save-thumbnail-exclude=""');
+    expect(source.indexOf("{#if open}")).toBeLessThan(
+      source.indexOf('class="game-menu-scrim"'),
+    );
+    expect(source.indexOf('data-save-thumbnail-exclude=""')).toBeGreaterThan(
+      source.indexOf('class="game-menu-scrim"'),
+    );
+  });
+
+  it("excludes only the decorative rain canvas before html-to-image cloning", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/lib/components/GameAtmosphere.svelte"),
+      "utf8",
+    );
+
+    expect(source).toMatch(
+      /<canvas class="rain" data-save-thumbnail-exclude="" bind:this=\{canvas\}/,
+    );
+    expect(source.match(/<canvas/g)).toHaveLength(1);
+    expect(source).toContain("packaged WebKit");
+    expect(source).toContain("CSS atmosphere layers");
+  });
+
+  it("marks only clone-layout artwork so packaged SVG normalization cannot mutate live positioning", () => {
+    const component = (name: string) =>
+      readFileSync(
+        join(process.cwd(), `src/lib/components/${name}.svelte`),
+        "utf8",
+      );
+    const shell = component("GameShell");
+    const atmosphere = component("GameAtmosphere");
+    const backdrop = component("SceneBackdrop");
+    const dialogue = component("DialogueBox");
+    const investigation = component("InvestigationSceneSurface");
+    const capture = readFileSync(
+      join(process.cwd(), "src/lib/persistence/thumbnail-capture.ts"),
+      "utf8",
+    );
+
+    expect(shell).toContain('data-save-thumbnail-layout="main"');
+    expect(atmosphere).toContain('data-save-thumbnail-layout="atmosphere"');
+    expect(atmosphere).toContain('data-save-thumbnail-atmosphere-wash=""');
+    expect(backdrop).toContain('data-save-thumbnail-layout="backdrop"');
+    expect(backdrop).toContain('imageClass="background-image"');
+    expect(backdrop).toContain('"save-thumbnail-asset-role": "background"');
+    expect(dialogue).toContain("imageClass={`portrait ${portraitPlacement}`}");
+    expect(dialogue).toContain('"save-thumbnail-asset-role": "portrait"');
+    expect(dialogue).toContain('data-save-thumbnail-layer="over-portrait"');
+    expect(investigation).toContain('imageClass="background-image"');
+    expect(investigation).toContain(
+      '"save-thumbnail-asset-role": "background"',
+    );
+    expect(capture).toContain("normalizeGameplayCaptureSvg(serializedSvgUrl)");
+    expect(capture).toContain("THUMBNAIL_ASSET_ROLE_ATTRIBUTE");
+    expect(capture).not.toContain('root.style.setProperty("--save-thumbnail');
+  });
+
+  it("compile-gates the closed packaged proof outside the capture root", () => {
+    const source = pageSource();
+    const probeSource = readFileSync(
+      join(
+        process.cwd(),
+        "src/lib/test-harnesses/PackagedCaptureProofProbe.svelte",
+      ),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      'import.meta.env.VITE_LYRA_E2E_CAPTURE_PROOF === "1"',
+    );
+    expect(source).toContain("<PackagedCaptureProofProbe");
+    expect(source.indexOf("</GameShell>")).toBeLessThan(
+      source.indexOf("<PackagedCaptureProofProbe"),
+    );
+    expect(source.indexOf("<PackagedCaptureProofProbe")).toBeLessThan(
+      source.indexOf("<AcquisitionPopup"),
+    );
+    expect(probeSource).toContain('data-save-thumbnail-exclude=""');
+    expect(probeSource).toContain('"list_saves"');
+    expect(probeSource).not.toContain("window.");
+    expect(probeSource).not.toContain("eval(");
+  });
+
+  it("wires the proof wrapper instance into gameplay dispatch and exposes only owning-command settlement", () => {
+    const source = pageSource();
+    const captureSource = readFileSync(
+      join(process.cwd(), "src/lib/persistence/thumbnail-capture.ts"),
+      "utf8",
+    );
+    const gameClientSource = readFileSync(
+      join(process.cwd(), "src/lib/state/game-client.svelte.ts"),
+      "utf8",
+    );
+
+    expect(captureSource).toContain(
+      "packagedCaptureProof?.capture ?? htmlToImageGameplayCapture",
+    );
+    expect(gameClientSource).toContain(
+      "captureResult = await gameplayThumbnailCapture.capture(request)",
+    );
+    expect(source).toContain("captureCommandInFlight={gameState.inFlight}");
+  });
+
+  it("tree-shakes proof-only diagnostics out of ordinary production capture", () => {
+    const captureSource = readFileSync(
+      join(process.cwd(), "src/lib/persistence/thumbnail-capture.ts"),
+      "utf8",
+    );
+    const probeSource = readFileSync(
+      join(
+        process.cwd(),
+        "src/lib/test-harnesses/PackagedCaptureProofProbe.svelte",
+      ),
+      "utf8",
+    );
+    const adapterStart = captureSource.indexOf(
+      "const htmlToImageGameplayCapture",
+    );
+    const proofWrapperStart = captureSource.indexOf(
+      "const packagedCaptureProof =",
+      adapterStart,
+    );
+    const adapterSource = captureSource.slice(adapterStart, proofWrapperStart);
+    const ordinaryBranchStart = adapterSource.indexOf(
+      ": createHtmlToImageGameplayCapture({",
+    );
+
+    expect(captureSource).toContain(
+      'import.meta.env.VITE_LYRA_E2E_CAPTURE_PROOF === "1"',
+    );
+    expect(ordinaryBranchStart).toBeGreaterThan(0);
+    expect(adapterSource.slice(0, ordinaryBranchStart)).toContain(
+      "onRenderDiagnostic:",
+    );
+    expect(adapterSource.slice(ordinaryBranchStart)).not.toContain(
+      "onRenderDiagnostic:",
+    );
+    for (const removedDiagnostic of [
+      "createPackagedRenderTimingTracker",
+      "createPackagedRasterizerTimingTracker",
+      "createPackagedCaptureStageDiagnostic",
+      "locatePackagedCloneHang",
+      'from "html-to-image/es/',
+    ]) {
+      expect(captureSource).not.toContain(removedDiagnostic);
+    }
+    for (const removedAttribute of [
+      "data-hpa-392-capture-proof-render-",
+      "data-hpa-392-capture-proof-raster-",
+      "data-hpa-392-capture-proof-stage-",
+      "data-hpa-392-capture-proof-svg-",
+    ]) {
+      expect(probeSource).not.toContain(removedAttribute);
+    }
+    expect(probeSource).toContain(
+      "data-hpa-392-capture-proof-last-render-diagnostic",
+    );
+    expect(captureSource).toContain("includeStyleProperties:");
+    expect(captureSource).toContain(
+      "? curatedCaptureOptions(baseRenderOptions)",
+    );
+    for (const property of [
+      "display",
+      "flex-direction",
+      "grid-template-columns",
+      "position",
+      "width",
+      "padding",
+      "overflow",
+      "clip-path",
+      "transform",
+      "opacity",
+      "background-image",
+      "border-radius",
+      "box-shadow",
+      "color",
+      "font-family",
+      "text-shadow",
+      "object-fit",
+      "filter",
+      "visibility",
+      "--save-crossfade-opacity",
+      "--save-crossfade-transition",
+    ]) {
+      expect(captureSource).toContain(`"${property}"`);
+    }
+  });
+});
 describe("+page scene navigation wiring", () => {
   it("passes scene navigation through the GameShell sceneMenu snippet", () => {
     const source = pageSource();

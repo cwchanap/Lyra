@@ -252,6 +252,7 @@
     src={background?.url ?? null}
     imageClass="background-image"
     imageStyle="--crossfade-visible-opacity: 0.62;"
+    dataAttributes={{ "save-thumbnail-asset-role": "background" }}
     alt=""
     ariaHidden={true}
     onImageError={handleBackgroundError}

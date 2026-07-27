@@ -317,8 +317,9 @@ function emitDialogueItem(item: DialogueItem): JSONDialogueItem {
   }
   if (item.kind !== "line") return item;
   return {
-    ...item,
-    expression: item.expression ?? null,
+    kind: item.kind,
+    speaker: item.speaker,
+    text: item.text,
     portrait: item.portrait ?? null,
   };
 }

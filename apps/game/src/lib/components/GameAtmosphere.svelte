@@ -84,9 +84,19 @@
   });
 </script>
 
-<div class="atmosphere" aria-hidden="true">
-  <div class="wash"></div>
-  <canvas class="rain" bind:this={canvas}></canvas>
+<div
+  class="atmosphere"
+  data-save-thumbnail-layout="atmosphere"
+  aria-hidden="true"
+>
+  <div class="wash" data-save-thumbnail-atmosphere-wash=""></div>
+  <!--
+    html-to-image 1.11.13 converts non-empty canvases to data URLs, then waits
+    for an image load that never settles in packaged WebKit. Rain is decorative;
+    exclude only this node while the CSS atmosphere layers remain captured.
+  -->
+  <canvas class="rain" data-save-thumbnail-exclude="" bind:this={canvas}
+  ></canvas>
   <div class="halftone"></div>
   <div class="vignette"></div>
   <div class="scan"></div>

@@ -14,7 +14,7 @@ use game::save::capture::{capture_checkpoint_v1, CapturedCheckpointV1};
 use game::save::coordinator::{
     AppSession, ApplicationExit, AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome,
     AutosavePreparedWrite, AutosaveRegisteredIntent, AutosaveWriteJob, CoordinatorFuture,
-    ExitRequestSource, ExitStatusView, ExitTask, ExitTaskScheduler, FlushOperation,
+    CoordinatorTask, CoordinatorTaskScheduler, ExitRequestSource, ExitStatusView, FlushOperation,
     PersistenceBypassOperation, PersistenceFailureTokenView, PersistenceHealthView,
     PreparedThumbnailPurpose, SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose,
     ThumbnailCaptureRequestView,
@@ -2041,10 +2041,10 @@ impl ApplicationExit for TauriApplicationExit {
     }
 }
 
-struct TauriExitTaskScheduler;
+struct TauriCoordinatorTaskScheduler;
 
-impl ExitTaskScheduler for TauriExitTaskScheduler {
-    fn spawn(&self, task: ExitTask) -> Result<(), GameError> {
+impl CoordinatorTaskScheduler for TauriCoordinatorTaskScheduler {
+    fn spawn(&self, task: CoordinatorTask) -> Result<(), GameError> {
         tauri::async_runtime::spawn(task);
         Ok(())
     }
@@ -2079,7 +2079,7 @@ pub fn run() {
             state.coordinator = state
                 .coordinator
                 .clone()
-                .with_exit_scheduler(Arc::new(TauriExitTaskScheduler));
+                .with_task_scheduler(Arc::new(TauriCoordinatorTaskScheduler));
             let app_handle = app.handle().clone();
             bind_persistence_status_events(&state.coordinator, move |event, payload| {
                 if let Err(error) = app_handle.emit(event, payload) {
@@ -4353,6 +4353,24 @@ mod tests {
 
             assert_eq!(result.state.chapter.id, "chapter_1");
             assert!(result.thumbnail_capture.is_some());
+        }
+
+        #[test]
+        fn advancing_mutation_from_the_sync_tauri_boundary_surfaces_an_autosave_capture_ticket() {
+            let app = mutation_app();
+
+            let result = run_gameplay_mutation(
+                &app,
+                MutationPersistencePolicy::AutosaveIfAdvanced,
+                |engine| engine.enter_sublocation("room"),
+            )
+            .unwrap();
+
+            assert_eq!(result.state.chapter.id, "chapter_1");
+            assert!(
+                result.thumbnail_capture.is_some(),
+                "the sync Tauri command boundary must return the autosave capture ticket"
+            );
         }
 
         #[tokio::test]

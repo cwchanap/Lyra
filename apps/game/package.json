@@ -20,6 +20,7 @@
     "test:watch": "vitest",
     "test:e2e": "bun run test:e2e:build",
     "test:e2e:build": "node scripts/build-e2e.mjs && bun run test:e2e:run",
+    "test:e2e:capture-proof": "node scripts/build-e2e.mjs && node scripts/run-hpa-392-e2e.mjs --capture-proof",
     "test:e2e:run": "node scripts/require-e2e-binary.mjs && wdio run wdio.conf.ts",
     "check:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --all --check",
@@ -30,7 +31,8 @@
     "@lyra/asset-paths": "workspace:*",
     "@lyra/shared": "workspace:*",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "html-to-image": "^1.11.13"
   },
   "devDependencies": {
     "@wdio/cli": "^9.29.1",

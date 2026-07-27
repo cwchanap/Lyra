@@ -75,6 +75,136 @@ export async function waitForShell(): Promise<void> {
   );
 }
 
+async function waitForCaptureProofShell(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (label: string) =>
+          Array.from(document.querySelectorAll("button")).some((button) =>
+            (button.textContent ?? "").includes(label),
+          ),
+        anchors.startButton,
+      ),
+    {
+      timeout: 60000,
+      timeoutMsg: "capture proof main-menu start control did not appear",
+      interval: 250,
+    },
+  );
+}
+
+export async function resetCaptureProofStorage(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => typeof window.localStorage !== "undefined"),
+    { timeout: 30000, timeoutMsg: "capture proof localStorage unavailable" },
+  );
+  await browser.execute((clearanceKey: string) => {
+    const toRemove: string[] = [];
+    for (let index = 0; index < window.localStorage.length; index++) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith("lyra.")) toRemove.push(key);
+    }
+    for (const key of toRemove) window.localStorage.removeItem(key);
+    window.localStorage.setItem(clearanceKey, "true");
+  }, STORY_CLEARED_STORAGE_KEY);
+  await browser.execute(() => {
+    document.documentElement.setAttribute(
+      "data-hpa-392-capture-proof-pre-refresh",
+      "",
+    );
+  });
+  await browser.refresh();
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        () =>
+          document.readyState === "complete" &&
+          !document.documentElement.hasAttribute(
+            "data-hpa-392-capture-proof-pre-refresh",
+          ),
+      ),
+    {
+      timeout: 30000,
+      timeoutMsg: "capture proof refresh did not replace the prior document",
+    },
+  );
+  await waitForCaptureProofShell();
+}
+
+export async function startCaptureProofAtScene(
+  sceneId: string,
+  expectedEntryDialogue: string,
+): Promise<void> {
+  const started = await browser.execute((label: string) => {
+    document.getAnimations?.().forEach((animation) => {
+      try {
+        animation.finish();
+      } catch {
+        // The menu remains directly clickable even if one animation cannot finish.
+      }
+    });
+    const button = Array.from(document.querySelectorAll("button")).find(
+      (candidate) => (candidate.textContent ?? "").includes(label),
+    );
+    button?.click();
+    return button !== undefined;
+  }, anchors.startButton);
+  if (!started) throw new Error("capture proof start control missing");
+
+  await browser.waitUntil(async () => elementExists(advanceDialogueSelector), {
+    timeout: 30000,
+    timeoutMsg: "capture proof dialogue did not appear after start",
+  });
+  await browser.keys("Escape");
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (heading: string) =>
+          Array.from(document.querySelectorAll('[role="dialog"]')).some(
+            (dialog) =>
+              Array.from(dialog.querySelectorAll("h2")).some((title) =>
+                (title.textContent ?? "").includes(heading),
+              ),
+          ),
+        anchors.gameMenu,
+      ),
+    { timeout: 10000, timeoutMsg: "capture proof game menu did not open" },
+  );
+  await jsClickButtonContaining(anchors.sceneSelect);
+  await browser.waitUntil(
+    async () => elementExists('[aria-label="場景跳轉"]'),
+    { timeout: 10000, timeoutMsg: "capture proof scene picker did not open" },
+  );
+  const selected = await browser.execute((expectedSceneId: string) => {
+    const button = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '[aria-label="場景跳轉"] button',
+      ),
+    ).find((candidate) =>
+      (candidate.textContent ?? "").includes(expectedSceneId),
+    );
+    button?.click();
+    return button !== undefined;
+  }, sceneId);
+  if (!selected) {
+    throw new Error(`capture proof scene ${sceneId} was not selectable`);
+  }
+  await browser.waitUntil(
+    async () =>
+      browser.execute((expected: string) => {
+        const line = document.querySelector(
+          ".text-line, .text-action, .text-scene",
+        );
+        return (line?.textContent ?? "").includes(expected);
+      }, expectedEntryDialogue),
+    {
+      timeout: 30000,
+      timeoutMsg: `capture proof scene ${sceneId} did not expose its entry dialogue`,
+    },
+  );
+}
+
 export async function clickStartButton(): Promise<void> {
   await waitForShell();
   const clicked = await browser.execute((label: string) => {
