@@ -161,11 +161,30 @@ fn sync_directory(path: &Path) -> io::Result<()> {
     File::open(path)?.sync_all()
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn sync_directory(path: &Path) -> io::Result<()> {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    const GENERIC_WRITE: u32 = 0x4000_0000;
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const FILE_SHARE_WRITE: u32 = 0x0000_0002;
+    const FILE_SHARE_DELETE: u32 = 0x0000_0004;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+
+    let directory = fs::OpenOptions::new()
+        .access_mode(GENERIC_WRITE)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)?;
+    directory.sync_all()
+}
+
+#[cfg(not(any(unix, windows)))]
 fn sync_directory(_path: &Path) -> io::Result<()> {
-    // atomic-write-file commits sync their parent directory on platforms where
-    // std does not expose a portable directory handle (notably Windows).
-    Ok(())
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "directory synchronization is unsupported on this platform",
+    ))
 }
 
 pub(crate) fn resolve_save_root(
@@ -1736,5 +1755,36 @@ mod tests {
         let staged = fs.stage_atomic(&target, b"installed").unwrap();
         staged.install().unwrap();
         assert_eq!(std::fs::read(target).unwrap(), b"installed");
+    }
+
+    #[test]
+    fn production_adapter_propagates_directory_sync_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing-directory");
+
+        assert!(ProductionSaveFilesystem.sync_dir(&missing).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_production_adapter_flushes_an_existing_directory() {
+        let dir = tempfile::tempdir().unwrap();
+
+        ProductionSaveFilesystem.sync_dir(dir.path()).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_production_adapter_propagates_directory_open_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing-directory");
+
+        assert_eq!(
+            ProductionSaveFilesystem
+                .sync_dir(&missing)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::NotFound
+        );
     }
 }
