@@ -559,3 +559,141 @@ rtk git diff --check
 
 Task 9 is complete. Task 10 may now wire the core transition, flush,
 discovery, manual-save/load, and failure-challenge APIs into Tauri commands.
+
+## Fix round 1: persistence transition ownership
+
+This round addresses the review's Critical finding and three Important
+findings. The two recorded Task 9 Minor findings remain explicitly deferred.
+
+### Held-G acknowledgement commit
+
+- `AutosaveBackend` now has two distinct consuming commit paths.
+  `commit_if_current` remains the ordinary autosave path and acquires G before
+  exact S revalidation. `commit_with_gate_held` is reserved for acknowledgement
+  while its caller already owns the real AppState G.
+- Acknowledgement reserves W, acquires AppState G, mutates under exact S
+  revalidation, and passes the same prepared write to
+  `commit_with_gate_held`; it never calls the normal G-acquiring method.
+- The shared-gate real-storage test gives the backend the exact same
+  `Arc<tokio::sync::Mutex<()>>` as AppState, applies a timeout, and proves the
+  acknowledgement completes with zero normal-commit calls and one held-G
+  commit call.
+- Ordinary Task 8 storage coverage retains the full S → W → G → S →
+  replacement contract.
+
+### Start and Reset transition ownership
+
+- `start_game` now constructs the engine and delegates installation to
+  `start_game_core`, which delegates to `SaveCoordinator::install_session`.
+  `reset_game` continues to call `start_game`, so both production commands use
+  the same preflight and G → S installation seam.
+- Actual queued and active acknowledgement tests now call
+  `start_game_core`. Both return `persistenceOperationInProgress` immediately,
+  do not replace the existing scene, and do not allocate a generation before
+  rejection.
+
+### Failed target retention
+
+- A successful normal autosave registration records its selected auto target
+  immediately under the exact `(session generation, durable revision)`
+  identity, before preparation or replacement.
+- Preparation/replacement failure does not erase that registration.
+  Acknowledgement N+1 first checks the exact retained selection for source N,
+  independently of successful receipts.
+- A changed slot ranking is probed directly: after failed N registration the
+  ordinary selector would choose slot 2, but acknowledgement registers slot 1
+  again. The test observes exactly one ranking probe and the two registrations
+  `[slot 1, slot 1]`.
+- A later revision or generation supersedes the retained identity; stale
+  late registrations cannot replace the newer selection. A successful receipt
+  clears every covered retained identity.
+
+### Cancellation-safe exclusive intent
+
+- `AcknowledgementIntentGuard` owns the same-generation exclusive intent from
+  the moment it is set through every queued/active await.
+- Its `Drop` clears only the matching generation's acknowledgement intent.
+  The enumerated error-branch cleanup calls were removed.
+- Aborting while queued behind W and aborting while active under real AppState
+  G both clear the intent. The tests then prove gameplay probing, session
+  installation, and session clearing succeed, and that subsequent writer turns
+  and G acquisition are not wedged.
+
+### RED evidence
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  save::coordinator::tests::acknowledgement::acknowledgement_commits_without_reacquiring_the_shared_replacement_gate
+  exit 101; 0 passed, 1 failed; timed out at 0.11s on shared G
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml tests::start_core
+  exit 101; 3 E0425 errors after test setup; start_game_core did not exist
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  save::coordinator::tests::acknowledgement::failed_revision_retains_its_registered_target_after_slot_ranking_changes
+  exit 101; 0 passed, 1 failed; acknowledgement selected slot 2 instead of retained slot 1
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  save::coordinator::tests::lock_order::aborting_queued_acknowledgement_clears_intent_and_releases_its_writer_turn
+  exit 101; 0 passed, 1 failed; queued abort left stale exclusive intent
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  save::coordinator::tests::lock_order::aborting_active_acknowledgement_clears_intent_and_releases_g_and_w
+  exit 101; 0 passed, 1 failed; active abort left stale exclusive intent
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  save::coordinator::tests::acknowledgement::retained_registration_is_superseded_only_by_newer_revision_or_generation
+  exit 101; 0 passed, 1 failed; older retained identities were not superseded
+```
+
+### Final commands and results
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  tests::start_core_rejects_queued_ack_before_allocating_or_installing
+  exit 0; 1 passed, 472 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  tests::reset_core_rejects_active_ack_without_waiting_for_its_gate
+  exit 0; 1 passed, 472 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::acknowledgement
+  exit 0; 14 passed, 459 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::lock_order
+  exit 0; 10 passed, 463 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::flush
+  exit 0; 11 passed, 462 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::failure_token
+  exit 0; 9 passed, 464 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::ticket
+  exit 0; 11 passed, 462 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::debounce
+  exit 0; 23 passed, 450 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::writer
+  exit 0; 4 passed, 469 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::coordinator::tests::storage_integration
+  exit 0; 6 passed, 467 filtered out
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 473 passed across 6 suites
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml \
+  --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+
+rtk git diff --check
+  exit 0
+```
+
+Task 10 still owns the remaining discovery, manual-save/load, return/title,
+and failure-challenge IPC wiring.

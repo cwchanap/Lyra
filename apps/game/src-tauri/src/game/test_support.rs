@@ -58,7 +58,7 @@ pub fn write_empty_story_catalog_and_content_manifest(dir: &Path) {
     write_content_manifest(dir);
 }
 
-pub(super) fn investigation_scene_with_intro(
+pub(crate) fn investigation_scene_with_intro(
     id: &str,
     intro: Vec<DialogueItem>,
 ) -> InvestigationSceneJson {
@@ -87,7 +87,7 @@ pub(super) fn investigation_scene_with_intro(
         },
     }
 }
-pub(super) fn empty_engine_with_scene(
+pub(crate) fn empty_engine_with_scene(
     scene: InvestigationSceneJson,
     intro_queue_gen: u64,
 ) -> GameEngine {
