@@ -527,7 +527,14 @@ pub(crate) fn validate_envelope(envelope: &SaveEnvelopeV1) -> Result<(), GameErr
         }
         _ => {}
     }
-    let parsed: DateTime<FixedOffset> = DateTime::parse_from_rfc3339(&envelope.saved_at)
+    parse_saved_at_utc(&envelope.saved_at)?;
+    validate_manual_display_name(&envelope.display_name)?;
+    super::thumbnail::validate_descriptor(&envelope.save_id, &envelope.thumbnail)?;
+    Ok(())
+}
+
+pub(crate) fn parse_saved_at_utc(input: &str) -> Result<DateTime<FixedOffset>, GameError> {
+    let parsed = DateTime::parse_from_rfc3339(input)
         .map_err(|_| GameError::new("malformedSaveJson", "Save timestamp is not RFC 3339."))?;
     if parsed.offset().local_minus_utc() != 0 {
         return Err(GameError::new(
@@ -535,9 +542,7 @@ pub(crate) fn validate_envelope(envelope: &SaveEnvelopeV1) -> Result<(), GameErr
             "Save timestamp must be UTC.",
         ));
     }
-    validate_manual_display_name(&envelope.display_name)?;
-    super::thumbnail::validate_descriptor(&envelope.save_id, &envelope.thumbnail)?;
-    Ok(())
+    Ok(parsed)
 }
 
 pub(crate) fn canonical_uuid_v4(input: &str) -> Result<uuid::Uuid, GameError> {
