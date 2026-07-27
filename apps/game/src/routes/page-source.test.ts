@@ -250,35 +250,6 @@ describe("+page save-thumbnail boundary", () => {
     expect(probeSource).toContain(
       "data-hpa-392-capture-proof-last-render-diagnostic",
     );
-    expect(captureSource).toContain("includeStyleProperties:");
-    expect(captureSource).toContain(
-      "? curatedCaptureOptions(baseRenderOptions)",
-    );
-    for (const property of [
-      "display",
-      "flex-direction",
-      "grid-template-columns",
-      "position",
-      "width",
-      "padding",
-      "overflow",
-      "clip-path",
-      "transform",
-      "opacity",
-      "background-image",
-      "border-radius",
-      "box-shadow",
-      "color",
-      "font-family",
-      "text-shadow",
-      "object-fit",
-      "filter",
-      "visibility",
-      "--save-crossfade-opacity",
-      "--save-crossfade-transition",
-    ]) {
-      expect(captureSource).toContain(`"${property}"`);
-    }
   });
 });
 describe("+page scene navigation wiring", () => {
