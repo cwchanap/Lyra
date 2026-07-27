@@ -11,11 +11,13 @@ compile_error!("dev_engine_server is dev-only; build it in debug mode or enable 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use lyra_lib::game::GameError;
 use lyra_lib::{
-    build_development_app_state, dispatch_development_command, validate_thumbnail_submission,
-    AppState, RawThumbnailHeader, MAX_THUMBNAIL_SUBMISSION_BYTES,
+    build_development_app_state, dispatch_development_command_with_exit,
+    validate_thumbnail_submission, AppState, DevelopmentExitDriver, RawThumbnailHeader,
+    MAX_THUMBNAIL_SUBMISSION_BYTES,
 };
 
 const ADDR: &str = "127.0.0.1:1421";
@@ -27,6 +29,7 @@ fn resources_dir() -> PathBuf {
 
 struct ServerState {
     app: AppState,
+    exit: Arc<DevelopmentExitDriver>,
     runtime: tokio::runtime::Runtime,
 }
 
@@ -41,6 +44,7 @@ fn main() {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/dev-engine-server/saves"),
         )
         .expect("application state"),
+        exit: Arc::new(DevelopmentExitDriver::default()),
         runtime,
     };
     let listener = TcpListener::bind(ADDR).expect("bind");
@@ -335,9 +339,15 @@ fn dispatch(
     headers: &[RawThumbnailHeader<'_>],
     body: &[u8],
 ) -> Result<lyra_lib::DevelopmentCommandResponse, GameError> {
-    state.runtime.block_on(dispatch_development_command(
-        &state.app, command, headers, body,
-    ))
+    state
+        .runtime
+        .block_on(dispatch_development_command_with_exit(
+            &state.app,
+            command,
+            headers,
+            body,
+            Arc::clone(&state.exit),
+        ))
 }
 
 #[cfg(test)]

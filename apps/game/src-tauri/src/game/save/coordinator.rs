@@ -105,6 +105,31 @@ pub(crate) enum PersistenceHealthView {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
+pub(crate) enum ExitStatusView {
+    Idle,
+    Saving,
+    Failed {
+        diagnostic: SaveDiagnosticView,
+        failure_token: PersistenceFailureTokenView,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExitRequestSource {
+    WindowClose,
+    ApplicationQuit,
+}
+
+pub(crate) trait ApplicationExit: Send + Sync {
+    fn exit(&self, code: i32);
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub(crate) enum ThumbnailActivityView {
     Idle,
     Capturing,
@@ -402,6 +427,7 @@ pub(crate) enum FlushOperation {
     InGameLoad,
     ReturnToTitle,
     AcquisitionAcknowledgement,
+    Exit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -545,10 +571,26 @@ impl AppSession {
     }
 
     pub(crate) fn ensure_persistence_available(&self) -> Result<(), GameError> {
+        if self.persistence.exclusive_intent.is_some() || self.persistence.exit_flush_requested {
+            Err(GameError::persistence_operation_in_progress())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn ensure_rendered_state_available(&self) -> Result<(), GameError> {
         if self.persistence.exclusive_intent.is_some() {
             Err(GameError::persistence_operation_in_progress())
         } else {
             Ok(())
+        }
+    }
+
+    fn ensure_exit_flush_available(&self) -> Result<(), GameError> {
+        if self.persistence.exclusive_intent.is_none() && self.persistence.exit_flush_requested {
+            Ok(())
+        } else {
+            Err(GameError::persistence_operation_in_progress())
         }
     }
 
@@ -567,13 +609,15 @@ impl AppSession {
 struct AcknowledgementIntentGuard<'a> {
     app: &'a crate::AppState,
     session_generation: u64,
+    intent_updates: Arc<Notify>,
 }
 
 impl<'a> AcknowledgementIntentGuard<'a> {
-    fn new(app: &'a crate::AppState, session_generation: u64) -> Self {
+    fn new(app: &'a crate::AppState, session_generation: u64, intent_updates: Arc<Notify>) -> Self {
         Self {
             app,
             session_generation,
+            intent_updates,
         }
     }
 }
@@ -581,11 +625,17 @@ impl<'a> AcknowledgementIntentGuard<'a> {
 impl Drop for AcknowledgementIntentGuard<'_> {
     fn drop(&mut self) {
         if let Ok(mut session) = self.app.session.lock() {
+            let mut cleared = false;
             if session.persistence.generation == self.session_generation
                 && session.persistence.exclusive_intent
                     == Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement)
             {
                 session.end_acknowledgement();
+                cleared = true;
+            }
+            drop(session);
+            if cleared {
+                self.intent_updates.notify_one();
             }
         }
     }
@@ -682,6 +732,7 @@ pub(crate) struct SessionPersistence {
     pub(crate) written_revision: Option<u64>,
     pub(crate) autosave_target: Option<SaveSlotRef>,
     pub(crate) exclusive_intent: Option<ExclusivePersistenceIntent>,
+    pub(crate) exit_flush_requested: bool,
 }
 
 impl SessionPersistence {
@@ -696,6 +747,7 @@ impl SessionPersistence {
             written_revision: None,
             autosave_target,
             exclusive_intent: None,
+            exit_flush_requested: false,
         }
     }
 
@@ -884,6 +936,7 @@ impl WriterQueue {
 
 type HealthSubscriber = Arc<dyn Fn(PersistenceHealthView) + Send + Sync>;
 type ActivitySubscriber = Arc<dyn Fn(ThumbnailActivityView) + Send + Sync>;
+type ExitSubscriber = Arc<dyn Fn(ExitStatusView) + Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum CaptureIntent {
@@ -945,6 +998,7 @@ struct CoordinatorState {
     thumbnail_activity: ThumbnailActivityView,
     health_subscribers: Vec<HealthSubscriber>,
     activity_subscribers: Vec<ActivitySubscriber>,
+    exit_subscribers: Vec<ExitSubscriber>,
     next_session_generation: u64,
     discovery_generation: u64,
     next_autosave_serial: u64,
@@ -954,6 +1008,8 @@ struct CoordinatorState {
     failed_write: Option<BackgroundWriteFailure>,
     cleanup_failure: Option<CleanupFailure>,
     failure_challenges: HashMap<Uuid, PersistenceFailureChallenge>,
+    exit_status: ExitStatusView,
+    programmatic_exit_bypass: bool,
 }
 
 impl Default for CoordinatorState {
@@ -965,6 +1021,7 @@ impl Default for CoordinatorState {
             thumbnail_activity: ThumbnailActivityView::Idle,
             health_subscribers: Vec::new(),
             activity_subscribers: Vec::new(),
+            exit_subscribers: Vec::new(),
             next_session_generation: 0,
             discovery_generation: 0,
             next_autosave_serial: 0,
@@ -974,8 +1031,16 @@ impl Default for CoordinatorState {
             failed_write: None,
             cleanup_failure: None,
             failure_challenges: HashMap::new(),
+            exit_status: ExitStatusView::Idle,
+            programmatic_exit_bypass: false,
         }
     }
+}
+
+#[derive(Clone)]
+struct ExitApplicationContext {
+    session: Arc<Mutex<AppSession>>,
+    replacement_gate: Arc<tokio::sync::Mutex<()>>,
 }
 
 #[derive(Clone)]
@@ -985,6 +1050,8 @@ pub(crate) struct SaveCoordinator {
     writer_queue: Arc<WriterQueue>,
     backend: Option<Arc<dyn AutosaveBackend>>,
     fail_next_schedule: Arc<AtomicBool>,
+    exit_application: Option<ExitApplicationContext>,
+    exclusive_updates: Arc<Notify>,
 }
 
 impl Default for SaveCoordinator {
@@ -995,6 +1062,8 @@ impl Default for SaveCoordinator {
             writer_queue: Arc::new(WriterQueue::default()),
             backend: None,
             fail_next_schedule: Arc::new(AtomicBool::new(false)),
+            exit_application: None,
+            exclusive_updates: Arc::new(Notify::new()),
         }
     }
 }
@@ -1002,6 +1071,337 @@ impl Default for SaveCoordinator {
 impl SaveCoordinator {
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn for_application(
+        session: Arc<Mutex<AppSession>>,
+        replacement_gate: Arc<tokio::sync::Mutex<()>>,
+    ) -> Self {
+        Self {
+            exit_application: Some(ExitApplicationContext {
+                session,
+                replacement_gate,
+            }),
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn with_backend_for_application(
+        backend: Arc<dyn AutosaveBackend>,
+        session: Arc<Mutex<AppSession>>,
+        replacement_gate: Arc<tokio::sync::Mutex<()>>,
+    ) -> Self {
+        Self {
+            backend: Some(backend),
+            exit_application: Some(ExitApplicationContext {
+                session,
+                replacement_gate,
+            }),
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn with_exit_application(
+        mut self,
+        session: Arc<Mutex<AppSession>>,
+        replacement_gate: Arc<tokio::sync::Mutex<()>>,
+    ) -> Self {
+        self.exit_application = Some(ExitApplicationContext {
+            session,
+            replacement_gate,
+        });
+        self
+    }
+
+    pub(crate) fn exit_status(&self) -> ExitStatusView {
+        self.state
+            .lock()
+            .map(|state| state.exit_status.clone())
+            .unwrap_or(ExitStatusView::Idle)
+    }
+
+    pub(crate) fn subscribe_exit_status(
+        &self,
+        subscriber: impl Fn(ExitStatusView) + Send + Sync + 'static,
+    ) {
+        let subscriber: ExitSubscriber = Arc::new(subscriber);
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let current = state.exit_status.clone();
+        state.exit_subscribers.push(Arc::clone(&subscriber));
+        drop(state);
+        subscriber(current);
+    }
+
+    pub(crate) fn consume_programmatic_exit_bypass(&self) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        std::mem::take(&mut state.programmatic_exit_bypass)
+    }
+
+    pub(crate) fn request_exit_flush(
+        &self,
+        exit: Arc<dyn ApplicationExit>,
+        _source: ExitRequestSource,
+    ) {
+        if !self.begin_exit_saving(ExitStatusView::Idle) {
+            return;
+        }
+        self.spawn_exit_flush(exit);
+    }
+
+    pub(crate) fn retry_exit(
+        &self,
+        exit: Arc<dyn ApplicationExit>,
+        token: PersistenceFailureTokenView,
+    ) -> Result<(), GameError> {
+        self.validate_current_exit_token(&token)?;
+        let application = self
+            .exit_application
+            .as_ref()
+            .ok_or_else(GameError::save_write_failed)?;
+        let identity = {
+            let session = application
+                .session
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
+            FailureChallengeIdentity {
+                session_generation: session.persistence.generation,
+                discovery_generation: None,
+                durable_revision: session.durable_revision().unwrap_or(0),
+                selected_save_id: None,
+                acquisition_event_id: None,
+            }
+        };
+        self.consume_failure_token(
+            &token,
+            PersistenceBypassOperation::ExitWithoutSaving,
+            identity,
+        )?;
+        if !self.begin_exit_saving(self.exit_status()) {
+            return Err(GameError::stale_persistence_failure_token());
+        }
+        self.spawn_exit_flush(exit);
+        Ok(())
+    }
+
+    pub(crate) fn cancel_exit(
+        &self,
+        token: PersistenceFailureTokenView,
+    ) -> Result<ExitStatusView, GameError> {
+        self.validate_current_exit_token(&token)?;
+        let application = self
+            .exit_application
+            .as_ref()
+            .ok_or_else(GameError::save_write_failed)?;
+        let identity = {
+            let session = application
+                .session
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
+            FailureChallengeIdentity {
+                session_generation: session.persistence.generation,
+                discovery_generation: None,
+                durable_revision: session.durable_revision().unwrap_or(0),
+                selected_save_id: None,
+                acquisition_event_id: None,
+            }
+        };
+        self.consume_failure_token(
+            &token,
+            PersistenceBypassOperation::ExitWithoutSaving,
+            identity,
+        )?;
+        if let Some(application) = &self.exit_application {
+            application
+                .session
+                .lock()
+                .map_err(|_| GameError::unavailable())?
+                .persistence
+                .exit_flush_requested = false;
+        }
+        self.publish_exit_status(ExitStatusView::Idle);
+        Ok(ExitStatusView::Idle)
+    }
+
+    pub(crate) fn exit_without_saving(
+        &self,
+        exit: Arc<dyn ApplicationExit>,
+        token: PersistenceFailureTokenView,
+    ) -> Result<(), GameError> {
+        self.validate_current_exit_token(&token)?;
+        let application = self
+            .exit_application
+            .as_ref()
+            .ok_or_else(GameError::save_write_failed)?;
+        let identity = {
+            let session = application
+                .session
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
+            FailureChallengeIdentity {
+                session_generation: session.persistence.generation,
+                discovery_generation: None,
+                durable_revision: session.durable_revision().unwrap_or(0),
+                selected_save_id: None,
+                acquisition_event_id: None,
+            }
+        };
+        self.consume_failure_token(
+            &token,
+            PersistenceBypassOperation::ExitWithoutSaving,
+            identity,
+        )?;
+        {
+            let mut state = self.lock_state()?;
+            state.programmatic_exit_bypass = true;
+        }
+        exit.exit(0);
+        Ok(())
+    }
+
+    fn validate_current_exit_token(
+        &self,
+        token: &PersistenceFailureTokenView,
+    ) -> Result<(), GameError> {
+        let state = self.lock_state()?;
+        match &state.exit_status {
+            ExitStatusView::Failed { failure_token, .. } if failure_token == token => Ok(()),
+            _ => Err(GameError::stale_persistence_failure_token()),
+        }
+    }
+
+    fn begin_exit_saving(&self, expected: ExitStatusView) -> bool {
+        let Some(application) = &self.exit_application else {
+            return false;
+        };
+        let subscribers = {
+            let Ok(mut state) = self.state.lock() else {
+                return false;
+            };
+            if state.exit_status != expected {
+                return false;
+            }
+            state.exit_status = ExitStatusView::Saving;
+            state.programmatic_exit_bypass = false;
+            state.exit_subscribers.clone()
+        };
+        let Ok(mut session) = application.session.lock() else {
+            return false;
+        };
+        session.persistence.exit_flush_requested = true;
+        drop(session);
+        publish_exit(&subscribers, &ExitStatusView::Saving);
+        true
+    }
+
+    fn spawn_exit_flush(&self, exit: Arc<dyn ApplicationExit>) {
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let coordinator = self.clone();
+        runtime.spawn(async move {
+            match coordinator.flush_for_exit().await {
+                Ok(()) => {
+                    {
+                        let Ok(mut state) = coordinator.state.lock() else {
+                            return;
+                        };
+                        state.programmatic_exit_bypass = true;
+                    }
+                    exit.exit(0);
+                }
+                Err(error) => {
+                    if let Ok(status) = coordinator.challenge_exit_failure(error) {
+                        coordinator.publish_exit_status(status);
+                    }
+                }
+            }
+        });
+    }
+
+    async fn flush_for_exit(&self) -> Result<(), GameError> {
+        let application = self
+            .exit_application
+            .as_ref()
+            .ok_or_else(GameError::save_write_failed)?;
+        loop {
+            let update = self.exclusive_updates.notified();
+            let acknowledgement_active = application
+                .session
+                .lock()
+                .map_err(|_| GameError::unavailable())?
+                .persistence
+                .exclusive_intent
+                .is_some();
+            if !acknowledgement_active {
+                break;
+            }
+            update.await;
+        }
+        if application
+            .session
+            .lock()
+            .map_err(|_| GameError::unavailable())?
+            .engine
+            .is_none()
+        {
+            return Ok(());
+        }
+        self.flush_session_parts(
+            &application.session,
+            &application.replacement_gate,
+            FlushOperation::Exit,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    fn challenge_exit_failure(&self, diagnostic: GameError) -> Result<ExitStatusView, GameError> {
+        let application = self
+            .exit_application
+            .as_ref()
+            .ok_or_else(GameError::save_write_failed)?;
+        let identity = {
+            let session = application
+                .session
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
+            FailureChallengeIdentity {
+                session_generation: session.persistence.generation,
+                discovery_generation: None,
+                durable_revision: session.durable_revision().unwrap_or(0),
+                selected_save_id: None,
+                acquisition_event_id: None,
+            }
+        };
+        let mut challenged = self.challenge_persistence_failure(
+            PersistenceBypassOperation::ExitWithoutSaving,
+            identity,
+            diagnostic,
+        )?;
+        let failure_token = challenged
+            .failure_token
+            .take()
+            .map(PersistenceFailureTokenView)
+            .ok_or_else(GameError::stale_persistence_failure_token)?;
+        Ok(ExitStatusView::Failed {
+            diagnostic: challenged,
+            failure_token,
+        })
+    }
+
+    fn publish_exit_status(&self, status: ExitStatusView) {
+        let subscribers = {
+            let Ok(mut state) = self.state.lock() else {
+                return;
+            };
+            state.exit_status = status.clone();
+            state.exit_subscribers.clone()
+        };
+        publish_exit(&subscribers, &status);
     }
 
     pub(crate) fn next_session_generation(&self) -> Result<u64, GameError> {
@@ -1472,9 +1872,23 @@ impl SaveCoordinator {
         app: &crate::AppState,
         operation: FlushOperation,
     ) -> Result<FlushOutcome, GameError> {
+        self.flush_session_parts(&app.session, &app.replacement_gate, operation)
+            .await
+    }
+
+    async fn flush_session_parts(
+        &self,
+        session_state: &Arc<Mutex<AppSession>>,
+        replacement_gate: &Arc<tokio::sync::Mutex<()>>,
+        operation: FlushOperation,
+    ) -> Result<FlushOutcome, GameError> {
         let (session_generation, durable_revision, flush_revision, preferred_target) = {
-            let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
-            session.ensure_persistence_available()?;
+            let mut session = session_state.lock().map_err(|_| GameError::unavailable())?;
+            if operation == FlushOperation::Exit {
+                session.ensure_exit_flush_available()?;
+            } else {
+                session.ensure_persistence_available()?;
+            }
             if let Some(receipt) = self.last_successful_write() {
                 session.persistence.record_written(&receipt);
             }
@@ -1519,9 +1933,13 @@ impl SaveCoordinator {
             .await
             .map_err(|_| GameError::save_write_failed())??;
 
-        let _gate = app.replacement_gate.lock().await;
-        let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
-        session.ensure_persistence_available()?;
+        let _gate = replacement_gate.lock().await;
+        let mut session = session_state.lock().map_err(|_| GameError::unavailable())?;
+        if operation == FlushOperation::Exit {
+            session.ensure_exit_flush_available()?;
+        } else {
+            session.ensure_persistence_available()?;
+        }
         if session.persistence.generation != session_generation
             || session.durable_revision() != Some(durable_revision)
         {
@@ -1583,7 +2001,11 @@ impl SaveCoordinator {
                 thumbnail,
             )
         };
-        let _intent_guard = AcknowledgementIntentGuard::new(app, session_generation);
+        let _intent_guard = AcknowledgementIntentGuard::new(
+            app,
+            session_generation,
+            Arc::clone(&self.exclusive_updates),
+        );
 
         self.cancel_pending_autosave_covered_by_flush(session_generation, source_revision)?;
 
@@ -3146,6 +3568,12 @@ fn publish_activity(subscribers: &[ActivitySubscriber], view: &ThumbnailActivity
     }
 }
 
+fn publish_exit(subscribers: &[ExitSubscriber], view: &ExitStatusView) {
+    for subscriber in subscribers {
+        subscriber(view.clone());
+    }
+}
+
 fn spawn_ticket_expiry(
     runtime: &tokio::runtime::Handle,
     state: Weak<Mutex<CoordinatorState>>,
@@ -3180,6 +3608,362 @@ fn spawn_ticket_expiry(
 
 #[cfg(test)]
 mod tests {
+    mod exit_lifecycle {
+        use super::super::{
+            AppSession, ApplicationExit, ExitRequestSource, ExitStatusView,
+            PersistenceFailureTokenView, SaveCoordinator, AUTOSAVE_DEBOUNCE,
+        };
+        use super::acknowledgement::{app_with_event, terminal_acknowledgement_ticket};
+        use super::debounce::{PhasedBackend, RecordingBackend};
+        use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
+        use std::sync::{Arc, Mutex};
+        use tokio::sync::{mpsc, Notify};
+
+        #[derive(Default)]
+        struct RecordingExit {
+            calls: Mutex<Vec<i32>>,
+            called: Notify,
+        }
+
+        impl ApplicationExit for RecordingExit {
+            fn exit(&self, code: i32) {
+                self.calls.lock().unwrap().push(code);
+                self.called.notify_waiters();
+            }
+        }
+
+        impl RecordingExit {
+            async fn wait_for_call(&self) {
+                loop {
+                    let notified = self.called.notified();
+                    if !self.calls.lock().unwrap().is_empty() {
+                        return;
+                    }
+                    notified.await;
+                }
+            }
+        }
+
+        fn active_session(revision: u64) -> Arc<Mutex<AppSession>> {
+            let mut engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            engine.durable_revision = revision;
+            Arc::new(Mutex::new(AppSession::installed(engine, 4, None)))
+        }
+
+        fn advance_revision(session: &Arc<Mutex<AppSession>>, revision: u64) {
+            session
+                .lock()
+                .unwrap()
+                .engine
+                .as_mut()
+                .unwrap()
+                .durable_revision = revision;
+        }
+
+        fn status_receiver(
+            coordinator: &SaveCoordinator,
+        ) -> mpsc::UnboundedReceiver<ExitStatusView> {
+            let (tx, rx) = mpsc::unbounded_channel();
+            coordinator.subscribe_exit_status(move |status| {
+                let _ = tx.send(status);
+            });
+            let mut rx = rx;
+            assert_eq!(rx.try_recv().unwrap(), ExitStatusView::Idle);
+            rx
+        }
+
+        #[test]
+        fn exit_lifecycle_status_uses_complete_camel_case_tagged_views() {
+            assert_eq!(
+                serde_json::to_value(ExitStatusView::Idle).unwrap(),
+                serde_json::json!({ "type": "idle" })
+            );
+            assert_eq!(
+                serde_json::to_value(ExitStatusView::Saving).unwrap(),
+                serde_json::json!({ "type": "saving" })
+            );
+        }
+
+        #[test]
+        fn exit_lifecycle_request_without_application_context_stays_idle() {
+            let coordinator = SaveCoordinator::new();
+
+            coordinator.request_exit_flush(
+                Arc::new(RecordingExit::default()),
+                ExitRequestSource::WindowClose,
+            );
+
+            assert_eq!(coordinator.exit_status(), ExitStatusView::Idle);
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_repeated_native_requests_share_one_noop_flush_and_one_exit_bypass()
+        {
+            let engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            let session = Arc::new(Mutex::new(AppSession::installed(engine, 4, None)));
+            let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let coordinator =
+                SaveCoordinator::for_application(Arc::clone(&session), replacement_gate);
+            let exit = Arc::new(RecordingExit::default());
+
+            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::WindowClose);
+            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit);
+            exit.wait_for_call().await;
+
+            assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+            assert_eq!(coordinator.exit_status(), ExitStatusView::Saving);
+            assert!(coordinator.consume_programmatic_exit_bypass());
+            assert!(!coordinator.consume_programmatic_exit_bypass());
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn exit_lifecycle_waits_for_an_active_writer_without_holding_session_or_gate() {
+            let backend = Arc::new(RecordingBackend::paused());
+            let session = active_session(1);
+            let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let coordinator = SaveCoordinator::with_backend_for_application(
+                backend.clone(),
+                Arc::clone(&session),
+                Arc::clone(&replacement_gate),
+            );
+            advance_revision(&session, 2);
+            let request = coordinator.notify_durable_commit(4, 2).unwrap();
+            coordinator
+                .report_thumbnail_failure(&request.ticket)
+                .unwrap();
+            tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+            backend.wait_until_started().await;
+
+            let exit = Arc::new(RecordingExit::default());
+            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::WindowClose);
+
+            assert!(session.try_lock().is_ok());
+            assert!(replacement_gate.try_lock().is_ok());
+            assert_eq!(
+                session
+                    .lock()
+                    .unwrap()
+                    .ensure_persistence_available()
+                    .unwrap_err()
+                    .code,
+                "persistenceOperationInProgress"
+            );
+            assert!(session
+                .lock()
+                .unwrap()
+                .engine
+                .as_ref()
+                .unwrap()
+                .view()
+                .is_ok());
+            assert!(exit.calls.lock().unwrap().is_empty());
+
+            backend.release();
+            exit.wait_for_call().await;
+
+            assert_eq!(backend.write_count(), 1);
+            assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn exit_lifecycle_supersedes_pending_debounce_without_waiting_for_its_deadline() {
+            let backend = Arc::new(RecordingBackend::default());
+            let session = active_session(1);
+            let coordinator = SaveCoordinator::with_backend_for_application(
+                backend.clone(),
+                Arc::clone(&session),
+                Arc::new(tokio::sync::Mutex::new(())),
+            );
+            advance_revision(&session, 2);
+            let request = coordinator.notify_durable_commit(4, 2).unwrap();
+            coordinator
+                .report_thumbnail_failure(&request.ticket)
+                .unwrap();
+
+            let exit = Arc::new(RecordingExit::default());
+            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit);
+            exit.wait_for_call().await;
+
+            assert_eq!(backend.write_count(), 1);
+            assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_failure_publishes_complete_status_and_cancel_consumes_exact_token()
+        {
+            let backend = Arc::new(PhasedBackend::new(4));
+            backend.fail_next_commit();
+            let session = active_session(1);
+            advance_revision(&session, 2);
+            let coordinator = SaveCoordinator::with_backend_for_application(
+                backend.clone(),
+                session,
+                Arc::new(tokio::sync::Mutex::new(())),
+            );
+            let mut statuses = status_receiver(&coordinator);
+            let exit = Arc::new(RecordingExit::default());
+
+            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit);
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            backend.wait_for_failed_commits(1).await;
+            let failed = statuses.recv().await.unwrap();
+            let ExitStatusView::Failed {
+                diagnostic,
+                failure_token,
+            } = failed
+            else {
+                panic!("exit failure must publish a complete failed status");
+            };
+            assert_eq!(diagnostic.code, "saveReplaceFailed");
+            assert!(exit.calls.lock().unwrap().is_empty());
+
+            let wrong: PersistenceFailureTokenView =
+                serde_json::from_value(serde_json::json!("00000000-0000-4000-8000-000000000000"))
+                    .unwrap();
+            assert_eq!(
+                coordinator.cancel_exit(wrong).unwrap_err().code,
+                "stalePersistenceFailureToken"
+            );
+            assert_eq!(
+                coordinator.cancel_exit(failure_token.clone()).unwrap(),
+                ExitStatusView::Idle
+            );
+            assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Idle);
+            assert_eq!(
+                coordinator.cancel_exit(failure_token).unwrap_err().code,
+                "stalePersistenceFailureToken"
+            );
+            assert!(exit.calls.lock().unwrap().is_empty());
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_retry_and_without_saving_each_consume_one_exact_challenge() {
+            let retry_backend = Arc::new(PhasedBackend::new(4));
+            retry_backend.fail_next_commit();
+            let retry_session = active_session(1);
+            advance_revision(&retry_session, 2);
+            let retry_coordinator = SaveCoordinator::with_backend_for_application(
+                retry_backend.clone(),
+                retry_session,
+                Arc::new(tokio::sync::Mutex::new(())),
+            );
+            let mut retry_statuses = status_receiver(&retry_coordinator);
+            let retry_exit = Arc::new(RecordingExit::default());
+            retry_coordinator
+                .request_exit_flush(retry_exit.clone(), ExitRequestSource::WindowClose);
+            assert_eq!(retry_statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            retry_backend.wait_for_failed_commits(1).await;
+            let ExitStatusView::Failed {
+                failure_token: retry_token,
+                ..
+            } = retry_statuses.recv().await.unwrap()
+            else {
+                panic!("first exit flush must fail");
+            };
+
+            retry_coordinator
+                .retry_exit(retry_exit.clone(), retry_token.clone())
+                .unwrap();
+            assert_eq!(retry_statuses.recv().await.unwrap(), ExitStatusView::Saving);
+            retry_exit.wait_for_call().await;
+            assert_eq!(*retry_exit.calls.lock().unwrap(), vec![0]);
+            assert_eq!(
+                retry_coordinator
+                    .retry_exit(retry_exit, retry_token)
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+
+            let bypass_backend = Arc::new(PhasedBackend::new(4));
+            bypass_backend.fail_next_commit();
+            let bypass_session = active_session(1);
+            advance_revision(&bypass_session, 2);
+            let bypass_coordinator = SaveCoordinator::with_backend_for_application(
+                bypass_backend.clone(),
+                bypass_session,
+                Arc::new(tokio::sync::Mutex::new(())),
+            );
+            let mut bypass_statuses = status_receiver(&bypass_coordinator);
+            let bypass_exit = Arc::new(RecordingExit::default());
+            bypass_coordinator
+                .request_exit_flush(bypass_exit.clone(), ExitRequestSource::ApplicationQuit);
+            assert_eq!(
+                bypass_statuses.recv().await.unwrap(),
+                ExitStatusView::Saving
+            );
+            bypass_backend.wait_for_failed_commits(1).await;
+            let ExitStatusView::Failed {
+                failure_token: bypass_token,
+                ..
+            } = bypass_statuses.recv().await.unwrap()
+            else {
+                panic!("exit flush must fail before bypass");
+            };
+
+            bypass_coordinator
+                .exit_without_saving(bypass_exit.clone(), bypass_token.clone())
+                .unwrap();
+            bypass_exit.wait_for_call().await;
+            assert_eq!(*bypass_exit.calls.lock().unwrap(), vec![0]);
+            assert!(bypass_coordinator.consume_programmatic_exit_bypass());
+            assert_eq!(
+                bypass_coordinator
+                    .exit_without_saving(bypass_exit, bypass_token)
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_waits_for_active_acknowledgement_to_commit_before_flushing() {
+            let backend = Arc::new(PhasedBackend::new(4));
+            backend.pause_prepare();
+            let base = SaveCoordinator::with_backend(backend.clone());
+            let event_id = "acq:1:0";
+            let app = Arc::new(app_with_event(base.clone(), 4, 1, event_id, None));
+            let coordinator = base
+                .with_exit_application(Arc::clone(&app.session), Arc::clone(&app.replacement_gate));
+            let ticket = terminal_acknowledgement_ticket(&coordinator, 4, 1, event_id);
+            let acknowledgement = {
+                let coordinator = coordinator.clone();
+                let app = Arc::clone(&app);
+                tokio::spawn(async move {
+                    coordinator
+                        .acknowledge_acquisition(&app, event_id.into(), ticket)
+                        .await
+                })
+            };
+            backend.wait_for_prepare().await;
+
+            let exit = Arc::new(RecordingExit::default());
+            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit);
+
+            assert_eq!(coordinator.exit_status(), ExitStatusView::Saving);
+            assert!(app.session.try_lock().is_ok());
+            assert!(exit.calls.lock().unwrap().is_empty());
+
+            backend.release_prepare();
+            acknowledgement.await.unwrap().unwrap();
+            exit.wait_for_call().await;
+
+            assert!(app
+                .session
+                .lock()
+                .unwrap()
+                .engine
+                .as_ref()
+                .unwrap()
+                .pending_acquisition_events
+                .is_empty());
+            assert_eq!(backend.registered_targets().len(), 1);
+            assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+        }
+    }
+
     mod lock_order {
         use super::super::{
             AppSession, ExclusivePersistenceIntent, FlushOperation, SaveCoordinator,
@@ -5147,7 +5931,7 @@ mod tests {
         }
 
         impl RecordingBackend {
-            fn paused() -> Self {
+            pub(super) fn paused() -> Self {
                 Self {
                     pause_writes: AtomicBool::new(true),
                     ..Self::default()
@@ -5162,13 +5946,13 @@ mod tests {
                 self.writes.lock().unwrap().len()
             }
 
-            async fn wait_until_started(&self) {
+            pub(super) async fn wait_until_started(&self) {
                 if self.observations().is_empty() {
                     self.started.notified().await;
                 }
             }
 
-            fn release(&self) {
+            pub(super) fn release(&self) {
                 self.pause_writes.store(false, Ordering::SeqCst);
                 self.release.notify_waiters();
             }

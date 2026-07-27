@@ -12,11 +12,11 @@ use tauri::{Emitter, Manager};
 
 use game::save::capture::{capture_checkpoint_v1, CapturedCheckpointV1};
 use game::save::coordinator::{
-    AppSession, AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome, AutosavePreparedWrite,
-    AutosaveRegisteredIntent, AutosaveWriteJob, CoordinatorFuture, FlushOperation,
-    PersistenceBypassOperation, PersistenceFailureTokenView, PersistenceHealthView,
-    PreparedThumbnailPurpose, SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose,
-    ThumbnailCaptureRequestView,
+    AppSession, ApplicationExit, AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome,
+    AutosavePreparedWrite, AutosaveRegisteredIntent, AutosaveWriteJob, CoordinatorFuture,
+    ExitRequestSource, ExitStatusView, FlushOperation, PersistenceBypassOperation,
+    PersistenceFailureTokenView, PersistenceHealthView, PreparedThumbnailPurpose, SaveCoordinator,
+    ThumbnailActivityView, ThumbnailCapturePurpose, ThumbnailCaptureRequestView,
 };
 use game::save::restore::{
     build_restore_candidate, load_current_definitions, RestoredGameCandidate,
@@ -63,6 +63,8 @@ pub(crate) struct SaveBrowserOpenResultView {
 
 const PERSISTENCE_STATUS_CHANGED_EVENT: &str = "persistence-status-changed";
 const THUMBNAIL_ACTIVITY_CHANGED_EVENT: &str = "thumbnail-activity-changed";
+const EXIT_STATUS_CHANGED_EVENT: &str = "exit-status-changed";
+const MAIN_WINDOW_LABEL: &str = "main";
 #[doc(hidden)]
 pub const MAX_THUMBNAIL_SUBMISSION_BYTES: usize = MAX_THUMBNAIL_BYTES;
 
@@ -186,7 +188,10 @@ impl AutosaveBackend for ApplicationPersistence {
         Box::pin(async move {
             let (checkpoint, content_revision) = {
                 let session = self.session.lock().map_err(|_| GameError::unavailable())?;
-                session.ensure_persistence_available()?;
+                // The coordinator already authorized this writer before
+                // application-exit exclusivity was installed. Revalidate its
+                // identity below, but do not reject the writer merely because
+                // exit is now waiting for it to flush.
                 let engine = session
                     .engine
                     .as_ref()
@@ -270,7 +275,9 @@ impl ApplicationPersistence {
     ) -> Result<AutosaveCommitOutcome, GameError> {
         let current = {
             let session = self.session.lock().map_err(|_| GameError::unavailable())?;
-            session.ensure_persistence_available()?;
+            // Exit exclusivity blocks new command-side mutations, not a writer
+            // the coordinator has already authorized. Generation and revision
+            // are the commit-time stale-write guard.
             session.persistence.generation == prepared.session_generation()
                 && session.durable_revision() == Some(prepared.durable_revision())
         };
@@ -304,7 +311,11 @@ fn build_app_state_with_storage(
         last_saved_at: Mutex::new(None),
         availability_error: Mutex::new(initial_error.clone()),
     });
-    let coordinator = SaveCoordinator::with_backend(persistence.clone());
+    let coordinator = SaveCoordinator::with_backend_for_application(
+        persistence.clone(),
+        Arc::clone(&session),
+        Arc::clone(&replacement_gate),
+    );
     if let Some(diagnostic) = initial_error {
         coordinator.publish_persistence_health(PersistenceHealthView::Degraded { diagnostic });
     }
@@ -324,12 +335,36 @@ fn unavailable_error() -> GameError {
 
 fn read_game_state(state: &AppState) -> Result<GameStateView, GameError> {
     let session = state.session.lock().map_err(|_| unavailable_error())?;
-    session.ensure_persistence_available()?;
+    session.ensure_rendered_state_available()?;
     session
         .engine
         .as_ref()
         .ok_or_else(GameError::game_not_started)?
         .view()
+}
+
+fn handle_close_requested(
+    label: &str,
+    prevent_close: impl FnOnce(),
+    schedule: impl FnOnce(ExitRequestSource),
+) {
+    if label == MAIN_WINDOW_LABEL {
+        prevent_close();
+        schedule(ExitRequestSource::WindowClose);
+    }
+}
+
+fn handle_exit_requested(
+    code: Option<i32>,
+    coordinator: &SaveCoordinator,
+    prevent_exit: impl FnOnce(),
+    schedule: impl FnOnce(ExitRequestSource),
+) {
+    if code.is_some() && coordinator.consume_programmatic_exit_bypass() {
+        return;
+    }
+    prevent_exit();
+    schedule(ExitRequestSource::ApplicationQuit);
 }
 
 fn run_gameplay_mutation(
@@ -523,13 +558,18 @@ fn thumbnail_activity_snapshot(coordinator: &SaveCoordinator) -> ThumbnailActivi
     coordinator.thumbnail_activity()
 }
 
+fn exit_status_snapshot(coordinator: &SaveCoordinator) -> ExitStatusView {
+    coordinator.exit_status()
+}
+
 fn bind_persistence_status_events(
     coordinator: &SaveCoordinator,
     emit: impl Fn(&'static str, serde_json::Value) + Send + Sync + 'static,
 ) {
     let emit = Arc::new(emit);
     let health_emitter = Arc::clone(&emit);
-    let activity_emitter = emit;
+    let activity_emitter = Arc::clone(&emit);
+    let exit_emitter = emit;
     coordinator.subscribe(
         move |view| {
             if let Ok(payload) = serde_json::to_value(view) {
@@ -542,6 +582,11 @@ fn bind_persistence_status_events(
             }
         },
     );
+    coordinator.subscribe_exit_status(move |view| {
+        if let Ok(payload) = serde_json::to_value(view) {
+            exit_emitter(EXIT_STATUS_CHANGED_EVENT, payload);
+        }
+    });
 }
 
 #[tauri::command]
@@ -552,6 +597,69 @@ fn get_persistence_status(state: tauri::State<'_, AppState>) -> PersistenceHealt
 #[tauri::command]
 fn get_thumbnail_activity(state: tauri::State<'_, AppState>) -> ThumbnailActivityView {
     thumbnail_activity_snapshot(&state.coordinator)
+}
+
+fn get_exit_status_core(state: &AppState) -> ExitStatusView {
+    exit_status_snapshot(&state.coordinator)
+}
+
+#[tauri::command]
+fn get_exit_status(state: tauri::State<'_, AppState>) -> ExitStatusView {
+    get_exit_status_core(&state)
+}
+
+fn application_exit(app: tauri::AppHandle) -> Arc<dyn ApplicationExit> {
+    Arc::new(TauriApplicationExit { app })
+}
+
+fn retry_exit_core(
+    state: &AppState,
+    exit: Arc<dyn ApplicationExit>,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<ExitStatusView, GameError> {
+    state.coordinator.retry_exit(exit, failure_token)?;
+    Ok(exit_status_snapshot(&state.coordinator))
+}
+
+#[tauri::command]
+fn retry_exit(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<ExitStatusView, GameError> {
+    retry_exit_core(&state, application_exit(app), failure_token)
+}
+
+fn cancel_exit_core(
+    state: &AppState,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<ExitStatusView, GameError> {
+    state.coordinator.cancel_exit(failure_token)
+}
+
+#[tauri::command]
+fn cancel_exit(
+    state: tauri::State<'_, AppState>,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<ExitStatusView, GameError> {
+    cancel_exit_core(&state, failure_token)
+}
+
+fn exit_without_saving_core(
+    state: &AppState,
+    exit: Arc<dyn ApplicationExit>,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<(), GameError> {
+    state.coordinator.exit_without_saving(exit, failure_token)
+}
+
+#[tauri::command]
+fn exit_without_saving(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<(), GameError> {
+    exit_without_saving_core(&state, application_exit(app), failure_token)
 }
 
 fn challengeable_flush_failure(error: GameError) -> Result<GameError, GameError> {
@@ -1331,11 +1439,53 @@ fn parse_development_body<T: for<'de> serde::Deserialize<'de>>(
 }
 
 #[doc(hidden)]
+#[derive(Default)]
+pub struct DevelopmentExitDriver {
+    codes: Mutex<Vec<i32>>,
+}
+
+impl ApplicationExit for DevelopmentExitDriver {
+    fn exit(&self, code: i32) {
+        if let Ok(mut codes) = self.codes.lock() {
+            codes.push(code);
+        }
+    }
+}
+
+impl DevelopmentExitDriver {
+    #[doc(hidden)]
+    pub fn recorded_codes(&self) -> Vec<i32> {
+        self.codes
+            .lock()
+            .map(|codes| codes.clone())
+            .unwrap_or_default()
+    }
+}
+
+#[doc(hidden)]
 pub async fn dispatch_development_command(
     state: &AppState,
     command: &str,
     headers: &[RawThumbnailHeader<'_>],
     body: &[u8],
+) -> Result<DevelopmentCommandResponse, GameError> {
+    dispatch_development_command_with_exit(
+        state,
+        command,
+        headers,
+        body,
+        Arc::new(DevelopmentExitDriver::default()),
+    )
+    .await
+}
+
+#[doc(hidden)]
+pub async fn dispatch_development_command_with_exit(
+    state: &AppState,
+    command: &str,
+    headers: &[RawThumbnailHeader<'_>],
+    body: &[u8],
+    development_exit: Arc<DevelopmentExitDriver>,
 ) -> Result<DevelopmentCommandResponse, GameError> {
     match command {
         "list_saves" => {
@@ -1356,6 +1506,37 @@ pub async fn dispatch_development_command(
         }
         "get_thumbnail_activity" => {
             development_json(thumbnail_activity_snapshot(&state.coordinator))
+        }
+        "get_exit_status" => development_json(get_exit_status_core(state)),
+        "retry_exit" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                failure_token: PersistenceFailureTokenView,
+            }
+            let args: Args = parse_development_body(body)?;
+            let exit: Arc<dyn ApplicationExit> = development_exit;
+            development_json(retry_exit_core(state, exit, args.failure_token)?)
+        }
+        "cancel_exit" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                failure_token: PersistenceFailureTokenView,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(cancel_exit_core(state, args.failure_token)?)
+        }
+        "exit_without_saving" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                failure_token: PersistenceFailureTokenView,
+            }
+            let args: Args = parse_development_body(body)?;
+            let exit: Arc<dyn ApplicationExit> = development_exit;
+            exit_without_saving_core(state, exit, args.failure_token)?;
+            development_json(())
         }
         "start_game" | "reset_game" => {
             development_json(start_game_with_persistence_core(state).await?)
@@ -1841,6 +2022,16 @@ fn complete_interrogation_phase(
 #[cfg(all(feature = "e2e", not(debug_assertions)))]
 compile_error!("feature \"e2e\" is only for debug e2e builds");
 
+struct TauriApplicationExit {
+    app: tauri::AppHandle,
+}
+
+impl ApplicationExit for TauriApplicationExit {
+    fn exit(&self, code: i32) {
+        self.app.exit(code);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
@@ -1849,7 +2040,7 @@ pub fn run() {
         .plugin(tauri_plugin_wdio::init())
         .plugin(tauri_plugin_wdio_webdriver::init());
 
-    builder
+    let app = builder
         .setup(|app| {
             let resources_dir = resolve_scenes_dir(app.handle())
                 .map_err(|error| std::io::Error::other(error.message))?;
@@ -1880,6 +2071,7 @@ pub fn run() {
             list_saves,
             get_persistence_status,
             get_thumbnail_activity,
+            get_exit_status,
             start_game,
             start_game_without_saving,
             prepare_save_thumbnail,
@@ -1895,6 +2087,9 @@ pub fn run() {
             return_to_title_without_saving,
             acknowledge_acquisition_event,
             confirm_acquisition_without_saving,
+            retry_exit,
+            cancel_exit,
+            exit_without_saving,
             reset_game,
             get_state,
             list_scenes,
@@ -1912,8 +2107,40 @@ pub fn run() {
             resume_interrogation_testimony,
             complete_interrogation_phase,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        let state = app_handle.state::<AppState>();
+        match event {
+            tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::CloseRequested { api, .. },
+                ..
+            } => {
+                let exit: Arc<dyn ApplicationExit> = Arc::new(TauriApplicationExit {
+                    app: app_handle.clone(),
+                });
+                handle_close_requested(
+                    &label,
+                    || api.prevent_close(),
+                    |source| state.coordinator.request_exit_flush(exit, source),
+                );
+            }
+            tauri::RunEvent::ExitRequested { code, api, .. } => {
+                let exit: Arc<dyn ApplicationExit> = Arc::new(TauriApplicationExit {
+                    app: app_handle.clone(),
+                });
+                handle_exit_requested(
+                    code,
+                    &state.coordinator,
+                    || api.prevent_exit(),
+                    |source| state.coordinator.request_exit_flush(exit, source),
+                );
+            }
+            _ => {}
+        }
+    });
 }
 
 #[cfg(test)]
@@ -2013,6 +2240,10 @@ mod tests {
                         THUMBNAIL_ACTIVITY_CHANGED_EVENT.into(),
                         serde_json::to_value(coordinator.thumbnail_activity()).unwrap(),
                     ),
+                    (
+                        EXIT_STATUS_CHANGED_EVENT.into(),
+                        serde_json::to_value(exit_status_snapshot(&coordinator)).unwrap(),
+                    ),
                 ]
             );
 
@@ -2064,6 +2295,285 @@ mod tests {
                         .unwrap_err();
                 assert_eq!(http_error, tauri_error);
             }
+        }
+    }
+
+    mod exit_lifecycle {
+        use super::*;
+        use crate::game::save::coordinator::{
+            AppSession, ApplicationExit, ExitRequestSource, SaveCoordinator,
+        };
+        use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
+        use std::cell::{Cell, RefCell};
+        use tokio::sync::Notify;
+
+        #[derive(Default)]
+        struct RecordingExit {
+            calls: Mutex<Vec<i32>>,
+            called: Notify,
+        }
+
+        impl ApplicationExit for RecordingExit {
+            fn exit(&self, code: i32) {
+                self.calls.lock().unwrap().push(code);
+                self.called.notify_waiters();
+            }
+        }
+
+        impl RecordingExit {
+            async fn wait_for_call(&self) {
+                loop {
+                    let notified = self.called.notified();
+                    if !self.calls.lock().unwrap().is_empty() {
+                        return;
+                    }
+                    notified.await;
+                }
+            }
+        }
+
+        #[test]
+        fn exit_lifecycle_main_window_close_prevents_and_schedules_only_the_main_window() {
+            let prevented = Cell::new(0);
+            let scheduled = RefCell::new(Vec::new());
+
+            handle_close_requested(
+                "main",
+                || prevented.set(prevented.get() + 1),
+                |source| scheduled.borrow_mut().push(source),
+            );
+            handle_close_requested(
+                "secondary",
+                || prevented.set(prevented.get() + 1),
+                |source| scheduled.borrow_mut().push(source),
+            );
+
+            assert_eq!(prevented.get(), 1);
+            assert_eq!(*scheduled.borrow(), vec![ExitRequestSource::WindowClose]);
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_user_exit_is_prevented_but_programmatic_bypass_is_consumed_once() {
+            let session = Arc::new(Mutex::new(AppSession::empty()));
+            let coordinator =
+                SaveCoordinator::for_application(session, Arc::new(tokio::sync::Mutex::new(())));
+            let exit = Arc::new(RecordingExit::default());
+            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::WindowClose);
+            exit.wait_for_call().await;
+
+            let prevented = Cell::new(0);
+            let scheduled = RefCell::new(Vec::new());
+            handle_exit_requested(
+                Some(0),
+                &coordinator,
+                || prevented.set(prevented.get() + 1),
+                |source| scheduled.borrow_mut().push(source),
+            );
+            assert_eq!(prevented.get(), 0);
+            assert!(scheduled.borrow().is_empty());
+
+            handle_exit_requested(
+                Some(0),
+                &coordinator,
+                || prevented.set(prevented.get() + 1),
+                |source| scheduled.borrow_mut().push(source),
+            );
+            handle_exit_requested(
+                None,
+                &coordinator,
+                || prevented.set(prevented.get() + 1),
+                |source| scheduled.borrow_mut().push(source),
+            );
+
+            assert_eq!(prevented.get(), 2);
+            assert_eq!(
+                *scheduled.borrow(),
+                vec![
+                    ExitRequestSource::ApplicationQuit,
+                    ExitRequestSource::ApplicationQuit
+                ]
+            );
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_saving_keeps_rendered_state_readable_but_mutations_inert() {
+            let engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            let expected = engine.view().unwrap();
+            let session = Arc::new(Mutex::new(AppSession::installed(engine, 8, None)));
+            let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let coordinator = SaveCoordinator::for_application(
+                Arc::clone(&session),
+                Arc::clone(&replacement_gate),
+            );
+            let app = AppState {
+                session,
+                replacement_gate,
+                coordinator: coordinator.clone(),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+                persistence: None,
+            };
+            coordinator.request_exit_flush(
+                Arc::new(RecordingExit::default()),
+                ExitRequestSource::WindowClose,
+            );
+
+            assert_eq!(
+                serde_json::to_value(read_game_state(&app).unwrap()).unwrap(),
+                serde_json::to_value(&expected).unwrap()
+            );
+            assert_eq!(
+                run_gameplay_mutation(
+                    &app,
+                    MutationPersistencePolicy::AutosaveIfAdvanced,
+                    |engine| engine.view(),
+                )
+                .unwrap_err()
+                .code,
+                "persistenceOperationInProgress"
+            );
+            assert_eq!(
+                start_game_core(
+                    &app,
+                    empty_engine_with_scene(
+                        investigation_scene_with_intro("replacement", vec![]),
+                        1,
+                    ),
+                )
+                .await
+                .unwrap_err()
+                .code,
+                "persistenceOperationInProgress"
+            );
+            assert_eq!(
+                serde_json::to_value(
+                    app.session
+                        .lock()
+                        .unwrap()
+                        .engine
+                        .as_ref()
+                        .unwrap()
+                        .view()
+                        .unwrap()
+                )
+                .unwrap(),
+                serde_json::to_value(expected).unwrap()
+            );
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_getter_event_and_http_share_complete_status_and_error_views() {
+            let session = Arc::new(Mutex::new(AppSession::empty()));
+            let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let coordinator = SaveCoordinator::for_application(
+                Arc::clone(&session),
+                Arc::clone(&replacement_gate),
+            );
+            let app = AppState {
+                session,
+                replacement_gate,
+                coordinator: coordinator.clone(),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+                persistence: None,
+            };
+            let events = Arc::new(Mutex::new(Vec::<(String, serde_json::Value)>::new()));
+            let recorded = Arc::clone(&events);
+            bind_persistence_status_events(&coordinator, move |name, payload| {
+                recorded.lock().unwrap().push((name.into(), payload));
+            });
+            let exit = Arc::new(RecordingExit::default());
+            coordinator.request_exit_flush(exit.clone(), ExitRequestSource::WindowClose);
+
+            let getter = serde_json::to_value(get_exit_status_core(&app)).unwrap();
+            let latest_exit_event = events
+                .lock()
+                .unwrap()
+                .iter()
+                .rev()
+                .find(|(name, _)| name == EXIT_STATUS_CHANGED_EVENT)
+                .unwrap()
+                .1
+                .clone();
+            let dev_exit = Arc::new(DevelopmentExitDriver::default());
+            let http = dispatch_development_command_with_exit(
+                &app,
+                "get_exit_status",
+                &[],
+                b"",
+                Arc::clone(&dev_exit),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(latest_exit_event, getter);
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&http.body).unwrap(),
+                getter
+            );
+
+            let wrong_token = PersistenceFailureTokenView::from_error(
+                &GameError::save_write_failed()
+                    .with_failure_token("00000000-0000-4000-8000-000000000000".into()),
+            )
+            .unwrap();
+            let tauri_error = cancel_exit_core(&app, wrong_token.clone()).unwrap_err();
+            let http_error = dispatch_development_command_with_exit(
+                &app,
+                "cancel_exit",
+                &[],
+                &serde_json::to_vec(&serde_json::json!({
+                    "failureToken": wrong_token,
+                }))
+                .unwrap(),
+                Arc::clone(&dev_exit),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(http_error, tauri_error);
+            assert!(dev_exit.recorded_codes().is_empty());
+        }
+
+        #[tokio::test]
+        async fn exit_lifecycle_production_backend_flushes_while_exit_exclusivity_is_active() {
+            let resources = crate::game::test_support::save_capture_fixture_resources();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                resources.join("exit-saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            run_gameplay_mutation(
+                &app,
+                MutationPersistencePolicy::AdvanceWithoutSaving,
+                |engine| engine.jump_to_scene("chapter_1", "investigation_scene_1"),
+            )
+            .unwrap();
+            let (failed_tx, mut failed_rx) = tokio::sync::mpsc::unbounded_channel();
+            app.coordinator.subscribe_exit_status(move |status| {
+                if matches!(status, ExitStatusView::Failed { .. }) {
+                    let _ = failed_tx.send(status);
+                }
+            });
+            let exit = Arc::new(RecordingExit::default());
+
+            app.coordinator
+                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose);
+            tokio::select! {
+                _ = exit.wait_for_call() => {}
+                failed = failed_rx.recv() => panic!("production exit flush failed: {failed:?}"),
+            }
+
+            let browser = app.persistence.as_ref().unwrap().discover();
+            assert!(browser
+                .slots
+                .iter()
+                .any(|slot| matches!(slot.status, SaveSlotStatusView::Valid { .. })));
+            assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
         }
     }
 
@@ -3863,7 +4373,7 @@ mod tests {
         }
 
         #[test]
-        fn task_10_commands_are_registered_once_and_task_11_exit_commands_are_absent() {
+        fn task_11_commands_are_registered_once_with_the_existing_application_surface() {
             let source = include_str!("lib.rs");
             let handler_start = source
                 .find("tauri::generate_handler![")
@@ -3879,6 +4389,7 @@ mod tests {
                 "get_state",
                 "get_persistence_status",
                 "get_thumbnail_activity",
+                "get_exit_status",
                 "start_game",
                 "start_game_without_saving",
                 "prepare_save_thumbnail",
@@ -3894,6 +4405,9 @@ mod tests {
                 "return_to_title_without_saving",
                 "acknowledge_acquisition_event",
                 "confirm_acquisition_without_saving",
+                "retry_exit",
+                "cancel_exit",
+                "exit_without_saving",
                 "reset_game",
                 "list_scenes",
                 "jump_to_scene",
@@ -3916,19 +4430,6 @@ mod tests {
                     "{command} must be registered exactly once"
                 );
             }
-            for command in [
-                "get_exit_status",
-                "retry_exit",
-                "cancel_exit",
-                "exit_without_saving",
-            ] {
-                assert_eq!(
-                    registered_command_count(handler, command),
-                    0,
-                    "{command} belongs to Task 11"
-                );
-            }
-
             let production_source = source
                 .split("#[cfg(test)]")
                 .next()
@@ -3941,14 +4442,18 @@ mod tests {
         }
 
         #[test]
-        fn development_http_dispatch_registers_task_10_and_defers_task_11() {
-            let body = function_body(include_str!("lib.rs"), "dispatch_development_command");
+        fn development_http_dispatch_registers_the_complete_task_11_surface() {
+            let body = function_body(
+                include_str!("lib.rs"),
+                "dispatch_development_command_with_exit",
+            );
 
             for command in [
                 "list_saves",
                 "get_state",
                 "get_persistence_status",
                 "get_thumbnail_activity",
+                "get_exit_status",
                 "start_game",
                 "start_game_without_saving",
                 "prepare_save_thumbnail",
@@ -3964,24 +4469,15 @@ mod tests {
                 "return_to_title_without_saving",
                 "acknowledge_acquisition_event",
                 "confirm_acquisition_without_saving",
+                "retry_exit",
+                "cancel_exit",
+                "exit_without_saving",
                 "reset_game",
             ] {
                 assert_eq!(
                     body.matches(&format!("\"{command}\"")).count(),
                     1,
                     "{command} must have exactly one HTTP dispatch arm"
-                );
-            }
-            for command in [
-                "get_exit_status",
-                "retry_exit",
-                "cancel_exit",
-                "exit_without_saving",
-            ] {
-                assert_eq!(
-                    body.matches(&format!("\"{command}\"")).count(),
-                    0,
-                    "{command} belongs to Task 11"
                 );
             }
         }
