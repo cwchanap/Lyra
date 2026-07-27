@@ -86,6 +86,31 @@ pub(crate) struct SaveFileMetadata {
     pub(crate) byte_length: u64,
 }
 
+enum BoundedSlotJsonBody {
+    Readable(Vec<u8>),
+    Oversized,
+}
+
+enum SlotJsonObservation {
+    Missing,
+    Readable {
+        metadata: SaveFileMetadata,
+        bytes: Vec<u8>,
+    },
+    Oversized {
+        metadata: SaveFileMetadata,
+    },
+}
+
+impl SlotJsonObservation {
+    fn bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Readable { bytes, .. } => Some(bytes),
+            Self::Missing | Self::Oversized { .. } => None,
+        }
+    }
+}
+
 pub(crate) struct SaveDiscoveryContext {
     pub(crate) resources_dir: PathBuf,
     pub(crate) definitions: Arc<CurrentDefinitions>,
@@ -557,8 +582,17 @@ fn discover_slot(
         }
     };
     let modified_at = Some(format_modified_at(metadata.modified_at));
-    let bytes = match read_bounded_slot_json_bytes(fs, &path, &metadata) {
-        Ok(bytes) => bytes,
+    let bytes = match read_bounded_slot_json_body(fs, &path, &metadata) {
+        Ok(BoundedSlotJsonBody::Readable(bytes)) => bytes,
+        Ok(BoundedSlotJsonBody::Oversized) => {
+            return invalid_slot(
+                reference,
+                modified_at,
+                Some(metadata.modified_at),
+                None,
+                GameError::save_read_failed(),
+            );
+        }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             return SaveSlotView {
                 reference,
@@ -890,15 +924,15 @@ pub(crate) fn commit_prepared_slot_write(
     let slot_path = slot_path(root, prepared.reference)?;
     let thumbnails = thumbnail_directory(root);
     let mut cleanup_diagnostic = None;
-    let prior_bytes = match read_optional(fs, &slot_path) {
-        Ok(bytes) => bytes,
+    let prior = match read_optional(fs, &slot_path) {
+        Ok(observation) => observation,
         Err(error) => {
             let _ = discard_prepared_slot_write(prepared);
             return Err(error);
         }
     };
-    if prior_bytes
-        .as_deref()
+    if prior
+        .bytes()
         .and_then(safely_canonical_save_id)
         .is_some_and(|id| id.hyphenated().to_string() == prepared.unavailable_envelope.save_id)
     {
@@ -950,7 +984,7 @@ pub(crate) fn commit_prepared_slot_write(
         }
     }
 
-    let current_bytes_result = match prepared.reference {
+    let current_observation_result = match prepared.reference {
         SaveSlotRef::Manual { .. } => match_manual_expectation(
             fs,
             &slot_path,
@@ -959,15 +993,15 @@ pub(crate) fn commit_prepared_slot_write(
         ),
         SaveSlotRef::Auto { .. } => read_optional(fs, &slot_path),
     };
-    let current_bytes = match current_bytes_result {
-        Ok(bytes) => bytes,
+    let current_observation = match current_observation_result {
+        Ok(observation) => observation,
         Err(error) => {
             let _ = staged_envelope.discard();
             return Err(error);
         }
     };
-    let old_sidecar = current_bytes
-        .as_deref()
+    let old_sidecar = current_observation
+        .bytes()
         .and_then(|bytes| validated_sidecar_from_slot(root, prepared.reference, bytes));
 
     staged_envelope
@@ -1021,9 +1055,11 @@ pub(crate) fn delete_slot(
     observation: OccupiedSlotExpectation,
 ) -> Result<SlotDeleteOutcome, GameError> {
     let path = slot_path(root, reference)?;
-    let bytes =
+    let current =
         match_occupied_observation(fs, &path, &observation, GameError::stale_save_selection)?;
-    let old_sidecar = validated_sidecar_from_slot(root, reference, &bytes);
+    let old_sidecar = current
+        .bytes()
+        .and_then(|bytes| validated_sidecar_from_slot(root, reference, bytes));
 
     fs.remove_file(&path)
         .map_err(|_| GameError::save_write_failed())?;
@@ -1094,46 +1130,54 @@ fn read_bounded_slot_json(
     fs: &dyn SaveFilesystem,
     path: &Path,
 ) -> io::Result<Option<(SaveFileMetadata, Vec<u8>)>> {
-    let metadata = match fs.metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    let bytes = match read_bounded_slot_json_bytes(fs, path, &metadata) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    Ok(Some((metadata, bytes)))
+    match observe_bounded_slot_json(fs, path)? {
+        SlotJsonObservation::Missing => Ok(None),
+        SlotJsonObservation::Readable { metadata, bytes } => Ok(Some((metadata, bytes))),
+        SlotJsonObservation::Oversized { .. } => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "save JSON exceeds the fixed byte limit",
+        )),
+    }
 }
 
-fn read_bounded_slot_json_bytes(
+fn observe_bounded_slot_json(
+    fs: &dyn SaveFilesystem,
+    path: &Path,
+) -> io::Result<SlotJsonObservation> {
+    let metadata = match fs.metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(SlotJsonObservation::Missing);
+        }
+        Err(error) => return Err(error),
+    };
+    match read_bounded_slot_json_body(fs, path, &metadata) {
+        Ok(BoundedSlotJsonBody::Readable(bytes)) => {
+            Ok(SlotJsonObservation::Readable { metadata, bytes })
+        }
+        Ok(BoundedSlotJsonBody::Oversized) => Ok(SlotJsonObservation::Oversized { metadata }),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(SlotJsonObservation::Missing),
+        Err(error) => Err(error),
+    }
+}
+
+fn read_bounded_slot_json_body(
     fs: &dyn SaveFilesystem,
     path: &Path,
     metadata: &SaveFileMetadata,
-) -> io::Result<Vec<u8>> {
+) -> io::Result<BoundedSlotJsonBody> {
     if metadata.byte_length > MAX_SAVE_JSON_BYTES as u64 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "save JSON exceeds the fixed byte limit",
-        ));
+        return Ok(BoundedSlotJsonBody::Oversized);
     }
     let bytes = fs.read_prefix(path, MAX_SAVE_JSON_BYTES + 1)?;
     if bytes.len() > MAX_SAVE_JSON_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "save JSON exceeds the fixed byte limit",
-        ));
+        return Ok(BoundedSlotJsonBody::Oversized);
     }
-    Ok(bytes)
+    Ok(BoundedSlotJsonBody::Readable(bytes))
 }
 
-fn read_optional(fs: &dyn SaveFilesystem, path: &Path) -> Result<Option<Vec<u8>>, GameError> {
-    match read_bounded_slot_json(fs, path) {
-        Ok(Some((_, bytes))) => Ok(Some(bytes)),
-        Ok(None) => Ok(None),
-        Err(_) => Err(GameError::save_read_failed()),
-    }
+fn read_optional(fs: &dyn SaveFilesystem, path: &Path) -> Result<SlotJsonObservation, GameError> {
+    observe_bounded_slot_json(fs, path).map_err(|_| GameError::save_read_failed())
 }
 
 fn match_manual_expectation(
@@ -1141,17 +1185,16 @@ fn match_manual_expectation(
     path: &Path,
     expectation: Option<&ManualSlotExpectation>,
     stale: fn() -> GameError,
-) -> Result<Option<Vec<u8>>, GameError> {
+) -> Result<SlotJsonObservation, GameError> {
     match expectation {
-        Some(ManualSlotExpectation::Empty) => {
-            if read_optional(fs, path)?.is_none() {
-                Ok(None)
-            } else {
+        Some(ManualSlotExpectation::Empty) => match read_optional(fs, path)? {
+            SlotJsonObservation::Missing => Ok(SlotJsonObservation::Missing),
+            SlotJsonObservation::Readable { .. } | SlotJsonObservation::Oversized { .. } => {
                 Err(stale())
             }
-        }
+        },
         Some(ManualSlotExpectation::Occupied { observation }) => {
-            match_occupied_observation(fs, path, observation, stale).map(Some)
+            match_occupied_observation(fs, path, observation, stale)
         }
         None => Err(stale()),
     }
@@ -1162,9 +1205,15 @@ fn match_occupied_observation(
     path: &Path,
     observation: &OccupiedSlotExpectation,
     stale: fn() -> GameError,
-) -> Result<Vec<u8>, GameError> {
-    let bytes = read_optional(fs, path)?.ok_or_else(stale)?;
-    let current_id = safely_canonical_save_id(&bytes);
+) -> Result<SlotJsonObservation, GameError> {
+    let current = read_optional(fs, path)?;
+    let (current_id, metadata) = match &current {
+        SlotJsonObservation::Missing => return Err(stale()),
+        SlotJsonObservation::Readable { metadata, bytes } => {
+            (safely_canonical_save_id(bytes), metadata)
+        }
+        SlotJsonObservation::Oversized { metadata } => (None, metadata),
+    };
     match observation.save_id.as_deref() {
         Some(expected) => {
             let expected = canonical_uuid_v4(expected).map_err(|_| stale())?;
@@ -1177,15 +1226,12 @@ fn match_occupied_observation(
                 return Err(stale());
             }
             let expected_modified = observation.modified_at.as_deref().ok_or_else(stale)?;
-            let metadata = fs
-                .metadata(path)
-                .map_err(|_| GameError::save_read_failed())?;
             if format_modified_at(metadata.modified_at) != expected_modified {
                 return Err(stale());
             }
         }
     }
-    Ok(bytes)
+    Ok(current)
 }
 
 #[derive(Deserialize)]
@@ -2155,6 +2201,84 @@ mod tests {
     }
 
     #[test]
+    fn manual_oversized_corrupt_overwrite_matches_exact_mtime_without_full_reads() {
+        let reference = SaveSlotRef::Manual { slot: 1 };
+        let expectation = || ManualSlotExpectation::Occupied {
+            observation: OccupiedSlotExpectation {
+                save_id: None,
+                modified_at: Some(OBSERVED_MTIME.into()),
+            },
+        };
+        let oversized = vec![b'x'; MAX_SAVE_JSON_BYTES + 1];
+
+        let matching = FakeFilesystem::new();
+        matching.put_file(
+            slot_path(reference),
+            oversized.clone(),
+            UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+        );
+        matching.report_byte_length(&slot_path(reference), 1);
+        let prepared =
+            prepare_slot_write(&matching, &root(), request(reference, Some(expectation())))
+                .unwrap();
+        assert!(commit_prepared_slot_write(&matching, &root(), prepared).is_ok());
+        assert_eq!(
+            committed_envelope(&matching, reference).save_id,
+            NEW_SAVE_ID
+        );
+        assert!(
+            matching
+                .reads()
+                .iter()
+                .any(|(path, limit)| path == &slot_path(reference)
+                    && *limit == Some(MAX_SAVE_JSON_BYTES + 1)),
+            "oversized corrupt overwrite must perform a bounded slot read"
+        );
+        assert!(
+            matching
+                .reads()
+                .iter()
+                .all(|(path, limit)| path != &slot_path(reference)
+                    || *limit == Some(MAX_SAVE_JSON_BYTES + 1)),
+            "oversized corrupt overwrite must never perform a full slot read"
+        );
+
+        let retouched = FakeFilesystem::new();
+        retouched.put_file(
+            slot_path(reference),
+            oversized.clone(),
+            UNIX_EPOCH + Duration::from_secs(1_700_000_001),
+        );
+        retouched.report_byte_length(&slot_path(reference), 1);
+        let prepared =
+            prepare_slot_write(&retouched, &root(), request(reference, Some(expectation())))
+                .unwrap();
+        assert_eq!(
+            commit_prepared_slot_write(&retouched, &root(), prepared)
+                .unwrap_err()
+                .code,
+            "staleManualOverwriteConfirmation"
+        );
+        assert_eq!(retouched.bytes(&slot_path(reference)).unwrap(), oversized);
+        assert!(
+            retouched
+                .reads()
+                .iter()
+                .any(|(path, limit)| path == &slot_path(reference)
+                    && *limit == Some(MAX_SAVE_JSON_BYTES + 1)),
+            "stale oversized corrupt overwrite must perform a bounded slot read"
+        );
+        assert!(
+            retouched
+                .reads()
+                .iter()
+                .all(|(path, limit)| path != &slot_path(reference)
+                    || *limit == Some(MAX_SAVE_JSON_BYTES + 1)),
+            "stale oversized corrupt overwrite must never perform a full slot read"
+        );
+    }
+
+    #[test]
     fn manual_empty_and_canonical_id_expectations_reject_replaced_slots() {
         let reference = SaveSlotRef::Manual { slot: 1 };
         let fs = occupied_fs(reference);
@@ -2293,6 +2417,49 @@ mod tests {
         assert!(outcome.cleanup_diagnostic.is_none());
         assert!(!corrupt.exists(&slot_path(reference)));
         assert!(corrupt.exists(&sidecar_path(OLD_SAVE_ID)));
+    }
+
+    #[test]
+    fn oversized_corrupt_delete_matches_exact_mtime_without_full_reads() {
+        let reference = SaveSlotRef::Manual { slot: 1 };
+        let observation = || OccupiedSlotExpectation {
+            save_id: None,
+            modified_at: Some(OBSERVED_MTIME.into()),
+        };
+        let oversized = vec![b'x'; MAX_SAVE_JSON_BYTES + 1];
+
+        let matching = FakeFilesystem::new();
+        matching.put_file(
+            slot_path(reference),
+            oversized.clone(),
+            UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+        );
+        matching.report_byte_length(&slot_path(reference), 1);
+        assert!(delete_slot(&matching, &root(), reference, observation()).is_ok());
+        assert!(!matching.exists(&slot_path(reference)));
+        assert_eq!(
+            matching.reads(),
+            vec![(slot_path(reference), Some(MAX_SAVE_JSON_BYTES + 1))]
+        );
+
+        let retouched = FakeFilesystem::new();
+        retouched.put_file(
+            slot_path(reference),
+            oversized.clone(),
+            UNIX_EPOCH + Duration::from_secs(1_700_000_001),
+        );
+        retouched.report_byte_length(&slot_path(reference), 1);
+        assert_eq!(
+            delete_slot(&retouched, &root(), reference, observation())
+                .unwrap_err()
+                .code,
+            "staleSaveSelection"
+        );
+        assert_eq!(retouched.bytes(&slot_path(reference)).unwrap(), oversized);
+        assert_eq!(
+            retouched.reads(),
+            vec![(slot_path(reference), Some(MAX_SAVE_JSON_BYTES + 1))]
+        );
     }
 
     #[test]
