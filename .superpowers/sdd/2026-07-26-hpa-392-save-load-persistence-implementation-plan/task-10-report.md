@@ -418,3 +418,138 @@ rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml \
 
 - Part C only: raw PNG request/response IPC, exact ticket-header parsing,
   complete persistence/thumbnail status events, and development HTTP parity.
+
+## Part C — raw thumbnail IPC, complete status events, and HTTP parity
+
+### Raw thumbnail request and response contracts
+
+- `submit_save_thumbnail` now accepts `tauri::ipc::Request` and only accepts
+  `InvokeBody::Raw`; a JSON byte array is rejected as a malformed PNG
+  submission.
+- One shared byte-oriented header validator is used by the Tauri command and
+  development HTTP bridge. It matches
+  `x-lyra-thumbnail-ticket` case-insensitively, requires exactly one value,
+  rejects non-UTF-8 and noncanonical/non-v4 UUID values, and does not trim or
+  normalize the opaque ticket.
+- Missing, duplicate, invalid, and malformed ticket headers fail before
+  coordinator submission. Contract tests prove the live ticket remains in
+  `capturing`, so no rejected ingress mutates coordinator state.
+- The 1 MiB raw body cap is checked on the borrowed request bytes before any
+  clone or coordinator call. The HTTP bridge also checks `Content-Length`
+  against that cap before body allocation.
+- `read_save_thumbnail` delegates to the existing bounded Task 6 storage
+  reader with only a typed slot and browser-observed save ID, then returns
+  `tauri::ipc::Response::new(bytes)`. Tests save a real available thumbnail,
+  recover byte-identical PNG data, and reject a stale observed ID. No command
+  accepts or returns a filesystem path or URL.
+
+### Complete status snapshots and events
+
+- Getter snapshots and event payloads use the same complete
+  `PersistenceHealthView` and `ThumbnailActivityView` serialization.
+- Application setup binds the coordinator's one subscription surface to the
+  exact `persistence-status-changed` and `thumbnail-activity-changed` event
+  names.
+- Subscription immediately emits both complete current snapshots and every
+  later publication emits another complete replacement payload. Tests compare
+  whole serialized values to the getters, including tagged variants and
+  optional diagnostic fields, rather than reconstructing individual fields.
+- The getters remain available for startup/event-recovery reads.
+
+### Development HTTP mirror
+
+- The development server now owns the same `AppState` facade as Tauri instead
+  of a transport-specific `Mutex<Option<GameEngine>>`. Its dispatcher calls
+  the exact Task 10 cores and preserves the existing gameplay/debug commands,
+  so mutation responses use `GameplayCommandResultView` in both transports.
+- A shared adapter serializes gameplay wrappers, save-browser views, and
+  status views once; parity tests compare the complete JSON values against
+  direct core results.
+- `POST /command/submit_save_thumbnail` is explicitly normalized and accepts
+  the same raw ticket-header/body shape. Legacy development command paths such
+  as `/get_state` remain accepted.
+- The socket parser preserves repeated header values and opaque non-UTF-8
+  bytes until the shared validator. It rejects duplicate or overflowing
+  `Content-Length`, rejects early EOF, and retains missing/duplicate ticket
+  error parity with the Tauri core.
+- Response writing is byte-oriented. A binary PNG response retains non-UTF-8
+  bytes and uses their exact byte count for `Content-Length`; the shared
+  thumbnail-read integration returns `image/png`.
+- CORS allows exactly `Content-Type, X-Lyra-Thumbnail-Ticket`.
+- Source guards require every Task 10 command plus the retained `reset_game`
+  development alias exactly once and require the four Task 11 exit commands
+  to remain absent from both Tauri registration and HTTP dispatch.
+
+### RED evidence
+
+Raw ingress contract:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  raw_thumbnail_command_contract
+  exit 101; 7 compile errors
+  missing RawThumbnailHeader and submit_save_thumbnail_core
+```
+
+Binary read and status events:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  thumbnail_read_returns_exact_bytes
+  exit 101; 2 compile errors
+  missing read_save_thumbnail_core
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  status_events_are_named_complete_snapshots
+  exit 101; 5 compile errors
+  missing event constants and bind_persistence_status_events
+```
+
+Shared development adapter and byte response:
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  development_http_adapter_serializes
+  exit 101; 4 compile errors
+  missing development AppState builder and dispatcher
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  --example dev_engine_server binary_response_preserves_bytes
+  exit 101; missing encode_response
+```
+
+### GREEN evidence
+
+```text
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  application_command_contract
+  exit 0; 34 passed, 477 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  --example dev_engine_server
+  exit 0; 6 passed
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml thumbnail
+  exit 0; 21 passed, 490 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml save
+  exit 0; 203 passed, 308 filtered out across 5 suites
+
+rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+  exit 0; 511 passed across 6 suites
+
+rtk cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml -- --check
+  exit 0
+
+rtk cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml \
+  --all-targets --all-features -- -D warnings
+  exit 0; no issues found
+
+rtk git diff --check
+  exit 0
+```
+
+### Deferred after Task 10
+
+- Task 11 only: `get_exit_status`, `retry_exit`, `cancel_exit`, and
+  `exit_without_saving`, plus native close/quit interception.
