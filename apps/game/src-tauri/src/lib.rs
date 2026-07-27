@@ -69,16 +69,14 @@ fn resolve_scenes_dir(app: &tauri::AppHandle) -> Result<PathBuf, GameError> {
     Ok(dir)
 }
 
+async fn start_game_core(state: &AppState, engine: GameEngine) -> Result<GameStateView, GameError> {
+    state.coordinator.install_session(state, engine, None).await
+}
+
 #[tauri::command]
 async fn start_game(state: tauri::State<'_, AppState>) -> Result<GameStateView, GameError> {
     let engine = GameEngine::new_started(state.resources_dir.clone())?;
-    let generation = state.coordinator.next_session_generation()?;
-    let view = engine.view()?;
-    let _gate = state.replacement_gate.lock().await;
-    let mut session = state.session.lock().map_err(|_| unavailable_error())?;
-    session.ensure_persistence_available()?;
-    *session = AppSession::installed(engine, generation, None);
-    Ok(view)
+    start_game_core(&state, engine).await
 }
 
 #[tauri::command]
@@ -330,4 +328,78 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::save::coordinator::ExclusivePersistenceIntent;
+    use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
+    use std::time::Duration;
+
+    fn engine(scene_id: &str) -> GameEngine {
+        empty_engine_with_scene(investigation_scene_with_intro(scene_id, vec![]), 1)
+    }
+
+    fn installed_scene_id(app: &AppState) -> String {
+        let session = app.session.lock().unwrap();
+        let view = session.engine.as_ref().unwrap().view().unwrap();
+        serde_json::to_value(view).unwrap()["scene"]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    fn app() -> AppState {
+        AppState {
+            session: Mutex::new(AppSession::installed(engine("old"), 40, None)),
+            replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+            coordinator: SaveCoordinator::new(),
+            resources_dir: PathBuf::new(),
+            save_root: PathBuf::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn start_core_rejects_queued_ack_before_allocating_or_installing() {
+        let app = app();
+        app.session.lock().unwrap().persistence.exclusive_intent =
+            Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+
+        let error = tokio::time::timeout(
+            Duration::from_millis(50),
+            start_game_core(&app, engine("new")),
+        )
+        .await
+        .expect("queued acknowledgement must fail fast")
+        .unwrap_err();
+
+        assert_eq!(error.code, "persistenceOperationInProgress");
+        assert_eq!(installed_scene_id(&app), "old");
+
+        app.session.lock().unwrap().persistence.exclusive_intent = None;
+        start_game_core(&app, engine("new")).await.unwrap();
+        assert_eq!(app.session.lock().unwrap().persistence.generation, 1);
+        assert_eq!(installed_scene_id(&app), "new");
+    }
+
+    #[tokio::test]
+    async fn reset_core_rejects_active_ack_without_waiting_for_its_gate() {
+        let app = app();
+        app.session.lock().unwrap().persistence.exclusive_intent =
+            Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+        let gate = app.replacement_gate.clone().lock_owned().await;
+
+        let error = tokio::time::timeout(
+            Duration::from_millis(50),
+            start_game_core(&app, engine("new")),
+        )
+        .await
+        .expect("active acknowledgement must fail before waiting for G")
+        .unwrap_err();
+
+        assert_eq!(error.code, "persistenceOperationInProgress");
+        assert_eq!(installed_scene_id(&app), "old");
+        drop(gate);
+    }
 }
