@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   advanceDialogueSelector,
   elementExists,
+  getPackagedGameState,
   resetCaptureProofStorage,
   startCaptureProofAtScene,
   waitTypewriterIdle,
@@ -37,6 +38,9 @@ type CaptureWrapperStatus = {
   available: number;
   lastClosedReason: string;
   completedGeneration: number;
+  embeddedFontCssBytes: number;
+  embeddedFontChunkCount: number;
+  embeddedZhHantCodePointCount: number;
 };
 
 async function captureWrapperStatus(): Promise<CaptureWrapperStatus> {
@@ -56,6 +60,18 @@ async function captureWrapperStatus(): Promise<CaptureWrapperStatus> {
       completedGeneration: Number(
         element?.getAttribute(
           "data-hpa-392-capture-proof-completed-generation",
+        ) ?? "0",
+      ),
+      embeddedFontCssBytes: Number(
+        element?.getAttribute("data-hpa-392-capture-proof-font-css-bytes") ??
+          "0",
+      ),
+      embeddedFontChunkCount: Number(
+        element?.getAttribute("data-hpa-392-capture-proof-font-chunks") ?? "0",
+      ),
+      embeddedZhHantCodePointCount: Number(
+        element?.getAttribute(
+          "data-hpa-392-capture-proof-font-zh-hant-code-points",
         ) ?? "0",
       ),
     };
@@ -84,10 +100,14 @@ async function waitForCaptureProofDialogueTextStable(): Promise<string> {
             ?.getAttribute("aria-disabled") ?? null,
       };
     }, advanceDialogueSelector);
+    const state = await getPackagedGameState();
+    const authoritativeText =
+      state.mode.type === "dialogue" ? state.mode.current.text : "";
     if (
       captureProofDialogueTextIsStable({
         before,
         after: snapshot.after,
+        authoritativeText,
         advanceAriaDisabled: snapshot.advanceAriaDisabled,
       })
     ) {
@@ -667,6 +687,16 @@ describe("HPA-392 packaged gameplay thumbnail proof", () => {
     if (captureAfterSwap.lastClosedReason !== "") {
       throw new Error(
         `capture proof wrapper closed unavailable before list_saves; baseline=${JSON.stringify(captureBeforeSwap)} current=${JSON.stringify(captureAfterSwap)}`,
+      );
+    }
+    if (
+      captureAfterSwap.embeddedZhHantCodePointCount < 1 ||
+      captureAfterSwap.embeddedFontChunkCount < 1 ||
+      captureAfterSwap.embeddedFontCssBytes < 1 ||
+      captureAfterSwap.embeddedFontCssBytes > 2_000_000
+    ) {
+      throw new Error(
+        `capture proof did not use a bounded embedded zh-Hant font subset: ${JSON.stringify(captureAfterSwap)}`,
       );
     }
 

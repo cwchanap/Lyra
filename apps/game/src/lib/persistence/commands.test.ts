@@ -112,6 +112,22 @@ describe("persistence command transport", () => {
     });
   });
 
+  it("cancels a persistence challenge with only its opaque token", async () => {
+    const commands = await loadCommands();
+    mocks.invoke.mockResolvedValueOnce(undefined);
+
+    await expect(
+      commands.cancelPersistenceFailure("00000000-0000-4000-8000-000000000000"),
+    ).resolves.toBeUndefined();
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "cancel_persistence_failure",
+      {
+        failureToken: "00000000-0000-4000-8000-000000000000",
+      },
+    );
+  });
+
   it("keeps filesystem and bypass details out of command argument shapes", () => {
     const source = readFileSync(join(testDir, "commands.ts"), "utf8");
 

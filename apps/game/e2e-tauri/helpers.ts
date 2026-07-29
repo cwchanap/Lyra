@@ -3,6 +3,1060 @@ import {
   DIALOGUE_DRAIN_CAP,
   STORY_CLEARED_STORAGE_KEY,
 } from "./production-anchors";
+import type {
+  ExitStatusView,
+  SaveBrowserOpenResultView,
+} from "$lib/persistence/types";
+import type { GameStateView, PendingAcquisitionView } from "$lib/state/types";
+
+type TauriInternals = {
+  invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+};
+
+export async function invokePackagedCommand<T>(
+  command: string,
+  args: Record<string, unknown> = {},
+): Promise<T> {
+  const result = await browser.execute(
+    async (
+      selectedCommand: string,
+      selectedArgs: Record<string, unknown>,
+    ): Promise<
+      { ok: true; value: unknown } | { ok: false; error: unknown }
+    > => {
+      const internals = (
+        window as unknown as { __TAURI_INTERNALS__?: TauriInternals }
+      ).__TAURI_INTERNALS__;
+      if (!internals) {
+        return {
+          ok: false,
+          error: {
+            code: "tauriUnavailable",
+            message: "Tauri internals are unavailable.",
+          },
+        };
+      }
+      try {
+        return {
+          ok: true,
+          value: await internals.invoke(selectedCommand, selectedArgs),
+        };
+      } catch (error) {
+        return { ok: false, error };
+      }
+    },
+    command,
+    args,
+  );
+  if (!result.ok) throw result.error;
+  return result.value as T;
+}
+
+export type PackagedCommandSettlement<T> =
+  | { ok: true; value: T }
+  | {
+      ok: false;
+      error: {
+        code: string;
+        message: string;
+        failureToken?: string;
+      };
+    };
+
+/**
+ * Observes an expected command rejection without returning its rejected
+ * object through WebDriver. Packaged WebKit turns a rejected Tauri object
+ * into an execute/sync protocol failure (`[object Object]`) before the Node
+ * caller can inspect it. Settle the invoke inside the page, copy only the
+ * public GameError fields to a DOM attribute, then read that plain JSON in a
+ * later synchronous probe.
+ */
+export async function settlePackagedCommand<T>(
+  command: string,
+  args: Record<string, unknown> = {},
+): Promise<PackagedCommandSettlement<T>> {
+  const requestId = `${Date.now()}-${Math.random()}`;
+  const attribute = "data-hpa-392-command-settlement";
+  const started = await browser.execute(
+    (
+      selectedCommand: string,
+      selectedArgs: Record<string, unknown>,
+      settlementAttribute: string,
+      settlementRequestId: string,
+    ) => {
+      const root = document.documentElement;
+      root.removeAttribute(settlementAttribute);
+      const internals = (
+        window as unknown as { __TAURI_INTERNALS__?: TauriInternals }
+      ).__TAURI_INTERNALS__;
+      const settle = (result: unknown) => {
+        root.setAttribute(
+          settlementAttribute,
+          JSON.stringify({
+            requestId: settlementRequestId,
+            result,
+          }),
+        );
+      };
+      if (!internals) {
+        settle({
+          ok: false,
+          error: {
+            code: "tauriUnavailable",
+            message: "Tauri internals are unavailable.",
+          },
+        });
+        return true;
+      }
+      const reject = (error: unknown) => {
+        const source =
+          error !== null && typeof error === "object"
+            ? (error as Record<string, unknown>)
+            : {};
+        settle({
+          ok: false,
+          error: {
+            code:
+              typeof source.code === "string"
+                ? source.code
+                : "unknownCommandError",
+            message:
+              typeof source.message === "string"
+                ? source.message
+                : String(error),
+            ...(typeof source.failureToken === "string"
+              ? { failureToken: source.failureToken }
+              : {}),
+          },
+        });
+      };
+      try {
+        void internals
+          .invoke(selectedCommand, selectedArgs)
+          .then((value) => settle({ ok: true, value }), reject);
+      } catch (error) {
+        reject(error);
+      }
+      return true;
+    },
+    command,
+    args,
+    attribute,
+    requestId,
+  );
+  if (!started) throw new Error(`command ${command} could not be started`);
+
+  await browser.pause(100);
+  let settlement: PackagedCommandSettlement<T> | null = null;
+  await browser.waitUntil(
+    async () => {
+      const serialized = await browser.execute(
+        (settlementAttribute: string) =>
+          document.documentElement.getAttribute(settlementAttribute),
+        attribute,
+      );
+      if (!serialized) return false;
+      const parsed = JSON.parse(serialized) as {
+        requestId?: unknown;
+        result?: PackagedCommandSettlement<T>;
+      };
+      if (parsed.requestId !== requestId || !parsed.result) return false;
+      settlement = parsed.result;
+      return true;
+    },
+    {
+      timeout: 30000,
+      interval: 250,
+      timeoutMsg: `command ${command} did not settle`,
+    },
+  );
+  await browser.execute(
+    (settlementAttribute: string) =>
+      document.documentElement.removeAttribute(settlementAttribute),
+    attribute,
+  );
+  if (!settlement) throw new Error(`command ${command} settlement is missing`);
+  return settlement;
+}
+
+export function assertHpa392Phase(
+  expected: string | readonly string[],
+): string {
+  const phase = process.env.LYRA_HPA392_PHASE;
+  const accepted = typeof expected === "string" ? [expected] : [...expected];
+  if (!phase || !accepted.includes(phase)) {
+    throw new Error(
+      `Expected HPA-392 phase ${accepted.join(" or ")}, got ${String(phase)}.`,
+    );
+  }
+  return phase;
+}
+
+export async function currentPackagedDocumentIdentity(): Promise<string> {
+  return browser.execute(() => {
+    const root = document.documentElement;
+    const existing = root.dataset.hpa392DocumentIdentity;
+    if (existing) return existing;
+    const identity = `${performance.timeOrigin}:${crypto.randomUUID()}`;
+    root.dataset.hpa392DocumentIdentity = identity;
+    return identity;
+  });
+}
+
+export function getPackagedGameState(): Promise<GameStateView> {
+  return invokePackagedCommand<GameStateView>("get_state");
+}
+
+async function packagedGameplayCommandGeneration(): Promise<number> {
+  return browser.execute(
+    (probe: string) =>
+      Number(
+        document
+          .querySelector(probe)
+          ?.getAttribute("data-hpa-392-capture-proof-completed-generation") ??
+          "0",
+      ),
+    anchors.captureProof.probe,
+  );
+}
+
+async function waitForPackagedGameplayCommandSettled(
+  beforeGeneration: number,
+  timeoutMsg: string,
+): Promise<void> {
+  const result = await browser.executeAsync(
+    (
+      probe: string,
+      baselineGeneration: number,
+      done: (result: {
+        settled: boolean;
+        generation: number;
+        status: string | null;
+      }) => void,
+    ) => {
+      const element = document.querySelector(probe);
+      if (!element) {
+        done({ settled: false, generation: 0, status: null });
+        return;
+      }
+      let completed = false;
+      const observer = new MutationObserver(() => settle());
+      const finish = (outcome: {
+        settled: boolean;
+        generation: number;
+        status: string | null;
+      }) => {
+        if (completed) return;
+        completed = true;
+        clearTimeout(timeout);
+        observer.disconnect();
+        done(outcome);
+      };
+      const settle = () => {
+        const generation = Number(
+          element.getAttribute(
+            "data-hpa-392-capture-proof-completed-generation",
+          ) ?? "0",
+        );
+        const status = element.getAttribute(
+          "data-hpa-392-capture-proof-command-status",
+        );
+        if (generation > baselineGeneration && status === "idle") {
+          finish({ settled: true, generation, status });
+        }
+      };
+      observer.observe(element, {
+        attributes: true,
+        attributeFilter: [
+          "data-hpa-392-capture-proof-completed-generation",
+          "data-hpa-392-capture-proof-command-status",
+        ],
+      });
+      const timeout = setTimeout(() => {
+        finish({
+          settled: false,
+          generation: Number(
+            element.getAttribute(
+              "data-hpa-392-capture-proof-completed-generation",
+            ) ?? "0",
+          ),
+          status: element.getAttribute(
+            "data-hpa-392-capture-proof-command-status",
+          ),
+        });
+      }, 90000);
+      settle();
+    },
+    anchors.captureProof.probe,
+    beforeGeneration,
+  );
+  if (!result.settled) {
+    throw new Error(
+      `${timeoutMsg} (generation ${result.generation}, status ${String(result.status)})`,
+    );
+  }
+}
+
+async function waitForPackagedDomTransition(
+  presentSelector: string,
+  absentSelector: string,
+  timeoutMsg: string,
+): Promise<void> {
+  // The embedded WebDriver holds WebKit's script executor for the full
+  // duration of execute/async, which prevents Tauri invoke callbacks from
+  // reaching the page. Leave one command-free window first, then keep the
+  // synchronous probes sparse enough for the callback to settle between them.
+  await browser.pause(500);
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (requiredSelector: string, removedSelector: string) =>
+          Boolean(document.querySelector(requiredSelector)) &&
+          !document.querySelector(removedSelector),
+        presentSelector,
+        absentSelector,
+      ),
+    {
+      timeout: 90000,
+      interval: 500,
+      timeoutMsg,
+    },
+  );
+}
+
+export async function waitForPackagedGameState(
+  predicate: (state: GameStateView) => boolean,
+  timeout = 30000,
+  timeoutMsg = "packaged game state did not reach the expected condition",
+): Promise<GameStateView> {
+  let last: GameStateView | null = null;
+  await browser.waitUntil(
+    async () => {
+      try {
+        last = await getPackagedGameState();
+        return predicate(last);
+      } catch {
+        return false;
+      }
+    },
+    { timeout, interval: 100, timeoutMsg },
+  );
+  if (!last) throw new Error(timeoutMsg);
+  return last;
+}
+
+export async function waitForButton(
+  accessibleName: string,
+  timeout = 15000,
+): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((name: string) => {
+        return Array.from(
+          document.querySelectorAll<HTMLButtonElement>("button"),
+        ).some(
+          (button) =>
+            !button.disabled &&
+            (button.getAttribute("aria-label") === name ||
+              (button.textContent ?? "").trim().includes(name)),
+        );
+      }, accessibleName),
+    {
+      timeout,
+      interval: 100,
+      timeoutMsg: `enabled button ${accessibleName} did not appear`,
+    },
+  );
+}
+
+export async function clickButton(accessibleName: string): Promise<void> {
+  await waitForButton(accessibleName);
+  const clicked = await browser.execute((name: string) => {
+    const button = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find(
+      (candidate) =>
+        candidate.getAttribute("aria-label") === name ||
+        (candidate.textContent ?? "").trim().includes(name),
+    );
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
+  }, accessibleName);
+  if (!clicked) {
+    throw new Error(`button ${accessibleName} was missing or disabled`);
+  }
+}
+
+export async function clickDialogButton(
+  heading: string,
+  accessibleName: string,
+): Promise<void> {
+  await waitForDialog(heading);
+  const clicked = await browser.execute(
+    (expectedHeading: string, expectedName: string) => {
+      const dialog = Array.from(
+        document.querySelectorAll<HTMLElement>('[role="dialog"]'),
+      ).find(
+        (candidate) =>
+          (candidate.getAttribute("aria-label") ?? "").includes(
+            expectedHeading,
+          ) ||
+          Array.from(candidate.querySelectorAll("h2")).some((title) =>
+            (title.textContent ?? "").includes(expectedHeading),
+          ),
+      );
+      const button = Array.from(
+        dialog?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+      ).find(
+        (candidate) =>
+          candidate.getAttribute("aria-label") === expectedName ||
+          (candidate.textContent ?? "").trim() === expectedName,
+      );
+      if (!button || button.disabled) return false;
+      button.click();
+      return true;
+    },
+    heading,
+    accessibleName,
+  );
+  if (!clicked) {
+    throw new Error(
+      `dialog ${heading} button ${accessibleName} was missing or disabled`,
+    );
+  }
+}
+
+export async function clickPersistenceBrowserButton(
+  accessibleName: string,
+): Promise<void> {
+  await browser.waitUntil(
+    async () => elementExists('[aria-label="存檔瀏覽器"]'),
+    {
+      timeout: 15000,
+      interval: 100,
+      timeoutMsg: "persistence browser did not appear",
+    },
+  );
+  const clicked = await browser.execute((expectedName: string) => {
+    const saveBrowser = document.querySelector('[aria-label="存檔瀏覽器"]');
+    const button = Array.from(
+      saveBrowser?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+    ).find(
+      (candidate) =>
+        candidate.getAttribute("aria-label") === expectedName ||
+        (candidate.textContent ?? "").trim() === expectedName,
+    );
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
+  }, accessibleName);
+  if (!clicked) {
+    throw new Error(
+      `persistence browser button ${accessibleName} was missing or disabled`,
+    );
+  }
+}
+
+export async function waitForDialog(
+  heading: string,
+  timeout = 15000,
+): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((expectedHeading: string) => {
+        return Array.from(document.querySelectorAll('[role="dialog"]')).some(
+          (dialog) =>
+            (dialog.getAttribute("aria-label") ?? "").includes(
+              expectedHeading,
+            ) ||
+            Array.from(dialog.querySelectorAll("h2")).some((title) =>
+              (title.textContent ?? "").includes(expectedHeading),
+            ),
+        );
+      }, heading),
+    {
+      timeout,
+      interval: 100,
+      timeoutMsg: `dialog ${heading} did not appear`,
+    },
+  );
+}
+
+export async function dialogText(heading: string): Promise<string> {
+  return browser.execute((expectedHeading: string) => {
+    const dialog = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="dialog"]'),
+    ).find(
+      (candidate) =>
+        (candidate.getAttribute("aria-label") ?? "").includes(
+          expectedHeading,
+        ) ||
+        Array.from(candidate.querySelectorAll("h2")).some((title) =>
+          (title.textContent ?? "").includes(expectedHeading),
+        ),
+    );
+    return (dialog?.textContent ?? "").trim();
+  }, heading);
+}
+
+export async function waitForNoDialog(
+  heading: string,
+  timeout = 15000,
+): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((expectedHeading: string) => {
+        return !Array.from(document.querySelectorAll('[role="dialog"]')).some(
+          (dialog) =>
+            (dialog.getAttribute("aria-label") ?? "").includes(
+              expectedHeading,
+            ) ||
+            Array.from(dialog.querySelectorAll("h2")).some((title) =>
+              (title.textContent ?? "").includes(expectedHeading),
+            ),
+        );
+      }, heading),
+    {
+      timeout,
+      interval: 100,
+      timeoutMsg: `dialog ${heading} remained open`,
+    },
+  );
+}
+
+export async function jumpToProductionScene(sceneId: string): Promise<void> {
+  await openGameMenu();
+  await clickButton(anchors.sceneSelect);
+  await browser.waitUntil(
+    async () => elementExists('[aria-label="場景跳轉"]'),
+    {
+      timeout: 15000,
+      timeoutMsg: "scene navigation panel did not appear",
+    },
+  );
+  const beforeGeneration = await packagedGameplayCommandGeneration();
+  await clickButton(sceneId);
+  await waitForPackagedGameplayCommandSettled(
+    beforeGeneration,
+    `scene ${sceneId} command did not settle`,
+  );
+  await waitForPackagedGameState(
+    (state) => state.scene.id === sceneId,
+    30000,
+    `scene ${sceneId} did not become current`,
+  );
+}
+
+export async function saveManualSlot(
+  slot: 1 | 2 | 3,
+  displayName: string,
+  overwrite = false,
+): Promise<void> {
+  await waitForPersistenceIdle();
+  await openGameMenu();
+  await clickButton(anchors.saveGame);
+  try {
+    await browser.waitUntil(
+      async () => elementExists('[aria-label="存檔瀏覽器"]'),
+      { timeout: 30000, timeoutMsg: "manual save browser did not appear" },
+    );
+  } catch (error) {
+    const rendered = await browser.execute(() => ({
+      bodyText: (document.body.textContent ?? "").trim().slice(-2000),
+      dialogs: Array.from(
+        document.querySelectorAll<HTMLElement>('[role="dialog"]'),
+      ).map((dialog) => ({
+        ariaLabel: dialog.getAttribute("aria-label"),
+        headings: Array.from(dialog.querySelectorAll("h2")).map((heading) =>
+          (heading.textContent ?? "").trim(),
+        ),
+        text: (dialog.textContent ?? "").trim().slice(0, 500),
+      })),
+      buttons: Array.from(
+        document.querySelectorAll<HTMLButtonElement>("button"),
+      )
+        .map((button) => ({
+          ariaLabel: button.getAttribute("aria-label"),
+          text: (button.textContent ?? "").trim().slice(0, 120),
+          disabled: button.disabled,
+        }))
+        .slice(-20),
+    }));
+    throw new Error(
+      [
+        error instanceof Error ? error.message : String(error),
+        `rendered=${JSON.stringify(rendered)}`,
+      ].join("\n"),
+      { cause: error },
+    );
+  }
+  await clickButton(`選擇手動存檔 ${slot}`);
+  await waitForDialog(anchors.nameSave);
+  const value = await browser.execute((name: string) => {
+    const input = document.querySelector<HTMLInputElement>("#manual-save-name");
+    if (!input) return null;
+    input.value = name;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return input.value;
+  }, displayName);
+  if (value !== displayName) throw new Error("manual save name input missing");
+  await clickDialogButton(anchors.nameSave, anchors.continueName);
+  if (overwrite) {
+    await waitForDialog(`覆寫手動存檔 ${slot}`);
+    await clickDialogButton(`覆寫手動存檔 ${slot}`, anchors.confirmOverwrite);
+  }
+  await waitForPersistenceLayersClosed(
+    `manual slot ${slot} save flow did not close the persistence layers and game menu`,
+  );
+  // The name/confirmation layer replaces SaveBrowser before the async capture
+  // and save have finished. The closed game menu above is therefore the
+  // completion signal: performManualSave closes it only after persistence
+  // succeeds. Reopen the browser so callers can inspect the refreshed card and
+  // continue exercising load/delete/preview behavior in the same phase.
+  await openGameMenu();
+  await clickButton(anchors.saveGame);
+  await browser.waitUntil(
+    async () => elementExists('[aria-label="存檔瀏覽器"]'),
+    {
+      timeout: 30000,
+      timeoutMsg: "refreshed manual save browser did not appear",
+    },
+  );
+  try {
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (slotNumber: number, expectedName: string) => {
+            const card = document.querySelector(
+              `article[data-slot-type="manual"][data-slot-number="${slotNumber}"]`,
+            );
+            return (card?.textContent ?? "").includes(expectedName);
+          },
+          slot,
+          displayName,
+        ),
+      {
+        timeout: 5000,
+        interval: 100,
+        timeoutMsg: `manual slot ${slot} did not show ${displayName}`,
+      },
+    );
+  } catch (error) {
+    const [native, rendered] = await Promise.all([
+      invokePackagedCommand<SaveBrowserOpenResultView>("list_saves"),
+      browser.execute(() => ({
+        browserText:
+          document.querySelector('[aria-label="存檔瀏覽器"]')?.textContent ??
+          null,
+        cards: Array.from(
+          document.querySelectorAll<HTMLElement>(
+            "article[data-slot-type][data-slot-number]",
+          ),
+        ).map((card) => ({
+          type: card.dataset.slotType ?? null,
+          slot: card.dataset.slotNumber ?? null,
+          text: (card.textContent ?? "").trim(),
+        })),
+      })),
+    ]);
+    const nativeSlot = native.browser.slots.find(
+      (candidate) =>
+        candidate.reference.type === "manual" &&
+        candidate.reference.slot === slot,
+    );
+    throw new Error(
+      [
+        error instanceof Error ? error.message : String(error),
+        `native=${JSON.stringify(nativeSlot ?? null)}`,
+        `rendered=${JSON.stringify(rendered)}`,
+      ].join("\n"),
+      { cause: error },
+    );
+  }
+}
+
+export async function waitForPersistenceLayersClosed(
+  timeoutMsg = "persistence layers and game menu did not close",
+): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute((gameMenuHeading: string) => {
+        const saveBrowserOpen =
+          document.querySelector('[aria-label="存檔瀏覽器"]') !== null;
+        const gameMenuOpen = Array.from(
+          document.querySelectorAll('[role="dialog"]'),
+        ).some((dialog) =>
+          Array.from(dialog.querySelectorAll("h2")).some((heading) =>
+            (heading.textContent ?? "").includes(gameMenuHeading),
+          ),
+        );
+        return !saveBrowserOpen && !gameMenuOpen;
+      }, anchors.gameMenu),
+    {
+      timeout: 90000,
+      interval: 100,
+      timeoutMsg,
+    },
+  );
+}
+
+export async function closePersistenceBrowserToGameplay(): Promise<void> {
+  await clickPersistenceBrowserButton("返回");
+  await browser.waitUntil(
+    async () => !(await elementExists('[aria-label="存檔瀏覽器"]')),
+    { timeout: 15000, timeoutMsg: "persistence browser did not close" },
+  );
+  const menuOpen = await browser.execute((heading: string) => {
+    return Array.from(document.querySelectorAll('[role="dialog"]')).some(
+      (dialog) =>
+        Array.from(dialog.querySelectorAll("h2")).some((title) =>
+          (title.textContent ?? "").includes(heading),
+        ),
+    );
+  }, anchors.gameMenu);
+  if (menuOpen) await clickButton(anchors.continueInvestigation);
+}
+
+export function dialogueFingerprint(state: GameStateView): string {
+  if (state.mode.type !== "dialogue") return "";
+  return JSON.stringify(state.mode.current);
+}
+
+export async function drainCurrentDialogue(
+  expectedMode: "explore" | "interrogation",
+  cap = 200,
+): Promise<GameStateView> {
+  await advanceDialogueUntil(async () => {
+    try {
+      return (await getPackagedGameState()).mode.type === expectedMode;
+    } catch {
+      return false;
+    }
+  }, cap);
+  return waitForPackagedGameState(
+    (state) => state.mode.type === expectedMode,
+    15000,
+    `dialogue did not drain to ${expectedMode}`,
+  );
+}
+
+export async function waitForAcquisitionOrdinal(
+  ordinal: number,
+): Promise<GameStateView> {
+  return waitForPackagedGameState(
+    (state) => state.pendingAcquisition?.ordinal === ordinal,
+    30000,
+    `acquisition ordinal ${ordinal} did not become current`,
+  );
+}
+
+export async function startAcquisitionAcknowledgement(
+  current: Pick<PendingAcquisitionView, "id" | "title">,
+): Promise<void> {
+  await waitForButton("CONTINUE", 90000);
+  const currentCardMatches = await browser.execute((currentTitle: string) => {
+    const card = document.querySelector(".acquisition-card");
+    return (
+      (card?.querySelector(".item-title")?.textContent ?? "").trim() ===
+      currentTitle
+    );
+  }, current.title);
+  if (!currentCardMatches) {
+    throw new Error(
+      `acquisition ${current.id} was not the current DOM notification`,
+    );
+  }
+  await clickButton("CONTINUE");
+}
+
+export async function waitForAcquisitionDomSettlement(
+  current: Pick<PendingAcquisitionView, "id" | "title">,
+): Promise<void> {
+  // Never invoke get_state until the owning acknowledgement command has
+  // updated or removed the keyed popup. A concurrent Tauri invoke can occupy
+  // the WebView response path needed to settle the Svelte command.
+  await browser.waitUntil(
+    async () =>
+      browser.execute((currentTitle: string) => {
+        const card = document.querySelector(".acquisition-card");
+        if (!card) return true;
+        const nextTitle = (
+          card.querySelector(".item-title")?.textContent ?? ""
+        ).trim();
+        const continueButton = Array.from(
+          card.querySelectorAll<HTMLButtonElement>("button"),
+        ).find((button) =>
+          (button.textContent ?? "").trim().includes("CONTINUE"),
+        );
+        return nextTitle !== currentTitle && continueButton?.disabled === false;
+      }, current.title),
+    {
+      timeout: 90000,
+      interval: 100,
+      timeoutMsg: `acquisition ${current.id} popup did not settle`,
+    },
+  );
+}
+
+export async function acknowledgeAcquisitionDomFirst(
+  current: Pick<PendingAcquisitionView, "id" | "title">,
+): Promise<void> {
+  await startAcquisitionAcknowledgement(current);
+  await waitForAcquisitionDomSettlement(current);
+}
+
+export async function dismissAllPendingAcquisitions(
+  options: { cap?: number; forceCaptureUnavailable?: boolean } = {},
+): Promise<void> {
+  const { cap = 50, forceCaptureUnavailable = false } = options;
+  for (let index = 0; index < cap; index += 1) {
+    const state = await getPackagedGameState();
+    const current = state.pendingAcquisition;
+    if (!current) {
+      await waitForNoDialog(anchors.evidenceAcquired, 90000);
+      await waitForPersistenceIdle();
+      if ((await getPackagedGameState()).pendingAcquisition === null) return;
+      continue;
+    }
+    if (forceCaptureUnavailable) {
+      await jsClick(anchors.captureProof.forceUnavailable);
+    }
+    await acknowledgeAcquisitionDomFirst(current);
+    await waitForPackagedGameState(
+      (next) => next.pendingAcquisition?.id !== current.id,
+      30000,
+      `acquisition ${current.id} did not advance`,
+    );
+  }
+  throw new Error(
+    `pending acquisitions did not drain within the cap of ${cap}`,
+  );
+}
+
+export async function returnToTitle(): Promise<void> {
+  await openGameMenu();
+  await clickButton(anchors.returnToTitle);
+  await waitForPackagedDomTransition(
+    '[aria-label="主選單"]',
+    "[data-gameplay-root]",
+    "title screen did not appear",
+  );
+}
+
+export async function continueFromTitle(): Promise<void> {
+  await waitForButton(anchors.continueGame, 30000);
+  await clickButton(anchors.continueGame);
+  await waitForPackagedDomTransition(
+    "[data-gameplay-root]",
+    '[aria-label="主選單"]',
+    "Continue did not leave the title screen",
+  );
+  await waitForPackagedGameState(
+    () => true,
+    30000,
+    "Continue did not install a packaged game state",
+  );
+}
+
+export async function openTitleLoadBrowser(): Promise<void> {
+  await waitForButton(anchors.loadGame, 30000);
+  await clickButton(anchors.loadGame);
+  await browser.waitUntil(
+    async () => elementExists('[aria-label="存檔瀏覽器"]'),
+    { timeout: 30000, timeoutMsg: "title load browser did not appear" },
+  );
+}
+
+export async function loadTitleSlot(
+  type: "auto" | "manual",
+  slot: number,
+): Promise<void> {
+  await openTitleLoadBrowser();
+  await clickButton(`選擇${type === "auto" ? "自動存檔" : "手動存檔"} ${slot}`);
+  await waitForPackagedDomTransition(
+    "[data-gameplay-root]",
+    '[aria-label="主選單"]',
+    `title load of ${type}-${slot} did not install gameplay`,
+  );
+  await waitForPackagedGameState(
+    () => true,
+    30000,
+    `title load of ${type}-${slot} did not install gameplay`,
+  );
+}
+
+export async function clickSaveCardButton(
+  type: "auto" | "manual",
+  slot: number,
+  label: "載入" | "刪除" | "選擇",
+): Promise<void> {
+  const clicked = await browser.execute(
+    (slotType: "auto" | "manual", slotNumber: number, buttonLabel: string) => {
+      const card = document.querySelector(
+        `article[data-slot-type="${slotType}"][data-slot-number="${slotNumber}"]`,
+      );
+      const button = Array.from(
+        card?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+      ).find((candidate) =>
+        (candidate.textContent ?? "").trim().includes(buttonLabel),
+      );
+      if (!button || button.disabled) return false;
+      button.click();
+      return true;
+    },
+    type,
+    slot,
+    label,
+  );
+  if (!clicked) {
+    throw new Error(`${type}-${slot} ${label} action was unavailable`);
+  }
+}
+
+export async function saveCardText(
+  type: "auto" | "manual",
+  slot: number,
+): Promise<string> {
+  return browser.execute(
+    (slotType: "auto" | "manual", slotNumber: number) => {
+      const card = document.querySelector(
+        `article[data-slot-type="${slotType}"][data-slot-number="${slotNumber}"]`,
+      );
+      return (card?.textContent ?? "").trim();
+    },
+    type,
+    slot,
+  );
+}
+
+export async function waitForPersistenceIdle(): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const status = await invokePackagedCommand<{ type: string }>(
+        "get_persistence_status",
+      );
+      const thumbnail = await invokePackagedCommand<{ type: string }>(
+        "get_thumbnail_activity",
+      );
+      return status.type === "healthy" && thumbnail.type !== "capturing";
+    },
+    {
+      timeout: 90000,
+      interval: 100,
+      timeoutMsg: "persistence did not settle to healthy",
+    },
+  );
+}
+
+export async function requestWindowClose(): Promise<void> {
+  await browser.execute(() => {
+    const internals = (
+      window as unknown as { __TAURI_INTERNALS__?: TauriInternals }
+    ).__TAURI_INTERNALS__;
+    if (!internals) throw new Error("Tauri internals are unavailable.");
+    void internals.invoke("plugin:window|close", { label: "main" });
+  });
+}
+
+export async function requestApplicationQuit(): Promise<void> {
+  await browser.execute(() => {
+    const internals = (
+      window as unknown as { __TAURI_INTERNALS__?: TauriInternals }
+    ).__TAURI_INTERNALS__;
+    if (!internals) throw new Error("Tauri internals are unavailable.");
+    void internals.invoke("e2e_request_application_quit", {
+      waitForActiveAcknowledgement: false,
+    });
+  });
+}
+
+export async function requestApplicationQuitWhenAcknowledging(): Promise<void> {
+  await browser.execute(() => {
+    const internals = (
+      window as unknown as { __TAURI_INTERNALS__?: TauriInternals }
+    ).__TAURI_INTERNALS__;
+    if (!internals) throw new Error("Tauri internals are unavailable.");
+    void internals.invoke("e2e_request_application_quit", {
+      waitForActiveAcknowledgement: true,
+    });
+  });
+}
+
+export async function waitForExitSavingWhileAlive(
+  timeout = 30000,
+): Promise<void> {
+  await waitForExitSavingDomWhileAlive(timeout);
+  const status = await invokePackagedCommand<ExitStatusView>("get_exit_status");
+  if (status.type !== "saving") {
+    throw new Error(
+      `native ExitStatus was ${status.type} after the saving UI appeared`,
+    );
+  }
+}
+
+export async function waitForExitSavingDomWhileAlive(
+  timeout = 30000,
+): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        () =>
+          document.querySelector('[role="status"][aria-label="儲存中…"]') !==
+          null,
+      ),
+    {
+      timeout,
+      interval: 20,
+      timeoutMsg: "process did not render the saving exit state while alive",
+    },
+  );
+  const handles = await browser.getWindowHandles();
+  if (handles.length === 0) {
+    throw new Error("ExitStatus reached saving after the last window closed");
+  }
+  const documentAlive = await browser.execute(
+    () => document.documentElement.isConnected,
+  );
+  if (!documentAlive) {
+    throw new Error("packaged document was unavailable during exit saving");
+  }
+}
+
+export function isPackagedDisconnectError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /(?:invalid session|no such window|session.*(?:closed|deleted)|window.*closed|disconnected|econnrefused|connection refused|failed to connect|terminated)/i.test(
+    message,
+  );
+}
+
+export async function waitForPackagedDisconnect(
+  timeout = 30000,
+): Promise<void> {
+  const retireDisconnectedSession = () => {
+    // The app owns this successful shutdown. Once the embedded driver has
+    // disappeared, prevent WDIO teardown from issuing DELETE against the dead
+    // port and converting the proven disconnect into an ECONNREFUSED failure.
+    delete (browser as unknown as { sessionId?: string }).sessionId;
+  };
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try {
+      if ((await browser.getWindowHandles()).length === 0) {
+        retireDisconnectedSession();
+        return;
+      }
+    } catch (error) {
+      if (isPackagedDisconnectError(error)) {
+        retireDisconnectedSession();
+        return;
+      }
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("packaged process remained connected after exit flush");
+}
 
 /** DialogueBox renders a visible <button aria-label="推進對話"> as a sibling
  * of the click-to-advance .box div. The button is the named advance target
@@ -207,10 +1261,28 @@ export async function startCaptureProofAtScene(
 
 export async function clickStartButton(): Promise<void> {
   await waitForShell();
+  await browser.waitUntil(
+    async () =>
+      browser.execute((label: string) => {
+        const button = Array.from(
+          document.querySelectorAll<HTMLButtonElement>("button"),
+        ).find(
+          (candidate) =>
+            candidate.getAttribute("aria-label") === label ||
+            (candidate.textContent ?? "").includes(label),
+        );
+        return !!button && !button.disabled;
+      }, anchors.startButton),
+    {
+      timeout: 30000,
+      interval: 100,
+      timeoutMsg: "main menu start control stayed disabled after discovery",
+    },
+  );
   const clicked = await browser.execute((label: string) => {
     const buttons = Array.from(document.querySelectorAll("button"));
     const btn = buttons.find((b) => (b.textContent ?? "").includes(label));
-    if (!btn) return false;
+    if (!btn || (btn as HTMLButtonElement).disabled) return false;
     // Finish entrance animations so layout/hit-testing is stable.
     document.getAnimations?.().forEach((a) => {
       try {
@@ -248,6 +1320,51 @@ export async function resetE2eStorage(): Promise<void> {
   await waitForShell();
 }
 
+export async function resetE2eStorageWithStoryClearance(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => typeof window.localStorage !== "undefined"),
+    { timeout: 30000, timeoutMsg: "localStorage unavailable" },
+  );
+  await browser.execute((clearanceKey: string) => {
+    const toRemove: string[] = [];
+    for (let index = 0; index < window.localStorage.length; index++) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith("lyra.")) toRemove.push(key);
+    }
+    for (const key of toRemove) window.localStorage.removeItem(key);
+    window.localStorage.setItem(clearanceKey, "true");
+    document.documentElement.setAttribute(
+      "data-hpa-392-storage-pre-refresh",
+      "",
+    );
+  }, STORY_CLEARED_STORAGE_KEY);
+  await browser.refresh();
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        () =>
+          document.readyState === "complete" &&
+          !document.documentElement.hasAttribute(
+            "data-hpa-392-storage-pre-refresh",
+          ),
+      ),
+    {
+      timeout: 30000,
+      timeoutMsg: "HPA-392 setup refresh did not replace the prior document",
+    },
+  );
+  await waitForShell();
+  const value = await browser.execute((clearanceKey: string) => {
+    return window.localStorage.getItem(clearanceKey);
+  }, STORY_CLEARED_STORAGE_KEY);
+  if (value !== "true") {
+    throw new Error(
+      `resetE2eStorageWithStoryClearance: ${STORY_CLEARED_STORAGE_KEY} did not persist across refresh (got ${JSON.stringify(value)})`,
+    );
+  }
+}
+
 export async function startFromMenu(): Promise<void> {
   await clickStartButton();
   try {
@@ -266,14 +1383,50 @@ export async function startFromMenu(): Promise<void> {
   } catch (e) {
     // Surface the on-screen error banner (if any) so resource/IPC failures
     // are diagnosable instead of just "did not appear after start".
-    const diag = await browser.execute(() => {
+    const diag = await browser.execute(async () => {
       const banner = document.querySelector("[role='alert'], .error-banner");
-      const tauriInternals =
-        typeof (window as unknown as Record<string, unknown>)
-          .__TAURI_INTERNALS__ !== "undefined";
+      const diagnosticWindow = window as Window & {
+        __TAURI_INTERNALS__?: TauriInternals;
+        __hpa392RuntimeErrors?: string[];
+      };
+      const internals = diagnosticWindow.__TAURI_INTERNALS__;
+      let nativeState:
+        | { ok: true; value: unknown }
+        | { ok: false; error: string };
+      try {
+        nativeState = internals
+          ? { ok: true, value: await internals.invoke("get_state", {}) }
+          : { ok: false, error: "Tauri internals are unavailable." };
+      } catch (error) {
+        nativeState = {
+          ok: false,
+          error:
+            error instanceof Error
+              ? (error.stack ?? error.message)
+              : JSON.stringify(error),
+        };
+      }
       return {
-        tauriInternals,
+        url: window.location.href,
+        documentIdentity:
+          document.documentElement.dataset.hpa392DocumentIdentity ?? null,
+        titleVisible: document.querySelector('[aria-label="主選單"]') !== null,
+        gameplayRootVisible:
+          document.querySelector("[data-gameplay-root]") !== null,
+        captureRootVisible:
+          document.querySelector("[data-save-thumbnail-root]") !== null,
+        tauriInternals: internals !== undefined,
         errorBanner: banner ? (banner.textContent ?? "").trim() : null,
+        runtimeErrors: diagnosticWindow.__hpa392RuntimeErrors ?? [],
+        bodyText: (document.body.textContent ?? "").trim(),
+        buttons: Array.from(
+          document.querySelectorAll<HTMLButtonElement>("button"),
+        ).map((button) => ({
+          ariaLabel: button.getAttribute("aria-label"),
+          text: (button.textContent ?? "").trim(),
+          disabled: button.disabled,
+        })),
+        nativeState,
       };
     });
     console.error("[startFromMenu diagnostic]", JSON.stringify(diag));
@@ -291,7 +1444,11 @@ export async function waitTypewriterIdle(): Promise<void> {
       }, advanceDialogueSelector);
     },
     {
-      timeout: 20000,
+      // A real packaged autosave captures the gameplay root before the next
+      // mutation becomes interactive. WebKit capture on an unfocused CI
+      // process can take just over 20 seconds; keep the assertion on the
+      // actual enabled control and give the owned capture its full deadline.
+      timeout: 60000,
       timeoutMsg: "dialogue advance stayed aria-disabled",
       interval: 100,
     },
@@ -428,22 +1585,92 @@ export async function drainToInvestigationExplore(): Promise<void> {
 }
 
 export async function openGameMenu(): Promise<void> {
-  await browser.keys("Escape");
-  await browser.waitUntil(
-    async () => {
-      return browser.execute((heading: string) => {
-        const dialogs = Array.from(
-          document.querySelectorAll('[role="dialog"]'),
-        );
-        return dialogs.some((d) =>
-          Array.from(d.querySelectorAll("h2")).some((h) =>
-            (h.textContent ?? "").includes(heading),
-          ),
-        );
-      }, anchors.gameMenu);
-    },
-    { timeout: 10000, timeoutMsg: "game menu dialog did not open" },
-  );
+  try {
+    await browser.waitUntil(
+      async () => {
+        const open = await browser.execute((heading: string) => {
+          const dialogs = Array.from(
+            document.querySelectorAll('[role="dialog"]'),
+          );
+          return dialogs.some((d) =>
+            Array.from(d.querySelectorAll("h2")).some((h) =>
+              (h.textContent ?? "").includes(heading),
+            ),
+          );
+        }, anchors.gameMenu);
+        if (open) return true;
+        // GameShell deliberately swallows Escape while a gameplay command and
+        // its owned thumbnail submission are still in flight. Retry with a new
+        // physical key event until that bounded frontend phase has settled.
+        await browser.keys("Escape");
+        return false;
+      },
+      {
+        timeout: 15000,
+        interval: 100,
+        timeoutMsg: "game menu dialog did not open",
+      },
+    );
+  } catch (error) {
+    const rendered = await browser.execute(() => ({
+      activeElement:
+        document.activeElement instanceof HTMLElement
+          ? {
+              tag: document.activeElement.tagName,
+              ariaLabel: document.activeElement.getAttribute("aria-label"),
+              text: (document.activeElement.textContent ?? "")
+                .trim()
+                .slice(0, 200),
+            }
+          : null,
+      dialogs: Array.from(
+        document.querySelectorAll<HTMLElement>('[role="dialog"]'),
+      ).map((dialog) => ({
+        ariaLabel: dialog.getAttribute("aria-label"),
+        headings: Array.from(dialog.querySelectorAll("h2")).map((heading) =>
+          (heading.textContent ?? "").trim(),
+        ),
+        text: (dialog.textContent ?? "").trim().slice(0, 500),
+      })),
+      buttons: Array.from(
+        document.querySelectorAll<HTMLButtonElement>("button"),
+      ).map((button) => ({
+        ariaLabel: button.getAttribute("aria-label"),
+        text: (button.textContent ?? "").trim().slice(0, 200),
+        disabled: button.disabled,
+      })),
+    }));
+    let native:
+      | {
+          mode: GameStateView["mode"];
+          scene: GameStateView["scene"];
+          pendingAcquisition: GameStateView["pendingAcquisition"];
+        }
+      | { diagnosticError: string };
+    try {
+      const state = await getPackagedGameState();
+      native = {
+        mode: state.mode,
+        scene: state.scene,
+        pendingAcquisition: state.pendingAcquisition,
+      };
+    } catch (diagnosticError) {
+      native = {
+        diagnosticError:
+          diagnosticError instanceof Error
+            ? diagnosticError.message
+            : String(diagnosticError),
+      };
+    }
+    throw new Error(
+      [
+        error instanceof Error ? error.message : String(error),
+        `native=${JSON.stringify(native)}`,
+        `rendered=${JSON.stringify(rendered)}`,
+      ].join("\n"),
+      { cause: error },
+    );
+  }
 }
 
 export async function seedStoryCleared(): Promise<void> {

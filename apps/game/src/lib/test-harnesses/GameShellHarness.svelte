@@ -5,8 +5,14 @@
   let {
     gameState,
     onCloseCase,
+    onSaveGame,
+    onLoadGame,
+    onReturnToTitle,
+    onTopLayerEscape,
     disabled = false,
     open = $bindable(false),
+    topLayerOpen = false,
+    gameplayInert = false,
     menuContent = null,
     menuExtraButtonLabel = null,
     sceneMenuEnabled = false,
@@ -16,10 +22,16 @@
   }: {
     gameState: GameStateView;
     onCloseCase: () => void;
+    onSaveGame?: () => void;
+    onLoadGame?: () => void;
+    onReturnToTitle?: () => void;
+    onTopLayerEscape?: () => void;
     disabled?: boolean;
     // Forwarded as a bindable so tests can drive the external close path
     // (production: +page.svelte closes the menu on dossier reexamine).
     open?: boolean;
+    topLayerOpen?: boolean;
+    gameplayInert?: boolean;
     menuContent?: string | null;
     // When set, renders a focusable <button> inside the menu slot. Mirrors
     // production's <InventoryPanel>, whose toggle/evidence buttons are
@@ -37,7 +49,13 @@
 <GameShell
   {gameState}
   {onCloseCase}
+  {onSaveGame}
+  {onLoadGame}
+  {onReturnToTitle}
+  {onTopLayerEscape}
   {disabled}
+  {topLayerOpen}
+  {gameplayInert}
   {sceneMenuEnabled}
   {evidenceMenuEnabled}
   {onOpenEvidence}

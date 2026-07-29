@@ -19,6 +19,9 @@ import type {
   AcquisitionAcknowledgementPhase,
   ExitStatusView,
   GameplayCommandResultView,
+  PersistenceFailureTokenView,
+  SaveBrowserOpenResultView,
+  SaveSlotRef,
 } from "$lib/persistence/types";
 import type {
   GameError,
@@ -73,6 +76,8 @@ export const gameState = $state<{
   loading: false,
   inFlight: false,
 });
+
+export const presentationState = $state({ sessionEpoch: 0 });
 
 function normalizeError(error: unknown): string {
   if (error && typeof error === "object" && "message" in error) {
@@ -243,6 +248,125 @@ async function dispatchStateCommand(
 export async function startGame() {
   if (gameState.inFlight) return;
   await dispatchGameCommand("start_game", undefined, true);
+}
+
+async function dispatchPersistenceTransition(
+  command: string,
+  args?: Record<string, unknown>,
+  resetPresentation = false,
+): Promise<GameStateView> {
+  if (gameState.inFlight) {
+    throw {
+      code: "persistenceOperationInProgress",
+      message: "Persistence operation is already in progress.",
+    } satisfies GameError;
+  }
+  gameState.inFlight = true;
+  gameState.loading = true;
+  try {
+    const result = await invokePersistenceCommand<GameplayCommandResultView>(
+      command,
+      args,
+    );
+    if (resetPresentation) presentationState.sessionEpoch += 1;
+    gameState.error = null;
+    return await applyGameplayCommandResult(result);
+  } finally {
+    gameState.loading = false;
+    gameState.inFlight = false;
+  }
+}
+
+export function startPersistedGame(): Promise<GameStateView> {
+  return dispatchPersistenceTransition("start_game");
+}
+
+export function startGameWithoutSaving(
+  failureToken: PersistenceFailureTokenView,
+): Promise<GameStateView> {
+  return dispatchPersistenceTransition("start_game_without_saving", {
+    failureToken,
+  });
+}
+
+export function continuePersistedGame(): Promise<GameStateView> {
+  return dispatchPersistenceTransition("continue_game", undefined, true);
+}
+
+export function loadPersistedGame(
+  reference: SaveSlotRef,
+  observedSaveId: string,
+): Promise<GameStateView> {
+  return dispatchPersistenceTransition(
+    "load_save",
+    { reference, observedSaveId },
+    true,
+  );
+}
+
+export function loadPersistedGameDiscardingCurrent(
+  reference: SaveSlotRef,
+  observedSaveId: string,
+  failureToken: PersistenceFailureTokenView,
+): Promise<GameStateView> {
+  return dispatchPersistenceTransition(
+    "load_save_discarding_current",
+    { reference, observedSaveId, failureToken },
+    true,
+  );
+}
+
+async function dispatchReturnToTitle(
+  command: "return_to_title" | "return_to_title_without_saving",
+  args?: Record<string, unknown>,
+): Promise<SaveBrowserOpenResultView> {
+  if (gameState.inFlight) {
+    throw {
+      code: "persistenceOperationInProgress",
+      message: "Persistence operation is already in progress.",
+    } satisfies GameError;
+  }
+  gameState.inFlight = true;
+  try {
+    return await invokePersistenceCommand<SaveBrowserOpenResultView>(
+      command,
+      args,
+    );
+  } finally {
+    gameState.inFlight = false;
+  }
+}
+
+export function returnPersistedToTitle(): Promise<SaveBrowserOpenResultView> {
+  return dispatchReturnToTitle("return_to_title");
+}
+
+export function returnPersistedToTitleWithoutSaving(
+  failureToken: PersistenceFailureTokenView,
+): Promise<SaveBrowserOpenResultView> {
+  return dispatchReturnToTitle("return_to_title_without_saving", {
+    failureToken,
+  });
+}
+
+export async function settlePreparedThumbnailCapture(
+  request: GameplayCommandResultView["thumbnailCapture"],
+): Promise<void> {
+  if (!request || !gameState.value) return;
+  pinThumbnailCaptureDeadline(request);
+  const committedIdentity = gameState.value;
+  await finishThumbnailCapture(
+    { state: committedIdentity, thumbnailCapture: request },
+    committedIdentity,
+  );
+}
+
+export function resetFrontendForTitle(): void {
+  presentationState.sessionEpoch += 1;
+  gameState.value = null;
+  gameState.error = null;
+  gameState.loading = false;
+  gameState.inFlight = false;
 }
 
 export async function resetGame() {

@@ -67,6 +67,41 @@ describe("thumbnail capture deadline", () => {
 });
 
 describe("gameplay capture SVG layout normalization", () => {
+  it("prepends the embedded zh-Hant family only inside the cloned SVG", () => {
+    const source = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+        <foreignObject width="100%" height="100%">
+          <div
+            xmlns="http://www.w3.org/1999/xhtml"
+            data-save-thumbnail-root=""
+            style="font-family: &quot;Shippori Mincho&quot;, serif;"
+          >
+            <span style="font-family: &quot;Dela Gothic One&quot;, serif;">證據</span>
+          </div>
+        </foreignObject>
+      </svg>
+    `;
+
+    const normalized = normalizeGameplayCaptureSvg(
+      `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`,
+    );
+    const parsed = new DOMParser().parseFromString(
+      decodeURIComponent(
+        normalized.slice("data:image/svg+xml;charset=utf-8,".length),
+      ),
+      "image/svg+xml",
+    );
+    const root = parsed.querySelector("[data-save-thumbnail-root]");
+    const child = parsed.querySelector("span");
+
+    expect(root?.getAttribute("style")).toContain(
+      '"Lyra Thumbnail Zh-Hant", "Shippori Mincho", serif',
+    );
+    expect(child?.getAttribute("style")).toContain(
+      '"Lyra Thumbnail Zh-Hant", "Dela Gothic One", serif',
+    );
+  });
+
   it("reanchors fixed gameplay images inside the capture viewport without changing unrelated layers", () => {
     const source = `
       <svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
@@ -663,6 +698,73 @@ function installFontsReady(ready: Promise<unknown> = Promise.resolve()): void {
 }
 
 describe("html-to-image gameplay capture", () => {
+  it("selects and caches only local font chunks covering captured zh-Hant text", async () => {
+    type FontFaceSource = Readonly<{
+      sourceUrl: string;
+      unicodeRange: string;
+      fontStyle: string;
+      fontWeight: string;
+    }>;
+    type FontEmbedResult = Readonly<{
+      css: string;
+      selectedChunkCount: number;
+      embeddedZhHantCodePointCount: number;
+      cssBytes: number;
+    }>;
+    type FontEmbedderFactory = (input: {
+      fontFaces: (document: Document) => readonly FontFaceSource[];
+      loadFontDataUrl: (sourceUrl: string) => Promise<string>;
+    }) => (root: HTMLElement) => Promise<FontEmbedResult>;
+    const createFontEmbedder = (
+      thumbnailCaptureModule as unknown as {
+        createThumbnailFontEmbedder?: FontEmbedderFactory;
+      }
+    ).createThumbnailFontEmbedder;
+    const sourceFaces: FontFaceSource[] = [
+      {
+        sourceUrl: "/fonts/han-8b49.woff2",
+        unicodeRange: "U+8B49",
+        fontStyle: "normal",
+        fontWeight: "200 900",
+      },
+      {
+        sourceUrl: "/fonts/latin.woff2",
+        unicodeRange: "U+0000-00FF",
+        fontStyle: "normal",
+        fontWeight: "200 900",
+      },
+    ];
+    const loadFontDataUrl = vi.fn(async (sourceUrl: string) =>
+      sourceUrl.includes("han")
+        ? "data:font/woff2;base64,SEFO"
+        : "data:font/woff2;base64,TEFUSU4=",
+    );
+    const embedder = createFontEmbedder?.({
+      fontFaces: () => sourceFaces,
+      loadFontDataUrl,
+    });
+    const root = captureRoot();
+    root.textContent = "證 A";
+
+    const first = await embedder?.(root);
+    const second = await embedder?.(root);
+
+    expect(first).toEqual({
+      css: [
+        '@font-face { font-family: "Lyra Thumbnail Zh-Hant"; font-style: normal; font-weight: 200 900;',
+        'src: url("data:font/woff2;base64,SEFO") format("woff2"); unicode-range: U+8B49; }',
+      ].join(" "),
+      selectedChunkCount: 1,
+      embeddedZhHantCodePointCount: 1,
+      cssBytes: 175,
+    });
+    expect(second).toEqual(first);
+    expect(loadFontDataUrl).toHaveBeenCalledExactlyOnceWith(
+      "/fonts/han-8b49.woff2",
+    );
+    expect(sourceFaces).toHaveLength(2);
+  });
+
   it("passes the curated WebKit style properties to the ordinary renderer", async () => {
     const root = captureRoot();
     root.append(loadedImage());
@@ -751,9 +853,18 @@ describe("html-to-image gameplay capture", () => {
     );
     const request = { ticket: "capture-1", timeoutMs: 725 };
     pinThumbnailCaptureDeadline(request, 100);
+    const fontEmbedCss =
+      '@font-face { font-family: "Lyra Thumbnail Zh-Hant"; src: url("data:font/woff2;base64,SEFO"); }';
+    const embedFontForCapture = vi.fn().mockResolvedValue({
+      css: fontEmbedCss,
+      selectedChunkCount: 1,
+      embeddedZhHantCodePointCount: 2,
+      cssBytes: new TextEncoder().encode(fontEmbedCss).byteLength,
+    });
     const capture = createHtmlToImageGameplayCapture({
       root: () => root,
       now: () => 100,
+      embedFontForCapture,
     });
 
     const pending = capture.capture(request);
@@ -782,8 +893,10 @@ describe("html-to-image gameplay capture", () => {
       canvasWidth: 480,
       canvasHeight: 360,
       pixelRatio: 1,
-      skipFonts: false,
+      skipFonts: true,
+      fontEmbedCSS: fontEmbedCss,
     });
+    expect(embedFontForCapture).toHaveBeenCalledExactlyOnceWith(root);
     expect(options.filter?.(ordinary)).toBe(true);
     expect(options.filter?.(excluded)).toBe(false);
     expect(options.filter?.(excludedChild)).toBe(false);
@@ -805,6 +918,31 @@ describe("html-to-image gameplay capture", () => {
     expect(root.style.getPropertyValue("--save-crossfade-transition")).toBe("");
     expect(winner.style.opacity).toBe("");
     expect(winner.style.transition).toBe("");
+  });
+
+  it("spends the same fixed ticket deadline while preparing embedded fonts", async () => {
+    vi.useFakeTimers();
+    const root = captureRoot();
+    root.textContent = "證據";
+    installFontsReady();
+    const renderToBlob = vi.fn();
+    const request = { ticket: "capture-font-embed-timeout", timeoutMs: 75 };
+    pinThumbnailCaptureDeadline(request, 0);
+    const capture = createHtmlToImageGameplayCapture({
+      root: () => root,
+      now: () => 0,
+      renderToBlob,
+      embedFontForCapture: () => new Promise(() => {}),
+    });
+
+    const pending = capture.capture(request);
+    await vi.advanceTimersByTimeAsync(75);
+
+    await expect(pending).resolves.toEqual({
+      type: "unavailable",
+      reason: "fontsDeadlineExpired",
+    });
+    expect(renderToBlob).not.toHaveBeenCalled();
   });
 
   it("excludes marked winner assets from the UI SVG and passes mapped layers to the renderer", async () => {
@@ -1238,6 +1376,9 @@ describe("packaged capture proof wrapper", () => {
       available: 0,
       lastClosedReason: "",
       lastRenderDiagnostic: "",
+      embeddedFontCssBytes: 0,
+      embeddedFontChunkCount: 0,
+      embeddedZhHantCodePointCount: 0,
     });
 
     await proof.capture.capture(request);
@@ -1246,6 +1387,9 @@ describe("packaged capture proof wrapper", () => {
       available: 0,
       lastClosedReason: "renderDeadlineExpired",
       lastRenderDiagnostic: "",
+      embeddedFontCssBytes: 0,
+      embeddedFontChunkCount: 0,
+      embeddedZhHantCodePointCount: 0,
     });
 
     await proof.capture.capture(request);
@@ -1254,6 +1398,9 @@ describe("packaged capture proof wrapper", () => {
       available: 1,
       lastClosedReason: "",
       lastRenderDiagnostic: "",
+      embeddedFontCssBytes: 0,
+      embeddedFontChunkCount: 0,
+      embeddedZhHantCodePointCount: 0,
     });
 
     proof.forceNextUnavailable();
@@ -1263,6 +1410,9 @@ describe("packaged capture proof wrapper", () => {
       available: 1,
       lastClosedReason: "forcedUnavailable",
       lastRenderDiagnostic: "",
+      embeddedFontCssBytes: 0,
+      embeddedFontChunkCount: 0,
+      embeddedZhHantCodePointCount: 0,
     });
   });
 

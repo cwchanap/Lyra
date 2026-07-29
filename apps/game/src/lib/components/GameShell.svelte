@@ -13,8 +13,14 @@
   let {
     gameState,
     onCloseCase,
+    onSaveGame,
+    onLoadGame,
+    onReturnToTitle,
+    onTopLayerEscape,
     disabled = false,
     open = $bindable(false),
+    topLayerOpen = false,
+    gameplayInert = false,
     sceneMenuEnabled = false,
     evidenceMenuEnabled = true,
     onOpenEvidence,
@@ -24,12 +30,18 @@
   }: {
     gameState: GameStateView;
     onCloseCase: () => void;
+    onSaveGame?: () => void;
+    onLoadGame?: () => void;
+    onReturnToTitle?: () => void;
+    onTopLayerEscape?: () => void;
     disabled?: boolean;
     // Bound by +page.svelte so menu-triggered transitions (dossier reexamine)
     // can close the menu programmatically — otherwise the reexamine dialogue
     // renders behind this modal scrim. Self-manages via the fallback when no
     // parent binds (tests/standalone renders), preserving prior behavior.
     open?: boolean;
+    topLayerOpen?: boolean;
+    gameplayInert?: boolean;
     sceneMenuEnabled?: boolean;
     // Gates the Evidence root-menu entry and its submenu. The `menu` snippet
     // is always passed from +page.svelte, but its body guards InventoryPanel
@@ -261,6 +273,11 @@
         return;
       }
 
+      if (topLayerOpen) {
+        onTopLayerEscape?.();
+        return;
+      }
+
       if (open) {
         if (activeMenuPanel !== null) {
           closeMenuPanel();
@@ -301,7 +318,7 @@
   <GameAtmosphere intensity={0.55} />
 
   {#if showChapterHud}
-    <header inert={open}>
+    <header inert={open || gameplayInert}>
       <div class="left">
         <span class="case-marker">
           <span class="diamond"></span>
@@ -323,7 +340,7 @@
     <div class="rule"></div>
   {/if}
 
-  <main data-save-thumbnail-layout="main" inert={open}>
+  <main data-save-thumbnail-layout="main" inert={open || gameplayInert}>
     {@render children()}
   </main>
 
@@ -335,6 +352,7 @@
       aria-modal="true"
       aria-labelledby="game-menu-title"
       tabindex="-1"
+      inert={topLayerOpen}
       onclick={(event) => {
         // Backdrop-dismiss: only close when the click lands on the scrim
         // itself (currentTarget), not when it bubbles up from inside the
@@ -385,6 +403,28 @@
               <span>繼續調查</span>
               <span class="en">RESUME</span>
             </button>
+            {#if onSaveGame}
+              <button
+                type="button"
+                aria-label="儲存遊戲"
+                data-focus-target="save-game"
+                onclick={onSaveGame}
+              >
+                <span>儲存遊戲</span>
+                <span class="en">SAVE&nbsp;GAME</span>
+              </button>
+            {/if}
+            {#if onLoadGame}
+              <button
+                type="button"
+                aria-label="載入遊戲"
+                data-focus-target="load-game"
+                onclick={onLoadGame}
+              >
+                <span>載入遊戲</span>
+                <span class="en">LOAD&nbsp;GAME</span>
+              </button>
+            {/if}
             {#if sceneMenuEnabled && sceneMenu}
               <button
                 type="button"
@@ -413,9 +453,15 @@
               <span>音訊設定</span>
               <span class="en">SOUND</span>
             </button>
-            <button type="button" onclick={handleCloseCase} {disabled}>
-              <span>結束案件</span>
-              <span class="en">CLOSE&nbsp;CASE</span>
+            <button
+              type="button"
+              aria-label="返回標題畫面"
+              data-focus-target="return-to-title"
+              onclick={onReturnToTitle ?? handleCloseCase}
+              {disabled}
+            >
+              <span>返回標題畫面</span>
+              <span class="en">RETURN&nbsp;TO&nbsp;TITLE</span>
             </button>
           </div>
         {:else}

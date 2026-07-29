@@ -102,6 +102,12 @@ export function getExitStatus(): Promise<ExitStatusView> {
   return invokePersistenceCommand("get_exit_status");
 }
 
+export function cancelPersistenceFailure(failureToken: string): Promise<void> {
+  return invokePersistenceCommand("cancel_persistence_failure", {
+    failureToken,
+  });
+}
+
 export function prepareSaveThumbnail(
   purpose: ThumbnailCapturePurposeView,
 ): Promise<ThumbnailCaptureRequestView> {

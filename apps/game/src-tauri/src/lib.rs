@@ -11,6 +11,8 @@ use tauri::path::BaseDirectory;
 use tauri::{Emitter, Manager};
 
 use game::save::capture::{capture_checkpoint_v1, CapturedCheckpointV1};
+#[cfg(feature = "e2e")]
+use game::save::coordinator::ExclusivePersistenceIntent;
 use game::save::coordinator::{
     AppSession, ApplicationExit, AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome,
     AutosavePreparedWrite, AutosaveRegisteredIntent, AutosaveWriteJob, CoordinatorFuture,
@@ -19,6 +21,8 @@ use game::save::coordinator::{
     PreparedThumbnailPurpose, SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose,
     ThumbnailCaptureRequestView,
 };
+#[cfg(feature = "e2e")]
+use game::save::e2e_faults::{E2ePersistenceFaultBoundary, E2ePersistenceFaultState};
 use game::save::restore::{
     build_restore_candidate, load_current_definitions, RestoredGameCandidate,
 };
@@ -27,6 +31,8 @@ use game::save::schema::{
     SaveDiscoveryStatusView, SaveEnvelopeV1, SaveSlotRef, SaveSlotStatusView, SaveSlotView,
     SaveType, ThumbnailDescriptorV1, MAX_THUMBNAIL_BYTES, SAVE_SCHEMA_VERSION,
 };
+#[cfg(feature = "e2e")]
+use game::save::storage::with_e2e_persistence_faults;
 use game::save::storage::{
     clean_orphaned_save_files, commit_prepared_slot_write, delete_slot, discover_saves,
     ensure_save_layout, prepare_slot_write, read_save_envelope,
@@ -68,6 +74,32 @@ const EXIT_STATUS_CHANGED_EVENT: &str = "exit-status-changed";
 const MAIN_WINDOW_LABEL: &str = "main";
 #[doc(hidden)]
 pub const MAX_THUMBNAIL_SUBMISSION_BYTES: usize = MAX_THUMBNAIL_BYTES;
+
+#[cfg(all(test, feature = "e2e"))]
+mod e2e_persistence_fault_command_tests {
+    use super::e2e_set_persistence_fault_core;
+    use crate::game::save::coordinator::SaveCoordinator;
+    use crate::game::save::e2e_faults::E2ePersistenceFaultBoundary;
+
+    #[test]
+    fn command_core_accepts_only_one_pending_closed_fault() {
+        let coordinator = SaveCoordinator::new();
+
+        e2e_set_persistence_fault_core(
+            &coordinator,
+            E2ePersistenceFaultBoundary::EnvelopeReplace,
+            1,
+        )
+        .unwrap();
+
+        assert!(e2e_set_persistence_fault_core(
+            &coordinator,
+            E2ePersistenceFaultBoundary::ThumbnailInstall,
+            1,
+        )
+        .is_err());
+    }
+}
 
 #[derive(Debug, Serialize)]
 #[serde(
@@ -296,6 +328,11 @@ fn build_app_state_with_storage(
     save_root: PathBuf,
     fs: Arc<dyn SaveFilesystem>,
 ) -> Result<AppState, GameError> {
+    #[cfg(feature = "e2e")]
+    let (fs, e2e_persistence_faults): (Arc<dyn SaveFilesystem>, Arc<E2ePersistenceFaultState>) = {
+        let faults = Arc::new(E2ePersistenceFaultState::new());
+        (with_e2e_persistence_faults(fs, Arc::clone(&faults)), faults)
+    };
     let definitions = Arc::new(load_current_definitions(&resources_dir)?);
     let session = Arc::new(Mutex::new(AppSession::empty()));
     let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
@@ -317,6 +354,8 @@ fn build_app_state_with_storage(
         Arc::clone(&session),
         Arc::clone(&replacement_gate),
     );
+    #[cfg(feature = "e2e")]
+    let coordinator = coordinator.with_e2e_persistence_faults(e2e_persistence_faults);
     if let Some(diagnostic) = initial_error {
         coordinator.publish_persistence_health(PersistenceHealthView::Degraded { diagnostic });
     }
@@ -564,6 +603,64 @@ fn exit_status_snapshot(coordinator: &SaveCoordinator) -> ExitStatusView {
     coordinator.exit_status()
 }
 
+#[cfg(feature = "e2e")]
+fn e2e_set_persistence_fault_core(
+    coordinator: &SaveCoordinator,
+    boundary: E2ePersistenceFaultBoundary,
+    occurrence_count: u8,
+) -> Result<(), GameError> {
+    coordinator.arm_e2e_persistence_fault(boundary, occurrence_count)
+}
+
+#[cfg(feature = "e2e")]
+#[tauri::command]
+fn e2e_set_persistence_fault(
+    state: tauri::State<'_, AppState>,
+    boundary: E2ePersistenceFaultBoundary,
+    occurrence_count: u8,
+) -> Result<(), GameError> {
+    e2e_set_persistence_fault_core(&state.coordinator, boundary, occurrence_count)
+}
+
+#[cfg(feature = "e2e")]
+#[tauri::command]
+async fn e2e_request_application_quit(
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+    wait_for_active_acknowledgement: bool,
+) -> Result<(), GameError> {
+    // WebDriver key events terminate at the webview and cannot exercise the
+    // macOS application-level Command-Q route. AppHandle::exit emits the same
+    // RunEvent::ExitRequested event that the native quit action produces; the
+    // lifecycle handler below prevents that first request, flushes, then uses
+    // its one-shot programmatic bypass to complete the exit.
+    //
+    // The optional E2E gate makes the active-acknowledgement race deterministic:
+    // arm the native quit first, then emit ExitRequested only after the real
+    // coordinator has installed its exclusive acknowledgement intent.
+    if wait_for_active_acknowledgement {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            let active = state
+                .session
+                .lock()
+                .map_err(|_| GameError::unavailable())?
+                .persistence
+                .exclusive_intent
+                == Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+            if active {
+                break;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(GameError::persistence_operation_in_progress());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    }
+    app.exit(0);
+    Ok(())
+}
+
 fn bind_persistence_status_events(
     coordinator: &SaveCoordinator,
     emit: impl Fn(&'static str, serde_json::Value) + Send + Sync + 'static,
@@ -612,6 +709,24 @@ fn get_exit_status(state: tauri::State<'_, AppState>) -> ExitStatusView {
 
 fn application_exit(app: tauri::AppHandle) -> Arc<dyn ApplicationExit> {
     Arc::new(TauriApplicationExit { app })
+}
+
+async fn cancel_persistence_failure_core(
+    state: &AppState,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<(), GameError> {
+    state
+        .coordinator
+        .cancel_persistence_failure(state, failure_token)
+        .await
+}
+
+#[tauri::command]
+async fn cancel_persistence_failure(
+    state: tauri::State<'_, AppState>,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<(), GameError> {
+    cancel_persistence_failure_core(&state, failure_token).await
 }
 
 fn retry_exit_core(
@@ -1516,6 +1631,16 @@ pub async fn dispatch_development_command_with_exit(
             development_json(thumbnail_activity_snapshot(&state.coordinator))
         }
         "get_exit_status" => development_json(get_exit_status_core(state)),
+        "cancel_persistence_failure" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                failure_token: PersistenceFailureTokenView,
+            }
+            let args: Args = parse_development_body(body)?;
+            cancel_persistence_failure_core(state, args.failure_token).await?;
+            development_json(())
+        }
         "retry_exit" => {
             #[derive(serde::Deserialize)]
             #[serde(rename_all = "camelCase")]
@@ -2090,6 +2215,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            #[cfg(feature = "e2e")]
+            e2e_set_persistence_fault,
+            #[cfg(feature = "e2e")]
+            e2e_request_application_quit,
             list_saves,
             get_persistence_status,
             get_thumbnail_activity,
@@ -2109,6 +2238,7 @@ pub fn run() {
             return_to_title_without_saving,
             acknowledge_acquisition_event,
             confirm_acquisition_without_saving,
+            cancel_persistence_failure,
             retry_exit,
             cancel_exit,
             exit_without_saving,
@@ -4589,6 +4719,7 @@ mod tests {
                 "return_to_title_without_saving",
                 "acknowledge_acquisition_event",
                 "confirm_acquisition_without_saving",
+                "cancel_persistence_failure",
                 "retry_exit",
                 "cancel_exit",
                 "exit_without_saving",
@@ -4653,6 +4784,7 @@ mod tests {
                 "return_to_title_without_saving",
                 "acknowledge_acquisition_event",
                 "confirm_acquisition_without_saving",
+                "cancel_persistence_failure",
                 "retry_exit",
                 "cancel_exit",
                 "exit_without_saving",

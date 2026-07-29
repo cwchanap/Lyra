@@ -23,6 +23,11 @@ const env = {
   // E2E bundle. Ordinary production builds never receive this flag.
   VITE_LYRA_E2E_CAPTURE_PROOF: "1",
 };
+// App-data ownership begins only in run-hpa-392-e2e.mjs. Never let a stale
+// shell environment bind the build step to a prior fixture root or phase.
+delete env.LYRA_E2E_APP_DATA_DIR;
+delete env.LYRA_E2E_CAPTURE_BACKEND_LOGS;
+delete env.LYRA_HPA392_PHASE;
 
 const args = [
   "run",

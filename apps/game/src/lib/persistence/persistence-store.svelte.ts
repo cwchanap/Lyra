@@ -14,6 +14,9 @@ export type PersistenceStore = {
   readonly persistenceStatus: PersistenceHealthView;
   readonly thumbnailActivity: ThumbnailActivityView;
   readonly exitStatus: ExitStatusView;
+  replacePersistenceStatus: (status: PersistenceHealthView) => void;
+  replaceThumbnailActivity: (activity: ThumbnailActivityView) => void;
+  replaceExitStatus: (status: ExitStatusView) => void;
   start: () => Promise<() => Promise<void>>;
 };
 
@@ -37,6 +40,15 @@ export function createPersistenceStore(): PersistenceStore {
     },
     get exitStatus() {
       return state.exitStatus;
+    },
+    replacePersistenceStatus(status) {
+      state.persistenceStatus = status;
+    },
+    replaceThumbnailActivity(activity) {
+      state.thumbnailActivity = activity;
+    },
+    replaceExitStatus(status) {
+      state.exitStatus = status;
     },
     async start() {
       const unlisteners: UnlistenFn[] = [];

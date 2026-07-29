@@ -1,4 +1,6 @@
 use super::capture::CapturedCheckpointV1;
+#[cfg(feature = "e2e")]
+use super::e2e_faults::{E2ePersistenceFaultBoundary, E2ePersistenceFaultState};
 use super::schema::{
     SaveDiagnosticView, SaveEnvelopeV1, SaveSlotRef, SaveSlotView, SaveType, ThumbnailDescriptorV1,
     ThumbnailDiagnosticView, ThumbnailUnavailableReason,
@@ -41,6 +43,28 @@ pub(crate) enum ThumbnailCapturePurpose {
         next_revision: u64,
         event_id: String,
     },
+}
+
+#[cfg(all(test, feature = "e2e"))]
+mod e2e_fault_boundary_tests {
+    use super::SaveCoordinator;
+    use crate::game::save::e2e_faults::E2ePersistenceFaultBoundary;
+
+    #[tokio::test]
+    async fn exit_flush_consumes_the_closed_fault_before_persistence_work() {
+        let coordinator = SaveCoordinator::new();
+        coordinator
+            .arm_e2e_persistence_fault(E2ePersistenceFaultBoundary::ExitFlush, 1)
+            .unwrap();
+
+        let error = coordinator.flush_for_exit().await.unwrap_err();
+
+        assert_eq!(error.code, "saveWriteFailed");
+        assert!(coordinator
+            .e2e_persistence_faults
+            .fire(E2ePersistenceFaultBoundary::ExitFlush)
+            .is_ok());
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1205,6 +1229,8 @@ pub(crate) struct SaveCoordinator {
     #[cfg(test)]
     panic_next_exit_worker: Arc<AtomicBool>,
     exclusive_updates: Arc<Notify>,
+    #[cfg(feature = "e2e")]
+    e2e_persistence_faults: Arc<E2ePersistenceFaultState>,
 }
 
 struct ExitAttemptRecoveryGuard {
@@ -1257,6 +1283,8 @@ impl Default for SaveCoordinator {
             #[cfg(test)]
             panic_next_exit_worker: Arc::new(AtomicBool::new(false)),
             exclusive_updates: Arc::new(Notify::new()),
+            #[cfg(feature = "e2e")]
+            e2e_persistence_faults: Arc::new(E2ePersistenceFaultState::new()),
         }
     }
 }
@@ -1312,6 +1340,24 @@ impl SaveCoordinator {
     ) -> Self {
         self.task_scheduler = scheduler;
         self
+    }
+
+    #[cfg(feature = "e2e")]
+    pub(crate) fn with_e2e_persistence_faults(
+        mut self,
+        faults: Arc<E2ePersistenceFaultState>,
+    ) -> Self {
+        self.e2e_persistence_faults = faults;
+        self
+    }
+
+    #[cfg(feature = "e2e")]
+    pub(crate) fn arm_e2e_persistence_fault(
+        &self,
+        boundary: E2ePersistenceFaultBoundary,
+        occurrence_count: u8,
+    ) -> Result<(), GameError> {
+        self.e2e_persistence_faults.arm(boundary, occurrence_count)
     }
 
     pub(crate) fn exit_status(&self) -> ExitStatusView {
@@ -1752,6 +1798,10 @@ impl SaveCoordinator {
     }
 
     async fn flush_for_exit(&self) -> Result<(), GameError> {
+        #[cfg(feature = "e2e")]
+        self.e2e_persistence_faults
+            .fire(E2ePersistenceFaultBoundary::ExitFlush)
+            .map_err(|_| GameError::save_write_failed())?;
         let application = self
             .exit_application
             .as_ref()
@@ -2032,6 +2082,48 @@ impl SaveCoordinator {
     ) -> Result<(), GameError> {
         self.consume_failure_token(token, expected, current)
             .map(|_| ())
+    }
+
+    pub(crate) async fn cancel_persistence_failure(
+        &self,
+        app: &crate::AppState,
+        token: PersistenceFailureTokenView,
+    ) -> Result<(), GameError> {
+        let _gate = app.replacement_gate.lock().await;
+        let parsed = Uuid::parse_str(&token.0)
+            .ok()
+            .filter(|parsed| parsed.hyphenated().to_string() == token.0)
+            .ok_or_else(GameError::stale_persistence_failure_token)?;
+        let challenge = self
+            .lock_state()?
+            .failure_challenges
+            .get(&parsed)
+            .cloned()
+            .ok_or_else(GameError::stale_persistence_failure_token)?;
+        match challenge.operation {
+            PersistenceBypassOperation::StartWithoutSaving
+            | PersistenceBypassOperation::LoadDiscardingCurrent
+            | PersistenceBypassOperation::ReturnWithoutSaving => {}
+            PersistenceBypassOperation::ContinueWithoutSaving
+            | PersistenceBypassOperation::ExitWithoutSaving => {
+                return Err(GameError::stale_persistence_failure_token());
+            }
+        }
+        let (session_generation, durable_revision) =
+            if let Some(event_id) = challenge.acquisition_event_id.as_deref() {
+                current_acquisition_failure_identity(app, event_id)?
+            } else {
+                let identity = self.transition_identity(app)?;
+                (identity.generation, identity.durable_revision.unwrap_or(0))
+            };
+        let current = FailureChallengeIdentity {
+            session_generation,
+            discovery_generation: challenge.discovery_generation,
+            durable_revision,
+            selected_save_id: challenge.selected_save_id.as_deref(),
+            acquisition_event_id: challenge.acquisition_event_id.as_deref(),
+        };
+        self.cancel_failure_token(&token, challenge.operation, current)
     }
 
     pub(crate) fn challenge_current_session_failure(
@@ -2348,7 +2440,9 @@ impl SaveCoordinator {
                 durable_revision,
             });
         };
-        self.cancel_pending_autosave_covered_by_flush(session_generation, flush_revision)?;
+        let thumbnail = self
+            .cancel_pending_autosave_covered_by_flush(session_generation, flush_revision)?
+            .unwrap_or(CaptureTerminalResult::Unavailable);
 
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
         let coordinator = self.clone();
@@ -2360,7 +2454,12 @@ impl SaveCoordinator {
             },
             Box::pin(async move {
                 let result = coordinator
-                    .execute_blocking_flush(session_generation, flush_revision, preferred_target)
+                    .execute_blocking_flush(
+                        session_generation,
+                        flush_revision,
+                        preferred_target,
+                        thumbnail,
+                    )
                     .await;
                 let _ = result_tx.send(result);
             }),
@@ -2776,6 +2875,7 @@ impl SaveCoordinator {
         session_generation: u64,
         durable_revision: u64,
         preferred_target: Option<SaveSlotRef>,
+        thumbnail: CaptureTerminalResult,
     ) -> Result<(AutosaveWriteReceipt, bool), GameError> {
         if let Some(receipt) = self.last_successful_write().filter(|receipt| {
             receipt.session_generation == session_generation
@@ -2793,7 +2893,7 @@ impl SaveCoordinator {
                 .capture(AutosaveWriteJob {
                     session_generation,
                     durable_revision,
-                    thumbnail: CaptureTerminalResult::Unavailable,
+                    thumbnail,
                 })
                 .await?;
             let target = match preferred_target {
@@ -2835,29 +2935,40 @@ impl SaveCoordinator {
         &self,
         session_generation: u64,
         durable_revision: u64,
-    ) -> Result<(), GameError> {
-        let subscribers = {
+    ) -> Result<Option<CaptureTerminalResult>, GameError> {
+        let (thumbnail, subscribers) = {
             let mut state = self.lock_state()?;
             let covered = state.pending_autosave.as_ref().is_some_and(|pending| {
                 pending.session_generation == session_generation
                     && pending.durable_revision <= durable_revision
             });
             if !covered {
-                return Ok(());
+                return Ok(None);
             }
             let pending = state
                 .pending_autosave
                 .take()
                 .ok_or_else(GameError::save_write_failed)?;
-            state.tickets.remove(&pending.ticket);
+            let terminal = state
+                .tickets
+                .remove(&pending.ticket)
+                .and_then(|mut record| record.terminal.take());
+            let thumbnail = if pending.durable_revision == durable_revision {
+                terminal.unwrap_or(CaptureTerminalResult::Unavailable)
+            } else {
+                CaptureTerminalResult::Unavailable
+            };
             if state.latest_by_intent.get(&CaptureIntent::Autosave) == Some(&pending.ticket) {
                 state.latest_by_intent.remove(&CaptureIntent::Autosave);
             }
-            set_thumbnail_activity(&mut state, ThumbnailActivityView::Idle)
+            (
+                Some(thumbnail),
+                set_thumbnail_activity(&mut state, ThumbnailActivityView::Idle),
+            )
         };
         publish_activity(&subscribers, &ThumbnailActivityView::Idle);
         self.ticket_updates.notify_waiters();
-        Ok(())
+        Ok(thumbnail)
     }
 
     pub(crate) fn last_successful_write(&self) -> Option<AutosaveWriteReceipt> {
@@ -4098,6 +4209,8 @@ mod tests {
         use super::acknowledgement::{app_with_event, terminal_acknowledgement_ticket};
         use super::debounce::{PhasedBackend, RecordingBackend};
         use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
+        use crate::AppState;
+        use std::path::PathBuf;
         use std::sync::{Arc, Mutex};
         use std::time::Duration;
         use tokio::sync::{mpsc, Notify};
@@ -4790,11 +4903,20 @@ mod tests {
             backend.fail_next_commit();
             let session = active_session(1);
             advance_revision(&session, 2);
+            let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
             let coordinator = SaveCoordinator::with_backend_for_application(
                 backend.clone(),
-                session,
-                Arc::new(tokio::sync::Mutex::new(())),
+                Arc::clone(&session),
+                Arc::clone(&replacement_gate),
             );
+            let app = AppState {
+                session,
+                replacement_gate,
+                coordinator: coordinator.clone(),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+                persistence: None,
+            };
             let mut statuses = status_receiver(&coordinator);
             let exit = Arc::new(RecordingExit::default());
 
@@ -4813,6 +4935,21 @@ mod tests {
             };
             assert_eq!(diagnostic.code, "saveReplaceFailed");
             assert!(exit.calls.lock().unwrap().is_empty());
+            assert_eq!(
+                coordinator
+                    .cancel_persistence_failure(&app, failure_token.clone())
+                    .await
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+            assert!(matches!(
+                coordinator.exit_status(),
+                ExitStatusView::Failed {
+                    failure_token: ref current,
+                    ..
+                } if current == &failure_token
+            ));
 
             let wrong: PersistenceFailureTokenView =
                 serde_json::from_value(serde_json::json!("00000000-0000-4000-8000-000000000000"))
@@ -5773,6 +5910,15 @@ mod tests {
         use std::path::PathBuf;
         use std::sync::{Arc, Mutex};
 
+        fn png(width: u32, height: u32) -> Vec<u8> {
+            let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+            bytes.extend_from_slice(&width.to_be_bytes());
+            bytes.extend_from_slice(&height.to_be_bytes());
+            bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+            bytes.extend_from_slice(&[0, 0, 0, 0]);
+            bytes
+        }
+
         #[test]
         fn fresh_revision_zero_baseline_is_a_physical_no_op() {
             let persistence = SessionPersistence::for_installed_engine(1, 0, None);
@@ -6061,15 +6207,86 @@ mod tests {
             }
             assert_eq!(backend.write_count(), 1);
         }
+
+        #[tokio::test(start_paused = true)]
+        async fn blocking_flush_preserves_a_terminal_thumbnail_from_the_covered_autosave() {
+            let backend = Arc::new(RecordingBackend::default());
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            let mut session = AppSession::installed(engine, 3, None);
+            session.engine.as_mut().unwrap().durable_revision = 1;
+            let app = AppState {
+                session: Arc::new(Mutex::new(session)),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator: coordinator.clone(),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+                persistence: None,
+            };
+
+            let request = coordinator.notify_durable_commit(3, 1).unwrap();
+            coordinator
+                .submit_thumbnail(&request.ticket, &png(320, 180))
+                .unwrap();
+
+            assert!(matches!(
+                coordinator
+                    .flush_session(&app, FlushOperation::ReturnToTitle)
+                    .await
+                    .unwrap(),
+                FlushOutcome::Written { .. }
+            ));
+            assert_eq!(backend.write_count(), 1);
+            assert_eq!(backend.last_thumbnail_available(), Some(true));
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn blocking_flush_discards_an_older_autosave_thumbnail() {
+            let backend = Arc::new(RecordingBackend::default());
+            let coordinator = SaveCoordinator::with_backend(backend.clone());
+            let engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            let mut session = AppSession::installed(engine, 3, None);
+            session.engine.as_mut().unwrap().durable_revision = 2;
+            let app = AppState {
+                session: Arc::new(Mutex::new(session)),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator: coordinator.clone(),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+                persistence: None,
+            };
+
+            let request = coordinator.notify_durable_commit(3, 1).unwrap();
+            coordinator
+                .submit_thumbnail(&request.ticket, &png(320, 180))
+                .unwrap();
+
+            assert!(matches!(
+                coordinator
+                    .flush_session(&app, FlushOperation::ReturnToTitle)
+                    .await
+                    .unwrap(),
+                FlushOutcome::Written { .. }
+            ));
+            assert_eq!(backend.write_count(), 1);
+            assert_eq!(backend.last_thumbnail_available(), Some(false));
+        }
     }
 
     mod failure_token {
         use super::super::{
-            FailureChallengeIdentity, PersistenceBypassOperation, PersistenceFailureTokenView,
-            PersistenceHealthView, SaveCoordinator,
+            AppSession, FailureChallengeIdentity, PersistenceBypassOperation,
+            PersistenceFailureTokenView, PersistenceHealthView, SaveCoordinator,
         };
+        use crate::game::save::schema::SaveSlotRef;
+        use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
         use crate::game::GameError;
+        use crate::AppState;
         use serde_json::json;
+        use std::path::PathBuf;
+        use std::sync::{Arc, Mutex};
         use uuid::Uuid;
 
         fn identity<'a>(
@@ -6102,6 +6319,28 @@ mod tests {
                 .expect("challenge error must carry its opaque token")))
             .unwrap();
             (error, token)
+        }
+
+        fn app(
+            coordinator: SaveCoordinator,
+            session_generation: u64,
+            durable_revision: u64,
+        ) -> AppState {
+            let mut engine =
+                empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+            engine.durable_revision = durable_revision;
+            AppState {
+                session: Arc::new(Mutex::new(AppSession::installed(
+                    engine,
+                    session_generation,
+                    None,
+                ))),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator,
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+                persistence: None,
+            }
         }
 
         #[test]
@@ -6318,6 +6557,125 @@ mod tests {
             assert_eq!(
                 coordinator
                     .consume_failure_token(&token, operation, current)
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[tokio::test]
+        async fn token_only_cancel_derives_the_exact_operation_and_selection_then_rejects_replay() {
+            let coordinator = SaveCoordinator::new();
+            let app = app(coordinator.clone(), 12, 22);
+            coordinator.complete_discovery_attempt().unwrap();
+            let error = coordinator
+                .challenge_current_selected_save_failure(
+                    &app,
+                    PersistenceBypassOperation::LoadDiscardingCurrent,
+                    SaveSlotRef::Manual { slot: 2 },
+                    "selected-save-id",
+                    GameError::save_write_failed(),
+                )
+                .unwrap();
+            let token = PersistenceFailureTokenView::from_error(&error).unwrap();
+
+            coordinator
+                .cancel_persistence_failure(&app, token.clone())
+                .await
+                .unwrap();
+
+            assert!(matches!(
+                coordinator.persistence_health(),
+                PersistenceHealthView::Degraded { .. }
+            ));
+            {
+                let session = app.session.lock().unwrap();
+                assert_eq!(session.persistence.generation, 12);
+                assert_eq!(session.durable_revision(), Some(22));
+            }
+            assert_eq!(
+                coordinator
+                    .cancel_persistence_failure(&app, token)
+                    .await
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[tokio::test]
+        async fn token_only_cancel_rejects_stale_session_and_a_different_token() {
+            let coordinator = SaveCoordinator::new();
+            let app = app(coordinator.clone(), 3, 7);
+            let error = coordinator
+                .challenge_current_session_error(
+                    &app,
+                    PersistenceBypassOperation::ReturnWithoutSaving,
+                    GameError::save_write_failed(),
+                )
+                .unwrap();
+            let token = PersistenceFailureTokenView::from_error(&error).unwrap();
+            let different: PersistenceFailureTokenView =
+                serde_json::from_value(json!(Uuid::new_v4().hyphenated().to_string())).unwrap();
+
+            assert_eq!(
+                coordinator
+                    .cancel_persistence_failure(&app, different)
+                    .await
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+
+            app.session
+                .lock()
+                .unwrap()
+                .engine
+                .as_mut()
+                .unwrap()
+                .durable_revision += 1;
+            assert_eq!(
+                coordinator
+                    .cancel_persistence_failure(&app, token)
+                    .await
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[tokio::test]
+        async fn token_only_cancel_validates_the_stored_acquisition_binding() {
+            let coordinator = SaveCoordinator::new();
+            let app = super::acknowledgement::app_with_event(
+                coordinator.clone(),
+                8,
+                13,
+                "acquisition-event",
+                None,
+            );
+            let error = coordinator
+                .challenge_persistence_failure(
+                    PersistenceBypassOperation::ContinueWithoutSaving,
+                    identity(8, None, 13, None, Some("acquisition-event")),
+                    GameError::save_write_failed(),
+                )
+                .unwrap();
+            let token = PersistenceFailureTokenView::from_error(&error).unwrap();
+
+            app.session
+                .lock()
+                .unwrap()
+                .engine
+                .as_mut()
+                .unwrap()
+                .pending_acquisition_events
+                .clear();
+
+            assert_eq!(
+                coordinator
+                    .cancel_persistence_failure(&app, token)
+                    .await
                     .unwrap_err()
                     .code,
                 "stalePersistenceFailureToken"
@@ -7062,6 +7420,14 @@ mod tests {
             };
             let token = failure_token(&error);
 
+            assert_eq!(
+                coordinator
+                    .cancel_persistence_failure(&app, token.clone())
+                    .await
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
             let state = coordinator
                 .cancel_acquisition_failure(&app, event_id.into(), token.clone())
                 .unwrap();
@@ -7205,6 +7571,14 @@ mod tests {
 
             pub(super) fn write_count(&self) -> usize {
                 self.writes.lock().unwrap().len()
+            }
+
+            pub(super) fn last_thumbnail_available(&self) -> Option<bool> {
+                self.writes
+                    .lock()
+                    .unwrap()
+                    .last()
+                    .map(|write| write.thumbnail_available)
             }
 
             fn wait_for_write_count_blocking(&self, expected: usize) {
