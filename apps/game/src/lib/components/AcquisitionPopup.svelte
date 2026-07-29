@@ -54,12 +54,17 @@
       : "STATEMENT ACQUIRED",
   );
   const savingLabel = $derived(
-    phase.type === "saving" && phase.slow ? "仍在儲存，請稍候…" : "儲存中…",
+    phase.type === "cancelling"
+      ? "取消中…"
+      : phase.type === "saving" && phase.slow
+        ? "仍在儲存，請稍候…"
+        : "儲存中…",
   );
   const saving = $derived(
     phase.type === "preparing" ||
       phase.type === "capturing" ||
-      phase.type === "saving",
+      phase.type === "saving" ||
+      phase.type === "cancelling",
   );
 
   // Guard against stale async results: if the notification changes (via

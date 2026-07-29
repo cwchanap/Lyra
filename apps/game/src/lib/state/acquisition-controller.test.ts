@@ -333,6 +333,89 @@ describe("Rust-event-backed acquisition controller", () => {
     expect(controller.blocking).toBe(true);
   });
 
+  it("cancel blocks further actions with a cancelling phase until the command settles", async () => {
+    const { acknowledge, cancelFailure, controller } = setup();
+    acknowledge.mockRejectedValueOnce({
+      code: "saveWriteFailed",
+      message: "Save could not be written.",
+      failureToken: "failure-token-1",
+    });
+    await controller.dismissCurrent("event-1");
+
+    const cancellation = deferred<GameplayCommandResultView>();
+    cancelFailure.mockReturnValueOnce(cancellation.promise);
+
+    const pending = controller.cancel("event-1");
+    await vi.waitFor(() => expect(cancelFailure).toHaveBeenCalledTimes(1));
+
+    // While cancel is in flight the phase is "cancelling" and a new
+    // acknowledgement cannot start.
+    expect(controller.phase).toEqual({ type: "cancelling" });
+    expect(controller.blocking).toBe(true);
+    const acknowledgeBefore = acknowledge.mock.calls.length;
+    await controller.dismissCurrent("event-1");
+    expect(acknowledge.mock.calls.length).toBe(acknowledgeBefore);
+
+    cancellation.resolve({ state: state(null), thumbnailCapture: null });
+    await pending;
+
+    expect(controller.phase).toEqual({ type: "idle" });
+    expect(controller.current).toBeNull();
+  });
+
+  it("cancel does not overwrite a newer state when ownership is lost mid-flight", async () => {
+    const { acknowledge, cancelFailure, controller, gameState } = setup();
+    acknowledge.mockRejectedValueOnce({
+      code: "saveWriteFailed",
+      message: "Save could not be written.",
+      failureToken: "failure-token-1",
+    });
+    await controller.dismissCurrent("event-1");
+
+    const cancellation = deferred<GameplayCommandResultView>();
+    cancelFailure.mockReturnValueOnce(cancellation.promise);
+
+    const pending = controller.cancel("event-1");
+    await vi.waitFor(() => expect(cancelFailure).toHaveBeenCalledTimes(1));
+
+    // Simulate the event changing (e.g. a newer Rust event) while cancel is
+    // still running. The stale cancel result must not clobber the new state.
+    gameState.value = state(acquisition("event-2"));
+
+    cancellation.resolve({ state: state(), thumbnailCapture: null });
+    await pending;
+
+    expect(gameState.value?.pendingAcquisition?.id).toBe("event-2");
+  });
+
+  it("cancel restores the failed phase with the original token when the command fails", async () => {
+    const { acknowledge, cancelFailure, controller } = setup();
+    const failure: GameError = {
+      code: "saveWriteFailed",
+      message: "Save could not be written.",
+      failureToken: "failure-token-1",
+    };
+    acknowledge.mockRejectedValueOnce(failure);
+    await controller.dismissCurrent("event-1");
+
+    cancelFailure.mockRejectedValueOnce({
+      code: "stalePersistenceFailureToken",
+      message: "The failure token is no longer valid.",
+    });
+
+    await controller.cancel("event-1");
+
+    expect(controller.phase).toEqual({
+      type: "failed",
+      diagnostic: {
+        code: "stalePersistenceFailureToken",
+        message: "The failure token is no longer valid.",
+      },
+      failureToken: "failure-token-1",
+    });
+    expect(controller.blocking).toBe(true);
+  });
+
   it("continues without saving only with the exact failed event and token", async () => {
     const { acknowledge, confirmWithoutSaving, controller, gameState } =
       setup();

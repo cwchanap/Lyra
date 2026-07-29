@@ -327,13 +327,36 @@ export function createAcquisitionController(
         return;
       }
       const failureToken = phase.failureToken;
-      releaseAttempt(activeAttempt);
-      if (!failureToken) return;
+      const attempt = activeAttempt;
+      if (!failureToken || !attempt) {
+        releaseAttempt(attempt);
+        return;
+      }
+      // Keep the attempt owned and disable further actions while the
+      // cancellation command is in flight. Releasing before the await would
+      // flip the phase to idle, exposing an enabled Continue button and
+      // allowing a concurrent acknowledgement whose result a late cancel
+      // response could then overwrite.
+      phase = { type: "cancelling" };
       try {
         const result = await dependencies.cancelFailure(eventId, failureToken);
+        if (!ownsCurrent(attempt)) return;
         dependencies.gameState.value = result.state;
+        releaseAttempt(attempt);
       } catch (error) {
-        console.warn("[Persistence] Acquisition failure cancel failed", error);
+        if (!ownsCurrent(attempt)) return;
+        // Restore the visible failed phase so the user can retry, cancel, or
+        // continue without saving. Preserve the original failure token so the
+        // bypass actions remain available even if the cancel error itself
+        // carries no token.
+        const diagnostic = asGameError(error);
+        phase = {
+          type: "failed",
+          diagnostic,
+          failureToken,
+        };
+      } finally {
+        if (owns(attempt)) clearAttemptTimer(attempt);
       }
     },
     async continueWithoutSaving(eventId, failureToken) {

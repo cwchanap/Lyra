@@ -165,6 +165,7 @@ export type AcquisitionAcknowledgementPhase =
   | { type: "preparing" }
   | { type: "capturing" }
   | { type: "saving"; slow: boolean }
+  | { type: "cancelling" }
   | {
       type: "failed";
       diagnostic: GameError;
