@@ -143,6 +143,16 @@ pub(crate) trait StagedAtomicWrite: Send {
     fn discard(self: Box<Self>) -> io::Result<()>;
 }
 
+#[cfg(feature = "e2e")]
+pub(crate) fn with_e2e_persistence_faults(
+    fs: Arc<dyn SaveFilesystem>,
+    faults: Arc<super::e2e_faults::E2ePersistenceFaultState>,
+) -> Arc<dyn SaveFilesystem> {
+    Arc::new(super::e2e_faults::E2eFaultingSaveFilesystem::new(
+        fs, faults,
+    ))
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct ProductionSaveFilesystem;
 

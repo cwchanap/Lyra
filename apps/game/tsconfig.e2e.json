@@ -2,7 +2,12 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "types": ["node", "@wdio/mocha-framework", "expect-webdriverio"],
+    "checkJs": false,
     "noEmit": true
   },
-  "include": ["e2e-tauri/**/*.ts", "wdio.conf.ts"]
+  "include": [
+    "e2e-tauri/**/*.ts",
+    "scripts/hpa-392-e2e-paths.mjs",
+    "wdio.conf.ts"
+  ]
 }

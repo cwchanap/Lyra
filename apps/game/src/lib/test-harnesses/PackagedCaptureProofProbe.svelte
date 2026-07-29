@@ -18,6 +18,9 @@
       available: 0,
       lastClosedReason: "",
       lastRenderDiagnostic: "",
+      embeddedFontCssBytes: 0,
+      embeddedFontChunkCount: 0,
+      embeddedZhHantCodePointCount: 0,
     }),
     captureCommandInFlight = false,
   }: {
@@ -44,6 +47,9 @@
   let captureAvailable = $state(0);
   let captureLastClosedReason = $state("");
   let captureLastRenderDiagnostic = $state("");
+  let captureEmbeddedFontCssBytes = $state(0);
+  let captureEmbeddedFontChunkCount = $state(0);
+  let captureEmbeddedZhHantCodePointCount = $state(0);
   $effect(() => {
     const inFlight = captureCommandInFlight;
     const snapshot = captureStatus();
@@ -51,6 +57,9 @@
     captureAvailable = snapshot.available;
     captureLastClosedReason = snapshot.lastClosedReason;
     captureLastRenderDiagnostic = snapshot.lastRenderDiagnostic;
+    captureEmbeddedFontCssBytes = snapshot.embeddedFontCssBytes;
+    captureEmbeddedFontChunkCount = snapshot.embeddedFontChunkCount;
+    captureEmbeddedZhHantCodePointCount = snapshot.embeddedZhHantCodePointCount;
     if (inFlight) {
       observedCommandInFlight = true;
     } else if (observedCommandInFlight) {
@@ -179,6 +188,9 @@
   data-hpa-392-capture-proof-available={captureAvailable}
   data-hpa-392-capture-proof-last-closed-reason={captureLastClosedReason}
   data-hpa-392-capture-proof-last-render-diagnostic={captureLastRenderDiagnostic}
+  data-hpa-392-capture-proof-font-css-bytes={captureEmbeddedFontCssBytes}
+  data-hpa-392-capture-proof-font-chunks={captureEmbeddedFontChunkCount}
+  data-hpa-392-capture-proof-font-zh-hant-code-points={captureEmbeddedZhHantCodePointCount}
   data-save-thumbnail-exclude=""
   aria-label="Packaged capture proof"
 >

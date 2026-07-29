@@ -14,7 +14,14 @@ const appBinaryPath = path.join(
 
 export const config: WebdriverIO.Config = {
   runner: "local",
-  specs: ["./e2e-tauri/**/*.e2e.ts"],
+  // The default configuration is deliberately ordinary-only. Every
+  // hpa-392-*.e2e.ts process is selected explicitly by the guarded phased
+  // runner so it can own and revalidate the app-data directory lifecycle.
+  specs: [
+    "./e2e-tauri/app.e2e.ts",
+    "./e2e-tauri/investigation-layout.e2e.ts",
+    "./e2e-tauri/scene-navigation-gate.e2e.ts",
+  ],
   maxInstances: 1,
   // Desktop-e2e is inherently flaky (focus, WebView animations, IPC timing).
   // Spec-level retries are CI-only per the e2e design spec (local: 0).
@@ -27,7 +34,7 @@ export const config: WebdriverIO.Config = {
     },
   ],
   logLevel: "info",
-  outputDir: path.join(__dirname, "logs"),
+  outputDir: process.env.LYRA_E2E_OUTPUT_DIR ?? path.join(__dirname, "logs"),
   waitforTimeout: 15000,
   connectionRetryTimeout: 120000,
   connectionRetryCount: 2,

@@ -189,6 +189,9 @@ describe("PackagedCaptureProofProbe", () => {
       available: 0,
       lastClosedReason: "",
       lastRenderDiagnostic: "",
+      embeddedFontCssBytes: 0,
+      embeddedFontChunkCount: 0,
+      embeddedZhHantCodePointCount: 0,
     };
     const rendered = render(PackagedCaptureProofProbe, {
       onForceNextCaptureUnavailable: vi.fn(),
@@ -201,6 +204,9 @@ describe("PackagedCaptureProofProbe", () => {
       available: 1,
       lastClosedReason: "",
       lastRenderDiagnostic: "errorEvent",
+      embeddedFontCssBytes: 175_000,
+      embeddedFontChunkCount: 3,
+      embeddedZhHantCodePointCount: 12,
     };
     await rendered.rerender({ captureCommandInFlight: false });
 
@@ -221,6 +227,18 @@ describe("PackagedCaptureProofProbe", () => {
     expect(
       rendered.container.querySelector("[data-hpa-392-capture-proof]"),
     ).toHaveAttribute("data-hpa-392-capture-proof-last-closed-reason", "");
+    expect(
+      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
+    ).toHaveAttribute("data-hpa-392-capture-proof-font-css-bytes", "175000");
+    expect(
+      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
+    ).toHaveAttribute("data-hpa-392-capture-proof-font-chunks", "3");
+    expect(
+      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
+    ).toHaveAttribute(
+      "data-hpa-392-capture-proof-font-zh-hant-code-points",
+      "12",
+    );
   });
 
   it("reports the newest autosave's unavailable thumbnail without falling back", async () => {

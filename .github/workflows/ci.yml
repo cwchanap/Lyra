@@ -236,5 +236,6 @@ jobs:
           path: |
             apps/game/*.log
             apps/game/logs/
+            apps/game/e2e-artifacts/
           retention-days: 7
           if-no-files-found: ignore

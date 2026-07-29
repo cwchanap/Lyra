@@ -204,13 +204,57 @@ describe("GameShell", () => {
         within(dialog).getByRole("button", { name: /返回選單/ }),
       );
       await user.click(
-        within(dialog).getByRole("button", { name: /結束案件/ }),
+        within(dialog).getByRole("button", { name: "返回標題畫面" }),
       );
 
       expect(onCloseCase).toHaveBeenCalledTimes(1);
     } catch (error) {
       reportAsyncTestFailure(testName, error);
     }
+  });
+
+  it("exposes canonical Save, Load, and Return actions from the root Escape menu", async () => {
+    const user = userEvent.setup();
+    const onSaveGame = vi.fn();
+    const onLoadGame = vi.fn();
+    const onReturnToTitle = vi.fn();
+    render(GameShellHarness, {
+      gameState: state(),
+      onCloseCase: vi.fn(),
+      onSaveGame,
+      onLoadGame,
+      onReturnToTitle,
+    });
+
+    await user.keyboard("{Escape}");
+    const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(dialog).getByRole("button", { name: "儲存遊戲" }));
+    await user.click(within(dialog).getByRole("button", { name: "載入遊戲" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "返回標題畫面" }),
+    );
+
+    expect(onSaveGame).toHaveBeenCalledOnce();
+    expect(onLoadGame).toHaveBeenCalledOnce();
+    expect(onReturnToTitle).toHaveBeenCalledOnce();
+  });
+
+  it("routes Escape to the top persistence layer without closing the root menu", async () => {
+    const user = userEvent.setup();
+    const onTopLayerEscape = vi.fn();
+    render(GameShellHarness, {
+      gameState: state(),
+      onCloseCase: vi.fn(),
+      topLayerOpen: true,
+      onTopLayerEscape,
+      open: true,
+    });
+
+    const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.keyboard("{Escape}");
+
+    expect(onTopLayerEscape).toHaveBeenCalledOnce();
+    expect(dialog).toBeInTheDocument();
   });
 
   it("renders scene select only when scene menu content is provided", async () => {
@@ -1024,7 +1068,7 @@ describe("GameShell", () => {
 
       const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
       const closeCase = within(dialog).getByRole("button", {
-        name: /結束案件/,
+        name: "返回標題畫面",
       });
       expect(closeCase).toBeDisabled();
     } catch (error) {

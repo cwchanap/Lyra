@@ -56,13 +56,59 @@ describe("+page gameplay audio wiring", () => {
 });
 
 describe("+page acquisition popup ownership", () => {
-  it("mounts one popup outside an inert gameplay root", () => {
+  it("mounts one popup outside the gameplay surfaces it makes inert", () => {
     const source = pageSource();
 
     expect(source).toContain('data-gameplay-root=""');
-    expect(source).toContain("inert={acquisitionController.blocking}");
+    expect(source).not.toContain("inert={rootInteractionBlocked}");
+    expect(source).toContain("gameplayInert={gameplayInteractionBlocked}");
     expect(source).toContain("<AcquisitionPopup");
     expect(source).toContain("notification={acquisitionController.current}");
+  });
+});
+
+describe("save/load canonical player copy", () => {
+  function componentSource(name: string) {
+    return readFileSync(
+      join(process.cwd(), `src/lib/components/${name}.svelte`),
+      "utf8",
+    );
+  }
+
+  it("pins every required Traditional Chinese action and status", () => {
+    const source = [
+      pageSource(),
+      componentSource("MainMenu"),
+      componentSource("GameShell"),
+      componentSource("SaveBrowser"),
+      componentSource("SaveCard"),
+      componentSource("AcquisitionPopup"),
+    ].join("\n");
+
+    for (const requiredCopy of [
+      "繼續遊戲",
+      "載入遊戲",
+      "開始新遊戲",
+      "儲存遊戲",
+      "返回標題畫面",
+      "自動存檔",
+      "手動存檔",
+      "儲存中…",
+      "仍在儲存，請稍候…",
+      "無法顯示預覽",
+      "不儲存並開始遊戲",
+      "捨棄未儲存進度並載入",
+      "不儲存並繼續",
+      "不儲存並結束遊戲",
+      "重試",
+      "取消",
+    ]) {
+      expect(source, requiredCopy).toContain(requiredCopy);
+    }
+  });
+
+  it("does not retain the stale title New Game label", () => {
+    expect(componentSource("MainMenu")).not.toContain("開始調查");
   });
 });
 
@@ -78,8 +124,8 @@ describe("+page save-thumbnail boundary", () => {
     expect(source.indexOf("</GameShell>")).toBeLessThan(
       source.indexOf("<AcquisitionPopup"),
     );
-    expect(source).toContain(
-      '<div data-save-thumbnail-exclude="">\n          <ErrorBanner',
+    expect(source).toMatch(
+      /<div data-save-thumbnail-exclude="">\s*<ErrorBanner/,
     );
     expect(source).toContain(
       '<div class="menu-error" data-save-thumbnail-exclude="">',

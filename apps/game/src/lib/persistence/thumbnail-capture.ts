@@ -1,4 +1,5 @@
 import { toBlob, toSvg } from "html-to-image";
+import "@fontsource-variable/noto-serif-tc/wght.css";
 import type {
   GameplayThumbnailCapture,
   ThumbnailCaptureRequestView,
@@ -10,9 +11,34 @@ export const SAVE_THUMBNAIL_MAX_HEIGHT = 360;
 const packagedCaptureProofEnabled =
   import.meta.env.VITE_LYRA_E2E_CAPTURE_PROOF === "1";
 let lastPackagedRenderDiagnostic: CaptureRenderDiagnosticCode | "" = "";
+let lastPackagedFontEmbedDiagnostic: ThumbnailFontEmbedDiagnostic = {
+  selectedChunkCount: 0,
+  embeddedZhHantCodePointCount: 0,
+  cssBytes: 0,
+};
 
 const fixedDeadlines = new WeakMap<ThumbnailCaptureRequestView, number>();
 type HtmlToImageOptions = NonNullable<Parameters<typeof toBlob>[1]>;
+const THUMBNAIL_EMBEDDED_FONT_FAMILY = "Lyra Thumbnail Zh-Hant";
+const THUMBNAIL_FONT_SOURCE_FAMILY = "Noto Serif TC Variable";
+
+export type ThumbnailFontFaceSource = Readonly<{
+  sourceUrl: string;
+  unicodeRange: string;
+  fontStyle: string;
+  fontWeight: string;
+}>;
+
+export type ThumbnailFontEmbedDiagnostic = Readonly<{
+  selectedChunkCount: number;
+  embeddedZhHantCodePointCount: number;
+  cssBytes: number;
+}>;
+
+export type ThumbnailFontEmbedResult = ThumbnailFontEmbedDiagnostic &
+  Readonly<{
+    css: string;
+  }>;
 
 export function fitWithoutUpscaling(
   width: number,
@@ -29,6 +55,184 @@ export function fitWithoutUpscaling(
     scale,
   };
 }
+
+function isZhHantCaptureCodePoint(codePoint: number): boolean {
+  return (
+    (codePoint >= 0x2e80 && codePoint <= 0x303f) ||
+    (codePoint >= 0x3100 && codePoint <= 0x312f) ||
+    (codePoint >= 0x3400 && codePoint <= 0x4dbf) ||
+    (codePoint >= 0x4e00 && codePoint <= 0x9fff) ||
+    (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+    (codePoint >= 0xfe10 && codePoint <= 0xfe6f) ||
+    (codePoint >= 0xff00 && codePoint <= 0xffef) ||
+    (codePoint >= 0x20000 && codePoint <= 0x2fa1f)
+  );
+}
+
+function unicodeRangeTokenBounds(
+  token: string,
+): readonly [number, number] | null {
+  const match = /^U\+([0-9A-F?]+)(?:-([0-9A-F]+))?$/i.exec(token.trim());
+  if (!match) return null;
+  const startToken = match[1];
+  if (!startToken) return null;
+  const start = Number.parseInt(startToken.replaceAll("?", "0"), 16);
+  const end = match[2]
+    ? Number.parseInt(match[2], 16)
+    : Number.parseInt(startToken.replaceAll("?", "F"), 16);
+  return Number.isFinite(start) && Number.isFinite(end) ? [start, end] : null;
+}
+
+function unicodeRangeContains(
+  unicodeRange: string,
+  codePoint: number,
+): boolean {
+  return unicodeRange.split(",").some((token) => {
+    const bounds = unicodeRangeTokenBounds(token);
+    return bounds !== null && codePoint >= bounds[0] && codePoint <= bounds[1];
+  });
+}
+
+function zhHantCodePoints(text: string): number[] {
+  return Array.from(
+    new Set(
+      Array.from(text)
+        .map((character) => character.codePointAt(0))
+        .filter(
+          (codePoint): codePoint is number =>
+            codePoint !== undefined && isZhHantCaptureCodePoint(codePoint),
+        ),
+    ),
+  );
+}
+
+function thumbnailFontFaces(document: Document): ThumbnailFontFaceSource[] {
+  const faces: ThumbnailFontFaceSource[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules: CSSRuleList;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      // Cross-origin runtime styles (the live Google font stylesheet) are
+      // intentionally ignored. The dedicated Fontsource sheet is same-origin.
+      continue;
+    }
+    for (const rule of Array.from(rules)) {
+      if (rule.type !== CSSRule.FONT_FACE_RULE) continue;
+      const style = (rule as CSSFontFaceRule).style;
+      if (
+        style.getPropertyValue("font-family").trim().replaceAll(/["']/g, "") !==
+        THUMBNAIL_FONT_SOURCE_FAMILY
+      ) {
+        continue;
+      }
+      const source = style.getPropertyValue("src");
+      const sourceMatch = /url\(\s*["']?([^"')]+)["']?\s*\)/i.exec(source);
+      const unicodeRange = style.getPropertyValue("unicode-range").trim();
+      if (!sourceMatch?.[1] || !unicodeRange) continue;
+      faces.push({
+        sourceUrl: sourceMatch[1],
+        unicodeRange,
+        fontStyle: style.getPropertyValue("font-style").trim() || "normal",
+        fontWeight: style.getPropertyValue("font-weight").trim() || "200 900",
+      });
+    }
+  }
+  return faces;
+}
+
+async function loadFontDataUrl(sourceUrl: string): Promise<string> {
+  const response = await fetch(sourceUrl);
+  if (!response.ok) {
+    throw new Error("Failed to load embedded thumbnail font.");
+  }
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener(
+      "load",
+      () => {
+        const result = reader.result;
+        if (typeof result === "string") resolve(result);
+        else reject(new Error("Failed to encode embedded thumbnail font."));
+      },
+      { once: true },
+    );
+    reader.addEventListener(
+      "error",
+      () => reject(new Error("Failed to encode embedded thumbnail font.")),
+      { once: true },
+    );
+    reader.readAsDataURL(blob);
+  });
+}
+
+export function createThumbnailFontEmbedder(input: {
+  fontFaces: (document: Document) => readonly ThumbnailFontFaceSource[];
+  loadFontDataUrl: (sourceUrl: string) => Promise<string>;
+}): (root: HTMLElement) => Promise<ThumbnailFontEmbedResult> {
+  const dataUrlCache = new Map<string, Promise<string>>();
+  const cachedDataUrl = (sourceUrl: string): Promise<string> => {
+    const existing = dataUrlCache.get(sourceUrl);
+    if (existing) return existing;
+    const pending = input.loadFontDataUrl(sourceUrl).catch((error) => {
+      dataUrlCache.delete(sourceUrl);
+      throw error;
+    });
+    dataUrlCache.set(sourceUrl, pending);
+    return pending;
+  };
+
+  return async (root) => {
+    const codePoints = zhHantCodePoints(root.textContent ?? "");
+    if (codePoints.length === 0) {
+      return {
+        css: "",
+        selectedChunkCount: 0,
+        embeddedZhHantCodePointCount: 0,
+        cssBytes: 0,
+      };
+    }
+
+    const selectedFaces = input
+      .fontFaces(root.ownerDocument)
+      .filter((face) =>
+        codePoints.some((codePoint) =>
+          unicodeRangeContains(face.unicodeRange, codePoint),
+        ),
+      );
+    const embeddedCodePoints = codePoints.filter((codePoint) =>
+      selectedFaces.some((face) =>
+        unicodeRangeContains(face.unicodeRange, codePoint),
+      ),
+    );
+    if (embeddedCodePoints.length !== codePoints.length) {
+      throw new Error("Embedded thumbnail font does not cover captured text.");
+    }
+
+    const rules = await Promise.all(
+      selectedFaces.map(async (face) => {
+        const dataUrl = await cachedDataUrl(face.sourceUrl);
+        return [
+          `@font-face { font-family: "${THUMBNAIL_EMBEDDED_FONT_FAMILY}"; font-style: ${face.fontStyle}; font-weight: ${face.fontWeight};`,
+          `src: url("${dataUrl}") format("woff2"); unicode-range: ${face.unicodeRange}; }`,
+        ].join(" ");
+      }),
+    );
+    const css = rules.join("\n");
+    return {
+      css,
+      selectedChunkCount: selectedFaces.length,
+      embeddedZhHantCodePointCount: embeddedCodePoints.length,
+      cssBytes: new TextEncoder().encode(css).byteLength,
+    };
+  };
+}
+
+const embedThumbnailFont = createThumbnailFontEmbedder({
+  fontFaces: thumbnailFontFaces,
+  loadFontDataUrl,
+});
 
 export type CaptureRect = Readonly<{
   x: number;
@@ -268,6 +472,16 @@ export function normalizeGameplayCaptureSvg(svgUrl: string): string {
   const styleOf = (element: Element) =>
     (element as Element & { style: CSSStyleDeclaration }).style;
 
+  for (const element of [captureRoot, ...captureRoot.querySelectorAll("*")]) {
+    const style = styleOf(element);
+    const fontFamily = style.fontFamily.trim();
+    if (
+      fontFamily &&
+      !fontFamily.includes(`"${THUMBNAIL_EMBEDDED_FONT_FAMILY}"`)
+    ) {
+      style.fontFamily = `"${THUMBNAIL_EMBEDDED_FONT_FAMILY}", ${fontFamily}`;
+    }
+  }
   styleOf(captureRoot).position = "relative";
   for (const layout of parsed.querySelectorAll(
     '[data-save-thumbnail-layout="main"], [data-save-thumbnail-layout="backdrop"]',
@@ -765,6 +979,7 @@ function gameplayCaptureOptions(
   sourceWidth: number,
   sourceHeight: number,
   winners: Set<Element>,
+  fontEmbedCss: string,
 ): HtmlToImageOptions {
   const fitted = fitWithoutUpscaling(sourceWidth, sourceHeight);
   return {
@@ -773,7 +988,8 @@ function gameplayCaptureOptions(
     canvasWidth: fitted.width,
     canvasHeight: fitted.height,
     pixelRatio: 1,
-    skipFonts: false,
+    skipFonts: true,
+    fontEmbedCSS: fontEmbedCss,
     type: "image/png",
     style: captureOnlyRootStyle,
     filter: (node) => {
@@ -879,6 +1095,10 @@ export function createHtmlToImageGameplayCapture(input: {
   root: () => HTMLElement | null;
   now: () => number;
   onRenderDiagnostic?: (code: CaptureRenderDiagnosticCode) => void;
+  onFontEmbedDiagnostic?: (diagnostic: ThumbnailFontEmbedDiagnostic) => void;
+  embedFontForCapture?: (
+    root: HTMLElement,
+  ) => Promise<ThumbnailFontEmbedResult>;
   renderToBlob?: (
     root: HTMLElement,
     options: HtmlToImageOptions,
@@ -910,6 +1130,16 @@ export function createHtmlToImageGameplayCapture(input: {
             : Promise.resolve();
         phase = "fonts";
         await withinDeadline(fontsReady, deadline, input.now);
+        const fontEmbed = await withinDeadline(
+          (input.embedFontForCapture ?? embedThumbnailFont)(root),
+          deadline,
+          input.now,
+        );
+        input.onFontEmbedDiagnostic?.({
+          selectedChunkCount: fontEmbed.selectedChunkCount,
+          embeddedZhHantCodePointCount: fontEmbed.embeddedZhHantCodePointCount,
+          cssBytes: fontEmbed.cssBytes,
+        });
 
         phase = "images";
         const images = Array.from(root.querySelectorAll("img")).filter(
@@ -935,6 +1165,7 @@ export function createHtmlToImageGameplayCapture(input: {
           sourceWidth,
           sourceHeight,
           winners,
+          fontEmbed.css,
         );
         const renderOptions = curatedCaptureOptions(baseRenderOptions);
         const assetLayers = gameplayCaptureAssetLayers(
@@ -977,11 +1208,19 @@ export type PackagedCaptureProofStatus = Readonly<{
   available: number;
   lastClosedReason: string;
   lastRenderDiagnostic: CaptureRenderDiagnosticCode | "";
+  embeddedFontCssBytes: number;
+  embeddedFontChunkCount: number;
+  embeddedZhHantCodePointCount: number;
 }>;
 
 export function createPackagedCaptureProofCapture(
   delegate: GameplayThumbnailCapture,
   renderDiagnostic: () => CaptureRenderDiagnosticCode | "" = () => "",
+  fontEmbedDiagnostic: () => ThumbnailFontEmbedDiagnostic = () => ({
+    selectedChunkCount: 0,
+    embeddedZhHantCodePointCount: 0,
+    cssBytes: 0,
+  }),
 ): {
   capture: GameplayThumbnailCapture;
   forceNextUnavailable: () => void;
@@ -1021,11 +1260,15 @@ export function createPackagedCaptureProofCapture(
       return lastUnavailableReason;
     },
     status() {
+      const font = fontEmbedDiagnostic();
       return {
         calls,
         available,
         lastClosedReason: lastUnavailableReason,
         lastRenderDiagnostic: renderDiagnostic(),
+        embeddedFontCssBytes: font.cssBytes,
+        embeddedFontChunkCount: font.selectedChunkCount,
+        embeddedZhHantCodePointCount: font.embeddedZhHantCodePointCount,
       };
     },
   };
@@ -1193,6 +1436,9 @@ const htmlToImageGameplayCapture = packagedCaptureProofEnabled
       onRenderDiagnostic: (code) => {
         lastPackagedRenderDiagnostic = code;
       },
+      onFontEmbedDiagnostic: (diagnostic) => {
+        lastPackagedFontEmbedDiagnostic = diagnostic;
+      },
     })
   : createHtmlToImageGameplayCapture({
       root: () =>
@@ -1207,6 +1453,7 @@ const packagedCaptureProof = packagedCaptureProofEnabled
   ? createPackagedCaptureProofCapture(
       htmlToImageGameplayCapture,
       () => lastPackagedRenderDiagnostic,
+      () => lastPackagedFontEmbedDiagnostic,
     )
   : null;
 
@@ -1228,6 +1475,9 @@ export function packagedCaptureProofStatus(): PackagedCaptureProofStatus {
       available: 0,
       lastClosedReason: "",
       lastRenderDiagnostic: "",
+      embeddedFontCssBytes: 0,
+      embeddedFontChunkCount: 0,
+      embeddedZhHantCodePointCount: 0,
     }
   );
 }

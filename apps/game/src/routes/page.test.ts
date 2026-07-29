@@ -20,8 +20,13 @@ import type {
   PendingAcquisitionView,
   SceneNavigationIndex,
 } from "$lib/state/types";
+import type {
+  SaveBrowserOpenResultView,
+  SaveSlotStatusView,
+} from "$lib/persistence/types";
 import { advanceDialogue, gameState } from "$lib/state/game-client.svelte";
 import { acquisitionController } from "$lib/state/acquisition-controller.svelte";
+import { persistenceStore } from "$lib/persistence/persistence-store.svelte";
 import {
   STORY_CLEARED_STORAGE_KEY,
   __resetStoryClearanceWarningLatches,
@@ -197,6 +202,58 @@ function jsonResponse(body: unknown): Response {
   } as unknown as Response;
 }
 
+function jsonError(body: unknown): Response {
+  return {
+    ok: false,
+    status: 500,
+    text: () => Promise.resolve(JSON.stringify(body)),
+  } as unknown as Response;
+}
+
+function titleDiscovery(
+  firstStatus: SaveSlotStatusView = { type: "empty" },
+): SaveBrowserOpenResultView {
+  return {
+    browser: {
+      discovery: { type: "available" },
+      slots: Array.from({ length: 8 }, (_, index) => ({
+        reference:
+          index < 5
+            ? ({ type: "auto", slot: index + 1 } as const)
+            : ({ type: "manual", slot: index - 4 } as const),
+        modifiedAt: index === 0 ? "2026-07-27T12:00:00Z" : null,
+        status: index === 0 ? firstStatus : ({ type: "empty" } as const),
+      })),
+    },
+    continueCandidate:
+      firstStatus.type === "empty" ? null : { type: "auto", slot: 1 },
+    preflight: { type: "ready" },
+  };
+}
+
+function validSlotStatus(saveId: string): SaveSlotStatusView {
+  return {
+    type: "valid",
+    metadata: {
+      saveId,
+      saveType: "manual",
+      schemaVersion: 1,
+      contentRevision: "revision",
+      savedAt: "2026-07-27T12:00:00Z",
+      displayName: "新的存檔",
+      thumbnail: { type: "unavailable", reason: "missing" },
+      summary: {
+        chapterId: "chapter_1",
+        chapterTitle: "雨夜的第一份證詞",
+        sceneId: "scene_1",
+        sceneTitle: "序章",
+        activePrimaryObjectiveId: null,
+        activePrimaryObjectiveLabel: null,
+      },
+    },
+  };
+}
+
 function stubFetchForSceneNavigation() {
   mocks.fetch.mockImplementation(async (url: string) => {
     const path = String(url).replace("http://127.0.0.1:1421/", "");
@@ -229,6 +286,473 @@ function stubAcquisitionAcknowledgement() {
     return jsonResponse({});
   });
 }
+
+describe("+page title persistence flows", () => {
+  let canvasGetContextSpy: MockInstance<
+    typeof HTMLCanvasElement.prototype.getContext
+  >;
+
+  beforeEach(() => {
+    canvasGetContextSpy = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(null);
+    mocks.fetch.mockReset();
+    vi.stubGlobal("fetch", mocks.fetch);
+    gameState.value = null;
+    gameState.error = null;
+    gameState.loading = false;
+    gameState.inFlight = false;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    cleanup();
+    canvasGetContextSpy.mockRestore();
+    gameState.value = null;
+    gameState.error = null;
+    gameState.loading = false;
+    gameState.inFlight = false;
+  });
+
+  it("discovers saves on title and disables Continue and Load for eight empty slots", async () => {
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(titleDiscovery());
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      return jsonResponse({});
+    });
+
+    render(Page);
+
+    expect(screen.getByRole("status")).toHaveTextContent("讀取存檔中…");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "繼續遊戲" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "載入遊戲" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "開始新遊戲" })).toBeEnabled();
+    });
+    expect(
+      mocks.fetch.mock.calls.some(([url]) =>
+        String(url).endsWith("/list_saves"),
+      ),
+    ).toBe(true);
+  });
+
+  it("requires a second confirmation and preserves the exact token before starting without persistence", async () => {
+    const user = userEvent.setup();
+    const unavailable: SaveBrowserOpenResultView = {
+      browser: {
+        discovery: {
+          type: "unavailable",
+          diagnostic: {
+            code: "saveDiscoveryUnavailable",
+            message: "無法建立存檔目錄",
+          },
+        },
+        slots: [],
+      },
+      continueCandidate: null,
+      preflight: { type: "ready" },
+    };
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(unavailable);
+      if (command === "get_persistence_status") {
+        return jsonResponse({
+          type: "degraded",
+          diagnostic:
+            unavailable.browser.discovery.type === "unavailable"
+              ? unavailable.browser.discovery.diagnostic
+              : null,
+        });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      if (command === "start_game") {
+        return jsonError({
+          code: "persistenceUnavailable",
+          message: "無法儲存新遊戲",
+          failureToken: "new-game-token",
+        });
+      }
+      if (command === "start_game_without_saving") {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          failureToken: "new-game-token",
+        });
+        return jsonResponse({
+          state: currentState(),
+          thumbnailCapture: null,
+        });
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    const newGame = await screen.findByRole("button", {
+      name: "開始新遊戲",
+    });
+    await user.click(newGame);
+
+    const firstWarning = await screen.findByRole("dialog", {
+      name: "無法儲存新遊戲",
+    });
+    expect(
+      within(firstWarning).getByRole("button", { name: "不儲存並開始遊戲" }),
+    ).toBeInTheDocument();
+    expect(gameState.value).toBeNull();
+
+    await user.click(
+      within(firstWarning).getByRole("button", {
+        name: "不儲存並開始遊戲",
+      }),
+    );
+    const confirmation = await screen.findByRole("dialog", {
+      name: "確認不儲存並開始遊戲",
+    });
+    await user.click(
+      within(confirmation).getByRole("button", {
+        name: "不儲存並開始遊戲",
+      }),
+    );
+
+    await waitFor(() => expect(gameState.value).not.toBeNull());
+  });
+
+  it("cancels a new-game challenge before dismissing it and remains blocking when cancellation fails", async () => {
+    const user = userEvent.setup();
+    const cancelBodies: Record<string, unknown>[] = [];
+    let cancelAttempts = 0;
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(titleDiscovery());
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      if (command === "start_game") {
+        return jsonError({
+          code: "saveWriteFailed",
+          message: "無法儲存新遊戲",
+          failureToken: "new-game-cancel-token",
+        });
+      }
+      if (command === "cancel_persistence_failure") {
+        cancelBodies.push(JSON.parse(String(init?.body)));
+        cancelAttempts += 1;
+        return cancelAttempts === 1
+          ? jsonError({
+              code: "persistenceUnavailable",
+              message: "暫時無法取消",
+            })
+          : jsonResponse(null);
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.click(await screen.findByRole("button", { name: "開始新遊戲" }));
+    let failure = await screen.findByRole("dialog", {
+      name: "無法儲存新遊戲",
+    });
+    await user.click(within(failure).getByRole("button", { name: "取消" }));
+
+    await waitFor(() => expect(cancelBodies).toHaveLength(1));
+    failure = screen.getByRole("dialog", { name: "無法儲存新遊戲" });
+    expect(within(failure).getByRole("alert")).toHaveTextContent(
+      "暫時無法取消",
+    );
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(cancelBodies).toHaveLength(2);
+      expect(
+        screen.queryByRole("dialog", { name: "無法儲存新遊戲" }),
+      ).not.toBeInTheDocument();
+    });
+    expect(cancelBodies).toEqual([
+      { failureToken: "new-game-cancel-token" },
+      { failureToken: "new-game-cancel-token" },
+    ]);
+  });
+
+  it("does not carry a failed New Game cancellation alert into a later Return recovery", async () => {
+    const user = userEvent.setup();
+    let startAttempts = 0;
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(titleDiscovery());
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      if (command === "start_game") {
+        startAttempts += 1;
+        return startAttempts === 1
+          ? jsonError({
+              code: "saveWriteFailed",
+              message: "無法儲存新遊戲",
+              failureToken: "new-alert-token",
+            })
+          : jsonResponse({
+              state: currentState(),
+              thumbnailCapture: null,
+            });
+      }
+      if (command === "cancel_persistence_failure") {
+        return jsonError({
+          code: "persistenceUnavailable",
+          message: "這是上一個取消錯誤",
+        });
+      }
+      if (command === "return_to_title") {
+        return jsonError({
+          code: "saveWriteFailed",
+          message: "返回標題前無法儲存",
+          failureToken: "return-alert-token",
+        });
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.click(await screen.findByRole("button", { name: "開始新遊戲" }));
+    let failure = await screen.findByRole("dialog", {
+      name: "無法儲存新遊戲",
+    });
+    await user.click(within(failure).getByRole("button", { name: "取消" }));
+    expect(await within(failure).findByRole("alert")).toHaveTextContent(
+      "這是上一個取消錯誤",
+    );
+    await user.click(within(failure).getByRole("button", { name: "重試" }));
+    await waitFor(() => expect(gameState.value).not.toBeNull());
+
+    await user.keyboard("{Escape}");
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(
+      within(menu).getByRole("button", { name: "返回標題畫面" }),
+    );
+    failure = await screen.findByRole("dialog", {
+      name: "無法返回標題畫面",
+    });
+
+    expect(within(failure).queryByRole("alert")).not.toBeInTheDocument();
+    expect(failure).toHaveTextContent("返回標題前無法儲存");
+  });
+
+  it("refreshes after a failed Continue and opens Load at Rust's new candidate", async () => {
+    const user = userEvent.setup();
+    const invalid = titleDiscovery({
+      type: "invalid",
+      metadata: null,
+      diagnostic: { code: "saveCorrupt", message: "最新存檔已損毀" },
+    });
+    const refreshed = titleDiscovery();
+    refreshed.browser.slots[6] = {
+      reference: { type: "manual", slot: 2 },
+      modifiedAt: "2026-07-27T13:00:00Z",
+      status: validSlotStatus("new-save"),
+    };
+    refreshed.continueCandidate = { type: "manual", slot: 2 };
+    let listCalls = 0;
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") {
+        listCalls += 1;
+        return jsonResponse(listCalls === 1 ? invalid : refreshed);
+      }
+      if (command === "continue_game") {
+        return jsonError({
+          code: "saveCorrupt",
+          message: "最新存檔已損毀",
+        });
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      return jsonResponse({});
+    });
+
+    render(Page);
+    const continueButton = await screen.findByRole("button", {
+      name: "繼續遊戲",
+    });
+    await waitFor(() => expect(continueButton).toBeEnabled());
+    await user.click(continueButton);
+
+    const diagnostic = await screen.findByRole("dialog", {
+      name: "無法繼續遊戲",
+    });
+    expect(diagnostic).toHaveTextContent("最新存檔已損毀");
+    await user.click(
+      within(diagnostic).getByRole("button", { name: "載入遊戲" }),
+    );
+
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    expect(listCalls).toBe(2);
+    const current = browser.querySelector(
+      '[data-slot-type="manual"][data-slot-number="2"]',
+    );
+    expect(current).toHaveTextContent("最新");
+    expect(current).toHaveClass("selected");
+  });
+
+  it("loads a valid title slot directly with its observed save ID", async () => {
+    const user = userEvent.setup();
+    const discovery = titleDiscovery(validSlotStatus("title-load-id"));
+    let loadArgs: Record<string, unknown> | null = null;
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(discovery);
+      if (command === "load_save") {
+        loadArgs = JSON.parse(String(init?.body));
+        return jsonResponse({
+          state: jumpedState(),
+          thumbnailCapture: null,
+        });
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") {
+        return jsonResponse({ type: "idle" });
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.click(await screen.findByRole("button", { name: "載入遊戲" }));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const autoOne = browser.querySelector(
+      '[data-slot-type="auto"][data-slot-number="1"]',
+    )!;
+    await user.click(
+      within(autoOne as HTMLElement).getByRole("button", { name: "載入" }),
+    );
+
+    await waitFor(() => expect(loadArgs).not.toBeNull());
+    expect(loadArgs).toEqual({
+      reference: { type: "auto", slot: 1 },
+      observedSaveId: "title-load-id",
+    });
+    expect(gameState.value?.scene.id).toBe("scene_2");
+    expect(screen.queryByRole("region", { name: "存檔瀏覽器" })).toBeNull();
+  });
+
+  it("closes the title browser from the real window Escape handler and restores Load focus", async () => {
+    const user = userEvent.setup();
+    const discovery = titleDiscovery(validSlotStatus("title-load-id"));
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(discovery);
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      return jsonResponse({});
+    });
+
+    render(Page);
+    const load = await screen.findByRole("button", { name: "載入遊戲" });
+    await user.click(load);
+    expect(
+      await screen.findByRole("region", { name: "存檔瀏覽器" }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("region", { name: "存檔瀏覽器" }),
+      ).not.toBeInTheDocument();
+      expect(load).toHaveFocus();
+    });
+  });
+
+  it("retries the title slot the player selected instead of the initial Continue candidate", async () => {
+    const user = userEvent.setup();
+    const discovery = titleDiscovery(validSlotStatus("candidate-save-id"));
+    discovery.browser.slots[6] = {
+      reference: { type: "manual", slot: 2 },
+      modifiedAt: "2026-07-27T13:00:00Z",
+      status: validSlotStatus("selected-save-id"),
+    };
+    const loadArgs: Record<string, unknown>[] = [];
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(discovery);
+      if (command === "load_save") {
+        loadArgs.push(JSON.parse(String(init?.body)));
+        return jsonError({
+          code: "saveReadFailed",
+          message: "選取的存檔暫時無法載入",
+        });
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") {
+        return jsonResponse({ type: "idle" });
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.click(await screen.findByRole("button", { name: "載入遊戲" }));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    await user.click(
+      within(browser).getByRole("button", { name: "選擇手動存檔 2" }),
+    );
+    const failure = await screen.findByRole("dialog", { name: "載入失敗" });
+    await user.click(within(failure).getByRole("button", { name: "重試" }));
+
+    await waitFor(() => expect(loadArgs).toHaveLength(2));
+    expect(loadArgs).toEqual([
+      {
+        reference: { type: "manual", slot: 2 },
+        observedSaveId: "selected-save-id",
+      },
+      {
+        reference: { type: "manual", slot: 2 },
+        observedSaveId: "selected-save-id",
+      },
+    ]);
+  });
+});
 
 describe("+page acquisition popup integration", () => {
   let canvasGetContextSpy: MockInstance<
@@ -270,7 +794,9 @@ describe("+page acquisition popup integration", () => {
 
     const popup = await screen.findByRole("dialog", { name: "物證取得" });
     const gameplayRoot = container.querySelector("[data-gameplay-root]")!;
-    expect(gameplayRoot).toHaveAttribute("inert");
+    const gameplayMain = gameplayRoot.querySelector("main")!;
+    expect(gameplayRoot).not.toHaveAttribute("inert");
+    expect(gameplayMain.inert).toBe(true);
     expect(
       within(popup).getByRole("button", { name: "CONTINUE / 繼續" }),
     ).toHaveFocus();
@@ -279,7 +805,7 @@ describe("+page acquisition popup integration", () => {
 
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "物證取得" })).toBeNull();
-      expect(gameplayRoot).not.toHaveAttribute("inert");
+      expect(gameplayMain.inert).toBe(false);
       expect(advanceButton).toHaveFocus();
     });
     expect(
@@ -346,8 +872,889 @@ describe("+page acquisition popup integration", () => {
   });
 });
 
+describe("+page in-game persistence browser", () => {
+  beforeEach(() => {
+    mocks.fetch.mockReset();
+    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.currentWindow.isFullscreen.mockResolvedValue(false);
+    persistenceStore.replacePersistenceStatus({ type: "healthy" });
+    persistenceStore.replaceThumbnailActivity({ type: "idle" });
+    persistenceStore.replaceExitStatus({ type: "idle" });
+    seedGameState();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    cleanup();
+    gameState.value = null;
+    gameState.error = null;
+    gameState.loading = false;
+    gameState.inFlight = false;
+    persistenceStore.replacePersistenceStatus({ type: "healthy" });
+    persistenceStore.replaceThumbnailActivity({ type: "idle" });
+    persistenceStore.replaceExitStatus({ type: "idle" });
+  });
+
+  it("keeps gameplay isolated behind visible loading until Manual Save preflight succeeds", async () => {
+    let resolveList!: (response: Response) => void;
+    const delayedList = new Promise<Response>((resolve) => {
+      resolveList = resolve;
+    });
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return delayedList;
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      return jsonResponse({});
+    });
+
+    const user = userEvent.setup();
+    const { container } = render(Page);
+    await user.keyboard("{Escape}");
+    const rootMenu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(
+      within(rootMenu).getByRole("button", { name: "儲存遊戲" }),
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("讀取存檔中…");
+    const gameplayRoot = container.querySelector("[data-gameplay-root]");
+    const gameplayMain = gameplayRoot?.querySelector("main");
+    expect(gameplayRoot).not.toHaveAttribute("inert");
+    expect(gameplayMain?.inert).toBe(true);
+    expect(rootMenu.inert).toBe(true);
+    expect(screen.getByRole("status").closest("[inert]")).toBeNull();
+
+    resolveList(jsonResponse(titleDiscovery()));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    expect(
+      within(browser).getByRole("heading", { name: "儲存遊戲" }),
+    ).toBeInTheDocument();
+    expect(
+      within(browser).queryByRole("group", { name: "自動存檔" }),
+    ).toBeNull();
+    expect(rootMenu).toBeInTheDocument();
+  });
+
+  it("offers only Retry and Cancel when Manual Save preflight flush fails", async () => {
+    const failed = titleDiscovery();
+    failed.preflight = {
+      type: "flushFailed",
+      diagnostic: {
+        code: "saveWriteFailed",
+        message: "無法先儲存目前進度",
+      },
+      failureToken: "manual-flush-token",
+    };
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(failed);
+      if (command === "list_scenes") return jsonResponse(sceneNavigationIndex);
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      return jsonResponse({});
+    });
+
+    const user = userEvent.setup();
+    render(Page);
+    await user.keyboard("{Escape}");
+    const rootMenu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(
+      within(rootMenu).getByRole("button", { name: "儲存遊戲" }),
+    );
+
+    const failure = await screen.findByRole("dialog", {
+      name: "無法開啟存檔",
+    });
+    expect(
+      within(failure).getByRole("button", { name: "重試" }),
+    ).toBeInTheDocument();
+    expect(
+      within(failure).getByRole("button", { name: "取消" }),
+    ).toBeInTheDocument();
+    expect(
+      within(failure).queryByRole("button", {
+        name: "捨棄未儲存進度並載入",
+      }),
+    ).toBeNull();
+  });
+
+  it("requires a second confirmation before opening Load with the exact discard token", async () => {
+    const user = userEvent.setup();
+    const failed = titleDiscovery();
+    failed.preflight = {
+      type: "flushFailed",
+      diagnostic: {
+        code: "saveWriteFailed",
+        message: "無法先儲存目前進度",
+      },
+      failureToken: "load-flush-token",
+    };
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(failed);
+      if (command === "list_scenes") return jsonResponse(sceneNavigationIndex);
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.keyboard("{Escape}");
+    const rootMenu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(
+      within(rootMenu).getByRole("button", { name: "載入遊戲" }),
+    );
+    const failure = await screen.findByRole("dialog", {
+      name: "無法開啟存檔",
+    });
+    await user.click(
+      within(failure).getByRole("button", {
+        name: "捨棄未儲存進度並載入",
+      }),
+    );
+
+    const confirmation = await screen.findByRole("dialog", {
+      name: "確認捨棄未儲存進度並載入",
+    });
+    expect(screen.queryByRole("region", { name: "存檔瀏覽器" })).toBeNull();
+    await user.click(
+      within(confirmation).getByRole("button", {
+        name: "捨棄未儲存進度並載入",
+      }),
+    );
+
+    expect(
+      await screen.findByRole("region", { name: "存檔瀏覽器" }),
+    ).toBeInTheDocument();
+  });
+
+  it("cancels a discarded-progress browser token before closing so a normal reopen uses load_save", async () => {
+    const user = userEvent.setup();
+    const failed = titleDiscovery(validSlotStatus("discard-candidate"));
+    failed.preflight = {
+      type: "flushFailed",
+      diagnostic: {
+        code: "saveWriteFailed",
+        message: "無法先儲存目前進度",
+      },
+      failureToken: "discard-browser-token",
+    };
+    const ready = titleDiscovery(validSlotStatus("normal-load-id"));
+    const commands: Array<{
+      command: string;
+      args: Record<string, unknown>;
+    }> = [];
+    let listCalls = 0;
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1)!;
+      if (command === "list_saves") {
+        listCalls += 1;
+        return jsonResponse(listCalls === 1 ? failed : ready);
+      }
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      if (
+        command === "cancel_persistence_failure" ||
+        command === "load_save" ||
+        command === "load_save_discarding_current"
+      ) {
+        commands.push({
+          command,
+          args: JSON.parse(String(init?.body)),
+        });
+        return command === "cancel_persistence_failure"
+          ? jsonResponse(null)
+          : jsonResponse({
+              state: jumpedState(),
+              thumbnailCapture: null,
+            });
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.keyboard("{Escape}");
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(menu).getByRole("button", { name: "載入遊戲" }));
+    const failure = await screen.findByRole("dialog", {
+      name: "無法開啟存檔",
+    });
+    await user.click(
+      within(failure).getByRole("button", {
+        name: "捨棄未儲存進度並載入",
+      }),
+    );
+    const confirmation = await screen.findByRole("dialog", {
+      name: "確認捨棄未儲存進度並載入",
+    });
+    await user.click(
+      within(confirmation).getByRole("button", {
+        name: "捨棄未儲存進度並載入",
+      }),
+    );
+    let browser = await screen.findByRole("region", { name: "存檔瀏覽器" });
+    await user.click(within(browser).getByRole("button", { name: "返回" }));
+
+    await waitFor(() =>
+      expect(commands).toEqual([
+        {
+          command: "cancel_persistence_failure",
+          args: { failureToken: "discard-browser-token" },
+        },
+      ]),
+    );
+    expect(
+      screen.queryByRole("region", { name: "存檔瀏覽器" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(within(menu).getByRole("button", { name: "載入遊戲" }));
+    browser = await screen.findByRole("region", { name: "存檔瀏覽器" });
+    const autoOne = browser.querySelector(
+      '[data-slot-type="auto"][data-slot-number="1"]',
+    )!;
+    await user.click(
+      within(autoOne as HTMLElement).getByRole("button", { name: "載入" }),
+    );
+    await user.click(
+      within(
+        await screen.findByRole("dialog", { name: "載入自動存檔 1" }),
+      ).getByRole("button", { name: "確認載入" }),
+    );
+
+    await waitFor(() => expect(gameState.value?.scene.id).toBe("scene_2"));
+    expect(commands.at(-1)).toEqual({
+      command: "load_save",
+      args: {
+        reference: { type: "auto", slot: 1 },
+        observedSaveId: "normal-load-id",
+      },
+    });
+    expect(
+      commands.some(
+        ({ command }) => command === "load_save_discarding_current",
+      ),
+    ).toBe(false);
+  });
+
+  it("names an empty manual slot, settles capture, and saves with the typed observation", async () => {
+    const user = userEvent.setup();
+    let manualArgs: Record<string, unknown> | null = null;
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(titleDiscovery());
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "prepare_save_thumbnail") {
+        return jsonResponse({ ticket: "manual-ticket", timeoutMs: 0 });
+      }
+      if (command === "report_save_thumbnail_failure") {
+        return jsonResponse({
+          type: "unavailable",
+          diagnostic: {
+            reason: "captureUnavailable",
+            message: "無法顯示預覽",
+            retryable: false,
+          },
+        });
+      }
+      if (command === "save_manual") {
+        manualArgs = JSON.parse(String(init?.body));
+        const browser = titleDiscovery().browser;
+        return jsonResponse({
+          savedSlot: browser.slots[5],
+          browser,
+          thumbnailActivity: {
+            type: "unavailable",
+            diagnostic: {
+              reason: "captureUnavailable",
+              message: "無法顯示預覽",
+              retryable: false,
+            },
+          },
+        });
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.keyboard("{Escape}");
+    const rootMenu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(
+      within(rootMenu).getByRole("button", { name: "儲存遊戲" }),
+    );
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    await user.click(
+      within(browser).getByRole("button", { name: "選擇手動存檔 1" }),
+    );
+
+    const nameDialog = await screen.findByRole("dialog", { name: "命名存檔" });
+    const input = within(nameDialog).getByRole("textbox", {
+      name: "存檔名稱",
+    });
+    await user.clear(input);
+    await user.type(input, "雨夜調查");
+    await user.click(within(nameDialog).getByRole("button", { name: "繼續" }));
+
+    await waitFor(() => expect(manualArgs).not.toBeNull());
+    expect(manualArgs).toEqual({
+      reference: { type: "manual", slot: 1 },
+      displayName: "雨夜調查",
+      expectation: { type: "empty" },
+      preparedThumbnailTicket: "manual-ticket",
+    });
+    expect(
+      await screen.findByRole("status", { name: "預覽狀態" }),
+    ).toHaveTextContent("無法顯示預覽");
+    expect(persistenceStore.thumbnailActivity).toEqual({
+      type: "unavailable",
+      diagnostic: {
+        reason: "captureUnavailable",
+        message: "無法顯示預覽",
+        retryable: false,
+      },
+    });
+    expect(screen.getAllByRole("status", { name: "預覽狀態" })).toHaveLength(1);
+    expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+  });
+
+  it("dismisses only the top manual-save failure on Escape and leaves its name layer intact", async () => {
+    const user = userEvent.setup();
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(titleDiscovery());
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      if (command === "prepare_save_thumbnail") {
+        return jsonResponse({ ticket: "manual-ticket", timeoutMs: 0 });
+      }
+      if (command === "report_save_thumbnail_failure") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "save_manual") {
+        return jsonError({
+          code: "saveWriteFailed",
+          message: "手動存檔失敗",
+        });
+      }
+      return jsonResponse({});
+    });
+
+    const { container } = render(Page);
+    await user.keyboard("{Escape}");
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(menu).getByRole("button", { name: "儲存遊戲" }));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    await user.click(
+      within(browser).getByRole("button", { name: "選擇手動存檔 1" }),
+    );
+    const nameDialog = await screen.findByRole("dialog", { name: "命名存檔" });
+    await user.click(within(nameDialog).getByRole("button", { name: "繼續" }));
+    expect(
+      await screen.findByRole("dialog", { name: "儲存失敗" }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+
+    expect(
+      screen.queryByRole("dialog", { name: "儲存失敗" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "命名存檔" }),
+    ).toBeInTheDocument();
+    expect(menu).toBeInTheDocument();
+    expect(
+      container.querySelector<HTMLElement>("[data-gameplay-root] main")?.inert,
+    ).toBe(true);
+  });
+
+  it("always confirms in-game Load, installs the full state, and closes transient layers", async () => {
+    const user = userEvent.setup();
+    const saves = titleDiscovery(validSlotStatus("load-save-id"));
+    let loadArgs: Record<string, unknown> | null = null;
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(saves);
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "load_save") {
+        loadArgs = JSON.parse(String(init?.body));
+        return jsonResponse({
+          state: jumpedState(),
+          thumbnailCapture: null,
+        });
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.keyboard("{Escape}");
+    const rootMenu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(
+      within(rootMenu).getByRole("button", { name: "載入遊戲" }),
+    );
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const autoOne = browser.querySelector(
+      '[data-slot-type="auto"][data-slot-number="1"]',
+    )!;
+    await user.click(
+      within(autoOne as HTMLElement).getByRole("button", {
+        name: "載入",
+      }),
+    );
+
+    const confirmation = await screen.findByRole("dialog", {
+      name: "載入自動存檔 1",
+    });
+    expect(gameState.value?.scene.id).toBe("scene_1");
+    await user.click(
+      within(confirmation).getByRole("button", { name: "確認載入" }),
+    );
+
+    await waitFor(() => expect(gameState.value?.scene.id).toBe("scene_2"));
+    expect(loadArgs).toEqual({
+      reference: { type: "auto", slot: 1 },
+      observedSaveId: "load-save-id",
+    });
+    expect(screen.queryByRole("region", { name: "存檔瀏覽器" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "載入自動存檔 1" })).toBeNull();
+    expect(screen.getByRole("button", { name: "推進對話" })).toHaveFocus();
+  });
+
+  it("retains the exact Load failure token through the second discard confirmation", async () => {
+    const user = userEvent.setup();
+    const saves = titleDiscovery(validSlotStatus("observed-load-id"));
+    let discardArgs: Record<string, unknown> | null = null;
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(saves);
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "load_save") {
+        return jsonError({
+          code: "saveWriteFailed",
+          message: "無法先儲存目前進度",
+          failureToken: "opaque-load-token",
+        });
+      }
+      if (command === "load_save_discarding_current") {
+        discardArgs = JSON.parse(String(init?.body));
+        return jsonResponse({
+          state: jumpedState(),
+          thumbnailCapture: null,
+        });
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.keyboard("{Escape}");
+    const rootMenu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(
+      within(rootMenu).getByRole("button", { name: "載入遊戲" }),
+    );
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const autoOne = browser.querySelector(
+      '[data-slot-type="auto"][data-slot-number="1"]',
+    )!;
+    await user.click(
+      within(autoOne as HTMLElement).getByRole("button", { name: "載入" }),
+    );
+    const initialConfirmation = await screen.findByRole("dialog", {
+      name: "載入自動存檔 1",
+    });
+    await user.click(
+      within(initialConfirmation).getByRole("button", { name: "確認載入" }),
+    );
+
+    const failure = await screen.findByRole("dialog", { name: "載入失敗" });
+    expect(
+      within(failure).getByRole("button", { name: "重試" }),
+    ).toBeInTheDocument();
+    expect(
+      within(failure).getByRole("button", { name: "取消" }),
+    ).toBeInTheDocument();
+    await user.click(
+      within(failure).getByRole("button", {
+        name: "捨棄未儲存進度並載入",
+      }),
+    );
+
+    const discardConfirmation = await screen.findByRole("dialog", {
+      name: "確認捨棄未儲存進度並載入",
+    });
+    await user.click(
+      within(discardConfirmation).getByRole("button", {
+        name: "捨棄未儲存進度並載入",
+      }),
+    );
+
+    await waitFor(() => expect(discardArgs).not.toBeNull());
+    expect(discardArgs).toEqual({
+      reference: { type: "auto", slot: 1 },
+      observedSaveId: "observed-load-id",
+      failureToken: "opaque-load-token",
+    });
+    expect(gameState.value?.scene.id).toBe("scene_2");
+  });
+
+  it("cancels an in-game Load challenge before returning to the browser", async () => {
+    const user = userEvent.setup();
+    const saves = titleDiscovery(validSlotStatus("observed-load-id"));
+    let cancelArgs: Record<string, unknown> | null = null;
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(saves);
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      if (command === "load_save") {
+        return jsonError({
+          code: "saveWriteFailed",
+          message: "無法先儲存目前進度",
+          failureToken: "load-cancel-token",
+        });
+      }
+      if (command === "cancel_persistence_failure") {
+        cancelArgs = JSON.parse(String(init?.body));
+        return jsonResponse(null);
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.keyboard("{Escape}");
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(menu).getByRole("button", { name: "載入遊戲" }));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const autoOne = browser.querySelector(
+      '[data-slot-type="auto"][data-slot-number="1"]',
+    )!;
+    await user.click(
+      within(autoOne as HTMLElement).getByRole("button", { name: "載入" }),
+    );
+    await user.click(
+      within(
+        await screen.findByRole("dialog", { name: "載入自動存檔 1" }),
+      ).getByRole("button", { name: "確認載入" }),
+    );
+    const failure = await screen.findByRole("dialog", { name: "載入失敗" });
+    await user.click(within(failure).getByRole("button", { name: "取消" }));
+
+    await waitFor(() =>
+      expect(cancelArgs).toEqual({ failureToken: "load-cancel-token" }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "載入失敗" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "存檔瀏覽器" }),
+    ).toBeInTheDocument();
+  });
+
+  it("uses the exact exit failure token for Cancel, Retry, and exit without saving", async () => {
+    const user = userEvent.setup();
+    const commandArgs: Array<{
+      command: string;
+      args: Record<string, unknown>;
+    }> = [];
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1)!;
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (
+        command === "cancel_exit" ||
+        command === "retry_exit" ||
+        command === "exit_without_saving"
+      ) {
+        commandArgs.push({
+          command,
+          args: JSON.parse(String(init?.body)),
+        });
+        return jsonResponse(
+          command === "retry_exit" ? { type: "saving" } : { type: "idle" },
+        );
+      }
+      return jsonResponse({});
+    });
+
+    const { container } = render(Page);
+    await waitFor(() =>
+      expect(
+        mocks.fetch.mock.calls.some(([url]) =>
+          String(url).endsWith("/get_exit_status"),
+        ),
+      ).toBe(true),
+    );
+
+    persistenceStore.replaceExitStatus({ type: "saving" });
+    expect(
+      await screen.findByRole("status", { name: "儲存中…" }),
+    ).toHaveTextContent("仍在儲存，請稍候…");
+    const gameplayRoot = container.querySelector("[data-gameplay-root]")!;
+    expect(gameplayRoot).not.toHaveAttribute("inert");
+    expect(gameplayRoot.querySelector("main")?.inert).toBe(true);
+
+    const failed = {
+      type: "failed",
+      diagnostic: { code: "saveWriteFailed", message: "無法結束前儲存" },
+      failureToken: "opaque-exit-token",
+    } as const;
+    persistenceStore.replaceExitStatus(failed);
+    let dialog = await screen.findByRole("dialog", { name: "無法結束遊戲" });
+    await user.click(within(dialog).getByRole("button", { name: "取消" }));
+    await waitFor(() => expect(commandArgs).toHaveLength(1));
+
+    persistenceStore.replaceExitStatus(failed);
+    dialog = await screen.findByRole("dialog", { name: "無法結束遊戲" });
+    await user.click(within(dialog).getByRole("button", { name: "重試" }));
+    await waitFor(() => expect(commandArgs).toHaveLength(2));
+
+    persistenceStore.replaceExitStatus(failed);
+    dialog = await screen.findByRole("dialog", { name: "無法結束遊戲" });
+    await user.click(
+      within(dialog).getByRole("button", {
+        name: "不儲存並結束遊戲",
+      }),
+    );
+    const confirmation = await screen.findByRole("dialog", {
+      name: "確認不儲存並結束遊戲",
+    });
+    await user.click(
+      within(confirmation).getByRole("button", {
+        name: "不儲存並結束遊戲",
+      }),
+    );
+    await waitFor(() => expect(commandArgs).toHaveLength(3));
+
+    expect(commandArgs).toEqual([
+      {
+        command: "cancel_exit",
+        args: { failureToken: "opaque-exit-token" },
+      },
+      {
+        command: "retry_exit",
+        args: { failureToken: "opaque-exit-token" },
+      },
+      {
+        command: "exit_without_saving",
+        args: { failureToken: "opaque-exit-token" },
+      },
+    ]);
+  });
+
+  it("swallows Escape while exit is saving and uses exact cancel_exit from the failed layer", async () => {
+    const user = userEvent.setup();
+    const cancelBodies: Record<string, unknown>[] = [];
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1)!;
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      if (command === "cancel_exit") {
+        cancelBodies.push(JSON.parse(String(init?.body)));
+        return jsonResponse({ type: "idle" });
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await waitFor(() =>
+      expect(
+        mocks.fetch.mock.calls.some(([url]) =>
+          String(url).endsWith("/get_exit_status"),
+        ),
+      ).toBe(true),
+    );
+    persistenceStore.replaceExitStatus({ type: "saving" });
+    expect(
+      await screen.findByRole("status", { name: "儲存中…" }),
+    ).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(cancelBodies).toEqual([]);
+    expect(
+      screen.queryByRole("dialog", { name: "遊戲選單" }),
+    ).not.toBeInTheDocument();
+    expect(persistenceStore.exitStatus.type).toBe("saving");
+
+    persistenceStore.replaceExitStatus({
+      type: "failed",
+      diagnostic: { code: "saveWriteFailed", message: "無法結束前儲存" },
+      failureToken: "escape-exit-token",
+    });
+    expect(
+      await screen.findByRole("dialog", { name: "無法結束遊戲" }),
+    ).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(cancelBodies).toEqual([{ failureToken: "escape-exit-token" }]),
+    );
+    expect(persistenceStore.exitStatus.type).toBe("idle");
+    expect(
+      screen.queryByRole("dialog", { name: "遊戲選單" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps degraded persistence health visible separately from preview failure", async () => {
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_scenes") return jsonResponse(sceneNavigationIndex);
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      return jsonResponse({});
+    });
+    render(Page);
+    await waitFor(() =>
+      expect(
+        mocks.fetch.mock.calls.some(([url]) =>
+          String(url).endsWith("/get_exit_status"),
+        ),
+      ).toBe(true),
+    );
+
+    persistenceStore.replacePersistenceStatus({
+      type: "degraded",
+      diagnostic: { code: "saveWriteFailed", message: "自動存檔失敗" },
+    });
+    persistenceStore.replaceThumbnailActivity({
+      type: "unavailable",
+      diagnostic: {
+        reason: "captureUnavailable",
+        message: "無法顯示預覽",
+        retryable: false,
+      },
+    });
+
+    expect(
+      await screen.findByRole("status", { name: "儲存狀態" }),
+    ).toHaveTextContent("自動存檔失敗");
+    expect(screen.getByRole("status", { name: "預覽狀態" })).toHaveTextContent(
+      "無法顯示預覽",
+    );
+
+    persistenceStore.replacePersistenceStatus({ type: "healthy" });
+    persistenceStore.replaceThumbnailActivity({ type: "idle" });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("status", { name: "儲存狀態" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("status", { name: "預覽狀態" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("+page close case flow", () => {
   beforeEach(() => {
+    mocks.fetch.mockReset();
+    vi.stubGlobal("fetch", mocks.fetch);
     mocks.invoke.mockReset();
     mocks.updateAudioPreferences.mockReset();
     mocks.playGameplaySfxEvent.mockReset();
@@ -363,6 +1770,7 @@ describe("+page close case flow", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     cleanup();
     gameState.value = null;
     gameState.error = null;
@@ -370,8 +1778,27 @@ describe("+page close case flow", () => {
     gameState.inFlight = false;
   });
 
-  it("returns to the start screen instead of resetting to chapter one", async () => {
+  it("returns the Rust discovery snapshot to title without rediscovering and focuses Continue", async () => {
     const user = userEvent.setup();
+    const returned = titleDiscovery(validSlotStatus("return-save"));
+    let listCalls = 0;
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "return_to_title") return jsonResponse(returned);
+      if (command === "list_saves") {
+        listCalls += 1;
+        return jsonResponse(titleDiscovery());
+      }
+      if (command === "list_scenes") return jsonResponse(sceneNavigationIndex);
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      return jsonResponse({});
+    });
     render(Page);
 
     expect(
@@ -380,7 +1807,9 @@ describe("+page close case flow", () => {
 
     await user.keyboard("{Escape}");
     const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
-    await user.click(within(dialog).getByRole("button", { name: /結束案件/ }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "返回標題畫面" }),
+    );
 
     expect(
       await screen.findByRole("main", { name: "主選單" }),
@@ -388,14 +1817,128 @@ describe("+page close case flow", () => {
     expect(
       screen.queryByRole("dialog", { name: "遊戲選單" }),
     ).not.toBeInTheDocument();
-    // "Close case" must return to the main menu, never invoke reset_game
-    // under any argument shape. Assert against the raw call list so a
-    // regression (missing/different second arg) is still caught —
-    // `not.toHaveBeenCalledWith("reset_game", undefined)` would pass even if
-    // reset_game were called with other args.
+    expect(listCalls).toBe(0);
+    expect(screen.getByRole("button", { name: "繼續遊戲" })).toHaveFocus();
+  });
+
+  it("keeps gameplay on Return failure and retains the exact token through the second confirmation", async () => {
+    const user = userEvent.setup();
+    let discardArgs: Record<string, unknown> | null = null;
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "return_to_title") {
+        return jsonError({
+          code: "saveWriteFailed",
+          message: "返回標題前無法儲存",
+          failureToken: "opaque-return-token",
+        });
+      }
+      if (command === "return_to_title_without_saving") {
+        discardArgs = JSON.parse(String(init?.body));
+        return jsonResponse(titleDiscovery());
+      }
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") {
+        return jsonResponse({ type: "idle" });
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.keyboard("{Escape}");
+    const rootMenu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(
+      within(rootMenu).getByRole("button", { name: "返回標題畫面" }),
+    );
+
+    const failure = await screen.findByRole("dialog", {
+      name: "無法返回標題畫面",
+    });
+    expect(gameState.value).not.toBeNull();
     expect(
-      mocks.invoke.mock.calls.every((call) => call[0] !== "reset_game"),
-    ).toBe(true);
+      within(failure).getByRole("button", { name: "重試" }),
+    ).toBeInTheDocument();
+    expect(
+      within(failure).getByRole("button", { name: "取消" }),
+    ).toBeInTheDocument();
+    await user.click(
+      within(failure).getByRole("button", {
+        name: "不儲存並返回標題畫面",
+      }),
+    );
+
+    const confirmation = await screen.findByRole("dialog", {
+      name: "確認不儲存並返回標題畫面",
+    });
+    expect(gameState.value).not.toBeNull();
+    await user.click(
+      within(confirmation).getByRole("button", {
+        name: "不儲存並返回標題畫面",
+      }),
+    );
+
+    await waitFor(() => expect(discardArgs).not.toBeNull());
+    expect(discardArgs).toEqual({ failureToken: "opaque-return-token" });
+    expect(gameState.value).toBeNull();
+    expect(screen.getByRole("button", { name: "開始新遊戲" })).toHaveFocus();
+  });
+
+  it("cancels a Return challenge with its exact token before Escape restores the game menu", async () => {
+    const user = userEvent.setup();
+    let cancelArgs: Record<string, unknown> | null = null;
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "return_to_title") {
+        return jsonError({
+          code: "saveWriteFailed",
+          message: "返回標題前無法儲存",
+          failureToken: "return-cancel-token",
+        });
+      }
+      if (command === "cancel_persistence_failure") {
+        cancelArgs = JSON.parse(String(init?.body));
+        return jsonResponse(null);
+      }
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.keyboard("{Escape}");
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(
+      within(menu).getByRole("button", { name: "返回標題畫面" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "無法返回標題畫面" }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() =>
+      expect(cancelArgs).toEqual({ failureToken: "return-cancel-token" }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "無法返回標題畫面" }),
+    ).not.toBeInTheDocument();
+    expect(menu).toBeInTheDocument();
   });
 });
 
@@ -529,6 +2072,9 @@ describe("+page scene navigation retries after return to title", () => {
         }
         return jsonResponse(sceneNavigationIndex);
       }
+      if (path === "return_to_title") {
+        return jsonResponse(titleDiscovery());
+      }
       return jsonResponse({});
     });
 
@@ -544,7 +2090,9 @@ describe("+page scene navigation retries after return to title", () => {
     // scene-nav latches synchronously before returning to the title.
     await user.keyboard("{Escape}");
     const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
-    await user.click(within(dialog).getByRole("button", { name: /結束案件/ }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "返回標題畫面" }),
+    );
     await waitFor(() => {
       expect(screen.getByRole("main", { name: "主選單" })).toBeInTheDocument();
     });
@@ -578,6 +2126,9 @@ describe("+page scene navigation retries after return to title", () => {
         if (listScenesCallCount === 1) return firstLoad;
         return jsonResponse(sceneNavigationIndex);
       }
+      if (path === "return_to_title") {
+        return jsonResponse(titleDiscovery());
+      }
       return jsonResponse({});
     });
 
@@ -592,7 +2143,9 @@ describe("+page scene navigation retries after return to title", () => {
     // Close the case while the first load is still in flight.
     await user.keyboard("{Escape}");
     const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
-    await user.click(within(dialog).getByRole("button", { name: /結束案件/ }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "返回標題畫面" }),
+    );
     await waitFor(() => {
       expect(screen.getByRole("main", { name: "主選單" })).toBeInTheDocument();
     });

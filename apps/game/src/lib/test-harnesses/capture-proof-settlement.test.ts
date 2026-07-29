@@ -46,11 +46,23 @@ describe("capture proof command settlement", () => {
 });
 
 describe("capture proof dialogue stability", () => {
+  it("rejects an unchanged typewriter prefix that is shorter than the authoritative dialogue", () => {
+    expect(
+      captureProofDialogueTextIsStable({
+        before: "我胃不",
+        after: "我胃不",
+        authoritativeText: "我胃不好，不能喝咖啡。",
+        advanceAriaDisabled: null,
+      }),
+    ).toBe(false);
+  });
+
   it("rejects a truncated typewriter prefix that changed during the bounded interval", () => {
     expect(
       captureProofDialogueTextIsStable({
         before: "我胃不",
         after: "我胃不好，不能喝咖啡。",
+        authoritativeText: "我胃不好，不能喝咖啡。",
         advanceAriaDisabled: null,
       }),
     ).toBe(false);
@@ -61,6 +73,7 @@ describe("capture proof dialogue stability", () => {
       captureProofDialogueTextIsStable({
         before: "",
         after: "",
+        authoritativeText: "",
         advanceAriaDisabled: null,
       }),
     ).toBe(false);
@@ -68,6 +81,7 @@ describe("capture proof dialogue stability", () => {
       captureProofDialogueTextIsStable({
         before: "我胃不好，不能喝咖啡。",
         after: "我胃不好，不能喝咖啡。",
+        authoritativeText: "我胃不好，不能喝咖啡。",
         advanceAriaDisabled: "true",
       }),
     ).toBe(false);
@@ -75,6 +89,7 @@ describe("capture proof dialogue stability", () => {
       captureProofDialogueTextIsStable({
         before: "我胃不好，不能喝咖啡。",
         after: "我胃不好，不能喝咖啡。",
+        authoritativeText: "我胃不好，不能喝咖啡。",
         advanceAriaDisabled: null,
       }),
     ).toBe(true);

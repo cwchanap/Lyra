@@ -16,11 +16,13 @@ export function captureProofCommandIsSettled(input: {
 export function captureProofDialogueTextIsStable(input: {
   before: string;
   after: string;
+  authoritativeText: string;
   advanceAriaDisabled: string | null;
 }): boolean {
   return (
     input.before.length > 0 &&
     input.before === input.after &&
+    input.after === input.authoritativeText &&
     input.advanceAriaDisabled !== "true"
   );
 }

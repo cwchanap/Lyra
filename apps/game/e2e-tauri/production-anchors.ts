@@ -11,7 +11,18 @@ export const DIALOGUE_DRAIN_CAP = 600;
  * Prefer exact aria-label / button text partials that match production a11y.
  */
 export const anchors = {
-  startButton: "開始調查",
+  startButton: "開始新遊戲",
+  continueGame: "繼續遊戲",
+  loadGame: "載入遊戲",
+  newGame: "開始新遊戲",
+  saveGame: "儲存遊戲",
+  returnToTitle: "返回標題畫面",
+  exitGame: "結束偵查",
+  nameSave: "命名存檔",
+  continueName: "繼續",
+  confirmOverwrite: "確認覆寫",
+  confirmDelete: "確認刪除",
+  previewUnavailable: "無法顯示預覽",
   advanceDialogue: "推進對話",
   gameMenu: "遊戲選單",
   continueInvestigation: "繼續調查",
@@ -33,6 +44,17 @@ export const anchors = {
     id: "hayasaka",
     // InvestigationSceneSurface: aria-label={`詢問：${character.name}`}
     label: "詢問：早坂茜",
+  },
+  hpa392: {
+    unicodeName: "雨の証拠 🕵🏽‍♀️ é",
+    compositeSceneId: "investigation_scene_7",
+    compositeSublocation: "後場門口",
+    compositeHotspot: "調查：止滑墊與半乾水痕",
+    acquisitionTitles: ["雨宮匿名訊息縮圖", "地板雨水乾燥圖"],
+    interrogationSceneId: "interrogation_scene_4",
+    interrogationQuestion: "二十二點五十六分左右在哪裡",
+    challenge: "反駁",
+    withdraw: "收回",
   },
   // InvestigationSceneSurface: aria-label={`${activeCharacter.name}詢問項目`}
   topicPopoverName: "早坂茜詢問項目",

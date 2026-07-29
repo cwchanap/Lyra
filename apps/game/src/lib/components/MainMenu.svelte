@@ -1,26 +1,37 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import type { SaveBrowserOpenResultView } from "$lib/persistence/types";
 
   type Props = {
     onNewGame: () => void;
     onContinue?: () => void;
+    onLoad?: () => void;
+    onRetryDiscovery?: () => void;
     onArchive?: () => void;
     onSettings?: () => void;
     onExit?: () => void;
+    discovery?: SaveBrowserOpenResultView | null;
     disabled?: boolean;
   };
 
   const {
     onNewGame,
     onContinue,
+    onLoad,
+    onRetryDiscovery,
     onArchive,
     onSettings,
     onExit,
+    discovery = null,
     disabled = false,
   }: Props = $props();
 
   let clock = $state("— : — : —");
   let weather: HTMLCanvasElement | undefined = $state();
+  let diskActionsAvailable = $derived(
+    discovery?.browser.discovery.type === "available" &&
+      discovery.browser.slots.some((slot) => slot.status.type !== "empty"),
+  );
 
   onMount(() => {
     const tickClock = () => {
@@ -103,16 +114,18 @@
     window.addEventListener("resize", resize);
     raf = window.requestAnimationFrame(draw);
 
-    const cards = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        ".lyra-menu .card:not(:disabled)",
-      ),
-    );
     let focusIndex = 0;
+    const cards = () =>
+      Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          ".lyra-menu .card:not(:disabled)",
+        ),
+      );
     const focusCard = (n: number) => {
-      if (cards.length === 0) return;
-      focusIndex = (n + cards.length) % cards.length;
-      cards[focusIndex].focus();
+      const currentCards = cards();
+      if (currentCards.length === 0) return;
+      focusIndex = (n + currentCards.length) % currentCards.length;
+      currentCards[focusIndex].focus();
     };
     const onKey = (e: KeyboardEvent) => {
       // When focus is on an interactive form control (future input,
@@ -138,7 +151,7 @@
       }
     };
     window.addEventListener("keydown", onKey);
-    const focusTimer = window.setTimeout(() => cards[0]?.focus(), 1500);
+    const focusTimer = window.setTimeout(() => cards()[0]?.focus(), 1500);
 
     return () => {
       window.clearInterval(clockTimer);
@@ -359,10 +372,46 @@
     </section>
 
     <nav class="deck" aria-label="選單項目">
-      <button class="card primary" type="button" onclick={onNewGame} {disabled}>
+      <button
+        class="card primary"
+        type="button"
+        aria-label="繼續遊戲"
+        onclick={onContinue}
+        disabled={disabled || !onContinue || !diskActionsAvailable}
+      >
         <span class="num">01</span>
         <span class="label">
-          <span class="zh" data-text="開始調查">開始調查</span>
+          <span class="zh" data-text="繼續遊戲">繼續遊戲</span>
+          <span class="sub">CONTINUE&nbsp;·&nbsp;<b>最新的存檔</b></span>
+        </span>
+        <span class="chip">LOAD</span>
+      </button>
+
+      <button
+        class="card"
+        type="button"
+        aria-label="載入遊戲"
+        onclick={onLoad}
+        disabled={disabled || !onLoad || !diskActionsAvailable}
+      >
+        <span class="num">02</span>
+        <span class="label">
+          <span class="zh" data-text="載入遊戲">載入遊戲</span>
+          <span class="sub">LOAD GAME&nbsp;·&nbsp;<b>選擇存檔</b></span>
+        </span>
+        <span class="chip">OPEN</span>
+      </button>
+
+      <button
+        class="card"
+        type="button"
+        aria-label="開始新遊戲"
+        onclick={onNewGame}
+        {disabled}
+      >
+        <span class="num">03</span>
+        <span class="label">
+          <span class="zh" data-text="開始新遊戲">開始新遊戲</span>
           <span class="sub"
             >NEW GAME&nbsp;·&nbsp;<b>第一章「雨鐘咖啡館」</b></span
           >
@@ -373,24 +422,10 @@
       <button
         class="card"
         type="button"
-        onclick={onContinue}
-        disabled={disabled || !onContinue}
-      >
-        <span class="num">02</span>
-        <span class="label">
-          <span class="zh" data-text="繼續追蹤">繼續追蹤</span>
-          <span class="sub">CONTINUE&nbsp;·&nbsp;<b>尚未啟用</b></span>
-        </span>
-        <span class="chip">LOAD</span>
-      </button>
-
-      <button
-        class="card"
-        type="button"
         onclick={onArchive}
         disabled={disabled || !onArchive}
       >
-        <span class="num">03</span>
+        <span class="num">04</span>
         <span class="label">
           <span class="zh" data-text="案件檔案">案件檔案</span>
           <span class="sub">FILES&nbsp;·&nbsp;<b>尚未啟用</b></span>
@@ -404,7 +439,7 @@
         onclick={onSettings}
         disabled={disabled || !onSettings}
       >
-        <span class="num">04</span>
+        <span class="num">05</span>
         <span class="label">
           <span class="zh" data-text="系統設定">系統設定</span>
           <span class="sub">CONFIG&nbsp;·&nbsp;尚未啟用</span>
@@ -418,7 +453,7 @@
         onclick={onExit}
         disabled={disabled || !onExit}
       >
-        <span class="num">05</span>
+        <span class="num">06</span>
         <span class="label">
           <span class="zh" data-text="結束偵查">結束偵查</span>
           <span class="sub">QUIT&nbsp;·&nbsp;<b>登出 KAGAMI</b></span>
@@ -426,6 +461,15 @@
         <span class="chip">EXIT&nbsp;✕</span>
       </button>
     </nav>
+
+    {#if discovery === null}
+      <p class="save-discovery-state" role="status">讀取存檔中…</p>
+    {:else if discovery.browser.discovery.type === "unavailable"}
+      <div class="save-discovery-state">
+        <p role="alert">{discovery.browser.discovery.diagnostic.message}</p>
+        <button type="button" onclick={onRetryDiscovery}>重試</button>
+      </div>
+    {/if}
 
     <footer class="footer">
       <div class="footer-row">
