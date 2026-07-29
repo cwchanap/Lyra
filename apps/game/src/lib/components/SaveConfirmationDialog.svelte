@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import SaveCard from "./SaveCard.svelte";
   import type {
     OccupiedSlotExpectationView,
@@ -20,6 +20,7 @@
     currentSummary = null,
     pendingDisplayName = null,
     returnFocusTo = null,
+    pending = false,
     onConfirm,
     onCancel,
   }: {
@@ -28,6 +29,7 @@
     currentSummary?: SaveSummaryView | null;
     pendingDisplayName?: string | null;
     returnFocusTo?: HTMLElement | null;
+    pending?: boolean;
     onConfirm: (request: SaveConfirmationRequest, opener: HTMLElement) => void;
     onCancel: () => void;
   } = $props();
@@ -35,6 +37,9 @@
   let dialog = $state<HTMLDivElement | null>(null);
   let cancelButton = $state<HTMLButtonElement | null>(null);
   let confirmButton = $state<HTMLButtonElement | null>(null);
+  let mounted = false;
+  let pendingObserved = false;
+  let previousPending = false;
 
   const slotLabel = $derived(
     `${slot.reference.type === "auto" ? "自動存檔" : "手動存檔"} ${slot.reference.slot}`,
@@ -57,6 +62,19 @@
     slot.status.type === "valid" ? slot.status.metadata.saveId : null,
   );
 
+  $effect(() => {
+    const nextPending = pending;
+    const shouldMoveFocus =
+      mounted && pendingObserved && !previousPending && nextPending;
+    pendingObserved = true;
+    previousPending = nextPending;
+    if (shouldMoveFocus) {
+      void tick().then(() => {
+        if (pending && dialog?.isConnected) dialog.focus();
+      });
+    }
+  });
+
   function occupiedExpectation(): OccupiedSlotExpectationView {
     const saveId =
       slot.status.type === "valid"
@@ -74,11 +92,13 @@
   }
 
   function cancel(): void {
+    if (pending) return;
     onCancel();
     restoreFocus();
   }
 
   function confirm(event: MouseEvent): void {
+    if (pending) return;
     if (kind === "load") {
       if (!loadSaveId) return;
       onConfirm(
@@ -97,6 +117,7 @@
     if (event.key === "Escape" && !event.repeat) {
       event.preventDefault();
       event.stopPropagation();
+      if (pending) return;
       cancel();
       return;
     }
@@ -108,6 +129,11 @@
     );
     const first = controls[0];
     const last = controls.at(-1);
+    if (!first || !last) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
     if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last?.focus();
@@ -118,6 +144,11 @@
   }
 
   onMount(() => {
+    mounted = true;
+    if (pending) {
+      dialog?.focus();
+      return;
+    }
     const initialAction =
       confirmButton && !confirmButton.disabled ? confirmButton : cancelButton;
     initialAction?.focus();
@@ -129,6 +160,7 @@
     bind:this={dialog}
     class="dialog"
     role="dialog"
+    tabindex="-1"
     aria-modal="true"
     aria-labelledby="save-confirmation-title"
   >
@@ -164,14 +196,17 @@
     </div>
 
     <div class="actions">
-      <button bind:this={cancelButton} type="button" onclick={cancel}
-        >取消</button
+      <button
+        bind:this={cancelButton}
+        type="button"
+        disabled={pending}
+        onclick={cancel}>取消</button
       >
       <button
         bind:this={confirmButton}
         type="button"
         class:danger={kind === "delete"}
-        disabled={kind === "load" && !loadSaveId}
+        disabled={pending || (kind === "load" && !loadSaveId)}
         onclick={confirm}
       >
         {confirmLabel}

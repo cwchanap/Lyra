@@ -166,7 +166,11 @@ try {
   // were already removed by the executor's own finally.
   for (const root of createdRoots) {
     if (existsSync(root)) {
-      removeHpa392AppDataDir(root);
+      try {
+        removeHpa392AppDataDir(root);
+      } catch (error) {
+        console.error("HPA-392 E2E app data cleanup failed:", error);
+      }
     }
   }
 }

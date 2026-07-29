@@ -15,6 +15,7 @@ import {
   requestApplicationQuit,
   requestApplicationQuitWhenAcknowledging,
   requestWindowClose,
+  settlePackagedCommand,
   startAcquisitionAcknowledgement,
   startFromMenu,
   waitForAcquisitionOrdinal,
@@ -246,15 +247,15 @@ async function proveFailureCancelAndBypass(): Promise<void> {
     unsaved.currentDialogueFingerprint,
   );
 
-  let staleRejected = false;
-  try {
-    await invokePackagedCommand<void>("exit_without_saving", {
-      failureToken: staleToken,
-    });
-  } catch {
-    staleRejected = true;
+  const staleRejection = await settlePackagedCommand<void>(
+    "exit_without_saving",
+    { failureToken: staleToken },
+  );
+  expect(staleRejection.ok).toBe(false);
+  if (staleRejection.ok) {
+    throw new Error("stale-token exit_without_saving unexpectedly succeeded");
   }
-  expect(staleRejected).toBe(true);
+  expect(staleRejection.error.code).toBe("stalePersistenceFailureToken");
 
   await setNextPersistenceFault("exitFlush");
   await requestWindowClose();

@@ -254,13 +254,16 @@ async function refreshProof(): Promise<void> {
 }
 
 async function proofPixels(): Promise<CapturePixels> {
-  return browser.executeAsync(
+  const payload = await browser.executeAsync<
+    CapturePixels | string,
+    [string, string, string, string]
+  >(
     (
       selector: string,
       rootSelector: string,
       newestPortraitFragment: string,
       leavingPortraitFragment: string,
-      done: (result: CapturePixels) => void,
+      done: (result: CapturePixels | string) => void,
     ) => {
       const image = document.querySelector(selector) as HTMLImageElement | null;
       if (!image) throw new Error("capture proof image missing");
@@ -312,249 +315,277 @@ async function proofPixels(): Promise<CapturePixels> {
         waitForImage(newestPortrait),
         waitForImage(leavingPortrait),
         waitForImage(background),
-      ]).then(() => {
-        const canvas = document.createElement("canvas");
-        canvas.width = image.naturalWidth;
-        canvas.height = image.naturalHeight;
-        const context = canvas.getContext("2d", { willReadFrequently: true });
-        if (!context) throw new Error("capture proof canvas unavailable");
-        context.drawImage(image, 0, 0);
-        const pixels = context.getImageData(
-          0,
-          0,
-          canvas.width,
-          canvas.height,
-        ).data;
-        let alphaPixels = 0;
-        let hash = 2_166_136_261;
-        const buckets = new Set<number>();
-        for (let offset = 0; offset < pixels.length; offset += 4) {
-          const red = pixels[offset] ?? 0;
-          const green = pixels[offset + 1] ?? 0;
-          const blue = pixels[offset + 2] ?? 0;
-          const alpha = pixels[offset + 3] ?? 0;
-          if (alpha > 0) alphaPixels += 1;
-          if (offset % 64 === 0) {
-            buckets.add(
-              (Math.floor(red / 32) << 6) |
-                (Math.floor(green / 32) << 3) |
-                Math.floor(blue / 32),
-            );
-            hash ^= red | (green << 8) | (blue << 16) | (alpha << 24);
-            hash = Math.imul(hash, 16_777_619) >>> 0;
-          }
-        }
-        const sampleAlpha = (x: number, y: number) =>
-          pixels[(y * canvas.width + x) * 4 + 3] ?? 0;
-        const rootRect = root.getBoundingClientRect();
-        const scaleX = canvas.width / rootRect.width;
-        const scaleY = canvas.height / rootRect.height;
-        const captureRect = (rect: DOMRect) => ({
-          x: (rect.left - rootRect.left) * scaleX,
-          y: (rect.top - rootRect.top) * scaleY,
-          width: rect.width * scaleX,
-          height: rect.height * scaleY,
-        });
-        const drawReference = (
-          asset: HTMLImageElement,
-          destination: ReturnType<typeof captureRect>,
-          cover: boolean,
-        ) => {
-          const reference = document.createElement("canvas");
-          reference.width = canvas.width;
-          reference.height = canvas.height;
-          const referenceContext = reference.getContext("2d", {
-            willReadFrequently: true,
-          });
-          if (!referenceContext) {
-            throw new Error("capture proof reference canvas unavailable");
-          }
-          if (cover) {
-            const sourceAspect = asset.naturalWidth / asset.naturalHeight;
-            const destinationAspect = destination.width / destination.height;
-            let sourceX = 0;
-            let sourceY = 0;
-            let sourceWidth = asset.naturalWidth;
-            let sourceHeight = asset.naturalHeight;
-            if (sourceAspect > destinationAspect) {
-              sourceWidth = asset.naturalHeight * destinationAspect;
-              sourceX = (asset.naturalWidth - sourceWidth) / 2;
-            } else {
-              sourceHeight = asset.naturalWidth / destinationAspect;
-              sourceY = (asset.naturalHeight - sourceHeight) / 2;
-            }
-            referenceContext.drawImage(
-              asset,
-              sourceX,
-              sourceY,
-              sourceWidth,
-              sourceHeight,
-              destination.x,
-              destination.y,
-              destination.width,
-              destination.height,
-            );
-          } else {
-            referenceContext.drawImage(
-              asset,
-              destination.x,
-              destination.y,
-              destination.width,
-              destination.height,
-            );
-          }
-          return referenceContext.getImageData(
-            0,
-            0,
-            canvas.width,
-            canvas.height,
-          ).data;
-        };
-        const portraitRect = captureRect(
-          newestPortrait.getBoundingClientRect(),
-        );
-        const newestReference = drawReference(
-          newestPortrait,
-          portraitRect,
-          false,
-        );
-        const leavingReference = drawReference(
-          leavingPortrait,
-          portraitRect,
-          false,
-        );
-        const portraitMatchRatio = (reference: Uint8ClampedArray) => {
-          let samples = 0;
-          let matches = 0;
-          const maxY = Math.min(
-            canvas.height,
-            Math.floor(canvas.height * 0.64),
-          );
-          for (let y = 0; y < maxY; y += 1) {
-            for (
-              let x = Math.floor(canvas.width * 0.45);
-              x < canvas.width;
-              x += 1
-            ) {
-              const offset = (y * canvas.width + x) * 4;
-              if ((reference[offset + 3] ?? 0) < 230) continue;
-              const referenceLuminance =
-                (reference[offset] ?? 0) * 0.2126 +
-                (reference[offset + 1] ?? 0) * 0.7152 +
-                (reference[offset + 2] ?? 0) * 0.0722;
-              if (referenceLuminance < 72) continue;
-              samples += 1;
-              const redDelta = (pixels[offset] ?? 0) - (reference[offset] ?? 0);
-              const greenDelta =
-                (pixels[offset + 1] ?? 0) - (reference[offset + 1] ?? 0);
-              const blueDelta =
-                (pixels[offset + 2] ?? 0) - (reference[offset + 2] ?? 0);
-              if (
-                Math.sqrt(
-                  redDelta * redDelta +
-                    greenDelta * greenDelta +
-                    blueDelta * blueDelta,
-                ) <= 72
-              ) {
-                matches += 1;
+      ])
+        .then(() => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = image.naturalWidth;
+            canvas.height = image.naturalHeight;
+            const context = canvas.getContext("2d", {
+              willReadFrequently: true,
+            });
+            if (!context) throw new Error("capture proof canvas unavailable");
+            context.drawImage(image, 0, 0);
+            const pixels = context.getImageData(
+              0,
+              0,
+              canvas.width,
+              canvas.height,
+            ).data;
+            let alphaPixels = 0;
+            let hash = 2_166_136_261;
+            const buckets = new Set<number>();
+            for (let offset = 0; offset < pixels.length; offset += 4) {
+              const red = pixels[offset] ?? 0;
+              const green = pixels[offset + 1] ?? 0;
+              const blue = pixels[offset + 2] ?? 0;
+              const alpha = pixels[offset + 3] ?? 0;
+              if (alpha > 0) alphaPixels += 1;
+              if (offset % 64 === 0) {
+                buckets.add(
+                  (Math.floor(red / 32) << 6) |
+                    (Math.floor(green / 32) << 3) |
+                    Math.floor(blue / 32),
+                );
+                hash ^= red | (green << 8) | (blue << 16) | (alpha << 24);
+                hash = Math.imul(hash, 16_777_619) >>> 0;
               }
             }
-          }
-          return { samples, ratio: samples === 0 ? 0 : matches / samples };
-        };
-        const newestPortraitMatch = portraitMatchRatio(newestReference);
-        const leavingPortraitMatch = portraitMatchRatio(leavingReference);
+            const sampleAlpha = (x: number, y: number) =>
+              pixels[(y * canvas.width + x) * 4 + 3] ?? 0;
+            const rootRect = root.getBoundingClientRect();
+            const scaleX = canvas.width / rootRect.width;
+            const scaleY = canvas.height / rootRect.height;
+            const captureRect = (rect: DOMRect) => ({
+              x: (rect.left - rootRect.left) * scaleX,
+              y: (rect.top - rootRect.top) * scaleY,
+              width: rect.width * scaleX,
+              height: rect.height * scaleY,
+            });
+            const drawReference = (
+              asset: HTMLImageElement,
+              destination: ReturnType<typeof captureRect>,
+              cover: boolean,
+            ) => {
+              const reference = document.createElement("canvas");
+              reference.width = canvas.width;
+              reference.height = canvas.height;
+              const referenceContext = reference.getContext("2d", {
+                willReadFrequently: true,
+              });
+              if (!referenceContext) {
+                throw new Error("capture proof reference canvas unavailable");
+              }
+              if (cover) {
+                const sourceAspect = asset.naturalWidth / asset.naturalHeight;
+                const destinationAspect =
+                  destination.width / destination.height;
+                let sourceX = 0;
+                let sourceY = 0;
+                let sourceWidth = asset.naturalWidth;
+                let sourceHeight = asset.naturalHeight;
+                if (sourceAspect > destinationAspect) {
+                  sourceWidth = asset.naturalHeight * destinationAspect;
+                  sourceX = (asset.naturalWidth - sourceWidth) / 2;
+                } else {
+                  sourceHeight = asset.naturalWidth / destinationAspect;
+                  sourceY = (asset.naturalHeight - sourceHeight) / 2;
+                }
+                referenceContext.drawImage(
+                  asset,
+                  sourceX,
+                  sourceY,
+                  sourceWidth,
+                  sourceHeight,
+                  destination.x,
+                  destination.y,
+                  destination.width,
+                  destination.height,
+                );
+              } else {
+                referenceContext.drawImage(
+                  asset,
+                  destination.x,
+                  destination.y,
+                  destination.width,
+                  destination.height,
+                );
+              }
+              return referenceContext.getImageData(
+                0,
+                0,
+                canvas.width,
+                canvas.height,
+              ).data;
+            };
+            const portraitRect = captureRect(
+              newestPortrait.getBoundingClientRect(),
+            );
+            const newestReference = drawReference(
+              newestPortrait,
+              portraitRect,
+              false,
+            );
+            const leavingReference = drawReference(
+              leavingPortrait,
+              portraitRect,
+              false,
+            );
+            const portraitMatchRatio = (reference: Uint8ClampedArray) => {
+              let samples = 0;
+              let matches = 0;
+              const maxY = Math.min(
+                canvas.height,
+                Math.floor(canvas.height * 0.64),
+              );
+              for (let y = 0; y < maxY; y += 1) {
+                for (
+                  let x = Math.floor(canvas.width * 0.45);
+                  x < canvas.width;
+                  x += 1
+                ) {
+                  const offset = (y * canvas.width + x) * 4;
+                  if ((reference[offset + 3] ?? 0) < 230) continue;
+                  const referenceLuminance =
+                    (reference[offset] ?? 0) * 0.2126 +
+                    (reference[offset + 1] ?? 0) * 0.7152 +
+                    (reference[offset + 2] ?? 0) * 0.0722;
+                  if (referenceLuminance < 72) continue;
+                  samples += 1;
+                  const redDelta =
+                    (pixels[offset] ?? 0) - (reference[offset] ?? 0);
+                  const greenDelta =
+                    (pixels[offset + 1] ?? 0) - (reference[offset + 1] ?? 0);
+                  const blueDelta =
+                    (pixels[offset + 2] ?? 0) - (reference[offset + 2] ?? 0);
+                  if (
+                    Math.sqrt(
+                      redDelta * redDelta +
+                        greenDelta * greenDelta +
+                        blueDelta * blueDelta,
+                    ) <= 72
+                  ) {
+                    matches += 1;
+                  }
+                }
+              }
+              return { samples, ratio: samples === 0 ? 0 : matches / samples };
+            };
+            const newestPortraitMatch = portraitMatchRatio(newestReference);
+            const leavingPortraitMatch = portraitMatchRatio(leavingReference);
 
-        const backgroundRect = captureRect(background.getBoundingClientRect());
-        const backgroundReference = drawReference(
-          background,
-          backgroundRect,
-          true,
-        );
-        let backgroundSamples = 0;
-        let backgroundSourceSum = 0;
-        let backgroundCaptureSum = 0;
-        let backgroundSourceSquared = 0;
-        let backgroundCaptureSquared = 0;
-        let backgroundProducts = 0;
-        const regionLeft = Math.floor(canvas.width * 0.02);
-        const regionRight = Math.floor(canvas.width * 0.48);
-        const regionTop = Math.floor(canvas.height * 0.27);
-        const regionBottom = Math.floor(canvas.height * 0.68);
-        for (let y = regionTop; y < regionBottom; y += 2) {
-          for (let x = regionLeft; x < regionRight; x += 2) {
-            const offset = (y * canvas.width + x) * 4;
-            const sourceLuminance =
-              (backgroundReference[offset] ?? 0) * 0.2126 +
-              (backgroundReference[offset + 1] ?? 0) * 0.7152 +
-              (backgroundReference[offset + 2] ?? 0) * 0.0722;
-            const captureLuminance =
-              (pixels[offset] ?? 0) * 0.2126 +
-              (pixels[offset + 1] ?? 0) * 0.7152 +
-              (pixels[offset + 2] ?? 0) * 0.0722;
-            backgroundSamples += 1;
-            backgroundSourceSum += sourceLuminance;
-            backgroundCaptureSum += captureLuminance;
-            backgroundSourceSquared += sourceLuminance * sourceLuminance;
-            backgroundCaptureSquared += captureLuminance * captureLuminance;
-            backgroundProducts += sourceLuminance * captureLuminance;
+            const backgroundRect = captureRect(
+              background.getBoundingClientRect(),
+            );
+            const backgroundReference = drawReference(
+              background,
+              backgroundRect,
+              true,
+            );
+            let backgroundSamples = 0;
+            let backgroundSourceSum = 0;
+            let backgroundCaptureSum = 0;
+            let backgroundSourceSquared = 0;
+            let backgroundCaptureSquared = 0;
+            let backgroundProducts = 0;
+            const regionLeft = Math.floor(canvas.width * 0.02);
+            const regionRight = Math.floor(canvas.width * 0.48);
+            const regionTop = Math.floor(canvas.height * 0.27);
+            const regionBottom = Math.floor(canvas.height * 0.68);
+            for (let y = regionTop; y < regionBottom; y += 2) {
+              for (let x = regionLeft; x < regionRight; x += 2) {
+                const offset = (y * canvas.width + x) * 4;
+                const sourceLuminance =
+                  (backgroundReference[offset] ?? 0) * 0.2126 +
+                  (backgroundReference[offset + 1] ?? 0) * 0.7152 +
+                  (backgroundReference[offset + 2] ?? 0) * 0.0722;
+                const captureLuminance =
+                  (pixels[offset] ?? 0) * 0.2126 +
+                  (pixels[offset + 1] ?? 0) * 0.7152 +
+                  (pixels[offset + 2] ?? 0) * 0.0722;
+                backgroundSamples += 1;
+                backgroundSourceSum += sourceLuminance;
+                backgroundCaptureSum += captureLuminance;
+                backgroundSourceSquared += sourceLuminance * sourceLuminance;
+                backgroundCaptureSquared += captureLuminance * captureLuminance;
+                backgroundProducts += sourceLuminance * captureLuminance;
+              }
+            }
+            const backgroundNumerator =
+              backgroundSamples * backgroundProducts -
+              backgroundSourceSum * backgroundCaptureSum;
+            const backgroundDenominator = Math.sqrt(
+              (backgroundSamples * backgroundSourceSquared -
+                backgroundSourceSum * backgroundSourceSum) *
+                (backgroundSamples * backgroundCaptureSquared -
+                  backgroundCaptureSum * backgroundCaptureSum),
+            );
+            const bottomY = Math.max(0, canvas.height - 42);
+            let bottomEdgeChanges = 0;
+            let previous = -1;
+            for (let x = 0; x < canvas.width; x += 2) {
+              const offset = (bottomY * canvas.width + x) * 4;
+              const luminance =
+                ((pixels[offset] ?? 0) +
+                  (pixels[offset + 1] ?? 0) +
+                  (pixels[offset + 2] ?? 0)) /
+                3;
+              const bucket = Math.floor(luminance / 24);
+              if (previous !== -1 && bucket !== previous)
+                bottomEdgeChanges += 1;
+              previous = bucket;
+            }
+            done({
+              width: canvas.width,
+              height: canvas.height,
+              alphaCoverage: alphaPixels / (canvas.width * canvas.height),
+              colorBuckets: buckets.size,
+              bottomEdgeChanges,
+              cornerAlpha: [
+                sampleAlpha(0, 0),
+                sampleAlpha(canvas.width - 1, 0),
+                sampleAlpha(0, canvas.height - 1),
+                sampleAlpha(canvas.width - 1, canvas.height - 1),
+              ],
+              hash,
+              newestPortraitSamples: newestPortraitMatch.samples,
+              newestPortraitMatchRatio: newestPortraitMatch.ratio,
+              leavingPortraitMatchRatio: leavingPortraitMatch.ratio,
+              backgroundCorrelation:
+                backgroundDenominator > 0
+                  ? backgroundNumerator / backgroundDenominator
+                  : 0,
+              newestPortraitNaturalSize: `${newestPortrait.naturalWidth}x${newestPortrait.naturalHeight}`,
+              newestPortraitRect: `${Math.round(portraitRect.x)},${Math.round(portraitRect.y)},${Math.round(portraitRect.width)},${Math.round(portraitRect.height)}`,
+              backgroundNaturalSize: `${background.naturalWidth}x${background.naturalHeight}`,
+              backgroundRect: `${Math.round(backgroundRect.x)},${Math.round(backgroundRect.y)},${Math.round(backgroundRect.width)},${Math.round(backgroundRect.height)}`,
+            });
+          } catch (error: unknown) {
+            done(
+              `ERROR:${error instanceof Error ? error.message : "capture proof pixel sampling failed"}`,
+            );
           }
-        }
-        const backgroundNumerator =
-          backgroundSamples * backgroundProducts -
-          backgroundSourceSum * backgroundCaptureSum;
-        const backgroundDenominator = Math.sqrt(
-          (backgroundSamples * backgroundSourceSquared -
-            backgroundSourceSum * backgroundSourceSum) *
-            (backgroundSamples * backgroundCaptureSquared -
-              backgroundCaptureSum * backgroundCaptureSum),
-        );
-        const bottomY = Math.max(0, canvas.height - 42);
-        let bottomEdgeChanges = 0;
-        let previous = -1;
-        for (let x = 0; x < canvas.width; x += 2) {
-          const offset = (bottomY * canvas.width + x) * 4;
-          const luminance =
-            ((pixels[offset] ?? 0) +
-              (pixels[offset + 1] ?? 0) +
-              (pixels[offset + 2] ?? 0)) /
-            3;
-          const bucket = Math.floor(luminance / 24);
-          if (previous !== -1 && bucket !== previous) bottomEdgeChanges += 1;
-          previous = bucket;
-        }
-        done({
-          width: canvas.width,
-          height: canvas.height,
-          alphaCoverage: alphaPixels / (canvas.width * canvas.height),
-          colorBuckets: buckets.size,
-          bottomEdgeChanges,
-          cornerAlpha: [
-            sampleAlpha(0, 0),
-            sampleAlpha(canvas.width - 1, 0),
-            sampleAlpha(0, canvas.height - 1),
-            sampleAlpha(canvas.width - 1, canvas.height - 1),
-          ],
-          hash,
-          newestPortraitSamples: newestPortraitMatch.samples,
-          newestPortraitMatchRatio: newestPortraitMatch.ratio,
-          leavingPortraitMatchRatio: leavingPortraitMatch.ratio,
-          backgroundCorrelation:
-            backgroundDenominator > 0
-              ? backgroundNumerator / backgroundDenominator
-              : 0,
-          newestPortraitNaturalSize: `${newestPortrait.naturalWidth}x${newestPortrait.naturalHeight}`,
-          newestPortraitRect: `${Math.round(portraitRect.x)},${Math.round(portraitRect.y)},${Math.round(portraitRect.width)},${Math.round(portraitRect.height)}`,
-          backgroundNaturalSize: `${background.naturalWidth}x${background.naturalHeight}`,
-          backgroundRect: `${Math.round(backgroundRect.x)},${Math.round(backgroundRect.y)},${Math.round(backgroundRect.width)},${Math.round(backgroundRect.height)}`,
+        })
+        .catch((error: unknown) => {
+          done(
+            `ERROR:${error instanceof Error ? error.message : "capture proof pixel sampling failed"}`,
+          );
         });
-      });
     },
     anchors.captureProof.thumbnail,
     anchors.captureProof.root,
     anchors.captureProof.newestPortrait,
     anchors.captureProof.leavingPortrait,
   );
+  if (typeof payload === "string") {
+    if (payload.startsWith("ERROR:")) {
+      throw new Error(payload.slice("ERROR:".length));
+    }
+    throw new Error(
+      `capture proof pixel sampling returned unexpected string: ${payload}`,
+    );
+  }
+  return payload;
 }
 
 async function exportProofThumbnailArtifact(): Promise<string> {

@@ -672,6 +672,12 @@ export function executeHpa392PhasePlan(
     }
     return exitCode;
   } finally {
-    for (const root of roots) cleanupAppDataDir(root);
+    for (const root of roots) {
+      try {
+        cleanupAppDataDir(root);
+      } catch (error) {
+        console.error("HPA-392 E2E app data cleanup failed:", error);
+      }
+    }
   }
 }

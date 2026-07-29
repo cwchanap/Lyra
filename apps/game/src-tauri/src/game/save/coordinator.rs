@@ -2259,6 +2259,37 @@ impl SaveCoordinator {
         Ok(identity)
     }
 
+    pub(crate) fn consume_current_start_without_saving_failure(
+        &self,
+        app: &crate::AppState,
+        token: &PersistenceFailureTokenView,
+    ) -> Result<SessionTransitionIdentity, GameError> {
+        let identity = self.transition_identity(app)?;
+        let discovery_generation = self
+            .state
+            .lock()
+            .map_err(|_| GameError::save_discovery_unavailable())?
+            .discovery_generation;
+        let session_identity = FailureChallengeIdentity {
+            session_generation: identity.generation,
+            discovery_generation: None,
+            durable_revision: identity.durable_revision.unwrap_or(0),
+            selected_save_id: None,
+            acquisition_event_id: None,
+        };
+        let discovery_identity = FailureChallengeIdentity {
+            discovery_generation: Some(discovery_generation),
+            ..session_identity
+        };
+        self.consume_failure_token_matching(
+            token,
+            PersistenceBypassOperation::StartWithoutSaving,
+            session_identity,
+            Some(discovery_identity),
+        )?;
+        Ok(identity)
+    }
+
     pub(crate) fn consume_current_selected_save_failure(
         &self,
         app: &crate::AppState,
