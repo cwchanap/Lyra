@@ -18,6 +18,7 @@ import {
   waitForShell,
 } from "./helpers";
 import {
+  newestAutosaveSlot,
   readSaveE2eExpectation,
   readSaveE2eOwnershipSnapshot,
   waitForSaveE2eEnvelope,
@@ -262,16 +263,7 @@ describe("save resume", () => {
     expect(playingCrossExam?.lineId).toBe(presentingCrossExam?.lineId);
 
     await returnToTitle();
-    const newest = readSaveE2eOwnershipSnapshot()
-      .slots.filter(
-        (slot) =>
-          slot.fixedSlotName.startsWith("autosave-") && slot.envelope !== null,
-      )
-      .toSorted(
-        (left, right) =>
-          Date.parse(right.envelope!.savedAt) -
-          Date.parse(left.envelope!.savedAt),
-      )[0];
+    const newest = newestAutosaveSlot();
     if (!newest?.envelope) throw new Error("acknowledged autosave missing");
     writeSaveE2eExpectation("management-state", {
       ...control,

@@ -585,6 +585,24 @@ test("sidecar inventory rejects unknown names and unreferenced canonical files",
   );
 });
 
+test("sidecar inventory accepts legitimately referenced canonical thumbnails", () => {
+  const appData = holder("lyra-save-e2e-");
+  const saves = path.join(appData, "saves");
+  const thumbnails = path.join(saves, "thumbnails");
+  mkdirSync(thumbnails, { recursive: true });
+  const saveId = "123e4567-e89b-42d3-a456-426614174000";
+  writeFileSync(
+    path.join(saves, "manual-1.json"),
+    JSON.stringify({
+      saveId,
+      thumbnail: { type: "available", objectId: saveId },
+    }),
+  );
+  writeFileSync(path.join(thumbnails, `${saveId}.png`), "png");
+
+  assert.equal(assertNoUnknownSaveE2eSidecars(appData), true);
+});
+
 test("control expectations live outside saves and accept only closed names", () => {
   const appData = holder("lyra-save-e2e-");
   mkdirSync(path.join(appData, "saves"));

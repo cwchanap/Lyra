@@ -28,6 +28,8 @@ import {
 import {
   SAVE_E2E_PHASE_NAMES,
   assertSaveE2eSidecarOwnership,
+  autosaveSlots,
+  newestAutosaveSlot,
   readSaveE2eEnvelope,
   readSaveE2eExpectation,
   readSaveE2eOwnershipSnapshot,
@@ -68,20 +70,6 @@ type ManagementControl = {
   [key: string]: unknown;
 };
 
-function autosaves(snapshot = readSaveE2eOwnershipSnapshot()) {
-  return snapshot.slots.filter(
-    (slot) =>
-      slot.fixedSlotName.startsWith("autosave-") && slot.envelope !== null,
-  );
-}
-
-function newestAutosave(snapshot = readSaveE2eOwnershipSnapshot()) {
-  return autosaves(snapshot).toSorted(
-    (left, right) =>
-      Date.parse(right.envelope!.savedAt) - Date.parse(left.envelope!.savedAt),
-  )[0];
-}
-
 async function seedRotationAndOverwrite(): Promise<void> {
   const inherited =
     readSaveE2eExpectation<Record<string, unknown>>("management-state");
@@ -94,13 +82,13 @@ async function seedRotationAndOverwrite(): Promise<void> {
     await advanceDialogueOnce();
     await browser.pause(700);
     await waitForPersistenceIdle();
-    for (const slot of autosaves()) {
+    for (const slot of autosaveSlots()) {
       if (slot.modifiedAtMs === null) {
         throw new Error(`${slot.fixedSlotName} has no filesystem mtime`);
       }
       observedRecoveryPoints.set(slot.envelope!.saveId, slot.modifiedAtMs);
     }
-    const newest = newestAutosave();
+    const newest = newestAutosaveSlot();
     if (
       observedRecoveryPoints.size >= 6 &&
       newest?.fixedSlotName === "autosave-1"
@@ -109,10 +97,10 @@ async function seedRotationAndOverwrite(): Promise<void> {
     }
   }
   const rotation = readSaveE2eOwnershipSnapshot();
-  const retained = autosaves(rotation);
+  const retained = autosaveSlots(rotation);
   expect(retained).toHaveLength(5);
   expect(observedRecoveryPoints.size).toBeGreaterThanOrEqual(6);
-  expect(newestAutosave(rotation)?.fixedSlotName).toBe("autosave-1");
+  expect(newestAutosaveSlot(rotation)?.fixedSlotName).toBe("autosave-1");
   const expectedRetainedIds = [...observedRecoveryPoints.entries()]
     .toSorted((left, right) => right[1] - left[1])
     .slice(0, 5)
@@ -229,13 +217,10 @@ async function seedRotationAndOverwrite(): Promise<void> {
     unavailable.summary.sceneId,
   );
 
-  const recoverySlot = autosaves(rotation)
-    .filter((slot) => slot.fixedSlotName !== "autosave-1")
-    .toSorted(
-      (left, right) =>
-        Date.parse(right.envelope!.savedAt) -
-        Date.parse(left.envelope!.savedAt),
-    )[0]!.fixedSlotName;
+  const recoverySlot = newestAutosaveSlot({
+    ...rotation,
+    slots: rotation.slots.filter((slot) => slot.fixedSlotName !== "autosave-1"),
+  })!.fixedSlotName;
   writeSaveE2eExpectation("management-state", {
     ...inherited,
     seedDocumentIdentity: documentIdentity,

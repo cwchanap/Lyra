@@ -23,35 +23,13 @@ import {
   waitForPersistenceIdle,
 } from "./helpers";
 import {
-  readSaveE2eOwnershipSnapshot,
+  newestAutosaveSlot,
   waitForSaveE2eEnvelope,
   writeSaveE2eExpectation,
   type ExpectedResumeCheckpoint,
-  type SaveE2eFixedSlotName,
   type SeedControl,
 } from "./save-fixtures";
 import { anchors } from "./production-anchors";
-
-function newestAutosave(): {
-  fixedSlotName: SaveE2eFixedSlotName;
-  saveId: string;
-} {
-  const newest = readSaveE2eOwnershipSnapshot()
-    .slots.filter(
-      (slot) =>
-        slot.fixedSlotName.startsWith("autosave-") && slot.envelope !== null,
-    )
-    .toSorted(
-      (left, right) =>
-        Date.parse(right.envelope!.savedAt) -
-        Date.parse(left.envelope!.savedAt),
-    )[0];
-  if (!newest?.envelope) throw new Error("no autosave envelope exists");
-  return {
-    fixedSlotName: newest.fixedSlotName,
-    saveId: newest.envelope.saveId,
-  };
-}
 
 describe("save seed", () => {
   it("seeds Unicode, composite, acquisition, investigation, and interrogation checkpoints", async function () {
@@ -201,7 +179,10 @@ describe("save seed", () => {
     expect(secondEvent?.createdByCommandId).toBe(
       firstEvent?.createdByCommandId,
     );
-    const firstAcknowledgementAutosave = newestAutosave();
+    const firstAcknowledgementAutosave = newestAutosaveSlot();
+    if (!firstAcknowledgementAutosave?.envelope) {
+      throw new Error("no autosave envelope exists");
+    }
     await acknowledgeAcquisitionDomFirst(secondEvent!);
     await waitForPackagedGameState(
       (state) => state.pendingAcquisition === null,
@@ -210,16 +191,20 @@ describe("save seed", () => {
     );
     await waitForNoDialog(anchors.evidenceAcquired, 90000);
     await waitForPersistenceIdle();
-    const secondAcknowledgementAutosave = newestAutosave();
+    const secondAcknowledgementAutosave = newestAutosaveSlot();
+    if (!secondAcknowledgementAutosave?.envelope) {
+      throw new Error("no autosave envelope exists");
+    }
     expect(secondAcknowledgementAutosave.fixedSlotName).toBe(
       firstAcknowledgementAutosave.fixedSlotName,
     );
-    expect(secondAcknowledgementAutosave.saveId).not.toBe(
-      firstAcknowledgementAutosave.saveId,
+    expect(secondAcknowledgementAutosave.envelope.saveId).not.toBe(
+      firstAcknowledgementAutosave.envelope.saveId,
     );
     const acknowledgementEnvelope = await waitForSaveE2eEnvelope(
       secondAcknowledgementAutosave.fixedSlotName,
-      (envelope) => envelope.saveId === secondAcknowledgementAutosave.saveId,
+      (envelope) =>
+        envelope.saveId === secondAcknowledgementAutosave.envelope!.saveId,
     );
     if (acknowledgementEnvelope.thumbnail.type === "available") {
       expect(acknowledgementEnvelope.thumbnail.objectId).toBe(

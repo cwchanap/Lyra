@@ -31,8 +31,8 @@ import {
 } from "./helpers";
 import {
   SAVE_E2E_PHASE_NAMES,
+  newestAutosaveSlot,
   readSaveE2eExpectation,
-  readSaveE2eOwnershipSnapshot,
   setNextPersistenceFault,
   writeSaveE2eExpectation,
 } from "./save-fixtures";
@@ -216,16 +216,7 @@ async function proveFailureCancelAndBypass(): Promise<void> {
   await waitForPersistenceIdle();
   const documentIdentity = await currentPackagedDocumentIdentity();
   const authoritativeState = await getPackagedGameState();
-  const authoritativeSlot = readSaveE2eOwnershipSnapshot()
-    .slots.filter(
-      (slot) =>
-        slot.fixedSlotName.startsWith("autosave-") && slot.envelope !== null,
-    )
-    .toSorted(
-      (left, right) =>
-        Date.parse(right.envelope!.savedAt) -
-        Date.parse(left.envelope!.savedAt),
-    )[0];
+  const authoritativeSlot = newestAutosaveSlot();
   if (!authoritativeSlot?.envelope) {
     throw new Error("authoritative pre-bypass autosave is missing");
   }
