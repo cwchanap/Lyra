@@ -22,6 +22,7 @@ use lyra_lib::{
 
 const ADDR: &str = "127.0.0.1:1421";
 const CORS_ORIGIN: &str = "http://localhost:1420";
+const MAX_REQUEST_BODY_BYTES: usize = 16 * 1024 * 1024;
 
 fn resources_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/scenes")
@@ -75,6 +76,23 @@ fn handle(mut stream: TcpStream, state: &ServerState) {
         };
         write_response(&mut stream, status, "", b"", request.origin.as_deref());
         return;
+    }
+
+    // Enforce CORS origin validation for every non-OPTIONS request before
+    // command validation or dispatch. A browser-readable response is only
+    // useful to the single approved dev origin; reject any other origin up
+    // front so a malicious page on a different origin cannot drive the dev
+    // server. Requests without an Origin header (e.g. curl, server-to-server)
+    // are still allowed, mirroring `cors_allowed`.
+    if let Some(origin) = request.origin.as_deref() {
+        if origin != CORS_ORIGIN {
+            write_forbidden_response(
+                &mut stream,
+                GameError::request_origin_forbidden(origin),
+                Some(origin),
+            );
+            return;
+        }
     }
 
     let command = normalize_command_path(&request.path);
@@ -261,6 +279,9 @@ fn validate_thumbnail_request_head(
 }
 
 fn read_request_body(reader: &mut impl Read, content_length: usize) -> Result<Vec<u8>, GameError> {
+    if content_length > MAX_REQUEST_BODY_BYTES {
+        return Err(request_parse_failure("request body is too large"));
+    }
     let mut body = Vec::new();
     body.try_reserve_exact(content_length)
         .map_err(|_| request_parse_failure("request body is too large"))?;
@@ -278,6 +299,11 @@ fn request_parse_failure(detail: &str) -> GameError {
 fn write_error_response(stream: &mut TcpStream, error: GameError, origin: Option<&str>) {
     let body = serde_json::to_vec(&error).unwrap_or_else(|_| b"{}".to_vec());
     write_response(stream, 400, "application/json", &body, origin);
+}
+
+fn write_forbidden_response(stream: &mut TcpStream, error: GameError, origin: Option<&str>) {
+    let body = serde_json::to_vec(&error).unwrap_or_else(|_| b"{}".to_vec());
+    write_response(stream, 403, "application/json", &body, origin);
 }
 
 fn write_response(
@@ -378,6 +404,21 @@ mod tests {
         assert!(headers
             .contains("Access-Control-Allow-Headers: Content-Type, X-Lyra-Thumbnail-Ticket\r\n"));
         assert_eq!(headers.matches("Access-Control-Allow-Headers:").count(), 1);
+    }
+
+    #[test]
+    fn request_origin_forbidden_error_carries_typed_code() {
+        let error = GameError::request_origin_forbidden("http://evil.example");
+        assert_eq!(error.code, "requestOriginForbidden");
+        assert!(error.message.contains("http://evil.example"));
+    }
+
+    #[test]
+    fn cors_allowed_permits_missing_origin_and_approved_origin_only() {
+        assert!(cors_allowed(None));
+        assert!(cors_allowed(Some(CORS_ORIGIN)));
+        assert!(!cors_allowed(Some("http://evil.example")));
+        assert!(!cors_allowed(Some("http://localhost:9999")));
     }
 
     #[test]

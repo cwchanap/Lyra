@@ -471,4 +471,10 @@ impl GameError {
     pub fn internal(detail: String) -> Self {
         Self::new("internalError", detail)
     }
+    pub fn request_origin_forbidden(origin: &str) -> Self {
+        Self::new(
+            "requestOriginForbidden",
+            format!("Request origin '{origin}' is not allowed by CORS policy."),
+        )
+    }
 }

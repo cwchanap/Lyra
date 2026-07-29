@@ -1425,29 +1425,24 @@ function curatedCaptureOptions(
   };
 }
 
-const htmlToImageGameplayCapture = packagedCaptureProofEnabled
-  ? createHtmlToImageGameplayCapture({
-      root: () =>
-        typeof document === "undefined"
-          ? null
-          : document.querySelector<HTMLElement>("[data-save-thumbnail-root]"),
-      now: () => performance.now(),
-      renderToBlob: renderGameplayNodeToPngBlob,
-      onRenderDiagnostic: (code) => {
-        lastPackagedRenderDiagnostic = code;
-      },
-      onFontEmbedDiagnostic: (diagnostic) => {
-        lastPackagedFontEmbedDiagnostic = diagnostic;
-      },
-    })
-  : createHtmlToImageGameplayCapture({
-      root: () =>
-        typeof document === "undefined"
-          ? null
-          : document.querySelector<HTMLElement>("[data-save-thumbnail-root]"),
-      now: () => performance.now(),
-      renderToBlob: renderGameplayNodeToPngBlob,
-    });
+const htmlToImageGameplayCapture = createHtmlToImageGameplayCapture({
+  root: () =>
+    typeof document === "undefined"
+      ? null
+      : document.querySelector<HTMLElement>("[data-save-thumbnail-root]"),
+  now: () => performance.now(),
+  renderToBlob: renderGameplayNodeToPngBlob,
+  ...(packagedCaptureProofEnabled
+    ? {
+        onRenderDiagnostic: (code: CaptureRenderDiagnosticCode) => {
+          lastPackagedRenderDiagnostic = code;
+        },
+        onFontEmbedDiagnostic: (diagnostic: ThumbnailFontEmbedDiagnostic) => {
+          lastPackagedFontEmbedDiagnostic = diagnostic;
+        },
+      }
+    : {}),
+});
 
 const packagedCaptureProof = packagedCaptureProofEnabled
   ? createPackagedCaptureProofCapture(

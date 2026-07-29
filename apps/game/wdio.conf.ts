@@ -1,5 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SAVE_E2E_ORDINARY_SPECS } from "./scripts/save-e2e-paths.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Dedicated e2e target dir (CARGO_TARGET_DIR=src-tauri/target-e2e) so that
@@ -15,13 +16,9 @@ const appBinaryPath = path.join(
 export const config: WebdriverIO.Config = {
   runner: "local",
   // The default configuration is deliberately ordinary-only. Every
-  // hpa-392-*.e2e.ts process is selected explicitly by the guarded phased
+  // save e2e spec process is selected explicitly by the guarded phased
   // runner so it can own and revalidate the app-data directory lifecycle.
-  specs: [
-    "./e2e-tauri/app.e2e.ts",
-    "./e2e-tauri/investigation-layout.e2e.ts",
-    "./e2e-tauri/scene-navigation-gate.e2e.ts",
-  ],
+  specs: [...SAVE_E2E_ORDINARY_SPECS],
   maxInstances: 1,
   // Desktop-e2e is inherently flaky (focus, WebView animations, IPC timing).
   // Spec-level retries are CI-only per the e2e design spec (local: 0).

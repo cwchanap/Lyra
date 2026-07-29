@@ -12,26 +12,26 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
-  buildHpa392PhaseEnvironment,
-  buildHpa392PhasePlan,
-  assertNoUnknownHpa392Sidecars,
-  corruptHpa392ObservedSidecar,
-  corruptHpa392Slot,
-  createHpa392E2eAppDataDir,
-  executeHpa392PhasePlan,
-  guardedRemoveHpa392E2eAppDataDir,
+  buildSaveE2ePhaseEnvironment,
+  buildSaveE2ePhasePlan,
+  assertNoUnknownSaveE2eSidecars,
+  corruptSaveE2eObservedSidecar,
+  corruptSaveE2eSlot,
+  createSaveE2eAppDataDir,
+  executeSaveE2ePhasePlan,
+  removeSaveE2eAppDataDir,
   productionAppDataDir,
-  readHpa392ControlExpectation,
-  readHpa392SlotFiles,
-  removeHpa392ObservedSidecar,
-  resolveHpa392ObservedSidecar,
-  validateHpa392E2eAppDataDir,
-  writeHpa392ControlExpectation,
-} from "./hpa-392-e2e-paths.mjs";
+  readSaveE2eControlExpectation,
+  readSaveE2eSlotFiles,
+  removeSaveE2eObservedSidecar,
+  resolveSaveE2eObservedSidecar,
+  assertSafeSaveE2eAppDataDir,
+  writeSaveE2eControlExpectation,
+} from "./save-e2e-paths.mjs";
 
 const holders = [];
 
-function holder(prefix = "lyra-hpa-392-path-test-") {
+function holder(prefix = "lyra-save-e2e-path-test-") {
   const value = mkdtempSync(path.join(tmpdir(), prefix));
   holders.push(value);
   return value;
@@ -61,26 +61,26 @@ test("Turbo preserves OS temp-directory variables for packaged E2E tasks", () =>
   }
 });
 
-test("accepts only an absolute generated lyra-hpa-392 child of the OS temp root", () => {
-  const generated = createHpa392E2eAppDataDir();
+test("accepts only an absolute generated lyra-save-e2e child of the OS temp root", () => {
+  const generated = createSaveE2eAppDataDir();
   holders.push(generated);
 
   assert.equal(path.isAbsolute(generated), true);
   assert.equal(path.dirname(generated), realpathSync(tmpdir()));
-  assert.match(path.basename(generated), /^lyra-hpa-392-/);
-  assert.equal(validateHpa392E2eAppDataDir(generated), generated);
+  assert.match(path.basename(generated), /^lyra-save-e2e-/);
+  assert.equal(assertSafeSaveE2eAppDataDir(generated), generated);
 });
 
 test("refuses missing, relative, temp-root, home, production, and wrong-prefix paths", () => {
-  const valid = holder("lyra-hpa-392-");
-  const production = holder("lyra-hpa-392-production-");
+  const valid = holder("lyra-save-e2e-");
+  const production = holder("lyra-save-e2e-production-");
   const wrongPrefix = holder("not-lyra-save-proof-");
-  const missing = path.join(tmpdir(), "lyra-hpa-392-does-not-exist");
+  const missing = path.join(tmpdir(), "lyra-save-e2e-does-not-exist");
 
   const rejected = [
     undefined,
     "",
-    "relative/lyra-hpa-392-test",
+    "relative/lyra-save-e2e-test",
     tmpdir(),
     homedir(),
     production,
@@ -91,16 +91,16 @@ test("refuses missing, relative, temp-root, home, production, and wrong-prefix p
   for (const candidate of rejected) {
     assert.throws(
       () =>
-        validateHpa392E2eAppDataDir(candidate, {
+        assertSafeSaveE2eAppDataDir(candidate, {
           productionAppDataDir: production,
         }),
-      /unsafe HPA-392 E2E app-data directory/i,
+      /unsafe save e2e app-data directory/i,
       String(candidate),
     );
   }
 
   assert.equal(
-    validateHpa392E2eAppDataDir(valid, {
+    assertSafeSaveE2eAppDataDir(valid, {
       productionAppDataDir: production,
     }),
     realpathSync(valid),
@@ -113,60 +113,60 @@ test(
   () => {
     const linkHolder = holder("hpa-path-link-holder-");
     const outside = path.resolve(process.cwd());
-    const link = path.join(linkHolder, "lyra-hpa-392-symlink");
+    const link = path.join(linkHolder, "lyra-save-e2e-symlink");
     symlinkSync(outside, link, "dir");
 
     assert.throws(
-      () => validateHpa392E2eAppDataDir(link),
-      /unsafe HPA-392 E2E app-data directory/i,
+      () => assertSafeSaveE2eAppDataDir(link),
+      /unsafe save e2e app-data directory/i,
     );
     assert.equal(realpathSync(outside), outside);
   },
 );
 
 test("revalidates immediately before cleanup and removes only the validated directory", () => {
-  const generated = holder("lyra-hpa-392-");
+  const generated = holder("lyra-save-e2e-");
   const sentinel = path.join(generated, "sentinel.txt");
   writeFileSync(sentinel, "test-owned");
 
-  guardedRemoveHpa392E2eAppDataDir(generated);
+  removeSaveE2eAppDataDir(generated);
 
   assert.throws(() => readFileSync(sentinel));
-  assert.throws(() => validateHpa392E2eAppDataDir(generated));
+  assert.throws(() => assertSafeSaveE2eAppDataDir(generated));
 });
 
 test(
   "revalidation blocks cleanup after a validated path is replaced by a symlink escape",
   { skip: process.platform === "win32" },
   () => {
-    const generated = holder("lyra-hpa-392-");
+    const generated = holder("lyra-save-e2e-");
     const outside = holder("outside-hpa-proof-");
     const sentinel = path.join(outside, "keep.txt");
     writeFileSync(sentinel, "keep");
 
     assert.equal(
-      validateHpa392E2eAppDataDir(generated),
+      assertSafeSaveE2eAppDataDir(generated),
       realpathSync(generated),
     );
     rmSync(generated, { recursive: true });
     symlinkSync(outside, generated, "dir");
 
     assert.throws(
-      () => guardedRemoveHpa392E2eAppDataDir(generated),
-      /unsafe HPA-392 E2E app-data directory/i,
+      () => removeSaveE2eAppDataDir(generated),
+      /unsafe save e2e app-data directory/i,
     );
     assert.equal(readFileSync(sentinel, "utf8"), "keep");
   },
 );
 
 test("refuses nested prefixed directories rather than broadening cleanup scope", () => {
-  const parent = holder("lyra-hpa-392-parent-");
-  const nested = path.join(parent, "lyra-hpa-392-nested");
+  const parent = holder("lyra-save-e2e-parent-");
+  const nested = path.join(parent, "lyra-save-e2e-nested");
   mkdirSync(nested);
 
   assert.throws(
-    () => validateHpa392E2eAppDataDir(nested),
-    /unsafe HPA-392 E2E app-data directory/i,
+    () => assertSafeSaveE2eAppDataDir(nested),
+    /unsafe save e2e app-data directory/i,
   );
 });
 
@@ -207,8 +207,8 @@ test("derives the production comparison from each platform data directory", () =
 });
 
 test("--ordinary yields only the existing non-HPA specs with one guarded root", () => {
-  const ordinary = holder("lyra-hpa-392-");
-  const plan = buildHpa392PhasePlan({
+  const ordinary = holder("lyra-save-e2e-");
+  const plan = buildSaveE2ePhasePlan({
     mode: "--ordinary",
     ordinaryAppDataDir: ordinary,
   });
@@ -229,20 +229,20 @@ test("--ordinary yields only the existing non-HPA specs with one guarded root", 
 });
 
 test("phase child environments replace stale guarded values instead of inheriting them", () => {
-  const ordinary = holder("lyra-hpa-392-");
-  const [phase] = buildHpa392PhasePlan({
+  const ordinary = holder("lyra-save-e2e-");
+  const [phase] = buildSaveE2ePhasePlan({
     mode: "--ordinary",
     ordinaryAppDataDir: ordinary,
   });
   const outputDirectory = path.join(ordinary, "runner-logs", "ordinary");
 
-  const environment = buildHpa392PhaseEnvironment(phase, {
+  const environment = buildSaveE2ePhaseEnvironment(phase, {
     baseEnvironment: {
       KEEP_ME: "yes",
       LYRA_E2E_APP_DATA_DIR: "/stale/app-data",
       LYRA_E2E_CAPTURE_BACKEND_LOGS: "0",
       LYRA_E2E_OUTPUT_DIR: "/stale/output",
-      LYRA_HPA392_PHASE: "management-delete",
+      LYRA_SAVE_E2E_PHASE: "management-delete",
     },
     outputDirectory,
   });
@@ -256,8 +256,8 @@ test("phase child environments replace stale guarded values instead of inheritin
 });
 
 test("--capture-proof yields only the packaged capture proof", () => {
-  const capture = holder("lyra-hpa-392-");
-  const plan = buildHpa392PhasePlan({
+  const capture = holder("lyra-save-e2e-");
+  const plan = buildSaveE2ePhasePlan({
     mode: "--capture-proof",
     captureProofAppDataDir: capture,
   });
@@ -267,16 +267,16 @@ test("--capture-proof yields only the packaged capture proof", () => {
       id: "capture-proof",
       group: "capture-proof",
       appDataDir: realpathSync(capture),
-      specs: ["./e2e-tauri/hpa-392-capture-proof.e2e.ts"],
+      specs: ["./e2e-tauri/capture-proof.e2e.ts"],
       environment: { LYRA_E2E_CAPTURE_BACKEND_LOGS: "1" },
     },
   ]);
 });
 
 test("--full orders proof, seed, resume, management, and exit with isolated roots", () => {
-  const capture = holder("lyra-hpa-392-");
-  const persistence = holder("lyra-hpa-392-");
-  const plan = buildHpa392PhasePlan({
+  const capture = holder("lyra-save-e2e-");
+  const persistence = holder("lyra-save-e2e-");
+  const plan = buildSaveE2ePhasePlan({
     mode: "--full",
     captureProofAppDataDir: capture,
     persistenceAppDataDir: persistence,
@@ -309,7 +309,7 @@ test("--full orders proof, seed, resume, management, and exit with isolated root
         phase.environment,
         {
           LYRA_E2E_CAPTURE_BACKEND_LOGS: "1",
-          LYRA_HPA392_PHASE: phase.id,
+          LYRA_SAVE_E2E_PHASE: phase.id,
         },
         phase.id,
       );
@@ -318,9 +318,9 @@ test("--full orders proof, seed, resume, management, and exit with isolated root
 });
 
 test("a failing persistence phase captures backend logs and artifacts before guarded cleanup", () => {
-  const capture = holder("lyra-hpa-392-");
-  const persistence = holder("lyra-hpa-392-");
-  const phases = buildHpa392PhasePlan({
+  const capture = holder("lyra-save-e2e-");
+  const persistence = holder("lyra-save-e2e-");
+  const phases = buildSaveE2ePhasePlan({
     mode: "--full",
     captureProofAppDataDir: capture,
     persistenceAppDataDir: persistence,
@@ -330,7 +330,7 @@ test("a failing persistence phase captures backend logs and artifacts before gua
   const cleaned = [];
   const events = [];
 
-  const exitCode = executeHpa392PhasePlan(phases, {
+  const exitCode = executeSaveE2ePhasePlan(phases, {
     spawnPhase(phase) {
       spawned.push(phase.id);
       if (phase.id === "save-seed") {
@@ -363,17 +363,17 @@ test("a failing persistence phase captures backend logs and artifacts before gua
 });
 
 test("an unknown mode or spec is rejected before any child is spawned", () => {
-  const ordinary = holder("lyra-hpa-392-");
+  const ordinary = holder("lyra-save-e2e-");
   assert.throws(
     () =>
-      buildHpa392PhasePlan({
+      buildSaveE2ePhasePlan({
         mode: "--mystery",
         ordinaryAppDataDir: ordinary,
       }),
-    /unknown HPA-392 E2E mode/i,
+    /unknown save e2e mode/i,
   );
 
-  const phases = buildHpa392PhasePlan({
+  const phases = buildSaveE2ePhasePlan({
     mode: "--ordinary",
     ordinaryAppDataDir: ordinary,
   });
@@ -381,7 +381,7 @@ test("an unknown mode or spec is rejected before any child is spawned", () => {
   let spawned = false;
   assert.throws(
     () =>
-      executeHpa392PhasePlan(phases, {
+      executeSaveE2ePhasePlan(phases, {
         spawnPhase() {
           spawned = true;
           return 0;
@@ -389,14 +389,14 @@ test("an unknown mode or spec is rejected before any child is spawned", () => {
         captureFailureArtifacts() {},
         cleanupAppDataDir() {},
       }),
-    /unknown HPA-392 E2E spec/i,
+    /unknown save e2e spec/i,
   );
   assert.equal(spawned, false);
 });
 
 test("an unknown disk checkpoint action is rejected before spawn", () => {
-  const ordinary = holder("lyra-hpa-392-");
-  const phases = buildHpa392PhasePlan({
+  const ordinary = holder("lyra-save-e2e-");
+  const phases = buildSaveE2ePhasePlan({
     mode: "--ordinary",
     ordinaryAppDataDir: ordinary,
   });
@@ -408,7 +408,7 @@ test("an unknown disk checkpoint action is rejected before spawn", () => {
 
   assert.throws(
     () =>
-      executeHpa392PhasePlan(phases, {
+      executeSaveE2ePhasePlan(phases, {
         spawnPhase() {
           spawned = true;
           return 0;
@@ -416,23 +416,23 @@ test("an unknown disk checkpoint action is rejected before spawn", () => {
         captureFailureArtifacts() {},
         cleanupAppDataDir() {},
       }),
-    /unknown HPA-392 checkpoint action/i,
+    /unknown save e2e checkpoint action/i,
   );
   assert.equal(spawned, false);
 });
 
 test("an approved spec in the wrong phase is rejected before spawn", () => {
-  const ordinary = holder("lyra-hpa-392-");
-  const phases = buildHpa392PhasePlan({
+  const ordinary = holder("lyra-save-e2e-");
+  const phases = buildSaveE2ePhasePlan({
     mode: "--ordinary",
     ordinaryAppDataDir: ordinary,
   });
-  phases[0].specs = ["./e2e-tauri/hpa-392-capture-proof.e2e.ts"];
+  phases[0].specs = ["./e2e-tauri/capture-proof.e2e.ts"];
   let spawned = false;
 
   assert.throws(
     () =>
-      executeHpa392PhasePlan(phases, {
+      executeSaveE2ePhasePlan(phases, {
         spawnPhase() {
           spawned = true;
           return 0;
@@ -440,19 +440,19 @@ test("an approved spec in the wrong phase is rejected before spawn", () => {
         captureFailureArtifacts() {},
         cleanupAppDataDir() {},
       }),
-    /invalid HPA-392 phase plan/i,
+    /invalid save e2e phase plan/i,
   );
   assert.equal(spawned, false);
 });
 
 test("slot fixtures enumerate exactly eight fixed envelopes without broad reads", () => {
-  const appData = holder("lyra-hpa-392-");
+  const appData = holder("lyra-save-e2e-");
   const saves = path.join(appData, "saves");
   mkdirSync(saves);
   writeFileSync(path.join(saves, "manual-2.json"), '{"saveId":"fixture"}\n');
   writeFileSync(path.join(saves, "notes.txt"), "not owned");
 
-  const slots = readHpa392SlotFiles(appData);
+  const slots = readSaveE2eSlotFiles(appData);
 
   assert.deepEqual(
     slots.map(({ fixedSlotName }) => fixedSlotName),
@@ -478,7 +478,7 @@ test("slot fixtures enumerate exactly eight fixed envelopes without broad reads"
 });
 
 test("slot corruption accepts one fixed existing slot and rejects traversal", () => {
-  const appData = holder("lyra-hpa-392-");
+  const appData = holder("lyra-save-e2e-");
   const saves = path.join(appData, "saves");
   mkdirSync(saves);
   const slot = path.join(saves, "autosave-1.json");
@@ -486,12 +486,12 @@ test("slot corruption accepts one fixed existing slot and rejects traversal", ()
   writeFileSync(slot, '{"valid":true}\n');
   writeFileSync(outside, "keep");
 
-  corruptHpa392Slot(appData, "autosave-1");
+  corruptSaveE2eSlot(appData, "autosave-1");
 
   assert.equal(readFileSync(slot, "utf8"), '{"broken":');
   assert.throws(
-    () => corruptHpa392Slot(appData, "../keep"),
-    /fixed HPA-392 slot/i,
+    () => corruptSaveE2eSlot(appData, "../keep"),
+    /fixed save e2e slot/i,
   );
   assert.equal(readFileSync(outside, "utf8"), "keep");
 });
@@ -500,7 +500,7 @@ test(
   "slot and control mutation reject symlink escapes",
   { skip: process.platform === "win32" },
   () => {
-    const appData = holder("lyra-hpa-392-");
+    const appData = holder("lyra-save-e2e-");
     const saves = path.join(appData, "saves");
     const control = path.join(appData, "test-control");
     const outside = holder("outside-hpa-fixture-");
@@ -517,17 +517,17 @@ test(
     );
 
     assert.throws(
-      () => corruptHpa392Slot(appData, "manual-1"),
-      /unsafe HPA-392 E2E app-data directory/i,
+      () => corruptSaveE2eSlot(appData, "manual-1"),
+      /unsafe save e2e app-data directory/i,
     );
     assert.throws(
       () =>
-        writeHpa392ControlExpectation(
+        writeSaveE2eControlExpectation(
           appData,
           "expected-resume-checkpoint",
           {},
         ),
-      /unsafe HPA-392 E2E app-data directory/i,
+      /unsafe save e2e app-data directory/i,
     );
     assert.equal(readFileSync(outsideSlot, "utf8"), "keep-slot");
     assert.equal(readFileSync(outsideControl, "utf8"), "keep-control");
@@ -535,7 +535,7 @@ test(
 );
 
 test("observed sidecar mutation requires a canonical matching UUID", () => {
-  const appData = holder("lyra-hpa-392-");
+  const appData = holder("lyra-save-e2e-");
   const saves = path.join(appData, "saves");
   const thumbnails = path.join(saves, "thumbnails");
   mkdirSync(thumbnails, { recursive: true });
@@ -552,12 +552,12 @@ test("observed sidecar mutation requires a canonical matching UUID", () => {
   writeFileSync(sidecar, "png");
 
   assert.equal(
-    resolveHpa392ObservedSidecar(appData, "manual-1"),
+    resolveSaveE2eObservedSidecar(appData, "manual-1"),
     realpathSync(sidecar),
   );
-  corruptHpa392ObservedSidecar(appData, "manual-1");
+  corruptSaveE2eObservedSidecar(appData, "manual-1");
   assert.equal(readFileSync(sidecar, "utf8"), "not-a-png");
-  removeHpa392ObservedSidecar(appData, "manual-1");
+  removeSaveE2eObservedSidecar(appData, "manual-1");
   assert.throws(() => readFileSync(sidecar));
 
   writeFileSync(
@@ -568,33 +568,33 @@ test("observed sidecar mutation requires a canonical matching UUID", () => {
     }),
   );
   assert.throws(
-    () => removeHpa392ObservedSidecar(appData, "manual-1"),
+    () => removeSaveE2eObservedSidecar(appData, "manual-1"),
     /canonical UUID/i,
   );
 });
 
 test("sidecar inventory rejects unknown names and unreferenced canonical files", () => {
-  const appData = holder("lyra-hpa-392-");
+  const appData = holder("lyra-save-e2e-");
   const thumbnails = path.join(appData, "saves", "thumbnails");
   mkdirSync(thumbnails, { recursive: true });
   writeFileSync(path.join(thumbnails, "unexpected.txt"), "keep");
 
   assert.throws(
-    () => assertNoUnknownHpa392Sidecars(appData),
-    /unknown HPA-392 sidecar/i,
+    () => assertNoUnknownSaveE2eSidecars(appData),
+    /unknown save e2e sidecar/i,
   );
 });
 
 test("control expectations live outside saves and accept only closed names", () => {
-  const appData = holder("lyra-hpa-392-");
+  const appData = holder("lyra-save-e2e-");
   mkdirSync(path.join(appData, "saves"));
 
-  writeHpa392ControlExpectation(appData, "expected-resume-checkpoint", {
+  writeSaveE2eControlExpectation(appData, "expected-resume-checkpoint", {
     saveId: "fixture",
   });
 
   assert.deepEqual(
-    readHpa392ControlExpectation(appData, "expected-resume-checkpoint"),
+    readSaveE2eControlExpectation(appData, "expected-resume-checkpoint"),
     { saveId: "fixture" },
   );
   assert.equal(
@@ -605,7 +605,7 @@ test("control expectations live outside saves and accept only closed names", () 
     '{\n  "saveId": "fixture"\n}\n',
   );
   assert.throws(
-    () => writeHpa392ControlExpectation(appData, "../saves/manual-1", {}),
+    () => writeSaveE2eControlExpectation(appData, "../saves/manual-1", {}),
     /test-control expectation/i,
   );
 });

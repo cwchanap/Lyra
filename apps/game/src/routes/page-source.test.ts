@@ -261,21 +261,24 @@ describe("+page save-thumbnail boundary", () => {
       "const packagedCaptureProof =",
       adapterStart,
     );
+    expect(adapterStart).toBeGreaterThan(-1);
+    expect(proofWrapperStart).toBeGreaterThan(-1);
     const adapterSource = captureSource.slice(adapterStart, proofWrapperStart);
-    const ordinaryBranchStart = adapterSource.indexOf(
-      ": createHtmlToImageGameplayCapture({",
-    );
 
     expect(captureSource).toContain(
       'import.meta.env.VITE_LYRA_E2E_CAPTURE_PROOF === "1"',
     );
-    expect(ordinaryBranchStart).toBeGreaterThan(0);
-    expect(adapterSource.slice(0, ordinaryBranchStart)).toContain(
-      "onRenderDiagnostic:",
+    // Diagnostics are gated by a packagedCaptureProofEnabled conditional
+    // spread inside the consolidated createHtmlToImageGameplayCapture call so
+    // the bundler can tree-shake them out of ordinary production captures.
+    expect(adapterSource).toContain("packagedCaptureProofEnabled");
+    expect(adapterSource).toContain("onRenderDiagnostic:");
+    const conditionalStart = adapterSource.indexOf(
+      "packagedCaptureProofEnabled",
     );
-    expect(adapterSource.slice(ordinaryBranchStart)).not.toContain(
-      "onRenderDiagnostic:",
-    );
+    const diagnosticStart = adapterSource.indexOf("onRenderDiagnostic:");
+    expect(conditionalStart).toBeGreaterThan(-1);
+    expect(diagnosticStart).toBeGreaterThan(conditionalStart);
     for (const removedDiagnostic of [
       "createPackagedRenderTimingTracker",
       "createPackagedRasterizerTimingTracker",
@@ -286,16 +289,14 @@ describe("+page save-thumbnail boundary", () => {
       expect(captureSource).not.toContain(removedDiagnostic);
     }
     for (const removedAttribute of [
-      "data-hpa-392-capture-proof-render-",
-      "data-hpa-392-capture-proof-raster-",
-      "data-hpa-392-capture-proof-stage-",
-      "data-hpa-392-capture-proof-svg-",
+      "data-capture-proof-render-",
+      "data-capture-proof-raster-",
+      "data-capture-proof-stage-",
+      "data-capture-proof-svg-",
     ]) {
       expect(probeSource).not.toContain(removedAttribute);
     }
-    expect(probeSource).toContain(
-      "data-hpa-392-capture-proof-last-render-diagnostic",
-    );
+    expect(probeSource).toContain("data-capture-proof-last-render-diagnostic");
   });
 });
 describe("+page scene navigation wiring", () => {

@@ -47,32 +47,24 @@ async function captureWrapperStatus(): Promise<CaptureWrapperStatus> {
   return browser.execute((probe: string) => {
     const element = document.querySelector(probe);
     return {
-      calls: Number(
-        element?.getAttribute("data-hpa-392-capture-proof-calls") ?? "0",
-      ),
+      calls: Number(element?.getAttribute("data-capture-proof-calls") ?? "0"),
       available: Number(
-        element?.getAttribute("data-hpa-392-capture-proof-available") ?? "0",
+        element?.getAttribute("data-capture-proof-available") ?? "0",
       ),
       lastClosedReason:
-        element?.getAttribute(
-          "data-hpa-392-capture-proof-last-closed-reason",
-        ) ?? "",
+        element?.getAttribute("data-capture-proof-last-closed-reason") ?? "",
       completedGeneration: Number(
-        element?.getAttribute(
-          "data-hpa-392-capture-proof-completed-generation",
-        ) ?? "0",
+        element?.getAttribute("data-capture-proof-completed-generation") ?? "0",
       ),
       embeddedFontCssBytes: Number(
-        element?.getAttribute("data-hpa-392-capture-proof-font-css-bytes") ??
-          "0",
+        element?.getAttribute("data-capture-proof-font-css-bytes") ?? "0",
       ),
       embeddedFontChunkCount: Number(
-        element?.getAttribute("data-hpa-392-capture-proof-font-chunks") ?? "0",
+        element?.getAttribute("data-capture-proof-font-chunks") ?? "0",
       ),
       embeddedZhHantCodePointCount: Number(
-        element?.getAttribute(
-          "data-hpa-392-capture-proof-font-zh-hant-code-points",
-        ) ?? "0",
+        element?.getAttribute("data-capture-proof-font-zh-hant-code-points") ??
+          "0",
       ),
     };
   }, anchors.captureProof.probe);
@@ -128,8 +120,7 @@ async function advanceCaptureProofDialogueOnce(): Promise<void> {
       Number(
         document
           .querySelector(probe)
-          ?.getAttribute("data-hpa-392-capture-proof-completed-generation") ??
-          "0",
+          ?.getAttribute("data-capture-proof-completed-generation") ?? "0",
       ),
     anchors.captureProof.probe,
   );
@@ -156,15 +147,12 @@ async function advanceCaptureProofDialogueOnce(): Promise<void> {
           completedGeneration: Number(
             document
               .querySelector(probe)
-              ?.getAttribute(
-                "data-hpa-392-capture-proof-completed-generation",
-              ) ?? "0",
+              ?.getAttribute("data-capture-proof-completed-generation") ?? "0",
           ),
           commandStatus:
             document
               .querySelector(probe)
-              ?.getAttribute("data-hpa-392-capture-proof-command-status") ??
-            null,
+              ?.getAttribute("data-capture-proof-command-status") ?? null,
           advanceAriaDisabled:
             document
               .querySelector(advanceSelector)
@@ -246,7 +234,7 @@ async function refreshProof(): Promise<void> {
         (probe: string) =>
           document
             .querySelector(probe)
-            ?.getAttribute("data-hpa-392-capture-proof-status") !== "loading",
+            ?.getAttribute("data-capture-proof-status") !== "loading",
         anchors.captureProof.probe,
       ),
     { timeout: 30000, timeoutMsg: "capture proof refresh stayed loading" },
@@ -635,7 +623,7 @@ async function exportProofThumbnailArtifact(): Promise<string> {
   const artifact = path.join(
     process.cwd(),
     "e2e-artifacts",
-    "hpa-392",
+    "save-e2e",
     "capture-proof.png",
   );
   mkdirSync(path.dirname(artifact), { recursive: true });
@@ -643,7 +631,7 @@ async function exportProofThumbnailArtifact(): Promise<string> {
   return artifact;
 }
 
-describe("HPA-392 packaged gameplay thumbnail proof", () => {
+describe("packaged gameplay thumbnail proof", () => {
   it("captures the real gameplay root and keeps failure injection one-shot", async () => {
     await resetCaptureProofStorage();
     await startCaptureProofAtScene(
@@ -735,18 +723,12 @@ describe("HPA-392 packaged gameplay thumbnail proof", () => {
     const proofState = await browser.execute((probe: string) => {
       const element = document.querySelector(probe);
       return {
-        status: element?.getAttribute("data-hpa-392-capture-proof-status"),
-        errorCode: element?.getAttribute(
-          "data-hpa-392-capture-proof-error-code",
-        ),
-        errorMessage: element?.getAttribute(
-          "data-hpa-392-capture-proof-error-message",
-        ),
-        errorStage: element?.getAttribute(
-          "data-hpa-392-capture-proof-error-stage",
-        ),
+        status: element?.getAttribute("data-capture-proof-status"),
+        errorCode: element?.getAttribute("data-capture-proof-error-code"),
+        errorMessage: element?.getAttribute("data-capture-proof-error-message"),
+        errorStage: element?.getAttribute("data-capture-proof-error-stage"),
         unavailableReason: element?.getAttribute(
-          "data-hpa-392-capture-proof-unavailable-reason",
+          "data-capture-proof-unavailable-reason",
         ),
       };
     }, anchors.captureProof.probe);
@@ -811,7 +793,7 @@ describe("HPA-392 packaged gameplay thumbnail proof", () => {
         (probe: string) =>
           document
             .querySelector(probe)
-            ?.getAttribute("data-hpa-392-capture-proof-status"),
+            ?.getAttribute("data-capture-proof-status"),
         anchors.captureProof.probe,
       ),
     ).toBe("unavailable");
@@ -826,7 +808,7 @@ describe("HPA-392 packaged gameplay thumbnail proof", () => {
         (probe: string) =>
           document
             .querySelector(probe)
-            ?.getAttribute("data-hpa-392-capture-proof-status"),
+            ?.getAttribute("data-capture-proof-status"),
         anchors.captureProof.probe,
       ),
     ).toBe("ready");

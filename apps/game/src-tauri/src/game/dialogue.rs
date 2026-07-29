@@ -1123,6 +1123,7 @@ mod tests {
             history: dialogue::DialogueHistory::default(),
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
+            cached_pending_acquisition_scene: std::cell::RefCell::new(None),
         };
         engine.prime_initial_queue().unwrap();
 
@@ -1195,6 +1196,7 @@ mod tests {
             history: dialogue::DialogueHistory::default(),
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
+            cached_pending_acquisition_scene: std::cell::RefCell::new(None),
         };
         // prime_initial_queue: no leading tags, cursor at 0 (first Line)
         engine.prime_initial_queue().unwrap();
@@ -1289,6 +1291,7 @@ mod tests {
             history: dialogue::DialogueHistory::default(),
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
+            cached_pending_acquisition_scene: std::cell::RefCell::new(None),
         };
         engine.prime_initial_queue().unwrap();
 

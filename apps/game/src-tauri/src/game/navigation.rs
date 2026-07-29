@@ -70,7 +70,20 @@ impl GameEngine {
             // inventory there would spoil every scene's evidence and bypass
             // the intended inventory gating.
             if cfg!(debug_assertions) && matches!(engine.scene, SceneRuntime::Interrogation(_)) {
+                // `grant_all_evidence_for_testing` seeds the inventory so every
+                // contradiction is presentable, but it also queues an
+                // acquisition event per evidence/statement, which would surface
+                // a flurry of "evidence acquired" popups for items the player
+                // never actually collected. Capture the pending-event baseline
+                // before the grant and restore it afterward, mirroring
+                // `prime_initial_queue`'s discard-baseline-events pattern. The
+                // inventory seeding itself is preserved because only the event
+                // queue is truncated, not `engine.inventory`.
+                let acquisition_event_baseline = engine.pending_acquisition_events.len();
                 engine.grant_all_evidence_for_testing(command_id, next_ordinal);
+                engine
+                    .pending_acquisition_events
+                    .truncate(acquisition_event_baseline);
             }
             Ok(CommandMutation::Changed)
         })
@@ -884,6 +897,18 @@ mod tests {
             }
             other => panic!("expected interrogation mode, got {other:?}"),
         }
+
+        // Debug-only grant seeds the inventory for testing every contradiction
+        // but must not leave acquisition events queued (no spurious "evidence
+        // acquired" popups for items the player never collected).
+        assert!(
+            engine.pending_acquisition_events.is_empty(),
+            "debug grant must not leave acquisition events queued"
+        );
+        assert!(
+            !engine.inventory.evidence.is_empty(),
+            "debug grant must seed inventory evidence"
+        );
 
         let _ = std::fs::remove_dir_all(d);
     }

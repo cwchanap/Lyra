@@ -1,6 +1,7 @@
 import {
   advanceDialogueUntil,
   advanceDialogueOnce,
+  assertSaveE2ePhase,
   clickButton,
   continueFromTitle,
   currentPackagedDocumentIdentity,
@@ -29,22 +30,22 @@ import {
   waitForShell,
 } from "./helpers";
 import {
-  HPA392_PHASE_NAMES,
-  readHpa392Expectation,
-  readHpa392OwnershipSnapshot,
+  SAVE_E2E_PHASE_NAMES,
+  readSaveE2eExpectation,
+  readSaveE2eOwnershipSnapshot,
   setNextPersistenceFault,
-  writeHpa392Expectation,
-} from "./hpa-392-fixtures";
+  writeSaveE2eExpectation,
+} from "./save-fixtures";
 import { anchors } from "./production-anchors";
 import type { ExitStatusView } from "$lib/persistence/types";
 
 const EXIT_PHASES = [
-  HPA392_PHASE_NAMES.exitCloseSeed,
-  HPA392_PHASE_NAMES.exitCloseResume,
-  HPA392_PHASE_NAMES.exitQuitSeed,
-  HPA392_PHASE_NAMES.exitQuitResume,
-  HPA392_PHASE_NAMES.exitFailureBypass,
-  HPA392_PHASE_NAMES.exitFinalVerification,
+  SAVE_E2E_PHASE_NAMES.exitCloseSeed,
+  SAVE_E2E_PHASE_NAMES.exitCloseResume,
+  SAVE_E2E_PHASE_NAMES.exitQuitSeed,
+  SAVE_E2E_PHASE_NAMES.exitQuitResume,
+  SAVE_E2E_PHASE_NAMES.exitFailureBypass,
+  SAVE_E2E_PHASE_NAMES.exitFinalVerification,
 ] as const;
 
 type ExitCheckpoint = {
@@ -114,7 +115,7 @@ async function requestAndFinish(source: "close" | "quit"): Promise<void> {
 async function seedSuccessfulExit(source: "close" | "quit"): Promise<void> {
   const inherited = (() => {
     try {
-      return readHpa392Expectation<ExitControl>("exit-state");
+      return readSaveE2eExpectation<ExitControl>("exit-state");
     } catch {
       return {};
     }
@@ -123,7 +124,7 @@ async function seedSuccessfulExit(source: "close" | "quit"): Promise<void> {
   if (source === "close") await startFromMenu();
   else await continueFromTitle();
   const saved = await mutateBeforeDebounce();
-  writeHpa392Expectation("exit-state", {
+  writeSaveE2eExpectation("exit-state", {
     ...inherited,
     [source]: saved,
   });
@@ -131,7 +132,7 @@ async function seedSuccessfulExit(source: "close" | "quit"): Promise<void> {
 }
 
 async function resumeSuccessfulExit(source: "close" | "quit"): Promise<void> {
-  const control = readHpa392Expectation<ExitControl>("exit-state");
+  const control = readSaveE2eExpectation<ExitControl>("exit-state");
   const expected = control[source];
   if (!expected) throw new Error(`${source} checkpoint expectation is missing`);
   await waitForShell();
@@ -150,7 +151,7 @@ async function resumeSuccessfulExit(source: "close" | "quit"): Promise<void> {
 }
 
 async function exitDuringActiveAcknowledgement(): Promise<void> {
-  const inherited = readHpa392Expectation<ExitControl>("exit-state");
+  const inherited = readSaveE2eExpectation<ExitControl>("exit-state");
   const documentIdentity = await currentPackagedDocumentIdentity();
   await jumpToProductionScene(anchors.investigationSceneId);
   await drainCurrentDialogue("explore");
@@ -173,7 +174,7 @@ async function exitDuringActiveAcknowledgement(): Promise<void> {
   if (!current) {
     throw new Error("active-acknowledgement exit event is missing");
   }
-  writeHpa392Expectation("exit-state", {
+  writeSaveE2eExpectation("exit-state", {
     ...inherited,
     activeAcknowledgementExit: {
       documentIdentity,
@@ -191,7 +192,7 @@ async function exitDuringActiveAcknowledgement(): Promise<void> {
 }
 
 async function proveFailureCancelAndBypass(): Promise<void> {
-  const inherited = readHpa392Expectation<ExitControl>("exit-state");
+  const inherited = readSaveE2eExpectation<ExitControl>("exit-state");
   await waitForShell();
   await continueFromTitle();
   const activeAcknowledgement = inherited.activeAcknowledgementExit;
@@ -215,7 +216,7 @@ async function proveFailureCancelAndBypass(): Promise<void> {
   await waitForPersistenceIdle();
   const documentIdentity = await currentPackagedDocumentIdentity();
   const authoritativeState = await getPackagedGameState();
-  const authoritativeSlot = readHpa392OwnershipSnapshot()
+  const authoritativeSlot = readSaveE2eOwnershipSnapshot()
     .slots.filter(
       (slot) =>
         slot.fixedSlotName.startsWith("autosave-") && slot.envelope !== null,
@@ -262,7 +263,7 @@ async function proveFailureCancelAndBypass(): Promise<void> {
   await waitForDialog("無法結束遊戲", 30000);
   await clickButton("不儲存並結束遊戲");
   await waitForDialog("確認不儲存並結束遊戲");
-  writeHpa392Expectation("exit-state", {
+  writeSaveE2eExpectation("exit-state", {
     ...inherited,
     authoritativeBeforeBypass: authoritative,
     unsavedBypassed: unsaved,
@@ -277,7 +278,7 @@ async function proveFailureCancelAndBypass(): Promise<void> {
 }
 
 async function verifyBypassDidNotPersist(): Promise<void> {
-  const control = readHpa392Expectation<ExitControl>("exit-state");
+  const control = readSaveE2eExpectation<ExitControl>("exit-state");
   const expected = control.authoritativeBeforeBypass;
   const bypassed = control.unsavedBypassed;
   if (!expected || !bypassed) {
@@ -299,22 +300,21 @@ async function verifyBypassDidNotPersist(): Promise<void> {
   );
 }
 
-describe("HPA-392 exit lifecycle", () => {
+describe("save exit lifecycle", () => {
   it("proves the closed exit phase", async () => {
-    const phase = process.env.LYRA_HPA392_PHASE;
-    expect(EXIT_PHASES).toContain(phase);
-    if (phase === HPA392_PHASE_NAMES.exitCloseSeed) {
+    const phase = assertSaveE2ePhase(EXIT_PHASES);
+    if (phase === SAVE_E2E_PHASE_NAMES.exitCloseSeed) {
       await seedSuccessfulExit("close");
-    } else if (phase === HPA392_PHASE_NAMES.exitCloseResume) {
+    } else if (phase === SAVE_E2E_PHASE_NAMES.exitCloseResume) {
       await resumeSuccessfulExit("close");
-    } else if (phase === HPA392_PHASE_NAMES.exitQuitSeed) {
+    } else if (phase === SAVE_E2E_PHASE_NAMES.exitQuitSeed) {
       await seedSuccessfulExit("quit");
-    } else if (phase === HPA392_PHASE_NAMES.exitQuitResume) {
+    } else if (phase === SAVE_E2E_PHASE_NAMES.exitQuitResume) {
       await resumeSuccessfulExit("quit");
       await exitDuringActiveAcknowledgement();
-    } else if (phase === HPA392_PHASE_NAMES.exitFailureBypass) {
+    } else if (phase === SAVE_E2E_PHASE_NAMES.exitFailureBypass) {
       await proveFailureCancelAndBypass();
-    } else if (phase === HPA392_PHASE_NAMES.exitFinalVerification) {
+    } else if (phase === SAVE_E2E_PHASE_NAMES.exitFinalVerification) {
       await verifyBypassDidNotPersist();
     } else {
       throw new Error(`unexpected exit phase ${String(phase)}`);

@@ -101,11 +101,10 @@
   $effect(() => {
     const eventId = notification.id;
     const phaseType = phase.type;
-    const failureToken = phase.type === "failed" ? phase.failureToken : null;
     confirmWithoutSaving = false;
     void tick().then(() => {
       if (notification.id !== eventId || phase.type !== phaseType) return;
-      if (phase.type === "failed" && phase.failureToken === failureToken) {
+      if (phase.type === "failed") {
         retryButton?.focus();
       } else if (phase.type === "idle") {
         continueButton?.focus();

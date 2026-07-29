@@ -14,18 +14,34 @@ use crate::game::scenes::interrogation::{CrossExam, InterrogationSceneState};
 use crate::game::scenes::investigation::InvestigationSceneState;
 use crate::game::scenes::SceneRuntime;
 use crate::game::schema::{
-    DialogueItem, InterrogationPhaseJson, InterrogationSceneJson, InvestigationSceneJson, SceneJson,
+    InterrogationPhaseJson, InterrogationSceneJson, InvestigationSceneJson, SceneJson,
 };
+use crate::game::state::ChapterManifest;
 use crate::game::story::StoryState;
 use crate::game::view::{DialogueHistoryEntry, QueueToken};
 use crate::game::{GameEngine, GameError};
 use serde::Serialize;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CapturedCheckpointV1 {
     pub(crate) summary: SaveSummary,
     pub(crate) snapshot: SaveSnapshotV1,
+}
+
+type SceneCache = HashMap<String, Vec<SceneJson>>;
+
+fn ensure_chapter_scenes(
+    engine: &GameEngine,
+    chapter: &ChapterManifest,
+    cache: &mut SceneCache,
+) -> Result<(), GameError> {
+    if !cache.contains_key(&chapter.id) {
+        let scenes = load_chapter_scene_jsons(&engine.resources_dir, chapter)?;
+        cache.insert(chapter.id.clone(), scenes);
+    }
+    Ok(())
 }
 
 pub(crate) fn capture_checkpoint_v1(
@@ -48,13 +64,15 @@ pub(crate) fn capture_checkpoint_v1(
         history,
         durable_revision,
         pending_acquisition_events,
+        cached_pending_acquisition_scene: _not_persisted,
     } = engine;
 
     let active_dialogue = engine.capture_active_dialogue()?;
     validate_active_dialogue(active_dialogue.as_ref(), *next_queue_gen)?;
     let packaged_dialogue = validate_packaged_dialogue_candidate(engine, active_dialogue.as_ref())?;
+    let mut scene_cache = SceneCache::new();
     let (chapter_id, chapter_title, scene_id, scene_title, game_complete) =
-        capture_location(engine)?;
+        capture_location(engine, &mut scene_cache)?;
     if game_complete && active_dialogue.is_some() {
         return Err(capture_error(
             "A completed game cannot retain an active dialogue queue.",
@@ -64,6 +82,7 @@ pub(crate) fn capture_checkpoint_v1(
         engine,
         active_dialogue.as_ref(),
         packaged_dialogue.as_ref(),
+        &mut scene_cache,
     )?;
     let story_snapshot = story_state.snapshot();
     StoryState::from_snapshot(&engine.story_catalog, story_snapshot.clone())
@@ -151,7 +170,7 @@ pub(crate) fn capture_checkpoint_v1(
         },
         pending_acquisition_events: pending_acquisition_events.clone(),
         story_state,
-        dialogue_history: capture_history(engine, history, *next_queue_gen)?,
+        dialogue_history: capture_history(engine, history, *next_queue_gen, &mut scene_cache)?,
         next_queue_gen: *next_queue_gen,
         durable_revision: *durable_revision,
     };
@@ -171,7 +190,8 @@ pub(crate) fn capture_checkpoint_v1(
 pub(crate) fn capture_scene_progress_v1(
     engine: &GameEngine,
 ) -> Result<SceneProgressSnapshotV1, GameError> {
-    let (_, _, _, _, game_complete) = capture_location(engine)?;
+    let mut scene_cache = SceneCache::new();
+    let (_, _, _, _, game_complete) = capture_location(engine, &mut scene_cache)?;
     let active_dialogue = engine.capture_active_dialogue()?;
     validate_active_dialogue(active_dialogue.as_ref(), engine.next_queue_gen)?;
     let packaged_dialogue = validate_packaged_dialogue_candidate(engine, active_dialogue.as_ref())?;
@@ -180,13 +200,19 @@ pub(crate) fn capture_scene_progress_v1(
             "A completed game cannot retain an active dialogue queue.",
         ));
     }
-    capture_scene_progress_with_active(engine, active_dialogue.as_ref(), packaged_dialogue.as_ref())
+    capture_scene_progress_with_active(
+        engine,
+        active_dialogue.as_ref(),
+        packaged_dialogue.as_ref(),
+        &mut scene_cache,
+    )
 }
 
 fn capture_scene_progress_with_active(
     engine: &GameEngine,
     active_dialogue: Option<&ActiveDialogueStateV1>,
     packaged_dialogue: Option<&ActiveDialogueQueue>,
+    scene_cache: &mut SceneCache,
 ) -> Result<SceneProgressSnapshotV1, GameError> {
     if engine.current_chapter_idx == engine.chapters.len() {
         return Ok(SceneProgressSnapshotV1::GameComplete);
@@ -197,7 +223,7 @@ fn capture_scene_progress_with_active(
         ));
     }
 
-    let packaged_scene = current_packaged_scene(engine)?;
+    let packaged_scene = current_packaged_scene(engine, scene_cache)?;
     match (&engine.scene, &packaged_scene) {
         (SceneRuntime::Linear(scene), SceneJson::Linear(_)) => {
             if scene.queue.is_none() {
@@ -335,16 +361,22 @@ fn capture_scene_progress_with_active(
     }
 }
 
-fn current_packaged_scene(engine: &GameEngine) -> Result<SceneJson, GameError> {
+fn current_packaged_scene(
+    engine: &GameEngine,
+    scene_cache: &mut SceneCache,
+) -> Result<SceneJson, GameError> {
     if engine.current_chapter_idx >= engine.chapters.len() {
         return Err(capture_error(
             "A completed or invalid location has no current progress definition.",
         ));
     }
     let chapter = &engine.chapters[engine.current_chapter_idx];
-    load_chapter_scene_jsons(&engine.resources_dir, chapter)?
-        .into_iter()
-        .nth(engine.current_scene_idx)
+    ensure_chapter_scenes(engine, chapter, scene_cache)?;
+    scene_cache
+        .get(&chapter.id)
+        .expect("scenes were just ensured")
+        .get(engine.current_scene_idx)
+        .cloned()
         .ok_or_else(|| capture_error("Current packaged scene is missing."))
 }
 
@@ -841,6 +873,7 @@ fn capture_history(
     engine: &GameEngine,
     history: &crate::game::dialogue::DialogueHistory,
     next_queue_gen: u64,
+    scene_cache: &mut SceneCache,
 ) -> Result<DialogueHistorySnapshotV1, GameError> {
     let (entries, next_id, last_token) = history.persistence_parts();
     if entries.len() > DIALOGUE_HISTORY_LIMIT {
@@ -889,7 +922,7 @@ fn capture_history(
         ));
     }
     if let Some(token) = last_token {
-        validate_history_token(engine, token, next_queue_gen)?;
+        validate_history_token(engine, token, next_queue_gen, scene_cache)?;
     }
     Ok(DialogueHistorySnapshotV1 {
         entries: entries
@@ -930,6 +963,7 @@ fn validate_history_token(
     engine: &GameEngine,
     token: &QueueToken,
     next_queue_gen: u64,
+    scene_cache: &mut SceneCache,
 ) -> Result<(), GameError> {
     if token.queue_gen == 0 || token.queue_gen >= next_queue_gen {
         return Err(capture_error(format!(
@@ -937,7 +971,7 @@ fn validate_history_token(
             token.queue_gen
         )));
     }
-    let maxima = packaged_scene_cursor_exclusive(engine, &token.scene_id)?;
+    let maxima = packaged_scene_cursor_exclusive(engine, &token.scene_id, scene_cache)?;
     if !maxima.iter().any(|maximum| token.cursor < *maximum) {
         return Err(capture_error(format!(
             "Dialogue history cursor {} is outside every packaged scene '{}' bound.",
@@ -960,12 +994,17 @@ fn validate_history_token(
 fn packaged_scene_cursor_exclusive(
     engine: &GameEngine,
     target_scene_id: &str,
+    scene_cache: &mut SceneCache,
 ) -> Result<Vec<usize>, GameError> {
     let mut found = Vec::new();
     for chapter in &engine.chapters {
-        for scene in load_chapter_scene_jsons(&engine.resources_dir, chapter)? {
-            if scene_json_identity(&scene).0 == target_scene_id {
-                found.push(maximum_scene_dialogue_items(&scene)?);
+        ensure_chapter_scenes(engine, chapter, scene_cache)?;
+        let scenes = scene_cache
+            .get(&chapter.id)
+            .expect("scenes were just ensured");
+        for scene in scenes.iter() {
+            if scene_json_identity(scene).0 == target_scene_id {
+                found.push(maximum_scene_dialogue_items(scene)?);
             }
         }
     }
@@ -979,11 +1018,7 @@ fn packaged_scene_cursor_exclusive(
 }
 
 fn maximum_scene_dialogue_items(scene: &SceneJson) -> Result<usize, GameError> {
-    let groups: Vec<&[DialogueItem]> = match scene {
-        SceneJson::Linear(scene) => vec![&scene.queue],
-        SceneJson::Investigation(scene) => investigation_dialogue_groups(scene),
-        SceneJson::Interrogation(scene) => interrogation_dialogue_groups(scene),
-    };
+    let groups = crate::game::schema::scene_dialogue_groups(scene);
     groups.into_iter().try_fold(0usize, |total, items| {
         total
             .checked_add(items.len())
@@ -991,80 +1026,9 @@ fn maximum_scene_dialogue_items(scene: &SceneJson) -> Result<usize, GameError> {
     })
 }
 
-fn investigation_dialogue_groups(scene: &InvestigationSceneJson) -> Vec<&[DialogueItem]> {
-    let mut groups = vec![scene.intro.as_slice(), scene.outro.dialogue.as_slice()];
-    for sublocation in &scene.sublocations {
-        groups.push(&sublocation.transition_dialogue);
-        for hotspot in &sublocation.hotspots {
-            groups.push(&hotspot.inspect_dialogue);
-            if let Some(items) = hotspot.on_reexamine.as_deref() {
-                groups.push(items);
-            }
-        }
-        for character in &sublocation.characters {
-            for topic in &character.topics {
-                groups.push(&topic.topic_dialogue);
-                if let Some(items) = topic.on_reexamine.as_deref() {
-                    groups.push(items);
-                }
-            }
-        }
-    }
-    for evidence in &scene.evidence_manifest {
-        groups.push(&evidence.on_collect);
-        if let Some(items) = evidence.on_reexamine.as_deref() {
-            groups.push(items);
-        }
-    }
-    for statement in &scene.statement_manifest {
-        groups.push(&statement.on_acquire);
-        if let Some(items) = statement.on_reexamine.as_deref() {
-            groups.push(items);
-        }
-    }
-    groups
-}
-
-fn interrogation_dialogue_groups(scene: &InterrogationSceneJson) -> Vec<&[DialogueItem]> {
-    let mut groups = vec![scene.intro.as_slice(), scene.outro.dialogue.as_slice()];
-    for phase in &scene.phases {
-        let InterrogationPhaseJson::Inquiry {
-            entry_dialogue,
-            questions,
-            ..
-        } = phase;
-        groups.push(entry_dialogue);
-        for question in questions {
-            groups.push(&question.testimony.on_loop);
-            groups.push(&question.testimony.loop_prompt);
-            groups.push(&question.testimony.default_challenge);
-            groups.push(&question.testimony.default_wrong);
-            groups.push(&question.testimony.wrong_reply);
-            for line in &question.testimony.lines {
-                groups.push(&line.content);
-                groups.push(&line.challenge);
-                groups.push(&line.on_correct);
-                groups.push(&line.on_wrong_evidence);
-            }
-        }
-    }
-    for evidence in &scene.evidence_manifest {
-        groups.push(&evidence.on_collect);
-        if let Some(items) = evidence.on_reexamine.as_deref() {
-            groups.push(items);
-        }
-    }
-    for statement in &scene.statement_manifest {
-        groups.push(&statement.on_acquire);
-        if let Some(items) = statement.on_reexamine.as_deref() {
-            groups.push(items);
-        }
-    }
-    groups
-}
-
 fn capture_location(
     engine: &GameEngine,
+    scene_cache: &mut SceneCache,
 ) -> Result<(String, String, String, String, bool), GameError> {
     if engine.current_chapter_idx > engine.chapters.len() {
         return Err(capture_error(
@@ -1076,8 +1040,10 @@ fn capture_location(
             .chapters
             .last()
             .ok_or_else(|| capture_error("Game complete has no final chapter."))?;
-        let scenes = load_chapter_scene_jsons(&engine.resources_dir, chapter)?;
-        let packaged_scene = scenes
+        ensure_chapter_scenes(engine, chapter, scene_cache)?;
+        let packaged_scene = scene_cache
+            .get(&chapter.id)
+            .expect("scenes were just ensured")
             .last()
             .ok_or_else(|| capture_error("Game complete has no final scene."))?;
         if engine.scene.id() != scene_json_identity(packaged_scene).0 {
@@ -1095,13 +1061,17 @@ fn capture_location(
     }
 
     let chapter = &engine.chapters[engine.current_chapter_idx];
-    let scenes = load_chapter_scene_jsons(&engine.resources_dir, chapter)?;
-    let packaged_scene = scenes.get(engine.current_scene_idx).ok_or_else(|| {
-        capture_error(format!(
-            "Current scene index {} is outside chapter '{}'.",
-            engine.current_scene_idx, chapter.id
-        ))
-    })?;
+    ensure_chapter_scenes(engine, chapter, scene_cache)?;
+    let packaged_scene = scene_cache
+        .get(&chapter.id)
+        .expect("scenes were just ensured")
+        .get(engine.current_scene_idx)
+        .ok_or_else(|| {
+            capture_error(format!(
+                "Current scene index {} is outside chapter '{}'.",
+                engine.current_scene_idx, chapter.id
+            ))
+        })?;
     if engine.scene.id() != scene_json_identity(packaged_scene).0 {
         return Err(capture_error(
             "Current runtime scene does not match its packaged scene index.",
@@ -1165,13 +1135,15 @@ mod tests {
         }
     }
 
-    fn fixture_engine() -> GameEngine {
-        GameEngine::new_started(save_capture_fixture_resources()).unwrap()
+    fn fixture_engine() -> (tempfile::TempDir, GameEngine) {
+        let (_guard, resources) = save_capture_fixture_resources();
+        let engine = GameEngine::new_started(resources).unwrap();
+        (_guard, engine)
     }
 
     #[test]
     fn captures_active_linear_checkpoint_as_exact_wire_value() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .story_state
             .reveal_objective(&engine.story_catalog, "objective_truth")
@@ -1249,7 +1221,7 @@ mod tests {
 
     #[test]
     fn rejects_a_linear_runtime_left_without_its_entered_successor() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         let SceneRuntime::Linear(scene) = &mut engine.scene else {
             panic!("expected linear fixture");
         };
@@ -1262,7 +1234,7 @@ mod tests {
 
     #[test]
     fn captures_game_complete_with_the_retained_final_scene_identity() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "interrogation_scene_2")
             .unwrap();
@@ -1291,7 +1263,7 @@ mod tests {
 
     #[test]
     fn scene_progress_capture_rejects_game_complete_with_a_nonfinal_runtime() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine.current_chapter_idx = engine.chapters.len();
         engine.current_scene_idx = 0;
 
@@ -1302,7 +1274,7 @@ mod tests {
 
     #[test]
     fn captures_investigation_progress_inventory_and_composite_queue_deterministically() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "investigation_scene_1")
             .unwrap();
@@ -1464,7 +1436,7 @@ mod tests {
 
     #[test]
     fn captures_interrogation_playing_and_presenting_with_stable_line_ids() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "interrogation_scene_2")
             .unwrap();
@@ -1599,7 +1571,7 @@ mod tests {
 
     #[test]
     fn preserves_rendered_history_and_accepts_a_prior_scene_last_token() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "investigation_scene_1")
             .unwrap();
@@ -1638,7 +1610,7 @@ mod tests {
 
     #[test]
     fn rejects_malformed_override_keys_and_future_history_generations() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "investigation_scene_1")
             .unwrap();
@@ -1701,7 +1673,7 @@ mod tests {
 
     #[test]
     fn accepts_exactly_fifty_history_entries_and_rejects_fifty_one() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "investigation_scene_1")
             .unwrap();
@@ -1730,7 +1702,7 @@ mod tests {
 
     #[test]
     fn rejects_zero_unknown_and_out_of_range_history_tokens() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         for token in [
             QueueToken {
                 scene_id: "scene_0".into(),
@@ -1758,7 +1730,7 @@ mod tests {
 
     #[test]
     fn compares_history_cursor_only_when_it_names_the_active_queue() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         install_raw_history(
             &mut engine,
             history_entries(1),
@@ -1777,7 +1749,7 @@ mod tests {
 
     #[test]
     fn rejects_a_history_token_without_any_retained_entry() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         install_raw_history(
             &mut engine,
             vec![],
@@ -1795,7 +1767,7 @@ mod tests {
 
     #[test]
     fn rejects_noncontiguous_history_entry_ids() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "investigation_scene_1")
             .unwrap();
@@ -1830,7 +1802,7 @@ mod tests {
 
     #[test]
     fn rejects_unprimed_intro_and_accepts_restored_consumed_generation_zero() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "investigation_scene_1")
             .unwrap();
@@ -1857,7 +1829,7 @@ mod tests {
 
     #[test]
     fn rejects_testimony_content_offsets_that_are_not_segment_boundaries() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "interrogation_scene_2")
             .unwrap();
@@ -1889,7 +1861,7 @@ mod tests {
 
     #[test]
     fn rejects_an_interrogation_phase_entry_queue_before_phase_commit() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "interrogation_scene_2")
             .unwrap();
@@ -1944,7 +1916,7 @@ mod tests {
 
     #[test]
     fn captures_an_investigation_outro_only_after_its_commit() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "investigation_scene_1")
             .unwrap();
@@ -1984,7 +1956,7 @@ mod tests {
 
     #[test]
     fn omits_non_testimony_line_content_boundaries_and_validates_testimony_origin() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "interrogation_scene_2")
             .unwrap();
@@ -2114,7 +2086,7 @@ mod tests {
 
     #[test]
     fn rejects_live_stable_ids_missing_from_packaged_definitions() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "investigation_scene_1")
             .unwrap();
@@ -2129,7 +2101,7 @@ mod tests {
             "invalidSaveCapture"
         );
 
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine.inventory.evidence.push(EvidenceRecord {
             id: "test_evidence".into(),
             name: "copy".into(),
@@ -2145,7 +2117,7 @@ mod tests {
             "invalidSaveCapture"
         );
 
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .story_state
             .insert_unknown_objective_for_test("missing");
@@ -2154,7 +2126,7 @@ mod tests {
             "invalidSaveCapture"
         );
 
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         let SceneRuntime::Linear(scene) = &mut engine.scene else {
             panic!("expected linear");
         };
@@ -2181,7 +2153,7 @@ mod tests {
 
     #[test]
     fn rejects_pending_acquisition_that_disagrees_with_inventory_kind() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine.inventory.evidence.push(EvidenceRecord {
             id: "test_evidence".into(),
             name: "copy".into(),
@@ -2209,7 +2181,7 @@ mod tests {
 
     #[test]
     fn empty_history_requires_initial_next_id() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine.history = DialogueHistory::from_persistence_parts_for_test(Vec::new(), 2, None);
 
         assert_eq!(
@@ -2220,7 +2192,7 @@ mod tests {
 
     #[test]
     fn history_scene_ids_are_resolved_within_each_chapter_package() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         let mut repeated_id_chapter = engine.chapters[0].clone();
         repeated_id_chapter.id = "chapter_2".into();
         repeated_id_chapter.title = "Chapter Two".into();
@@ -2240,7 +2212,7 @@ mod tests {
 
     #[test]
     fn captures_active_investigation_and_interrogation_intro_and_outro_origins() {
-        let mut investigation = fixture_engine();
+        let (_guard, mut investigation) = fixture_engine();
         investigation
             .jump_to_scene("chapter_1", "investigation_scene_1")
             .unwrap();
@@ -2253,7 +2225,7 @@ mod tests {
             }]
         );
 
-        let mut interrogation = fixture_engine();
+        let (_guard, mut interrogation) = fixture_engine();
         interrogation
             .jump_to_scene("chapter_1", "interrogation_scene_2")
             .unwrap();
@@ -2317,7 +2289,7 @@ mod tests {
 
     #[test]
     fn rejects_live_queue_item_count_and_order_drift_from_packaged_origins() {
-        let mut engine = fixture_engine();
+        let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "investigation_scene_1")
             .unwrap();

@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Task 7/10 wire these crate-private primitives into the save coordinator.
-
 use super::restore::{build_restore_candidate, validate_save_summary, CurrentDefinitions};
 use super::schema::{
     canonical_uuid_v4, parse_current_envelope, parse_saved_at_utc, validate_envelope,
@@ -321,7 +319,7 @@ fn unsafe_e2e_app_data_root(reason: &str) -> GameError {
 fn has_e2e_basename(path: &Path) -> bool {
     path.file_name()
         .and_then(OsStr::to_str)
-        .is_some_and(|name| name.starts_with("lyra-hpa-392-"))
+        .is_some_and(|name| name.starts_with("lyra-save-e2e-"))
 }
 
 fn home_directory() -> Option<PathBuf> {
@@ -1767,7 +1765,7 @@ mod tests {
     #[test]
     fn e2e_guard_refuses_every_unsafe_root_before_any_mutation() {
         let allowed = tempfile::Builder::new()
-            .prefix("lyra-hpa-392-")
+            .prefix("lyra-save-e2e-")
             .tempdir_in(std::env::temp_dir())
             .unwrap();
         let home = PathBuf::from(std::env::var_os("HOME").unwrap());
@@ -1781,7 +1779,7 @@ mod tests {
                 Path::new("/definitely/not/production"),
             ),
             (
-                Some(Path::new("relative/lyra-hpa-392-test")),
+                Some(Path::new("relative/lyra-save-e2e-test")),
                 E2E_APP_IDENTIFIER,
                 Path::new("/definitely/not/production"),
             ),
@@ -1826,7 +1824,7 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         let holder = tempfile::tempdir_in(std::env::temp_dir()).unwrap();
-        let link = holder.path().join("lyra-hpa-392-symlink");
+        let link = holder.path().join("lyra-save-e2e-symlink");
         symlink(env!("CARGO_MANIFEST_DIR"), &link).unwrap();
 
         assert_eq!(
@@ -1848,7 +1846,7 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         let allowed = tempfile::Builder::new()
-            .prefix("lyra-hpa-392-")
+            .prefix("lyra-save-e2e-")
             .tempdir_in(std::env::temp_dir())
             .unwrap();
         let holder = tempfile::tempdir_in(std::env::temp_dir()).unwrap();
@@ -1870,7 +1868,7 @@ mod tests {
     #[test]
     fn e2e_guard_accepts_only_a_canonical_prefixed_directory_beneath_temp() {
         let allowed = tempfile::Builder::new()
-            .prefix("lyra-hpa-392-")
+            .prefix("lyra-save-e2e-")
             .tempdir_in(std::env::temp_dir())
             .unwrap();
 
@@ -2623,8 +2621,13 @@ mod tests {
         );
     }
 
-    fn discovery_fixture() -> (PathBuf, SaveDiscoveryContext, SaveEnvelopeV1) {
-        let resources = crate::game::test_support::save_capture_fixture_resources();
+    fn discovery_fixture() -> (
+        tempfile::TempDir,
+        PathBuf,
+        SaveDiscoveryContext,
+        SaveEnvelopeV1,
+    ) {
+        let (_guard, resources) = crate::game::test_support::save_capture_fixture_resources();
         let engine = crate::game::GameEngine::new_started(resources.clone()).unwrap();
         let checkpoint = crate::game::save::capture::capture_checkpoint_v1(&engine).unwrap();
         let envelope = SaveEnvelopeV1 {
@@ -2641,6 +2644,7 @@ mod tests {
         };
         let definitions = crate::game::save::restore::load_current_definitions(&resources).unwrap();
         (
+            _guard,
             resources.clone(),
             SaveDiscoveryContext {
                 resources_dir: resources,
@@ -2694,7 +2698,7 @@ mod tests {
 
     #[test]
     fn discovery_reads_only_eight_fixed_slots_and_fixed_thumbnail_headers() {
-        let (_resources, context, template) = discovery_fixture();
+        let (_guard, _resources, context, template) = discovery_fixture();
         let fs = FakeFilesystem::new();
         for index in 0..8 {
             let reference = slot_reference(index);
@@ -2738,7 +2742,7 @@ mod tests {
 
     #[test]
     fn discovery_classifies_empty_valid_corrupt_oversize_and_incompatible_slots() {
-        let (_resources, context, template) = discovery_fixture();
+        let (_guard, _resources, context, template) = discovery_fixture();
         let fs = FakeFilesystem::new();
         let (valid, _) = envelope_for_slot(&template, 0, false);
         fs.put_file(
@@ -2973,7 +2977,7 @@ mod tests {
 
     #[test]
     fn lazy_thumbnail_rereads_identity_and_validates_one_bounded_body() {
-        let (_resources, _context, template) = discovery_fixture();
+        let (_guard, _resources, _context, template) = discovery_fixture();
         let fs = FakeFilesystem::new();
         let (reference, expected) = thumbnail_slot(&fs, &template);
         let observed_save_id = match reference {
@@ -3000,7 +3004,7 @@ mod tests {
 
     #[test]
     fn lazy_thumbnail_closes_stale_missing_corrupt_and_oversize_failures() {
-        let (_resources, _context, template) = discovery_fixture();
+        let (_guard, _resources, _context, template) = discovery_fixture();
         let reference = SaveSlotRef::Manual { slot: 1 };
 
         let stale = FakeFilesystem::new();
@@ -3102,7 +3106,7 @@ mod tests {
 
     #[test]
     fn browser_view_never_serializes_paths_or_thumbnail_object_ids() {
-        let (_resources, context, template) = discovery_fixture();
+        let (_guard, _resources, context, template) = discovery_fixture();
         let fs = FakeFilesystem::new();
         thumbnail_slot(&fs, &template);
 
@@ -3115,7 +3119,7 @@ mod tests {
 
     #[test]
     fn orphan_cleanup_removes_only_owned_temps_and_unreferenced_canonical_pngs() {
-        let (_resources, _context, template) = discovery_fixture();
+        let (_guard, _resources, _context, template) = discovery_fixture();
         let fs = FakeFilesystem::new();
         let (reference, _) = thumbnail_slot(&fs, &template);
         let referenced = sidecar_path("550e8400-e29b-41d4-a716-446655440005");
@@ -3145,7 +3149,7 @@ mod tests {
 
     #[test]
     fn orphan_cleanup_rescans_after_writer_turn_and_preserves_possible_corrupt_sources() {
-        let (_resources, _context, template) = discovery_fixture();
+        let (_guard, _resources, _context, template) = discovery_fixture();
         let fs = FakeFilesystem::new();
         let new_sidecar = sidecar_path("550e8400-e29b-41d4-a716-446655440005");
         fs.put_file(
@@ -3181,7 +3185,7 @@ mod tests {
     #[test]
     fn discovery_and_load_share_exact_schema_cursor_history_and_scene_diagnostics() {
         type Mutation = Box<dyn Fn(&mut SaveEnvelopeV1)>;
-        let (_resources, context, template) = discovery_fixture();
+        let (_guard, _resources, context, template) = discovery_fixture();
         let cases: Vec<(&str, Mutation)> = vec![
             (
                 "malformed checkpoint ID",
@@ -3237,7 +3241,7 @@ mod tests {
 
     #[test]
     fn discovery_rejects_manual_files_claiming_auto_or_another_manual_slot() {
-        let (_resources, context, template) = discovery_fixture();
+        let (_guard, _resources, context, template) = discovery_fixture();
         for (save_type, claimed_slot) in [(SaveType::Auto, 2), (SaveType::Manual, 1)] {
             let fs = FakeFilesystem::new();
             let mut envelope = template.clone();
@@ -3260,7 +3264,7 @@ mod tests {
 
     #[test]
     fn discovery_rejects_a_context_detached_from_its_preloaded_definitions_globally() {
-        let (_resources, mut context, template) = discovery_fixture();
+        let (_guard, _resources, mut context, template) = discovery_fixture();
         context.resources_dir = PathBuf::from("/different/package");
         let fs = FakeFilesystem::new();
         let (envelope, _) = envelope_for_slot(&template, 0, false);
@@ -3305,7 +3309,7 @@ mod tests {
 
     #[test]
     fn discovery_bounds_slot_json_even_when_metadata_lies_small() {
-        let (_resources, context, _template) = discovery_fixture();
+        let (_guard, _resources, context, _template) = discovery_fixture();
         let fs = FakeFilesystem::new();
         let path = slot_path(SaveSlotRef::Auto { slot: 1 });
         fs.put_file(
@@ -3333,7 +3337,7 @@ mod tests {
 
     #[test]
     fn oversized_discovery_retains_authoritative_mtime_for_continue_ordering() {
-        let (_resources, context, mut template) = discovery_fixture();
+        let (_guard, _resources, context, mut template) = discovery_fixture();
         let fs = FakeFilesystem::new();
         let oversized_path = slot_path(SaveSlotRef::Auto { slot: 1 });
         let newest = UNIX_EPOCH + Duration::from_secs(90);
@@ -3421,7 +3425,7 @@ mod tests {
     #[test]
     fn invalid_metadata_exposes_only_authoritatively_valid_timestamp_and_summary_fields() {
         type Mutation = Box<dyn Fn(&mut SaveEnvelopeV1)>;
-        let (_resources, context, template) = discovery_fixture();
+        let (_guard, _resources, context, template) = discovery_fixture();
         let cases: Vec<(&str, Mutation, bool, bool)> = vec![
             (
                 "non-UTC timestamp",
@@ -3471,7 +3475,7 @@ mod tests {
 
     #[test]
     fn continue_does_not_use_structurally_parseable_but_non_utc_saved_at() {
-        let (_resources, context, template) = discovery_fixture();
+        let (_guard, _resources, context, template) = discovery_fixture();
         let fs = FakeFilesystem::new();
         let tied_mtime = UNIX_EPOCH + Duration::from_secs(81);
 

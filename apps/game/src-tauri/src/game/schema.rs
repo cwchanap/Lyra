@@ -575,6 +575,105 @@ pub struct InterrogationOutroJson {
     pub dialogue: Vec<DialogueItem>,
 }
 
+/// Enumerates every dialogue-item group a scene can play, in the order the
+/// runtime/cursor machinery visits them. Shared by save capture and restore so
+/// the cursor-bound maximum-dialogue-item calculation stays identical on both
+/// sides. Callers fold the returned slices' lengths with overflow validation.
+pub fn scene_dialogue_groups(scene: &SceneJson) -> Vec<&[DialogueItem]> {
+    match scene {
+        SceneJson::Linear(scene) => vec![&scene.queue],
+        SceneJson::Investigation(scene) => investigation_dialogue_groups(scene),
+        SceneJson::Interrogation(scene) => interrogation_dialogue_groups(scene),
+    }
+}
+
+/// Investigation-scene dialogue groups: intro, outro, every sublocation's
+/// transition/hotspot/character-topic dialogue (including reexamine), then the
+/// evidence/statement on_collect and on_reexamine groups.
+pub fn investigation_dialogue_groups(scene: &InvestigationSceneJson) -> Vec<&[DialogueItem]> {
+    let mut groups: Vec<&[DialogueItem]> =
+        vec![scene.intro.as_slice(), scene.outro.dialogue.as_slice()];
+    for sublocation in &scene.sublocations {
+        groups.push(&sublocation.transition_dialogue);
+        for hotspot in &sublocation.hotspots {
+            groups.push(&hotspot.inspect_dialogue);
+            if let Some(items) = hotspot.on_reexamine.as_deref() {
+                groups.push(items);
+            }
+        }
+        for character in &sublocation.characters {
+            for topic in &character.topics {
+                groups.push(&topic.topic_dialogue);
+                if let Some(items) = topic.on_reexamine.as_deref() {
+                    groups.push(items);
+                }
+            }
+        }
+    }
+    append_record_dialogue_groups(
+        &mut groups,
+        &scene.evidence_manifest,
+        &scene.statement_manifest,
+    );
+    groups
+}
+
+/// Interrogation-scene dialogue groups: intro, outro, every inquiry phase's
+/// entry dialogue and per-question testimony groups (on_loop, loop_prompt,
+/// default_challenge, default_wrong, wrong_reply, and each line's
+/// content/challenge/on_correct/on_wrong_evidence), then the evidence/statement
+/// on_collect and on_reexamine groups.
+pub fn interrogation_dialogue_groups(scene: &InterrogationSceneJson) -> Vec<&[DialogueItem]> {
+    let mut groups: Vec<&[DialogueItem]> =
+        vec![scene.intro.as_slice(), scene.outro.dialogue.as_slice()];
+    for phase in &scene.phases {
+        let InterrogationPhaseJson::Inquiry {
+            entry_dialogue,
+            questions,
+            ..
+        } = phase;
+        groups.push(entry_dialogue);
+        for question in questions {
+            groups.push(&question.testimony.on_loop);
+            groups.push(&question.testimony.loop_prompt);
+            groups.push(&question.testimony.default_challenge);
+            groups.push(&question.testimony.default_wrong);
+            groups.push(&question.testimony.wrong_reply);
+            for line in &question.testimony.lines {
+                groups.push(&line.content);
+                groups.push(&line.challenge);
+                groups.push(&line.on_correct);
+                groups.push(&line.on_wrong_evidence);
+            }
+        }
+    }
+    append_record_dialogue_groups(
+        &mut groups,
+        &scene.evidence_manifest,
+        &scene.statement_manifest,
+    );
+    groups
+}
+
+fn append_record_dialogue_groups<'a>(
+    groups: &mut Vec<&'a [DialogueItem]>,
+    evidence: &'a [EvidenceJson],
+    statements: &'a [StatementJson],
+) {
+    for record in evidence {
+        groups.push(&record.on_collect);
+        if let Some(items) = record.on_reexamine.as_deref() {
+            groups.push(items);
+        }
+    }
+    for record in statements {
+        groups.push(&record.on_acquire);
+        if let Some(items) = record.on_reexamine.as_deref() {
+            groups.push(items);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

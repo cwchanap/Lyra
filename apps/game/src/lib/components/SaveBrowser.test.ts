@@ -223,7 +223,7 @@ describe("SaveBrowser", () => {
       .getByText("manual-1")
       .closest("article") as HTMLElement;
     await fireEvent.click(
-      within(validCard).getByRole("button", { name: "載入" }),
+      within(validCard).getByRole("button", { name: "載入手動存檔 1" }),
     );
     expect(onLoad).toHaveBeenCalledWith(
       expect.objectContaining({ reference: { type: "manual", slot: 1 } }),
@@ -234,10 +234,10 @@ describe("SaveBrowser", () => {
       .getByText("無法相容")
       .closest("article") as HTMLElement;
     expect(
-      within(invalidCard).getByRole("button", { name: "載入" }),
+      within(invalidCard).getByRole("button", { name: "載入手動存檔 2" }),
     ).toBeDisabled();
     await fireEvent.click(
-      within(invalidCard).getByRole("button", { name: "刪除" }),
+      within(invalidCard).getByRole("button", { name: "刪除手動存檔 2" }),
     );
     expect(onDelete).toHaveBeenCalledWith(
       expect.objectContaining({ reference: { type: "manual", slot: 2 } }),

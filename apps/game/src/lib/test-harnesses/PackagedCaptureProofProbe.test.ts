@@ -87,18 +87,15 @@ function openResult(
 beforeEach(() => {
   mocks.invokePersistenceCommand.mockReset();
   mocks.readSaveThumbnail.mockReset();
-  vi.stubGlobal("URL", {
-    createObjectURL: vi
-      .fn()
-      .mockReturnValueOnce("blob:proof-1")
-      .mockReturnValueOnce("blob:proof-2"),
-    revokeObjectURL: vi.fn(),
-  });
+  vi.spyOn(URL, "createObjectURL")
+    .mockReturnValueOnce("blob:proof-1")
+    .mockReturnValueOnce("blob:proof-2");
+  vi.spyOn(URL, "revokeObjectURL");
 });
 
 afterEach(() => {
   cleanup();
-  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("PackagedCaptureProofProbe", () => {
@@ -119,9 +116,7 @@ describe("PackagedCaptureProofProbe", () => {
     await fireEvent.click(refresh);
     await waitFor(() =>
       expect(
-        rendered.container.querySelector(
-          "[data-hpa-392-capture-proof-thumbnail]",
-        ),
+        rendered.container.querySelector("[data-capture-proof-thumbnail]"),
       ).toHaveAttribute("src", "blob:proof-1"),
     );
     expect(mocks.invokePersistenceCommand).toHaveBeenCalledWith("list_saves");
@@ -133,9 +128,7 @@ describe("PackagedCaptureProofProbe", () => {
     await fireEvent.click(refresh);
     await waitFor(() =>
       expect(
-        rendered.container.querySelector(
-          "[data-hpa-392-capture-proof-thumbnail]",
-        ),
+        rendered.container.querySelector("[data-capture-proof-thumbnail]"),
       ).toHaveAttribute("src", "blob:proof-2"),
     );
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:proof-1");
@@ -166,21 +159,21 @@ describe("PackagedCaptureProofProbe", () => {
     });
 
     expect(
-      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-    ).toHaveAttribute("data-hpa-392-capture-proof-command-status", "capturing");
+      rendered.container.querySelector("[data-capture-proof]"),
+    ).toHaveAttribute("data-capture-proof-command-status", "capturing");
     expect(
-      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-    ).toHaveAttribute("data-hpa-392-capture-proof-completed-generation", "0");
+      rendered.container.querySelector("[data-capture-proof]"),
+    ).toHaveAttribute("data-capture-proof-completed-generation", "0");
 
     await rendered.rerender({ captureCommandInFlight: false });
     await waitFor(() =>
       expect(
-        rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-      ).toHaveAttribute("data-hpa-392-capture-proof-completed-generation", "1"),
+        rendered.container.querySelector("[data-capture-proof]"),
+      ).toHaveAttribute("data-capture-proof-completed-generation", "1"),
     );
     expect(
-      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-    ).toHaveAttribute("data-hpa-392-capture-proof-command-status", "idle");
+      rendered.container.querySelector("[data-capture-proof]"),
+    ).toHaveAttribute("data-capture-proof-command-status", "idle");
   });
 
   it("publishes the persistent capture wrapper status when the owning command settles", async () => {
@@ -212,33 +205,30 @@ describe("PackagedCaptureProofProbe", () => {
 
     await waitFor(() =>
       expect(
-        rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-      ).toHaveAttribute("data-hpa-392-capture-proof-calls", "1"),
+        rendered.container.querySelector("[data-capture-proof]"),
+      ).toHaveAttribute("data-capture-proof-calls", "1"),
     );
     expect(
-      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-    ).toHaveAttribute("data-hpa-392-capture-proof-available", "1");
+      rendered.container.querySelector("[data-capture-proof]"),
+    ).toHaveAttribute("data-capture-proof-available", "1");
     expect(
-      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
+      rendered.container.querySelector("[data-capture-proof]"),
     ).toHaveAttribute(
-      "data-hpa-392-capture-proof-last-render-diagnostic",
+      "data-capture-proof-last-render-diagnostic",
       "errorEvent",
     );
     expect(
-      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-    ).toHaveAttribute("data-hpa-392-capture-proof-last-closed-reason", "");
+      rendered.container.querySelector("[data-capture-proof]"),
+    ).toHaveAttribute("data-capture-proof-last-closed-reason", "");
     expect(
-      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-    ).toHaveAttribute("data-hpa-392-capture-proof-font-css-bytes", "175000");
+      rendered.container.querySelector("[data-capture-proof]"),
+    ).toHaveAttribute("data-capture-proof-font-css-bytes", "175000");
     expect(
-      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-    ).toHaveAttribute("data-hpa-392-capture-proof-font-chunks", "3");
+      rendered.container.querySelector("[data-capture-proof]"),
+    ).toHaveAttribute("data-capture-proof-font-chunks", "3");
     expect(
-      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-    ).toHaveAttribute(
-      "data-hpa-392-capture-proof-font-zh-hant-code-points",
-      "12",
-    );
+      rendered.container.querySelector("[data-capture-proof]"),
+    ).toHaveAttribute("data-capture-proof-font-zh-hant-code-points", "12");
   });
 
   it("reports the newest autosave's unavailable thumbnail without falling back", async () => {
@@ -261,14 +251,14 @@ describe("PackagedCaptureProofProbe", () => {
 
     await waitFor(() =>
       expect(
-        rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-      ).toHaveAttribute("data-hpa-392-capture-proof-status", "unavailable"),
+        rendered.container.querySelector("[data-capture-proof]"),
+      ).toHaveAttribute("data-capture-proof-status", "unavailable"),
     );
     expect(mocks.readSaveThumbnail).not.toHaveBeenCalled();
     expect(
-      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
+      rendered.container.querySelector("[data-capture-proof]"),
     ).toHaveAttribute(
-      "data-hpa-392-capture-proof-unavailable-reason",
+      "data-capture-proof-unavailable-reason",
       "renderDeadlineExpired",
     );
   });
@@ -288,21 +278,18 @@ describe("PackagedCaptureProofProbe", () => {
 
     await waitFor(() =>
       expect(
-        rendered.container.querySelector("[data-hpa-392-capture-proof]"),
+        rendered.container.querySelector("[data-capture-proof]"),
       ).toHaveAttribute(
-        "data-hpa-392-capture-proof-error-code",
+        "data-capture-proof-error-code",
         "saveDiscoveryUnavailable",
       ),
     );
     expect(
-      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-    ).toHaveAttribute(
-      "data-hpa-392-capture-proof-error-message",
-      "list saves failed",
-    );
+      rendered.container.querySelector("[data-capture-proof]"),
+    ).toHaveAttribute("data-capture-proof-error-message", "list saves failed");
     expect(
-      rendered.container.querySelector("[data-hpa-392-capture-proof]"),
-    ).toHaveAttribute("data-hpa-392-capture-proof-error-stage", "listSaves");
+      rendered.container.querySelector("[data-capture-proof]"),
+    ).toHaveAttribute("data-capture-proof-error-stage", "listSaves");
   });
 
   it("selects the newest autosave when Array.prototype.toSorted is unavailable", async () => {
@@ -328,9 +315,7 @@ describe("PackagedCaptureProofProbe", () => {
       );
       await waitFor(() =>
         expect(
-          rendered.container.querySelector(
-            "[data-hpa-392-capture-proof-thumbnail]",
-          ),
+          rendered.container.querySelector("[data-capture-proof-thumbnail]"),
         ).toHaveAttribute("src", "blob:proof-1"),
       );
     } finally {
