@@ -5165,4 +5165,120 @@ mod tests {
         assert_eq!(installed_scene_id(&app), "old");
         drop(gate);
     }
+
+    /// Contract test: every command registered in `generate_handler!` must also
+    /// be handled by the HTTP development dispatch
+    /// (`dispatch_development_command_with_exit`). The two surfaces share the
+    /// same `GameEngine` methods and `*_core` helpers, so arg-type drift
+    /// surfaces as compile errors. This test catches the remaining drift risk:
+    /// a command added to one surface but not the other.
+    ///
+    /// When you add a new command to `generate_handler!`, add its name here AND
+    /// to the HTTP dispatch match in `dispatch_development_command_with_exit`.
+    mod command_surface_contract {
+        use super::*;
+        use std::sync::Arc;
+
+        fn title_state() -> AppState {
+            AppState {
+                session: Arc::new(Mutex::new(AppSession::empty())),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator: SaveCoordinator::new(),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+                persistence: None,
+            }
+        }
+
+        /// Every command name that appears in `generate_handler!` (excluding
+        /// `cfg(feature = "e2e")` commands, which are Tauri-only by design).
+        /// The HTTP dispatch must handle each of these.
+        const TAURI_COMMAND_NAMES: &[&str] = &[
+            "list_saves",
+            "get_persistence_status",
+            "get_thumbnail_activity",
+            "get_exit_status",
+            "start_game",
+            "start_game_without_saving",
+            "prepare_save_thumbnail",
+            "submit_save_thumbnail",
+            "report_save_thumbnail_failure",
+            "read_save_thumbnail",
+            "save_manual",
+            "load_save",
+            "load_save_discarding_current",
+            "continue_game",
+            "delete_save",
+            "return_to_title",
+            "return_to_title_without_saving",
+            "acknowledge_acquisition_event",
+            "confirm_acquisition_without_saving",
+            "cancel_persistence_failure",
+            "retry_exit",
+            "cancel_exit",
+            "exit_without_saving",
+            "reset_game",
+            "get_state",
+            "list_scenes",
+            "jump_to_scene",
+            "advance_dialogue",
+            "inspect_hotspot",
+            "interview_topic",
+            "enter_sublocation",
+            "reexamine_evidence",
+            "reexamine_statement",
+            "ask_interrogation_question",
+            "challenge_interrogation_line",
+            "present_interrogation_evidence",
+            "withdraw_interrogation",
+            "resume_interrogation_testimony",
+            "complete_interrogation_phase",
+        ];
+
+        #[tokio::test]
+        async fn http_dispatch_recognizes_every_tauri_command() {
+            let state = title_state();
+            let exit = Arc::new(DevelopmentExitDriver::default());
+            for &command in TAURI_COMMAND_NAMES {
+                let result = dispatch_development_command_with_exit(
+                    &state,
+                    command,
+                    &[],
+                    &[],
+                    Arc::clone(&exit),
+                )
+                .await;
+                match result {
+                    Ok(_) => { /* command succeeded — recognized */ }
+                    Err(error) => {
+                        assert_ne!(
+                            error.code, "unknownCommand",
+                            "HTTP dispatch does not recognize `{command}`, \
+                             but it is registered in generate_handler!. \
+                             Add it to dispatch_development_command_with_exit."
+                        );
+                    }
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn http_dispatch_rejects_unknown_commands() {
+            let state = title_state();
+            let exit = Arc::new(DevelopmentExitDriver::default());
+            let result = dispatch_development_command_with_exit(
+                &state,
+                "this_command_does_not_exist",
+                &[],
+                &[],
+                exit,
+            )
+            .await;
+            assert_eq!(
+                result.unwrap_err().code,
+                "unknownCommand",
+                "negative control: a nonexistent command must return unknownCommand"
+            );
+        }
+    }
 }
