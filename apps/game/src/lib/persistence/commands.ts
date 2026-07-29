@@ -221,3 +221,23 @@ export function confirmAcquisitionWithoutSaving(
     failureToken,
   });
 }
+
+export function retryAcquisitionAcknowledgement(
+  eventId: string,
+  failureToken: string,
+): Promise<ThumbnailCaptureRequestView> {
+  return invokePersistenceCommand("retry_acquisition_acknowledgement", {
+    eventId,
+    failureToken,
+  });
+}
+
+export function cancelAcquisitionFailure(
+  eventId: string,
+  failureToken: string,
+): Promise<GameplayCommandResultView> {
+  return invokePersistenceCommand("cancel_acquisition_failure", {
+    eventId,
+    failureToken,
+  });
+}

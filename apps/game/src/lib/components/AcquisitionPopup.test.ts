@@ -92,7 +92,7 @@ function props(
       async () => undefined,
     ),
     onRetry: vi.fn<(eventId: string) => Promise<void>>(async () => undefined),
-    onCancel: vi.fn<(eventId: string) => void>(),
+    onCancel: vi.fn<(eventId: string) => Promise<void>>(async () => undefined),
     onContinueWithoutSaving: vi.fn<
       (
         eventId: string,

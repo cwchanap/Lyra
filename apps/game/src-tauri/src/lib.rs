@@ -1125,9 +1125,11 @@ async fn save_manual_core(
         .find(|slot| slot.reference == reference)
         .cloned()
         .ok_or_else(GameError::save_discovery_unavailable)?;
-    if !matches!(saved_slot.status, SaveSlotStatusView::Valid { .. })
-        || outcome.committed_envelope.save_id != save_id
-    {
+    let rediscovered_save_id = match &saved_slot.status {
+        SaveSlotStatusView::Valid { metadata } => &metadata.save_id,
+        _ => return Err(GameError::save_write_failed()),
+    };
+    if rediscovered_save_id != &save_id {
         return Err(GameError::save_write_failed());
     }
     Ok(ManualSaveResultView {
@@ -1531,6 +1533,46 @@ async fn confirm_acquisition_without_saving(
     finish_coordinator_mutation(state_view, MutationPersistencePolicy::AdvanceWithoutSaving)
 }
 
+fn retry_acquisition_acknowledgement_core(
+    state: &AppState,
+    event_id: String,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<ThumbnailCaptureRequestView, GameError> {
+    state
+        .coordinator
+        .retry_acquisition_acknowledgement(state, event_id, failure_token)
+}
+
+#[tauri::command]
+fn retry_acquisition_acknowledgement(
+    state: tauri::State<'_, AppState>,
+    event_id: String,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<ThumbnailCaptureRequestView, GameError> {
+    retry_acquisition_acknowledgement_core(&state, event_id, failure_token)
+}
+
+fn cancel_acquisition_failure_core(
+    state: &AppState,
+    event_id: String,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<GameplayCommandResultView, GameError> {
+    let state_view =
+        state
+            .coordinator
+            .cancel_acquisition_failure(state, event_id, failure_token)?;
+    finish_coordinator_mutation(state_view, MutationPersistencePolicy::CoordinatorManaged)
+}
+
+#[tauri::command]
+fn cancel_acquisition_failure(
+    state: tauri::State<'_, AppState>,
+    event_id: String,
+    failure_token: PersistenceFailureTokenView,
+) -> Result<GameplayCommandResultView, GameError> {
+    cancel_acquisition_failure_core(&state, event_id, failure_token)
+}
+
 #[doc(hidden)]
 #[derive(Debug)]
 pub struct DevelopmentCommandResponse {
@@ -1825,6 +1867,34 @@ pub async fn dispatch_development_command_with_exit(
             development_json(finish_coordinator_mutation(
                 state_view,
                 MutationPersistencePolicy::AdvanceWithoutSaving,
+            )?)
+        }
+        "retry_acquisition_acknowledgement" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                event_id: String,
+                failure_token: PersistenceFailureTokenView,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(retry_acquisition_acknowledgement_core(
+                state,
+                args.event_id,
+                args.failure_token,
+            )?)
+        }
+        "cancel_acquisition_failure" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                event_id: String,
+                failure_token: PersistenceFailureTokenView,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(cancel_acquisition_failure_core(
+                state,
+                args.event_id,
+                args.failure_token,
             )?)
         }
         "list_scenes" => development_json(GameEngine::scene_navigation_index(
@@ -2240,6 +2310,8 @@ pub fn run() {
             return_to_title_without_saving,
             acknowledge_acquisition_event,
             confirm_acquisition_without_saving,
+            retry_acquisition_acknowledgement,
+            cancel_acquisition_failure,
             cancel_persistence_failure,
             retry_exit,
             cancel_exit,
@@ -4952,6 +5024,11 @@ mod tests {
             let bypass = function_body(source, "confirm_acquisition_without_saving");
             assert!(bypass.contains("MutationPersistencePolicy::AdvanceWithoutSaving"));
             assert!(!bypass.contains("notify_"));
+            let retry = function_body(source, "retry_acquisition_acknowledgement");
+            assert!(!retry.contains("notify_"));
+            let cancel = function_body(source, "cancel_acquisition_failure");
+            assert!(cancel.contains("MutationPersistencePolicy::CoordinatorManaged"));
+            assert!(!cancel.contains("notify_"));
         }
 
         #[test]
@@ -4987,6 +5064,8 @@ mod tests {
                 "return_to_title_without_saving",
                 "acknowledge_acquisition_event",
                 "confirm_acquisition_without_saving",
+                "retry_acquisition_acknowledgement",
+                "cancel_acquisition_failure",
                 "cancel_persistence_failure",
                 "retry_exit",
                 "cancel_exit",
@@ -5052,6 +5131,8 @@ mod tests {
                 "return_to_title_without_saving",
                 "acknowledge_acquisition_event",
                 "confirm_acquisition_without_saving",
+                "retry_acquisition_acknowledgement",
+                "cancel_acquisition_failure",
                 "cancel_persistence_failure",
                 "retry_exit",
                 "cancel_exit",
@@ -5213,6 +5294,8 @@ mod tests {
             "return_to_title_without_saving",
             "acknowledge_acquisition_event",
             "confirm_acquisition_without_saving",
+            "retry_acquisition_acknowledgement",
+            "cancel_acquisition_failure",
             "cancel_persistence_failure",
             "retry_exit",
             "cancel_exit",

@@ -2,9 +2,11 @@ import { tick } from "svelte";
 import {
   acknowledgeAcquisitionEvent,
   asGameError,
+  cancelAcquisitionFailure,
   confirmAcquisitionWithoutSaving,
   prepareSaveThumbnail,
   reportSaveThumbnailFailure,
+  retryAcquisitionAcknowledgement,
   submitSaveThumbnail,
 } from "$lib/persistence/commands";
 import {
@@ -41,6 +43,14 @@ type AcquisitionControllerDependencies = {
     eventId: string,
     preparedThumbnailTicket: string,
   ) => Promise<GameplayCommandResultView>;
+  retryAcknowledge: (
+    eventId: string,
+    failureToken: PersistenceFailureTokenView,
+  ) => Promise<ThumbnailCaptureRequestView>;
+  cancelFailure: (
+    eventId: string,
+    failureToken: PersistenceFailureTokenView,
+  ) => Promise<GameplayCommandResultView>;
   confirmWithoutSaving: (
     eventId: string,
     failureToken: PersistenceFailureTokenView,
@@ -54,7 +64,7 @@ export type AcquisitionController = {
   readonly phase: AcquisitionAcknowledgementPhase;
   dismissCurrent: (expectedEventId: string) => Promise<void>;
   retry: (expectedEventId: string) => Promise<void>;
-  cancel: (expectedEventId: string) => void;
+  cancel: (expectedEventId: string) => Promise<void>;
   continueWithoutSaving: (
     expectedEventId: string,
     failureToken: PersistenceFailureTokenView,
@@ -251,6 +261,31 @@ export function createAcquisitionController(
     }
   }
 
+  async function retryAcknowledge(
+    eventId: string,
+    failureToken: PersistenceFailureTokenView,
+  ): Promise<void> {
+    const attempt = beginAttempt(eventId, "preparing");
+    if (!attempt) return;
+    try {
+      const request = await dependencies.retryAcknowledge(
+        eventId,
+        failureToken,
+      );
+      if (!ownsCurrent(attempt)) return;
+      if (!(await capturePreparedThumbnail(request, attempt))) return;
+      if (!ownsCurrent(attempt)) return;
+      setActivePhase(attempt, "saving");
+      const result = await dependencies.acknowledge(eventId, request.ticket);
+      if (!ownsCurrent(attempt)) return;
+      commitResult(result, attempt);
+    } catch (error) {
+      fail(error, attempt);
+    } finally {
+      if (owns(attempt)) clearAttemptTimer(attempt);
+    }
+  }
+
   return {
     get current() {
       return current();
@@ -278,10 +313,12 @@ export function createAcquisitionController(
       ) {
         return;
       }
+      const failureToken = phase.failureToken;
+      if (!failureToken) return;
       releaseAttempt(activeAttempt);
-      await acknowledge(eventId);
+      await retryAcknowledge(eventId, failureToken);
     },
-    cancel(eventId) {
+    async cancel(eventId) {
       if (
         current()?.id !== eventId ||
         activeAttempt?.eventId !== eventId ||
@@ -289,7 +326,15 @@ export function createAcquisitionController(
       ) {
         return;
       }
+      const failureToken = phase.failureToken;
       releaseAttempt(activeAttempt);
+      if (!failureToken) return;
+      try {
+        const result = await dependencies.cancelFailure(eventId, failureToken);
+        dependencies.gameState.value = result.state;
+      } catch (error) {
+        console.warn("[Persistence] Acquisition failure cancel failed", error);
+      }
     },
     async continueWithoutSaving(eventId, failureToken) {
       if (
@@ -333,5 +378,7 @@ export const acquisitionController = createAcquisitionController({
   submit: submitSaveThumbnail,
   report: reportSaveThumbnailFailure,
   acknowledge: acknowledgeAcquisitionEvent,
+  retryAcknowledge: retryAcquisitionAcknowledgement,
+  cancelFailure: cancelAcquisitionFailure,
   confirmWithoutSaving: confirmAcquisitionWithoutSaving,
 });
