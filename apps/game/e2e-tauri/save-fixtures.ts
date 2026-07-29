@@ -1,21 +1,21 @@
 import {
-  HPA392_PHASE_NAMES as nodePhaseNames,
-  assertNoUnknownHpa392Sidecars as assertNoUnknownSidecars,
-  assertSafeHpa392AppDataDir,
-  corruptHpa392ObservedSidecar as corruptObservedSidecar,
-  corruptHpa392Slot as corruptSlot,
-  readHpa392ControlExpectation as readControlExpectation,
-  readHpa392SlotFiles as readSlotFiles,
-  removeHpa392ObservedSidecar as removeObservedSidecar,
-  resolveHpa392ObservedSidecar as resolveObservedSidecar,
-  writeHpa392ControlExpectation as writeControlExpectation,
-} from "../scripts/hpa-392-e2e-paths.mjs";
+  SAVE_E2E_PHASE_NAMES as nodePhaseNames,
+  assertNoUnknownSaveE2eSidecars as assertNoUnknownSidecars,
+  assertSafeSaveE2eAppDataDir,
+  corruptSaveE2eObservedSidecar as corruptObservedSidecar,
+  corruptSaveE2eSlot as corruptSlot,
+  readSaveE2eControlExpectation as readControlExpectation,
+  readSaveE2eSlotFiles as readSlotFiles,
+  removeSaveE2eObservedSidecar as removeObservedSidecar,
+  resolveSaveE2eObservedSidecar as resolveObservedSidecar,
+  writeSaveE2eControlExpectation as writeControlExpectation,
+} from "../scripts/save-e2e-paths.mjs";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 
-export const HPA392_PHASE_NAMES = nodePhaseNames;
+export const SAVE_E2E_PHASE_NAMES = nodePhaseNames;
 
-export type Hpa392FixedSlotName =
+export type SaveE2eFixedSlotName =
   | "autosave-1"
   | "autosave-2"
   | "autosave-3"
@@ -25,8 +25,8 @@ export type Hpa392FixedSlotName =
   | "manual-2"
   | "manual-3";
 
-export type Hpa392SlotFile = {
-  fixedSlotName: Hpa392FixedSlotName;
+export type SaveE2eSlotFile = {
+  fixedSlotName: SaveE2eFixedSlotName;
   path: string;
   text: string | null;
   modifiedAtMs: number | null;
@@ -52,23 +52,23 @@ export type SeedControl = {
     cursor: number;
     currentDialogueFingerprint: string;
     pendingEventIds: [string, string];
-    sceneSnapshot: Hpa392InvestigationSceneSnapshot;
-    inventorySnapshot: Hpa392InventorySnapshot;
-    visualCueSnapshot: Hpa392VisualCueSnapshot;
+    sceneSnapshot: SaveE2eInvestigationSceneSnapshot;
+    inventorySnapshot: SaveE2eInventorySnapshot;
+    visualCueSnapshot: SaveE2eVisualCueSnapshot;
   };
   interrogation: {
     fixedSlotName: "manual-3";
     saveId: string;
     phaseId: string;
     presenting: boolean;
-    sceneSnapshot: Hpa392InterrogationSceneSnapshot;
-    inventorySnapshot: Hpa392InventorySnapshot;
-    visualCueSnapshot: Hpa392VisualCueSnapshot;
+    sceneSnapshot: SaveE2eInterrogationSceneSnapshot;
+    inventorySnapshot: SaveE2eInventorySnapshot;
+    visualCueSnapshot: SaveE2eVisualCueSnapshot;
   };
-  acknowledgementAutosave: Hpa392FixedSlotName;
+  acknowledgementAutosave: SaveE2eFixedSlotName;
 };
 
-export type Hpa392ThumbnailDescriptor =
+export type SaveE2eThumbnailDescriptor =
   | { type: "unavailable" }
   | {
       type: "available";
@@ -78,16 +78,16 @@ export type Hpa392ThumbnailDescriptor =
       sha256: string;
     };
 
-export type Hpa392InvestigationOverride =
+export type SaveE2eInvestigationOverride =
   | { type: "hotspot"; id: string }
   | { type: "sublocation"; id: string }
   | { type: "topic"; characterId: string; topicId: string };
 
-export type Hpa392InterrogationOverride =
+export type SaveE2eInterrogationOverride =
   | { type: "question"; id: string }
   | { type: "phase"; id: string };
 
-export type Hpa392InvestigationSceneSnapshot = {
+export type SaveE2eInvestigationSceneSnapshot = {
   type: "investigation";
   introPlayed: boolean;
   outroPlayed: boolean;
@@ -95,34 +95,34 @@ export type Hpa392InvestigationSceneSnapshot = {
   inspectedHotspotIds: string[];
   discussedTopicIds: Array<{ characterId: string; topicId: string }>;
   enteredSublocationIds: string[];
-  unlockedOverrides: Hpa392InvestigationOverride[];
+  unlockedOverrides: SaveE2eInvestigationOverride[];
 };
 
-export type Hpa392CrossExamSnapshot =
+export type SaveE2eCrossExamSnapshot =
   | { type: "idle" }
   | { type: "playing"; questionId: string; lineId: string }
   | { type: "presenting"; questionId: string; lineId: string };
 
-export type Hpa392InterrogationSceneSnapshot = {
+export type SaveE2eInterrogationSceneSnapshot = {
   type: "interrogation";
   introPlayed: boolean;
   outroPlayed: boolean;
   currentPhaseId: string | null;
-  crossExam: Hpa392CrossExamSnapshot;
+  crossExam: SaveE2eCrossExamSnapshot;
   brokenQuestionIds: string[];
   completedPhaseIds: string[];
-  unlockedOverrides: Hpa392InterrogationOverride[];
+  unlockedOverrides: SaveE2eInterrogationOverride[];
   enteredPhaseIds: string[];
   lineContentSegmentIndex: number | null;
 };
 
-export type Hpa392SceneSnapshot =
+export type SaveE2eSceneSnapshot =
   | { type: "linear" }
   | { type: "gameComplete" }
-  | Hpa392InvestigationSceneSnapshot
-  | Hpa392InterrogationSceneSnapshot;
+  | SaveE2eInvestigationSceneSnapshot
+  | SaveE2eInterrogationSceneSnapshot;
 
-export type Hpa392InventorySnapshot = {
+export type SaveE2eInventorySnapshot = {
   evidence: Array<{
     recordId: string;
     collectedInChapterId: string;
@@ -135,14 +135,14 @@ export type Hpa392InventorySnapshot = {
   }>;
 };
 
-export type Hpa392VisualCueSnapshot = {
+export type SaveE2eVisualCueSnapshot = {
   sceneTag: string | null;
   backgroundAssetId: string | null;
   bgm: { channel: "bgm"; assetId: string | null } | null;
   bgs: { channel: "bgs"; assetId: string | null } | null;
 };
 
-export type Hpa392SaveEnvelope = {
+export type SaveE2eSaveEnvelope = {
   schemaVersion: number;
   contentRevision: string;
   saveId: string;
@@ -150,7 +150,7 @@ export type Hpa392SaveEnvelope = {
   slot: number;
   savedAt: string;
   displayName: string;
-  thumbnail: Hpa392ThumbnailDescriptor;
+  thumbnail: SaveE2eThumbnailDescriptor;
   summary: {
     chapterId: string;
     chapterTitle: string;
@@ -162,23 +162,23 @@ export type Hpa392SaveEnvelope = {
   snapshot: {
     chapterId: string;
     sceneId: string;
-    scene: Hpa392SceneSnapshot;
+    scene: SaveE2eSceneSnapshot;
     activeDialogue: {
       activeSegmentIndex: number;
       itemCursor: number;
       queueGen: number;
     } | null;
-    lastVisualCue: Hpa392VisualCueSnapshot;
-    inventory: Hpa392InventorySnapshot;
+    lastVisualCue: SaveE2eVisualCueSnapshot;
+    inventory: SaveE2eInventorySnapshot;
     [key: string]: unknown;
   };
 };
 
-export type Hpa392OwnershipSnapshot = {
+export type SaveE2eOwnershipSnapshot = {
   slots: Array<{
-    fixedSlotName: Hpa392FixedSlotName;
+    fixedSlotName: SaveE2eFixedSlotName;
     modifiedAtMs: number | null;
-    envelope: Hpa392SaveEnvelope | null;
+    envelope: SaveE2eSaveEnvelope | null;
     parseError: boolean;
     sidecarPath: string | null;
     sidecarSha256: string | null;
@@ -191,54 +191,54 @@ export type E2ePersistenceFaultBoundary =
   | "savesDirectorySync"
   | "exitFlush";
 
-export function hpa392AppDataDir(): string {
+export function saveE2eAppDataDir(): string {
   const root = process.env.LYRA_E2E_APP_DATA_DIR;
   if (!root) {
-    throw new Error("LYRA_E2E_APP_DATA_DIR is required for HPA-392 fixtures.");
+    throw new Error("LYRA_E2E_APP_DATA_DIR is required for save e2e fixtures.");
   }
-  return assertSafeHpa392AppDataDir(root);
+  return assertSafeSaveE2eAppDataDir(root);
 }
 
-export function readHpa392Slots(): Hpa392SlotFile[] {
-  return readSlotFiles(hpa392AppDataDir()) as Hpa392SlotFile[];
+export function readSaveE2eSlots(): SaveE2eSlotFile[] {
+  return readSlotFiles(saveE2eAppDataDir()) as SaveE2eSlotFile[];
 }
 
-export function readHpa392Envelope(
-  fixedSlotName: Hpa392FixedSlotName,
-): Hpa392SaveEnvelope | null {
-  const slot = readHpa392Slots().find(
+export function readSaveE2eEnvelope(
+  fixedSlotName: SaveE2eFixedSlotName,
+): SaveE2eSaveEnvelope | null {
+  const slot = readSaveE2eSlots().find(
     (candidate) => candidate.fixedSlotName === fixedSlotName,
   );
   if (!slot || slot.text === null) return null;
-  return JSON.parse(slot.text) as Hpa392SaveEnvelope;
+  return JSON.parse(slot.text) as SaveE2eSaveEnvelope;
 }
 
-export async function waitForHpa392Envelope(
-  fixedSlotName: Hpa392FixedSlotName,
-  predicate: (envelope: Hpa392SaveEnvelope) => boolean = () => true,
+export async function waitForSaveE2eEnvelope(
+  fixedSlotName: SaveE2eFixedSlotName,
+  predicate: (envelope: SaveE2eSaveEnvelope) => boolean = () => true,
   timeoutMs = 30000,
-): Promise<Hpa392SaveEnvelope> {
+): Promise<SaveE2eSaveEnvelope> {
   const deadline = Date.now() + timeoutMs;
-  let last: Hpa392SaveEnvelope | null = null;
+  let last: SaveE2eSaveEnvelope | null = null;
   while (Date.now() < deadline) {
     try {
-      last = readHpa392Envelope(fixedSlotName);
+      last = readSaveE2eEnvelope(fixedSlotName);
       if (last && predicate(last)) return last;
     } catch {
       // Atomic replacement can expose no parseable envelope for a short
       // interval only on a failing implementation; keep polling so the final
       // error reports the owned slot rather than a transient JSON exception.
     }
-    await browser.pause(100);
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(
-    `HPA-392 envelope ${fixedSlotName} did not reach the expected state; last=${JSON.stringify(last)}`,
+    `save e2e envelope ${fixedSlotName} did not reach the expected state; last=${JSON.stringify(last)}`,
   );
 }
 
-export function readHpa392OwnershipSnapshot(): Hpa392OwnershipSnapshot {
+export function readSaveE2eOwnershipSnapshot(): SaveE2eOwnershipSnapshot {
   return {
-    slots: readHpa392Slots().map((slot) => {
+    slots: readSaveE2eSlots().map((slot) => {
       if (slot.text === null) {
         return {
           fixedSlotName: slot.fixedSlotName,
@@ -249,9 +249,9 @@ export function readHpa392OwnershipSnapshot(): Hpa392OwnershipSnapshot {
           sidecarSha256: null,
         };
       }
-      let envelope: Hpa392SaveEnvelope;
+      let envelope: SaveE2eSaveEnvelope;
       try {
-        envelope = JSON.parse(slot.text) as Hpa392SaveEnvelope;
+        envelope = JSON.parse(slot.text) as SaveE2eSaveEnvelope;
       } catch {
         return {
           fixedSlotName: slot.fixedSlotName,
@@ -265,7 +265,7 @@ export function readHpa392OwnershipSnapshot(): Hpa392OwnershipSnapshot {
       let sidecarPath: string | null = null;
       let sidecarSha256: string | null = null;
       if (envelope.thumbnail.type === "available") {
-        sidecarPath = resolveHpa392FixedSlotSidecar(slot.fixedSlotName);
+        sidecarPath = resolveSaveE2eFixedSlotSidecar(slot.fixedSlotName);
         if (existsSync(sidecarPath)) {
           sidecarSha256 = `sha256:${createHash("sha256")
             .update(readFileSync(sidecarPath))
@@ -284,45 +284,45 @@ export function readHpa392OwnershipSnapshot(): Hpa392OwnershipSnapshot {
   };
 }
 
-export function corruptHpa392FixedSlot(
-  fixedSlotName: Hpa392FixedSlotName,
+export function corruptSaveE2eFixedSlot(
+  fixedSlotName: SaveE2eFixedSlotName,
 ): void {
-  corruptSlot(hpa392AppDataDir(), fixedSlotName);
+  corruptSlot(saveE2eAppDataDir(), fixedSlotName);
 }
 
-export function removeHpa392FixedSlotSidecar(
-  fixedSlotName: Hpa392FixedSlotName,
+export function removeSaveE2eFixedSlotSidecar(
+  fixedSlotName: SaveE2eFixedSlotName,
 ): void {
-  removeObservedSidecar(hpa392AppDataDir(), fixedSlotName);
+  removeObservedSidecar(saveE2eAppDataDir(), fixedSlotName);
 }
 
-export function resolveHpa392FixedSlotSidecar(
-  fixedSlotName: Hpa392FixedSlotName,
+export function resolveSaveE2eFixedSlotSidecar(
+  fixedSlotName: SaveE2eFixedSlotName,
 ): string {
-  return resolveObservedSidecar(hpa392AppDataDir(), fixedSlotName);
+  return resolveObservedSidecar(saveE2eAppDataDir(), fixedSlotName);
 }
 
-export function corruptHpa392FixedSlotSidecar(
-  fixedSlotName: Hpa392FixedSlotName,
+export function corruptSaveE2eFixedSlotSidecar(
+  fixedSlotName: SaveE2eFixedSlotName,
 ): void {
-  corruptObservedSidecar(hpa392AppDataDir(), fixedSlotName);
+  corruptObservedSidecar(saveE2eAppDataDir(), fixedSlotName);
 }
 
-export function assertHpa392SidecarOwnership(): void {
-  assertNoUnknownSidecars(hpa392AppDataDir());
+export function assertSaveE2eSidecarOwnership(): void {
+  assertNoUnknownSidecars(saveE2eAppDataDir());
 }
 
-export function writeHpa392Expectation(
+export function writeSaveE2eExpectation(
   name: "expected-resume-checkpoint" | "management-state" | "exit-state",
   value: unknown,
 ): void {
-  writeControlExpectation(hpa392AppDataDir(), name, value);
+  writeControlExpectation(saveE2eAppDataDir(), name, value);
 }
 
-export function readHpa392Expectation<T>(
+export function readSaveE2eExpectation<T>(
   name: "expected-resume-checkpoint" | "management-state" | "exit-state",
 ): T {
-  return readControlExpectation(hpa392AppDataDir(), name) as T;
+  return readControlExpectation(saveE2eAppDataDir(), name) as T;
 }
 
 export async function setNextPersistenceFault(

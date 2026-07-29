@@ -158,31 +158,48 @@ pub(crate) trait CoordinatorTaskScheduler: Send + Sync {
 
 struct PortableCoordinatorTaskScheduler {
     runtime: Option<tokio::runtime::Handle>,
+    fallback: Mutex<Option<tokio::runtime::Handle>>,
 }
 
 impl PortableCoordinatorTaskScheduler {
     fn capture() -> Self {
         Self {
             runtime: tokio::runtime::Handle::try_current().ok(),
+            fallback: Mutex::new(None),
         }
     }
 }
 
 impl CoordinatorTaskScheduler for PortableCoordinatorTaskScheduler {
     fn spawn(&self, task: CoordinatorTask) -> Result<(), GameError> {
-        if let Some(runtime) = &self.runtime {
-            runtime.spawn(task);
+        if let Some(handle) = tokio::runtime::Handle::try_current()
+            .ok()
+            .or_else(|| self.runtime.clone())
+        {
+            handle.spawn(task);
             return Ok(());
         }
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|_| GameError::save_write_failed())?;
-        std::thread::Builder::new()
-            .name("lyra-save-coordinator".into())
-            .spawn(move || runtime.block_on(task))
-            .map(|_| ())
-            .map_err(|_| GameError::save_write_failed())
+        let handle = {
+            let mut guard = self
+                .fallback
+                .lock()
+                .map_err(|_| GameError::save_write_failed())?;
+            if guard.is_none() {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|_| GameError::save_write_failed())?;
+                let handle = runtime.handle().clone();
+                std::thread::Builder::new()
+                    .name("lyra-save-coordinator".into())
+                    .spawn(move || runtime.block_on(std::future::pending::<()>()))
+                    .map_err(|_| GameError::save_write_failed())?;
+                *guard = Some(handle);
+            }
+            guard.as_ref().unwrap().clone()
+        };
+        handle.spawn(task);
+        Ok(())
     }
 }
 

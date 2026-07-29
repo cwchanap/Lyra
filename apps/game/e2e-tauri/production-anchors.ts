@@ -45,7 +45,7 @@ export const anchors = {
     // InvestigationSceneSurface: aria-label={`詢問：${character.name}`}
     label: "詢問：早坂茜",
   },
-  hpa392: {
+  unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",
     compositeSceneId: "investigation_scene_7",
     compositeSublocation: "後場門口",
@@ -60,10 +60,10 @@ export const anchors = {
   topicPopoverName: "早坂茜詢問項目",
   captureProof: {
     root: "[data-save-thumbnail-root]",
-    probe: "[data-hpa-392-capture-proof]",
-    refresh: "[data-hpa-392-capture-proof-refresh]",
-    forceUnavailable: "[data-hpa-392-capture-proof-force-unavailable]",
-    thumbnail: "[data-hpa-392-capture-proof-thumbnail]",
+    probe: "[data-capture-proof]",
+    refresh: "[data-capture-proof-refresh]",
+    forceUnavailable: "[data-capture-proof-force-unavailable]",
+    thumbnail: "[data-capture-proof-thumbnail]",
     sceneId: "scene_2",
     sceneEntryDialogue: "三宅蒼太的母親",
     preSwapDialogue: "我胃不好",

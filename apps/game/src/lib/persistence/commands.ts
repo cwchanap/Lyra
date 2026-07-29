@@ -47,15 +47,36 @@ export function asGameError(error: unknown): GameError {
   };
 }
 
-async function developmentJson<T>(
-  command: string,
-  args?: Record<string, unknown>,
-): Promise<T> {
+function assertDevelopmentFallback(): void {
   if (!import.meta.env.DEV) {
     throw new Error(
       "Tauri runtime unavailable; HTTP fallback is disabled in production builds.",
     );
   }
+}
+
+function throwHttpError(
+  command: string,
+  response: Response,
+  text: string,
+): never {
+  try {
+    throw JSON.parse(text);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new Error(text || `${command} failed (${response.status})`, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+}
+
+async function developmentJson<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  assertDevelopmentFallback();
   const response = await fetch(`${developmentHttpBase}/${command}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -63,16 +84,7 @@ async function developmentJson<T>(
   });
   const text = await response.text();
   if (!response.ok) {
-    try {
-      throw JSON.parse(text);
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        throw new Error(text || `${command} failed (${response.status})`, {
-          cause: error,
-        });
-      }
-      throw error;
-    }
+    throwHttpError(command, response, text);
   }
   return JSON.parse(text) as T;
 }
@@ -132,11 +144,7 @@ export async function submitSaveThumbnail(
         { headers: { [thumbnailTicketHeader]: ticket } },
       );
     }
-    if (!import.meta.env.DEV) {
-      throw new Error(
-        "Tauri runtime unavailable; HTTP fallback is disabled in production builds.",
-      );
-    }
+    assertDevelopmentFallback();
     const response = await fetch(
       `${developmentHttpBase}/submit_save_thumbnail`,
       {
@@ -147,17 +155,7 @@ export async function submitSaveThumbnail(
     );
     const body = await response.text();
     if (!response.ok) {
-      try {
-        throw JSON.parse(body);
-      } catch (error) {
-        if (error instanceof SyntaxError) {
-          throw new Error(
-            body || `submit_save_thumbnail failed (${response.status})`,
-            { cause: error },
-          );
-        }
-        throw error;
-      }
+      throwHttpError("submit_save_thumbnail", response, body);
     }
     return JSON.parse(body) as ThumbnailActivityView;
   } catch (error) {
@@ -191,11 +189,7 @@ async function readDevelopmentThumbnail(
   reference: SaveSlotRef,
   observedSaveId: string,
 ): Promise<ArrayBuffer> {
-  if (!import.meta.env.DEV) {
-    throw new Error(
-      "Tauri runtime unavailable; HTTP fallback is disabled in production builds.",
-    );
-  }
+  assertDevelopmentFallback();
   const response = await fetch(`${developmentHttpBase}/read_save_thumbnail`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -203,17 +197,7 @@ async function readDevelopmentThumbnail(
   });
   if (!response.ok) {
     const text = await response.text();
-    try {
-      throw JSON.parse(text);
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        throw new Error(
-          text || `read_save_thumbnail failed (${response.status})`,
-          { cause: error },
-        );
-      }
-      throw error;
-    }
+    throwHttpError("read_save_thumbnail", response, text);
   }
   return response.arrayBuffer();
 }

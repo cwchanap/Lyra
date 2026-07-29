@@ -383,7 +383,7 @@ pub(crate) struct StatementInventoryEntryV1 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum RecordKind {
+pub enum RecordKind {
     Evidence,
     Statement,
 }

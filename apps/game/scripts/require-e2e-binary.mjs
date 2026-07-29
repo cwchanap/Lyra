@@ -21,7 +21,7 @@ const binaryPath = path.resolve(
 if (!existsSync(binaryPath)) {
   console.error(
     `[e2e] Debug e2e binary not found at ${binaryPath}.\n` +
-      `       Build it first with \`bun run test:e2e\` (or \`bun run test:e2e:build\`).`,
+      `       Build it first with \`bun run test:e2e\` (or \`bun run test:e2e:all\`).`,
   );
   process.exit(1);
 }

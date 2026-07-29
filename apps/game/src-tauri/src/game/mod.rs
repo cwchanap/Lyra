@@ -40,6 +40,7 @@ use schema::{
     DialogueItem, InterrogationPhaseJson, InventoryTarget, LockStatus, SceneJson, SceneType,
 };
 use state::{ChapterManifest, Inventory};
+use std::cell::RefCell;
 use std::path::PathBuf;
 use story::{StoryCatalog, StoryState, StoryStateView};
 use view::{
@@ -65,6 +66,7 @@ pub struct GameEngine {
     history: dialogue::DialogueHistory,
     durable_revision: u64,
     pending_acquisition_events: Vec<save::schema::AcquisitionEventStateV1>,
+    cached_pending_acquisition_scene: RefCell<Option<(String, String, SceneJson)>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -237,6 +239,7 @@ impl GameEngine {
             history: dialogue::DialogueHistory::default(),
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
+            cached_pending_acquisition_scene: RefCell::new(None),
         };
         engine.prime_initial_queue()?;
         engine.record_current_dialogue_history();
@@ -313,6 +316,25 @@ impl GameEngine {
             .ok_or_else(GameError::missing_acquisition_definition)
     }
 
+    fn cached_packaged_acquisition_scene(
+        &self,
+        chapter_id: &str,
+        scene_id: &str,
+    ) -> Result<SceneJson, GameError> {
+        {
+            let cache = self.cached_pending_acquisition_scene.borrow();
+            if let Some((cached_chapter, cached_scene, scene)) = cache.as_ref() {
+                if cached_chapter == chapter_id && cached_scene == scene_id {
+                    return Ok(scene.clone());
+                }
+            }
+        }
+        let scene = self.packaged_acquisition_scene(chapter_id, scene_id)?;
+        *self.cached_pending_acquisition_scene.borrow_mut() =
+            Some((chapter_id.to_string(), scene_id.to_string(), scene.clone()));
+        Ok(scene)
+    }
+
     pub(in crate::game) fn pending_acquisition_view(
         &self,
     ) -> Result<Option<PendingAcquisitionView>, GameError> {
@@ -332,7 +354,7 @@ impl GameEngine {
                     .iter()
                     .find(|record| record.id == event.record_id)
                     .ok_or_else(GameError::unknown_acquisition_event)?;
-                let scene = self.packaged_acquisition_scene(
+                let scene = self.cached_packaged_acquisition_scene(
                     &record.collected_in_chapter_id,
                     &record.collected_in_scene_id,
                 )?;
@@ -360,7 +382,7 @@ impl GameEngine {
                     })?;
                 PendingAcquisitionView {
                     id: event.id.clone(),
-                    record_kind: "evidence".into(),
+                    record_kind: event.record_kind,
                     record_id: definition.id.clone(),
                     title: definition.name.clone(),
                     description: definition.description.clone(),
@@ -377,7 +399,7 @@ impl GameEngine {
                     .iter()
                     .find(|record| record.id == event.record_id)
                     .ok_or_else(GameError::unknown_acquisition_event)?;
-                let scene = self.packaged_acquisition_scene(
+                let scene = self.cached_packaged_acquisition_scene(
                     &record.acquired_in_chapter_id,
                     &record.acquired_in_scene_id,
                 )?;
@@ -405,7 +427,7 @@ impl GameEngine {
                     })?;
                 PendingAcquisitionView {
                     id: event.id.clone(),
-                    record_kind: "statement".into(),
+                    record_kind: event.record_kind,
                     record_id: definition.id.clone(),
                     title: definition.speaker.clone(),
                     description: definition.content.clone(),
@@ -3225,6 +3247,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             history: dialogue::DialogueHistory::default(),
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
+            cached_pending_acquisition_scene: RefCell::new(None),
         };
 
         engine.prime_initial_queue().unwrap();

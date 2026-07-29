@@ -101,7 +101,9 @@ describe("SaveCard", () => {
 
     expect(screen.getByText("自動存檔 3")).toBeInTheDocument();
     expect(screen.getByText("空白存檔")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "載入" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "載入自動存檔 3" }),
+    ).toBeDisabled();
     expect(readThumbnail).not.toHaveBeenCalled();
   });
 
@@ -171,14 +173,18 @@ describe("SaveCard", () => {
 
     expect(screen.getByText("舊版存檔")).toBeInTheDocument();
     expect(screen.getByText("這個存檔版本無法載入。")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "載入" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "載入手動存檔 2" }),
+    ).toBeDisabled();
 
     await fireEvent.click(
       screen.getByRole("button", { name: "選擇手動存檔 2" }),
     );
     expect(onSelect).toHaveBeenCalledWith(slot, expect.any(HTMLElement));
 
-    await fireEvent.click(screen.getByRole("button", { name: "刪除" }));
+    await fireEvent.click(
+      screen.getByRole("button", { name: "刪除手動存檔 2" }),
+    );
     expect(onDelete).toHaveBeenCalledWith(slot, expect.any(HTMLElement));
   });
 

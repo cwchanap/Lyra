@@ -1,7 +1,13 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   buildSaveContentManifest,
   type BuildSaveContentManifestInput,
@@ -57,6 +63,12 @@ function manifest(input: BuildSaveContentManifestInput) {
 }
 
 describe("buildSaveContentManifest", () => {
+  const tempDirs: string[] = [];
+
+  afterAll(() => {
+    for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  });
+
   it("has the exact minimal manifest shape", () => {
     expect(
       manifest({
@@ -337,6 +349,7 @@ describe("buildSaveContentManifest", () => {
       "packages/scripts/__fixtures__/save_content_revision_golden",
     );
     const outputRoot = mkdtempSync(join(tmpdir(), "lyra-content-revision-"));
+    tempDirs.push(outputRoot);
     const result = compile({
       sourceRoot: join(fixtureRoot, "stories_plan"),
       assetConfigRoot: join(fixtureRoot, "assets/config"),
@@ -377,12 +390,14 @@ describe("buildSaveContentManifest", () => {
     expect(investigation.statementManifest[0]!.onReexamine).toEqual(fallback);
 
     const physicalRoot = mkdtempSync(join(tmpdir(), "lyra-physical-assets-"));
+    tempDirs.push(physicalRoot);
     const physicalFile = join(physicalRoot, "static/assets/audio/bgm/rain.ogg");
     mkdirSync(resolve(physicalFile, ".."), { recursive: true });
     writeFileSync(physicalFile, "first physical bytes");
     const physicalOutputOne = mkdtempSync(
       join(tmpdir(), "lyra-content-revision-"),
     );
+    tempDirs.push(physicalOutputOne);
     const firstPhysical = compile({
       sourceRoot: join(fixtureRoot, "stories_plan"),
       assetConfigRoot: join(fixtureRoot, "assets/config"),
@@ -395,6 +410,7 @@ describe("buildSaveContentManifest", () => {
     const physicalOutputTwo = mkdtempSync(
       join(tmpdir(), "lyra-content-revision-"),
     );
+    tempDirs.push(physicalOutputTwo);
     const secondPhysical = compile({
       sourceRoot: join(fixtureRoot, "stories_plan"),
       assetConfigRoot: join(fixtureRoot, "assets/config"),

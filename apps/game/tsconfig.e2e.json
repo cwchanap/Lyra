@@ -5,9 +5,5 @@
     "checkJs": false,
     "noEmit": true
   },
-  "include": [
-    "e2e-tauri/**/*.ts",
-    "scripts/hpa-392-e2e-paths.mjs",
-    "wdio.conf.ts"
-  ]
+  "include": ["e2e-tauri/**/*.ts", "scripts/save-e2e-paths.mjs", "wdio.conf.ts"]
 }

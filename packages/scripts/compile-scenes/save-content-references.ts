@@ -271,18 +271,31 @@ export function validateSaveContentReferences(input: {
   );
   const configuredCounts = configuredSemanticIds(input.config);
   const errors: CompileError[] = [];
+  const seen = new Set<string>();
   for (const scene of input.scenes)
     for (const reference of sceneReferences(scene)) {
       const manifestCount = manifestCounts.get(reference.assetId) ?? 0;
-      if (manifestCount !== 1)
-        errors.push(error(reference, "asset manifest", manifestCount));
+      if (manifestCount !== 1) {
+        const key = `${reference.assetId}:asset manifest`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          errors.push(error(reference, "asset manifest", manifestCount));
+        }
+      }
       if (
         reference.assetId.startsWith("portrait.") ||
         reference.assetId.startsWith("audio.")
       ) {
         const configuredCount = configuredCounts.get(reference.assetId) ?? 0;
-        if (configuredCount !== 1)
-          errors.push(error(reference, "asset configuration", configuredCount));
+        if (configuredCount !== 1) {
+          const key = `${reference.assetId}:asset configuration`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            errors.push(
+              error(reference, "asset configuration", configuredCount),
+            );
+          }
+        }
       }
     }
   return errors;

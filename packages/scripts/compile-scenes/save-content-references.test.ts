@@ -189,6 +189,23 @@ describe("validateSaveContentReferences", () => {
     );
   });
 
+  it("reports a missing semantic portrait declaration at its source location", () => {
+    const cfg = config();
+    cfg.characters.byId.get("detective")!.expressions.delete("standard");
+    const errors = validateSaveContentReferences({
+      scenes: [scene()],
+      config: cfg,
+      manifest: manifest(),
+    });
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        code: "saveContentReferenceMissing",
+        sourceFile,
+        line: 4,
+      }),
+    );
+  });
+
   it("reports a semantic manifest ID declared more than once", () => {
     const errors = validateSaveContentReferences({
       scenes: [scene()],

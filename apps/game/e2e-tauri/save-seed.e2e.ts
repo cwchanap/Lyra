@@ -23,20 +23,20 @@ import {
   waitForPersistenceIdle,
 } from "./helpers";
 import {
-  readHpa392OwnershipSnapshot,
-  waitForHpa392Envelope,
-  writeHpa392Expectation,
+  readSaveE2eOwnershipSnapshot,
+  waitForSaveE2eEnvelope,
+  writeSaveE2eExpectation,
   type ExpectedResumeCheckpoint,
-  type Hpa392FixedSlotName,
+  type SaveE2eFixedSlotName,
   type SeedControl,
-} from "./hpa-392-fixtures";
+} from "./save-fixtures";
 import { anchors } from "./production-anchors";
 
 function newestAutosave(): {
-  fixedSlotName: Hpa392FixedSlotName;
+  fixedSlotName: SaveE2eFixedSlotName;
   saveId: string;
 } {
-  const newest = readHpa392OwnershipSnapshot()
+  const newest = readSaveE2eOwnershipSnapshot()
     .slots.filter(
       (slot) =>
         slot.fixedSlotName.startsWith("autosave-") && slot.envelope !== null,
@@ -53,16 +53,16 @@ function newestAutosave(): {
   };
 }
 
-describe("HPA-392 save seed", () => {
+describe("save seed", () => {
   it("seeds Unicode, composite, acquisition, investigation, and interrogation checkpoints", async function () {
     this.timeout(1_800_000);
     await resetE2eStorageWithStoryClearance();
     await browser.execute(() => {
       const diagnosticWindow = window as Window & {
-        __hpa392RuntimeErrors?: string[];
+        __saveE2eRuntimeErrors?: string[];
       };
       const errors: string[] = [];
-      diagnosticWindow.__hpa392RuntimeErrors = errors;
+      diagnosticWindow.__saveE2eRuntimeErrors = errors;
       window.addEventListener("error", (event) => {
         const stack =
           event.error instanceof Error ? (event.error.stack ?? "") : "";
@@ -87,10 +87,10 @@ describe("HPA-392 save seed", () => {
     const documentIdentity = await currentPackagedDocumentIdentity();
     await startFromMenu();
 
-    await jumpToProductionScene(anchors.hpa392.compositeSceneId);
+    await jumpToProductionScene(anchors.unicodeSave.compositeSceneId);
     await drainCurrentDialogue("explore");
     await waitForPersistenceIdle();
-    const hotspot = `button[aria-label="${anchors.hpa392.compositeHotspot}"]`;
+    const hotspot = `button[aria-label="${anchors.unicodeSave.compositeHotspot}"]`;
     try {
       await browser.waitUntil(async () => elementExists(hotspot), {
         timeout: 30000,
@@ -101,7 +101,7 @@ describe("HPA-392 save seed", () => {
         return {
           url: window.location.href,
           documentIdentity:
-            document.documentElement.dataset.hpa392DocumentIdentity ?? null,
+            document.documentElement.dataset.saveDocumentIdentity ?? null,
           titleVisible:
             document.querySelector('[aria-label="主選單"]') !== null,
           gameplayRootVisible:
@@ -111,9 +111,9 @@ describe("HPA-392 save seed", () => {
           runtimeErrors:
             (
               window as Window & {
-                __hpa392RuntimeErrors?: string[];
+                __saveE2eRuntimeErrors?: string[];
               }
-            ).__hpa392RuntimeErrors ?? [],
+            ).__saveE2eRuntimeErrors ?? [],
           bodyText: (document.body.textContent ?? "").trim(),
           buttons: Array.from(
             document.querySelectorAll<HTMLButtonElement>("button"),
@@ -151,7 +151,7 @@ describe("HPA-392 save seed", () => {
     expect(compositeState.mode.queueToken.cursor).toBeGreaterThan(0);
 
     await saveManualSlot(2, "複合佇列復原點");
-    const compositeEnvelope = await waitForHpa392Envelope(
+    const compositeEnvelope = await waitForSaveE2eEnvelope(
       "manual-2",
       (envelope) =>
         envelope.thumbnail.type === "available" &&
@@ -216,7 +216,7 @@ describe("HPA-392 save seed", () => {
     expect(secondAcknowledgementAutosave.saveId).not.toBe(
       firstAcknowledgementAutosave.saveId,
     );
-    const acknowledgementEnvelope = await waitForHpa392Envelope(
+    const acknowledgementEnvelope = await waitForSaveE2eEnvelope(
       secondAcknowledgementAutosave.fixedSlotName,
       (envelope) =>
         envelope.saveId === secondAcknowledgementAutosave.saveId &&
@@ -228,10 +228,10 @@ describe("HPA-392 save seed", () => {
       );
     }
 
-    await jumpToProductionScene(anchors.hpa392.interrogationSceneId);
+    await jumpToProductionScene(anchors.unicodeSave.interrogationSceneId);
     await drainCurrentDialogue("interrogation");
     await dismissAllPendingAcquisitions({ forceCaptureUnavailable: true });
-    await clickButton(anchors.hpa392.interrogationQuestion);
+    await clickButton(anchors.unicodeSave.interrogationQuestion);
     const playing = await waitForPackagedGameState(
       (state) =>
         state.mode.type === "dialogue" && state.scene.kind === "interrogation",
@@ -244,9 +244,9 @@ describe("HPA-392 save seed", () => {
         return Array.from(document.querySelectorAll("button")).some((button) =>
           (button.textContent ?? "").includes(label),
         );
-      }, anchors.hpa392.challenge);
+      }, anchors.unicodeSave.challenge);
     }, 80);
-    await clickButton(anchors.hpa392.challenge);
+    await clickButton(anchors.unicodeSave.challenge);
     await advanceDialogueUntil(async () => {
       try {
         const state = await getPackagedGameState();
@@ -272,10 +272,10 @@ describe("HPA-392 save seed", () => {
       "interrogation did not restore to Presenting tray state",
     );
     await saveManualSlot(3, "訊問提出證據狀態");
-    const interrogationEnvelope = await waitForHpa392Envelope(
+    const interrogationEnvelope = await waitForSaveE2eEnvelope(
       "manual-3",
       (envelope) =>
-        envelope.summary.sceneId === anchors.hpa392.interrogationSceneId &&
+        envelope.summary.sceneId === anchors.unicodeSave.interrogationSceneId &&
         envelope.thumbnail.type === "available",
     );
     expect(interrogationEnvelope.snapshot.scene.type).toBe("interrogation");
@@ -309,11 +309,11 @@ describe("HPA-392 save seed", () => {
     if (stable.mode.type !== "dialogue") {
       throw new Error("stable checkpoint is not dialogue");
     }
-    await saveManualSlot(1, anchors.hpa392.unicodeName);
-    const unicodeEnvelope = await waitForHpa392Envelope(
+    await saveManualSlot(1, anchors.unicodeSave.unicodeName);
+    const unicodeEnvelope = await waitForSaveE2eEnvelope(
       "manual-1",
       (envelope) =>
-        envelope.displayName === anchors.hpa392.unicodeName &&
+        envelope.displayName === anchors.unicodeSave.unicodeName &&
         envelope.thumbnail.type === "available",
     );
     const checkpoint: ExpectedResumeCheckpoint = {
@@ -325,11 +325,11 @@ describe("HPA-392 save seed", () => {
       cursor: stable.mode.queueToken.cursor,
       currentDialogueFingerprint: dialogueFingerprint(stable),
     };
-    writeHpa392Expectation("expected-resume-checkpoint", {
+    writeSaveE2eExpectation("expected-resume-checkpoint", {
       ...checkpoint,
       documentIdentity,
     });
-    writeHpa392Expectation("management-state", {
+    writeSaveE2eExpectation("management-state", {
       documentIdentity,
       checkpoint,
       composite: {

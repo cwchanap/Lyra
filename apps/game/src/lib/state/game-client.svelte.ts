@@ -34,6 +34,33 @@ const isTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 const DEV_HTTP_BASE = "http://127.0.0.1:1421";
 
+/**
+ * Gameplay commands whose backend response is wrapped in
+ * {@link GameplayCommandResultView} (state + thumbnail capture request).
+ * The test harness uses this to simulate the backend wrapping for raw state
+ * responses, keeping the set in sync with the client's command dispatch.
+ */
+// eslint-disable-next-line svelte/prefer-svelte-reactivity -- constant lookup table, not reactive state
+export const MUTATING_GAMEPLAY_COMMANDS: ReadonlySet<string> = new Set<
+  GameplayCommandName | "jump_to_scene"
+>([
+  "start_game",
+  "reset_game",
+  "jump_to_scene",
+  "advance_dialogue",
+  "inspect_hotspot",
+  "interview_topic",
+  "enter_sublocation",
+  "reexamine_evidence",
+  "reexamine_statement",
+  "ask_interrogation_question",
+  "challenge_interrogation_line",
+  "present_interrogation_evidence",
+  "withdraw_interrogation",
+  "resume_interrogation_testimony",
+  "complete_interrogation_phase",
+]);
+
 async function httpInvoke<T>(
   command: string,
   args?: Record<string, unknown>,
@@ -174,10 +201,17 @@ async function applyGameplayCommandResult(
   gameState.value = result.state;
   const committedIdentity = gameState.value;
   onApplied?.(result.state);
-  await finishThumbnailCapture(
+  await tick();
+  // Thumbnail capture/submission is detached so the inFlight guard can be
+  // released after the committed state and frame synchronization complete.
+  // The committedIdentity check inside finishThumbnailCapture prevents stale
+  // captures from affecting later state.
+  void finishThumbnailCapture(
     { ...result, thumbnailCapture: request },
     committedIdentity,
-  );
+  ).catch((error) => {
+    console.warn("[Persistence] Detached thumbnail capture failed", error);
+  });
   return result.state;
 }
 

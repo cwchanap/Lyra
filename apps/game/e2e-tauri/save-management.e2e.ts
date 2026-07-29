@@ -1,5 +1,6 @@
 import {
   advanceDialogueOnce,
+  assertSaveE2ePhase,
   clickButton,
   clickDialogButton,
   clickPersistenceBrowserButton,
@@ -25,18 +26,18 @@ import {
   waitForShell,
 } from "./helpers";
 import {
-  HPA392_PHASE_NAMES,
-  assertHpa392SidecarOwnership,
-  readHpa392Envelope,
-  readHpa392Expectation,
-  readHpa392OwnershipSnapshot,
-  readHpa392Slots,
-  resolveHpa392FixedSlotSidecar,
-  waitForHpa392Envelope,
-  writeHpa392Expectation,
-  type Hpa392FixedSlotName,
-  type Hpa392OwnershipSnapshot,
-} from "./hpa-392-fixtures";
+  SAVE_E2E_PHASE_NAMES,
+  assertSaveE2eSidecarOwnership,
+  readSaveE2eEnvelope,
+  readSaveE2eExpectation,
+  readSaveE2eOwnershipSnapshot,
+  readSaveE2eSlots,
+  resolveSaveE2eFixedSlotSidecar,
+  waitForSaveE2eEnvelope,
+  writeSaveE2eExpectation,
+  type SaveE2eFixedSlotName,
+  type SaveE2eOwnershipSnapshot,
+} from "./save-fixtures";
 import { anchors } from "./production-anchors";
 import { existsSync, readdirSync } from "node:fs";
 import { basename, dirname } from "node:path";
@@ -48,33 +49,33 @@ import type {
 } from "$lib/persistence/types";
 
 const MANAGEMENT_PHASES = [
-  HPA392_PHASE_NAMES.managementSeed,
-  HPA392_PHASE_NAMES.managementCorruptNewest,
-  HPA392_PHASE_NAMES.managementRecoverOlder,
-  HPA392_PHASE_NAMES.managementMissingThumbnail,
-  HPA392_PHASE_NAMES.managementRestoreThumbnail,
-  HPA392_PHASE_NAMES.managementCorruptThumbnail,
-  HPA392_PHASE_NAMES.managementDelete,
+  SAVE_E2E_PHASE_NAMES.managementSeed,
+  SAVE_E2E_PHASE_NAMES.managementCorruptNewest,
+  SAVE_E2E_PHASE_NAMES.managementRecoverOlder,
+  SAVE_E2E_PHASE_NAMES.managementMissingThumbnail,
+  SAVE_E2E_PHASE_NAMES.managementRestoreThumbnail,
+  SAVE_E2E_PHASE_NAMES.managementCorruptThumbnail,
+  SAVE_E2E_PHASE_NAMES.managementDelete,
 ] as const;
 
 type ManagementControl = {
   seedDocumentIdentity?: string;
-  rotation?: Hpa392OwnershipSnapshot;
+  rotation?: SaveE2eOwnershipSnapshot;
   rotationSaveIds?: string[];
-  recoverySlot?: Hpa392FixedSlotName;
+  recoverySlot?: SaveE2eFixedSlotName;
   manualOneSaveId?: string;
   manualOneSidecar?: string;
   [key: string]: unknown;
 };
 
-function autosaves(snapshot = readHpa392OwnershipSnapshot()) {
+function autosaves(snapshot = readSaveE2eOwnershipSnapshot()) {
   return snapshot.slots.filter(
     (slot) =>
       slot.fixedSlotName.startsWith("autosave-") && slot.envelope !== null,
   );
 }
 
-function newestAutosave(snapshot = readHpa392OwnershipSnapshot()) {
+function newestAutosave(snapshot = readSaveE2eOwnershipSnapshot()) {
   return autosaves(snapshot).toSorted(
     (left, right) =>
       Date.parse(right.envelope!.savedAt) - Date.parse(left.envelope!.savedAt),
@@ -83,7 +84,7 @@ function newestAutosave(snapshot = readHpa392OwnershipSnapshot()) {
 
 async function seedRotationAndOverwrite(): Promise<void> {
   const inherited =
-    readHpa392Expectation<Record<string, unknown>>("management-state");
+    readSaveE2eExpectation<Record<string, unknown>>("management-state");
   await waitForShell();
   await startFromMenu();
   const documentIdentity = await currentPackagedDocumentIdentity();
@@ -107,7 +108,7 @@ async function seedRotationAndOverwrite(): Promise<void> {
       break;
     }
   }
-  const rotation = readHpa392OwnershipSnapshot();
+  const rotation = readSaveE2eOwnershipSnapshot();
   const retained = autosaves(rotation);
   expect(retained).toHaveLength(5);
   expect(observedRecoveryPoints.size).toBeGreaterThanOrEqual(6);
@@ -135,7 +136,7 @@ async function seedRotationAndOverwrite(): Promise<void> {
       expect(slot.sidecarSha256).toBe(slot.envelope!.thumbnail.sha256);
     }
   }
-  assertHpa392SidecarOwnership();
+  assertSaveE2eSidecarOwnership();
 
   await returnToTitle();
   await openTitleLoadBrowser();
@@ -148,8 +149,8 @@ async function seedRotationAndOverwrite(): Promise<void> {
   await clickPersistenceBrowserButton("返回");
 
   await loadTitleSlot("manual", 1);
-  const oldManualOne = readHpa392Envelope("manual-1");
-  const untouchedManualTwo = readHpa392Envelope("manual-2");
+  const oldManualOne = readSaveE2eEnvelope("manual-1");
+  const untouchedManualTwo = readSaveE2eEnvelope("manual-2");
   if (!oldManualOne || !untouchedManualTwo) {
     throw new Error("manual overwrite seed slots are missing");
   }
@@ -177,40 +178,43 @@ async function seedRotationAndOverwrite(): Promise<void> {
   await clickButton(anchors.saveGame);
   await browser.waitUntil(
     async () => elementExists('[aria-label="存檔瀏覽器"]'),
-    { timeout: 30000 },
+    {
+      timeout: 30000,
+      timeoutMsg: "save browser (存檔瀏覽器) did not open for manual overwrite",
+    },
   );
   await clickButton("選擇手動存檔 1");
   await waitForDialog(anchors.nameSave);
   const defaultName = await browser.execute(
     () => document.querySelector<HTMLInputElement>("#manual-save-name")?.value,
   );
-  expect(defaultName).toBe(anchors.hpa392.unicodeName);
-  expect(readHpa392Envelope("manual-1")?.saveId).toBe(oldManualOne.saveId);
+  expect(defaultName).toBe(anchors.unicodeSave.unicodeName);
+  expect(readSaveE2eEnvelope("manual-1")?.saveId).toBe(oldManualOne.saveId);
   await clickDialogButton(anchors.nameSave, anchors.continueName);
   await waitForDialog("覆寫手動存檔 1");
-  expect(readHpa392Envelope("manual-1")?.saveId).toBe(oldManualOne.saveId);
+  expect(readSaveE2eEnvelope("manual-1")?.saveId).toBe(oldManualOne.saveId);
   await clickDialogButton("覆寫手動存檔 1", anchors.confirmOverwrite);
-  const overwritten = await waitForHpa392Envelope(
+  const overwritten = await waitForSaveE2eEnvelope(
     "manual-1",
     (envelope) =>
       envelope.saveId !== oldManualOne.saveId &&
-      envelope.displayName === anchors.hpa392.unicodeName &&
+      envelope.displayName === anchors.unicodeSave.unicodeName &&
       envelope.thumbnail.type === "available",
   );
   expect(overwritten.savedAt).not.toBe(oldManualOne.savedAt);
-  expect(readHpa392Envelope("manual-1")?.saveId).toBe(overwritten.saveId);
-  expect(readHpa392Envelope("manual-2")?.saveId).toBe(
+  expect(readSaveE2eEnvelope("manual-1")?.saveId).toBe(overwritten.saveId);
+  expect(readSaveE2eEnvelope("manual-2")?.saveId).toBe(
     untouchedManualTwo.saveId,
   );
-  expect(existsSync(resolveHpa392FixedSlotSidecar("manual-1"))).toBe(true);
-  assertHpa392SidecarOwnership();
+  expect(existsSync(resolveSaveE2eFixedSlotSidecar("manual-1"))).toBe(true);
+  assertSaveE2eSidecarOwnership();
   await waitForPersistenceLayersClosed();
 
   const captureUnavailableControl = anchors.captureProof.forceUnavailable;
   expect(await elementExists(captureUnavailableControl)).toBe(true);
   await jsClick(captureUnavailableControl);
   await saveManualSlot(3, "預覽不可用但可載入", true);
-  const unavailable = await waitForHpa392Envelope(
+  const unavailable = await waitForSaveE2eEnvelope(
     "manual-3",
     (envelope) =>
       envelope.displayName === "預覽不可用但可載入" &&
@@ -232,14 +236,14 @@ async function seedRotationAndOverwrite(): Promise<void> {
         Date.parse(right.envelope!.savedAt) -
         Date.parse(left.envelope!.savedAt),
     )[0]!.fixedSlotName;
-  writeHpa392Expectation("management-state", {
+  writeSaveE2eExpectation("management-state", {
     ...inherited,
     seedDocumentIdentity: documentIdentity,
     rotation,
     rotationSaveIds: [...observedRecoveryPoints.keys()],
     recoverySlot,
     manualOneSaveId: overwritten.saveId,
-    manualOneSidecar: resolveHpa392FixedSlotSidecar("manual-1"),
+    manualOneSidecar: resolveSaveE2eFixedSlotSidecar("manual-1"),
   } satisfies ManagementControl);
 
   // Keep the expected concurrency rejection terminal: the coordinator
@@ -256,7 +260,7 @@ async function seedRotationAndOverwrite(): Promise<void> {
     "save_manual",
     {
       reference: { type: "manual", slot: 1 },
-      displayName: anchors.hpa392.unicodeName,
+      displayName: anchors.unicodeSave.unicodeName,
       expectation: staleExpectation,
       preparedThumbnailTicket: staleTicket.ticket,
     },
@@ -266,7 +270,7 @@ async function seedRotationAndOverwrite(): Promise<void> {
     throw new Error("stale manual overwrite unexpectedly succeeded");
   }
   expect(staleResult.error.code).toBe("staleManualOverwriteConfirmation");
-  expect(readHpa392Envelope("manual-1")?.saveId).toBe(overwritten.saveId);
+  expect(readSaveE2eEnvelope("manual-1")?.saveId).toBe(overwritten.saveId);
   const degraded = await invokePackagedCommand<PersistenceHealthView>(
     "get_persistence_status",
   );
@@ -280,12 +284,12 @@ async function seedRotationAndOverwrite(): Promise<void> {
 }
 
 async function proveCorruptNewest(): Promise<void> {
-  const control = readHpa392Expectation<ManagementControl>("management-state");
+  const control = readSaveE2eExpectation<ManagementControl>("management-state");
   await waitForShell();
   const identity = await currentPackagedDocumentIdentity();
   expect(identity).not.toBe(control.seedDocumentIdentity);
   expect(
-    readHpa392OwnershipSnapshot().slots.find(
+    readSaveE2eOwnershipSnapshot().slots.find(
       (slot) => slot.fixedSlotName === "autosave-1",
     )?.parseError,
   ).toBe(true);
@@ -295,7 +299,10 @@ async function proveCorruptNewest(): Promise<void> {
   await clickButton(anchors.loadGame);
   await browser.waitUntil(
     async () => elementExists('[aria-label="存檔瀏覽器"]'),
-    { timeout: 30000 },
+    {
+      timeout: 30000,
+      timeoutMsg: "save browser (存檔瀏覽器) did not open after corrupt newest",
+    },
   );
   const selectedInvalid = await browser.execute(() => {
     const card = document.querySelector(
@@ -308,12 +315,13 @@ async function proveCorruptNewest(): Promise<void> {
   });
   expect(selectedInvalid).toBe(true);
   expect(
-    readHpa392Slots().find((slot) => slot.fixedSlotName === "autosave-1")?.text,
+    readSaveE2eSlots().find((slot) => slot.fixedSlotName === "autosave-1")
+      ?.text,
   ).toBe('{"broken":');
 }
 
 async function recoverOlder(): Promise<void> {
-  const control = readHpa392Expectation<ManagementControl>("management-state");
+  const control = readSaveE2eExpectation<ManagementControl>("management-state");
   const recovery = control.recoverySlot;
   if (!recovery?.startsWith("autosave-")) {
     throw new Error("management recovery slot is missing");
@@ -323,7 +331,7 @@ async function recoverOlder(): Promise<void> {
   await loadTitleSlot("auto", slotNumber);
   expect((await getPackagedGameState()).scene.id.length).toBeGreaterThan(0);
   expect(
-    readHpa392OwnershipSnapshot().slots.find(
+    readSaveE2eOwnershipSnapshot().slots.find(
       (slot) => slot.fixedSlotName === "autosave-1",
     )?.parseError,
   ).toBe(true);
@@ -343,12 +351,12 @@ async function proveThumbnailFallback(
     "manual save with presentation-only thumbnail failure did not load",
   );
   expect(state.scene.id.length).toBeGreaterThan(0);
-  const envelope = readHpa392Envelope("manual-1");
+  const envelope = readSaveE2eEnvelope("manual-1");
   expect(envelope?.thumbnail.type).toBe("available");
   if (expectedPhase === "missing") {
-    expect(existsSync(resolveHpa392FixedSlotSidecar("manual-1"))).toBe(false);
+    expect(existsSync(resolveSaveE2eFixedSlotSidecar("manual-1"))).toBe(false);
   } else {
-    expect(existsSync(resolveHpa392FixedSlotSidecar("manual-1"))).toBe(true);
+    expect(existsSync(resolveSaveE2eFixedSlotSidecar("manual-1"))).toBe(true);
   }
   await returnToTitle();
 }
@@ -356,14 +364,14 @@ async function proveThumbnailFallback(
 async function restoreThumbnail(): Promise<void> {
   await waitForShell();
   await loadTitleSlot("manual", 1);
-  const oldId = readHpa392Envelope("manual-1")?.saveId;
-  await saveManualSlot(1, anchors.hpa392.unicodeName, true);
-  const restored = await waitForHpa392Envelope(
+  const oldId = readSaveE2eEnvelope("manual-1")?.saveId;
+  await saveManualSlot(1, anchors.unicodeSave.unicodeName, true);
+  const restored = await waitForSaveE2eEnvelope(
     "manual-1",
     (envelope) =>
       envelope.saveId !== oldId && envelope.thumbnail.type === "available",
   );
-  expect(existsSync(resolveHpa392FixedSlotSidecar("manual-1"))).toBe(true);
+  expect(existsSync(resolveSaveE2eFixedSlotSidecar("manual-1"))).toBe(true);
   expect(restored.thumbnail.type).toBe("available");
   await closePersistenceBrowserToGameplay();
   await returnToTitle();
@@ -371,7 +379,7 @@ async function restoreThumbnail(): Promise<void> {
 
 async function deleteOwnedManual(): Promise<void> {
   await waitForShell();
-  const before = readHpa392OwnershipSnapshot();
+  const before = readSaveE2eOwnershipSnapshot();
   const target = before.slots.find((slot) => slot.fixedSlotName === "manual-1");
   if (!target?.envelope || !target.sidecarPath) {
     throw new Error("delete target has no owned sidecar");
@@ -387,9 +395,9 @@ async function deleteOwnedManual(): Promise<void> {
     async () => (await saveCardText("manual", 1)).includes("空白存檔"),
     { timeout: 30000, timeoutMsg: "manual slot 1 did not become empty" },
   );
-  expect(readHpa392Envelope("manual-1")).toBeNull();
+  expect(readSaveE2eEnvelope("manual-1")).toBeNull();
   expect(existsSync(target.sidecarPath)).toBe(false);
-  const after = readHpa392OwnershipSnapshot();
+  const after = readSaveE2eOwnershipSnapshot();
   for (const prior of before.slots.filter(
     (slot) => slot.fixedSlotName !== "manual-1",
   )) {
@@ -406,23 +414,22 @@ async function deleteOwnedManual(): Promise<void> {
   );
 }
 
-describe("HPA-392 save management", () => {
+describe("save management", () => {
   it("proves the closed management phase", async () => {
-    const phase = process.env.LYRA_HPA392_PHASE;
-    expect(MANAGEMENT_PHASES).toContain(phase);
-    if (phase === HPA392_PHASE_NAMES.managementSeed) {
+    const phase = assertSaveE2ePhase(MANAGEMENT_PHASES);
+    if (phase === SAVE_E2E_PHASE_NAMES.managementSeed) {
       await seedRotationAndOverwrite();
-    } else if (phase === HPA392_PHASE_NAMES.managementCorruptNewest) {
+    } else if (phase === SAVE_E2E_PHASE_NAMES.managementCorruptNewest) {
       await proveCorruptNewest();
-    } else if (phase === HPA392_PHASE_NAMES.managementRecoverOlder) {
+    } else if (phase === SAVE_E2E_PHASE_NAMES.managementRecoverOlder) {
       await recoverOlder();
-    } else if (phase === HPA392_PHASE_NAMES.managementMissingThumbnail) {
+    } else if (phase === SAVE_E2E_PHASE_NAMES.managementMissingThumbnail) {
       await proveThumbnailFallback("missing");
-    } else if (phase === HPA392_PHASE_NAMES.managementRestoreThumbnail) {
+    } else if (phase === SAVE_E2E_PHASE_NAMES.managementRestoreThumbnail) {
       await restoreThumbnail();
-    } else if (phase === HPA392_PHASE_NAMES.managementCorruptThumbnail) {
+    } else if (phase === SAVE_E2E_PHASE_NAMES.managementCorruptThumbnail) {
       await proveThumbnailFallback("corrupt");
-    } else if (phase === HPA392_PHASE_NAMES.managementDelete) {
+    } else if (phase === SAVE_E2E_PHASE_NAMES.managementDelete) {
       await deleteOwnedManual();
     } else {
       throw new Error(`unexpected management phase ${String(phase)}`);

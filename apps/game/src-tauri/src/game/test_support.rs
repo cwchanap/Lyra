@@ -117,6 +117,7 @@ pub(crate) fn empty_engine_with_scene(
         history: dialogue::DialogueHistory::default(),
         durable_revision: 0,
         pending_acquisition_events: Vec::new(),
+        cached_pending_acquisition_scene: std::cell::RefCell::new(None),
     }
 }
 pub(super) fn token_from(view: &GameStateView) -> QueueToken {
@@ -205,16 +206,11 @@ pub(super) fn dialogue_history_fixture_resources(line_count: usize) -> PathBuf {
     d
 }
 
-pub(super) fn packaged_acquisition_fixture_resources() -> PathBuf {
+pub(super) fn packaged_acquisition_fixture_resources() -> (tempfile::TempDir, PathBuf) {
     use std::fs;
-    use std::sync::atomic::{AtomicU64, Ordering};
 
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let n = SEQ.fetch_add(1, Ordering::Relaxed);
-    let resources = std::env::temp_dir().join(format!(
-        "lyra-packaged-acquisition-test-{}-{n}",
-        std::process::id()
-    ));
+    let dir = tempfile::tempdir().unwrap();
+    let resources = dir.path().to_path_buf();
     let chapter_dir = resources.join("chapter_1");
     fs::create_dir_all(&chapter_dir).unwrap();
     write_empty_story_catalog_and_content_manifest(&resources);
@@ -297,19 +293,15 @@ pub(super) fn packaged_acquisition_fixture_resources() -> PathBuf {
         }"#,
     )
     .unwrap();
-    resources
+    (dir, resources)
 }
 
-pub(super) fn scene_jump_fixture_resources() -> PathBuf {
+fn write_scene_jump_fixture_into(d: &Path) {
     use std::fs;
-    use std::sync::atomic::{AtomicU64, Ordering};
 
-    static SEQ: AtomicU64 = AtomicU64::new(0);
-    let n = SEQ.fetch_add(1, Ordering::Relaxed);
-    let d = std::env::temp_dir().join(format!("lyra-scene-jump-test-{}-{}", std::process::id(), n));
     let chapter_1 = d.join("chapter_1");
     fs::create_dir_all(&chapter_1).unwrap();
-    write_empty_story_catalog_and_content_manifest(&d);
+    write_empty_story_catalog_and_content_manifest(d);
     fs::write(
         d.join("chapters.json"),
         r#"{
@@ -430,11 +422,22 @@ pub(super) fn scene_jump_fixture_resources() -> PathBuf {
     }"#,
     )
     .unwrap();
+}
+
+pub(super) fn scene_jump_fixture_resources() -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, Ordering::Relaxed);
+    let d = std::env::temp_dir().join(format!("lyra-scene-jump-test-{}-{}", std::process::id(), n));
+    write_scene_jump_fixture_into(&d);
     d
 }
 
-pub(crate) fn save_capture_fixture_resources() -> PathBuf {
-    let resources = scene_jump_fixture_resources();
+pub(crate) fn save_capture_fixture_resources() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    write_scene_jump_fixture_into(dir.path());
+    let resources = dir.path().to_path_buf();
     std::fs::write(
         resources.join("story_catalog.json"),
         r#"{
@@ -657,7 +660,7 @@ pub(crate) fn save_capture_fixture_resources() -> PathBuf {
 }"#,
     )
     .unwrap();
-    resources
+    (dir, resources)
 }
 
 pub(super) fn story_navigation_fixture_resources() -> PathBuf {
@@ -1114,6 +1117,7 @@ pub(super) fn empty_engine_with_interrogation_scene(
         history: dialogue::DialogueHistory::default(),
         durable_revision: 0,
         pending_acquisition_events: Vec::new(),
+        cached_pending_acquisition_scene: std::cell::RefCell::new(None),
     }
 }
 pub(super) fn completed_interrogation_engine_with_bad_next_scene(
@@ -1155,6 +1159,7 @@ pub(super) fn completed_interrogation_engine_with_bad_next_scene(
         history: dialogue::DialogueHistory::default(),
         durable_revision: 0,
         pending_acquisition_events: Vec::new(),
+        cached_pending_acquisition_scene: std::cell::RefCell::new(None),
     }
 }
 /// Builds a single required `Auto` inquiry phase with one required

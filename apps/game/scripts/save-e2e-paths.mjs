@@ -14,13 +14,13 @@ import {
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 
-export const HPA392_E2E_DIRECTORY_PREFIX = "lyra-hpa-392-";
-export const HPA392_ORDINARY_SPECS = Object.freeze([
+export const SAVE_E2E_E2E_DIRECTORY_PREFIX = "lyra-save-e2e-";
+export const SAVE_E2E_ORDINARY_SPECS = Object.freeze([
   "./e2e-tauri/app.e2e.ts",
   "./e2e-tauri/investigation-layout.e2e.ts",
   "./e2e-tauri/scene-navigation-gate.e2e.ts",
 ]);
-export const HPA392_PHASE_NAMES = Object.freeze({
+export const SAVE_E2E_PHASE_NAMES = Object.freeze({
   captureProof: "capture-proof",
   saveSeed: "save-seed",
   saveResume: "save-resume",
@@ -39,24 +39,24 @@ export const HPA392_PHASE_NAMES = Object.freeze({
   exitFinalVerification: "exit-final-verification",
 });
 
-const HPA392_CAPTURE_SPEC = "./e2e-tauri/hpa-392-capture-proof.e2e.ts";
-const HPA392_SEED_SPEC = "./e2e-tauri/hpa-392-save-seed.e2e.ts";
-const HPA392_RESUME_SPEC = "./e2e-tauri/hpa-392-save-resume.e2e.ts";
-const HPA392_MANAGEMENT_SPEC = "./e2e-tauri/hpa-392-save-management.e2e.ts";
-const HPA392_EXIT_SPEC = "./e2e-tauri/hpa-392-exit.e2e.ts";
-const HPA392_APPROVED_SPECS = new Set([
-  ...HPA392_ORDINARY_SPECS,
-  HPA392_CAPTURE_SPEC,
-  HPA392_SEED_SPEC,
-  HPA392_RESUME_SPEC,
-  HPA392_MANAGEMENT_SPEC,
-  HPA392_EXIT_SPEC,
+const SAVE_E2E_CAPTURE_SPEC = "./e2e-tauri/capture-proof.e2e.ts";
+const SAVE_E2E_SEED_SPEC = "./e2e-tauri/save-seed.e2e.ts";
+const SAVE_E2E_RESUME_SPEC = "./e2e-tauri/save-resume.e2e.ts";
+const SAVE_E2E_MANAGEMENT_SPEC = "./e2e-tauri/save-management.e2e.ts";
+const SAVE_E2E_EXIT_SPEC = "./e2e-tauri/save-exit.e2e.ts";
+const SAVE_E2E_APPROVED_SPECS = new Set([
+  ...SAVE_E2E_ORDINARY_SPECS,
+  SAVE_E2E_CAPTURE_SPEC,
+  SAVE_E2E_SEED_SPEC,
+  SAVE_E2E_RESUME_SPEC,
+  SAVE_E2E_MANAGEMENT_SPEC,
+  SAVE_E2E_EXIT_SPEC,
 ]);
-const HPA392_APPROVED_PHASES = new Set([
+const SAVE_E2E_APPROVED_PHASES = new Set([
   "ordinary",
-  ...Object.values(HPA392_PHASE_NAMES),
+  ...Object.values(SAVE_E2E_PHASE_NAMES),
 ]);
-const HPA392_APPROVED_GROUPS = new Set([
+const SAVE_E2E_APPROVED_GROUPS = new Set([
   "ordinary",
   "capture-proof",
   "seed",
@@ -64,25 +64,25 @@ const HPA392_APPROVED_GROUPS = new Set([
   "management",
   "exit",
 ]);
-const HPA392_FULL_PHASE_ORDER = Object.freeze([
-  HPA392_PHASE_NAMES.captureProof,
-  HPA392_PHASE_NAMES.saveSeed,
-  HPA392_PHASE_NAMES.saveResume,
-  HPA392_PHASE_NAMES.managementSeed,
-  HPA392_PHASE_NAMES.managementCorruptNewest,
-  HPA392_PHASE_NAMES.managementRecoverOlder,
-  HPA392_PHASE_NAMES.managementMissingThumbnail,
-  HPA392_PHASE_NAMES.managementRestoreThumbnail,
-  HPA392_PHASE_NAMES.managementCorruptThumbnail,
-  HPA392_PHASE_NAMES.managementDelete,
-  HPA392_PHASE_NAMES.exitCloseSeed,
-  HPA392_PHASE_NAMES.exitCloseResume,
-  HPA392_PHASE_NAMES.exitQuitSeed,
-  HPA392_PHASE_NAMES.exitQuitResume,
-  HPA392_PHASE_NAMES.exitFailureBypass,
-  HPA392_PHASE_NAMES.exitFinalVerification,
+const SAVE_E2E_FULL_PHASE_ORDER = Object.freeze([
+  SAVE_E2E_PHASE_NAMES.captureProof,
+  SAVE_E2E_PHASE_NAMES.saveSeed,
+  SAVE_E2E_PHASE_NAMES.saveResume,
+  SAVE_E2E_PHASE_NAMES.managementSeed,
+  SAVE_E2E_PHASE_NAMES.managementCorruptNewest,
+  SAVE_E2E_PHASE_NAMES.managementRecoverOlder,
+  SAVE_E2E_PHASE_NAMES.managementMissingThumbnail,
+  SAVE_E2E_PHASE_NAMES.managementRestoreThumbnail,
+  SAVE_E2E_PHASE_NAMES.managementCorruptThumbnail,
+  SAVE_E2E_PHASE_NAMES.managementDelete,
+  SAVE_E2E_PHASE_NAMES.exitCloseSeed,
+  SAVE_E2E_PHASE_NAMES.exitCloseResume,
+  SAVE_E2E_PHASE_NAMES.exitQuitSeed,
+  SAVE_E2E_PHASE_NAMES.exitQuitResume,
+  SAVE_E2E_PHASE_NAMES.exitFailureBypass,
+  SAVE_E2E_PHASE_NAMES.exitFinalVerification,
 ]);
-const HPA392_FIXED_SLOT_NAMES = Object.freeze([
+const SAVE_E2E_FIXED_SLOT_NAMES = Object.freeze([
   "autosave-1",
   "autosave-2",
   "autosave-3",
@@ -92,20 +92,20 @@ const HPA392_FIXED_SLOT_NAMES = Object.freeze([
   "manual-2",
   "manual-3",
 ]);
-const HPA392_FIXED_SLOT_NAME_SET = new Set(HPA392_FIXED_SLOT_NAMES);
-const HPA392_CONTROL_EXPECTATIONS = new Set([
+const SAVE_E2E_FIXED_SLOT_NAME_SET = new Set(SAVE_E2E_FIXED_SLOT_NAMES);
+const SAVE_E2E_CONTROL_EXPECTATIONS = new Set([
   "expected-resume-checkpoint",
   "management-state",
   "exit-state",
 ]);
-const HPA392_BACKEND_LOG_ENVIRONMENT = Object.freeze({
+const SAVE_E2E_BACKEND_LOG_ENVIRONMENT = Object.freeze({
   LYRA_E2E_CAPTURE_BACKEND_LOGS: "1",
 });
 const CANONICAL_UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function unsafePath() {
-  return new Error("Unsafe HPA-392 E2E app-data directory.");
+  return new Error("Unsafe save e2e app-data directory.");
 }
 
 function canonicalIfPresent(candidate) {
@@ -143,7 +143,7 @@ export function productionAppDataDir({
   );
 }
 
-export function assertSafeHpa392AppDataDir(
+export function assertSafeSaveE2eAppDataDir(
   candidate,
   {
     homeDir = homedir(),
@@ -155,7 +155,7 @@ export function assertSafeHpa392AppDataDir(
     typeof candidate !== "string" ||
     candidate.length === 0 ||
     !path.isAbsolute(candidate) ||
-    !path.basename(candidate).startsWith(HPA392_E2E_DIRECTORY_PREFIX)
+    !path.basename(candidate).startsWith(SAVE_E2E_E2E_DIRECTORY_PREFIX)
   ) {
     throw unsafePath();
   }
@@ -176,7 +176,7 @@ export function assertSafeHpa392AppDataDir(
     !metadata.isDirectory() ||
     canonical === canonicalTemp ||
     path.dirname(canonical) !== canonicalTemp ||
-    !path.basename(canonical).startsWith(HPA392_E2E_DIRECTORY_PREFIX) ||
+    !path.basename(canonical).startsWith(SAVE_E2E_E2E_DIRECTORY_PREFIX) ||
     canonical === canonicalIfPresent(homeDir) ||
     canonical === canonicalIfPresent(production)
   ) {
@@ -186,33 +186,30 @@ export function assertSafeHpa392AppDataDir(
   return canonical;
 }
 
-export function createHpa392AppDataDir({ tempDir = tmpdir(), ...safety } = {}) {
+export function createSaveE2eAppDataDir({
+  tempDir = tmpdir(),
+  ...safety
+} = {}) {
   const canonicalTemp = realpathSync(tempDir);
   const candidate = mkdtempSync(
-    path.join(canonicalTemp, HPA392_E2E_DIRECTORY_PREFIX),
+    path.join(canonicalTemp, SAVE_E2E_E2E_DIRECTORY_PREFIX),
   );
-  return assertSafeHpa392AppDataDir(candidate, {
+  return assertSafeSaveE2eAppDataDir(candidate, {
     ...safety,
     tempDir: canonicalTemp,
   });
 }
 
-export function removeHpa392AppDataDir(candidate, safetyContext) {
-  assertSafeHpa392AppDataDir(candidate, safetyContext);
-  const revalidated = assertSafeHpa392AppDataDir(candidate, safetyContext);
+export function removeSaveE2eAppDataDir(candidate, safetyContext) {
+  assertSafeSaveE2eAppDataDir(candidate, safetyContext);
+  const revalidated = assertSafeSaveE2eAppDataDir(candidate, safetyContext);
   rmSync(revalidated, { recursive: true });
 }
 
-// Task 13 public names remain as compatibility aliases for the existing proof
-// tests while Task 16 exposes the plan's canonical API.
-export const validateHpa392E2eAppDataDir = assertSafeHpa392AppDataDir;
-export const createHpa392E2eAppDataDir = createHpa392AppDataDir;
-export const guardedRemoveHpa392E2eAppDataDir = removeHpa392AppDataDir;
-
 function fixedSlotPath(appDataDir, fixedSlotName) {
-  const root = assertSafeHpa392AppDataDir(appDataDir);
-  if (!HPA392_FIXED_SLOT_NAME_SET.has(fixedSlotName)) {
-    throw new Error(`Unknown fixed HPA-392 slot: ${String(fixedSlotName)}`);
+  const root = assertSafeSaveE2eAppDataDir(appDataDir);
+  if (!SAVE_E2E_FIXED_SLOT_NAME_SET.has(fixedSlotName)) {
+    throw new Error(`Unknown fixed save e2e slot: ${String(fixedSlotName)}`);
   }
   const saves = path.join(root, "saves");
   if (existsSync(saves)) {
@@ -231,8 +228,8 @@ function readFixedSlotText(appDataDir, fixedSlotName) {
   return readFileSync(slot, "utf8");
 }
 
-export function readHpa392SlotFiles(appDataDir) {
-  return HPA392_FIXED_SLOT_NAMES.map((fixedSlotName) => {
+export function readSaveE2eSlotFiles(appDataDir) {
+  return SAVE_E2E_FIXED_SLOT_NAMES.map((fixedSlotName) => {
     const slotPath = fixedSlotPath(appDataDir, fixedSlotName);
     const text = readFixedSlotText(appDataDir, fixedSlotName);
     return {
@@ -244,26 +241,26 @@ export function readHpa392SlotFiles(appDataDir) {
   });
 }
 
-export function corruptHpa392Slot(appDataDir, fixedSlotName) {
+export function corruptSaveE2eSlot(appDataDir, fixedSlotName) {
   const slot = fixedSlotPath(appDataDir, fixedSlotName);
   if (!existsSync(slot)) {
-    throw new Error(`HPA-392 slot does not exist: ${fixedSlotName}`);
+    throw new Error(`save e2e slot does not exist: ${fixedSlotName}`);
   }
   const metadata = lstatSync(slot);
   if (metadata.isSymbolicLink() || !metadata.isFile()) throw unsafePath();
   writeFileSync(slot, '{"broken":');
 }
 
-export function resolveHpa392ObservedSidecar(appDataDir, fixedSlotName) {
+export function resolveSaveE2eObservedSidecar(appDataDir, fixedSlotName) {
   const text = readFixedSlotText(appDataDir, fixedSlotName);
   if (text === null) {
-    throw new Error(`HPA-392 slot does not exist: ${fixedSlotName}`);
+    throw new Error(`save e2e slot does not exist: ${fixedSlotName}`);
   }
   let envelope;
   try {
     envelope = JSON.parse(text);
   } catch {
-    throw new Error("HPA-392 slot envelope is not valid JSON.");
+    throw new Error("save e2e slot envelope is not valid JSON.");
   }
   const saveId = envelope?.saveId;
   const objectId = envelope?.thumbnail?.objectId;
@@ -273,9 +270,9 @@ export function resolveHpa392ObservedSidecar(appDataDir, fixedSlotName) {
     !CANONICAL_UUID_V4.test(saveId) ||
     objectId !== saveId
   ) {
-    throw new Error("HPA-392 sidecar requires a canonical UUID observation.");
+    throw new Error("save e2e sidecar requires a canonical UUID observation.");
   }
-  const root = assertSafeHpa392AppDataDir(appDataDir);
+  const root = assertSafeSaveE2eAppDataDir(appDataDir);
   const thumbnails = path.join(root, "saves", "thumbnails");
   if (existsSync(thumbnails)) {
     const metadata = lstatSync(thumbnails);
@@ -285,29 +282,29 @@ export function resolveHpa392ObservedSidecar(appDataDir, fixedSlotName) {
   return path.join(thumbnails, `${saveId}.png`);
 }
 
-export function removeHpa392ObservedSidecar(appDataDir, fixedSlotName) {
-  const sidecar = resolveHpa392ObservedSidecar(appDataDir, fixedSlotName);
+export function removeSaveE2eObservedSidecar(appDataDir, fixedSlotName) {
+  const sidecar = resolveSaveE2eObservedSidecar(appDataDir, fixedSlotName);
   const metadata = lstatSync(sidecar);
   if (metadata.isSymbolicLink() || !metadata.isFile()) throw unsafePath();
   unlinkSync(sidecar);
 }
 
-export function corruptHpa392ObservedSidecar(appDataDir, fixedSlotName) {
-  const sidecar = resolveHpa392ObservedSidecar(appDataDir, fixedSlotName);
+export function corruptSaveE2eObservedSidecar(appDataDir, fixedSlotName) {
+  const sidecar = resolveSaveE2eObservedSidecar(appDataDir, fixedSlotName);
   const metadata = lstatSync(sidecar);
   if (metadata.isSymbolicLink() || !metadata.isFile()) throw unsafePath();
   writeFileSync(sidecar, "not-a-png");
 }
 
-export function assertNoUnknownHpa392Sidecars(appDataDir) {
-  const root = assertSafeHpa392AppDataDir(appDataDir);
+export function assertNoUnknownSaveE2eSidecars(appDataDir) {
+  const root = assertSafeSaveE2eAppDataDir(appDataDir);
   const thumbnails = path.join(root, "saves", "thumbnails");
   if (!existsSync(thumbnails)) return true;
   const metadata = lstatSync(thumbnails);
   if (metadata.isSymbolicLink() || !metadata.isDirectory()) throw unsafePath();
 
   const referenced = new Set();
-  for (const slot of readHpa392SlotFiles(root)) {
+  for (const slot of readSaveE2eSlotFiles(root)) {
     if (slot.text === null) continue;
     try {
       const envelope = JSON.parse(slot.text);
@@ -335,17 +332,17 @@ export function assertNoUnknownHpa392Sidecars(appDataDir) {
       !filename.endsWith(".png") ||
       !referenced.has(filename)
     ) {
-      throw new Error(`Unknown HPA-392 sidecar: ${filename}`);
+      throw new Error(`Unknown save e2e sidecar: ${filename}`);
     }
   }
   return true;
 }
 
 function controlExpectationPath(appDataDir, expectationName, create) {
-  const root = assertSafeHpa392AppDataDir(appDataDir);
-  if (!HPA392_CONTROL_EXPECTATIONS.has(expectationName)) {
+  const root = assertSafeSaveE2eAppDataDir(appDataDir);
+  if (!SAVE_E2E_CONTROL_EXPECTATIONS.has(expectationName)) {
     throw new Error(
-      `Unknown HPA-392 test-control expectation: ${String(expectationName)}`,
+      `Unknown save e2e test-control expectation: ${String(expectationName)}`,
     );
   }
   const control = path.join(root, "test-control");
@@ -358,7 +355,7 @@ function controlExpectationPath(appDataDir, expectationName, create) {
   return path.join(control, `${expectationName}.json`);
 }
 
-export function writeHpa392ControlExpectation(
+export function writeSaveE2eControlExpectation(
   appDataDir,
   expectationName,
   value,
@@ -371,7 +368,7 @@ export function writeHpa392ControlExpectation(
   writeFileSync(destination, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-export function readHpa392ControlExpectation(appDataDir, expectationName) {
+export function readSaveE2eControlExpectation(appDataDir, expectationName) {
   const source = controlExpectationPath(appDataDir, expectationName, false);
   const metadata = lstatSync(source);
   if (metadata.isSymbolicLink() || !metadata.isFile()) throw unsafePath();
@@ -383,13 +380,13 @@ function phase(
   group,
   appDataDir,
   specs,
-  environment = { ...HPA392_BACKEND_LOG_ENVIRONMENT },
+  environment = { ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT },
   before,
 ) {
   const result = {
     id,
     group,
-    appDataDir: assertSafeHpa392AppDataDir(appDataDir),
+    appDataDir: assertSafeSaveE2eAppDataDir(appDataDir),
     specs,
     environment,
   };
@@ -402,23 +399,23 @@ function managementPhase(id, appDataDir, before) {
     id,
     "management",
     appDataDir,
-    [HPA392_MANAGEMENT_SPEC],
+    [SAVE_E2E_MANAGEMENT_SPEC],
     {
-      ...HPA392_BACKEND_LOG_ENVIRONMENT,
-      LYRA_HPA392_PHASE: id,
+      ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT,
+      LYRA_SAVE_E2E_PHASE: id,
     },
     before,
   );
 }
 
 function exitPhase(id, appDataDir) {
-  return phase(id, "exit", appDataDir, [HPA392_EXIT_SPEC], {
-    ...HPA392_BACKEND_LOG_ENVIRONMENT,
-    LYRA_HPA392_PHASE: id,
+  return phase(id, "exit", appDataDir, [SAVE_E2E_EXIT_SPEC], {
+    ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT,
+    LYRA_SAVE_E2E_PHASE: id,
   });
 }
 
-export function buildHpa392PhasePlan({
+export function buildSaveE2ePhasePlan({
   mode,
   ordinaryAppDataDir,
   captureProofAppDataDir,
@@ -427,70 +424,76 @@ export function buildHpa392PhasePlan({
   if (mode === "--ordinary") {
     return [
       phase("ordinary", "ordinary", ordinaryAppDataDir, [
-        ...HPA392_ORDINARY_SPECS,
+        ...SAVE_E2E_ORDINARY_SPECS,
       ]),
     ];
   }
   if (mode === "--capture-proof") {
     return [
       phase(
-        HPA392_PHASE_NAMES.captureProof,
+        SAVE_E2E_PHASE_NAMES.captureProof,
         "capture-proof",
         captureProofAppDataDir,
-        [HPA392_CAPTURE_SPEC],
-        { ...HPA392_BACKEND_LOG_ENVIRONMENT },
+        [SAVE_E2E_CAPTURE_SPEC],
+        { ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT },
       ),
     ];
   }
   if (mode !== "--full") {
-    throw new Error(`Unknown HPA-392 E2E mode: ${String(mode)}`);
+    throw new Error(`Unknown save e2e mode: ${String(mode)}`);
   }
 
   return [
     phase(
-      HPA392_PHASE_NAMES.captureProof,
+      SAVE_E2E_PHASE_NAMES.captureProof,
       "capture-proof",
       captureProofAppDataDir,
-      [HPA392_CAPTURE_SPEC],
-      { ...HPA392_BACKEND_LOG_ENVIRONMENT },
+      [SAVE_E2E_CAPTURE_SPEC],
+      { ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT },
     ),
-    phase(HPA392_PHASE_NAMES.saveSeed, "seed", persistenceAppDataDir, [
-      HPA392_SEED_SPEC,
+    phase(SAVE_E2E_PHASE_NAMES.saveSeed, "seed", persistenceAppDataDir, [
+      SAVE_E2E_SEED_SPEC,
     ]),
-    phase(HPA392_PHASE_NAMES.saveResume, "resume", persistenceAppDataDir, [
-      HPA392_RESUME_SPEC,
+    phase(SAVE_E2E_PHASE_NAMES.saveResume, "resume", persistenceAppDataDir, [
+      SAVE_E2E_RESUME_SPEC,
     ]),
-    managementPhase(HPA392_PHASE_NAMES.managementSeed, persistenceAppDataDir),
+    managementPhase(SAVE_E2E_PHASE_NAMES.managementSeed, persistenceAppDataDir),
     managementPhase(
-      HPA392_PHASE_NAMES.managementCorruptNewest,
+      SAVE_E2E_PHASE_NAMES.managementCorruptNewest,
       persistenceAppDataDir,
       { type: "corrupt-slot", fixedSlotName: "autosave-1" },
     ),
     managementPhase(
-      HPA392_PHASE_NAMES.managementRecoverOlder,
+      SAVE_E2E_PHASE_NAMES.managementRecoverOlder,
       persistenceAppDataDir,
     ),
     managementPhase(
-      HPA392_PHASE_NAMES.managementMissingThumbnail,
+      SAVE_E2E_PHASE_NAMES.managementMissingThumbnail,
       persistenceAppDataDir,
       { type: "remove-observed-sidecar", fixedSlotName: "manual-1" },
     ),
     managementPhase(
-      HPA392_PHASE_NAMES.managementRestoreThumbnail,
+      SAVE_E2E_PHASE_NAMES.managementRestoreThumbnail,
       persistenceAppDataDir,
     ),
     managementPhase(
-      HPA392_PHASE_NAMES.managementCorruptThumbnail,
+      SAVE_E2E_PHASE_NAMES.managementCorruptThumbnail,
       persistenceAppDataDir,
       { type: "corrupt-observed-sidecar", fixedSlotName: "manual-1" },
     ),
-    managementPhase(HPA392_PHASE_NAMES.managementDelete, persistenceAppDataDir),
-    exitPhase(HPA392_PHASE_NAMES.exitCloseSeed, persistenceAppDataDir),
-    exitPhase(HPA392_PHASE_NAMES.exitCloseResume, persistenceAppDataDir),
-    exitPhase(HPA392_PHASE_NAMES.exitQuitSeed, persistenceAppDataDir),
-    exitPhase(HPA392_PHASE_NAMES.exitQuitResume, persistenceAppDataDir),
-    exitPhase(HPA392_PHASE_NAMES.exitFailureBypass, persistenceAppDataDir),
-    exitPhase(HPA392_PHASE_NAMES.exitFinalVerification, persistenceAppDataDir),
+    managementPhase(
+      SAVE_E2E_PHASE_NAMES.managementDelete,
+      persistenceAppDataDir,
+    ),
+    exitPhase(SAVE_E2E_PHASE_NAMES.exitCloseSeed, persistenceAppDataDir),
+    exitPhase(SAVE_E2E_PHASE_NAMES.exitCloseResume, persistenceAppDataDir),
+    exitPhase(SAVE_E2E_PHASE_NAMES.exitQuitSeed, persistenceAppDataDir),
+    exitPhase(SAVE_E2E_PHASE_NAMES.exitQuitResume, persistenceAppDataDir),
+    exitPhase(SAVE_E2E_PHASE_NAMES.exitFailureBypass, persistenceAppDataDir),
+    exitPhase(
+      SAVE_E2E_PHASE_NAMES.exitFinalVerification,
+      persistenceAppDataDir,
+    ),
   ];
 }
 
@@ -498,21 +501,21 @@ function validatePhase(phaseToValidate) {
   if (
     !phaseToValidate ||
     typeof phaseToValidate !== "object" ||
-    !HPA392_APPROVED_PHASES.has(phaseToValidate.id) ||
-    !HPA392_APPROVED_GROUPS.has(phaseToValidate.group)
+    !SAVE_E2E_APPROVED_PHASES.has(phaseToValidate.id) ||
+    !SAVE_E2E_APPROVED_GROUPS.has(phaseToValidate.group)
   ) {
-    throw new Error("Unknown HPA-392 E2E phase.");
+    throw new Error("Unknown save e2e phase.");
   }
-  assertSafeHpa392AppDataDir(phaseToValidate.appDataDir);
+  assertSafeSaveE2eAppDataDir(phaseToValidate.appDataDir);
   if (
     !Array.isArray(phaseToValidate.specs) ||
     phaseToValidate.specs.length === 0
   ) {
-    throw new Error("Unknown HPA-392 E2E spec.");
+    throw new Error("Unknown save e2e spec.");
   }
   for (const spec of phaseToValidate.specs) {
-    if (!HPA392_APPROVED_SPECS.has(spec)) {
-      throw new Error(`Unknown HPA-392 E2E spec: ${String(spec)}`);
+    if (!SAVE_E2E_APPROVED_SPECS.has(spec)) {
+      throw new Error(`Unknown save e2e spec: ${String(spec)}`);
     }
   }
   if (phaseToValidate.before !== undefined) {
@@ -525,24 +528,24 @@ function validatePhase(phaseToValidate) {
         "remove-observed-sidecar",
         "corrupt-observed-sidecar",
       ].includes(action.type) ||
-      !HPA392_FIXED_SLOT_NAME_SET.has(action.fixedSlotName)
+      !SAVE_E2E_FIXED_SLOT_NAME_SET.has(action.fixedSlotName)
     ) {
-      throw new Error("Unknown HPA-392 checkpoint action.");
+      throw new Error("Unknown save e2e checkpoint action.");
     }
   }
   const environment = phaseToValidate.environment;
   if (!environment || typeof environment !== "object") {
-    throw new Error("Unknown HPA-392 phase environment.");
+    throw new Error("Unknown save e2e phase environment.");
   }
   const expectedEnvironment =
     phaseToValidate.group === "management" || phaseToValidate.group === "exit"
       ? {
-          ...HPA392_BACKEND_LOG_ENVIRONMENT,
-          LYRA_HPA392_PHASE: phaseToValidate.id,
+          ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT,
+          LYRA_SAVE_E2E_PHASE: phaseToValidate.id,
         }
-      : { ...HPA392_BACKEND_LOG_ENVIRONMENT };
+      : { ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT };
   if (JSON.stringify(environment) !== JSON.stringify(expectedEnvironment)) {
-    throw new Error("Unknown HPA-392 phase environment.");
+    throw new Error("Unknown save e2e phase environment.");
   }
   const expected = expectedPhaseShape(phaseToValidate.id);
   if (
@@ -550,7 +553,7 @@ function validatePhase(phaseToValidate) {
     JSON.stringify(phaseToValidate.specs) !== JSON.stringify(expected.specs) ||
     JSON.stringify(phaseToValidate.before) !== JSON.stringify(expected.before)
   ) {
-    throw new Error("Invalid HPA-392 phase plan.");
+    throw new Error("Invalid save e2e phase plan.");
   }
 }
 
@@ -558,63 +561,63 @@ function expectedPhaseShape(id) {
   if (id === "ordinary") {
     return {
       group: "ordinary",
-      specs: [...HPA392_ORDINARY_SPECS],
+      specs: [...SAVE_E2E_ORDINARY_SPECS],
       before: undefined,
     };
   }
-  if (id === HPA392_PHASE_NAMES.captureProof) {
+  if (id === SAVE_E2E_PHASE_NAMES.captureProof) {
     return {
       group: "capture-proof",
-      specs: [HPA392_CAPTURE_SPEC],
+      specs: [SAVE_E2E_CAPTURE_SPEC],
       before: undefined,
     };
   }
-  if (id === HPA392_PHASE_NAMES.saveSeed) {
-    return { group: "seed", specs: [HPA392_SEED_SPEC], before: undefined };
+  if (id === SAVE_E2E_PHASE_NAMES.saveSeed) {
+    return { group: "seed", specs: [SAVE_E2E_SEED_SPEC], before: undefined };
   }
-  if (id === HPA392_PHASE_NAMES.saveResume) {
+  if (id === SAVE_E2E_PHASE_NAMES.saveResume) {
     return {
       group: "resume",
-      specs: [HPA392_RESUME_SPEC],
+      specs: [SAVE_E2E_RESUME_SPEC],
       before: undefined,
     };
   }
   const managementBefore = new Map([
     [
-      HPA392_PHASE_NAMES.managementCorruptNewest,
+      SAVE_E2E_PHASE_NAMES.managementCorruptNewest,
       { type: "corrupt-slot", fixedSlotName: "autosave-1" },
     ],
     [
-      HPA392_PHASE_NAMES.managementMissingThumbnail,
+      SAVE_E2E_PHASE_NAMES.managementMissingThumbnail,
       { type: "remove-observed-sidecar", fixedSlotName: "manual-1" },
     ],
     [
-      HPA392_PHASE_NAMES.managementCorruptThumbnail,
+      SAVE_E2E_PHASE_NAMES.managementCorruptThumbnail,
       { type: "corrupt-observed-sidecar", fixedSlotName: "manual-1" },
     ],
   ]);
   if (id.startsWith("management-")) {
     return {
       group: "management",
-      specs: [HPA392_MANAGEMENT_SPEC],
+      specs: [SAVE_E2E_MANAGEMENT_SPEC],
       before: managementBefore.get(id),
     };
   }
-  return { group: "exit", specs: [HPA392_EXIT_SPEC], before: undefined };
+  return { group: "exit", specs: [SAVE_E2E_EXIT_SPEC], before: undefined };
 }
 
 function validatePhaseSequence(phases) {
   const ids = phases.map((phaseToValidate) => phaseToValidate.id);
   const ordinary = ["ordinary"];
-  const captureOnly = [HPA392_PHASE_NAMES.captureProof];
+  const captureOnly = [SAVE_E2E_PHASE_NAMES.captureProof];
   if (
     JSON.stringify(ids) === JSON.stringify(ordinary) ||
     JSON.stringify(ids) === JSON.stringify(captureOnly)
   ) {
     return;
   }
-  if (JSON.stringify(ids) !== JSON.stringify(HPA392_FULL_PHASE_ORDER)) {
-    throw new Error("Invalid HPA-392 phase plan.");
+  if (JSON.stringify(ids) !== JSON.stringify(SAVE_E2E_FULL_PHASE_ORDER)) {
+    throw new Error("Invalid save e2e phase plan.");
   }
   const captureRoot = phases[0].appDataDir;
   const persistenceRoot = phases[1].appDataDir;
@@ -624,23 +627,23 @@ function validatePhaseSequence(phases) {
       return phaseToValidate.appDataDir !== persistenceRoot;
     })
   ) {
-    throw new Error("Invalid HPA-392 phase plan roots.");
+    throw new Error("Invalid save e2e phase plan roots.");
   }
 }
 
-export function buildHpa392PhaseEnvironment(
+export function buildSaveE2ePhaseEnvironment(
   phaseToRun,
   { baseEnvironment = process.env, outputDirectory },
 ) {
   validatePhase(phaseToRun);
   if (typeof outputDirectory !== "string" || outputDirectory.length === 0) {
-    throw new Error("Unknown HPA-392 E2E output directory.");
+    throw new Error("Unknown save e2e output directory.");
   }
   const environment = { ...baseEnvironment };
   delete environment.LYRA_E2E_APP_DATA_DIR;
   delete environment.LYRA_E2E_CAPTURE_BACKEND_LOGS;
   delete environment.LYRA_E2E_OUTPUT_DIR;
-  delete environment.LYRA_HPA392_PHASE;
+  delete environment.LYRA_SAVE_E2E_PHASE;
   return {
     ...environment,
     ...phaseToRun.environment,
@@ -649,12 +652,12 @@ export function buildHpa392PhaseEnvironment(
   };
 }
 
-export function executeHpa392PhasePlan(
+export function executeSaveE2ePhasePlan(
   phases,
   { spawnPhase, captureFailureArtifacts, cleanupAppDataDir },
 ) {
   if (!Array.isArray(phases) || phases.length === 0) {
-    throw new Error("Unknown HPA-392 E2E phase plan.");
+    throw new Error("Unknown save e2e phase plan.");
   }
   const roots = [
     ...new Set(phases.map((phaseToValidate) => phaseToValidate.appDataDir)),
@@ -676,7 +679,7 @@ export function executeHpa392PhasePlan(
       try {
         cleanupAppDataDir(root);
       } catch (error) {
-        console.error("HPA-392 E2E app data cleanup failed:", error);
+        console.error("save e2e app data cleanup failed:", error);
       }
     }
   }

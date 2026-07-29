@@ -13,18 +13,24 @@ vi.mock("html-to-image", () => ({
 }));
 
 import {
+  containDestinationRect,
+  coverSourceRect,
   createPackagedCaptureProofCapture,
   createHtmlToImageGameplayCapture,
+  drawGameplayLayeredCompositePass,
   drawLoadedSvgPasses,
   fitWithoutUpscaling,
+  mapBoundsToCanvas,
   normalizeGameplayCaptureSvg,
   pinThumbnailCaptureDeadline,
   rasterizeSvgToPngBlob,
+  splitGameplayCaptureSvgLayers,
   thumbnailCaptureDeadline,
   WEBKIT_SVG_DRAW_INTERVAL_MS,
   WEBKIT_SVG_DRAW_PASSES,
   waitForAnimationFrameOrTimeout,
 } from "./thumbnail-capture";
+import type { GameplayCaptureAssetLayer } from "./thumbnail-capture";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -213,24 +219,17 @@ describe("gameplay capture SVG layout normalization", () => {
     const normalized = normalizeGameplayCaptureSvg(
       `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`,
     );
-    const split = (
-      thumbnailCaptureModule as unknown as {
-        splitGameplayCaptureSvgLayers?: (svgUrl: string) => {
-          underPortraitSvgUrl: string;
-          overPortraitSvgUrl: string;
-        };
-      }
-    ).splitGameplayCaptureSvgLayers?.(normalized);
+    const split = splitGameplayCaptureSvgLayers(normalized);
     const markup = (value: string | undefined) =>
       value ? decodeURIComponent(value.split(",", 2)[1] ?? "") : "";
 
-    expect(markup(split?.underPortraitSvgUrl)).toContain("atmosphere");
-    expect(markup(split?.underPortraitSvgUrl)).toContain("case hud");
-    expect(markup(split?.underPortraitSvgUrl)).not.toContain("dialogue-over");
-    expect(markup(split?.overPortraitSvgUrl)).toContain("dialogue-over");
-    expect(markup(split?.overPortraitSvgUrl)).not.toContain("atmosphere");
-    expect(markup(split?.overPortraitSvgUrl)).not.toContain("case hud");
-    expect(markup(split?.overPortraitSvgUrl)).not.toContain("scene-ui");
+    expect(markup(split.underPortraitSvgUrl)).toContain("atmosphere");
+    expect(markup(split.underPortraitSvgUrl)).toContain("case hud");
+    expect(markup(split.underPortraitSvgUrl)).not.toContain("dialogue-over");
+    expect(markup(split.overPortraitSvgUrl)).toContain("dialogue-over");
+    expect(markup(split.overPortraitSvgUrl)).not.toContain("atmosphere");
+    expect(markup(split.overPortraitSvgUrl)).not.toContain("case hud");
+    expect(markup(split.overPortraitSvgUrl)).not.toContain("scene-ui");
   });
 });
 
@@ -259,28 +258,8 @@ describe("gameplay capture SVG repeated draw workaround", () => {
 });
 
 describe("direct gameplay asset composition geometry", () => {
-  const geometry = thumbnailCaptureModule as unknown as {
-    coverSourceRect?: (
-      sourceWidth: number,
-      sourceHeight: number,
-      destinationWidth: number,
-      destinationHeight: number,
-    ) => { x: number; y: number; width: number; height: number };
-    containDestinationRect?: (
-      sourceWidth: number,
-      sourceHeight: number,
-      bounds: { x: number; y: number; width: number; height: number },
-    ) => { x: number; y: number; width: number; height: number };
-    mapBoundsToCanvas?: (
-      bounds: { x: number; y: number; width: number; height: number },
-      rootBounds: { x: number; y: number; width: number; height: number },
-      canvasWidth: number,
-      canvasHeight: number,
-    ) => { x: number; y: number; width: number; height: number };
-  };
-
   it("center-crops a wide background to a square cover destination", () => {
-    expect(geometry.coverSourceRect?.(1_600, 900, 400, 400)).toEqual({
+    expect(coverSourceRect(1_600, 900, 400, 400)).toEqual({
       x: 350,
       y: 0,
       width: 900,
@@ -290,7 +269,7 @@ describe("direct gameplay asset composition geometry", () => {
 
   it("centers a portrait inside its destination bounds without cropping", () => {
     expect(
-      geometry.containDestinationRect?.(800, 1_200, {
+      containDestinationRect(800, 1_200, {
         x: 0,
         y: 0,
         width: 300,
@@ -306,7 +285,7 @@ describe("direct gameplay asset composition geometry", () => {
 
   it("maps live viewport bounds into fitted thumbnail coordinates", () => {
     expect(
-      geometry.mapBoundsToCanvas?.(
+      mapBoundsToCanvas(
         { x: 300, y: 200, width: 200, height: 300 },
         { x: 100, y: 50, width: 800, height: 600 },
         480,
@@ -344,50 +323,28 @@ describe("direct gameplay asset draw order", () => {
       },
     };
     const context = contextState as unknown as CanvasRenderingContext2D;
-    const drawComposite = (
-      thumbnailCaptureModule as unknown as {
-        drawGameplayLayeredCompositePass?: (
-          context: CanvasRenderingContext2D,
-          underUi: CanvasImageSource,
-          overUi: CanvasImageSource,
-          assets: Array<{
-            image: HTMLImageElement;
-            opacity: number;
-            role: "background" | "portrait";
-            source: { x: number; y: number; width: number; height: number };
-            destination: {
-              x: number;
-              y: number;
-              width: number;
-              height: number;
-            };
-          }>,
-          width: number,
-          height: number,
-        ) => void;
-      }
-    ).drawGameplayLayeredCompositePass;
+    const assets: GameplayCaptureAssetLayer[] = [
+      {
+        image: portrait,
+        opacity: 1,
+        role: "portrait",
+        source: { x: 0, y: 0, width: 768, height: 1_024 },
+        destination: { x: 276, y: 68, width: 204, height: 273 },
+      },
+      {
+        image: background,
+        opacity: 0.52,
+        role: "background",
+        source: { x: 200, y: 0, width: 1_520, height: 1_080 },
+        destination: { x: 0, y: 0, width: 480, height: 341 },
+      },
+    ];
 
-    drawComposite?.(
+    drawGameplayLayeredCompositePass(
       context,
       underUi,
       overUi,
-      [
-        {
-          image: portrait,
-          opacity: 1,
-          role: "portrait",
-          source: { x: 0, y: 0, width: 768, height: 1_024 },
-          destination: { x: 276, y: 68, width: 204, height: 273 },
-        },
-        {
-          image: background,
-          opacity: 0.52,
-          role: "background",
-          source: { x: 200, y: 0, width: 1_520, height: 1_080 },
-          destination: { x: 0, y: 0, width: 480, height: 341 },
-        },
-      ],
+      assets,
       480,
       341,
     );

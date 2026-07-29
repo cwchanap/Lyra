@@ -19,15 +19,15 @@ const env = {
   // @wdio/tauri-plugin frontend import. Tree-shaken out of ordinary builds
   // where this var is absent (import.meta.env.VITE_E2E is undefined).
   VITE_E2E: "true",
-  // Compile the closed HPA-392 packaged capture probe only into this debug
+  // Compile the closed save e2e packaged capture probe only into this debug
   // E2E bundle. Ordinary production builds never receive this flag.
   VITE_LYRA_E2E_CAPTURE_PROOF: "1",
 };
-// App-data ownership begins only in run-hpa-392-e2e.mjs. Never let a stale
+// App-data ownership begins only in run-save-e2e.mjs. Never let a stale
 // shell environment bind the build step to a prior fixture root or phase.
 delete env.LYRA_E2E_APP_DATA_DIR;
 delete env.LYRA_E2E_CAPTURE_BACKEND_LOGS;
-delete env.LYRA_HPA392_PHASE;
+delete env.LYRA_SAVE_E2E_PHASE;
 
 const args = [
   "run",

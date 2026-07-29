@@ -1,4 +1,5 @@
 // src-tauri/src/game/view.rs
+use crate::game::save::schema::RecordKind;
 use crate::game::schema::{
     AudioChannelJson, CharacterLayoutJson, DialogueItem, HotspotLayoutJson, SceneType,
 };
@@ -22,7 +23,7 @@ pub struct GameStateView {
 #[serde(rename_all = "camelCase")]
 pub struct PendingAcquisitionView {
     pub id: String,
-    pub record_kind: String,
+    pub record_kind: RecordKind,
     pub record_id: String,
     pub title: String,
     pub description: String,

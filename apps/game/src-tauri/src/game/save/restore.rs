@@ -295,6 +295,7 @@ pub(crate) fn build_restore_candidate(
         history,
         durable_revision: snapshot.durable_revision,
         pending_acquisition_events: snapshot.pending_acquisition_events.clone(),
+        cached_pending_acquisition_scene: std::cell::RefCell::new(None),
     };
 
     // The capture boundary is intentionally independent from restore. Re-run
@@ -1035,89 +1036,12 @@ fn packaged_history_cursor_maxima(
 }
 
 fn maximum_scene_dialogue_items(scene: &SceneJson) -> Result<usize, GameError> {
-    let groups: Vec<&[crate::game::schema::DialogueItem]> = match scene {
-        SceneJson::Linear(scene) => vec![&scene.queue],
-        SceneJson::Investigation(scene) => {
-            let mut groups = vec![scene.intro.as_slice(), scene.outro.dialogue.as_slice()];
-            for sublocation in &scene.sublocations {
-                groups.push(&sublocation.transition_dialogue);
-                for hotspot in &sublocation.hotspots {
-                    groups.push(&hotspot.inspect_dialogue);
-                    if let Some(items) = hotspot.on_reexamine.as_deref() {
-                        groups.push(items);
-                    }
-                }
-                for character in &sublocation.characters {
-                    for topic in &character.topics {
-                        groups.push(&topic.topic_dialogue);
-                        if let Some(items) = topic.on_reexamine.as_deref() {
-                            groups.push(items);
-                        }
-                    }
-                }
-            }
-            append_record_dialogue_groups(
-                &mut groups,
-                &scene.evidence_manifest,
-                &scene.statement_manifest,
-            );
-            groups
-        }
-        SceneJson::Interrogation(scene) => {
-            let mut groups = vec![scene.intro.as_slice(), scene.outro.dialogue.as_slice()];
-            for phase in &scene.phases {
-                let InterrogationPhaseJson::Inquiry {
-                    entry_dialogue,
-                    questions,
-                    ..
-                } = phase;
-                groups.push(entry_dialogue);
-                for question in questions {
-                    groups.push(&question.testimony.on_loop);
-                    groups.push(&question.testimony.loop_prompt);
-                    groups.push(&question.testimony.default_challenge);
-                    groups.push(&question.testimony.default_wrong);
-                    groups.push(&question.testimony.wrong_reply);
-                    for line in &question.testimony.lines {
-                        groups.push(&line.content);
-                        groups.push(&line.challenge);
-                        groups.push(&line.on_correct);
-                        groups.push(&line.on_wrong_evidence);
-                    }
-                }
-            }
-            append_record_dialogue_groups(
-                &mut groups,
-                &scene.evidence_manifest,
-                &scene.statement_manifest,
-            );
-            groups
-        }
-    };
+    let groups = crate::game::schema::scene_dialogue_groups(scene);
     groups.into_iter().try_fold(0usize, |total, items| {
         total
             .checked_add(items.len())
             .ok_or_else(|| invalid_progress("Packaged dialogue item count overflowed usize."))
     })
-}
-
-fn append_record_dialogue_groups<'a>(
-    groups: &mut Vec<&'a [crate::game::schema::DialogueItem]>,
-    evidence: &'a [crate::game::schema::EvidenceJson],
-    statements: &'a [crate::game::schema::StatementJson],
-) {
-    for record in evidence {
-        groups.push(&record.on_collect);
-        if let Some(items) = record.on_reexamine.as_deref() {
-            groups.push(items);
-        }
-    }
-    for record in statements {
-        groups.push(&record.on_acquire);
-        if let Some(items) = record.on_reexamine.as_deref() {
-            groups.push(items);
-        }
-    }
 }
 
 fn validate_visual_cues(
@@ -1532,10 +1456,10 @@ mod tests {
         envelope_from_checkpoint(engine, capture_checkpoint_v1(engine).unwrap())
     }
 
-    fn resources_and_engine() -> (PathBuf, GameEngine) {
-        let resources = save_capture_fixture_resources();
+    fn resources_and_engine() -> (tempfile::TempDir, PathBuf, GameEngine) {
+        let (_guard, resources) = save_capture_fixture_resources();
         let engine = GameEngine::new_started(resources.clone()).unwrap();
-        (resources, engine)
+        (_guard, resources, engine)
     }
 
     fn round_trip(
@@ -1600,25 +1524,25 @@ mod tests {
         }
     }
 
-    fn investigation_engine() -> (PathBuf, GameEngine) {
-        let (resources, mut engine) = resources_and_engine();
+    fn investigation_engine() -> (tempfile::TempDir, PathBuf, GameEngine) {
+        let (_guard, resources, mut engine) = resources_and_engine();
         engine
             .jump_to_scene("chapter_1", "investigation_scene_1")
             .unwrap();
-        (resources, engine)
+        (_guard, resources, engine)
     }
 
-    fn interrogation_engine() -> (PathBuf, GameEngine) {
-        let (resources, mut engine) = resources_and_engine();
+    fn interrogation_engine() -> (tempfile::TempDir, PathBuf, GameEngine) {
+        let (_guard, resources, mut engine) = resources_and_engine();
         engine
             .jump_to_scene("chapter_1", "interrogation_scene_2")
             .unwrap();
-        (resources, engine)
+        (_guard, resources, engine)
     }
 
     #[test]
     fn exact_revision_and_location_are_resolved_from_the_current_package() {
-        let (resources, engine) = resources_and_engine();
+        let (_guard, resources, engine) = resources_and_engine();
         for mutate in [
             |save: &mut SaveEnvelopeV1| {
                 save.content_revision =
@@ -1647,7 +1571,7 @@ mod tests {
 
     #[test]
     fn investigation_references_and_override_targets_are_closed() {
-        let (resources, engine) = investigation_engine();
+        let (_guard, resources, engine) = investigation_engine();
         let mutations: Vec<SaveMutation> = vec![
             Box::new(|save| {
                 let SceneProgressSnapshotV1::Investigation {
@@ -1714,7 +1638,7 @@ mod tests {
 
     #[test]
     fn interrogation_phase_question_line_and_override_references_are_closed() {
-        let (resources, engine) = interrogation_engine();
+        let (_guard, resources, engine) = interrogation_engine();
         let mutations: Vec<SaveMutation> = vec![
             Box::new(|save| {
                 let SceneProgressSnapshotV1::Interrogation {
@@ -1768,7 +1692,7 @@ mod tests {
 
     #[test]
     fn inventory_story_and_summary_references_are_revalidated() {
-        let (resources, engine) = resources_and_engine();
+        let (_guard, resources, engine) = resources_and_engine();
         let mutations: Vec<SaveMutation> = vec![
             Box::new(|save| {
                 save.snapshot
@@ -1810,7 +1734,7 @@ mod tests {
 
     #[test]
     fn story_origins_require_package_backed_ids() {
-        let (resources, engine) = resources_and_engine();
+        let (_guard, resources, engine) = resources_and_engine();
         let mutations: Vec<SaveMutation> = vec![
             Box::new(|save| {
                 save.snapshot.story_state.facts.insert(
@@ -1870,7 +1794,7 @@ mod tests {
 
     #[test]
     fn pending_acquisitions_require_canonical_monotonic_event_identity() {
-        let (resources, mut engine) = investigation_engine();
+        let (_guard, resources, mut engine) = investigation_engine();
         engine.inventory.evidence.push(EvidenceRecord {
             id: "test_evidence".into(),
             name: "mutable".into(),
@@ -1917,7 +1841,7 @@ mod tests {
 
     #[test]
     fn history_coordinates_and_generation_counters_are_revalidated() {
-        let (resources, engine) = resources_and_engine();
+        let (_guard, resources, engine) = resources_and_engine();
         let mutations: Vec<SaveMutation> = vec![
             Box::new(|save| save.snapshot.next_queue_gen = 1),
             Box::new(|save| save.snapshot.dialogue_history.next_id = 0),
@@ -1947,7 +1871,7 @@ mod tests {
 
     #[test]
     fn restore_validates_untrusted_history_before_reconstruction() {
-        let (resources, engine) = resources_and_engine();
+        let (_guard, resources, engine) = resources_and_engine();
         let definitions = load_current_definitions(&resources).unwrap();
         let baseline = envelope(&engine);
         let active_token = engine.current_queue_token();
@@ -2009,7 +1933,7 @@ mod tests {
 
     #[test]
     fn restore_validates_testimony_boundary_origin_before_installing_it() {
-        let (resources, _) = interrogation_engine();
+        let (_guard, resources, _) = interrogation_engine();
         let definitions = load_current_definitions(&resources).unwrap();
         let SceneJson::Interrogation(definition) = definitions
             .scenes_by_key
@@ -2051,7 +1975,7 @@ mod tests {
 
     #[test]
     fn first_view_does_not_duplicate_history_and_saved_token_advances_once() {
-        let (resources, engine) = resources_and_engine();
+        let (_guard, resources, engine) = resources_and_engine();
         let (_, mut restored) = round_trip(resources, &engine);
         let before = capture_checkpoint_v1(&restored.engine).unwrap();
         let saved_token = restored.engine.current_queue_token().unwrap();
@@ -2081,7 +2005,7 @@ mod tests {
 
     #[test]
     fn consumed_intro_hands_the_exact_saved_generation_to_the_next_real_queue() {
-        let (resources, mut engine) = investigation_engine();
+        let (_guard, resources, mut engine) = investigation_engine();
         engine.history = DialogueHistory::default();
         let SceneRuntime::Investigation(scene) = &mut engine.scene else {
             panic!()
@@ -2104,10 +2028,10 @@ mod tests {
 
     #[test]
     fn linear_investigation_and_idle_interrogation_round_trip() {
-        let (resources, engine) = resources_and_engine();
+        let (_guard, resources, engine) = resources_and_engine();
         assert_round_trip(resources, &engine);
 
-        let (resources, mut engine) = investigation_engine();
+        let (_guard, resources, mut engine) = investigation_engine();
         engine.history = DialogueHistory::default();
         let SceneRuntime::Investigation(scene) = &mut engine.scene else {
             panic!()
@@ -2119,7 +2043,7 @@ mod tests {
         scene.current_sublocation_id = Some("room".into());
         assert_round_trip(resources, &engine);
 
-        let (resources, mut engine) = interrogation_engine();
+        let (_guard, resources, mut engine) = interrogation_engine();
         engine.history = DialogueHistory::default();
         let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
             panic!()
@@ -2133,7 +2057,7 @@ mod tests {
 
     #[test]
     fn composite_investigation_queue_inventory_story_and_events_round_trip() {
-        let (resources, mut engine) = investigation_engine();
+        let (_guard, resources, mut engine) = investigation_engine();
         engine.history = DialogueHistory::default();
         let SceneRuntime::Investigation(scene) = &mut engine.scene else {
             panic!()
@@ -2227,7 +2151,7 @@ mod tests {
     #[test]
     fn playing_and_presenting_cross_exam_round_trip_exactly() {
         for presenting in [false, true] {
-            let (resources, mut engine) = interrogation_engine();
+            let (_guard, resources, mut engine) = interrogation_engine();
             engine.history = DialogueHistory::default();
             let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
                 panic!()
@@ -2303,7 +2227,7 @@ mod tests {
 
     #[test]
     fn game_complete_retains_the_final_scene_sentinel() {
-        let (resources, mut engine) = interrogation_engine();
+        let (_guard, resources, mut engine) = interrogation_engine();
         let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
             panic!()
         };
@@ -2318,7 +2242,7 @@ mod tests {
 
     #[test]
     fn authoritative_audio_cues_and_explicit_silence_round_trip() {
-        let (resources, mut engine) = resources_and_engine();
+        let (_guard, resources, mut engine) = resources_and_engine();
         engine.last_visual_cue.bgm = Some(AudioCueJson {
             channel: AudioChannelJson::Bgm,
             asset_id: Some("bgm.rain".into()),
@@ -2342,7 +2266,7 @@ mod tests {
 
     #[test]
     fn visual_and_audio_cues_must_resolve_and_match_their_channels() {
-        let (resources, engine) = resources_and_engine();
+        let (_guard, resources, engine) = resources_and_engine();
         let mutations: Vec<SaveMutation> = vec![
             Box::new(|save| {
                 save.snapshot.last_visual_cue.background_asset_id = Some("missing".into())
@@ -2454,7 +2378,7 @@ mod tests {
 
     #[test]
     fn generic_resumable_rejects_revision_and_definition_drift_without_live_mutation() {
-        let (resources, engine) = resources_and_engine();
+        let (_guard, resources, engine) = resources_and_engine();
         let definitions = load_current_definitions(&resources).unwrap();
         let save_bytes = serde_json::to_vec(&envelope(&engine)).unwrap();
         let parsed = crate::game::save::schema::parse_current_envelope(&save_bytes).unwrap();

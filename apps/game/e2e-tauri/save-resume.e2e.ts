@@ -18,13 +18,13 @@ import {
   waitForShell,
 } from "./helpers";
 import {
-  readHpa392Expectation,
-  readHpa392OwnershipSnapshot,
-  waitForHpa392Envelope,
-  writeHpa392Expectation,
+  readSaveE2eExpectation,
+  readSaveE2eOwnershipSnapshot,
+  waitForSaveE2eEnvelope,
+  writeSaveE2eExpectation,
   type ExpectedResumeCheckpoint,
   type SeedControl,
-} from "./hpa-392-fixtures";
+} from "./save-fixtures";
 import { anchors } from "./production-anchors";
 
 type ResumeSeedControl = SeedControl & {
@@ -32,13 +32,13 @@ type ResumeSeedControl = SeedControl & {
   resumeDocumentIdentity?: string;
 };
 
-describe("HPA-392 save resume", () => {
+describe("save resume", () => {
   it("reconstructs exact queues and acknowledgement state from disk", async () => {
-    const expected = readHpa392Expectation<
+    const expected = readSaveE2eExpectation<
       ExpectedResumeCheckpoint & { documentIdentity: string }
     >("expected-resume-checkpoint");
     const control =
-      readHpa392Expectation<ResumeSeedControl>("management-state");
+      readSaveE2eExpectation<ResumeSeedControl>("management-state");
     await waitForShell();
     const documentIdentity = await currentPackagedDocumentIdentity();
     expect(documentIdentity).not.toBe(expected.documentIdentity);
@@ -56,7 +56,7 @@ describe("HPA-392 save resume", () => {
     expect(dialogueFingerprint(resumed)).toBe(
       expected.currentDialogueFingerprint,
     );
-    const manualOne = readHpa392OwnershipSnapshot().slots.find(
+    const manualOne = readSaveE2eOwnershipSnapshot().slots.find(
       (slot) => slot.fixedSlotName === "manual-1",
     )?.envelope;
     expect(manualOne?.saveId).toBe(expected.saveId);
@@ -128,7 +128,7 @@ describe("HPA-392 save resume", () => {
     );
 
     await saveManualSlot(2, "複合佇列復原點", true);
-    const reserializedComposite = await waitForHpa392Envelope(
+    const reserializedComposite = await waitForSaveE2eEnvelope(
       "manual-2",
       (envelope) => envelope.saveId !== control.composite.saveId,
     );
@@ -190,15 +190,16 @@ describe("HPA-392 save resume", () => {
     const presentingCrossExam = presenting.scene.visiblePhases.find(
       (phase) => phase.id === presentingPhaseId,
     )?.crossExam;
+    if (control.interrogation.sceneSnapshot.crossExam.type !== "presenting") {
+      throw new Error(
+        "expected control cross-exam snapshot to be in presenting state",
+      );
+    }
     expect(presentingCrossExam?.questionId).toBe(
-      control.interrogation.sceneSnapshot.crossExam.type === "presenting"
-        ? control.interrogation.sceneSnapshot.crossExam.questionId
-        : undefined,
+      control.interrogation.sceneSnapshot.crossExam.questionId,
     );
     expect(presentingCrossExam?.lineId).toBe(
-      control.interrogation.sceneSnapshot.crossExam.type === "presenting"
-        ? control.interrogation.sceneSnapshot.crossExam.lineId
-        : undefined,
+      control.interrogation.sceneSnapshot.crossExam.lineId,
     );
     const restoredBrokenQuestions = presenting.scene.visiblePhases
       .flatMap((phase) => phase.questions)
@@ -228,7 +229,7 @@ describe("HPA-392 save resume", () => {
         .toSorted(),
     );
     await saveManualSlot(3, "訊問提出證據狀態", true);
-    const reserializedInterrogation = await waitForHpa392Envelope(
+    const reserializedInterrogation = await waitForSaveE2eEnvelope(
       "manual-3",
       (envelope) => envelope.saveId !== control.interrogation.saveId,
     );
@@ -242,7 +243,7 @@ describe("HPA-392 save resume", () => {
       control.interrogation.visualCueSnapshot,
     );
     await closePersistenceBrowserToGameplay();
-    await clickButton(anchors.hpa392.withdraw);
+    await clickButton(anchors.unicodeSave.withdraw);
     const resumedPlaying = await waitForPackagedGameState(
       (state) =>
         state.mode.type === "dialogue" && state.scene.kind === "interrogation",
@@ -261,7 +262,7 @@ describe("HPA-392 save resume", () => {
     expect(playingCrossExam?.lineId).toBe(presentingCrossExam?.lineId);
 
     await returnToTitle();
-    const newest = readHpa392OwnershipSnapshot()
+    const newest = readSaveE2eOwnershipSnapshot()
       .slots.filter(
         (slot) =>
           slot.fixedSlotName.startsWith("autosave-") && slot.envelope !== null,
@@ -272,7 +273,7 @@ describe("HPA-392 save resume", () => {
           Date.parse(left.envelope!.savedAt),
       )[0];
     if (!newest?.envelope) throw new Error("acknowledged autosave missing");
-    writeHpa392Expectation("management-state", {
+    writeSaveE2eExpectation("management-state", {
       ...control,
       resumeDocumentIdentity: documentIdentity,
       acknowledgedCheckpointSaveId: newest.envelope.saveId,

@@ -57,6 +57,7 @@ impl EngineRollbackSnapshot {
             history,
             durable_revision,
             pending_acquisition_events,
+            ..
         } = engine;
         Self {
             current_chapter_idx: *current_chapter_idx,
@@ -392,7 +393,7 @@ mod tests {
     fn pending_acquisition_hides_during_dialogue_then_resolves_earliest_record() {
         use crate::game::save::schema::RecordKind;
 
-        let resources = packaged_acquisition_fixture_resources();
+        let (_guard, resources) = packaged_acquisition_fixture_resources();
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
         engine.inventory.evidence = vec![mutable_evidence_record("receipt")];
         engine.pending_acquisition_events = vec![
@@ -407,8 +408,6 @@ mod tests {
         assert_eq!(pending.id, "acq:7:0");
         assert_eq!(pending.title, "Packaged Receipt");
         assert_eq!(pending.image_asset_id.as_deref(), Some("evidence.receipt"));
-
-        let _ = std::fs::remove_dir_all(resources);
     }
 
     // Break caught: pending presentation trusts mutable inventory display
@@ -418,7 +417,7 @@ mod tests {
     fn pending_acquisition_resolves_packaged_definitions_in_event_order() {
         use crate::game::save::schema::RecordKind;
 
-        let resources = packaged_acquisition_fixture_resources();
+        let (_guard, resources) = packaged_acquisition_fixture_resources();
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
         clear_active_fixture_dialogue(&mut engine);
         engine.inventory.evidence = vec![
@@ -463,8 +462,6 @@ mod tests {
         let third = engine.pending_acquisition_view().unwrap().unwrap();
         assert_eq!(third.id, "acq:9:0");
         assert_eq!(third.title, "Packaged Second Note");
-
-        let _ = std::fs::remove_dir_all(resources);
     }
 
     // Break caught: an event can present an inventory copy whose ID exists
@@ -474,7 +471,7 @@ mod tests {
     fn pending_acquisition_rejects_missing_and_wrong_kind_definitions() {
         use crate::game::save::schema::RecordKind;
 
-        let resources = packaged_acquisition_fixture_resources();
+        let (_guard, resources) = packaged_acquisition_fixture_resources();
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
         clear_active_fixture_dialogue(&mut engine);
 
@@ -497,8 +494,6 @@ mod tests {
             vec![acquisition_event(RecordKind::Evidence, "alibi", 5, 0)];
         let mismatch = engine.pending_acquisition_view().unwrap_err();
         assert_eq!(mismatch.code, "acquisitionDefinitionMismatch");
-
-        let _ = std::fs::remove_dir_all(resources);
     }
 
     // Break caught: authored dialogue returns None before a malformed event is
@@ -507,7 +502,7 @@ mod tests {
     fn malformed_pending_acquisition_errors_before_dialogue_hiding() {
         use crate::game::save::schema::RecordKind;
 
-        let resources = packaged_acquisition_fixture_resources();
+        let (_guard, resources) = packaged_acquisition_fixture_resources();
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
         engine.inventory.evidence = vec![mutable_evidence_record("receipt")];
         let mut malformed = acquisition_event(RecordKind::Evidence, "receipt", 2, 0);
@@ -516,8 +511,6 @@ mod tests {
 
         let error = engine.pending_acquisition_view().unwrap_err();
         assert_eq!(error.code, "unknownAcquisitionEvent");
-
-        let _ = std::fs::remove_dir_all(resources);
     }
 
     // Break caught: the public state builder absorbs pending-event errors into
@@ -527,7 +520,7 @@ mod tests {
     fn public_view_propagates_malformed_and_unknown_pending_events() {
         use crate::game::save::schema::RecordKind;
 
-        let resources = packaged_acquisition_fixture_resources();
+        let (_guard, resources) = packaged_acquisition_fixture_resources();
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
         engine.inventory.evidence = vec![mutable_evidence_record("receipt")];
         let mut malformed = acquisition_event(RecordKind::Evidence, "receipt", 2, 0);
@@ -543,8 +536,6 @@ mod tests {
             vec![acquisition_event(RecordKind::Evidence, "receipt", 3, 0)];
         let unknown_error = engine.view().unwrap_err();
         assert_eq!(unknown_error.code, "unknownAcquisitionEvent");
-
-        let _ = std::fs::remove_dir_all(resources);
     }
 
     #[test]
@@ -1060,6 +1051,7 @@ mod tests {
             history: dialogue::DialogueHistory::default(),
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
+            cached_pending_acquisition_scene: std::cell::RefCell::new(None),
         };
         engine.prime_initial_queue().unwrap();
         let token = token_from(&engine.view().unwrap());
@@ -1196,6 +1188,7 @@ mod tests {
             history: dialogue::DialogueHistory::default(),
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
+            cached_pending_acquisition_scene: std::cell::RefCell::new(None),
         };
         engine.prime_initial_queue().unwrap();
         let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();

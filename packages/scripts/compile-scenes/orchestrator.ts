@@ -341,7 +341,9 @@ export function compile(opts: CompileOptions): CompileResult {
   let manifestToWrite: AssetManifest | null = null;
   if (assetConfig.ok) {
     const configWarnings = assetConfig.warnings;
-    scenes.splice(0, scenes.length, ...scenes.map(materializeSemanticDefaults));
+    scenes.forEach((scene, i) => {
+      scenes[i] = materializeSemanticDefaults(scene);
+    });
     const enriched = enrichScenesWithAssets({
       scenes,
       config: assetConfig.value,
@@ -354,13 +356,15 @@ export function compile(opts: CompileOptions): CompileResult {
       ...enriched.warnings,
     ]);
     manifestToWrite = enriched.manifest;
-    errors.push(
-      ...validateSaveContentReferences({
-        scenes,
-        config: assetConfig.value,
-        manifest: enriched.manifest,
-      }),
-    );
+    if (enriched.errors.length === 0) {
+      errors.push(
+        ...validateSaveContentReferences({
+          scenes,
+          config: assetConfig.value,
+          manifest: enriched.manifest,
+        }),
+      );
+    }
   }
 
   // 4. Validate.

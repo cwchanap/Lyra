@@ -654,7 +654,9 @@ describe("+page title persistence flows", () => {
       '[data-slot-type="auto"][data-slot-number="1"]',
     )!;
     await user.click(
-      within(autoOne as HTMLElement).getByRole("button", { name: "載入" }),
+      within(autoOne as HTMLElement).getByRole("button", {
+        name: "載入自動存檔 1",
+      }),
     );
 
     await waitFor(() => expect(loadArgs).not.toBeNull());
@@ -702,7 +704,7 @@ describe("+page title persistence flows", () => {
       browser.querySelector(
         '[data-slot-type="auto"][data-slot-number="1"]',
       ) as HTMLElement,
-    ).getByRole("button", { name: "載入" });
+    ).getByRole("button", { name: "載入自動存檔 1" });
 
     await fireEvent.click(load);
     await fireEvent.click(load);
@@ -1190,7 +1192,9 @@ describe("+page in-game persistence browser", () => {
       '[data-slot-type="auto"][data-slot-number="1"]',
     )!;
     await user.click(
-      within(autoOne as HTMLElement).getByRole("button", { name: "載入" }),
+      within(autoOne as HTMLElement).getByRole("button", {
+        name: "載入自動存檔 1",
+      }),
     );
     await user.click(
       within(
@@ -1506,7 +1510,7 @@ describe("+page in-game persistence browser", () => {
     )!;
     await user.click(
       within(autoOne as HTMLElement).getByRole("button", {
-        name: "載入",
+        name: "載入自動存檔 1",
       }),
     );
 
@@ -1578,7 +1582,9 @@ describe("+page in-game persistence browser", () => {
       '[data-slot-type="auto"][data-slot-number="1"]',
     )!;
     await user.click(
-      within(autoOne as HTMLElement).getByRole("button", { name: "載入" }),
+      within(autoOne as HTMLElement).getByRole("button", {
+        name: "載入自動存檔 1",
+      }),
     );
     const initialConfirmation = await screen.findByRole("dialog", {
       name: "載入自動存檔 1",
@@ -1660,7 +1666,9 @@ describe("+page in-game persistence browser", () => {
       '[data-slot-type="auto"][data-slot-number="1"]',
     )!;
     await user.click(
-      within(autoOne as HTMLElement).getByRole("button", { name: "載入" }),
+      within(autoOne as HTMLElement).getByRole("button", {
+        name: "載入自動存檔 1",
+      }),
     );
     await user.click(
       within(

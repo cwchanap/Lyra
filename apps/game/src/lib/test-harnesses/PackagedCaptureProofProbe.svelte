@@ -171,42 +171,42 @@
 </script>
 
 <aside
-  data-hpa-392-capture-proof=""
-  data-hpa-392-capture-proof-status={status}
-  data-hpa-392-capture-proof-save-id={observedSaveId ?? ""}
-  data-hpa-392-capture-proof-width={intrinsicWidth}
-  data-hpa-392-capture-proof-height={intrinsicHeight}
-  data-hpa-392-capture-proof-error-code={errorCode}
-  data-hpa-392-capture-proof-error-message={errorMessage}
-  data-hpa-392-capture-proof-error-stage={errorStage}
-  data-hpa-392-capture-proof-unavailable-reason={unavailableReason}
-  data-hpa-392-capture-proof-command-status={captureCommandInFlight
+  data-capture-proof=""
+  data-capture-proof-status={status}
+  data-capture-proof-save-id={observedSaveId ?? ""}
+  data-capture-proof-width={intrinsicWidth}
+  data-capture-proof-height={intrinsicHeight}
+  data-capture-proof-error-code={errorCode}
+  data-capture-proof-error-message={errorMessage}
+  data-capture-proof-error-stage={errorStage}
+  data-capture-proof-unavailable-reason={unavailableReason}
+  data-capture-proof-command-status={captureCommandInFlight
     ? "capturing"
     : "idle"}
-  data-hpa-392-capture-proof-completed-generation={completedCommandGeneration}
-  data-hpa-392-capture-proof-calls={captureCalls}
-  data-hpa-392-capture-proof-available={captureAvailable}
-  data-hpa-392-capture-proof-last-closed-reason={captureLastClosedReason}
-  data-hpa-392-capture-proof-last-render-diagnostic={captureLastRenderDiagnostic}
-  data-hpa-392-capture-proof-font-css-bytes={captureEmbeddedFontCssBytes}
-  data-hpa-392-capture-proof-font-chunks={captureEmbeddedFontChunkCount}
-  data-hpa-392-capture-proof-font-zh-hant-code-points={captureEmbeddedZhHantCodePointCount}
+  data-capture-proof-completed-generation={completedCommandGeneration}
+  data-capture-proof-calls={captureCalls}
+  data-capture-proof-available={captureAvailable}
+  data-capture-proof-last-closed-reason={captureLastClosedReason}
+  data-capture-proof-last-render-diagnostic={captureLastRenderDiagnostic}
+  data-capture-proof-font-css-bytes={captureEmbeddedFontCssBytes}
+  data-capture-proof-font-chunks={captureEmbeddedFontChunkCount}
+  data-capture-proof-font-zh-hant-code-points={captureEmbeddedZhHantCodePointCount}
   data-save-thumbnail-exclude=""
   aria-label="Packaged capture proof"
 >
-  <button type="button" data-hpa-392-capture-proof-refresh="" onclick={refresh}>
+  <button type="button" data-capture-proof-refresh="" onclick={refresh}>
     Refresh capture proof
   </button>
   <button
     type="button"
-    data-hpa-392-capture-proof-force-unavailable=""
+    data-capture-proof-force-unavailable=""
     onclick={onForceNextCaptureUnavailable}
   >
     Force next capture unavailable
   </button>
   {#if imageUrl}
     <img
-      data-hpa-392-capture-proof-thumbnail=""
+      data-capture-proof-thumbnail=""
       src={imageUrl}
       alt="Newest autosave capture proof"
       onload={handleImageLoad}

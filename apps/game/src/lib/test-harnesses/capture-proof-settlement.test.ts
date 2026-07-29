@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import * as settlementModule from "./capture-proof-settlement";
 import {
   captureProofCommandIsSettled,
   captureProofDialogueTextIsStable,
+  captureProofRecoveryTargetMatches,
 } from "./capture-proof-settlement";
 
 describe("capture proof command settlement", () => {
@@ -98,19 +98,8 @@ describe("capture proof dialogue stability", () => {
 
 describe("capture proof recovery target", () => {
   it("accepts a distinctive revealed prefix only with the expected current portrait", () => {
-    const matches = (
-      settlementModule as unknown as {
-        captureProofRecoveryTargetMatches?: (input: {
-          dialogueText: string;
-          expectedPrefix: string;
-          visiblePortraitSrc: string;
-          expectedPortraitFragment: string;
-        }) => boolean;
-      }
-    ).captureProofRecoveryTargetMatches;
-
     expect(
-      matches?.({
+      captureProofRecoveryTargetMatches({
         dialogueText: "他在店裡帶回來的那些蛋",
         expectedPrefix: "他在店裡",
         visiblePortraitSrc:
@@ -119,7 +108,7 @@ describe("capture proof recovery target", () => {
       }),
     ).toBe(true);
     expect(
-      matches?.({
+      captureProofRecoveryTargetMatches({
         dialogueText: "他在店裡帶回來的那些蛋",
         expectedPrefix: "他在店裡",
         visiblePortraitSrc:
@@ -128,7 +117,7 @@ describe("capture proof recovery target", () => {
       }),
     ).toBe(false);
     expect(
-      matches?.({
+      captureProofRecoveryTargetMatches({
         dialogueText: "他在",
         expectedPrefix: "他在店裡",
         visiblePortraitSrc:

@@ -180,6 +180,16 @@ describe("materializeSemanticDefaults", () => {
     expect(actual.statement).toBe(authored);
   });
 
+  it("does not mutate the input scene when materializing a null re-examination block", () => {
+    const input = scene({ hotspot: null });
+    const actual = defaults(input);
+    expect(
+      (input.ast as ASTInvestigationScene).sublocations[0]!.hotspots[0]!
+        .onReexamine,
+    ).toBeNull();
+    expect(actual.hotspot).toEqual(FALLBACK);
+  });
+
   it("does not add a fallback to unrelated empty intro or outro dialogue", () => {
     const actual = defaults(scene());
     expect(actual.intro).toEqual([]);

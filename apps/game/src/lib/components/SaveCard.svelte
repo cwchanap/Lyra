@@ -192,6 +192,7 @@
         <button
           type="button"
           class="load"
+          aria-label={`載入${slotLabel}`}
           disabled={!isValid}
           onclick={(event) =>
             onLoad(slot, event.currentTarget as HTMLButtonElement)}
@@ -203,6 +204,7 @@
         <button
           type="button"
           class="delete"
+          aria-label={`刪除${slotLabel}`}
           onclick={(event) =>
             onDelete(slot, event.currentTarget as HTMLButtonElement)}
         >

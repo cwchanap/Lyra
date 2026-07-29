@@ -121,6 +121,9 @@
   );
   let acquisitionReturnFocus = $state<HTMLElement | null>(null);
   let acquisitionWasBlocking = false;
+  // Element that had focus before a recovery dialog appeared; restored on
+  // dismissal. Mirrors the acquisitionReturnFocus capture/restore pattern.
+  let recoveryReturnFocus = $state<HTMLElement | null>(null);
   let gameplayRoot: HTMLDivElement | null = $state(null);
   let titleDiscovery = $state<SaveBrowserOpenResultView | null>(null);
   let titleBrowserOpen = $state(false);
@@ -180,6 +183,11 @@
       persistenceLayerOpen ||
       persistenceStore.exitStatus.type === "saving" ||
       persistenceStore.exitStatus.type === "failed",
+  );
+  let exitFailureToken = $derived(
+    persistenceStore.exitStatus.type === "failed"
+      ? persistenceStore.exitStatus.failureToken
+      : null,
   );
   let currentSaveSummary = $derived.by<SaveSummaryView | null>(() => {
     const state = gameState.value;
@@ -347,19 +355,32 @@
     void cancelPersistenceChallenge(newGameFailure?.failureToken, () => {
       newGameFailure = null;
       confirmingNewGameWithoutSaving = false;
+      restoreRecoveryFocus();
     });
   }
 
   function cancelTitleLoadFailure(): void {
     void cancelPersistenceChallenge(titleLoadFailure?.failureToken, () => {
       titleLoadFailure = null;
+      restoreRecoveryFocus();
     });
   }
 
   function cancelContinueFailure(): void {
     void cancelPersistenceChallenge(continueFailure?.failureToken, () => {
       continueFailure = null;
+      restoreRecoveryFocus();
     });
+  }
+
+  // Restore focus to the element that had focus before a recovery dialog
+  // appeared. Mirrors the acquisition popup's returnFocusTo restore.
+  function restoreRecoveryFocus(): void {
+    const target = recoveryReturnFocus;
+    recoveryReturnFocus = null;
+    if (target) {
+      void tick().then(() => target.focus());
+    }
   }
 
   async function openFreshLoadAfterContinueFailure(): Promise<void> {
@@ -501,11 +522,13 @@
           "cancel_exit",
           persistenceStore.exitStatus.failureToken,
         );
+        restoreRecoveryFocus();
       }
       return;
     }
     if (manualSaveFailure) {
       manualSaveFailure = null;
+      restoreRecoveryFocus();
       return;
     }
     if (returnToTitleFailure) {
@@ -535,6 +558,9 @@
           gameLoadDiscardFailureToken = null;
         }
         loadFailure = null;
+        // `back()` restores focus to the browser layer; the recovery dialog's
+        // return-focus target would point at the browser's slot button, which
+        // `back()` already handles.
         gameBrowserController?.back();
       });
       return;
@@ -1001,6 +1027,51 @@
     }
   });
 
+  // Move focus into a recovery dialog when one appears, and restore focus to
+  // the triggering element on dismissal. Mirrors the acquisition popup's
+  // capture/restore pattern (acquisitionReturnFocus) and the browser/name/
+  // confirmation focus-controller behavior (tick().then(...focus())).
+  $effect(() => {
+    const open =
+      manualSaveFailure !== null ||
+      loadFailure !== null ||
+      returnToTitleFailure !== null ||
+      titleLoadFailure !== null ||
+      continueFailure !== null ||
+      newGameFailure !== null ||
+      persistenceStore.exitStatus.type === "failed";
+    // Also re-run when an in-dialog confirmation toggle changes the primary
+    // action, so focus follows the newly rendered confirmation button.
+    void confirmingLoadWithoutSaving;
+    void confirmingReturnWithoutSaving;
+    void confirmingNewGameWithoutSaving;
+    void confirmingExitWithoutSaving;
+    if (!open) {
+      // No recovery dialog is visible. Clear any stale return-focus target
+      // so we don't hold a detached DOM reference after a successful
+      // recovery. Dismissal handlers already consume and null it via
+      // restoreRecoveryFocus() before this effect re-runs.
+      recoveryReturnFocus = null;
+      return;
+    }
+    // Capture the element that had focus before the modal stole it. Skip if
+    // focus is already inside a recovery dialog (e.g. confirmation toggle).
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      !active.closest(".recovery-dialog") &&
+      active !== recoveryReturnFocus
+    ) {
+      recoveryReturnFocus = active;
+    }
+    void tick().then(() => {
+      const primary = document.querySelector<HTMLElement>(
+        ".recovery-dialog [data-recovery-focus]",
+      );
+      primary?.focus();
+    });
+  });
+
   async function loadSceneNavigationIndex() {
     // untrack: this function is called synchronously from the auto-load
     // $effect. Reading sceneNavigationLoadGen here without untrack would
@@ -1349,6 +1420,7 @@
           >
           <button
             type="button"
+            data-recovery-focus
             onclick={() => {
               if (pendingManualSubmission) {
                 void performManualSave(pendingManualSubmission);
@@ -1396,6 +1468,7 @@
             >
             <button
               type="button"
+              data-recovery-focus
               onclick={() => {
                 const failure = loadFailure;
                 const token = failure?.diagnostic.failureToken;
@@ -1412,6 +1485,7 @@
             >
             <button
               type="button"
+              data-recovery-focus
               onclick={() => {
                 const failure = loadFailure;
                 if (failure) {
@@ -1467,6 +1541,7 @@
             >
             <button
               type="button"
+              data-recovery-focus
               onclick={() => {
                 const token = returnToTitleFailure?.failureToken;
                 if (token) void handleReturnToTitle(token);
@@ -1478,8 +1553,10 @@
             <button type="button" onclick={closeGamePersistenceLayer}
               >取消</button
             >
-            <button type="button" onclick={() => handleReturnToTitle()}
-              >重試</button
+            <button
+              type="button"
+              data-recovery-focus
+              onclick={() => handleReturnToTitle()}>重試</button
             >
             {#if returnToTitleFailure.failureToken}
               <button
@@ -1575,6 +1652,7 @@
           >
           <button
             type="button"
+            data-recovery-focus
             onclick={() => {
               const selected = titleBrowserController?.selected;
               const slot = titleDiscovery?.browser.slots.find(
@@ -1604,9 +1682,12 @@
             type="button"
             onclick={() => {
               continueFailure = null;
+              restoreRecoveryFocus();
             }}>取消</button
           >
-          <button type="button" onclick={handleContinue}>重試</button>
+          <button type="button" data-recovery-focus onclick={handleContinue}
+            >重試</button
+          >
           <button type="button" onclick={openFreshLoadAfterContinueFailure}
             >載入遊戲</button
           >
@@ -1644,8 +1725,10 @@
                 confirmingNewGameWithoutSaving = false;
               }}>取消</button
             >
-            <button type="button" onclick={handleStartGameWithoutSaving}
-              >不儲存並開始遊戲</button
+            <button
+              type="button"
+              data-recovery-focus
+              onclick={handleStartGameWithoutSaving}>不儲存並開始遊戲</button
             >
           </div>
         {:else}
@@ -1655,7 +1738,9 @@
               disabled={persistenceCancellationInFlight}
               onclick={cancelNewGameFailure}>取消</button
             >
-            <button type="button" onclick={handleStartGame}>重試</button>
+            <button type="button" data-recovery-focus onclick={handleStartGame}
+              >重試</button
+            >
             {#if newGameFailure.failureToken}
               <button
                 type="button"
@@ -1733,35 +1818,29 @@
           >
           <button
             type="button"
-            onclick={() =>
-              exitWithoutSaving(
-                persistenceStore.exitStatus.type === "failed"
-                  ? persistenceStore.exitStatus.failureToken
-                  : "",
-              )}>不儲存並結束遊戲</button
+            data-recovery-focus
+            onclick={() => {
+              if (!exitFailureToken) return;
+              exitWithoutSaving(exitFailureToken);
+            }}>不儲存並結束遊戲</button
           >
         </div>
       {:else}
         <div class="recovery-actions">
           <button
             type="button"
-            onclick={() =>
-              updateExitStatus(
-                "cancel_exit",
-                persistenceStore.exitStatus.type === "failed"
-                  ? persistenceStore.exitStatus.failureToken
-                  : "",
-              )}>取消</button
+            onclick={() => {
+              if (!exitFailureToken) return;
+              updateExitStatus("cancel_exit", exitFailureToken);
+            }}>取消</button
           >
           <button
             type="button"
-            onclick={() =>
-              updateExitStatus(
-                "retry_exit",
-                persistenceStore.exitStatus.type === "failed"
-                  ? persistenceStore.exitStatus.failureToken
-                  : "",
-              )}>重試</button
+            data-recovery-focus
+            onclick={() => {
+              if (!exitFailureToken) return;
+              updateExitStatus("retry_exit", exitFailureToken);
+            }}>重試</button
           >
           <button
             type="button"

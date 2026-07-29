@@ -99,6 +99,7 @@ export function createSaveBrowserController(
       open("confirmation", opener, initialFocus);
     },
     handleKeydown(event) {
+      if (closed) return false;
       if (event.key !== "Escape" || event.repeat) return false;
       event.preventDefault();
       event.stopPropagation();

@@ -4,6 +4,7 @@ import type {
   GameplaySfxEvent,
 } from "$lib/audio/sfx-events";
 import type { GameplayCommandResultView } from "$lib/persistence/types";
+import { MUTATING_GAMEPLAY_COMMANDS } from "./game-client.svelte";
 import type { GameStateView, QuestionView } from "./types";
 
 const mocks = vi.hoisted(() => ({
@@ -18,24 +19,6 @@ const mocks = vi.hoisted(() => ({
   playGameplaySfxEvent: vi.fn(),
 }));
 
-const mutatingCommands = new Set([
-  "start_game",
-  "reset_game",
-  "jump_to_scene",
-  "advance_dialogue",
-  "inspect_hotspot",
-  "interview_topic",
-  "enter_sublocation",
-  "reexamine_evidence",
-  "reexamine_statement",
-  "ask_interrogation_question",
-  "challenge_interrogation_line",
-  "present_interrogation_evidence",
-  "withdraw_interrogation",
-  "resume_interrogation_testimony",
-  "complete_interrogation_phase",
-]);
-
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: async (
     command: string,
@@ -49,7 +32,7 @@ vi.mock("@tauri-apps/api/core", () => ({
           : await mocks.invoke(command, args)
         : await mocks.invoke(command, args, options);
     if (
-      mutatingCommands.has(command) &&
+      MUTATING_GAMEPLAY_COMMANDS.has(command) &&
       response &&
       typeof response === "object" &&
       !("state" in response)

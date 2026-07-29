@@ -48,7 +48,17 @@ export async function invokePackagedCommand<T>(
     command,
     args,
   );
-  if (!result.ok) throw result.error;
+  if (!result.ok) {
+    const payload = result.error;
+    const message =
+      payload !== null &&
+      typeof payload === "object" &&
+      "message" in payload &&
+      typeof (payload as { message: unknown }).message === "string"
+        ? (payload as { message: string }).message
+        : String(payload);
+    throw new Error(message, { cause: payload });
+  }
   return result.value as T;
 }
 
@@ -76,7 +86,7 @@ export async function settlePackagedCommand<T>(
   args: Record<string, unknown> = {},
 ): Promise<PackagedCommandSettlement<T>> {
   const requestId = `${Date.now()}-${Math.random()}`;
-  const attribute = "data-hpa-392-command-settlement";
+  const attribute = "data-save-command-settlement";
   const started = await browser.execute(
     (
       selectedCommand: string,
@@ -179,14 +189,14 @@ export async function settlePackagedCommand<T>(
   return settlement;
 }
 
-export function assertHpa392Phase(
+export function assertSaveE2ePhase(
   expected: string | readonly string[],
 ): string {
-  const phase = process.env.LYRA_HPA392_PHASE;
+  const phase = process.env.LYRA_SAVE_E2E_PHASE;
   const accepted = typeof expected === "string" ? [expected] : [...expected];
   if (!phase || !accepted.includes(phase)) {
     throw new Error(
-      `Expected HPA-392 phase ${accepted.join(" or ")}, got ${String(phase)}.`,
+      `Expected save e2e phase ${accepted.join(" or ")}, got ${String(phase)}.`,
     );
   }
   return phase;
@@ -195,10 +205,10 @@ export function assertHpa392Phase(
 export async function currentPackagedDocumentIdentity(): Promise<string> {
   return browser.execute(() => {
     const root = document.documentElement;
-    const existing = root.dataset.hpa392DocumentIdentity;
+    const existing = root.dataset.saveDocumentIdentity;
     if (existing) return existing;
     const identity = `${performance.timeOrigin}:${crypto.randomUUID()}`;
-    root.dataset.hpa392DocumentIdentity = identity;
+    root.dataset.saveDocumentIdentity = identity;
     return identity;
   });
 }
@@ -213,8 +223,7 @@ async function packagedGameplayCommandGeneration(): Promise<number> {
       Number(
         document
           .querySelector(probe)
-          ?.getAttribute("data-hpa-392-capture-proof-completed-generation") ??
-          "0",
+          ?.getAttribute("data-capture-proof-completed-generation") ?? "0",
       ),
     anchors.captureProof.probe,
   );
@@ -254,12 +263,11 @@ async function waitForPackagedGameplayCommandSettled(
       };
       const settle = () => {
         const generation = Number(
-          element.getAttribute(
-            "data-hpa-392-capture-proof-completed-generation",
-          ) ?? "0",
+          element.getAttribute("data-capture-proof-completed-generation") ??
+            "0",
         );
         const status = element.getAttribute(
-          "data-hpa-392-capture-proof-command-status",
+          "data-capture-proof-command-status",
         );
         if (generation > baselineGeneration && status === "idle") {
           finish({ settled: true, generation, status });
@@ -268,21 +276,18 @@ async function waitForPackagedGameplayCommandSettled(
       observer.observe(element, {
         attributes: true,
         attributeFilter: [
-          "data-hpa-392-capture-proof-completed-generation",
-          "data-hpa-392-capture-proof-command-status",
+          "data-capture-proof-completed-generation",
+          "data-capture-proof-command-status",
         ],
       });
       const timeout = setTimeout(() => {
         finish({
           settled: false,
           generation: Number(
-            element.getAttribute(
-              "data-hpa-392-capture-proof-completed-generation",
-            ) ?? "0",
+            element.getAttribute("data-capture-proof-completed-generation") ??
+              "0",
           ),
-          status: element.getAttribute(
-            "data-hpa-392-capture-proof-command-status",
-          ),
+          status: element.getAttribute("data-capture-proof-command-status"),
         });
       }, 90000);
       settle();
@@ -1163,10 +1168,7 @@ export async function resetCaptureProofStorage(): Promise<void> {
     window.localStorage.setItem(clearanceKey, "true");
   }, STORY_CLEARED_STORAGE_KEY);
   await browser.execute(() => {
-    document.documentElement.setAttribute(
-      "data-hpa-392-capture-proof-pre-refresh",
-      "",
-    );
+    document.documentElement.setAttribute("data-capture-proof-pre-refresh", "");
   });
   await browser.refresh();
   await browser.waitUntil(
@@ -1175,7 +1177,7 @@ export async function resetCaptureProofStorage(): Promise<void> {
         () =>
           document.readyState === "complete" &&
           !document.documentElement.hasAttribute(
-            "data-hpa-392-capture-proof-pre-refresh",
+            "data-capture-proof-pre-refresh",
           ),
       ),
     {
@@ -1355,10 +1357,7 @@ export async function resetE2eStorageWithStoryClearance(): Promise<void> {
     }
     for (const key of toRemove) window.localStorage.removeItem(key);
     window.localStorage.setItem(clearanceKey, "true");
-    document.documentElement.setAttribute(
-      "data-hpa-392-storage-pre-refresh",
-      "",
-    );
+    document.documentElement.setAttribute("data-save-storage-pre-refresh", "");
   }, STORY_CLEARED_STORAGE_KEY);
   await browser.refresh();
   await browser.waitUntil(
@@ -1367,12 +1366,12 @@ export async function resetE2eStorageWithStoryClearance(): Promise<void> {
         () =>
           document.readyState === "complete" &&
           !document.documentElement.hasAttribute(
-            "data-hpa-392-storage-pre-refresh",
+            "data-save-storage-pre-refresh",
           ),
       ),
     {
       timeout: 30000,
-      timeoutMsg: "HPA-392 setup refresh did not replace the prior document",
+      timeoutMsg: "save e2e setup refresh did not replace the prior document",
     },
   );
   await waitForShell();
@@ -1447,7 +1446,7 @@ export async function startFromMenu(): Promise<void> {
       const banner = document.querySelector("[role='alert'], .error-banner");
       const diagnosticWindow = window as Window & {
         __TAURI_INTERNALS__?: TauriInternals;
-        __hpa392RuntimeErrors?: string[];
+        __saveE2eRuntimeErrors?: string[];
       };
       const internals = diagnosticWindow.__TAURI_INTERNALS__;
       let nativeState:
@@ -1469,7 +1468,7 @@ export async function startFromMenu(): Promise<void> {
       return {
         url: window.location.href,
         documentIdentity:
-          document.documentElement.dataset.hpa392DocumentIdentity ?? null,
+          document.documentElement.dataset.saveDocumentIdentity ?? null,
         titleVisible: document.querySelector('[aria-label="主選單"]') !== null,
         gameplayRootVisible:
           document.querySelector("[data-gameplay-root]") !== null,
@@ -1477,7 +1476,7 @@ export async function startFromMenu(): Promise<void> {
           document.querySelector("[data-save-thumbnail-root]") !== null,
         tauriInternals: internals !== undefined,
         errorBanner: banner ? (banner.textContent ?? "").trim() : null,
-        runtimeErrors: diagnosticWindow.__hpa392RuntimeErrors ?? [],
+        runtimeErrors: diagnosticWindow.__saveE2eRuntimeErrors ?? [],
         bodyText: (document.body.textContent ?? "").trim(),
         buttons: Array.from(
           document.querySelectorAll<HTMLButtonElement>("button"),
@@ -1541,7 +1540,7 @@ export async function waitTypewriterIdle(): Promise<void> {
             })),
             captureProof: document
               .querySelector(captureProbe)
-              ?.getAttribute("data-hpa-392-capture-proof-command-status"),
+              ?.getAttribute("data-capture-proof-command-status"),
           };
         },
         advanceDialogueSelector,

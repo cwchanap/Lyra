@@ -454,16 +454,14 @@ fn run_gameplay_mutation(
 fn finish_coordinator_mutation(
     state: GameStateView,
     policy: MutationPersistencePolicy,
-) -> GameplayCommandResultView {
+) -> Result<GameplayCommandResultView, GameError> {
     match policy {
         MutationPersistencePolicy::CoordinatorManaged
-        | MutationPersistencePolicy::AdvanceWithoutSaving => GameplayCommandResultView {
+        | MutationPersistencePolicy::AdvanceWithoutSaving => Ok(GameplayCommandResultView {
             state,
             thumbnail_capture: None,
-        },
-        MutationPersistencePolicy::AutosaveIfAdvanced => {
-            unreachable!("ordinary autosave mutations must use run_gameplay_mutation")
-        }
+        }),
+        MutationPersistencePolicy::AutosaveIfAdvanced => Err(GameError::unavailable()),
     }
 }
 
@@ -588,10 +586,7 @@ async fn start_game_without_saving_core(
         .coordinator
         .install_session_if_current(state, engine, None, expected)
         .await?;
-    Ok(finish_coordinator_mutation(
-        state_view,
-        MutationPersistencePolicy::CoordinatorManaged,
-    ))
+    finish_coordinator_mutation(state_view, MutationPersistencePolicy::CoordinatorManaged)
 }
 
 #[tauri::command]
@@ -1247,10 +1242,7 @@ async fn load_save_core_impl(
         .coordinator
         .install_session_if_current(state, candidate.engine, Some(candidate.source), expected)
         .await?;
-    Ok(finish_coordinator_mutation(
-        state_view,
-        MutationPersistencePolicy::CoordinatorManaged,
-    ))
+    finish_coordinator_mutation(state_view, MutationPersistencePolicy::CoordinatorManaged)
 }
 
 #[cfg(test)]
@@ -1290,10 +1282,7 @@ async fn load_save_discarding_current_core(
         .coordinator
         .install_session_if_current(state, candidate.engine, Some(candidate.source), expected)
         .await?;
-    Ok(finish_coordinator_mutation(
-        state_view,
-        MutationPersistencePolicy::CoordinatorManaged,
-    ))
+    finish_coordinator_mutation(state_view, MutationPersistencePolicy::CoordinatorManaged)
 }
 
 #[tauri::command]
@@ -1357,10 +1346,7 @@ async fn continue_game_core_impl(
         .coordinator
         .install_session_if_current(state, candidate.engine, Some(candidate.source), expected)
         .await?;
-    Ok(finish_coordinator_mutation(
-        state_view,
-        MutationPersistencePolicy::CoordinatorManaged,
-    ))
+    finish_coordinator_mutation(state_view, MutationPersistencePolicy::CoordinatorManaged)
 }
 
 #[cfg(test)]
@@ -1529,10 +1515,7 @@ async fn acknowledge_acquisition_event(
         .coordinator
         .acknowledge_acquisition(&state, event_id, prepared_thumbnail_ticket)
         .await?;
-    Ok(finish_coordinator_mutation(
-        outcome.state,
-        MutationPersistencePolicy::CoordinatorManaged,
-    ))
+    finish_coordinator_mutation(outcome.state, MutationPersistencePolicy::CoordinatorManaged)
 }
 
 #[tauri::command]
@@ -1545,10 +1528,7 @@ async fn confirm_acquisition_without_saving(
         .coordinator
         .confirm_acquisition_without_saving(&state, event_id, failure_token)
         .await?;
-    Ok(finish_coordinator_mutation(
-        state_view,
-        MutationPersistencePolicy::AdvanceWithoutSaving,
-    ))
+    finish_coordinator_mutation(state_view, MutationPersistencePolicy::AdvanceWithoutSaving)
 }
 
 #[doc(hidden)]
@@ -1828,7 +1808,7 @@ pub async fn dispatch_development_command_with_exit(
             development_json(finish_coordinator_mutation(
                 outcome.state,
                 MutationPersistencePolicy::CoordinatorManaged,
-            ))
+            )?)
         }
         "confirm_acquisition_without_saving" => {
             #[derive(serde::Deserialize)]
@@ -1845,7 +1825,7 @@ pub async fn dispatch_development_command_with_exit(
             development_json(finish_coordinator_mutation(
                 state_view,
                 MutationPersistencePolicy::AdvanceWithoutSaving,
-            ))
+            )?)
         }
         "list_scenes" => development_json(GameEngine::scene_navigation_index(
             state.resources_dir.clone(),
@@ -2742,7 +2722,7 @@ mod tests {
 
         #[tokio::test]
         async fn exit_lifecycle_production_backend_flushes_while_exit_exclusivity_is_active() {
-            let resources = crate::game::test_support::save_capture_fixture_resources();
+            let (_guard, resources) = crate::game::test_support::save_capture_fixture_resources();
             let app = build_app_state_with_storage(
                 resources.clone(),
                 resources.join("exit-saves"),
@@ -3122,7 +3102,7 @@ mod tests {
 
         #[test]
         fn production_setup_shares_the_exact_session_and_gate_and_retains_layout_failure() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources,
@@ -3140,8 +3120,9 @@ mod tests {
             assert!(temporary.path().join("saves").is_dir());
             assert!(temporary.path().join("saves/thumbnails").is_dir());
 
+            let (_fixture_guard, fixture_resources) = save_capture_fixture_resources();
             let failed = build_app_state_with_storage(
-                save_capture_fixture_resources(),
+                fixture_resources,
                 temporary.path().join("unavailable"),
                 Arc::new(LayoutFailureFilesystem),
             )
@@ -3157,7 +3138,7 @@ mod tests {
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
         async fn production_capture_releases_the_session_guard_before_storage_work() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let probe = Arc::new(GuardProbe {
                 entered: tokio::sync::Notify::new(),
@@ -3205,7 +3186,7 @@ mod tests {
 
         #[tokio::test]
         async fn production_backend_flushes_a_real_checkpoint_and_adopts_only_its_autosave() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -3246,7 +3227,7 @@ mod tests {
 
         #[tokio::test(start_paused = true)]
         async fn transition_contract_reset_flushes_pending_revision_before_replacing_session() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -3287,7 +3268,7 @@ mod tests {
 
         #[tokio::test(start_paused = true)]
         async fn transition_contract_active_reset_token_survives_newer_discovery() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let failing = Arc::new(AtomicBool::new(false));
             let app = build_app_state_with_storage(
@@ -3337,7 +3318,7 @@ mod tests {
 
         #[tokio::test(start_paused = true)]
         async fn transition_contract_active_reset_token_is_invalidated_by_revision_change() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let failing = Arc::new(AtomicBool::new(false));
             let app = build_app_state_with_storage(
@@ -3373,7 +3354,7 @@ mod tests {
 
         #[tokio::test(start_paused = true)]
         async fn transition_contract_reset_flush_failure_can_retry_after_storage_recovers() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let failing = Arc::new(AtomicBool::new(false));
             let app = build_app_state_with_storage(
@@ -3425,7 +3406,7 @@ mod tests {
 
         #[tokio::test(start_paused = true)]
         async fn transition_contract_title_start_does_not_create_an_autosave() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources,
@@ -3457,7 +3438,7 @@ mod tests {
 
         #[tokio::test]
         async fn transition_contract_title_start_token_is_invalidated_by_newer_discovery() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let failing = Arc::new(AtomicBool::new(true));
             let app = build_app_state_with_storage(
@@ -3485,7 +3466,7 @@ mod tests {
 
         #[tokio::test]
         async fn transition_contract_load_flushes_before_rereading_an_adopted_source_slot() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -3542,7 +3523,7 @@ mod tests {
         #[tokio::test]
         async fn transition_contract_load_build_failure_keeps_public_view_and_generation_unchanged()
         {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -3587,7 +3568,7 @@ mod tests {
 
         #[tokio::test]
         async fn transition_contract_load_discard_consumes_exact_token_and_skips_flush() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -3664,7 +3645,7 @@ mod tests {
         #[tokio::test]
         async fn transition_contract_continue_uses_fresh_newest_and_never_falls_back_from_invalid()
         {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -3719,7 +3700,7 @@ mod tests {
 
         #[tokio::test]
         async fn transition_contract_start_without_saving_can_persist_after_storage_recovers() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let failing = Arc::new(AtomicBool::new(true));
             let app = build_app_state_with_storage(
@@ -3755,7 +3736,7 @@ mod tests {
 
         #[tokio::test]
         async fn transition_contract_delete_uses_exact_observation_and_returns_fresh_browser() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -3797,7 +3778,7 @@ mod tests {
         #[tokio::test]
         async fn exit_lifecycle_saving_rejects_delete_before_health_writer_or_filesystem_side_effects(
         ) {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let fs = Arc::new(RemoveCountingFilesystem::new());
             let app = build_app_state_with_storage(
@@ -3847,7 +3828,7 @@ mod tests {
 
         #[tokio::test]
         async fn transition_fault_matrix_rejects_install_after_live_revision_drift() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -3879,7 +3860,7 @@ mod tests {
 
         #[tokio::test]
         async fn transition_race_load_preserves_mutation_after_flush_before_install() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -3922,7 +3903,7 @@ mod tests {
 
         #[tokio::test]
         async fn transition_race_continue_preserves_mutation_after_flush_before_install() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -3959,7 +3940,7 @@ mod tests {
 
         #[tokio::test]
         async fn transition_race_return_preserves_mutation_after_flush_before_clear() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -3995,7 +3976,7 @@ mod tests {
 
         #[tokio::test]
         async fn transition_race_load_from_title_does_not_replace_newly_started_session() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -4045,7 +4026,7 @@ mod tests {
 
         #[tokio::test]
         async fn direct_load_discard_token_rejects_a_different_slot() {
-            let (app, _temporary, _first_id, second_id, token) =
+            let (app, _temporary, _fixture_guard, _first_id, second_id, token) =
                 selected_load_failure_fixture().await;
             let before = session_observation(&app);
 
@@ -4064,7 +4045,7 @@ mod tests {
 
         #[tokio::test]
         async fn direct_load_discard_token_rejects_a_different_observed_save_id() {
-            let (app, _temporary, _first_id, _second_id, token) =
+            let (app, _temporary, _fixture_guard, _first_id, _second_id, token) =
                 selected_load_failure_fixture().await;
             let before = session_observation(&app);
 
@@ -4083,7 +4064,7 @@ mod tests {
 
         #[tokio::test]
         async fn direct_load_discard_token_loads_its_exact_target_once() {
-            let (app, _temporary, first_id, _second_id, token) =
+            let (app, _temporary, _fixture_guard, first_id, _second_id, token) =
                 selected_load_failure_fixture().await;
 
             let loaded = load_save_discarding_current_core(
@@ -4152,7 +4133,7 @@ mod tests {
 
         #[tokio::test]
         async fn transition_contract_continue_and_return_success_use_fresh_disk_state() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -4183,7 +4164,7 @@ mod tests {
         #[tokio::test]
         async fn transition_delete_invalid_file_preserves_foreign_sidecar_and_rejects_replacement()
         {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -4336,11 +4317,12 @@ mod tests {
         async fn selected_load_failure_fixture() -> (
             AppState,
             tempfile::TempDir,
+            tempfile::TempDir,
             String,
             String,
             PersistenceFailureTokenView,
         ) {
-            let resources = save_capture_fixture_resources();
+            let (_fixture_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let failing = Arc::new(AtomicBool::new(false));
             let app = build_app_state_with_storage(
@@ -4367,12 +4349,12 @@ mod tests {
                 .unwrap_err();
             assert_eq!(error.code, "saveWriteFailed");
             let token = PersistenceFailureTokenView::from_error(&error).unwrap();
-            (app, temporary, first_id, second_id, token)
+            (app, temporary, _fixture_guard, first_id, second_id, token)
         }
 
         #[tokio::test]
         async fn thumbnail_read_returns_exact_bytes_and_rejects_stale_observed_identity() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
@@ -4435,7 +4417,7 @@ mod tests {
 
         #[tokio::test]
         async fn development_http_adapter_serializes_the_shared_wrapper_and_save_views() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let direct_temp = tempfile::tempdir().unwrap();
             let http_temp = tempfile::tempdir().unwrap();
             let direct = build_app_state_with_storage(
@@ -4526,7 +4508,7 @@ mod tests {
 
         #[tokio::test]
         async fn manual_saves_same_revision_to_two_slots_with_distinct_identity_and_no_adoption() {
-            let resources = save_capture_fixture_resources();
+            let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = build_app_state_with_storage(
                 resources.clone(),
