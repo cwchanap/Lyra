@@ -20,9 +20,10 @@ export const config: WebdriverIO.Config = {
   // runner so it can own and revalidate the app-data directory lifecycle.
   specs: [...SAVE_E2E_ORDINARY_SPECS],
   maxInstances: 1,
-  // Desktop-e2e is inherently flaky (focus, WebView animations, IPC timing).
-  // Spec-level retries are CI-only per the e2e design spec (local: 0).
-  specFileRetries: process.env.CI ? 2 : 0,
+  // Phased save E2E owns persistent app-data across process boundaries. WDIO
+  // spec retries reuse that directory, so a partial seed contaminates the retry.
+  // Keep retries only for standalone/non-phased CI specs.
+  specFileRetries: process.env.CI && !process.env.LYRA_SAVE_E2E_PHASE ? 2 : 0,
   specFileRetriesDelay: 5,
   capabilities: [
     {
