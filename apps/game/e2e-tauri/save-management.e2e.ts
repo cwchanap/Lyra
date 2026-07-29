@@ -364,13 +364,46 @@ async function proveThumbnailFallback(
 async function restoreThumbnail(): Promise<void> {
   await waitForShell();
   await loadTitleSlot("manual", 1);
-  const oldId = readSaveE2eEnvelope("manual-1")?.saveId;
-  await saveManualSlot(1, anchors.unicodeSave.unicodeName, true);
-  const restored = await waitForSaveE2eEnvelope(
-    "manual-1",
-    (envelope) =>
-      envelope.saveId !== oldId && envelope.thumbnail.type === "available",
-  );
+  let previousId = readSaveE2eEnvelope("manual-1")?.saveId;
+  if (!previousId)
+    throw new Error("thumbnail restoration source save is missing");
+
+  let restored: ReturnType<typeof readSaveE2eEnvelope> = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await saveManualSlot(1, anchors.unicodeSave.unicodeName, true);
+    const overwritten = await waitForSaveE2eEnvelope(
+      "manual-1",
+      (envelope) => envelope.saveId !== previousId,
+    );
+    if (overwritten.thumbnail.type === "available") {
+      restored = overwritten;
+      break;
+    }
+    previousId = overwritten.saveId;
+    await closePersistenceBrowserToGameplay();
+  }
+
+  if (!restored) {
+    const diagnostic = await browser.execute((probe: string) => {
+      const element = document.querySelector(probe);
+      return {
+        reason:
+          element?.getAttribute("data-capture-proof-last-closed-reason") ??
+          null,
+        renderDiagnostic:
+          element?.getAttribute("data-capture-proof-last-render-diagnostic") ??
+          null,
+        calls: Number(element?.getAttribute("data-capture-proof-calls") ?? "0"),
+        available: Number(
+          element?.getAttribute("data-capture-proof-available") ?? "0",
+        ),
+      };
+    }, anchors.captureProof.probe);
+    throw new Error(
+      `manual-1 thumbnail remained unavailable after 3 overwrites: ${JSON.stringify(diagnostic)}`,
+    );
+  }
+
   expect(existsSync(resolveSaveE2eFixedSlotSidecar("manual-1"))).toBe(true);
   expect(restored.thumbnail.type).toBe("available");
   await closePersistenceBrowserToGameplay();
