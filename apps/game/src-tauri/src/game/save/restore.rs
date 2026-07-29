@@ -1419,7 +1419,8 @@ mod tests {
         AcquisitionEventStateV1, AudioCueSnapshotV1, CharacterTopicRefV1, CrossExamSnapshotV1,
         DialogueHistoryEntryV1, EvidenceInventoryEntryV1, InterrogationOverrideRefV1,
         InvestigationOverrideRefV1, ObjectiveProgressSnapshotV1, RecordKind, SaveEnvelopeV1,
-        SaveSlotRef, SaveType, SceneProgressSnapshotV1, ThumbnailDescriptorV1,
+        SaveSlotRef, SaveType, SceneProgressSnapshotV1, StatementInventoryEntryV1,
+        ThumbnailDescriptorV1,
     };
     use crate::game::scenes::interrogation::CrossExam;
     use crate::game::scenes::SceneRuntime;
@@ -2446,5 +2447,356 @@ mod tests {
                 public_value: "scene_0:true:7".into(),
             }
         );
+    }
+
+    #[test]
+    fn populated_story_state_round_trips_through_capture_and_restore() {
+        let (_guard, resources, mut engine) = resources_and_engine();
+        // Assert a supporting fact first so it can be referenced by fact_origin.
+        engine
+            .story_state
+            .assert_fact(
+                &engine.story_catalog,
+                "fact_supporting",
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    block_kind: StoryEventBlockKind::Hotspot,
+                    block_id: "desk".into(),
+                },
+                &[],
+                &[],
+            )
+            .unwrap();
+        // Assert the primary fact with supporting records (both Evidence and
+        // Statement) and a supporting fact id, exercising every conversion arm.
+        engine
+            .story_state
+            .assert_fact(
+                &engine.story_catalog,
+                "fact_origin",
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    block_kind: StoryEventBlockKind::Topic,
+                    block_id: "alibi".into(),
+                },
+                &[
+                    InventoryTarget::Evidence {
+                        id: "test_evidence".into(),
+                    },
+                    InventoryTarget::Statement {
+                        id: "alibi_statement".into(),
+                    },
+                ],
+                &["fact_supporting".into()],
+            )
+            .unwrap();
+        engine
+            .story_state
+            .reveal_question(&engine.story_catalog, "question_open")
+            .unwrap();
+        engine
+            .story_state
+            .resolve_question(&engine.story_catalog, "question_open", "fact_origin")
+            .unwrap();
+        engine
+            .story_state
+            .reveal_objective(&engine.story_catalog, "objective_truth")
+            .unwrap();
+        engine
+            .story_state
+            .set_primary_objective(&engine.story_catalog, false, Some("objective_truth"))
+            .unwrap();
+        engine
+            .story_state
+            .grant_authorization(
+                &engine.story_catalog,
+                "authorization_scene",
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    block_kind: StoryEventBlockKind::Sublocation,
+                    block_id: "room".into(),
+                },
+            )
+            .unwrap();
+
+        assert_round_trip(resources, &engine);
+    }
+
+    #[test]
+    fn debug_impl_does_not_leak_internal_engine_fields() {
+        let (_guard, resources, engine) = resources_and_engine();
+        let (_, restored) = round_trip(resources, &engine);
+        let debug = format!("{:?}", restored);
+        assert!(debug.contains("RestoredGameCandidate"));
+        assert!(debug.contains("source"));
+        assert!(debug.contains("save_id"));
+        assert!(debug.contains("durable_revision"));
+        assert!(!debug.contains("engine"));
+        assert!(!debug.contains("story_state"));
+    }
+
+    #[test]
+    fn build_restore_candidate_rejects_a_resources_dir_mismatch() {
+        let (_guard, resources, engine) = resources_and_engine();
+        let original = envelope(&engine);
+        let definitions = load_current_definitions(&resources).unwrap();
+        let wrong_dir = resources.join("does_not_exist");
+        let error = build_restore_candidate(wrong_dir, &definitions, original).unwrap_err();
+        assert_eq!(error.code, "saveDiscoveryUnavailable");
+    }
+
+    #[test]
+    fn restore_rejects_game_complete_that_does_not_retain_the_final_scene() {
+        let (_guard, resources, engine) = resources_and_engine();
+        let code = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            save.snapshot.scene = SceneProgressSnapshotV1::GameComplete;
+        });
+        assert_eq!(code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn restore_rejects_line_content_segment_index_without_an_active_queue() {
+        let (_guard, resources, engine) = interrogation_engine();
+        let code = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            save.snapshot.active_dialogue = None;
+            let SceneProgressSnapshotV1::Interrogation {
+                line_content_segment_index,
+                ..
+            } = &mut save.snapshot.scene
+            else {
+                panic!()
+            };
+            *line_content_segment_index = Some(0);
+        });
+        assert_eq!(code, "invalidSaveCursor");
+    }
+
+    #[test]
+    fn restore_rejects_testimony_boundary_with_idle_cross_exam() {
+        // Start from a valid playing cross-exam engine so capture succeeds,
+        // then mutate the save to flip cross_exam to Idle while keeping the
+        // line_content_segment_index.
+        let (_guard, resources, mut engine) = interrogation_engine();
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.intro_played = true;
+        scene.intro_queue_gen =
+            crate::game::scenes::interrogation::RESTORED_CONSUMED_INTRO_QUEUE_GEN;
+        scene.mark_phase_entered("phase_1");
+        scene.cross_exam = CrossExam::Playing {
+            question_id: "q1".into(),
+            line_index: 0,
+        };
+        scene.pending_queue = Some(
+            ActiveDialogueQueue::from_position(
+                vec![DialogueSegment::new(
+                    interrogation_origin("question:q1:line:l1:content"),
+                    vec![DialogueItem::Line {
+                        speaker: "witness".into(),
+                        text: "line".into(),
+                        portrait: None,
+                    }],
+                )
+                .unwrap()],
+                0,
+                0,
+                6,
+            )
+            .unwrap(),
+        );
+        scene.line_content_start = 0;
+        engine.next_queue_gen = 7;
+        engine.durable_revision = 3;
+
+        let code = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            let SceneProgressSnapshotV1::Interrogation { cross_exam, .. } =
+                &mut save.snapshot.scene
+            else {
+                panic!()
+            };
+            *cross_exam = CrossExamSnapshotV1::Idle;
+        });
+        assert_eq!(code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn restore_rejects_duplicate_evidence_and_statement_inventory() {
+        let (_guard, resources, mut engine) = investigation_engine();
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "test_evidence".into(),
+            name: "first".into(),
+            description: "first".into(),
+            details: "first".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "investigation_scene_1".into(),
+        });
+        engine.inventory.statements.push(StatementRecord {
+            id: "alibi_statement".into(),
+            speaker: "first".into(),
+            content: "first".into(),
+            on_reexamine: None,
+            acquired_in_chapter_id: "chapter_1".into(),
+            acquired_in_scene_id: "investigation_scene_1".into(),
+        });
+
+        let dup_evidence = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            save.snapshot
+                .inventory
+                .evidence
+                .push(EvidenceInventoryEntryV1 {
+                    record_id: "test_evidence".into(),
+                    collected_in_chapter_id: "chapter_1".into(),
+                    collected_in_scene_id: "investigation_scene_1".into(),
+                });
+        });
+        assert_eq!(dup_evidence, "invalidSaveProgress");
+
+        let dup_statement = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            save.snapshot
+                .inventory
+                .statements
+                .push(StatementInventoryEntryV1 {
+                    record_id: "alibi_statement".into(),
+                    acquired_in_chapter_id: "chapter_1".into(),
+                    acquired_in_scene_id: "investigation_scene_1".into(),
+                });
+        });
+        assert_eq!(dup_statement, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn restore_rejects_history_next_id_zero() {
+        let (_guard, resources, engine) = resources_and_engine();
+        let code = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            save.snapshot.dialogue_history.next_id = 0;
+            save.snapshot.dialogue_history.entries.clear();
+            save.snapshot.dialogue_history.last_token = None;
+        });
+        assert_eq!(code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn restore_rejects_empty_history_with_non_initial_next_id() {
+        let (_guard, resources, engine) = resources_and_engine();
+        let code = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            save.snapshot.dialogue_history.next_id = 5;
+            save.snapshot.dialogue_history.entries.clear();
+            save.snapshot.dialogue_history.last_token = None;
+        });
+        assert_eq!(code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn restore_rejects_cross_exam_playing_without_current_phase() {
+        let (_guard, resources, engine) = interrogation_engine();
+        let code = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            let SceneProgressSnapshotV1::Interrogation {
+                current_phase_id,
+                cross_exam,
+                ..
+            } = &mut save.snapshot.scene
+            else {
+                panic!()
+            };
+            *current_phase_id = None;
+            *cross_exam = CrossExamSnapshotV1::Playing {
+                question_id: "q1".into(),
+                line_id: "l1".into(),
+            };
+        });
+        assert_eq!(code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn restore_rejects_interrogation_override_with_missing_phase() {
+        let (_guard, resources, engine) = interrogation_engine();
+        let code = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            let SceneProgressSnapshotV1::Interrogation {
+                unlocked_overrides, ..
+            } = &mut save.snapshot.scene
+            else {
+                panic!()
+            };
+            unlocked_overrides.push(InterrogationOverrideRefV1::Phase {
+                id: "missing_phase".into(),
+            });
+        });
+        assert_eq!(code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn restore_rejects_investigation_override_with_missing_sublocation_and_topic() {
+        let (_guard, resources, engine) = investigation_engine();
+        let sublocation_code = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            let SceneProgressSnapshotV1::Investigation {
+                unlocked_overrides, ..
+            } = &mut save.snapshot.scene
+            else {
+                panic!()
+            };
+            unlocked_overrides.push(InvestigationOverrideRefV1::Sublocation {
+                id: "missing_sub".into(),
+            });
+        });
+        assert_eq!(sublocation_code, "invalidSaveProgress");
+
+        let topic_code = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            let SceneProgressSnapshotV1::Investigation {
+                unlocked_overrides, ..
+            } = &mut save.snapshot.scene
+            else {
+                panic!()
+            };
+            unlocked_overrides.push(InvestigationOverrideRefV1::Topic {
+                character_id: "missing_char".into(),
+                topic_id: "missing_topic".into(),
+            });
+        });
+        assert_eq!(topic_code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn restore_rejects_noncontiguous_history_entry_ids() {
+        let (_guard, resources, engine) = resources_and_engine();
+        let code = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            save.snapshot.dialogue_history.entries = vec![
+                DialogueHistoryEntryV1::Action {
+                    id: 1,
+                    text: "first".into(),
+                    chapter_title: "Chapter One".into(),
+                    scene_title: "Opening".into(),
+                },
+                DialogueHistoryEntryV1::Action {
+                    id: 3,
+                    text: "third".into(),
+                    chapter_title: "Chapter One".into(),
+                    scene_title: "Opening".into(),
+                },
+            ];
+            save.snapshot.dialogue_history.next_id = 4;
+            save.snapshot.dialogue_history.last_token = None;
+        });
+        assert_eq!(code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn restore_rejects_history_token_presence_without_entries() {
+        let (_guard, resources, engine) = resources_and_engine();
+        let code = assert_rejected_without_live_mutation(&resources, &engine, |save| {
+            save.snapshot.dialogue_history.entries.clear();
+            save.snapshot.dialogue_history.last_token = Some(QueueToken {
+                scene_id: "scene_0".into(),
+                queue_gen: 1,
+                cursor: 1,
+            });
+            save.snapshot.dialogue_history.next_id = 1;
+        });
+        assert_eq!(code, "invalidSaveProgress");
     }
 }

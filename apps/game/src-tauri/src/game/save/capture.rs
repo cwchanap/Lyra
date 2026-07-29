@@ -2368,4 +2368,216 @@ mod tests {
         assert_eq!(order_error.code, "invalidSaveCapture");
         assert!(order_error.message.contains("order"));
     }
+
+    #[test]
+    fn capture_rejects_playing_cross_exam_with_out_of_range_line_index() {
+        let (_guard, mut engine) = fixture_engine();
+        engine
+            .jump_to_scene("chapter_1", "interrogation_scene_2")
+            .unwrap();
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.intro_played = true;
+        scene.current_phase_id = Some("phase_1".into());
+        scene.cross_exam = CrossExam::Playing {
+            question_id: "q1".into(),
+            line_index: 99,
+        };
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Playing cross-exam coordinate"));
+    }
+
+    #[test]
+    fn capture_rejects_presenting_cross_exam_with_unknown_line_id() {
+        let (_guard, mut engine) = fixture_engine();
+        engine
+            .jump_to_scene("chapter_1", "interrogation_scene_2")
+            .unwrap();
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.intro_played = true;
+        scene.current_phase_id = Some("phase_1".into());
+        scene.cross_exam = CrossExam::Presenting {
+            question_id: "q1".into(),
+            line_id: "missing_line".into(),
+        };
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Presenting cross-exam coordinate"));
+    }
+
+    #[test]
+    fn capture_rejects_investigation_with_unknown_sublocation_hotspot_and_topic() {
+        let (_guard, mut engine) = fixture_engine();
+        engine
+            .jump_to_scene("chapter_1", "investigation_scene_1")
+            .unwrap();
+        let SceneRuntime::Investigation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.intro_played = true;
+        scene.current_sublocation_id = Some("missing_sub".into());
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Current investigation sublocation"));
+
+        let SceneRuntime::Investigation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.current_sublocation_id = Some("room".into());
+        scene
+            .inspected_hotspots
+            .insert("missing_hotspot".to_string());
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Inspected investigation hotspot"));
+
+        let SceneRuntime::Investigation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.inspected_hotspots.clear();
+        scene
+            .discussed_topics
+            .insert(("missing_char".into(), "missing_topic".into()));
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Discussed investigation topic"));
+    }
+
+    #[test]
+    fn capture_rejects_investigation_with_unknown_override_targets() {
+        let (_guard, mut engine) = fixture_engine();
+        engine
+            .jump_to_scene("chapter_1", "investigation_scene_1")
+            .unwrap();
+        let SceneRuntime::Investigation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.intro_played = true;
+        scene.current_sublocation_id = Some("room".into());
+
+        scene
+            .unlocked_overrides
+            .insert("hotspot:missing_hotspot".to_string());
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Investigation override hotspot"));
+
+        let SceneRuntime::Investigation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.unlocked_overrides.clear();
+        scene
+            .unlocked_overrides
+            .insert("sublocation:missing_sub".to_string());
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Investigation override sublocation"));
+
+        let SceneRuntime::Investigation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.unlocked_overrides.clear();
+        scene
+            .unlocked_overrides
+            .insert("topic:missing_char@missing_topic".to_string());
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Investigation override topic"));
+    }
+
+    #[test]
+    fn capture_rejects_interrogation_with_unknown_phase_question_and_overrides() {
+        let (_guard, mut engine) = fixture_engine();
+        engine
+            .jump_to_scene("chapter_1", "interrogation_scene_2")
+            .unwrap();
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.intro_played = true;
+        scene.current_phase_id = Some("missing_phase".into());
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Current interrogation phase"));
+
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.current_phase_id = Some("phase_1".into());
+        scene.completed_phases.insert("missing_phase".to_string());
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Interrogation phase progress"));
+
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.completed_phases.clear();
+        scene
+            .broken_questions
+            .insert("missing_question".to_string());
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Broken interrogation question"));
+
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.broken_questions.clear();
+        scene
+            .unlocked_overrides
+            .insert("question:missing_question".to_string());
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Interrogation override question"));
+
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.unlocked_overrides.clear();
+        scene
+            .unlocked_overrides
+            .insert("phase:missing_phase".to_string());
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Interrogation override phase"));
+    }
+
+    #[test]
+    fn capture_rejects_inventory_with_invalid_packaged_provenance() {
+        let (_guard, mut engine) = fixture_engine();
+        engine
+            .jump_to_scene("chapter_1", "investigation_scene_1")
+            .unwrap();
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "test_evidence".into(),
+            name: "test".into(),
+            description: "test".into(),
+            details: "test".into(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "scene_0".into(),
+        });
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("invalid packaged provenance"));
+
+        engine.inventory.evidence.clear();
+        engine.inventory.statements.push(StatementRecord {
+            id: "alibi_statement".into(),
+            speaker: "test".into(),
+            content: "test".into(),
+            on_reexamine: None,
+            acquired_in_chapter_id: "chapter_1".into(),
+            acquired_in_scene_id: "scene_0".into(),
+        });
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("invalid packaged provenance"));
+    }
 }

@@ -448,8 +448,19 @@ pub(crate) fn save_capture_fixture_resources() -> (tempfile::TempDir, PathBuf) {
     "summary": "Exercises persisted assertion origins.",
     "details": "Only used by save/restore fixtures.",
     "category": "timeline"
+  },{
+    "id": "fact_supporting",
+    "label": "Supporting fact",
+    "summary": "Exercises supporting fact id round-trip.",
+    "details": "Only used by save/restore fixtures.",
+    "category": "timeline"
   }],
-  "questions": [],
+  "questions": [{
+    "id": "question_open",
+    "label": "Open question",
+    "summary": "Exercises question reveal and resolution.",
+    "resolvedByFactIds": ["fact_origin"]
+  }],
   "objectives": [{
     "id": "objective_truth",
     "label": "Find the truth",
@@ -457,7 +468,12 @@ pub(crate) fn save_capture_fixture_resources() -> (tempfile::TempDir, PathBuf) {
     "kind": "primary",
     "sortOrder": 1
   }],
-  "authorizations": [],
+  "authorizations": [{
+    "id": "authorization_scene",
+    "label": "Scene authorization",
+    "summary": "Exercises authorization grant round-trip.",
+    "grantingAuthority": "Detective"
+  }],
   "evidenceIndex": [{
     "id":"test_evidence",
     "chapterId":"chapter_1",
