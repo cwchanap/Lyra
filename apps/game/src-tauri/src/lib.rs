@@ -2264,40 +2264,43 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|app_handle, event| {
-        let state = app_handle.state::<AppState>();
-        match event {
-            tauri::RunEvent::WindowEvent {
-                label,
-                event: tauri::WindowEvent::CloseRequested { api, .. },
-                ..
-            } => {
-                let exit: Arc<dyn ApplicationExit> = Arc::new(TauriApplicationExit {
-                    app: app_handle.clone(),
-                });
-                if let Err(error) = handle_close_requested(
-                    &label,
-                    || api.prevent_close(),
-                    |source| state.coordinator.request_exit_flush(exit, source),
-                ) {
-                    eprintln!("failed to schedule exit flush: {}", error.message);
-                }
+    app.run(|app_handle, event| match event {
+        tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::CloseRequested { api, .. },
+            ..
+        } => {
+            let Some(state) = app_handle.try_state::<AppState>() else {
+                return;
+            };
+            let exit: Arc<dyn ApplicationExit> = Arc::new(TauriApplicationExit {
+                app: app_handle.clone(),
+            });
+            if let Err(error) = handle_close_requested(
+                &label,
+                || api.prevent_close(),
+                |source| state.coordinator.request_exit_flush(exit, source),
+            ) {
+                eprintln!("failed to schedule exit flush: {}", error.message);
             }
-            tauri::RunEvent::ExitRequested { code, api, .. } => {
-                let exit: Arc<dyn ApplicationExit> = Arc::new(TauriApplicationExit {
-                    app: app_handle.clone(),
-                });
-                if let Err(error) = handle_exit_requested(
-                    code,
-                    &state.coordinator,
-                    || api.prevent_exit(),
-                    |source| state.coordinator.request_exit_flush(exit, source),
-                ) {
-                    eprintln!("failed to schedule exit flush: {}", error.message);
-                }
-            }
-            _ => {}
         }
+        tauri::RunEvent::ExitRequested { code, api, .. } => {
+            let Some(state) = app_handle.try_state::<AppState>() else {
+                return;
+            };
+            let exit: Arc<dyn ApplicationExit> = Arc::new(TauriApplicationExit {
+                app: app_handle.clone(),
+            });
+            if let Err(error) = handle_exit_requested(
+                code,
+                &state.coordinator,
+                || api.prevent_exit(),
+                |source| state.coordinator.request_exit_flush(exit, source),
+            ) {
+                eprintln!("failed to schedule exit flush: {}", error.message);
+            }
+        }
+        _ => {}
     });
 }
 
