@@ -324,4 +324,60 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn validate_png_bytes_rejects_unavailable_descriptor() {
+        let error =
+            validate_png_bytes_for_descriptor(SAVE_ID, &[], &ThumbnailDescriptorV1::Unavailable)
+                .unwrap_err();
+        assert_eq!(error.code, "thumbnailPngMalformed");
+    }
+
+    #[test]
+    fn validate_png_bytes_rejects_oversized_byte_stream() {
+        let bytes = vec![0u8; MAX_THUMBNAIL_BYTES + 1];
+        let error = validate_png_bytes_for_descriptor(
+            SAVE_ID,
+            &bytes,
+            &descriptor(1, 1, bytes.len() as u32, DIGEST),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "thumbnailPngTooLarge");
+    }
+
+    #[test]
+    fn validate_png_bytes_rejects_byte_length_mismatch() {
+        let bytes = png(1, 1);
+        let mut d = descriptor(1, 1, bytes.len() as u32, DIGEST);
+        // Declare a different byte_length than the actual stream length.
+        if let ThumbnailDescriptorV1::Available { byte_length, .. } = &mut d {
+            *byte_length = (bytes.len() as u32) + 1;
+        }
+        let error = validate_png_bytes_for_descriptor(SAVE_ID, &bytes, &d).unwrap_err();
+        assert_eq!(error.code, "thumbnailPngMalformed");
+    }
+
+    #[test]
+    fn validate_png_bytes_rejects_dimension_mismatch() {
+        let bytes = png(2, 2);
+        let d = descriptor(1, 1, bytes.len() as u32, DIGEST);
+        let error = validate_png_bytes_for_descriptor(SAVE_ID, &bytes, &d).unwrap_err();
+        assert_eq!(error.code, "thumbnailPngMalformed");
+    }
+
+    #[test]
+    fn validate_png_bytes_rejects_digest_mismatch() {
+        let bytes = png(1, 1);
+        let d = descriptor(1, 1, bytes.len() as u32, DIGEST);
+        let error = validate_png_bytes_for_descriptor(SAVE_ID, &bytes, &d).unwrap_err();
+        assert_eq!(error.code, "thumbnailPngMalformed");
+    }
+
+    #[test]
+    fn validate_png_bytes_accepts_a_self_consistent_png() {
+        let bytes = png(1, 1);
+        let digest = format!("sha256:{:x}", Sha256::digest(&bytes));
+        let d = descriptor(1, 1, bytes.len() as u32, &digest);
+        assert!(validate_png_bytes_for_descriptor(SAVE_ID, &bytes, &d).is_ok());
+    }
 }

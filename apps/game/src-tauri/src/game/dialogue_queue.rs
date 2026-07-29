@@ -2414,4 +2414,25 @@ mod tests {
             assert_eq!(error.code, "dialogueSegmentResolutionFailed");
         }
     }
+
+    #[test]
+    fn flattened_len_and_segment_boundary_report_total_items_and_starts() {
+        let segments = vec![
+            DialogueSegment::new(
+                investigation_interaction("hotspot:desk:inspect"),
+                vec![action("a"), action("b")],
+            )
+            .unwrap(),
+            DialogueSegment::new(
+                investigation_interaction("hotspot:desk:reexamine"),
+                vec![action("c")],
+            )
+            .unwrap(),
+        ];
+        let queue = ActiveDialogueQueue::from_position(segments, 0, 0, 1).unwrap();
+        assert_eq!(queue.flattened_len().unwrap(), 3);
+        assert_eq!(queue.flattened_segment_boundary(0).unwrap(), 0);
+        assert_eq!(queue.flattened_segment_boundary(1).unwrap(), 2);
+        assert_eq!(queue.flattened_segment_boundary(2).unwrap(), 3);
+    }
 }

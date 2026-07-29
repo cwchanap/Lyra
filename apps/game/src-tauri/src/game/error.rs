@@ -478,3 +478,88 @@ impl GameError {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uncovered_error_constructors_return_their_exact_codes() {
+        let cases: Vec<(&str, GameError)> = vec![
+            ("invalidSaveProgress", GameError::invalid_save_progress()),
+            ("invalidSaveCursor", GameError::invalid_save_cursor()),
+            ("manualSaveNameEmpty", GameError::manual_save_name_empty()),
+            (
+                "manualSaveNameTooLong",
+                GameError::manual_save_name_too_long(),
+            ),
+            (
+                "manualSaveNameForbidden",
+                GameError::manual_save_name_forbidden(),
+            ),
+            (
+                "thumbnailPngMalformed",
+                GameError::thumbnail_png_malformed(),
+            ),
+            (
+                "thumbnailTicketPurposeMismatch",
+                GameError::thumbnail_ticket_purpose_mismatch(),
+            ),
+            (
+                "acquisitionThumbnailTicketMismatch",
+                GameError::acquisition_thumbnail_ticket_mismatch(),
+            ),
+            (
+                "persistenceOperationInProgress",
+                GameError::persistence_operation_in_progress(),
+            ),
+            (
+                "staleSessionGeneration",
+                GameError::stale_session_generation(),
+            ),
+            (
+                "persistenceBypassUnavailable",
+                GameError::persistence_bypass_unavailable(),
+            ),
+            ("stateUnavailable", GameError::unavailable()),
+            ("unknownHotspot", GameError::unknown_hotspot("h")),
+            ("lockedHotspot", GameError::locked_hotspot("h")),
+            ("unknownCharacter", GameError::unknown_character("c")),
+            ("unknownTopic", GameError::unknown_topic("c", "t")),
+            ("lockedTopic", GameError::locked_topic("c", "t")),
+            ("unknownSublocation", GameError::unknown_sublocation("s")),
+            ("lockedSublocation", GameError::locked_sublocation("s")),
+            ("unknownStatement", GameError::unknown_statement("s")),
+            (
+                "unknownInventoryTarget",
+                GameError::unknown_inventory_target("evidence", "id"),
+            ),
+            (
+                "unsupportedSceneType",
+                GameError::unsupported_scene_type("mystery"),
+            ),
+            ("parseFailure", GameError::parse_failure("detail".into())),
+            ("gameComplete", GameError::game_complete()),
+            ("internalError", GameError::internal("detail".into())),
+            (
+                "requestOriginForbidden",
+                GameError::request_origin_forbidden("http://evil"),
+            ),
+        ];
+        for (expected_code, error) in cases {
+            assert_eq!(error.code, expected_code);
+            assert!(!error.message.is_empty());
+            assert!(error.failure_token.is_none());
+        }
+        assert!(
+            GameError::persistence_operation_in_progress().is_persistence_operation_in_progress()
+        );
+        assert!(!GameError::unavailable().is_persistence_operation_in_progress());
+    }
+
+    #[test]
+    fn with_failure_token_attaches_the_token() {
+        let error = GameError::unavailable().with_failure_token("token123".into());
+        assert_eq!(error.failure_token, Some("token123".into()));
+    }
+}

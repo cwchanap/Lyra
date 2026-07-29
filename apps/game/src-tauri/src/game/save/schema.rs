@@ -795,4 +795,59 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn investigation_override_runtime_key_round_trips() {
+        for value in [
+            InvestigationOverrideRefV1::Hotspot { id: "h1".into() },
+            InvestigationOverrideRefV1::Sublocation { id: "s1".into() },
+            InvestigationOverrideRefV1::Topic {
+                character_id: "c1".into(),
+                topic_id: "t1".into(),
+            },
+        ] {
+            let key = value.runtime_key();
+            assert_eq!(
+                InvestigationOverrideRefV1::parse_runtime_key(&key).unwrap(),
+                value
+            );
+        }
+        assert_eq!(
+            InvestigationOverrideRefV1::parse_runtime_key("unknown:x").unwrap_err(),
+            "Unknown investigation override key 'unknown:x'."
+        );
+        assert_eq!(
+            InvestigationOverrideRefV1::parse_runtime_key("topic:missing_at").unwrap_err(),
+            "Malformed override key 'topic:missing_at'."
+        );
+    }
+
+    #[test]
+    fn interrogation_override_runtime_key_round_trips() {
+        for value in [
+            InterrogationOverrideRefV1::Question { id: "q1".into() },
+            InterrogationOverrideRefV1::Phase { id: "p1".into() },
+        ] {
+            let key = value.runtime_key();
+            assert_eq!(
+                InterrogationOverrideRefV1::parse_runtime_key(&key).unwrap(),
+                value
+            );
+        }
+        assert_eq!(
+            InterrogationOverrideRefV1::parse_runtime_key("unknown:x").unwrap_err(),
+            "Unknown interrogation override key 'unknown:x'."
+        );
+    }
+
+    #[test]
+    fn validate_envelope_rejects_unsupported_schema_version_directly() {
+        let mut candidate: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();
+        candidate["schemaVersion"] = serde_json::json!(99);
+        let envelope: SaveEnvelopeV1 = serde_json::from_value(candidate).unwrap();
+        assert_eq!(
+            validate_envelope(&envelope).unwrap_err().code,
+            "unsupportedSaveSchemaVersion"
+        );
+    }
 }
