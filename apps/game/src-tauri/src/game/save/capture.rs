@@ -21,6 +21,7 @@ use crate::game::story::StoryState;
 use crate::game::view::{DialogueHistoryEntry, QueueToken};
 use crate::game::{GameEngine, GameError};
 use serde::Serialize;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -32,16 +33,21 @@ pub(crate) struct CapturedCheckpointV1 {
 
 type SceneCache = HashMap<String, Vec<SceneJson>>;
 
-fn ensure_chapter_scenes(
+/// Return the cached scene slice for `chapter`, loading it from disk on first
+/// access. Propagates load errors so callers never need to re-derive the
+/// invariant that the entry exists after a successful call.
+fn chapter_scenes<'a>(
     engine: &GameEngine,
     chapter: &ChapterManifest,
-    cache: &mut SceneCache,
-) -> Result<(), GameError> {
-    if !cache.contains_key(&chapter.id) {
-        let scenes = load_chapter_scene_jsons(&engine.resources_dir, chapter)?;
-        cache.insert(chapter.id.clone(), scenes);
+    cache: &'a mut SceneCache,
+) -> Result<&'a Vec<SceneJson>, GameError> {
+    match cache.entry(chapter.id.clone()) {
+        Entry::Occupied(entry) => Ok(entry.into_mut()),
+        Entry::Vacant(entry) => {
+            let scenes = load_chapter_scene_jsons(&engine.resources_dir, chapter)?;
+            Ok(entry.insert(scenes))
+        }
     }
-    Ok(())
 }
 
 pub(crate) fn capture_checkpoint_v1(
@@ -371,10 +377,8 @@ fn current_packaged_scene(
         ));
     }
     let chapter = &engine.chapters[engine.current_chapter_idx];
-    ensure_chapter_scenes(engine, chapter, scene_cache)?;
-    scene_cache
-        .get(&chapter.id)
-        .expect("scenes were just ensured")
+    let scenes = chapter_scenes(engine, chapter, scene_cache)?;
+    scenes
         .get(engine.current_scene_idx)
         .cloned()
         .ok_or_else(|| capture_error("Current packaged scene is missing."))
@@ -998,10 +1002,7 @@ fn packaged_scene_cursor_exclusive(
 ) -> Result<Vec<usize>, GameError> {
     let mut found = Vec::new();
     for chapter in &engine.chapters {
-        ensure_chapter_scenes(engine, chapter, scene_cache)?;
-        let scenes = scene_cache
-            .get(&chapter.id)
-            .expect("scenes were just ensured");
+        let scenes = chapter_scenes(engine, chapter, scene_cache)?;
         for scene in scenes.iter() {
             if scene_json_identity(scene).0 == target_scene_id {
                 found.push(maximum_scene_dialogue_items(scene)?);
@@ -1040,10 +1041,8 @@ fn capture_location(
             .chapters
             .last()
             .ok_or_else(|| capture_error("Game complete has no final chapter."))?;
-        ensure_chapter_scenes(engine, chapter, scene_cache)?;
-        let packaged_scene = scene_cache
-            .get(&chapter.id)
-            .expect("scenes were just ensured")
+        let scenes = chapter_scenes(engine, chapter, scene_cache)?;
+        let packaged_scene = scenes
             .last()
             .ok_or_else(|| capture_error("Game complete has no final scene."))?;
         if engine.scene.id() != scene_json_identity(packaged_scene).0 {
@@ -1061,17 +1060,13 @@ fn capture_location(
     }
 
     let chapter = &engine.chapters[engine.current_chapter_idx];
-    ensure_chapter_scenes(engine, chapter, scene_cache)?;
-    let packaged_scene = scene_cache
-        .get(&chapter.id)
-        .expect("scenes were just ensured")
-        .get(engine.current_scene_idx)
-        .ok_or_else(|| {
-            capture_error(format!(
-                "Current scene index {} is outside chapter '{}'.",
-                engine.current_scene_idx, chapter.id
-            ))
-        })?;
+    let scenes = chapter_scenes(engine, chapter, scene_cache)?;
+    let packaged_scene = scenes.get(engine.current_scene_idx).ok_or_else(|| {
+        capture_error(format!(
+            "Current scene index {} is outside chapter '{}'.",
+            engine.current_scene_idx, chapter.id
+        ))
+    })?;
     if engine.scene.id() != scene_json_identity(packaged_scene).0 {
         return Err(capture_error(
             "Current runtime scene does not match its packaged scene index.",

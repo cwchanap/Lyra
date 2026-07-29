@@ -284,6 +284,39 @@ export function readSaveE2eOwnershipSnapshot(): SaveE2eOwnershipSnapshot {
   };
 }
 
+export type SaveE2eOwnershipSlot = SaveE2eOwnershipSnapshot["slots"][number];
+
+/**
+ * Filter a snapshot down to autosave slots that carry a parseable envelope.
+ */
+export function autosaveSlots(
+  snapshot: SaveE2eOwnershipSnapshot = readSaveE2eOwnershipSnapshot(),
+): SaveE2eOwnershipSlot[] {
+  return snapshot.slots.filter(
+    (slot) =>
+      slot.fixedSlotName.startsWith("autosave-") && slot.envelope !== null,
+  );
+}
+
+/**
+ * Select the newest autosave slot from a snapshot, ordering by filesystem
+ * mtime (descending) and breaking ties with the envelope's `savedAt`
+ * timestamp. Returns `undefined` when no autosave envelope exists; callers
+ * are responsible for throwing with context-specific diagnostics.
+ */
+export function newestAutosaveSlot(
+  snapshot: SaveE2eOwnershipSnapshot = readSaveE2eOwnershipSnapshot(),
+): SaveE2eOwnershipSlot | undefined {
+  return autosaveSlots(snapshot).toSorted((left, right) => {
+    const leftMtime = left.modifiedAtMs ?? -1;
+    const rightMtime = right.modifiedAtMs ?? -1;
+    if (rightMtime !== leftMtime) return rightMtime - leftMtime;
+    return (
+      Date.parse(right.envelope!.savedAt) - Date.parse(left.envelope!.savedAt)
+    );
+  })[0];
+}
+
 export function corruptSaveE2eFixedSlot(
   fixedSlotName: SaveE2eFixedSlotName,
 ): void {
