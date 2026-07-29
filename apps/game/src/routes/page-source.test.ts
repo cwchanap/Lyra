@@ -222,7 +222,7 @@ describe("+page save-thumbnail boundary", () => {
     expect(probeSource).not.toContain("eval(");
   });
 
-  it("wires the proof wrapper instance into gameplay dispatch and exposes only owning-command settlement", () => {
+  it("wires the proof wrapper instance into gameplay dispatch and waits for full capture persistence settlement", () => {
     const source = pageSource();
     const captureSource = readFileSync(
       join(process.cwd(), "src/lib/persistence/thumbnail-capture.ts"),
@@ -239,7 +239,13 @@ describe("+page save-thumbnail boundary", () => {
     expect(gameClientSource).toContain(
       "captureResult = await gameplayThumbnailCapture.capture(request)",
     );
-    expect(source).toContain("captureCommandInFlight={gameState.inFlight}");
+    expect(source).toContain("captureCommandInFlight={gameState.inFlight ||");
+    expect(source).toContain(
+      'persistenceStore.persistenceStatus.type === "pending" ||',
+    );
+    expect(source).toContain(
+      'persistenceStore.thumbnailActivity.type === "capturing"}',
+    );
   });
 
   it("tree-shakes proof-only diagnostics out of ordinary production capture", () => {

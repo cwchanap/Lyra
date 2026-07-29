@@ -1256,7 +1256,9 @@
       onForceNextCaptureUnavailable={forceNextPackagedCaptureUnavailable}
       captureUnavailableReason={packagedCaptureUnavailableReason}
       captureStatus={packagedCaptureProofStatus}
-      captureCommandInFlight={gameState.inFlight}
+      captureCommandInFlight={gameState.inFlight ||
+        persistenceStore.persistenceStatus.type === "pending" ||
+        persistenceStore.thumbnailActivity.type === "capturing"}
     />
   {/if}
   {#if gameBrowserLoading}
