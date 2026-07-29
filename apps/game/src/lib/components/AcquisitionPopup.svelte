@@ -29,7 +29,7 @@
     fallbackFocusTarget?: HTMLElement | null;
     onContinue: (eventId: string) => Promise<void>;
     onRetry: (eventId: string) => Promise<void>;
-    onCancel: (eventId: string) => void;
+    onCancel: (eventId: string) => Promise<void>;
     onContinueWithoutSaving: (
       eventId: string,
       failureToken: PersistenceFailureTokenView,
@@ -126,7 +126,7 @@
   function cancel() {
     if (phase.type !== "failed") return;
     confirmWithoutSaving = false;
-    onCancel(notification.id);
+    void onCancel(notification.id);
   }
 
   function continueWithoutSaving() {

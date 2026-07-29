@@ -98,6 +98,20 @@ function setup() {
         failureToken: string,
       ) => Promise<GameplayCommandResultView>
     >();
+  const retryAcknowledge =
+    vi.fn<
+      (
+        eventId: string,
+        failureToken: string,
+      ) => Promise<ThumbnailCaptureRequestView>
+    >();
+  const cancelFailure =
+    vi.fn<
+      (
+        eventId: string,
+        failureToken: string,
+      ) => Promise<GameplayCommandResultView>
+    >();
   const pinDeadline = vi.fn((request: ThumbnailCaptureRequestView) => request);
   prepare.mockResolvedValue({ ticket: "ticket-1", timeoutMs: 725 });
   capture.mockResolvedValue({
@@ -114,6 +128,11 @@ function setup() {
     state: state(null),
     thumbnailCapture: null,
   });
+  retryAcknowledge.mockResolvedValue({ ticket: "ticket-2", timeoutMs: 600 });
+  cancelFailure.mockResolvedValue({
+    state: state(),
+    thumbnailCapture: null,
+  });
   const controller = createAcquisitionController({
     gameState,
     prepare,
@@ -122,17 +141,21 @@ function setup() {
     submit,
     report,
     acknowledge,
+    retryAcknowledge,
+    cancelFailure,
     confirmWithoutSaving,
   });
   return {
     acknowledge,
     capture,
+    cancelFailure,
     confirmWithoutSaving,
     controller,
     gameState,
     pinDeadline,
     prepare,
     report,
+    retryAcknowledge,
     submit,
   };
 }
@@ -263,8 +286,8 @@ describe("Rust-event-backed acquisition controller", () => {
     await dismissal;
   });
 
-  it("preserves a typed failure and retries from a fresh prepare", async () => {
-    const { acknowledge, controller, prepare } = setup();
+  it("preserves a typed failure and retries by consuming the failure token", async () => {
+    const { acknowledge, controller, retryAcknowledge } = setup();
     const failure: GameError = {
       code: "saveWriteFailed",
       message: "Save could not be written.",
@@ -280,20 +303,18 @@ describe("Rust-event-backed acquisition controller", () => {
       failureToken: "failure-token-1",
     });
 
-    prepare.mockResolvedValueOnce({ ticket: "ticket-2", timeoutMs: 600 });
     await controller.retry("event-1");
 
-    expect(prepare).toHaveBeenCalledTimes(2);
-    expect(prepare).toHaveBeenLastCalledWith({
-      type: "acquisitionAcknowledgement",
-      eventId: "event-1",
-    });
+    expect(retryAcknowledge).toHaveBeenCalledExactlyOnceWith(
+      "event-1",
+      "failure-token-1",
+    );
     expect(acknowledge).toHaveBeenLastCalledWith("event-1", "ticket-2");
     expect(controller.current).toBeNull();
   });
 
-  it("cancel keeps the exact Rust event visible", async () => {
-    const { acknowledge, controller } = setup();
+  it("cancel consumes the failure token and keeps the exact Rust event visible", async () => {
+    const { acknowledge, cancelFailure, controller } = setup();
     acknowledge.mockRejectedValueOnce({
       code: "saveWriteFailed",
       message: "Save could not be written.",
@@ -301,8 +322,12 @@ describe("Rust-event-backed acquisition controller", () => {
     });
     await controller.dismissCurrent("event-1");
 
-    controller.cancel("event-1");
+    await controller.cancel("event-1");
 
+    expect(cancelFailure).toHaveBeenCalledExactlyOnceWith(
+      "event-1",
+      "failure-token-1",
+    );
     expect(controller.phase).toEqual({ type: "idle" });
     expect(controller.current?.id).toBe("event-1");
     expect(controller.blocking).toBe(true);
