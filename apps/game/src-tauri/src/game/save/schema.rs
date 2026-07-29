@@ -740,6 +740,125 @@ mod tests {
         assert!(suggestion.ends_with('…'));
     }
 
+    // Shared grapheme-parity fixture: the same JSON file is loaded by the
+    // TypeScript test in apps/game/src/lib/persistence/manual-name.test.ts.
+    // If either side's grapheme segmentation drifts (e.g. from a Unicode
+    // version mismatch between V8/ICU and unicode-segmentation), the test on
+    // the drifting side fails. Rust is the persistence-layer authority.
+    const GRAPHEME_PARITY: &str =
+        include_str!("../../../tests/fixtures/save-name-grapheme-parity.json");
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ParityFixture {
+        validation_cases: Vec<ParityValidationCase>,
+        suggestion_cases: Vec<ParitySuggestionCase>,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ParityValidationCase {
+        id: String,
+        input: String,
+        expected: ParityExpected,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct ParityExpected {
+        ok: bool,
+        value: Option<String>,
+        reason: Option<String>,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct ParitySuggestionCase {
+        id: String,
+        chapter_title: String,
+        scene_title: String,
+        expected: Option<String>,
+        expected_grapheme_count: Option<usize>,
+        expected_suffix: Option<String>,
+    }
+
+    #[test]
+    fn grapheme_parity_fixture_validation_matches_rust_outcome() {
+        let fixture: ParityFixture = serde_json::from_str(GRAPHEME_PARITY).unwrap();
+        for case in &fixture.validation_cases {
+            let result = validate_manual_display_name(&case.input);
+            if case.expected.ok {
+                let expected_value = case
+                    .expected
+                    .value
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("case `{}` has ok=true but no value", case.id));
+                assert_eq!(
+                    result.as_deref(),
+                    Ok(expected_value.as_str()),
+                    "validation case `{}` expected Ok but got {:?}",
+                    case.id,
+                    result
+                );
+            } else {
+                let reason = case
+                    .expected
+                    .reason
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("case `{}` has ok=false but no reason", case.id));
+                let err = match result {
+                    Ok(_) => panic!(
+                        "validation case `{}` expected Err({}) but got Ok",
+                        case.id, reason
+                    ),
+                    Err(e) => e,
+                };
+                let expected_code = match reason.as_str() {
+                    "empty" => "manualSaveNameEmpty",
+                    "tooLong" => "manualSaveNameTooLong",
+                    "forbidden" => "manualSaveNameForbidden",
+                    other => panic!("unknown parity reason `{other}` in case `{}`", case.id),
+                };
+                assert_eq!(
+                    err.code, expected_code,
+                    "validation case `{}` expected error code `{}` but got `{}`",
+                    case.id, expected_code, err.code
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn grapheme_parity_fixture_suggestion_matches_rust_outcome() {
+        let fixture: ParityFixture = serde_json::from_str(GRAPHEME_PARITY).unwrap();
+        for case in &fixture.suggestion_cases {
+            let suggestion = suggested_display_name(&case.chapter_title, &case.scene_title);
+            if let Some(expected) = &case.expected {
+                assert_eq!(
+                    suggestion, *expected,
+                    "suggestion case `{}` exact match failed",
+                    case.id
+                );
+            }
+            if let Some(count) = case.expected_grapheme_count {
+                let actual = suggestion.graphemes(true).count();
+                assert_eq!(
+                    actual, count,
+                    "suggestion case `{}` expected {} graphemes but got {}",
+                    case.id, count, actual
+                );
+            }
+            if let Some(suffix) = &case.expected_suffix {
+                assert!(
+                    suggestion.ends_with(suffix.as_str()),
+                    "suggestion case `{}` expected suffix `{}` but got `{}`",
+                    case.id,
+                    suffix,
+                    suggestion
+                );
+            }
+        }
+    }
+
     #[test]
     fn envelope_validation_rejects_slot_timestamp_and_thumbnail_drift() {
         let mut invalid: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();

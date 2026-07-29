@@ -1,0 +1,162 @@
+{
+  "description": "Shared grapheme parity cases for save-name validation. Both the TypeScript test (apps/game/src/lib/persistence/manual-name.test.ts via Intl.Segmenter) and the Rust test (apps/game/src-tauri/src/game/save/schema.rs via unicode-segmentation) load this file and assert the same outcomes. If either side's grapheme segmentation drifts (e.g. from a Unicode version mismatch between V8/ICU and unicode-segmentation), its test fails. Rust is the persistence-layer authority; TS is client-side preview only.",
+  "validationCases": [
+    {
+      "id": "empty-string",
+      "input": "",
+      "expected": {
+        "ok": false,
+        "reason": "empty"
+      }
+    },
+    {
+      "id": "ideographic-space-only",
+      "input": " 　 ",
+      "expected": {
+        "ok": false,
+        "reason": "empty"
+      }
+    },
+    {
+      "id": "nbsp-and-ideographic-space-only",
+      "input": " 　",
+      "expected": {
+        "ok": false,
+        "reason": "empty"
+      }
+    },
+    {
+      "id": "null-character",
+      "input": "a\u0000",
+      "expected": {
+        "ok": false,
+        "reason": "forbidden"
+      }
+    },
+    {
+      "id": "nel-control",
+      "input": "a",
+      "expected": {
+        "ok": false,
+        "reason": "forbidden"
+      }
+    },
+    {
+      "id": "line-separator",
+      "input": " 雨",
+      "expected": {
+        "ok": false,
+        "reason": "forbidden"
+      }
+    },
+    {
+      "id": "paragraph-separator",
+      "input": "雨 ",
+      "expected": {
+        "ok": false,
+        "reason": "forbidden"
+      }
+    },
+    {
+      "id": "tab-control",
+      "input": " \t雨",
+      "expected": {
+        "ok": false,
+        "reason": "forbidden"
+      }
+    },
+    {
+      "id": "cjk-with-edge-whitespace",
+      "input": " 雨  夜　",
+      "expected": {
+        "ok": true,
+        "value": "雨  夜"
+      }
+    },
+    {
+      "id": "fullwidth-latin-with-combining-mark",
+      "input": "ＡＢＣ é",
+      "expected": {
+        "ok": true,
+        "value": "ＡＢＣ é"
+      }
+    },
+    {
+      "id": "simple-cjk",
+      "input": "雨夜",
+      "expected": {
+        "ok": true,
+        "value": "雨夜"
+      }
+    },
+    {
+      "id": "internal-whitespace-preserved",
+      "input": "  雨  夜  ",
+      "expected": {
+        "ok": true,
+        "value": "雨  夜"
+      }
+    },
+    {
+      "id": "combining-mark-boundary-40",
+      "input": "éééééééééééééééééééééééééééééééééééééééé",
+      "expected": {
+        "ok": true,
+        "value": "éééééééééééééééééééééééééééééééééééééééé"
+      }
+    },
+    {
+      "id": "combining-mark-over-boundary-41",
+      "input": "ééééééééééééééééééééééééééééééééééééééééé",
+      "expected": {
+        "ok": false,
+        "reason": "tooLong"
+      }
+    },
+    {
+      "id": "emoji-zwj-boundary-40",
+      "input": "👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻",
+      "expected": {
+        "ok": true,
+        "value": "👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻"
+      }
+    },
+    {
+      "id": "emoji-zwj-over-boundary-41",
+      "input": "👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻",
+      "expected": {
+        "ok": false,
+        "reason": "tooLong"
+      }
+    },
+    {
+      "id": "emoji-zwj-40-plus-one-cjk",
+      "input": "👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻雨",
+      "expected": {
+        "ok": false,
+        "reason": "tooLong"
+      }
+    }
+  ],
+  "suggestionCases": [
+    {
+      "id": "short-cjk",
+      "chapterTitle": "第一章",
+      "sceneTitle": "雨夜",
+      "expected": "第一章 · 雨夜"
+    },
+    {
+      "id": "short-ascii",
+      "chapterTitle": "Chapter 1",
+      "sceneTitle": "Rainy Night",
+      "expected": "Chapter 1 · Rainy Night"
+    },
+    {
+      "id": "truncated-emoji-and-cjk",
+      "chapterTitle": "👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻👩🏽‍💻",
+      "sceneTitle": "雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨雨",
+      "expectedGraphemeCount": 40,
+      "expectedSuffix": "…"
+    }
+  ]
+}

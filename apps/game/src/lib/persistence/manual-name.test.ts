@@ -1,8 +1,39 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   suggestManualDisplayName,
   validateManualDisplayName,
 } from "./manual-name";
+
+// Shared grapheme-parity fixture: the same JSON file is loaded by the Rust
+// test in apps/game/src-tauri/src/game/save/schema.rs. If either side's
+// grapheme segmentation drifts (e.g. from a Unicode version mismatch between
+// V8/ICU and unicode-segmentation), the test on the drifting side fails.
+// Rust is the persistence-layer authority; TS is client-side preview only.
+// Vitest runs from the app root (apps/game), so process.cwd() resolves there.
+const parityFixturePath = join(
+  process.cwd(),
+  "src-tauri",
+  "tests",
+  "fixtures",
+  "save-name-grapheme-parity.json",
+);
+const parityFixture = JSON.parse(readFileSync(parityFixturePath, "utf8")) as {
+  validationCases: Array<{
+    id: string;
+    input: string;
+    expected: { ok: boolean; value?: string; reason?: string };
+  }>;
+  suggestionCases: Array<{
+    id: string;
+    chapterTitle: string;
+    sceneTitle: string;
+    expected?: string;
+    expectedGraphemeCount?: number;
+    expectedSuffix?: string;
+  }>;
+};
 
 describe("validateManualDisplayName", () => {
   it.each([
@@ -68,4 +99,51 @@ describe("suggestManualDisplayName", () => {
     expect(graphemes.at(-1)).toBe("…");
     expect(graphemes.slice(0, 30).join("")).toBe("👩🏽‍💻".repeat(30));
   });
+});
+
+describe("grapheme parity fixture (shared with Rust)", () => {
+  it.each(parityFixture.validationCases)(
+    "validation case `$id` matches the Rust outcome",
+    ({ input, expected }) => {
+      if (expected.ok) {
+        expect(validateManualDisplayName(input)).toEqual({
+          ok: true,
+          value: expected.value,
+        });
+      } else {
+        expect(validateManualDisplayName(input)).toEqual({
+          ok: false,
+          reason: expected.reason,
+        });
+      }
+    },
+  );
+
+  it.each(parityFixture.suggestionCases)(
+    "suggestion case `$id` matches the Rust outcome",
+    ({
+      chapterTitle,
+      sceneTitle,
+      expected,
+      expectedGraphemeCount,
+      expectedSuffix,
+    }) => {
+      const suggestion = suggestManualDisplayName(chapterTitle, sceneTitle);
+      if (expected !== undefined) {
+        expect(suggestion).toBe(expected);
+      }
+      if (expectedGraphemeCount !== undefined) {
+        const graphemes = Array.from(
+          new Intl.Segmenter("zh-Hant", { granularity: "grapheme" }).segment(
+            suggestion,
+          ),
+          ({ segment }) => segment,
+        );
+        expect(graphemes).toHaveLength(expectedGraphemeCount);
+      }
+      if (expectedSuffix !== undefined) {
+        expect(suggestion.endsWith(expectedSuffix)).toBe(true);
+      }
+    },
+  );
 });
