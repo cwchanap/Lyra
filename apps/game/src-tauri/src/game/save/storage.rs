@@ -274,33 +274,48 @@ fn validate_e2e_app_data_root(
     app_identifier: &str,
 ) -> Result<PathBuf, GameError> {
     if app_identifier != E2E_APP_IDENTIFIER {
-        return Err(GameError::unsafe_e2e_app_data_root());
+        return Err(unsafe_e2e_app_data_root("identifier"));
     }
-    let candidate = override_root.ok_or_else(GameError::unsafe_e2e_app_data_root)?;
+    let candidate = override_root.ok_or_else(|| unsafe_e2e_app_data_root("missing"))?;
     if !candidate.is_absolute() || !has_e2e_basename(candidate) {
-        return Err(GameError::unsafe_e2e_app_data_root());
+        return Err(unsafe_e2e_app_data_root("shape"));
     }
 
     let candidate = candidate
         .canonicalize()
-        .map_err(|_| GameError::unsafe_e2e_app_data_root())?;
+        .map_err(|_| unsafe_e2e_app_data_root("candidate-canonicalize"))?;
     let temp_root = std::env::temp_dir()
         .canonicalize()
-        .map_err(|_| GameError::unsafe_e2e_app_data_root())?;
+        .map_err(|_| unsafe_e2e_app_data_root("temp-canonicalize"))?;
     let home = home_directory()
         .and_then(|path| path.canonicalize().ok())
-        .ok_or_else(GameError::unsafe_e2e_app_data_root)?;
+        .ok_or_else(|| unsafe_e2e_app_data_root("home-canonicalize"))?;
     let production = production_app_data.canonicalize().ok();
 
-    if candidate == temp_root
-        || candidate == home
-        || production.as_ref().is_some_and(|path| path == &candidate)
-        || !candidate.starts_with(&temp_root)
-        || !has_e2e_basename(&candidate)
-    {
-        return Err(GameError::unsafe_e2e_app_data_root());
+    if candidate == temp_root {
+        return Err(unsafe_e2e_app_data_root("temp-root"));
+    }
+    if candidate == home {
+        return Err(unsafe_e2e_app_data_root("home"));
+    }
+    if production.as_ref().is_some_and(|path| path == &candidate) {
+        return Err(unsafe_e2e_app_data_root("production"));
+    }
+    if !candidate.starts_with(&temp_root) {
+        return Err(unsafe_e2e_app_data_root("outside-temp"));
+    }
+    if !has_e2e_basename(&candidate) {
+        return Err(unsafe_e2e_app_data_root("canonical-shape"));
     }
     Ok(candidate.join("saves"))
+}
+
+fn unsafe_e2e_app_data_root(reason: &str) -> GameError {
+    #[cfg(feature = "e2e")]
+    eprintln!("[lyra-e2e] unsafe app-data override: {reason}");
+    #[cfg(not(feature = "e2e"))]
+    let _ = reason;
+    GameError::unsafe_e2e_app_data_root()
 }
 
 fn has_e2e_basename(path: &Path) -> bool {

@@ -511,6 +511,7 @@ fn resolve_scenes_dir(app: &tauri::AppHandle) -> Result<PathBuf, GameError> {
     Ok(dir)
 }
 
+#[cfg(test)]
 async fn install_session_candidate(
     state: &AppState,
     candidate: Result<(GameEngine, Option<SaveSlotRef>), GameError>,
@@ -526,6 +527,7 @@ async fn install_session_candidate(
     })
 }
 
+#[cfg(test)]
 async fn start_game_core(
     state: &AppState,
     engine: GameEngine,
@@ -548,8 +550,30 @@ async fn start_game_with_persistence_core(
             error,
         )?);
     }
+    let expected = state.coordinator.transition_identity(state)?;
+    if expected.durable_revision.is_some() {
+        if let Err(error) = state
+            .coordinator
+            .flush_session(state, FlushOperation::InGameLoad)
+            .await
+        {
+            let error = challengeable_flush_failure(error)?;
+            return Err(state.coordinator.challenge_current_session_error(
+                state,
+                PersistenceBypassOperation::StartWithoutSaving,
+                error,
+            )?);
+        }
+    }
     let engine = GameEngine::new_started(state.resources_dir.clone())?;
-    start_game_core(state, engine).await
+    let state_view = state
+        .coordinator
+        .install_session_if_current(state, engine, None, expected)
+        .await?;
+    Ok(GameplayCommandResultView {
+        state: state_view,
+        thumbnail_capture: None,
+    })
 }
 
 async fn start_game_without_saving_core(
@@ -557,11 +581,9 @@ async fn start_game_without_saving_core(
     failure_token: PersistenceFailureTokenView,
 ) -> Result<GameplayCommandResultView, GameError> {
     let engine = GameEngine::new_started(state.resources_dir.clone())?;
-    let expected = state.coordinator.consume_current_discovery_failure(
-        state,
-        &failure_token,
-        PersistenceBypassOperation::StartWithoutSaving,
-    )?;
+    let expected = state
+        .coordinator
+        .consume_current_start_without_saving_failure(state, &failure_token)?;
     let state_view = state
         .coordinator
         .install_session_if_current(state, engine, None, expected)
@@ -3222,6 +3244,245 @@ mod tests {
             assert_eq!(session.persistence.autosave_target, Some(slot));
         }
 
+        #[tokio::test(start_paused = true)]
+        async fn transition_contract_reset_flushes_pending_revision_before_replacing_session() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            let (old_generation, old_revision) = schedule_pending_fixture_autosave(&app);
+
+            start_game_with_persistence_core(&app).await.unwrap();
+
+            assert!(
+                app.session.lock().unwrap().persistence.generation > old_generation,
+                "reset must install a fresh session generation"
+            );
+            let persistence = app.persistence.as_ref().unwrap();
+            let browser = persistence.discover();
+            let persisted = browser
+                .slots
+                .iter()
+                .find(|slot| {
+                    matches!(slot.reference, SaveSlotRef::Auto { .. })
+                        && matches!(slot.status, SaveSlotStatusView::Valid { .. })
+                })
+                .expect("reset must durably flush the superseded session revision");
+            let envelope = read_save_envelope(
+                persistence.fs.as_ref(),
+                &persistence.root,
+                persisted.reference,
+                &valid_save_id(persisted),
+            )
+            .unwrap();
+            assert_eq!(envelope.snapshot.durable_revision, old_revision);
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn transition_contract_active_reset_token_survives_newer_discovery() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let failing = Arc::new(AtomicBool::new(false));
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(FailingWriteFilesystem {
+                    inner: ProductionSaveFilesystem,
+                    failing: Arc::clone(&failing),
+                }),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            schedule_pending_fixture_autosave(&app);
+            let before = session_observation(&app);
+            failing.store(true, Ordering::SeqCst);
+
+            let error = start_game_with_persistence_core(&app).await.unwrap_err();
+
+            assert_eq!(error.code, "saveWriteFailed");
+            assert_eq!(session_observation(&app), before);
+            let token = PersistenceFailureTokenView::from_error(&error).unwrap();
+            app.coordinator.complete_discovery_attempt().unwrap();
+            let replaced = start_game_without_saving_core(&app, token.clone())
+                .await
+                .unwrap();
+            assert!(replaced.thumbnail_capture.is_none());
+            assert_eq!(app.session.lock().unwrap().durable_revision(), Some(0));
+            assert_eq!(
+                start_game_without_saving_core(&app, token)
+                    .await
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+            assert!(app
+                .persistence
+                .as_ref()
+                .unwrap()
+                .discover()
+                .slots
+                .iter()
+                .filter(|slot| matches!(slot.reference, SaveSlotRef::Auto { .. }))
+                .all(|slot| matches!(slot.status, SaveSlotStatusView::Empty)));
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn transition_contract_active_reset_token_is_invalidated_by_revision_change() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let failing = Arc::new(AtomicBool::new(false));
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(FailingWriteFilesystem {
+                    inner: ProductionSaveFilesystem,
+                    failing: Arc::clone(&failing),
+                }),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            schedule_pending_fixture_autosave(&app);
+            failing.store(true, Ordering::SeqCst);
+            let error = start_game_with_persistence_core(&app).await.unwrap_err();
+            let token = PersistenceFailureTokenView::from_error(&error).unwrap();
+            let (_, failed_revision, _) = session_observation(&app);
+
+            advance_fixture_dialogue(&app);
+
+            let (_, current_revision, _) = session_observation(&app);
+            assert_ne!(current_revision, failed_revision);
+            assert_eq!(
+                start_game_without_saving_core(&app, token)
+                    .await
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn transition_contract_reset_flush_failure_can_retry_after_storage_recovers() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let failing = Arc::new(AtomicBool::new(false));
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(FailingWriteFilesystem {
+                    inner: ProductionSaveFilesystem,
+                    failing: Arc::clone(&failing),
+                }),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            let (_, old_revision) = schedule_pending_fixture_autosave(&app);
+            failing.store(true, Ordering::SeqCst);
+            let failed = start_game_with_persistence_core(&app).await.unwrap_err();
+            let stale_after_retry = PersistenceFailureTokenView::from_error(&failed).unwrap();
+
+            failing.store(false, Ordering::SeqCst);
+            start_game_with_persistence_core(&app).await.unwrap();
+
+            let persistence = app.persistence.as_ref().unwrap();
+            let browser = persistence.discover();
+            let persisted = browser
+                .slots
+                .iter()
+                .find(|slot| {
+                    matches!(slot.reference, SaveSlotRef::Auto { .. })
+                        && matches!(slot.status, SaveSlotStatusView::Valid { .. })
+                })
+                .expect("retry must flush the superseded session revision");
+            let envelope = read_save_envelope(
+                persistence.fs.as_ref(),
+                &persistence.root,
+                persisted.reference,
+                &valid_save_id(persisted),
+            )
+            .unwrap();
+            assert_eq!(envelope.snapshot.durable_revision, old_revision);
+            assert_eq!(
+                start_game_without_saving_core(&app, stale_after_retry)
+                    .await
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
+        #[tokio::test(start_paused = true)]
+        async fn transition_contract_title_start_does_not_create_an_autosave() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources,
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+
+            start_game_with_persistence_core(&app).await.unwrap();
+            tokio::time::advance(Duration::from_secs(60)).await;
+            for _ in 0..5 {
+                tokio::task::yield_now().await;
+            }
+
+            let session = app.session.lock().unwrap();
+            assert_eq!(session.persistence.generation, 1);
+            assert_eq!(session.durable_revision(), Some(0));
+            drop(session);
+            assert!(app
+                .persistence
+                .as_ref()
+                .unwrap()
+                .discover()
+                .slots
+                .iter()
+                .filter(|slot| matches!(slot.reference, SaveSlotRef::Auto { .. }))
+                .all(|slot| matches!(slot.status, SaveSlotStatusView::Empty)));
+        }
+
+        #[tokio::test]
+        async fn transition_contract_title_start_token_is_invalidated_by_newer_discovery() {
+            let resources = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let failing = Arc::new(AtomicBool::new(true));
+            let app = build_app_state_with_storage(
+                resources,
+                temporary.path().join("saves"),
+                Arc::new(RecoveringFilesystem {
+                    inner: ProductionSaveFilesystem,
+                    failing,
+                }),
+            )
+            .unwrap();
+            let error = start_game_with_persistence_core(&app).await.unwrap_err();
+            let token = PersistenceFailureTokenView::from_error(&error).unwrap();
+
+            app.coordinator.complete_discovery_attempt().unwrap();
+
+            assert_eq!(
+                start_game_without_saving_core(&app, token)
+                    .await
+                    .unwrap_err()
+                    .code,
+                "stalePersistenceFailureToken"
+            );
+        }
+
         #[tokio::test]
         async fn transition_contract_load_flushes_before_rereading_an_adopted_source_slot() {
             let resources = save_capture_fixture_resources();
@@ -4023,6 +4284,28 @@ mod tests {
                 panic!("fixture must expose an active dialogue queue");
             };
             engine.advance_dialogue(queue_token).unwrap();
+        }
+
+        fn schedule_pending_fixture_autosave(app: &AppState) -> (u64, u64) {
+            let mutated = run_gameplay_mutation(
+                app,
+                MutationPersistencePolicy::AutosaveIfAdvanced,
+                |engine| {
+                    let ModeView::Dialogue { queue_token, .. } = engine.view()?.mode else {
+                        return Err(GameError::game_not_started());
+                    };
+                    engine.advance_dialogue(queue_token)
+                },
+            )
+            .unwrap();
+            let pending = mutated
+                .thumbnail_capture
+                .expect("durable mutation must schedule its debounced autosave");
+            app.coordinator
+                .report_thumbnail_failure(&pending.ticket)
+                .unwrap();
+            let (generation, revision, _) = session_observation(app);
+            (generation, revision)
         }
 
         fn valid_save_id(slot: &SaveSlotView) -> String {

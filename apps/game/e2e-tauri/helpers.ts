@@ -1315,7 +1315,28 @@ export async function resetE2eStorage(): Promise<void> {
     }
     for (const k of toRemove) window.localStorage.removeItem(k);
   }, STORY_CLEARED_STORAGE_KEY);
+  await browser.execute(() => {
+    document.documentElement.setAttribute(
+      "data-ordinary-storage-pre-refresh",
+      "",
+    );
+  });
   await browser.refresh();
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        () =>
+          document.readyState === "complete" &&
+          !document.documentElement.hasAttribute(
+            "data-ordinary-storage-pre-refresh",
+          ),
+      ),
+    {
+      timeout: 30000,
+      timeoutMsg:
+        "ordinary E2E setup refresh did not replace the prior document",
+    },
+  );
   // Re-apply motion stubs after navigation (refresh drops injected scripts).
   await waitForShell();
 }
@@ -1370,12 +1391,51 @@ export async function startFromMenu(): Promise<void> {
   try {
     await browser.waitUntil(
       async () => {
-        return browser.execute((sel: string) => {
-          return document.querySelector(sel) !== null;
-        }, advanceDialogueSelector);
+        const status = await browser.execute(
+          (sel: string, label: string) => {
+            if (document.querySelector(sel) !== null) {
+              return { started: true, error: null };
+            }
+
+            const error = document.querySelector(
+              "[role='alert'], .error-banner",
+            );
+            if (error) {
+              return {
+                started: false,
+                error:
+                  (error.textContent ?? "").trim() ||
+                  "New Game reported an empty error.",
+              };
+            }
+
+            const button = Array.from(
+              document.querySelectorAll<HTMLButtonElement>("button"),
+            ).find(
+              (candidate) =>
+                candidate.getAttribute("aria-label") === label ||
+                (candidate.textContent ?? "").includes(label),
+            );
+
+            // A freshly launched WebView can expose the server-rendered menu
+            // just before Svelte attaches its click handler. Retrying is safe
+            // only while the control remains enabled: the handler disables it
+            // synchronously before awaiting the native start command.
+            if (button && !button.disabled) {
+              button.click();
+            }
+            return { started: false, error: null };
+          },
+          advanceDialogueSelector,
+          anchors.startButton,
+        );
+        if (status.error) {
+          throw new Error(`New Game failed: ${status.error}`);
+        }
+        return status.started;
       },
       {
-        timeout: 30000,
+        timeout: 90000,
         timeoutMsg: "dialogue advance control did not appear after start",
         interval: 200,
       },
@@ -1435,42 +1495,83 @@ export async function startFromMenu(): Promise<void> {
 }
 
 export async function waitTypewriterIdle(): Promise<void> {
-  await browser.waitUntil(
-    async () => {
-      return browser.execute((sel: string) => {
-        const el = document.querySelector(sel) as HTMLElement | null;
-        if (!el) return false;
-        return el.getAttribute("aria-disabled") !== "true";
-      }, advanceDialogueSelector);
-    },
-    {
-      // A real packaged autosave captures the gameplay root before the next
-      // mutation becomes interactive. WebKit capture on an unfocused CI
-      // process can take just over 20 seconds; keep the assertion on the
-      // actual enabled control and give the owned capture its full deadline.
-      timeout: 60000,
-      timeoutMsg: "dialogue advance stayed aria-disabled",
-      interval: 100,
-    },
-  );
+  try {
+    await browser.waitUntil(
+      async () => {
+        return browser.execute((sel: string) => {
+          const el = document.querySelector(sel) as HTMLElement | null;
+          if (!el) return false;
+          return el.getAttribute("aria-disabled") !== "true";
+        }, advanceDialogueSelector);
+      },
+      {
+        // A real packaged autosave captures the gameplay root before the next
+        // mutation becomes interactive. Keep this aligned with the 90-second
+        // packaged command/capture deadline used by the HPA phase helpers: a
+        // fresh macOS build can exceed 60 seconds while WebKit embeds fonts.
+        timeout: 90000,
+        timeoutMsg: "dialogue advance stayed aria-disabled",
+        interval: 100,
+      },
+    );
+  } catch (error) {
+    const [native, rendered] = await Promise.all([
+      getPackagedGameState().catch((stateError: unknown) => ({
+        diagnosticError:
+          stateError instanceof Error ? stateError.message : String(stateError),
+      })),
+      browser.execute(
+        (sel: string, captureProbe: string) => {
+          const advance = document.querySelector<HTMLElement>(sel);
+          return {
+            advance: advance
+              ? {
+                  ariaDisabled: advance.getAttribute("aria-disabled"),
+                  text: (advance.textContent ?? "").trim(),
+                }
+              : null,
+            visibleDialogue:
+              document.querySelector(".text-line, .text-action, .text-scene")
+                ?.textContent ?? null,
+            dialogs: Array.from(
+              document.querySelectorAll<HTMLElement>('[role="dialog"]'),
+            ).map((dialog) => ({
+              ariaLabel: dialog.getAttribute("aria-label"),
+              text: (dialog.textContent ?? "").trim().slice(0, 1000),
+            })),
+            captureProof: document
+              .querySelector(captureProbe)
+              ?.getAttribute("data-hpa-392-capture-proof-command-status"),
+          };
+        },
+        advanceDialogueSelector,
+        anchors.captureProof.probe,
+      ),
+    ]);
+    throw new Error(
+      [
+        error instanceof Error ? error.message : String(error),
+        `native=${JSON.stringify(native)}`,
+        `rendered=${JSON.stringify(rendered)}`,
+      ].join("\n"),
+      { cause: error },
+    );
+  }
   // Typewriter can take up to ~1.5s after enable; settle briefly.
   await browser.pause(150);
 }
 
-export async function advanceDialogueOnce(): Promise<void> {
+export async function advanceDialogueOnce(): Promise<boolean> {
   await waitTypewriterIdle();
   // Click twice: first may only complete a typewriter reveal; second advances.
   // With reduced-motion both are cheap no-ops/advances as appropriate.
-  const ok = await browser.execute((sel: string) => {
+  return browser.execute((sel: string) => {
     const el = document.querySelector(sel) as HTMLElement | null;
     if (!el) return false;
     el.click();
     el.click();
     return true;
   }, advanceDialogueSelector);
-  if (!ok) {
-    throw new Error("advanceDialogueOnce: advance control missing");
-  }
 }
 
 /**
@@ -1540,7 +1641,12 @@ export async function advanceDialogueUntil(
       // The selector reappeared — continue draining from the next step.
       continue;
     }
-    await advanceDialogueOnce();
+    // A queue-exhausting command can remove the control during the short
+    // settle between waitTypewriterIdle() and the atomic DOM click. Let the
+    // capped outer loop re-check its predicate and existing transition grace
+    // instead of treating that legitimate mode transition as a terminal
+    // missing-control failure.
+    if (!(await advanceDialogueOnce()) && (await predicate())) return;
   }
   const lastText = await lastVisibleDialogueText();
   throw new Error(
@@ -1571,7 +1677,8 @@ export async function elementTextIncludes(
 export async function drainToInvestigationExplore(): Promise<void> {
   await startFromMenu();
   await advanceDialogueUntil(async () => {
-    // Prefer DOM existence — avoids opacity/visibility flake on animated UI.
+    // Use DOM existence to detect the mode transition without coupling this
+    // dialogue drain to the longer persistence-owned capture deadline.
     const sub = await browser.execute((label: string) => {
       return Array.from(document.querySelectorAll("button")).some((b) =>
         (b.textContent ?? "").includes(label),
@@ -1582,6 +1689,12 @@ export async function drainToInvestigationExplore(): Promise<void> {
       `button[aria-label="${anchors.hotspotEvidence.label}"]`,
     );
   });
+  // The explore DOM renders before the autosave thumbnail submission settles.
+  // Investigation controls are deliberately disabled throughout that owned
+  // command phase, and HTMLElement.click() is a no-op for disabled buttons.
+  // Do not hand control to a test until the canonical production hotspot is
+  // actually interactive.
+  await waitForButton(anchors.hotspotEvidence.label, 90000);
 }
 
 export async function openGameMenu(): Promise<void> {
@@ -1723,11 +1836,7 @@ export async function jsClickButtonContaining(text: string): Promise<void> {
  * drain dialogue first, then expect the popup, then CONTINUE. */
 export async function collectKagamiSummaryEvidence(): Promise<void> {
   const hotspotSel = `button[aria-label="${anchors.hotspotEvidence.label}"]`;
-  await browser.waitUntil(async () => elementExists(hotspotSel), {
-    timeout: 15000,
-    timeoutMsg: "evidence hotspot not in DOM",
-  });
-  await jsClick(hotspotSel);
+  await clickButton(anchors.hotspotEvidence.label);
   // Drain the on_collect dialogue queue. The popup surfaces once the queue
   // empties and the deferred acquisition notification flushes. If the hotspot
   // has no on_collect dialogue, the predicate is true on the first check and
@@ -1749,4 +1858,8 @@ export async function collectKagamiSummaryEvidence(): Promise<void> {
       return true;
     return elementExists(hotspotSel);
   }, 40);
+  // Dismissing the acquisition popup can trigger another autosave capture.
+  // The explore DOM returns before its controls are interactive, so wait for
+  // the next action used by callers instead of handing back a disabled button.
+  await waitForButton(anchors.character.label, 90000);
 }

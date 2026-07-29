@@ -43,6 +43,24 @@ test.afterEach(() => {
   }
 });
 
+test("Turbo preserves OS temp-directory variables for packaged E2E tasks", () => {
+  const turboConfig = JSON.parse(
+    readFileSync(new URL("../../../turbo.json", import.meta.url), "utf8"),
+  );
+
+  for (const taskName of ["test:e2e", "test:e2e:run"]) {
+    const passThroughEnv = turboConfig.tasks[taskName]?.passThroughEnv ?? [];
+
+    for (const variable of ["TMPDIR", "TMP", "TEMP"]) {
+      assert.equal(
+        passThroughEnv.includes(variable),
+        true,
+        `${taskName} must pass through ${variable}`,
+      );
+    }
+  }
+});
+
 test("accepts only an absolute generated lyra-hpa-392 child of the OS temp root", () => {
   const generated = createHpa392E2eAppDataDir();
   holders.push(generated);

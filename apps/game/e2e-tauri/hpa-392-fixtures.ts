@@ -42,6 +42,32 @@ export type ExpectedResumeCheckpoint = {
   currentDialogueFingerprint: string;
 };
 
+export type SeedControl = {
+  documentIdentity: string;
+  checkpoint: ExpectedResumeCheckpoint;
+  composite: {
+    fixedSlotName: "manual-2";
+    saveId: string;
+    queueGen: number;
+    cursor: number;
+    currentDialogueFingerprint: string;
+    pendingEventIds: [string, string];
+    sceneSnapshot: Hpa392InvestigationSceneSnapshot;
+    inventorySnapshot: Hpa392InventorySnapshot;
+    visualCueSnapshot: Hpa392VisualCueSnapshot;
+  };
+  interrogation: {
+    fixedSlotName: "manual-3";
+    saveId: string;
+    phaseId: string;
+    presenting: boolean;
+    sceneSnapshot: Hpa392InterrogationSceneSnapshot;
+    inventorySnapshot: Hpa392InventorySnapshot;
+    visualCueSnapshot: Hpa392VisualCueSnapshot;
+  };
+  acknowledgementAutosave: Hpa392FixedSlotName;
+};
+
 export type Hpa392ThumbnailDescriptor =
   | { type: "unavailable" }
   | {

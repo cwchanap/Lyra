@@ -23,39 +23,13 @@ import {
   waitForHpa392Envelope,
   writeHpa392Expectation,
   type ExpectedResumeCheckpoint,
-  type Hpa392FixedSlotName,
-  type Hpa392InterrogationSceneSnapshot,
-  type Hpa392InventorySnapshot,
-  type Hpa392InvestigationSceneSnapshot,
-  type Hpa392VisualCueSnapshot,
+  type SeedControl,
 } from "./hpa-392-fixtures";
 import { anchors } from "./production-anchors";
 
-type SeedControl = {
-  documentIdentity: string;
-  checkpoint: ExpectedResumeCheckpoint;
-  composite: {
-    fixedSlotName: "manual-2";
-    saveId: string;
-    queueGen: number;
-    cursor: number;
-    currentDialogueFingerprint: string;
-    pendingEventIds: [string, string];
-    sceneSnapshot: Hpa392InvestigationSceneSnapshot;
-    inventorySnapshot: Hpa392InventorySnapshot;
-    visualCueSnapshot: Hpa392VisualCueSnapshot;
-  };
-  interrogation: {
-    fixedSlotName: "manual-3";
-    saveId: string;
-    phaseId: string;
-    presenting: boolean;
-    sceneSnapshot: Hpa392InterrogationSceneSnapshot;
-    inventorySnapshot: Hpa392InventorySnapshot;
-    visualCueSnapshot: Hpa392VisualCueSnapshot;
-  };
-  acknowledgementAutosave: Hpa392FixedSlotName;
+type ResumeSeedControl = SeedControl & {
   acknowledgedCheckpointSaveId?: string;
+  resumeDocumentIdentity?: string;
 };
 
 describe("HPA-392 save resume", () => {
@@ -63,7 +37,8 @@ describe("HPA-392 save resume", () => {
     const expected = readHpa392Expectation<
       ExpectedResumeCheckpoint & { documentIdentity: string }
     >("expected-resume-checkpoint");
-    const control = readHpa392Expectation<SeedControl>("management-state");
+    const control =
+      readHpa392Expectation<ResumeSeedControl>("management-state");
     await waitForShell();
     const documentIdentity = await currentPackagedDocumentIdentity();
     expect(documentIdentity).not.toBe(expected.documentIdentity);

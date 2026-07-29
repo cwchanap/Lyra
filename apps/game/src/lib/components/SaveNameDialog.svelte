@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import {
     suggestManualDisplayName,
     validateManualDisplayName,
@@ -19,12 +19,14 @@
     slot,
     currentSummary,
     returnFocusTo = null,
+    pending = false,
     onSubmit,
     onCancel,
   }: {
     slot: SaveSlotView;
     currentSummary: SaveSummaryView;
     returnFocusTo?: HTMLElement | null;
+    pending?: boolean;
     onSubmit: (submission: SaveNameSubmission, opener: HTMLElement) => void;
     onCancel: () => void;
   } = $props();
@@ -33,6 +35,9 @@
   let input = $state<HTMLInputElement | null>(null);
   let editedName = $state<string | null>(null);
   let validationAttempted = $state(false);
+  let mounted = false;
+  let pendingObserved = false;
+  let previousPending = false;
 
   const readableExistingName = $derived(
     slot.status.type === "valid"
@@ -61,6 +66,19 @@
           : "存檔名稱包含不允許的字元。",
   );
 
+  $effect(() => {
+    const nextPending = pending;
+    const shouldMoveFocus =
+      mounted && pendingObserved && !previousPending && nextPending;
+    pendingObserved = true;
+    previousPending = nextPending;
+    if (shouldMoveFocus) {
+      void tick().then(() => {
+        if (pending && dialog?.isConnected) dialog.focus();
+      });
+    }
+  });
+
   function expectation(): ManualSlotExpectationView {
     if (slot.status.type === "empty") return { type: "empty" };
     const saveId =
@@ -80,12 +98,14 @@
   }
 
   function cancel(): void {
+    if (pending) return;
     onCancel();
     restoreFocus();
   }
 
   function submit(event: SubmitEvent): void {
     event.preventDefault();
+    if (pending) return;
     validationAttempted = true;
     if (!validation.ok) {
       input?.focus();
@@ -103,6 +123,7 @@
     if (event.key === "Escape" && !event.repeat) {
       event.preventDefault();
       event.stopPropagation();
+      if (pending) return;
       cancel();
       return;
     }
@@ -114,6 +135,11 @@
     );
     const first = controls[0];
     const last = controls.at(-1);
+    if (!first || !last) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
     if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last?.focus();
@@ -124,7 +150,9 @@
   }
 
   onMount(() => {
-    input?.focus();
+    mounted = true;
+    if (pending) dialog?.focus();
+    else input?.focus();
   });
 </script>
 
@@ -133,6 +161,7 @@
     bind:this={dialog}
     class="dialog"
     role="dialog"
+    tabindex="-1"
     aria-modal="true"
     aria-labelledby="save-name-title"
   >
@@ -153,6 +182,7 @@
         aria-describedby={validationAttempted && !validation.ok
           ? "save-name-error"
           : undefined}
+        disabled={pending}
         oninput={(event) => {
           editedName = event.currentTarget.value;
           validationAttempted = false;
@@ -164,8 +194,8 @@
         </p>
       {/if}
       <div class="actions">
-        <button type="button" onclick={cancel}>取消</button>
-        <button type="submit">繼續</button>
+        <button type="button" disabled={pending} onclick={cancel}>取消</button>
+        <button type="submit" disabled={pending}>繼續</button>
       </div>
     </form>
   </div>

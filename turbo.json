@@ -17,10 +17,12 @@
       "cache": false
     },
     "test:e2e": {
-      "cache": false
+      "cache": false,
+      "passThroughEnv": ["TMPDIR", "TMP", "TEMP"]
     },
     "test:e2e:run": {
-      "cache": false
+      "cache": false,
+      "passThroughEnv": ["TMPDIR", "TMP", "TEMP"]
     },
     "dev:frontend": {
       "cache": false,

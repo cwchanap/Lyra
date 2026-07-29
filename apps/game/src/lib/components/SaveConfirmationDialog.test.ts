@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
+import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SaveSlotView, SaveSummaryView } from "$lib/persistence/types";
 import SaveConfirmationDialog from "./SaveConfirmationDialog.svelte";
@@ -188,5 +189,53 @@ describe("SaveConfirmationDialog", () => {
     await Promise.resolve();
     expect(onCancel).toHaveBeenCalledOnce();
     expect(document.activeElement).toBe(opener);
+  });
+
+  it("disables every action and ignores confirm, cancel, and Escape while pending", async () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(SaveConfirmationDialog, {
+      kind: "delete",
+      slot: validSlot,
+      pending: true,
+      onConfirm,
+      onCancel,
+    });
+
+    const dialog = screen.getByRole("dialog");
+    const cancel = screen.getByRole("button", { name: "取消" });
+    const confirm = screen.getByRole("button", { name: "確認刪除" });
+    expect(cancel).toBeDisabled();
+    expect(confirm).toBeDisabled();
+    expect(dialog).toHaveFocus();
+
+    await fireEvent.click(confirm);
+    await fireEvent.click(cancel);
+    await fireEvent.keyDown(dialog, { key: "Escape" });
+
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(dialog).toHaveFocus();
+  });
+
+  it("moves focus from the action to the dialog when pending begins after mount", async () => {
+    const props = {
+      kind: "delete" as const,
+      slot: validSlot,
+      pending: false,
+      onConfirm: vi.fn(),
+      onCancel: vi.fn(),
+    };
+    const rendered = render(SaveConfirmationDialog, props);
+    const dialog = screen.getByRole("dialog");
+    const confirm = screen.getByRole("button", { name: "確認刪除" });
+    confirm.focus();
+
+    await rendered.rerender({ ...props, pending: true });
+    await tick();
+
+    expect(confirm).toBeDisabled();
+    expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
+    expect(dialog).toHaveFocus();
   });
 });

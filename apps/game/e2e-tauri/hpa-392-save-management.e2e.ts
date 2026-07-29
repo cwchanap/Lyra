@@ -347,6 +347,8 @@ async function proveThumbnailFallback(
   expect(envelope?.thumbnail.type).toBe("available");
   if (expectedPhase === "missing") {
     expect(existsSync(resolveHpa392FixedSlotSidecar("manual-1"))).toBe(false);
+  } else {
+    expect(existsSync(resolveHpa392FixedSlotSidecar("manual-1"))).toBe(true);
   }
   await returnToTitle();
 }

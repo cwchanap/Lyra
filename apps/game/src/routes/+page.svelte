@@ -184,13 +184,16 @@
   let currentSaveSummary = $derived.by<SaveSummaryView | null>(() => {
     const state = gameState.value;
     if (!state) return null;
+    const activePrimaryObjective = state.story.objectives.find(
+      (objective) => objective.activePrimary,
+    );
     return {
       chapterId: state.chapter.id,
       chapterTitle: state.chapter.title,
       sceneId: state.scene.id,
       sceneTitle: state.scene.title,
-      activePrimaryObjectiveId: null,
-      activePrimaryObjectiveLabel: null,
+      activePrimaryObjectiveId: activePrimaryObjective?.id ?? null,
+      activePrimaryObjectiveLabel: activePrimaryObjective?.label ?? null,
     };
   });
 
@@ -267,6 +270,7 @@
   async function performTitleDelete(
     expectation: OccupiedSlotExpectationView,
   ): Promise<void> {
+    if (gameState.inFlight) return;
     const slot = titleDeleteSlot;
     if (!slot) return;
     gameState.inFlight = true;
@@ -365,6 +369,7 @@
   }
 
   async function handleTitleLoad(slot: SaveSlotView): Promise<void> {
+    if (gameState.inFlight) return;
     if (slot.status.type !== "valid") return;
     titleLoadFailure = null;
     try {
@@ -486,6 +491,7 @@
   }
 
   function closeGamePersistenceLayer(): void {
+    if (gameState.inFlight) return;
     if (persistenceStore.exitStatus.type === "saving") return;
     if (persistenceStore.exitStatus.type === "failed") {
       if (confirmingExitWithoutSaving) {
@@ -636,6 +642,7 @@
   async function performGameDelete(
     expectation: OccupiedSlotExpectationView,
   ): Promise<void> {
+    if (gameState.inFlight) return;
     const slot = pendingDeleteSlot;
     const mode = gameBrowserMode;
     if (!slot || !mode) return;
@@ -668,6 +675,7 @@
   async function performManualSave(
     submission: SaveNameSubmission,
   ): Promise<void> {
+    if (gameState.inFlight) return;
     const slot = selectedSaveSlot;
     if (!slot || slot.reference.type !== "manual") return;
     gameState.inFlight = true;
@@ -701,6 +709,7 @@
   }
 
   function handleManualNameSubmission(submission: SaveNameSubmission): void {
+    if (gameState.inFlight) return;
     pendingManualSubmission = submission;
     if (submission.expectation.type === "occupied") {
       gameBrowserController?.openConfirmation(nameSubmitLocator, () =>
@@ -718,6 +727,7 @@
     observedSaveId: string,
     failureToken: string | null = gameLoadDiscardFailureToken,
   ): Promise<void> {
+    if (gameState.inFlight) return;
     loadFailure = null;
     confirmingLoadWithoutSaving = false;
     try {
@@ -857,6 +867,12 @@
 
   function handleTitleWindowKeydown(event: KeyboardEvent): void {
     if (gameState.value !== null || event.key !== "Escape" || event.repeat) {
+      return;
+    }
+    if (gameState.inFlight) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
       return;
     }
     if (newGameFailure) {
@@ -1199,6 +1215,7 @@
         <SaveNameDialog
           slot={selectedSaveSlot}
           currentSummary={currentSaveSummary}
+          pending={gameState.inFlight}
           onSubmit={handleManualNameSubmission}
           onCancel={gameBrowserController.back}
         />
@@ -1207,6 +1224,7 @@
           <SaveConfirmationDialog
             kind="delete"
             slot={pendingDeleteSlot}
+            pending={gameState.inFlight}
             onCancel={cancelGameDelete}
             onConfirm={(request) => {
               if (request.type === "delete") {
@@ -1218,6 +1236,7 @@
           <SaveConfirmationDialog
             kind="load"
             slot={pendingLoadSlot}
+            pending={gameState.inFlight}
             onCancel={gameBrowserController.back}
             onConfirm={(request) => {
               if (request.type === "load") {
@@ -1229,6 +1248,7 @@
           <SaveConfirmationDialog
             kind="overwrite"
             slot={selectedSaveSlot}
+            pending={gameState.inFlight}
             currentSummary={currentSaveSummary}
             pendingDisplayName={pendingManualSubmission.displayName}
             onCancel={gameBrowserController.back}
@@ -1518,6 +1538,7 @@
         <SaveConfirmationDialog
           kind="delete"
           slot={titleDeleteSlot}
+          pending={gameState.inFlight}
           onCancel={cancelTitleDelete}
           onConfirm={(request) => {
             if (request.type === "delete") {

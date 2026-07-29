@@ -1,5 +1,6 @@
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -665,6 +666,54 @@ describe("+page title persistence flows", () => {
     expect(screen.queryByRole("region", { name: "存檔瀏覽器" })).toBeNull();
   });
 
+  it("single-flights a double title Load before the first IPC settles", async () => {
+    const user = userEvent.setup();
+    const discovery = titleDiscovery(validSlotStatus("title-load-id"));
+    let resolveLoad!: (response: Response) => void;
+    const delayedLoad = new Promise<Response>((resolve) => {
+      resolveLoad = resolve;
+    });
+    let loadCalls = 0;
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(discovery);
+      if (command === "load_save") {
+        loadCalls += 1;
+        return delayedLoad;
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") {
+        return jsonResponse({ type: "idle" });
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+    await user.click(await screen.findByRole("button", { name: "載入遊戲" }));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const load = within(
+      browser.querySelector(
+        '[data-slot-type="auto"][data-slot-number="1"]',
+      ) as HTMLElement,
+    ).getByRole("button", { name: "載入" });
+
+    await fireEvent.click(load);
+    await fireEvent.click(load);
+
+    expect(loadCalls).toBe(1);
+    expect(screen.queryByRole("dialog", { name: "載入失敗" })).toBeNull();
+    resolveLoad(jsonResponse({ state: jumpedState(), thumbnailCapture: null }));
+    await waitFor(() => expect(gameState.value?.scene.id).toBe("scene_2"));
+    expect(screen.queryByRole("dialog", { name: "載入失敗" })).toBeNull();
+  });
+
   it("closes the title browser from the real window Escape handler and restores Load focus", async () => {
     const user = userEvent.setup();
     const discovery = titleDiscovery(validSlotStatus("title-load-id"));
@@ -1164,9 +1213,15 @@ describe("+page in-game persistence browser", () => {
     ).toBe(false);
   });
 
-  it("names an empty manual slot, settles capture, and saves with the typed observation", async () => {
+  it("single-flights an empty manual save before thumbnail preparation settles", async () => {
     const user = userEvent.setup();
     let manualArgs: Record<string, unknown> | null = null;
+    let resolvePreparation!: (response: Response) => void;
+    const delayedPreparation = new Promise<Response>((resolve) => {
+      resolvePreparation = resolve;
+    });
+    let prepareCalls = 0;
+    let manualCalls = 0;
     mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(titleDiscovery());
@@ -1183,7 +1238,8 @@ describe("+page in-game persistence browser", () => {
         return jsonResponse({ type: "idle" });
       }
       if (command === "prepare_save_thumbnail") {
-        return jsonResponse({ ticket: "manual-ticket", timeoutMs: 0 });
+        prepareCalls += 1;
+        return delayedPreparation;
       }
       if (command === "report_save_thumbnail_failure") {
         return jsonResponse({
@@ -1196,6 +1252,7 @@ describe("+page in-game persistence browser", () => {
         });
       }
       if (command === "save_manual") {
+        manualCalls += 1;
         manualArgs = JSON.parse(String(init?.body));
         const browser = titleDiscovery().browser;
         return jsonResponse({
@@ -1233,9 +1290,18 @@ describe("+page in-game persistence browser", () => {
     });
     await user.clear(input);
     await user.type(input, "雨夜調查");
-    await user.click(within(nameDialog).getByRole("button", { name: "繼續" }));
+    const submit = within(nameDialog).getByRole("button", { name: "繼續" });
+    await fireEvent.click(submit);
+    await fireEvent.click(submit);
 
+    expect(prepareCalls).toBe(1);
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(
+      screen.getByRole("dialog", { name: "命名存檔" }),
+    ).toBeInTheDocument();
+    resolvePreparation(jsonResponse({ ticket: "manual-ticket", timeoutMs: 0 }));
     await waitFor(() => expect(manualArgs).not.toBeNull());
+    expect(manualCalls).toBe(1);
     expect(manualArgs).toEqual({
       reference: { type: "manual", slot: 1 },
       displayName: "雨夜調查",
@@ -1255,7 +1321,87 @@ describe("+page in-game persistence browser", () => {
     });
     expect(screen.getAllByRole("status", { name: "預覽狀態" })).toHaveLength(1);
     expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "儲存失敗" })).toBeNull();
   });
+
+  it.each([
+    {
+      caseName: "active primary objective",
+      objectives: [
+        {
+          id: "objective_follow_witness",
+          label: "追查雨夜目擊者",
+          summary: "找出目擊者隱瞞的證詞。",
+          kind: "primary" as const,
+          sortOrder: 10,
+          completed: false,
+          activePrimary: true,
+        },
+      ],
+      expectedLabel: "追查雨夜目擊者",
+      unexpectedLabel: "沒有進行中的主要目標",
+    },
+    {
+      caseName: "no active primary objective",
+      objectives: [],
+      expectedLabel: "沒有進行中的主要目標",
+      unexpectedLabel: "追查雨夜目擊者",
+    },
+  ])(
+    "shows the $caseName in an occupied manual overwrite summary",
+    async ({ objectives, expectedLabel, unexpectedLabel }) => {
+      const user = userEvent.setup();
+      const state = currentState();
+      state.story.objectives = objectives;
+      gameState.value = state;
+      const saves = titleDiscovery();
+      saves.browser.slots[5] = {
+        reference: { type: "manual", slot: 1 },
+        modifiedAt: "2026-07-27T12:00:01Z",
+        status: validSlotStatus("occupied-manual-id"),
+      };
+      mocks.fetch.mockImplementation(async (url: string) => {
+        const command = String(url).split("/").at(-1);
+        if (command === "list_saves") return jsonResponse(saves);
+        if (command === "list_scenes") {
+          return jsonResponse(sceneNavigationIndex);
+        }
+        if (command === "get_persistence_status") {
+          return jsonResponse({ type: "healthy" });
+        }
+        if (command === "get_thumbnail_activity") {
+          return jsonResponse({ type: "idle" });
+        }
+        if (command === "get_exit_status") {
+          return jsonResponse({ type: "idle" });
+        }
+        return jsonResponse({});
+      });
+
+      render(Page);
+      await user.keyboard("{Escape}");
+      const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+      await user.click(within(menu).getByRole("button", { name: "儲存遊戲" }));
+      const browser = await screen.findByRole("region", {
+        name: "存檔瀏覽器",
+      });
+      await user.click(
+        within(browser).getByRole("button", { name: "選擇手動存檔 1" }),
+      );
+      const nameDialog = await screen.findByRole("dialog", {
+        name: "命名存檔",
+      });
+      await user.click(
+        within(nameDialog).getByRole("button", { name: "繼續" }),
+      );
+
+      const current = await screen.findByRole("region", {
+        name: "目前遊戲",
+      });
+      expect(current).toHaveTextContent(expectedLabel);
+      expect(current).not.toHaveTextContent(unexpectedLabel);
+    },
+  );
 
   it("dismisses only the top manual-save failure on Escape and leaves its name layer intact", async () => {
     const user = userEvent.setup();
