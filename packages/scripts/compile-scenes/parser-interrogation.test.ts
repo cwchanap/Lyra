@@ -65,6 +65,15 @@ const VALID_SOURCE = `# Scene 2: 第一次詢問與交叉詢問
 ### statement:wakatsuki_entered_for_beans {#wakatsuki_entered_for_beans}
 - **Speaker:** 若槻蓮
 - **Content:** 「我進倉庫只是拿咖啡豆。」
+- **Source Kind:** testimony
+- **Representation Layer:** raw
+- **Procedural Status:** lead
+- **Completeness:** partial
+- **Confidence:** disputed
+- **Source Group:** wakatsuki_account
+- **Source Label:** 若槻蓮最初證詞
+- **Proof Capabilities:** [credibility, identity]
+- **Supersedes:** statement:initial_witness_account
 
 #### On Acquire
 
@@ -141,6 +150,62 @@ describe("parseInterrogationScene", () => {
     expect(parsed.value.statementManifest.map((s) => s.id)).toContain(
       "kagami_timeline_inconsistent",
     );
+    expect(parsed.value.statementManifest[0]?.provenance).toMatchObject({
+      sourceKind: { value: "testimony", line: 65 },
+      representationLayer: { value: "raw", line: 66 },
+      proceduralStatus: { value: "lead", line: 67 },
+      completeness: { value: "partial", line: 68 },
+      confidence: { value: "disputed", line: 69 },
+      sourceGroupId: { value: "wakatsuki_account", line: 70 },
+      sourceLabel: { value: "若槻蓮最初證詞", line: 71 },
+      proofCapabilities: [
+        { value: "credibility", line: 72 },
+        { value: "identity", line: 72 },
+      ],
+      supersedes: {
+        kind: "statement",
+        id: "initial_witness_account",
+        line: 73,
+      },
+    });
+  });
+
+  it("keeps unannotated statement provenance absent in the AST", () => {
+    const parsed = parseInterrogationScene(
+      VALID_SOURCE,
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.statementManifest[1]?.provenance).toEqual({
+      sourceKind: null,
+      representationLayer: null,
+      proceduralStatus: null,
+      completeness: null,
+      confidence: null,
+      sourceGroupId: null,
+      sourceLabel: null,
+      proofCapabilities: [],
+      supersedes: null,
+    });
+  });
+
+  it("rejects Image Prompt on a statement at its authored line", () => {
+    const parsed = parseInterrogationScene(
+      VALID_SOURCE.replace(
+        "- **Content:** 「我進倉庫只是拿咖啡豆。」",
+        "- **Content:** 「我進倉庫只是拿咖啡豆。」\n- **Image Prompt:** prohibited",
+      ),
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error).toMatchObject({
+      code: "caseRecordMetadataUnknownKey",
+      line: 65,
+    });
   });
 
   it("parses intro scene tag background metadata", () => {

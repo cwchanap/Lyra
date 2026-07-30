@@ -96,6 +96,70 @@ export type InventoryTarget =
   | { kind: "evidence"; id: string }
   | { kind: "statement"; id: string };
 
+export type SourceKind =
+  | "physical"
+  | "testimony"
+  | "digital"
+  | "subjective"
+  | "unspecified";
+
+export type RepresentationLayer =
+  | "raw"
+  | "sync"
+  | "summary"
+  | "composite"
+  | "none";
+
+export type ProceduralStatus =
+  | "unspecified"
+  | "lead"
+  | "reacquired"
+  | "exhibit";
+
+export type Completeness = "complete" | "partial" | "cropped" | "unspecified";
+
+export type Confidence =
+  | "unverified"
+  | "corroborated"
+  | "disputed"
+  | "unspecified";
+
+export type ProofCapability =
+  | "time"
+  | "order"
+  | "route"
+  | "identity"
+  | "access"
+  | "motive"
+  | "source"
+  | "credibility"
+  | "procedure"
+  | "causation";
+
+export type CaseRecordProvenance = {
+  sourceKind: SourceKind;
+  representationLayer: RepresentationLayer;
+  proceduralStatus: ProceduralStatus;
+  completeness: Completeness;
+  confidence: Confidence;
+  sourceGroupId: string | null;
+  sourceLabel: string | null;
+  proofCapabilities: ProofCapability[];
+  supersedesRecordId: string | null;
+};
+
+export type ASTCaseRecordProvenance = {
+  sourceKind: Located<{ value: SourceKind }> | null;
+  representationLayer: Located<{ value: RepresentationLayer }> | null;
+  proceduralStatus: Located<{ value: ProceduralStatus }> | null;
+  completeness: Located<{ value: Completeness }> | null;
+  confidence: Located<{ value: Confidence }> | null;
+  sourceGroupId: Located<{ value: string }> | null;
+  sourceLabel: Located<{ value: string }> | null;
+  proofCapabilities: Array<Located<{ value: ProofCapability }>>;
+  supersedes: Located<InventoryTarget> | null;
+};
+
 export type InterrogationRevealTarget =
   | InventoryTarget
   | { kind: "question"; id: string }
@@ -242,6 +306,7 @@ export type ASTEvidence = Located<{
   details: string;
   imageCue: EvidenceImageCue;
   sourceSublocationId: string | null;
+  provenance?: ASTCaseRecordProvenance;
   onCollect: DialogueItem[];
   onReexamine: DialogueItem[] | null;
 }>;
@@ -250,6 +315,7 @@ export type ASTStatement = Located<{
   id: string;
   speaker: string;
   content: string;
+  provenance?: ASTCaseRecordProvenance;
   onAcquire: DialogueItem[];
   onReexamine: DialogueItem[] | null;
 }>;
