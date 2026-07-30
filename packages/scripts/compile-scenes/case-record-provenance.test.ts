@@ -668,6 +668,34 @@ describe("case record supersession graph", () => {
     },
   );
 
+  it("rejects a resolving predecessor reference whose kind differs from the successor", () => {
+    const result = compileRecords([
+      {
+        target: { kind: "evidence", id: "prior" },
+        line: 20,
+      },
+      {
+        target: { kind: "statement", id: "next" },
+        line: 21,
+        provenance: astProvenance({
+          supersedes: { kind: "evidence", id: "prior" },
+          supersedesLine: 66,
+        }),
+      },
+    ]);
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "caseRecordSupersessionKindMismatch",
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 66,
+        }),
+      ],
+    });
+  });
+
   it("rejects a fork at the later successor Supersedes line", () => {
     const result = compileRecords([
       { target: { kind: "evidence", id: "root" }, line: 20 },

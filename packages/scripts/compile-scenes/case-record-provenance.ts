@@ -449,6 +449,17 @@ function validateSupersessionGraph(
     if (!predecessor || !successor) continue;
     const predecessorKey = inventoryTargetKey(predecessor);
 
+    if (predecessor.kind !== successor.target.kind) {
+      errors.push(
+        supersessionError(
+          "caseRecordSupersessionKindMismatch",
+          `Case record ${successorKey} cannot supersede cross-kind record ${predecessorKey}.`,
+          predecessor,
+        ),
+      );
+      continue;
+    }
+
     if (predecessorKey === successorKey) {
       errors.push(
         supersessionError(
