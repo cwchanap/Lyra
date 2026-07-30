@@ -106,6 +106,7 @@ mod tests {
             name: id.into(),
             description: id.into(),
             details: id.into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_collect: vec![],
             on_reexamine: None,
