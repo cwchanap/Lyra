@@ -603,21 +603,23 @@ fn validate_inventory(engine: &GameEngine) -> Result<(), GameError> {
     for record in &engine.inventory.evidence {
         validate_inventory_record(
             engine,
-            &record.id,
+            &InventoryTarget::Evidence {
+                id: record.id.clone(),
+            },
             &record.collected_in_chapter_id,
             &record.collected_in_scene_id,
             &record.provenance,
-            true,
         )?;
     }
     for record in &engine.inventory.statements {
         validate_inventory_record(
             engine,
-            &record.id,
+            &InventoryTarget::Statement {
+                id: record.id.clone(),
+            },
             &record.acquired_in_chapter_id,
             &record.acquired_in_scene_id,
             &record.provenance,
-            false,
         )?;
     }
     Ok(())
@@ -625,60 +627,44 @@ fn validate_inventory(engine: &GameEngine) -> Result<(), GameError> {
 
 fn validate_inventory_record(
     engine: &GameEngine,
-    record_id: &str,
+    target: &InventoryTarget,
     chapter_id: &str,
     scene_id: &str,
     provenance: &CaseRecordProvenance,
-    evidence: bool,
 ) -> Result<(), GameError> {
-    let target = if evidence {
-        InventoryTarget::Evidence {
-            id: record_id.to_owned(),
-        }
-    } else {
-        InventoryTarget::Statement {
-            id: record_id.to_owned(),
-        }
-    };
     validate_inventory_record_against_catalog(
         &engine.story_catalog,
         chapter_id,
         scene_id,
-        &target,
+        target,
         provenance,
     )?;
     let scene = engine.packaged_acquisition_scene(chapter_id, scene_id)?;
     let found = match scene {
-        SceneJson::Investigation(scene) => {
-            if evidence {
-                scene
-                    .evidence_manifest
-                    .iter()
-                    .any(|item| item.id == record_id)
-            } else {
-                scene
-                    .statement_manifest
-                    .iter()
-                    .any(|item| item.id == record_id)
-            }
-        }
-        SceneJson::Interrogation(scene) => {
-            if evidence {
-                scene
-                    .evidence_manifest
-                    .iter()
-                    .any(|item| item.id == record_id)
-            } else {
-                scene
-                    .statement_manifest
-                    .iter()
-                    .any(|item| item.id == record_id)
-            }
-        }
+        SceneJson::Investigation(scene) => match target {
+            InventoryTarget::Evidence { id } => scene
+                .evidence_manifest
+                .iter()
+                .any(|item| item.id == id.as_str()),
+            InventoryTarget::Statement { id } => scene
+                .statement_manifest
+                .iter()
+                .any(|item| item.id == id.as_str()),
+        },
+        SceneJson::Interrogation(scene) => match target {
+            InventoryTarget::Evidence { id } => scene
+                .evidence_manifest
+                .iter()
+                .any(|item| item.id == id.as_str()),
+            InventoryTarget::Statement { id } => scene
+                .statement_manifest
+                .iter()
+                .any(|item| item.id == id.as_str()),
+        },
         SceneJson::Linear(_) => false,
     };
     if !found {
-        return Err(GameError::case_record_definition_mismatch());
+        return Err(GameError::inventory_record_definition_mismatch());
     }
     Ok(())
 }

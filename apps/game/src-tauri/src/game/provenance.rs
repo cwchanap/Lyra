@@ -88,18 +88,10 @@ const CANONICAL_PROOF_CAPABILITIES: [ProofCapability; 10] = [
 ];
 
 fn proof_capability_rank(capability: ProofCapability) -> usize {
-    match capability {
-        ProofCapability::Time => 0,
-        ProofCapability::Order => 1,
-        ProofCapability::Route => 2,
-        ProofCapability::Identity => 3,
-        ProofCapability::Access => 4,
-        ProofCapability::Motive => 5,
-        ProofCapability::Source => 6,
-        ProofCapability::Credibility => 7,
-        ProofCapability::Procedure => 8,
-        ProofCapability::Causation => 9,
-    }
+    CANONICAL_PROOF_CAPABILITIES
+        .iter()
+        .position(|entry| *entry == capability)
+        .expect("proof capability must appear in CANONICAL_PROOF_CAPABILITIES")
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -115,6 +107,20 @@ pub struct CaseRecordProvenance {
     pub supersedes_record_id: Option<String>,
 }
 
+fn case_record_matches_catalog(
+    catalog: &StoryCatalog,
+    chapter_id: &str,
+    scene_id: &str,
+    target: &InventoryTarget,
+    provenance: &CaseRecordProvenance,
+) -> bool {
+    catalog.case_record(target).is_some_and(|definition| {
+        definition.chapter_id == chapter_id
+            && definition.scene_id == scene_id
+            && definition.provenance == *provenance
+    })
+}
+
 pub(in crate::game) fn validate_scene_record_against_catalog(
     catalog: &StoryCatalog,
     chapter_id: &str,
@@ -122,12 +128,7 @@ pub(in crate::game) fn validate_scene_record_against_catalog(
     target: &InventoryTarget,
     scene_provenance: &CaseRecordProvenance,
 ) -> Result<(), GameError> {
-    let matches = catalog.case_record(target).is_some_and(|definition| {
-        definition.chapter_id == chapter_id
-            && definition.scene_id == scene_id
-            && definition.provenance == *scene_provenance
-    });
-    if matches {
+    if case_record_matches_catalog(catalog, chapter_id, scene_id, target, scene_provenance) {
         Ok(())
     } else {
         Err(GameError::case_record_definition_mismatch())
@@ -141,12 +142,7 @@ pub(in crate::game) fn validate_inventory_record_against_catalog(
     target: &InventoryTarget,
     inventory_provenance: &CaseRecordProvenance,
 ) -> Result<(), GameError> {
-    let matches = catalog.case_record(target).is_some_and(|definition| {
-        definition.chapter_id == chapter_id
-            && definition.scene_id == scene_id
-            && definition.provenance == *inventory_provenance
-    });
-    if matches {
+    if case_record_matches_catalog(catalog, chapter_id, scene_id, target, inventory_provenance) {
         Ok(())
     } else {
         Err(GameError::inventory_record_definition_mismatch())

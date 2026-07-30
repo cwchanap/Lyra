@@ -752,6 +752,7 @@ describe("case record supersession graph", () => {
           }),
         },
       ],
+      72,
     ],
     [
       "longer",
@@ -781,23 +782,27 @@ describe("case record supersession graph", () => {
           }),
         },
       ],
+      74,
     ],
-  ])("rejects a %s cycle at a successor Supersedes line", (_label, records) => {
-    const result = compileRecords(records);
+  ])(
+    "rejects a %s cycle at a successor Supersedes line",
+    (_label, records, expectedCycleLine) => {
+      const result = compileRecords(records);
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.errors).toContainEqual(
-      expect.objectContaining({
-        code: "caseRecordSupersessionCycle",
-        sourceFile: "chapter_1/investigation_scene_1.md",
-      }),
-    );
-    expect([71, 72, 73, 74, 75]).toContain(
-      result.errors.find(({ code }) => code === "caseRecordSupersessionCycle")
-        ?.line,
-    );
-  });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          code: "caseRecordSupersessionCycle",
+          sourceFile: "chapter_1/investigation_scene_1.md",
+        }),
+      );
+      const cycleError = result.errors.find(
+        ({ code }) => code === "caseRecordSupersessionCycle",
+      );
+      expect(cycleError?.line).toBe(expectedCycleLine);
+    },
+  );
 
   it.each([
     ["exhibit to reacquired", "exhibit", "reacquired", 81],

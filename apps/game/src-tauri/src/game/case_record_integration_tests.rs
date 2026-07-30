@@ -251,6 +251,10 @@ fn drain_dialogue(engine: &mut GameEngine) {
         };
         engine.advance_dialogue(queue_token).unwrap();
     }
+    let view = engine.view().unwrap();
+    if !matches!(view.mode, ModeView::Dialogue { .. }) {
+        return;
+    }
     panic!("fixture dialogue did not drain");
 }
 

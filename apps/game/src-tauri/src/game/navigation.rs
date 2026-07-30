@@ -563,17 +563,7 @@ mod tests {
                     "id": record["id"],
                     "chapterId": "chapter_1",
                     "sceneId": scene_id,
-                    "provenance": {
-                        "sourceKind": "unspecified",
-                        "representationLayer": "none",
-                        "proceduralStatus": "unspecified",
-                        "completeness": "unspecified",
-                        "confidence": "unspecified",
-                        "sourceGroupId": null,
-                        "sourceLabel": null,
-                        "proofCapabilities": [],
-                        "supersedesRecordId": null
-                    }
+                    "provenance": neutral_provenance_json()
                 }));
             }
         }
@@ -1715,17 +1705,7 @@ mod tests {
                 "id": "orphaned_record",
                 "chapterId": "chapter_1",
                 "sceneId": "missing_scene",
-                "provenance": {
-                    "sourceKind": "unspecified",
-                    "representationLayer": "none",
-                    "proceduralStatus": "unspecified",
-                    "completeness": "unspecified",
-                    "confidence": "unspecified",
-                    "sourceGroupId": null,
-                    "sourceLabel": null,
-                    "proofCapabilities": [],
-                    "supersedesRecordId": null
-                }
+                "provenance": neutral_provenance_json()
             }));
         std::fs::write(&catalog_path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
 

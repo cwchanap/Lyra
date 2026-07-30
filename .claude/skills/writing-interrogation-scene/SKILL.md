@@ -129,13 +129,8 @@ end, not a dead-end error.
 - **Details:** ...
 - **Source Kind:** digital
 - **Representation Layer:** raw
-- **Procedural Status:** reacquired
-- **Completeness:** complete
-- **Confidence:** corroborated
-- **Source Group:** <declared_source_group_id>
 - **Source Label:** 經核實的來源顯示文字
 - **Proof Capabilities:** [time, source, procedure]
-- **Supersedes:** evidence:<immediate_predecessor_id>
 
 #### On Collect
 
@@ -149,13 +144,8 @@ end, not a dead-end error.
 - **Content:** ...
 - **Source Kind:** testimony
 - **Representation Layer:** summary
-- **Procedural Status:** reacquired
-- **Completeness:** complete
-- **Confidence:** corroborated
-- **Source Group:** <declared_source_group_id>
 - **Source Label:** 經核實的證詞來源
 - **Proof Capabilities:** [identity, credibility, procedure]
-- **Supersedes:** statement:<immediate_predecessor_id>
 
 #### On Acquire
 
@@ -461,8 +451,12 @@ unspecified < lead < reacquired < exhibit
 ```
 
 Successor 省略 status 會落到 `unspecified`，可能正確觸發 non-regression
-error。File Skeleton 中的 `reacquired` + `Supersedes` 是 successor 範例；
-沒有 predecessor 的 lead 可省略 `Supersedes`，但應明寫
+error。File Skeleton 預設 neutral：不假設 supersession 或 source group，
+故 `Procedural Status` / `Completeness` / `Confidence` / `Source Group` /
+`Supersedes` 皆省略（套用預設值）。要寫 successor 時才補上
+`Procedural Status`（不得低於 predecessor）與 `Supersedes`，並參照 canonical
+fixture 的 opt-in successor 範本（使用前務必換成真實 predecessor）。沒有
+predecessor 的 lead 可省略 `Supersedes`，但應明寫
 `Procedural Status: lead`。
 
 Evidence / Statement metadata 是 closed、duplicate-safe contract。同一 key

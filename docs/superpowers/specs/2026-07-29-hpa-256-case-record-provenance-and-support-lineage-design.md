@@ -1303,8 +1303,9 @@ canonicalized by record ID; canonical ordering remains limited to capabilities
 and set-derived typed-target projections.
 
 `Inventory`, `EvidenceRecord`, and `StatementRecord` are engine state, not public
-wire types. Once `InventoryView` is wired, remove their `Serialize` derives where
-practical so Rust cannot accidentally bypass redaction. Save capture continues
+wire types, and MUST NOT derive `Serialize` (they currently derive none). This is
+a mandatory compile-time boundary so Rust cannot accidentally bypass redaction;
+`InventoryView` is the sole public inventory wire type. Save capture continues
 its explicit ID-only mapping and does not depend on public serialization.
 
 The external JSON retains the existing property shape:

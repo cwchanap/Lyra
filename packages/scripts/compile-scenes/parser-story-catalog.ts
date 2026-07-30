@@ -214,6 +214,7 @@ export function parseStoryCatalog(
           sourceFile,
           line: item.line,
         });
+        return;
       }
     }
   };

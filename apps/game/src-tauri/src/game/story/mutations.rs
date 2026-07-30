@@ -339,62 +339,33 @@ mod tests {
         std::fs::create_dir_all(&path).unwrap();
         std::fs::write(
             path.join("story_catalog.json"),
-            r#"{
-  "schemaVersion": 2,
-  "facts": [
-    {"id":"fact_alpha","label":"Alpha","summary":"Alpha","details":"Alpha details","category":"timeline"},
-    {"id":"fact_beta","label":"Beta","summary":"Beta","details":"Beta details","category":"motive"},
-    {"id":"fact_gamma","label":"Gamma","summary":"Gamma","details":"Gamma details","category":"identity"}
-  ],
-  "questions": [
-    {"id":"question_main","label":"Main","summary":"Main","resolvedByFactIds":["fact_alpha","fact_beta"]}
-  ],
-  "objectives": [
-    {"id":"primary_a","label":"Primary A","summary":"A","kind":"primary","sortOrder":1},
-    {"id":"primary_b","label":"Primary B","summary":"B","kind":"primary","sortOrder":2},
-    {"id":"secondary_a","label":"Secondary A","summary":"S","kind":"secondary","sortOrder":3}
-  ],
-  "authorizations": [
-    {"id":"authorization_a","label":"Authorization A","summary":"A","grantingAuthority":"Police"}
-  ],
-  "sourceGroups": [],
-  "evidenceIndex": [
-    {
-      "id":"evidence_a",
-      "chapterId":"chapter_1",
-      "sceneId":"scene_1",
-      "provenance":{
-        "sourceKind":"unspecified",
-        "representationLayer":"none",
-        "proceduralStatus":"unspecified",
-        "completeness":"unspecified",
-        "confidence":"unspecified",
-        "sourceGroupId":null,
-        "sourceLabel":null,
-        "proofCapabilities":[],
-        "supersedesRecordId":null
-      }
-    }
-  ],
-  "statementsIndex": [
-    {
-      "id":"statement_a",
-      "chapterId":"chapter_1",
-      "sceneId":"scene_1",
-      "provenance":{
-        "sourceKind":"unspecified",
-        "representationLayer":"none",
-        "proceduralStatus":"unspecified",
-        "completeness":"unspecified",
-        "confidence":"unspecified",
-        "sourceGroupId":null,
-        "sourceLabel":null,
-        "proofCapabilities":[],
-        "supersedesRecordId":null
-      }
-    }
-  ]
-}"#,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "schemaVersion": 2,
+                "facts": [
+                    {"id":"fact_alpha","label":"Alpha","summary":"Alpha","details":"Alpha details","category":"timeline"},
+                    {"id":"fact_beta","label":"Beta","summary":"Beta","details":"Beta details","category":"motive"},
+                    {"id":"fact_gamma","label":"Gamma","summary":"Gamma","details":"Gamma details","category":"identity"}
+                ],
+                "questions": [
+                    {"id":"question_main","label":"Main","summary":"Main","resolvedByFactIds":["fact_alpha","fact_beta"]}
+                ],
+                "objectives": [
+                    {"id":"primary_a","label":"Primary A","summary":"A","kind":"primary","sortOrder":1},
+                    {"id":"primary_b","label":"Primary B","summary":"B","kind":"primary","sortOrder":2},
+                    {"id":"secondary_a","label":"Secondary A","summary":"S","kind":"secondary","sortOrder":3}
+                ],
+                "authorizations": [
+                    {"id":"authorization_a","label":"Authorization A","summary":"A","grantingAuthority":"Police"}
+                ],
+                "sourceGroups": [],
+                "evidenceIndex": [
+                    {"id":"evidence_a","chapterId":"chapter_1","sceneId":"scene_1","provenance": crate::game::test_support::neutral_provenance_json()}
+                ],
+                "statementsIndex": [
+                    {"id":"statement_a","chapterId":"chapter_1","sceneId":"scene_1","provenance": crate::game::test_support::neutral_provenance_json()}
+                ]
+            }))
+            .unwrap(),
         )
         .unwrap();
         let catalog = StoryCatalog::load(&path).unwrap();
