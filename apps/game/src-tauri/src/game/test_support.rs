@@ -58,11 +58,12 @@ pub fn write_empty_story_catalog_and_content_manifest(dir: &Path) {
     std::fs::write(
         dir.join("story_catalog.json"),
         r#"{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "facts": [],
   "questions": [],
   "objectives": [],
   "authorizations": [],
+  "sourceGroups": [],
   "evidenceIndex": [],
   "statementsIndex": []
 }
@@ -455,7 +456,7 @@ pub(crate) fn save_capture_fixture_resources() -> (tempfile::TempDir, PathBuf) {
     std::fs::write(
         resources.join("story_catalog.json"),
         r#"{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "facts": [{
     "id": "fact_origin",
     "label": "Origin fact",
@@ -488,15 +489,38 @@ pub(crate) fn save_capture_fixture_resources() -> (tempfile::TempDir, PathBuf) {
     "summary": "Exercises authorization grant round-trip.",
     "grantingAuthority": "Detective"
   }],
+  "sourceGroups": [],
   "evidenceIndex": [{
     "id":"test_evidence",
     "chapterId":"chapter_1",
-    "sceneId":"investigation_scene_1"
+    "sceneId":"investigation_scene_1",
+    "provenance":{
+      "sourceKind":"unspecified",
+      "representationLayer":"none",
+      "proceduralStatus":"unspecified",
+      "completeness":"unspecified",
+      "confidence":"unspecified",
+      "sourceGroupId":null,
+      "sourceLabel":null,
+      "proofCapabilities":[],
+      "supersedesRecordId":null
+    }
   }],
   "statementsIndex": [{
     "id":"alibi_statement",
     "chapterId":"chapter_1",
-    "sceneId":"investigation_scene_1"
+    "sceneId":"investigation_scene_1",
+    "provenance":{
+      "sourceKind":"unspecified",
+      "representationLayer":"none",
+      "proceduralStatus":"unspecified",
+      "completeness":"unspecified",
+      "confidence":"unspecified",
+      "sourceGroupId":null,
+      "sourceLabel":null,
+      "proofCapabilities":[],
+      "supersedesRecordId":null
+    }
   }]
 }"#,
     )
@@ -712,13 +736,14 @@ pub(super) fn story_navigation_fixture_resources() -> PathBuf {
     fs::write(
         d.join("story_catalog.json"),
         r#"{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "facts": [
     {"id":"persistent_fact","label":"Persistent fact","summary":"Persists","details":"Persists across navigation","category":"timeline"}
   ],
   "questions": [],
   "objectives": [],
   "authorizations": [],
+  "sourceGroups": [],
   "evidenceIndex": [],
   "statementsIndex": []
 }"#,

@@ -171,7 +171,28 @@ impl GameError {
     pub fn acquisition_definition_mismatch() -> Self {
         Self::new(
             "acquisitionDefinitionMismatch",
-            "Acquisition definition does not match the stored record kind or provenance.",
+            "The pending acquisition event does not match its owning scene record kind.",
+        )
+    }
+    pub fn case_record_definition_mismatch() -> Self {
+        Self::new(
+            "caseRecordDefinitionMismatch",
+            "Case record origin or provenance does not match the story catalog.",
+        )
+    }
+    pub fn inventory_record_definition_mismatch() -> Self {
+        Self::new(
+            "inventoryRecordDefinitionMismatch",
+            "Acquired inventory record origin or provenance does not match the story catalog.",
+        )
+    }
+    pub fn missing_case_record_source_group(records: impl Into<String>) -> Self {
+        Self::new(
+            "missingCaseRecordSourceGroup",
+            format!(
+                "Strict source counting requires source groups for these case records: {}.",
+                records.into()
+            ),
         )
     }
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
@@ -338,7 +359,7 @@ impl GameError {
         Self::new(
             "unsupportedStoryCatalogVersion",
             format!(
-                "Story catalog '{}' uses unsupported schema version {version}; expected version 1.",
+                "Story catalog '{}' uses unsupported schema version {version}; expected version 2.",
                 path.display()
             ),
         )
@@ -545,6 +566,18 @@ mod tests {
                 "requestOriginForbidden",
                 GameError::request_origin_forbidden("http://evil"),
             ),
+            (
+                "caseRecordDefinitionMismatch",
+                GameError::case_record_definition_mismatch(),
+            ),
+            (
+                "inventoryRecordDefinitionMismatch",
+                GameError::inventory_record_definition_mismatch(),
+            ),
+            (
+                "missingCaseRecordSourceGroup",
+                GameError::missing_case_record_source_group("evidence:receipt"),
+            ),
         ];
         for (expected_code, error) in cases {
             assert_eq!(error.code, expected_code);
@@ -555,6 +588,16 @@ mod tests {
             GameError::persistence_operation_in_progress().is_persistence_operation_in_progress()
         );
         assert!(!GameError::unavailable().is_persistence_operation_in_progress());
+    }
+
+    #[test]
+    fn acquisition_definition_mismatch_is_scoped_to_pending_event_ownership() {
+        let error = GameError::acquisition_definition_mismatch();
+
+        assert_eq!(error.code, "acquisitionDefinitionMismatch");
+        assert!(error.message.contains("pending acquisition event"));
+        assert!(error.message.contains("owning scene"));
+        assert!(!error.message.contains("provenance"));
     }
 
     #[test]
