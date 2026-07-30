@@ -3761,7 +3761,17 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 "title": "Source",
                 "intro": [],
                 "sublocations": [],
-                "evidenceManifest": [],
+                "evidenceManifest": [{
+                    "id": "note",
+                    "name": "Note",
+                    "description": "Note",
+                    "details": "Note",
+                    "imageAssetId": null,
+                    "onCollect": [],
+                    "onReexamine": [
+                        {"kind": "action", "text": "source-bound reexamine"}
+                    ]
+                }],
                 "statementManifest": [],
                 "outro": { "unlock": "auto", "dialogue": [] }
             }"#,

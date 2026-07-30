@@ -158,6 +158,8 @@ pub(in crate::game) fn validate_scene_records_against_catalog(
     chapter_id: &str,
     scene: &SceneJson,
 ) -> Result<(), GameError> {
+    use std::collections::BTreeMap;
+
     let (scene_id, evidence, statements) = match scene {
         SceneJson::Linear(_) => return Ok(()),
         SceneJson::Investigation(scene) => (
@@ -171,27 +173,45 @@ pub(in crate::game) fn validate_scene_records_against_catalog(
             &scene.statement_manifest,
         ),
     };
+    let mut scene_record_counts = BTreeMap::new();
     for definition in evidence {
+        let target = InventoryTarget::Evidence {
+            id: definition.id.clone(),
+        };
+        let count = scene_record_counts.entry(target.clone()).or_insert(0);
+        *count += 1;
+        if *count != 1 {
+            return Err(GameError::case_record_definition_mismatch());
+        }
         validate_scene_record_against_catalog(
             catalog,
             chapter_id,
             scene_id,
-            &InventoryTarget::Evidence {
-                id: definition.id.clone(),
-            },
+            &target,
             &definition.provenance,
         )?;
     }
     for definition in statements {
+        let target = InventoryTarget::Statement {
+            id: definition.id.clone(),
+        };
+        let count = scene_record_counts.entry(target.clone()).or_insert(0);
+        *count += 1;
+        if *count != 1 {
+            return Err(GameError::case_record_definition_mismatch());
+        }
         validate_scene_record_against_catalog(
             catalog,
             chapter_id,
             scene_id,
-            &InventoryTarget::Statement {
-                id: definition.id.clone(),
-            },
+            &target,
             &definition.provenance,
         )?;
+    }
+    for target in catalog.case_record_targets_for_origin(chapter_id, scene_id) {
+        if scene_record_counts.get(&target) != Some(&1) {
+            return Err(GameError::case_record_definition_mismatch());
+        }
     }
     Ok(())
 }

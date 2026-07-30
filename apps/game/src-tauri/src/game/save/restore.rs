@@ -2744,6 +2744,37 @@ mod tests {
     }
 
     #[test]
+    fn current_definition_loading_rejects_catalog_record_omitted_from_owning_scene() {
+        let (_guard, resources) = provenance_save_fixture_resources();
+        let engine = GameEngine::new_started(resources.clone()).unwrap();
+        let checkpoint = capture_checkpoint_v1(&engine).unwrap();
+        let save = envelope_from_checkpoint(&engine, checkpoint);
+        let scene_path = resources.join("chapter_1/investigation_scene_1.json");
+        let mut scene: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&scene_path).unwrap()).unwrap();
+        scene["statementManifest"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|definition| definition["id"] != "witness_support");
+        std::fs::write(&scene_path, serde_json::to_vec_pretty(&scene).unwrap()).unwrap();
+
+        let error = match load_current_definitions(&resources) {
+            Ok(definitions) => {
+                let candidate =
+                    build_restore_candidate(resources.clone(), &definitions, save.clone()).unwrap();
+                panic!(
+                    "catalog-only record reached candidate installation: {:?}",
+                    candidate
+                )
+            }
+            Err(error) => error,
+        };
+
+        assert_eq!(save.content_revision, engine.content_revision());
+        assert_eq!(error.code, "caseRecordDefinitionMismatch");
+    }
+
+    #[test]
     fn debug_impl_does_not_leak_internal_engine_fields() {
         let (_guard, resources, engine) = resources_and_engine();
         let (_, restored) = round_trip(resources, &engine);
