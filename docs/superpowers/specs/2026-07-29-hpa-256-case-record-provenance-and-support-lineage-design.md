@@ -1,7 +1,7 @@
 # HPA-256 Case-Record Provenance and Support-Lineage Design
 
-**Status:** Ready for approval; revised after three focused codebase reviews and a final self-review  
-**Issue:** HPA-256 — Add orthogonal case-record provenance, immutable supersession, and support lineage  
+**Status:** Ready for approval; revised after three focused codebase reviews and a final self-review
+**Issue:** HPA-256 — Add orthogonal case-record provenance, immutable supersession, and support lineage
 **Date:** 2026-07-29
 
 ## 1. References and scope
