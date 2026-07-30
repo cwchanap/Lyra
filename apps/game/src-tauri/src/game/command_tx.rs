@@ -222,6 +222,7 @@ mod tests {
             name: "Mutable inventory name".into(),
             description: "Mutable inventory description".into(),
             details: "Mutable inventory details".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -234,6 +235,7 @@ mod tests {
             id: id.into(),
             speaker: "Mutable inventory speaker".into(),
             content: "Mutable inventory content".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             on_reexamine: None,
             acquired_in_chapter_id: "chapter_1".into(),
             acquired_in_scene_id: "investigation_scene_1".into(),
@@ -569,6 +571,7 @@ mod tests {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 image_asset_id: None,
                 on_reexamine: Some(vec![DialogueItem::SceneTag {
                     text: "tag_only".into(),
@@ -679,6 +682,7 @@ mod tests {
                 id: "alibi".into(),
                 speaker: "Witness".into(),
                 content: "Alibi".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 on_reexamine: Some(vec![DialogueItem::SceneTag {
                     text: "tag_only".into(),
                     asset_cue: None,
@@ -862,6 +866,7 @@ mod tests {
         let chapter_dir = d.join("chapter_1");
         fs::create_dir_all(&chapter_dir).unwrap();
         write_empty_story_catalog_and_content_manifest(&d);
+        write_neutral_story_catalog(&d, &[("note", "chapter_1", "investigation_scene_1")], &[]);
         fs::write(
             d.join("chapters.json"),
             r#"{
@@ -1021,10 +1026,19 @@ mod tests {
                 dialogue: vec![],
             },
         };
+        let story_catalog = catalog_with_case_records(
+            vec![(
+                "note",
+                "chapter_1",
+                "investigation_scene_1",
+                crate::game::provenance::CaseRecordProvenance::default(),
+            )],
+            vec![],
+        );
         let mut engine = GameEngine {
             resources_dir: d.clone(),
             content_manifest: test_content_manifest(),
-            story_catalog: StoryCatalog::empty(),
+            story_catalog,
             story_state: StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
@@ -1159,10 +1173,19 @@ mod tests {
                 dialogue: vec![],
             },
         };
+        let story_catalog = catalog_with_case_records(
+            vec![(
+                "note",
+                "chapter_1",
+                "investigation_scene_1",
+                crate::game::provenance::CaseRecordProvenance::default(),
+            )],
+            vec![],
+        );
         let mut engine = GameEngine {
             resources_dir: d.clone(),
             content_manifest: test_content_manifest(),
-            story_catalog: StoryCatalog::empty(),
+            story_catalog,
             story_state: StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),

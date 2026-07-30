@@ -180,8 +180,9 @@ impl GameEngine {
             if matching_chapters.next().is_some() {
                 return Err(GameError::duplicate_chapter_target(chapter_id));
             }
-            let (_, source_scene) = find_scene_json_by_id(&self.resources_dir, chapter, scene_id)?
-                .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
+            let (_, source_scene) =
+                find_scene_json_by_id(&self.resources_dir, &self.story_catalog, chapter, scene_id)?
+                    .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
             match source_scene {
                 SceneJson::Linear(_) => SceneType::Linear,
                 SceneJson::Investigation(_) => SceneType::Investigation,
@@ -223,8 +224,13 @@ impl GameEngine {
             .first()
             .ok_or_else(|| GameError::chapter_load_failed("chapter 1 has no scenes.".into()))?
             .clone();
-        let initial_scene =
-            load_scene_runtime(&resources_dir, &chapters[0].id, &first_scene_ref, 1)?;
+        let initial_scene = load_scene_runtime(
+            &resources_dir,
+            &story_catalog,
+            &chapters[0].id,
+            &first_scene_ref,
+            1,
+        )?;
         let mut engine = Self {
             resources_dir,
             content_manifest,
@@ -251,7 +257,8 @@ impl GameEngine {
         resources_dir: PathBuf,
     ) -> Result<SceneNavigationIndex, GameError> {
         let chapters = load_chapter_manifests(&resources_dir)?;
-        scene_navigation_index_from_chapters(&resources_dir, &chapters)
+        let story_catalog = StoryCatalog::load(&resources_dir)?;
+        scene_navigation_index_from_chapters(&resources_dir, &story_catalog, &chapters)
     }
 
     /// One-line delegation to `navigation.rs::jump_to_scene_inner`. The body
@@ -297,7 +304,7 @@ impl GameEngine {
             .next()
             .ok_or_else(GameError::missing_acquisition_definition)?;
         if matching_chapters.next().is_some() {
-            return Err(GameError::acquisition_definition_mismatch());
+            return Err(GameError::duplicate_chapter_target(chapter_id));
         }
         #[cfg(test)]
         if self.resources_dir.as_os_str().is_empty() {
@@ -311,8 +318,7 @@ impl GameEngine {
                 _ => Err(GameError::missing_acquisition_definition()),
             };
         }
-        find_scene_json_by_id(&self.resources_dir, chapter, scene_id)
-            .map_err(|_| GameError::missing_acquisition_definition())?
+        find_scene_json_by_id(&self.resources_dir, &self.story_catalog, chapter, scene_id)?
             .map(|(_, scene)| scene)
             .ok_or_else(GameError::missing_acquisition_definition)
     }
@@ -735,6 +741,7 @@ impl GameEngine {
             reveals::apply_interrogation_reveals_and_build_queue(
                 scene,
                 &mut AcquisitionCtx {
+                    catalog: &self.story_catalog,
                     inventory: &mut self.inventory,
                     pending_events: &mut self.pending_acquisition_events,
                     command_id,
@@ -743,7 +750,7 @@ impl GameEngine {
                 trigger_segment,
                 &reveals,
                 chapter_id,
-            )
+            )?
         };
         self.last_visual_cue.set_scene_tag(scene_tag, asset_cue);
         self.install_or_exhaust(queue_items, command_id, next_ordinal)?;
@@ -798,6 +805,7 @@ impl GameEngine {
                 reveals::apply_reveals_and_build_queue(
                     inv,
                     &mut AcquisitionCtx {
+                        catalog: &self.story_catalog,
                         inventory: &mut self.inventory,
                         pending_events: &mut self.pending_acquisition_events,
                         command_id,
@@ -806,7 +814,7 @@ impl GameEngine {
                     trigger_segment,
                     &sub_reveals,
                     &chapter_id,
-                )
+                )?
             } else {
                 Vec::new()
             }
@@ -884,6 +892,7 @@ impl GameEngine {
                 reveals::apply_reveals_and_build_queue(
                     inv,
                     &mut AcquisitionCtx {
+                        catalog: &engine.story_catalog,
                         inventory: &mut engine.inventory,
                         pending_events: &mut engine.pending_acquisition_events,
                         command_id,
@@ -892,7 +901,7 @@ impl GameEngine {
                     trigger_segment,
                     &hot_def.reveals,
                     &chapter_id,
-                )
+                )?
             } else {
                 investigation_segment(
                     &chapter_id,
@@ -982,6 +991,7 @@ impl GameEngine {
                 reveals::apply_reveals_and_build_queue(
                     inv,
                     &mut AcquisitionCtx {
+                        catalog: &engine.story_catalog,
                         inventory: &mut engine.inventory,
                         pending_events: &mut engine.pending_acquisition_events,
                         command_id,
@@ -990,7 +1000,7 @@ impl GameEngine {
                     trigger_segment,
                     &topic.reveals,
                     &chapter_id,
-                )
+                )?
             } else {
                 investigation_segment(
                     &chapter_id,
@@ -1071,6 +1081,7 @@ impl GameEngine {
                 reveals::apply_reveals_and_build_queue(
                     inv,
                     &mut AcquisitionCtx {
+                        catalog: &engine.story_catalog,
                         inventory: &mut engine.inventory,
                         pending_events: &mut engine.pending_acquisition_events,
                         command_id,
@@ -1079,7 +1090,7 @@ impl GameEngine {
                     trigger_segment,
                     &sub_reveals,
                     &chapter_id,
-                )
+                )?
             } else {
                 if let SceneRuntime::Investigation(inv) = &mut engine.scene {
                     inv.current_sublocation_id = Some(sublocation_id.into());
@@ -1255,6 +1266,7 @@ impl GameEngine {
                     let queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
                         &mut AcquisitionCtx {
+                            catalog: &engine.story_catalog,
                             inventory: &mut engine.inventory,
                             pending_events: &mut engine.pending_acquisition_events,
                             command_id,
@@ -1263,7 +1275,7 @@ impl GameEngine {
                         line_segment,
                         &reveals,
                         &chapter_id,
-                    );
+                    )?;
                     // A broken question exposes no challenge target. The broken
                     // guard in `playing_unbroken_line_id` already returns None,
                     // but set `line_content_start` past the queue as
@@ -1489,6 +1501,7 @@ impl GameEngine {
                     let queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
                         &mut AcquisitionCtx {
+                            catalog: &engine.story_catalog,
                             inventory: &mut engine.inventory,
                             pending_events: &mut engine.pending_acquisition_events,
                             command_id,
@@ -1497,7 +1510,7 @@ impl GameEngine {
                         trigger_segment,
                         &reveals,
                         &chapter_id,
-                    );
+                    )?;
                     scene.record_break(&question_id);
                     queue
                 } else {
@@ -3393,6 +3406,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             name: "Key".into(),
             description: "Key".into(),
             details: "Key".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -3427,6 +3441,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             name: "Key".into(),
             description: "Key".into(),
             details: "Key".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -3690,6 +3705,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 image_asset_id: None,
                 on_reexamine: Some(vec![DialogueItem::Line {
                     speaker: "Detective".into(),
@@ -3745,6 +3761,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 image_asset_id: None,
                 on_reexamine: Some(vec![DialogueItem::Action {
                     text: "source-bound reexamine".into(),
@@ -3812,6 +3829,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 id: "alibi".into(),
                 speaker: "Witness".into(),
                 content: "Alibi".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 on_reexamine: Some(vec![DialogueItem::Line {
                     speaker: "Detective".into(),
                     text: "reexamining alibi".into(),
@@ -4034,6 +4052,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 image_asset_id: None,
                 on_reexamine: Some(vec![DialogueItem::Line {
                     speaker: "A".into(),
@@ -4050,6 +4069,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 id: "alibi".into(),
                 speaker: "Witness".into(),
                 content: "I was elsewhere".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 on_reexamine: Some(vec![DialogueItem::Line {
                     speaker: "Witness".into(),
                     text: "again".into(),
@@ -4324,6 +4344,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             name: "Contradiction".into(),
             description: "d".into(),
             details: "d".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -4497,6 +4518,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             name: "Contradiction".into(),
             description: "d".into(),
             details: "d".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -4657,6 +4679,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             name: "Ev".into(),
             description: "d".into(),
             details: "d".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -4688,6 +4711,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             name: "Ev".into(),
             description: "d".into(),
             details: "d".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -4790,6 +4814,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             name: "Unrelated".into(),
             description: "d".into(),
             details: "d".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -4910,6 +4935,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             name: "Unrelated".into(),
             description: "d".into(),
             details: "d".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -5000,6 +5026,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             name: "Cleaning Log".into(),
             description: "d".into(),
             details: "d".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),

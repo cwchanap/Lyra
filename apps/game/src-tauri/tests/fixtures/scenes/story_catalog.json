@@ -5,6 +5,56 @@
   "objectives": [],
   "authorizations": [],
   "sourceGroups": [],
-  "evidenceIndex": [],
-  "statementsIndex": []
+  "evidenceIndex": [
+    {
+      "id": "coffee",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "locked_box",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    }
+  ],
+  "statementsIndex": [
+    {
+      "id": "witness_alibi",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    }
+  ]
 }

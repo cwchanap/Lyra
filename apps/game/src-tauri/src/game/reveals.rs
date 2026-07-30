@@ -4,6 +4,7 @@ use crate::game::dialogue_queue::{DialogueSegment, DialogueSegmentOriginV1};
 use crate::game::scenes::interrogation::InterrogationSceneState;
 use crate::game::scenes::investigation::InvestigationSceneState;
 use crate::game::schema::{InterrogationRevealTarget, RevealTarget};
+use crate::game::GameError;
 
 pub(super) fn apply_reveals_and_build_queue(
     scene: &mut InvestigationSceneState,
@@ -11,13 +12,13 @@ pub(super) fn apply_reveals_and_build_queue(
     trigger_segment: Option<DialogueSegment>,
     reveals: &[RevealTarget],
     chapter_id: &str,
-) -> Vec<DialogueSegment> {
+) -> Result<Vec<DialogueSegment>, GameError> {
     let mut segments: Vec<DialogueSegment> = trigger_segment.into_iter().collect();
     for r in reveals {
         match r {
             RevealTarget::Evidence { id } => {
                 if let Some(def) = scene.def.evidence_manifest.iter().find(|e| e.id == *id) {
-                    let newly_added = acq.evidence(def, chapter_id, &scene.def.id);
+                    let newly_added = acq.evidence(def, chapter_id, &scene.def.id)?;
                     if newly_added {
                         segments.extend(DialogueSegment::new(
                             DialogueSegmentOriginV1::InvestigationInteraction {
@@ -32,7 +33,7 @@ pub(super) fn apply_reveals_and_build_queue(
             }
             RevealTarget::Statement { id } => {
                 if let Some(def) = scene.def.statement_manifest.iter().find(|s| s.id == *id) {
-                    let newly_added = acq.statement(def, chapter_id, &scene.def.id);
+                    let newly_added = acq.statement(def, chapter_id, &scene.def.id)?;
                     if newly_added {
                         segments.extend(DialogueSegment::new(
                             DialogueSegmentOriginV1::InvestigationInteraction {
@@ -59,7 +60,7 @@ pub(super) fn apply_reveals_and_build_queue(
             }
         }
     }
-    segments
+    Ok(segments)
 }
 
 pub(super) fn apply_interrogation_reveals_and_build_queue(
@@ -68,13 +69,13 @@ pub(super) fn apply_interrogation_reveals_and_build_queue(
     trigger_segment: Option<DialogueSegment>,
     reveals: &[InterrogationRevealTarget],
     chapter_id: &str,
-) -> Vec<DialogueSegment> {
+) -> Result<Vec<DialogueSegment>, GameError> {
     let mut segments: Vec<DialogueSegment> = trigger_segment.into_iter().collect();
     for r in reveals {
         match r {
             InterrogationRevealTarget::Evidence { id } => {
                 if let Some(def) = scene.def.evidence_manifest.iter().find(|e| e.id == *id) {
-                    let newly_added = acq.evidence(def, chapter_id, &scene.def.id);
+                    let newly_added = acq.evidence(def, chapter_id, &scene.def.id)?;
                     if newly_added {
                         segments.extend(DialogueSegment::new(
                             DialogueSegmentOriginV1::InterrogationPhase {
@@ -90,7 +91,7 @@ pub(super) fn apply_interrogation_reveals_and_build_queue(
             }
             InterrogationRevealTarget::Statement { id } => {
                 if let Some(def) = scene.def.statement_manifest.iter().find(|s| s.id == *id) {
-                    let newly_added = acq.statement(def, chapter_id, &scene.def.id);
+                    let newly_added = acq.statement(def, chapter_id, &scene.def.id)?;
                     if newly_added {
                         segments.extend(DialogueSegment::new(
                             DialogueSegmentOriginV1::InterrogationPhase {
@@ -112,7 +113,7 @@ pub(super) fn apply_interrogation_reveals_and_build_queue(
             }
         }
     }
-    segments
+    Ok(segments)
 }
 
 #[cfg(test)]
@@ -123,6 +124,7 @@ mod tests {
         InterrogationSceneJson, InvestigationSceneJson, OutroJson, OutroUnlock,
     };
     use crate::game::state::Inventory;
+    use crate::game::test_support::catalog_with_case_records;
 
     fn evidence_def(id: &str) -> EvidenceJson {
         EvidenceJson {
@@ -139,6 +141,22 @@ mod tests {
             }],
             on_reexamine: None,
         }
+    }
+
+    fn evidence_catalog(scene_id: &str, ids: &[&str]) -> crate::game::story::StoryCatalog {
+        catalog_with_case_records(
+            ids.iter()
+                .map(|id| {
+                    (
+                        *id,
+                        "chapter_1",
+                        scene_id,
+                        crate::game::provenance::CaseRecordProvenance::default(),
+                    )
+                })
+                .collect(),
+            vec![],
+        )
     }
 
     fn empty_scene_with_evidence(defs: Vec<EvidenceJson>) -> InvestigationSceneState {
@@ -202,13 +220,59 @@ mod tests {
         )
     }
 
+    // Break caught: a reveal swallows the catalog mismatch and commits an
+    // inventory record/event instead of propagating the typed error.
+    #[test]
+    fn reveal_propagates_acquisition_definition_mismatch_without_mutation() {
+        let catalog = catalog_with_case_records(
+            vec![(
+                "coffee",
+                "chapter_1",
+                "i",
+                crate::game::provenance::CaseRecordProvenance::default(),
+            )],
+            vec![],
+        );
+        let mut definition = evidence_def("coffee");
+        definition.provenance.source_label = Some("mismatch".into());
+        let mut scene = empty_scene_with_evidence(vec![definition]);
+        let mut inv = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
+        let mut acq = AcquisitionCtx {
+            catalog: &catalog,
+            inventory: &mut inv,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
+        };
+
+        let error = apply_reveals_and_build_queue(
+            &mut scene,
+            &mut acq,
+            None,
+            &[RevealTarget::Evidence {
+                id: "coffee".into(),
+            }],
+            "chapter_1",
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, "caseRecordDefinitionMismatch");
+        assert!(inv.evidence.is_empty());
+        assert!(events.is_empty());
+        assert_eq!(next_ordinal, 0);
+    }
+
     #[test]
     fn reveals_evidence_appends_on_collect_to_queue() {
+        let catalog = evidence_catalog("i", &["coffee"]);
         let mut scene = empty_scene_with_evidence(vec![evidence_def("coffee")]);
         let mut inv = Inventory::default();
         let mut events = Vec::new();
         let mut next_ordinal = 0;
         let mut acq = AcquisitionCtx {
+            catalog: &catalog,
             inventory: &mut inv,
             pending_events: &mut events,
             command_id: 1,
@@ -226,19 +290,22 @@ mod tests {
                 id: "coffee".into(),
             }],
             "chapter_1",
-        );
+        )
+        .unwrap();
         assert_eq!(queue.len(), 2);
         assert!(inv.has_evidence("coffee"));
     }
 
     #[test]
     fn reveals_multiple_evidence_items_from_one_trigger() {
+        let catalog = evidence_catalog("i", &["receipt", "cctv"]);
         let mut scene =
             empty_scene_with_evidence(vec![evidence_def("receipt"), evidence_def("cctv")]);
         let mut inv = Inventory::default();
         let mut events = Vec::new();
         let mut next_ordinal = 0;
         let mut acq = AcquisitionCtx {
+            catalog: &catalog,
             inventory: &mut inv,
             pending_events: &mut events,
             command_id: 1,
@@ -259,7 +326,8 @@ mod tests {
                 RevealTarget::Evidence { id: "cctv".into() },
             ],
             "chapter_1",
-        );
+        )
+        .unwrap();
 
         assert!(inv.has_evidence("receipt"));
         assert!(inv.has_evidence("cctv"));
@@ -278,11 +346,13 @@ mod tests {
 
     #[test]
     fn double_reveal_of_same_evidence_does_not_double_append() {
+        let catalog = evidence_catalog("i", &["coffee"]);
         let mut scene = empty_scene_with_evidence(vec![evidence_def("coffee")]);
         let mut inv = Inventory::default();
         let mut events = Vec::new();
         let mut next_ordinal = 0;
         let mut acq = AcquisitionCtx {
+            catalog: &catalog,
             inventory: &mut inv,
             pending_events: &mut events,
             command_id: 1,
@@ -296,7 +366,8 @@ mod tests {
                 id: "coffee".into(),
             }],
             "chapter_1",
-        );
+        )
+        .unwrap();
         let queue2 = apply_reveals_and_build_queue(
             &mut scene,
             &mut acq,
@@ -305,17 +376,20 @@ mod tests {
                 id: "coffee".into(),
             }],
             "chapter_1",
-        );
+        )
+        .unwrap();
         assert!(queue2.is_empty());
     }
 
     #[test]
     fn reveals_sublocation_silently_unlocks_it() {
+        let catalog = evidence_catalog("i", &[]);
         let mut scene = empty_scene_with_evidence(vec![]);
         let mut inv = Inventory::default();
         let mut events = Vec::new();
         let mut next_ordinal = 0;
         let mut acq = AcquisitionCtx {
+            catalog: &catalog,
             inventory: &mut inv,
             pending_events: &mut events,
             command_id: 1,
@@ -329,18 +403,21 @@ mod tests {
                 id: "back_room".into(),
             }],
             "chapter_1",
-        );
+        )
+        .unwrap();
         assert!(queue.is_empty());
         assert!(scene.unlocked_overrides.contains("sublocation:back_room"));
     }
 
     #[test]
     fn interrogation_reveals_evidence_appends_on_collect_to_queue() {
+        let catalog = evidence_catalog("interrogation", &["receipt"]);
         let mut scene = empty_interrogation_scene_with_evidence(vec![evidence_def("receipt")]);
         let mut inv = Inventory::default();
         let mut events = Vec::new();
         let mut next_ordinal = 0;
         let mut acq = AcquisitionCtx {
+            catalog: &catalog,
             inventory: &mut inv,
             pending_events: &mut events,
             command_id: 1,
@@ -358,18 +435,21 @@ mod tests {
                 id: "receipt".into(),
             }],
             "chapter_1",
-        );
+        )
+        .unwrap();
         assert_eq!(queue.len(), 2);
         assert!(inv.has_evidence("receipt"));
     }
 
     #[test]
     fn interrogation_reveals_question_and_phase_unlock_overrides() {
+        let catalog = evidence_catalog("interrogation", &[]);
         let mut scene = empty_interrogation_scene_with_evidence(vec![]);
         let mut inv = Inventory::default();
         let mut events = Vec::new();
         let mut next_ordinal = 0;
         let mut acq = AcquisitionCtx {
+            catalog: &catalog,
             inventory: &mut inv,
             pending_events: &mut events,
             command_id: 1,
@@ -388,7 +468,8 @@ mod tests {
                 },
             ],
             "chapter_1",
-        );
+        )
+        .unwrap();
         assert!(queue.is_empty());
         assert!(scene.unlocked_overrides.contains("question:hidden"));
         assert!(scene.unlocked_overrides.contains("phase:testimony"));

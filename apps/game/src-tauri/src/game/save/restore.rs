@@ -145,7 +145,7 @@ pub(crate) fn load_current_definitions(
     let mut semantic_audio_ids = BTreeSet::new();
 
     for chapter in &chapters {
-        let scenes = load_chapter_scene_jsons(resources_dir, chapter)?;
+        let scenes = load_chapter_scene_jsons(resources_dir, &story_catalog, chapter)?;
         if scenes.len() != chapter.scenes.len() {
             return Err(GameError::missing_save_definition());
         }
@@ -1801,6 +1801,7 @@ mod tests {
             name: "mutable".into(),
             description: "mutable".into(),
             details: "mutable".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -2107,6 +2108,7 @@ mod tests {
             name: "mutable".into(),
             description: "mutable".into(),
             details: "mutable".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -2116,6 +2118,7 @@ mod tests {
             id: "alibi_statement".into(),
             speaker: "mutable".into(),
             content: "mutable".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             on_reexamine: None,
             acquired_in_chapter_id: "chapter_1".into(),
             acquired_in_scene_id: "investigation_scene_1".into(),
@@ -2631,6 +2634,7 @@ mod tests {
             name: "first".into(),
             description: "first".into(),
             details: "first".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -2640,6 +2644,7 @@ mod tests {
             id: "alibi_statement".into(),
             speaker: "first".into(),
             content: "first".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             on_reexamine: None,
             acquired_in_chapter_id: "chapter_1".into(),
             acquired_in_scene_id: "investigation_scene_1".into(),

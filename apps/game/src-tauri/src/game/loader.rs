@@ -1,10 +1,12 @@
 // src-tauri/src/game/loader.rs
 use crate::game::error::GameError;
+use crate::game::provenance::validate_scene_records_against_catalog;
 use crate::game::schema::{
     ChaptersIndexJson, InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationRevealTarget,
     InterrogationSceneJson, InterrogationUnlockExpr, InvestigationSceneJson, OutroUnlock,
     RevealTarget, SceneJson, UnlockExpr,
 };
+use crate::game::story::StoryCatalog;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -18,7 +20,7 @@ pub fn load_chapters_index(resources_dir: &Path) -> Result<ChaptersIndexJson, Ga
         .map_err(|e| GameError::parse_failure(format!("invalid chapters.json: {e}")))
 }
 
-pub fn load_scene(resources_dir: &Path, file_rel: &str) -> Result<SceneJson, GameError> {
+fn decode_scene_json(resources_dir: &Path, file_rel: &str) -> Result<SceneJson, GameError> {
     let path = resources_dir.join(file_rel);
     let raw = fs::read_to_string(&path).map_err(|e| {
         GameError::scene_load_failed(format!("failed to read {}: {}", path.display(), e))
@@ -27,6 +29,25 @@ pub fn load_scene(resources_dir: &Path, file_rel: &str) -> Result<SceneJson, Gam
         GameError::parse_failure(format!("invalid scene JSON {}: {}", path.display(), e))
     })?;
     validate_scene_references(&scene, file_rel)?;
+    Ok(scene)
+}
+
+#[cfg(test)]
+pub(in crate::game) fn decode_scene_json_without_catalog_for_test(
+    resources_dir: &Path,
+    file_rel: &str,
+) -> Result<SceneJson, GameError> {
+    decode_scene_json(resources_dir, file_rel)
+}
+
+pub(in crate::game) fn load_scene_with_catalog(
+    resources_dir: &Path,
+    catalog: &StoryCatalog,
+    chapter_id: &str,
+    file_rel: &str,
+) -> Result<SceneJson, GameError> {
+    let scene = decode_scene_json(resources_dir, file_rel)?;
+    validate_scene_records_against_catalog(catalog, chapter_id, &scene)?;
     Ok(scene)
 }
 
@@ -384,6 +405,12 @@ fn validate_interrogation_unlock(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::provenance::{
+        CaseRecordProvenance, Completeness, Confidence, ProceduralStatus, ProofCapability,
+        RepresentationLayer, SourceKind,
+    };
+    use crate::game::test_support::catalog_with_case_records;
+    use std::collections::BTreeSet;
     use std::io::Write;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -395,6 +422,155 @@ mod tests {
         let d = std::env::temp_dir().join(format!("lyra-loader-test-{}-{}", std::process::id(), n));
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    fn write_record_scene(
+        resources_dir: &Path,
+        scene_id: &str,
+        evidence: &[(&str, &CaseRecordProvenance)],
+        statements: &[(&str, &CaseRecordProvenance)],
+    ) {
+        let chapter_dir = resources_dir.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        let evidence = evidence
+            .iter()
+            .map(|(id, provenance)| {
+                serde_json::json!({
+                    "id": id,
+                    "name": id,
+                    "description": id,
+                    "details": id,
+                    "provenance": provenance,
+                    "imageAssetId": null,
+                    "onCollect": [],
+                    "onReexamine": null,
+                })
+            })
+            .collect::<Vec<_>>();
+        let statements = statements
+            .iter()
+            .map(|(id, provenance)| {
+                serde_json::json!({
+                    "id": id,
+                    "speaker": id,
+                    "content": id,
+                    "provenance": provenance,
+                    "onAcquire": [],
+                    "onReexamine": null,
+                })
+            })
+            .collect::<Vec<_>>();
+        fs::write(
+            chapter_dir.join(format!("{scene_id}.json")),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "type": "investigation",
+                "id": scene_id,
+                "title": scene_id,
+                "intro": [],
+                "sublocations": [],
+                "evidenceManifest": evidence,
+                "statementManifest": statements,
+                "outro": { "unlock": "auto", "dialogue": [] },
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn full_provenance() -> CaseRecordProvenance {
+        CaseRecordProvenance {
+            source_kind: SourceKind::Digital,
+            representation_layer: RepresentationLayer::Summary,
+            procedural_status: ProceduralStatus::Exhibit,
+            completeness: Completeness::Cropped,
+            confidence: Confidence::Corroborated,
+            source_group_id: None,
+            source_label: Some("Full record provenance".into()),
+            proof_capabilities: BTreeSet::from([
+                ProofCapability::Time,
+                ProofCapability::Identity,
+                ProofCapability::Procedure,
+            ]),
+            supersedes_record_id: None,
+        }
+    }
+
+    // Break caught: a loaded scene can silently override the catalog's typed
+    // record origin or immutable provenance for the same evidence ID.
+    #[test]
+    fn rejects_scene_record_chapter_scene_and_provenance_mismatches() {
+        let matching = CaseRecordProvenance::default();
+        let mismatched = full_provenance();
+        let cases = [
+            ("chapter_2", "investigation_scene_1", matching.clone()),
+            ("chapter_1", "investigation_scene_2", matching.clone()),
+            ("chapter_1", "investigation_scene_1", mismatched),
+        ];
+
+        for (catalog_chapter, catalog_scene, catalog_provenance) in cases {
+            let resources = unique_temp_dir();
+            write_record_scene(
+                &resources,
+                "investigation_scene_1",
+                &[("receipt", &matching)],
+                &[],
+            );
+            let catalog = catalog_with_case_records(
+                vec![(
+                    "receipt",
+                    catalog_chapter,
+                    catalog_scene,
+                    catalog_provenance,
+                )],
+                vec![],
+            );
+
+            let error = load_scene_with_catalog(
+                &resources,
+                &catalog,
+                "chapter_1",
+                "chapter_1/investigation_scene_1.json",
+            )
+            .unwrap_err();
+
+            assert_eq!(error.code, "caseRecordDefinitionMismatch");
+            let _ = fs::remove_dir_all(resources);
+        }
+    }
+
+    // Break caught: exact neutral evidence or non-neutral statement
+    // provenance is rejected even though scene and catalog agree.
+    #[test]
+    fn accepts_matching_neutral_and_full_scene_record_definitions() {
+        let resources = unique_temp_dir();
+        let neutral = CaseRecordProvenance::default();
+        let full = full_provenance();
+        write_record_scene(
+            &resources,
+            "investigation_scene_1",
+            &[("receipt", &neutral)],
+            &[("witness_account", &full)],
+        );
+        let catalog = catalog_with_case_records(
+            vec![("receipt", "chapter_1", "investigation_scene_1", neutral)],
+            vec![(
+                "witness_account",
+                "chapter_1",
+                "investigation_scene_1",
+                full,
+            )],
+        );
+
+        let scene = load_scene_with_catalog(
+            &resources,
+            &catalog,
+            "chapter_1",
+            "chapter_1/investigation_scene_1.json",
+        )
+        .unwrap();
+
+        assert!(matches!(scene, SceneJson::Investigation(_)));
+        let _ = fs::remove_dir_all(resources);
     }
 
     #[test]
@@ -446,7 +622,9 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_scene(&d, "chapter_1/investigation_scene_1.json").unwrap_err();
+        let err =
+            decode_scene_json_without_catalog_for_test(&d, "chapter_1/investigation_scene_1.json")
+                .unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
         assert!(err.message.contains("reveal target evidence:missing"));
         let _ = fs::remove_dir_all(d);
@@ -491,7 +669,9 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_scene(&d, "chapter_1/investigation_scene_1.json").unwrap_err();
+        let err =
+            decode_scene_json_without_catalog_for_test(&d, "chapter_1/investigation_scene_1.json")
+                .unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
         assert!(err.message.contains("unlock predicate evidence:missing"));
         let _ = fs::remove_dir_all(d);
@@ -530,7 +710,9 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap_err();
+        let err =
+            decode_scene_json_without_catalog_for_test(&d, "chapter_1/interrogation_scene_1.json")
+                .unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
         assert!(err
             .message
@@ -571,7 +753,9 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap_err();
+        let err =
+            decode_scene_json_without_catalog_for_test(&d, "chapter_1/interrogation_scene_1.json")
+                .unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
         assert!(err
             .message
@@ -634,7 +818,9 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap_err();
+        let err =
+            decode_scene_json_without_catalog_for_test(&d, "chapter_1/interrogation_scene_1.json")
+                .unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
         assert!(err
             .message
@@ -698,7 +884,9 @@ mod tests {
         )
         .unwrap();
 
-        let parsed = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap();
+        let parsed =
+            decode_scene_json_without_catalog_for_test(&d, "chapter_1/interrogation_scene_1.json")
+                .unwrap();
         assert!(matches!(parsed, SceneJson::Interrogation(_)));
         let _ = fs::remove_dir_all(d);
     }
@@ -744,7 +932,9 @@ mod tests {
         )
         .unwrap();
 
-        let parsed = load_scene(&d, "chapter_1/interrogation_scene_1.json").unwrap();
+        let parsed =
+            decode_scene_json_without_catalog_for_test(&d, "chapter_1/interrogation_scene_1.json")
+                .unwrap();
         assert!(matches!(parsed, SceneJson::Interrogation(_)));
         let _ = fs::remove_dir_all(d);
     }

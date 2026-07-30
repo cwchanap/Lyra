@@ -12,6 +12,7 @@ use super::scenes::linear::LinearSceneState;
 use super::scenes::SceneRuntime;
 use super::schema::{SceneJson, SceneType};
 use super::state::{ChapterManifest, Inventory, SceneRef};
+use super::story::StoryCatalog;
 use super::view::{
     GameStateView, SceneNavigationChapter, SceneNavigationIndex, SceneNavigationScene,
 };
@@ -44,6 +45,7 @@ impl GameEngine {
         let queue_gen = self.next_queue_gen;
         let (scene_idx, new_scene) = find_scene_runtime_by_id(
             &self.resources_dir,
+            &self.story_catalog,
             &self.chapters[chapter_idx],
             scene_id,
             queue_gen,
@@ -103,7 +105,12 @@ impl GameEngine {
         let chapters = self.chapters.clone();
         for chapter in &chapters {
             for scene_ref in &chapter.scenes {
-                let Ok(scene) = loader::load_scene(&self.resources_dir, &scene_ref.file) else {
+                let Ok(scene) = loader::load_scene_with_catalog(
+                    &self.resources_dir,
+                    &self.story_catalog,
+                    &chapter.id,
+                    &scene_ref.file,
+                ) else {
                     continue;
                 };
                 let (scene_id, _) = scene_json_identity(&scene);
@@ -118,16 +125,17 @@ impl GameEngine {
                     SceneJson::Linear(_) => continue,
                 };
                 let mut acq = AcquisitionCtx {
+                    catalog: &self.story_catalog,
                     inventory: &mut self.inventory,
                     pending_events: &mut self.pending_acquisition_events,
                     command_id,
                     next_ordinal,
                 };
                 for def in evidence {
-                    acq.evidence(def, &chapter.id, &scene_id);
+                    let _ = acq.evidence(def, &chapter.id, &scene_id);
                 }
                 for def in statements {
-                    acq.statement(def, &chapter.id, &scene_id);
+                    let _ = acq.statement(def, &chapter.id, &scene_id);
                 }
             }
         }
@@ -249,8 +257,13 @@ impl GameEngine {
             .ok_or_else(|| GameError::chapter_load_failed("scene index out of bounds".into()))?
             .clone();
         let chapter_id = self.chapters[next_chapter_idx].id.clone();
-        let new_scene =
-            load_scene_runtime(&self.resources_dir, &chapter_id, &scene_ref, queue_gen)?;
+        let new_scene = load_scene_runtime(
+            &self.resources_dir,
+            &self.story_catalog,
+            &chapter_id,
+            &scene_ref,
+            queue_gen,
+        )?;
 
         self.rollback_scope(|engine| {
             engine.current_chapter_idx = next_chapter_idx;
@@ -312,6 +325,7 @@ pub(super) fn load_chapter_manifests(
 
 pub(super) fn scene_navigation_index_from_chapters(
     resources_dir: &std::path::Path,
+    catalog: &StoryCatalog,
     chapters: &[ChapterManifest],
 ) -> Result<SceneNavigationIndex, GameError> {
     let mut chapter_views = Vec::with_capacity(chapters.len());
@@ -334,7 +348,7 @@ pub(super) fn scene_navigation_index_from_chapters(
         let mut seen_scene_ids: std::collections::HashSet<String> =
             std::collections::HashSet::new();
         for (scene_index, scene_ref) in chapter.scenes.iter().enumerate() {
-            let json = load_scene_json_for_ref(resources_dir, scene_ref)?;
+            let json = load_scene_json_for_ref(resources_dir, catalog, &chapter.id, scene_ref)?;
             let actual_type = scene_json_type(&json);
             let (id, title) = scene_json_identity(&json);
             let id = id.to_string();
@@ -367,16 +381,20 @@ pub(super) fn scene_navigation_index_from_chapters(
 
 fn find_scene_runtime_by_id(
     resources_dir: &std::path::Path,
+    catalog: &StoryCatalog,
     chapter: &ChapterManifest,
     scene_id: &str,
     queue_gen: u64,
 ) -> Result<Option<(usize, SceneRuntime)>, GameError> {
-    Ok(find_scene_json_by_id(resources_dir, chapter, scene_id)?
-        .map(|(idx, json)| (idx, scene_runtime_from_json(json, &chapter.id, queue_gen))))
+    Ok(
+        find_scene_json_by_id(resources_dir, catalog, chapter, scene_id)?
+            .map(|(idx, json)| (idx, scene_runtime_from_json(json, &chapter.id, queue_gen))),
+    )
 }
 
 pub(super) fn find_scene_json_by_id(
     resources_dir: &std::path::Path,
+    catalog: &StoryCatalog,
     chapter: &ChapterManifest,
     scene_id: &str,
 ) -> Result<Option<(usize, SceneJson)>, GameError> {
@@ -389,7 +407,7 @@ pub(super) fn find_scene_json_by_id(
     // than picking one arbitrarily. The extra JSON loads are negligible for an
     // infrequent, user-driven jump.
     let mut found: Option<(usize, SceneJson)> = None;
-    for (idx, json) in load_chapter_scene_jsons(resources_dir, chapter)?
+    for (idx, json) in load_chapter_scene_jsons(resources_dir, catalog, chapter)?
         .into_iter()
         .enumerate()
     {
@@ -405,30 +423,35 @@ pub(super) fn find_scene_json_by_id(
 
 pub(super) fn load_chapter_scene_jsons(
     resources_dir: &std::path::Path,
+    catalog: &StoryCatalog,
     chapter: &ChapterManifest,
 ) -> Result<Vec<SceneJson>, GameError> {
     chapter
         .scenes
         .iter()
-        .map(|scene_ref| load_scene_json_for_ref(resources_dir, scene_ref))
+        .map(|scene_ref| load_scene_json_for_ref(resources_dir, catalog, &chapter.id, scene_ref))
         .collect()
 }
 
 pub(super) fn load_scene_runtime(
     resources_dir: &std::path::Path,
+    catalog: &StoryCatalog,
     chapter_id: &str,
     scene_ref: &SceneRef,
     queue_gen: u64,
 ) -> Result<SceneRuntime, GameError> {
-    let json = load_scene_json_for_ref(resources_dir, scene_ref)?;
+    let json = load_scene_json_for_ref(resources_dir, catalog, chapter_id, scene_ref)?;
     Ok(scene_runtime_from_json(json, chapter_id, queue_gen))
 }
 
 fn load_scene_json_for_ref(
     resources_dir: &std::path::Path,
+    catalog: &StoryCatalog,
+    chapter_id: &str,
     scene_ref: &SceneRef,
 ) -> Result<SceneJson, GameError> {
-    let json = loader::load_scene(resources_dir, &scene_ref.file)?;
+    let json =
+        loader::load_scene_with_catalog(resources_dir, catalog, chapter_id, &scene_ref.file)?;
     let actual_type = scene_json_type(&json);
     validate_manifest_scene_type(&scene_ref.file, scene_ref.scene_type, actual_type)?;
     Ok(json)
@@ -512,9 +535,52 @@ mod tests {
         std::fs::create_dir_all(&chapter_dir).unwrap();
         write_empty_story_catalog_and_content_manifest(&resources);
         std::fs::write(resources.join("chapters.json"), chapters).unwrap();
+        let mut evidence_index = Vec::new();
         for (file, body) in scenes {
             std::fs::write(chapter_dir.join(file), body).unwrap();
+            let scene: serde_json::Value = serde_json::from_str(body).unwrap();
+            let Some(scene_id) = scene.get("id").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            for record in scene
+                .get("evidenceManifest")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                evidence_index.push(serde_json::json!({
+                    "id": record["id"],
+                    "chapterId": "chapter_1",
+                    "sceneId": scene_id,
+                    "provenance": {
+                        "sourceKind": "unspecified",
+                        "representationLayer": "none",
+                        "proceduralStatus": "unspecified",
+                        "completeness": "unspecified",
+                        "confidence": "unspecified",
+                        "sourceGroupId": null,
+                        "sourceLabel": null,
+                        "proofCapabilities": [],
+                        "supersedesRecordId": null
+                    }
+                }));
+            }
         }
+        std::fs::write(
+            resources.join("story_catalog.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "schemaVersion": 2,
+                "facts": [],
+                "questions": [],
+                "objectives": [],
+                "authorizations": [],
+                "sourceGroups": [],
+                "evidenceIndex": evidence_index,
+                "statementsIndex": [],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
         resources
     }
 
@@ -826,6 +892,7 @@ mod tests {
             name: "Old".into(),
             description: "Old".into(),
             details: "Old".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -1272,9 +1339,10 @@ mod tests {
     fn scene_lookup_returns_loaded_runtime_for_matching_scene() {
         let d = scene_jump_fixture_resources();
         let chapters = load_chapter_manifests(&d).unwrap();
+        let catalog = StoryCatalog::load(&d).unwrap();
 
         let (index, runtime) =
-            find_scene_runtime_by_id(&d, &chapters[0], "investigation_scene_1", 42)
+            find_scene_runtime_by_id(&d, &catalog, &chapters[0], "investigation_scene_1", 42)
                 .expect("scene lookup succeeds")
                 .expect("matching scene exists");
 
@@ -1361,9 +1429,10 @@ mod tests {
         .unwrap();
 
         let chapters = load_chapter_manifests(&d).unwrap();
+        let catalog = StoryCatalog::load(&d).unwrap();
 
         // The helper itself rejects the ambiguous target.
-        let err = find_scene_runtime_by_id(&d, &chapters[0], "dup_scene", 1)
+        let err = find_scene_runtime_by_id(&d, &catalog, &chapters[0], "dup_scene", 1)
             .expect_err("duplicate ids must be rejected");
         assert_eq!(err.code, "duplicateSceneTarget");
 
@@ -1415,6 +1484,7 @@ mod tests {
 
         let runtime = load_scene_runtime(
             &d,
+            &StoryCatalog::empty(),
             "chapter_1",
             &SceneRef {
                 scene_type: SceneType::Interrogation,
@@ -1455,6 +1525,7 @@ mod tests {
 
         let err = load_scene_runtime(
             &d,
+            &StoryCatalog::empty(),
             "chapter_1",
             &SceneRef {
                 scene_type: SceneType::Interrogation,
@@ -1486,6 +1557,7 @@ mod tests {
         let chapter_2 = d.join("chapter_2");
         fs::create_dir_all(&chapter_1).unwrap();
         fs::create_dir_all(&chapter_2).unwrap();
+        write_empty_story_catalog_and_content_manifest(&d);
         fs::write(
             d.join("chapters.json"),
             r#"{
@@ -1620,6 +1692,7 @@ mod tests {
         ));
         let chapter_1 = d.join("chapter_1");
         fs::create_dir_all(&chapter_1).unwrap();
+        write_empty_story_catalog_and_content_manifest(&d);
         fs::write(
             d.join("chapters.json"),
             r#"{
@@ -1665,6 +1738,7 @@ mod tests {
         ));
         let chapter_1 = d.join("chapter_1");
         fs::create_dir_all(&chapter_1).unwrap();
+        write_empty_story_catalog_and_content_manifest(&d);
         fs::write(
             d.join("chapters.json"),
             r#"{

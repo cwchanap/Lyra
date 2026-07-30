@@ -1,8 +1,10 @@
 // src-tauri/src/game/acquisition.rs
 
+use super::provenance::validate_scene_record_against_catalog;
 use super::save::schema::{AcquisitionEventStateV1, RecordKind};
-use super::schema::{EvidenceJson, StatementJson};
+use super::schema::{EvidenceJson, InventoryTarget, StatementJson};
 use super::state::Inventory;
+use super::story::StoryCatalog;
 use super::GameError;
 
 /// The engine's named entry point for adding records to the inventory.
@@ -19,6 +21,7 @@ use super::GameError;
 /// `reveals::*` already holds `&mut scene` and `&mut inventory` as disjoint
 /// borrows of the engine; a `&mut self` call from inside would not compile.
 pub(super) struct AcquisitionCtx<'a> {
+    pub(super) catalog: &'a StoryCatalog,
     pub(super) inventory: &'a mut Inventory,
     pub(super) pending_events: &'a mut Vec<AcquisitionEventStateV1>,
     pub(super) command_id: u64,
@@ -32,14 +35,21 @@ impl AcquisitionCtx<'_> {
         def: &EvidenceJson,
         chapter_id: &str,
         scene_id: &str,
-    ) -> bool {
+    ) -> Result<bool, GameError> {
+        validate_scene_record_against_catalog(
+            self.catalog,
+            chapter_id,
+            scene_id,
+            &InventoryTarget::Evidence { id: def.id.clone() },
+            &def.provenance,
+        )?;
         let added = self
             .inventory
             .add_evidence_from_def(def, chapter_id, scene_id);
         if added {
             self.record(RecordKind::Evidence, &def.id);
         }
-        added
+        Ok(added)
     }
 
     /// Returns true when the record was newly acquired.
@@ -48,14 +58,21 @@ impl AcquisitionCtx<'_> {
         def: &StatementJson,
         chapter_id: &str,
         scene_id: &str,
-    ) -> bool {
+    ) -> Result<bool, GameError> {
+        validate_scene_record_against_catalog(
+            self.catalog,
+            chapter_id,
+            scene_id,
+            &InventoryTarget::Statement { id: def.id.clone() },
+            &def.provenance,
+        )?;
         let added = self
             .inventory
             .add_statement_from_def(def, chapter_id, scene_id);
         if added {
             self.record(RecordKind::Statement, &def.id);
         }
-        added
+        Ok(added)
     }
 
     fn record(&mut self, record_kind: RecordKind, record_id: &str) {
@@ -86,9 +103,15 @@ pub(in crate::game) fn validate_event_id(event: &AcquisitionEventStateV1) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::provenance::{
+        CaseRecordProvenance, Completeness, Confidence, ProceduralStatus, ProofCapability,
+        RepresentationLayer, SourceKind,
+    };
     use crate::game::save::schema::{AcquisitionEventStateV1, RecordKind};
     use crate::game::schema::{EvidenceJson, StatementJson};
     use crate::game::state::Inventory;
+    use crate::game::test_support::catalog_with_case_records;
+    use std::collections::BTreeSet;
 
     fn evidence_def(id: &str) -> EvidenceJson {
         EvidenceJson {
@@ -114,35 +137,157 @@ mod tests {
         }
     }
 
+    fn exact_provenance() -> CaseRecordProvenance {
+        CaseRecordProvenance {
+            source_kind: SourceKind::Physical,
+            representation_layer: RepresentationLayer::Raw,
+            procedural_status: ProceduralStatus::Exhibit,
+            completeness: Completeness::Complete,
+            confidence: Confidence::Corroborated,
+            source_group_id: None,
+            source_label: Some("Original receipt".into()),
+            proof_capabilities: BTreeSet::from([ProofCapability::Time, ProofCapability::Source]),
+            supersedes_record_id: None,
+        }
+    }
+
+    // Break caught: definition validation happens after inventory/event/ordinal
+    // mutation, leaving a partial acquisition behind on error.
     #[test]
-    fn evidence_reports_newly_added_then_dedupes() {
+    fn mismatched_evidence_definition_is_rejected_before_any_mutation() {
+        let catalog = catalog_with_case_records(
+            vec![(
+                "receipt",
+                "chapter_1",
+                "scene_1",
+                CaseRecordProvenance::default(),
+            )],
+            vec![],
+        );
+        let mut definition = evidence_def("receipt");
+        definition.provenance = exact_provenance();
+        let mut inventory = Inventory::default();
+        let mut events = vec![AcquisitionEventStateV1 {
+            id: "acq:4:0".into(),
+            record_kind: RecordKind::Evidence,
+            record_id: "existing".into(),
+            created_by_command_id: 4,
+            ordinal: 0,
+        }];
+        let mut next_ordinal = 3;
+        let mut ctx = AcquisitionCtx {
+            catalog: &catalog,
+            inventory: &mut inventory,
+            pending_events: &mut events,
+            command_id: 4,
+            next_ordinal: &mut next_ordinal,
+        };
+
+        let error = ctx
+            .evidence(&definition, "chapter_1", "scene_1")
+            .unwrap_err();
+
+        assert_eq!(error.code, "caseRecordDefinitionMismatch");
+        assert!(inventory.evidence.is_empty());
+        assert_eq!(events.len(), 1);
+        assert_eq!(next_ordinal, 3);
+    }
+
+    // Break caught: a valid acquisition loses or normalizes the immutable
+    // provenance copied from its validated scene definition.
+    #[test]
+    fn valid_acquisitions_copy_exact_provenance() {
+        let provenance = exact_provenance();
+        let catalog = catalog_with_case_records(
+            vec![("receipt", "chapter_1", "scene_1", provenance.clone())],
+            vec![(
+                "witness_account",
+                "chapter_1",
+                "scene_1",
+                provenance.clone(),
+            )],
+        );
+        let mut evidence = evidence_def("receipt");
+        evidence.provenance = provenance.clone();
+        let mut statement = statement_def("witness_account");
+        statement.provenance = provenance.clone();
         let mut inventory = Inventory::default();
         let mut events = Vec::new();
         let mut next_ordinal = 0;
         let mut ctx = AcquisitionCtx {
+            catalog: &catalog,
+            inventory: &mut inventory,
+            pending_events: &mut events,
+            command_id: 4,
+            next_ordinal: &mut next_ordinal,
+        };
+
+        assert!(ctx.evidence(&evidence, "chapter_1", "scene_1").unwrap());
+        assert!(ctx.statement(&statement, "chapter_1", "scene_1").unwrap());
+
+        assert_eq!(inventory.evidence[0].provenance, provenance);
+        assert_eq!(inventory.statements[0].provenance, provenance);
+        assert_eq!(events.len(), 2);
+        assert_eq!(next_ordinal, 2);
+    }
+
+    #[test]
+    fn evidence_reports_newly_added_then_dedupes() {
+        let catalog = catalog_with_case_records(
+            vec![(
+                "coffee",
+                "chapter_1",
+                "scene_1",
+                CaseRecordProvenance::default(),
+            )],
+            vec![],
+        );
+        let mut inventory = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
+        let mut ctx = AcquisitionCtx {
+            catalog: &catalog,
             inventory: &mut inventory,
             pending_events: &mut events,
             command_id: 1,
             next_ordinal: &mut next_ordinal,
         };
-        assert!(ctx.evidence(&evidence_def("coffee"), "chapter_1", "scene_1"));
-        assert!(!ctx.evidence(&evidence_def("coffee"), "chapter_1", "scene_1"));
+        assert!(ctx
+            .evidence(&evidence_def("coffee"), "chapter_1", "scene_1")
+            .unwrap());
+        assert!(!ctx
+            .evidence(&evidence_def("coffee"), "chapter_1", "scene_1")
+            .unwrap());
         assert_eq!(inventory.evidence.len(), 1);
     }
 
     #[test]
     fn statement_reports_newly_added_then_dedupes() {
+        let catalog = catalog_with_case_records(
+            vec![],
+            vec![(
+                "alibi",
+                "chapter_1",
+                "scene_1",
+                CaseRecordProvenance::default(),
+            )],
+        );
         let mut inventory = Inventory::default();
         let mut events = Vec::new();
         let mut next_ordinal = 0;
         let mut ctx = AcquisitionCtx {
+            catalog: &catalog,
             inventory: &mut inventory,
             pending_events: &mut events,
             command_id: 1,
             next_ordinal: &mut next_ordinal,
         };
-        assert!(ctx.statement(&statement_def("alibi"), "chapter_1", "scene_1"));
-        assert!(!ctx.statement(&statement_def("alibi"), "chapter_1", "scene_1"));
+        assert!(ctx
+            .statement(&statement_def("alibi"), "chapter_1", "scene_1")
+            .unwrap());
+        assert!(!ctx
+            .statement(&statement_def("alibi"), "chapter_1", "scene_1")
+            .unwrap());
         assert_eq!(inventory.statements.len(), 1);
     }
 
@@ -150,19 +295,40 @@ mod tests {
     // or re-acquisition consumes an ordinal despite adding no record.
     #[test]
     fn new_records_emit_reveal_ordered_events_without_dedupe_gaps() {
+        let catalog = catalog_with_case_records(
+            vec![(
+                "receipt",
+                "chapter_1",
+                "scene_1",
+                CaseRecordProvenance::default(),
+            )],
+            vec![(
+                "alibi",
+                "chapter_1",
+                "scene_1",
+                CaseRecordProvenance::default(),
+            )],
+        );
         let mut inventory = Inventory::default();
         let mut events = Vec::new();
         let mut next_ordinal = 0;
         let mut ctx = AcquisitionCtx {
+            catalog: &catalog,
             inventory: &mut inventory,
             pending_events: &mut events,
             command_id: 7,
             next_ordinal: &mut next_ordinal,
         };
 
-        assert!(ctx.evidence(&evidence_def("receipt"), "chapter_1", "scene_1"));
-        assert!(ctx.statement(&statement_def("alibi"), "chapter_1", "scene_1"));
-        assert!(!ctx.evidence(&evidence_def("receipt"), "chapter_1", "scene_1"));
+        assert!(ctx
+            .evidence(&evidence_def("receipt"), "chapter_1", "scene_1")
+            .unwrap());
+        assert!(ctx
+            .statement(&statement_def("alibi"), "chapter_1", "scene_1")
+            .unwrap());
+        assert!(!ctx
+            .evidence(&evidence_def("receipt"), "chapter_1", "scene_1")
+            .unwrap());
 
         assert_eq!(
             events,
@@ -191,6 +357,15 @@ mod tests {
     // unrelated global pending events.
     #[test]
     fn acquisition_uses_the_supplied_command_local_ordinal() {
+        let catalog = catalog_with_case_records(
+            vec![(
+                "receipt",
+                "chapter_1",
+                "scene_1",
+                CaseRecordProvenance::default(),
+            )],
+            vec![],
+        );
         let mut inventory = Inventory::default();
         let mut events = vec![AcquisitionEventStateV1 {
             id: "acq:7:0".into(),
@@ -201,13 +376,16 @@ mod tests {
         }];
         let mut next_ordinal = 3;
         let mut ctx = AcquisitionCtx {
+            catalog: &catalog,
             inventory: &mut inventory,
             pending_events: &mut events,
             command_id: 7,
             next_ordinal: &mut next_ordinal,
         };
 
-        assert!(ctx.evidence(&evidence_def("receipt"), "chapter_1", "scene_1"));
+        assert!(ctx
+            .evidence(&evidence_def("receipt"), "chapter_1", "scene_1")
+            .unwrap());
         assert_eq!(events[1].id, "acq:7:3");
         assert_eq!(events[1].ordinal, 3);
         assert_eq!(next_ordinal, 4);
