@@ -166,10 +166,14 @@ end, not a dead-end error.
 **偵探名**：...
 ```
 
-This skeleton is a faithful reduction of the canonical compiler fixture
-`packages/scripts/__fixtures__/valid_interrogation/chapter_1/interrogation_scene_1.md`
-— every heading level and field label above matches that fixture exactly.
-When in doubt about a field name, defer to that fixture over prose.
+The skeleton's base interrogation headings, heading levels, and manifest block
+structure follow the canonical compiler fixture
+`packages/scripts/__fixtures__/valid_interrogation/chapter_1/interrogation_scene_1.md`.
+Use that fixture to resolve questions about base interrogation structure. The
+nine optional provenance fields shown in the Evidence / Statement entries are
+governed by this skill's shared provenance section and the canonical
+`writing-investigation-scene` guidance it delegates to; the fixture may omit
+them and must not be used as a reason to drop them from annotated records.
 
 ## Heading Hierarchy Reference
 
