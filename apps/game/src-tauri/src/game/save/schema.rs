@@ -622,6 +622,71 @@ mod tests {
     }
 
     #[test]
+    fn schema_v1_inventory_keeps_immutable_record_definitions_out_of_the_save() {
+        let mut save: SaveEnvelopeV1 = serde_json::from_str(REPRESENTATIVE).unwrap();
+        save.snapshot.inventory = InventorySnapshotV1 {
+            evidence: vec![
+                EvidenceInventoryEntryV1 {
+                    record_id: "chain_lead".into(),
+                    collected_in_chapter_id: "chapter_1".into(),
+                    collected_in_scene_id: "investigation_scene_1".into(),
+                },
+                EvidenceInventoryEntryV1 {
+                    record_id: "chain_reacquired".into(),
+                    collected_in_chapter_id: "chapter_1".into(),
+                    collected_in_scene_id: "investigation_scene_1".into(),
+                },
+                EvidenceInventoryEntryV1 {
+                    record_id: "chain_exhibit".into(),
+                    collected_in_chapter_id: "chapter_1".into(),
+                    collected_in_scene_id: "investigation_scene_1".into(),
+                },
+            ],
+            statements: vec![],
+        };
+
+        let inventory = serde_json::to_value(&save).unwrap()["snapshot"]["inventory"].clone();
+        assert_eq!(SAVE_SCHEMA_VERSION, 1);
+        assert_eq!(
+            inventory,
+            serde_json::json!({
+                "evidence": [
+                    {
+                        "recordId": "chain_lead",
+                        "collectedInChapterId": "chapter_1",
+                        "collectedInSceneId": "investigation_scene_1"
+                    },
+                    {
+                        "recordId": "chain_reacquired",
+                        "collectedInChapterId": "chapter_1",
+                        "collectedInSceneId": "investigation_scene_1"
+                    },
+                    {
+                        "recordId": "chain_exhibit",
+                        "collectedInChapterId": "chapter_1",
+                        "collectedInSceneId": "investigation_scene_1"
+                    }
+                ],
+                "statements": []
+            })
+        );
+        let encoded = inventory.to_string();
+        for forbidden in [
+            "provenance",
+            "sourceGroup",
+            "sourceLabel",
+            "proofCapabilities",
+            "supersedes",
+            "members",
+        ] {
+            assert!(
+                !encoded.contains(forbidden),
+                "save inventory leaked immutable key fragment '{forbidden}'"
+            );
+        }
+    }
+
+    #[test]
     fn current_dispatch_rejects_unknown_and_wrong_dialect_fields() {
         let mut unknown_top_level: serde_json::Value =
             serde_json::from_str(REPRESENTATIVE).unwrap();

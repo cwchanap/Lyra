@@ -10,11 +10,13 @@ use crate::game::dialogue_queue::{
     ActiveDialogueQueue, ActiveDialogueStateV1, DialogueSegmentOriginV1,
 };
 use crate::game::navigation::{load_chapter_scene_jsons, scene_json_identity};
+use crate::game::provenance::{validate_inventory_record_against_catalog, CaseRecordProvenance};
 use crate::game::scenes::interrogation::{CrossExam, InterrogationSceneState};
 use crate::game::scenes::investigation::InvestigationSceneState;
 use crate::game::scenes::SceneRuntime;
 use crate::game::schema::{
-    InterrogationPhaseJson, InterrogationSceneJson, InvestigationSceneJson, SceneJson,
+    InterrogationPhaseJson, InterrogationSceneJson, InventoryTarget, InvestigationSceneJson,
+    SceneJson,
 };
 use crate::game::state::ChapterManifest;
 use crate::game::story::StoryState;
@@ -604,6 +606,7 @@ fn validate_inventory(engine: &GameEngine) -> Result<(), GameError> {
             &record.id,
             &record.collected_in_chapter_id,
             &record.collected_in_scene_id,
+            &record.provenance,
             true,
         )?;
     }
@@ -613,6 +616,7 @@ fn validate_inventory(engine: &GameEngine) -> Result<(), GameError> {
             &record.id,
             &record.acquired_in_chapter_id,
             &record.acquired_in_scene_id,
+            &record.provenance,
             false,
         )?;
     }
@@ -624,11 +628,26 @@ fn validate_inventory_record(
     record_id: &str,
     chapter_id: &str,
     scene_id: &str,
+    provenance: &CaseRecordProvenance,
     evidence: bool,
 ) -> Result<(), GameError> {
-    let scene = engine
-        .packaged_acquisition_scene(chapter_id, scene_id)
-        .map_err(|error| capture_error(error.message))?;
+    let target = if evidence {
+        InventoryTarget::Evidence {
+            id: record_id.to_owned(),
+        }
+    } else {
+        InventoryTarget::Statement {
+            id: record_id.to_owned(),
+        }
+    };
+    validate_inventory_record_against_catalog(
+        &engine.story_catalog,
+        chapter_id,
+        scene_id,
+        &target,
+        provenance,
+    )?;
+    let scene = engine.packaged_acquisition_scene(chapter_id, scene_id)?;
     let found = match scene {
         SceneJson::Investigation(scene) => {
             if evidence {
@@ -659,10 +678,7 @@ fn validate_inventory_record(
         SceneJson::Linear(_) => false,
     };
     if !found {
-        return Err(capture_error(format!(
-            "Inventory {} '{record_id}' has invalid packaged provenance '{chapter_id}/{scene_id}'.",
-            if evidence { "evidence" } else { "statement" }
-        )));
+        return Err(GameError::case_record_definition_mismatch());
     }
     Ok(())
 }
@@ -1101,7 +1117,9 @@ mod tests {
     use crate::game::scenes::SceneRuntime;
     use crate::game::schema::{AudioChannelJson, AudioCueJson, DialogueItem};
     use crate::game::state::{EvidenceRecord, StatementRecord};
-    use crate::game::test_support::save_capture_fixture_resources;
+    use crate::game::test_support::{
+        provenance_save_fixture_resources, save_capture_fixture_resources,
+    };
     use crate::game::view::QueueToken;
     use crate::game::GameEngine;
     use serde_json::json;
@@ -2113,7 +2131,7 @@ mod tests {
         });
         assert_eq!(
             capture_checkpoint_v1(&engine).unwrap_err().code,
-            "invalidSaveCapture"
+            "inventoryRecordDefinitionMismatch"
         );
 
         let (_guard, mut engine) = fixture_engine();
@@ -2551,7 +2569,7 @@ mod tests {
     }
 
     #[test]
-    fn capture_rejects_inventory_with_invalid_packaged_provenance() {
+    fn capture_rejects_inventory_with_invalid_acquisition_origins() {
         let (_guard, mut engine) = fixture_engine();
         engine
             .jump_to_scene("chapter_1", "investigation_scene_1")
@@ -2568,8 +2586,7 @@ mod tests {
             collected_in_scene_id: "scene_0".into(),
         });
         let error = capture_checkpoint_v1(&engine).unwrap_err();
-        assert_eq!(error.code, "invalidSaveCapture");
-        assert!(error.message.contains("invalid packaged provenance"));
+        assert_eq!(error.code, "inventoryRecordDefinitionMismatch");
 
         engine.inventory.evidence.clear();
         engine.inventory.statements.push(StatementRecord {
@@ -2582,7 +2599,34 @@ mod tests {
             acquired_in_scene_id: "scene_0".into(),
         });
         let error = capture_checkpoint_v1(&engine).unwrap_err();
-        assert_eq!(error.code, "invalidSaveCapture");
-        assert!(error.message.contains("invalid packaged provenance"));
+        assert_eq!(error.code, "inventoryRecordDefinitionMismatch");
+    }
+
+    #[test]
+    fn capture_rejects_acquired_provenance_that_differs_from_the_catalog() {
+        let (_guard, resources) = provenance_save_fixture_resources();
+        let mut engine = GameEngine::new_started(resources).unwrap();
+        let SceneJson::Investigation(scene) = engine
+            .packaged_acquisition_scene("chapter_1", "investigation_scene_1")
+            .unwrap()
+        else {
+            panic!("expected investigation fixture")
+        };
+        let definition = scene
+            .evidence_manifest
+            .iter()
+            .find(|definition| definition.id == "chain_exhibit")
+            .unwrap();
+        assert!(engine.inventory.add_evidence_from_def(
+            definition,
+            "chapter_1",
+            "investigation_scene_1",
+        ));
+        engine.inventory.evidence[0].provenance.confidence =
+            crate::game::provenance::Confidence::Disputed;
+
+        let error = capture_checkpoint_v1(&engine).unwrap_err();
+
+        assert_eq!(error.code, "inventoryRecordDefinitionMismatch");
     }
 }
