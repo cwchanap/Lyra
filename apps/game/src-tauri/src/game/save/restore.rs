@@ -1426,7 +1426,10 @@ mod tests {
     use crate::game::scenes::SceneRuntime;
     use crate::game::schema::{AudioChannelJson, AudioCueJson, DialogueItem};
     use crate::game::state::{EvidenceRecord, StatementRecord};
-    use crate::game::test_support::save_capture_fixture_resources;
+    use crate::game::support_lineage::SupportLineage;
+    use crate::game::test_support::{
+        provenance_save_fixture_resources, save_capture_fixture_resources,
+    };
     use crate::game::view::ModeView;
     use crate::game::GameEngine;
     use serde::{Deserialize, Serialize};
@@ -2526,6 +2529,218 @@ mod tests {
             .unwrap();
 
         assert_round_trip(resources, &engine);
+    }
+
+    #[test]
+    fn provenance_chain_groups_and_support_lineage_rejoin_from_packaged_definitions() {
+        let (_guard, resources) = provenance_save_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        let SceneJson::Investigation(scene) = engine
+            .packaged_acquisition_scene("chapter_1", "investigation_scene_1")
+            .unwrap()
+        else {
+            panic!("expected investigation fixture")
+        };
+        let definition = |id: &str| {
+            scene
+                .evidence_manifest
+                .iter()
+                .find(|definition| definition.id == id)
+                .unwrap()
+                .clone()
+        };
+        let lead = definition("chain_lead");
+        let reacquired = definition("chain_reacquired");
+        let exhibit = definition("chain_exhibit");
+        assert!(engine.inventory.add_evidence_from_def(
+            &lead,
+            "chapter_1",
+            "investigation_scene_1",
+        ));
+        assert!(engine.inventory.add_evidence_from_def(
+            &exhibit,
+            "chapter_1",
+            "investigation_scene_1",
+        ));
+        engine
+            .story_state
+            .assert_fact(
+                &engine.story_catalog,
+                "fact_supporting",
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    block_kind: StoryEventBlockKind::Hotspot,
+                    block_id: "desk".into(),
+                },
+                &[InventoryTarget::Statement {
+                    id: "witness_support".into(),
+                }],
+                &[],
+            )
+            .unwrap();
+        engine
+            .story_state
+            .assert_fact(
+                &engine.story_catalog,
+                "fact_origin",
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    block_kind: StoryEventBlockKind::Topic,
+                    block_id: "alibi".into(),
+                },
+                &[InventoryTarget::Evidence {
+                    id: "chain_exhibit".into(),
+                }],
+                &["fact_supporting".into()],
+            )
+            .unwrap();
+        let original = capture_checkpoint_v1(&engine).unwrap();
+        let original_inventory = engine.inventory.clone();
+        let definitions = load_current_definitions(&resources).unwrap();
+        let encoded =
+            serde_json::to_vec(&envelope_from_checkpoint(&engine, original.clone())).unwrap();
+        let parsed = crate::game::save::schema::parse_current_envelope(&encoded).unwrap();
+
+        let mut restored = build_restore_candidate(resources, &definitions, parsed).unwrap();
+
+        assert_eq!(restored.engine.inventory, original_inventory);
+        assert_eq!(
+            restored
+                .engine
+                .story_catalog
+                .chain(&InventoryTarget::Evidence {
+                    id: "chain_exhibit".into(),
+                })
+                .unwrap(),
+            vec![
+                InventoryTarget::Evidence {
+                    id: "chain_lead".into(),
+                },
+                InventoryTarget::Evidence {
+                    id: "chain_reacquired".into(),
+                },
+                InventoryTarget::Evidence {
+                    id: "chain_exhibit".into(),
+                },
+            ]
+        );
+        assert_eq!(
+            restored
+                .engine
+                .story_catalog
+                .source_group("video_versions")
+                .unwrap()
+                .members,
+            BTreeSet::from([
+                InventoryTarget::Evidence {
+                    id: "chain_lead".into(),
+                },
+                InventoryTarget::Evidence {
+                    id: "chain_reacquired".into(),
+                },
+                InventoryTarget::Evidence {
+                    id: "chain_exhibit".into(),
+                },
+            ])
+        );
+        let lineage =
+            SupportLineage::new(&restored.engine.story_catalog, &restored.engine.story_state);
+        assert_eq!(
+            lineage.direct_records("fact_origin").unwrap(),
+            BTreeSet::from([InventoryTarget::Evidence {
+                id: "chain_exhibit".into(),
+            }])
+        );
+        assert_eq!(
+            lineage.transitive_records("fact_origin").unwrap(),
+            BTreeSet::from([
+                InventoryTarget::Evidence {
+                    id: "chain_exhibit".into(),
+                },
+                InventoryTarget::Statement {
+                    id: "witness_support".into(),
+                },
+            ])
+        );
+        assert_eq!(
+            lineage
+                .transitive_source_group_closure("fact_origin")
+                .unwrap()
+                .groups,
+            BTreeSet::from(["video_versions".into(), "witness_accounts".into()])
+        );
+        assert_eq!(
+            capture_checkpoint_v1(&restored.engine).unwrap(),
+            original,
+            "definition rejoin must preserve exact v1 recapture"
+        );
+
+        let redacted = restored.engine.view().unwrap();
+        assert_eq!(
+            redacted
+                .inventory
+                .evidence
+                .iter()
+                .find(|record| record.id == "chain_exhibit")
+                .unwrap()
+                .provenance
+                .supersedes_record_id,
+            None
+        );
+        assert!(
+            redacted
+                .story
+                .facts
+                .iter()
+                .find(|fact| fact.id == "fact_supporting")
+                .unwrap()
+                .supporting_records
+                .is_empty(),
+            "unacquired statement support must stay internal"
+        );
+        assert!(restored.engine.inventory.add_evidence_from_def(
+            &reacquired,
+            "chapter_1",
+            "investigation_scene_1",
+        ));
+        assert_eq!(
+            restored
+                .engine
+                .view()
+                .unwrap()
+                .inventory
+                .evidence
+                .iter()
+                .find(|record| record.id == "chain_exhibit")
+                .unwrap()
+                .provenance
+                .supersedes_record_id
+                .as_deref(),
+            Some("evidence:chain_reacquired")
+        );
+    }
+
+    #[test]
+    fn current_definition_loading_rejects_scene_catalog_provenance_drift() {
+        let (_guard, resources) = provenance_save_fixture_resources();
+        let engine = GameEngine::new_started(resources.clone()).unwrap();
+        let checkpoint = capture_checkpoint_v1(&engine).unwrap();
+        let save = envelope_from_checkpoint(&engine, checkpoint);
+        let scene_path = resources.join("chapter_1/investigation_scene_1.json");
+        let mut scene: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&scene_path).unwrap()).unwrap();
+        scene["evidenceManifest"][0]["provenance"]["confidence"] = serde_json::json!("disputed");
+        std::fs::write(&scene_path, serde_json::to_vec_pretty(&scene).unwrap()).unwrap();
+
+        let error = match load_current_definitions(&resources) {
+            Ok(_) => panic!("corrupt scene definitions must not be installed"),
+            Err(error) => error,
+        };
+
+        assert_eq!(save.content_revision, engine.content_revision());
+        assert_eq!(error.code, "caseRecordDefinitionMismatch");
     }
 
     #[test]

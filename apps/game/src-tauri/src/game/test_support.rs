@@ -861,6 +861,142 @@ pub(crate) fn save_capture_fixture_resources() -> (tempfile::TempDir, PathBuf) {
     (dir, resources)
 }
 
+pub(super) fn provenance_save_fixture_resources() -> (tempfile::TempDir, PathBuf) {
+    let (dir, resources) = save_capture_fixture_resources();
+    let provenance = |procedural_status: &str,
+                      source_group_id: &str,
+                      proof_capabilities: &[&str],
+                      supersedes_record_id: Option<&str>| {
+        serde_json::json!({
+            "sourceKind": "digital",
+            "representationLayer": "sync",
+            "proceduralStatus": procedural_status,
+            "completeness": "complete",
+            "confidence": "corroborated",
+            "sourceGroupId": source_group_id,
+            "sourceLabel": "Station camera",
+            "proofCapabilities": proof_capabilities,
+            "supersedesRecordId": supersedes_record_id,
+        })
+    };
+    let statement_provenance = serde_json::json!({
+        "sourceKind": "testimony",
+        "representationLayer": "raw",
+        "proceduralStatus": "lead",
+        "completeness": "complete",
+        "confidence": "corroborated",
+        "sourceGroupId": "witness_accounts",
+        "sourceLabel": "Witness interview",
+        "proofCapabilities": ["identity", "credibility"],
+        "supersedesRecordId": null,
+    });
+    let evidence = [
+        (
+            "chain_exhibit",
+            "exhibit",
+            &["time", "route", "identity"][..],
+            Some("evidence:chain_reacquired"),
+            "Exhibit recording",
+        ),
+        ("chain_lead", "lead", &["time"][..], None, "Lead recording"),
+        (
+            "chain_reacquired",
+            "reacquired",
+            &["time", "route"][..],
+            Some("evidence:chain_lead"),
+            "Reacquired recording",
+        ),
+    ];
+
+    let mut catalog: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(resources.join("story_catalog.json")).unwrap())
+            .unwrap();
+    catalog["sourceGroups"] = serde_json::json!([
+        {
+            "id": "video_versions",
+            "label": "Station camera versions",
+            "summary": "Successive procedural forms of the same recording.",
+            "members": [
+                {"kind": "evidence", "id": "chain_exhibit"},
+                {"kind": "evidence", "id": "chain_lead"},
+                {"kind": "evidence", "id": "chain_reacquired"}
+            ]
+        },
+        {
+            "id": "witness_accounts",
+            "label": "Witness accounts",
+            "summary": "Statements supplied by the station witness.",
+            "members": [{"kind": "statement", "id": "witness_support"}]
+        }
+    ]);
+    catalog["evidenceIndex"] = serde_json::Value::Array(
+        evidence
+            .iter()
+            .map(|(id, status, capabilities, supersedes, _)| {
+                serde_json::json!({
+                    "id": id,
+                    "chapterId": "chapter_1",
+                    "sceneId": "investigation_scene_1",
+                    "provenance": provenance(
+                        status,
+                        "video_versions",
+                        capabilities,
+                        *supersedes,
+                    ),
+                })
+            })
+            .collect(),
+    );
+    catalog["statementsIndex"] = serde_json::json!([{
+        "id": "witness_support",
+        "chapterId": "chapter_1",
+        "sceneId": "investigation_scene_1",
+        "provenance": statement_provenance.clone(),
+    }]);
+    std::fs::write(
+        resources.join("story_catalog.json"),
+        serde_json::to_vec_pretty(&catalog).unwrap(),
+    )
+    .unwrap();
+
+    let scene_path = resources.join("chapter_1/investigation_scene_1.json");
+    let mut scene: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&scene_path).unwrap()).unwrap();
+    scene["evidenceManifest"] = serde_json::Value::Array(
+        evidence
+            .iter()
+            .map(|(id, status, capabilities, supersedes, name)| {
+                serde_json::json!({
+                    "id": id,
+                    "name": name,
+                    "description": "Camera recording",
+                    "details": "Fixture provenance",
+                    "provenance": provenance(
+                        status,
+                        "video_versions",
+                        capabilities,
+                        *supersedes,
+                    ),
+                    "imageAssetId": null,
+                    "onCollect": [],
+                    "onReexamine": null,
+                })
+            })
+            .collect(),
+    );
+    scene["statementManifest"] = serde_json::json!([{
+        "id": "witness_support",
+        "speaker": "Witness",
+        "content": "The camera clock matched the station clock.",
+        "provenance": statement_provenance,
+        "onAcquire": [],
+        "onReexamine": null,
+    }]);
+    std::fs::write(scene_path, serde_json::to_vec_pretty(&scene).unwrap()).unwrap();
+
+    (dir, resources)
+}
+
 pub(super) fn story_navigation_fixture_resources() -> PathBuf {
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
