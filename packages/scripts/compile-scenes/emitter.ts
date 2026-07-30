@@ -13,7 +13,9 @@ import type {
   ASTTestimony,
   ASTTestimonyLine,
   AssetRef,
-  CaseRecordDefinitionIndex,
+  CaseRecordProvenance,
+  CompiledCaseRecordCorpus,
+  CompileError,
   DialogueItem,
   JSONChaptersIndex,
   JSONDialogueItem,
@@ -23,48 +25,16 @@ import type {
   JSONTestimony,
   JSONTestimonyLine,
   JSONVisualAssetCue,
-  StoryCatalogJson,
+  StoryCatalogJsonV2,
   VisualAssetCue,
 } from "./types";
-import type { SceneRecord } from "./validator";
 
 export function emitStoryCatalog(
   catalog: ASTStoryCatalog,
-  scenes: SceneRecord[],
-): StoryCatalogJson {
-  const evidenceIndex: CaseRecordDefinitionIndex[] = [];
-  const statementsIndex: CaseRecordDefinitionIndex[] = [];
-
-  for (const record of scenes) {
-    if (
-      record.ast.kind !== "investigationScene" &&
-      record.ast.kind !== "interrogationScene"
-    ) {
-      continue;
-    }
-    for (const evidence of record.ast.evidenceManifest) {
-      evidenceIndex.push({
-        id: evidence.id,
-        chapterId: record.chapterId,
-        sceneId: record.ast.id,
-      });
-    }
-    for (const statement of record.ast.statementManifest) {
-      statementsIndex.push({
-        id: statement.id,
-        chapterId: record.chapterId,
-        sceneId: record.ast.id,
-      });
-    }
-  }
-
-  const byId = (
-    left: CaseRecordDefinitionIndex,
-    right: CaseRecordDefinitionIndex,
-  ) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
-
+  caseRecords: CompiledCaseRecordCorpus,
+): StoryCatalogJsonV2 {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     facts: catalog.facts.map(({ id, label, summary, details, category }) => ({
       id,
       label,
@@ -107,8 +77,18 @@ export function emitStoryCatalog(
         grantingAuthority,
       }),
     ),
-    evidenceIndex: evidenceIndex.sort(byId),
-    statementsIndex: statementsIndex.sort(byId),
+    sourceGroups: caseRecords.sourceGroups.map((group) => ({
+      ...group,
+      members: group.members.map((member) => ({ ...member })),
+    })),
+    evidenceIndex: caseRecords.evidenceIndex.map((record) => ({
+      ...record,
+      provenance: copyCaseRecordProvenance(record.provenance),
+    })),
+    statementsIndex: caseRecords.statementsIndex.map((record) => ({
+      ...record,
+      provenance: copyCaseRecordProvenance(record.provenance),
+    })),
   };
 }
 
@@ -124,6 +104,7 @@ export function emitLinearScene(ast: ASTLinearScene): JSONLinearScene {
 
 export function emitInvestigationScene(
   ast: ASTInvestigationScene,
+  caseRecords: CompiledCaseRecordCorpus,
 ): JSONInvestigationScene {
   return {
     type: "investigation",
@@ -177,6 +158,14 @@ export function emitInvestigationScene(
       details: e.details,
       imageAssetId: e.imageCue.imageAssetId,
       sourceSublocationId: e.sourceSublocationId,
+      provenance: provenanceForRecord(
+        ast,
+        "evidence",
+        e.id,
+        e.sourceFile,
+        e.line,
+        caseRecords,
+      ),
       onCollect: emitDialogueItems(e.onCollect),
       onReexamine: emitNullableDialogueItems(e.onReexamine),
     })),
@@ -184,6 +173,14 @@ export function emitInvestigationScene(
       id: s.id,
       speaker: s.speaker,
       content: s.content,
+      provenance: provenanceForRecord(
+        ast,
+        "statement",
+        s.id,
+        s.sourceFile,
+        s.line,
+        caseRecords,
+      ),
       onAcquire: emitDialogueItems(s.onAcquire),
       onReexamine: emitNullableDialogueItems(s.onReexamine),
     })),
@@ -196,6 +193,7 @@ export function emitInvestigationScene(
 
 export function emitInterrogationScene(
   ast: ASTInterrogationScene,
+  caseRecords: CompiledCaseRecordCorpus,
 ): JSONInterrogationScene {
   return {
     type: "interrogation",
@@ -237,6 +235,14 @@ export function emitInterrogationScene(
       description: e.description,
       details: e.details,
       imageAssetId: e.imageCue.imageAssetId,
+      provenance: provenanceForRecord(
+        ast,
+        "evidence",
+        e.id,
+        e.sourceFile,
+        e.line,
+        caseRecords,
+      ),
       onCollect: emitDialogueItems(e.onCollect),
       onReexamine: emitNullableDialogueItems(e.onReexamine),
     })),
@@ -244,6 +250,14 @@ export function emitInterrogationScene(
       id: s.id,
       speaker: s.speaker,
       content: s.content,
+      provenance: provenanceForRecord(
+        ast,
+        "statement",
+        s.id,
+        s.sourceFile,
+        s.line,
+        caseRecords,
+      ),
       onAcquire: emitDialogueItems(s.onAcquire),
       onReexamine: emitNullableDialogueItems(s.onReexamine),
     })),
@@ -251,6 +265,53 @@ export function emitInterrogationScene(
       unlock: ast.outro.unlock,
       dialogue: emitDialogueItems(ast.outro.dialogue),
     },
+  };
+}
+
+export class CaseRecordEmissionError extends Error implements CompileError {
+  readonly code = "caseRecordEmissionMismatch";
+
+  constructor(
+    message: string,
+    readonly sourceFile: string,
+    readonly line: number,
+  ) {
+    super(message);
+    this.name = "CaseRecordEmissionError";
+  }
+}
+
+function provenanceForRecord(
+  ast: ASTInvestigationScene | ASTInterrogationScene,
+  kind: "evidence" | "statement",
+  id: string,
+  sourceFile: string,
+  line: number,
+  caseRecords: CompiledCaseRecordCorpus,
+): CaseRecordProvenance {
+  const key = `${kind}:${id}`;
+  const record = caseRecords.recordsByKey.get(key);
+  if (
+    !record ||
+    record.target.kind !== kind ||
+    record.target.id !== id ||
+    record.sceneId !== ast.id
+  ) {
+    throw new CaseRecordEmissionError(
+      `Case record ${key} in scene "${ast.id}" is missing from the compiled corpus or has a different scene origin.`,
+      sourceFile,
+      line,
+    );
+  }
+  return copyCaseRecordProvenance(record.provenance);
+}
+
+function copyCaseRecordProvenance(
+  provenance: CaseRecordProvenance,
+): CaseRecordProvenance {
+  return {
+    ...provenance,
+    proofCapabilities: [...provenance.proofCapabilities],
   };
 }
 

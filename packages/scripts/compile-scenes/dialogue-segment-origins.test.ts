@@ -1,10 +1,30 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { compileCaseRecordCorpus } from "./case-record-provenance";
 import { emitInterrogationScene, emitInvestigationScene } from "./emitter";
 import { deriveDialogueSegments } from "./dialogue-segment-origins";
 import { parseInterrogationScene } from "./parser-interrogation";
 import { parseInvestigationScene } from "./parser-investigation";
+import { emptyStoryCatalog } from "./parser-story-catalog";
+import type {
+  ASTInterrogationScene,
+  ASTInvestigationScene,
+  CompiledCaseRecordCorpus,
+} from "./types";
+
+function corpusForAst(
+  ast: ASTInvestigationScene | ASTInterrogationScene,
+): CompiledCaseRecordCorpus {
+  const result = compileCaseRecordCorpus(
+    emptyStoryCatalog("story_catalog.md"),
+    [{ chapterId: "chapter_1", file: ast.sourceFile, ast }],
+  );
+  if (!result.ok) {
+    throw new Error(result.errors.map(({ message }) => message).join("\n"));
+  }
+  return result.value;
+}
 
 function investigationAst() {
   const path =
@@ -19,7 +39,8 @@ function investigationAst() {
 }
 
 function investigation() {
-  return emitInvestigationScene(investigationAst());
+  const ast = investigationAst();
+  return emitInvestigationScene(ast, corpusForAst(ast));
 }
 
 function interrogationAst() {
@@ -35,7 +56,8 @@ function interrogationAst() {
 }
 
 function interrogation() {
-  return emitInterrogationScene(interrogationAst());
+  const ast = interrogationAst();
+  return emitInterrogationScene(ast, corpusForAst(ast));
 }
 
 function interrogationWithEveryCarrier() {
@@ -55,7 +77,7 @@ function interrogationWithEveryCarrier() {
   ast.statementManifest[0]!.onReexamine = [
     { kind: "action", text: "Exhaustive statement re-examination." },
   ];
-  return emitInterrogationScene(ast);
+  return emitInterrogationScene(ast, corpusForAst(ast));
 }
 
 describe("deriveDialogueSegments", () => {
@@ -356,7 +378,7 @@ describe("deriveDialogueSegments", () => {
     ];
     const origins = deriveDialogueSegments({
       chapterId: "chapter_1",
-      json: emitInterrogationScene(ast),
+      json: emitInterrogationScene(ast, corpusForAst(ast)),
     }).map(({ origin }) => origin);
 
     expect(origins).toContainEqual({

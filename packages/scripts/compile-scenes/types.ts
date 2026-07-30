@@ -491,6 +491,7 @@ export type JSONInvestigationScene = {
     details: string;
     imageAssetId: string | null;
     sourceSublocationId: string | null;
+    provenance: CaseRecordProvenance;
     onCollect: JSONDialogueItem[];
     onReexamine: JSONDialogueItem[] | null;
   }>;
@@ -498,6 +499,7 @@ export type JSONInvestigationScene = {
     id: string;
     speaker: string;
     content: string;
+    provenance: CaseRecordProvenance;
     onAcquire: JSONDialogueItem[];
     onReexamine: JSONDialogueItem[] | null;
   }>;
@@ -520,6 +522,7 @@ export type JSONInterrogationScene = {
     description: string;
     details: string;
     imageAssetId: string | null;
+    provenance: CaseRecordProvenance;
     onCollect: JSONDialogueItem[];
     onReexamine: JSONDialogueItem[] | null;
   }>;
@@ -527,6 +530,7 @@ export type JSONInterrogationScene = {
     id: string;
     speaker: string;
     content: string;
+    provenance: CaseRecordProvenance;
     onAcquire: JSONDialogueItem[];
     onReexamine: JSONDialogueItem[] | null;
   }>;
@@ -591,12 +595,13 @@ export type JSONTestimonyLine = {
   reveals: InterrogationRevealTarget[];
 };
 
-export type StoryCatalogJson = {
-  schemaVersion: 1;
+export type StoryCatalogJsonV2 = {
+  schemaVersion: 2;
   facts: FactDefinition[];
   questions: QuestionDefinition[];
   objectives: ObjectiveDefinition[];
   authorizations: AuthorizationDefinition[];
+  sourceGroups: SourceGroupDefinition[];
   evidenceIndex: CaseRecordDefinitionIndex[];
   statementsIndex: CaseRecordDefinitionIndex[];
 };
@@ -635,6 +640,7 @@ export type CaseRecordDefinitionIndex = {
   id: string;
   chapterId: string;
   sceneId: string;
+  provenance: CaseRecordProvenance;
 };
 
 export type CompiledCaseRecord = {

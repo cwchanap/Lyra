@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   cpSync,
@@ -21,7 +22,35 @@ import type { SceneRecord } from "./compile-scenes/validator";
 const VALID_STORY_CATALOG = readFileSync(
   resolve("packages/scripts/__fixtures__/story_catalog/valid/story_catalog.md"),
   "utf-8",
-);
+).replace(/\n## Source Groups[\s\S]*$/, "");
+
+const SINGLETON_SOURCE_GROUP_CATALOG = `# Story Catalog
+
+## Source Groups
+
+### Source Group: Program export {#program_export}
+- **Summary:** Records derived from the same program export.
+`;
+
+function annotateCoffeeWithSourceGroup(sourceRoot: string): void {
+  const scenePath = resolve(sourceRoot, "chapter_1/investigation_scene_1.md");
+  const original = readFileSync(scenePath, "utf-8");
+  writeFileSync(
+    scenePath,
+    original.replace(
+      "- **Source Sublocation:** main_hall",
+      `- **Source Sublocation:** main_hall
+- **Source Kind:** digital
+- **Representation Layer:** summary
+- **Procedural Status:** reacquired
+- **Completeness:** complete
+- **Confidence:** corroborated
+- **Source Group:** program_export
+- **Source Label:** Main hall program export
+- **Proof Capabilities:** [procedure, time]`,
+    ),
+  );
+}
 
 describe("compile (end-to-end against valid fixture)", () => {
   it("compiles the valid fixture without errors and emits expected files", () => {
@@ -783,7 +812,7 @@ describe("compile (global story catalog)", () => {
     }
   });
 
-  it("emits the exact empty version-1 artifact when no catalog is authored", () => {
+  it("emits the exact empty version-2 artifact when no catalog is authored", () => {
     const sourceRoot = mkdtempSync(
       resolve(tmpdir(), "scene-compile-empty-catalog-source-"),
     );
@@ -816,11 +845,12 @@ describe("compile (global story catalog)", () => {
           readFileSync(resolve(outRoot, "story_catalog.json"), "utf-8"),
         ),
       ).toEqual({
-        schemaVersion: 1,
+        schemaVersion: 2,
         facts: [],
         questions: [],
         objectives: [],
         authorizations: [],
+        sourceGroups: [],
         evidenceIndex: [],
         statementsIndex: [],
       });
@@ -862,6 +892,7 @@ describe("compile (global story catalog)", () => {
         expect(emitted.questions[0]?.resolvedByFactIds).toEqual([
           "visitor_signed_in",
         ]);
+        expect(emitted.sourceGroups).toEqual([]);
       } finally {
         rmSync(catalogRoot, { recursive: true, force: true });
         rmSync(outRoot, { recursive: true, force: true });
@@ -1037,7 +1068,7 @@ describe("compile (global story catalog)", () => {
         JSON.parse(
           readFileSync(resolve(outRoot, "story_catalog.json"), "utf-8"),
         ).schemaVersion,
-      ).toBe(1);
+      ).toBe(2);
       expect(
         JSON.parse(
           readFileSync(resolve(outRoot, "save_content_manifest.json"), "utf-8"),
@@ -1047,6 +1078,131 @@ describe("compile (global story catalog)", () => {
         contentRevision: expect.any(String),
       });
     } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      label: "an undeclared record source group",
+      expectedCode: "caseRecordSourceGroupUnknown",
+      arrange(sourceRoot: string) {
+        annotateCoffeeWithSourceGroup(sourceRoot);
+      },
+    },
+    {
+      label: "an unused catalog source group",
+      expectedCode: "caseRecordSourceGroupUnused",
+      arrange(sourceRoot: string) {
+        writeFileSync(
+          resolve(sourceRoot, "story_catalog.md"),
+          SINGLETON_SOURCE_GROUP_CATALOG,
+        );
+      },
+    },
+  ])(
+    "rejects $label before replacing any compiler-owned output",
+    ({ expectedCode, arrange }) => {
+      const sourceRoot = mkdtempSync(
+        resolve(tmpdir(), "scene-compile-source-group-invalid-source-"),
+      );
+      const outRoot = mkdtempSync(
+        resolve(tmpdir(), "scene-compile-source-group-invalid-out-"),
+      );
+      const sentinel = "preserve sentinel\n";
+      try {
+        cpSync("packages/scripts/__fixtures__/valid", sourceRoot, {
+          recursive: true,
+        });
+        arrange(sourceRoot);
+        for (const file of [
+          "chapters.json",
+          "story_catalog.json",
+          "save_content_manifest.json",
+        ]) {
+          writeFileSync(resolve(outRoot, file), sentinel);
+        }
+        mkdirSync(resolve(outRoot, "chapter_1"));
+        writeFileSync(resolve(outRoot, "chapter_1/sentinel.json"), sentinel);
+
+        const result = compile({ sourceRoot, outputRoot: outRoot });
+
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.errors).toContainEqual(
+          expect.objectContaining({ code: expectedCode }),
+        );
+        for (const file of [
+          "chapters.json",
+          "story_catalog.json",
+          "save_content_manifest.json",
+          "chapter_1/sentinel.json",
+        ]) {
+          expect(readFileSync(resolve(outRoot, file), "utf-8")).toBe(sentinel);
+        }
+      } finally {
+        rmSync(sourceRoot, { recursive: true, force: true });
+        rmSync(outRoot, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("returns singleton warnings and emits structurally equal scene/catalog provenance from one corpus", () => {
+    const sourceRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-source-group-success-source-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-source-group-success-out-"),
+    );
+    try {
+      cpSync("packages/scripts/__fixtures__/valid", sourceRoot, {
+        recursive: true,
+      });
+      annotateCoffeeWithSourceGroup(sourceRoot);
+      writeFileSync(
+        resolve(sourceRoot, "story_catalog.md"),
+        SINGLETON_SOURCE_GROUP_CATALOG,
+      );
+
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+
+      if (!result.ok) throw new Error(formatErrors(result.errors));
+      expect(result.warnings).toContainEqual(
+        expect.objectContaining({
+          code: "singletonSourceGroup",
+          sourceFile: resolve(sourceRoot, "story_catalog.md"),
+        }),
+      );
+      const scene = JSON.parse(
+        readFileSync(
+          resolve(outRoot, "chapter_1/investigation_scene_1.json"),
+          "utf-8",
+        ),
+      );
+      const catalog = JSON.parse(
+        readFileSync(resolve(outRoot, "story_catalog.json"), "utf-8"),
+      );
+      const sceneRecord = scene.evidenceManifest.find(
+        ({ id }: { id: string }) => id === "coffee",
+      );
+      const catalogRecord = catalog.evidenceIndex.find(
+        ({ id }: { id: string }) => id === "coffee",
+      );
+      assert.deepStrictEqual(sceneRecord.provenance, catalogRecord.provenance);
+      expect(catalog.sourceGroups).toEqual([
+        {
+          id: "program_export",
+          label: "Program export",
+          summary: "Records derived from the same program export.",
+          members: [{ kind: "evidence", id: "coffee" }],
+        },
+      ]);
+      expect(catalogRecord.provenance.proofCapabilities).toEqual([
+        "time",
+        "procedure",
+      ]);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(outRoot, { recursive: true, force: true });
     }
   });

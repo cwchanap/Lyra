@@ -1,4 +1,6 @@
+import assert from "node:assert/strict";
 import { describe, expect, it } from "vitest";
+import { compileCaseRecordCorpus } from "./case-record-provenance";
 import {
   emitChaptersIndex,
   emitInterrogationScene,
@@ -14,10 +16,35 @@ import type {
   ASTInvestigationScene,
   ASTLinearScene,
   ASTStoryCatalog,
+  CompiledCaseRecordCorpus,
   JSONChaptersIndex,
   JSONInterrogationScene,
 } from "./types";
 import type { SceneRecord } from "./validator";
+
+function compileCorpus(
+  catalog: ASTStoryCatalog,
+  scenes: readonly SceneRecord[],
+): CompiledCaseRecordCorpus {
+  const result = compileCaseRecordCorpus(catalog, scenes);
+  if (!result.ok) {
+    throw new Error(
+      result.errors
+        .map(({ code, message }) => `${code}: ${message}`)
+        .join("\n"),
+    );
+  }
+  return result.value;
+}
+
+function corpusForScene(
+  ast: ASTInvestigationScene | ASTInterrogationScene,
+  chapterId = "chapter_1",
+): CompiledCaseRecordCorpus {
+  return compileCorpus(emptyStoryCatalog("story_catalog.md"), [
+    { chapterId, file: ast.sourceFile, ast },
+  ]);
+}
 
 // Mirrors XEXAM_SRC from parser-interrogation.test.ts (Task-2 grammar
 // fixture): a question/testimony/line scene with one honest line and one
@@ -78,22 +105,22 @@ function emitInterrogationFixture(): JSONInterrogationScene {
       `fixture parse failed: ${parsed.error.code} ${parsed.error.message}`,
     );
   }
-  return emitInterrogationScene(parsed.value);
+  return emitInterrogationScene(parsed.value, corpusForScene(parsed.value));
 }
 
 describe("emitter", () => {
-  it("emits an empty version-1 story catalog", () => {
-    expect(emitStoryCatalog(emptyStoryCatalog("story_catalog.md"), [])).toEqual(
-      {
-        schemaVersion: 1,
-        facts: [],
-        questions: [],
-        objectives: [],
-        authorizations: [],
-        evidenceIndex: [],
-        statementsIndex: [],
-      },
-    );
+  it("emits an empty version-2 story catalog", () => {
+    const catalog = emptyStoryCatalog("story_catalog.md");
+    expect(emitStoryCatalog(catalog, compileCorpus(catalog, []))).toEqual({
+      schemaVersion: 2,
+      facts: [],
+      questions: [],
+      objectives: [],
+      authorizations: [],
+      sourceGroups: [],
+      evidenceIndex: [],
+      statementsIndex: [],
+    });
   });
 
   it("preserves authored definition order except objectives and derives sorted case-record origins", () => {
@@ -276,7 +303,7 @@ describe("emitter", () => {
       },
     ];
 
-    const emitted = emitStoryCatalog(catalog, scenes);
+    const emitted = emitStoryCatalog(catalog, compileCorpus(catalog, scenes));
 
     expect(emitted.facts.map(({ id }) => id)).toEqual(["fact_z", "fact_a"]);
     expect(emitted.questions.map(({ id }) => id)).toEqual([
@@ -298,11 +325,33 @@ describe("emitter", () => {
         id: "evidence_a",
         chapterId: "chapter_1",
         sceneId: "interrogation_scene_3",
+        provenance: {
+          sourceKind: "unspecified",
+          representationLayer: "none",
+          proceduralStatus: "unspecified",
+          completeness: "unspecified",
+          confidence: "unspecified",
+          sourceGroupId: null,
+          sourceLabel: null,
+          proofCapabilities: [],
+          supersedesRecordId: null,
+        },
       },
       {
         id: "evidence_z",
         chapterId: "chapter_2",
         sceneId: "investigation_scene_4",
+        provenance: {
+          sourceKind: "unspecified",
+          representationLayer: "none",
+          proceduralStatus: "unspecified",
+          completeness: "unspecified",
+          confidence: "unspecified",
+          sourceGroupId: null,
+          sourceLabel: null,
+          proofCapabilities: [],
+          supersedesRecordId: null,
+        },
       },
     ]);
     expect(emitted.statementsIndex).toEqual([
@@ -310,14 +359,413 @@ describe("emitter", () => {
         id: "statement_a",
         chapterId: "chapter_2",
         sceneId: "investigation_scene_4",
+        provenance: {
+          sourceKind: "unspecified",
+          representationLayer: "none",
+          proceduralStatus: "unspecified",
+          completeness: "unspecified",
+          confidence: "unspecified",
+          sourceGroupId: null,
+          sourceLabel: null,
+          proofCapabilities: [],
+          supersedesRecordId: null,
+        },
       },
       {
         id: "statement_z",
         chapterId: "chapter_1",
         sceneId: "interrogation_scene_3",
+        provenance: {
+          sourceKind: "unspecified",
+          representationLayer: "none",
+          proceduralStatus: "unspecified",
+          completeness: "unspecified",
+          confidence: "unspecified",
+          sourceGroupId: null,
+          sourceLabel: null,
+          proofCapabilities: [],
+          supersedesRecordId: null,
+        },
       },
     ]);
   });
+
+  it("copies neutral and full provenance from one corpus into scenes and the exact canonical v2 catalog", () => {
+    const ast: ASTInvestigationScene = {
+      kind: "investigationScene",
+      id: "investigation_scene_1",
+      title: "Provenance",
+      intro: [],
+      sublocations: [],
+      evidenceManifest: [
+        {
+          id: "neutral_record",
+          name: "Neutral",
+          description: "Neutral.",
+          details: "Neutral details.",
+          imageCue: { imagePrompt: null, imageAssetId: null },
+          sourceSublocationId: null,
+          onCollect: [],
+          onReexamine: null,
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 10,
+        },
+        {
+          id: "grouped_record",
+          name: "Grouped",
+          description: "Grouped.",
+          details: "Grouped details.",
+          imageCue: { imagePrompt: null, imageAssetId: null },
+          sourceSublocationId: null,
+          provenance: {
+            sourceKind: null,
+            representationLayer: null,
+            proceduralStatus: null,
+            completeness: null,
+            confidence: null,
+            sourceGroupId: {
+              value: "shared_source",
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 21,
+            },
+            sourceLabel: null,
+            proofCapabilities: [],
+            supersedes: null,
+          },
+          onCollect: [],
+          onReexamine: null,
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 20,
+        },
+      ],
+      statementManifest: [
+        {
+          id: "old_account",
+          speaker: "Witness",
+          content: "Earlier.",
+          provenance: {
+            sourceKind: null,
+            representationLayer: null,
+            proceduralStatus: {
+              value: "lead",
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 31,
+            },
+            completeness: null,
+            confidence: null,
+            sourceGroupId: null,
+            sourceLabel: null,
+            proofCapabilities: [],
+            supersedes: null,
+          },
+          onAcquire: [],
+          onReexamine: null,
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 30,
+        },
+        {
+          id: "full_account",
+          speaker: "Witness",
+          content: "Complete.",
+          provenance: {
+            sourceKind: {
+              value: "testimony",
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 41,
+            },
+            representationLayer: {
+              value: "summary",
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 42,
+            },
+            proceduralStatus: {
+              value: "reacquired",
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 43,
+            },
+            completeness: {
+              value: "partial",
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 44,
+            },
+            confidence: {
+              value: "corroborated",
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 45,
+            },
+            sourceGroupId: {
+              value: "shared_source",
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 46,
+            },
+            sourceLabel: {
+              value: "Witness summary",
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 47,
+            },
+            proofCapabilities: [
+              {
+                value: "causation",
+                sourceFile: "chapter_1/investigation_scene_1.md",
+                line: 48,
+              },
+              {
+                value: "procedure",
+                sourceFile: "chapter_1/investigation_scene_1.md",
+                line: 48,
+              },
+              {
+                value: "credibility",
+                sourceFile: "chapter_1/investigation_scene_1.md",
+                line: 48,
+              },
+              {
+                value: "source",
+                sourceFile: "chapter_1/investigation_scene_1.md",
+                line: 48,
+              },
+              {
+                value: "motive",
+                sourceFile: "chapter_1/investigation_scene_1.md",
+                line: 48,
+              },
+              {
+                value: "access",
+                sourceFile: "chapter_1/investigation_scene_1.md",
+                line: 48,
+              },
+              {
+                value: "time",
+                sourceFile: "chapter_1/investigation_scene_1.md",
+                line: 48,
+              },
+              {
+                value: "identity",
+                sourceFile: "chapter_1/investigation_scene_1.md",
+                line: 48,
+              },
+              {
+                value: "route",
+                sourceFile: "chapter_1/investigation_scene_1.md",
+                line: 48,
+              },
+              {
+                value: "order",
+                sourceFile: "chapter_1/investigation_scene_1.md",
+                line: 48,
+              },
+            ],
+            supersedes: {
+              kind: "statement",
+              id: "old_account",
+              sourceFile: "chapter_1/investigation_scene_1.md",
+              line: 49,
+            },
+          },
+          onAcquire: [],
+          onReexamine: null,
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 40,
+        },
+      ],
+      outro: { unlock: "auto", dialogue: [] },
+      assetRefs: [],
+      sourceFile: "chapter_1/investigation_scene_1.md",
+      line: 1,
+    };
+    const scene: SceneRecord = {
+      chapterId: "chapter_1",
+      file: "investigation_scene_1.md",
+      ast,
+    };
+    const catalog = emptyStoryCatalog("story_catalog.md");
+    catalog.sourceGroups = [
+      {
+        id: "shared_source",
+        label: "Shared source",
+        summary: "One underlying source.",
+        sourceFile: "story_catalog.md",
+        line: 8,
+      },
+    ];
+    const corpus = compileCorpus(catalog, [scene]);
+
+    const emittedScene = emitInvestigationScene(ast, corpus);
+    const emittedCatalog = emitStoryCatalog(catalog, corpus);
+    for (const sceneRecord of [
+      ...emittedScene.evidenceManifest.map((record) => ({
+        kind: "evidence" as const,
+        record,
+      })),
+      ...emittedScene.statementManifest.map((record) => ({
+        kind: "statement" as const,
+        record,
+      })),
+    ]) {
+      const catalogRecord =
+        sceneRecord.kind === "evidence"
+          ? emittedCatalog.evidenceIndex.find(
+              ({ id }) => id === sceneRecord.record.id,
+            )
+          : emittedCatalog.statementsIndex.find(
+              ({ id }) => id === sceneRecord.record.id,
+            );
+      assert.deepStrictEqual(
+        sceneRecord.record.provenance,
+        catalogRecord?.provenance,
+      );
+    }
+
+    expect(emittedCatalog).toEqual({
+      schemaVersion: 2,
+      facts: [],
+      questions: [],
+      objectives: [],
+      authorizations: [],
+      sourceGroups: [
+        {
+          id: "shared_source",
+          label: "Shared source",
+          summary: "One underlying source.",
+          members: [
+            { kind: "evidence", id: "grouped_record" },
+            { kind: "statement", id: "full_account" },
+          ],
+        },
+      ],
+      evidenceIndex: [
+        {
+          id: "grouped_record",
+          chapterId: "chapter_1",
+          sceneId: "investigation_scene_1",
+          provenance: {
+            sourceKind: "unspecified",
+            representationLayer: "none",
+            proceduralStatus: "unspecified",
+            completeness: "unspecified",
+            confidence: "unspecified",
+            sourceGroupId: "shared_source",
+            sourceLabel: null,
+            proofCapabilities: [],
+            supersedesRecordId: null,
+          },
+        },
+        {
+          id: "neutral_record",
+          chapterId: "chapter_1",
+          sceneId: "investigation_scene_1",
+          provenance: {
+            sourceKind: "unspecified",
+            representationLayer: "none",
+            proceduralStatus: "unspecified",
+            completeness: "unspecified",
+            confidence: "unspecified",
+            sourceGroupId: null,
+            sourceLabel: null,
+            proofCapabilities: [],
+            supersedesRecordId: null,
+          },
+        },
+      ],
+      statementsIndex: [
+        {
+          id: "full_account",
+          chapterId: "chapter_1",
+          sceneId: "investigation_scene_1",
+          provenance: {
+            sourceKind: "testimony",
+            representationLayer: "summary",
+            proceduralStatus: "reacquired",
+            completeness: "partial",
+            confidence: "corroborated",
+            sourceGroupId: "shared_source",
+            sourceLabel: "Witness summary",
+            proofCapabilities: [
+              "time",
+              "order",
+              "route",
+              "identity",
+              "access",
+              "motive",
+              "source",
+              "credibility",
+              "procedure",
+              "causation",
+            ],
+            supersedesRecordId: "statement:old_account",
+          },
+        },
+        {
+          id: "old_account",
+          chapterId: "chapter_1",
+          sceneId: "investigation_scene_1",
+          provenance: {
+            sourceKind: "unspecified",
+            representationLayer: "none",
+            proceduralStatus: "lead",
+            completeness: "unspecified",
+            confidence: "unspecified",
+            sourceGroupId: null,
+            sourceLabel: null,
+            proofCapabilities: [],
+            supersedesRecordId: null,
+          },
+        },
+      ],
+    });
+  });
+
+  it.each(["missing", "mis-originated"] as const)(
+    "reports caseRecordEmissionMismatch for a %s compiled record",
+    (failure) => {
+      const ast: ASTInvestigationScene = {
+        kind: "investigationScene",
+        id: "investigation_scene_1",
+        title: "Mismatch",
+        intro: [],
+        sublocations: [],
+        evidenceManifest: [
+          {
+            id: "record",
+            name: "Record",
+            description: "Record.",
+            details: "Details.",
+            imageCue: { imagePrompt: null, imageAssetId: null },
+            sourceSublocationId: null,
+            onCollect: [],
+            onReexamine: null,
+            sourceFile: "chapter_1/investigation_scene_1.md",
+            line: 12,
+          },
+        ],
+        statementManifest: [],
+        outro: { unlock: "auto", dialogue: [] },
+        assetRefs: [],
+        sourceFile: "chapter_1/investigation_scene_1.md",
+        line: 1,
+      };
+      const corpus =
+        failure === "missing"
+          ? compileCorpus(emptyStoryCatalog("story_catalog.md"), [])
+          : corpusForScene(ast);
+      if (failure === "mis-originated") {
+        const record = corpus.recordsByKey.get("evidence:record");
+        if (!record) throw new Error("expected compiled fixture record");
+        record.sceneId = "investigation_scene_other";
+      }
+
+      try {
+        emitInvestigationScene(ast, corpus);
+        throw new Error("expected emission to fail");
+      } catch (error) {
+        expect(error).toMatchObject({
+          code: "caseRecordEmissionMismatch",
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 12,
+        });
+      }
+    },
+  );
 
   it("emits a linear scene JSON", () => {
     const ast: ASTLinearScene = {
@@ -488,7 +936,7 @@ describe("emitter", () => {
       sourceFile: "i.md",
       line: 1,
     };
-    const json = emitInvestigationScene(ast);
+    const json = emitInvestigationScene(ast, corpusForScene(ast));
     expect(json.outro.unlock).toBe("auto");
     expect(json.type).toBe("investigation");
     expect(json.assetRefs).toEqual([
@@ -585,7 +1033,7 @@ describe("emitter", () => {
       sourceFile: "x",
       line: 1,
     };
-    expect(emitInterrogationScene(ast)).toMatchObject({
+    expect(emitInterrogationScene(ast, corpusForScene(ast))).toMatchObject({
       type: "interrogation",
       id: "interrogation_scene_1",
       assetRefs: [{ type: "audio", assetId: "rain_loop" }],
