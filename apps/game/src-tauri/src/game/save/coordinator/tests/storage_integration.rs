@@ -11,7 +11,7 @@ use crate::game::save::storage::{
     StagedAtomicWrite,
 };
 use crate::game::save::thumbnail::ValidatedThumbnail;
-use crate::game::test_support::representative_save_envelope;
+use crate::game::test_support::{png_fixture, representative_save_envelope};
 use crate::game::GameError;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -256,6 +256,48 @@ impl StorageBackend {
         self.completion_update.notify_waiters();
     }
 
+    /// Shared revalidation, commit, receipt-corruption, and finish flow used by
+    /// both `commit_if_current` and `commit_with_gate_held`. Each caller keeps
+    /// its distinct commit counter and gate acquisition/assertion, then
+    /// delegates here once the writer lock and (where applicable) the gate are
+    /// held and the `"G"` phase has been recorded.
+    async fn commit_locked(
+        &self,
+        prepared: AutosavePreparedWrite,
+    ) -> Result<AutosaveCommitOutcome, GameError> {
+        let _session = self.session.lock().await;
+        self.revalidate_held_gate_and_session.store(
+            self.gate.try_lock().is_err() && self.session.try_lock().is_err(),
+            Ordering::SeqCst,
+        );
+        self.phases.lock().unwrap().push("G:S:revalidate");
+        if prepared.session_generation() != self.current_generation.load(Ordering::SeqCst)
+            || prepared.durable_revision() != self.current_revision.load(Ordering::SeqCst)
+        {
+            drop(_session);
+            self.finish();
+            return Ok(AutosaveCommitOutcome::Stale(prepared));
+        }
+        drop(_session);
+        self.commit_held_writer_and_gate.store(
+            self.writer.try_lock().is_err() && self.gate.try_lock().is_err(),
+            Ordering::SeqCst,
+        );
+        self.phases.lock().unwrap().push("W+G:commit");
+        let mut committed = prepared.commit(self.fs.as_ref(), &self.root)?;
+        match self.commit_receipt_corruption.lock().unwrap().take() {
+            Some(CommitReceiptCorruption::SaveId) => {
+                committed.receipt.save_id = "22222222-2222-4222-8222-222222222222".into();
+            }
+            Some(CommitReceiptCorruption::Slot) => {
+                committed.receipt.slot = SaveSlotRef::Auto { slot: 2 };
+            }
+            None => {}
+        }
+        self.finish();
+        Ok(AutosaveCommitOutcome::Committed(committed))
+    }
+
     pub(super) fn phases(&self) -> Vec<&'static str> {
         self.phases.lock().unwrap().clone()
     }
@@ -358,7 +400,7 @@ impl StorageBackend {
 
     pub(super) fn install_old_autosave_with_sidecar(&self) -> PathBuf {
         const OLD_SAVE_ID: &str = "33333333-3333-4333-8333-333333333333";
-        let thumbnail_bytes = png(1, 1);
+        let thumbnail_bytes = png_fixture(1, 1);
         let mut envelope = autosave_envelope(
             OLD_SAVE_ID,
             SaveSlotRef::Auto { slot: 1 },
@@ -405,15 +447,6 @@ fn autosave_envelope(save_id: &str, target: SaveSlotRef, durable_revision: u64) 
         }
     }
     envelope
-}
-
-fn png(width: u32, height: u32) -> Vec<u8> {
-    let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
-    bytes.extend_from_slice(&width.to_be_bytes());
-    bytes.extend_from_slice(&height.to_be_bytes());
-    bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
-    bytes.extend_from_slice(&[0, 0, 0, 0]);
-    bytes
 }
 
 impl AutosaveBackend for StorageBackend {
@@ -493,37 +526,7 @@ impl AutosaveBackend for StorageBackend {
             let _writer = self.writer.lock().await;
             let _gate = self.gate.lock().await;
             self.phases.lock().unwrap().push("G");
-            let _session = self.session.lock().await;
-            self.revalidate_held_gate_and_session.store(
-                self.gate.try_lock().is_err() && self.session.try_lock().is_err(),
-                Ordering::SeqCst,
-            );
-            self.phases.lock().unwrap().push("G:S:revalidate");
-            if prepared.session_generation() != self.current_generation.load(Ordering::SeqCst)
-                || prepared.durable_revision() != self.current_revision.load(Ordering::SeqCst)
-            {
-                drop(_session);
-                self.finish();
-                return Ok(AutosaveCommitOutcome::Stale(prepared));
-            }
-            drop(_session);
-            self.commit_held_writer_and_gate.store(
-                self.writer.try_lock().is_err() && self.gate.try_lock().is_err(),
-                Ordering::SeqCst,
-            );
-            self.phases.lock().unwrap().push("W+G:commit");
-            let mut committed = prepared.commit(self.fs.as_ref(), &self.root)?;
-            match self.commit_receipt_corruption.lock().unwrap().take() {
-                Some(CommitReceiptCorruption::SaveId) => {
-                    committed.receipt.save_id = "22222222-2222-4222-8222-222222222222".into();
-                }
-                Some(CommitReceiptCorruption::Slot) => {
-                    committed.receipt.slot = SaveSlotRef::Auto { slot: 2 };
-                }
-                None => {}
-            }
-            self.finish();
-            Ok(AutosaveCommitOutcome::Committed(committed))
+            self.commit_locked(prepared).await
         })
     }
 
@@ -538,37 +541,7 @@ impl AutosaveBackend for StorageBackend {
                 return Err(GameError::save_sync_failed());
             }
             self.phases.lock().unwrap().push("G");
-            let _session = self.session.lock().await;
-            self.revalidate_held_gate_and_session.store(
-                self.gate.try_lock().is_err() && self.session.try_lock().is_err(),
-                Ordering::SeqCst,
-            );
-            self.phases.lock().unwrap().push("G:S:revalidate");
-            if prepared.session_generation() != self.current_generation.load(Ordering::SeqCst)
-                || prepared.durable_revision() != self.current_revision.load(Ordering::SeqCst)
-            {
-                drop(_session);
-                self.finish();
-                return Ok(AutosaveCommitOutcome::Stale(prepared));
-            }
-            drop(_session);
-            self.commit_held_writer_and_gate.store(
-                self.writer.try_lock().is_err() && self.gate.try_lock().is_err(),
-                Ordering::SeqCst,
-            );
-            self.phases.lock().unwrap().push("W+G:commit");
-            let mut committed = prepared.commit(self.fs.as_ref(), &self.root)?;
-            match self.commit_receipt_corruption.lock().unwrap().take() {
-                Some(CommitReceiptCorruption::SaveId) => {
-                    committed.receipt.save_id = "22222222-2222-4222-8222-222222222222".into();
-                }
-                Some(CommitReceiptCorruption::Slot) => {
-                    committed.receipt.slot = SaveSlotRef::Auto { slot: 2 };
-                }
-                None => {}
-            }
-            self.finish();
-            Ok(AutosaveCommitOutcome::Committed(committed))
+            self.commit_locked(prepared).await
         })
     }
 

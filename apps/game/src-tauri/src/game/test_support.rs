@@ -28,6 +28,20 @@ pub(super) fn representative_save_envelope() -> crate::game::save::schema::SaveE
     .unwrap()
 }
 
+/// Minimal PNG header fixture (signature + IHDR) used by save-coordinator and
+/// thumbnail tests that only need a byte payload shaped like a PNG. Shared so
+/// the three former local copies (flush, ticket, storage_integration) cannot
+/// drift. The payload is not a decodable image; tests that need a real PNG
+/// construct their own.
+pub(super) fn png_fixture(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+    bytes.extend_from_slice(&width.to_be_bytes());
+    bytes.extend_from_slice(&height.to_be_bytes());
+    bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes
+}
+
 pub(super) fn write_content_manifest(dir: &Path) {
     std::fs::write(
         dir.join("save_content_manifest.json"),

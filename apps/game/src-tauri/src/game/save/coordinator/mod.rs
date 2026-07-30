@@ -3894,14 +3894,25 @@ impl SaveCoordinator {
             deadline_at,
             Arc::downgrade(&self.ticket_updates),
         )) {
-            if let Ok(mut state) = self.state.lock() {
+            // The expiry task never started, so without an explicit terminal
+            // publication the activity would remain stuck at `Capturing` for
+            // any subscriber that already observed it. Revert to a terminal
+            // `Unavailable` view (the same terminal state the expiry task
+            // publishes on timeout) while preserving the ticket /
+            // latest_by_intent cleanup and the original error return.
+            let terminal = capture_unavailable_activity();
+            let activity_subscribers = if let Ok(mut state) = self.state.lock() {
                 if let Some(record) = state.tickets.remove(&ticket) {
                     let intent = record.purpose.intent();
                     if state.latest_by_intent.get(&intent) == Some(&ticket) {
                         state.latest_by_intent.remove(&intent);
                     }
                 }
-            }
+                set_thumbnail_activity(&mut state, terminal.clone())
+            } else {
+                Vec::new()
+            };
+            publish_activity(&activity_subscribers, &terminal);
             return Err(error);
         }
         Ok(ThumbnailCaptureRequestView {

@@ -4,19 +4,12 @@ use super::super::{
 };
 use super::debounce::RecordingBackend;
 use crate::game::save::schema::SaveSlotRef;
-use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
+use crate::game::test_support::{
+    empty_engine_with_scene, investigation_scene_with_intro, png_fixture,
+};
 use crate::AppState;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-
-fn png(width: u32, height: u32) -> Vec<u8> {
-    let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
-    bytes.extend_from_slice(&width.to_be_bytes());
-    bytes.extend_from_slice(&height.to_be_bytes());
-    bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
-    bytes.extend_from_slice(&[0, 0, 0, 0]);
-    bytes
-}
 
 #[test]
 fn fresh_revision_zero_baseline_is_a_physical_no_op() {
@@ -320,7 +313,7 @@ async fn blocking_flush_preserves_a_terminal_thumbnail_from_the_covered_autosave
 
     let request = coordinator.notify_durable_commit(3, 1).unwrap();
     coordinator
-        .submit_thumbnail(&request.ticket, &png(320, 180))
+        .submit_thumbnail(&request.ticket, &png_fixture(320, 180))
         .unwrap();
 
     assert!(matches!(
@@ -352,7 +345,7 @@ async fn blocking_flush_discards_an_older_autosave_thumbnail() {
 
     let request = coordinator.notify_durable_commit(3, 1).unwrap();
     coordinator
-        .submit_thumbnail(&request.ticket, &png(320, 180))
+        .submit_thumbnail(&request.ticket, &png_fixture(320, 180))
         .unwrap();
 
     assert!(matches!(

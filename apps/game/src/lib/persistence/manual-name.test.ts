@@ -11,13 +11,11 @@ import {
 // grapheme segmentation drifts (e.g. from a Unicode version mismatch between
 // V8/ICU and unicode-segmentation), the test on the drifting side fails.
 // Rust is the persistence-layer authority; TS is client-side preview only.
-// Vitest runs from the app root (apps/game), so process.cwd() resolves there.
+// Resolve the fixture relative to this test module so the path is correct
+// regardless of the test runner's working directory.
 const parityFixturePath = join(
-  process.cwd(),
-  "src-tauri",
-  "tests",
-  "fixtures",
-  "save-name-grapheme-parity.json",
+  import.meta.dirname,
+  "../../../src-tauri/tests/fixtures/save-name-grapheme-parity.json",
 );
 const parityFixture = JSON.parse(readFileSync(parityFixturePath, "utf8")) as {
   validationCases: Array<{
@@ -129,8 +127,10 @@ describe("grapheme parity fixture (shared with Rust)", () => {
       expectedSuffix,
     }) => {
       const suggestion = suggestManualDisplayName(chapterTitle, sceneTitle);
+      let asserted = false;
       if (expected !== undefined) {
         expect(suggestion).toBe(expected);
+        asserted = true;
       }
       if (expectedGraphemeCount !== undefined) {
         const graphemes = Array.from(
@@ -140,10 +140,15 @@ describe("grapheme parity fixture (shared with Rust)", () => {
           ({ segment }) => segment,
         );
         expect(graphemes).toHaveLength(expectedGraphemeCount);
+        asserted = true;
       }
       if (expectedSuffix !== undefined) {
         expect(suggestion.endsWith(expectedSuffix)).toBe(true);
+        asserted = true;
       }
+      // Guard against a fixture case that omits every expected* field and
+      // therefore runs zero assertions, passing vacuously.
+      expect(asserted).toBe(true);
     },
   );
 });

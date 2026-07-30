@@ -1,15 +1,25 @@
 use super::super::{
-    CaptureTerminalResult, PersistenceHealthView, SaveCoordinator, ThumbnailActivityView,
-    ThumbnailCapturePurpose, THUMBNAIL_CAPTURE_TIMEOUT,
+    CaptureTerminalResult, CoordinatorTask, CoordinatorTaskScheduler, PersistenceHealthView,
+    SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose, THUMBNAIL_CAPTURE_TIMEOUT,
 };
 use crate::game::save::schema::{
     canonical_uuid_v4, ThumbnailUnavailableReason, MAX_THUMBNAIL_BYTES, MAX_THUMBNAIL_WIDTH,
 };
+use crate::game::test_support::png_fixture;
+use crate::game::GameError;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 fn coordinator() -> SaveCoordinator {
     SaveCoordinator::ticket_only()
+}
+
+struct RejectingTaskScheduler;
+
+impl CoordinatorTaskScheduler for RejectingTaskScheduler {
+    fn spawn(&self, _task: CoordinatorTask) -> Result<(), GameError> {
+        Err(GameError::save_write_failed())
+    }
 }
 
 fn manual(generation: u64, revision: u64) -> ThumbnailCapturePurpose {
@@ -31,15 +41,6 @@ fn acknowledgement(
         next_revision,
         event_id: event_id.into(),
     }
-}
-
-fn png(width: u32, height: u32) -> Vec<u8> {
-    let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
-    bytes.extend_from_slice(&width.to_be_bytes());
-    bytes.extend_from_slice(&height.to_be_bytes());
-    bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
-    bytes.extend_from_slice(&[0, 0, 0, 0]);
-    bytes
 }
 
 #[tokio::test(start_paused = true)]
@@ -81,7 +82,7 @@ async fn accepted_png_is_terminal_and_can_be_consumed_once() {
     let request = coordinator.prepare_thumbnail(purpose.clone()).unwrap();
 
     assert_eq!(
-        coordinator.submit_thumbnail(&request.ticket, &png(320, 180)),
+        coordinator.submit_thumbnail(&request.ticket, &png_fixture(320, 180)),
         Ok(ThumbnailActivityView::Idle)
     );
     let CaptureTerminalResult::Available(thumbnail) = coordinator
@@ -103,7 +104,7 @@ async fn accepted_png_is_terminal_and_can_be_consumed_once() {
     );
     assert_eq!(
         coordinator
-            .submit_thumbnail(&request.ticket, &png(320, 180))
+            .submit_thumbnail(&request.ticket, &png_fixture(320, 180))
             .unwrap_err()
             .code,
         "staleThumbnailTicket"
@@ -163,7 +164,7 @@ async fn expiry_is_terminal_unavailable_at_exactly_one_second() {
     ));
     assert_eq!(
         coordinator
-            .submit_thumbnail(&request.ticket, &png(1, 1))
+            .submit_thumbnail(&request.ticket, &png_fixture(1, 1))
             .unwrap_err()
             .code,
         "staleThumbnailTicket"
@@ -189,7 +190,7 @@ async fn a_newer_intent_supersedes_the_older_ticket_terminally() {
     );
     assert_eq!(
         coordinator
-            .submit_thumbnail(&older.ticket, &png(1, 1))
+            .submit_thumbnail(&older.ticket, &png_fixture(1, 1))
             .unwrap_err()
             .code,
         "staleThumbnailTicket"
@@ -202,7 +203,7 @@ async fn claim_rejects_changed_generation_revision_purpose_and_event() {
     let original = acknowledgement(8, 40, 41, "acq:40:0");
     let request = coordinator.prepare_thumbnail(original.clone()).unwrap();
     coordinator
-        .submit_thumbnail(&request.ticket, &png(1, 1))
+        .submit_thumbnail(&request.ticket, &png_fixture(1, 1))
         .unwrap();
 
     for changed in [
@@ -233,7 +234,7 @@ async fn valid_png_is_bounded_and_digested_before_retention() {
     let coordinator = coordinator();
     let purpose = manual(1, 1);
     let request = coordinator.prepare_thumbnail(purpose.clone()).unwrap();
-    let bytes = png(MAX_THUMBNAIL_WIDTH, 1);
+    let bytes = png_fixture(MAX_THUMBNAIL_WIDTH, 1);
 
     coordinator
         .submit_thumbnail(&request.ticket, &bytes)
@@ -257,7 +258,7 @@ async fn rejected_png_is_terminal_unavailable_and_never_retained() {
         (vec![0; 33], "thumbnailPngMalformed"),
         (vec![0; MAX_THUMBNAIL_BYTES + 1], "thumbnailPngTooLarge"),
         (
-            png(MAX_THUMBNAIL_WIDTH + 1, 1),
+            png_fixture(MAX_THUMBNAIL_WIDTH + 1, 1),
             "thumbnailDimensionsOutOfBounds",
         ),
     ] {
@@ -287,7 +288,7 @@ async fn only_the_latest_terminal_result_for_an_intent_is_retained() {
     let purpose = manual(6, 12);
     let first = coordinator.prepare_thumbnail(purpose.clone()).unwrap();
     coordinator
-        .submit_thumbnail(&first.ticket, &png(1, 1))
+        .submit_thumbnail(&first.ticket, &png_fixture(1, 1))
         .unwrap();
     let second = coordinator.prepare_thumbnail(purpose.clone()).unwrap();
     coordinator
@@ -338,5 +339,35 @@ async fn subscribers_receive_complete_health_and_activity_payloads() {
             ThumbnailActivityView::Capturing,
             ThumbnailActivityView::Unavailable { .. }
         ]
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn scheduler_rejection_publishes_terminal_activity_and_drops_the_ticket() {
+    let coordinator = SaveCoordinator::new().with_task_scheduler(Arc::new(RejectingTaskScheduler));
+    let activity = Arc::new(Mutex::new(Vec::new()));
+    let activity_sink = Arc::clone(&activity);
+    coordinator.subscribe(
+        |_health| {},
+        move |value| activity_sink.lock().unwrap().push(value),
+    );
+
+    let error = coordinator.prepare_thumbnail(manual(1, 2)).unwrap_err();
+    assert_eq!(error.code, "saveWriteFailed");
+
+    // The `Capturing` view was already published before the spawn attempt, so
+    // the failure path must follow it with a terminal `Unavailable` view
+    // rather than leaving subscribers stuck observing `Capturing`.
+    assert!(matches!(
+        activity.lock().unwrap().as_slice(),
+        [
+            ThumbnailActivityView::Idle,
+            ThumbnailActivityView::Capturing,
+            ThumbnailActivityView::Unavailable { .. }
+        ]
+    ));
+    assert!(matches!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Unavailable { .. }
     ));
 }
