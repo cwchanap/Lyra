@@ -1,4 +1,5 @@
 // src-tauri/src/game/state.rs
+use crate::game::provenance::CaseRecordProvenance;
 use crate::game::schema::{DialogueItem, EvidenceJson, StatementJson};
 use serde::Serialize;
 
@@ -9,6 +10,7 @@ pub struct EvidenceRecord {
     pub name: String,
     pub description: String,
     pub details: String,
+    pub provenance: CaseRecordProvenance,
     pub image_asset_id: Option<String>,
     pub on_reexamine: Option<Vec<DialogueItem>>,
     pub collected_in_chapter_id: String,
@@ -21,6 +23,7 @@ pub struct StatementRecord {
     pub id: String,
     pub speaker: String,
     pub content: String,
+    pub provenance: CaseRecordProvenance,
     pub on_reexamine: Option<Vec<DialogueItem>>,
     pub acquired_in_chapter_id: String,
     pub acquired_in_scene_id: String,
@@ -54,6 +57,7 @@ impl Inventory {
             name: def.name.clone(),
             description: def.description.clone(),
             details: def.details.clone(),
+            provenance: def.provenance.clone(),
             image_asset_id: def.image_asset_id.clone(),
             on_reexamine: def.on_reexamine.clone(),
             collected_in_chapter_id: chapter_id.into(),
@@ -74,6 +78,7 @@ impl Inventory {
             id: def.id.clone(),
             speaker: def.speaker.clone(),
             content: def.content.clone(),
+            provenance: def.provenance.clone(),
             on_reexamine: def.on_reexamine.clone(),
             acquired_in_chapter_id: chapter_id.into(),
             acquired_in_scene_id: scene_id.into(),

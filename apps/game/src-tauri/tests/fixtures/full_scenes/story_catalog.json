@@ -5,6 +5,472 @@
   "objectives": [],
   "authorizations": [],
   "sourceGroups": [],
-  "evidenceIndex": [],
-  "statementsIndex": []
+  "evidenceIndex": [
+    {
+      "id": "back_door_observation",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "blue_umbrella",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "brass_bell",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "coffee_machine_cleaning_log",
+      "chapterId": "chapter_1",
+      "sceneId": "interrogation_scene_2",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "coffee_machine_log",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "entrance_cctv",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "frother_warmth",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "half_latte",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "kagami_door_log",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "kagami_official_timeline",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "shelf_mud",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "timecard_record",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "torn_umbrella_sleeve",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "victim_phone",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "victim_smartwatch",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "victim_usb",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "wet_floor_marks",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    }
+  ],
+  "statementsIndex": [
+    {
+      "id": "cant_see_storeroom",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "death_scene",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "hayasaka_back_door",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "hayasaka_kagami_note",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "hayasaka_overview",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "hayasaka_victim_info",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "kagami_timeline_inconsistent",
+      "chapterId": "chapter_1",
+      "sceneId": "interrogation_scene_2",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "kuruse_suspect",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "kuruse_timeline",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "kuruse_too_clean",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "kuruse_victim_kagami",
+      "chapterId": "chapter_1",
+      "sceneId": "investigation_scene_1",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    },
+    {
+      "id": "wakatsuki_entered_for_beans",
+      "chapterId": "chapter_1",
+      "sceneId": "interrogation_scene_2",
+      "provenance": {
+        "sourceKind": "unspecified",
+        "representationLayer": "none",
+        "proceduralStatus": "unspecified",
+        "completeness": "unspecified",
+        "confidence": "unspecified",
+        "sourceGroupId": null,
+        "sourceLabel": null,
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+      }
+    }
+  ]
 }

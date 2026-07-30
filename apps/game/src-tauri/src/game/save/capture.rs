@@ -44,7 +44,8 @@ fn chapter_scenes<'a>(
     match cache.entry(chapter.id.clone()) {
         Entry::Occupied(entry) => Ok(entry.into_mut()),
         Entry::Vacant(entry) => {
-            let scenes = load_chapter_scene_jsons(&engine.resources_dir, chapter)?;
+            let scenes =
+                load_chapter_scene_jsons(&engine.resources_dir, &engine.story_catalog, chapter)?;
             Ok(entry.insert(scenes))
         }
     }
@@ -1318,6 +1319,7 @@ mod tests {
             name: "mutable copy must not persist".into(),
             description: "mutable".into(),
             details: "mutable".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -1327,6 +1329,7 @@ mod tests {
             id: "alibi_statement".into(),
             speaker: "mutable".into(),
             content: "mutable".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             on_reexamine: None,
             acquired_in_chapter_id: "chapter_1".into(),
             acquired_in_scene_id: "investigation_scene_1".into(),
@@ -2102,6 +2105,7 @@ mod tests {
             name: "copy".into(),
             description: "copy".into(),
             details: "copy".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -2154,6 +2158,7 @@ mod tests {
             name: "copy".into(),
             description: "copy".into(),
             details: "copy".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -2191,6 +2196,9 @@ mod tests {
         let mut repeated_id_chapter = engine.chapters[0].clone();
         repeated_id_chapter.id = "chapter_2".into();
         repeated_id_chapter.title = "Chapter Two".into();
+        repeated_id_chapter
+            .scenes
+            .retain(|scene| scene.file.ends_with("/scene_0.json"));
         engine.chapters.push(repeated_id_chapter);
 
         let captured = capture_checkpoint_v1(&engine).unwrap();
@@ -2553,6 +2561,7 @@ mod tests {
             name: "test".into(),
             description: "test".into(),
             details: "test".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
@@ -2567,6 +2576,7 @@ mod tests {
             id: "alibi_statement".into(),
             speaker: "test".into(),
             content: "test".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             on_reexamine: None,
             acquired_in_chapter_id: "chapter_1".into(),
             acquired_in_scene_id: "scene_0".into(),

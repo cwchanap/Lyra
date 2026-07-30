@@ -3,6 +3,10 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeSet;
 
+use crate::game::schema::{InventoryTarget, SceneJson};
+use crate::game::story::StoryCatalog;
+use crate::game::GameError;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SourceKind {
@@ -109,6 +113,68 @@ pub struct CaseRecordProvenance {
     pub source_label: Option<String>,
     pub proof_capabilities: BTreeSet<ProofCapability>,
     pub supersedes_record_id: Option<String>,
+}
+
+pub(in crate::game) fn validate_scene_record_against_catalog(
+    catalog: &StoryCatalog,
+    chapter_id: &str,
+    scene_id: &str,
+    target: &InventoryTarget,
+    scene_provenance: &CaseRecordProvenance,
+) -> Result<(), GameError> {
+    let matches = catalog.case_record(target).is_some_and(|definition| {
+        definition.chapter_id == chapter_id
+            && definition.scene_id == scene_id
+            && definition.provenance == *scene_provenance
+    });
+    if matches {
+        Ok(())
+    } else {
+        Err(GameError::case_record_definition_mismatch())
+    }
+}
+
+pub(in crate::game) fn validate_scene_records_against_catalog(
+    catalog: &StoryCatalog,
+    chapter_id: &str,
+    scene: &SceneJson,
+) -> Result<(), GameError> {
+    let (scene_id, evidence, statements) = match scene {
+        SceneJson::Linear(_) => return Ok(()),
+        SceneJson::Investigation(scene) => (
+            scene.id.as_str(),
+            &scene.evidence_manifest,
+            &scene.statement_manifest,
+        ),
+        SceneJson::Interrogation(scene) => (
+            scene.id.as_str(),
+            &scene.evidence_manifest,
+            &scene.statement_manifest,
+        ),
+    };
+    for definition in evidence {
+        validate_scene_record_against_catalog(
+            catalog,
+            chapter_id,
+            scene_id,
+            &InventoryTarget::Evidence {
+                id: definition.id.clone(),
+            },
+            &definition.provenance,
+        )?;
+    }
+    for definition in statements {
+        validate_scene_record_against_catalog(
+            catalog,
+            chapter_id,
+            scene_id,
+            &InventoryTarget::Statement {
+                id: definition.id.clone(),
+            },
+            &definition.provenance,
+        )?;
+    }
+    Ok(())
 }
 
 struct RequiredNullable<T>(Option<T>);

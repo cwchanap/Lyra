@@ -157,6 +157,11 @@ mod persistence_adapter_tests {
             }"#,
         )
         .unwrap();
+        crate::game::test_support::write_neutral_story_catalog(
+            resources.path(),
+            &[("note", SOURCE_CHAPTER_ID, SOURCE_SCENE_ID)],
+            &[],
+        );
         std::fs::write(
             resources.path().join("chapters.json"),
             format!(
@@ -497,7 +502,7 @@ mod persistence_adapter_tests {
     #[test]
     fn repeated_origins_load_their_packaged_scene_definition_once() {
         let (resources, engine) = fixture();
-        let definition = crate::game::loader::load_scene(
+        let definition = crate::game::loader::decode_scene_json_without_catalog_for_test(
             resources.path(),
             &format!("{CURRENT_CHAPTER_ID}/{CURRENT_SCENE_ID}.json"),
         )
@@ -523,12 +528,12 @@ mod persistence_adapter_tests {
     #[test]
     fn distinct_origin_scenes_load_once_each_and_keep_saved_order() {
         let (resources, engine) = fixture();
-        let source_definition = crate::game::loader::load_scene(
+        let source_definition = crate::game::loader::decode_scene_json_without_catalog_for_test(
             resources.path(),
             &format!("{SOURCE_CHAPTER_ID}/{SOURCE_SCENE_ID}.json"),
         )
         .unwrap();
-        let current_definition = crate::game::loader::load_scene(
+        let current_definition = crate::game::loader::decode_scene_json_without_catalog_for_test(
             resources.path(),
             &format!("{CURRENT_CHAPTER_ID}/{CURRENT_SCENE_ID}.json"),
         )
@@ -568,7 +573,7 @@ mod persistence_adapter_tests {
     #[test]
     fn a_second_same_scene_loader_value_cannot_mix_the_candidate() {
         let (resources, engine) = fixture();
-        let stable_definition = crate::game::loader::load_scene(
+        let stable_definition = crate::game::loader::decode_scene_json_without_catalog_for_test(
             resources.path(),
             &format!("{CURRENT_CHAPTER_ID}/{CURRENT_SCENE_ID}.json"),
         )
@@ -875,7 +880,11 @@ impl crate::game::GameEngine {
         saved: &ActiveDialogueStateV1,
     ) -> Result<ActiveDialogueQueue, GameError> {
         self.restore_active_dialogue_queue_with_loader(content_revision, saved, |chapter| {
-            crate::game::navigation::load_chapter_scene_jsons(&self.resources_dir, chapter)
+            crate::game::navigation::load_chapter_scene_jsons(
+                &self.resources_dir,
+                &self.story_catalog,
+                chapter,
+            )
         })
     }
 

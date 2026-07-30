@@ -73,6 +73,87 @@ pub fn write_empty_story_catalog_and_content_manifest(dir: &Path) {
     write_content_manifest(dir);
 }
 
+pub(super) fn write_neutral_story_catalog(
+    dir: &Path,
+    evidence: &[(&str, &str, &str)],
+    statements: &[(&str, &str, &str)],
+) {
+    let record_json = |(id, chapter_id, scene_id): &(&str, &str, &str)| {
+        serde_json::json!({
+            "id": id,
+            "chapterId": chapter_id,
+            "sceneId": scene_id,
+            "provenance": {
+                "sourceKind": "unspecified",
+                "representationLayer": "none",
+                "proceduralStatus": "unspecified",
+                "completeness": "unspecified",
+                "confidence": "unspecified",
+                "sourceGroupId": null,
+                "sourceLabel": null,
+                "proofCapabilities": [],
+                "supersedesRecordId": null
+            }
+        })
+    };
+    std::fs::write(
+        dir.join("story_catalog.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schemaVersion": 2,
+            "facts": [],
+            "questions": [],
+            "objectives": [],
+            "authorizations": [],
+            "sourceGroups": [],
+            "evidenceIndex": evidence.iter().map(record_json).collect::<Vec<_>>(),
+            "statementsIndex": statements.iter().map(record_json).collect::<Vec<_>>(),
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+}
+
+pub(super) fn catalog_with_case_records(
+    evidence: Vec<(
+        &str,
+        &str,
+        &str,
+        crate::game::provenance::CaseRecordProvenance,
+    )>,
+    statements: Vec<(
+        &str,
+        &str,
+        &str,
+        crate::game::provenance::CaseRecordProvenance,
+    )>,
+) -> crate::game::story::StoryCatalog {
+    let dir = tempfile::tempdir().unwrap();
+    let record_json = |(id, chapter_id, scene_id, provenance)| {
+        serde_json::json!({
+            "id": id,
+            "chapterId": chapter_id,
+            "sceneId": scene_id,
+            "provenance": provenance,
+        })
+    };
+    std::fs::write(
+        dir.path().join("story_catalog.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schemaVersion": 2,
+            "facts": [],
+            "questions": [],
+            "objectives": [],
+            "authorizations": [],
+            "sourceGroups": [],
+            "evidenceIndex": evidence.into_iter().map(record_json).collect::<Vec<_>>(),
+            "statementsIndex": statements.into_iter().map(record_json).collect::<Vec<_>>(),
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    crate::game::story::StoryCatalog::load(dir.path()).unwrap()
+}
+
 pub(crate) fn investigation_scene_with_intro(
     id: &str,
     intro: Vec<DialogueItem>,
@@ -106,6 +187,32 @@ pub(crate) fn empty_engine_with_scene(
     scene: InvestigationSceneJson,
     intro_queue_gen: u64,
 ) -> GameEngine {
+    let story_catalog = catalog_with_case_records(
+        scene
+            .evidence_manifest
+            .iter()
+            .map(|definition| {
+                (
+                    definition.id.as_str(),
+                    "chapter_1",
+                    scene.id.as_str(),
+                    definition.provenance.clone(),
+                )
+            })
+            .collect(),
+        scene
+            .statement_manifest
+            .iter()
+            .map(|definition| {
+                (
+                    definition.id.as_str(),
+                    "chapter_1",
+                    scene.id.as_str(),
+                    definition.provenance.clone(),
+                )
+            })
+            .collect(),
+    );
     GameEngine {
         resources_dir: PathBuf::new(),
         content_manifest: test_content_manifest(),
@@ -118,7 +225,7 @@ pub(crate) fn empty_engine_with_scene(
                 file: "chapter_1/investigation_scene_1.json".into(),
             }],
         }],
-        story_catalog: StoryCatalog::empty(),
+        story_catalog,
         story_state: StoryState::default(),
         current_chapter_idx: 0,
         current_scene_idx: 0,
@@ -229,6 +336,14 @@ pub(super) fn packaged_acquisition_fixture_resources() -> (tempfile::TempDir, Pa
     let chapter_dir = resources.join("chapter_1");
     fs::create_dir_all(&chapter_dir).unwrap();
     write_empty_story_catalog_and_content_manifest(&resources);
+    write_neutral_story_catalog(
+        &resources,
+        &[
+            ("receipt", "chapter_1", "investigation_scene_1"),
+            ("second_note", "chapter_1", "investigation_scene_1"),
+        ],
+        &[("alibi", "chapter_1", "investigation_scene_1")],
+    );
     fs::write(
         resources.join("chapters.json"),
         r#"{
@@ -317,6 +432,35 @@ fn write_scene_jump_fixture_into(d: &Path) {
     let chapter_1 = d.join("chapter_1");
     fs::create_dir_all(&chapter_1).unwrap();
     write_empty_story_catalog_and_content_manifest(d);
+    fs::write(
+        d.join("story_catalog.json"),
+        r#"{
+  "schemaVersion": 2,
+  "facts": [],
+  "questions": [],
+  "objectives": [],
+  "authorizations": [],
+  "sourceGroups": [],
+  "evidenceIndex": [{
+    "id": "test_evidence",
+    "chapterId": "chapter_1",
+    "sceneId": "investigation_scene_1",
+    "provenance": {
+      "sourceKind": "unspecified",
+      "representationLayer": "none",
+      "proceduralStatus": "unspecified",
+      "completeness": "unspecified",
+      "confidence": "unspecified",
+      "sourceGroupId": null,
+      "sourceLabel": null,
+      "proofCapabilities": [],
+      "supersedesRecordId": null
+    }
+  }],
+  "statementsIndex": []
+}"#,
+    )
+    .unwrap();
     fs::write(
         d.join("chapters.json"),
         r#"{
@@ -1150,6 +1294,32 @@ pub(super) fn empty_engine_with_interrogation_scene(
     scene: InterrogationSceneJson,
     intro_queue_gen: u64,
 ) -> GameEngine {
+    let story_catalog = catalog_with_case_records(
+        scene
+            .evidence_manifest
+            .iter()
+            .map(|definition| {
+                (
+                    definition.id.as_str(),
+                    "chapter_1",
+                    scene.id.as_str(),
+                    definition.provenance.clone(),
+                )
+            })
+            .collect(),
+        scene
+            .statement_manifest
+            .iter()
+            .map(|definition| {
+                (
+                    definition.id.as_str(),
+                    "chapter_1",
+                    scene.id.as_str(),
+                    definition.provenance.clone(),
+                )
+            })
+            .collect(),
+    );
     GameEngine {
         resources_dir: PathBuf::new(),
         content_manifest: test_content_manifest(),
@@ -1162,7 +1332,7 @@ pub(super) fn empty_engine_with_interrogation_scene(
                 file: "chapter_1/interrogation_scene_1.json".into(),
             }],
         }],
-        story_catalog: StoryCatalog::empty(),
+        story_catalog,
         story_state: StoryState::default(),
         current_chapter_idx: 0,
         current_scene_idx: 0,
