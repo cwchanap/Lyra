@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { emitCaseRecordProvenance } from "./case-record-provenance";
 import { parseInvestigationScene } from "./parser-investigation";
+import type { ASTCaseRecordProvenance } from "./types";
 
 function evidenceScene(metadata: string): string {
   return `
@@ -97,5 +99,59 @@ describe("case record provenance metadata", () => {
     if (code === "caseRecordMetadataDuplicateKey") {
       expect(result.error.message).toContain("line 18");
     }
+  });
+});
+
+describe("emitCaseRecordProvenance", () => {
+  it("emits the locked neutral defaults for an all-absent AST", () => {
+    const provenance: ASTCaseRecordProvenance = {
+      sourceKind: null,
+      representationLayer: null,
+      proceduralStatus: null,
+      completeness: null,
+      confidence: null,
+      sourceGroupId: null,
+      sourceLabel: null,
+      proofCapabilities: [],
+      supersedes: null,
+    };
+
+    expect(emitCaseRecordProvenance(provenance)).toEqual({
+      sourceKind: "unspecified",
+      representationLayer: "none",
+      proceduralStatus: "unspecified",
+      completeness: "unspecified",
+      confidence: "unspecified",
+      sourceGroupId: null,
+      sourceLabel: null,
+      proofCapabilities: [],
+      supersedesRecordId: null,
+    });
+  });
+
+  it("orders already-valid proof capabilities by the canonical rank", () => {
+    const provenance: ASTCaseRecordProvenance = {
+      sourceKind: null,
+      representationLayer: null,
+      proceduralStatus: null,
+      completeness: null,
+      confidence: null,
+      sourceGroupId: null,
+      sourceLabel: null,
+      proofCapabilities: [
+        { value: "procedure", sourceFile: "provenance.md", line: 9 },
+        { value: "time", sourceFile: "provenance.md", line: 9 },
+        { value: "identity", sourceFile: "provenance.md", line: 9 },
+        { value: "source", sourceFile: "provenance.md", line: 9 },
+      ],
+      supersedes: null,
+    };
+
+    expect(emitCaseRecordProvenance(provenance).proofCapabilities).toEqual([
+      "time",
+      "identity",
+      "source",
+      "procedure",
+    ]);
   });
 });
