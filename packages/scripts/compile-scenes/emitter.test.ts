@@ -46,6 +46,36 @@ function corpusForScene(
   ]);
 }
 
+function mismatchScene(chapterId: string): ASTInvestigationScene {
+  const sourceFile = `${chapterId}/investigation_scene_1.md`;
+  return {
+    kind: "investigationScene",
+    id: "investigation_scene_1",
+    title: "Mismatch",
+    intro: [],
+    sublocations: [],
+    evidenceManifest: [
+      {
+        id: "record",
+        name: "Record",
+        description: "Record.",
+        details: "Details.",
+        imageCue: { imagePrompt: null, imageAssetId: null },
+        sourceSublocationId: null,
+        onCollect: [],
+        onReexamine: null,
+        sourceFile,
+        line: 12,
+      },
+    ],
+    statementManifest: [],
+    outro: { unlock: "auto", dialogue: [] },
+    assetRefs: [],
+    sourceFile,
+    line: 1,
+  };
+}
+
 // Mirrors XEXAM_SRC from parser-interrogation.test.ts (Task-2 grammar
 // fixture): a question/testimony/line scene with one honest line and one
 // contradiction line whose On Correct reveals a follow-up question.
@@ -718,32 +748,7 @@ describe("emitter", () => {
   it.each(["missing", "mis-originated"] as const)(
     "reports caseRecordEmissionMismatch for a %s compiled record",
     (failure) => {
-      const ast: ASTInvestigationScene = {
-        kind: "investigationScene",
-        id: "investigation_scene_1",
-        title: "Mismatch",
-        intro: [],
-        sublocations: [],
-        evidenceManifest: [
-          {
-            id: "record",
-            name: "Record",
-            description: "Record.",
-            details: "Details.",
-            imageCue: { imagePrompt: null, imageAssetId: null },
-            sourceSublocationId: null,
-            onCollect: [],
-            onReexamine: null,
-            sourceFile: "chapter_1/investigation_scene_1.md",
-            line: 12,
-          },
-        ],
-        statementManifest: [],
-        outro: { unlock: "auto", dialogue: [] },
-        assetRefs: [],
-        sourceFile: "chapter_1/investigation_scene_1.md",
-        line: 1,
-      };
+      const ast = mismatchScene("chapter_1");
       const corpus =
         failure === "missing"
           ? compileCorpus(emptyStoryCatalog("story_catalog.md"), [])
@@ -766,6 +771,23 @@ describe("emitter", () => {
       }
     },
   );
+
+  it("rejects a same-ID record compiled from another chapter with the same scene ID", () => {
+    const emittingAst = mismatchScene("chapter_1");
+    const foreignAst = mismatchScene("chapter_2");
+    const corpus = corpusForScene(foreignAst, "chapter_2");
+
+    try {
+      emitInvestigationScene(emittingAst, corpus);
+      throw new Error("expected emission to fail");
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: "caseRecordEmissionMismatch",
+        sourceFile: "chapter_1/investigation_scene_1.md",
+        line: 12,
+      });
+    }
+  });
 
   it("emits a linear scene JSON", () => {
     const ast: ASTLinearScene = {
