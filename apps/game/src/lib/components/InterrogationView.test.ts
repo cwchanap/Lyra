@@ -2,6 +2,10 @@ import { fireEvent, render } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 import InterrogationView from "./InterrogationView.svelte";
 import type { Inventory, SceneView } from "../state/types";
+import {
+  neutralEvidenceRecordView,
+  neutralStatementRecordView,
+} from "../state/test-fixtures";
 
 // Narrows SceneView down to the interrogation arm so fixtures can be built
 // (and spread/mutated) with visiblePhases/currentPhaseId in scope, without
@@ -12,7 +16,7 @@ type InterrogationSceneView = Extract<SceneView, { kind: "interrogation" }>;
 function sampleInventory(): Inventory {
   return {
     evidence: [
-      {
+      neutralEvidenceRecordView({
         id: "cleaning_log",
         name: "清掃日誌",
         description: "記錄了當晚的清潔時段。",
@@ -21,17 +25,17 @@ function sampleInventory(): Inventory {
         onReexamine: null,
         collectedInChapterId: "chapter_1",
         collectedInSceneId: "scene_0",
-      },
+      }),
     ],
     statements: [
-      {
+      neutralStatementRecordView({
         id: "stmt_clerk",
         speaker: "店員的證言",
         content: "當晚的清掃時段。",
         onReexamine: null,
         acquiredInChapterId: "chapter_1",
         acquiredInSceneId: "scene_0",
-      },
+      }),
     ],
   };
 }

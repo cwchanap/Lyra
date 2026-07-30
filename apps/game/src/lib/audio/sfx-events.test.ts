@@ -4,6 +4,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GameStateView } from "$lib/state/types";
 import {
+  neutralEvidenceRecordView,
+  neutralStatementRecordView,
+} from "$lib/state/test-fixtures";
+import {
   STORY_BEAT_SFX_TRIGGERS,
   assetIdForGameplaySfxEvent,
   inferGameplaySfxEvents,
@@ -536,7 +540,7 @@ describe("inferGameplaySfxEvents", () => {
     const next = state({
       inventory: {
         evidence: [
-          {
+          neutralEvidenceRecordView({
             id: "amemiya_message_thumb",
             name: "雨宮匿名訊息縮圖",
             description: "",
@@ -545,7 +549,7 @@ describe("inferGameplaySfxEvents", () => {
             onReexamine: null,
             collectedInChapterId: "chapter_1",
             collectedInSceneId: "investigation_scene_7",
-          },
+          }),
         ],
         statements: [],
       },
@@ -562,14 +566,14 @@ describe("inferGameplaySfxEvents", () => {
       inventory: {
         evidence: [],
         statements: [
-          {
+          neutralStatementRecordView({
             id: "stmt_1",
             speaker: "黑瀨徹",
             content: "我那天晚上在店裡。",
             onReexamine: null,
             acquiredInChapterId: "chapter_1",
             acquiredInSceneId: "investigation_scene_7",
-          },
+          }),
         ],
       },
     });

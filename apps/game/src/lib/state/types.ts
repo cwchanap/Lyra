@@ -182,11 +182,71 @@ export type SceneNavigationIndex = {
   }>;
 };
 
+export type SourceKind =
+  | "physical"
+  | "testimony"
+  | "digital"
+  | "subjective"
+  | "unspecified";
+
+export type RepresentationLayer =
+  | "raw"
+  | "sync"
+  | "summary"
+  | "composite"
+  | "none";
+
+export type ProceduralStatus =
+  | "unspecified"
+  | "lead"
+  | "reacquired"
+  | "exhibit";
+
+export type Completeness = "complete" | "partial" | "cropped" | "unspecified";
+
+export type Confidence =
+  | "unverified"
+  | "corroborated"
+  | "disputed"
+  | "unspecified";
+
+export type ProofCapability =
+  | "time"
+  | "order"
+  | "route"
+  | "identity"
+  | "access"
+  | "motive"
+  | "source"
+  | "credibility"
+  | "procedure"
+  | "causation";
+
+export type CaseRecordProvenance = {
+  sourceKind: SourceKind;
+  representationLayer: RepresentationLayer;
+  proceduralStatus: ProceduralStatus;
+  completeness: Completeness;
+  confidence: Confidence;
+  sourceGroupId: string | null;
+  sourceLabel: string | null;
+  /** Canonically ordered by the Rust public wire contract. */
+  proofCapabilities: ProofCapability[];
+  /**
+   * The immediate predecessor's typed record ID when that predecessor is
+   * acquired. Public null means either no predecessor exists or an existing
+   * predecessor is unacquired and redacted; consumers cannot infer a lineage
+   * root from null.
+   */
+  supersedesRecordId: string | null;
+};
+
 export type EvidenceRecord = {
   id: string;
   name: string;
   description: string;
   details: string;
+  provenance: CaseRecordProvenance;
   imageAssetId: string | null;
   onReexamine: DialogueItem[] | null;
   collectedInChapterId: string;
@@ -196,6 +256,7 @@ export type StatementRecord = {
   id: string;
   speaker: string;
   content: string;
+  provenance: CaseRecordProvenance;
   onReexamine: DialogueItem[] | null;
   acquiredInChapterId: string;
   acquiredInSceneId: string;
@@ -221,6 +282,11 @@ export type FactView = {
   assertedInChapterId: string | null;
   assertedInSceneId: string | null;
   firstOrigin: AssertionOrigin;
+  /**
+   * Direct supporting records currently acquired and exposed by the public
+   * view. An empty array cannot be used to infer that internal story progress
+   * has no direct record support.
+   */
   supportingRecords: InventoryTarget[];
   supportingFactIds: string[];
 };
