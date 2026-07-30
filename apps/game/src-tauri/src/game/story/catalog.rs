@@ -249,33 +249,34 @@ impl StoryCatalog {
         }
     }
 
+    pub(in crate::game) fn case_record_targets(&self) -> Vec<InventoryTarget> {
+        let mut targets = self
+            .evidence_by_id
+            .keys()
+            .map(|id| InventoryTarget::Evidence { id: id.clone() })
+            .chain(
+                self.statement_by_id
+                    .keys()
+                    .map(|id| InventoryTarget::Statement { id: id.clone() }),
+            )
+            .collect::<Vec<_>>();
+        targets.sort_by(compare_inventory_targets);
+        targets
+    }
+
     pub(in crate::game) fn case_record_targets_for_origin(
         &self,
         chapter_id: &str,
         scene_id: &str,
     ) -> Vec<InventoryTarget> {
-        let mut targets = self
-            .evidence_by_id
-            .values()
-            .filter(|definition| {
-                definition.chapter_id == chapter_id && definition.scene_id == scene_id
+        self.case_record_targets()
+            .into_iter()
+            .filter(|target| {
+                self.case_record(target).is_some_and(|definition| {
+                    definition.chapter_id == chapter_id && definition.scene_id == scene_id
+                })
             })
-            .map(|definition| InventoryTarget::Evidence {
-                id: definition.id.clone(),
-            })
-            .chain(
-                self.statement_by_id
-                    .values()
-                    .filter(|definition| {
-                        definition.chapter_id == chapter_id && definition.scene_id == scene_id
-                    })
-                    .map(|definition| InventoryTarget::Statement {
-                        id: definition.id.clone(),
-                    }),
-            )
-            .collect::<Vec<_>>();
-        targets.sort_by(compare_inventory_targets);
-        targets
+            .collect()
     }
 
     #[allow(dead_code)] // Consumed by the support-lineage task that follows.

@@ -6,6 +6,7 @@ use super::acquisition::AcquisitionCtx;
 use super::command_tx::CommandMutation;
 use super::dialogue_queue::{DialogueSegment, DialogueSegmentOriginV1};
 use super::loader;
+use super::provenance::validate_catalog_record_origin_coverage;
 use super::scenes::interrogation::InterrogationSceneState;
 use super::scenes::investigation::InvestigationSceneState;
 use super::scenes::linear::LinearSceneState;
@@ -373,6 +374,16 @@ pub(super) fn scene_navigation_index_from_chapters(
             scenes,
         });
     }
+
+    validate_catalog_record_origin_coverage(
+        catalog,
+        chapter_views.iter().flat_map(|chapter| {
+            chapter
+                .scenes
+                .iter()
+                .map(|scene| (chapter.id.clone(), scene.id.clone()))
+        }),
+    )?;
 
     Ok(SceneNavigationIndex {
         chapters: chapter_views,
@@ -1676,6 +1687,52 @@ mod tests {
         assert_eq!(index.chapters[1].scenes[0].index, 0);
 
         let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_navigation_index_rejects_catalog_record_with_unmanifested_origin() {
+        let resources = acquisition_navigation_resources(
+            "scene-index-orphaned-catalog-origin",
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_0.json" }
+                    ]
+                }]
+            }"#,
+            &[("scene_0.json", linear_scene_json("scene_0", "start"))],
+        );
+        let catalog_path = resources.join("story_catalog.json");
+        let mut catalog: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&catalog_path).unwrap()).unwrap();
+        catalog["evidenceIndex"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "orphaned_record",
+                "chapterId": "chapter_1",
+                "sceneId": "missing_scene",
+                "provenance": {
+                    "sourceKind": "unspecified",
+                    "representationLayer": "none",
+                    "proceduralStatus": "unspecified",
+                    "completeness": "unspecified",
+                    "confidence": "unspecified",
+                    "sourceGroupId": null,
+                    "sourceLabel": null,
+                    "proofCapabilities": [],
+                    "supersedesRecordId": null
+                }
+            }));
+        std::fs::write(&catalog_path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
+
+        let error = GameEngine::scene_navigation_index(resources.clone()).unwrap_err();
+
+        assert_eq!(error.code, "caseRecordDefinitionMismatch");
+        let _ = std::fs::remove_dir_all(resources);
     }
 
     #[test]

@@ -3,7 +3,7 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeSet;
 
-use crate::game::schema::{InventoryTarget, SceneJson};
+use crate::game::schema::{EvidenceJson, InventoryTarget, SceneJson, StatementJson};
 use crate::game::story::StoryCatalog;
 use crate::game::GameError;
 
@@ -160,8 +160,8 @@ pub(in crate::game) fn validate_scene_records_against_catalog(
 ) -> Result<(), GameError> {
     use std::collections::BTreeMap;
 
-    let (scene_id, evidence, statements) = match scene {
-        SceneJson::Linear(_) => return Ok(()),
+    let (scene_id, evidence, statements): (&str, &[EvidenceJson], &[StatementJson]) = match scene {
+        SceneJson::Linear(scene) => (scene.id.as_str(), &[], &[]),
         SceneJson::Investigation(scene) => (
             scene.id.as_str(),
             &scene.evidence_manifest,
@@ -210,6 +210,22 @@ pub(in crate::game) fn validate_scene_records_against_catalog(
     }
     for target in catalog.case_record_targets_for_origin(chapter_id, scene_id) {
         if scene_record_counts.get(&target) != Some(&1) {
+            return Err(GameError::case_record_definition_mismatch());
+        }
+    }
+    Ok(())
+}
+
+pub(in crate::game) fn validate_catalog_record_origin_coverage(
+    catalog: &StoryCatalog,
+    scene_origins: impl IntoIterator<Item = (String, String)>,
+) -> Result<(), GameError> {
+    let scene_origins = scene_origins.into_iter().collect::<BTreeSet<_>>();
+    for target in catalog.case_record_targets() {
+        let definition = catalog
+            .case_record(&target)
+            .expect("target was built from catalog record indexes");
+        if !scene_origins.contains(&(definition.chapter_id.clone(), definition.scene_id.clone())) {
             return Err(GameError::case_record_definition_mismatch());
         }
     }
