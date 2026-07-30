@@ -1,6 +1,6 @@
 # HPA-256 Case-Record Provenance and Support-Lineage Design
 
-**Status:** Ready for approval; revised after focused codebase reviews  
+**Status:** Ready for approval; revised after three focused codebase reviews  
 **Issue:** HPA-256 — Add orthogonal case-record provenance, immutable supersession, and support lineage  
 **Date:** 2026-07-29
 
@@ -18,20 +18,21 @@ This focused design refines:
   implementation.
 
 HPA-256 adds one shared provenance vocabulary for evidence and statements,
-immutable case-record supersession chains, and deterministic support-lineage
-queries. It builds on the existing scene definitions, global story catalog,
-inventory, fact state, public views, and save contract instead of creating
-parallel stores.
+immutable case-record supersession chains, explicit source-group identity, and
+deterministic support-lineage queries. It builds on existing scene definitions,
+the global story catalog, inventory, fact state, public views, and save contracts
+instead of creating parallel stores.
 
 This slice delivers:
 
 - optional provenance authoring on every evidence and statement manifest entry;
 - neutral defaults for existing unannotated records;
+- a globally authored source-group registry with explicit typed membership;
+- source-located, duplicate-safe, closed-key manifest metadata parsing;
 - compiler and Rust validation of provenance and supersession;
 - exact scene-definition ↔ catalog-index provenance equality;
-- catalog-backed provenance lookup for evidence and statements;
 - immutable lead → reacquired → exhibit chains;
-- source-group independence semantics;
+- conservative source-independence semantics;
 - deterministic direct and transitive fact-support closure;
 - diagnostic and strict source-group closure APIs;
 - explicit inventory-independent internal lineage and consumer-level filters;
@@ -41,80 +42,104 @@ This slice delivers:
 - updated investigation/interrogation authoring guidance.
 
 It does not add analysis-scene Markdown, threshold-board syntax, case-file UI,
-new record-acquisition commands, automatic source inference, production story
+new acquisition commands, automatic source inference, production story
 provenance annotations, or a layout-editor provenance form.
 
 ## 2. Approved decisions
 
 1. Provenance is immutable compiled definition data, not mutable save state.
-2. Evidence and statements use the same `CaseRecordProvenance` contract.
+2. Evidence and statements share one `CaseRecordProvenance` contract.
 3. Provenance dimensions are orthogonal. No value in one dimension implies a
    value in another.
-4. Omitted authored provenance compiles to neutral defaults and causes no visible
-   UI change.
-5. A newer record points to its immediate predecessor through
+4. Omitted authored provenance compiles to explicit neutral defaults and causes
+   no visible UI change.
+5. Every neutral Rust enum default is designated explicitly; declaration order
+   never determines semantic defaults.
+6. A newer record points to its immediate predecessor through
    `supersedesRecordId`; older records are never mutated or removed.
-6. Supersession is a chain, not a branching graph. A record may have at most one
+7. Supersession is a chain, not a branching graph. A record may have at most one
    immediate successor.
-7. Procedural status may stay equal or advance, but may not regress through a
+8. Procedural status may stay equal or advance, but may not regress through a
    supersession edge.
-8. `sourceGroupId` is the only source-independence identity. Labels,
+9. `sourceGroupId` is the only source-independence identity. Labels,
    supersession, record kind, matching prose, and matching acquisition origin do
    not establish independence.
-9. A missing source group means independence is unknown. It never counts as a
-   synthetic one-record source.
-10. Facts retain HPA-255's direct typed supporting-record and supporting-fact
+10. Every non-null `sourceGroupId` must resolve to an authored source-group
+    definition in `story_catalog.md`.
+11. Each source-group definition declares its complete typed member list. Record
+    metadata and registry membership must agree exactly in both directions.
+12. Singleton source groups are legal but visible in authored review and emitted
+    membership. Undefined, orphaned, duplicated, or contradictory membership is
+    invalid.
+13. A missing source group means independence is unknown. It never counts as a
+    synthetic one-record source.
+14. Duplicate proof capabilities are rejected before normalization. Rust wire
+    deserialization uses an ordered `Vec`; the validated domain uses a set.
+15. Generated capability arrays use one canonical order. Runtime rejects a
+    duplicate or non-canonical array rather than silently repairing it.
+16. Facts retain HPA-255's direct typed supporting-record and supporting-fact
     edges. HPA-256 adds derived closure; it does not duplicate fact mutation.
-11. Internal lineage is pure over asserted `StoryState` progress plus immutable
-    catalog definitions. It does not implicitly filter by current inventory.
-12. Player-facing and selection-facing consumers must apply their own acquired or
-    selected-record boundary. Internal closure must never be mistaken for a
-    player-visible count.
-13. Derived source closure has two levels: a diagnostic result returns known
+17. Internal lineage is pure over asserted `StoryState` progress plus immutable
+    `StoryCatalog` definitions. It does not implicitly filter by inventory.
+18. Player-facing and selection-facing consumers apply their own acquired or
+    selected-record boundary. Internal closure is never itself a possession
+    count.
+19. Derived source closure has two levels: a diagnostic result returns known
     groups plus records with missing groups; a strict complete-count operation
     fails while any supporting record has an unknown group.
-14. HPA-262 MVP threshold boards count selected evidence/statement records
+20. HPA-262 MVP threshold boards count selected evidence/statement records
     directly. Facts and case notes are not eligible independent-source inputs in
     that ticket.
-15. A supersession chain query returns the complete containing chain, includes
+21. A supersession chain query returns the complete containing chain, includes
     the target, and orders records oldest → newest.
-16. Scene JSON and the story-catalog index repeat provenance from one normalized
-    compiler value. Same-ID copies must be exactly equal.
-17. The catalog is authoritative for lineage, source-group, capability, and
-    supersession queries. The scene definition remains authoritative for record
-    prose, images, acquisition dialogue, and acquisition-time record lookup.
-    Runtime validation rejects any disagreement between their provenance copies.
-18. The generated story catalog advances to schema version 2 because its global
-    case-record indexes gain required provenance.
-19. Rust rejects any catalog whose `schemaVersion` is not 2 before deserializing
-    the v2 payload. Legacy scene defaults never make catalog v1 acceptable.
-20. Save schema version 1 remains unchanged. Saves retain stable record IDs,
+22. Scene JSON and the catalog repeat provenance from one normalized compiler
+    value. Same-ID copies must be exactly equal.
+23. The catalog is authoritative for lineage, source-group, capability, and
+    supersession queries. Scene definitions remain authoritative for record
+    prose, images, acquisition dialogue, and acquisition-time lookup. Runtime
+    validation rejects disagreement.
+24. The generated story catalog advances to schema version 2. The existing
+    minimal version-envelope pattern is reused rather than reinvented.
+25. Rust rejects every catalog whose `schemaVersion` is not 2 before attempting
+    v2 payload deserialization. Legacy scene defaults never make catalog v1
+    acceptable.
+26. The existing private Rust `CaseRecordDefinitionIndex` is replaced by a v2
+    wire type plus a validated `CaseRecordDefinition` domain type; no parallel
+    legacy index remains.
+27. Save schema version 1 remains unchanged. Saves retain stable record IDs,
     acquisition locations, and direct support edges; immutable provenance rejoins
     from the exact content revision.
-21. A provenance-only content edit must change the package content revision.
-22. Any future provenance wire-field addition, removal, or semantic
+28. `SaveContentBundleV1` and `SaveContentManifestV1` remain version 1 because
+    their version describes the manifest envelope and hash algorithm, not the
+    nested story-catalog schema.
+29. `save-content-manifest.ts` receives the required v2 catalog type-reference
+    update. The canonical SHA-256 algorithm and `manifestVersion: 1` do not
+    change.
+30. A provenance-only content edit must change the package content revision.
+31. Any future provenance wire-field addition, removal, or semantic
     reinterpretation requires another catalog schema-version bump.
-23. `@lyra/scene-types` remains unchanged. Provenance is not yet an editor-shared
-    layout contract.
-24. `GameStateView` exposes an `InventoryView`; mutable `Inventory` is no longer a
-    public serialization surface.
-25. Public views do not reveal an unacquired predecessor or future successor ID.
-26. Public `supersedesRecordId: null` is intentionally ambiguous: it may mean no
-    predecessor exists or that the predecessor is unacquired and therefore
-    redacted.
-27. Public redaction is recomputed on every `GameEngine::view()` build from the
-    current inventory. It is not frozen when a record is acquired.
-28. `FactView.supportingRecords` must not leak unacquired record IDs even though
+32. `@lyra/scene-types` remains unchanged. Provenance is not yet an
+    editor-shared layout contract.
+33. `GameStateView` exposes an `InventoryView`; mutable `Inventory` is no longer
+    a public serialization surface.
+34. Public views do not reveal an unacquired predecessor or future successor ID.
+35. Public `supersedesRecordId: null` intentionally means either no predecessor
+    exists or the predecessor is unacquired and redacted.
+36. Public redaction is recomputed on every `GameEngine::view()` build from the
+    current inventory. It is not frozen at acquisition.
+37. `FactView.supportingRecords` does not leak unacquired record IDs even though
     internal fact progress may legally reference them.
-29. Duplicate proof capabilities are rejected during parsing/validation;
-    canonical capability ordering is an emitter concern and never repairs invalid
-    authored input.
-30. The investigation and interrogation authoring skills must document every
-    provenance field and warn that a superseding record should explicitly author
-    `Procedural Status`.
-31. `.claude/skills/` is the repository-canonical authoring-skill path. A local
-    `.agents/skills/` hardlink or generated mirror may be verified after editing,
-    but HPA-256 does not create a second divergent tracked copy.
+38. Public `supportingRecords: []` means no acquired direct supporting records
+    are exposed; it does not prove internal progress has no direct support.
+39. HPA-256 does not add a `hasHiddenSupportingRecords` flag because that flag
+    would itself disclose locked content.
+40. Provenance and lineage service APIs take their required catalog/state
+    context and return the repository's `GameError` contract. Illustrative free
+    functions and unconnected public error types are not accepted.
+41. The investigation and interrogation authoring skills document every
+    provenance field, source-group registry requirement, neutral default, and
+    explicit-status supersession warning.
+42. `.claude/skills/` remains the repository-canonical authoring-skill path.
 
 ## 3. Current repository constraints
 
@@ -122,31 +147,43 @@ The current compiler:
 
 - parses evidence and statement manifests through shared
   `parser-manifest.ts`, consumed by both investigation and interrogation parsers;
+- currently collapses metadata into `Record<string, string>`, losing per-key
+  lines, silently overwriting duplicate keys, and ignoring most unknown keys;
 - emits full evidence/statement definitions inside scene JSON;
 - independently emits lightweight evidence/statement indexes into
   `story_catalog.json`;
+- parses `story_catalog.md` sections for facts, questions, objectives, and
+  authorizations with source-located field maps;
 - treats evidence and statement IDs as separate game-global typed namespaces;
 - computes one package content revision from the canonical emitted scene/catalog
   bundle in `save-content-manifest.ts`.
 
 The current runtime:
 
+- already reads a minimal `StoryCatalogVersionEnvelope` before deserializing the
+  version-specific catalog payload;
+- currently accepts catalog schema version 1 and uses version 2 as an unsupported
+  test sentinel;
+- stores evidence and statement indexes in a private
+  `CaseRecordDefinitionIndex` containing ID, chapter, and scene;
 - deserializes evidence and statement definitions from scene JSON;
-- loads immutable case-record indexes through `StoryCatalog`;
 - copies acquired display data and acquisition locations into `Inventory`;
 - currently serializes mutable `Inventory` directly in `GameStateView`;
 - stores typed supporting records and supporting fact IDs inside sparse
   `StoryState` fact progress;
-- validates support existence and supporting-fact acyclicity in live mutation and
-  restore, but does not require supporting records to be acquired;
+- validates supporting records only against catalog existence, while supporting
+  facts must also have been asserted;
 - serializes inventory as record IDs plus acquisition chapter/scene;
 - serializes direct fact support in `StoryStateSnapshotV1`;
-- reconstructs inventory and story state against the installed package and
-  demands exact recapture after restore.
+- reconstructs inventory and story state against installed content and demands
+  exact recapture after restore.
 
-HPA-256 preserves those boundaries while closing two existing spoiler seams:
-mutable inventory must stop being a public wire type, and public fact support must
-not expose unacquired record IDs.
+HPA-256 preserves those seams while closing four silent-drift paths:
+
+1. mistyped or contradictory source groups;
+2. duplicate or unknown manifest metadata;
+3. duplicate/non-canonical capability arrays at the Rust wire boundary;
+4. public inventory or fact views leaking immutable unacquired definitions.
 
 ## 4. Domain contract
 
@@ -187,12 +224,12 @@ Each dimension answers a different question:
 
 - `sourceKind`: what kind of originating source the record represents;
 - `representationLayer`: which processing or representation layer is shown;
-- `proceduralStatus`: where this immutable record sits in the acquisition/legal
+- `proceduralStatus`: where the immutable record sits in the acquisition/legal
   process;
 - `completeness`: whether the represented material is whole or limited;
 - `confidence`: its authored corroboration state;
-- `sourceGroupId`: which underlying source it belongs to for independence;
-- `sourceLabel`: optional player-facing source wording;
+- `sourceGroupId`: which declared underlying source it belongs to;
+- `sourceLabel`: optional record-specific player-facing source wording;
 - `proofCapabilities`: which positive authored requirements it may satisfy;
 - `supersedesRecordId`: the immediate older immutable record.
 
@@ -201,15 +238,15 @@ The compiler and runtime never infer across dimensions. For example:
 - `digital` does not imply `time`;
 - `raw` does not imply `complete`, `corroborated`, or `exhibit`;
 - `exhibit` does not imply `corroborated`;
-- `complete` does not imply any proof capability;
+- `complete` does not imply a proof capability;
 - records in one supersession chain are not automatically independent;
-- a statement record may describe a physical, digital, testimony, or subjective
+- a statement may represent a physical, digital, testimony, or subjective
   originating source.
 
 Proof capabilities are positive limits. An absent capability means the record
 cannot satisfy that authored requirement; it does not prove the opposite claim.
 
-### 4.2 Neutral authored defaults
+### 4.2 Neutral defaults
 
 An evidence or statement entry with omitted provenance emits:
 
@@ -236,27 +273,106 @@ requirement:
 - `none` does not satisfy a requirement for `raw`, `sync`, `summary`, or
   `composite`.
 
-### 4.3 Immutable definition data versus mutable progress
+`RepresentationLayer::None` intentionally serves both as the neutral default and
+as the authored value for a record with no meaningful representation layer.
+HPA-256 does not retain an “explicitly authored” bit. A consumer that requires a
+concrete layer must require `raw`, `sync`, `summary`, or `composite`; it cannot
+distinguish omitted `none` from deliberately authored `none`.
 
-Provenance and supersession belong to immutable definitions. Mutable progress
-remains:
+### 4.3 Explicit neutral enum defaults
+
+Rust enum defaults are semantic declarations, not side effects of variant order:
+
+```rust
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SourceKind {
+    Physical,
+    Testimony,
+    Digital,
+    Subjective,
+    #[default]
+    Unspecified,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RepresentationLayer {
+    Raw,
+    Sync,
+    Summary,
+    Composite,
+    #[default]
+    None,
+}
+```
+
+The same explicit pattern applies to:
+
+- `ProceduralStatus::Unspecified`;
+- `Completeness::Unspecified`;
+- `Confidence::Unspecified`.
+
+Tests compare `CaseRecordProvenance::default()` field-for-field with the neutral
+JSON literal. Merely proving that a legacy scene deserializes is insufficient.
+
+### 4.4 Source-group definitions
+
+A source group represents one underlying source for independence counting. It is
+not inferred from labels, record kind, chapter, scene, representation, or
+supersession.
+
+```ts
+type SourceGroupDefinition = {
+  id: string;
+  label: string;
+  summary: string;
+  members: InventoryTarget[];
+};
+```
+
+The registry is game-global across evidence and statements. Typed members are
+required because evidence and statement namespaces may reuse the same slug.
+
+Registry invariants:
+
+- every group ID is a unique `^[a-z0-9_]+$` slug;
+- every member exists;
+- members are unique by typed identity;
+- a record appears in at most one group;
+- every non-null record `sourceGroupId` resolves to one registry group;
+- every such record appears in that group's declared `Members` list;
+- every declared member has exactly the matching record `sourceGroupId`;
+- every group has at least one member;
+- singleton groups are allowed;
+- members emit in canonical typed order: evidence before statement, then ID.
+
+The explicit member list makes accidental one-member groups and suspicious
+splits visible in authored review instead of hiding them behind valid-looking
+slugs.
+
+`sourceLabel` remains record-specific presentation text. It neither replaces the
+registry label nor establishes source identity.
+
+### 4.5 Immutable definition data versus mutable progress
+
+Provenance, source-group membership, and supersession belong to immutable
+content definitions. Mutable progress remains:
 
 - whether a record has been acquired;
 - where it was acquired;
 - existing acquisition acknowledgement state;
-- direct fact-support edges naming the record.
+- direct fact-support edges naming records and facts.
 
-Acquiring a record does not upgrade its procedural status. Reacquisition or
-admission as an exhibit creates and acquires a separate immutable record.
+Acquiring a record does not upgrade procedural status. Reacquisition or admission
+as an exhibit creates and acquires another immutable record.
 
-### 4.4 Story-facing examples
+### 4.6 Story-facing examples
 
 The contract supports the narrative's required procedure:
 
 - an informal screenshot may be a `lead`, while a separately fixed forensic copy
   is an `exhibit` that supersedes it;
-- several Chapter 2 wall/composite-derived clips remain separate records but
-  share one `sourceGroupId`, so they do not masquerade as independent sources;
+- several Chapter 2 wall/composite-derived clips remain separate records but are
+  declared as members of one source group;
 - a social repost lead, legally reacquired original, and hearing exhibit form one
   immutable chain;
 - an anonymous or cropped record may prove `route` without proving `identity`;
@@ -266,7 +382,7 @@ No story prose is parsed to infer these values automatically.
 
 ## 5. Authoring contract
 
-### 5.1 Optional fields
+### 5.1 Optional record fields
 
 Evidence and statement entries accept these exact optional fields alongside their
 current required metadata:
@@ -291,7 +407,7 @@ current required metadata:
 ...
 ```
 
-Statements use the same fields with a typed statement predecessor:
+Statements use the same provenance fields with typed statement supersession:
 
 ```md
 - **Supersedes:** statement:initial_witness_account
@@ -305,22 +421,115 @@ Allowed syntax:
 - `Procedural Status`: `unspecified`, `lead`, `reacquired`, or `exhibit`;
 - `Completeness`: `complete`, `partial`, `cropped`, or `unspecified`;
 - `Confidence`: `unverified`, `corroborated`, `disputed`, or `unspecified`;
-- `Source Group`: one non-empty `^[a-z0-9_]+$` slug;
+- `Source Group`: one declared non-empty source-group slug;
 - `Source Label`: non-empty display text;
 - `Proof Capabilities`: bracketed comma-separated canonical values; `[]` is
   allowed;
-- `Supersedes`: exactly one typed `evidence:<id>` or `statement:<id>` reference.
-
-Present-but-blank metadata, repeated metadata, unknown values, and duplicate
-capabilities are errors. Duplicate rejection occurs while source locations are
-available. Emission only sorts an already valid duplicate-free list.
+- `Supersedes`: one typed `evidence:<id>` or `statement:<id>` reference.
 
 A record that authors `Supersedes` should explicitly author `Procedural Status`.
 If a predecessor is `lead`, `reacquired`, or `exhibit` and the successor omits
 status, the successor normalizes to `unspecified` and correctly fails the
 non-regression rule.
 
-### 5.2 Source-located AST
+### 5.2 Source-group registry authoring
+
+`story_catalog.md` gains a final canonical section after Authorizations:
+
+```md
+## Source Groups
+
+### Source Group: 澀谷活動 Program Composite {#shibuya_program_composite}
+
+- **Summary:** 同一活動方 Program Composite 輸出衍生的紀錄。
+- **Members:** [evidence:anonymous_wall_clip, evidence:verified_wall_clip, statement:control_room_account]
+```
+
+Rules:
+
+- section heading: exactly `## Source Groups`;
+- item heading: `### Source Group: <label> {#<id>}`;
+- required fields: `Summary`, `Members`;
+- `Members` is a non-empty bracketed typed-reference list;
+- duplicate members are invalid;
+- unknown member references are invalid;
+- records with null `sourceGroupId` are not listed;
+- every listed member must author the matching `Source Group` value;
+- every record authoring `Source Group` must be listed exactly once.
+
+If `story_catalog.md` is absent, the compiler may still emit an empty v2 catalog
+only when no record references a source group. A source-group reference without a
+registry is an error.
+
+### 5.3 Source-located, duplicate-safe metadata collection
+
+The current `consumeMetadata` last-write-wins map is replaced for evidence and
+statement entries by a source-preserving collector:
+
+```ts
+type MetadataValue = {
+  value: string;
+  line: number;
+};
+
+type ManifestMetadata = Map<string, MetadataValue>;
+```
+
+Equivalent `{ values, lines }` storage is acceptable, but the following behavior
+is mandatory:
+
+- retain the exact line of every metadata key;
+- reject a duplicate on its second occurrence;
+- include the first occurrence's line in the diagnostic message;
+- reject unknown keys against an entry-specific allowlist;
+- reject present-but-blank provenance fields;
+- keep current required-field diagnostics for Name/Description/Details and
+  Speaker/Content;
+- preserve existing dialogue-block parsing behavior.
+
+Evidence allowlist:
+
+```text
+Name
+Description
+Details
+Source Sublocation
+Image Prompt
+Source Kind
+Representation Layer
+Procedural Status
+Completeness
+Confidence
+Source Group
+Source Label
+Proof Capabilities
+Supersedes
+```
+
+Statement allowlist:
+
+```text
+Speaker
+Content
+Source Kind
+Representation Layer
+Procedural Status
+Completeness
+Confidence
+Source Group
+Source Label
+Proof Capabilities
+Supersedes
+```
+
+Thus `Source Knid`, a repeated `Supersedes`, or `Image Prompt` on a statement is a
+source-located compile error rather than a neutral default or silent overwrite.
+
+The implementation should reuse the source-location pattern already present in
+`parser-assets.ts` and the field-map approach already present in
+`parser-story-catalog.ts`.
+
+### 5.4 Source-located AST
 
 ```ts
 type ASTCaseRecordProvenance = {
@@ -334,13 +543,21 @@ type ASTCaseRecordProvenance = {
   proofCapabilities: Array<Located<{ value: ProofCapability }>>;
   supersedes: Located<InventoryTarget> | null;
 };
+
+type ASTSourceGroupDefinition = Located<{
+  id: string;
+  label: string;
+  summary: string;
+  members: Array<Located<InventoryTarget>>;
+}>;
 ```
 
-`ASTEvidence` and `ASTStatement` both own this source-located object. Omitted
-fields become defaults only after parsing and validation, so diagnostics can
-still distinguish omission from an explicitly authored value.
+`ASTEvidence` and `ASTStatement` own provenance. `ASTStoryCatalog` gains
+`sourceGroups`. Defaults are applied only after parsing and validation, so an
+omitted value remains distinguishable from malformed authored input while
+source-located diagnostics are still available.
 
-### 5.3 Procedural-status ordering
+### 5.5 Procedural-status ordering
 
 Status progression uses this rank only for supersession validation:
 
@@ -356,7 +573,7 @@ by `unspecified`.
 The ordering implies nothing about confidence, completeness, source identity, or
 proof capability.
 
-### 5.4 Authoring-skill obligations and dual-root handling
+### 5.6 Authoring-skill obligations
 
 The implementation updates the repository-canonical files:
 
@@ -369,21 +586,24 @@ Both must:
 
 - list every provenance field and allowed value;
 - explain neutral defaults;
+- explain that `none` conflates omitted and intentionally unlayered records;
+- require a source group to be declared centrally with matching typed members;
 - warn that `Supersedes` normally requires explicit procedural status;
 - distinguish source grouping from supersession;
 - describe proof capabilities as positive limits;
 - preserve Traditional Chinese player-facing values and English parser-facing
   field names.
 
-Some local agent environments expose `.agents/skills/` as a hardlinked or
-generated mirror. The implementation verifies that mirror when present, but does
-not create or commit a second divergent copy unless it becomes repository-tracked.
+Non-normative implementation note: some local environments expose
+`.agents/skills/` as a hardlinked or generated mirror. Editing the tracked
+`.claude/skills/` source remains the repository contract; local mirrors may be
+checked manually but are not a CI acceptance criterion.
 
 ## 6. Compiler and generated artifacts
 
 ### 6.1 Single normalization path and equality invariant
 
-The compiler introduces one pure normalization/emission helper, for example:
+The compiler introduces one pure normalization helper:
 
 ```ts
 function emitCaseRecordProvenance(
@@ -391,22 +611,21 @@ function emitCaseRecordProvenance(
 ): CaseRecordProvenance;
 ```
 
-Both scene emission and story-catalog index emission must call this helper. No
-second hand-written defaulting or sorting path is allowed.
+Both scene emission and story-catalog index emission call this helper. No second
+hand-written defaulting or sorting path is allowed.
 
-For every typed evidence/statement ID, the compiler asserts:
+For every typed evidence/statement ID, the compiler asserts deep exact equality:
 
 ```text
 sceneRecord.provenance === catalogIndexRecord.provenance
 ```
 
-using deep exact equality after normalization. Focused tests cover both record
-kinds and neutral/non-neutral values. A mismatch is a compiler defect and blocks
-emission; partial resources are never written.
+Focused tests cover both record kinds, omitted values, every enum, capabilities,
+and supersession. A mismatch is a compiler defect and blocks all output writes.
 
 ### 6.2 Scene JSON
 
-Both emitted record definitions gain a required normalized `provenance` object:
+Both emitted record definitions gain required normalized provenance:
 
 ```ts
 type JSONEvidence = {
@@ -420,12 +639,14 @@ type JSONStatement = {
 };
 ```
 
-Capabilities emit in canonical order:
+Capabilities emit in this canonical order:
 
 ```text
 time, order, route, identity, access, motive,
 source, credibility, procedure, causation
 ```
+
+The emitter only orders an already valid duplicate-free list.
 
 ### 6.3 Story catalog schema version 2
 
@@ -436,6 +657,7 @@ type StoryCatalogJsonV2 = {
   questions: QuestionDefinition[];
   objectives: ObjectiveDefinition[];
   authorizations: AuthorizationDefinition[];
+  sourceGroups: SourceGroupDefinition[];
   evidenceIndex: CaseRecordDefinitionIndex[];
   statementsIndex: CaseRecordDefinitionIndex[];
 };
@@ -446,21 +668,36 @@ type CaseRecordDefinitionIndex = {
   sceneId: string;
   provenance: CaseRecordProvenance;
 };
+
+type SourceGroupDefinition = {
+  id: string;
+  label: string;
+  summary: string;
+  members: InventoryTarget[];
+};
 ```
 
 The scene remains the owner of prose, image references, and acquisition dialogue.
-The catalog repeats only typed identity, immutable origin, and provenance from the
-same normalized value so lineage services need not load every scene.
+The catalog repeats typed identity, immutable origin, and provenance from the same
+normalized value. Source-group definitions preserve the authored registry and
+canonical member audit.
 
-A missing authored `story_catalog.md` still emits a required empty v2 artifact.
+A missing authored `story_catalog.md` emits a required empty v2 artifact only if
+there are no references requiring catalog definitions.
 
 ### 6.4 Compiler validation
 
-After all scenes have parsed, validation rejects:
+After all scenes and the story catalog parse, validation rejects:
 
-- malformed, blank, repeated, or unknown provenance metadata;
+- malformed, blank, repeated, or unknown record metadata;
 - duplicate or unknown proof capabilities;
+- non-canonical capabilities reaching a generated-resource validation boundary;
 - invalid source-group slugs;
+- duplicate, empty, unknown, or contradictory source-group membership;
+- a record group reference absent from the registry;
+- a registry member whose record declares a different or null group;
+- a grouped record omitted from registry membership;
+- orphaned source-group definitions;
 - malformed typed predecessor references;
 - unknown, cross-kind, or self-supersession;
 - supersession forks and cycles;
@@ -468,20 +705,50 @@ After all scenes have parsed, validation rejects:
 - scene/catalog provenance inequality;
 - metadata that fails a later consumer's explicit requirement.
 
-Supersession diagnostics point to the newer record's `Supersedes` metadata line
-and name the involved typed records.
+Diagnostics point to the most precise authored field:
 
-### 6.5 Content identity
+- malformed `Supersedes` → the successor's `Supersedes` line;
+- unknown `Source Group` → the record's `Source Group` line;
+- bad registry member → the corresponding `Members` reference line;
+- duplicate metadata → the second occurrence, naming the first line;
+- unknown key → that metadata key's line.
 
-The package content revision includes normalized scene and catalog provenance.
+### 6.5 Content identity and manifest versioning
+
+The package content revision includes normalized scene provenance, catalog record
+provenance, source-group definitions, and typed membership.
+
 `save-content-manifest.ts` already hashes the canonical emitted scene/catalog
-bundle, so production code should not be edited merely for ceremony if the new
-fields naturally enter that bundle.
+bundle, so the hash algorithm remains unchanged. However, production code must
+update the nested type reference:
 
-A focused regression test must prove that changing only one provenance value
-changes `contentRevision`. If the versioned bundle/input type truly requires a
-production adjustment, that change belongs in `save-content-manifest.ts`.
-`save-content-references.ts` remains the semantic asset-reference validator.
+```ts
+export type SaveContentBundleV1 = {
+  chapters: Array<{
+    id: string;
+    title: string;
+    summary: string;
+    scenes: EmittedSceneJsonV1[];
+  }>;
+  storyCatalog: StoryCatalogJsonV2;
+};
+```
+
+The following remain unchanged:
+
+```ts
+export type SaveContentManifestV1 = {
+  manifestVersion: 1;
+  contentRevision: `sha256:${string}`;
+};
+```
+
+`V1` names the manifest envelope and canonical hash contract, not the nested
+catalog schema. A focused regression proves changing only one provenance value or
+source-group membership changes `contentRevision`.
+
+`save-content-references.ts` remains the semantic asset-reference validator and
+is not the hashing owner.
 
 ### 6.6 Metadata-requirement seam
 
@@ -507,9 +774,9 @@ function validateCaseRecordRequirement(
 ```
 
 Exact membership applies. Prohibited status wins. `requireSourceGroup` rejects
-null. Every required capability must be present. Neutral defaults fail explicit
-requirements that exclude them. Diagnostics point to the requirement and identify
-the insufficient record.
+null and assumes registry validation has already succeeded. Every required
+capability must be present. Neutral defaults fail requirements that exclude them.
+Diagnostics point to the requirement and identify the insufficient record.
 
 HPA-259 later calls this helper for resolved selectable candidates. HPA-262 MVP
 uses it per eligible evidence/statement candidate and does not import fact closure.
@@ -532,18 +799,38 @@ Each record has at most one predecessor because it stores one pointer. Validatio
 also permits at most one successor per predecessor, producing a linear audit
 trail. Branching derivations use source groups and explicit support edges instead.
 
-### 7.2 Deterministic queries
+### 7.2 Compilable catalog APIs
+
+Supersession queries are catalog methods because they require validated global
+definitions:
 
 ```rust
-fn predecessor(target: &InventoryTarget) -> Option<InventoryTarget>;
-fn successor(target: &InventoryTarget) -> Option<InventoryTarget>;
-fn chain(target: &InventoryTarget) -> Result<Vec<InventoryTarget>, ProvenanceError>;
-fn latest_definition(target: &InventoryTarget) -> Result<InventoryTarget, ProvenanceError>;
+impl StoryCatalog {
+    pub(crate) fn predecessor(
+        &self,
+        target: &InventoryTarget,
+    ) -> Result<Option<InventoryTarget>, GameError>;
+
+    pub(crate) fn successor(
+        &self,
+        target: &InventoryTarget,
+    ) -> Result<Option<InventoryTarget>, GameError>;
+
+    pub(crate) fn chain(
+        &self,
+        target: &InventoryTarget,
+    ) -> Result<Vec<InventoryTarget>, GameError>;
+
+    pub(crate) fn latest_definition(
+        &self,
+        target: &InventoryTarget,
+    ) -> Result<InventoryTarget, GameError>;
+}
 ```
 
 `chain` returns the complete containing chain, includes the target, and orders
-records oldest → newest. An unlinked record returns one element. A target in the
-middle still returns the full chain. `latest_definition` is the final element.
+records oldest → newest. An unlinked record returns one element. A middle target
+still returns the full chain. `latest_definition` is the final element.
 
 ### 7.3 Public no-spoiler rule
 
@@ -570,14 +857,16 @@ apps/game/src-tauri/src/game/support_lineage.rs
 ```
 
 and extends scene schema, mutable inventory, story catalog/state/view, public view,
-acquisition validation, and save capture/restore tests. `GameEngine` does not gain
-a second provenance store.
+acquisition validation, error constructors, and save capture/restore tests.
+`GameEngine` does not gain a second provenance store.
 
-### 8.2 Strict provenance types and version gates
+### 8.2 Strict wire/domain provenance split
+
+The validated domain keeps efficient set semantics:
 
 ```rust
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CaseRecordProvenance {
     pub source_kind: SourceKind,
     pub representation_layer: RepresentationLayer,
@@ -591,39 +880,125 @@ pub struct CaseRecordProvenance {
 }
 ```
 
-Legacy compatibility applies to the containing scene-record field:
+Deserialization first uses a strict wire shape:
+
+```rust
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CaseRecordProvenanceWire {
+    source_kind: SourceKind,
+    representation_layer: RepresentationLayer,
+    procedural_status: ProceduralStatus,
+    completeness: Completeness,
+    confidence: Confidence,
+    source_group_id: Option<String>,
+    source_label: Option<String>,
+    proof_capabilities: Vec<ProofCapability>,
+    supersedes_record_id: Option<String>,
+}
+```
+
+Conversion from wire to domain:
+
+1. rejects duplicate capabilities;
+2. rejects unique but non-canonical ordering;
+3. converts the validated array into `BTreeSet`;
+4. validates non-empty optional strings and slugs where appropriate;
+5. returns a typed validation failure instead of silently normalizing malformed
+   packaged content.
+
+`CaseRecordProvenance` may implement custom `Deserialize` through this wire type.
+Serialization emits capabilities in canonical order.
+
+Legacy scene compatibility applies only at the containing record field:
 
 ```rust
 #[serde(default)]
 pub provenance: CaseRecordProvenance,
 ```
 
-An absent scene provenance object becomes neutral. A present object is strict:
-individual fields are required and unknown fields fail. Catalog-v2 provenance is
-always required and never defaulted.
+An absent scene provenance object becomes the exact neutral default. A present
+object is strict. Catalog-v2 provenance is always present and strict.
 
-`StoryCatalog::load` first reads a minimal version envelope. It accepts exactly
-version 2 and rejects v1 or future versions before v2 payload deserialization.
+### 8.3 Reuse the existing catalog version envelope
 
-### 8.3 Catalog resolver and authoritative ownership
+`StoryCatalog::load` already reads `StoryCatalogVersionEnvelope` before the
+payload. HPA-256 reuses it:
+
+- set `STORY_CATALOG_SCHEMA_VERSION` to `2`;
+- rename v1-oriented payload types/comments as appropriate;
+- accept exactly version 2;
+- reject version 1 before attempting v2 field validation;
+- use version 3 as the unsupported-future test sentinel;
+- prove `{ "schemaVersion": 1 }` returns
+  `unsupportedStoryCatalogVersion`, not a malformed-payload error;
+- prove `{ "schemaVersion": 3 }` is rejected before v2 field validation.
+
+This is a version migration, not a new envelope architecture.
+
+### 8.4 Replace the existing record-index type
+
+The current private Rust `CaseRecordDefinitionIndex` is replaced, not wrapped or
+retained:
 
 ```rust
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CaseRecordDefinitionJsonV2 {
+    id: String,
+    chapter_id: String,
+    scene_id: String,
+    provenance: CaseRecordProvenanceWire,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::game) struct CaseRecordDefinition {
     pub id: String,
     pub chapter_id: String,
     pub scene_id: String,
     pub provenance: CaseRecordProvenance,
 }
+```
 
-fn case_record(&self, target: &InventoryTarget)
-    -> Option<&CaseRecordDefinition>;
+Catalog maps store validated `CaseRecordDefinition` values. Existing
+`#[allow(dead_code)]` annotations on chapter/scene origin are removed once those
+fields participate in scene/catalog equality checks.
+
+Source groups similarly use a strict v2 wire type and validated domain type:
+
+```rust
+pub(in crate::game) struct SourceGroupDefinition {
+    pub id: String,
+    pub label: String,
+    pub summary: String,
+    pub members: BTreeSet<InventoryTarget>,
+}
+```
+
+`StoryCatalog` stores a source-group index and validates bidirectional membership
+against case-record definitions.
+
+### 8.5 Catalog resolver and equality validation
+
+```rust
+impl StoryCatalog {
+    pub(in crate::game) fn case_record(
+        &self,
+        target: &InventoryTarget,
+    ) -> Option<&CaseRecordDefinition>;
+
+    pub(in crate::game) fn source_group(
+        &self,
+        id: &str,
+    ) -> Option<&SourceGroupDefinition>;
+}
 ```
 
 The catalog is authoritative for lineage and metadata evaluation. The scene
 record is authoritative for acquisition prose and dialogue. They must agree on
-provenance exactly.
+origin and provenance exactly.
 
-Runtime validation uses a shared typed comparison:
+Runtime comparison:
 
 ```rust
 fn validate_scene_record_against_catalog(
@@ -638,22 +1013,21 @@ fn validate_scene_record_against_catalog(
 Validation occurs:
 
 - whenever an investigation/interrogation scene definition is loaded;
-- again at evidence/statement acquisition before mutating inventory;
-- during save restore while joining saved IDs to packaged definitions.
+- again before evidence/statement acquisition mutates inventory;
+- during restore while joining saved IDs to packaged definitions.
 
-HPA-256 does not force eager loading of every scene during ordinary startup solely
-for this check. Compiler whole-bundle validation remains the package-wide guard;
-runtime checks defend each loaded/acquired/restored boundary. A mismatch produces
-a typed `caseRecordDefinitionMismatch`-class error and never silently chooses one
-copy.
+HPA-256 does not eagerly load every packaged scene during ordinary startup solely
+for this check. Compiler whole-bundle validation is the package-wide guard;
+runtime checks defend loaded/acquired/restored boundaries. A mismatch returns
+`caseRecordDefinitionMismatch` and never silently chooses one copy.
 
-### 8.4 Mutable inventory and constructor audit
+### 8.6 Mutable inventory and constructor audit
 
-`EvidenceRecord` and `StatementRecord` gain the full internal provenance copied
-from the validated scene definition. Acquisition chapter/scene remains a separate
+`EvidenceRecord` and `StatementRecord` gain full internal provenance copied from
+the validated scene definition. Acquisition chapter/scene remains a separate
 origin. Acquiring a successor never mutates its predecessor.
 
-The implementation plan must inventory all Rust literals and constructors for:
+The implementation plan inventories all Rust literals and constructors for:
 
 ```text
 EvidenceJson {
@@ -674,87 +1048,147 @@ fn evidence_json(id: &str) -> EvidenceJson;
 fn statement_json(id: &str) -> StatementJson;
 ```
 
-Production constructors and public wire fields remain explicit. Do not derive a
-misleading `Default` for complete evidence/statement definitions merely to avoid
-updating required fields.
+Production constructors and public wire fields remain explicit. Complete evidence
+or statement definitions do not gain misleading broad `Default` implementations
+merely to avoid updating required fields.
+
+### 8.7 Error contract
+
+Public-in-game provenance and lineage services return `GameError`, preserving the
+existing `{ code, message }` command contract. Private traversal/conversion errors
+may exist only when immediately mapped before crossing a module API.
+
+Required mappings:
+
+| Failure | `GameError` contract |
+|---|---|
+| unknown root fact | existing `unknownStoryFact` |
+| unknown supporting record | existing `unknownSupportingCaseRecord` |
+| invalid/cyclic supporting fact | existing `invalidSupportingFact` |
+| malformed catalog/source-group graph | existing `storyCatalogValidationFailed` |
+| scene/catalog definition disagreement | new `caseRecordDefinitionMismatch` |
+| strict count with unknown source groups | new `missingCaseRecordSourceGroup` |
+| inconsistent inventory during public view | new or existing typed internal-definition mismatch code |
+
+Generated-resource serde failures continue through the owning scene/catalog load
+error with a precise detail message. They are not exposed as unrelated public
+`ProvenanceError` or `LineageError` types.
 
 ## 9. Source independence and fact-support lineage
 
 ### 9.1 Source identity
 
-`sourceGroupId` is a game-global semantic key across evidence and statements.
-Records with one non-null group count as one source even when they differ in ID,
-kind, representation, procedural status, chapter, scene, or supersession position.
+`sourceGroupId` is a game-global reference to the authored registry. Records in
+one declared group count as one source even when they differ in ID, kind,
+representation, procedural status, chapter, scene, or supersession position.
 
-Different non-null IDs count independently. Null means unknown and never creates a
-synthetic group. `sourceLabel` is presentation only.
+Different registered IDs count independently. Null means unknown and never
+creates a synthetic group. `sourceLabel` is presentation only.
 
 Supersession and source grouping answer different questions. A successor does not
-automatically inherit its predecessor's group. Authors normally reuse the group
-when all chain members derive from one underlying source, but may change it when
-the newer record genuinely establishes a different source.
+automatically inherit its predecessor's group. Authors normally reuse a group
+when all chain members derive from one underlying source, but may declare a
+different group when the newer record genuinely establishes another source.
 
 ### 9.2 Inventory-independent internal closure
 
-HPA-255 already permits asserted facts to reference valid catalog records that are
-not currently acquired. HPA-256 preserves that contract.
+HPA-255 permits asserted facts to reference valid catalog records that are not
+currently acquired. HPA-256 preserves that contract.
 
-Internal lineage queries operate over:
+Internal lineage operates over:
 
 ```text
 StoryState fact progress → typed support edges → StoryCatalog definitions
 ```
 
-They do not consult `Inventory`. Therefore an unacquired supporting record remains
+It does not consult `Inventory`. Therefore an unacquired supporting record remains
 part of authoritative direct/transitive record closure and contributes its known
-source group to internal source closure.
+registered group to internal source closure.
 
-This is intentional graph math, not automatically a player-visible claim.
+This is graph math, not automatically a player-visible possession claim.
 
-### 9.3 Derived APIs
+### 9.3 Compilable lineage service
+
+```rust
+pub(crate) struct SupportLineage<'a> {
+    catalog: &'a StoryCatalog,
+    state: &'a StoryState,
+}
+
+impl<'a> SupportLineage<'a> {
+    pub(crate) fn new(
+        catalog: &'a StoryCatalog,
+        state: &'a StoryState,
+    ) -> Self;
+
+    pub(crate) fn direct_records(
+        &self,
+        fact_id: &str,
+    ) -> Result<BTreeSet<InventoryTarget>, GameError>;
+
+    pub(crate) fn transitive_records(
+        &self,
+        fact_id: &str,
+    ) -> Result<BTreeSet<InventoryTarget>, GameError>;
+
+    pub(crate) fn transitive_facts(
+        &self,
+        fact_id: &str,
+    ) -> Result<BTreeSet<String>, GameError>;
+
+    pub(crate) fn transitive_source_group_closure(
+        &self,
+        fact_id: &str,
+    ) -> Result<SourceGroupClosure, GameError>;
+
+    pub(crate) fn transitive_source_groups(
+        &self,
+        fact_id: &str,
+    ) -> Result<BTreeSet<String>, GameError>;
+}
+```
+
+`transitive_records` includes direct records and records beneath recursively
+supporting facts, deduplicated by typed identity. `transitive_facts` excludes the
+queried root. Traversal retains visited tracking even though mutation and restore
+already reject cycles.
+
+### 9.4 Diagnostic and strict source closure
 
 ```rust
 pub struct SourceGroupClosure {
     pub groups: BTreeSet<String>,
     pub missing_group_records: BTreeSet<InventoryTarget>,
 }
-
-fn direct_records(fact_id: &str)
-    -> Result<BTreeSet<InventoryTarget>, LineageError>;
-fn transitive_records(fact_id: &str)
-    -> Result<BTreeSet<InventoryTarget>, LineageError>;
-fn transitive_facts(fact_id: &str)
-    -> Result<BTreeSet<String>, LineageError>;
-fn transitive_source_group_closure(fact_id: &str)
-    -> Result<SourceGroupClosure, LineageError>;
-fn transitive_source_groups(fact_id: &str)
-    -> Result<BTreeSet<String>, LineageError>;
 ```
 
-`transitive_records` includes direct records and records beneath recursively
-supporting facts, deduplicated by typed identity. `transitive_facts` excludes the
-queried root.
+The diagnostic closure:
 
-The diagnostic source closure returns every known group plus every record lacking
-a group. It never drops unknowns or invents groups. The strict operation returns a
-complete set only when no records are missing groups; otherwise it returns a typed
-error listing them.
+- resolves every transitive record through the catalog;
+- includes every registered known group;
+- lists every record whose `sourceGroupId` is null;
+- never drops unknowns;
+- never manufactures a group.
 
-Unknown fact/record references and cycles remain typed errors at this
-read-only defense-in-depth boundary.
+The strict operation returns groups only when `missing_group_records` is empty;
+otherwise it returns `missingCaseRecordSourceGroup` naming every missing typed
+record.
 
-### 9.4 Consumer filtering
+Unknown facts/records and cycles remain typed errors at this read-only
+defense-in-depth boundary.
 
-A consumer must declare its visibility/eligibility boundary:
+### 9.5 Consumer filtering and HPA-262 boundary
 
-- HPA-262 validates and counts the selected evidence/statement records directly;
-- an inventory case-file view intersects internal lineage with acquired typed IDs;
+A consumer declares its visibility/eligibility boundary:
+
+- HPA-262 validates and counts selected evidence/statement records directly;
+- an inventory case-file view intersects internal lineage with acquired IDs;
 - public fact projections redact unacquired direct supporting records;
-- a future fact-aware board must state whether it imports the full closure or a
+- a future fact-aware board states whether it imports the full closure or a
   selected/acquired subset and whether it needs diagnostic or strict counting.
 
 No consumer may present internal source closure as “sources the player possesses”
-without applying an acquired or selected-record filter.
+without an acquired or selected-record filter.
 
 ## 10. Public and frontend contract
 
@@ -772,11 +1206,10 @@ provenance. It is rebuilt from mutable inventory on every `GameEngine::view()`.
 
 `Inventory`, `EvidenceRecord`, and `StatementRecord` are engine state, not public
 wire types. Once `InventoryView` is wired, remove their `Serialize` derives where
-practical so Rust cannot accidentally bypass redaction by embedding mutable
-inventory in another public view. Save capture continues its explicit ID-only
-mapping and does not depend on public serialization.
+practical so Rust cannot accidentally bypass redaction. Save capture continues
+its explicit ID-only mapping and does not depend on public serialization.
 
-The external JSON remains:
+The external JSON retains the existing property shape:
 
 ```ts
 type Inventory = {
@@ -785,7 +1218,7 @@ type Inventory = {
 };
 ```
 
-with each public record including `provenance`.
+Each public record gains `provenance`.
 
 ### 10.2 Dynamic lineage redaction
 
@@ -803,41 +1236,56 @@ Acquire B, where B supersedes A → public B.supersedesRecordId = null
 Acquire A later                   → next view exposes B.supersedesRecordId = A
 ```
 
-Acquiring A alone never reveals that packaged future B exists. There is no public
-successor field in HPA-256.
+Acquiring A alone never reveals packaged future B. HPA-256 has no public
+successor field.
 
-### 10.3 Spoiler-safe facts
+### 10.3 Spoiler-safe facts and public ambiguity
 
-`StoryState` continues to store every authoritative direct supporting record.
-`FactView.supportingRecords`, however, includes only currently acquired typed
-records. `supportingFactIds` remains unchanged because facts are themselves public
-only after assertion.
+`StoryState` stores every authoritative direct supporting record.
+`FactView.supportingRecords` includes only currently acquired typed records.
+`supportingFactIds` remains unchanged because supporting facts must already be
+asserted before they can be referenced.
 
 The `StoryStateView` builder therefore receives an acquired-record set or a small
-public-view context instead of blindly copying every internal support target.
+public-view context instead of blindly copying internal support targets.
 Transitive closure is not added to the current public wire shape.
+
+Public ambiguity is intentional:
+
+```text
+supportingRecords: []
+```
+
+means “no acquired direct supporting records are exposed.” It may mean either:
+
+1. internal progress has no direct record support; or
+2. every direct supporting record is currently unacquired and redacted.
+
+No current component relies on distinguishing these states. HPA-256 does not add
+a hidden-support flag because it would reveal the existence of locked content.
+A later Rust-owned lineage view may distinguish them when story design permits.
 
 ### 10.4 Frontend mirror and fixture churn
 
 Frontend types mirror every enum and provenance field exactly. Documentation on
-`supersedesRecordId` explains the redacted-or-absent dual meaning.
+`supersedesRecordId` and `supportingRecords` explains their redacted-or-absent
+meanings.
 
 The implementation plan inventories every frontend fixture and constructor for
 public evidence/statement records. Shared neutral-provenance test factories are
 allowed; production public fields remain explicit. Existing components do not
-render provenance in this ticket, so their DOM and accessible names remain
-unchanged.
+render provenance in this ticket, so DOM and accessible names remain unchanged.
 
 ### 10.5 Layout-editor compatibility
 
 The layout editor intentionally reads investigation scene JSON through a narrower
 structural type and writes only the separate layout sidecar. Additional compiled
-provenance fields are ignored by structural JSON parsing and are never written
-back into scene JSON.
+provenance fields are ignored by plain structural JSON parsing and are never
+written back into scene JSON.
 
 HPA-256 therefore does not extend `@lyra/scene-types` or layout-editor provenance
-types. A focused compatibility regression may load a compiled investigation scene
-containing provenance and confirm that saving changes only the sidecar.
+types. A focused regression may load a compiled investigation scene containing
+provenance and confirm saving changes only the sidecar.
 
 ## 11. Persistence and compatibility
 
@@ -851,8 +1299,8 @@ The save already stores all mutable data required here:
 - direct supporting fact IDs;
 - exact package content revision.
 
-It does not add provenance, source groups, capabilities, or supersession to
-`InventorySnapshotV1` or `StoryStateSnapshotV1`.
+It does not add provenance, source groups, capabilities, membership, or
+supersession to `InventorySnapshotV1` or `StoryStateSnapshotV1`.
 
 ### 11.2 Capture
 
@@ -869,36 +1317,41 @@ Restore:
 
 1. validates save schema and exact content revision;
 2. loads and version-gates catalog-v2 definitions;
-3. resolves saved record IDs to the owning packaged scenes;
-4. validates scene/catalog provenance equality;
-5. reconstructs internal inventory records from definitions and saved acquisition
+3. validates source-group registry and membership;
+4. resolves saved record IDs to owning packaged scenes;
+5. validates scene/catalog provenance equality;
+6. reconstructs internal inventory records from definitions and saved acquisition
    locations;
-6. reconstructs direct fact support;
-7. recomputes provenance, supersession, and source closure;
-8. recaptures the candidate and demands exact snapshot equality;
-9. rebuilds public views and verifies spoiler-safe projections.
+7. reconstructs direct fact support;
+8. recomputes provenance, supersession, and source closure;
+9. recaptures the candidate and demands exact snapshot equality;
+10. rebuilds public views and verifies spoiler-safe projections.
 
 Because provenance is definition data, exact snapshot equality remains unchanged.
 Dedicated tests compare pre-save/post-restore internal provenance, acquisition
-origins, public redaction, and derived lineage.
+origins, source-group identity, public redaction, and derived lineage.
 
 ### 11.4 Compatibility consequences
 
 A pre-v2 package must regenerate resources. `StoryCatalog::load` rejects v1 rather
-than defaulting missing catalog provenance. An older pre-release save has a
-different content revision and is rejected by the existing compatibility gate; no
-save-schema migration is needed.
+than defaulting missing catalog provenance or source groups. An older pre-release
+save has a different content revision and is rejected by the existing
+compatibility gate; no save-schema migration is needed.
 
-A future shipped release that preserves saves across provenance edits must add an
-explicit content migration.
+A future shipped release that preserves saves across provenance or group edits
+must add an explicit content migration.
 
 ## 12. Diagnostics and failure behavior
 
-Compiler diagnostics use stable codes and source locations for:
+### 12.1 Compiler diagnostics
 
-- malformed, blank, repeated, or unknown provenance metadata;
+Stable source-located categories cover:
+
+- malformed, blank, repeated, or unknown record metadata;
 - duplicate or unknown proof capabilities;
 - invalid source-group slug;
+- missing source-group definition;
+- duplicate, unknown, orphaned, or contradictory group membership;
 - malformed typed predecessor reference;
 - unknown, cross-kind, or self-supersession;
 - supersession fork or cycle;
@@ -906,84 +1359,116 @@ Compiler diagnostics use stable codes and source locations for:
 - scene/catalog provenance mismatch;
 - metadata missing for an explicit consumer requirement.
 
-Runtime failures are typed for:
+The focused plan may refine exact code strings, but no category may collapse into
+entry-heading-only diagnostics when a metadata line exists.
+
+### 12.2 Runtime failures
+
+Typed runtime failures cover:
 
 - unsupported catalog version;
 - malformed strict provenance;
+- duplicate/non-canonical capability array;
+- invalid source-group registry or membership;
 - invalid catalog supersession graph;
-- scene/catalog provenance mismatch;
+- scene/catalog definition mismatch;
 - unknown lineage fact/record;
 - lineage cycle at query boundary;
 - strict complete-source request with missing groups;
 - attempted public-view construction from inconsistent inventory definitions.
 
-Runtime never silently chooses scene or catalog provenance, drops unknown sources,
-creates synthetic groups, leaks an unacquired lineage ID, or installs a partially
-validated engine.
+Runtime never silently chooses scene or catalog provenance, repairs capabilities,
+drops unknown sources, creates synthetic groups, leaks an unacquired ID, or
+installs a partially validated engine.
 
 ## 13. Verification and acceptance mapping
 
-### 13.1 Compiler tests
+### 13.1 Compiler and parser tests
 
-- Parse every enum value for evidence and statements.
+- Parse every provenance enum for evidence and statements.
 - Parse all ten proof capabilities.
-- Emit neutral defaults when authored fields are omitted.
-- Reject blank, repeated, unknown, malformed, and duplicate metadata.
+- Emit exact neutral defaults when authored fields are omitted.
+- Refactor manifest metadata collection to preserve per-key lines.
+- Reject a duplicate metadata key on the second occurrence and name the first
+  line.
+- Reject unknown evidence/statement metadata keys, including `Source Knid`.
+- Reject `Image Prompt` on a statement.
+- Reject blank provenance fields at their own line.
 - Prove duplicate capabilities fail before emission.
 - Emit canonical ordering only for valid duplicate-free capabilities.
-- Reject invalid source groups and typed supersession references.
-- Emit catalog schema version 2.
+- Parse `## Source Groups` with required Summary and typed Members.
+- Reject duplicate, empty, unknown, orphaned, or contradictory group membership.
+- Reject a record group reference absent from the registry.
+- Accept an explicit legal singleton group and expose its one member.
+- Emit catalog schema version 2, including source groups and canonical members.
 - Validate missing, cross-kind, self, forked, cyclic, and regressing chains.
 - Use one normalized provenance helper for scene and catalog emission.
 - Assert exact same-ID scene ↔ catalog provenance equality for evidence and
   statements, including neutral defaults.
-- Prove same-group wall-derived clips remain distinct records in emitted JSON.
+- Prove same-group wall-derived clips remain distinct records but one declared
+  source.
 - Prove metadata requirements reject unspecified exhibit status, missing
   capabilities, and null source groups.
-- Prove a provenance-only change changes the `save-content-manifest` hash.
-- Compile live existing chapters without an authored provenance migration.
-- Verify both writing skills document matching syntax and explicit-status advice.
+- Update `SaveContentBundleV1.storyCatalog` to `StoryCatalogJsonV2`.
+- Prove provenance-only and membership-only edits change the content revision.
+- Compile live existing chapters without authored provenance migration; their
+  sourceGroups list is empty until production annotations land.
+- Verify both writing skills document matching syntax, registry membership,
+  `none` conflation, and explicit-status advice.
 
 ### 13.2 Rust tests
 
-- Deserialize a legacy scene record by defaulting an absent provenance object.
+- Assert every neutral enum `Default` variant explicitly.
+- Assert `CaseRecordProvenance::default()` equals the full neutral literal.
+- Deserialize a legacy scene record by defaulting an absent provenance object and
+  assert every field value.
 - Reject a present provenance object with missing or unknown fields.
+- Reject duplicate capability arrays before set conversion.
+- Reject non-canonical unique capability arrays.
+- Serialize validated capabilities in canonical order.
+- Reuse the existing version envelope with accepted version 2.
 - Reject catalog v1 before v2 payload deserialization.
-- Round-trip every provenance enum and field through serde.
-- Reject catalog-v2 corruption for every chain invariant.
-- Resolve typed evidence/statement definitions through the catalog.
+- Reject future catalog v3 before v2 field validation.
+- Replace the existing `CaseRecordDefinitionIndex` with v2 wire/domain types.
+- Remove obsolete dead-code allowances from record origin fields.
+- Validate source-group definitions and exact bidirectional membership.
+- Reject catalog-v2 corruption for every group and chain invariant.
+- Resolve typed evidence/statement and source-group definitions through catalog.
 - Reject a loaded scene whose provenance differs from its same-ID catalog entry.
-- Reject acquisition when scene/catalog provenance differs before inventory
-  mutation.
+- Reject acquisition mismatch before inventory mutation.
 - Return full supersession chains oldest → newest, including one-element chains
   and targets in the middle.
 - Copy provenance into inventory without mutating acquisition origin.
 - Keep predecessor and successor as separate acquired records.
-- Audit all Rust `EvidenceJson`, `StatementJson`, `EvidenceRecord`, and
+- Audit all `EvidenceJson`, `StatementJson`, `EvidenceRecord`, and
   `StatementRecord` literal/constructor sites; use explicit values or approved
   test helpers.
 - Compute internal record/source closure for an unacquired supporting record.
-- Confirm diagnostic/strict closure includes that record's known group while
-  public inventory hides the record.
+- Confirm diagnostic/strict closure includes its known group while public
+  inventory hides the record.
 - Return diagnostic source closure with known groups plus every missing record.
 - Make strict source closure fail when any supporting record lacks a group.
-- Deduplicate records and source groups reached through several supporting facts.
+- Deduplicate records and groups reached through several supporting facts.
 - Preserve existing support-cycle and snapshot validation.
+- Prove provenance/catalog/lineage service methods return `GameError` mappings.
 - Build `GameStateView` from `InventoryView`, never mutable `Inventory`.
-- Hide an unacquired predecessor from a successor's public provenance.
-- Recompute redaction: acquire successor first, then predecessor, and expose the
-  predecessor on the next view.
+- Hide an unacquired predecessor from successor public provenance.
+- Recompute redaction after acquiring the predecessor later.
 - Never expose a future successor when only the predecessor is acquired.
 - Filter unacquired record IDs out of `FactView.supportingRecords` while retaining
   them in internal `StoryState`.
+- Prove public empty supportingRecords remains deliberately ambiguous without a
+  hidden-support flag.
 - Capture/save/restore lead → reacquired → exhibit records and confirm identical
-  definitions, acquisition origins, direct support, internal closure, public
-  redaction, and exact recapture.
+  definitions, group membership, acquisition origins, direct support, internal
+  closure, public redaction, and exact recapture.
 
 ### 13.3 Frontend and regression tests
 
 - Mirror every provenance enum and field in `state/types.ts`.
 - Document the redacted-or-absent meaning of public null predecessor.
+- Document that empty public supportingRecords means no acquired support is
+  exposed, not necessarily no internal support.
 - Inventory and update every public record fixture/constructor with neutral
   provenance or a shared factory.
 - Confirm current evidence/statement rendering ignores neutral provenance and is
@@ -996,11 +1481,15 @@ validated engine.
 
 ### 13.4 Structural guards
 
-Add a focused structural or compile-time guard that fails if:
+Add focused structural or compile-time guards that fail if:
 
 - `GameStateView.inventory` is changed back to mutable `Inventory`;
-- mutable inventory records regain an unintended direct public serialization path;
+- mutable inventory records regain an unintended direct public serialization
+  path;
 - scene and catalog emission stop sharing the normalization helper;
+- manifest metadata collection returns to last-write-wins or open-key behavior;
+- catalog v2 accepts a record group not present in the registry;
+- strict provenance deserializes capabilities directly into a set;
 - a public view exposes a catalog successor field or unacquired supporting record.
 
 ### 13.5 Required command gates
@@ -1013,36 +1502,41 @@ bun run check:scripts
 bun run test
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml
 bun run check
+bun run --cwd apps/game check:e2e
 bun run lint:all
 ```
 
-Focused tests run first. Packaged Tauri E2E is required only if implementation
-changes a rendered flow or save command surface; otherwise save integration,
-public-view tests, layout compatibility where relevant, and the full-playthrough
-regression are the P0 gate.
+Focused tests run first. Packaged Tauri `test:e2e` is required only if the
+implementation changes a rendered flow or save command surface; the separate E2E
+TypeScript check is always part of the floor because ordinary Svelte checking
+excludes those files.
 
 ## 14. Expected file boundaries
 
-Compiler:
+Compiler and story catalog:
 
 ```text
 Modify packages/scripts/compile-scenes/types.ts
 Modify packages/scripts/compile-scenes/parser-manifest.ts
+Modify packages/scripts/compile-scenes/parser-story-catalog.ts
 Add    packages/scripts/compile-scenes/case-record-provenance.ts
 Modify packages/scripts/compile-scenes/emitter.ts
 Modify packages/scripts/compile-scenes/story-catalog.ts
 Modify packages/scripts/compile-scenes/validator.ts
-Modify packages/scripts/compile-scenes/save-content-manifest.test.ts
 Modify packages/scripts/compile-scenes/save-content-manifest.ts
-       only if the versioned bundle/input boundary needs a production change
-Add/modify focused compiler fixtures and equality tests
+Modify packages/scripts/compile-scenes/save-content-manifest.test.ts
+Modify parser-manifest, parser-story-catalog, emitter, validator, and catalog tests
+Add/modify focused fixtures for metadata, groups, equality, and content identity
 ```
+
+`save-content-references.ts` remains the semantic asset-reference validator.
 
 Rust core:
 
 ```text
 Add    apps/game/src-tauri/src/game/provenance.rs
 Add    apps/game/src-tauri/src/game/support_lineage.rs
+Modify apps/game/src-tauri/src/game/error.rs
 Modify apps/game/src-tauri/src/game/mod.rs
 Modify apps/game/src-tauri/src/game/schema.rs
 Modify apps/game/src-tauri/src/game/state.rs
@@ -1076,7 +1570,6 @@ Authoring guidance:
 ```text
 Modify .claude/skills/writing-investigation-scene/SKILL.md
 Modify .claude/skills/writing-interrogation-scene/SKILL.md
-Verify local .agents/skills mirror when present; do not commit a duplicate copy.
 ```
 
 Documentation:
@@ -1086,8 +1579,8 @@ Add docs/superpowers/plans/2026-07-29-hpa-256-case-record-provenance-and-support
 ```
 
 The implementation plan may refine test filenames and split large Rust modules,
-but it must preserve these ownership, equality, visibility, and persistence
-boundaries.
+but it must preserve these authoring, registry, equality, validation, visibility,
+error, and persistence boundaries.
 
 ## 15. Non-goals and future ownership
 
@@ -1095,8 +1588,10 @@ HPA-256 does not implement:
 
 - automatic provenance inference from names, prose, record kind, scene type, or
   acquisition source;
+- automatic source-group creation from labels or record co-occurrence;
 - automatic source-group inheritance through supersession;
 - automatic capability inference from raw/composite/exhibit status;
+- rejecting every singleton source group merely because it is a singleton;
 - eager loading of every packaged scene solely to validate equality at ordinary
   startup;
 - analysis-scene Markdown or accepted solutions (HPA-259);
@@ -1110,7 +1605,7 @@ HPA-256 does not implement:
   (HPA-274);
 - branching supersession graphs;
 - generic confidence scores or probabilistic evidence weighting;
-- a public successor ID or a new public transitive-lineage field.
+- a public successor ID, hidden-support flag, or public transitive-lineage field.
 
 Later tickets consume this contract rather than redefining source identity,
 procedural status, proof capability, supersession, acquisition visibility, or
