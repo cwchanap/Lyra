@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import InventoryPanel from "./InventoryPanel.svelte";
 import type { CaseRecordProvenance, Inventory } from "../state/types";
 import {
+  neutralCaseRecordProvenance,
   neutralEvidenceRecordView,
   neutralStatementRecordView,
 } from "../state/test-fixtures";
@@ -23,7 +24,7 @@ const annotatedProvenance: CaseRecordProvenance = {
   sourceGroupId: "cafe_register_export",
   sourceLabel: "鑑識原始檔",
   proofCapabilities: ["time", "identity", "procedure"],
-  supersedesRecordId: "evidence:coffee_receipt_lead",
+  supersedesRecordId: null,
 };
 
 const inventory: Inventory = {
@@ -54,6 +55,36 @@ const inventory: Inventory = {
 
 function source() {
   return readFileSync(join(testDir, "InventoryPanel.svelte"), "utf8");
+}
+
+function normalizedText(element: Element): string {
+  return element.textContent?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function inventoryOutput(provenance: CaseRecordProvenance) {
+  const rendered = render(InventoryPanel, {
+    inventory: {
+      ...inventory,
+      evidence: inventory.evidence.map((record) => ({
+        ...record,
+        provenance,
+      })),
+    },
+    reexamineEnabled: true,
+    onReexamineEvidence: vi.fn(),
+    onReexamineStatement: vi.fn(),
+    open: true,
+  });
+  const inventoryPanel = rendered.container.querySelector("aside");
+  if (!inventoryPanel) {
+    throw new Error("expected rendered inventory panel");
+  }
+  const output = {
+    visibleText: normalizedText(inventoryPanel),
+    buttons: Array.from(inventoryPanel.querySelectorAll("button")),
+    unmount: rendered.unmount,
+  };
+  return output;
 }
 
 describe("InventoryPanel", () => {
@@ -125,24 +156,34 @@ describe("InventoryPanel", () => {
   });
 
   it("keeps provenance out of visible and accessible inventory content", () => {
-    render(InventoryPanel, {
-      inventory,
-      reexamineEnabled: true,
-      onReexamineEvidence: vi.fn(),
-      onReexamineStatement: vi.fn(),
-      open: true,
-    });
+    const establishedVisibleText =
+      "收合 EVIDENCE ▸ 1 證 1 言 DOSSIER · 物證檔案 2 項已歸檔 證 證物 (1) 01 咖啡收據 收據上的時間被圈起。 言 證言 (1) 01 若月 我一直在店內。";
+    const establishedAccessibleNames = [
+      "收合 EVIDENCE ▸ 1 證 1 言",
+      "01 咖啡收據 收據上的時間被圈起。",
+      "01 若月 我一直在店內。",
+    ];
+    const expectEstablishedOutput = (
+      output: ReturnType<typeof inventoryOutput>,
+    ) => {
+      expect(output.visibleText).toBe(establishedVisibleText);
+      expect(output.buttons).toHaveLength(establishedAccessibleNames.length);
+      for (const [
+        index,
+        accessibleName,
+      ] of establishedAccessibleNames.entries()) {
+        expect(output.buttons[index]).toHaveAccessibleName(accessibleName);
+      }
+    };
+    const neutralOutput = inventoryOutput(neutralCaseRecordProvenance());
+    expectEstablishedOutput(neutralOutput);
+    neutralOutput.unmount();
 
-    const evidenceButton = screen.getByRole("button", { name: /咖啡收據/ });
-    expect(evidenceButton).toHaveAccessibleName(/咖啡收據.*收據上的時間被圈起/);
-    expect(evidenceButton).not.toHaveAccessibleName(
-      /digital|raw|exhibit|complete|corroborated|cafe_register_export|鑑識原始檔|time|identity|procedure|coffee_receipt_lead/,
-    );
-    expect(
-      screen.getByRole("region", { name: "物證清單" }),
-    ).not.toHaveTextContent(
-      /digital|raw|exhibit|complete|corroborated|cafe_register_export|鑑識原始檔|time|identity|procedure|coffee_receipt_lead/,
-    );
+    const annotatedOutput = inventoryOutput(annotatedProvenance);
+    expectEstablishedOutput(annotatedOutput);
+    annotatedOutput.unmount();
+
+    expect(annotatedOutput.visibleText).toBe(neutralOutput.visibleText);
   });
 
   it("respects a bound open prop to start expanded", () => {
