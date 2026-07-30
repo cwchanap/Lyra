@@ -1,7 +1,8 @@
 use super::catalog::{ObjectiveKind, StoryCatalog};
 use super::state::{AssertionOrigin, StoryState};
-use crate::game::schema::InventoryTarget;
+use crate::game::schema::{compare_inventory_targets, InventoryTarget};
 use serde::Serialize;
+use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,6 +24,8 @@ pub struct FactView {
     pub asserted_in_chapter_id: Option<String>,
     pub asserted_in_scene_id: Option<String>,
     pub first_origin: AssertionOrigin,
+    /// Empty means no acquired direct supporting records are exposed. Internal
+    /// story progress may still contain direct support that is not yet acquired.
     pub supporting_records: Vec<InventoryTarget>,
     pub supporting_fact_ids: Vec<String>,
 }
@@ -76,11 +79,22 @@ pub struct AuthorizationView {
 }
 
 impl StoryStateView {
-    pub(in crate::game) fn from_catalog_state(catalog: &StoryCatalog, state: &StoryState) -> Self {
+    pub(in crate::game) fn from_catalog_state(
+        catalog: &StoryCatalog,
+        state: &StoryState,
+        acquired_targets: &BTreeSet<InventoryTarget>,
+    ) -> Self {
         let facts = catalog
             .facts()
             .filter_map(|definition| {
                 let progress = state.facts.get(&definition.id)?;
+                let mut supporting_records = progress
+                    .supporting_records
+                    .iter()
+                    .filter(|target| acquired_targets.contains(*target))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                supporting_records.sort_by(compare_inventory_targets);
                 Some(FactView {
                     id: definition.id.clone(),
                     label: definition.label.clone(),
@@ -90,7 +104,7 @@ impl StoryStateView {
                     asserted_in_chapter_id: progress.asserted_in_chapter_id.clone(),
                     asserted_in_scene_id: progress.asserted_in_scene_id.clone(),
                     first_origin: progress.first_origin.clone(),
-                    supporting_records: progress.supporting_records.iter().cloned().collect(),
+                    supporting_records,
                     supporting_fact_ids: progress.supporting_fact_ids.iter().cloned().collect(),
                 })
             })
@@ -170,6 +184,7 @@ mod tests {
     use crate::game::schema::InventoryTarget;
     use crate::game::story::{AssertionOrigin, StoryCatalog, StoryEventBlockKind, StoryState};
     use serde_json::json;
+    use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     fn catalog() -> StoryCatalog {
@@ -347,9 +362,24 @@ mod tests {
     fn filters_untouched_definitions_and_serializes_only_applied_progress() {
         let catalog = catalog();
         let state = populated_state(&catalog);
+        let acquired_targets = BTreeSet::from([
+            InventoryTarget::Evidence {
+                id: "evidence_a".into(),
+            },
+            InventoryTarget::Evidence {
+                id: "evidence_z".into(),
+            },
+            InventoryTarget::Statement {
+                id: "statement_b".into(),
+            },
+        ]);
 
-        let value =
-            serde_json::to_value(StoryStateView::from_catalog_state(&catalog, &state)).unwrap();
+        let value = serde_json::to_value(StoryStateView::from_catalog_state(
+            &catalog,
+            &state,
+            &acquired_targets,
+        ))
+        .unwrap();
 
         assert_eq!(
             value,
@@ -474,6 +504,78 @@ mod tests {
         assert!(
             value["questions"][1].get("resolvedByFactIds").is_none(),
             "candidate resolver lists must remain immutable catalog-only data"
+        );
+    }
+
+    #[test]
+    fn public_facts_filter_unacquired_direct_support_and_sort_acquired_targets() {
+        let catalog = catalog();
+        let state = populated_state(&catalog);
+        let mut acquired_targets = BTreeSet::from([InventoryTarget::Statement {
+            id: "statement_b".into(),
+        }]);
+
+        let statement_only = serde_json::to_value(StoryStateView::from_catalog_state(
+            &catalog,
+            &state,
+            &acquired_targets,
+        ))
+        .unwrap();
+        assert_eq!(
+            statement_only["facts"][0]["supportingRecords"],
+            json!([{"kind": "statement", "id": "statement_b"}])
+        );
+        assert_eq!(
+            state
+                .fact_progress("fact_first")
+                .unwrap()
+                .supporting_records()
+                .len(),
+            3,
+            "public filtering must not erase inventory-independent internal support"
+        );
+
+        acquired_targets.insert(InventoryTarget::Evidence {
+            id: "evidence_a".into(),
+        });
+        let evidence_then_statement = serde_json::to_value(StoryStateView::from_catalog_state(
+            &catalog,
+            &state,
+            &acquired_targets,
+        ))
+        .unwrap();
+        assert_eq!(
+            evidence_then_statement["facts"][0]["supportingRecords"],
+            json!([
+                {"kind": "evidence", "id": "evidence_a"},
+                {"kind": "statement", "id": "statement_b"}
+            ])
+        );
+    }
+
+    #[test]
+    fn empty_public_support_means_no_acquired_direct_support_without_a_spoiler_flag() {
+        let catalog = catalog();
+        let state = populated_state(&catalog);
+
+        let value = serde_json::to_value(StoryStateView::from_catalog_state(
+            &catalog,
+            &state,
+            &BTreeSet::new(),
+        ))
+        .unwrap();
+
+        assert_eq!(value["facts"][0]["supportingRecords"], json!([]));
+        assert_eq!(
+            value["facts"][1]["supportingFactIds"],
+            json!(["fact_first"]),
+            "supporting fact IDs retain their existing asserted-fact semantics"
+        );
+        assert!(
+            value["facts"][0]
+                .get("hasHiddenSupportingRecords")
+                .is_none(),
+            "a hidden-support flag would itself disclose locked support"
         );
     }
 }

@@ -24,7 +24,9 @@ pub mod view;
 
 use command_tx::CommandMutation;
 pub use error::GameError;
-pub use view::{DialogueHistoryEntry, GameStateView, ModeView, QueueToken, SceneNavigationIndex};
+pub use view::{
+    DialogueHistoryEntry, GameStateView, InventoryView, ModeView, QueueToken, SceneNavigationIndex,
+};
 
 use acquisition::AcquisitionCtx;
 use content_manifest::ContentManifest;
@@ -276,13 +278,20 @@ impl GameEngine {
     }
 
     pub fn view(&self) -> Result<GameStateView, GameError> {
+        let inventory = InventoryView::from_inventory(&self.story_catalog, &self.inventory)?;
+        let acquired_targets = self.inventory.acquired_targets();
+        let story = StoryStateView::from_catalog_state(
+            &self.story_catalog,
+            &self.story_state,
+            &acquired_targets,
+        );
         let pending_acquisition = self.pending_acquisition_view()?;
         Ok(GameStateView {
             mode: self.mode_view(),
             chapter: self.chapter_view(),
             scene: self.scene_view(),
-            inventory: self.inventory.clone(),
-            story: StoryStateView::from_catalog_state(&self.story_catalog, &self.story_state),
+            inventory,
+            story,
             dialogue_history: self.history.entries().to_vec(),
             pending_acquisition,
         })
@@ -3411,7 +3420,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
-            collected_in_scene_id: "previous_scene".into(),
+            collected_in_scene_id: "interrogation_scene_1".into(),
         });
 
         engine.prime_initial_queue().unwrap();
@@ -3446,7 +3455,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
-            collected_in_scene_id: "previous_scene".into(),
+            collected_in_scene_id: "interrogation_scene_1".into(),
         });
 
         engine.prime_initial_queue().unwrap();
@@ -4349,7 +4358,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
-            collected_in_scene_id: "previous_scene".into(),
+            collected_in_scene_id: "ordering_test".into(),
         });
 
         engine.prime_initial_queue().unwrap();
@@ -4523,7 +4532,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
-            collected_in_scene_id: "previous_scene".into(),
+            collected_in_scene_id: "q_reveal_present".into(),
         });
         engine.prime_initial_queue().unwrap();
 
@@ -4684,7 +4693,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
-            collected_in_scene_id: "previous_scene".into(),
+            collected_in_scene_id: "manual_complete".into(),
         });
         engine.prime_initial_queue().unwrap();
         break_q1(&mut engine);
@@ -4716,7 +4725,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
-            collected_in_scene_id: "previous_scene".into(),
+            collected_in_scene_id: "manual_complete".into(),
         });
         engine.prime_initial_queue().unwrap();
         break_q1(&mut engine);
@@ -4819,7 +4828,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
-            collected_in_scene_id: "prev".into(),
+            collected_in_scene_id: "interrogation_scene_1".into(),
         });
         engine.prime_initial_queue().unwrap();
         engine.ask_interrogation_question("alibi").unwrap();
@@ -4940,7 +4949,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
-            collected_in_scene_id: "prev".into(),
+            collected_in_scene_id: "interrogation_scene_1".into(),
         });
         engine.prime_initial_queue().unwrap();
         engine.ask_interrogation_question("alibi").unwrap();
@@ -5031,7 +5040,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             image_asset_id: None,
             on_reexamine: None,
             collected_in_chapter_id: "chapter_1".into(),
-            collected_in_scene_id: "prev".into(),
+            collected_in_scene_id: "interrogation_scene_1".into(),
         });
         engine.prime_initial_queue().unwrap();
         engine.ask_interrogation_question("alibi").unwrap();

@@ -1,10 +1,9 @@
 // src-tauri/src/game/state.rs
 use crate::game::provenance::CaseRecordProvenance;
-use crate::game::schema::{DialogueItem, EvidenceJson, StatementJson};
-use serde::Serialize;
+use crate::game::schema::{DialogueItem, EvidenceJson, InventoryTarget, StatementJson};
+use std::collections::BTreeSet;
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvidenceRecord {
     pub id: String,
     pub name: String,
@@ -17,8 +16,7 @@ pub struct EvidenceRecord {
     pub collected_in_scene_id: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatementRecord {
     pub id: String,
     pub speaker: String,
@@ -29,8 +27,7 @@ pub struct StatementRecord {
     pub acquired_in_scene_id: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Inventory {
     pub evidence: Vec<EvidenceRecord>,
     pub statements: Vec<StatementRecord>,
@@ -42,6 +39,21 @@ impl Inventory {
     }
     pub fn has_statement(&self, id: &str) -> bool {
         self.statements.iter().any(|s| s.id == id)
+    }
+    pub(in crate::game) fn acquired_targets(&self) -> BTreeSet<InventoryTarget> {
+        self.evidence
+            .iter()
+            .map(|record| InventoryTarget::Evidence {
+                id: record.id.clone(),
+            })
+            .chain(
+                self.statements
+                    .iter()
+                    .map(|record| InventoryTarget::Statement {
+                        id: record.id.clone(),
+                    }),
+            )
+            .collect()
     }
     pub(in crate::game) fn add_evidence_from_def(
         &mut self,

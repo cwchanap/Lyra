@@ -1058,7 +1058,28 @@ pub(super) fn two_line_question_scene() -> InterrogationSceneJson {
                 },
             }],
         }],
-        evidence_manifest: vec![],
+        evidence_manifest: vec![
+            EvidenceJson {
+                id: "cleaning_log".into(),
+                name: "Cleaning Log".into(),
+                description: "Cleaning log".into(),
+                details: "Cleaning log".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            },
+            EvidenceJson {
+                id: "unrelated".into(),
+                name: "Unrelated".into(),
+                description: "Unrelated".into(),
+                details: "Unrelated".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            },
+        ],
         statement_manifest: vec![],
         outro: InterrogationOutroJson {
             unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
@@ -1177,16 +1198,28 @@ pub(super) fn locked_inventory_unlocked_interrogation_scene() -> InterrogationSc
                 testimony: empty_testimony(),
             }],
         }],
-        evidence_manifest: vec![EvidenceJson {
-            id: "note".into(),
-            name: "Note".into(),
-            description: "Note".into(),
-            details: "Note".into(),
-            provenance: crate::game::provenance::CaseRecordProvenance::default(),
-            image_asset_id: None,
-            on_collect: vec![],
-            on_reexamine: None,
-        }],
+        evidence_manifest: vec![
+            EvidenceJson {
+                id: "key".into(),
+                name: "Key".into(),
+                description: "Key".into(),
+                details: "Key".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            },
+            EvidenceJson {
+                id: "note".into(),
+                name: "Note".into(),
+                description: "Note".into(),
+                details: "Note".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            },
+        ],
         statement_manifest: vec![],
         outro: InterrogationOutroJson {
             unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
@@ -1262,6 +1295,16 @@ pub(super) fn source_order_inventory_unlocked_interrogation_scene() -> Interroga
             },
         ],
         evidence_manifest: vec![
+            EvidenceJson {
+                id: "key".into(),
+                name: "Key".into(),
+                description: "Key".into(),
+                details: "Key".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
+                image_asset_id: None,
+                on_collect: vec![],
+                on_reexamine: None,
+            },
             EvidenceJson {
                 id: "early_note".into(),
                 name: "Early Note".into(),
@@ -1356,6 +1399,32 @@ pub(super) fn completed_interrogation_engine_with_bad_next_scene(
     let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
     scene.current_phase_id = None;
     scene.outro_played = true;
+    let story_catalog = catalog_with_case_records(
+        inventory
+            .evidence
+            .iter()
+            .map(|record| {
+                (
+                    record.id.as_str(),
+                    record.collected_in_chapter_id.as_str(),
+                    record.collected_in_scene_id.as_str(),
+                    record.provenance.clone(),
+                )
+            })
+            .collect(),
+        inventory
+            .statements
+            .iter()
+            .map(|record| {
+                (
+                    record.id.as_str(),
+                    record.acquired_in_chapter_id.as_str(),
+                    record.acquired_in_scene_id.as_str(),
+                    record.provenance.clone(),
+                )
+            })
+            .collect(),
+    );
     GameEngine {
         resources_dir,
         content_manifest: test_content_manifest(),
@@ -1374,7 +1443,7 @@ pub(super) fn completed_interrogation_engine_with_bad_next_scene(
                 },
             ],
         }],
-        story_catalog: StoryCatalog::empty(),
+        story_catalog,
         story_state: StoryState::default(),
         current_chapter_idx: 0,
         current_scene_idx: 0,
