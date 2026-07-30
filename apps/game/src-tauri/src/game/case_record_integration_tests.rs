@@ -158,7 +158,7 @@ fn compiler_shaped_resources() -> (tempfile::TempDir, PathBuf) {
                 {"kind": "evidence", "id": "camera_exhibit"},
                 {"kind": "evidence", "id": "camera_lead"},
                 {"kind": "evidence", "id": "camera_reacquired"},
-                {"kind": "statement", "id": "witness_clock"}
+                {"kind": "statement", "id": "camera_exhibit"}
             ]
         }],
         "evidenceIndex": [
@@ -177,7 +177,7 @@ fn compiler_shaped_resources() -> (tempfile::TempDir, PathBuf) {
         ],
         "statementsIndex": [
             catalog_record(
-                "witness_clock",
+                "camera_exhibit",
                 "interrogation_scene_2",
                 statement.clone(),
             )
@@ -229,7 +229,7 @@ fn compiler_shaped_resources() -> (tempfile::TempDir, PathBuf) {
     let interrogation_path = resources.join("chapter_1/interrogation_scene_2.json");
     let mut interrogation = read_json(&interrogation_path);
     interrogation["statementManifest"] = json!([{
-        "id": "witness_clock",
+        "id": "camera_exhibit",
         "speaker": "Witness",
         "content": "The station clock matched the camera clock.",
         "provenance": statement,
@@ -330,25 +330,21 @@ fn compiler_shaped_provenance_lineage_and_public_redaction_survive_exact_restore
         ]
     );
     assert_eq!(
-        engine
-            .story_catalog
-            .source_group("mixed_station_source")
-            .unwrap()
-            .members,
-        BTreeSet::from([
-            InventoryTarget::Evidence {
-                id: "camera_exhibit".into(),
-            },
-            InventoryTarget::Evidence {
-                id: "camera_lead".into(),
-            },
-            InventoryTarget::Evidence {
-                id: "camera_reacquired".into(),
-            },
-            InventoryTarget::Statement {
-                id: "witness_clock".into(),
-            },
-        ])
+        serde_json::to_value(
+            &engine
+                .story_catalog
+                .source_group("mixed_station_source")
+                .unwrap()
+                .members
+        )
+        .unwrap(),
+        json!([
+            {"kind": "evidence", "id": "camera_exhibit"},
+            {"kind": "evidence", "id": "camera_lead"},
+            {"kind": "evidence", "id": "camera_reacquired"},
+            {"kind": "statement", "id": "camera_exhibit"}
+        ]),
+        "typed namespaces must retain same-slug evidence and statement members"
     );
 
     let successor_first = engine.inspect_hotspot("exhibit_terminal").unwrap();
@@ -376,7 +372,7 @@ fn compiler_shaped_provenance_lineage_and_public_redaction_survive_exact_restore
         &mut engine,
         "fact_clock",
         &[InventoryTarget::Statement {
-            id: "witness_clock".into(),
+            id: "camera_exhibit".into(),
         }],
         &[],
     );
@@ -405,16 +401,12 @@ fn compiler_shaped_provenance_lineage_and_public_redaction_survive_exact_restore
         }])
     );
     assert_eq!(
-        lineage.transitive_records("fact_timeline").unwrap(),
-        BTreeSet::from([
-            InventoryTarget::Evidence {
-                id: "camera_exhibit".into(),
-            },
-            InventoryTarget::Statement {
-                id: "witness_clock".into(),
-            },
+        serde_json::to_value(lineage.transitive_records("fact_timeline").unwrap()).unwrap(),
+        json!([
+            {"kind": "evidence", "id": "camera_exhibit"},
+            {"kind": "statement", "id": "camera_exhibit"}
         ]),
-        "internal closure must retain unacquired interrogation-statement support"
+        "internal closure must retain distinct same-slug evidence and unacquired statement support"
     );
     assert_eq!(
         lineage.transitive_facts("fact_timeline").unwrap(),
@@ -504,16 +496,15 @@ fn compiler_shaped_provenance_lineage_and_public_redaction_survive_exact_restore
     let restored_lineage =
         SupportLineage::new(&restored.engine.story_catalog, &restored.engine.story_state);
     assert_eq!(
-        restored_lineage
-            .transitive_records("fact_timeline")
-            .unwrap(),
-        BTreeSet::from([
-            InventoryTarget::Evidence {
-                id: "camera_exhibit".into(),
-            },
-            InventoryTarget::Statement {
-                id: "witness_clock".into(),
-            },
+        serde_json::to_value(
+            restored_lineage
+                .transitive_records("fact_timeline")
+                .unwrap()
+        )
+        .unwrap(),
+        json!([
+            {"kind": "evidence", "id": "camera_exhibit"},
+            {"kind": "statement", "id": "camera_exhibit"}
         ])
     );
     assert_eq!(
