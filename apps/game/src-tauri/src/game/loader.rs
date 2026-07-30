@@ -653,6 +653,39 @@ mod tests {
     }
 
     #[test]
+    fn rejects_catalog_record_assigned_to_loaded_linear_scene() {
+        let resources = unique_temp_dir();
+        let chapter_dir = resources.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("scene_0.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Linear",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+        let catalog = catalog_with_case_records(
+            vec![(
+                "catalog_only",
+                "chapter_1",
+                "scene_0",
+                CaseRecordProvenance::default(),
+            )],
+            vec![],
+        );
+
+        let error =
+            load_scene_with_catalog(&resources, &catalog, "chapter_1", "chapter_1/scene_0.json")
+                .unwrap_err();
+
+        assert_eq!(error.code, "caseRecordDefinitionMismatch");
+        let _ = fs::remove_dir_all(resources);
+    }
+
+    #[test]
     fn loads_a_valid_chapters_index() {
         let d = unique_temp_dir();
         let p = d.join("chapters.json");

@@ -15,6 +15,7 @@ use crate::game::dialogue_queue::{
 use crate::game::navigation::{
     load_chapter_manifests, load_chapter_scene_jsons, scene_json_identity,
 };
+use crate::game::provenance::validate_catalog_record_origin_coverage;
 use crate::game::scenes::interrogation::{CrossExam, InterrogationSceneState};
 use crate::game::scenes::investigation::InvestigationSceneState;
 use crate::game::scenes::linear::LinearSceneState;
@@ -175,6 +176,8 @@ pub(crate) fn load_current_definitions(
             scenes_by_key.insert(key, scene);
         }
     }
+
+    validate_catalog_record_origin_coverage(&story_catalog, scenes_by_key.keys().cloned())?;
 
     Ok(CurrentDefinitions {
         resources_dir: resources_dir.to_path_buf(),
@@ -2771,6 +2774,41 @@ mod tests {
         };
 
         assert_eq!(save.content_revision, engine.content_revision());
+        assert_eq!(error.code, "caseRecordDefinitionMismatch");
+    }
+
+    #[test]
+    fn current_definition_loading_rejects_catalog_record_with_unmanifested_origin() {
+        let (_guard, resources) = provenance_save_fixture_resources();
+        let catalog_path = resources.join("story_catalog.json");
+        let mut catalog: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&catalog_path).unwrap()).unwrap();
+        catalog["evidenceIndex"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "orphaned_record",
+                "chapterId": "chapter_1",
+                "sceneId": "missing_scene",
+                "provenance": {
+                    "sourceKind": "unspecified",
+                    "representationLayer": "none",
+                    "proceduralStatus": "unspecified",
+                    "completeness": "unspecified",
+                    "confidence": "unspecified",
+                    "sourceGroupId": null,
+                    "sourceLabel": null,
+                    "proofCapabilities": [],
+                    "supersedesRecordId": null
+                }
+            }));
+        std::fs::write(&catalog_path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
+
+        let error = match load_current_definitions(&resources) {
+            Ok(_) => panic!("orphaned catalog origin reached candidate construction"),
+            Err(error) => error,
+        };
+
         assert_eq!(error.code, "caseRecordDefinitionMismatch");
     }
 
