@@ -642,7 +642,11 @@ mod tests {
                     collected_in_scene_id: "investigation_scene_1".into(),
                 },
             ],
-            statements: vec![],
+            statements: vec![StatementInventoryEntryV1 {
+                record_id: "witness_support".into(),
+                acquired_in_chapter_id: "chapter_1".into(),
+                acquired_in_scene_id: "investigation_scene_1".into(),
+            }],
         };
 
         let inventory = serde_json::to_value(&save).unwrap()["snapshot"]["inventory"].clone();
@@ -667,7 +671,11 @@ mod tests {
                         "collectedInSceneId": "investigation_scene_1"
                     }
                 ],
-                "statements": []
+                "statements": [{
+                    "recordId": "witness_support",
+                    "acquiredInChapterId": "chapter_1",
+                    "acquiredInSceneId": "investigation_scene_1"
+                }]
             })
         );
         let encoded = inventory.to_string();
