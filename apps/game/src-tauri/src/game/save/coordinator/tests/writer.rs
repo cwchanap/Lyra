@@ -3,7 +3,6 @@ use super::super::{
 };
 use crate::game::GameError;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 struct RejectingTaskScheduler;
 
@@ -106,11 +105,9 @@ async fn superseded_debounce_is_removed_before_it_can_enter_writer_turn() {
 }
 
 #[tokio::test]
-async fn waiting_for_writer_holds_neither_gate_nor_session_lock() {
+async fn queued_writer_runs_only_after_the_current_writer_completes() {
     let coordinator = SaveCoordinator::new();
     let probe = Arc::new(WriterQueueProbe::paused());
-    let gate = Arc::new(Mutex::new(()));
-    let session = Arc::new(Mutex::new(()));
 
     let current_probe = probe.clone();
     coordinator
@@ -128,11 +125,14 @@ async fn waiting_for_writer_holds_neither_gate_nor_session_lock() {
         probe.clone(),
     );
 
-    assert!(gate.try_lock().is_ok());
-    assert!(session.try_lock().is_ok());
-
+    // The queued "waiting" writer cannot start until "current" releases its
+    // writer turn. The lock-order tests in lock_order.rs cover the real
+    // AppState gate/session non-holding; this test covers queue serialization.
     probe.release_all();
     probe.wait_for_completions(2).await;
+
+    assert_eq!(probe.started_labels(), ["current", "waiting"]);
+    assert_eq!(probe.max_concurrent(), 1);
 }
 
 #[tokio::test]

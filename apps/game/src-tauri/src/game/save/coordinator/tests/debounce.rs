@@ -78,8 +78,9 @@ impl RecordingBackend {
     }
 
     pub(super) async fn wait_until_started(&self) {
+        let notified = self.started.notified();
         if self.observations().is_empty() {
-            self.started.notified().await;
+            notified.await;
         }
     }
 
@@ -223,8 +224,9 @@ impl PhasedBackend {
     }
 
     pub(super) async fn wait_for_prepare(&self) {
+        let notified = self.prepare_started.notified();
         if !self.phases.lock().unwrap().contains(&"W:prepare") {
-            self.prepare_started.notified().await;
+            notified.await;
         }
     }
 
@@ -268,10 +270,11 @@ impl PhasedBackend {
             return;
         }
         loop {
+            let notified = self.pause_reached.notified();
             if *self.reached_point.lock().unwrap() == Some(point) {
                 return;
             }
-            self.pause_reached.notified().await;
+            notified.await;
         }
     }
 
@@ -301,30 +304,33 @@ impl PhasedBackend {
 
     async fn pause_if_requested(&self, point: PausePoint) {
         loop {
+            let notified = self.pause_release.notified();
             if *self.pause_point.lock().unwrap() != Some(point) {
                 return;
             }
             *self.reached_point.lock().unwrap() = Some(point);
             self.pause_reached.notify_waiters();
-            self.pause_release.notified().await;
+            notified.await;
         }
     }
 
     pub(super) async fn wait_for_receipts(&self, count: usize) {
         loop {
+            let notified = self.committed.notified();
             if self.receipts.lock().unwrap().len() >= count {
                 return;
             }
-            self.committed.notified().await;
+            notified.await;
         }
     }
 
     pub(super) async fn wait_for_failed_commits(&self, count: u64) {
         loop {
+            let notified = self.commit_failed.notified();
             if self.failed_commits.load(Ordering::SeqCst) >= count {
                 return;
             }
-            self.commit_failed.notified().await;
+            notified.await;
         }
     }
 
