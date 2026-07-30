@@ -10,6 +10,7 @@ mod dialogue_queue;
 pub mod error;
 pub mod loader;
 pub mod navigation;
+pub mod provenance;
 pub mod reveals;
 #[allow(dead_code)] // Later save tasks consume this standalone v1 wire boundary.
 pub(crate) mod save;
@@ -2110,6 +2111,7 @@ mod tests {
                 name: "Receipt".into(),
                 description: "Receipt".into(),
                 details: "Receipt".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 image_asset_id: None,
                 on_collect: vec![DialogueItem::Action {
                     text: "collect".into(),
@@ -2120,6 +2122,7 @@ mod tests {
                 id: "alibi".into(),
                 speaker: "Witness".into(),
                 content: "Alibi".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 on_acquire: vec![DialogueItem::Action {
                     text: "acquire".into(),
                 }],
@@ -3508,6 +3511,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 name: "Optional Leak".into(),
                 description: "Optional Leak".into(),
                 details: "Optional Leak".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
@@ -3609,6 +3613,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 name: "Optional Leak".into(),
                 description: "Optional Leak".into(),
                 details: "Optional Leak".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
@@ -3913,6 +3918,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
@@ -3974,6 +3980,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 id: "alibi_statement".into(),
                 speaker: "Witness".into(),
                 content: "I was elsewhere".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 on_acquire: vec![],
                 on_reexamine: None,
             }],
@@ -4141,6 +4148,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
@@ -4189,6 +4197,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 name: "Note".into(),
                 description: "Note".into(),
                 details: "Note".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
@@ -4285,6 +4294,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 name: "Contradiction".into(),
                 description: "d".into(),
                 details: "d".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
@@ -4293,6 +4303,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 id: "acquired_stmt".into(),
                 speaker: "Witness".into(),
                 content: "The truth".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 on_acquire: vec![DialogueItem::Line {
                     speaker: "Narrator".into(),
                     text: "Statement acquired: the truth".into(),
@@ -4462,6 +4473,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 name: "Contradiction".into(),
                 description: "d".into(),
                 details: "d".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 image_asset_id: None,
                 on_collect: vec![],
                 on_reexamine: None,
@@ -4470,6 +4482,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 id: "revealed_stmt".into(),
                 speaker: "Witness".into(),
                 content: "The truth".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 on_acquire: vec![],
                 on_reexamine: None,
             }],
@@ -4596,6 +4609,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 id: "revealed_stmt".into(),
                 speaker: "Witness".into(),
                 content: "The truth".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
                 on_acquire: vec![],
                 on_reexamine: None,
             }],

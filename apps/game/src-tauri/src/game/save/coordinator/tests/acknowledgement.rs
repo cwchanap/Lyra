@@ -26,6 +26,7 @@ pub(super) fn app_with_event(
         name: "Evidence One".into(),
         description: "Description".into(),
         details: "Details".into(),
+        provenance: crate::game::provenance::CaseRecordProvenance::default(),
         image_asset_id: None,
         on_collect: vec![],
         on_reexamine: None,

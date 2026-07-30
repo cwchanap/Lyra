@@ -1,5 +1,7 @@
 // src-tauri/src/game/schema.rs
+use crate::game::provenance::CaseRecordProvenance;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 
 // ============================================================================
 // Shared atoms
@@ -144,11 +146,37 @@ pub enum RevealTarget {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum InventoryTarget {
     Evidence { id: String },
     Statement { id: String },
+}
+
+pub(crate) fn compare_inventory_targets(
+    left: &InventoryTarget,
+    right: &InventoryTarget,
+) -> Ordering {
+    fn sort_key(target: &InventoryTarget) -> (u8, &str) {
+        match target {
+            InventoryTarget::Evidence { id } => (0, id),
+            InventoryTarget::Statement { id } => (1, id),
+        }
+    }
+
+    sort_key(left).cmp(&sort_key(right))
+}
+
+impl PartialOrd for InventoryTarget {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for InventoryTarget {
+    fn cmp(&self, other: &Self) -> Ordering {
+        compare_inventory_targets(self, other)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -537,6 +565,8 @@ pub struct EvidenceJson {
     pub description: String,
     pub details: String,
     #[serde(default)]
+    pub provenance: CaseRecordProvenance,
+    #[serde(default)]
     pub image_asset_id: Option<String>,
     pub on_collect: Vec<DialogueItem>,
     pub on_reexamine: Option<Vec<DialogueItem>>,
@@ -557,6 +587,8 @@ pub struct StatementJson {
     pub id: String,
     pub speaker: String,
     pub content: String,
+    #[serde(default)]
+    pub provenance: CaseRecordProvenance,
     pub on_acquire: Vec<DialogueItem>,
     pub on_reexamine: Option<Vec<DialogueItem>>,
 }
@@ -680,27 +712,92 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn inventory_target_orders_without_changing_its_wire_shape() {
-        let evidence = InventoryTarget::Evidence {
-            id: "record_1".into(),
+    fn inventory_target_uses_explicit_evidence_then_id_ordering() {
+        let evidence_a = InventoryTarget::Evidence {
+            id: "a_record".into(),
         };
-        let statement = InventoryTarget::Statement {
-            id: "record_1".into(),
+        let evidence_z = InventoryTarget::Evidence {
+            id: "z_record".into(),
+        };
+        let statement_a = InventoryTarget::Statement {
+            id: "a_record".into(),
+        };
+        let statement_z = InventoryTarget::Statement {
+            id: "z_record".into(),
         };
 
-        let ordered = BTreeSet::from([statement.clone(), evidence.clone()]);
+        assert_eq!(
+            compare_inventory_targets(&evidence_z, &statement_a),
+            std::cmp::Ordering::Less
+        );
+        assert_eq!(
+            compare_inventory_targets(&evidence_z, &evidence_a),
+            std::cmp::Ordering::Greater
+        );
+        let ordered = BTreeSet::from([
+            statement_z.clone(),
+            evidence_z.clone(),
+            statement_a.clone(),
+            evidence_a.clone(),
+        ]);
         assert_eq!(
             ordered.into_iter().collect::<Vec<_>>(),
-            [evidence.clone(), statement.clone()]
+            [
+                evidence_a.clone(),
+                evidence_z.clone(),
+                statement_a.clone(),
+                statement_z.clone()
+            ]
         );
         assert_eq!(
-            serde_json::to_value(evidence).unwrap(),
-            serde_json::json!({"kind": "evidence", "id": "record_1"})
+            serde_json::to_value(evidence_a).unwrap(),
+            serde_json::json!({"kind": "evidence", "id": "a_record"})
         );
         assert_eq!(
-            serde_json::to_value(statement).unwrap(),
-            serde_json::json!({"kind": "statement", "id": "record_1"})
+            serde_json::to_value(statement_a).unwrap(),
+            serde_json::json!({"kind": "statement", "id": "a_record"})
         );
+    }
+
+    #[test]
+    fn legacy_scene_records_default_only_an_entirely_absent_provenance_object() {
+        let evidence: EvidenceJson = serde_json::from_value(serde_json::json!({
+            "id": "platform_clock",
+            "name": "Platform Clock",
+            "description": "A clock",
+            "details": "The original record has no provenance key.",
+            "onCollect": [],
+            "onReexamine": null
+        }))
+        .unwrap();
+        let statement: StatementJson = serde_json::from_value(serde_json::json!({
+            "id": "witness_account",
+            "speaker": "Witness",
+            "content": "I saw the clock.",
+            "onAcquire": [],
+            "onReexamine": null
+        }))
+        .unwrap();
+
+        assert_eq!(
+            evidence.provenance,
+            crate::game::provenance::CaseRecordProvenance::default()
+        );
+        assert_eq!(
+            statement.provenance,
+            crate::game::provenance::CaseRecordProvenance::default()
+        );
+
+        let present_but_incomplete = serde_json::json!({
+            "id": "platform_clock",
+            "name": "Platform Clock",
+            "description": "A clock",
+            "details": "The object is present but incomplete.",
+            "onCollect": [],
+            "onReexamine": null,
+            "provenance": {}
+        });
+        assert!(serde_json::from_value::<EvidenceJson>(present_but_incomplete).is_err());
     }
 
     #[test]

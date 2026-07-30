@@ -96,6 +96,7 @@ mod tests {
             name: id.into(),
             description: id.into(),
             details: id.into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             image_asset_id: None,
             on_collect: vec![],
             on_reexamine: None,
@@ -107,6 +108,7 @@ mod tests {
             id: id.into(),
             speaker: id.into(),
             content: id.into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
             on_acquire: vec![],
             on_reexamine: None,
         }
