@@ -150,7 +150,7 @@ impl<'de> Deserialize<'de> for CaseRecordProvenance {
         let wire = CaseRecordProvenanceWire::deserialize(deserializer)?;
         validate_optional_slug::<D::Error>("sourceGroupId", wire.source_group_id.0.as_deref())?;
         validate_optional_nonblank::<D::Error>("sourceLabel", wire.source_label.0.as_deref())?;
-        validate_optional_slug::<D::Error>(
+        validate_optional_typed_record_id::<D::Error>(
             "supersedesRecordId",
             wire.supersedes_record_id.0.as_deref(),
         )?;
@@ -226,14 +226,35 @@ where
     E: serde::de::Error,
 {
     validate_optional_nonblank::<E>(field, value)?;
-    if value.is_some_and(|value| {
-        !value
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-    }) {
+    if value.is_some_and(|value| !is_slug(value)) {
         return Err(E::custom(format!("{field} must match ^[a-z0-9_]+$")));
     }
     Ok(())
+}
+
+fn validate_optional_typed_record_id<E>(field: &str, value: Option<&str>) -> Result<(), E>
+where
+    E: serde::de::Error,
+{
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let valid = value
+        .split_once(':')
+        .is_some_and(|(kind, id)| matches!(kind, "evidence" | "statement") && is_slug(id));
+    if !valid {
+        return Err(E::custom(format!(
+            "{field} must match ^(evidence|statement):[a-z0-9_]+$"
+        )));
+    }
+    Ok(())
+}
+
+fn is_slug(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 fn proof_capability_name(capability: ProofCapability) -> &'static str {
@@ -278,7 +299,7 @@ mod tests {
                 "procedure",
                 "causation"
             ],
-            "supersedesRecordId": "platform_clock_lead"
+            "supersedesRecordId": "evidence:platform_clock_lead"
         })
     }
 
@@ -556,7 +577,6 @@ mod tests {
             ("sourceGroupId", " "),
             ("sourceLabel", "\t"),
             ("sourceGroupId", "Platform-Clock"),
-            ("supersedesRecordId", "evidence:platform_clock"),
         ] {
             let mut value = full_wire_value();
             value
@@ -566,6 +586,41 @@ mod tests {
             assert!(
                 deserialize(value).is_err(),
                 "{field} unexpectedly accepted {invalid:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn supersedes_record_id_accepts_only_normalized_typed_record_ids() {
+        for valid in ["evidence:platform_clock_lead", "statement:witness_account"] {
+            let mut value = full_wire_value();
+            value
+                .as_object_mut()
+                .unwrap()
+                .insert("supersedesRecordId".into(), json!(valid));
+            assert_eq!(
+                deserialize(value).unwrap().supersedes_record_id.as_deref(),
+                Some(valid)
+            );
+        }
+
+        for invalid in [
+            "platform_clock_lead",
+            "topic:platform_clock_lead",
+            "evidence:",
+            ":platform_clock_lead",
+            "evidence:Platform-Clock",
+            "statement:witness-account",
+            "evidence:statement:platform_clock",
+        ] {
+            let mut value = full_wire_value();
+            value
+                .as_object_mut()
+                .unwrap()
+                .insert("supersedesRecordId".into(), json!(invalid));
+            assert!(
+                deserialize(value).is_err(),
+                "supersedesRecordId unexpectedly accepted {invalid:?}"
             );
         }
     }
