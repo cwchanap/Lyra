@@ -127,6 +127,15 @@ end, not a dead-end error.
 - **Name:** ...
 - **Description:** ...
 - **Details:** ...
+- **Source Kind:** digital
+- **Representation Layer:** raw
+- **Procedural Status:** reacquired
+- **Completeness:** complete
+- **Confidence:** corroborated
+- **Source Group:** <declared_source_group_id>
+- **Source Label:** 經核實的來源顯示文字
+- **Proof Capabilities:** [time, source, procedure]
+- **Supersedes:** evidence:<immediate_predecessor_id>
 
 #### On Collect
 
@@ -138,6 +147,15 @@ end, not a dead-end error.
 
 - **Speaker:** ...
 - **Content:** ...
+- **Source Kind:** testimony
+- **Representation Layer:** summary
+- **Procedural Status:** reacquired
+- **Completeness:** complete
+- **Confidence:** corroborated
+- **Source Group:** <declared_source_group_id>
+- **Source Label:** 經核實的證詞來源
+- **Proof Capabilities:** [identity, credibility, procedure]
+- **Supersedes:** statement:<immediate_predecessor_id>
 
 #### On Acquire
 
@@ -391,6 +409,64 @@ Use the same manifest entry formats as `writing-investigation-scene`:
 `Image Prompt` is an English production prompt for the evidence icon. Do not
 include a path. Phase scene tags and background prompts are semantic
 production prompts, not filesystem paths; writers never author paths.
+
+### 案件紀錄 provenance（本地 skeleton 與 Investigation 共用）
+
+上方 File Skeleton 的 Evidence / Statement entries 刻意列出完整 provenance
+slots，避免 Interrogation 範例教成縮減版。這九個 exact English keys 都是
+optional；若不寫，輸出以下 neutral values：
+
+| Exact key | Allowed value | Omitted neutral value |
+|---|---|---|
+| `Source Kind` | `physical`, `testimony`, `digital`, `subjective`, `unspecified` | `unspecified` |
+| `Representation Layer` | `raw`, `sync`, `summary`, `composite`, `none` | `none` |
+| `Procedural Status` | `unspecified`, `lead`, `reacquired`, `exhibit` | `unspecified` |
+| `Completeness` | `complete`, `partial`, `cropped`, `unspecified` | `unspecified` |
+| `Confidence` | `unverified`, `corroborated`, `disputed`, `unspecified` | `unspecified` |
+| `Source Group` | 已在全域 catalog 宣告的非空 slug | `null` |
+| `Source Label` | 非空的繁體中文顯示文字 | `null` |
+| `Proof Capabilities` | 方括號包住的 capability list | `[]` |
+| `Supersedes` | `evidence:<id>` 或 `statement:<id>` | `null` |
+
+`Representation Layer: none` 既是 omitted neutral default，也可明寫成
+「沒有 meaningful representation layer」；runtime 不保留 authored-presence
+bit，兩者無法區分。
+
+`Proof Capabilities` 是正向能力集合。缺少某個 capability 表示不能靠此紀錄
+滿足該 authored requirement，但不證明相反命題。不可重複；用方括號並依
+canonical order 書寫：
+
+```text
+time, order, route, identity, access, motive, source, credibility, procedure, causation
+```
+
+`Source Group` 只引用全域 `story_catalog.md` 最後 `## Source Groups` 內
+`### Source Group: <繁體中文顯示 label> {#<english_slug>}` 的 anchor slug。
+Group block 只寫 `Summary`；compiler 從 Evidence / Statement records 的
+references 推導 typed membership。未填 group 會輸出 `null`，表示來源獨立性
+未知，絕不是自成一組的 synthetic independent source。`Source Label`
+只供顯示，不建立 source identity。
+
+`Supersedes` 必須由新紀錄指向同種類的 immutable immediate predecessor：
+evidence 指 evidence，statement 指 statement。Chain 不可分叉；source
+grouping 與 supersession 互不推導。只要寫 `Supersedes`，就同時明寫
+`Procedural Status`，並遵守：
+
+```text
+unspecified < lead < reacquired < exhibit
+```
+
+Successor 省略 status 會落到 `unspecified`，可能正確觸發 non-regression
+error。File Skeleton 中的 `reacquired` + `Supersedes` 是 successor 範例；
+沒有 predecessor 的 lead 可省略 `Supersedes`，但應明寫
+`Procedural Status: lead`。
+
+Evidence / Statement metadata 是 closed、duplicate-safe contract。同一 key
+重複會在第二次出現處報錯；present-but-blank provenance value 無效；不要把
+source、capability 或 supersession 只寫進 `Details` / `Content` 後期待
+compiler 推斷。完整語義與 compact two-file example 以
+`writing-investigation-scene` 的「案件紀錄來源與承接」為 canonical
+reference。
 
 ## Outro
 

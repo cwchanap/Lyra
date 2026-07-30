@@ -131,6 +131,7 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 - **Required:** `Name`, `Description`, `Details`, `Source Sublocation`
 - **Source Sublocation:** the exact ID of the sub-location where this evidence is discovered, e.g. `front`, `corridor`, or `inner_entry`. Evidence may only be revealed by a Hotspot, Topic, or sub-location entry trigger in that same sub-location.
 - **Required when assets are enabled:** `Image Prompt` — English production prompt for the evidence icon. Do not include a path.
+- **Optional:** the shared case-record provenance fields documented below.
 - **Body:**
   - `#### On Collect` (required) — dialogue that plays when this evidence is first added to inventory.
   - `#### On Reexamine` (optional) — dialogue that plays when the player re-opens this item from inventory.
@@ -138,9 +139,135 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 ### Statement Manifest entry (H3 under `## Statement Manifest`)
 - **Heading:** `### statement:<id> {#id}`
 - **Required:** `Speaker`, `Content`
+- **Optional:** the shared case-record provenance fields documented below.
 - **Body:**
   - `#### On Acquire` (required) — dialogue that plays when this statement is first added to the log.
   - `#### On Reexamine` (optional) — dialogue that plays when the player re-reads it from the log.
+
+### 案件紀錄來源與承接（Evidence / Statement 共用）
+
+Evidence 與 Statement 可在既有必填欄位之後加入以下九個 optional
+metadata keys。Parser-facing key 與 enum value 必須保持以下英文拼法；只有
+`Source Label` 等玩家會看到的顯示文字使用繁體中文。
+
+| Exact key | Allowed value | Omitted neutral value |
+|---|---|---|
+| `Source Kind` | `physical`, `testimony`, `digital`, `subjective`, `unspecified` | `unspecified` |
+| `Representation Layer` | `raw`, `sync`, `summary`, `composite`, `none` | `none` |
+| `Procedural Status` | `unspecified`, `lead`, `reacquired`, `exhibit` | `unspecified` |
+| `Completeness` | `complete`, `partial`, `cropped`, `unspecified` | `unspecified` |
+| `Confidence` | `unverified`, `corroborated`, `disputed`, `unspecified` | `unspecified` |
+| `Source Group` | 已在全域 catalog 宣告的非空 slug | `null` |
+| `Source Label` | 非空的繁體中文顯示文字 | `null` |
+| `Proof Capabilities` | 方括號包住的 capability list | `[]` |
+| `Supersedes` | `evidence:<id>` 或 `statement:<id>` | `null` |
+
+`Representation Layer: none` 同時表示「沒有有意義的 representation
+layer」及 omitted neutral default；系統不保留「曾明寫 `none`」的 presence
+bit。若玩法要求具體 layer，必須要求 `raw`、`sync`、`summary` 或
+`composite`，不能靠 `none` 判斷作者是否填過欄位。
+
+`Proof Capabilities` 是正向能力集合，只表示這筆紀錄能滿足哪些 authored
+requirements。缺少 capability 代表不能用它滿足該 requirement，但不證明
+相反命題。可用值的 canonical order 為：
+
+```text
+time, order, route, identity, access, motive, source, credibility, procedure, causation
+```
+
+寫成 `[]` 代表沒有能力；非空時必須用方括號，例如
+`[time, source, procedure]`。同一 capability 重複出現是錯誤，不可期待
+compiler 幫忙去重；依 canonical order 書寫，方便 review。
+
+`Source Group` 是獨立來源計數的唯一 identity。相同顯示文字、紀錄種類、
+場景、取得位置或 supersession 都不會自動建立同一來源。群組 identity 與
+`Summary` 只在全域 `story_catalog.md` 最後的 `## Source Groups` 宣告一次；
+每筆紀錄的 `Source Group` 只引用 heading anchor 的 group ID，compiler
+再從所有紀錄反向推導 typed membership。Heading 使用
+`### Source Group: <繁體中文顯示 label> {#<english_slug>}`；record 引用
+`english_slug`，不是顯示 label。群組段只寫 `Summary`：
+
+`story_catalog.md`：
+
+```markdown
+## Source Groups
+
+### Source Group: 門禁終端原始匯出 {#access_terminal_export}
+
+- **Summary:** 同一門禁終端原始事件匯出所衍生的紀錄。
+```
+
+`## Source Groups` block 只屬於全域 `story_catalog.md`，不放進
+`investigation_scene_<N>.md`。Scene file 只在 Evidence / Statement entry
+寫 `Source Group: access_terminal_export` 這類 group-ID reference。
+
+未填 `Source Group` 會輸出 `null`，表示來源獨立性未知；不可把它當成一個
+自成一組的獨立來源。`Source Label` 只供顯示，不取代 catalog group label，
+也不建立來源 identity。
+
+`Supersedes` 由較新的 immutable record 指向同種類的 immediate
+predecessor：evidence 只能指向 evidence，statement 只能指向 statement。
+每筆紀錄最多一個 predecessor，也最多被一個 successor 承接，因此鏈不可
+分叉；舊紀錄不會被改寫或刪除。Source grouping 與 supersession 是兩個
+不同維度：同一條 chain 不會自動變成同一來源，反之亦然。
+
+程序狀態只可維持或往前：
+
+```text
+unspecified < lead < reacquired < exhibit
+```
+
+只要寫了 `Supersedes`，就應同時明寫 `Procedural Status`。若 successor
+省略它，就會套用 `unspecified`；當 predecessor 已是 `lead`、
+`reacquired` 或 `exhibit` 時，這會正確地被判定為程序倒退。
+
+Metadata 是 closed、duplicate-safe contract：只可使用本 skill 列出的
+Evidence/Statement keys；同一 key 重複出現會在第二次出現的位置報錯，
+present-but-blank 的 provenance value 也無效。不要把來源或能力藏在
+`Details` / `Content` 後期待 compiler 推斷。
+
+以下是 `investigation_scene_<N>.md` 內同一底層來源的 lead 與經重新取得
+核實之 successor；兩筆紀錄仍保留各自 immutable identity。搭配上方另存於
+`story_catalog.md` 的 group declaration 使用：
+
+```markdown
+### evidence:access_log_lead {#access_log_lead}
+- **Name:** 初步門禁紀錄
+- **Description:** 從管理室終端機匯出的初步紀錄。
+- **Details:** 保留事件時間，但尚未完成程序覆核。
+- **Source Sublocation:** admin_office
+- **Source Kind:** digital
+- **Representation Layer:** raw
+- **Procedural Status:** lead
+- **Completeness:** partial
+- **Confidence:** unverified
+- **Source Group:** access_terminal_export
+- **Source Label:** 門禁終端初步匯出
+- **Proof Capabilities:** [time, source]
+
+#### On Collect
+
+**相馬律**：先保留原始匯出。
+
+### evidence:access_log_verified {#access_log_verified}
+- **Name:** 經核實門禁紀錄
+- **Description:** 從同一終端重新取得並完成覆核的紀錄。
+- **Details:** 保留完整時間及程序資料。
+- **Source Sublocation:** admin_office
+- **Source Kind:** digital
+- **Representation Layer:** raw
+- **Procedural Status:** reacquired
+- **Completeness:** complete
+- **Confidence:** corroborated
+- **Source Group:** access_terminal_export
+- **Source Label:** 經核實門禁終端匯出
+- **Proof Capabilities:** [time, source, procedure]
+- **Supersedes:** evidence:access_log_lead
+
+#### On Collect
+
+**相馬律**：這是同一來源重新取得的完整版本。
+```
 
 ### Intro (H2)
 - **Heading:** `## Intro`.
