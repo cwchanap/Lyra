@@ -2051,6 +2051,9 @@ impl<'a> unlock::UnlockContext for SceneAndInventoryCtx<'a> {
 }
 
 #[cfg(test)]
+mod case_record_integration_tests;
+
+#[cfg(test)]
 pub(crate) mod test_support;
 
 #[cfg(test)]
