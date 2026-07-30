@@ -12,6 +12,7 @@
 
 - Treat `docs/superpowers/specs/2026-07-29-hpa-256-case-record-provenance-and-support-lineage-design.md` as normative.
 - Use strict TDD: write one failing behavior test, run it and confirm the intended failure, add the minimum implementation, rerun focused tests, refactor only while green, then commit.
+- Human-approved test-quality ruling: do not test writer-skill prose or implementation source text with grep/change-detector assertions. Verify documentation against a manual contract checklist, and express architectural guarantees through observable compiler/runtime/wire behavior. When a Task 13 regression protects behavior already implemented by earlier slices, prove that it catches the break with a narrow temporary mutation, then restore the production code before committing.
 - Keep compiler AST, normalized case-record types, and generated wire types under `packages/scripts`; do not broaden `@lyra/scene-types`.
 - Omitted authored provenance must normalize exactly to `unspecified` / `none` / empty / null values and must not change existing UI.
 - Never infer one provenance dimension from another, from record prose, record kind, scene, acquisition location, filename, or supersession.
@@ -1143,16 +1144,9 @@ rtk git commit -m "feat: restore immutable record provenance"
 - Modify `packages/scripts/compile-scenes/case-record-provenance.test.ts`
 - Modify `packages/scripts/compile-scenes.test.ts`
 
-- [ ] **Red: skill contract**
+- [ ] **Review the skill contract**
 
-Read both tracked skills and assert every field/enum, exact neutral defaults, `none` conflation, central group declaration with derived membership, positive capability semantics, explicit-status supersession warning, and absence of an authored Members instruction.
-
-- [ ] **Run red**
-
-```bash
-rtk bunx vitest run --config vitest.scripts.config.ts \
-  packages/scripts/compile-scenes/case-record-provenance.test.ts
-```
+Read both tracked skills and manually check every field/enum, exact neutral defaults, `none` conflation, central group declaration with derived membership, positive capability semantics, explicit-status supersession warning, and absence of an authored Members instruction. Record the completed checklist in the task report. Do not add tests that grep or assert prose/source text.
 
 - [ ] **Update both skills**
 
@@ -1161,6 +1155,8 @@ The investigation skill contains canonical Traditional Chinese-facing guidance w
 - [ ] **Add live-corpus compatibility**
 
 Current production chapters and current `story_catalog.md` compile with neutral provenance and `sourceGroups: []` without story Markdown edits.
+
+Add or strengthen compiler behavior tests only where they exercise this emitted/runtime input contract. Do not use those tests as proxies for the wording of the writer skills.
 
 - [ ] **Green**
 
@@ -1206,36 +1202,37 @@ rtk git commit -m "docs: document case record provenance"
 
 - Create `apps/game/src-tauri/src/game/case_record_integration_tests.rs`
 - Modify `apps/game/src-tauri/src/game/mod.rs`
-- Create `packages/scripts/compile-scenes/case-record-provenance.source-contract.test.ts`
+- Create `packages/scripts/compile-scenes/case-record-provenance.integration.test.ts`
 
 - [ ] **Red: cross-layer Rust integration**
 
 Create compiler-shaped temp resources with catalog v2, lead/reacquired/exhibit, one statement, a mixed group, and direct/transitive fact support. Start `GameEngine`, acquire successor-first, assert dynamic redaction and internal lineage, capture/restore, and assert identical public/internal behavior.
 
-- [ ] **Add narrow structural guards**
+- [ ] **Add narrow behavioral and wire-contract guards**
 
-Fail if:
+Exercise public compiler/runtime behavior that fails if:
 
-- scene/catalog emission stops consuming one corpus;
-- manifest metadata returns to open last-write-wins maps;
-- catalog v2 loses provenance or source groups;
-- source-group Markdown gains `Members`;
-- strict wire capabilities or group members deserialize directly into sets;
-- `GameStateView.inventory` points to mutable `Inventory`;
-- mutable inventory records derive `Serialize`;
-- public successor/hidden-support fields appear;
-- canonical output relies on set/enum order.
+- scene/catalog output stops using the same normalized provenance;
+- duplicate or unknown manifest metadata becomes last-write-wins;
+- catalog v2 output loses provenance or source groups;
+- source-group Markdown accepts `Members`;
+- strict wire capabilities or group members silently deduplicate or reorder invalid arrays;
+- the serialized `GameStateView.inventory` payload bypasses the spoiler-safe inventory projection;
+- public JSON exposes successor or hidden-support fields;
+- canonical output changes with input insertion order or enum/set declaration details.
 
-- [ ] **Run integration and source-contract tests**
+Do not grep TypeScript/Rust source or assert private type/derive spelling. The existing task-scoped tests may already cover individual failures; this task adds only integration-level gaps and avoids duplicating their logic.
+
+- [ ] **Run integration and behavioral-contract tests**
 
 ```bash
 rtk bunx vitest run --config vitest.scripts.config.ts \
-  packages/scripts/compile-scenes/case-record-provenance.source-contract.test.ts
+  packages/scripts/compile-scenes/case-record-provenance.integration.test.ts
 rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
   game::case_record_integration_tests -- --nocapture
 ```
 
-Confirm the intended red failure for each newly introduced guard, add only the missing wiring, and rerun green.
+Confirm the intended red failure for each newly introduced integration guard. When earlier tasks already implement the behavior, use a narrow temporary mutation to prove the test catches that break, restore the production code, and rerun green.
 
 - [ ] **Commit guards before the full floor**
 
@@ -1243,7 +1240,7 @@ Confirm the intended red failure for each newly introduced guard, add only the m
 rtk git add \
   apps/game/src-tauri/src/game/case_record_integration_tests.rs \
   apps/game/src-tauri/src/game/mod.rs \
-  packages/scripts/compile-scenes/case-record-provenance.source-contract.test.ts
+  packages/scripts/compile-scenes/case-record-provenance.integration.test.ts
 rtk git commit -m "test: cover provenance lineage integration"
 ```
 
