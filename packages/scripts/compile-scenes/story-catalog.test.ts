@@ -8,7 +8,7 @@ import {
 import type { ASTStoryCatalog, Located } from "./types";
 
 function catalogWithDuplicate(
-  kind: "fact" | "question" | "objective" | "authorization",
+  kind: "fact" | "question" | "objective" | "authorization" | "sourceGroup",
 ): ASTStoryCatalog {
   const catalog = emptyStoryCatalog("story_catalog.md");
   const first = { id: "same_id", sourceFile: "story_catalog.md", line: 3 };
@@ -83,27 +83,44 @@ function catalogWithDuplicate(
         },
       ];
       break;
+    case "sourceGroup":
+      catalog.sourceGroups = [
+        {
+          ...first,
+          label: "First group",
+          summary: "First.",
+        },
+        {
+          ...second,
+          label: "Second group",
+          summary: "Second.",
+        },
+      ];
+      break;
   }
 
   return catalog;
 }
 
 describe("story catalog validation", () => {
-  it.each(["fact", "question", "objective", "authorization"] as const)(
-    "rejects duplicate %s IDs at the second definition",
-    (kind) => {
-      const errors = validateStoryCatalog(catalogWithDuplicate(kind), []);
+  it.each([
+    "fact",
+    "question",
+    "objective",
+    "authorization",
+    "sourceGroup",
+  ] as const)("rejects duplicate %s IDs at the second definition", (kind) => {
+    const errors = validateStoryCatalog(catalogWithDuplicate(kind), []);
 
-      expect(errors).toHaveLength(1);
-      expect(errors[0]).toMatchObject({
-        code: "duplicateGlobalDefinitionId",
-        sourceFile: "story_catalog.md",
-        line: 9,
-      });
-      expect(errors[0]?.message).toContain("story_catalog.md:3");
-      expect(errors[0]?.message).toContain("story_catalog.md:9");
-    },
-  );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      code: "duplicateGlobalDefinitionId",
+      sourceFile: "story_catalog.md",
+      line: 9,
+    });
+    expect(errors[0]?.message).toContain("story_catalog.md:3");
+    expect(errors[0]?.message).toContain("story_catalog.md:9");
+  });
 
   it("rejects unresolved question fact references at the reference location", () => {
     const catalog = emptyStoryCatalog("story_catalog.md");

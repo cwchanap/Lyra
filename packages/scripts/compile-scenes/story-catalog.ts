@@ -24,6 +24,7 @@ export function validateStoryCatalog(
   indexDefinitions("Question", catalog.questions, errors);
   indexDefinitions("Objective", catalog.objectives, errors);
   indexDefinitions("Authorization", catalog.authorizations, errors);
+  indexDefinitions("Source Group", catalog.sourceGroups, errors);
 
   for (const question of catalog.questions) {
     for (const reference of question.resolvedByFactIds) {

@@ -148,6 +148,17 @@ export type CaseRecordProvenance = {
   supersedesRecordId: string | null;
 };
 
+export type CaseRecordMetadataRequirement = {
+  allowedSourceKinds: SourceKind[] | null;
+  allowedRepresentationLayers: RepresentationLayer[] | null;
+  allowedProceduralStatuses: ProceduralStatus[] | null;
+  prohibitedProceduralStatuses: ProceduralStatus[];
+  allowedCompleteness: Completeness[] | null;
+  allowedConfidence: Confidence[] | null;
+  requireSourceGroup: boolean;
+  requiredProofCapabilities: ProofCapability[];
+};
+
 export type ASTCaseRecordProvenance = {
   sourceKind: Located<{ value: SourceKind }> | null;
   representationLayer: Located<{ value: RepresentationLayer }> | null;
@@ -239,6 +250,13 @@ export type ASTSourceGroupDefinition = Located<{
   label: string;
   summary: string;
 }>;
+
+export type SourceGroupDefinition = {
+  id: string;
+  label: string;
+  summary: string;
+  members: InventoryTarget[];
+};
 
 export type ASTLinearScene = Located<{
   kind: "linearScene";
@@ -618,6 +636,27 @@ export type CaseRecordDefinitionIndex = {
   chapterId: string;
   sceneId: string;
 };
+
+export type CompiledCaseRecord = {
+  target: InventoryTarget;
+  chapterId: string;
+  sceneId: string;
+  provenance: CaseRecordProvenance;
+  sourceFile: string;
+  line: number;
+};
+
+export type CompiledCaseRecordCorpus = {
+  recordsByKey: ReadonlyMap<string, CompiledCaseRecord>;
+  evidenceIndex: CaseRecordDefinitionIndex[];
+  statementsIndex: CaseRecordDefinitionIndex[];
+  sourceGroups: SourceGroupDefinition[];
+  warnings: CompileError[];
+};
+
+export type CompileCaseRecordCorpusResult =
+  | { ok: true; value: CompiledCaseRecordCorpus }
+  | { ok: false; errors: CompileError[] };
 
 // ----- Compile errors --------------------------------------------------------
 
