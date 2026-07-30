@@ -1,11 +1,152 @@
 // src-tauri/src/game/view.rs
 use crate::game::save::schema::RecordKind;
 use crate::game::schema::{
-    AudioChannelJson, CharacterLayoutJson, DialogueItem, HotspotLayoutJson, SceneType,
+    AudioChannelJson, CharacterLayoutJson, DialogueItem, HotspotLayoutJson, InventoryTarget,
+    SceneType,
 };
-use crate::game::state::Inventory;
-use crate::game::story::StoryStateView;
+use crate::game::state::{EvidenceRecord, Inventory, StatementRecord};
+use crate::game::story::{StoryCatalog, StoryStateView};
+use crate::game::{provenance::validate_inventory_record_against_catalog, GameError};
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InventoryView {
+    pub evidence: Vec<EvidenceRecordView>,
+    pub statements: Vec<StatementRecordView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvidenceRecordView {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub details: String,
+    pub provenance: crate::game::provenance::CaseRecordProvenance,
+    pub image_asset_id: Option<String>,
+    pub on_reexamine: Option<Vec<DialogueItem>>,
+    pub collected_in_chapter_id: String,
+    pub collected_in_scene_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatementRecordView {
+    pub id: String,
+    pub speaker: String,
+    pub content: String,
+    pub provenance: crate::game::provenance::CaseRecordProvenance,
+    pub on_reexamine: Option<Vec<DialogueItem>>,
+    pub acquired_in_chapter_id: String,
+    pub acquired_in_scene_id: String,
+}
+
+impl InventoryView {
+    pub fn has_evidence(&self, id: &str) -> bool {
+        self.evidence.iter().any(|record| record.id == id)
+    }
+
+    pub fn has_statement(&self, id: &str) -> bool {
+        self.statements.iter().any(|record| record.id == id)
+    }
+
+    pub(in crate::game) fn from_inventory(
+        catalog: &StoryCatalog,
+        inventory: &Inventory,
+    ) -> Result<Self, GameError> {
+        let acquired_targets = inventory.acquired_targets();
+        let mut evidence = inventory
+            .evidence
+            .iter()
+            .map(|record| evidence_record_view(catalog, &acquired_targets, record))
+            .collect::<Result<Vec<_>, _>>()?;
+        evidence.sort_by(|left, right| left.id.cmp(&right.id));
+
+        let mut statements = inventory
+            .statements
+            .iter()
+            .map(|record| statement_record_view(catalog, &acquired_targets, record))
+            .collect::<Result<Vec<_>, _>>()?;
+        statements.sort_by(|left, right| left.id.cmp(&right.id));
+
+        Ok(Self {
+            evidence,
+            statements,
+        })
+    }
+}
+
+fn public_provenance(
+    catalog: &StoryCatalog,
+    acquired_targets: &std::collections::BTreeSet<InventoryTarget>,
+    target: &InventoryTarget,
+    provenance: &crate::game::provenance::CaseRecordProvenance,
+) -> Result<crate::game::provenance::CaseRecordProvenance, GameError> {
+    let mut public = provenance.clone();
+    let predecessor = catalog.predecessor(target)?;
+    if predecessor
+        .as_ref()
+        .is_none_or(|predecessor| !acquired_targets.contains(predecessor))
+    {
+        public.supersedes_record_id = None;
+    }
+    Ok(public)
+}
+
+fn evidence_record_view(
+    catalog: &StoryCatalog,
+    acquired_targets: &std::collections::BTreeSet<InventoryTarget>,
+    record: &EvidenceRecord,
+) -> Result<EvidenceRecordView, GameError> {
+    let target = InventoryTarget::Evidence {
+        id: record.id.clone(),
+    };
+    validate_inventory_record_against_catalog(
+        catalog,
+        &record.collected_in_chapter_id,
+        &record.collected_in_scene_id,
+        &target,
+        &record.provenance,
+    )?;
+    Ok(EvidenceRecordView {
+        id: record.id.clone(),
+        name: record.name.clone(),
+        description: record.description.clone(),
+        details: record.details.clone(),
+        provenance: public_provenance(catalog, acquired_targets, &target, &record.provenance)?,
+        image_asset_id: record.image_asset_id.clone(),
+        on_reexamine: record.on_reexamine.clone(),
+        collected_in_chapter_id: record.collected_in_chapter_id.clone(),
+        collected_in_scene_id: record.collected_in_scene_id.clone(),
+    })
+}
+
+fn statement_record_view(
+    catalog: &StoryCatalog,
+    acquired_targets: &std::collections::BTreeSet<InventoryTarget>,
+    record: &StatementRecord,
+) -> Result<StatementRecordView, GameError> {
+    let target = InventoryTarget::Statement {
+        id: record.id.clone(),
+    };
+    validate_inventory_record_against_catalog(
+        catalog,
+        &record.acquired_in_chapter_id,
+        &record.acquired_in_scene_id,
+        &target,
+        &record.provenance,
+    )?;
+    Ok(StatementRecordView {
+        id: record.id.clone(),
+        speaker: record.speaker.clone(),
+        content: record.content.clone(),
+        provenance: public_provenance(catalog, acquired_targets, &target, &record.provenance)?,
+        on_reexamine: record.on_reexamine.clone(),
+        acquired_in_chapter_id: record.acquired_in_chapter_id.clone(),
+        acquired_in_scene_id: record.acquired_in_scene_id.clone(),
+    })
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,7 +154,7 @@ pub struct GameStateView {
     pub mode: ModeView,
     pub chapter: ChapterView,
     pub scene: SceneView,
-    pub inventory: Inventory,
+    pub inventory: InventoryView,
     pub story: StoryStateView,
     pub dialogue_history: Vec<DialogueHistoryEntry>,
     pub pending_acquisition: Option<PendingAcquisitionView>,
@@ -258,4 +399,224 @@ pub struct CrossExamView {
     pub line_total: usize,
     /// True when the evidence tray should be shown.
     pub presenting: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::provenance::{
+        CaseRecordProvenance, Completeness, Confidence, ProceduralStatus, ProofCapability,
+        RepresentationLayer, SourceKind,
+    };
+    use crate::game::schema::{EvidenceJson, StatementJson};
+    use crate::game::state::Inventory;
+    use crate::game::test_support::catalog_with_case_records;
+    use serde_json::json;
+    use std::collections::BTreeSet;
+
+    fn lead_provenance() -> CaseRecordProvenance {
+        CaseRecordProvenance {
+            source_kind: SourceKind::Physical,
+            representation_layer: RepresentationLayer::Raw,
+            procedural_status: ProceduralStatus::Lead,
+            completeness: Completeness::Partial,
+            confidence: Confidence::Unverified,
+            source_group_id: None,
+            source_label: Some("Station camera".into()),
+            proof_capabilities: BTreeSet::from([ProofCapability::Source, ProofCapability::Time]),
+            supersedes_record_id: None,
+        }
+    }
+
+    fn successor_provenance() -> CaseRecordProvenance {
+        CaseRecordProvenance {
+            source_kind: SourceKind::Digital,
+            representation_layer: RepresentationLayer::Sync,
+            procedural_status: ProceduralStatus::Reacquired,
+            completeness: Completeness::Complete,
+            confidence: Confidence::Corroborated,
+            source_group_id: None,
+            source_label: Some("Reacquired station camera".into()),
+            proof_capabilities: BTreeSet::from([
+                ProofCapability::Source,
+                ProofCapability::Route,
+                ProofCapability::Time,
+            ]),
+            supersedes_record_id: Some("evidence:evidence_a".into()),
+        }
+    }
+
+    fn evidence_definition(id: &str, provenance: CaseRecordProvenance) -> EvidenceJson {
+        EvidenceJson {
+            id: id.into(),
+            name: format!("Evidence {id}"),
+            description: format!("Description {id}"),
+            details: format!("Details {id}"),
+            provenance,
+            image_asset_id: Some(format!("evidence.{id}")),
+            on_collect: vec![],
+            on_reexamine: None,
+        }
+    }
+
+    fn statement_definition(id: &str, provenance: CaseRecordProvenance) -> StatementJson {
+        StatementJson {
+            id: id.into(),
+            speaker: "Witness".into(),
+            content: format!("Statement {id}"),
+            provenance,
+            on_acquire: vec![],
+            on_reexamine: None,
+        }
+    }
+
+    #[test]
+    fn public_inventory_recomputes_predecessor_redaction_and_canonical_arrays() {
+        let lead = lead_provenance();
+        let successor = successor_provenance();
+        let neutral = CaseRecordProvenance::default();
+        let catalog = catalog_with_case_records(
+            vec![
+                ("evidence_a", "chapter_1", "scene_1", lead.clone()),
+                ("evidence_b", "chapter_1", "scene_1", successor.clone()),
+            ],
+            vec![
+                ("statement_z", "chapter_1", "scene_1", neutral.clone()),
+                ("statement_a", "chapter_1", "scene_1", neutral.clone()),
+            ],
+        );
+        let mut inventory = Inventory::default();
+        assert!(inventory.add_evidence_from_def(
+            &evidence_definition("evidence_b", successor),
+            "chapter_1",
+            "scene_1",
+        ));
+        assert!(inventory.add_statement_from_def(
+            &statement_definition("statement_z", neutral.clone()),
+            "chapter_1",
+            "scene_1",
+        ));
+        assert!(inventory.add_statement_from_def(
+            &statement_definition("statement_a", neutral),
+            "chapter_1",
+            "scene_1",
+        ));
+
+        let hidden =
+            serde_json::to_value(InventoryView::from_inventory(&catalog, &inventory).unwrap())
+                .unwrap();
+        assert_eq!(
+            hidden["evidence"][0]["provenance"]["supersedesRecordId"],
+            json!(null)
+        );
+        assert_eq!(
+            hidden["evidence"][0]["provenance"]["proofCapabilities"],
+            json!(["time", "route", "source"])
+        );
+        assert_eq!(
+            hidden["statements"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|record| record["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["statement_a", "statement_z"]
+        );
+        assert_eq!(
+            hidden["statements"][0]["provenance"],
+            json!({
+                "sourceKind": "unspecified",
+                "representationLayer": "none",
+                "proceduralStatus": "unspecified",
+                "completeness": "unspecified",
+                "confidence": "unspecified",
+                "sourceGroupId": null,
+                "sourceLabel": null,
+                "proofCapabilities": [],
+                "supersedesRecordId": null
+            })
+        );
+        assert!(
+            hidden["evidence"][0].get("successorRecordId").is_none(),
+            "a predecessor-only public record must not gain a future-successor field"
+        );
+        assert!(
+            hidden["evidence"][0]["provenance"]
+                .get("successorRecordId")
+                .is_none(),
+            "public provenance must not disclose a packaged future successor"
+        );
+
+        assert!(inventory.add_evidence_from_def(
+            &evidence_definition("evidence_a", lead),
+            "chapter_1",
+            "scene_1",
+        ));
+        let revealed =
+            serde_json::to_value(InventoryView::from_inventory(&catalog, &inventory).unwrap())
+                .unwrap();
+        assert_eq!(
+            revealed["evidence"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|record| record["id"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["evidence_a", "evidence_b"]
+        );
+        assert_eq!(
+            revealed["evidence"][0]["provenance"]["supersedesRecordId"],
+            json!(null),
+            "acquiring a predecessor must not reveal its packaged successor"
+        );
+        assert_eq!(
+            revealed["evidence"][1]["provenance"]["supersedesRecordId"],
+            "evidence:evidence_a"
+        );
+    }
+
+    #[test]
+    fn public_inventory_rejects_mutated_internal_provenance_at_its_own_boundary() {
+        let expected = lead_provenance();
+        let catalog = catalog_with_case_records(
+            vec![("evidence_a", "chapter_1", "scene_1", expected.clone())],
+            vec![],
+        );
+        let mut inventory = Inventory::default();
+        assert!(inventory.add_evidence_from_def(
+            &evidence_definition("evidence_a", expected),
+            "chapter_1",
+            "scene_1",
+        ));
+        inventory.evidence[0].provenance.confidence = Confidence::Disputed;
+
+        let error = InventoryView::from_inventory(&catalog, &inventory).unwrap_err();
+
+        assert_eq!(error.code, "inventoryRecordDefinitionMismatch");
+        assert_ne!(error.code, "caseRecordDefinitionMismatch");
+    }
+
+    #[test]
+    fn public_inventory_validates_statement_acquisition_origin() {
+        let catalog = catalog_with_case_records(
+            vec![],
+            vec![(
+                "statement_a",
+                "chapter_1",
+                "scene_1",
+                CaseRecordProvenance::default(),
+            )],
+        );
+        let mut inventory = Inventory::default();
+        assert!(inventory.add_statement_from_def(
+            &statement_definition("statement_a", CaseRecordProvenance::default()),
+            "chapter_1",
+            "scene_1",
+        ));
+        inventory.statements[0].acquired_in_scene_id = "scene_other".into();
+
+        let error = InventoryView::from_inventory(&catalog, &inventory).unwrap_err();
+
+        assert_eq!(error.code, "inventoryRecordDefinitionMismatch");
+    }
 }

@@ -1329,7 +1329,7 @@ mod tests {
         );
 
         let revision_before = engine.durable_revision;
-        let inventory_before = serde_json::to_vec(&engine.inventory).unwrap();
+        let inventory_before = engine.inventory.clone();
         let events_before = serde_json::to_vec(&engine.pending_acquisition_events).unwrap();
         let history_before = serde_json::to_vec(engine.history.entries()).unwrap();
 
@@ -1357,10 +1357,7 @@ mod tests {
 
         assert_eq!(error.code, "internalError");
         assert_eq!(engine.durable_revision, revision_before);
-        assert_eq!(
-            serde_json::to_vec(&engine.inventory).unwrap(),
-            inventory_before
-        );
+        assert_eq!(engine.inventory, inventory_before);
         assert_eq!(
             serde_json::to_vec(&engine.pending_acquisition_events).unwrap(),
             events_before

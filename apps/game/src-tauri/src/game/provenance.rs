@@ -134,6 +134,25 @@ pub(in crate::game) fn validate_scene_record_against_catalog(
     }
 }
 
+pub(in crate::game) fn validate_inventory_record_against_catalog(
+    catalog: &StoryCatalog,
+    chapter_id: &str,
+    scene_id: &str,
+    target: &InventoryTarget,
+    inventory_provenance: &CaseRecordProvenance,
+) -> Result<(), GameError> {
+    let matches = catalog.case_record(target).is_some_and(|definition| {
+        definition.chapter_id == chapter_id
+            && definition.scene_id == scene_id
+            && definition.provenance == *inventory_provenance
+    });
+    if matches {
+        Ok(())
+    } else {
+        Err(GameError::inventory_record_definition_mismatch())
+    }
+}
+
 pub(in crate::game) fn validate_scene_records_against_catalog(
     catalog: &StoryCatalog,
     chapter_id: &str,
