@@ -27,6 +27,7 @@
 - Catalog definitions are authoritative for lineage, groups, capabilities, and supersession. Scene definitions remain authoritative for prose, image, and acquisition dialogue. Runtime rejects origin/provenance disagreement.
 - Internal lineage reads asserted `StoryState` plus `StoryCatalog` and does not filter by inventory. Player-facing and selection-facing consumers apply acquired/selected filtering.
 - `GameStateView` exposes an `InventoryView`, never mutable `Inventory`. Remove direct public serialization from mutable inventory records once the projection is wired.
+- Public evidence and statement vectors preserve legacy acquisition/insertion order for UI and tray consumers. Canonical sorting applies to capabilities and set-derived typed-target projections, not acquired record vectors.
 - Public state never exposes an unacquired predecessor, a future successor, an unacquired supporting record, a hidden-support flag, or transitive lineage.
 - Preserve distinct errors:
   - `acquisitionDefinitionMismatch`: pending acquisition event kind disagrees with the owning scene definition.
@@ -944,9 +945,11 @@ impl Inventory {
 }
 ```
 
-- [ ] **Red: dynamic predecessor redaction**
+- [ ] **Red: dynamic predecessor redaction and acquisition order**
 
 Neutral/full provenance serializes; acquire B superseding absent A → public null; acquire A later → next view exposes A; acquire A alone → no future successor; capability arrays stay canonical.
+Construct evidence and statements in non-lexical acquisition order and assert
+their public vectors preserve that exact order.
 
 - [ ] **Red: inventory mismatch**
 
@@ -968,6 +971,8 @@ rtk cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
 - [ ] **Implement public projection**
 
 Add record-view types mirroring current display/acquisition fields plus public provenance. Remove `Serialize` from mutable `Inventory`, `EvidenceRecord`, and `StatementRecord`. During projection, validate each internal record against catalog provenance and origin, build public records, and redact predecessor unless acquired. Never expose successor.
+Preserve mutable inventory vector order; do not sort public evidence or
+statement arrays by ID.
 
 - [ ] **Filter fact support**
 

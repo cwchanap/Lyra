@@ -151,6 +151,10 @@ provenance annotations, or a layout-editor provenance form.
     provenance field, source-group registry requirement, neutral default, and
     explicit-status supersession warning.
 45. `.claude/skills/` remains the repository-canonical authoring-skill path.
+46. Public evidence and statement vectors preserve acquisition/insertion order,
+    matching the legacy `Inventory` contract and UI/tray rendering order.
+    Canonical sorting applies to capabilities and set-derived typed-target
+    projections, not acquired record vectors.
 
 ## 3. Current repository constraints
 
@@ -1294,6 +1298,9 @@ pub struct GameStateView {
 
 `InventoryView` contains evidence/statement record-view arrays with public
 provenance. It is rebuilt from mutable inventory on every `GameEngine::view()`.
+The arrays preserve the mutable inventory's acquisition order. They are not
+canonicalized by record ID; canonical ordering remains limited to capabilities
+and set-derived typed-target projections.
 
 `Inventory`, `EvidenceRecord`, and `StatementRecord` are engine state, not public
 wire types. Once `InventoryView` is wired, remove their `Serialize` derives where

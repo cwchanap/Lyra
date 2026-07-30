@@ -445,8 +445,14 @@ fn compiler_shaped_provenance_lineage_and_public_redaction_survive_exact_restore
     engine.inspect_hotspot("lead_terminal").unwrap();
     let before_restore = serde_json::to_value(engine.view().unwrap()).unwrap();
     assert_eq!(
-        before_restore["inventory"]["evidence"][0]["id"],
-        "camera_exhibit"
+        before_restore["inventory"]["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|record| record["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["camera_exhibit", "camera_lead"],
+        "public evidence must follow the hotspot acquisition sequence"
     );
     assert_eq!(
         before_restore["inventory"]["evidence"][0]["provenance"]["supersedesRecordId"],

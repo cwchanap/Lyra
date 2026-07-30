@@ -870,6 +870,38 @@ describe("case record metadata requirement", () => {
     line: 91,
   };
 
+  it("rejects an omitted neutral record when only exhibit status is allowed", () => {
+    const neutralProvenance = emitCaseRecordProvenance({
+      sourceKind: null,
+      representationLayer: null,
+      proceduralStatus: null,
+      completeness: null,
+      confidence: null,
+      sourceGroupId: null,
+      sourceLabel: null,
+      proofCapabilities: [],
+      supersedes: null,
+    });
+    const errors = validateCaseRecordRequirement(
+      { id: "neutral_candidate", provenance: neutralProvenance },
+      {
+        ...ALLOW_ANY_REQUIREMENT,
+        allowedProceduralStatuses: ["exhibit"],
+      },
+      { sourceFile: "live_acceptance.md", line: 37 },
+    );
+
+    expect(errors).toEqual([
+      {
+        code: "caseRecordRequirementFailed",
+        message:
+          'Case record "neutral_candidate" does not satisfy the metadata requirement: procedural status "unspecified" is not allowed.',
+        sourceFile: "live_acceptance.md",
+        line: 37,
+      },
+    ]);
+  });
+
   it.each([
     ["source kind", { allowedSourceKinds: ["physical"] }],
     ["representation layer", { allowedRepresentationLayers: ["raw"] }],

@@ -548,17 +548,17 @@ mod tests {
         write_record_scene(
             &resources,
             "investigation_scene_1",
-            &[("receipt", &neutral)],
-            &[("witness_account", &full)],
+            &[("shared_record", &neutral)],
+            &[("shared_record", &full)],
         );
         let catalog = catalog_with_case_records(
-            vec![("receipt", "chapter_1", "investigation_scene_1", neutral)],
             vec![(
-                "witness_account",
+                "shared_record",
                 "chapter_1",
                 "investigation_scene_1",
-                full,
+                neutral,
             )],
+            vec![("shared_record", "chapter_1", "investigation_scene_1", full)],
         );
 
         let scene = load_scene_with_catalog(
@@ -570,6 +570,85 @@ mod tests {
         .unwrap();
 
         assert!(matches!(scene, SceneJson::Investigation(_)));
+        let _ = fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn rejects_duplicate_identical_typed_scene_record_definitions() {
+        let provenance = CaseRecordProvenance::default();
+        for (evidence, statements) in [
+            (
+                vec![("duplicate", &provenance), ("duplicate", &provenance)],
+                vec![],
+            ),
+            (
+                vec![],
+                vec![("duplicate", &provenance), ("duplicate", &provenance)],
+            ),
+        ] {
+            let resources = unique_temp_dir();
+            write_record_scene(&resources, "investigation_scene_1", &evidence, &statements);
+            let catalog = catalog_with_case_records(
+                evidence
+                    .first()
+                    .map(|_| {
+                        vec![(
+                            "duplicate",
+                            "chapter_1",
+                            "investigation_scene_1",
+                            provenance.clone(),
+                        )]
+                    })
+                    .unwrap_or_default(),
+                statements
+                    .first()
+                    .map(|_| {
+                        vec![(
+                            "duplicate",
+                            "chapter_1",
+                            "investigation_scene_1",
+                            provenance.clone(),
+                        )]
+                    })
+                    .unwrap_or_default(),
+            );
+
+            let error = load_scene_with_catalog(
+                &resources,
+                &catalog,
+                "chapter_1",
+                "chapter_1/investigation_scene_1.json",
+            )
+            .unwrap_err();
+
+            assert_eq!(error.code, "caseRecordDefinitionMismatch");
+            let _ = fs::remove_dir_all(resources);
+        }
+    }
+
+    #[test]
+    fn rejects_catalog_record_missing_from_its_owning_scene() {
+        let resources = unique_temp_dir();
+        write_record_scene(&resources, "investigation_scene_1", &[], &[]);
+        let catalog = catalog_with_case_records(
+            vec![(
+                "catalog_only",
+                "chapter_1",
+                "investigation_scene_1",
+                CaseRecordProvenance::default(),
+            )],
+            vec![],
+        );
+
+        let error = load_scene_with_catalog(
+            &resources,
+            &catalog,
+            "chapter_1",
+            "chapter_1/investigation_scene_1.json",
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, "caseRecordDefinitionMismatch");
         let _ = fs::remove_dir_all(resources);
     }
 

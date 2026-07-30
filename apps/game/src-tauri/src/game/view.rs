@@ -56,19 +56,17 @@ impl InventoryView {
         inventory: &Inventory,
     ) -> Result<Self, GameError> {
         let acquired_targets = inventory.acquired_targets();
-        let mut evidence = inventory
+        let evidence = inventory
             .evidence
             .iter()
             .map(|record| evidence_record_view(catalog, &acquired_targets, record))
             .collect::<Result<Vec<_>, _>>()?;
-        evidence.sort_by(|left, right| left.id.cmp(&right.id));
 
-        let mut statements = inventory
+        let statements = inventory
             .statements
             .iter()
             .map(|record| statement_record_view(catalog, &acquired_targets, record))
             .collect::<Result<Vec<_>, _>>()?;
-        statements.sort_by(|left, right| left.id.cmp(&right.id));
 
         Ok(Self {
             evidence,
@@ -471,7 +469,7 @@ mod tests {
     }
 
     #[test]
-    fn public_inventory_recomputes_predecessor_redaction_and_canonical_arrays() {
+    fn public_inventory_recomputes_predecessor_redaction_and_preserves_acquisition_order() {
         let lead = lead_provenance();
         let successor = successor_provenance();
         let neutral = CaseRecordProvenance::default();
@@ -520,7 +518,8 @@ mod tests {
                 .iter()
                 .map(|record| record["id"].as_str().unwrap())
                 .collect::<Vec<_>>(),
-            vec!["statement_a", "statement_z"]
+            vec!["statement_z", "statement_a"],
+            "public statements must retain their acquisition order"
         );
         assert_eq!(
             hidden["statements"][0]["provenance"],
@@ -562,16 +561,17 @@ mod tests {
                 .iter()
                 .map(|record| record["id"].as_str().unwrap())
                 .collect::<Vec<_>>(),
-            vec!["evidence_a", "evidence_b"]
+            vec!["evidence_b", "evidence_a"],
+            "public evidence must retain its acquisition order"
         );
         assert_eq!(
             revealed["evidence"][0]["provenance"]["supersedesRecordId"],
-            json!(null),
-            "acquiring a predecessor must not reveal its packaged successor"
+            "evidence:evidence_a"
         );
         assert_eq!(
             revealed["evidence"][1]["provenance"]["supersedesRecordId"],
-            "evidence:evidence_a"
+            json!(null),
+            "acquiring a predecessor must not reveal its packaged successor"
         );
     }
 
