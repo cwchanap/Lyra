@@ -7,15 +7,31 @@
 
 import type { Token } from "./tokenizer";
 import {
-  EVIDENCE_IMAGE_METADATA_KEYS,
-  rejectReservedAssetMetadata,
-} from "./parser-assets";
+  CASE_RECORD_PROVENANCE_METADATA_KEYS,
+  parseCaseRecordProvenance,
+  type ManifestMetadata,
+} from "./case-record-provenance";
 import type {
   ASTEvidence,
   ASTStatement,
   CompileError,
   DialogueItem,
 } from "./types";
+
+const EVIDENCE_METADATA_KEYS = [
+  "Name",
+  "Description",
+  "Details",
+  "Source Sublocation",
+  "Image Prompt",
+  ...CASE_RECORD_PROVENANCE_METADATA_KEYS,
+] as const;
+
+const STATEMENT_METADATA_KEYS = [
+  "Speaker",
+  "Content",
+  ...CASE_RECORD_PROVENANCE_METADATA_KEYS,
+] as const;
 
 type CursorLike = {
   readonly sourceFile: string;
@@ -75,20 +91,16 @@ function parseEvidenceEntry(
       `Evidence anchor #${head.anchorId} does not match id ${id}.`,
     );
 
-  const meta = consumeMetadata(cur);
+  const meta = consumeMetadata(cur, EVIDENCE_METADATA_KEYS);
   if (!meta.ok) return meta;
-  const badAssetMeta = rejectReservedAssetMetadata(
-    meta.value,
-    EVIDENCE_IMAGE_METADATA_KEYS,
-    cur.sourceFile,
-    head.line,
-  );
-  if (badAssetMeta) return { ok: false, error: badAssetMeta };
-  const name = meta.value.Name;
-  const description = meta.value.Description;
-  const details = meta.value.Details;
-  const imagePrompt = meta.value["Image Prompt"] ?? null;
-  const sourceSublocationId = meta.value["Source Sublocation"] ?? null;
+  const provenance = parseCaseRecordProvenance(meta.value);
+  if (!provenance.ok) return provenance;
+  const name = meta.value.get("Name")?.value;
+  const description = meta.value.get("Description")?.value;
+  const details = meta.value.get("Details")?.value;
+  const imagePrompt = meta.value.get("Image Prompt")?.value ?? null;
+  const sourceSublocationId =
+    meta.value.get("Source Sublocation")?.value ?? null;
   if (!name || !description || !details)
     return fail(
       cur.sourceFile,
@@ -154,6 +166,7 @@ function parseEvidenceEntry(
         imageAssetId: null,
       },
       sourceSublocationId,
+      provenance: provenance.value,
       onCollect,
       onReexamine,
       sourceFile: cur.sourceFile,
@@ -214,17 +227,12 @@ function parseStatementEntry(
       `Statement anchor #${head.anchorId} does not match id ${id}.`,
     );
 
-  const meta = consumeMetadata(cur);
+  const meta = consumeMetadata(cur, STATEMENT_METADATA_KEYS);
   if (!meta.ok) return meta;
-  const badAssetMeta = rejectReservedAssetMetadata(
-    meta.value,
-    [],
-    cur.sourceFile,
-    head.line,
-  );
-  if (badAssetMeta) return { ok: false, error: badAssetMeta };
-  const speaker = meta.value.Speaker;
-  const content = meta.value.Content;
+  const provenance = parseCaseRecordProvenance(meta.value);
+  if (!provenance.ok) return provenance;
+  const speaker = meta.value.get("Speaker")?.value;
+  const content = meta.value.get("Content")?.value;
   if (!speaker || !content)
     return fail(
       cur.sourceFile,
@@ -284,6 +292,7 @@ function parseStatementEntry(
       id,
       speaker,
       content,
+      provenance: provenance.value,
       onAcquire,
       onReexamine,
       sourceFile: cur.sourceFile,
@@ -294,16 +303,48 @@ function parseStatementEntry(
 
 function consumeMetadata(
   cur: CursorLike,
-):
-  | { ok: true; value: Record<string, string> }
-  | { ok: false; error: CompileError } {
-  const out: Record<string, string> = {};
+  allowedKeys: readonly string[],
+): { ok: true; value: ManifestMetadata } | { ok: false; error: CompileError } {
+  const out: ManifestMetadata = new Map();
   while (true) {
     const next = cur.peek();
-    if (!next || next.kind !== "metadata") return { ok: true, value: out };
+    if (!next) return { ok: true, value: out };
+    const metadata = asManifestMetadataToken(next);
+    if (!metadata) return { ok: true, value: out };
     cur.next();
-    out[next.key] = next.value;
+    if (!allowedKeys.includes(metadata.key)) {
+      return fail(
+        cur.sourceFile,
+        metadata.line,
+        "caseRecordMetadataUnknownKey",
+        `Unknown case record metadata key: ${metadata.key}.`,
+      );
+    }
+    const first = out.get(metadata.key);
+    if (first) {
+      return fail(
+        cur.sourceFile,
+        metadata.line,
+        "caseRecordMetadataDuplicateKey",
+        `Duplicate case record metadata key ${metadata.key} at line ${metadata.line}; first defined at line ${first.line}.`,
+      );
+    }
+    out.set(metadata.key, {
+      value: metadata.value,
+      sourceFile: cur.sourceFile,
+      line: metadata.line,
+    });
   }
+}
+
+function asManifestMetadataToken(
+  token: Token,
+): { key: string; value: string; line: number } | null {
+  if (token.kind === "metadata") return token;
+  if (token.kind !== "unknown") return null;
+  const match = /^-\s+\*\*([A-Za-z][A-Za-z0-9 ]*):\*\*\s*$/.exec(token.text);
+  if (!match) return null;
+  return { key: match[1] ?? "", value: "", line: token.line };
 }
 
 type DialogueResult =

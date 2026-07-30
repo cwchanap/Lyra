@@ -3,6 +3,125 @@ import { readFileSync } from "node:fs";
 import { parseInvestigationScene } from "./parser-investigation";
 
 describe("parseInvestigationScene", () => {
+  it("keeps every authored evidence provenance field with its source line", () => {
+    const source = `
+# Scene 1: provenance
+
+## Intro
+
+**A**：開始。
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：房間。]
+
+## Evidence Manifest
+
+### evidence:verified_clip {#verified_clip}
+- **Name:** 已驗證影片
+- **Description:** 重新取得的完整輸出。
+- **Details:** 保留原始時間碼。
+- **Source Kind:** digital
+- **Representation Layer:** composite
+- **Procedural Status:** reacquired
+- **Completeness:** complete
+- **Confidence:** corroborated
+- **Source Group:** shibuya_program_composite
+- **Source Label:** 澀谷活動 Program Composite
+- **Proof Capabilities:** [time, source, procedure]
+- **Supersedes:** evidence:anonymous_wall_clip
+
+#### On Collect
+
+**A**：收下。
+
+## Statement Manifest
+
+## Outro
+
+**A**：結束。
+`.trim();
+    const result = parseInvestigationScene(
+      source,
+      "provenance.md",
+      "provenance",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.evidenceManifest[0]).toMatchObject({
+      provenance: {
+        sourceKind: { value: "digital", line: 18 },
+        representationLayer: { value: "composite", line: 19 },
+        proceduralStatus: { value: "reacquired", line: 20 },
+        completeness: { value: "complete", line: 21 },
+        confidence: { value: "corroborated", line: 22 },
+        sourceGroupId: { value: "shibuya_program_composite", line: 23 },
+        sourceLabel: { value: "澀谷活動 Program Composite", line: 24 },
+        proofCapabilities: [
+          { value: "time", line: 25 },
+          { value: "source", line: 25 },
+          { value: "procedure", line: 25 },
+        ],
+        supersedes: {
+          kind: "evidence",
+          id: "anonymous_wall_clip",
+          line: 26,
+        },
+      },
+    });
+  });
+
+  it("keeps unannotated evidence provenance absent in the AST", () => {
+    const source = `
+# Scene 1: provenance
+
+## Intro
+
+**A**：開始。
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：房間。]
+
+## Evidence Manifest
+
+### evidence:plain_note {#plain_note}
+- **Name:** 紙條
+- **Description:** 沒有作者註記的紙條。
+- **Details:** 字跡尚待比對。
+
+#### On Collect
+
+**A**：收下。
+
+## Statement Manifest
+
+## Outro
+
+**A**：結束。
+`.trim();
+    const result = parseInvestigationScene(source, "plain.md", "plain");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.evidenceManifest[0]?.provenance).toEqual({
+      sourceKind: null,
+      representationLayer: null,
+      proceduralStatus: null,
+      completeness: null,
+      confidence: null,
+      sourceGroupId: null,
+      sourceLabel: null,
+      proofCapabilities: [],
+      supersedes: null,
+    });
+  });
+
   it("parses the valid fixture investigation scene end-to-end", () => {
     const source = readFileSync(
       "packages/scripts/__fixtures__/valid/chapter_1/investigation_scene_1.md",
@@ -342,7 +461,7 @@ describe("parseInvestigationScene", () => {
     const result = parseInvestigationScene(source, "i.md", "i");
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe("assetMetadataUnknownKey");
+    expect(result.error.code).toBe("caseRecordMetadataUnknownKey");
   });
 
   it("rejects reserved asset metadata on a hotspot", () => {
@@ -553,7 +672,7 @@ describe("parseInvestigationScene", () => {
     const result = parseInvestigationScene(source, "i.md", "i");
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.code).toBe("assetMetadataUnknownKey");
+    expect(result.error.code).toBe("caseRecordMetadataUnknownKey");
   });
 
   it("defaults evidence image prompts to null", () => {
