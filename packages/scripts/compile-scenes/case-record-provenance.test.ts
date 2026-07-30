@@ -410,6 +410,9 @@ describe("case record corpus", () => {
       line: 21,
     });
     expect(
+      result.value.recordsByKey.get("statement:a_record")?.provenance,
+    ).toEqual(NEUTRAL_PROVENANCE);
+    expect(
       result.value.recordsByKey.get("evidence:shared")?.provenance,
     ).toEqual({
       sourceKind: "digital",

@@ -32,6 +32,18 @@ const SINGLETON_SOURCE_GROUP_CATALOG = `# Story Catalog
 - **Summary:** Records derived from the same program export.
 `;
 
+const NEUTRAL_CASE_RECORD_PROVENANCE = {
+  sourceKind: "unspecified",
+  representationLayer: "none",
+  proceduralStatus: "unspecified",
+  completeness: "unspecified",
+  confidence: "unspecified",
+  sourceGroupId: null,
+  sourceLabel: null,
+  proofCapabilities: [],
+  supersedesRecordId: null,
+};
+
 function annotateCoffeeWithSourceGroup(sourceRoot: string): void {
   const scenePath = resolve(sourceRoot, "chapter_1/investigation_scene_1.md");
   const original = readFileSync(scenePath, "utf-8");
@@ -1203,6 +1215,104 @@ describe("compile (global story catalog)", () => {
       ]);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("compile (tracked production corpus compatibility)", () => {
+  it("emits neutral provenance and no source groups without story migration", () => {
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-live-provenance-"),
+    );
+    try {
+      const repoRoot = resolve(".");
+      const result = compile({
+        sourceRoot: [
+          resolve(repoRoot, "static/stories_plan"),
+          resolve(repoRoot, "docs/stories_plan"),
+        ],
+        outputRoot: outRoot,
+        assetConfigRoot: resolve(repoRoot, "static/assets/config"),
+        assetOutputRoot: resolve(outRoot, "assets"),
+        repoRoot,
+      });
+      if (!result.ok) {
+        throw new Error(
+          "Live corpus compile failed:\n" + formatErrors(result.errors),
+        );
+      }
+
+      const chapters = JSON.parse(
+        readFileSync(resolve(outRoot, "chapters.json"), "utf-8"),
+      ) as {
+        chapters: Array<{
+          scenes: Array<{ type: string; file: string }>;
+        }>;
+      };
+      const sceneRecords: Array<{
+        kind: "evidence" | "statement";
+        id: string;
+        provenance: unknown;
+      }> = [];
+      for (const chapter of chapters.chapters) {
+        for (const descriptor of chapter.scenes) {
+          if (
+            descriptor.type !== "investigation" &&
+            descriptor.type !== "interrogation"
+          ) {
+            continue;
+          }
+          const scene = JSON.parse(
+            readFileSync(resolve(outRoot, descriptor.file), "utf-8"),
+          ) as {
+            evidenceManifest: Array<{ id: string; provenance: unknown }>;
+            statementManifest: Array<{ id: string; provenance: unknown }>;
+          };
+          sceneRecords.push(
+            ...scene.evidenceManifest.map(({ id, provenance }) => ({
+              kind: "evidence" as const,
+              id,
+              provenance,
+            })),
+            ...scene.statementManifest.map(({ id, provenance }) => ({
+              kind: "statement" as const,
+              id,
+              provenance,
+            })),
+          );
+        }
+      }
+
+      const catalog = JSON.parse(
+        readFileSync(resolve(outRoot, "story_catalog.json"), "utf-8"),
+      ) as {
+        sourceGroups: unknown[];
+        evidenceIndex: Array<{ id: string; provenance: unknown }>;
+        statementsIndex: Array<{ id: string; provenance: unknown }>;
+      };
+      const catalogRecords = [
+        ...catalog.evidenceIndex.map(({ id, provenance }) => ({
+          kind: "evidence" as const,
+          id,
+          provenance,
+        })),
+        ...catalog.statementsIndex.map(({ id, provenance }) => ({
+          kind: "statement" as const,
+          id,
+          provenance,
+        })),
+      ];
+
+      expect(sceneRecords.length).toBeGreaterThan(0);
+      expect(
+        sceneRecords.map(({ kind, id }) => `${kind}:${id}`).sort(),
+      ).toEqual(catalogRecords.map(({ kind, id }) => `${kind}:${id}`).sort());
+      for (const record of [...sceneRecords, ...catalogRecords]) {
+        expect(record.provenance).toEqual(NEUTRAL_CASE_RECORD_PROVENANCE);
+      }
+      expect(catalog.sourceGroups).toEqual([]);
+    } finally {
       rmSync(outRoot, { recursive: true, force: true });
     }
   });
