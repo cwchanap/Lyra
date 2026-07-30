@@ -146,11 +146,12 @@ mod persistence_adapter_tests {
         std::fs::write(
             resources.path().join("story_catalog.json"),
             r#"{
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "facts": [],
                 "questions": [],
                 "objectives": [],
                 "authorizations": [],
+                "sourceGroups": [],
                 "evidenceIndex": [],
                 "statementsIndex": []
             }"#,
