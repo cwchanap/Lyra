@@ -183,7 +183,7 @@ mod tests {
         std::fs::write(
             path.join("story_catalog.json"),
             r#"{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "facts": [
     {"id":"fact_first","label":"First fact","summary":"First summary","details":"First details","category":"timeline"},
     {"id":"fact_second","label":"Second fact","summary":"Second summary","details":"Second details","category":"motive"},
@@ -206,12 +206,58 @@ mod tests {
     {"id":"authorization_migration","label":"Migration authorization","summary":"Migration summary","grantingAuthority":"Court"},
     {"id":"authorization_untouched","label":"Untouched authorization","summary":"Hidden","grantingAuthority":"Hidden"}
   ],
+  "sourceGroups": [],
   "evidenceIndex": [
-    {"id":"evidence_z","chapterId":"chapter_1","sceneId":"scene_1"},
-    {"id":"evidence_a","chapterId":"chapter_1","sceneId":"scene_1"}
+    {
+      "id":"evidence_z",
+      "chapterId":"chapter_1",
+      "sceneId":"scene_1",
+      "provenance":{
+        "sourceKind":"unspecified",
+        "representationLayer":"none",
+        "proceduralStatus":"unspecified",
+        "completeness":"unspecified",
+        "confidence":"unspecified",
+        "sourceGroupId":null,
+        "sourceLabel":null,
+        "proofCapabilities":[],
+        "supersedesRecordId":null
+      }
+    },
+    {
+      "id":"evidence_a",
+      "chapterId":"chapter_1",
+      "sceneId":"scene_1",
+      "provenance":{
+        "sourceKind":"unspecified",
+        "representationLayer":"none",
+        "proceduralStatus":"unspecified",
+        "completeness":"unspecified",
+        "confidence":"unspecified",
+        "sourceGroupId":null,
+        "sourceLabel":null,
+        "proofCapabilities":[],
+        "supersedesRecordId":null
+      }
+    }
   ],
   "statementsIndex": [
-    {"id":"statement_b","chapterId":"chapter_1","sceneId":"scene_1"}
+    {
+      "id":"statement_b",
+      "chapterId":"chapter_1",
+      "sceneId":"scene_1",
+      "provenance":{
+        "sourceKind":"unspecified",
+        "representationLayer":"none",
+        "proceduralStatus":"unspecified",
+        "completeness":"unspecified",
+        "confidence":"unspecified",
+        "sourceGroupId":null,
+        "sourceLabel":null,
+        "proofCapabilities":[],
+        "supersedesRecordId":null
+      }
+    }
   ]
 }"#,
         )

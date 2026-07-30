@@ -544,7 +544,7 @@ mod tests {
         std::fs::write(
             path.join("story_catalog.json"),
             r#"{
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "facts": [
     {"id":"fact_alpha","label":"Alpha","summary":"Alpha","details":"Alpha details","category":"timeline"},
     {"id":"fact_beta","label":"Beta","summary":"Beta","details":"Beta details","category":"motive"},
@@ -561,11 +561,42 @@ mod tests {
   "authorizations": [
     {"id":"authorization_a","label":"Authorization A","summary":"A","grantingAuthority":"Police"}
   ],
+  "sourceGroups": [],
   "evidenceIndex": [
-    {"id":"evidence_a","chapterId":"chapter_1","sceneId":"scene_1"}
+    {
+      "id":"evidence_a",
+      "chapterId":"chapter_1",
+      "sceneId":"scene_1",
+      "provenance":{
+        "sourceKind":"unspecified",
+        "representationLayer":"none",
+        "proceduralStatus":"unspecified",
+        "completeness":"unspecified",
+        "confidence":"unspecified",
+        "sourceGroupId":null,
+        "sourceLabel":null,
+        "proofCapabilities":[],
+        "supersedesRecordId":null
+      }
+    }
   ],
   "statementsIndex": [
-    {"id":"statement_a","chapterId":"chapter_1","sceneId":"scene_1"}
+    {
+      "id":"statement_a",
+      "chapterId":"chapter_1",
+      "sceneId":"scene_1",
+      "provenance":{
+        "sourceKind":"unspecified",
+        "representationLayer":"none",
+        "proceduralStatus":"unspecified",
+        "completeness":"unspecified",
+        "confidence":"unspecified",
+        "sourceGroupId":null,
+        "sourceLabel":null,
+        "proofCapabilities":[],
+        "supersedesRecordId":null
+      }
+    }
   ]
 }"#,
         )

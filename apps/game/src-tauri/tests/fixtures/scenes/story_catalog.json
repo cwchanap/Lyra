@@ -1,9 +1,10 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "facts": [],
   "questions": [],
   "objectives": [],
   "authorizations": [],
+  "sourceGroups": [],
   "evidenceIndex": [],
   "statementsIndex": []
 }
