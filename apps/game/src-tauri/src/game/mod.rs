@@ -18,6 +18,7 @@ pub mod scenes;
 pub mod schema;
 pub mod state;
 mod story;
+mod support_lineage;
 pub mod unlock;
 pub mod view;
 

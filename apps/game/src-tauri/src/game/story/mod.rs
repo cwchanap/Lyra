@@ -9,7 +9,7 @@ pub(in crate::game) use catalog::{CaseRecordDefinition, SourceGroupDefinition};
 #[allow(unused_imports)]
 pub(in crate::game) use mutations::MutationOutcome;
 #[allow(unused_imports)]
-pub(in crate::game) use state::{AssertionOrigin, StoryEventBlockKind, StoryState};
+pub(in crate::game) use state::{AssertionOrigin, FactProgress, StoryEventBlockKind, StoryState};
 #[allow(unused_imports)]
 pub(crate) use state::{
     AuthorizationProgressSnapshot, FactProgressSnapshot, ObjectiveProgressSnapshot,

@@ -39,6 +39,34 @@ pub(in crate::game) struct StoryState {
     pub(super) active_primary_objective_id: Option<String>,
 }
 
+impl FactProgress {
+    pub(in crate::game) fn supporting_records(&self) -> &BTreeSet<InventoryTarget> {
+        &self.supporting_records
+    }
+
+    pub(in crate::game) fn supporting_fact_ids(&self) -> &BTreeSet<String> {
+        &self.supporting_fact_ids
+    }
+}
+
+impl StoryState {
+    pub(in crate::game) fn fact_progress(&self, id: &str) -> Option<&FactProgress> {
+        self.facts.get(id)
+    }
+
+    #[cfg(test)]
+    pub(in crate::game) fn replace_supporting_fact_ids_for_test(
+        &mut self,
+        fact_id: &str,
+        supporting_fact_ids: BTreeSet<String>,
+    ) {
+        self.facts
+            .get_mut(fact_id)
+            .expect("test fact progress must exist")
+            .supporting_fact_ids = supporting_fact_ids;
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
