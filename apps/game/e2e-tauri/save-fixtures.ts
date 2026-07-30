@@ -122,6 +122,11 @@ export type SaveE2eSceneSnapshot =
   | SaveE2eInvestigationSceneSnapshot
   | SaveE2eInterrogationSceneSnapshot;
 
+/**
+ * Save schema v1 inventory payload. These entries intentionally remain
+ * ID-and-acquisition-origin only; immutable provenance rejoins from the exact
+ * packaged content and is exposed separately by the public game-state view.
+ */
 export type SaveE2eInventorySnapshot = {
   evidence: Array<{
     recordId: string;

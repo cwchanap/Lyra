@@ -5,10 +5,26 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import InventoryPanel from "./InventoryPanel.svelte";
-import type { Inventory } from "../state/types";
+import type { CaseRecordProvenance, Inventory } from "../state/types";
+import {
+  neutralEvidenceRecordView,
+  neutralStatementRecordView,
+} from "../state/test-fixtures";
 import { cssRule } from "$lib/test-utils";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
+
+const annotatedProvenance: CaseRecordProvenance = {
+  sourceKind: "digital",
+  representationLayer: "raw",
+  proceduralStatus: "exhibit",
+  completeness: "complete",
+  confidence: "corroborated",
+  sourceGroupId: "cafe_register_export",
+  sourceLabel: "鑑識原始檔",
+  proofCapabilities: ["time", "identity", "procedure"],
+  supersedesRecordId: "evidence:coffee_receipt_lead",
+};
 
 const inventory: Inventory = {
   evidence: [
@@ -17,6 +33,7 @@ const inventory: Inventory = {
       name: "咖啡收據",
       description: "收據上的時間被圈起。",
       details: "一張潮濕的收據。",
+      provenance: annotatedProvenance,
       imageAssetId: "evidence.coffee_receipt_load_error_component_test",
       onReexamine: null,
       collectedInChapterId: "chapter_1",
@@ -24,14 +41,14 @@ const inventory: Inventory = {
     },
   ],
   statements: [
-    {
+    neutralStatementRecordView({
       id: "statement_1",
       speaker: "若月",
       content: "我一直在店內。",
       onReexamine: null,
       acquiredInChapterId: "chapter_1",
       acquiredInSceneId: "scene_0",
-    },
+    }),
   ],
 };
 
@@ -107,6 +124,27 @@ describe("InventoryPanel", () => {
     expect(container.querySelector("aside.scene")).not.toBeInTheDocument();
   });
 
+  it("keeps provenance out of visible and accessible inventory content", () => {
+    render(InventoryPanel, {
+      inventory,
+      reexamineEnabled: true,
+      onReexamineEvidence: vi.fn(),
+      onReexamineStatement: vi.fn(),
+      open: true,
+    });
+
+    const evidenceButton = screen.getByRole("button", { name: /咖啡收據/ });
+    expect(evidenceButton).toHaveAccessibleName(/咖啡收據.*收據上的時間被圈起/);
+    expect(evidenceButton).not.toHaveAccessibleName(
+      /digital|raw|exhibit|complete|corroborated|cafe_register_export|鑑識原始檔|time|identity|procedure|coffee_receipt_lead/,
+    );
+    expect(
+      screen.getByRole("region", { name: "物證清單" }),
+    ).not.toHaveTextContent(
+      /digital|raw|exhibit|complete|corroborated|cafe_register_export|鑑識原始檔|time|identity|procedure|coffee_receipt_lead/,
+    );
+  });
+
   it("respects a bound open prop to start expanded", () => {
     // The `open` prop is $bindable: when a parent passes a value, the panel
     // honors it on mount instead of defaulting to collapsed. This is the
@@ -144,7 +182,7 @@ describe("InventoryPanel", () => {
 
     const inventoryNoImage: Inventory = {
       evidence: [
-        {
+        neutralEvidenceRecordView({
           id: "no_image_evidence",
           name: "無圖物證",
           description: "沒有附圖。",
@@ -153,7 +191,7 @@ describe("InventoryPanel", () => {
           onReexamine: null,
           collectedInChapterId: "chapter_1",
           collectedInSceneId: "scene_0",
-        },
+        }),
       ],
       statements: [],
     };
