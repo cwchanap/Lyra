@@ -295,7 +295,8 @@ function provenanceForRecord(
     !record ||
     record.target.kind !== kind ||
     record.target.id !== id ||
-    record.sceneId !== ast.id
+    record.sceneId !== ast.id ||
+    record.sourceFile !== sourceFile
   ) {
     throw new CaseRecordEmissionError(
       `Case record ${key} in scene "${ast.id}" is missing from the compiled corpus or has a different scene origin.`,
