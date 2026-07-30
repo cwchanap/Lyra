@@ -143,20 +143,6 @@ mod persistence_adapter_tests {
             format!(r#"{{"manifestVersion":1,"contentRevision":"{CONTENT_REVISION}"}}"#),
         )
         .unwrap();
-        std::fs::write(
-            resources.path().join("story_catalog.json"),
-            r#"{
-                "schemaVersion": 2,
-                "facts": [],
-                "questions": [],
-                "objectives": [],
-                "authorizations": [],
-                "sourceGroups": [],
-                "evidenceIndex": [],
-                "statementsIndex": []
-            }"#,
-        )
-        .unwrap();
         crate::game::test_support::write_neutral_story_catalog(
             resources.path(),
             &[("note", SOURCE_CHAPTER_ID, SOURCE_SCENE_ID)],

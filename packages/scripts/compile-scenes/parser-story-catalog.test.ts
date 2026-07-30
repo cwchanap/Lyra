@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { emptyStoryCatalog, parseStoryCatalog } from "./parser-story-catalog";
 
@@ -110,8 +110,11 @@ describe("parseStoryCatalog", () => {
 
   it("parses the fixture's final source-group registry", () => {
     const source = readFileSync(
-      resolve(
-        "packages/scripts/__fixtures__/story_catalog/valid/story_catalog.md",
+      fileURLToPath(
+        new URL(
+          "../__fixtures__/story_catalog/valid/story_catalog.md",
+          import.meta.url,
+        ),
       ),
       "utf8",
     );

@@ -9,21 +9,48 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { compile, formatErrors } from "./orchestrator";
 
 const INVESTIGATION_TEMPLATE = readFileSync(
-  resolve(
-    "packages/scripts/__fixtures__/valid/chapter_1/investigation_scene_1.md",
+  fileURLToPath(
+    new URL(
+      "../__fixtures__/valid/chapter_1/investigation_scene_1.md",
+      import.meta.url,
+    ),
   ),
   "utf8",
 );
 const INTERROGATION_TEMPLATE = readFileSync(
-  resolve(
-    "packages/scripts/__fixtures__/valid_interrogation/chapter_1/interrogation_scene_1.md",
+  fileURLToPath(
+    new URL(
+      "../__fixtures__/valid_interrogation/chapter_1/interrogation_scene_1.md",
+      import.meta.url,
+    ),
   ),
   "utf8",
 );
+
+function replaceOnce(
+  input: string,
+  anchor: string,
+  replacement: string,
+  label: string,
+): string {
+  const first = input.indexOf(anchor);
+  if (first === -1) {
+    throw new Error(
+      `replaceOnce: ${label} anchor not found in template: ${anchor}`,
+    );
+  }
+  if (input.indexOf(anchor, first + anchor.length) !== -1) {
+    throw new Error(
+      `replaceOnce: ${label} anchor is not unique in template: ${anchor}`,
+    );
+  }
+  return input.replace(anchor, replacement);
+}
 
 const tempRoots: string[] = [];
 
@@ -209,22 +236,33 @@ ${(order === "forward"
     order === "forward"
       ? ["camera_lead", "camera_reacquired", "camera_exhibit"]
       : ["camera_exhibit", "camera_reacquired", "camera_lead"];
-  const investigation = INVESTIGATION_TEMPLATE.replace(
-    "- **Reveals:** [evidence:coffee, sublocation:back_room]",
-    "- **Reveals:** [evidence:coffee, evidence:camera_exhibit, evidence:camera_lead, evidence:camera_reacquired, sublocation:back_room]",
-  ).replace(
+  const investigation = replaceOnce(
+    replaceOnce(
+      INVESTIGATION_TEMPLATE,
+      "- **Reveals:** [evidence:coffee, sublocation:back_room]",
+      "- **Reveals:** [evidence:coffee, evidence:camera_exhibit, evidence:camera_lead, evidence:camera_reacquired, sublocation:back_room]",
+      "investigation reveals",
+    ),
     "## Statement Manifest",
     `${evidenceOrder.map((id) => entries[id as keyof typeof entries]).join("\n")}\n## Statement Manifest`,
+    "investigation statement manifest",
   );
   writeFileSync(
     resolve(chapterRoot, "investigation_scene_1.md"),
     investigation,
   );
 
-  const interrogation = INTERROGATION_TEMPLATE.replace(
-    "- **Reveals:** [statement:wakatsuki_entered_for_beans]",
-    `- **Reveals:** [statement:wakatsuki_entered_for_beans, statement:${COLLIDING_RECORD_ID}]`,
-  ).replace("## Outro", `${statementEntry()}\n## Outro`);
+  const interrogation = replaceOnce(
+    replaceOnce(
+      INTERROGATION_TEMPLATE,
+      "- **Reveals:** [statement:wakatsuki_entered_for_beans]",
+      `- **Reveals:** [statement:wakatsuki_entered_for_beans, statement:${COLLIDING_RECORD_ID}]`,
+      "interrogation reveals",
+    ),
+    "## Outro",
+    `${statementEntry()}\n## Outro`,
+    "interrogation outro",
+  );
   writeFileSync(
     resolve(chapterRoot, "interrogation_scene_2.md"),
     interrogation,

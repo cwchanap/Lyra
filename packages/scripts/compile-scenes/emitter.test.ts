@@ -22,6 +22,18 @@ import type {
 } from "./types";
 import type { SceneRecord } from "./validator";
 
+const NEUTRAL_PROVENANCE = {
+  sourceKind: "unspecified",
+  representationLayer: "none",
+  proceduralStatus: "unspecified",
+  completeness: "unspecified",
+  confidence: "unspecified",
+  sourceGroupId: null,
+  sourceLabel: null,
+  proofCapabilities: [],
+  supersedesRecordId: null,
+} as const;
+
 function compileCorpus(
   catalog: ASTStoryCatalog,
   scenes: readonly SceneRecord[],
@@ -355,33 +367,13 @@ describe("emitter", () => {
         id: "evidence_a",
         chapterId: "chapter_1",
         sceneId: "interrogation_scene_3",
-        provenance: {
-          sourceKind: "unspecified",
-          representationLayer: "none",
-          proceduralStatus: "unspecified",
-          completeness: "unspecified",
-          confidence: "unspecified",
-          sourceGroupId: null,
-          sourceLabel: null,
-          proofCapabilities: [],
-          supersedesRecordId: null,
-        },
+        provenance: NEUTRAL_PROVENANCE,
       },
       {
         id: "evidence_z",
         chapterId: "chapter_2",
         sceneId: "investigation_scene_4",
-        provenance: {
-          sourceKind: "unspecified",
-          representationLayer: "none",
-          proceduralStatus: "unspecified",
-          completeness: "unspecified",
-          confidence: "unspecified",
-          sourceGroupId: null,
-          sourceLabel: null,
-          proofCapabilities: [],
-          supersedesRecordId: null,
-        },
+        provenance: NEUTRAL_PROVENANCE,
       },
     ]);
     expect(emitted.statementsIndex).toEqual([
@@ -389,33 +381,13 @@ describe("emitter", () => {
         id: "statement_a",
         chapterId: "chapter_2",
         sceneId: "investigation_scene_4",
-        provenance: {
-          sourceKind: "unspecified",
-          representationLayer: "none",
-          proceduralStatus: "unspecified",
-          completeness: "unspecified",
-          confidence: "unspecified",
-          sourceGroupId: null,
-          sourceLabel: null,
-          proofCapabilities: [],
-          supersedesRecordId: null,
-        },
+        provenance: NEUTRAL_PROVENANCE,
       },
       {
         id: "statement_z",
         chapterId: "chapter_1",
         sceneId: "interrogation_scene_3",
-        provenance: {
-          sourceKind: "unspecified",
-          representationLayer: "none",
-          proceduralStatus: "unspecified",
-          completeness: "unspecified",
-          confidence: "unspecified",
-          sourceGroupId: null,
-          sourceLabel: null,
-          proofCapabilities: [],
-          supersedesRecordId: null,
-        },
+        provenance: NEUTRAL_PROVENANCE,
       },
     ]);
   });
@@ -684,17 +656,7 @@ describe("emitter", () => {
           id: "neutral_record",
           chapterId: "chapter_1",
           sceneId: "investigation_scene_1",
-          provenance: {
-            sourceKind: "unspecified",
-            representationLayer: "none",
-            proceduralStatus: "unspecified",
-            completeness: "unspecified",
-            confidence: "unspecified",
-            sourceGroupId: null,
-            sourceLabel: null,
-            proofCapabilities: [],
-            supersedesRecordId: null,
-          },
+          provenance: NEUTRAL_PROVENANCE,
         },
       ],
       statementsIndex: [
@@ -759,16 +721,13 @@ describe("emitter", () => {
         record.sceneId = "investigation_scene_other";
       }
 
-      try {
-        emitInvestigationScene(ast, corpus);
-        throw new Error("expected emission to fail");
-      } catch (error) {
-        expect(error).toMatchObject({
+      expect(() => emitInvestigationScene(ast, corpus)).toThrow(
+        expect.objectContaining({
           code: "caseRecordEmissionMismatch",
           sourceFile: "chapter_1/investigation_scene_1.md",
           line: 12,
-        });
-      }
+        }),
+      );
     },
   );
 
@@ -777,16 +736,13 @@ describe("emitter", () => {
     const foreignAst = mismatchScene("chapter_2");
     const corpus = corpusForScene(foreignAst, "chapter_2");
 
-    try {
-      emitInvestigationScene(emittingAst, corpus);
-      throw new Error("expected emission to fail");
-    } catch (error) {
-      expect(error).toMatchObject({
+    expect(() => emitInvestigationScene(emittingAst, corpus)).toThrow(
+      expect.objectContaining({
         code: "caseRecordEmissionMismatch",
         sourceFile: "chapter_1/investigation_scene_1.md",
         line: 12,
-      });
-    }
+      }),
+    );
   });
 
   it("emits a linear scene JSON", () => {

@@ -329,6 +329,14 @@ function consumeMetadata(
         `Duplicate case record metadata key ${metadata.key} at line ${metadata.line}; first defined at line ${first.line}.`,
       );
     }
+    if (metadata.value.trim() === "") {
+      return fail(
+        cur.sourceFile,
+        metadata.line,
+        "caseRecordMetadataBlank",
+        `Case record metadata ${metadata.key} must not be blank.`,
+      );
+    }
     out.set(metadata.key, {
       value: metadata.value,
       sourceFile: cur.sourceFile,

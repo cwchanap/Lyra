@@ -83,17 +83,7 @@ pub(super) fn write_neutral_story_catalog(
             "id": id,
             "chapterId": chapter_id,
             "sceneId": scene_id,
-            "provenance": {
-                "sourceKind": "unspecified",
-                "representationLayer": "none",
-                "proceduralStatus": "unspecified",
-                "completeness": "unspecified",
-                "confidence": "unspecified",
-                "sourceGroupId": null,
-                "sourceLabel": null,
-                "proofCapabilities": [],
-                "supersedesRecordId": null
-            }
+            "provenance": neutral_provenance_json()
         })
     };
     std::fs::write(
@@ -111,6 +101,10 @@ pub(super) fn write_neutral_story_catalog(
         .unwrap(),
     )
     .unwrap();
+}
+
+pub(super) fn neutral_provenance_json() -> serde_json::Value {
+    serde_json::to_value(crate::game::provenance::CaseRecordProvenance::default()).unwrap()
 }
 
 pub(super) fn catalog_with_case_records(

@@ -73,25 +73,13 @@ const PROOF_CAPABILITIES = [
   "causation",
 ] as const;
 
-const PROOF_CAPABILITY_RANK: Record<ProofCapability, number> = {
-  time: 0,
-  order: 1,
-  route: 2,
-  identity: 3,
-  access: 4,
-  motive: 5,
-  source: 6,
-  credibility: 7,
-  procedure: 8,
-  causation: 9,
-};
+const PROOF_CAPABILITY_RANK = Object.fromEntries(
+  PROOF_CAPABILITIES.map((capability, index) => [capability, index]),
+) as Record<ProofCapability, number>;
 
-const PROCEDURAL_STATUS_RANK: Record<ProceduralStatus, number> = {
-  unspecified: 0,
-  lead: 1,
-  reacquired: 2,
-  exhibit: 3,
-};
+const PROCEDURAL_STATUS_RANK = Object.fromEntries(
+  PROCEDURAL_STATUSES.map((status, index) => [status, index]),
+) as Record<ProceduralStatus, number>;
 
 export function inventoryTargetKey(target: InventoryTarget): string {
   return `${target.kind}:${target.id}`;
