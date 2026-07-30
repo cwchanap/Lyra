@@ -201,6 +201,7 @@ export type ASTStoryCatalog = Located<{
   questions: ASTQuestionDefinition[];
   objectives: ASTObjectiveDefinition[];
   authorizations: ASTAuthorizationDefinition[];
+  sourceGroups: ASTSourceGroupDefinition[];
 }>;
 
 export type ASTFactDefinition = Located<{
@@ -231,6 +232,12 @@ export type ASTAuthorizationDefinition = Located<{
   label: string;
   summary: string;
   grantingAuthority: string;
+}>;
+
+export type ASTSourceGroupDefinition = Located<{
+  id: string;
+  label: string;
+  summary: string;
 }>;
 
 export type ASTLinearScene = Located<{

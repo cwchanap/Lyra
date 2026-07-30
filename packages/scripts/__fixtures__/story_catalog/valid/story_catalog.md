@@ -29,3 +29,9 @@
 
 - **Summary:** Permission to inspect the archive.
 - **Granting Authority:** Metropolitan Police
+
+## Source Groups
+
+### Source Group: 澀谷活動 Program Composite {#shibuya_program_composite}
+
+- **Summary:** 同一活動方 Program Composite 輸出衍生的紀錄。
