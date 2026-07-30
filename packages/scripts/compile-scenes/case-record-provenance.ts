@@ -260,6 +260,7 @@ export function compileCaseRecordCorpus(
       id: target.id,
       chapterId: scene.chapterId,
       sceneId: scene.ast.id,
+      provenance,
     };
     if (target.kind === "evidence") evidenceIndex.push(indexEntry);
     else statementsIndex.push(indexEntry);

@@ -3,7 +3,7 @@ import type {
   JSONInterrogationScene,
   JSONInvestigationScene,
   JSONLinearScene,
-  StoryCatalogJson,
+  StoryCatalogJsonV2,
 } from "./types";
 
 export type DialogueSegmentOriginV1 =
@@ -44,7 +44,7 @@ export type SaveContentBundleV1 = {
     summary: string;
     scenes: EmittedSceneJsonV1[];
   }>;
-  storyCatalog: StoryCatalogJson;
+  storyCatalog: StoryCatalogJsonV2;
 };
 
 export type BuildSaveContentManifestInput = {

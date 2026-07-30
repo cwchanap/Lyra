@@ -41,12 +41,14 @@ import {
 import { validate, type SceneRecord } from "./validator";
 import { validateStoryCatalog } from "./story-catalog";
 import {
+  CaseRecordEmissionError,
   emitChaptersIndex,
   emitInterrogationScene,
   emitInvestigationScene,
   emitLinearScene,
   emitStoryCatalog,
 } from "./emitter";
+import { compileCaseRecordCorpus } from "./case-record-provenance";
 import {
   buildSaveContentManifest,
   type EmittedSceneJsonV1,
@@ -55,7 +57,12 @@ import {
 import { validateDerivedDialogueOriginCollisions } from "./dialogue-segment-origins";
 import { materializeSemanticDefaults } from "./semantic-defaults";
 import { validateSaveContentReferences } from "./save-content-references";
-import type { ASTChapter, ASTStoryCatalog, CompileError } from "./types";
+import type {
+  ASTChapter,
+  ASTStoryCatalog,
+  CompileError,
+  CompiledCaseRecordCorpus,
+} from "./types";
 import { loadAssetConfig } from "./assets/config";
 import { enrichScenesWithAssets } from "./assets/enrich";
 import type { AssetManifest } from "./assets/manifest";
@@ -372,17 +379,32 @@ export function compile(opts: CompileOptions): CompileResult {
     ...validate({ chapters, scenes, skippedReservedFiles, failedParseFiles }),
   );
   errors.push(...validateStoryCatalog(storyCatalog, scenes));
-  errors.push(
-    ...validateDerivedDialogueOriginCollisions(
-      scenes.map((rec) => ({
-        chapterId: rec.chapterId,
-        json: emitSceneRecord(rec),
-        sourceAst: rec.ast,
-      })),
-    ),
-  );
+  const caseRecordResult = compileCaseRecordCorpus(storyCatalog, scenes);
+  if (caseRecordResult.ok) {
+    warnings.push(...caseRecordResult.value.warnings);
+    try {
+      errors.push(
+        ...validateDerivedDialogueOriginCollisions(
+          scenes.map((rec) => ({
+            chapterId: rec.chapterId,
+            json: emitSceneRecord(rec, caseRecordResult.value),
+            sourceAst: rec.ast,
+          })),
+        ),
+      );
+    } catch (error) {
+      if (!(error instanceof CaseRecordEmissionError)) throw error;
+      errors.push(error);
+    }
+  } else {
+    errors.push(...caseRecordResult.errors);
+  }
 
   if (errors.length > 0) return { ok: false, errors };
+  if (!caseRecordResult.ok) {
+    throw new Error("case record corpus failed without compiler errors");
+  }
+  const caseRecords = caseRecordResult.value;
 
   // 5. Surgical delete + emit + write to disk.
   //
@@ -413,7 +435,7 @@ export function compile(opts: CompileOptions): CompileResult {
     const emittedScenes: EmittedSceneJsonV1[] = [];
     for (const rec of scenes) {
       if (rec.chapterId !== chapter.dirName) continue;
-      const json = emitSceneRecord(rec);
+      const json = emitSceneRecord(rec, caseRecords);
       const outFile = resolve(
         opts.outputRoot,
         rec.chapterId,
@@ -436,7 +458,7 @@ export function compile(opts: CompileOptions): CompileResult {
     resolve(opts.outputRoot, "chapters.json"),
     JSON.stringify(idx, null, 2) + "\n",
   );
-  const emittedStoryCatalog = emitStoryCatalog(storyCatalog, scenes);
+  const emittedStoryCatalog = emitStoryCatalog(storyCatalog, caseRecords);
   writeFileSync(
     resolve(opts.outputRoot, "story_catalog.json"),
     JSON.stringify(emittedStoryCatalog, null, 2) + "\n",
@@ -476,12 +498,15 @@ export function compile(opts: CompileOptions): CompileResult {
   };
 }
 
-function emitSceneRecord(rec: SceneRecord): EmittedSceneJsonV1 {
+function emitSceneRecord(
+  rec: SceneRecord,
+  caseRecords: CompiledCaseRecordCorpus,
+): EmittedSceneJsonV1 {
   return rec.ast.kind === "linearScene"
     ? emitLinearScene(rec.ast)
     : rec.ast.kind === "investigationScene"
-      ? emitInvestigationScene(rec.ast)
-      : emitInterrogationScene(rec.ast);
+      ? emitInvestigationScene(rec.ast, caseRecords)
+      : emitInterrogationScene(rec.ast, caseRecords);
 }
 
 function makeAssetReport(

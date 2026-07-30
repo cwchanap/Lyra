@@ -43,11 +43,12 @@ function bundle(
   return {
     chapters,
     storyCatalog: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       facts: [],
       questions: [],
       objectives: [],
       authorizations: [],
+      sourceGroups: [],
       evidenceIndex: [],
       statementsIndex: [],
     },
@@ -98,7 +99,8 @@ describe("buildSaveContentManifest", () => {
         objectives: [],
         questions: [],
         facts: [],
-        schemaVersion: 1,
+        sourceGroups: [],
+        schemaVersion: 2,
       },
       chapters: [
         {
@@ -241,6 +243,57 @@ describe("buildSaveContentManifest", () => {
     expect(manifest({ bundle: labelEdited }).contentRevision).not.toBe(
       manifest({ bundle: labelledBaseline }).contentRevision,
     );
+  });
+
+  it("changes when only provenance, a source-group summary, or derived membership changes", () => {
+    const baseline = bundle([
+      chapter("chapter_1", "Chapter 1", [
+        linear("scene_0", "Opening", [line("A")]),
+      ]),
+    ]);
+    baseline.storyCatalog.evidenceIndex.push({
+      id: "program_record",
+      chapterId: "chapter_1",
+      sceneId: "investigation_scene_1",
+      provenance: {
+        sourceKind: "digital",
+        representationLayer: "summary",
+        proceduralStatus: "reacquired",
+        completeness: "partial",
+        confidence: "corroborated",
+        sourceGroupId: "program_source",
+        sourceLabel: "Program export",
+        proofCapabilities: ["time", "source"],
+        supersedesRecordId: null,
+      },
+    });
+    baseline.storyCatalog.sourceGroups.push({
+      id: "program_source",
+      label: "Program source",
+      summary: "Records derived from the program export.",
+      members: [{ kind: "evidence", id: "program_record" }],
+    });
+
+    const provenanceEdited = structuredClone(baseline);
+    provenanceEdited.storyCatalog.evidenceIndex[0]!.provenance.confidence =
+      "disputed";
+    const summaryEdited = structuredClone(baseline);
+    summaryEdited.storyCatalog.sourceGroups[0]!.summary =
+      "Records derived from a corrected export.";
+    const membershipEdited = structuredClone(baseline);
+    membershipEdited.storyCatalog.sourceGroups[0]!.members = [
+      { kind: "statement", id: "program_record" },
+    ];
+    const baselineRevision = manifest({ bundle: baseline }).contentRevision;
+
+    expect(
+      manifest({ bundle: structuredClone(baseline) }).contentRevision,
+    ).toBe(baselineRevision);
+    for (const edited of [provenanceEdited, summaryEdited, membershipEdited]) {
+      expect(manifest({ bundle: edited }).contentRevision).not.toBe(
+        baselineRevision,
+      );
+    }
   });
 
   it("includes newly emitted static fields without an allowlist update", () => {
