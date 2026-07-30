@@ -189,6 +189,7 @@ describe("emitter", () => {
           line: 43,
         },
       ],
+      sourceGroups: [],
       sourceFile: "story_catalog.md",
       line: 1,
     };

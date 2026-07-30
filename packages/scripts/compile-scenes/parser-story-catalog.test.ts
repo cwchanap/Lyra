@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { emptyStoryCatalog, parseStoryCatalog } from "./parser-story-catalog";
 
@@ -30,7 +32,12 @@ const CANONICAL_CATALOG = `# Story Catalog
 
 ### Authorization: 調閱門鎖紀錄 {#access_lock_logs}
 - **Summary:** 允許取得原始門鎖稽核資料。
-- **Granting Authority:** 警視廳搜查一課`;
+- **Granting Authority:** 警視廳搜查一課
+
+## Source Groups
+
+### Source Group: 澀谷活動 Program Composite {#shibuya_program_composite}
+- **Summary:** 同一活動方 Program Composite 輸出衍生的紀錄。`;
 
 function validFact(id = "fact_one"): string {
   return `### Fact: Fact ${id} {#${id}}
@@ -58,6 +65,19 @@ function catalogWithObjectiveSortOrder(sortOrder: string): string {
 - **Sort Order:** ${sortOrder}`;
 }
 
+function sourceGroupCatalog(definition: string): string {
+  return `# Story Catalog
+
+## Source Groups
+
+${definition}`;
+}
+
+function validSourceGroup(id = "shibuya_program_composite"): string {
+  return `### Source Group: Source group ${id} {#${id}}
+- **Summary:** Records derived from one underlying source.`;
+}
+
 function errorsFor(source: string) {
   const result = parseStoryCatalog(source, SOURCE_FILE);
   expect(result.ok).toBe(false);
@@ -83,6 +103,29 @@ describe("parseStoryCatalog", () => {
           { id: "resolve_timeline", kind: "primary", sortOrder: 10 },
         ],
         authorizations: [{ id: "access_lock_logs" }],
+        sourceGroups: [{ id: "shibuya_program_composite", line: 32 }],
+      },
+    });
+  });
+
+  it("parses the fixture's final source-group registry", () => {
+    const source = readFileSync(
+      resolve(
+        "packages/scripts/__fixtures__/story_catalog/valid/story_catalog.md",
+      ),
+      "utf8",
+    );
+
+    expect(parseStoryCatalog(source, SOURCE_FILE)).toMatchObject({
+      ok: true,
+      value: {
+        sourceGroups: [
+          {
+            id: "shibuya_program_composite",
+            label: "澀谷活動 Program Composite",
+            summary: "同一活動方 Program Composite 輸出衍生的紀錄。",
+          },
+        ],
       },
     });
   });
@@ -95,6 +138,7 @@ describe("parseStoryCatalog", () => {
         questions: [],
         objectives: [],
         authorizations: [],
+        sourceGroups: [],
       },
     });
 
@@ -118,6 +162,7 @@ describe("parseStoryCatalog", () => {
         questions: [],
         objectives: [],
         authorizations: [],
+        sourceGroups: [],
       },
     });
   });
@@ -160,6 +205,7 @@ ${validFact("first")}`),
       questions: [],
       objectives: [],
       authorizations: [],
+      sourceGroups: [],
       sourceFile: SOURCE_FILE,
       line: 1,
     });
@@ -301,6 +347,18 @@ ${validFact("first")}`),
       5,
     ],
     [
+      "repeated source-group H2",
+      "# Story Catalog\n\n## Source Groups\n\n## Source Groups",
+      "storyCatalogDuplicateSection",
+      5,
+    ],
+    [
+      "source-group H2 before authorizations",
+      "# Story Catalog\n\n## Source Groups\n\n## Authorizations",
+      "storyCatalogSectionOutOfOrder",
+      5,
+    ],
+    [
       "misplaced H3",
       "# Story Catalog\n\n### Fact: Fact {#fact_one}",
       "storyCatalogMalformed",
@@ -311,6 +369,62 @@ ${validFact("first")}`),
       "# Story Catalog\n\n## Facts\n\n### Question: Question {#question_one}",
       "storyCatalogMalformed",
       5,
+    ],
+    [
+      "malformed source-group H3",
+      sourceGroupCatalog("### Source Group: Missing identifier"),
+      "storyCatalogMalformed",
+      5,
+    ],
+    [
+      "blank source-group label",
+      sourceGroupCatalog(
+        "### Source Group:  {#shibuya_program_composite}\n- **Summary:** Summary.",
+      ),
+      "storyCatalogMalformed",
+      5,
+    ],
+    [
+      "invalid source-group slug",
+      sourceGroupCatalog(validSourceGroup("Shibuya-Program")),
+      "invalidGlobalDefinitionId",
+      5,
+    ],
+    [
+      "missing source-group Summary",
+      sourceGroupCatalog(
+        "### Source Group: Source group {#shibuya_program_composite}",
+      ),
+      "storyCatalogMissingField",
+      5,
+    ],
+    [
+      "blank source-group Summary",
+      sourceGroupCatalog(
+        "### Source Group: Source group {#shibuya_program_composite}\n- **Summary:** ",
+      ),
+      "storyCatalogMalformed",
+      6,
+    ],
+    [
+      "repeated source-group Summary",
+      sourceGroupCatalog(`${validSourceGroup()}\n- **Summary:** Again.`),
+      "storyCatalogDuplicateField",
+      7,
+    ],
+    [
+      "unknown source-group field",
+      sourceGroupCatalog(`${validSourceGroup()}\n- **Unknown:** metadata`),
+      "storyCatalogUnknownField",
+      7,
+    ],
+    [
+      "authored source-group Members",
+      sourceGroupCatalog(
+        `${validSourceGroup()}\n- **Members:** [evidence:record]`,
+      ),
+      "storyCatalogUnknownField",
+      7,
     ],
     [
       "unknown metadata",

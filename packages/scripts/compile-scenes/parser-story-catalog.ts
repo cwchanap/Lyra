@@ -4,8 +4,18 @@ export type StoryCatalogParseResult =
   | { ok: true; value: ASTStoryCatalog }
   | { ok: false; errors: CompileError[] };
 
-type Section = "Facts" | "Questions" | "Objectives" | "Authorizations";
-type ItemKind = "Fact" | "Question" | "Objective" | "Authorization";
+type Section =
+  | "Facts"
+  | "Questions"
+  | "Objectives"
+  | "Authorizations"
+  | "Source Groups";
+type ItemKind =
+  | "Fact"
+  | "Question"
+  | "Objective"
+  | "Authorization"
+  | "Source Group";
 
 type Item = {
   kind: ItemKind;
@@ -21,6 +31,7 @@ const SECTION_ORDER: Section[] = [
   "Questions",
   "Objectives",
   "Authorizations",
+  "Source Groups",
 ];
 
 const ITEM_KIND_BY_SECTION: Record<Section, ItemKind> = {
@@ -28,6 +39,7 @@ const ITEM_KIND_BY_SECTION: Record<Section, ItemKind> = {
   Questions: "Question",
   Objectives: "Objective",
   Authorizations: "Authorization",
+  "Source Groups": "Source Group",
 };
 
 const FIELDS_BY_KIND: Record<ItemKind, readonly string[]> = {
@@ -35,12 +47,13 @@ const FIELDS_BY_KIND: Record<ItemKind, readonly string[]> = {
   Question: ["Summary", "Resolved By"],
   Objective: ["Summary", "Kind", "Sort Order"],
   Authorization: ["Summary", "Granting Authority"],
+  "Source Group": ["Summary"],
 };
 
 const ID_RE = /^[a-z0-9_]+$/;
 const H2_RE = /^##\s+(.+?)\s*$/;
 const H3_RE =
-  /^###\s+(Fact|Question|Objective|Authorization):\s+(.+?)\s+\{#([^}]*)\}\s*$/;
+  /^###\s+(Fact|Question|Objective|Authorization|Source Group):\s+(.+?)\s+\{#([^}]*)\}\s*$/;
 const METADATA_RE = /^-\s+\*\*([^*]+):\*\*(?:\s(.*))?$/;
 
 export function emptyStoryCatalog(sourceFile: string): ASTStoryCatalog {
@@ -49,6 +62,7 @@ export function emptyStoryCatalog(sourceFile: string): ASTStoryCatalog {
     questions: [],
     objectives: [],
     authorizations: [],
+    sourceGroups: [],
     sourceFile,
     line: 1,
   };
@@ -186,6 +200,17 @@ export function parseStoryCatalog(
           label: item.label,
           summary,
           grantingAuthority,
+          sourceFile,
+          line: item.line,
+        });
+        return;
+      }
+      case "Source Group": {
+        if (hasErrors || !summary) return;
+        catalog.sourceGroups.push({
+          id: item.id,
+          label: item.label,
+          summary,
           sourceFile,
           line: item.line,
         });
