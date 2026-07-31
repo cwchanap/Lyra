@@ -127,10 +127,6 @@ end, not a dead-end error.
 - **Name:** ...
 - **Description:** ...
 - **Details:** ...
-- **Source Kind:** digital
-- **Representation Layer:** raw
-- **Source Label:** 經核實的來源顯示文字
-- **Proof Capabilities:** [time, source, procedure]
 
 #### On Collect
 
@@ -142,10 +138,6 @@ end, not a dead-end error.
 
 - **Speaker:** ...
 - **Content:** ...
-- **Source Kind:** testimony
-- **Representation Layer:** summary
-- **Source Label:** 經核實的證詞來源
-- **Proof Capabilities:** [identity, credibility, procedure]
 
 #### On Acquire
 
@@ -160,10 +152,14 @@ The skeleton's base interrogation headings, heading levels, and manifest block
 structure follow the canonical compiler fixture
 `packages/scripts/__fixtures__/valid_interrogation/chapter_1/interrogation_scene_1.md`.
 Use that fixture to resolve questions about base interrogation structure. The
-nine optional provenance fields shown in the Evidence / Statement entries are
-governed by this skill's shared provenance section and the canonical
-`writing-investigation-scene` guidance it delegates to; the fixture may omit
-them and must not be used as a reason to drop them from annotated records.
+skeleton deliberately omits the nine optional provenance fields from its
+Evidence / Statement entries so the reusable template stays classification
+neutral — copying it never silently imports a `Source Kind`, `Representation
+Layer`, or `Proof Capabilities` claim. Those nine fields, their neutral
+defaults, and a labelled concrete example are governed by this skill's shared
+provenance section below and the canonical `writing-investigation-scene`
+guidance it delegates to; the fixture omits them too, and that must not be
+used as a reason to drop them from annotated records that need them.
 
 ## Heading Hierarchy Reference
 
@@ -406,9 +402,13 @@ production prompts, not filesystem paths; writers never author paths.
 
 ### 案件紀錄 provenance（本地 skeleton 與 Investigation 共用）
 
-上方 File Skeleton 的 Evidence / Statement entries 刻意列出完整 provenance
-slots，避免 Interrogation 範例教成縮減版。這九個 exact English keys 都是
-optional；若不寫，輸出以下 neutral values：
+上方 File Skeleton 的 Evidence / Statement entries 刻意不列出 provenance
+slots：九個欄位都是 optional，且 `Source Kind`、`Representation Layer`、
+`Proof Capabilities` 等分類彼此正交，預填具體值會讓作者在複製 skeleton 時
+默默把實體證物誤歸為 `digital`、把逐字證詞誤歸為 `summary`。skeleton 保持
+分類中性，分類語義與 labelled 具體範例只留在本節與 canonical
+`writing-investigation-scene` 的「案件紀錄來源與承接」範例。這九個 exact
+English keys 都是 optional；若不寫，輸出以下 neutral values：
 
 | Exact key | Allowed value | Omitted neutral value |
 |---|---|---|
@@ -451,13 +451,12 @@ unspecified < lead < reacquired < exhibit
 ```
 
 Successor 省略 status 會落到 `unspecified`，可能正確觸發 non-regression
-error。File Skeleton 預設 neutral：不假設 supersession 或 source group，
-故 `Procedural Status` / `Completeness` / `Confidence` / `Source Group` /
-`Supersedes` 皆省略（套用預設值）。要寫 successor 時才補上
-`Procedural Status`（不得低於 predecessor）與 `Supersedes`，並參照 canonical
-fixture 的 opt-in successor 範本（使用前務必換成真實 predecessor）。沒有
-predecessor 的 lead 可省略 `Supersedes`，但應明寫
-`Procedural Status: lead`。
+error。File Skeleton 預設 neutral：九個 provenance 欄位全部省略（套用
+neutral 預設值），不預設 supersession、source group 或任何分類。要寫
+successor 時才補上 `Procedural Status`（不得低於 predecessor）與
+`Supersedes`，並參照 canonical fixture 的 opt-in successor 範本（使用前務必
+換成真實 predecessor）。沒有 predecessor 的 lead 可省略 `Supersedes`，但應
+明寫 `Procedural Status: lead`。
 
 Evidence / Statement metadata 是 closed、duplicate-safe contract。同一 key
 重複會在第二次出現處報錯；present-but-blank provenance value 無效；不要把
