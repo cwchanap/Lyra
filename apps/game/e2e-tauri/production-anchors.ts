@@ -30,6 +30,7 @@ export const anchors = {
   sceneSelect: "場景跳轉",
   evidenceAcquired: "物證取得",
   caseFile: "案件檔案",
+  caseFileEvidenceTab: "證物",
 
   // investigation_scene_1 (first investigation after prologue)
   investigationSceneId: "investigation_scene_1",

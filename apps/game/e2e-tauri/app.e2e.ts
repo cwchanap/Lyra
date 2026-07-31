@@ -100,6 +100,7 @@ describe("App shell", () => {
 
     await openGameMenu();
     await jsClickButtonContaining(anchors.caseFileMenuEntry);
+    await jsClickButtonContaining(anchors.caseFileEvidenceTab);
     await browser.waitUntil(
       async () => {
         return browser.execute(
