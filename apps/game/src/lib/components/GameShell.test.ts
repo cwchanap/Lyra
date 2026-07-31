@@ -138,8 +138,8 @@ describe("GameShell", () => {
     expect(screen.getByText("scoped child")).toBeInTheDocument();
   });
 
-  it("opens evidence and sound as separate submenu screens", async () => {
-    const testName = "opens evidence and sound as separate submenu screens";
+  it("opens Case File and sound as separate submenu screens", async () => {
+    const testName = "opens Case File and sound as separate submenu screens";
 
     try {
       const user = userEvent.setup();
@@ -154,7 +154,7 @@ describe("GameShell", () => {
       const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
 
       expect(
-        within(dialog).getByRole("button", { name: /物證檔案/ }),
+        within(dialog).getByRole("button", { name: /案件檔案/ }),
       ).toBeInTheDocument();
       expect(
         within(dialog).getByRole("button", { name: /音訊設定/ }),
@@ -163,7 +163,7 @@ describe("GameShell", () => {
       expect(screen.queryByText("menu inventory slot")).toBeNull();
 
       await user.click(
-        within(dialog).getByRole("button", { name: /物證檔案/ }),
+        within(dialog).getByRole("button", { name: /案件檔案/ }),
       );
       expect(
         within(dialog).getByText("menu inventory slot"),
@@ -196,7 +196,7 @@ describe("GameShell", () => {
         within(dialog).getByRole("button", { name: /返回選單/ }),
       ).toBeInTheDocument();
       expect(
-        within(dialog).queryByRole("button", { name: /物證檔案/ }),
+        within(dialog).queryByRole("button", { name: /案件檔案/ }),
       ).toBeNull();
       expect(screen.queryByText("menu inventory slot")).toBeNull();
 
@@ -312,11 +312,11 @@ describe("GameShell", () => {
       await user.keyboard("{Escape}");
       const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
       await user.click(
-        within(dialog).getByRole("button", { name: /物證檔案/ }),
+        within(dialog).getByRole("button", { name: /案件檔案/ }),
       );
 
       expect(
-        await screen.findByRole("dialog", { name: "物證檔案" }),
+        await screen.findByRole("dialog", { name: "案件檔案" }),
       ).toBeInTheDocument();
 
       await user.keyboard("{Escape}");
@@ -327,10 +327,10 @@ describe("GameShell", () => {
       expect(screen.queryByText("menu inventory slot")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: /繼續調查/ })).toBeVisible();
       // Step-back must return focus to the control that opened the submenu
-      // (物證檔案), not Resume — so keyboard/SR users land back on their
+      // (案件檔案), not Resume — so keyboard/SR users land back on their
       // originating action.
-      const evidenceEntry = screen.getByRole("button", { name: /物證檔案/ });
-      expect(evidenceEntry).toHaveFocus();
+      const caseFileEntry = screen.getByRole("button", { name: /案件檔案/ });
+      expect(caseFileEntry).toHaveFocus();
     } catch (error) {
       reportAsyncTestFailure(testName, error);
     }
@@ -351,7 +351,7 @@ describe("GameShell", () => {
       await user.keyboard("{Escape}");
       const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
       await user.click(
-        within(dialog).getByRole("button", { name: /物證檔案/ }),
+        within(dialog).getByRole("button", { name: /案件檔案/ }),
       );
 
       // Submenu open: BACK button is the first focusable.
@@ -361,13 +361,13 @@ describe("GameShell", () => {
       expect(backButton).toHaveFocus();
 
       // Clicking BACK steps back to the root menu and must focus the
-      // originating 物證檔案 button, not Resume.
+      // originating 案件檔案 button, not Resume.
       await user.click(backButton);
 
       expect(
         await screen.findByRole("dialog", { name: "遊戲選單" }),
       ).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /物證檔案/ })).toHaveFocus();
+      expect(screen.getByRole("button", { name: /案件檔案/ })).toHaveFocus();
     } catch (error) {
       reportAsyncTestFailure(testName, error);
     }
@@ -421,7 +421,7 @@ describe("GameShell", () => {
       render(GameShellHarness, {
         gameState: state(),
         onCloseCase: vi.fn(),
-        // Mirror production's <InventoryPanel>: a focusable control rendered
+        // Mirror production's CaseFilePanel: a focusable control rendered
         // via the menu slot. The default harness slot is a non-focusable <p>,
         // so without this knob the trap never exercises a slot-provided
         // focusable and a regression that dropped it from the Tab cycle would
@@ -441,7 +441,7 @@ describe("GameShell", () => {
 
       const user = userEvent.setup();
       await user.click(
-        within(dialog).getByRole("button", { name: /物證檔案/ }),
+        within(dialog).getByRole("button", { name: /案件檔案/ }),
       );
       const backFromEvidence = within(dialog).getByRole("button", {
         name: /返回選單/,
@@ -455,7 +455,7 @@ describe("GameShell", () => {
       // middle focusables it relies on the browser's native Tab focus move.
       // userEvent.tab() performs that real traversal, so this exercises the
       // full integration: every focusable in the panel — including the
-      // menu-slot control (production: <InventoryPanel>) — must be reachable
+      // menu-slot control (production: CaseFilePanel) — must be reachable
       // by Tab, and focus must never escape the dialog.
       let sawSlotFocusable = false;
       let wrappedToFirst = false;
@@ -557,9 +557,9 @@ describe("GameShell", () => {
     }
   });
 
-  it("renders menu slot content only inside the evidence submenu", async () => {
+  it("renders menu slot content only inside the Case File submenu", async () => {
     const testName =
-      "renders menu slot content only inside the evidence submenu";
+      "renders menu slot content only inside the Case File submenu";
 
     try {
       const user = userEvent.setup();
@@ -583,7 +583,7 @@ describe("GameShell", () => {
       expect(screen.queryByText("menu inventory slot")).not.toBeInTheDocument();
 
       await user.click(
-        within(dialog).getByRole("button", { name: /物證檔案/ }),
+        within(dialog).getByRole("button", { name: /案件檔案/ }),
       );
       expect(
         within(dialog).getByText("menu inventory slot"),
@@ -593,70 +593,36 @@ describe("GameShell", () => {
     }
   });
 
-  it("fires onOpenEvidence when the evidence submenu opens", async () => {
-    const testName = "fires onOpenEvidence when the evidence submenu opens";
+  it("delegates initial Case File focus to its menu marker", async () => {
+    const user = userEvent.setup();
+    render(GameShellHarness, {
+      gameState: state(),
+      onCloseCase: vi.fn(),
+      menuContent: "Case File menu slot",
+      menuInitialFocusLabel: "Case File objective",
+      sceneMenuEnabled: true,
+      sceneMenuContent: "scene selector slot",
+    });
 
-    // Production's +page.svelte wires onOpenEvidence to expand the
-    // InventoryPanel by default, so opening the evidence submenu shows the
-    // dossier contents rather than a collapsed toggle inside a screen
-    // already titled 物證檔案. Pin the callback contract so a regression
-    // that dropped the hook (or fired it for a different panel) is caught.
-    try {
-      const user = userEvent.setup();
-      const onOpenEvidence = vi.fn();
-      render(GameShellHarness, {
-        gameState: state(),
-        onCloseCase: vi.fn(),
-        menuContent: "menu inventory slot",
-        onOpenEvidence,
-      });
+    await user.keyboard("{Escape}");
+    const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(dialog).getByRole("button", { name: /案件檔案/ }));
 
-      await user.keyboard("{Escape}");
-      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
-      expect(onOpenEvidence).not.toHaveBeenCalled();
+    expect(
+      within(dialog).getByRole("button", { name: "Case File objective" }),
+    ).toHaveFocus();
 
-      await user.click(
-        within(dialog).getByRole("button", { name: /物證檔案/ }),
-      );
-      expect(onOpenEvidence).toHaveBeenCalledTimes(1);
+    await user.click(within(dialog).getByRole("button", { name: /返回選單/ }));
+    await user.click(within(dialog).getByRole("button", { name: /音訊設定/ }));
+    expect(
+      within(dialog).getByRole("button", { name: /返回選單/ }),
+    ).toHaveFocus();
 
-      // Step back to the root menu and reopen evidence — the callback must
-      // fire again on each open, not just the first.
-      await user.click(
-        within(dialog).getByRole("button", { name: /返回選單/ }),
-      );
-      await user.click(
-        within(dialog).getByRole("button", { name: /物證檔案/ }),
-      );
-      expect(onOpenEvidence).toHaveBeenCalledTimes(2);
-    } catch (error) {
-      reportAsyncTestFailure(testName, error);
-    }
-  });
-
-  it("does not fire onOpenEvidence when other submenus open", async () => {
-    const testName = "does not fire onOpenEvidence when other submenus open";
-
-    try {
-      const user = userEvent.setup();
-      const onOpenEvidence = vi.fn();
-      render(GameShellHarness, {
-        gameState: state(),
-        onCloseCase: vi.fn(),
-        menuContent: "menu inventory slot",
-        onOpenEvidence,
-      });
-
-      await user.keyboard("{Escape}");
-      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
-
-      await user.click(
-        within(dialog).getByRole("button", { name: /音訊設定/ }),
-      );
-      expect(onOpenEvidence).not.toHaveBeenCalled();
-    } catch (error) {
-      reportAsyncTestFailure(testName, error);
-    }
+    await user.click(within(dialog).getByRole("button", { name: /返回選單/ }));
+    await user.click(within(dialog).getByRole("button", { name: /場景跳轉/ }));
+    expect(
+      within(dialog).getByRole("button", { name: /返回選單/ }),
+    ).toHaveFocus();
   });
 
   it("closes the menu when the bound open prop is driven false externally (dossier reexamine path)", async () => {
@@ -913,7 +879,7 @@ describe("GameShell", () => {
       const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
 
       await user.click(
-        within(dialog).getByRole("button", { name: /物證檔案/ }),
+        within(dialog).getByRole("button", { name: /案件檔案/ }),
       );
 
       // A click inside the panel (non-interactive slot content) must NOT
@@ -1016,10 +982,10 @@ describe("GameShell", () => {
       const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
       const user = userEvent.setup();
       await user.click(
-        within(dialog).getByRole("button", { name: /物證檔案/ }),
+        within(dialog).getByRole("button", { name: /案件檔案/ }),
       );
       expect(
-        await screen.findByRole("dialog", { name: "物證檔案" }),
+        await screen.findByRole("dialog", { name: "案件檔案" }),
       ).toBeInTheDocument();
 
       // Parent drives open=false while the evidence submenu is active.
@@ -1113,14 +1079,14 @@ describe("GameShell", () => {
     }
   });
 
-  it("hides the evidence entry when evidenceMenuEnabled is false even if the menu snippet is provided", async () => {
+  it("hides the Case File entry when caseFileMenuEnabled is false even if the menu snippet is provided", async () => {
     const testName =
-      "hides the evidence entry when evidenceMenuEnabled is false even if the menu snippet is provided";
+      "hides the Case File entry when caseFileMenuEnabled is false even if the menu snippet is provided";
 
     // The `menu` snippet is always defined in production's +page.svelte, but
-    // its body guards <InventoryPanel> on shouldShowInventoryPanel(mode)
-    // (false for gameComplete). Without the evidenceMenuEnabled gate the
-    // 物證檔案 button would render in every mode and open an empty submenu
+    // its body guards CaseFilePanel on shouldShowCaseFile(mode)
+    // (false for gameComplete). Without the caseFileMenuEnabled gate the
+    // 案件檔案 button would render in every mode and open an empty submenu
     // after completion. Pin that the flag — not snippet presence — controls
     // button visibility, so a regression that dropped the gate is caught.
     try {
@@ -1131,14 +1097,14 @@ describe("GameShell", () => {
         // Snippet content IS provided, mirroring production where the snippet
         // is always passed; the gate must still hide the button.
         menuContent: "menu inventory slot",
-        evidenceMenuEnabled: false,
+        caseFileMenuEnabled: false,
       });
 
       await user.keyboard("{Escape}");
       const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
 
       expect(
-        within(dialog).queryByRole("button", { name: /物證檔案/ }),
+        within(dialog).queryByRole("button", { name: /案件檔案/ }),
       ).toBeNull();
       // Sibling entries remain available.
       expect(

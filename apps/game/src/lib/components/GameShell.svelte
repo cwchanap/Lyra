@@ -22,8 +22,7 @@
     topLayerOpen = false,
     gameplayInert = false,
     sceneMenuEnabled = false,
-    evidenceMenuEnabled = true,
-    onOpenEvidence,
+    caseFileMenuEnabled = true,
     children,
     menu,
     sceneMenu,
@@ -43,24 +42,19 @@
     topLayerOpen?: boolean;
     gameplayInert?: boolean;
     sceneMenuEnabled?: boolean;
-    // Gates the Evidence root-menu entry and its submenu. The `menu` snippet
-    // is always passed from +page.svelte, but its body guards InventoryPanel
-    // on shouldShowInventoryPanel(mode) (false for gameComplete). Without this
+    // Gates the Case File root-menu entry and its submenu. The `menu` snippet
+    // is always passed from +page.svelte, but its body guards CaseFilePanel
+    // on shouldShowCaseFile(mode) (false for gameComplete). Without this
     // flag the button would show in every mode and open an empty submenu after
     // completion. Mirrors the sceneMenuEnabled/sceneMenu split so the button
     // availability is decoupled from snippet presence.
-    evidenceMenuEnabled?: boolean;
-    // Fired when the evidence submenu opens so the parent can expand the
-    // InventoryPanel by default. The panel lives in the menu snippet and
-    // starts collapsed; without this, opening the evidence submenu screen
-    // shows only the panel's own toggle rather than the dossier contents.
-    onOpenEvidence?: () => void;
+    caseFileMenuEnabled?: boolean;
     children: Snippet;
     menu?: Snippet;
     sceneMenu?: Snippet;
   } = $props();
 
-  type MenuPanel = "scene" | "evidence" | "sound" | null;
+  type MenuPanel = "scene" | "caseFile" | "sound" | null;
 
   let showChapterHud = $derived(gameState.mode.type !== "explore");
   let resumeButton: HTMLButtonElement | undefined = $state();
@@ -161,7 +155,7 @@
 
   function menuPanelTitle(panel: MenuPanel) {
     if (panel === "scene") return "場景跳轉";
-    if (panel === "evidence") return "物證檔案";
+    if (panel === "caseFile") return "案件檔案";
     if (panel === "sound") return "音訊設定";
     return "遊戲選單";
   }
@@ -169,10 +163,12 @@
   function openMenuPanel(panel: Exclude<MenuPanel, null>) {
     lastOpenedSubmenu = panel;
     activeMenuPanel = panel;
-    if (panel === "evidence") {
-      onOpenEvidence?.();
-    }
-    void tick().then(() => submenuBackButton?.focus());
+    void tick().then(() => {
+      const target = gameMenuPanel?.querySelector<HTMLElement>(
+        "[data-submenu-initial-focus]",
+      );
+      (target ?? submenuBackButton)?.focus();
+    });
   }
 
   function closeMenuPanel() {
@@ -435,14 +431,14 @@
                 <span class="en">SCENE&nbsp;SELECT</span>
               </button>
             {/if}
-            {#if evidenceMenuEnabled && menu}
+            {#if caseFileMenuEnabled && menu}
               <button
                 type="button"
-                data-opens="evidence"
-                onclick={() => openMenuPanel("evidence")}
+                data-opens="caseFile"
+                onclick={() => openMenuPanel("caseFile")}
               >
-                <span>物證檔案</span>
-                <span class="en">EVIDENCE</span>
+                <span>案件檔案</span>
+                <span class="en">CASE FILE</span>
               </button>
             {/if}
             <button
@@ -469,7 +465,7 @@
             <div class="game-menu-extra">
               {#if activeMenuPanel === "scene" && sceneMenuEnabled && sceneMenu}
                 {@render sceneMenu()}
-              {:else if activeMenuPanel === "evidence" && evidenceMenuEnabled && menu}
+              {:else if activeMenuPanel === "caseFile" && caseFileMenuEnabled && menu}
                 {@render menu()}
               {:else if activeMenuPanel === "sound"}
                 <AudioSettings

@@ -6,23 +6,24 @@ function pageSource() {
   return readFileSync(join(process.cwd(), "src/routes/+page.svelte"), "utf8");
 }
 
-describe("+page inventory placement", () => {
-  it("renders inventory inside the GameShell menu slot instead of scene HUDs", () => {
+describe("+page Case File placement", () => {
+  it("renders the Case File inside the GameShell menu slot instead of scene HUDs", () => {
     const source = pageSource();
 
     expect(source).toContain("{#snippet menu()}");
-    expect(source).toContain("<InventoryPanel");
+    expect(source).toContain("<CaseFilePanel");
     expect(source).not.toContain('placement="scene"');
     expect(source).not.toContain('gameState.value.mode.type !== "explore"');
   });
 
-  it("binds the inventory panel open state to the page so it survives menu close/reopen", () => {
+  it("keeps the selected Case File section on the page and resets it only for a replacement session", () => {
     const source = pageSource();
 
-    // The expand/collapse state is hoisted to the page via bind:open so the
-    // dossier does not reset every time the Escape menu closes and reopens.
-    expect(source).toContain("let inventoryPanelOpen = $state(false)");
-    expect(source).toContain("bind:open={inventoryPanelOpen}");
+    expect(source).toContain(
+      'let caseFileSection = $state<CaseFileSection>("objective")',
+    );
+    expect(source).toContain("bind:section={caseFileSection}");
+    expect(source).toContain("if (epoch !== observedCaseFileEpoch)");
   });
 });
 
@@ -331,18 +332,18 @@ describe("+page scene navigation wiring", () => {
   });
 });
 
-describe("+page evidence menu gating", () => {
-  it("gates the evidence menu entry on shouldShowInventoryPanel so it hides after gameComplete", () => {
+describe("+page Case File menu gating", () => {
+  it("gates the Case File entry on shouldShowCaseFile so it hides after gameComplete", () => {
     const source = pageSource();
 
     // The menu snippet is always passed to GameShell, but its body guards
-    // <InventoryPanel> on shouldShowInventoryPanel(mode) (false for
-    // gameComplete). The Evidence button must therefore be gated by an
-    // explicit evidenceMenuEnabled flag wired to the same helper, otherwise
+    // CaseFilePanel on shouldShowCaseFile(mode) (false for gameComplete).
+    // The Case File button must therefore be gated by an explicit
+    // caseFileMenuEnabled flag wired to the same helper, otherwise
     // it would render in every mode and open an empty submenu after
     // completion.
     expect(source).toContain(
-      "evidenceMenuEnabled={shouldShowInventoryPanel(gameState.value.mode)}",
+      "caseFileMenuEnabled={shouldShowCaseFile(gameState.value.mode)}",
     );
   });
 });

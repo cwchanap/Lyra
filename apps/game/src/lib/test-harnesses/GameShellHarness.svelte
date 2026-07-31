@@ -16,9 +16,9 @@
     menuContent = null,
     menuExtraButtonLabel = null,
     sceneMenuEnabled = false,
-    evidenceMenuEnabled = true,
+    caseFileMenuEnabled = true,
     sceneMenuContent = null,
-    onOpenEvidence,
+    menuInitialFocusLabel = null,
   }: {
     gameState: GameStateView;
     onCloseCase: () => void;
@@ -34,15 +34,15 @@
     gameplayInert?: boolean;
     menuContent?: string | null;
     // When set, renders a focusable <button> inside the menu slot. Mirrors
-    // production's <InventoryPanel>, whose toggle/evidence buttons are
+    // production's CaseFilePanel, whose record controls are
     // focusable controls the focus trap must include in its Tab cycle. The
     // default <p> slot content is non-focusable, so without this knob the
     // focus-trap test never exercises a focusable slot element.
     menuExtraButtonLabel?: string | null;
     sceneMenuEnabled?: boolean;
-    evidenceMenuEnabled?: boolean;
+    caseFileMenuEnabled?: boolean;
     sceneMenuContent?: string | null;
-    onOpenEvidence?: () => void;
+    menuInitialFocusLabel?: string | null;
   } = $props();
 </script>
 
@@ -57,8 +57,7 @@
   {topLayerOpen}
   {gameplayInert}
   {sceneMenuEnabled}
-  {evidenceMenuEnabled}
-  {onOpenEvidence}
+  {caseFileMenuEnabled}
   bind:open
 >
   {#snippet sceneMenu()}
@@ -76,6 +75,11 @@
     {#if menuExtraButtonLabel}
       <button type="button" class="harness-extra-menu-button">
         {menuExtraButtonLabel}
+      </button>
+    {/if}
+    {#if menuInitialFocusLabel}
+      <button type="button" data-submenu-initial-focus>
+        {menuInitialFocusLabel}
       </button>
     {/if}
   {/snippet}

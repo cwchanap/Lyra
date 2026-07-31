@@ -99,7 +99,7 @@ describe("App shell", () => {
     await collectKagamiSummaryEvidence();
 
     await openGameMenu();
-    await jsClickButtonContaining(anchors.evidenceMenuEntry);
+    await jsClickButtonContaining(anchors.caseFileMenuEntry);
     await browser.waitUntil(
       async () => {
         return browser.execute(
@@ -113,7 +113,7 @@ describe("App shell", () => {
             );
             return !!dialog && (dialog.textContent ?? "").includes(name);
           },
-          anchors.evidenceFile,
+          anchors.caseFile,
           anchors.evidenceName,
         );
       },
