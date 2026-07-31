@@ -13,9 +13,12 @@ type TauriInternals = {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 };
 
-type CssViewport = {
+export type CssViewportSize = {
   width: number;
   height: number;
+};
+
+type CssViewport = CssViewportSize & {
   devicePixelRatio: number;
 };
 
@@ -29,11 +32,24 @@ async function observedCssViewport(): Promise<CssViewport> {
   }));
 }
 
-function validDevicePixelRatio(value: number): number {
+export function validDevicePixelRatio(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
-function meetsCaseFileViewportTarget(viewport: CssViewport): boolean {
+export function caseFileViewportNativeSize(
+  devicePixelRatio: number,
+  cssViewport: CssViewportSize = CASE_FILE_PREFERRED_VIEWPORT,
+): CssViewportSize {
+  const scale = validDevicePixelRatio(devicePixelRatio);
+  return {
+    width: Math.ceil(cssViewport.width * scale),
+    height: Math.ceil(cssViewport.height * scale),
+  };
+}
+
+export function meetsCaseFileViewportTarget(
+  viewport: CssViewportSize,
+): boolean {
   return (
     viewport.width >= CASE_FILE_PREFERRED_VIEWPORT.width &&
     viewport.height >= CASE_FILE_PREFERRED_VIEWPORT.height
@@ -47,14 +63,8 @@ function meetsCaseFileViewportTarget(viewport: CssViewport): boolean {
  */
 export async function ensureCaseFileViewport(): Promise<CssViewport> {
   let viewport = await observedCssViewport();
-  let requestedWidth = Math.ceil(
-    CASE_FILE_PREFERRED_VIEWPORT.width *
-      validDevicePixelRatio(viewport.devicePixelRatio),
-  );
-  let requestedHeight = Math.ceil(
-    CASE_FILE_PREFERRED_VIEWPORT.height *
-      validDevicePixelRatio(viewport.devicePixelRatio),
-  );
+  let { width: requestedWidth, height: requestedHeight } =
+    caseFileViewportNativeSize(viewport.devicePixelRatio);
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await browser.setWindowSize(requestedWidth, requestedHeight);
