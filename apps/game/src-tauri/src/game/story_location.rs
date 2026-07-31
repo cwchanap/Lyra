@@ -1,4 +1,5 @@
 use super::navigation::{load_chapter_scene_jsons, scene_json_identity};
+use super::schema::SceneJson;
 use super::state::ChapterManifest;
 use super::story::StoryCatalog;
 use super::GameError;
@@ -24,9 +25,13 @@ pub(crate) struct SceneLocationContextView {
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct StoryLocationIndex {
-    // Tasks 2–3 expose these package-derived entries through public views.
-    #[allow(dead_code)]
-    locations: BTreeMap<(String, String), SceneLocationContextView>,
+    locations: BTreeMap<(String, String), StoryLocation>,
+}
+
+#[derive(Debug, Clone)]
+struct StoryLocation {
+    context: SceneLocationContextView,
+    scene: SceneJson,
 }
 
 impl StoryLocationIndex {
@@ -47,11 +52,14 @@ impl StoryLocationIndex {
                 }
                 locations.insert(
                     key,
-                    SceneLocationContextView {
-                        chapter_id: chapter.id.clone(),
-                        chapter_title: chapter.title.clone(),
-                        scene_id: scene_id.to_owned(),
-                        scene_title: scene_title.to_owned(),
+                    StoryLocation {
+                        context: SceneLocationContextView {
+                            chapter_id: chapter.id.clone(),
+                            chapter_title: chapter.title.clone(),
+                            scene_id: scene_id.to_owned(),
+                            scene_title: scene_title.to_owned(),
+                        },
+                        scene,
                     },
                 );
             }
@@ -82,7 +90,18 @@ impl StoryLocationIndex {
     ) -> Result<SceneLocationContextView, GameError> {
         self.locations
             .get(&(chapter_id.to_owned(), scene_id.to_owned()))
-            .cloned()
+            .map(|location| location.context.clone())
+            .ok_or_else(|| GameError::story_location_missing(chapter_id, scene_id))
+    }
+
+    pub(in crate::game) fn resolve_scene_json(
+        &self,
+        chapter_id: &str,
+        scene_id: &str,
+    ) -> Result<SceneJson, GameError> {
+        self.locations
+            .get(&(chapter_id.to_owned(), scene_id.to_owned()))
+            .map(|location| location.scene.clone())
             .ok_or_else(|| GameError::story_location_missing(chapter_id, scene_id))
     }
 }
@@ -157,6 +176,57 @@ mod tests {
 
         engine.view().unwrap();
         assert_eq!(StoryLocationIndex::load_count_for_test(), 1);
+    }
+
+    #[test]
+    fn cold_pending_acquisition_view_does_not_load_scene_files() {
+        use crate::game::navigation::{
+            chapter_scene_load_count_for_test, reset_chapter_scene_load_count_for_test,
+        };
+        use crate::game::save::schema::{AcquisitionEventStateV1, RecordKind};
+        use crate::game::state::EvidenceRecord;
+        use crate::game::test_support::packaged_acquisition_fixture_resources;
+
+        let (_guard, resources) = packaged_acquisition_fixture_resources();
+        let mut engine = crate::game::GameEngine::new_started(resources).unwrap();
+        drain_dialogue(&mut engine);
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "receipt".into(),
+            name: "Packaged Receipt".into(),
+            description: "Packaged description".into(),
+            details: "Packaged details".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
+            image_asset_id: Some("evidence.receipt".into()),
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "investigation_scene_1".into(),
+        });
+        engine
+            .pending_acquisition_events
+            .push(AcquisitionEventStateV1 {
+                id: "acq:1:0".into(),
+                record_kind: RecordKind::Evidence,
+                record_id: "receipt".into(),
+                created_by_command_id: 1,
+                ordinal: 0,
+            });
+        engine.cached_pending_acquisition_scene.borrow_mut().take();
+
+        reset_chapter_scene_load_count_for_test();
+        let view = engine.view().unwrap();
+
+        assert_eq!(view.pending_acquisition.unwrap().record_id, "receipt");
+        assert_eq!(chapter_scene_load_count_for_test(), 0);
+    }
+
+    fn drain_dialogue(engine: &mut crate::game::GameEngine) {
+        loop {
+            let view = engine.view().unwrap();
+            let crate::game::ModeView::Dialogue { queue_token, .. } = view.mode else {
+                return;
+            };
+            engine.advance_dialogue(queue_token).unwrap();
+        }
     }
 
     fn fixture_location_index() -> StoryLocationIndex {
