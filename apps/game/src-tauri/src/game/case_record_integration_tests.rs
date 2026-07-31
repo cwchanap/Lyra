@@ -507,6 +507,20 @@ fn compiler_shaped_provenance_lineage_and_public_redaction_survive_exact_restore
         fact(&before_restore, "fact_clock")["supportingRecords"],
         json!([])
     );
+    assert_eq!(
+        fact(&before_restore, "fact_clock")["originContext"],
+        json!({
+            "type": "scene",
+            "originKind": "sceneEvent",
+            "location": {
+                "chapterId": "chapter_1",
+                "chapterTitle": "Chapter One",
+                "sceneId": "investigation_scene_1",
+                "sceneTitle": "Investigation"
+            }
+        }),
+        "public facts must retain their exact origin while exposing packaged scene titles"
+    );
     assert!(fact(&before_restore, "fact_clock")
         .get("hasHiddenSupportingRecords")
         .is_none());

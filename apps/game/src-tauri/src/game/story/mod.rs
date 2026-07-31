@@ -15,4 +15,5 @@ pub(crate) use state::{
     AuthorizationProgressSnapshot, FactProgressSnapshot, ObjectiveProgressSnapshot,
     QuestionProgressSnapshot, StoryStateSnapshot,
 };
-pub(in crate::game) use view::StoryStateView;
+#[allow(unused_imports)]
+pub(in crate::game) use view::{OriginContextKindView, OriginContextView, StoryStateView};
