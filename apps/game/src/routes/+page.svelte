@@ -27,22 +27,20 @@
     presentationState,
     settlePreparedThumbnailCapture,
   } from "$lib/state/game-client.svelte";
-  import {
-    canReexamineInventory,
-    shouldShowInventoryPanel,
-  } from "$lib/state/mode";
+  import { canReexamineCaseRecords, shouldShowCaseFile } from "$lib/state/mode";
   import {
     loadStoryClearedOnce,
     saveStoryClearedOnce,
   } from "$lib/state/story-clearance";
   import type { SceneNavigationIndex } from "$lib/state/types";
+  import type { CaseFileSection } from "$lib/case-file/types";
   import AcquisitionPopup from "$lib/components/AcquisitionPopup.svelte";
   import DialogueBox from "$lib/components/DialogueBox.svelte";
   import ExploreView from "$lib/components/ExploreView.svelte";
   import SceneBackdrop from "$lib/components/SceneBackdrop.svelte";
   import SceneNavigationPanel from "$lib/components/SceneNavigationPanel.svelte";
   import GameShell from "$lib/components/GameShell.svelte";
-  import InventoryPanel from "$lib/components/InventoryPanel.svelte";
+  import CaseFilePanel from "$lib/components/case-file/CaseFilePanel.svelte";
   import ErrorBanner from "$lib/components/ErrorBanner.svelte";
   import GameComplete from "$lib/components/GameComplete.svelte";
   import GameplayAudio from "$lib/components/GameplayAudio.svelte";
@@ -94,11 +92,20 @@
     }
   }
 
-  // Hoisted so the dossier expand/collapse survives the Escape menu
-  // close/reopen. The panel mounts only while the menu is open; this state
-  // lives on the page (which does not unmount on menu toggle), and
-  // bind:open keeps the panel in sync with it.
-  let inventoryPanelOpen = $state(false);
+  // The Case File mounts only while its submenu is open, so retain the
+  // selected section here across ordinary menu close/reopen. A new gameplay
+  // session starts from the objective section instead of inheriting the prior
+  // session's context.
+  let caseFileSection = $state<CaseFileSection>("objective");
+  let observedCaseFileEpoch = presentationState.sessionEpoch;
+
+  $effect(() => {
+    const epoch = presentationState.sessionEpoch;
+    if (epoch !== observedCaseFileEpoch) {
+      observedCaseFileEpoch = epoch;
+      caseFileSection = "objective";
+    }
+  });
   // Bound to GameShell so dossier reexamine can close the Escape menu
   // programmatically (see handleReexamine*).
   let gameMenuOpen = $state(false);
@@ -769,7 +776,6 @@
       gameLoadDiscardFailureToken = null;
       closeGameBrowser();
       gameMenuOpen = false;
-      inventoryPanelOpen = false;
       acquisitionController.clear();
       await tick();
       const activeControl =
@@ -834,7 +840,6 @@
     confirmingDiscardedProgressLoad = false;
     closeGameBrowser();
     closeTitleBrowser();
-    inventoryPanelOpen = false;
     gameMenuOpen = false;
     acquisitionController.clear();
     titleDiscovery = snapshot;
@@ -1166,10 +1171,7 @@
         onTopLayerEscape={closeGamePersistenceLayer}
         disabled={gameState.inFlight}
         sceneMenuEnabled={sceneNavigationEnabled}
-        evidenceMenuEnabled={shouldShowInventoryPanel(gameState.value.mode)}
-        onOpenEvidence={() => {
-          inventoryPanelOpen = true;
-        }}
+        caseFileMenuEnabled={shouldShowCaseFile(gameState.value.mode)}
         bind:open={gameMenuOpen}
       >
         {#snippet sceneMenu()}
@@ -1185,14 +1187,14 @@
         {/snippet}
 
         {#snippet menu()}
-          {#if shouldShowInventoryPanel(gameState.value!.mode)}
-            <InventoryPanel
-              inventory={gameState.value!.inventory}
-              reexamineEnabled={canReexamineInventory(gameState.value!.mode)}
+          {#if shouldShowCaseFile(gameState.value!.mode)}
+            <CaseFilePanel
+              state={gameState.value!}
+              reexamineEnabled={canReexamineCaseRecords(gameState.value!.mode)}
               onReexamineEvidence={handleReexamineEvidence}
               onReexamineStatement={handleReexamineStatement}
               disabled={gameState.inFlight}
-              bind:open={inventoryPanelOpen}
+              bind:section={caseFileSection}
             />
           {/if}
         {/snippet}

@@ -26,10 +26,10 @@ export const anchors = {
   advanceDialogue: "推進對話",
   gameMenu: "遊戲選單",
   continueInvestigation: "繼續調查",
-  evidenceMenuEntry: "物證檔案",
+  caseFileMenuEntry: "案件檔案",
   sceneSelect: "場景跳轉",
   evidenceAcquired: "物證取得",
-  evidenceFile: "物證檔案",
+  caseFile: "案件檔案",
 
   // investigation_scene_1 (first investigation after prologue)
   investigationSceneId: "investigation_scene_1",

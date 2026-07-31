@@ -1,9 +1,9 @@
 import type { Mode } from "./types";
 
-export function shouldShowInventoryPanel(mode: Mode): boolean {
+export function shouldShowCaseFile(mode: Mode): boolean {
   return mode.type !== "gameComplete";
 }
 
-export function canReexamineInventory(mode: Mode): boolean {
+export function canReexamineCaseRecords(mode: Mode): boolean {
   return mode.type === "explore" || mode.type === "interrogation";
 }

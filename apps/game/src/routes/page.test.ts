@@ -25,7 +25,11 @@ import type {
   SaveBrowserOpenResultView,
   SaveSlotStatusView,
 } from "$lib/persistence/types";
-import { advanceDialogue, gameState } from "$lib/state/game-client.svelte";
+import {
+  advanceDialogue,
+  gameState,
+  presentationState,
+} from "$lib/state/game-client.svelte";
 import { acquisitionController } from "$lib/state/acquisition-controller.svelte";
 import { persistenceStore } from "$lib/persistence/persistence-store.svelte";
 import {
@@ -2393,6 +2397,60 @@ describe("+page scene navigation eligibility gate (production)", () => {
 
     expect(
       await within(dialog).findByRole("button", { name: /場景跳轉/ }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("+page Case File menu integration", () => {
+  beforeEach(() => {
+    mocks.fetch.mockReset();
+    stubFetchForSceneNavigation();
+    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.currentWindow.isFullscreen.mockResolvedValue(false);
+    presentationState.sessionEpoch = 0;
+    seedGameState();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    cleanup();
+    presentationState.sessionEpoch = 0;
+    gameState.value = null;
+    gameState.error = null;
+    gameState.loading = false;
+    gameState.inFlight = false;
+  });
+
+  it("preserves the chosen Case File section across menu reopen and resets it for a replacement session", async () => {
+    const user = userEvent.setup();
+    render(Page);
+
+    await user.keyboard("{Escape}");
+    let menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(menu).getByRole("button", { name: /案件檔案/ }));
+    const evidenceTab = await screen.findByRole("tab", { name: /證物/ });
+    await user.click(evidenceTab);
+    expect(evidenceTab).toHaveAttribute("aria-selected", "true");
+
+    await user.keyboard("{Escape}");
+    await user.keyboard("{Escape}");
+    await user.keyboard("{Escape}");
+    menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(menu).getByRole("button", { name: /案件檔案/ }));
+    expect(
+      await screen.findByRole("tab", { name: /證物/, selected: true }),
+    ).toBeInTheDocument();
+
+    presentationState.sessionEpoch += 1;
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: "遊戲選單" }),
+      ).toBeInTheDocument();
+    });
+    await user.click(screen.getByRole("button", { name: /案件檔案/ }));
+    expect(
+      await screen.findByRole("tab", { name: /目標/, selected: true }),
     ).toBeInTheDocument();
   });
 });
