@@ -31,6 +31,7 @@ export const anchors = {
   evidenceAcquired: "物證取得",
   caseFile: "案件檔案",
   caseFileEvidenceTab: "證物",
+  caseFileReexamine: "重新檢視",
 
   // investigation_scene_1 (first investigation after prologue)
   investigationSceneId: "investigation_scene_1",

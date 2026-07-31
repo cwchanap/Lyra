@@ -644,16 +644,6 @@ fn supersession_indexes(
             )
         })?;
 
-        if inventory_target_kind(&predecessor) != inventory_target_kind(target) {
-            return Err(GameError::story_catalog_validation_failed(
-                path,
-                format!(
-                    "Case record '{}:{}' supersedes cross-kind predecessor '{reference}'.",
-                    inventory_target_kind(target),
-                    inventory_target_id(target)
-                ),
-            ));
-        }
         if predecessor == *target {
             return Err(GameError::story_catalog_validation_failed(
                 path,
@@ -1560,6 +1550,44 @@ mod tests {
     }
 
     #[test]
+    fn resolves_cross_kind_supersession_chain_from_both_typed_namespaces() {
+        let dir = TestDir::new("cross-kind-supersession-chain");
+        let json = catalog_json(
+            vec![record_json("evidence_lead", None, "lead", None)],
+            vec![record_json(
+                "statement_exhibit",
+                None,
+                "exhibit",
+                Some("evidence:evidence_lead"),
+            )],
+            vec![],
+        );
+        write_catalog_value(dir.path(), &json);
+
+        let catalog = StoryCatalog::load(dir.path()).unwrap();
+        let evidence = InventoryTarget::Evidence {
+            id: "evidence_lead".into(),
+        };
+        let statement = InventoryTarget::Statement {
+            id: "statement_exhibit".into(),
+        };
+
+        assert_eq!(
+            catalog.predecessor(&statement).unwrap(),
+            Some(evidence.clone())
+        );
+        assert_eq!(
+            catalog.successor(&evidence).unwrap(),
+            Some(statement.clone())
+        );
+        assert_eq!(
+            catalog.chain(&evidence).unwrap(),
+            vec![evidence.clone(), statement.clone()]
+        );
+        assert_eq!(catalog.latest_definition(&evidence).unwrap(), statement);
+    }
+
+    #[test]
     fn rejects_invalid_supersession_graphs() {
         let cases = [
             (
@@ -1572,19 +1600,6 @@ mod tests {
                         Some("evidence:missing"),
                     )],
                     vec![],
-                    vec![],
-                ),
-            ),
-            (
-                "cross-kind",
-                catalog_json(
-                    vec![record_json(
-                        "successor",
-                        None,
-                        "reacquired",
-                        Some("statement:predecessor"),
-                    )],
-                    vec![record_json("predecessor", None, "lead", None)],
                     vec![],
                 ),
             ),

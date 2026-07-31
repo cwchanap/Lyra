@@ -89,7 +89,7 @@ describe("App shell", () => {
     expect(box!.x + box!.width).toBeLessThanOrEqual(box!.viewportWidth + 0.5);
   });
 
-  it("shows acquisition popup when collecting production evidence", async () => {
+  it("collects and re-examines production evidence through the focused Case File menu", async () => {
     await drainToInvestigationExplore();
     // collectKagamiSummaryEvidence drains the authored on_collect dialogue
     // queue before expecting the deferred 物證取得 popup, then dismisses it
@@ -119,6 +119,82 @@ describe("App shell", () => {
         );
       },
       { timeout: 10000, timeoutMsg: "evidence file panel missing evidence" },
+    );
+
+    await browser.keys("Escape");
+    await browser.waitUntil(
+      async () => {
+        return browser.execute(
+          (heading: string, entry: string) => {
+            const dialog = Array.from(
+              document.querySelectorAll<HTMLElement>('[role="dialog"]'),
+            ).find((candidate) =>
+              Array.from(candidate.querySelectorAll("h2")).some((title) =>
+                (title.textContent ?? "").includes(heading),
+              ),
+            );
+            const active = document.activeElement;
+            return (
+              dialog !== undefined &&
+              active instanceof HTMLButtonElement &&
+              dialog.contains(active) &&
+              (active.textContent ?? "").includes(entry)
+            );
+          },
+          anchors.gameMenu,
+          anchors.caseFileMenuEntry,
+        );
+      },
+      {
+        timeout: 10000,
+        timeoutMsg:
+          "Escape did not return one layer to the focused Case File menu entry",
+      },
+    );
+
+    await jsClickButtonContaining(anchors.caseFileMenuEntry);
+    await jsClickButtonContaining(anchors.caseFileEvidenceTab);
+    await jsClickButtonContaining(anchors.evidenceName);
+    await browser.waitUntil(
+      async () => {
+        return browser.execute((label: string) => {
+          return Array.from(document.querySelectorAll("button")).some(
+            (button) =>
+              (button.textContent ?? "").includes(label) && !button.disabled,
+          );
+        }, anchors.caseFileReexamine);
+      },
+      {
+        timeout: 10000,
+        timeoutMsg: "production evidence did not expose enabled re-examination",
+      },
+    );
+    await jsClickButtonContaining(anchors.caseFileReexamine);
+    await browser.waitUntil(
+      async () => {
+        return browser.execute(
+          (caseFileHeading: string, advance: string) => {
+            const caseFileOpen = Array.from(
+              document.querySelectorAll('[role="dialog"]'),
+            ).some((dialog) =>
+              Array.from(dialog.querySelectorAll("h2")).some((heading) =>
+                (heading.textContent ?? "").includes(caseFileHeading),
+              ),
+            );
+            const dialogueVisible = Array.from(
+              document.querySelectorAll("button"),
+            ).some((button) => (button.textContent ?? "").includes(advance));
+            return !caseFileOpen && dialogueVisible;
+          },
+          anchors.caseFile,
+          anchors.advanceDialogue,
+        );
+      },
+      {
+        timeout: 10000,
+        timeoutMsg:
+          "Case File re-examination did not close the menu and enter dialogue",
+      },
     );
   });
 });

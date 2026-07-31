@@ -620,7 +620,7 @@ describe("case record supersession graph", () => {
       61,
     ],
     [
-      "cross-kind predecessor",
+      "unknown typed predecessor when only the opposite namespace exists",
       [
         {
           target: { kind: "statement", id: "previous" } as const,
@@ -635,7 +635,7 @@ describe("case record supersession graph", () => {
           }),
         },
       ],
-      "caseRecordSupersessionKindMismatch",
+      "caseRecordSupersessionUnknown",
       62,
     ],
     [
@@ -671,7 +671,7 @@ describe("case record supersession graph", () => {
     },
   );
 
-  it("rejects a resolving predecessor reference whose kind differs from the successor", () => {
+  it("accepts an explicitly typed cross-kind predecessor and preserves it in the corpus", () => {
     const result = compileRecords([
       {
         target: { kind: "evidence", id: "prior" },
@@ -687,16 +687,12 @@ describe("case record supersession graph", () => {
       },
     ]);
 
-    expect(result).toEqual({
-      ok: false,
-      errors: [
-        expect.objectContaining({
-          code: "caseRecordSupersessionKindMismatch",
-          sourceFile: "chapter_1/investigation_scene_1.md",
-          line: 66,
-        }),
-      ],
-    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      result.value.recordsByKey.get("statement:next")?.provenance
+        .supersedesRecordId,
+    ).toBe("evidence:prior");
   });
 
   it("rejects a fork at the later successor Supersedes line", () => {

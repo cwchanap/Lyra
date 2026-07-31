@@ -438,17 +438,6 @@ function validateSupersessionGraph(
     if (!predecessor || !successor) continue;
     const predecessorKey = inventoryTargetKey(predecessor);
 
-    if (predecessor.kind !== successor.target.kind) {
-      errors.push(
-        supersessionError(
-          "caseRecordSupersessionKindMismatch",
-          `Case record ${successorKey} cannot supersede cross-kind record ${predecessorKey}.`,
-          predecessor,
-        ),
-      );
-      continue;
-    }
-
     if (predecessorKey === successorKey) {
       errors.push(
         supersessionError(
@@ -462,26 +451,13 @@ function validateSupersessionGraph(
 
     const predecessorRecord = recordsByKey.get(predecessorKey);
     if (!predecessorRecord) {
-      const oppositeKind =
-        predecessor.kind === "evidence" ? "statement" : "evidence";
-      const oppositeKey = `${oppositeKind}:${predecessor.id}`;
-      if (recordsByKey.has(oppositeKey)) {
-        errors.push(
-          supersessionError(
-            "caseRecordSupersessionKindMismatch",
-            `Case record ${successorKey} references ${predecessorKey}, but ${oppositeKey} is the declared record.`,
-            predecessor,
-          ),
-        );
-      } else {
-        errors.push(
-          supersessionError(
-            "caseRecordSupersessionUnknown",
-            `Case record ${successorKey} supersedes unknown record ${predecessorKey}.`,
-            predecessor,
-          ),
-        );
-      }
+      errors.push(
+        supersessionError(
+          "caseRecordSupersessionUnknown",
+          `Case record ${successorKey} supersedes unknown record ${predecessorKey}.`,
+          predecessor,
+        ),
+      );
       continue;
     }
 
