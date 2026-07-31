@@ -18,6 +18,7 @@ pub mod scenes;
 pub mod schema;
 pub mod state;
 mod story;
+mod story_location;
 mod support_lineage;
 pub mod unlock;
 pub mod view;
@@ -47,6 +48,7 @@ use state::{ChapterManifest, Inventory};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use story::{StoryCatalog, StoryState, StoryStateView};
+use story_location::StoryLocationIndex;
 use view::{
     AudioCueView, ChapterView, CharacterView, CrossExamView, HotspotView, InquiryQuestionView,
     InterrogationPhaseView, PendingAcquisitionView, SceneView, SubjectView, SublocationView,
@@ -60,6 +62,7 @@ pub struct GameEngine {
     content_manifest: ContentManifest,
     chapters: Vec<ChapterManifest>,
     story_catalog: StoryCatalog,
+    story_locations: StoryLocationIndex,
     story_state: StoryState,
     current_chapter_idx: usize,
     current_scene_idx: usize,
@@ -220,6 +223,7 @@ impl GameEngine {
     pub fn new_started(resources_dir: PathBuf) -> Result<Self, GameError> {
         let chapters = load_chapter_manifests(&resources_dir)?;
         let story_catalog = StoryCatalog::load(&resources_dir)?;
+        let story_locations = StoryLocationIndex::load(&resources_dir, &story_catalog, &chapters)?;
         let content_manifest = ContentManifest::load(&resources_dir)?;
 
         let first_scene_ref = chapters[0]
@@ -239,6 +243,7 @@ impl GameEngine {
             content_manifest,
             chapters,
             story_catalog,
+            story_locations,
             story_state: StoryState::default(),
             current_chapter_idx: 0,
             current_scene_idx: 0,
@@ -3255,6 +3260,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             resources_dir: PathBuf::new(),
             content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
+            story_locations: StoryLocationIndex::empty(),
             story_state: StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),

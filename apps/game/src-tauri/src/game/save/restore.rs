@@ -30,6 +30,7 @@ use crate::game::story::{
     ObjectiveProgressSnapshot, QuestionProgressSnapshot, StoryCatalog, StoryEventBlockKind,
     StoryState, StoryStateSnapshot,
 };
+use crate::game::story_location::StoryLocationIndex;
 use crate::game::view::{DialogueHistoryEntry, QueueToken};
 use crate::game::{GameEngine, GameError, LastVisualCue};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -283,11 +284,17 @@ pub(crate) fn build_restore_candidate(
         chapter_index
     };
     let current_scene_idx = if completed { 0 } else { scene_index };
+    let story_locations = StoryLocationIndex::load(
+        &resources_dir,
+        &definitions.story_catalog,
+        &definitions.chapters,
+    )?;
     let engine = GameEngine {
         resources_dir,
         content_manifest: definitions.content_manifest.clone(),
         chapters: definitions.chapters.clone(),
         story_catalog: definitions.story_catalog.clone(),
+        story_locations,
         story_state,
         current_chapter_idx,
         current_scene_idx,

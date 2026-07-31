@@ -1104,6 +1104,7 @@ mod tests {
             resources_dir: PathBuf::new(),
             content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
+            story_locations: crate::game::story_location::StoryLocationIndex::empty(),
             story_state: crate::game::story::StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
@@ -1177,6 +1178,7 @@ mod tests {
             resources_dir: PathBuf::new(),
             content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
+            story_locations: crate::game::story_location::StoryLocationIndex::empty(),
             story_state: crate::game::story::StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
@@ -1272,6 +1274,7 @@ mod tests {
             resources_dir: PathBuf::new(),
             content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
+            story_locations: crate::game::story_location::StoryLocationIndex::empty(),
             story_state: crate::game::story::StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),

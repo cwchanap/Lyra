@@ -299,6 +299,26 @@ fn save_envelope(engine: &GameEngine, checkpoint: CapturedCheckpointV1) -> SaveE
     }
 }
 
+#[test]
+fn restored_engine_rebuilds_story_locations_from_the_current_package() {
+    let (_guard, resources) = compiler_shaped_resources();
+    let engine = GameEngine::new_started(resources.clone()).unwrap();
+    let checkpoint = capture_checkpoint_v1(&engine).unwrap();
+    let definitions = load_current_definitions(&resources).unwrap();
+
+    let restored =
+        build_restore_candidate(resources, &definitions, save_envelope(&engine, checkpoint))
+            .unwrap();
+    let location = restored
+        .engine
+        .story_locations
+        .resolve_scene("chapter_1", "investigation_scene_1")
+        .unwrap();
+
+    assert_eq!(location.chapter_title, "Chapter One");
+    assert_eq!(location.scene_title, "Investigation");
+}
+
 fn fact<'a>(view: &'a Value, id: &str) -> &'a Value {
     view["story"]["facts"]
         .as_array()
