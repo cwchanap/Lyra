@@ -283,7 +283,11 @@ impl GameEngine {
     }
 
     pub fn view(&self) -> Result<GameStateView, GameError> {
-        let inventory = InventoryView::from_inventory(&self.story_catalog, &self.inventory)?;
+        let inventory = InventoryView::from_inventory(
+            &self.story_catalog,
+            &self.inventory,
+            &self.story_locations,
+        )?;
         let acquired_targets = self.inventory.acquired_targets();
         let story = StoryStateView::from_catalog_state(
             &self.story_catalog,

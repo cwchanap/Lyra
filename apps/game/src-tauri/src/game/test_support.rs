@@ -121,6 +121,24 @@ pub(super) fn catalog_with_case_records(
         crate::game::provenance::CaseRecordProvenance,
     )>,
 ) -> crate::game::story::StoryCatalog {
+    catalog_with_case_records_and_source_groups(evidence, statements, vec![])
+}
+
+pub(super) fn catalog_with_case_records_and_source_groups(
+    evidence: Vec<(
+        &str,
+        &str,
+        &str,
+        crate::game::provenance::CaseRecordProvenance,
+    )>,
+    statements: Vec<(
+        &str,
+        &str,
+        &str,
+        crate::game::provenance::CaseRecordProvenance,
+    )>,
+    source_groups: Vec<serde_json::Value>,
+) -> crate::game::story::StoryCatalog {
     let dir = tempfile::tempdir().unwrap();
     let record_json = |(id, chapter_id, scene_id, provenance)| {
         serde_json::json!({
@@ -138,7 +156,7 @@ pub(super) fn catalog_with_case_records(
             "questions": [],
             "objectives": [],
             "authorizations": [],
-            "sourceGroups": [],
+            "sourceGroups": source_groups,
             "evidenceIndex": evidence.into_iter().map(record_json).collect::<Vec<_>>(),
             "statementsIndex": statements.into_iter().map(record_json).collect::<Vec<_>>(),
         }))

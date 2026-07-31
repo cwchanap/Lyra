@@ -279,7 +279,6 @@ impl StoryCatalog {
             .collect()
     }
 
-    #[allow(dead_code)] // Consumed by the support-lineage task that follows.
     pub(in crate::game) fn source_group(&self, id: &str) -> Option<&SourceGroupDefinition> {
         self.source_group_by_id.get(id)
     }
