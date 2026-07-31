@@ -2401,6 +2401,86 @@ describe("+page scene navigation eligibility gate (production)", () => {
   });
 });
 
+describe("+page active primary objective HUD", () => {
+  beforeEach(() => {
+    mocks.fetch.mockReset();
+    stubFetchForSceneNavigation();
+    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.currentWindow.isFullscreen.mockResolvedValue(false);
+    seedGameState();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    cleanup();
+    gameState.value = null;
+    gameState.error = null;
+    gameState.loading = false;
+    gameState.inFlight = false;
+  });
+
+  it("shows only the active uncompleted primary objective in the exploration HUD", async () => {
+    const state = currentState();
+    state.scene = {
+      kind: "investigation",
+      id: "inv_scene",
+      title: "調査開始",
+      index: 0,
+      total: 1,
+      currentSublocationId: "coffee_shop",
+      visibleSublocations: [
+        {
+          id: "coffee_shop",
+          label: "喫茶店",
+          sceneTag: "雨夜喫茶店",
+          hotspots: [],
+          characters: [],
+        },
+      ],
+    };
+    state.mode = {
+      type: "explore",
+      sublocationId: "coffee_shop",
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+    };
+    state.story.objectives = [
+      {
+        id: "objective_follow_witness",
+        label: "追查雨夜目擊者",
+        summary: "找出目擊者隱瞞的證詞。",
+        kind: "primary",
+        sortOrder: 10,
+        completed: false,
+        activePrimary: true,
+      },
+      {
+        id: "objective_archived",
+        label: "已完成的舊目標",
+        summary: "這不應再顯示。",
+        kind: "primary",
+        sortOrder: 1,
+        completed: true,
+        activePrimary: true,
+      },
+    ];
+    gameState.value = state;
+
+    render(Page);
+
+    const objectiveHud = await screen.findByRole("status", {
+      name: "主要目標",
+    });
+    expect(objectiveHud).toHaveTextContent("追查雨夜目擊者");
+    expect(objectiveHud).not.toHaveTextContent("已完成的舊目標");
+    expect(screen.getAllByRole("status", { name: "主要目標" })).toHaveLength(1);
+    expect(
+      screen.getByRole("navigation", { name: "地點導航" }),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("+page Case File menu integration", () => {
   beforeEach(() => {
     mocks.fetch.mockReset();

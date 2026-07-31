@@ -37,6 +37,7 @@
   import AcquisitionPopup from "$lib/components/AcquisitionPopup.svelte";
   import DialogueBox from "$lib/components/DialogueBox.svelte";
   import ExploreView from "$lib/components/ExploreView.svelte";
+  import PrimaryObjectiveHud from "$lib/components/PrimaryObjectiveHud.svelte";
   import SceneBackdrop from "$lib/components/SceneBackdrop.svelte";
   import SceneNavigationPanel from "$lib/components/SceneNavigationPanel.svelte";
   import GameShell from "$lib/components/GameShell.svelte";
@@ -125,6 +126,11 @@
   let sceneNavigationLoadGen = $state(0);
   let sceneNavigationEnabled = $derived(
     import.meta.env.DEV || storyClearedOnce,
+  );
+  let activePrimaryObjective = $derived(
+    gameState.value?.story.objectives.find(
+      (objective) => objective.activePrimary && !objective.completed,
+    ) ?? null,
   );
   let acquisitionReturnFocus = $state<HTMLElement | null>(null);
   let acquisitionWasBlocking = false;
@@ -1172,6 +1178,7 @@
         disabled={gameState.inFlight}
         sceneMenuEnabled={sceneNavigationEnabled}
         caseFileMenuEnabled={shouldShowCaseFile(gameState.value.mode)}
+        {activePrimaryObjective}
         bind:open={gameMenuOpen}
       >
         {#snippet sceneMenu()}
@@ -1232,7 +1239,11 @@
             onInterview={interviewTopic}
             onEnterSublocation={enterSublocation}
             disabled={gameState.inFlight}
-          />
+          >
+            {#snippet hud()}
+              <PrimaryObjectiveHud objective={activePrimaryObjective} />
+            {/snippet}
+          </ExploreView>
         {:else if gameState.value.mode.type === "interrogation"}
           <SceneBackdrop
             sceneTag={null}

@@ -7,7 +7,7 @@ import {
 } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GameStateView } from "$lib/state/types";
+import type { GameStateView, ObjectiveView } from "$lib/state/types";
 import { reportAsyncTestFailure } from "$lib/test-utils";
 import {
   claimEscape,
@@ -77,6 +77,16 @@ function escapeKeydown(): KeyboardEvent {
   });
 }
 
+const activePrimaryObjective: ObjectiveView = {
+  id: "objective_follow_witness",
+  label: "追查雨夜目擊者",
+  summary: "找出目擊者隱瞞的證詞。",
+  kind: "primary",
+  sortOrder: 10,
+  completed: false,
+  activePrimary: true,
+};
+
 describe("GameShell", () => {
   afterEach(() => {
     cleanup();
@@ -101,6 +111,56 @@ describe("GameShell", () => {
     expect(screen.getByText("案件摘要")).toBeInTheDocument();
     expect(screen.getByText("FILE", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("scoped child")).toBeInTheDocument();
+  });
+
+  it.each([
+    {
+      name: "dialogue",
+      mode: state().mode,
+    },
+    {
+      name: "interrogation",
+      mode: {
+        type: "interrogation" as const,
+        phaseId: "cross_examination",
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+      },
+    },
+  ])(
+    "places the primary objective below chapter copy during $name",
+    ({ mode }) => {
+      render(GameShellHarness, {
+        gameState: state(mode),
+        onCloseCase: vi.fn(),
+        activePrimaryObjective,
+      });
+
+      const header = screen.getByRole("banner");
+      const chapterSummary = within(header).getByText("案件摘要");
+      const objectiveHud = within(header).getByRole("status", {
+        name: "主要目標",
+      });
+
+      expect(objectiveHud).toHaveTextContent("追查雨夜目擊者");
+      expect(
+        chapterSummary.compareDocumentPosition(objectiveHud) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).not.toBe(0);
+    },
+  );
+
+  it("does not render the primary objective HUD after game completion", () => {
+    render(GameShellHarness, {
+      gameState: state({ type: "gameComplete" }),
+      onCloseCase: vi.fn(),
+      activePrimaryObjective,
+    });
+
+    expect(
+      screen.queryByRole("status", { name: "主要目標" }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps duplicated utility controls out of the chapter HUD", () => {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import GameShell from "$lib/components/GameShell.svelte";
-  import type { GameStateView } from "$lib/state/types";
+  import type { GameStateView, ObjectiveView } from "$lib/state/types";
 
   let {
     gameState,
@@ -19,6 +19,7 @@
     caseFileMenuEnabled = true,
     sceneMenuContent = null,
     menuInitialFocusLabel = null,
+    activePrimaryObjective = null,
   }: {
     gameState: GameStateView;
     onCloseCase: () => void;
@@ -43,6 +44,7 @@
     caseFileMenuEnabled?: boolean;
     sceneMenuContent?: string | null;
     menuInitialFocusLabel?: string | null;
+    activePrimaryObjective?: ObjectiveView | null;
   } = $props();
 </script>
 
@@ -58,6 +60,7 @@
   {gameplayInert}
   {sceneMenuEnabled}
   {caseFileMenuEnabled}
+  {activePrimaryObjective}
   bind:open
 >
   {#snippet sceneMenu()}

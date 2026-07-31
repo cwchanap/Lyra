@@ -5,10 +5,11 @@
     audioPreferences,
     updateAudioPreferences,
   } from "$lib/audio/gameplay-audio-runtime.svelte";
-  import type { GameStateView } from "../state/types";
+  import type { GameStateView, ObjectiveView } from "../state/types";
   import { closeTopmostEscapeClaim } from "$lib/state/escape-coordinator";
   import AudioSettings from "./AudioSettings.svelte";
   import GameAtmosphere from "./GameAtmosphere.svelte";
+  import PrimaryObjectiveHud from "./PrimaryObjectiveHud.svelte";
 
   let {
     gameState,
@@ -23,6 +24,7 @@
     gameplayInert = false,
     sceneMenuEnabled = false,
     caseFileMenuEnabled = true,
+    activePrimaryObjective = null,
     children,
     menu,
     sceneMenu,
@@ -49,6 +51,7 @@
     // completion. Mirrors the sceneMenuEnabled/sceneMenu split so the button
     // availability is decoupled from snippet presence.
     caseFileMenuEnabled?: boolean;
+    activePrimaryObjective?: ObjectiveView | null;
     children: Snippet;
     menu?: Snippet;
     sceneMenu?: Snippet;
@@ -57,6 +60,9 @@
   type MenuPanel = "scene" | "caseFile" | "sound" | null;
 
   let showChapterHud = $derived(gameState.mode.type !== "explore");
+  let showPrimaryObjectiveHud = $derived(
+    gameState.mode.type !== "gameComplete",
+  );
   let resumeButton: HTMLButtonElement | undefined = $state();
   let submenuBackButton: HTMLButtonElement | undefined = $state();
   let gameMenuPanel: HTMLDivElement | undefined = $state();
@@ -330,6 +336,9 @@
           <h1>{gameState.chapter.title}</h1>
         </div>
         <p class="summary">{gameState.chapter.summary}</p>
+        {#if showPrimaryObjectiveHud}
+          <PrimaryObjectiveHud objective={activePrimaryObjective} />
+        {/if}
       </div>
     </header>
 
