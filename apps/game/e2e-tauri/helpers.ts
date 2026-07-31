@@ -13,6 +13,90 @@ type TauriInternals = {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 };
 
+type CssViewport = {
+  width: number;
+  height: number;
+  devicePixelRatio: number;
+};
+
+const CASE_FILE_PREFERRED_VIEWPORT = { width: 1280, height: 720 } as const;
+
+async function observedCssViewport(): Promise<CssViewport> {
+  return browser.execute(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+    devicePixelRatio: window.devicePixelRatio,
+  }));
+}
+
+function validDevicePixelRatio(value: number): number {
+  return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+function meetsCaseFileViewportTarget(viewport: CssViewport): boolean {
+  return (
+    viewport.width >= CASE_FILE_PREFERRED_VIEWPORT.width &&
+    viewport.height >= CASE_FILE_PREFERRED_VIEWPORT.height
+  );
+}
+
+/**
+ * The macOS Tauri WDIO executor applies setWindowSize dimensions as physical
+ * pixels. Measure the CSS viewport first, request a DPR-scaled native size,
+ * then compensate for any platform window chrome before layout assertions.
+ */
+export async function ensureCaseFileViewport(): Promise<CssViewport> {
+  let viewport = await observedCssViewport();
+  let requestedWidth = Math.ceil(
+    CASE_FILE_PREFERRED_VIEWPORT.width *
+      validDevicePixelRatio(viewport.devicePixelRatio),
+  );
+  let requestedHeight = Math.ceil(
+    CASE_FILE_PREFERRED_VIEWPORT.height *
+      validDevicePixelRatio(viewport.devicePixelRatio),
+  );
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await browser.setWindowSize(requestedWidth, requestedHeight);
+    try {
+      await browser.waitUntil(
+        async () => {
+          viewport = await observedCssViewport();
+          return meetsCaseFileViewportTarget(viewport);
+        },
+        {
+          timeout: 10000,
+          interval: 100,
+          timeoutMsg: "Case File viewport did not reach its CSS target.",
+        },
+      );
+    } catch {
+      // The next iteration compensates for platform chrome from the observed
+      // CSS shortfall rather than assuming a fixed title-bar size.
+    }
+    if (meetsCaseFileViewportTarget(viewport)) {
+      console.log(
+        `[CaseFileE2E] CSS viewport ${viewport.width}x${viewport.height} at DPR ${viewport.devicePixelRatio}`,
+      );
+      return viewport;
+    }
+
+    const devicePixelRatio = validDevicePixelRatio(viewport.devicePixelRatio);
+    requestedWidth += Math.ceil(
+      Math.max(0, CASE_FILE_PREFERRED_VIEWPORT.width - viewport.width) *
+        devicePixelRatio,
+    );
+    requestedHeight += Math.ceil(
+      Math.max(0, CASE_FILE_PREFERRED_VIEWPORT.height - viewport.height) *
+        devicePixelRatio,
+    );
+  }
+
+  throw new Error(
+    `Case File viewport remained ${viewport.width}x${viewport.height} at DPR ${viewport.devicePixelRatio}.`,
+  );
+}
+
 export async function invokePackagedCommand<T>(
   command: string,
   args: Record<string, unknown> = {},

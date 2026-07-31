@@ -3,6 +3,7 @@ import {
   collectKagamiSummaryEvidence,
   drainToInvestigationExplore,
   elementExists,
+  ensureCaseFileViewport,
   jsClickButtonContaining,
   openGameMenu,
   resetE2eStorage,
@@ -90,7 +91,7 @@ describe("App shell", () => {
   });
 
   it("collects and re-examines production evidence through the focused Case File menu", async () => {
-    await browser.setWindowSize(1280, 720);
+    await ensureCaseFileViewport();
     await drainToInvestigationExplore();
     // collectKagamiSummaryEvidence drains the authored on_collect dialogue
     // queue before expecting the deferred 物證取得 popup, then dismisses it
@@ -121,6 +122,20 @@ describe("App shell", () => {
       },
       { timeout: 10000, timeoutMsg: "evidence file panel missing evidence" },
     );
+
+    // The Case File owns one scroll container for long evidence detail. Focus
+    // the real enabled action as a keyboard user would; the browser must make
+    // it visible through that owner rather than relying on a nested scroller.
+    const caseFileActionFocused = await browser.execute(() => {
+      const detail = document.querySelector<HTMLElement>(".case-file-detail");
+      const action = detail?.querySelector<HTMLButtonElement>(
+        "button:not(:disabled)",
+      );
+      if (!action) return false;
+      action.focus();
+      return document.activeElement === action;
+    });
+    expect(caseFileActionFocused).toBe(true);
 
     const caseFileLayout = await browser.execute(() => {
       const menu = document.querySelector<HTMLElement>(
