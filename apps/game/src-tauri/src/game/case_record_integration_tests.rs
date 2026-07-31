@@ -383,6 +383,15 @@ fn compiler_shaped_provenance_lineage_and_public_redaction_survive_exact_restore
         serde_json::to_value(&successor.provenance).unwrap()["proofCapabilities"],
         json!(["time", "identity", "source", "procedure", "causation"])
     );
+    assert_eq!(successor.acquisition_context.chapter_title, "Chapter One");
+    assert_eq!(successor.acquisition_context.scene_title, "Investigation");
+    let source_group = successor.source_group.as_ref().unwrap();
+    assert_eq!(source_group.label, "Station camera and witness source");
+    assert_eq!(
+        serde_json::to_value(source_group).unwrap()["members"],
+        Value::Null,
+        "acquired-record source groups must not expose catalog membership"
+    );
     assert!(
         successor_first
             .inventory

@@ -6,6 +6,7 @@ use crate::game::schema::{
 };
 use crate::game::state::{EvidenceRecord, Inventory, StatementRecord};
 use crate::game::story::{StoryCatalog, StoryStateView};
+use crate::game::story_location::{SceneLocationContextView, StoryLocationIndex};
 use crate::game::{provenance::validate_inventory_record_against_catalog, GameError};
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +29,8 @@ pub struct EvidenceRecordView {
     pub on_reexamine: Option<Vec<DialogueItem>>,
     pub collected_in_chapter_id: String,
     pub collected_in_scene_id: String,
+    pub(in crate::game) acquisition_context: SceneLocationContextView,
+    pub(in crate::game) source_group: Option<SourceGroupReferenceView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,6 +43,16 @@ pub struct StatementRecordView {
     pub on_reexamine: Option<Vec<DialogueItem>>,
     pub acquired_in_chapter_id: String,
     pub acquired_in_scene_id: String,
+    pub(in crate::game) acquisition_context: SceneLocationContextView,
+    pub(in crate::game) source_group: Option<SourceGroupReferenceView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(in crate::game) struct SourceGroupReferenceView {
+    pub(in crate::game) id: String,
+    pub(in crate::game) label: String,
+    pub(in crate::game) summary: String,
 }
 
 impl InventoryView {
@@ -54,18 +67,19 @@ impl InventoryView {
     pub(in crate::game) fn from_inventory(
         catalog: &StoryCatalog,
         inventory: &Inventory,
+        locations: &StoryLocationIndex,
     ) -> Result<Self, GameError> {
         let acquired_targets = inventory.acquired_targets();
         let evidence = inventory
             .evidence
             .iter()
-            .map(|record| evidence_record_view(catalog, &acquired_targets, record))
+            .map(|record| evidence_record_view(catalog, &acquired_targets, locations, record))
             .collect::<Result<Vec<_>, _>>()?;
 
         let statements = inventory
             .statements
             .iter()
-            .map(|record| statement_record_view(catalog, &acquired_targets, record))
+            .map(|record| statement_record_view(catalog, &acquired_targets, locations, record))
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
@@ -73,6 +87,25 @@ impl InventoryView {
             statements,
         })
     }
+}
+
+fn source_group_reference(
+    catalog: &StoryCatalog,
+    provenance: &crate::game::provenance::CaseRecordProvenance,
+) -> Result<Option<SourceGroupReferenceView>, GameError> {
+    let Some(source_group_id) = provenance.source_group_id.as_deref() else {
+        return Ok(None);
+    };
+    let source_group = catalog.source_group(source_group_id).ok_or_else(|| {
+        GameError::internal(format!(
+            "Validated catalog omitted source group '{source_group_id}' referenced by an acquired record."
+        ))
+    })?;
+    Ok(Some(SourceGroupReferenceView {
+        id: source_group.id.clone(),
+        label: source_group.label.clone(),
+        summary: source_group.summary.clone(),
+    }))
 }
 
 fn public_provenance(
@@ -95,6 +128,7 @@ fn public_provenance(
 fn evidence_record_view(
     catalog: &StoryCatalog,
     acquired_targets: &std::collections::BTreeSet<InventoryTarget>,
+    locations: &StoryLocationIndex,
     record: &EvidenceRecord,
 ) -> Result<EvidenceRecordView, GameError> {
     let target = InventoryTarget::Evidence {
@@ -117,12 +151,18 @@ fn evidence_record_view(
         on_reexamine: record.on_reexamine.clone(),
         collected_in_chapter_id: record.collected_in_chapter_id.clone(),
         collected_in_scene_id: record.collected_in_scene_id.clone(),
+        acquisition_context: locations.resolve_scene(
+            &record.collected_in_chapter_id,
+            &record.collected_in_scene_id,
+        )?,
+        source_group: source_group_reference(catalog, &record.provenance)?,
     })
 }
 
 fn statement_record_view(
     catalog: &StoryCatalog,
     acquired_targets: &std::collections::BTreeSet<InventoryTarget>,
+    locations: &StoryLocationIndex,
     record: &StatementRecord,
 ) -> Result<StatementRecordView, GameError> {
     let target = InventoryTarget::Statement {
@@ -143,6 +183,9 @@ fn statement_record_view(
         on_reexamine: record.on_reexamine.clone(),
         acquired_in_chapter_id: record.acquired_in_chapter_id.clone(),
         acquired_in_scene_id: record.acquired_in_scene_id.clone(),
+        acquisition_context: locations
+            .resolve_scene(&record.acquired_in_chapter_id, &record.acquired_in_scene_id)?,
+        source_group: source_group_reference(catalog, &record.provenance)?,
     })
 }
 
@@ -406,9 +449,12 @@ mod tests {
         CaseRecordProvenance, Completeness, Confidence, ProceduralStatus, ProofCapability,
         RepresentationLayer, SourceKind,
     };
-    use crate::game::schema::{EvidenceJson, StatementJson};
-    use crate::game::state::Inventory;
-    use crate::game::test_support::catalog_with_case_records;
+    use crate::game::schema::{EvidenceJson, SceneType, StatementJson};
+    use crate::game::state::{ChapterManifest, Inventory, SceneRef};
+    use crate::game::story_location::StoryLocationIndex;
+    use crate::game::test_support::{
+        catalog_with_case_records, catalog_with_case_records_and_source_groups,
+    };
     use serde_json::json;
     use std::collections::BTreeSet;
 
@@ -468,6 +514,156 @@ mod tests {
         }
     }
 
+    fn fixture_inventory_view() -> Result<InventoryView, GameError> {
+        let grouped = CaseRecordProvenance {
+            source_group_id: Some("rain_bell_lock_source".into()),
+            ..lead_provenance()
+        };
+        let neutral = CaseRecordProvenance::default();
+        let catalog = catalog_with_case_records_and_source_groups(
+            vec![
+                ("evidence_a", "chapter_1", "scene_1", grouped.clone()),
+                ("evidence_b", "chapter_1", "scene_1", neutral.clone()),
+            ],
+            vec![("statement_a", "chapter_1", "scene_1", neutral.clone())],
+            vec![json!({
+                "id": "rain_bell_lock_source",
+                "label": "雨鐘門鎖原始來源",
+                "summary": "同一把門鎖的原始採證與記錄。",
+                "members": [{"kind": "evidence", "id": "evidence_a"}],
+            })],
+        );
+        let resources = tempfile::tempdir().unwrap();
+        std::fs::create_dir(resources.path().join("chapter_1")).unwrap();
+        std::fs::write(
+            resources.path().join("chapter_1/scene_1.json"),
+            json!({
+                "type": "linear",
+                "id": "scene_1",
+                "title": "反轉調查",
+                "queue": [{"kind": "line", "speaker": "Narrator", "text": "..."}],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let locations = StoryLocationIndex::load(
+            resources.path(),
+            &StoryCatalog::empty(),
+            &[ChapterManifest {
+                id: "chapter_1".into(),
+                title: "雨鐘咖啡館殺人事件".into(),
+                summary: "summary".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Linear,
+                    file: "chapter_1/scene_1.json".into(),
+                }],
+            }],
+        )?;
+        let mut inventory = Inventory::default();
+        assert!(inventory.add_evidence_from_def(
+            &evidence_definition("evidence_a", grouped),
+            "chapter_1",
+            "scene_1",
+        ));
+        assert!(inventory.add_evidence_from_def(
+            &evidence_definition("evidence_b", neutral.clone()),
+            "chapter_1",
+            "scene_1",
+        ));
+        assert!(inventory.add_statement_from_def(
+            &statement_definition("statement_a", neutral),
+            "chapter_1",
+            "scene_1",
+        ));
+
+        InventoryView::from_inventory(&catalog, &inventory, &locations)
+    }
+
+    fn fixture_location_index() -> StoryLocationIndex {
+        let resources = tempfile::tempdir().unwrap();
+        std::fs::create_dir(resources.path().join("chapter_1")).unwrap();
+        std::fs::write(
+            resources.path().join("chapter_1/scene_1.json"),
+            json!({
+                "type": "linear",
+                "id": "scene_1",
+                "title": "Test scene",
+                "queue": [{"kind": "line", "speaker": "Narrator", "text": "..."}],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        StoryLocationIndex::load(
+            resources.path(),
+            &StoryCatalog::empty(),
+            &[ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Test chapter".into(),
+                summary: "summary".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Linear,
+                    file: "chapter_1/scene_1.json".into(),
+                }],
+            }],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn acquired_record_view_resolves_location_and_group_without_membership() {
+        let view = fixture_inventory_view().unwrap();
+        let evidence = &view.evidence[0];
+
+        assert_eq!(evidence.acquisition_context.scene_title, "反轉調查");
+        assert_eq!(
+            evidence.source_group.as_ref().unwrap().label,
+            "雨鐘門鎖原始來源"
+        );
+        let json = serde_json::to_value(evidence).unwrap();
+        assert!(json["sourceGroup"].get("members").is_none());
+        assert_eq!(
+            view.evidence
+                .iter()
+                .map(|record| record.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["evidence_a", "evidence_b"],
+            "public evidence must retain acquisition order"
+        );
+        assert_eq!(
+            serde_json::to_value(&view.evidence[1]).unwrap()["sourceGroup"],
+            json!(null)
+        );
+        assert_eq!(
+            serde_json::to_value(&view.statements[0]).unwrap()["sourceGroup"],
+            json!(null)
+        );
+        assert_eq!(
+            view.statements[0].acquisition_context.scene_title,
+            "反轉調查"
+        );
+    }
+
+    #[test]
+    fn public_inventory_fails_closed_when_acquired_record_location_is_missing() {
+        let provenance = lead_provenance();
+        let catalog = catalog_with_case_records(
+            vec![("evidence_a", "chapter_1", "scene_1", provenance.clone())],
+            vec![],
+        );
+        let mut inventory = Inventory::default();
+        assert!(inventory.add_evidence_from_def(
+            &evidence_definition("evidence_a", provenance),
+            "chapter_1",
+            "scene_1",
+        ));
+
+        let error =
+            InventoryView::from_inventory(&catalog, &inventory, &StoryLocationIndex::empty())
+                .unwrap_err();
+
+        assert_eq!(error.code, "storyLocationMissing");
+    }
+
     #[test]
     fn public_inventory_recomputes_predecessor_redaction_and_preserves_acquisition_order() {
         let lead = lead_provenance();
@@ -483,6 +679,7 @@ mod tests {
                 ("statement_a", "chapter_1", "scene_1", neutral.clone()),
             ],
         );
+        let locations = fixture_location_index();
         let mut inventory = Inventory::default();
         assert!(inventory.add_evidence_from_def(
             &evidence_definition("evidence_b", successor),
@@ -500,9 +697,10 @@ mod tests {
             "scene_1",
         ));
 
-        let hidden =
-            serde_json::to_value(InventoryView::from_inventory(&catalog, &inventory).unwrap())
-                .unwrap();
+        let hidden = serde_json::to_value(
+            InventoryView::from_inventory(&catalog, &inventory, &locations).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             hidden["evidence"][0]["provenance"]["supersedesRecordId"],
             json!(null)
@@ -551,9 +749,10 @@ mod tests {
             "chapter_1",
             "scene_1",
         ));
-        let revealed =
-            serde_json::to_value(InventoryView::from_inventory(&catalog, &inventory).unwrap())
-                .unwrap();
+        let revealed = serde_json::to_value(
+            InventoryView::from_inventory(&catalog, &inventory, &locations).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             revealed["evidence"]
                 .as_array()
@@ -590,7 +789,8 @@ mod tests {
         ));
         inventory.evidence[0].provenance.confidence = Confidence::Disputed;
 
-        let error = InventoryView::from_inventory(&catalog, &inventory).unwrap_err();
+        let error = InventoryView::from_inventory(&catalog, &inventory, &fixture_location_index())
+            .unwrap_err();
 
         assert_eq!(error.code, "inventoryRecordDefinitionMismatch");
         assert_ne!(error.code, "caseRecordDefinitionMismatch");
@@ -615,7 +815,8 @@ mod tests {
         ));
         inventory.statements[0].acquired_in_scene_id = "scene_other".into();
 
-        let error = InventoryView::from_inventory(&catalog, &inventory).unwrap_err();
+        let error = InventoryView::from_inventory(&catalog, &inventory, &fixture_location_index())
+            .unwrap_err();
 
         assert_eq!(error.code, "inventoryRecordDefinitionMismatch");
     }
