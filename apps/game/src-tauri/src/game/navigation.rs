@@ -533,6 +533,33 @@ mod tests {
     use crate::game::*;
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    fn write_mismatched_investigation_scene(path: &std::path::Path) {
+        std::fs::write(
+            path,
+            r#"{
+                "type": "investigation",
+                "id": "scene_2",
+                "title": "Mismatched",
+                "intro": [],
+                "sublocations": [{
+                    "id": "room",
+                    "label": "Room",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "room",
+                    "transitionDialogue": [],
+                    "hotspots": [],
+                    "characters": []
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+    }
+
     fn acquisition_navigation_resources(
         label: &str,
         chapters: &str,
@@ -1099,35 +1126,20 @@ mod tests {
         }"#,
         )
         .unwrap();
-        // Next scene after the jump target: declared linear but file is
-        // investigation-typed → load_scene_runtime rejects with
-        // sceneValidationFailed during advance_scene.
+        // Start with a valid packaged scene so new-game indexing succeeds.
         fs::write(
             chapter_1.join("scene_2.json"),
             r#"{
-            "type": "investigation",
+            "type": "linear",
             "id": "scene_2",
-            "title": "Mismatched",
-            "intro": [],
-            "sublocations": [{
-                "id": "room",
-                "label": "Room",
-                "status": "unlocked",
-                "unlock": null,
-                "reveals": [],
-                "sceneTag": "room",
-                "transitionDialogue": [],
-                "hotspots": [],
-                "characters": []
-            }],
-            "evidenceManifest": [],
-            "statementManifest": [],
-            "outro": { "unlock": "auto", "dialogue": [] }
+            "title": "Next",
+            "queue": []
         }"#,
         )
         .unwrap();
 
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        write_mismatched_investigation_scene(&chapter_1.join("scene_2.json"));
         // Sanity: engine started on scene_0.
         let before = engine.view().unwrap();
         let before_scene_id = match &before.scene {
@@ -1238,35 +1250,20 @@ mod tests {
         }"#,
         )
         .unwrap();
-        // Next scene after the jump target: declared linear but file is
-        // investigation-typed → load_scene_runtime rejects with
-        // sceneValidationFailed during advance_scene.
+        // Start with a valid packaged scene so new-game indexing succeeds.
         fs::write(
             chapter_1.join("scene_2.json"),
             r#"{
-            "type": "investigation",
+            "type": "linear",
             "id": "scene_2",
-            "title": "Mismatched",
-            "intro": [],
-            "sublocations": [{
-                "id": "room",
-                "label": "Room",
-                "status": "unlocked",
-                "unlock": null,
-                "reveals": [],
-                "sceneTag": "room",
-                "transitionDialogue": [],
-                "hotspots": [],
-                "characters": []
-            }],
-            "evidenceManifest": [],
-            "statementManifest": [],
-            "outro": { "unlock": "auto", "dialogue": [] }
+            "title": "Next",
+            "queue": []
         }"#,
         )
         .unwrap();
 
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        write_mismatched_investigation_scene(&chapter_1.join("scene_2.json"));
         // Startup records the first visible line ("start") into history.
         let started = engine.view().unwrap();
         assert_eq!(

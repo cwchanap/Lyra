@@ -47,6 +47,7 @@ impl EngineRollbackSnapshot {
             content_manifest: _,
             chapters: _,
             story_catalog: _,
+            story_locations: _immutable_story_locations,
             story_state,
             current_chapter_idx,
             current_scene_idx,
@@ -57,7 +58,7 @@ impl EngineRollbackSnapshot {
             history,
             durable_revision,
             pending_acquisition_events,
-            ..
+            cached_pending_acquisition_scene: _,
         } = engine;
         Self {
             current_chapter_idx: *current_chapter_idx,
@@ -1039,6 +1040,7 @@ mod tests {
             resources_dir: d.clone(),
             content_manifest: test_content_manifest(),
             story_catalog,
+            story_locations: crate::game::story_location::StoryLocationIndex::empty(),
             story_state: StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
@@ -1186,6 +1188,7 @@ mod tests {
             resources_dir: d.clone(),
             content_manifest: test_content_manifest(),
             story_catalog,
+            story_locations: crate::game::story_location::StoryLocationIndex::empty(),
             story_state: StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),

@@ -63,6 +63,7 @@ pub(crate) fn capture_checkpoint_v1(
         content_manifest: _immutable_content_identity,
         chapters: _immutable_chapter_manifests,
         story_catalog: _immutable_story_catalog,
+        story_locations: _immutable_story_locations,
         story_state,
         current_chapter_idx: _persisted_chapter_as_stable_id,
         current_scene_idx: _persisted_scene_as_stable_id,
