@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/svelte";
+import { render, screen, waitFor, within } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { computeAccessibleName } from "dom-accessibility-api";
 import { describe, expect, it } from "vitest";
@@ -294,6 +294,71 @@ function expectLockedIdsAbsent(container: HTMLElement) {
 }
 
 describe("CaseFilePanel", () => {
+  it("uses direct rail, list, and detail columns with a tabpanel relationship", () => {
+    render(CaseFilePanel, {
+      state: acceptanceState(),
+      reexamineEnabled: false,
+      onReexamineEvidence: () => {},
+      onReexamineStatement: () => {},
+    });
+
+    const panel = screen.getByRole("region", { name: "案件檔案" });
+    const directColumns = Array.from(panel.children);
+    expect(directColumns).toHaveLength(3);
+    expect(directColumns[0]).toContainElement(
+      screen.getByRole("navigation", { name: "案件檔案分類" }),
+    );
+    expect(directColumns[1]).toContainElement(
+      screen.getByRole("region", { name: "目前目標清單" }),
+    );
+
+    const activeTab = screen.getByRole("tab", { name: "目前目標 7 項" });
+    const controlledId = activeTab.getAttribute("aria-controls");
+    expect(activeTab).toHaveAttribute("id");
+    expect(controlledId).not.toBeNull();
+    const tabpanel = document.getElementById(controlledId!);
+    expect(directColumns[2]).toContainElement(tabpanel);
+    expect(tabpanel).toHaveAttribute("role", "tabpanel");
+    expect(tabpanel).toHaveAttribute("aria-labelledby", activeTab.id);
+  });
+
+  it("gives same-speaker statement rows distinct visible and accessible excerpts", () => {
+    const state = acceptanceState();
+    state.inventory.statements = [
+      {
+        ...state.inventory.statements[0]!,
+        id: "first_account",
+        speaker: "目擊者乙",
+        content: "我先看見紅色雨傘靠在門邊。",
+      },
+      {
+        ...state.inventory.statements[0]!,
+        id: "second_account",
+        speaker: "目擊者乙",
+        content: "後來雨傘已經移到櫃檯旁。",
+      },
+    ];
+
+    render(CaseFilePanel, {
+      state,
+      section: "statements",
+      reexamineEnabled: false,
+      onReexamineEvidence: () => {},
+      onReexamineStatement: () => {},
+    });
+
+    expect(
+      screen.getByRole("button", {
+        name: "目擊者乙 我先看見紅色雨傘靠在門邊。",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: "目擊者乙 後來雨傘已經移到櫃檯旁。",
+      }),
+    ).toBeVisible();
+  });
+
   it("traverses every populated acceptance section without exposing locked catalog IDs", async () => {
     const user = userEvent.setup();
     const { container } = render(CaseFilePanel, {
@@ -304,7 +369,7 @@ describe("CaseFilePanel", () => {
     });
 
     const objectiveDetail = within(
-      screen.getByRole("region", { name: "目前目標" }),
+      screen.getByRole("tabpanel", { name: /目前目標/ }),
     );
     expect(objectiveDetail.getByText("確認合成檔案")).toBeInTheDocument();
     expect(objectiveDetail.getByText("核對來源")).toBeInTheDocument();
@@ -461,12 +526,70 @@ describe("CaseFilePanel", () => {
     ).toHaveFocus();
   });
 
+  it("restores focus to the first surviving row when replacement removes the focused selection", async () => {
+    const user = userEvent.setup();
+    render(CaseFilePanelHarness);
+
+    await user.click(screen.getByRole("tab", { name: /證物 2 項/ }));
+    const removedRow = screen.getByRole("button", { name: "黑色雨傘" });
+    await user.click(removedRow);
+    expect(removedRow).toHaveFocus();
+
+    screen
+      .getByRole("button", { name: "移除選取證物" })
+      .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "咖啡收據" })).toHaveFocus();
+    });
+  });
+
+  it("forwards disabled to objective disclosure, fact support, and resolved-question controls", async () => {
+    const user = userEvent.setup();
+    render(CaseFilePanelHarness);
+
+    const disclosure = screen.getByRole("button", {
+      name: "顯示較早完成目標",
+    });
+    await user.click(screen.getByRole("button", { name: "停用案件檔案" }));
+    expect(disclosure).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "啟用案件檔案" }));
+    await user.click(screen.getByRole("tab", { name: /已確認事實 2 項/ }));
+    await user.click(screen.getByRole("button", { name: "收據時間" }));
+    await user.click(screen.getByRole("button", { name: "停用案件檔案" }));
+    expect(
+      screen.getByRole("button", { name: "查看支持記錄：咖啡收據" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "查看支持事實：時鐘確認" }),
+    ).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "啟用案件檔案" }));
+    await user.click(screen.getByRole("tab", { name: /待解問題 2 項/ }));
+    await user.click(screen.getByRole("button", { name: "嫌疑人何時抵達？" }));
+    await user.click(screen.getByRole("button", { name: "停用案件檔案" }));
+    expect(
+      screen.getByRole("button", { name: "查看解答事實：收據時間" }),
+    ).toBeDisabled();
+  });
+
+  it("shows the localized fact category in the detail pane", async () => {
+    const user = userEvent.setup();
+    render(CaseFilePanelHarness);
+
+    await user.click(screen.getByRole("tab", { name: /已確認事實 2 項/ }));
+    await user.click(screen.getByRole("button", { name: "收據時間" }));
+
+    expect(screen.getByText("類別：時間")).toBeInTheDocument();
+  });
+
   it("renders only direct visible detail relations and safe fallback content", async () => {
     const user = userEvent.setup();
     render(CaseFilePanelHarness);
 
     const objectiveDetail = within(
-      screen.getByRole("region", { name: "目前目標" }),
+      screen.getByRole("tabpanel", { name: /目前目標/ }),
     );
     expect(
       objectiveDetail.getByRole("heading", { name: "目前目標" }),

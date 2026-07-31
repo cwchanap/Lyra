@@ -653,6 +653,26 @@ describe("GameShell", () => {
     }
   });
 
+  it("applies the wider menu treatment only to the Case File submenu", async () => {
+    const user = userEvent.setup();
+    render(GameShellHarness, {
+      gameState: state(),
+      onCloseCase: vi.fn(),
+      menuContent: "menu inventory slot",
+    });
+
+    await user.keyboard("{Escape}");
+    const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+    const menuPanel = dialog.querySelector(".game-menu-panel");
+    expect(menuPanel).not.toHaveClass("case-file");
+
+    await user.click(within(dialog).getByRole("button", { name: /案件檔案/ }));
+    expect(menuPanel).toHaveClass("case-file");
+
+    await user.click(within(dialog).getByRole("button", { name: /返回選單/ }));
+    expect(menuPanel).not.toHaveClass("case-file");
+  });
+
   it("delegates initial Case File focus to its menu marker", async () => {
     const user = userEvent.setup();
     render(GameShellHarness, {

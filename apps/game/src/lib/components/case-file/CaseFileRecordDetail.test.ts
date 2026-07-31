@@ -310,6 +310,10 @@ describe("CaseFileRecordDetail", () => {
         expect.stringContaining("data:image/svg+xml"),
       );
     });
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Missing evidence asset"),
+    );
     warnSpy.mockClear();
     image.dispatchEvent(new Event("error"));
     expect(warnSpy).not.toHaveBeenCalled();

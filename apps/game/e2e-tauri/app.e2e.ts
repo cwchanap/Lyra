@@ -90,6 +90,7 @@ describe("App shell", () => {
   });
 
   it("collects and re-examines production evidence through the focused Case File menu", async () => {
+    await browser.setWindowSize(1280, 720);
     await drainToInvestigationExplore();
     // collectKagamiSummaryEvidence drains the authored on_collect dialogue
     // queue before expecting the deferred 物證取得 popup, then dismisses it
@@ -120,6 +121,72 @@ describe("App shell", () => {
       },
       { timeout: 10000, timeoutMsg: "evidence file panel missing evidence" },
     );
+
+    const caseFileLayout = await browser.execute(() => {
+      const menu = document.querySelector<HTMLElement>(
+        ".game-menu-panel.case-file",
+      );
+      const layout = document.querySelector<HTMLElement>(".case-file-panel");
+      const scrollOwner = document.querySelector<HTMLElement>(
+        ".game-menu-panel.case-file .game-menu-extra",
+      );
+      const rail = layout?.children.item(0) as HTMLElement | null;
+      const list = layout?.children.item(1) as HTMLElement | null;
+      const detail = layout?.children.item(2) as HTMLElement | null;
+      if (!menu || !layout || !scrollOwner || !rail || !list || !detail) {
+        return null;
+      }
+      const menuRect = menu.getBoundingClientRect();
+      const action = detail.querySelector<HTMLElement>("button:not(:disabled)");
+      const actionRect = action?.getBoundingClientRect() ?? null;
+      return {
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        menu: {
+          left: menuRect.left,
+          top: menuRect.top,
+          right: menuRect.right,
+          bottom: menuRect.bottom,
+        },
+        columns: getComputedStyle(layout)
+          .gridTemplateColumns.split(" ")
+          .filter(Boolean).length,
+        directColumns: layout.children.length,
+        railLeft: rail.getBoundingClientRect().left,
+        listLeft: list.getBoundingClientRect().left,
+        detailLeft: detail.getBoundingClientRect().left,
+        scrollOwnerOverflowY: getComputedStyle(scrollOwner).overflowY,
+        nestedScrollOwners: Array.from(
+          layout.querySelectorAll<HTMLElement>("*"),
+        ).filter((element) => {
+          const overflowY = getComputedStyle(element).overflowY;
+          return overflowY === "auto" || overflowY === "scroll";
+        }).length,
+        actionReachable:
+          actionRect !== null &&
+          actionRect.top >= menuRect.top &&
+          actionRect.bottom <= menuRect.bottom,
+      };
+    });
+    expect(caseFileLayout).not.toBeNull();
+    // setWindowSize controls the native window rectangle; the webview's inner
+    // viewport can be slightly smaller because of platform chrome.
+    expect(caseFileLayout!.viewport.width).toBeGreaterThanOrEqual(1200);
+    expect(caseFileLayout!.viewport.height).toBeGreaterThanOrEqual(650);
+    expect(caseFileLayout!.menu.left).toBeGreaterThanOrEqual(-0.5);
+    expect(caseFileLayout!.menu.top).toBeGreaterThanOrEqual(-0.5);
+    expect(caseFileLayout!.menu.right).toBeLessThanOrEqual(
+      caseFileLayout!.viewport.width + 0.5,
+    );
+    expect(caseFileLayout!.menu.bottom).toBeLessThanOrEqual(
+      caseFileLayout!.viewport.height + 0.5,
+    );
+    expect(caseFileLayout!.columns).toBe(3);
+    expect(caseFileLayout!.directColumns).toBe(3);
+    expect(caseFileLayout!.railLeft).toBeLessThan(caseFileLayout!.listLeft);
+    expect(caseFileLayout!.listLeft).toBeLessThan(caseFileLayout!.detailLeft);
+    expect(caseFileLayout!.scrollOwnerOverflowY).toBe("auto");
+    expect(caseFileLayout!.nestedScrollOwners).toBe(0);
+    expect(caseFileLayout!.actionReachable).toBe(true);
 
     await browser.keys("Escape");
     await browser.waitUntil(

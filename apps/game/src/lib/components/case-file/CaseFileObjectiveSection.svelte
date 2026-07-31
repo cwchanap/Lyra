@@ -7,16 +7,19 @@
   let {
     objectives,
     selected,
+    disabled = false,
   }: {
     objectives: CaseFileObjectives;
     selected: CaseFileObjectiveItem | null;
+    disabled?: boolean;
   } = $props();
   let showEarlierCompleted = $state(false);
 </script>
 
-<section
+<div
   id="case-file-section-objective"
-  aria-labelledby="case-file-detail-heading"
+  role="tabpanel"
+  aria-labelledby="case-file-tab-objective"
 >
   <h2 id="case-file-detail-heading" data-case-file-detail-heading tabindex="-1">
     目前目標
@@ -59,6 +62,7 @@
   {#if objectives.earlierCompleted.length > 0}
     <button
       type="button"
+      {disabled}
       aria-expanded={showEarlierCompleted}
       onclick={() => (showEarlierCompleted = !showEarlierCompleted)}
       >{showEarlierCompleted ? "收起較早完成目標" : "顯示較早完成目標"}</button
@@ -71,4 +75,4 @@
       </ul>
     {/if}
   {/if}
-</section>
+</div>

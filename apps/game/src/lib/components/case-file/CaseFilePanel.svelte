@@ -37,6 +37,7 @@
 
   let selectedKey = $state<CaseFileKey | null>(null);
   let backTarget = $state<BackTarget | null>(null);
+  let focusedItemKey = $state<CaseFileKey | null>(null);
   let panel = $state<HTMLElement>();
   let model = $derived<CaseFileModel>(buildCaseFileModel(gameState));
   let selectedItem = $derived(
@@ -72,10 +73,15 @@
   }
 
   $effect(() => {
+    const previousKey = selectedKey;
     const item =
       selectedKey === null ? null : model.itemsByKey.get(selectedKey);
     if (item === undefined || item === null || item.section !== section) {
-      selectedKey = fallbackSelection(section);
+      const nextKey = fallbackSelection(section);
+      selectedKey = nextKey;
+      if (previousKey !== null && focusedItemKey === previousKey) {
+        focusAfterInvalidation(nextKey);
+      }
     }
   });
 
@@ -115,6 +121,43 @@
     });
   }
 
+  function focusAfterInvalidation(nextKey: CaseFileKey | null) {
+    void tick().then(() => {
+      const row = Array.from(
+        panel?.querySelectorAll<HTMLButtonElement>(
+          "[data-case-file-item-key]",
+        ) ?? [],
+      ).find((candidate) => candidate.dataset.caseFileItemKey === nextKey);
+      if (row !== undefined) {
+        row.focus();
+        return;
+      }
+      const activeTab = panel?.querySelector<HTMLButtonElement>(
+        `#case-file-tab-${section}`,
+      );
+      if (
+        activeTab !== null &&
+        activeTab !== undefined &&
+        !activeTab.disabled
+      ) {
+        activeTab.focus();
+        return;
+      }
+      panel
+        ?.querySelector<HTMLElement>("[data-case-file-detail-heading]")
+        ?.focus();
+    });
+  }
+
+  function trackFocusedItem(event: FocusEvent) {
+    const target = event.target;
+    focusedItemKey =
+      target instanceof HTMLElement
+        ? ((target.closest<HTMLButtonElement>("[data-case-file-item-key]")
+            ?.dataset.caseFileItemKey as CaseFileKey | undefined) ?? null)
+        : null;
+  }
+
   function followRelation(key: CaseFileKey) {
     backTarget = { section, key: selectedKey };
     const target = model.itemsByKey.get(key);
@@ -145,15 +188,22 @@
   }
 </script>
 
-<section bind:this={panel} class="case-file-panel" aria-label="案件檔案">
-  <CaseFileSectionNav
-    {section}
-    counts={model.counts}
-    onSelect={selectSection}
-    {disabled}
-  />
+<section
+  bind:this={panel}
+  class="case-file-panel"
+  aria-label="案件檔案"
+  onfocusin={trackFocusedItem}
+>
+  <div class="case-file-rail">
+    <CaseFileSectionNav
+      {section}
+      counts={model.counts}
+      onSelect={selectSection}
+      {disabled}
+    />
+  </div>
 
-  <div class="case-file-content">
+  <div class="case-file-list">
     <CaseFileItemList
       {section}
       items={itemsFor(section)}
@@ -162,60 +212,64 @@
       {disabled}
       onSelect={selectItem}
     />
+  </div>
 
-    <div class="case-file-detail">
-      {#if backTarget !== null}
-        <button type="button" {disabled} onclick={goBack}>返回上一項</button>
-      {/if}
+  <div class="case-file-detail">
+    {#if backTarget !== null}
+      <button type="button" {disabled} onclick={goBack}>返回上一項</button>
+    {/if}
 
-      {#if section === "objective"}
-        <CaseFileObjectiveSection
-          objectives={model.objectives}
-          selected={selectedItem?.section === "objective" ? selectedItem : null}
-        />
-      {:else if selectedItem?.section === "facts"}
-        <CaseFileFactDetail
-          item={selectedItem}
-          supportingRecords={supportItems(selectedItem.supportingRecordKeys)}
-          supportingFacts={supportItems(selectedItem.supportingFactKeys)}
-          onNavigate={followRelation}
-        />
-      {:else if selectedItem?.section === "questions"}
-        {@const resolvedFact =
-          selectedItem.resolvedFactKey === null
-            ? null
-            : model.itemsByKey.get(selectedItem.resolvedFactKey)}
-        <CaseFileQuestionDetail
-          item={selectedItem}
-          resolvedFact={resolvedFact?.section === "facts" ? resolvedFact : null}
-          onNavigate={followRelation}
-        />
-      {:else if selectedItem?.section === "authorizations"}
-        <CaseFileAuthorizationDetail item={selectedItem} />
-      {:else if selectedItem?.section === "evidence" || selectedItem?.section === "statements"}
-        <CaseFileRecordDetail
-          item={selectedItem}
-          {reexamineEnabled}
-          {onReexamineEvidence}
-          {onReexamineStatement}
-          onNavigate={followRelation}
-          {disabled}
-        />
-      {:else}
-        <section
-          id={`case-file-section-${section}`}
-          aria-labelledby="case-file-detail-heading"
+    {#if section === "objective"}
+      <CaseFileObjectiveSection
+        objectives={model.objectives}
+        selected={selectedItem?.section === "objective" ? selectedItem : null}
+        {disabled}
+      />
+    {:else if selectedItem?.section === "facts"}
+      <CaseFileFactDetail
+        item={selectedItem}
+        supportingRecords={supportItems(selectedItem.supportingRecordKeys)}
+        supportingFacts={supportItems(selectedItem.supportingFactKeys)}
+        onNavigate={followRelation}
+        {disabled}
+      />
+    {:else if selectedItem?.section === "questions"}
+      {@const resolvedFact =
+        selectedItem.resolvedFactKey === null
+          ? null
+          : model.itemsByKey.get(selectedItem.resolvedFactKey)}
+      <CaseFileQuestionDetail
+        item={selectedItem}
+        resolvedFact={resolvedFact?.section === "facts" ? resolvedFact : null}
+        onNavigate={followRelation}
+        {disabled}
+      />
+    {:else if selectedItem?.section === "authorizations"}
+      <CaseFileAuthorizationDetail item={selectedItem} />
+    {:else if selectedItem?.section === "evidence" || selectedItem?.section === "statements"}
+      <CaseFileRecordDetail
+        item={selectedItem}
+        {reexamineEnabled}
+        {onReexamineEvidence}
+        {onReexamineStatement}
+        onNavigate={followRelation}
+        {disabled}
+      />
+    {:else}
+      <div
+        id={`case-file-section-${section}`}
+        role="tabpanel"
+        aria-labelledby={`case-file-tab-${section}`}
+      >
+        <h2
+          id="case-file-detail-heading"
+          data-case-file-detail-heading
+          tabindex="-1"
         >
-          <h2
-            id="case-file-detail-heading"
-            data-case-file-detail-heading
-            tabindex="-1"
-          >
-            {caseFileSectionLabels[section]}
-          </h2>
-        </section>
-      {/if}
-    </div>
+          {caseFileSectionLabels[section]}
+        </h2>
+      </div>
+    {/if}
   </div>
 </section>
 
@@ -223,18 +277,30 @@
   .case-file-panel {
     display: grid;
     gap: 1rem;
+    grid-template-columns:
+      minmax(9.5rem, 0.55fr) minmax(12rem, 0.8fr)
+      minmax(0, 1.65fr);
+    align-items: start;
   }
-  .case-file-content {
-    display: grid;
-    gap: 1rem;
-    grid-template-columns: minmax(10rem, 0.35fr) minmax(0, 1fr);
+
+  .case-file-rail {
+    position: sticky;
+    top: 0;
+    align-self: start;
   }
+
+  .case-file-list,
   .case-file-detail {
     min-width: 0;
   }
-  @media (max-width: 640px) {
-    .case-file-content {
+
+  @media (max-width: 900px) {
+    .case-file-panel {
       grid-template-columns: 1fr;
+    }
+
+    .case-file-rail {
+      position: static;
     }
   }
 </style>
