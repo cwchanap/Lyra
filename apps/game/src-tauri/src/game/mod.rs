@@ -3271,7 +3271,11 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             resources_dir: PathBuf::new(),
             content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
-            story_locations: StoryLocationIndex::empty(),
+            story_locations: StoryLocationIndex::for_test_scenes(
+                "chapter_1",
+                "Chapter 1",
+                [SceneJson::Interrogation(scene.clone())],
+            ),
             story_state: StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
@@ -3816,6 +3820,18 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             scene_type: SceneType::Investigation,
             file: "chapter_1/investigation_scene_0.json".into(),
         }];
+        let source_scene = serde_json::from_slice::<SceneJson>(
+            &fs::read(chapter_dir.join("investigation_scene_0.json")).unwrap(),
+        )
+        .unwrap();
+        engine.story_locations = StoryLocationIndex::for_test_scenes(
+            "chapter_1",
+            "Chapter 1",
+            [
+                SceneJson::Interrogation(two_line_question_scene()),
+                source_scene,
+            ],
+        );
 
         engine.reexamine_evidence("note").unwrap();
 

@@ -238,7 +238,11 @@ pub(crate) fn empty_engine_with_scene(
             }],
         }],
         story_catalog,
-        story_locations: crate::game::story_location::StoryLocationIndex::empty(),
+        story_locations: crate::game::story_location::StoryLocationIndex::for_test_scenes(
+            "chapter_1",
+            "Chapter 1",
+            [SceneJson::Investigation(scene.clone())],
+        ),
         story_state: StoryState::default(),
         current_chapter_idx: 0,
         current_scene_idx: 0,
@@ -1847,7 +1851,11 @@ pub(super) fn empty_engine_with_interrogation_scene(
             }],
         }],
         story_catalog,
-        story_locations: crate::game::story_location::StoryLocationIndex::empty(),
+        story_locations: crate::game::story_location::StoryLocationIndex::for_test_scenes(
+            "chapter_1",
+            "Chapter 1",
+            [SceneJson::Interrogation(scene.clone())],
+        ),
         story_state: StoryState::default(),
         current_chapter_idx: 0,
         current_scene_idx: 0,
@@ -1868,7 +1876,8 @@ pub(super) fn completed_interrogation_engine_with_bad_next_scene(
     resources_dir: PathBuf,
     inventory: Inventory,
 ) -> GameEngine {
-    let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
+    let scene_def = two_line_question_scene();
+    let mut scene = InterrogationSceneState::from_json(scene_def.clone(), 1);
     scene.current_phase_id = None;
     scene.outro_played = true;
     let story_catalog = catalog_with_case_records(
@@ -1916,7 +1925,11 @@ pub(super) fn completed_interrogation_engine_with_bad_next_scene(
             ],
         }],
         story_catalog,
-        story_locations: crate::game::story_location::StoryLocationIndex::empty(),
+        story_locations: crate::game::story_location::StoryLocationIndex::for_test_scenes(
+            "chapter_1",
+            "Chapter 1",
+            [SceneJson::Interrogation(scene_def)],
+        ),
         story_state: StoryState::default(),
         current_chapter_idx: 0,
         current_scene_idx: 0,

@@ -1104,7 +1104,11 @@ mod tests {
             resources_dir: PathBuf::new(),
             content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
-            story_locations: crate::game::story_location::StoryLocationIndex::empty(),
+            story_locations: crate::game::story_location::StoryLocationIndex::for_test_scenes(
+                "chapter_1",
+                "Chapter 1",
+                [crate::game::schema::SceneJson::Linear(scene_json.clone())],
+            ),
             story_state: crate::game::story::StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
@@ -1178,7 +1182,11 @@ mod tests {
             resources_dir: PathBuf::new(),
             content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
-            story_locations: crate::game::story_location::StoryLocationIndex::empty(),
+            story_locations: crate::game::story_location::StoryLocationIndex::for_test_scenes(
+                "chapter_1",
+                "Chapter 1",
+                [crate::game::schema::SceneJson::Linear(scene_json.clone())],
+            ),
             story_state: crate::game::story::StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
@@ -1274,7 +1282,13 @@ mod tests {
             resources_dir: PathBuf::new(),
             content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
-            story_locations: crate::game::story_location::StoryLocationIndex::empty(),
+            story_locations: crate::game::story_location::StoryLocationIndex::for_test_scenes(
+                "chapter_1",
+                "Chapter 1",
+                [crate::game::schema::SceneJson::Linear(
+                    tag_only_json.clone(),
+                )],
+            ),
             story_state: crate::game::story::StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),

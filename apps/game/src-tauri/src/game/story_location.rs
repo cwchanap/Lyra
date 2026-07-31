@@ -68,6 +68,35 @@ impl StoryLocationIndex {
     }
 
     #[cfg(test)]
+    pub(crate) fn for_test_scenes(
+        chapter_id: &str,
+        chapter_title: &str,
+        scenes: impl IntoIterator<Item = SceneJson>,
+    ) -> Self {
+        let mut locations = BTreeMap::new();
+        for scene in scenes {
+            let (scene_id, scene_title) = scene_json_identity(&scene);
+            let scene_id = scene_id.to_owned();
+            let scene_title = scene_title.to_owned();
+            let key = (chapter_id.to_owned(), scene_id.clone());
+            let location = StoryLocation {
+                context: SceneLocationContextView {
+                    chapter_id: chapter_id.to_owned(),
+                    chapter_title: chapter_title.to_owned(),
+                    scene_id: scene_id.clone(),
+                    scene_title,
+                },
+                scene,
+            };
+            assert!(
+                locations.insert(key, location).is_none(),
+                "test fixture contains duplicate scene id {chapter_id}/{scene_id}"
+            );
+        }
+        Self { locations }
+    }
+
+    #[cfg(test)]
     pub(crate) fn empty() -> Self {
         Self::default()
     }
@@ -109,7 +138,7 @@ impl StoryLocationIndex {
 #[cfg(test)]
 mod tests {
     use super::StoryLocationIndex;
-    use crate::game::schema::SceneType;
+    use crate::game::schema::{LinearSceneJson, SceneJson, SceneType};
     use crate::game::state::{ChapterManifest, SceneRef};
     use crate::game::story::StoryCatalog;
 
@@ -164,6 +193,28 @@ mod tests {
             .resolve_scene("chapter_1", "missing")
             .unwrap_err();
         assert_eq!(error.code, "storyLocationMissing");
+    }
+
+    #[test]
+    fn test_fixture_constructor_indexes_the_in_memory_scene_identity() {
+        let index = StoryLocationIndex::for_test_scenes(
+            "chapter_fixture",
+            "Fixture Chapter",
+            [SceneJson::Linear(LinearSceneJson {
+                id: "fixture_scene".into(),
+                title: "Fixture Scene".into(),
+                asset_refs: vec![],
+                queue: vec![],
+            })],
+        );
+
+        let location = index
+            .resolve_scene("chapter_fixture", "fixture_scene")
+            .unwrap();
+        assert_eq!(location.chapter_id, "chapter_fixture");
+        assert_eq!(location.chapter_title, "Fixture Chapter");
+        assert_eq!(location.scene_id, "fixture_scene");
+        assert_eq!(location.scene_title, "Fixture Scene");
     }
 
     #[test]
