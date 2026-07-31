@@ -351,7 +351,10 @@ impl GameEngine {
                 }
             }
         }
-        let scene = self.packaged_acquisition_scene(chapter_id, scene_id)?;
+        let scene = self
+            .story_locations
+            .resolve_scene_json(chapter_id, scene_id)
+            .map_err(|_| GameError::missing_acquisition_definition())?;
         *self.cached_pending_acquisition_scene.borrow_mut() =
             Some((chapter_id.to_string(), scene_id.to_string(), scene.clone()));
         Ok(scene)

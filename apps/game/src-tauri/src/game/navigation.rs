@@ -18,6 +18,13 @@ use super::view::{
     GameStateView, SceneNavigationChapter, SceneNavigationIndex, SceneNavigationScene,
 };
 use super::{GameEngine, GameError, LastVisualCue};
+#[cfg(test)]
+use std::cell::Cell;
+
+#[cfg(test)]
+thread_local! {
+    static CHAPTER_SCENE_LOAD_COUNT: Cell<usize> = const { Cell::new(0) };
+}
 
 impl GameEngine {
     pub(super) fn jump_to_scene_inner(
@@ -437,11 +444,23 @@ pub(super) fn load_chapter_scene_jsons(
     catalog: &StoryCatalog,
     chapter: &ChapterManifest,
 ) -> Result<Vec<SceneJson>, GameError> {
+    #[cfg(test)]
+    CHAPTER_SCENE_LOAD_COUNT.with(|count| count.set(count.get() + 1));
     chapter
         .scenes
         .iter()
         .map(|scene_ref| load_scene_json_for_ref(resources_dir, catalog, &chapter.id, scene_ref))
         .collect()
+}
+
+#[cfg(test)]
+pub(in crate::game) fn reset_chapter_scene_load_count_for_test() {
+    CHAPTER_SCENE_LOAD_COUNT.with(|count| count.set(0));
+}
+
+#[cfg(test)]
+pub(in crate::game) fn chapter_scene_load_count_for_test() -> usize {
+    CHAPTER_SCENE_LOAD_COUNT.with(Cell::get)
 }
 
 pub(super) fn load_scene_runtime(
