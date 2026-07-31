@@ -46,7 +46,7 @@
           <button
             type="button"
             aria-current={item.key === selectedKey ? "true" : undefined}
-            {disabled}
+            disabled={disabled && !("record" in item)}
             onclick={() => onSelect(item.key)}>{labelFor(item)}</button
           >
         </li>

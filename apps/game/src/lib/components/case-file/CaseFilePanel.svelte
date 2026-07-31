@@ -14,14 +14,15 @@
   import CaseFileItemList from "./CaseFileItemList.svelte";
   import CaseFileObjectiveSection from "./CaseFileObjectiveSection.svelte";
   import CaseFileQuestionDetail from "./CaseFileQuestionDetail.svelte";
+  import CaseFileRecordDetail from "./CaseFileRecordDetail.svelte";
   import CaseFileSectionNav from "./CaseFileSectionNav.svelte";
 
   let {
     state: gameState,
     section = $bindable<CaseFileSection>("objective"),
-    reexamineEnabled: _reexamineEnabled,
-    onReexamineEvidence: _onReexamineEvidence,
-    onReexamineStatement: _onReexamineStatement,
+    reexamineEnabled,
+    onReexamineEvidence,
+    onReexamineStatement,
     disabled = false,
   }: {
     state: GameStateView;
@@ -41,10 +42,6 @@
   let selectedItem = $derived(
     model.itemsByKey.get(selectedKey ?? "objective:missing") ?? null,
   );
-
-  // Task 6 owns re-examination controls. These declared props preserve the
-  // gameplay boundary without introducing Svelte-side persistence, IPC, or
-  // catalog reads in this shell.
 
   function itemsFor(targetSection: CaseFileSection): CaseFileItem[] {
     if (targetSection === "objective") {
@@ -146,15 +143,6 @@
       return item === undefined ? [] : [item];
     });
   }
-
-  function recordHeading(item: CaseFileItem): string {
-    if ("record" in item) {
-      return "name" in item.record
-        ? `證物：${item.record.name}`
-        : `證詞：${item.record.speaker}`;
-    }
-    return caseFileSectionLabels[item.section];
-  }
 </script>
 
 <section bind:this={panel} class="case-file-panel" aria-label="案件檔案">
@@ -204,19 +192,15 @@
         />
       {:else if selectedItem?.section === "authorizations"}
         <CaseFileAuthorizationDetail item={selectedItem} />
-      {:else if selectedItem !== null}
-        <section
-          id={`case-file-section-${section}`}
-          aria-labelledby="case-file-detail-heading"
-        >
-          <h2
-            id="case-file-detail-heading"
-            data-case-file-detail-heading
-            tabindex="-1"
-          >
-            {recordHeading(selectedItem)}
-          </h2>
-        </section>
+      {:else if selectedItem?.section === "evidence" || selectedItem?.section === "statements"}
+        <CaseFileRecordDetail
+          item={selectedItem}
+          {reexamineEnabled}
+          {onReexamineEvidence}
+          {onReexamineStatement}
+          onNavigate={followRelation}
+          {disabled}
+        />
       {:else}
         <section
           id={`case-file-section-${section}`}
