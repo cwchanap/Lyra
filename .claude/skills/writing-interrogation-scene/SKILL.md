@@ -454,8 +454,9 @@ Successor 省略 status 會落到 `unspecified`，可能正確觸發 non-regress
 error。File Skeleton 預設 neutral：九個 provenance 欄位全部省略（套用
 neutral 預設值），不預設 supersession、source group 或任何分類。要寫
 successor 時才補上 `Procedural Status`（不得低於 predecessor）與
-`Supersedes`，並參照 canonical fixture 的 opt-in successor 範本（使用前務必
-換成真實 predecessor）。沒有 predecessor 的 lead 可省略 `Supersedes`，但應
+`Supersedes`，並參照 canonical `writing-investigation-scene` 技能中
+「案件紀錄來源與承接」的 opt-in successor 範例（使用前務必換成真實
+predecessor）。沒有 predecessor 的 lead 可省略 `Supersedes`，但應
 明寫 `Procedural Status: lead`。
 
 Evidence / Statement metadata 是 closed、duplicate-safe contract。同一 key
