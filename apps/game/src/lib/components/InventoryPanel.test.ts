@@ -39,6 +39,13 @@ const inventory: Inventory = {
       onReexamine: null,
       collectedInChapterId: "chapter_1",
       collectedInSceneId: "scene_0",
+      acquisitionContext: {
+        chapterId: "chapter_1",
+        chapterTitle: "第一章",
+        sceneId: "scene_0",
+        sceneTitle: "咖啡館",
+      },
+      sourceGroup: null,
     },
   ],
   statements: [

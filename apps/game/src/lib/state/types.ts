@@ -222,6 +222,31 @@ export type ProofCapability =
   | "procedure"
   | "causation";
 
+export type EncodedInventoryTarget =
+  | `evidence:${string}`
+  | `statement:${string}`;
+
+export type SceneLocationContextView = {
+  chapterId: string;
+  chapterTitle: string;
+  sceneId: string;
+  sceneTitle: string;
+};
+
+export type SourceGroupReferenceView = {
+  id: string;
+  label: string;
+  summary: string;
+};
+
+export type OriginContextView =
+  | {
+      type: "scene";
+      originKind: "sceneEvent" | "analysisBoard";
+      location: SceneLocationContextView;
+    }
+  | { type: "migration" };
+
 export type CaseRecordProvenance = {
   sourceKind: SourceKind;
   representationLayer: RepresentationLayer;
@@ -238,7 +263,7 @@ export type CaseRecordProvenance = {
    * predecessor is unacquired and redacted; consumers cannot infer a lineage
    * root from null.
    */
-  supersedesRecordId: string | null;
+  supersedesRecordId: EncodedInventoryTarget | null;
 };
 
 export type EvidenceRecord = {
@@ -251,6 +276,8 @@ export type EvidenceRecord = {
   onReexamine: DialogueItem[] | null;
   collectedInChapterId: string;
   collectedInSceneId: string;
+  acquisitionContext: SceneLocationContextView;
+  sourceGroup: SourceGroupReferenceView | null;
 };
 export type StatementRecord = {
   id: string;
@@ -260,6 +287,8 @@ export type StatementRecord = {
   onReexamine: DialogueItem[] | null;
   acquiredInChapterId: string;
   acquiredInSceneId: string;
+  acquisitionContext: SceneLocationContextView;
+  sourceGroup: SourceGroupReferenceView | null;
 };
 export type Inventory = {
   evidence: EvidenceRecord[];
@@ -282,6 +311,7 @@ export type FactView = {
   assertedInChapterId: string | null;
   assertedInSceneId: string | null;
   firstOrigin: AssertionOrigin;
+  originContext: OriginContextView;
   /**
    * Direct supporting records currently acquired and exposed by the public
    * view. An empty array cannot be used to infer that internal story progress
@@ -317,6 +347,7 @@ export type AuthorizationView = {
   grantedInChapterId: string | null;
   grantedInSceneId: string | null;
   firstOrigin: AssertionOrigin;
+  originContext: OriginContextView;
 };
 
 export type AssertionOrigin =
