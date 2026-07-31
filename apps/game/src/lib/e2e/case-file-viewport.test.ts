@@ -3,7 +3,7 @@ import {
   caseFileViewportNativeSize,
   meetsCaseFileViewportTarget,
   validDevicePixelRatio,
-} from "../../../e2e-tauri/helpers";
+} from "./case-file-viewport";
 
 describe("Case File packaged viewport sizing", () => {
   it("scales the desktop target for DPR 1, 1.25, and 2", () => {
