@@ -373,6 +373,7 @@
       <div
         class="game-menu-panel"
         class:submenu={activeMenuPanel !== null}
+        class:case-file={activeMenuPanel === "caseFile"}
         bind:this={gameMenuPanel}
         tabindex="-1"
       >
@@ -630,6 +631,11 @@
     box-shadow:
       0 20px 70px rgba(0, 0, 0, 0.48),
       inset 0 0 0 1px rgba(236, 228, 207, 0.05);
+  }
+
+  .game-menu-panel.case-file {
+    width: min(1160px, calc(100vw - 48px));
+    height: min(672px, calc(100dvh - 48px));
   }
 
   .game-menu-heading {

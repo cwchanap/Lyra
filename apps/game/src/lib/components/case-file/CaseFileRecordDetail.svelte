@@ -105,9 +105,10 @@
   }
 </script>
 
-<section
+<div
   id={`case-file-section-${item.section}`}
-  aria-labelledby="case-file-detail-heading"
+  role="tabpanel"
+  aria-labelledby={`case-file-tab-${item.section}`}
 >
   <h2 id="case-file-detail-heading" data-case-file-detail-heading tabindex="-1">
     {evidence !== null
@@ -188,4 +189,4 @@
       >重新檢視</button
     >
   {/if}
-</section>
+</div>

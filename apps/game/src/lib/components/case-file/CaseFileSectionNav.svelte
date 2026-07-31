@@ -63,6 +63,7 @@
       {@const active = section === entry}
       <button
         bind:this={tabButtons[index]}
+        id={`case-file-tab-${entry}`}
         type="button"
         role="tab"
         aria-selected={active}

@@ -10,11 +10,13 @@
     supportingRecords,
     supportingFacts,
     onNavigate,
+    disabled = false,
   }: {
     item: CaseFileFactItem;
     supportingRecords: CaseFileItem[];
     supportingFacts: CaseFileItem[];
     onNavigate: (key: CaseFileKey) => void;
+    disabled?: boolean;
   } = $props();
 
   const origin = $derived(
@@ -36,15 +38,17 @@
   }
 </script>
 
-<section
+<div
   id="case-file-section-facts"
-  aria-labelledby="case-file-detail-heading"
+  role="tabpanel"
+  aria-labelledby="case-file-tab-facts"
 >
   <h2 id="case-file-detail-heading" data-case-file-detail-heading tabindex="-1">
     事實：{item.fact.label}
   </h2>
   <p>{item.fact.summary}</p>
   <p>{item.fact.details}</p>
+  <p>類別：{item.fact.category}</p>
   <p>來源：<span>{origin}</span></p>
 
   {#if supportingRecords.length > 0}
@@ -53,7 +57,10 @@
       <ul>
         {#each supportingRecords as support (support.key)}
           <li>
-            <button type="button" onclick={() => onNavigate(support.key)}
+            <button
+              type="button"
+              {disabled}
+              onclick={() => onNavigate(support.key)}
               >查看支持記錄：{itemLabel(support)}</button
             >
           </li>
@@ -68,7 +75,10 @@
       <ul>
         {#each supportingFacts as support (support.key)}
           <li>
-            <button type="button" onclick={() => onNavigate(support.key)}
+            <button
+              type="button"
+              {disabled}
+              onclick={() => onNavigate(support.key)}
               >查看支持事實：{itemLabel(support)}</button
             >
           </li>
@@ -76,4 +86,4 @@
       </ul>
     </section>
   {/if}
-</section>
+</div>

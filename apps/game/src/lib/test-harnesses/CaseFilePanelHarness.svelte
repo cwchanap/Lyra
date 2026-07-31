@@ -10,6 +10,7 @@
     | "questions"
     | "authorizations"
   >("objective");
+  let panelDisabled = $state(false);
   let gameState = $state<GameStateView>({
     mode: { type: "gameComplete" },
     chapter: {
@@ -253,6 +254,10 @@
   function setSectionFromParent() {
     section = "questions";
   }
+
+  function toggleDisabled() {
+    panelDisabled = !panelDisabled;
+  }
 </script>
 
 <button
@@ -273,6 +278,12 @@
   data-case-file-action="set-section-from-parent"
   onclick={setSectionFromParent}>由父層切換待解問題</button
 >
+<button
+  type="button"
+  data-case-file-action="toggle-disabled"
+  onclick={toggleDisabled}
+  >{panelDisabled ? "啟用案件檔案" : "停用案件檔案"}</button
+>
 
 <CaseFilePanel
   state={gameState}
@@ -280,4 +291,5 @@
   reexamineEnabled={false}
   onReexamineEvidence={() => {}}
   onReexamineStatement={() => {}}
+  disabled={panelDisabled}
 />
