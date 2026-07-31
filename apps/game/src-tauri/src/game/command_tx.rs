@@ -762,7 +762,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_scene_advance_through_tag_only_prime_keeps_previous_dialogue_view() {
+    fn startup_rejects_invalid_future_scene_before_tag_only_transition() {
         use std::fs;
         use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -820,40 +820,15 @@ mod tests {
         )
         .unwrap();
 
-        let mut engine = GameEngine::new_started(d.clone()).unwrap();
-        let before = engine.view().unwrap();
-        assert_eq!(history_labels(&before), vec!["A: before"]);
-        let token = token_from(&before);
-        let expected_token_after_rollback = token.clone();
-        let err = engine.advance_dialogue(token).unwrap_err();
+        let err = GameEngine::new_started(d.clone())
+            .err()
+            .expect("startup must reject an invalid future scene");
         assert_eq!(err.code, "sceneValidationFailed");
-
-        let after = engine.view().unwrap();
-        assert_eq!(history_labels(&after), vec!["A: before"]);
-        assert_eq!(token_from(&after), expected_token_after_rollback);
-        match after.mode {
-            ModeView::Dialogue { current, .. } => {
-                assert!(
-                    matches!(current, DialogueItem::Line { speaker, text, .. } if speaker == "A" && text == "before")
-                );
-            }
-            other => panic!("expected previous dialogue mode after failed advance, got {other:?}"),
-        }
-        match after.scene {
-            SceneView::Linear {
-                id, index, total, ..
-            } => {
-                assert_eq!(id, "scene_0");
-                assert_eq!(index, 0);
-                assert_eq!(total, 3);
-            }
-            other => panic!("expected previous linear scene after failed advance, got {other:?}"),
-        }
         let _ = fs::remove_dir_all(d);
     }
 
     #[test]
-    fn failed_initial_silent_investigation_transition_rolls_back_inventory() {
+    fn startup_rejects_invalid_future_scene_before_silent_investigation_transition() {
         use std::fs;
         use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -939,26 +914,10 @@ mod tests {
         )
         .unwrap();
 
-        let mut engine = GameEngine::new_started(d.clone()).unwrap();
-        let token = token_from(&engine.view().unwrap());
-
-        let err = engine.advance_dialogue(token).unwrap_err();
+        let err = GameEngine::new_started(d.clone())
+            .err()
+            .expect("startup must reject an invalid future scene");
         assert_eq!(err.code, "sceneValidationFailed");
-
-        assert!(engine.inventory.evidence.is_empty());
-        assert_eq!(engine.current_chapter_idx, 0);
-        assert_eq!(engine.current_scene_idx, 0);
-        match engine.view().unwrap().scene {
-            SceneView::Linear {
-                id, index, total, ..
-            } => {
-                assert_eq!(id, "scene_0");
-                assert_eq!(index, 0);
-                assert_eq!(total, 3);
-            }
-            other => panic!("expected previous linear scene after failed advance, got {other:?}"),
-        }
-
         let _ = fs::remove_dir_all(d);
     }
 
@@ -1040,7 +999,11 @@ mod tests {
             resources_dir: d.clone(),
             content_manifest: test_content_manifest(),
             story_catalog,
-            story_locations: crate::game::story_location::StoryLocationIndex::empty(),
+            story_locations: crate::game::story_location::StoryLocationIndex::for_test_scenes(
+                "chapter_1",
+                "Chapter 1",
+                [SceneJson::Investigation(scene.clone())],
+            ),
             story_state: StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),
@@ -1188,7 +1151,11 @@ mod tests {
             resources_dir: d.clone(),
             content_manifest: test_content_manifest(),
             story_catalog,
-            story_locations: crate::game::story_location::StoryLocationIndex::empty(),
+            story_locations: crate::game::story_location::StoryLocationIndex::for_test_scenes(
+                "chapter_1",
+                "Chapter 1",
+                [SceneJson::Investigation(scene.clone())],
+            ),
             story_state: StoryState::default(),
             chapters: vec![ChapterManifest {
                 id: "chapter_1".into(),

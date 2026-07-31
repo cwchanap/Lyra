@@ -1376,7 +1376,7 @@ mod tests {
     }
 
     #[test]
-    fn scene_lookup_rejects_duplicate_scene_ids_as_ambiguous() {
+    fn duplicate_scene_ids_are_rejected_by_lookup_and_startup() {
         // Defense-in-depth for review comment #7: the navigation index build
         // rejects duplicate scene ids per chapter, but find_scene_runtime_by_id
         // must also resolve targets unambiguously so a jump never silently
@@ -1453,19 +1453,12 @@ mod tests {
             .expect_err("duplicate ids must be rejected");
         assert_eq!(err.code, "duplicateSceneTarget");
 
-        // And jump_to_scene propagates the same typed error.
-        let mut engine = GameEngine::new_started(d.clone()).unwrap();
-        let err = engine
-            .jump_to_scene("chapter_1", "dup_scene")
-            .expect_err("jump to ambiguous scene must fail");
+        // Startup indexes the complete package, so no engine can be created
+        // with an ambiguous future navigation target.
+        let err = GameEngine::new_started(d.clone())
+            .err()
+            .expect("startup must reject duplicate scene ids");
         assert_eq!(err.code, "duplicateSceneTarget");
-        // The engine is untouched (no snapshot/restore needed since the
-        // ambiguity is detected before any state mutation).
-        let after_scene_id = match &engine.view().unwrap().scene {
-            SceneView::Linear { id, .. } => id.clone(),
-            other => panic!("expected linear scene, got {other:?}"),
-        };
-        assert_eq!(after_scene_id, "scene_0");
 
         let _ = std::fs::remove_dir_all(d);
     }
