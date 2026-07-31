@@ -125,6 +125,281 @@ describe("Case File key normalization", () => {
 });
 
 describe("buildCaseFileModel", () => {
+  it("normalizes the complete spoiler-safe populated acceptance wire fixture", () => {
+    const syntheticLocation: SceneLocationContextView = {
+      chapterId: "synthetic_chapter",
+      chapterTitle: "合成測試章",
+      sceneId: "synthetic_case_file",
+      sceneTitle: "案件檔案測試室",
+    };
+    const sameSlugEvidence = {
+      ...evidence("shared_record"),
+      name: "共用代號照片",
+      collectedInChapterId: "synthetic_chapter",
+      collectedInSceneId: "synthetic_case_file",
+      acquisitionContext: syntheticLocation,
+      provenance: {
+        ...neutralProvenance,
+        sourceKind: "digital" as const,
+        representationLayer: "raw" as const,
+        proceduralStatus: "lead" as const,
+        completeness: "complete" as const,
+        confidence: "corroborated" as const,
+        sourceGroupId: null,
+        sourceLabel: "合成照片",
+        proofCapabilities: [],
+      },
+      sourceGroup: null,
+    };
+    const sharedStatement = {
+      ...statement("shared_record"),
+      speaker: "目擊者乙",
+      content: "我看見簽署檔案移交。",
+      acquiredInChapterId: "synthetic_chapter",
+      acquiredInSceneId: "synthetic_case_file",
+      acquisitionContext: syntheticLocation,
+      provenance: {
+        ...neutralProvenance,
+        sourceKind: "testimony" as const,
+        representationLayer: "raw" as const,
+        proceduralStatus: "lead" as const,
+        completeness: "complete" as const,
+        confidence: "corroborated" as const,
+        sourceGroupId: "synthetic_bundle",
+        sourceLabel: "合成目擊筆錄",
+        proofCapabilities: ["identity" as const],
+      },
+      sourceGroup: {
+        id: "synthetic_bundle",
+        label: "合成來源組",
+        summary: "只公開玩家已取得紀錄所需的來源摘要。",
+      },
+    };
+    const model = buildCaseFileModel(
+      stateWithCaseFile({
+        evidence: [
+          {
+            ...evidence("neutral_note"),
+            name: "折角便箋",
+            collectedInChapterId: "synthetic_chapter",
+            collectedInSceneId: "synthetic_case_file",
+            acquisitionContext: syntheticLocation,
+          },
+          sameSlugEvidence,
+          {
+            ...evidence("signed_scan", "statement:shared_record"),
+            name: "簽署掃描",
+            collectedInChapterId: "synthetic_chapter",
+            collectedInSceneId: "synthetic_case_file",
+            acquisitionContext: syntheticLocation,
+            provenance: {
+              ...neutralProvenance,
+              sourceKind: "digital",
+              representationLayer: "sync",
+              proceduralStatus: "exhibit",
+              completeness: "complete",
+              confidence: "corroborated",
+              sourceGroupId: null,
+              sourceLabel: "合成簽署掃描",
+              proofCapabilities: ["time", "identity", "source", "procedure"],
+              supersedesRecordId: "statement:shared_record",
+            },
+            sourceGroup: null,
+          },
+          {
+            ...evidence("orphan_scan"),
+            name: "孤立掃描",
+            collectedInChapterId: "synthetic_chapter",
+            collectedInSceneId: "synthetic_case_file",
+            acquisitionContext: syntheticLocation,
+            provenance: {
+              ...neutralProvenance,
+              sourceKind: "digital",
+              representationLayer: "sync",
+              proceduralStatus: "reacquired",
+              completeness: "complete",
+              confidence: "corroborated",
+              sourceLabel: "合成孤立掃描",
+              proofCapabilities: ["source"],
+            },
+          },
+        ],
+        statements: [sharedStatement],
+        facts: [
+          {
+            id: "fact_clock",
+            label: "時鐘已校準",
+            summary: "便箋時間可直接採信。",
+            details: "校準紀錄與便箋互相吻合。",
+            category: "時序",
+            assertedInChapterId: "synthetic_chapter",
+            assertedInSceneId: "synthetic_case_file",
+            firstOrigin: {
+              type: "sceneEvent",
+              chapterId: "synthetic_chapter",
+              sceneId: "synthetic_case_file",
+              blockKind: "hotspot",
+              blockId: "acceptance_fixture",
+            },
+            originContext: {
+              type: "scene",
+              originKind: "sceneEvent",
+              location: syntheticLocation,
+            },
+            supportingRecords: [{ kind: "evidence", id: "neutral_note" }],
+            supportingFactIds: [],
+          },
+          {
+            id: "fact_route",
+            label: "路線已確認",
+            summary: "目擊筆錄支持移動路線。",
+            details: "路線結論同時依賴時鐘事實。",
+            category: "位置",
+            assertedInChapterId: "synthetic_chapter",
+            assertedInSceneId: "synthetic_case_file",
+            firstOrigin: {
+              type: "sceneEvent",
+              chapterId: "synthetic_chapter",
+              sceneId: "synthetic_case_file",
+              blockKind: "hotspot",
+              blockId: "acceptance_fixture",
+            },
+            originContext: {
+              type: "scene",
+              originKind: "sceneEvent",
+              location: syntheticLocation,
+            },
+            supportingRecords: [{ kind: "statement", id: "shared_record" }],
+            supportingFactIds: ["fact_clock"],
+          },
+        ],
+        questions: [
+          {
+            id: "question_open",
+            label: "誰留下便箋？",
+            summary: "仍需確認便箋作者。",
+            status: "open",
+            resolvedByFactId: null,
+          },
+          {
+            id: "question_resolved",
+            label: "目擊路線為何？",
+            summary: "已由路線事實解答。",
+            status: "resolved",
+            resolvedByFactId: "fact_route",
+          },
+        ],
+        objectives: [
+          {
+            id: "objective_primary",
+            label: "確認合成檔案",
+            summary: "核對所有已揭露資料。",
+            kind: "primary",
+            sortOrder: 1,
+            completed: false,
+            activePrimary: true,
+          },
+          ...[
+            ["objective_secondary_a", "核對來源", 2, false],
+            ["objective_secondary_b", "核對時間", 3, false],
+            ["objective_completed_1", "完成舊線索一", 10, true],
+            ["objective_completed_2", "完成舊線索二", 11, true],
+            ["objective_completed_3", "完成舊線索三", 12, true],
+            ["objective_completed_4", "完成舊線索四", 13, true],
+          ].map(([id, label, sortOrder, completed]) => ({
+            id: id as string,
+            label: label as string,
+            summary: `${label as string}摘要。`,
+            kind: "secondary" as const,
+            sortOrder: sortOrder as number,
+            completed: completed as boolean,
+            activePrimary: false,
+          })),
+        ],
+        authorizations: [
+          {
+            id: "authorization_archive",
+            label: "調閱合成檔案",
+            summary: "可調閱本測試的合成來源。",
+            grantingAuthority: "測試管理員",
+            grantedInChapterId: "synthetic_chapter",
+            grantedInSceneId: "synthetic_case_file",
+            firstOrigin: {
+              type: "sceneEvent",
+              chapterId: "synthetic_chapter",
+              sceneId: "synthetic_case_file",
+              blockKind: "hotspot",
+              blockId: "acceptance_fixture",
+            },
+            originContext: {
+              type: "scene",
+              originKind: "sceneEvent",
+              location: syntheticLocation,
+            },
+          },
+        ],
+      }),
+    );
+
+    expect(model.counts).toEqual({
+      objective: 7,
+      evidence: 4,
+      statements: 1,
+      facts: 2,
+      questions: 2,
+      authorizations: 1,
+    });
+    expect(model.objectives.activePrimary?.id).toBe("objective_primary");
+    expect(model.objectives.incompleteSecondaries.map(({ id }) => id)).toEqual([
+      "objective_secondary_a",
+      "objective_secondary_b",
+    ]);
+    expect(model.objectives.recentCompleted.map(({ id }) => id)).toEqual([
+      "objective_completed_4",
+      "objective_completed_3",
+      "objective_completed_2",
+    ]);
+    expect(model.objectives.earlierCompleted.map(({ id }) => id)).toEqual([
+      "objective_completed_1",
+    ]);
+    expect(
+      model.recordsByKey.get("statement:shared_record")?.successor,
+    ).toEqual({ kind: "evidence", id: "signed_scan" });
+    expect(model.recordsByKey.get("evidence:signed_scan")?.predecessor).toEqual(
+      { kind: "statement", id: "shared_record" },
+    );
+    expect(
+      model.facts.find(({ fact }) => fact.id === "fact_route")
+        ?.supportingRecordKeys,
+    ).toEqual(["statement:shared_record"]);
+    expect(
+      model.facts.find(({ fact }) => fact.id === "fact_route")
+        ?.supportingFactKeys,
+    ).toEqual(["fact:fact_clock"]);
+    expect(model.questions.resolved[0]?.resolvedFactKey).toBe(
+      "fact:fact_route",
+    );
+    expect([...model.itemsByKey.keys()]).toEqual([
+      "evidence:neutral_note",
+      "evidence:shared_record",
+      "evidence:signed_scan",
+      "evidence:orphan_scan",
+      "statement:shared_record",
+      "fact:fact_clock",
+      "fact:fact_route",
+      "question:question_open",
+      "question:question_resolved",
+      "objective:objective_primary",
+      "objective:objective_secondary_a",
+      "objective:objective_secondary_b",
+      "objective:objective_completed_4",
+      "objective:objective_completed_3",
+      "objective:objective_completed_2",
+      "objective:objective_completed_1",
+      "authorization:authorization_archive",
+    ]);
+  });
+
   it("groups only public objectives and questions in their player-facing order", () => {
     const model = buildCaseFileModel(
       stateWithCaseFile({

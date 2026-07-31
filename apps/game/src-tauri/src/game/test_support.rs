@@ -874,6 +874,328 @@ pub(crate) fn save_capture_fixture_resources() -> (tempfile::TempDir, PathBuf) {
     (dir, resources)
 }
 
+pub(super) fn case_file_acceptance_fixture_resources() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let resources = dir.path().to_path_buf();
+    let chapter_dir = resources.join("synthetic_chapter");
+    std::fs::create_dir_all(&chapter_dir).unwrap();
+    write_content_manifest(&resources);
+    std::fs::write(
+        resources.join("chapters.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "chapters": [{
+                "id": "synthetic_chapter",
+                "title": "合成測試章",
+                "summary": "只供案件檔案跨層驗收使用。",
+                "scenes": [{
+                    "type": "investigation",
+                    "file": "synthetic_chapter/synthetic_case_file.json"
+                }]
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let same_slug_evidence = serde_json::json!({
+        "sourceKind": "digital",
+        "representationLayer": "raw",
+        "proceduralStatus": "lead",
+        "completeness": "complete",
+        "confidence": "corroborated",
+        "sourceGroupId": null,
+        "sourceLabel": "合成照片",
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+    });
+    let grouped_statement = serde_json::json!({
+        "sourceKind": "testimony",
+        "representationLayer": "raw",
+        "proceduralStatus": "lead",
+        "completeness": "complete",
+        "confidence": "corroborated",
+        "sourceGroupId": "synthetic_bundle",
+        "sourceLabel": "合成目擊筆錄",
+        "proofCapabilities": ["identity"],
+        "supersedesRecordId": null
+    });
+    let signed_scan = serde_json::json!({
+        "sourceKind": "digital",
+        "representationLayer": "sync",
+        "proceduralStatus": "exhibit",
+        "completeness": "complete",
+        "confidence": "corroborated",
+        "sourceGroupId": null,
+        "sourceLabel": "合成簽署掃描",
+        "proofCapabilities": ["time", "identity", "source", "procedure"],
+        "supersedesRecordId": "statement:shared_record"
+    });
+    let orphan_scan = serde_json::json!({
+        "sourceKind": "digital",
+        "representationLayer": "sync",
+        "proceduralStatus": "reacquired",
+        "completeness": "complete",
+        "confidence": "corroborated",
+        "sourceGroupId": null,
+        "sourceLabel": "合成孤立掃描",
+        "proofCapabilities": ["source"],
+        "supersedesRecordId": "statement:locked_statement"
+    });
+    let future_scan = serde_json::json!({
+        "sourceKind": "digital",
+        "representationLayer": "sync",
+        "proceduralStatus": "exhibit",
+        "completeness": "complete",
+        "confidence": "corroborated",
+        "sourceGroupId": null,
+        "sourceLabel": "未取得的後續掃描",
+        "proofCapabilities": ["procedure"],
+        "supersedesRecordId": "evidence:signed_scan"
+    });
+    let locked_statement = serde_json::json!({
+        "sourceKind": "testimony",
+        "representationLayer": "raw",
+        "proceduralStatus": "lead",
+        "completeness": "complete",
+        "confidence": "disputed",
+        "sourceGroupId": null,
+        "sourceLabel": "未公開筆錄",
+        "proofCapabilities": [],
+        "supersedesRecordId": null
+    });
+    let neutral = neutral_provenance_json();
+    let catalog_record = |id: &str, provenance: serde_json::Value| {
+        serde_json::json!({
+            "id": id,
+            "chapterId": "synthetic_chapter",
+            "sceneId": "synthetic_case_file",
+            "provenance": provenance
+        })
+    };
+
+    std::fs::write(
+        resources.join("story_catalog.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schemaVersion": 2,
+            "facts": [
+                {
+                    "id": "fact_clock",
+                    "label": "時鐘已校準",
+                    "summary": "便箋時間可直接採信。",
+                    "details": "校準紀錄與便箋互相吻合。",
+                    "category": "timeline"
+                },
+                {
+                    "id": "fact_route",
+                    "label": "路線已確認",
+                    "summary": "目擊筆錄支持移動路線。",
+                    "details": "路線結論同時依賴時鐘事實。",
+                    "category": "location"
+                },
+                {
+                    "id": "fact_locked",
+                    "label": "未揭露事實",
+                    "summary": "不得出現在玩家輸出。",
+                    "details": "只供防洩漏斷言。",
+                    "category": "procedure"
+                }
+            ],
+            "questions": [
+                {
+                    "id": "question_open",
+                    "label": "誰留下便箋？",
+                    "summary": "仍需確認便箋作者。",
+                    "resolvedByFactIds": ["fact_clock"]
+                },
+                {
+                    "id": "question_resolved",
+                    "label": "目擊路線為何？",
+                    "summary": "已由路線事實解答。",
+                    "resolvedByFactIds": ["fact_route"]
+                },
+                {
+                    "id": "question_locked",
+                    "label": "未揭露問題",
+                    "summary": "不得出現在玩家輸出。",
+                    "resolvedByFactIds": ["fact_locked"]
+                }
+            ],
+            "objectives": [
+                {
+                    "id": "objective_primary",
+                    "label": "確認合成檔案",
+                    "summary": "核對所有已揭露資料。",
+                    "kind": "primary",
+                    "sortOrder": 1
+                },
+                {
+                    "id": "objective_secondary_a",
+                    "label": "核對來源",
+                    "summary": "比對來源群組。",
+                    "kind": "secondary",
+                    "sortOrder": 2
+                },
+                {
+                    "id": "objective_secondary_b",
+                    "label": "核對時間",
+                    "summary": "確認取得順序。",
+                    "kind": "secondary",
+                    "sortOrder": 3
+                },
+                {
+                    "id": "objective_completed_1",
+                    "label": "完成舊線索一",
+                    "summary": "第一項已完成目標。",
+                    "kind": "secondary",
+                    "sortOrder": 10
+                },
+                {
+                    "id": "objective_completed_2",
+                    "label": "完成舊線索二",
+                    "summary": "第二項已完成目標。",
+                    "kind": "secondary",
+                    "sortOrder": 11
+                },
+                {
+                    "id": "objective_completed_3",
+                    "label": "完成舊線索三",
+                    "summary": "第三項已完成目標。",
+                    "kind": "secondary",
+                    "sortOrder": 12
+                },
+                {
+                    "id": "objective_completed_4",
+                    "label": "完成舊線索四",
+                    "summary": "第四項已完成目標。",
+                    "kind": "secondary",
+                    "sortOrder": 13
+                },
+                {
+                    "id": "objective_locked",
+                    "label": "未揭露目標",
+                    "summary": "不得出現在玩家輸出。",
+                    "kind": "secondary",
+                    "sortOrder": 99
+                }
+            ],
+            "authorizations": [
+                {
+                    "id": "authorization_archive",
+                    "label": "調閱合成檔案",
+                    "summary": "可調閱本測試的合成來源。",
+                    "grantingAuthority": "測試管理員"
+                },
+                {
+                    "id": "authorization_locked",
+                    "label": "未授予權限",
+                    "summary": "不得出現在玩家輸出。",
+                    "grantingAuthority": "未公開單位"
+                }
+            ],
+            "sourceGroups": [{
+                "id": "synthetic_bundle",
+                "label": "合成來源組",
+                "summary": "只公開玩家已取得紀錄所需的來源摘要。",
+                "members": [
+                    {"kind": "statement", "id": "shared_record"}
+                ]
+            }],
+            "evidenceIndex": [
+                catalog_record("neutral_note", neutral.clone()),
+                catalog_record("shared_record", same_slug_evidence.clone()),
+                catalog_record("signed_scan", signed_scan.clone()),
+                catalog_record("orphan_scan", orphan_scan.clone()),
+                catalog_record("future_scan", future_scan.clone())
+            ],
+            "statementsIndex": [
+                catalog_record("shared_record", grouped_statement.clone()),
+                catalog_record("locked_statement", locked_statement.clone())
+            ]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let evidence_definition = |id: &str, name: &str, provenance: serde_json::Value| {
+        serde_json::json!({
+            "id": id,
+            "name": name,
+            "description": format!("{name}摘要。"),
+            "details": format!("{name}詳情。"),
+            "imageAssetId": null,
+            "provenance": provenance,
+            "onCollect": [],
+            "onReexamine": null
+        })
+    };
+    let statement_definition =
+        |id: &str, speaker: &str, content: &str, provenance: serde_json::Value| {
+            serde_json::json!({
+                "id": id,
+                "speaker": speaker,
+                "content": content,
+                "provenance": provenance,
+                "onAcquire": [],
+                "onReexamine": null
+            })
+        };
+    std::fs::write(
+        chapter_dir.join("synthetic_case_file.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "type": "investigation",
+            "id": "synthetic_case_file",
+            "title": "案件檔案測試室",
+            "intro": [],
+            "sublocations": [{
+                "id": "fixture_room",
+                "label": "合成測試室",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "合成測試室",
+                "transitionDialogue": [],
+                "hotspots": [{
+                    "id": "acceptance_fixture",
+                    "label": "驗收固定點",
+                    "description": "提供可驗證的故事來源座標。",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "inspectDialogue": [],
+                    "onReexamine": null
+                }],
+                "characters": []
+            }],
+            "evidenceManifest": [
+                evidence_definition("neutral_note", "折角便箋", neutral.clone()),
+                evidence_definition("shared_record", "共用代號照片", same_slug_evidence),
+                evidence_definition("signed_scan", "簽署掃描", signed_scan),
+                evidence_definition("orphan_scan", "孤立掃描", orphan_scan),
+                evidence_definition("future_scan", "未取得的後續掃描", future_scan)
+            ],
+            "statementManifest": [
+                statement_definition(
+                    "shared_record",
+                    "目擊者乙",
+                    "我看見簽署檔案移交。",
+                    grouped_statement
+                ),
+                statement_definition(
+                    "locked_statement",
+                    "未公開證人",
+                    "不得出現在玩家輸出。",
+                    locked_statement
+                )
+            ],
+            "outro": {"unlock": "auto", "dialogue": []}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    (dir, resources)
+}
+
 pub(super) fn provenance_save_fixture_resources() -> (tempfile::TempDir, PathBuf) {
     let (dir, resources) = save_capture_fixture_resources();
     let provenance = |procedural_status: &str,
