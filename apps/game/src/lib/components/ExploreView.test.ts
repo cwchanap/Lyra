@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
+import { createRawSnippet } from "svelte";
 import { describe, expect, it, vi } from "vitest";
 import ExploreView from "./ExploreView.svelte";
 import type { SceneView, SublocationView } from "../state/types";
@@ -135,6 +136,36 @@ describe("ExploreView", () => {
 
     await waitFor(() => {
       expect(screen.getByText("地點 · LOCATIONS")).toBeInTheDocument();
+    });
+  });
+
+  it("renders a supplied HUD once beside the existing sublocation navigation", async () => {
+    const hud = createRawSnippet(() => ({
+      render: () => '<p data-testid="primary-objective-hud">追查雨夜目擊者</p>',
+    }));
+
+    render(ExploreView, {
+      scene: investigationScene(),
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+      onEnterSublocation: vi.fn(),
+      hud,
+    });
+
+    await waitFor(() => {
+      const sceneHud = document.querySelector(".scene-hud");
+      const navigation = screen.getByRole("navigation", {
+        name: "地點導航",
+      });
+      const objectiveHud = screen.getByTestId("primary-objective-hud");
+
+      expect(sceneHud).toContainElement(navigation);
+      expect(sceneHud).toContainElement(objectiveHud);
+      expect(screen.getAllByTestId("primary-objective-hud")).toHaveLength(1);
+      expect(
+        navigation.compareDocumentPosition(objectiveHud) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).not.toBe(0);
     });
   });
 });
