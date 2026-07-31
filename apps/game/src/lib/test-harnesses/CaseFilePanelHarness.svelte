@@ -98,6 +98,33 @@
           completed: false,
           activePrimary: true,
         },
+        {
+          id: "check-alibi",
+          label: "確認不在場證明",
+          summary: "核對嫌疑人的說法。",
+          kind: "secondary",
+          sortOrder: 2,
+          completed: false,
+          activePrimary: false,
+        },
+        {
+          id: "trace-umbrella",
+          label: "追查雨傘來源",
+          summary: "確認雨傘的所有人。",
+          kind: "secondary",
+          sortOrder: 3,
+          completed: false,
+          activePrimary: false,
+        },
+        ...["完成四", "完成三", "完成二", "完成一"].map((label, index) => ({
+          id: `complete-${index + 1}`,
+          label,
+          summary: `${label}的結案摘要。`,
+          kind: "secondary" as const,
+          sortOrder: 20 - index,
+          completed: true,
+          activePrimary: false,
+        })),
       ],
       facts: [
         {
@@ -125,7 +152,38 @@
               sceneTitle: "雨中現場",
             },
           },
-          supportingRecords: [{ kind: "evidence", id: "receipt" }],
+          supportingRecords: [
+            { kind: "evidence", id: "receipt" },
+            { kind: "evidence", id: "hidden-record" },
+          ],
+          supportingFactIds: ["clock-confirmed", "hidden-fact"],
+        },
+        {
+          id: "clock-confirmed",
+          label: "時鐘確認",
+          summary: "店內時鐘運作正常。",
+          details: "維修紀錄確認沒有誤差。",
+          category: "時間",
+          assertedInChapterId: "chapter_1",
+          assertedInSceneId: "scene_1",
+          firstOrigin: {
+            type: "sceneEvent",
+            chapterId: "chapter_1",
+            sceneId: "scene_1",
+            blockKind: "hotspot",
+            blockId: "clock",
+          },
+          originContext: {
+            type: "scene",
+            originKind: "sceneEvent",
+            location: {
+              chapterId: "chapter_1",
+              chapterTitle: "第一章",
+              sceneId: "scene_1",
+              sceneTitle: "雨中現場",
+            },
+          },
+          supportingRecords: [{ kind: "evidence", id: "umbrella" }],
           supportingFactIds: [],
         },
       ],
@@ -136,6 +194,13 @@
           summary: "確認抵達時間。",
           status: "resolved",
           resolvedByFactId: "receipt-time",
+        },
+        {
+          id: "motive",
+          label: "嫌疑人的動機是什麼？",
+          summary: "找出衝突原因。",
+          status: "open",
+          resolvedByFactId: null,
         },
       ],
       authorizations: [
@@ -160,7 +225,19 @@
       ...gameState,
       inventory: {
         ...gameState.inventory,
-        evidence: gameState.inventory.evidence.slice(0, 1),
+        evidence: gameState.inventory.evidence.slice(0, -1),
+      },
+    };
+  }
+
+  function removeReceiptDuringRelation() {
+    gameState = {
+      ...gameState,
+      inventory: {
+        ...gameState.inventory,
+        evidence: gameState.inventory.evidence.filter(
+          (evidence) => evidence.id !== "receipt",
+        ),
       },
     };
   }
@@ -172,6 +249,10 @@
       story: { facts: [], questions: [], objectives: [], authorizations: [] },
     };
   }
+
+  function setSectionFromParent() {
+    section = "questions";
+  }
 </script>
 
 <button
@@ -181,6 +262,16 @@
 >
 <button type="button" data-case-file-action="clear" onclick={clearCaseFile}
   >清空案件檔案</button
+>
+<button
+  type="button"
+  data-case-file-action="remove-receipt-during-relation"
+  onclick={removeReceiptDuringRelation}>使支持證物失效</button
+>
+<button
+  type="button"
+  data-case-file-action="set-section-from-parent"
+  onclick={setSectionFromParent}>由父層切換待解問題</button
 >
 
 <CaseFilePanel

@@ -24,7 +24,9 @@
     disabled?: boolean;
   } = $props();
 
-  let rovingIndex = $state(0);
+  // A writable derived starts on the externally-bound active section and can
+  // be overridden by arrow-key roving until the parent changes that section.
+  let rovingIndex = $derived(sections.indexOf(section));
   let tabButtons = $state<Array<HTMLButtonElement | undefined>>([]);
 
   async function moveFocus(offset: number) {
@@ -65,7 +67,7 @@
         role="tab"
         aria-selected={active}
         aria-controls={`case-file-section-${entry}`}
-        tabindex={active ? 0 : -1}
+        tabindex={index === rovingIndex ? 0 : -1}
         data-submenu-initial-focus={active ? "" : undefined}
         {disabled}
         onkeydown={handleKeydown}
