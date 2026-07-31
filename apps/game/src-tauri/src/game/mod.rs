@@ -293,7 +293,8 @@ impl GameEngine {
             &self.story_catalog,
             &self.story_state,
             &acquired_targets,
-        );
+            &self.story_locations,
+        )?;
         let pending_acquisition = self.pending_acquisition_view()?;
         Ok(GameStateView {
             mode: self.mode_view(),

@@ -1,6 +1,8 @@
 use super::catalog::{ObjectiveKind, StoryCatalog};
 use super::state::{AssertionOrigin, StoryState};
 use crate::game::schema::{compare_inventory_targets, InventoryTarget};
+use crate::game::story_location::{SceneLocationContextView, StoryLocationIndex};
+use crate::game::GameError;
 use serde::Serialize;
 use std::collections::BTreeSet;
 
@@ -24,6 +26,7 @@ pub struct FactView {
     pub asserted_in_chapter_id: Option<String>,
     pub asserted_in_scene_id: Option<String>,
     pub first_origin: AssertionOrigin,
+    pub(in crate::game) origin_context: OriginContextView,
     /// Empty means no acquired direct supporting records are exposed. Internal
     /// story progress may still contain direct support that is not yet acquired.
     pub supporting_records: Vec<InventoryTarget>,
@@ -67,6 +70,27 @@ pub enum ObjectiveKindView {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub(in crate::game) enum OriginContextView {
+    Scene {
+        origin_kind: OriginContextKindView,
+        location: SceneLocationContextView,
+    },
+    Migration,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(in crate::game) enum OriginContextKindView {
+    SceneEvent,
+    AnalysisBoard,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthorizationView {
     pub id: String,
@@ -76,6 +100,7 @@ pub struct AuthorizationView {
     pub granted_in_chapter_id: Option<String>,
     pub granted_in_scene_id: Option<String>,
     pub first_origin: AssertionOrigin,
+    pub(in crate::game) origin_context: OriginContextView,
 }
 
 impl StoryStateView {
@@ -83,11 +108,17 @@ impl StoryStateView {
         catalog: &StoryCatalog,
         state: &StoryState,
         acquired_targets: &BTreeSet<InventoryTarget>,
-    ) -> Self {
+        locations: &StoryLocationIndex,
+    ) -> Result<Self, GameError> {
         let facts = catalog
             .facts()
             .filter_map(|definition| {
-                let progress = state.facts.get(&definition.id)?;
+                state
+                    .facts
+                    .get(&definition.id)
+                    .map(|progress| (definition, progress))
+            })
+            .map(|(definition, progress)| {
                 let mut supporting_records = progress
                     .supporting_records
                     .iter()
@@ -95,7 +126,7 @@ impl StoryStateView {
                     .cloned()
                     .collect::<Vec<_>>();
                 supporting_records.sort_by(compare_inventory_targets);
-                Some(FactView {
+                Ok(FactView {
                     id: definition.id.clone(),
                     label: definition.label.clone(),
                     summary: definition.summary.clone(),
@@ -104,11 +135,12 @@ impl StoryStateView {
                     asserted_in_chapter_id: progress.asserted_in_chapter_id.clone(),
                     asserted_in_scene_id: progress.asserted_in_scene_id.clone(),
                     first_origin: progress.first_origin.clone(),
+                    origin_context: origin_context(&progress.first_origin, locations)?,
                     supporting_records,
                     supporting_fact_ids: progress.supporting_fact_ids.iter().cloned().collect(),
                 })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
         let questions = catalog
             .questions()
@@ -156,8 +188,13 @@ impl StoryStateView {
         let authorizations = catalog
             .authorizations()
             .filter_map(|definition| {
-                let progress = state.authorizations.get(&definition.id)?;
-                Some(AuthorizationView {
+                state
+                    .authorizations
+                    .get(&definition.id)
+                    .map(|progress| (definition, progress))
+            })
+            .map(|(definition, progress)| {
+                Ok(AuthorizationView {
                     id: definition.id.clone(),
                     label: definition.label.clone(),
                     summary: definition.summary.clone(),
@@ -165,24 +202,52 @@ impl StoryStateView {
                     granted_in_chapter_id: progress.granted_in_chapter_id.clone(),
                     granted_in_scene_id: progress.granted_in_scene_id.clone(),
                     first_origin: progress.first_origin.clone(),
+                    origin_context: origin_context(&progress.first_origin, locations)?,
                 })
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()?;
 
-        Self {
+        Ok(Self {
             facts,
             questions,
             objectives,
             authorizations,
-        }
+        })
+    }
+}
+
+fn origin_context(
+    origin: &AssertionOrigin,
+    locations: &StoryLocationIndex,
+) -> Result<OriginContextView, GameError> {
+    match origin {
+        AssertionOrigin::SceneEvent {
+            chapter_id,
+            scene_id,
+            ..
+        } => Ok(OriginContextView::Scene {
+            origin_kind: OriginContextKindView::SceneEvent,
+            location: locations.resolve_scene(chapter_id, scene_id)?,
+        }),
+        AssertionOrigin::AnalysisBoard {
+            chapter_id,
+            scene_id,
+            ..
+        } => Ok(OriginContextView::Scene {
+            origin_kind: OriginContextKindView::AnalysisBoard,
+            location: locations.resolve_scene(chapter_id, scene_id)?,
+        }),
+        AssertionOrigin::Migration { .. } => Ok(OriginContextView::Migration),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::schema::InventoryTarget;
+    use crate::game::schema::{InventoryTarget, SceneType};
+    use crate::game::state::{ChapterManifest, SceneRef};
     use crate::game::story::{AssertionOrigin, StoryCatalog, StoryEventBlockKind, StoryState};
+    use crate::game::story_location::StoryLocationIndex;
     use serde_json::json;
     use std::collections::BTreeSet;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -358,10 +423,144 @@ mod tests {
         state
     }
 
+    fn location_index() -> StoryLocationIndex {
+        let resources = tempfile::tempdir().unwrap();
+        std::fs::create_dir(resources.path().join("chapter_1")).unwrap();
+        for (scene_id, scene_title) in [("scene_1", "First scene"), ("scene_2", "Second scene")] {
+            std::fs::write(
+                resources.path().join(format!("chapter_1/{scene_id}.json")),
+                json!({
+                    "type": "linear",
+                    "id": scene_id,
+                    "title": scene_title,
+                    "queue": [{"kind": "line", "speaker": "Narrator", "text": "..."}],
+                })
+                .to_string(),
+            )
+            .unwrap();
+        }
+        StoryLocationIndex::load(
+            resources.path(),
+            &StoryCatalog::empty(),
+            &[ChapterManifest {
+                id: "chapter_1".into(),
+                title: "First chapter".into(),
+                summary: "summary".into(),
+                scenes: vec![
+                    SceneRef {
+                        scene_type: SceneType::Linear,
+                        file: "chapter_1/scene_1.json".into(),
+                    },
+                    SceneRef {
+                        scene_type: SceneType::Linear,
+                        file: "chapter_1/scene_2.json".into(),
+                    },
+                ],
+            }],
+        )
+        .unwrap()
+    }
+
+    fn build_story_view_with_origin(
+        origin: AssertionOrigin,
+        locations: &StoryLocationIndex,
+    ) -> Result<StoryStateView, crate::game::GameError> {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+        state
+            .assert_fact(&catalog, "fact_first", origin, &[], &[])
+            .unwrap();
+        StoryStateView::from_catalog_state(&catalog, &state, &BTreeSet::new(), locations)
+    }
+
+    #[test]
+    fn story_state_view_scene_event_origin_resolves_titles() {
+        let locations = location_index();
+        let view = build_story_view_with_origin(
+            AssertionOrigin::SceneEvent {
+                chapter_id: "chapter_1".into(),
+                scene_id: "scene_1".into(),
+                block_kind: StoryEventBlockKind::Hotspot,
+                block_id: "hotspot_clock".into(),
+            },
+            &locations,
+        )
+        .unwrap();
+
+        assert_eq!(
+            view.facts[0].origin_context,
+            OriginContextView::Scene {
+                origin_kind: OriginContextKindView::SceneEvent,
+                location: crate::game::story_location::SceneLocationContextView {
+                    chapter_id: "chapter_1".into(),
+                    chapter_title: "First chapter".into(),
+                    scene_id: "scene_1".into(),
+                    scene_title: "First scene".into(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn story_state_view_analysis_board_origin_resolves_titles() {
+        let locations = location_index();
+        let view = build_story_view_with_origin(
+            AssertionOrigin::AnalysisBoard {
+                chapter_id: "chapter_1".into(),
+                scene_id: "scene_2".into(),
+                board_id: "timeline_board".into(),
+            },
+            &locations,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            view.facts[0].origin_context,
+            OriginContextView::Scene {
+                origin_kind: OriginContextKindView::AnalysisBoard,
+                location: crate::game::story_location::SceneLocationContextView {
+                    ref chapter_title,
+                    ref scene_title,
+                    ..
+                },
+            } if chapter_title == "First chapter" && scene_title == "Second scene"
+        ));
+    }
+
+    #[test]
+    fn story_state_view_migration_origin_never_requires_scene_lookup() {
+        let view = build_story_view_with_origin(
+            AssertionOrigin::Migration {
+                migration_id: "save_v1".into(),
+            },
+            &StoryLocationIndex::empty(),
+        )
+        .unwrap();
+
+        assert_eq!(view.facts[0].origin_context, OriginContextView::Migration);
+    }
+
+    #[test]
+    fn story_state_view_unknown_scene_origin_fails_closed_with_story_location_missing() {
+        let error = build_story_view_with_origin(
+            AssertionOrigin::SceneEvent {
+                chapter_id: "chapter_missing".into(),
+                scene_id: "scene_missing".into(),
+                block_kind: StoryEventBlockKind::Hotspot,
+                block_id: "hotspot_missing".into(),
+            },
+            &StoryLocationIndex::empty(),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, "storyLocationMissing");
+    }
+
     #[test]
     fn filters_untouched_definitions_and_serializes_only_applied_progress() {
         let catalog = catalog();
         let state = populated_state(&catalog);
+        let locations = location_index();
         let acquired_targets = BTreeSet::from([
             InventoryTarget::Evidence {
                 id: "evidence_a".into(),
@@ -374,11 +573,10 @@ mod tests {
             },
         ]);
 
-        let value = serde_json::to_value(StoryStateView::from_catalog_state(
-            &catalog,
-            &state,
-            &acquired_targets,
-        ))
+        let value = serde_json::to_value(
+            StoryStateView::from_catalog_state(&catalog, &state, &acquired_targets, &locations)
+                .unwrap(),
+        )
         .unwrap();
 
         assert_eq!(
@@ -400,6 +598,16 @@ mod tests {
                             "blockKind": "hotspot",
                             "blockId": "hotspot_clock"
                         },
+                        "originContext": {
+                            "type": "scene",
+                            "originKind": "sceneEvent",
+                            "location": {
+                                "chapterId": "chapter_1",
+                                "chapterTitle": "First chapter",
+                                "sceneId": "scene_1",
+                                "sceneTitle": "First scene"
+                            }
+                        },
                         "supportingRecords": [
                             {"kind": "evidence", "id": "evidence_a"},
                             {"kind": "evidence", "id": "evidence_z"},
@@ -416,6 +624,7 @@ mod tests {
                         "assertedInChapterId": null,
                         "assertedInSceneId": null,
                         "firstOrigin": {"type": "migration", "migrationId": "legacy_case"},
+                        "originContext": {"type": "migration"},
                         "supportingRecords": [],
                         "supportingFactIds": ["fact_first"]
                     }
@@ -487,6 +696,16 @@ mod tests {
                             "chapterId": "chapter_1",
                             "sceneId": "scene_2",
                             "boardId": "timeline_board"
+                        },
+                        "originContext": {
+                            "type": "scene",
+                            "originKind": "analysisBoard",
+                            "location": {
+                                "chapterId": "chapter_1",
+                                "chapterTitle": "First chapter",
+                                "sceneId": "scene_2",
+                                "sceneTitle": "Second scene"
+                            }
                         }
                     },
                     {
@@ -496,7 +715,8 @@ mod tests {
                         "grantingAuthority": "Court",
                         "grantedInChapterId": null,
                         "grantedInSceneId": null,
-                        "firstOrigin": {"type": "migration", "migrationId": "legacy_auth"}
+                        "firstOrigin": {"type": "migration", "migrationId": "legacy_auth"},
+                        "originContext": {"type": "migration"}
                     }
                 ]
             })
@@ -511,15 +731,15 @@ mod tests {
     fn public_facts_filter_unacquired_direct_support_and_sort_acquired_targets() {
         let catalog = catalog();
         let state = populated_state(&catalog);
+        let locations = location_index();
         let mut acquired_targets = BTreeSet::from([InventoryTarget::Statement {
             id: "statement_b".into(),
         }]);
 
-        let statement_only = serde_json::to_value(StoryStateView::from_catalog_state(
-            &catalog,
-            &state,
-            &acquired_targets,
-        ))
+        let statement_only = serde_json::to_value(
+            StoryStateView::from_catalog_state(&catalog, &state, &acquired_targets, &locations)
+                .unwrap(),
+        )
         .unwrap();
         assert_eq!(
             statement_only["facts"][0]["supportingRecords"],
@@ -538,11 +758,10 @@ mod tests {
         acquired_targets.insert(InventoryTarget::Evidence {
             id: "evidence_a".into(),
         });
-        let evidence_then_statement = serde_json::to_value(StoryStateView::from_catalog_state(
-            &catalog,
-            &state,
-            &acquired_targets,
-        ))
+        let evidence_then_statement = serde_json::to_value(
+            StoryStateView::from_catalog_state(&catalog, &state, &acquired_targets, &locations)
+                .unwrap(),
+        )
         .unwrap();
         assert_eq!(
             evidence_then_statement["facts"][0]["supportingRecords"],
@@ -557,12 +776,12 @@ mod tests {
     fn empty_public_support_means_no_acquired_direct_support_without_a_spoiler_flag() {
         let catalog = catalog();
         let state = populated_state(&catalog);
+        let locations = location_index();
 
-        let value = serde_json::to_value(StoryStateView::from_catalog_state(
-            &catalog,
-            &state,
-            &BTreeSet::new(),
-        ))
+        let value = serde_json::to_value(
+            StoryStateView::from_catalog_state(&catalog, &state, &BTreeSet::new(), &locations)
+                .unwrap(),
+        )
         .unwrap();
 
         assert_eq!(value["facts"][0]["supportingRecords"], json!([]));
