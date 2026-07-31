@@ -276,5 +276,3 @@ rtk git commit -m "test: cover case file acceptance"
 PR description must say existing saves/content revision remain compatible and list HPA-265/HPA-266 packaged-population deferrals. Wait for PR A review/merge before branching PR B from updated `main`.
 
 ---
-
-# PR B — Authored Recap, Save Schema V2, and Continue
