@@ -1,11 +1,11 @@
 # HPA-258 Case File, Primary Objective, Authorizations, and Continue Recap Design
 
-**Status:** Revised after technical review; ready for repository review  
+**Status:** Revised after two technical reviews; ready for repository review  
 **Issue:** HPA-258 — Build case file, primary objective, authorizations, and Continue recap UI  
 **Parent:** HPA-254 — Detective gameplay systems program  
 **Milestone:** P0 — Persistence and Story State  
 **Date:** 2026-07-30  
-**Review revision:** 2026-07-31
+**Review revision:** 2026-07-31, second technical pass
 
 ## 1. References and scope
 
@@ -48,8 +48,7 @@ rules, new story-state mutation kinds, people or location archives, or Chapter
 
 ## 2. Review-resolution decisions
 
-The focused review raised seven substantive points and two documentation nits.
-The resulting decisions are part of this design:
+Two focused technical reviews produced the following binding decisions.
 
 1. **Kind-qualified supersession remains the existing contract.**
    `supersedesRecordId` is a string-encoded typed target such as
@@ -57,36 +56,66 @@ The resulting decisions are part of this design:
    record slug. HPA-256 validates the encoded kind and Rust preserves it when
    redacting an unacquired predecessor. HPA-258 does not add cross-kind slug
    uniqueness and does not replace the field with a second object shape.
-2. **Rust remains fail-closed for catalog/state invariant failures.**
-   `GameEngine::view()` is already whole-view fallible. An unresolved non-null
-   source group or packaged scene origin means authoritative content/state is
-   inconsistent and must return a typed error rather than silently changing the
-   meaning of one fact or authorization.
-3. **Origin lookup is cached.** A read-only `StoryLocationIndex` is built once
+2. **Rust remains fail-closed for authoritative catalog/state failures.**
+   `GameEngine::view()` already returns `Result<GameStateView, GameError>`.
+   HPA-258 does require a new inner signature change:
+   `StoryStateView::from_catalog_state` becomes fallible because it now resolves
+   story origins through packaged location data, and `GameEngine::view()`
+   propagates that result with `?`.
+3. **Source-group absence is rejected before view construction.**
+   Catalog loading already validates both directions of the source-group
+   projection, and inventory view construction already validates inventory
+   provenance against the catalog. An unresolved non-null group is therefore
+   not an ordinary constructible view-time scenario. The view projection keeps
+   a defense-in-depth invariant check, while acceptance coverage belongs to
+   catalog/provenance validation rather than a fabricated public runtime path.
+4. **Origin lookup is cached.** A read-only `StoryLocationIndex` is built once
    from packaged chapter/scene definitions and retained on `GameEngine`; it is
    never rebuilt on each `view()` call.
-4. **`@lyra/scene-types` remains a shared-subset package, not the complete
+5. **Scene summaries use the tokenizer’s list-metadata syntax.** The authored
+   form is `- **Summary:** ...`, not the dash-less chapter-manifest form.
+   Dash-less `**Summary:** ...` is invalid for scene files.
+6. **Linear scenes receive an explicit summary carve-out.** A shared scene
+   header helper consumes the one allowed top-level `Summary` token immediately
+   after H1 before `parser-linear.ts` applies its existing blanket rejection to
+   every other top-level metadata token. Scene-tag asset metadata remains
+   unchanged.
+7. **`@lyra/scene-types` remains a shared-subset package, not the complete
    runtime scene schema.** Scene `summary` is runtime semantic metadata used by
    compiler, Rust, save capture, and frontend gameplay. The layout editor does
    not consume it, so it stays outside the shared package unless a later editor
    feature needs a byte-identical shared `SceneMetadata` atom.
-5. **Existing save types are named explicitly.** The current unsuffixed Rust
+8. **Existing save types are named explicitly.** The current unsuffixed Rust
    `SaveSummary` is renamed to `SaveSummaryV1`; `SaveEnvelopeV1` continues to
    contain it. HPA-258 adds `SaveSummaryV2` and `SaveEnvelopeV2`, bumps
    `SAVE_SCHEMA_VERSION` to 2, and routes both versions through the migration
    registry.
-6. **PR-B save incompatibility is intentional.** Adding scene summaries changes
-   the canonical semantic bundle and therefore `contentRevision`. Pre-release
-   saves produced against the old package remain incompatible even though the
-   v1 envelope has a valid schema migration.
-7. **Populated packaged-story acceptance remains HPA-265/HPA-266-owned.**
-   HPA-258 uses synthetic compiler/Rust/frontend fixtures for all populated
-   Case File states. Its packaged E2E verifies the currently authored package,
-   menu/accessibility boundaries, and recap surfaces. The real Chapter 1
-   supersession/objective/authorization/save-resume path lands later in the
-   Chapter 1 vertical slice and packaged acceptance gate.
-8. `summaryAuthored` is compiler-internal audit state and is never emitted.
-9. Case File key normalization is specified once in §7 and reused everywhere.
+9. **Both public save-metadata projections move to V2.** Valid
+   `SaveMetadataView.summary` and optional
+   `ReadableSaveMetadataView.summary` expose `SaveSummaryV2` after decoding or
+   migration. Frontend mirrors use the same nullable V2 recap fields.
+10. **PR-B save incompatibility is intentional.** Adding scene summaries
+    changes the canonical semantic bundle and therefore `contentRevision`.
+    Pre-release saves produced against the old package remain incompatible even
+    though the v1 envelope has a valid schema migration.
+11. **Populated packaged-story acceptance remains HPA-265/HPA-266-owned.**
+    HPA-258 uses synthetic compiler/Rust/frontend fixtures for all populated
+    Case File states. Its packaged E2E verifies the currently authored package,
+    menu/accessibility boundaries, and recap surfaces. The real Chapter 1
+    supersession/objective/authorization/save-resume path lands later in the
+    Chapter 1 vertical slice and packaged acceptance gate.
+12. **The production E2E coupling point is part of PR A.** Renaming
+    `物證檔案` to `案件檔案` requires updating
+    `apps/game/e2e-tauri/production-anchors.ts` and every WDIO use of its old
+    evidence-menu anchors in the same PR.
+13. **Acquired records receive resolved location copy.** Evidence and statement
+    public views gain `acquisitionContext: SceneLocationContextView`, so the
+    Case File never renders raw chapter or scene slugs as player-facing prose.
+14. **Cross-kind supersession is explicitly legal.** The synthetic fixture
+    includes an acquired chain crossing evidence/statement kinds and proves the
+    encoded kind controls navigation.
+15. `summaryAuthored` is compiler-internal audit state and is never emitted.
+16. Case File key normalization is specified once in §7 and reused everywhere.
 
 ## 3. Approved product decisions
 
@@ -112,7 +141,11 @@ The resulting decisions are part of this design:
 9. A public `null` or empty array is never presented as proof that no hidden
    predecessor, successor, or supporting record exists.
 10. Acquired supersession navigation is derived from acquired public records.
-    Rust does not add a redundant public successor field.
+    Rust’s catalog owns a full `successor_by_target` index, but that index may
+    name a future unacquired successor and therefore cannot be projected
+    directly. The already-public acquired records plus HPA-256’s redacted
+    predecessor edges are sufficient to reverse into a unique acquired-only
+    successor map without adding another wire field or a second redaction path.
 11. Facts remain conclusions. They are never converted to `InventoryTarget`,
     never offered as physical evidence, and never sent to a presentation or
     re-examination command.
@@ -219,7 +252,9 @@ the menu after re-examination installs dialogue.
 - focus trapping;
 - top-layer inert behavior for persistence and other overlays.
 
-HPA-258 reuses these mechanisms.
+The packaged E2E coupling file currently pins `物證檔案` through both an entry
+and panel anchor. HPA-258 reuses the menu mechanisms and updates that coupling
+point as part of the rename.
 
 ### 4.3 Current objective and save metadata
 
@@ -232,11 +267,27 @@ primary objective ID/label. Save UI already displays slot/save type, chapter,
 scene, primary-objective label, save time, optional thumbnail, and invalid-save
 diagnostics.
 
-### 4.4 Current authored scene contract
+Both valid `SaveMetadataView` and partially readable invalid
+`ReadableSaveMetadataView` currently embed the unsuffixed `SaveSummary` shape.
 
-Chapter manifests require a chapter summary. Scene JSON contains a title but no
-summary. Linear, investigation, and interrogation parsers must converge on one
-shared scene-metadata parser rather than implement three separate grammars.
+### 4.4 Current authored scene/token contract
+
+Chapter manifests use a hand-written line scanner and accept dash-less
+`**Summary:**` copy. Scene files do not use that parser.
+
+All three current scene parsers call the shared tokenizer. Its metadata grammar
+is the list form:
+
+```markdown
+- **Key:** value
+```
+
+A dash-less scene line such as `**Summary:** text` is neither metadata nor
+full-width-colon dialogue and becomes an unknown token. In addition,
+`parser-linear.ts` currently rejects every top-level metadata token before
+handling scene-tag-local asset metadata. HPA-258 must therefore add an explicit
+header-summary consumption seam; merely adding a field to AST types is
+insufficient.
 
 ### 4.5 Current save and view fallibility
 
@@ -245,9 +296,23 @@ The current disk envelope is schema version 1 and contains an unsuffixed
 current version.
 
 `GameEngine::view()` already returns `Result<GameStateView, GameError>` because
-inventory/catalog disagreement is an authoritative invariant failure. HPA-258
-extends this existing fail-closed boundary; it does not introduce a new
-presentation-only failure philosophy.
+inventory/catalog disagreement is an authoritative invariant failure. However,
+`StoryStateView::from_catalog_state` is currently infallible and its production
+caller does not use `?`. HPA-258 extends the existing outer fail-closed boundary
+by making that inner constructor fallible when it resolves story origins.
+
+### 4.6 Existing source-group validation gates
+
+Before any public record view is built:
+
+1. catalog loading validates that every group member names the group and every
+   non-null record `sourceGroupId` resolves back to a group containing that
+   typed record;
+2. inventory public-view construction validates that the acquired record’s
+   immutable provenance equals its catalog definition.
+
+A missing group is therefore rejected at catalog load or definition comparison,
+not discovered as a normal Case File rendering condition.
 
 ## 5. Ownership and architecture
 
@@ -319,12 +384,36 @@ Rules:
 
 - `GameEngine::view()` performs no scene-file I/O for origin presentation.
 - `GameEngine::view()` does not rebuild or clone the complete index.
-- `StoryStateView::from_catalog_state` receives `&StoryLocationIndex`.
+- inventory and story view builders borrow `&StoryLocationIndex`.
 - save capture classifies the index as immutable package state and does not
   serialize it.
 - restore rebuilds it from the already compatibility-checked package.
-- a missing scene named by a non-migration origin is an authoritative typed
-  invariant failure.
+- a missing scene named by an acquired record or non-migration origin is an
+  authoritative typed invariant failure.
+
+Required signatures:
+
+```rust
+impl InventoryView {
+    fn from_inventory(
+        catalog: &StoryCatalog,
+        inventory: &Inventory,
+        locations: &StoryLocationIndex,
+    ) -> Result<Self, GameError>;
+}
+
+impl StoryStateView {
+    fn from_catalog_state(
+        catalog: &StoryCatalog,
+        state: &StoryState,
+        acquired_targets: &BTreeSet<InventoryTarget>,
+        locations: &StoryLocationIndex,
+    ) -> Result<Self, GameError>;
+}
+```
+
+`GameEngine::view()` calls both with `?`. Existing direct unit-test callers are
+updated to provide the index and unwrap or assert the expected error.
 
 A later refactor may share this index with scene navigation, but HPA-258 does
 not require unrelated navigation rewrites.
@@ -397,7 +486,45 @@ Compiler changes remain under `packages/scripts/compile-scenes/`.
 
 ## 6. Public-view refinements
 
-### 6.1 Resolved source-group presentation
+### 6.1 Shared location context and acquired-record projection
+
+Add one resolved location shape:
+
+```ts
+type SceneLocationContextView = {
+  chapterId: string;
+  chapterTitle: string;
+  sceneId: string;
+  sceneTitle: string;
+};
+```
+
+Both public record views retain their existing stable IDs and gain resolved
+player-facing context:
+
+```ts
+type EvidenceRecord = {
+  // existing fields, including collectedInChapterId/collectedInSceneId
+  acquisitionContext: SceneLocationContextView;
+  sourceGroup: SourceGroupReferenceView | null;
+};
+
+type StatementRecord = {
+  // existing fields, including acquiredInChapterId/acquiredInSceneId
+  acquisitionContext: SceneLocationContextView;
+  sourceGroup: SourceGroupReferenceView | null;
+};
+```
+
+Rules:
+
+- raw location IDs remain available for stable identity and command logic;
+- player-facing copy uses `acquisitionContext`, never raw slugs;
+- context resolves through the cached immutable `StoryLocationIndex`;
+- a missing location is a typed whole-view invariant failure;
+- the projection exposes no locked record or unrelated scene information.
+
+### 6.2 Resolved source-group presentation
 
 The frontend cannot safely resolve a source-group slug to authored copy. Add an
 acquired-record-only projection:
@@ -410,34 +537,26 @@ type SourceGroupReferenceView = {
 };
 ```
 
-Both record views gain:
-
-```ts
-sourceGroup: SourceGroupReferenceView | null;
-```
-
 Rules:
 
 - it is resolved only for the acquired record being serialized;
 - it exposes no membership list;
 - null `sourceGroupId` produces null projection;
-- a non-null unresolved source group is a catalog invariant failure;
+- catalog loading already proves every non-null ID resolves and membership is
+  bidirectionally consistent;
+- inventory definition validation already proves the acquired record carries
+  the catalog provenance;
+- projection may retain a defense-in-depth typed internal error if an impossible
+  invalid catalog is injected, but this is not a normal runtime acceptance path;
 - `provenance.sourceGroupId` remains in the canonical provenance projection;
 - display prefers record-specific `sourceLabel`, then source-group label;
 - source-group summary appears in details, not every compact row.
 
-### 6.2 Origin context
+### 6.3 Origin context and explicit fallibility
 
 Add a display projection without replacing exact `AssertionOrigin`:
 
 ```ts
-type SceneLocationContextView = {
-  chapterId: string;
-  chapterTitle: string;
-  sceneId: string;
-  sceneTitle: string;
-};
-
 type OriginContextView =
   | {
       type: "scene";
@@ -457,14 +576,19 @@ Rules:
 - migration origins are a valid explicit domain variant and display neutral
   localized copy such as `已匯入的進度`;
 - missing packaged chapter/scene context is a typed whole-view failure;
-- HPA-258 does not resolve hotspot, topic, testimony-line, or board labels.
+- HPA-258 does not resolve hotspot, topic, testimony-line, or board labels;
+- `StoryStateView::from_catalog_state` changes from `Self` to
+  `Result<Self, GameError>`;
+- `GameEngine::view()` propagates it with `?`.
 
-### 6.3 Fail-closed Rust, defensive frontend
+### 6.4 Fail-closed Rust, defensive frontend
 
 Rust and Svelte have different trust responsibilities:
 
-- Rust owns validated content and durable state. It must fail closed if a
-  non-null source group or scene origin cannot be resolved.
+- Rust owns validated content and durable state. It must fail closed if an
+  acquired location or scene origin cannot be resolved.
+- Source-group referential integrity is normally rejected earlier at catalog
+  load/inventory validation; any later failure is defense-in-depth only.
 - Svelte consumes a wire value. Its pure model may skip a malformed relation,
   retain the current item, and surface a non-spoiling generic detail error so a
   hand-built test fixture or stale browser state does not crash the menu.
@@ -473,10 +597,11 @@ Rust and Svelte have different trust responsibilities:
   origins. Doing so could misstate where a fact was established or who granted
   an authorization.
 
-Tests therefore cover both boundaries: a typed Rust view-construction error and
-non-crashing frontend handling of an impossible malformed relation fixture.
+Tests cover the actual boundaries: catalog validation for source groups, a typed
+Rust origin/location resolution error, and non-crashing frontend handling of an
+impossible malformed relation fixture.
 
-### 6.4 Scene summaries in public views
+### 6.5 Scene summaries in public views
 
 Every current `SceneView` variant gains:
 
@@ -487,7 +612,7 @@ summary: string;
 The summary comes from the validated packaged scene definition and is also
 available to save capture through the current scene identity.
 
-### 6.5 Supersession contract
+### 6.6 Supersession contract
 
 The existing HPA-256 public field remains:
 
@@ -515,12 +640,14 @@ Rules:
 - malformed values are ignored defensively by Svelte but are invalid Rust wire;
 - tests include evidence and statement records sharing the same slug and prove
   their keys do not collide;
-- tests include an acquired cross-kind chain if HPA-256 permits one, proving
-  successor navigation follows the encoded kind rather than slug alone.
+- a synthetic acquired cross-kind chain is required and proves successor
+  navigation follows the encoded kind rather than slug alone.
 
-No new successor field is emitted. For acquired records, Svelte reverses visible
-predecessor edges into a unique acquired successor map. HPA-256 guarantees the
-full catalog chain is non-branching.
+No new successor field is emitted. Rust’s full catalog successor accessor is
+not itself safe public copy because it may identify an unacquired successor.
+For acquired records, Svelte reverses only visible predecessor edges into a
+unique acquired successor map. HPA-256 guarantees the full catalog chain is
+non-branching, and the acquired public subset cannot introduce a branch.
 
 ## 7. Case File key normalization
 
@@ -572,6 +699,18 @@ The Escape-menu root entry changes from `物證檔案 / EVIDENCE` to
 `案件檔案 / CASE FILE`. It opens through the existing GameShell submenu stack.
 There is no second modal, router state, or overlay coordinator.
 
+The same implementation PR updates the packaged E2E coupling point:
+
+```ts
+// apps/game/e2e-tauri/production-anchors.ts
+evidenceMenuEntry → caseFileMenuEntry
+evidenceFile      → caseFile
+"物證檔案"         → "案件檔案"
+```
+
+Every WDIO use of the old keys is updated in the same change; no compatibility
+alias preserves the obsolete player-facing label.
+
 Opening behavior:
 
 - first open in a session defaults to Current Objective;
@@ -618,20 +757,27 @@ future primary definitions.
 Evidence retains acquisition order and existing image behavior. Details include:
 
 - name, description, and full details;
-- acquisition chapter/scene context where available;
+- resolved acquisition chapter and scene titles from `acquisitionContext`;
 - authored non-neutral provenance;
 - source-group label/summary;
 - positive proof capabilities;
 - acquired supersession history;
 - re-examination action when the current mode permits it.
 
-A fully neutral legacy record renders exactly as the legacy dossier did.
+A fully neutral legacy record renders exactly as the legacy dossier did apart
+from its ordinary resolved acquisition location in the detail view.
 
 ### 9.3 Statements
 
-Statements retain acquisition order and show speaker, statement text,
-non-neutral provenance, source-group context, acquired supersession history, and
-re-examination when permitted.
+Statements retain acquisition order and show:
+
+- speaker and statement text;
+- resolved acquisition chapter and scene titles from `acquisitionContext`;
+- non-neutral provenance and source-group context;
+- acquired supersession history;
+- re-examination when permitted.
+
+Neither section renders raw `chapter_1`/`scene_7`-style IDs as player copy.
 
 ### 9.4 Established Facts
 
@@ -709,12 +855,17 @@ list of everything a record cannot prove.
 
 ### 10.3 Acquired-only chain
 
-A superseded record remains inspectable and receives a restrained `已被後續紀錄取代`
-status. It is not struck out or disabled.
+A superseded record remains inspectable and receives a restrained
+`已被後續紀錄取代` status. It is not struck out or disabled.
 
 The chain contains acquired public records only. It never renders placeholders
 for hidden predecessors or future successors. Navigation offers previous/next
 links and an explicit return action when entered from a support relationship.
+
+The acquired successor map is derived by reversing the redacted public
+predecessor edges. This is deliberate: projecting Rust’s complete successor
+index would require another acquired-only redaction contract solely for this UI
+and could otherwise leak the existence or identity of a future record.
 
 ## 11. Re-examination and mode behavior
 
@@ -756,20 +907,89 @@ in the Case File.
 
 ### 13.1 Authoring syntax
 
-Every scene supports one summary immediately after its H1:
+Every scene supports one list-metadata summary immediately after its H1:
 
 ```markdown
 # Scene 7: 雨水留下的時間
 
-**Summary:** 相馬重新回到雨鐘後場，開始懷疑警方採用的門鎖時間不是實際開門時間。
+- **Summary:** 相馬重新回到雨鐘後場，開始懷疑警方採用的門鎖時間不是實際開門時間。
+```
+
+This form intentionally matches the scene tokenizer’s existing metadata grammar.
+The dash-less chapter-manifest form is invalid in a scene:
+
+```markdown
+**Summary:** 這不是合法的 scene summary 語法。
 ```
 
 The rule applies to linear, investigation, and interrogation scenes. HPA-259
-reuses the parser for analysis scenes.
+reuses the same header parser for analysis scenes.
 
-### 13.2 Shared parser and compiler AST
+### 13.2 Tokenizer and shared scene-header parser
 
-Add a focused parser helper such as:
+Add one shared helper, for example:
+
+```ts
+type ParsedSceneHeader = {
+  title: string;
+  summary: string;
+  summaryAuthored: boolean;
+  nextTokenIndex: number;
+};
+
+function parseSceneHeader(
+  source: string,
+  sourceFile: string,
+  tokens: Token[],
+): Result<ParsedSceneHeader, CompileError>;
+```
+
+Ownership:
+
+1. the existing tokenizer recognizes a non-empty
+   `- **Summary:** value` as a `metadata` token;
+2. a narrow summary-specific empty-value rule or pre-token header check recognizes
+   `- **Summary:**` and returns a dedicated source-located blank-summary
+   diagnostic instead of an unrelated unknown-line error;
+3. `parseSceneHeader` validates the H1, consumes zero or one immediate
+   `Summary` metadata token, and returns the first parser-specific token index;
+4. it rejects dash-less summary syntax, duplicate Summary tokens, and Summary
+   tokens outside the immediate post-H1 header position with dedicated
+   source-located diagnostics;
+5. parser-specific code never emits the Summary token as dialogue or treats it
+   as scene-tag asset metadata.
+
+The earlier wording that malformed summary copy might be “read as dialogue” is
+incorrect. ASCII-colon `**Summary:**` cannot match the full-width-colon dialogue
+rule; malformed summary syntax is rejected as unknown/header metadata before
+any dialogue item is emitted.
+
+### 13.3 Linear-scene carve-out
+
+`parser-linear.ts` currently rejects every top-level metadata token. HPA-258
+changes the control flow, not the general rule:
+
+```text
+tokenize source
+    ↓
+parseSceneHeader consumes H1 + optional immediate Summary
+    ↓
+linear queue loop starts at nextTokenIndex
+    ↓
+any remaining top-level metadata still fails linearSceneHasMetadata
+```
+
+Scene-tag-local visual/audio metadata remains consumed only by the existing
+scene-tag block. The summary carve-out must not make arbitrary top-level
+metadata legal in linear scenes.
+
+Investigation and interrogation parsers likewise start their H2 block loops at
+`nextTokenIndex`; an unconsumed Summary token must never reach the “expected H2”
+branch.
+
+### 13.4 Compiler AST and audit state
+
+The shared helper supplies:
 
 ```ts
 type ParsedSceneMetadata = {
@@ -785,8 +1005,10 @@ scene JSON, Rust, `contentRevision`, public views, or saves.
 Rules:
 
 - duplicate Summary fields fail with source location;
-- an explicitly present but blank Summary fails;
-- malformed placement fails rather than being read as dialogue;
+- an explicitly present but blank Summary fails with a summary-specific
+  diagnostic;
+- dash-less Summary fails with a malformed-syntax diagnostic;
+- a Summary after dialogue, a scene tag, or an H2 block fails as misplaced;
 - legacy fixtures without Summary receive a deterministic title-based fallback
   and `summaryAuthored: false`;
 - production Chapter 1 receives authored summaries for every manifested scene;
@@ -796,7 +1018,7 @@ Rules:
 A warning may flag unusually long summaries, but length is not a hard semantic
 failure unless later UI evidence justifies a fixed limit.
 
-### 13.3 Emitted and runtime shape
+### 13.5 Emitted and runtime shape
 
 Every full emitted scene JSON gains:
 
@@ -807,7 +1029,7 @@ summary: string;
 Rust serde scene definitions and every `SceneView` variant mirror it. The layout
 editor’s narrower structural scene view may ignore the extra JSON field.
 
-### 13.4 Content identity
+### 13.6 Content identity
 
 Scene summary is authored semantic copy. It participates in the canonical
 emitted bundle and changes `contentRevision` when edited. `summaryAuthored` does
@@ -907,14 +1129,31 @@ A migration unit fixture uses a matching synthetic revision to prove the v1-to-
 v2 transformation itself. Production pre-release rollout tests separately prove
 old-package saves are rejected for content mismatch.
 
-### 14.5 Public save metadata
+### 14.5 Rust and frontend save-metadata projections
 
-Frontend `SaveSummaryView` gains nullable recap fields matching V2. Invalid or
-migrated saves may display their retained titles and labels even when new
-summary copy is unavailable.
+After decode/migration, both Rust public metadata paths use V2:
 
-The UI omits a missing summary rather than displaying fake fallback prose such
-as “No summary available.”
+```rust
+struct SaveMetadataView {
+    // existing fields
+    summary: SaveSummaryV2,
+}
+
+struct ReadableSaveMetadataView {
+    // existing fields
+    summary: Option<SaveSummaryV2>,
+}
+```
+
+The optional readable path remains optional because an invalid file may not
+contain enough trustworthy metadata to expose a summary at all. A readable v1
+summary is migrated to V2 with the three new summary-copy fields set to null.
+
+Frontend `SaveSummaryView`, `SaveMetadataView`, and
+`ReadableSaveMetadataView` mirror those V2 fields. Invalid or migrated saves may
+display retained titles and labels even when new summary copy is unavailable.
+The UI omits missing summaries rather than inventing fallback prose such as
+“No summary available.”
 
 ## 15. Save and Continue recap presentation
 
@@ -995,11 +1234,17 @@ reachable without inaccessible nested scrolling.
 
 The following are typed view-construction failures:
 
-- non-null source-group ID missing from the validated catalog;
-- scene/analysis origin referencing a missing packaged chapter or scene;
+- an acquired record’s chapter/scene context missing from the immutable
+  `StoryLocationIndex`;
+- a scene/analysis origin referencing a missing packaged chapter or scene;
 - malformed authoritative supersession target reaching Rust domain state;
 - inventory/catalog definition disagreement;
 - impossible story relationship that violates HPA-255/HPA-256 invariants.
+
+Source-group integrity is normally rejected earlier by catalog loading and
+inventory definition validation. If an impossible unresolved group reaches the
+projection through a test-only or internal bypass, it is treated as an internal
+invariant failure, not a recoverable player-facing state.
 
 The command returns the existing `GameError` surface. It does not mutate engine
 state or partially serialize a misleading Case File.
@@ -1028,9 +1273,17 @@ thumbnail placeholders retain HPA-392 behavior.
 
 Tests cover:
 
-- Summary parsing for linear, investigation, and interrogation scenes;
-- shared parser use rather than three independent grammars;
+- valid list-form `- **Summary:** ...` parsing for linear, investigation, and
+  interrogation scenes;
+- dash-less `**Summary:** ...` rejected with a source-located malformed-syntax
+  diagnostic;
+- shared scene-header parser use rather than three independent grammars;
+- linear scenes accepting the one immediate header Summary while continuing to
+  reject every other top-level metadata token;
+- scene-tag asset metadata remaining valid and unchanged;
+- investigation/interrogation H2 loops beginning after the consumed Summary;
 - duplicate, blank, and misplaced Summary diagnostics with source locations;
+- no malformed Summary becoming dialogue;
 - deterministic legacy fallback;
 - `summaryAuthored` retained only in AST/audit state and absent from JSON;
 - production Chapter 1 audit with no fallback summaries;
@@ -1044,22 +1297,29 @@ Synthetic fixtures cover:
 
 - untouched definitions omitted;
 - all-neutral provenance unchanged;
-- source-group label/summary resolved for acquired records only;
-- unresolved source group failing the whole view with a typed error;
+- catalog validation rejecting unknown or inconsistent source-group projection;
+- source-group label/summary resolved for acquired records only after those
+  validation gates;
+- evidence and statement `acquisitionContext` resolving chapter/scene titles;
+- missing acquired-record location failing the whole view with a typed error;
+- `StoryStateView::from_catalog_state` returning `Result` and
+  `GameEngine::view()` propagating its error;
 - cached `StoryLocationIndex` reused without per-view scene loading;
 - scene and future analysis origins resolving chapter/scene titles;
 - unresolved non-migration origin failing the whole view;
 - migration origin producing the explicit migration view variant;
 - unacquired predecessors redacted;
 - same slug used by evidence and statement without key collision;
-- acquired predecessor chains across one or both record kinds;
+- an acquired cross-kind predecessor chain;
 - unacquired supporting records absent from facts;
 - active primary hidden after completion;
 - zero-or-one active primary preserved;
 - every `SceneView` carrying summary.
 
-A source or instrumentation test proves `view()` does not build the location
-index or read scene files on each refresh.
+No acceptance test fabricates an unresolved source group through a private
+`StoryCatalog` backdoor solely to reach an otherwise impossible view state.
+A source/instrumentation test proves `view()` does not build the location index
+or read scene files on each refresh.
 
 ### 18.3 Frontend model
 
@@ -1068,13 +1328,15 @@ Pure model tests cover:
 - all `CaseFileKey` normalization shapes from §7;
 - acquired successor reverse mapping from kind-qualified predecessor strings;
 - same-slug evidence/statement collision resistance;
+- an evidence-to-statement or statement-to-evidence acquired chain;
 - objective grouping and three-item completed disclosure;
 - open/resolved question grouping;
 - direct support navigation;
 - malformed/dangling relation omission without crash or raw-ID leakage;
 - neutral provenance visibility predicate;
 - section counts containing visible entries only;
-- state replacement clearing stale selection.
+- state replacement clearing stale selection;
+- record location display using resolved titles rather than raw IDs.
 
 ### 18.4 Component and page tests
 
@@ -1088,6 +1350,7 @@ Tests cover:
 - re-examination enabled only in existing valid modes;
 - re-examination closing the menu and installing dialogue;
 - facts never exposing evidence/presentation actions;
+- evidence/statement detail showing resolved acquisition context;
 - active-objective HUD placement in dialogue, exploration, and interrogation;
 - no HUD without active primary;
 - 1280×720 layout and reduced-motion behavior;
@@ -1104,6 +1367,8 @@ Tests cover:
 - new summary fields becoming null;
 - no packaged-prose lookup during migration;
 - new captures writing v2 with authored summaries;
+- valid `SaveMetadataView.summary` exposing V2;
+- readable invalid metadata exposing `Option<SaveSummaryV2>` after migration;
 - schema migration succeeding under a matching synthetic content revision;
 - a real old-package save still failing exact content compatibility after
   migration;
@@ -1118,7 +1383,7 @@ HPA-258 owns a deterministic non-production fixture containing:
 - incomplete secondary objectives;
 - more than three completed objectives;
 - acquired evidence and statements, including same-slug cross-kind records;
-- a visible supersession chain;
+- a visible acquired cross-kind supersession chain;
 - one neutral legacy record;
 - asserted facts with direct record and fact support;
 - open and resolved questions;
@@ -1133,10 +1398,13 @@ model tests, and component/page harnesses. It does not become production Chapter
 
 Against the currently authored packaged game, HPA-258 verifies:
 
+- `production-anchors.ts` and its consumers use the new
+  `caseFileMenuEntry`/`caseFile` anchors and `案件檔案` copy;
 - Case File replaces the Evidence submenu and opens/closes through GameShell;
 - every currently non-empty section is reachable;
 - empty sections are neutral and reveal no catalog totals;
 - legacy record presentation remains unchanged;
+- acquired record detail displays authored chapter/scene titles, not IDs;
 - re-examination still works in a packaged supported mode;
 - focus, Escape, inert, and 1280×720 behavior;
 - primary-objective HUD is absent when no authored active objective exists;
@@ -1170,12 +1438,16 @@ HPA-266 remains the program’s packaged Chapter 1 acceptance gate.
 Scope:
 
 1. cached `StoryLocationIndex`;
-2. source-group and origin-context public views;
-3. kind-qualified Case File key normalization and acquired supersession model;
-4. six-section Case File replacing InventoryPanel;
-5. preserved re-examination;
-6. primary-objective HUD;
-7. accessibility and synthetic populated fixtures.
+2. fallible inventory/story view integration and `?` propagation;
+3. source-group, acquisition-context, and origin-context public views;
+4. kind-qualified Case File key normalization and acquired-only supersession
+   model, including a cross-kind chain;
+5. six-section Case File replacing InventoryPanel;
+6. `production-anchors.ts` rename from evidence-menu to Case File anchors plus
+   all packaged WDIO consumers;
+7. preserved re-examination;
+8. primary-objective HUD;
+9. accessibility and synthetic populated fixtures.
 
 Compatibility:
 
@@ -1189,15 +1461,17 @@ Compatibility:
 
 Scope:
 
-1. shared scene-summary parser and compiler audit state;
-2. Chapter 1 authored summary backfill;
-3. emitted/Rust/public scene summary;
-4. explicit `SaveSummaryV1` rename;
-5. `SaveSummaryV2`, `SaveEnvelopeV2`, and v1-to-v2 migration;
-6. shared SaveRecapDetails;
-7. Save Browser and title Continue recap;
-8. repository guidance clarification for `@lyra/scene-types` shared-subset scope;
-9. migration, content-identity, and packaged persistence tests.
+1. list-form scene-summary syntax and shared scene-header parser;
+2. explicit linear-scene metadata carve-out and parser diagnostics;
+3. Chapter 1 authored summary backfill;
+4. emitted/Rust/public scene summary;
+5. explicit `SaveSummaryV1` rename;
+6. `SaveSummaryV2`, `SaveEnvelopeV2`, and v1-to-v2 migration;
+7. V2 valid and readable-invalid save metadata projections;
+8. shared SaveRecapDetails;
+9. Save Browser and title Continue recap;
+10. repository guidance clarification for `@lyra/scene-types` shared-subset scope;
+11. migration, content-identity, parser, and packaged persistence tests.
 
 Compatibility:
 
@@ -1221,11 +1495,12 @@ matrix passes. It does not wait for HPA-265/HPA-266.
 | Facts cannot be selected as physical evidence | PR A type/source/component tests |
 | Superseded leads remain inspectable and linked | PR A synthetic populated fixture; real Chapter 1 path HPA-265/266 |
 | Authorizations show grantor and permitted scope | PR A synthetic fixture; real Chapter 1 grant HPA-265/266 |
+| Evidence/statements show authored acquisition location, not raw IDs | PR A Rust/component tests + packaged E2E |
 | Continue/save cards show chapter, scene, primary objective, save type, time | PR B component + packaged persistence E2E |
 | Save/load restores all Case File sections exactly | PR A/PR B Rust synthetic round trip; packaged real-story path HPA-266 |
 | Locked definitions never leak | PR A Rust/model/component fixtures; HPA-266 real-story check |
 | Primary objective appears in gameplay where active | PR A synthetic/page tests; real authored objective HPA-265/266 |
-| Current scene summaries are authored and retained in saves | PR B compiler audit + save capture/migration tests |
+| Current scene summaries tokenize, compile, and are retained in saves | PR B parser/compiler audit + save capture/migration tests |
 
 ## 21. Non-goals
 
@@ -1248,15 +1523,25 @@ HPA-258 does not include:
 
 ## 22. Design self-review
 
+- Scene summary syntax is accepted by the actual tokenizer and has an explicit
+  linear-parser carve-out.
 - No durable Case File state duplicates inventory or story state.
 - No locked-definition lookup is delegated to Svelte.
-- Kind-qualified supersession preserves evidence/statement namespace identity.
-- Rust fail-closed behavior is consistent with existing whole-view fallibility.
-- Origin resolution is cached rather than placed on the hot view path.
+- Kind-qualified supersession preserves evidence/statement namespace identity,
+  and cross-kind chains are accepted rather than hedged.
+- Acquired successor derivation cannot expose a future catalog successor.
+- Rust fail-closed behavior is consistent with existing whole-view fallibility,
+  and the newly fallible story-view constructor is explicit.
+- Source-group rejection is assigned to the existing catalog/inventory gates,
+  not an artificial view-time test.
+- Origin and acquisition-location resolution are cached rather than placed on a
+  file-I/O hot path.
+- Evidence and statement details receive titles rather than raw location IDs.
+- The Case File rename includes the production E2E anchor coupling point.
 - Scene-summary ownership respects the shared-subset `@lyra/scene-types`
   boundary.
-- Save v1 naming, v2 migration, and exact content compatibility are distinct and
-  explicit.
+- Save v1 naming, both V2 metadata projections, migration, and exact content
+  compatibility are distinct and explicit.
 - PR A is save-compatible; PR B intentionally invalidates old package saves.
 - Synthetic populated acceptance is complete without reversing the HPA-258 →
   HPA-265 dependency.
