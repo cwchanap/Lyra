@@ -1,12 +1,12 @@
 // =============================================================================
 // packages/scene-types/src/index.ts
 //
-// Single source of truth for the scene-graph wire types shared between the
-// compile pipeline (packages/scripts/compile-scenes) and the layout editor
-// (apps/layout-editor). Every type here is a value-type that is byte-identical
-// on both sides and part of the emitted JSON contract — sharing it prevents
-// silent drift (e.g. a fourth EvidenceSource variant compiling cleanly on one
-// side and failing on the other).
+// Single source of truth for the byte-identical scene-graph subset shared
+// between the compile pipeline (packages/scripts/compile-scenes) and the
+// layout editor (apps/layout-editor). It does not own the full runtime scene
+// JSON; every type here is a value-type needed on both sides of this subset,
+// preventing silent drift (e.g. a fourth EvidenceSource variant compiling
+// cleanly on one side and failing on the other).
 //
 // Deliberately NOT shared here:
 //   - DialogueItem: the editor keeps a simplified rendering view (no assetCue,

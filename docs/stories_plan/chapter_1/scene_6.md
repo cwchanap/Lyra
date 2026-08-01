@@ -1,5 +1,7 @@
 # Scene 6: 喘息 — 商店街避雨
 
+- **Summary:** 相馬與早坂在商店街避雨，把人證、現場物件與系統摘要重新分開，決定回到雨鐘親自重走現場。
+
 [場景：吉祥寺商店街，傍晚，雨。一家便利店的屋簷下，相馬與早坂站著避雨。屋簷邊緣的雨水一條線地落下，街上行人撐著各色的傘走過。]
 - **Background Prompt:** Kichijoji shopping street at rainy dusk under a convenience-store awning, wet pavement, passing umbrellas, muted storefront light, no readable signage.
 - **BGS:** bgs_shopping_street_rain_dusk

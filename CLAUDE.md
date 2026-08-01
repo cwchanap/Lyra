@@ -129,10 +129,10 @@ that is what prevents silent drift in the emitted JSON/wire contract:
   build-time manifest (`packages/scripts/compile-scenes/assets/manifest.ts`),
   the runtime resolver (`apps/game/src/lib/assets/story-assets.ts`), and the
   editor preview (`apps/layout-editor/src/lib/editor-assets.ts`).
-- `@lyra/scene-types` - the scene-graph wire types emitted as JSON and read by
-  both the compiler and the editor. Add a new `EvidenceSource` variant or
-  layout shape here, not on one side. `DialogueItem` is deliberately NOT shared
-  (the editor keeps a narrower rendering view).
+- `@lyra/scene-types` - the byte-identical compiler/editor subset of scene-graph
+  wire types, not the full runtime scene JSON. Add a new shared `EvidenceSource`
+  variant or layout shape here, not on one side. `DialogueItem` is deliberately
+  NOT shared (the editor keeps a narrower rendering view).
 - `@lyra/scripts` - the compile-scenes pipeline plus audio tooling (formerly the
   root `scripts/` directory). The root `scenes:*`, `audio:*`, and
   `evidence-sources:audit` scripts delegate here via

@@ -163,6 +163,8 @@ Each `scene_<N>.md` is **one scene only**. Structure:
 ```
 # Scene <N>: <scene title in Traditional Chinese>
 
+- **Summary:** <one-sentence player recap copy, not a beat list>
+
 [場景：地點、時間、天氣、氛圍、視覺要素]
 
 **旁白**：...
@@ -175,7 +177,7 @@ Each `scene_<N>.md` is **one scene only**. Structure:
 ```
 
 - One `#` H1 at the top: `# Scene <N>: <title>`. Title is Traditional Chinese, matches the corresponding Part title in `_詳細計劃.md`.
-- The `[場景：...]` block comes immediately after the H1.
+- Immediately after the H1, write `- **Summary:** <...>`: one sentence of player-facing recap copy, not a beat list. The `[場景：...]` block follows the Summary.
 - **No `##` Part headings inside the file** — the file *is* the scene.
 - If a single Part needs multiple sub-scenes (rare — e.g. location change mid-Part), use additional `[場景：...]` blocks within the same file rather than `##` subheadings.
 
@@ -270,6 +272,8 @@ Exactly one H1 title line at the top, then dialogue. **No H2 or deeper headings 
 ```
 # Scene 0: 接案
 
+- **Summary:** 相馬在雨夜接下委託，知道眼前的紀錄仍缺了一段人證。
+
 [場景：吉祥寺街道，深夜，雨夜。律師相馬律撐傘走進雨鐘咖啡館。]
 
 [相馬律收起傘，在門口抖了抖。]
@@ -295,6 +299,7 @@ Exactly one H1 title line at the top, then dialogue. **No H2 or deeper headings 
 ### Linear scene semantics
 
 - The file is one linear queue. The parser walks it once and emits items in source order.
+- `- **Summary:**` sits directly after the H1 and is one-sentence player recap copy, never a beat list.
 - End-of-file = end-of-scene. The engine advances to the next scene in the chapter manifest.
 - Linear scenes carry **no metadata** beyond the H1 title — no `Status`, no `Unlock`, no `Reveals`. They never gate progression.
 - A linear scene may contain multiple `[場景：...]` tags if it spans multiple physical locations (e.g., 咖啡館 → 街道 → 警車內). Each scene tag updates the visible backdrop.

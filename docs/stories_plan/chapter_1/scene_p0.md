@@ -1,5 +1,7 @@
 # Scene P0: 雨中的東京
 
+- **Summary:** 東京雨夜裡，KAGAMI 證據摘要試點悄悄成為城市日常，而沒有人注意資訊如何先替案件排好故事。
+
 [場景：吉祥寺車站月台，傍晚，細雨。通勤人潮撐著傘在月台上移動，頭頂的跑馬燈與螢幕亮著。空氣濕冷，混著雨水與鐵鏽味。遠處電車進站的低鳴。]
 - **Background Prompt:** Rainy dusk at a Tokyo train station platform, blurred commuting crowd under transparent and dark umbrellas, overhead station information screens glowing with delay notices and route maps, wet reflective platform edge, neo-noir cinematic visual novel background, no foreground characters, no readable text, no UI overlay.
 - **BGM:** bgm_chapter_close

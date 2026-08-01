@@ -16,6 +16,10 @@ import { resolve } from "node:path";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
 import { enrichScenesWithAssets } from "./compile-scenes/assets/enrich";
 import type { AssetConfig } from "./compile-scenes/assets/config";
+import { parseChapter } from "./compile-scenes/parser-chapter";
+import { parseInterrogationScene } from "./compile-scenes/parser-interrogation";
+import { parseInvestigationScene } from "./compile-scenes/parser-investigation";
+import { parseLinearScene } from "./compile-scenes/parser-linear";
 import { buildSaveContentManifest } from "./compile-scenes/save-content-manifest";
 import type { SceneRecord } from "./compile-scenes/validator";
 
@@ -63,6 +67,37 @@ function annotateCoffeeWithSourceGroup(sourceRoot: string): void {
     ),
   );
 }
+
+describe("production Chapter 1 authoring", () => {
+  it("gives every manifested scene an authored player recap", () => {
+    const chapterDir = "docs/stories_plan/chapter_1";
+    const chapterFile = `${chapterDir}/chapter.md`;
+    const chapter = parseChapter(
+      readFileSync(chapterFile, "utf-8"),
+      "chapter_1/chapter.md",
+      "chapter_1",
+    );
+    if (!chapter.ok) throw new Error(formatErrors([chapter.error]));
+
+    const missingSummaryFiles = chapter.value.sceneFiles.filter((sceneFile) => {
+      const sourceFile = `chapter_1/${sceneFile}`;
+      const source = readFileSync(resolve(chapterDir, sceneFile), "utf-8");
+      const id = sceneFile.replace(/\.md$/, "");
+      const parsed = sceneFile.startsWith("investigation_scene_")
+        ? parseInvestigationScene(source, sourceFile, id)
+        : sceneFile.startsWith("interrogation_scene_")
+          ? parseInterrogationScene(source, sourceFile, id)
+          : parseLinearScene(source, sourceFile, id);
+      if (!parsed.ok) throw new Error(formatErrors([parsed.error]));
+      return !parsed.value.summaryAuthored;
+    });
+
+    expect(
+      missingSummaryFiles,
+      `Chapter 1 scenes missing authored player recap copy: ${missingSummaryFiles.join(", ")}`,
+    ).toEqual([]);
+  });
+});
 
 describe("compile (end-to-end against valid fixture)", () => {
   it("compiles the valid fixture without errors and emits expected files", () => {

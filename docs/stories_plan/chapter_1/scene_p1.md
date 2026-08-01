@@ -1,5 +1,7 @@
 # Scene P1: 零號小委託 — 重印收據
 
+- **Summary:** 相馬以一張重印收據拆開「記錄時間」與「事件時間」，並與堅持保留紙本痕跡的早坂建立最初搭檔節奏。
+
 [場景：吉祥寺商店街，黃昏，下著細雨。濕亮的騎樓倒映著店家招牌，騎樓邊緣滴著水。一家文具店兼影印店的招牌亮著暖光。]
 - **Background Prompt:** Rainy dusk on a small Tokyo shopping street, wet pavement reflecting warm storefront signs, awning-edge drip, a stationery-and-copy shop with warm interior light glowing through glass, no people, no readable text, cinematic visual-novel background, neo-noir mood.
 - **BGM:** bgm_chapter_close

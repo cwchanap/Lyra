@@ -63,6 +63,8 @@ end, not a dead-end error.
 ```markdown
 # Scene N: <title>
 
+- **Summary:** <one-sentence player recap copy, not a beat list>
+
 ## Intro
 
 **角色名**：...
@@ -151,6 +153,8 @@ end, not a dead-end error.
 The skeleton's base interrogation headings, heading levels, and manifest block
 structure follow the canonical compiler fixture
 `packages/scripts/__fixtures__/valid_interrogation/chapter_1/interrogation_scene_1.md`.
+`- **Summary:**` belongs directly after the H1 and is one sentence of
+player-facing recap copy, not a beat list or authoring notes.
 Use that fixture to resolve questions about base interrogation structure. The
 skeleton deliberately omits the nine optional provenance fields from its
 Evidence / Statement entries so the reusable template stays classification
