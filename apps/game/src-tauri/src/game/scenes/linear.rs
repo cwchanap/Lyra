@@ -6,6 +6,7 @@ use crate::game::schema::LinearSceneJson;
 pub struct LinearSceneState {
     pub id: String,
     pub title: String,
+    pub summary: String,
     pub(crate) queue: Option<ActiveDialogueQueue>,
 }
 
@@ -22,6 +23,7 @@ impl LinearSceneState {
         Self {
             id,
             title: j.title,
+            summary: j.summary,
             queue: segment.and_then(|segment| ActiveDialogueQueue::new(vec![segment], queue_gen)),
         }
     }
@@ -61,6 +63,7 @@ mod tests {
             LinearSceneJson {
                 id: "s".into(),
                 title: "t".into(),
+                summary: "summary".into(),
                 asset_refs: vec![],
                 queue: vec![line("a"), line("b")],
             },

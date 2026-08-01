@@ -167,6 +167,7 @@ mod tests {
             def: InvestigationSceneJson {
                 id: "i".into(),
                 title: "i".into(),
+                summary: "Summary".into(),
                 asset_refs: vec![],
                 intro: vec![],
                 sublocations: vec![],

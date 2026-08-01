@@ -36,7 +36,14 @@ function stateWithCaseFile(overrides: {
       index: 1,
       total: 1,
     },
-    scene: { kind: "linear", id: "scene_1", title: "起點", index: 1, total: 1 },
+    scene: {
+      kind: "linear",
+      id: "scene_1",
+      title: "起點",
+      summary: "",
+      index: 1,
+      total: 1,
+    },
     inventory: {
       evidence: overrides.evidence ?? [],
       statements: overrides.statements ?? [],

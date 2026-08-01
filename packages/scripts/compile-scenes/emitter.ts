@@ -97,6 +97,7 @@ export function emitLinearScene(ast: ASTLinearScene): JSONLinearScene {
     type: "linear",
     id: ast.id,
     title: ast.title,
+    summary: ast.summary,
     queue: emitDialogueItems(ast.queue),
     assetRefs: emitAssetRefs(ast.assetRefs),
   };
@@ -110,6 +111,7 @@ export function emitInvestigationScene(
     type: "investigation",
     id: ast.id,
     title: ast.title,
+    summary: ast.summary,
     intro: emitDialogueItems(ast.intro),
     assetRefs: emitAssetRefs(ast.assetRefs),
     sublocations: ast.sublocations.map((sub) => ({
@@ -199,6 +201,7 @@ export function emitInterrogationScene(
     type: "interrogation",
     id: ast.id,
     title: ast.title,
+    summary: ast.summary,
     intro: emitDialogueItems(ast.intro),
     assetRefs: emitAssetRefs(ast.assetRefs),
     phases: ast.phases.map((phase) => ({

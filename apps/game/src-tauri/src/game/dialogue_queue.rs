@@ -187,6 +187,7 @@ mod persistence_adapter_tests {
                     "type": "investigation",
                     "id": "{SOURCE_SCENE_ID}",
                     "title": "Source investigation",
+                    "summary": "Fixture scene summary.",
                     "intro": [],
                     "sublocations": [
                         {{
@@ -245,6 +246,7 @@ mod persistence_adapter_tests {
                     "type": "linear",
                     "id": "{CURRENT_SCENE_ID}",
                     "title": "Current linear",
+                    "summary": "Fixture scene summary.",
                     "queue": [
                         {{"kind":"action","text":"current-0"}},
                         {{"kind":"action","text":"current-1"}}
@@ -1353,6 +1355,7 @@ mod tests {
             "type": "linear",
             "id": LINEAR_SCENE_ID,
             "title": "Linear",
+            "summary": "Fixture scene summary.",
             "queue": items,
         }))
         .expect("linear scene fixture should deserialize")
@@ -1363,6 +1366,7 @@ mod tests {
             "type": "investigation",
             "id": INVESTIGATION_SCENE_ID,
             "title": "Investigation",
+            "summary": "Fixture scene summary.",
             "intro": [{ "kind": "action", "text": "investigation:intro" }],
             "sublocations": [{
                 "id": "lobby",
@@ -1509,6 +1513,7 @@ mod tests {
             "type": "interrogation",
             "id": INTERROGATION_SCENE_ID,
             "title": "Interrogation",
+            "summary": "Fixture scene summary.",
             "intro": [{ "kind": "action", "text": "interrogation:intro" }],
             "phases": [phase],
             "evidenceManifest": [{

@@ -164,6 +164,7 @@ mod tests {
             InvestigationSceneJson {
                 id: "i".into(),
                 title: "i".into(),
+                summary: "Summary".into(),
                 asset_refs: vec![],
                 intro: vec![],
                 sublocations: vec![],
@@ -183,6 +184,7 @@ mod tests {
             InterrogationSceneJson {
                 id: "interrogation".into(),
                 title: "interrogation".into(),
+                summary: "Summary".into(),
                 asset_refs: vec![],
                 intro: vec![],
                 phases: vec![],

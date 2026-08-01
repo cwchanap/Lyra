@@ -38,6 +38,7 @@ function state(
       kind: "investigation",
       id: "investigation_scene_1",
       title: "雨夜",
+      summary: "",
       index: 0,
       total: 1,
       currentSublocationId: "main",

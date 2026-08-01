@@ -2,6 +2,7 @@
   "type": "interrogation",
   "id": "interrogation_scene_2",
   "title": "若槻蓮的第一次詢問",
+  "summary": "Fixture scene summary.",
   "intro": [
     {
       "kind": "line",

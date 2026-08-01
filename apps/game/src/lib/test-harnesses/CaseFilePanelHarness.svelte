@@ -24,6 +24,7 @@
       kind: "linear",
       id: "scene_1",
       title: "雨中現場",
+      summary: "",
       index: 0,
       total: 1,
     },

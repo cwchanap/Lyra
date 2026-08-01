@@ -406,6 +406,7 @@ exports[`snapshot: valid fixture JSON output > matches the investigation scene s
       "unlock": null,
     },
   ],
+  "summary": "測試調查場景",
   "title": "測試調查場景",
   "type": "investigation",
 }
@@ -457,6 +458,7 @@ exports[`snapshot: valid fixture JSON output > matches the linear scene snapshot
       "text": "場景切換。",
     },
   ],
+  "summary": "測試線性場景",
   "title": "測試線性場景",
   "type": "linear",
 }

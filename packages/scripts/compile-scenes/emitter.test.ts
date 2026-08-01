@@ -779,6 +779,7 @@ describe("emitter", () => {
       type: "linear",
       id: "scene_0",
       title: "接案",
+      summary: "接案",
       queue: [
         { kind: "sceneTag", text: "街道", assetCue: null },
         {
@@ -796,6 +797,7 @@ describe("emitter", () => {
       ],
       assetRefs: [{ type: "background", assetId: "bg_street" }],
     });
+    expect(json).not.toHaveProperty("summaryAuthored");
   });
 
   it("omits the legacy line expression while preserving portrait.expression", () => {
@@ -931,6 +933,8 @@ describe("emitter", () => {
     const json = emitInvestigationScene(ast, corpusForScene(ast));
     expect(json.outro.unlock).toBe("auto");
     expect(json.type).toBe("investigation");
+    expect(json.summary).toBe("t");
+    expect(json).not.toHaveProperty("summaryAuthored");
     expect(json.assetRefs).toEqual([
       { type: "evidence", assetId: "evidence_photo" },
     ]);
@@ -1027,9 +1031,11 @@ describe("emitter", () => {
       sourceFile: "x",
       line: 1,
     };
-    expect(emitInterrogationScene(ast, corpusForScene(ast))).toMatchObject({
+    const json = emitInterrogationScene(ast, corpusForScene(ast));
+    expect(json).toMatchObject({
       type: "interrogation",
       id: "interrogation_scene_1",
+      summary: "詢問",
       assetRefs: [{ type: "audio", assetId: "rain_loop" }],
       phases: [
         {
@@ -1048,6 +1054,7 @@ describe("emitter", () => {
         },
       ],
     });
+    expect(json).not.toHaveProperty("summaryAuthored");
   });
 
   it("emits interrogation testimony lines with contradiction + reveals", () => {

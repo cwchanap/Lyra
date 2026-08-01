@@ -2,6 +2,7 @@
   "type": "investigation",
   "id": "investigation_scene_1",
   "title": "測試調查場景",
+  "summary": "Fixture scene summary.",
   "intro": [
     {
       "kind": "action",

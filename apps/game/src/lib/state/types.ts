@@ -148,11 +148,19 @@ export type CrossExamView = {
 };
 
 export type SceneView =
-  | { kind: "linear"; id: string; title: string; index: number; total: number }
+  | {
+      kind: "linear";
+      id: string;
+      title: string;
+      summary: string;
+      index: number;
+      total: number;
+    }
   | {
       kind: "investigation";
       id: string;
       title: string;
+      summary: string;
       index: number;
       total: number;
       currentSublocationId: string | null;
@@ -162,6 +170,7 @@ export type SceneView =
       kind: "interrogation";
       id: string;
       title: string;
+      summary: string;
       index: number;
       total: number;
       currentPhaseId: string | null;

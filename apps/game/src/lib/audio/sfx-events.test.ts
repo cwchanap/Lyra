@@ -128,6 +128,7 @@ function state(overrides: Partial<GameStateView> = {}): GameStateView {
       kind: "investigation",
       id: "investigation_scene_7",
       title: "",
+      summary: "",
       index: 0,
       total: 1,
       currentSublocationId: "back_door",
@@ -197,7 +198,14 @@ describe("SFX event mapping", () => {
 describe("inferGameplaySfxEvents", () => {
   it("does not dispatch generic dialogue feedback after ordinary dialogue advances", () => {
     const previous = state({
-      scene: { kind: "linear", id: "scene_2", title: "", index: 0, total: 1 },
+      scene: {
+        kind: "linear",
+        id: "scene_2",
+        title: "",
+        summary: "",
+        index: 0,
+        total: 1,
+      },
       mode: {
         type: "dialogue",
         crossExamLineId: null,
@@ -211,7 +219,14 @@ describe("inferGameplaySfxEvents", () => {
       },
     });
     const next = state({
-      scene: { kind: "linear", id: "scene_2", title: "", index: 0, total: 1 },
+      scene: {
+        kind: "linear",
+        id: "scene_2",
+        title: "",
+        summary: "",
+        index: 0,
+        total: 1,
+      },
       mode: {
         type: "dialogue",
         crossExamLineId: null,
@@ -235,7 +250,14 @@ describe("inferGameplaySfxEvents", () => {
     // investigation_scene_7 in explore mode must NOT fire the buzz before the
     // player inspects the hotspot and reaches the message dialogue.
     const previous = state({
-      scene: { kind: "linear", id: "scene_6", title: "", index: 0, total: 1 },
+      scene: {
+        kind: "linear",
+        id: "scene_6",
+        title: "",
+        summary: "",
+        index: 0,
+        total: 1,
+      },
       mode: {
         type: "dialogue",
         crossExamLineId: null,
@@ -302,10 +324,24 @@ describe("inferGameplaySfxEvents", () => {
 
   it("dispatches the USB hook on the exact chapter 1 insert action beat", () => {
     const previous = state({
-      scene: { kind: "linear", id: "scene_11", title: "", index: 0, total: 1 },
+      scene: {
+        kind: "linear",
+        id: "scene_11",
+        title: "",
+        summary: "",
+        index: 0,
+        total: 1,
+      },
     });
     const next = state({
-      scene: { kind: "linear", id: "scene_11", title: "", index: 0, total: 1 },
+      scene: {
+        kind: "linear",
+        id: "scene_11",
+        title: "",
+        summary: "",
+        index: 0,
+        total: 1,
+      },
       mode: {
         type: "dialogue",
         crossExamLineId: null,
@@ -328,7 +364,14 @@ describe("inferGameplaySfxEvents", () => {
 
   it("does not replay the USB hook on later dialogue under the sticky office-night scene tag", () => {
     const previous = state({
-      scene: { kind: "linear", id: "scene_11", title: "", index: 0, total: 1 },
+      scene: {
+        kind: "linear",
+        id: "scene_11",
+        title: "",
+        summary: "",
+        index: 0,
+        total: 1,
+      },
       mode: {
         type: "dialogue",
         crossExamLineId: null,
@@ -345,7 +388,14 @@ describe("inferGameplaySfxEvents", () => {
       },
     });
     const next = state({
-      scene: { kind: "linear", id: "scene_11", title: "", index: 0, total: 1 },
+      scene: {
+        kind: "linear",
+        id: "scene_11",
+        title: "",
+        summary: "",
+        index: 0,
+        total: 1,
+      },
       mode: {
         type: "dialogue",
         crossExamLineId: null,
@@ -369,6 +419,7 @@ describe("inferGameplaySfxEvents", () => {
         kind: "interrogation",
         id: "interrogation_scene_10",
         title: "",
+        summary: "",
         index: 0,
         total: 1,
         currentPhaseId: null,
@@ -399,6 +450,7 @@ describe("inferGameplaySfxEvents", () => {
         kind: "interrogation",
         id: "interrogation_scene_10",
         title: "",
+        summary: "",
         index: 0,
         total: 1,
         currentPhaseId: null,
@@ -434,6 +486,7 @@ describe("inferGameplaySfxEvents", () => {
         kind: "investigation",
         id: "investigation_scene_7",
         title: "",
+        summary: "",
         index: 0,
         total: 1,
         currentSublocationId: "inner",
@@ -463,6 +516,7 @@ describe("inferGameplaySfxEvents", () => {
         kind: "investigation",
         id: "investigation_scene_7",
         title: "",
+        summary: "",
         index: 0,
         total: 1,
         currentSublocationId: "inner",
@@ -499,6 +553,7 @@ describe("inferGameplaySfxEvents", () => {
         kind: "investigation",
         id: "investigation_scene_7",
         title: "",
+        summary: "",
         index: 0,
         total: 1,
         currentSublocationId: "inner",
@@ -517,6 +572,7 @@ describe("inferGameplaySfxEvents", () => {
         kind: "investigation",
         id: "investigation_scene_7",
         title: "",
+        summary: "",
         index: 0,
         total: 1,
         currentSublocationId: "inner",
@@ -590,6 +646,7 @@ describe("inferGameplaySfxEvents", () => {
           kind: "interrogation",
           id: "interrogation_scene_1",
           title: "",
+          summary: "",
           index: 0,
           total: 1,
           currentPhaseId: phaseId,
@@ -633,6 +690,7 @@ describe("inferGameplaySfxEvents", () => {
         kind: "investigation",
         id: "investigation_scene_1",
         title: "",
+        summary: "",
         index: 0,
         total: 1,
         currentSublocationId: "main",
@@ -650,6 +708,7 @@ describe("inferGameplaySfxEvents", () => {
         kind: "investigation",
         id: "investigation_scene_1",
         title: "",
+        summary: "",
         index: 0,
         total: 1,
         currentSublocationId: "main",

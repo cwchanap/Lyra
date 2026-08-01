@@ -2,6 +2,7 @@
   "type": "investigation",
   "id": "investigation_scene_1",
   "title": "第一次現場調查 — 雨鐘咖啡館",
+  "summary": "Fixture scene summary.",
   "intro": [
     {
       "kind": "action",

@@ -433,6 +433,7 @@ mod tests {
                     "type": "linear",
                     "id": scene_id,
                     "title": scene_title,
+                    "summary": scene_title,
                     "queue": [{"kind": "line", "speaker": "Narrator", "text": "..."}],
                 })
                 .to_string(),

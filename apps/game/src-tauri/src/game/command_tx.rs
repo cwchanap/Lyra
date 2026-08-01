@@ -561,6 +561,7 @@ mod tests {
                 "type": "linear",
                 "id": "interrogation_scene_2",
                 "title": "Wrong Type",
+                "summary": "Fixture scene summary.",
                 "queue": []
             }"#,
         )
@@ -672,6 +673,7 @@ mod tests {
                 "type": "linear",
                 "id": "interrogation_scene_2",
                 "title": "Wrong Type",
+                "summary": "Fixture scene summary.",
                 "queue": []
             }"#,
         )
@@ -795,6 +797,7 @@ mod tests {
                 "type": "linear",
                 "id": "scene_0",
                 "title": "Opening",
+                "summary": "Fixture scene summary.",
                 "queue": [{ "kind": "line", "speaker": "A", "text": "before" }]
             }"#,
         )
@@ -805,6 +808,7 @@ mod tests {
                 "type": "linear",
                 "id": "scene_tag_only",
                 "title": "Silent transition",
+                "summary": "Fixture scene summary.",
                 "queue": [{ "kind": "sceneTag", "text": "transition" }]
             }"#,
         )
@@ -815,6 +819,7 @@ mod tests {
                 "type": "linear",
                 "id": "interrogation_scene_1",
                 "title": "Wrong Type",
+                "summary": "Fixture scene summary.",
                 "queue": []
             }"#,
         )
@@ -865,6 +870,7 @@ mod tests {
                 "type": "linear",
                 "id": "scene_0",
                 "title": "Opening",
+                "summary": "Fixture scene summary.",
                 "queue": [{ "kind": "line", "speaker": "A", "text": "before" }]
             }"#,
         )
@@ -875,6 +881,7 @@ mod tests {
                 "type": "investigation",
                 "id": "investigation_scene_1",
                 "title": "Investigation",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "sublocations": [{
                     "id": "room",
@@ -909,6 +916,7 @@ mod tests {
                 "type": "linear",
                 "id": "interrogation_scene_1",
                 "title": "Wrong Type",
+                "summary": "Fixture scene summary.",
                 "queue": []
             }"#,
         )
@@ -941,6 +949,7 @@ mod tests {
                 "type": "linear",
                 "id": "interrogation_scene_1",
                 "title": "Wrong Type",
+                "summary": "Fixture scene summary.",
                 "queue": []
             }"#,
         )
@@ -949,6 +958,7 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![DialogueItem::Line {
                 speaker: "A".into(),
@@ -1087,6 +1097,7 @@ mod tests {
                 "type": "linear",
                 "id": "interrogation_scene_1",
                 "title": "Wrong Type",
+                "summary": "Fixture scene summary.",
                 "queue": []
             }"#,
         )
@@ -1095,6 +1106,7 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {

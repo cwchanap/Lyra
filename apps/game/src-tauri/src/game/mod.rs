@@ -1850,6 +1850,7 @@ impl GameEngine {
             SceneRuntime::Linear(s) => SceneView::Linear {
                 id: s.id.clone(),
                 title: s.title.clone(),
+                summary: s.summary.clone(),
                 index: self.current_scene_idx,
                 total,
             },
@@ -1929,6 +1930,7 @@ impl GameEngine {
                 SceneView::Investigation {
                     id: inv.def.id.clone(),
                     title: inv.def.title.clone(),
+                    summary: inv.def.summary.clone(),
                     index: self.current_scene_idx,
                     total,
                     current_sublocation_id: inv.current_sublocation_id.clone(),
@@ -2027,6 +2029,7 @@ impl GameEngine {
                 SceneView::Interrogation {
                     id: scene.def.id.clone(),
                     title: scene.def.title.clone(),
+                    summary: scene.def.summary.clone(),
                     index: self.current_scene_idx,
                     total,
                     current_phase_id: scene.current_phase_id.clone(),
@@ -2113,10 +2116,41 @@ mod tests {
     }
 
     #[test]
+    fn scene_views_preserve_deserialized_scene_summaries() {
+        let resources = scene_jump_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        assert!(matches!(
+            engine.view().unwrap().scene,
+            SceneView::Linear { summary, .. }
+                if summary == "The detective arrives at the opening scene."
+        ));
+        assert!(matches!(
+            engine
+                .jump_to_scene("chapter_1", "investigation_scene_1")
+                .unwrap()
+                .scene,
+            SceneView::Investigation { summary, .. }
+                if summary == "The detective searches the room for evidence."
+        ));
+        assert!(matches!(
+            engine
+                .jump_to_scene("chapter_1", "interrogation_scene_2")
+                .unwrap()
+                .scene,
+            SceneView::Interrogation { summary, .. }
+                if summary == "The detective questions the witness about the evidence."
+        ));
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
     fn investigation_composite_queue_is_one_generation_with_body_collect_acquire_segments() {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
@@ -2392,6 +2426,7 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Room".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
@@ -3169,6 +3204,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             "type": "investigation",
             "id": "investigation_scene_1",
             "title": "Investigation",
+            "summary": "Fixture scene summary.",
             "intro": [],
             "sublocations": [{
                 "id": "cafe",
@@ -3225,6 +3261,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             "type": "interrogation",
             "id": "interrogation_scene_1",
             "title": "Interrogation",
+            "summary": "Fixture scene summary.",
             "intro": [],
             "phases": [{
                 "kind": "inquiry",
@@ -3537,6 +3574,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![
@@ -3644,6 +3682,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![
@@ -3728,6 +3767,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 "type": "linear",
                 "id": "interrogation_scene_2",
                 "title": "Next",
+                "summary": "Fixture scene summary.",
                 "queue": [{ "kind": "line", "speaker": "Z", "text": "next" }]
             }"#,
         )
@@ -3780,6 +3820,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 "type": "investigation",
                 "id": "investigation_scene_0",
                 "title": "Source",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "sublocations": [],
                 "evidenceManifest": [{
@@ -3874,6 +3915,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 "type": "linear",
                 "id": "interrogation_scene_2",
                 "title": "Next",
+                "summary": "Fixture scene summary.",
                 "queue": [{ "kind": "line", "speaker": "Z", "text": "next" }]
             }"#,
         )
@@ -3963,6 +4005,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
@@ -4018,6 +4061,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
@@ -4078,6 +4122,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
@@ -4148,6 +4193,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
@@ -4191,6 +4237,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![
@@ -4254,6 +4301,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
@@ -4311,6 +4359,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InterrogationSceneJson {
             id: "ordering_test".into(),
             title: "Ordering Test".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
@@ -4491,6 +4540,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InterrogationSceneJson {
             id: "q_reveal_present".into(),
             title: "Q Reveal Present".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
@@ -4616,6 +4666,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InterrogationSceneJson {
             id: "q_reveal_ask".into(),
             title: "Q Reveal Ask".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
@@ -5198,6 +5249,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
@@ -5282,6 +5334,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
@@ -5390,6 +5443,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
@@ -5538,6 +5592,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
@@ -5637,6 +5692,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let scene = InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
