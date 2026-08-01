@@ -9,7 +9,7 @@ use crate::game::dialogue::DIALOGUE_HISTORY_LIMIT;
 use crate::game::dialogue_queue::{
     ActiveDialogueQueue, ActiveDialogueStateV1, DialogueSegmentOriginV1,
 };
-use crate::game::navigation::{load_chapter_scene_jsons, scene_json_identity};
+use crate::game::navigation::{load_chapter_scene_jsons, scene_json_identity, scene_json_summary};
 use crate::game::provenance::{validate_inventory_record_against_catalog, CaseRecordProvenance};
 use crate::game::scenes::interrogation::{CrossExam, InterrogationSceneState};
 use crate::game::scenes::investigation::InvestigationSceneState;
@@ -1071,15 +1071,7 @@ fn capture_location(
                 "Retained game-complete runtime is not the packaged final scene.",
             ));
         }
-        return Ok(CapturedLocation {
-            chapter_id: chapter.id.clone(),
-            chapter_title: chapter.title.clone(),
-            chapter_summary: chapter.summary.clone(),
-            scene_id: scene_json_identity(packaged_scene).0.into(),
-            scene_title: scene_json_identity(packaged_scene).1.into(),
-            scene_summary: scene_json_summary(packaged_scene).into(),
-            game_complete: true,
-        });
+        return Ok(location_from_scene(chapter, packaged_scene, true));
     }
 
     let chapter = &engine.chapters[engine.current_chapter_idx];
@@ -1095,22 +1087,23 @@ fn capture_location(
             "Current runtime scene does not match its packaged scene index.",
         ));
     }
-    Ok(CapturedLocation {
+    Ok(location_from_scene(chapter, packaged_scene, false))
+}
+
+fn location_from_scene(
+    chapter: &ChapterManifest,
+    packaged_scene: &SceneJson,
+    game_complete: bool,
+) -> CapturedLocation {
+    let (scene_id, scene_title) = scene_json_identity(packaged_scene);
+    CapturedLocation {
         chapter_id: chapter.id.clone(),
         chapter_title: chapter.title.clone(),
         chapter_summary: chapter.summary.clone(),
-        scene_id: scene_json_identity(packaged_scene).0.into(),
-        scene_title: scene_json_identity(packaged_scene).1.into(),
+        scene_id: scene_id.into(),
+        scene_title: scene_title.into(),
         scene_summary: scene_json_summary(packaged_scene).into(),
-        game_complete: false,
-    })
-}
-
-fn scene_json_summary(scene: &SceneJson) -> &str {
-    match scene {
-        SceneJson::Linear(scene) => &scene.summary,
-        SceneJson::Investigation(scene) => &scene.summary,
-        SceneJson::Interrogation(scene) => &scene.summary,
+        game_complete,
     }
 }
 

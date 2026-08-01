@@ -13,7 +13,7 @@ use crate::game::dialogue_queue::{
     DialogueSegmentOriginV1,
 };
 use crate::game::navigation::{
-    load_chapter_manifests, load_chapter_scene_jsons, scene_json_identity,
+    load_chapter_manifests, load_chapter_scene_jsons, scene_json_identity, scene_json_summary,
 };
 use crate::game::provenance::validate_catalog_record_origin_coverage;
 use crate::game::scenes::interrogation::{CrossExam, InterrogationSceneState};
@@ -108,11 +108,7 @@ pub(crate) fn validate_save_summary(
         .get(&(snapshot.chapter_id.clone(), snapshot.scene_id.clone()))
         .ok_or_else(GameError::missing_save_definition)?;
     let (_, scene_title) = scene_json_identity(scene);
-    let scene_summary = match scene {
-        SceneJson::Linear(scene) => &scene.summary,
-        SceneJson::Investigation(scene) => &scene.summary,
-        SceneJson::Interrogation(scene) => &scene.summary,
-    };
+    let scene_summary = scene_json_summary(scene);
     let active_primary_objective_id = snapshot.story_state.active_primary_objective_id.clone();
     let active_primary_objective_copy = active_primary_objective_id
         .as_deref()
@@ -1794,6 +1790,9 @@ mod tests {
             Box::new(|save| save.summary.chapter_id = "wrong".into()),
             Box::new(|save| save.summary.scene_title = "wrong".into()),
             Box::new(|save| save.summary.active_primary_objective_id = Some("missing".into())),
+            Box::new(|save| save.summary.chapter_summary = Some("wrong".into())),
+            Box::new(|save| save.summary.scene_summary = Some("wrong".into())),
+            Box::new(|save| save.summary.active_primary_objective_summary = Some("wrong".into())),
         ];
         for mutate in mutations {
             assert_ne!(
