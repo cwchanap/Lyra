@@ -355,10 +355,10 @@ describe("save seed", () => {
 
     await openTitleLoadBrowser();
     const manualOneText = await saveCardText("manual", 1);
+    expect(manualOneText).toContain(unicodeEnvelope.summary.chapterTitle);
+    expect(manualOneText).toContain(unicodeEnvelope.summary.sceneTitle);
     for (const field of [
-      unicodeEnvelope.summary.chapterTitle,
       unicodeEnvelope.summary.chapterSummary,
-      unicodeEnvelope.summary.sceneTitle,
       unicodeEnvelope.summary.sceneSummary,
       unicodeEnvelope.summary.activePrimaryObjectiveLabel,
       unicodeEnvelope.summary.activePrimaryObjectiveSummary,
@@ -392,10 +392,14 @@ describe("save seed", () => {
       ).map((region) => region.textContent ?? ""),
     );
     expect(titleRecaps).toHaveLength(1);
-    for (const field of [
+    expect(titleRecaps[0]).toContain(
       continueSlot.status.metadata.summary.chapterTitle,
-      continueSlot.status.metadata.summary.chapterSummary,
+    );
+    expect(titleRecaps[0]).toContain(
       continueSlot.status.metadata.summary.sceneTitle,
+    );
+    for (const field of [
+      continueSlot.status.metadata.summary.chapterSummary,
       continueSlot.status.metadata.summary.sceneSummary,
       continueSlot.status.metadata.summary.activePrimaryObjectiveLabel,
       continueSlot.status.metadata.summary.activePrimaryObjectiveSummary,
