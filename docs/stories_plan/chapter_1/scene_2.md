@@ -1,6 +1,6 @@
 # Scene 2: 委託與程序入口 — 三宅母親求助
 
-- **Summary:** 三宅母親正式委託相馬與早坂，兩人取得審查會入口，也明白今天真正要保住的是重新檢視證據的權利。
+- **Summary:** 三宅母親正式委託相馬與早坂，兩人循程序爭取重新調查的機會，也明白今天真正要保住的是再次檢視證據的權利。
 
 [場景：早坂律師事務所，上午，雨後。窗外的天還陰著，室內安靜。桌上一台壞掉的咖啡機，旁邊放著一份攤開的案件摘要。]
 - **Background Prompt:** Hayasaka law office on a rainy morning, quiet interior, case summary papers, thermos and rice-ball bag on table, restrained emotional tension, no readable document text.
