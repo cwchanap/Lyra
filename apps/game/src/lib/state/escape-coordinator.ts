@@ -10,16 +10,33 @@
  * the menu toggle when no overlay is claiming Escape.
  *
  * Contract: "close one layer per Escape." Each Escape closes at most one
- * overlay (the topmost); the next Escape then toggles the menu. The menu
- * itself is always closed first (GameShell checks `gameMenuOpen` before
- * consulting this coordinator), so a popover left open behind an open menu
- * never traps the player.
+ * overlay (the topmost); the next Escape then toggles the menu. Ordering
+ * depends on whether a submenu panel is active inside the open menu:
+ *
+ *   - No submenu panel: GameShell closes the menu first. The coordinator is
+ *     only consulted on the next Escape if the menu was already closed.
+ *   - Submenu panel active (e.g. Case File): GameShell consults the
+ *     coordinator FIRST, so a submenu-internal layer — Case File relation
+ *     navigation ("返回上一項") — can step back within the submenu before
+ *     the submenu itself closes. Only when no overlay claims Escape does
+ *     GameShell fall through to closing the submenu panel.
+ *
+ * This submenu-first ordering is intentional: a player who followed a
+ * supporting-record or supersession link returns to the source item on one
+ * Escape, not to the root menu. Do not "correct" it back to menu-first.
  *
  * Callers MUST release their handle when their overlay closes for any reason
  * (their own Escape routing, backdrop click, × button, mode change, or
  * component unmount), otherwise the menu will never open. The idiomatic
  * Svelte 5 usage is an `$effect` that claims while open and returns the
  * release function as its cleanup, so unmount/transition both release.
+ *
+ * Release timing is NOT required to be synchronous inside the closer. A
+ * closer may clear its own "open" condition (e.g. `backTarget = null`) and
+ * let the `$effect` cleanup release the claim on the next reactive flush, as
+ * CaseFilePanel does. The contract is that the claim is released once the
+ * overlay's open condition no longer holds — not that the closer invokes the
+ * release function itself before returning.
  */
 type Closer = () => void;
 
@@ -57,9 +74,11 @@ export function escapeClaimed(): boolean {
  * Close the topmost overlay. Returns `true` if an overlay was closed (so the
  * caller should consume the Escape and not toggle the menu), `false` if no
  * overlay claimed it (so the caller may fall through to its own Escape
- * behavior). The closer is expected to release its own claim synchronously;
- * if it does not, a stale claim would keep consuming Escape, which is the
- * documented caller contract.
+ * behavior). The closer is expected to clear its own open condition so that
+ * its claim is released — either synchronously inside the closer, or via
+ * `$effect` cleanup on the next reactive flush (as CaseFilePanel does). If
+ * the claim is never released, a stale entry would keep consuming Escape,
+ * which is the documented caller contract.
  */
 export function closeTopmostEscapeClaim(): boolean {
   const top = stack[stack.length - 1];
