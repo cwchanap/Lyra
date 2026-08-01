@@ -1,6 +1,11 @@
-import { render, screen, waitFor, within } from "@testing-library/svelte";
+import {
+  getRoles,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
-import { computeAccessibleName } from "dom-accessibility-api";
 import { describe, expect, it } from "vitest";
 import CaseFilePanelHarness from "$lib/test-harnesses/CaseFilePanelHarness.svelte";
 import type { GameStateView } from "$lib/state/types";
@@ -293,12 +298,17 @@ function acceptanceState(): GameStateView {
 
 function expectLockedIdsAbsent(container: HTMLElement) {
   const text = container.textContent ?? "";
-  const accessibleNames = Array.from(container.querySelectorAll("*")).map(
-    (element) => computeAccessibleName(element),
-  );
+  const queries = within(container);
+  const roles = Object.keys(getRoles(container));
   for (const id of lockedAcceptanceIds) {
     expect(text).not.toContain(id);
-    expect(accessibleNames.join("\n")).not.toContain(id);
+    for (const role of roles) {
+      expect(
+        queries.queryAllByRole(role, {
+          name: (accessibleName) => accessibleName.includes(id),
+        }),
+      ).toHaveLength(0);
+    }
   }
 }
 
