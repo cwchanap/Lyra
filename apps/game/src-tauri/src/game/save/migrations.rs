@@ -1,6 +1,6 @@
 use crate::game::save::schema::{
-    parse_schema_version, SaveEnvelopeV1, SaveEnvelopeV2, SaveSummaryV2, SAVE_SCHEMA_VERSION,
-    SAVE_SCHEMA_VERSION_V1, SAVE_SCHEMA_VERSION_V2,
+    parse_schema_version, SaveEnvelopeV1, SaveEnvelopeV2, SaveSummaryV1, SaveSummaryV2,
+    SAVE_SCHEMA_VERSION, SAVE_SCHEMA_VERSION_V1, SAVE_SCHEMA_VERSION_V2,
 };
 use crate::game::GameError;
 
@@ -19,6 +19,39 @@ const MIGRATION_REGISTRY: &[(u32, Option<u32>)] = &[
 
 pub(crate) fn migrate_to_current(bytes: &[u8]) -> Result<SaveEnvelopeV2, GameError> {
     migrate_to_current_with_registry(bytes, MIGRATION_REGISTRY)
+}
+
+/// Decode the `summary` sub-object independently of the rest of the envelope,
+/// using only the schema version read from the envelope. This keeps an
+/// unrelated structural error elsewhere in the save (e.g. an unknown
+/// top-level field or a malformed thumbnail descriptor) from suppressing the
+/// readable recap, since the summary is decoded from its own sub-object and
+/// the version is read via the permissive `VersionOnly` shape.
+pub(crate) fn decode_summary_by_version(
+    summary: &serde_json::Value,
+    version: u32,
+) -> Option<SaveSummaryV2> {
+    match version {
+        SAVE_SCHEMA_VERSION_V2 => serde_json::from_value::<SaveSummaryV2>(summary.clone()).ok(),
+        SAVE_SCHEMA_VERSION_V1 => serde_json::from_value::<SaveSummaryV1>(summary.clone())
+            .ok()
+            .map(migrate_summary_v1_to_v2),
+        _ => None,
+    }
+}
+
+pub(crate) fn migrate_summary_v1_to_v2(summary: SaveSummaryV1) -> SaveSummaryV2 {
+    SaveSummaryV2 {
+        chapter_id: summary.chapter_id,
+        chapter_title: summary.chapter_title,
+        chapter_summary: None,
+        scene_id: summary.scene_id,
+        scene_title: summary.scene_title,
+        scene_summary: None,
+        active_primary_objective_id: summary.active_primary_objective_id,
+        active_primary_objective_label: summary.active_primary_objective_label,
+        active_primary_objective_summary: None,
+    }
 }
 
 fn migrate_to_current_with_registry(
@@ -77,17 +110,7 @@ fn migrate_v1_to_v2(source: SaveEnvelopeV1) -> SaveEnvelopeV2 {
         saved_at,
         display_name,
         thumbnail,
-        summary: SaveSummaryV2 {
-            chapter_id: summary.chapter_id,
-            chapter_title: summary.chapter_title,
-            chapter_summary: None,
-            scene_id: summary.scene_id,
-            scene_title: summary.scene_title,
-            scene_summary: None,
-            active_primary_objective_id: summary.active_primary_objective_id,
-            active_primary_objective_label: summary.active_primary_objective_label,
-            active_primary_objective_summary: None,
-        },
+        summary: migrate_summary_v1_to_v2(summary),
         snapshot,
     }
 }
