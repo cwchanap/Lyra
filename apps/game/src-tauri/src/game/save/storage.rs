@@ -1,10 +1,10 @@
-use super::migrations::migrate_to_current;
+use super::migrations::{decode_summary_by_version, migrate_to_current};
 use super::restore::{build_restore_candidate, validate_save_summary, CurrentDefinitions};
 use super::schema::{
-    canonical_uuid_v4, parse_saved_at_utc, validate_envelope, ReadableSaveMetadataView,
-    SaveBrowserView, SaveDiscoveryStatusView, SaveEnvelopeV2, SaveMetadataView, SaveSlotRef,
-    SaveSlotStatusView, SaveSlotView, SaveSnapshotV1, SaveType, ThumbnailAvailabilityView,
-    ThumbnailDescriptorV1, ThumbnailUnavailableReason,
+    canonical_uuid_v4, parse_saved_at_utc, parse_schema_version, validate_envelope,
+    ReadableSaveMetadataView, SaveBrowserView, SaveDiscoveryStatusView, SaveEnvelopeV2,
+    SaveMetadataView, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveSnapshotV1, SaveType,
+    ThumbnailAvailabilityView, ThumbnailDescriptorV1, ThumbnailUnavailableReason,
 };
 use super::thumbnail::{
     parse_png_header, validate_png_bytes_for_descriptor, ValidatedThumbnail, PNG_HEADER_BYTES,
@@ -778,9 +778,12 @@ fn readable_metadata(
         .get("displayName")
         .and_then(Value::as_str)
         .and_then(|value| super::schema::validate_manual_display_name(value).ok());
-    let summary = migrate_to_current(bytes)
-        .ok()
-        .map(|envelope| envelope.summary)
+    let summary = object
+        .get("summary")
+        .and_then(|value| {
+            let version = parse_schema_version(bytes).ok()?;
+            decode_summary_by_version(value, version)
+        })
         .filter(|summary| {
             object
                 .get("snapshot")
@@ -3582,6 +3585,69 @@ mod tests {
             assert_eq!(metadata.saved_at.is_some(), expose_timestamp, "{label}");
             assert_eq!(metadata.summary.is_some(), expose_summary, "{label}");
         }
+    }
+
+    #[test]
+    fn invalid_metadata_still_exposes_recap_when_unrelated_field_is_malformed() {
+        let (_guard, _resources, context, template) = discovery_fixture();
+        // Inject an unknown top-level field. The strict envelope decoders
+        // (`deny_unknown_fields`) reject this, so the slot is invalid, but the
+        // summary and snapshot are individually readable and must still surface
+        // as the readable recap rather than being suppressed to `None`.
+        let mut envelope = serde_json::to_value(&template).unwrap();
+        envelope["unexpectedTopLevelField"] = serde_json::json!(true);
+        let fs = FakeFilesystem::new();
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 1 }),
+            serde_json::to_vec(&envelope).unwrap(),
+            UNIX_EPOCH + Duration::from_secs(90),
+        );
+
+        let view = discover_saves(&fs, &root(), &context);
+        let SaveSlotStatusView::Invalid {
+            metadata: Some(metadata),
+            diagnostic,
+        } = &view.slots[0].status
+        else {
+            panic!("expected an invalid slot with readable metadata");
+        };
+        assert_eq!(
+            diagnostic.code, "malformedSaveJson",
+            "the unknown field must invalidate the envelope"
+        );
+        let summary = metadata
+            .summary
+            .as_ref()
+            .expect("readable recap must survive an unrelated malformed field");
+        assert_eq!(summary.chapter_id, template.summary.chapter_id);
+        assert_eq!(summary.scene_id, template.summary.scene_id);
+        assert_eq!(summary.scene_title, template.summary.scene_title);
+    }
+
+    #[test]
+    fn invalid_metadata_still_exposes_recap_when_thumbnail_descriptor_is_malformed() {
+        let (_guard, _resources, context, template) = discovery_fixture();
+        let mut envelope = serde_json::to_value(&template).unwrap();
+        envelope["thumbnail"] = serde_json::json!({"type": "available"});
+        let fs = FakeFilesystem::new();
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 1 }),
+            serde_json::to_vec(&envelope).unwrap(),
+            UNIX_EPOCH + Duration::from_secs(91),
+        );
+
+        let view = discover_saves(&fs, &root(), &context);
+        let SaveSlotStatusView::Invalid {
+            metadata: Some(metadata),
+            ..
+        } = &view.slots[0].status
+        else {
+            panic!("expected an invalid slot with readable metadata");
+        };
+        assert!(
+            metadata.summary.is_some(),
+            "readable recap must survive a malformed thumbnail descriptor"
+        );
     }
 
     #[test]
