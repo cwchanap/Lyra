@@ -265,10 +265,13 @@ function validSlotStatus(saveId: string): SaveSlotStatusView {
       summary: {
         chapterId: "chapter_1",
         chapterTitle: "雨夜的第一份證詞",
+        chapterSummary: null,
         sceneId: "scene_1",
         sceneTitle: "序章",
+        sceneSummary: null,
         activePrimaryObjectiveId: null,
         activePrimaryObjectiveLabel: null,
+        activePrimaryObjectiveSummary: null,
       },
     },
   };

@@ -211,10 +211,13 @@
     return {
       chapterId: state.chapter.id,
       chapterTitle: state.chapter.title,
+      chapterSummary: null,
       sceneId: state.scene.id,
       sceneTitle: state.scene.title,
+      sceneSummary: null,
       activePrimaryObjectiveId: activePrimaryObjective?.id ?? null,
       activePrimaryObjectiveLabel: activePrimaryObjective?.label ?? null,
+      activePrimaryObjectiveSummary: null,
     };
   });
 
