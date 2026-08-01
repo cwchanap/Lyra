@@ -19,10 +19,13 @@ export type SaveType = "auto" | "manual";
 export type SaveSummaryView = {
   chapterId: string;
   chapterTitle: string;
+  chapterSummary: string | null;
   sceneId: string;
   sceneTitle: string;
+  sceneSummary: string | null;
   activePrimaryObjectiveId: string | null;
   activePrimaryObjectiveLabel: string | null;
+  activePrimaryObjectiveSummary: string | null;
 };
 
 export type ThumbnailUnavailableReason =

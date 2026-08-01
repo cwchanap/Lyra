@@ -46,10 +46,13 @@ const validSlot = {
       summary: {
         chapterId: "chapter_1",
         chapterTitle: "第一章",
+        chapterSummary: null,
         sceneId: "investigation_scene_1",
         sceneTitle: "雨夜",
+        sceneSummary: null,
         activePrimaryObjectiveId: null,
         activePrimaryObjectiveLabel: null,
+        activePrimaryObjectiveSummary: null,
       },
     },
   },

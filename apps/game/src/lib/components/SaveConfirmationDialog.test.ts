@@ -8,10 +8,13 @@ import SaveConfirmationDialog from "./SaveConfirmationDialog.svelte";
 const currentSummary: SaveSummaryView = {
   chapterId: "chapter_2",
   chapterTitle: "第二章",
+  chapterSummary: "相馬追查雨夜證詞背後的程序漏洞。",
   sceneId: "scene_4",
   sceneTitle: "證物保管室",
+  sceneSummary: "相馬比對保管紀錄與現存證物。",
   activePrimaryObjectiveId: "objective_4",
   activePrimaryObjectiveLabel: "比對證物",
+  activePrimaryObjectiveSummary: "確認證物保管鏈是否遭到竄改。",
 };
 
 const validSlot: SaveSlotView = {
@@ -30,10 +33,13 @@ const validSlot: SaveSlotView = {
       summary: {
         chapterId: "chapter_1",
         chapterTitle: "第一章",
+        chapterSummary: null,
         sceneId: "scene_2",
         sceneTitle: "律師事務所",
+        sceneSummary: null,
         activePrimaryObjectiveId: null,
         activePrimaryObjectiveLabel: null,
+        activePrimaryObjectiveSummary: null,
       },
     },
   },

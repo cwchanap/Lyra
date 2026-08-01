@@ -8,10 +8,13 @@ import SaveNameDialog from "./SaveNameDialog.svelte";
 const currentSummary: SaveSummaryView = {
   chapterId: "chapter_1",
   chapterTitle: "第一章",
+  chapterSummary: "相馬接下雨夜中的第一宗委託。",
   sceneId: "scene_2",
   sceneTitle: "律師事務所",
+  sceneSummary: "早坂帶來一份程序不明的調查摘要。",
   activePrimaryObjectiveId: "objective_1",
   activePrimaryObjectiveLabel: "詢問目擊者",
+  activePrimaryObjectiveSummary: "釐清目擊者在雨夜看見的人影。",
 };
 
 const emptySlot: SaveSlotView = {

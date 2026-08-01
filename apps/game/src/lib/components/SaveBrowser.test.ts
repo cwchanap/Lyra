@@ -25,10 +25,13 @@ function metadata(reference: SaveSlotRef, saveId: string): SaveMetadataView {
     summary: {
       chapterId: "chapter_1",
       chapterTitle: "第一章",
+      chapterSummary: null,
       sceneId: "scene_1",
       sceneTitle: "雨夜",
+      sceneSummary: null,
       activePrimaryObjectiveId: null,
       activePrimaryObjectiveLabel: null,
+      activePrimaryObjectiveSummary: null,
     },
   };
 }

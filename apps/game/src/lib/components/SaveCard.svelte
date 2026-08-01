@@ -2,6 +2,7 @@
   import { readSaveThumbnail } from "$lib/persistence/commands";
   import type { SaveBrowserMode } from "$lib/persistence/save-browser-controller.svelte";
   import type { SaveSlotView } from "$lib/persistence/types";
+  import SaveRecapDetails from "./SaveRecapDetails.svelte";
 
   let {
     slot,
@@ -100,16 +101,6 @@
     thumbnailOwnership.revoke?.();
     thumbnailUnavailable = true;
   }
-
-  function localSavedAt(value: string | null | undefined): string | null {
-    if (!value) return null;
-    const instant = new Date(value);
-    if (Number.isNaN(instant.valueOf())) return null;
-    return new Intl.DateTimeFormat("zh-Hant", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(instant);
-  }
 </script>
 
 <article
@@ -160,16 +151,12 @@
     {:else}
       <strong>{displayName ?? "無法讀取存檔名稱"}</strong>
       {#if summary}
-        <span>{summary.chapterTitle}</span>
-        <span>{summary.sceneTitle}</span>
-        <span class="objective"
-          >{summary.activePrimaryObjectiveLabel ?? "沒有進行中的主要目標"}</span
-        >
-      {/if}
-      {#if localSavedAt(metadata?.savedAt)}
-        <time data-testid="saved-at" datetime={metadata?.savedAt ?? undefined}
-          >{localSavedAt(metadata?.savedAt)}</time
-        >
+        <SaveRecapDetails
+          slotType={slot.reference.type}
+          savedAt={metadata?.savedAt ?? null}
+          {summary}
+          density="compact"
+        />
       {/if}
       {#if slot.status.type === "invalid"}
         <p class="diagnostic" role="alert">{slot.status.diagnostic.message}</p>
@@ -278,16 +265,6 @@
     display: grid;
     gap: 4px;
     min-height: 6rem;
-  }
-
-  .details span,
-  time {
-    color: var(--bone-dim, #a7a092);
-    font-size: 0.8rem;
-  }
-
-  .objective {
-    color: var(--cyan, #65d8ea);
   }
 
   .diagnostic {

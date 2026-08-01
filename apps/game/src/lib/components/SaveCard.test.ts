@@ -10,10 +10,13 @@ import SaveCard from "./SaveCard.svelte";
 const summary = {
   chapterId: "chapter_1",
   chapterTitle: "第一章　雨中的證言",
+  chapterSummary: "相馬律接下雨夜中的第一宗委託。",
   sceneId: "scene_2",
   sceneTitle: "律師事務所",
+  sceneSummary: "早坂帶來一份程序不明的調查摘要。",
   activePrimaryObjectiveId: "objective_1",
   activePrimaryObjectiveLabel: "詢問目擊者",
+  activePrimaryObjectiveSummary: "釐清目擊者在雨夜看見的人影。",
 };
 
 function validMetadata(
@@ -122,8 +125,21 @@ describe("SaveCard", () => {
     expect(screen.getByText("最新")).toBeInTheDocument();
     expect(screen.getByText("雨夜的證言")).toBeInTheDocument();
     expect(screen.getByText(/第一章.*雨中的證言/)).toBeInTheDocument();
+    expect(
+      screen.getByText("相馬律接下雨夜中的第一宗委託。"),
+    ).toBeInTheDocument();
     expect(screen.getByText("律師事務所")).toBeInTheDocument();
+    expect(
+      screen.getByText("早坂帶來一份程序不明的調查摘要。"),
+    ).toBeInTheDocument();
     expect(screen.getByText("詢問目擊者")).toBeInTheDocument();
+    expect(
+      screen.getByText("釐清目擊者在雨夜看見的人影。"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("save-recap-details")).toHaveClass("compact");
+    for (const copy of screen.getAllByTestId("recap-summary-copy")) {
+      expect(copy).toHaveClass("compact-clamp");
+    }
     expect(screen.getByTestId("saved-at")).toHaveTextContent("2026");
 
     const image = await screen.findByRole("img", { name: "雨夜的證言的預覽" });
@@ -145,6 +161,7 @@ describe("SaveCard", () => {
           ...summary,
           activePrimaryObjectiveId: null,
           activePrimaryObjectiveLabel: null,
+          activePrimaryObjectiveSummary: null,
         },
       }),
       mode: "titleLoad",
