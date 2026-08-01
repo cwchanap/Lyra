@@ -1,6 +1,6 @@
-use super::save::capture::{capture_checkpoint_v1, CapturedCheckpointV1};
+use super::save::capture::{capture_checkpoint_v2, CapturedCheckpointV2};
 use super::save::restore::{build_restore_candidate, load_current_definitions};
-use super::save::schema::{SaveEnvelopeV1, SaveType, ThumbnailDescriptorV1};
+use super::save::schema::{SaveEnvelopeV2, SaveType, ThumbnailDescriptorV1};
 use super::schema::InventoryTarget;
 use super::story::{AssertionOrigin, StoryEventBlockKind};
 use super::support_lineage::SupportLineage;
@@ -284,9 +284,9 @@ fn assert_fact(
         .unwrap();
 }
 
-fn save_envelope(engine: &GameEngine, checkpoint: CapturedCheckpointV1) -> SaveEnvelopeV1 {
-    SaveEnvelopeV1 {
-        schema_version: 1,
+fn save_envelope(engine: &GameEngine, checkpoint: CapturedCheckpointV2) -> SaveEnvelopeV2 {
+    SaveEnvelopeV2 {
+        schema_version: 2,
         content_revision: engine.content_manifest.content_revision().into(),
         save_id: "550e8400-e29b-41d4-a716-446655440256".into(),
         save_type: SaveType::Manual,
@@ -303,7 +303,7 @@ fn save_envelope(engine: &GameEngine, checkpoint: CapturedCheckpointV1) -> SaveE
 fn restored_engine_rebuilds_story_locations_from_the_current_package() {
     let (_guard, resources) = compiler_shaped_resources();
     let engine = GameEngine::new_started(resources.clone()).unwrap();
-    let checkpoint = capture_checkpoint_v1(&engine).unwrap();
+    let checkpoint = capture_checkpoint_v2(&engine).unwrap();
     let definitions = load_current_definitions(&resources).unwrap();
 
     let restored =
@@ -530,7 +530,7 @@ fn compiler_shaped_provenance_lineage_and_public_redaction_survive_exact_restore
         .iter()
         .all(|record| record.get("successorRecordId").is_none()));
 
-    let checkpoint = capture_checkpoint_v1(&engine).unwrap();
+    let checkpoint = capture_checkpoint_v2(&engine).unwrap();
     let envelope = save_envelope(&engine, checkpoint.clone());
     let encoded = serde_json::to_vec(&envelope).unwrap();
     let parsed = super::save::schema::parse_current_envelope(&encoded).unwrap();
@@ -538,7 +538,7 @@ fn compiler_shaped_provenance_lineage_and_public_redaction_survive_exact_restore
     let mut restored = build_restore_candidate(resources.clone(), &definitions, parsed).unwrap();
 
     assert_eq!(
-        capture_checkpoint_v1(&restored.engine).unwrap(),
+        capture_checkpoint_v2(&restored.engine).unwrap(),
         checkpoint,
         "restored immutable definitions and direct support must recapture exactly"
     );

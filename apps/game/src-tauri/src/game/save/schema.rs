@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::SystemTime;
 use unicode_segmentation::UnicodeSegmentation;
 
-pub(crate) const SAVE_SCHEMA_VERSION: u32 = 1;
+pub(crate) const SAVE_SCHEMA_VERSION: u32 = 2;
 pub(crate) const SAVE_SCHEMA_VERSION_V1: u32 = 1;
 pub(crate) const SAVE_SCHEMA_VERSION_V2: u32 = 2;
 pub(crate) const MAX_THUMBNAIL_BYTES: usize = 1024 * 1024;
@@ -70,10 +70,6 @@ pub(crate) struct SaveSummaryV1 {
     pub(crate) active_primary_objective_label: Option<String>,
 }
 
-// Task 14 moves runtime projections and capture onto V2. Keep the existing
-// integration surface on the frozen V1 shape until that cutover.
-pub(crate) type SaveSummary = SaveSummaryV1;
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct SaveBrowserView {
@@ -132,7 +128,7 @@ pub(crate) struct SaveMetadataView {
     pub(crate) saved_at: String,
     pub(crate) display_name: String,
     pub(crate) thumbnail: ThumbnailAvailabilityView,
-    pub(crate) summary: SaveSummary,
+    pub(crate) summary: SaveSummaryV2,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -142,7 +138,7 @@ pub(crate) struct ReadableSaveMetadataView {
     pub(crate) saved_at: Option<String>,
     pub(crate) display_name: Option<String>,
     pub(crate) thumbnail: ThumbnailAvailabilityView,
-    pub(crate) summary: Option<SaveSummary>,
+    pub(crate) summary: Option<SaveSummaryV2>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -544,16 +540,16 @@ pub(super) fn parse_schema_version(bytes: &[u8]) -> Result<u32, GameError> {
         .map_err(|error| GameError::new("malformedSaveJson", error.to_string()))
 }
 
-pub(crate) fn parse_current_envelope(bytes: &[u8]) -> Result<SaveEnvelopeV1, GameError> {
+pub(crate) fn parse_current_envelope(bytes: &[u8]) -> Result<SaveEnvelopeV2, GameError> {
     let version = parse_schema_version(bytes)?;
     super::migrations::dispatch_current(version)?;
-    let envelope = serde_json::from_slice::<SaveEnvelopeV1>(bytes)
+    let envelope = serde_json::from_slice::<SaveEnvelopeV2>(bytes)
         .map_err(|error| GameError::new("malformedSaveJson", error.to_string()))?;
     validate_envelope(&envelope)?;
     Ok(envelope)
 }
 
-pub(crate) fn validate_envelope(envelope: &SaveEnvelopeV1) -> Result<(), GameError> {
+pub(crate) fn validate_envelope(envelope: &SaveEnvelopeV2) -> Result<(), GameError> {
     if envelope.schema_version != SAVE_SCHEMA_VERSION {
         return Err(GameError::new(
             "unsupportedSaveSchemaVersion",
@@ -647,6 +643,13 @@ mod tests {
     const REPRESENTATIVE: &str =
         include_str!("../../../tests/fixtures/saves/v1-representative.json");
 
+    fn current_representative() -> String {
+        serde_json::to_string(
+            &super::super::migrations::migrate_to_current(REPRESENTATIVE.as_bytes()).unwrap(),
+        )
+        .unwrap()
+    }
+
     #[test]
     fn v1_representative_fixture_round_trips_exactly() {
         let save: SaveEnvelopeV1 = serde_json::from_str(REPRESENTATIVE).unwrap();
@@ -689,7 +692,7 @@ mod tests {
         };
 
         let inventory = serde_json::to_value(&save).unwrap()["snapshot"]["inventory"].clone();
-        assert_eq!(SAVE_SCHEMA_VERSION, 1);
+        assert_eq!(SAVE_SCHEMA_VERSION_V1, 1);
         assert_eq!(
             inventory,
             serde_json::json!({
@@ -735,8 +738,9 @@ mod tests {
 
     #[test]
     fn current_dispatch_rejects_unknown_and_wrong_dialect_fields() {
+        let representative = current_representative();
         let mut unknown_top_level: serde_json::Value =
-            serde_json::from_str(REPRESENTATIVE).unwrap();
+            serde_json::from_str(&representative).unwrap();
         unknown_top_level["unexpected"] = serde_json::json!(true);
         assert_eq!(
             parse_current_envelope(unknown_top_level.to_string().as_bytes())
@@ -745,7 +749,7 @@ mod tests {
             "malformedSaveJson"
         );
 
-        let snake_case = REPRESENTATIVE.replace("\"schemaVersion\"", "\"schema_version\"");
+        let snake_case = representative.replace("\"schemaVersion\"", "\"schema_version\"");
         assert_eq!(
             parse_current_envelope(snake_case.as_bytes())
                 .unwrap_err()
@@ -753,8 +757,8 @@ mod tests {
             "malformedSaveJson"
         );
 
-        let mut future_version: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();
-        future_version["schemaVersion"] = serde_json::json!(2);
+        let mut future_version: serde_json::Value = serde_json::from_str(&representative).unwrap();
+        future_version["schemaVersion"] = serde_json::json!(99);
         assert_eq!(
             parse_current_envelope(future_version.to_string().as_bytes())
                 .unwrap_err()
@@ -769,7 +773,8 @@ mod tests {
 
     #[test]
     fn closed_envelope_rejects_nested_unknown_fields_and_wrong_enum_dialect() {
-        let mut nested: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();
+        let representative = current_representative();
+        let mut nested: serde_json::Value = serde_json::from_str(&representative).unwrap();
         nested["snapshot"]["scene"]["unknown"] = serde_json::json!(true);
         assert_eq!(
             parse_current_envelope(nested.to_string().as_bytes())
@@ -778,7 +783,7 @@ mod tests {
             "malformedSaveJson"
         );
 
-        let wrong_enum = REPRESENTATIVE.replace("\"manual\"", "\"Manual\"");
+        let wrong_enum = representative.replace("\"manual\"", "\"Manual\"");
         assert_eq!(
             parse_current_envelope(wrong_enum.as_bytes())
                 .unwrap_err()
@@ -973,7 +978,8 @@ mod tests {
 
     #[test]
     fn envelope_validation_rejects_slot_timestamp_and_thumbnail_drift() {
-        let mut invalid: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();
+        let representative = current_representative();
+        let mut invalid: serde_json::Value = serde_json::from_str(&representative).unwrap();
         invalid["slot"] = serde_json::json!(4);
         assert_eq!(
             parse_current_envelope(invalid.to_string().as_bytes())
@@ -982,7 +988,7 @@ mod tests {
             "saveSlotMismatch"
         );
 
-        let mut invalid: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();
+        let mut invalid: serde_json::Value = serde_json::from_str(&representative).unwrap();
         invalid["savedAt"] = serde_json::json!("2026-07-26T12:34:56+01:00");
         assert_eq!(
             parse_current_envelope(invalid.to_string().as_bytes())
@@ -991,7 +997,7 @@ mod tests {
             "malformedSaveJson"
         );
 
-        let mut invalid: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();
+        let mut invalid: serde_json::Value = serde_json::from_str(&representative).unwrap();
         invalid["thumbnail"]["objectId"] =
             serde_json::json!("650e8400-e29b-41d4-a716-446655440000");
         assert_eq!(
@@ -1004,8 +1010,9 @@ mod tests {
 
     #[test]
     fn envelope_validation_accepts_each_slot_range_boundary() {
+        let representative = current_representative();
         for (save_type, slot) in [("auto", 1), ("auto", 5), ("manual", 1), ("manual", 3)] {
-            let mut candidate: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();
+            let mut candidate: serde_json::Value = serde_json::from_str(&representative).unwrap();
             candidate["saveType"] = serde_json::json!(save_type);
             candidate["slot"] = serde_json::json!(slot);
             assert!(parse_current_envelope(candidate.to_string().as_bytes()).is_ok());
@@ -1014,8 +1021,9 @@ mod tests {
 
     #[test]
     fn envelope_validation_rejects_each_slot_range_overflow() {
+        let representative = current_representative();
         for (save_type, slot) in [("auto", 0), ("auto", 6), ("manual", 0), ("manual", 4)] {
-            let mut candidate: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();
+            let mut candidate: serde_json::Value = serde_json::from_str(&representative).unwrap();
             candidate["saveType"] = serde_json::json!(save_type);
             candidate["slot"] = serde_json::json!(slot);
             assert_eq!(
@@ -1073,9 +1081,9 @@ mod tests {
 
     #[test]
     fn validate_envelope_rejects_unsupported_schema_version_directly() {
-        let mut candidate: serde_json::Value = serde_json::from_str(REPRESENTATIVE).unwrap();
-        candidate["schemaVersion"] = serde_json::json!(99);
-        let envelope: SaveEnvelopeV1 = serde_json::from_value(candidate).unwrap();
+        let mut envelope =
+            super::super::migrations::migrate_to_current(REPRESENTATIVE.as_bytes()).unwrap();
+        envelope.schema_version = 99;
         assert_eq!(
             validate_envelope(&envelope).unwrap_err().code,
             "unsupportedSaveSchemaVersion"
