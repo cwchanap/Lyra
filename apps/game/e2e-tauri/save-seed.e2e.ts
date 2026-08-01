@@ -3,6 +3,7 @@ import {
   advanceDialogueOnce,
   advanceDialogueUntil,
   clickButton,
+  clickPersistenceBrowserButton,
   closePersistenceBrowserToGameplay,
   currentPackagedDocumentIdentity,
   dialogueFingerprint,
@@ -10,10 +11,13 @@ import {
   drainCurrentDialogue,
   elementExists,
   getPackagedGameState,
+  invokePackagedCommand,
   jsClick,
   jumpToProductionScene,
+  openTitleLoadBrowser,
   resetE2eStorageWithStoryClearance,
   returnToTitle,
+  saveCardText,
   saveManualSlot,
   startFromMenu,
   waitForAcquisitionOrdinal,
@@ -30,6 +34,7 @@ import {
   type SeedControl,
 } from "./save-fixtures";
 import { anchors } from "./production-anchors";
+import type { SaveBrowserOpenResultView } from "$lib/persistence/types";
 
 describe("save seed", () => {
   it("seeds Unicode, composite, acquisition, investigation, and interrogation checkpoints", async function () {
@@ -297,6 +302,12 @@ describe("save seed", () => {
       "manual-1",
       (envelope) => envelope.displayName === anchors.unicodeSave.unicodeName,
     );
+    expect(unicodeEnvelope.schemaVersion).toBe(2);
+    if (unicodeEnvelope.schemaVersion !== 2) {
+      throw new Error("new manual save was not written with schema version 2");
+    }
+    expect(unicodeEnvelope.summary.chapterSummary).not.toBeNull();
+    expect(unicodeEnvelope.summary.sceneSummary).not.toBeNull();
     const checkpoint: ExpectedResumeCheckpoint = {
       saveId: unicodeEnvelope.saveId,
       displayName: unicodeEnvelope.displayName,
@@ -341,5 +352,55 @@ describe("save seed", () => {
     await closePersistenceBrowserToGameplay();
     await returnToTitle();
     expect(await elementExists('[aria-label="主選單"]')).toBe(true);
+
+    await openTitleLoadBrowser();
+    const manualOneText = await saveCardText("manual", 1);
+    for (const field of [
+      unicodeEnvelope.summary.chapterTitle,
+      unicodeEnvelope.summary.chapterSummary,
+      unicodeEnvelope.summary.sceneTitle,
+      unicodeEnvelope.summary.sceneSummary,
+      unicodeEnvelope.summary.activePrimaryObjectiveLabel,
+      unicodeEnvelope.summary.activePrimaryObjectiveSummary,
+    ]) {
+      if (field) expect(manualOneText).toContain(field);
+    }
+    await clickPersistenceBrowserButton("返回");
+
+    const titleDiscovery =
+      await invokePackagedCommand<SaveBrowserOpenResultView>("list_saves");
+    const continueReference = titleDiscovery.continueCandidate;
+    if (!continueReference) {
+      throw new Error("schema-v2 seed did not produce a Continue candidate");
+    }
+    const continueSlot = titleDiscovery.browser.slots.find(
+      (slot) =>
+        slot.reference.type === continueReference.type &&
+        slot.reference.slot === continueReference.slot,
+    );
+    if (!continueSlot || continueSlot.status.type !== "valid") {
+      throw new Error(
+        "Continue candidate did not expose valid schema-v2 metadata",
+      );
+    }
+    expect(continueSlot.status.metadata.schemaVersion).toBe(2);
+    expect(continueSlot.status.metadata.summary.chapterSummary).not.toBeNull();
+    expect(continueSlot.status.metadata.summary.sceneSummary).not.toBeNull();
+    const titleRecaps = await browser.execute(() =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>('[aria-label="繼續遊戲摘要"]'),
+      ).map((region) => region.textContent ?? ""),
+    );
+    expect(titleRecaps).toHaveLength(1);
+    for (const field of [
+      continueSlot.status.metadata.summary.chapterTitle,
+      continueSlot.status.metadata.summary.chapterSummary,
+      continueSlot.status.metadata.summary.sceneTitle,
+      continueSlot.status.metadata.summary.sceneSummary,
+      continueSlot.status.metadata.summary.activePrimaryObjectiveLabel,
+      continueSlot.status.metadata.summary.activePrimaryObjectiveSummary,
+    ]) {
+      if (field) expect(titleRecaps[0]).toContain(field);
+    }
   });
 });

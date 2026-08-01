@@ -278,6 +278,7 @@ async function proveCorruptNewest(): Promise<void> {
       (slot) => slot.fixedSlotName === "autosave-1",
     )?.parseError,
   ).toBe(true);
+  expect(await elementExists('[aria-label="繼續遊戲摘要"]')).toBe(false);
   await clickButton(anchors.continueGame);
   await waitForDialog("無法繼續遊戲");
   expect(await elementExists("[data-gameplay-root]")).toBe(false);
