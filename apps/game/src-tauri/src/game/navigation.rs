@@ -525,6 +525,14 @@ pub(super) fn scene_json_identity(json: &SceneJson) -> (&str, &str) {
     }
 }
 
+pub(super) fn scene_json_summary(json: &SceneJson) -> &str {
+    match json {
+        SceneJson::Linear(scene) => &scene.summary,
+        SceneJson::Investigation(scene) => &scene.summary,
+        SceneJson::Interrogation(scene) => &scene.summary,
+    }
+}
+
 fn scene_json_type(json: &SceneJson) -> SceneType {
     match json {
         SceneJson::Linear(_) => SceneType::Linear,
