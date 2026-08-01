@@ -184,8 +184,17 @@ function acceptanceState(): GameStateView {
             originKind: "sceneEvent",
             location: acceptanceLocation,
           },
-          supportingRecords: [{ kind: "evidence", id: "neutral_note" }],
-          supportingFactIds: [],
+          supportingRecords: [
+            { kind: "evidence", id: "neutral_note" },
+            { kind: "evidence", id: "future_scan" },
+            { kind: "statement", id: "locked_statement" },
+          ],
+          supportingFactIds: [
+            "fact_locked",
+            "question_locked",
+            "objective_locked",
+            "authorization_locked",
+          ],
         },
         {
           id: "fact_route",

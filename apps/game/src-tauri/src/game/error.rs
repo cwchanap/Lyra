@@ -255,13 +255,11 @@ impl GameError {
             format!("Scene '{scene_id}' does not exist in chapter '{chapter_id}'."),
         )
     }
-    #[allow(dead_code)] // Consumed by StoryLocationIndex public-view lookups in Tasks 2–3.
     pub(crate) fn story_location_missing(chapter_id: &str, scene_id: &str) -> Self {
-        Self {
-            code: "storyLocationMissing".into(),
-            message: format!("案件位置資料不完整：{chapter_id}/{scene_id}。"),
-            failure_token: None,
-        }
+        Self::new(
+            "storyLocationMissing",
+            format!("Story location for scene '{scene_id}' in chapter '{chapter_id}' is missing from the packaged index."),
+        )
     }
     pub fn duplicate_scene_target(chapter_id: &str, scene_id: &str) -> Self {
         Self::new(

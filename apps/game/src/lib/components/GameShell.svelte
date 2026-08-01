@@ -761,6 +761,11 @@
       padding: 20px;
     }
 
+    .game-menu-panel.case-file {
+      width: min(1160px, calc(100vw - 36px));
+      height: min(672px, calc(100dvh - 36px));
+    }
+
     .submenu-back-button {
       top: 14px;
       right: 14px;

@@ -1645,6 +1645,25 @@ mod tests {
                     vec![],
                 ),
             ),
+            (
+                "cross-kind-cycle",
+                catalog_json(
+                    vec![record_json("e1", None, "lead", Some("statement:s1"))],
+                    vec![record_json("s1", None, "lead", Some("evidence:e1"))],
+                    vec![],
+                ),
+            ),
+            (
+                "cross-kind-fork",
+                catalog_json(
+                    vec![record_json("root", None, "lead", None)],
+                    vec![
+                        record_json("s_a", None, "reacquired", Some("evidence:root")),
+                        record_json("s_b", None, "reacquired", Some("evidence:root")),
+                    ],
+                    vec![],
+                ),
+            ),
         ];
 
         for (label, json) in cases {

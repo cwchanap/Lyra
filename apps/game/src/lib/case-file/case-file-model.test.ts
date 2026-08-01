@@ -611,8 +611,16 @@ describe("buildCaseFileModel", () => {
     expect(model.acquiredSuccessorByRecordKey.size).toBe(0);
     expect(model.facts[0]?.supportingRecordKeys).toEqual([]);
     expect(model.facts[0]?.supportingFactKeys).toEqual([]);
-    expect(JSON.stringify(model)).not.toContain("hidden");
-    expect(JSON.stringify(model)).not.toContain("not-a-record");
+    const spoilerModelJson = JSON.stringify({
+      ...model,
+      itemsByKey: Object.fromEntries(model.itemsByKey),
+      recordsByKey: Object.fromEntries(model.recordsByKey),
+      acquiredSuccessorByRecordKey: Object.fromEntries(
+        model.acquiredSuccessorByRecordKey,
+      ),
+    });
+    expect(spoilerModelJson).not.toContain("hidden");
+    expect(spoilerModelJson).not.toContain("not-a-record");
   });
 });
 

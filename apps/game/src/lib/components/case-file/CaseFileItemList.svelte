@@ -4,7 +4,10 @@
     CaseFileKey,
     CaseFileSection,
   } from "$lib/case-file/types";
-  import { caseFileSectionLabels } from "$lib/case-file/labels";
+  import {
+    caseFileItemLabel,
+    caseFileSectionLabels,
+  } from "$lib/case-file/labels";
 
   let {
     section,
@@ -21,18 +24,6 @@
     disabled?: boolean;
     onSelect: (key: CaseFileKey) => void;
   } = $props();
-
-  function labelFor(item: CaseFileItem): string {
-    if ("record" in item) {
-      return "name" in item.record
-        ? item.record.name
-        : `${item.record.speaker} ${item.record.content}`;
-    }
-    if ("fact" in item) return item.fact.label;
-    if ("question" in item) return item.question.label;
-    if ("objective" in item) return item.objective.label;
-    return item.authorization.label;
-  }
 </script>
 
 <section
@@ -56,7 +47,7 @@
               <span class="statement-speaker">{item.record.speaker}</span>
               <span class="statement-excerpt">{item.record.content}</span>
             {:else}
-              {labelFor(item)}
+              {caseFileItemLabel(item)}
             {/if}
           </button>
         </li>

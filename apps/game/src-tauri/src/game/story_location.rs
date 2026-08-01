@@ -67,6 +67,41 @@ impl StoryLocationIndex {
         Ok(Self { locations })
     }
 
+    /// Build the index from scenes already loaded by `load_current_definitions`
+    /// instead of re-reading every package file. `scenes_by_key` is already
+    /// validated for duplicate-scene-target ambiguity by the caller, so this
+    /// constructor only assembles the context views.
+    pub(crate) fn from_loaded_scenes(
+        chapters: &[ChapterManifest],
+        scenes_by_key: &BTreeMap<(String, String), SceneJson>,
+    ) -> Result<Self, GameError> {
+        let chapter_titles: BTreeMap<&str, &str> = chapters
+            .iter()
+            .map(|chapter| (chapter.id.as_str(), chapter.title.as_str()))
+            .collect();
+        let mut locations = BTreeMap::new();
+        for ((chapter_id, scene_id), scene) in scenes_by_key {
+            let chapter_title = chapter_titles
+                .get(chapter_id.as_str())
+                .copied()
+                .ok_or_else(|| GameError::story_location_missing(chapter_id, scene_id))?;
+            let (_, scene_title) = scene_json_identity(scene);
+            locations.insert(
+                (chapter_id.clone(), scene_id.clone()),
+                StoryLocation {
+                    context: SceneLocationContextView {
+                        chapter_id: chapter_id.clone(),
+                        chapter_title: chapter_title.to_owned(),
+                        scene_id: scene_id.clone(),
+                        scene_title: scene_title.to_owned(),
+                    },
+                    scene: scene.clone(),
+                },
+            );
+        }
+        Ok(Self { locations })
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test_scenes(
         chapter_id: &str,

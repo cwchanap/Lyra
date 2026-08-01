@@ -6,7 +6,7 @@ import type {
   RepresentationLayer,
   SourceKind,
 } from "$lib/state/types";
-import type { CaseFileSection } from "./types";
+import type { CaseFileItem, CaseFileSection } from "./types";
 
 export const caseFileSectionLabels: Record<CaseFileSection, string> = {
   objective: "目前目標",
@@ -16,6 +16,16 @@ export const caseFileSectionLabels: Record<CaseFileSection, string> = {
   questions: "待解問題",
   authorizations: "授權",
 };
+
+export function caseFileItemLabel(item: CaseFileItem): string {
+  if ("record" in item) {
+    return "name" in item.record ? item.record.name : item.record.speaker;
+  }
+  if ("fact" in item) return item.fact.label;
+  if ("question" in item) return item.question.label;
+  if ("objective" in item) return item.objective.label;
+  return item.authorization.label;
+}
 
 export const sourceKindLabels: Record<SourceKind, string | null> = {
   physical: "實體物證",

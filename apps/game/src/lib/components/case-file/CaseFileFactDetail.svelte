@@ -4,6 +4,7 @@
     CaseFileItem,
     CaseFileKey,
   } from "$lib/case-file/types";
+  import { caseFileItemLabel } from "$lib/case-file/labels";
 
   let {
     item,
@@ -24,18 +25,6 @@
       ? "已匯入的進度"
       : `${item.fact.originContext.location.chapterTitle}・${item.fact.originContext.location.sceneTitle}`,
   );
-
-  function itemLabel(support: CaseFileItem): string {
-    if ("record" in support) {
-      return "name" in support.record
-        ? support.record.name
-        : support.record.speaker;
-    }
-    if ("fact" in support) return support.fact.label;
-    if ("question" in support) return support.question.label;
-    if ("objective" in support) return support.objective.label;
-    return support.authorization.label;
-  }
 </script>
 
 <div
@@ -61,7 +50,7 @@
               type="button"
               {disabled}
               onclick={() => onNavigate(support.key)}
-              >查看支持記錄：{itemLabel(support)}</button
+              >查看支持記錄：{caseFileItemLabel(support)}</button
             >
           </li>
         {/each}
@@ -79,7 +68,7 @@
               type="button"
               {disabled}
               onclick={() => onNavigate(support.key)}
-              >查看支持事實：{itemLabel(support)}</button
+              >查看支持事實：{caseFileItemLabel(support)}</button
             >
           </li>
         {/each}

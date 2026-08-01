@@ -15,5 +15,7 @@ pub(crate) use state::{
     AuthorizationProgressSnapshot, FactProgressSnapshot, ObjectiveProgressSnapshot,
     QuestionProgressSnapshot, StoryStateSnapshot,
 };
+pub(in crate::game) use view::StoryStateView;
 #[allow(unused_imports)]
-pub(in crate::game) use view::{OriginContextKindView, OriginContextView, StoryStateView};
+// OriginContext{Kind,}View are consumed only inside the story module today; kept pub(in crate::game) for future cross-module view assembly.
+pub(in crate::game) use view::{OriginContextKindView, OriginContextView};

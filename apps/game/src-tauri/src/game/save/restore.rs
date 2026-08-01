@@ -284,11 +284,8 @@ pub(crate) fn build_restore_candidate(
         chapter_index
     };
     let current_scene_idx = if completed { 0 } else { scene_index };
-    let story_locations = StoryLocationIndex::load(
-        &resources_dir,
-        &definitions.story_catalog,
-        &definitions.chapters,
-    )?;
+    let story_locations =
+        StoryLocationIndex::from_loaded_scenes(&definitions.chapters, &definitions.scenes_by_key)?;
     let engine = GameEngine {
         resources_dir,
         content_manifest: definitions.content_manifest.clone(),

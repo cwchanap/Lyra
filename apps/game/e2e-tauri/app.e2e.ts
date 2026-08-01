@@ -10,6 +10,7 @@ import {
   startFromMenu,
 } from "./helpers";
 import { anchors } from "./production-anchors";
+import { CASE_FILE_PREFERRED_VIEWPORT } from "../src/lib/e2e/case-file-viewport";
 
 describe("App shell", () => {
   beforeEach(async () => {
@@ -163,7 +164,7 @@ describe("App shell", () => {
           bottom: menuRect.bottom,
         },
         columns: getComputedStyle(layout)
-          .gridTemplateColumns.split(" ")
+          .gridTemplateColumns.split(/ (?![^()]*\))/)
           .filter(Boolean).length,
         directColumns: layout.children.length,
         railLeft: rail.getBoundingClientRect().left,
@@ -183,10 +184,12 @@ describe("App shell", () => {
       };
     });
     expect(caseFileLayout).not.toBeNull();
-    // setWindowSize controls the native window rectangle; the webview's inner
-    // viewport can be slightly smaller because of platform chrome.
-    expect(caseFileLayout!.viewport.width).toBeGreaterThanOrEqual(1200);
-    expect(caseFileLayout!.viewport.height).toBeGreaterThanOrEqual(650);
+    expect(caseFileLayout!.viewport.width).toBeGreaterThanOrEqual(
+      CASE_FILE_PREFERRED_VIEWPORT.width,
+    );
+    expect(caseFileLayout!.viewport.height).toBeGreaterThanOrEqual(
+      CASE_FILE_PREFERRED_VIEWPORT.height,
+    );
     expect(caseFileLayout!.menu.left).toBeGreaterThanOrEqual(-0.5);
     expect(caseFileLayout!.menu.top).toBeGreaterThanOrEqual(-0.5);
     expect(caseFileLayout!.menu.right).toBeLessThanOrEqual(
