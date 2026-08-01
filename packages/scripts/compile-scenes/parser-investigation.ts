@@ -15,6 +15,7 @@
 // =============================================================================
 
 import { tokenize, type Token } from "./tokenizer";
+import { parseSceneHeader } from "./parser-scene-header";
 import {
   parseVisualAssetCue,
   rejectReservedAssetMetadata,
@@ -70,19 +71,12 @@ export function parseInvestigationScene(
 ): InvestigationParseResult {
   const tokens = tokenize(source, sourceFile);
   const cur = new Cursor(tokens, sourceFile);
-
-  const first = cur.peek();
-  if (!first || first.kind !== "heading" || first.level !== 1) {
-    return fail(
-      sourceFile,
-      first?.line ?? 1,
-      "investigationSceneMissingTitle",
-      "Investigation scene must start with `# Scene N: <title>`.",
-    );
-  }
-  cur.next();
-  const titleMatch = /^Scene\s+\d+:\s*(.+)$/.exec(first.text);
-  const title = titleMatch ? (titleMatch[1] ?? "").trim() : first.text;
+  const header = parseSceneHeader(tokens, sourceFile, {
+    code: "investigationSceneMissingTitle",
+    message: "Investigation scene must start with `# Scene N: <title>`.",
+  });
+  if (!header.ok) return header;
+  cur.i = header.value.nextTokenIndex;
 
   let intro: DialogueItem[] = [];
   const sublocations: ASTSublocation[] = [];
@@ -138,7 +132,7 @@ export function parseInvestigationScene(
   if (!outro) {
     return fail(
       sourceFile,
-      first.line,
+      header.value.line,
       "investigationSceneMissingOutro",
       "Investigation scene must end with `## Outro`.",
     );
@@ -146,7 +140,7 @@ export function parseInvestigationScene(
   if (sublocations.length === 0) {
     return fail(
       sourceFile,
-      first.line,
+      header.value.line,
       "investigationSceneNoSublocation",
       "Investigation scene must declare at least one sub-location.",
     );
@@ -165,7 +159,9 @@ export function parseInvestigationScene(
     value: {
       kind: "investigationScene",
       id,
-      title,
+      title: header.value.title,
+      summary: header.value.summary,
+      summaryAuthored: header.value.summaryAuthored,
       intro,
       sublocations,
       evidenceManifest,
@@ -173,7 +169,7 @@ export function parseInvestigationScene(
       outro,
       assetRefs: [],
       sourceFile,
-      line: first.line,
+      line: header.value.line,
     },
   };
 }

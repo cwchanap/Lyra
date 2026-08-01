@@ -3,6 +3,26 @@ import { readFileSync } from "node:fs";
 import { parseInvestigationScene } from "./parser-investigation";
 
 describe("parseInvestigationScene", () => {
+  it("parses an immediate authored Summary", () => {
+    const source = readFileSync(
+      "packages/scripts/__fixtures__/valid/chapter_1/investigation_scene_1.md",
+      "utf-8",
+    ).replace(
+      "# Scene 1: 測試調查場景",
+      "# Scene 1: 測試調查場景\n\n- **Summary:** 相馬開始調查測試現場。",
+    );
+    const result = parseInvestigationScene(
+      source,
+      "investigation_scene_1.md",
+      "scene_1",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.summary).toBe("相馬開始調查測試現場。");
+    expect(result.value.summaryAuthored).toBe(true);
+  });
+
   it("keeps every authored evidence provenance field with its source line", () => {
     const source = `
 # Scene 1: provenance
@@ -750,6 +770,13 @@ describe("parseInvestigationScene", () => {
   it("rejects an investigation scene with no H1 title", () => {
     const source = `## Intro\n**A**：hi`;
     const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("investigationSceneMissingTitle");
+  });
+
+  it("rejects a malformed H1 title", () => {
+    const result = parseInvestigationScene("# Not a scene", "i.md", "i");
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("investigationSceneMissingTitle");

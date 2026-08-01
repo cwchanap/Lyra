@@ -20,6 +20,7 @@
 // =============================================================================
 
 import { tokenize, type Token } from "./tokenizer";
+import { parseSceneHeader } from "./parser-scene-header";
 import {
   parseVisualAssetCue,
   rejectReservedAssetMetadata,
@@ -80,27 +81,12 @@ export function parseInterrogationScene(
 ): InterrogationParseResult {
   const tokens = tokenize(source, sourceFile);
   const cur = new Cursor(tokens, sourceFile);
-
-  const first = cur.peek();
-  if (!first || first.kind !== "heading" || first.level !== 1) {
-    return fail(
-      sourceFile,
-      first?.line ?? 1,
-      "interrogationSceneMissingTitle",
-      "Interrogation scene must start with `# Scene N: <title>`.",
-    );
-  }
-  cur.next();
-  const titleMatch = /^Scene\s+\d+:\s*(.+)$/.exec(first.text);
-  if (!titleMatch) {
-    return fail(
-      sourceFile,
-      first.line,
-      "interrogationSceneMissingTitle",
-      "Interrogation scene must start with `# Scene N: <title>`.",
-    );
-  }
-  const title = (titleMatch[1] ?? "").trim();
+  const header = parseSceneHeader(tokens, sourceFile, {
+    code: "interrogationSceneMissingTitle",
+    message: "Interrogation scene must start with `# Scene N: <title>`.",
+  });
+  if (!header.ok) return header;
+  cur.i = header.value.nextTokenIndex;
 
   let intro: DialogueItem[] = [];
   const phases: ASTInterrogationPhase[] = [];
@@ -156,7 +142,7 @@ export function parseInterrogationScene(
   if (!outro) {
     return fail(
       sourceFile,
-      first.line,
+      header.value.line,
       "interrogationSceneMissingOutro",
       "Interrogation scene must end with `## Outro`.",
     );
@@ -164,7 +150,7 @@ export function parseInterrogationScene(
   if (phases.length === 0) {
     return fail(
       sourceFile,
-      first.line,
+      header.value.line,
       "interrogationSceneNoPhases",
       "Interrogation scene must declare at least one phase.",
     );
@@ -175,7 +161,9 @@ export function parseInterrogationScene(
     value: {
       kind: "interrogationScene",
       id,
-      title,
+      title: header.value.title,
+      summary: header.value.summary,
+      summaryAuthored: header.value.summaryAuthored,
       intro,
       phases,
       evidenceManifest,
@@ -183,7 +171,7 @@ export function parseInterrogationScene(
       outro,
       assetRefs: [],
       sourceFile,
-      line: first.line,
+      line: header.value.line,
     },
   };
 }

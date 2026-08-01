@@ -39,6 +39,46 @@ describe("parseLinearScene", () => {
     ]);
   });
 
+  it("accepts one immediate Summary while retaining scene-tag-local metadata", () => {
+    const source = `
+# Scene 0: 接案
+- **Summary:** 相馬在雨夜接下委託。
+
+[場景：咖啡館外，雨夜。]
+- **Background Prompt:** Rainy exterior of a small Tokyo cafe at midnight.
+- **BGM:** rain_mystery_low
+- **BGS:** street_rain
+
+**早坂茜**：你來得比我想的快。
+`.trim();
+    const result = parseLinearScene(source, "scene_0.md", "scene_0");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.summary).toBe("相馬在雨夜接下委託。");
+    expect(result.value.summaryAuthored).toBe(true);
+    expect(result.value.queue[0]).toMatchObject({
+      kind: "sceneTag",
+      assetCue: {
+        backgroundPrompt: "Rainy exterior of a small Tokyo cafe at midnight.",
+        bgm: { channel: "bgm", assetId: "rain_mystery_low" },
+        bgs: { channel: "bgs", assetId: "street_rain" },
+      },
+    });
+  });
+
+  it("still rejects non-Summary metadata immediately after the title", () => {
+    const source = `
+# Scene 0: 接案
+- **Unexpected:** value
+
+**早坂茜**：你來得比我想的快。
+`.trim();
+    const result = parseLinearScene(source, "scene_0.md", "scene_0");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("linearSceneHasMetadata");
+  });
+
   it("attaches asset metadata to the preceding scene tag", () => {
     const source = `
 # Scene 0: 接案
@@ -97,6 +137,14 @@ describe("parseLinearScene", () => {
 
   it("rejects a linear scene missing the H1 title", () => {
     const source = `**A**：hi`;
+    const result = parseLinearScene(source, "scene_0.md", "scene_0");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("linearSceneMissingTitle");
+  });
+
+  it("rejects a malformed H1 title", () => {
+    const source = `# Not a scene\n\n**A**：hi`;
     const result = parseLinearScene(source, "scene_0.md", "scene_0");
     expect(result.ok).toBe(false);
     if (result.ok) return;

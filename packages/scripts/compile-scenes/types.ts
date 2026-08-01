@@ -262,6 +262,8 @@ export type ASTLinearScene = Located<{
   kind: "linearScene";
   id: string; // derived from filename without .md
   title: string;
+  summary?: string;
+  summaryAuthored?: boolean;
   queue: DialogueItem[];
   assetRefs: AssetRef[];
 }>;
@@ -270,6 +272,8 @@ export type ASTInvestigationScene = Located<{
   kind: "investigationScene";
   id: string;
   title: string;
+  summary?: string;
+  summaryAuthored?: boolean;
   intro: DialogueItem[];
   sublocations: ASTSublocation[];
   evidenceManifest: ASTEvidence[];
@@ -354,6 +358,8 @@ export type ASTInterrogationScene = Located<{
   kind: "interrogationScene";
   id: string;
   title: string;
+  summary?: string;
+  summaryAuthored?: boolean;
   intro: DialogueItem[];
   phases: ASTInterrogationPhase[];
   evidenceManifest: ASTEvidence[];
