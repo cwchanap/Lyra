@@ -61,7 +61,7 @@ fn write_startup_resources(dir: &Path) {
     .unwrap();
     std::fs::write(
         dir.join("chapter_1/scene_1.json"),
-        r#"{"type":"linear","id":"scene_1","title":"Scene 1","queue":[]}"#,
+        r#"{"type":"linear","id":"scene_1","title":"Scene 1","summary":"Scene 1","queue":[]}"#,
     )
     .unwrap();
 }
