@@ -9,6 +9,8 @@ use std::time::SystemTime;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(crate) const SAVE_SCHEMA_VERSION: u32 = 1;
+pub(crate) const SAVE_SCHEMA_VERSION_V1: u32 = 1;
+pub(crate) const SAVE_SCHEMA_VERSION_V2: u32 = 2;
 pub(crate) const MAX_THUMBNAIL_BYTES: usize = 1024 * 1024;
 pub(crate) const MAX_THUMBNAIL_WIDTH: u32 = 480;
 pub(crate) const MAX_THUMBNAIL_HEIGHT: u32 = 360;
@@ -59,7 +61,7 @@ pub(crate) enum ThumbnailDescriptorV1 {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct SaveSummary {
+pub(crate) struct SaveSummaryV1 {
     pub(crate) chapter_id: String,
     pub(crate) chapter_title: String,
     pub(crate) scene_id: String,
@@ -67,6 +69,10 @@ pub(crate) struct SaveSummary {
     pub(crate) active_primary_objective_id: Option<String>,
     pub(crate) active_primary_objective_label: Option<String>,
 }
+
+// Task 14 moves runtime projections and capture onto V2. Keep the existing
+// integration surface on the frozen V1 shape until that cutover.
+pub(crate) type SaveSummary = SaveSummaryV1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -180,7 +186,36 @@ pub(crate) struct SaveEnvelopeV1 {
     pub(crate) saved_at: String,
     pub(crate) display_name: String,
     pub(crate) thumbnail: ThumbnailDescriptorV1,
-    pub(crate) summary: SaveSummary,
+    pub(crate) summary: SaveSummaryV1,
+    pub(crate) snapshot: SaveSnapshotV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SaveSummaryV2 {
+    pub(crate) chapter_id: String,
+    pub(crate) chapter_title: String,
+    pub(crate) chapter_summary: Option<String>,
+    pub(crate) scene_id: String,
+    pub(crate) scene_title: String,
+    pub(crate) scene_summary: Option<String>,
+    pub(crate) active_primary_objective_id: Option<String>,
+    pub(crate) active_primary_objective_label: Option<String>,
+    pub(crate) active_primary_objective_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SaveEnvelopeV2 {
+    pub(crate) schema_version: u32,
+    pub(crate) content_revision: String,
+    pub(crate) save_id: String,
+    pub(crate) save_type: SaveType,
+    pub(crate) slot: u8,
+    pub(crate) saved_at: String,
+    pub(crate) display_name: String,
+    pub(crate) thumbnail: ThumbnailDescriptorV1,
+    pub(crate) summary: SaveSummaryV2,
     pub(crate) snapshot: SaveSnapshotV1,
 }
 
@@ -503,10 +538,14 @@ struct VersionOnly {
     schema_version: u32,
 }
 
+pub(super) fn parse_schema_version(bytes: &[u8]) -> Result<u32, GameError> {
+    serde_json::from_slice::<VersionOnly>(bytes)
+        .map(|version| version.schema_version)
+        .map_err(|error| GameError::new("malformedSaveJson", error.to_string()))
+}
+
 pub(crate) fn parse_current_envelope(bytes: &[u8]) -> Result<SaveEnvelopeV1, GameError> {
-    let version = serde_json::from_slice::<VersionOnly>(bytes)
-        .map_err(|error| GameError::new("malformedSaveJson", error.to_string()))?
-        .schema_version;
+    let version = parse_schema_version(bytes)?;
     super::migrations::dispatch_current(version)?;
     let envelope = serde_json::from_slice::<SaveEnvelopeV1>(bytes)
         .map_err(|error| GameError::new("malformedSaveJson", error.to_string()))?;
