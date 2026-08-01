@@ -93,6 +93,34 @@ const VALID_SOURCE = `# Scene 2: 第一次詢問與交叉詢問
 `;
 
 describe("parseInterrogationScene", () => {
+  it("parses an immediate authored Summary", () => {
+    const parsed = parseInterrogationScene(
+      VALID_SOURCE.replace(
+        "# Scene 2: 第一次詢問與交叉詢問",
+        "# Scene 2: 第一次詢問與交叉詢問\n\n- **Summary:** 相馬開始第一次詢問。",
+      ),
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.summary).toBe("相馬開始第一次詢問。");
+    expect(parsed.value.summaryAuthored).toBe(true);
+  });
+
+  it("rejects a malformed H1 title", () => {
+    const parsed = parseInterrogationScene(
+      "# Not a scene",
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
+
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error.code).toBe("interrogationSceneMissingTitle");
+  });
+
   it("parses an inquiry phase with cross-examined testimony, evidence, and statement manifests", () => {
     const parsed = parseInterrogationScene(
       VALID_SOURCE,

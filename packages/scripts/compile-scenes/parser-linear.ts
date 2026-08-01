@@ -10,6 +10,7 @@
 // =============================================================================
 
 import { tokenize } from "./tokenizer";
+import { parseSceneHeader } from "./parser-scene-header";
 import {
   parseVisualAssetCue,
   rejectUnknownAssetMetadata,
@@ -27,28 +28,15 @@ export function parseLinearScene(
   id: string,
 ): LinearParseResult {
   const tokens = tokenize(source, sourceFile);
-
-  if (
-    tokens.length === 0 ||
-    tokens[0]?.kind !== "heading" ||
-    tokens[0].level !== 1
-  ) {
-    return fail(
-      sourceFile,
-      tokens[0]?.line ?? 1,
-      "linearSceneMissingTitle",
-      "Linear scene must start with a `# Scene N: <title>` heading.",
-    );
-  }
-
-  const titleToken = tokens[0];
-  // Title text is "Scene 0: 接案" — strip the leading "Scene N:" part.
-  const titleMatch = /^Scene\s+\d+:\s*(.+)$/.exec(titleToken.text);
-  const title = titleMatch ? (titleMatch[1] ?? "").trim() : titleToken.text;
+  const header = parseSceneHeader(tokens, sourceFile, {
+    code: "linearSceneMissingTitle",
+    message: "Linear scene must start with a `# Scene N: <title>` heading.",
+  });
+  if (!header.ok) return header;
 
   const queue: DialogueItem[] = [];
 
-  for (let i = 1; i < tokens.length; i++) {
+  for (let i = header.value.nextTokenIndex; i < tokens.length; i++) {
     const tok = tokens[i];
     if (!tok) continue;
 
@@ -117,7 +105,7 @@ export function parseLinearScene(
   if (queue.length === 0) {
     return fail(
       sourceFile,
-      titleToken.line,
+      header.value.line,
       "linearSceneEmptyQueue",
       "Linear scene has no dialogue items after the heading. An empty scene causes the engine to end the game immediately.",
     );
@@ -128,11 +116,13 @@ export function parseLinearScene(
     value: {
       kind: "linearScene",
       id,
-      title,
+      title: header.value.title,
+      summary: header.value.summary,
+      summaryAuthored: header.value.summaryAuthored,
       queue,
       assetRefs: [],
       sourceFile,
-      line: titleToken.line,
+      line: header.value.line,
     },
   };
 }
