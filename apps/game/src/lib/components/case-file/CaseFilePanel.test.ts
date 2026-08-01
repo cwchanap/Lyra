@@ -6,9 +6,14 @@ import {
   within,
 } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import CaseFilePanelHarness from "$lib/test-harnesses/CaseFilePanelHarness.svelte";
 import type { GameStateView } from "$lib/state/types";
+import {
+  closeTopmostEscapeClaim,
+  escapeClaimed,
+  resetEscapeCoordinator,
+} from "$lib/state/escape-coordinator";
 import CaseFilePanel from "./CaseFilePanel.svelte";
 
 const lockedAcceptanceIds = [
@@ -313,6 +318,10 @@ function expectLockedIdsAbsent(container: HTMLElement) {
 }
 
 describe("CaseFilePanel", () => {
+  afterEach(() => {
+    resetEscapeCoordinator();
+  });
+
   it("uses direct rail, list, and detail columns with a tabpanel relationship", () => {
     render(CaseFilePanel, {
       state: acceptanceState(),
@@ -543,6 +552,38 @@ describe("CaseFilePanel", () => {
     expect(
       screen.getByRole("heading", { name: "事實：收據時間" }),
     ).toHaveFocus();
+  });
+
+  it("steps back through a relation layer when Escape is routed via the coordinator", async () => {
+    // GameShell's submenu Escape branch consults the escape-coordinator
+    // before closing the submenu. Following a relation registers a claim, so
+    // one Escape (routed as closeTopmostEscapeClaim) must return the player
+    // to the source item rather than bouncing to the root menu — "close one
+    // layer per Escape."
+    const user = userEvent.setup();
+    render(CaseFilePanelHarness);
+
+    await user.click(screen.getByRole("tab", { name: /已確認事實 2 項/ }));
+    await user.click(screen.getByRole("button", { name: "收據時間" }));
+    await user.click(
+      screen.getByRole("button", { name: "查看支持記錄：咖啡收據" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "證物：咖啡收據" }),
+    ).toHaveFocus();
+
+    expect(escapeClaimed()).toBe(true);
+    expect(closeTopmostEscapeClaim()).toBe(true);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "事實：收據時間" }),
+      ).toHaveFocus();
+    });
+    // The relation layer cleared and released its claim — no lingering trap.
+    await waitFor(() => {
+      expect(escapeClaimed()).toBe(false);
+    });
   });
 
   it("restores focus to the first surviving row when replacement removes the focused selection", async () => {

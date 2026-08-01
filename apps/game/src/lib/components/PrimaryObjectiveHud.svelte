@@ -40,20 +40,4 @@
     font-size: 15px;
     line-height: 1.4;
   }
-
-  :global(.scene-hud) .primary-objective-hud {
-    position: fixed;
-    top: 76px;
-    right: clamp(20px, 3vw, 40px);
-    max-width: min(360px, calc(100vw - 40px));
-  }
-
-  @media (max-width: 720px) {
-    :global(.scene-hud) .primary-objective-hud {
-      top: 138px;
-      right: 12px;
-      left: 12px;
-      max-width: none;
-    }
-  }
 </style>

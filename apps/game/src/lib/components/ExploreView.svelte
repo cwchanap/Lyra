@@ -31,16 +31,18 @@
 
 {#if inv && currentSub}
   {#snippet sceneHud()}
-    <SublocationNav
-      sublocations={inv.visibleSublocations}
-      currentId={inv.currentSublocationId}
-      onEnter={onEnterSublocation}
-      {disabled}
-      placement="scene"
-    />
-    {#if hud}
-      {@render hud()}
-    {/if}
+    <div class="explore-hud">
+      <SublocationNav
+        sublocations={inv.visibleSublocations}
+        currentId={inv.currentSublocationId}
+        onEnter={onEnterSublocation}
+        {disabled}
+        placement="scene"
+      />
+      {#if hud}
+        {@render hud()}
+      {/if}
+    </div>
   {/snippet}
 
   <InvestigationSceneSurface
@@ -61,5 +63,34 @@
     color: var(--bone-faint);
     font-family: var(--serif-jp);
     font-style: italic;
+  }
+
+  .explore-hud {
+    position: absolute;
+    top: 76px;
+    left: clamp(20px, 3vw, 40px);
+    right: clamp(20px, 3vw, 40px);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    pointer-events: none;
+  }
+
+  /* Keep the scene objective compact so it sits beside (wide viewports) or
+     wraps below (narrow viewports) the location navigator without the two
+     independently pinning the same top offset. */
+  .explore-hud :global(.primary-objective-hud) {
+    max-width: min(360px, 100%);
+  }
+
+  @media (max-width: 720px) {
+    /* lyra-mobile-breakpoint — see tokens.css. */
+    .explore-hud {
+      top: 72px;
+      left: 12px;
+      right: 12px;
+    }
   }
 </style>
