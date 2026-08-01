@@ -79,6 +79,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "linearScene",
           id: "scene_0",
           title: "接案",
+          summary: "接案",
+          summaryAuthored: false,
           queue: [
             {
               kind: "sceneTag",
@@ -121,6 +123,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "investigationScene",
           id: "investigation_scene_1",
           title: "調查",
+          summary: "調查",
+          summaryAuthored: false,
           intro: [],
           sublocations: [],
           evidenceManifest: [
@@ -259,6 +263,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "linearScene",
           id: "scene_0",
           title: "接案",
+          summary: "接案",
+          summaryAuthored: false,
           queue: [
             {
               kind: "line",
@@ -289,6 +295,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "linearScene",
           id: "scene_0",
           title: "接案",
+          summary: "接案",
+          summaryAuthored: false,
           queue: [
             {
               kind: "line",
@@ -436,6 +444,8 @@ describe("enrichScenesWithAssets", () => {
         kind: "linearScene",
         id: "scene_0",
         title: "場景一",
+        summary: "場景一",
+        summaryAuthored: false,
         queue: [
           {
             kind: "sceneTag",
@@ -460,6 +470,8 @@ describe("enrichScenesWithAssets", () => {
         kind: "linearScene",
         id: "scene_1",
         title: "場景二",
+        summary: "場景二",
+        summaryAuthored: false,
         queue: [
           {
             kind: "sceneTag",
@@ -683,6 +695,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "investigationScene",
           id: "investigation_scene_1",
           title: "調查",
+          summary: "調查",
+          summaryAuthored: false,
           intro: [
             {
               kind: "sceneTag",
@@ -784,6 +798,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "investigationScene",
           id: "investigation_scene_1",
           title: "調查",
+          summary: "調查",
+          summaryAuthored: false,
           intro: [],
           sublocations: [
             {
@@ -848,6 +864,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "investigationScene",
           id: "investigation_scene_1",
           title: "調查",
+          summary: "調查",
+          summaryAuthored: false,
           intro: [],
           sublocations: [
             {
@@ -912,6 +930,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "investigationScene",
           id: "investigation_scene_1",
           title: "調查",
+          summary: "調查",
+          summaryAuthored: false,
           intro: [],
           sublocations: [
             {
@@ -976,6 +996,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "investigationScene",
           id: "investigation_scene_1",
           title: "調查",
+          summary: "調查",
+          summaryAuthored: false,
           intro: [],
           sublocations: [
             {
@@ -1047,6 +1069,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "investigationScene",
           id: "investigation_scene_1",
           title: "調查",
+          summary: "調查",
+          summaryAuthored: false,
           intro: [],
           sublocations: [
             {
@@ -1111,6 +1135,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "investigationScene",
           id: "investigation_scene_1",
           title: "調查",
+          summary: "調查",
+          summaryAuthored: false,
           intro: [],
           sublocations: [
             {
@@ -1175,6 +1201,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "investigationScene",
           id: "investigation_scene_1",
           title: "調查",
+          summary: "調查",
+          summaryAuthored: false,
           intro: [],
           sublocations: [
             {
@@ -1236,6 +1264,8 @@ describe("enrichScenesWithAssets", () => {
           kind: "investigationScene",
           id: "investigation_scene_1",
           title: "調查",
+          summary: "調查",
+          summaryAuthored: false,
           intro: [],
           sublocations: [
             {
@@ -1303,6 +1333,8 @@ function linearScene(queue: DialogueItem[]): SceneRecord {
       kind: "linearScene",
       id: "scene_0",
       title: "接案",
+      summary: "接案",
+      summaryAuthored: false,
       queue,
       assetRefs: [],
       sourceFile: "chapter_1/scene_0.md",
@@ -1321,6 +1353,8 @@ function investigationScene(input: {
       kind: "investigationScene",
       id: "investigation_scene_1",
       title: "調查",
+      summary: "調查",
+      summaryAuthored: false,
       intro: [],
       sublocations: [],
       evidenceManifest: [
@@ -1357,6 +1391,8 @@ function investigationSceneWithEvidenceSources(): SceneRecord {
       kind: "investigationScene",
       id: "investigation_scene_1",
       title: "調查",
+      summary: "調查",
+      summaryAuthored: false,
       intro: [],
       sublocations: [
         {
@@ -1519,6 +1555,8 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
         kind: "linearScene",
         id: "scene_missing_asset_warning_test",
         title: "Test",
+        summary: "Test",
+        summaryAuthored: false,
         queue: [
           {
             kind: "sceneTag",
@@ -1617,6 +1655,8 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
         kind: "linearScene",
         id: "scene_repo_root_test",
         title: "Test",
+        summary: "Test",
+        summaryAuthored: false,
         queue: [
           {
             kind: "sceneTag",
@@ -1700,6 +1740,8 @@ describe("enrichScenesWithAssets — asset existence warnings", () => {
         kind: "linearScene",
         id: "scene_0",
         title: "Test",
+        summary: "Test",
+        summaryAuthored: false,
         queue: [{ kind: "action", text: "test" }],
         assetRefs: [],
         sourceFile: "chapter_1/scene_0.md",
@@ -1877,6 +1919,8 @@ function interrogationScene(): SceneRecord {
       kind: "interrogationScene",
       id: "interrogation_scene_2",
       title: "詢問",
+      summary: "詢問",
+      summaryAuthored: false,
       intro: [
         {
           kind: "line" as const,

@@ -50,6 +50,24 @@ describe("parseSceneHeader", () => {
     });
   });
 
+  it.each(["P0", "8.5"])(
+    "accepts the established Scene %s identifier",
+    (sceneNumber) => {
+      const result = parseHeader(`# Scene ${sceneNumber}: 雨水留下的時間`);
+
+      expect(result).toEqual({
+        ok: true,
+        value: {
+          title: "雨水留下的時間",
+          summary: "雨水留下的時間",
+          summaryAuthored: false,
+          nextTokenIndex: 1,
+          line: 1,
+        },
+      });
+    },
+  );
+
   it("rejects a dash-less Summary", () => {
     const result = parseHeader(`
 # Scene 7: title

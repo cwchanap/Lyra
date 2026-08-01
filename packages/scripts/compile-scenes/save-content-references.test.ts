@@ -79,6 +79,8 @@ function scene(): SceneRecord {
       kind: "investigationScene",
       id: "investigation_scene_1",
       title: "調查",
+      summary: "調查",
+      summaryAuthored: false,
       intro: [],
       assetRefs: [{ type: "audio", assetId: "audio.sfx.click" }],
       sourceFile,

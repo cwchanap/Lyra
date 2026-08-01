@@ -462,6 +462,8 @@ describe("asset enrichment: first visual cue audio validation", () => {
         kind: "linearScene",
         id: "scene_0",
         title: "Test",
+        summary: "Test",
+        summaryAuthored: false,
         sourceFile: "scene_0.md",
         line: 1,
         queue: [
@@ -499,6 +501,8 @@ describe("asset enrichment: first visual cue audio validation", () => {
         kind: "linearScene",
         id: "scene_0",
         title: "Test",
+        summary: "Test",
+        summaryAuthored: false,
         sourceFile: "scene_0.md",
         line: 1,
         queue: [
@@ -536,6 +540,8 @@ describe("asset enrichment: first visual cue audio validation", () => {
         kind: "linearScene",
         id: "scene_0",
         title: "Test",
+        summary: "Test",
+        summaryAuthored: false,
         sourceFile: "scene_0.md",
         line: 1,
         queue: [
@@ -573,6 +579,8 @@ describe("asset enrichment: first visual cue audio validation", () => {
         kind: "linearScene",
         id: "scene_0",
         title: "Test",
+        summary: "Test",
+        summaryAuthored: false,
         sourceFile: "scene_0.md",
         line: 1,
         queue: [

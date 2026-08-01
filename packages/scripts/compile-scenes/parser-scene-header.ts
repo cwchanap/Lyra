@@ -15,7 +15,7 @@ export type SceneHeaderParseResult =
 
 type MissingTitleError = Pick<CompileError, "code" | "message">;
 
-const SCENE_TITLE_RE = /^Scene\s+\d+:\s*(.+)$/;
+const SCENE_TITLE_RE = /^Scene\s+(?:\d+|P\d+|\d+\.\d+):\s*(.+)$/;
 const DASHLESS_SUMMARY_RE = /^\*\*Summary:\*\*\s*(.*)$/;
 const BLANK_SUMMARY_RE = /^-\s+\*\*Summary:\*\*\s*$/;
 

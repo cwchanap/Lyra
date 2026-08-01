@@ -28,6 +28,8 @@ function scene(
       kind: "investigationScene",
       id: "investigation_scene_1",
       title: "調查",
+      summary: "調查",
+      summaryAuthored: false,
       intro: [],
       sublocations: [
         {
@@ -208,6 +210,8 @@ describe("materializeSemanticDefaults", () => {
         kind: "interrogationScene",
         id: "interrogation_scene_2",
         title: "詢問",
+        summary: "詢問",
+        summaryAuthored: false,
         intro: [],
         assetRefs: [],
         evidenceManifest: [],
