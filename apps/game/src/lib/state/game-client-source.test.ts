@@ -83,6 +83,7 @@ function state(id: string): GameStateView {
       kind: "investigation",
       id: `scene_${id}`,
       title: "",
+      summary: "",
       index: 0,
       total: 1,
       currentSublocationId: "main",
@@ -628,6 +629,7 @@ describe("game client persistence response boundary", () => {
         {
           id: "chapter_1",
           title: "Chapter 1",
+          summary: "",
           index: 0,
           scenes: [
             {
@@ -671,6 +673,7 @@ describe("game client scene navigation commands", () => {
         {
           id: "chapter_1",
           title: "Chapter 1",
+          summary: "",
           index: 0,
           scenes: [
             {

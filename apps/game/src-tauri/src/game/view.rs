@@ -309,12 +309,14 @@ pub enum SceneView {
     Linear {
         id: String,
         title: String,
+        summary: String,
         index: usize,
         total: usize,
     },
     Investigation {
         id: String,
         title: String,
+        summary: String,
         index: usize,
         total: usize,
         current_sublocation_id: Option<String>,
@@ -323,6 +325,7 @@ pub enum SceneView {
     Interrogation {
         id: String,
         title: String,
+        summary: String,
         index: usize,
         total: usize,
         current_phase_id: Option<String>,

@@ -173,6 +173,7 @@ pub(crate) fn investigation_scene_with_intro(
     InvestigationSceneJson {
         id: id.into(),
         title: id.into(),
+        summary: "Summary".into(),
         asset_refs: vec![],
         intro,
         sublocations: vec![SublocationJson {
@@ -326,6 +327,7 @@ pub(super) fn dialogue_history_fixture_resources(line_count: usize) -> PathBuf {
                 "type": "linear",
                 "id": "scene_0",
                 "title": "Opening",
+                "summary": "Fixture scene summary.",
                 "queue": [{}]
             }}"#,
             queue_items.join(",")
@@ -338,6 +340,7 @@ pub(super) fn dialogue_history_fixture_resources(line_count: usize) -> PathBuf {
             "type": "linear",
             "id": "scene_1",
             "title": "Next",
+            "summary": "Fixture scene summary.",
             "queue": [{ "kind": "line", "speaker": "B", "text": "next scene" }]
         }"#,
     )
@@ -382,6 +385,7 @@ pub(super) fn packaged_acquisition_fixture_resources() -> (tempfile::TempDir, Pa
             "type": "investigation",
             "id": "investigation_scene_1",
             "title": "Packaged Definitions",
+            "summary": "Fixture scene summary.",
             "intro": [{ "kind": "action", "text": "authored dialogue" }],
             "sublocations": [{
                 "id": "room",
@@ -500,6 +504,7 @@ fn write_scene_jump_fixture_into(d: &Path) {
         "type": "linear",
         "id": "scene_0",
         "title": "Opening",
+        "summary": "The detective arrives at the opening scene.",
         "assetRefs": [
             { "type": "background", "assetId": "background.opening" },
             { "type": "audio", "assetId": "bgm.rain" },
@@ -518,6 +523,7 @@ fn write_scene_jump_fixture_into(d: &Path) {
         "type": "investigation",
         "id": "investigation_scene_1",
         "title": "Investigation",
+        "summary": "The detective searches the room for evidence.",
         "intro": [{ "kind": "line", "speaker": "B", "text": "investigation intro" }],
         "sublocations": [{
             "id": "room",
@@ -560,6 +566,7 @@ fn write_scene_jump_fixture_into(d: &Path) {
         "type": "interrogation",
         "id": "interrogation_scene_2",
         "title": "Interrogation",
+        "summary": "The detective questions the witness about the evidence.",
         "intro": [],
         "phases": [{
             "kind": "inquiry",
@@ -692,6 +699,7 @@ pub(crate) fn save_capture_fixture_resources() -> (tempfile::TempDir, PathBuf) {
   "type": "investigation",
   "id": "investigation_scene_1",
   "title": "Investigation",
+  "summary": "Fixture scene summary.",
   "intro": [{"kind":"line","speaker":"B","text":"investigation intro"}],
   "sublocations": [{
     "id": "room",
@@ -792,6 +800,7 @@ pub(crate) fn save_capture_fixture_resources() -> (tempfile::TempDir, PathBuf) {
   "type": "interrogation",
   "id": "interrogation_scene_2",
   "title": "Interrogation",
+  "summary": "Fixture scene summary.",
   "intro": [{"kind":"action","text":"interrogation intro"}],
   "phases": [{
     "kind": "inquiry",
@@ -1149,6 +1158,7 @@ pub(super) fn case_file_acceptance_fixture_resources() -> (tempfile::TempDir, Pa
             "type": "investigation",
             "id": "synthetic_case_file",
             "title": "案件檔案測試室",
+            "summary": "Fixture scene summary.",
             "intro": [],
             "sublocations": [{
                 "id": "fixture_room",
@@ -1420,6 +1430,7 @@ pub(super) fn story_navigation_fixture_resources() -> PathBuf {
   "type": "linear",
   "id": "{id}",
   "title": "{title}",
+  "summary": "Fixture scene summary.",
   "queue": [{{"kind":"line","speaker":"{speaker}","text":"line"}}]
 }}"#
             ),
@@ -1459,6 +1470,7 @@ pub(super) fn two_line_question_scene() -> InterrogationSceneJson {
     InterrogationSceneJson {
         id: "interrogation_scene_1".into(),
         title: "Interrogation".into(),
+        summary: "Summary".into(),
         asset_refs: vec![],
         intro: vec![],
         phases: vec![InterrogationPhaseJson::Inquiry {
@@ -1566,6 +1578,7 @@ pub(super) fn empty_inquiry_interrogation_scene() -> InterrogationSceneJson {
     InterrogationSceneJson {
         id: "interrogation_scene_1".into(),
         title: "Interrogation".into(),
+        summary: "Summary".into(),
         asset_refs: vec![],
         intro: vec![],
         phases: vec![InterrogationPhaseJson::Inquiry {
@@ -1609,6 +1622,7 @@ pub(super) fn locked_unsatisfied_interrogation_scene() -> InterrogationSceneJson
     InterrogationSceneJson {
         id: "interrogation_scene_1".into(),
         title: "Interrogation".into(),
+        summary: "Summary".into(),
         asset_refs: vec![],
         intro: vec![],
         phases: vec![InterrogationPhaseJson::Inquiry {
@@ -1640,6 +1654,7 @@ pub(super) fn locked_inventory_unlocked_interrogation_scene() -> InterrogationSc
     InterrogationSceneJson {
         id: "interrogation_scene_1".into(),
         title: "Interrogation".into(),
+        summary: "Summary".into(),
         asset_refs: vec![],
         intro: vec![],
         phases: vec![InterrogationPhaseJson::Inquiry {
@@ -1706,6 +1721,7 @@ pub(super) fn source_order_inventory_unlocked_interrogation_scene() -> Interroga
     InterrogationSceneJson {
         id: "interrogation_scene_1".into(),
         title: "Interrogation".into(),
+        summary: "Summary".into(),
         asset_refs: vec![],
         intro: vec![],
         phases: vec![
@@ -1957,6 +1973,7 @@ pub(super) fn single_required_question_scene() -> crate::game::schema::Interroga
     InterrogationSceneJson {
         id: "manual_complete".into(),
         title: "Manual Complete".into(),
+        summary: "Summary".into(),
         asset_refs: vec![],
         intro: vec![],
         phases: vec![InterrogationPhaseJson::Inquiry {
@@ -2051,6 +2068,7 @@ pub(super) fn single_honest_question_scene() -> crate::game::schema::Interrogati
     InterrogationSceneJson {
         id: "honest".into(),
         title: "Honest".into(),
+        summary: "Summary".into(),
         asset_refs: vec![],
         intro: vec![],
         phases: vec![InterrogationPhaseJson::Inquiry {

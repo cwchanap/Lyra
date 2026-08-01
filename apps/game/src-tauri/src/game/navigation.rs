@@ -559,6 +559,7 @@ mod tests {
                 "type": "investigation",
                 "id": "scene_2",
                 "title": "Mismatched",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "sublocations": [{
                     "id": "room",
@@ -636,6 +637,7 @@ mod tests {
             "type": "linear",
             "id": id,
             "title": id,
+            "summary": id,
             "queue": [{ "kind": "line", "speaker": "A", "text": text }]
         })
         .to_string()
@@ -694,6 +696,7 @@ mod tests {
             "type": "investigation",
             "id": id,
             "title": id,
+            "summary": id,
             "intro": [],
             "sublocations": [{
                 "id": "room",
@@ -1127,6 +1130,7 @@ mod tests {
             "type": "linear",
             "id": "scene_0",
             "title": "Opening",
+            "summary": "Fixture scene summary.",
             "queue": [
                 { "kind": "line", "speaker": "A", "text": "start" },
                 { "kind": "line", "speaker": "A", "text": "second" }
@@ -1141,6 +1145,7 @@ mod tests {
             "type": "linear",
             "id": "scene_1",
             "title": "Empty",
+            "summary": "Fixture scene summary.",
             "queue": []
         }"#,
         )
@@ -1152,6 +1157,7 @@ mod tests {
             "type": "linear",
             "id": "scene_2",
             "title": "Next",
+            "summary": "Fixture scene summary.",
             "queue": []
         }"#,
         )
@@ -1250,6 +1256,7 @@ mod tests {
             "type": "linear",
             "id": "scene_0",
             "title": "Opening",
+            "summary": "Fixture scene summary.",
             "queue": [
                 { "kind": "line", "speaker": "A", "text": "start" },
                 { "kind": "line", "speaker": "A", "text": "second" },
@@ -1265,6 +1272,7 @@ mod tests {
             "type": "linear",
             "id": "scene_1",
             "title": "Empty",
+            "summary": "Fixture scene summary.",
             "queue": []
         }"#,
         )
@@ -1276,6 +1284,7 @@ mod tests {
             "type": "linear",
             "id": "scene_2",
             "title": "Next",
+            "summary": "Fixture scene summary.",
             "queue": []
         }"#,
         )
@@ -1419,6 +1428,7 @@ mod tests {
             "type": "linear",
             "id": "scene_0",
             "title": "Opening",
+            "summary": "Fixture scene summary.",
             "queue": [{ "kind": "line", "speaker": "A", "text": "start" }]
         }"#,
         )
@@ -1430,6 +1440,7 @@ mod tests {
             "type": "linear",
             "id": "dup_scene",
             "title": "First dup",
+            "summary": "Fixture scene summary.",
             "queue": [{ "kind": "line", "speaker": "A", "text": "a" }]
         }"#,
         )
@@ -1440,6 +1451,7 @@ mod tests {
             "type": "linear",
             "id": "dup_scene",
             "title": "Second dup",
+            "summary": "Fixture scene summary.",
             "queue": [{ "kind": "line", "speaker": "A", "text": "b" }]
         }"#,
         )
@@ -1483,6 +1495,7 @@ mod tests {
                 "type": "interrogation",
                 "id": "interrogation_scene_1",
                 "title": "Interrogation",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "phases": [],
                 "evidenceManifest": [],
@@ -1528,6 +1541,7 @@ mod tests {
                 "type": "linear",
                 "id": "scene_0",
                 "title": "Wrong Kind",
+                "summary": "Fixture scene summary.",
                 "queue": []
             }"#,
         )
@@ -1599,6 +1613,7 @@ mod tests {
                 "type": "linear",
                 "id": "scene_0",
                 "title": "Opening",
+                "summary": "Fixture scene summary.",
                 "queue": [{ "kind": "line", "speaker": "A", "text": "start" }]
             }"#,
         )
@@ -1609,6 +1624,7 @@ mod tests {
                 "type": "investigation",
                 "id": "investigation_scene_1",
                 "title": "Investigation",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "sublocations": [{
                     "id": "room",
@@ -1633,6 +1649,7 @@ mod tests {
                 "type": "interrogation",
                 "id": "interrogation_scene_0",
                 "title": "Interrogation",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "phases": [{
                     "kind": "inquiry",
@@ -1757,6 +1774,7 @@ mod tests {
                 "type": "linear",
                 "id": "scene_0",
                 "title": "Opening",
+                "summary": "Fixture scene summary.",
                 "queue": []
             }"#,
         )
@@ -1805,12 +1823,12 @@ mod tests {
         // build must reject it before navigation is possible.
         fs::write(
             chapter_1.join("scene_a.json"),
-            r#"{ "type": "linear", "id": "dup", "title": "A", "queue": [] }"#,
+            r#"{ "type": "linear", "id": "dup", "title": "A", "summary": "Fixture scene summary.", "queue": [] }"#,
         )
         .unwrap();
         fs::write(
             chapter_1.join("scene_b.json"),
-            r#"{ "type": "linear", "id": "dup", "title": "B", "queue": [] }"#,
+            r#"{ "type": "linear", "id": "dup", "title": "B", "summary": "Fixture scene summary.", "queue": [] }"#,
         )
         .unwrap();
 
@@ -1857,7 +1875,7 @@ mod tests {
         .unwrap();
         fs::write(
             chapter_dup.join("scene_0.json"),
-            r#"{ "type": "linear", "id": "scene_0", "title": "S", "queue": [] }"#,
+            r#"{ "type": "linear", "id": "scene_0", "title": "S", "summary": "Fixture scene summary.", "queue": [] }"#,
         )
         .unwrap();
 
@@ -1925,7 +1943,7 @@ mod tests {
         .unwrap();
         fs::write(
             chapter_dup.join("scene_0.json"),
-            r#"{ "type": "linear", "id": "scene_0", "title": "S", "queue": [] }"#,
+            r#"{ "type": "linear", "id": "scene_0", "title": "S", "summary": "Fixture scene summary.", "queue": [] }"#,
         )
         .unwrap();
 

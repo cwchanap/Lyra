@@ -1019,6 +1019,7 @@ mod tests {
         let scene = InvestigationSceneJson {
             id: "investigation_scene_1".into(),
             title: "Investigation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
@@ -1083,6 +1084,7 @@ mod tests {
         let scene_json = LinearSceneJson {
             id: "scene_0".into(),
             title: "Test".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             queue: vec![
                 DialogueItem::SceneTag {
@@ -1156,6 +1158,7 @@ mod tests {
         let scene_json = LinearSceneJson {
             id: "scene_0".into(),
             title: "Test".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             queue: vec![
                 DialogueItem::Line {
@@ -1272,6 +1275,7 @@ mod tests {
         let tag_only_json = LinearSceneJson {
             id: "scene_0".into(),
             title: "Tag Only".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             queue: vec![DialogueItem::SceneTag {
                 text: "吉祥寺街道".into(),

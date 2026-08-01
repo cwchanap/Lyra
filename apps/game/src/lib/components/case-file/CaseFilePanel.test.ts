@@ -63,6 +63,7 @@ function acceptanceState(): GameStateView {
       kind: "linear",
       id: "synthetic_case_file",
       title: "案件檔案測試室",
+      summary: "",
       index: 0,
       total: 1,
     },

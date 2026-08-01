@@ -593,6 +593,7 @@ mod tests {
         InterrogationSceneJson {
             id: "interrogation".into(),
             title: "Interrogation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
@@ -631,6 +632,7 @@ mod tests {
         InterrogationSceneJson {
             id: "interrogation".into(),
             title: "Interrogation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
@@ -877,6 +879,7 @@ mod tests {
         let def = InterrogationSceneJson {
             id: "interrogation".into(),
             title: "Interrogation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {
@@ -939,6 +942,7 @@ mod tests {
         let def = InterrogationSceneJson {
             id: "interrogation".into(),
             title: "Interrogation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![
@@ -1115,6 +1119,7 @@ mod tests {
         let def = InterrogationSceneJson {
             id: "interrogation".into(),
             title: "Interrogation".into(),
+            summary: "Summary".into(),
             asset_refs: vec![],
             intro: vec![],
             phases: vec![InterrogationPhaseJson::Inquiry {

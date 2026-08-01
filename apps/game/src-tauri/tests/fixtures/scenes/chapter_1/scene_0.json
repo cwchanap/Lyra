@@ -2,6 +2,7 @@
   "type": "linear",
   "id": "scene_0",
   "title": "測試線性場景",
+  "summary": "Fixture scene summary.",
   "queue": [
     {
       "kind": "sceneTag",

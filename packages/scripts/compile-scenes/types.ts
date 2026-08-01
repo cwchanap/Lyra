@@ -436,6 +436,7 @@ export type JSONLinearScene = {
   type: "linear";
   id: string;
   title: string;
+  summary: string;
   queue: JSONDialogueItem[];
   assetRefs: AssetRef[];
 };
@@ -447,6 +448,7 @@ export type JSONInvestigationScene = {
   type: "investigation";
   id: string;
   title: string;
+  summary: string;
   intro: JSONDialogueItem[];
   assetRefs: AssetRef[];
   sublocations: Array<{
@@ -519,6 +521,7 @@ export type JSONInterrogationScene = {
   type: "interrogation";
   id: string;
   title: string;
+  summary: string;
   intro: JSONDialogueItem[];
   assetRefs: AssetRef[];
   phases: JSONInterrogationPhase[];

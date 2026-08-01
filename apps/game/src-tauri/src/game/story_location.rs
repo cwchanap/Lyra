@@ -238,6 +238,7 @@ mod tests {
             [SceneJson::Linear(LinearSceneJson {
                 id: "fixture_scene".into(),
                 title: "Fixture Scene".into(),
+                summary: "Summary".into(),
                 asset_refs: vec![],
                 queue: vec![],
             })],
@@ -410,6 +411,7 @@ mod tests {
                 "type": "linear",
                 "id": id,
                 "title": title,
+                "summary": title,
                 "queue": [{"kind": "line", "speaker": "Narrator", "text": "..."}],
             })
             .to_string(),

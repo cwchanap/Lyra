@@ -89,6 +89,7 @@ describe("deriveDialogueSegments", () => {
           type: "linear",
           id: "scene_0",
           title: "Opening",
+          summary: "Opening",
           queue: [{ kind: "action", text: "Linear carrier." }],
           assetRefs: [],
         },

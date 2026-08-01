@@ -33,6 +33,7 @@ const linear = (id: string, title: string, queue: JSONDialogueItem[]) => ({
   type: "linear" as const,
   id,
   title,
+  summary: title,
   queue,
   assetRefs: [],
 });
@@ -116,6 +117,7 @@ describe("buildSaveContentManifest", () => {
                 },
               ],
               title: "Opening",
+              summary: "Opening",
               id: "scene_0",
               type: "linear",
             },
@@ -130,6 +132,36 @@ describe("buildSaveContentManifest", () => {
     expect(manifest({ bundle: right }).contentRevision).toBe(
       manifest({ bundle: left }).contentRevision,
     );
+  });
+
+  it("changes when an emitted scene summary changes", () => {
+    const ast: ASTLinearScene = {
+      kind: "linearScene",
+      id: "scene_0",
+      title: "Opening",
+      summary: "The detective takes the case.",
+      summaryAuthored: true,
+      queue: [
+        { kind: "line", speaker: "detective", text: "A", portrait: null },
+      ],
+      assetRefs: [],
+      sourceFile: "chapter_1/scene_0.md",
+      line: 1,
+    };
+    const edited = { ...ast, summary: "The detective revisits the case." };
+
+    const baselineRevision = manifest({
+      bundle: bundle([
+        chapter("chapter_1", "Chapter 1", [emitLinearScene(ast)]),
+      ]),
+    }).contentRevision;
+    const editedRevision = manifest({
+      bundle: bundle([
+        chapter("chapter_1", "Chapter 1", [emitLinearScene(edited)]),
+      ]),
+    }).contentRevision;
+
+    expect(editedRevision).not.toBe(baselineRevision);
   });
 
   it("changes for same-kind dialogue order and prose or label edits", () => {

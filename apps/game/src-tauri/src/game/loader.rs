@@ -466,6 +466,7 @@ mod tests {
                 "type": "investigation",
                 "id": scene_id,
                 "title": scene_id,
+                "summary": scene_id,
                 "intro": [],
                 "sublocations": [],
                 "evidenceManifest": evidence,
@@ -663,6 +664,7 @@ mod tests {
                 "type": "linear",
                 "id": "scene_0",
                 "title": "Linear",
+                "summary": "Fixture scene summary.",
                 "queue": []
             }"#,
         )
@@ -715,6 +717,7 @@ mod tests {
                 "type": "investigation",
                 "id": "investigation_scene_1",
                 "title": "Broken Reveal",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "sublocations": [{
                     "id": "room",
@@ -753,6 +756,7 @@ mod tests {
                 "type": "investigation",
                 "id": "investigation_scene_1",
                 "title": "Broken Unlock",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "sublocations": [{
                     "id": "room",
@@ -800,6 +804,7 @@ mod tests {
                 "type": "interrogation",
                 "id": "interrogation_scene_1",
                 "title": "Broken Reveal",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "phases": [{
                     "kind": "inquiry",
@@ -843,6 +848,7 @@ mod tests {
                 "type": "interrogation",
                 "id": "interrogation_scene_1",
                 "title": "Broken Unlock",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "phases": [{
                     "kind": "inquiry",
@@ -891,6 +897,7 @@ mod tests {
                 "type": "interrogation",
                 "id": "interrogation_scene_1",
                 "title": "Broken Line Reveal",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "phases": [{
                     "kind": "inquiry",
@@ -957,6 +964,7 @@ mod tests {
                 "type": "interrogation",
                 "id": "interrogation_scene_1",
                 "title": "External Inventory",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "phases": [{
                     "kind": "inquiry",
@@ -1014,6 +1022,7 @@ mod tests {
                 "type": "interrogation",
                 "id": "interrogation_scene_1",
                 "title": "External Unlock",
+                "summary": "Fixture scene summary.",
                 "intro": [],
                 "phases": [{
                     "kind": "inquiry",

@@ -376,6 +376,7 @@ pub enum SceneJson {
 pub struct LinearSceneJson {
     pub id: String,
     pub title: String,
+    pub summary: String,
     #[serde(default)]
     pub asset_refs: Vec<AssetRefJson>,
     pub queue: Vec<DialogueItem>,
@@ -386,6 +387,7 @@ pub struct LinearSceneJson {
 pub struct InvestigationSceneJson {
     pub id: String,
     pub title: String,
+    pub summary: String,
     #[serde(default)]
     pub asset_refs: Vec<AssetRefJson>,
     pub intro: Vec<DialogueItem>,
@@ -400,6 +402,7 @@ pub struct InvestigationSceneJson {
 pub struct InterrogationSceneJson {
     pub id: String,
     pub title: String,
+    pub summary: String,
     #[serde(default)]
     pub asset_refs: Vec<AssetRefJson>,
     pub intro: Vec<DialogueItem>,
@@ -806,6 +809,7 @@ mod tests {
             "type": "linear",
             "id": "scene_0",
             "title": "接案",
+            "summary": "The detective takes the case.",
             "queue": [
                 {"kind": "sceneTag", "text": "街道"},
                 {"kind": "action", "text": "推開門"},
@@ -816,6 +820,7 @@ mod tests {
         match parsed {
             SceneJson::Linear(s) => {
                 assert_eq!(s.id, "scene_0");
+                assert_eq!(s.summary, "The detective takes the case.");
                 assert_eq!(s.queue.len(), 3);
             }
             _ => panic!("expected Linear variant"),
@@ -948,6 +953,7 @@ mod tests {
             "type": "interrogation",
             "id": "interrogation_scene_2",
             "title": "詢問",
+            "summary": "The detective presses the witness.",
             "intro": [],
             "phases": [{
                 "kind": "inquiry",
@@ -968,7 +974,21 @@ mod tests {
             "outro": { "unlock": "auto", "dialogue": [] }
         }"#;
         let parsed: SceneJson = serde_json::from_str(json).unwrap();
-        assert!(matches!(parsed, SceneJson::Interrogation(_)));
+        assert!(
+            matches!(parsed, SceneJson::Interrogation(scene) if scene.summary == "The detective presses the witness.")
+        );
+    }
+
+    #[test]
+    fn rejects_scene_without_summary() {
+        let json = r#"{
+            "type": "linear",
+            "id": "scene_0",
+            "title": "Opening",
+            "queue": []
+        }"#;
+
+        assert!(serde_json::from_str::<SceneJson>(json).is_err());
     }
 
     #[test]

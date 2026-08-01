@@ -2,6 +2,7 @@
   "type": "linear",
   "id": "scene_0",
   "title": "開場",
+  "summary": "Fixture scene summary.",
   "queue": [
     {
       "kind": "sceneTag",
