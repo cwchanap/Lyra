@@ -1,6 +1,6 @@
 # Scene 8.5: 短暫誤判整理點
 
-- **Summary:** 相馬與早坂停下來整理已證明的命題：三宅不該被放在摘要時間裡，但真正更早進入後場的人仍待確認。
+- **Summary:** 相馬與早坂停下來盤點進度：三宅的說謊不能證明殺人，而且有人比他更早進入後場，但那個人是誰仍待查明。
 
 [場景：警署走廊，自動販賣機旁，深夜。販賣機的燈光是走廊唯一的光源，旁邊有一塊空白告示板，相馬從事務所帶來的資料夾放在長椅上，窗外雨聲未停。]
 - **Background Prompt:** Late-night Japanese police station corridor beside a vending machine, vending-machine glow the only light source, blank notice board on the wall, case folder on a bench, cold institutional air, faint rain on dark windows, no readable text.
