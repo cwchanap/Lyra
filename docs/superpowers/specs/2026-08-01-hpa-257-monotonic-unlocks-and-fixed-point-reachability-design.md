@@ -300,13 +300,13 @@ and_expr      := atom ("and" atom)*
 atom          := "(" expr ")"
                | at_least
                | predicate
-at_least      := "at_least" "(" count "," expr ("," expr)+ ")"
+at_least      := "at_least" "(" count "," expr ("," expr)* ")"
 count         := base-10 positive integer
 ```
 
-The grammar deliberately requires at least one comma after `count`; an empty
-condition list is malformed. Whitespace may appear around delimiters and
-operators.
+The grammar deliberately requires the comma after `count` and at least one child
+expression; an empty condition list is malformed. Whitespace may appear around
+delimiters and operators.
 
 Operator behavior remains:
 
@@ -420,6 +420,10 @@ The compiler rejects:
 - a count larger than the number of conditions;
 - structurally duplicate normalized child expressions;
 - missing commas or closing parentheses.
+
+Structural duplicate means equality of the emitted child tree after redundant
+parentheses are removed. The compiler does not reorder commutative `and`/`or`
+children or attempt general Boolean equivalence proving.
 
 Valid edge cases include:
 
