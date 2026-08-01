@@ -1,5 +1,7 @@
 # Scene 0: 冷開場 — 摘要的乾淨故事
 
+- **Summary:** KAGAMI 將門鎖、鏡頭與打卡紀錄整理成三宅犯案的乾淨結論，而畫面外已有一個家庭被摘要壓住。
+
 [場景：純黑底的 KAGAMI 摘要介面，沒有任何人，只有一行行靜靜浮現的資料。冷白色字體，邊緣乾淨，沒有雜訊。]
 - **Background Prompt:** Minimal black KAGAMI evidence-summary interface, cold white aligned data rows implied by abstract glowing lines, clean machine logic, no readable text, no people, no UI labels.
 - **BGM:** none

@@ -1,5 +1,7 @@
 # Scene P2: 雨鐘咖啡館的普通日
 
+- **Summary:** 命案發生前的雨鐘咖啡館仍只是普通工作場所，三宅、增田、舊掛鐘與閉店流程留下日後會被重新閱讀的日常痕跡。
+
 [場景：吉祥寺・雨鐘咖啡館主廳，午後，雨剛停。窗外濕漉漉的，店內暖黃光，空氣裡飄著金木犀拿鐵的餘香。三宅蒼太在收桌面。]
 - **Background Prompt:** Small Tokyo cafe interior in the afternoon after rain, warm yellow light, wet street outside the window, paper cups and a loyalty card on the counter, osmanthus latte traces, quiet ordinary-day mood, no people, no readable text.
 - **BGM:** bgm_chapter_close

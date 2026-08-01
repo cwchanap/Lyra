@@ -1,5 +1,7 @@
 # Scene 5: 第一輪審查會 — 摘要先贏
 
+- **Summary:** 第一輪證據摘要審查會中，三宅的員工憑證、監視器與打卡紀錄壓過模糊第三者線索，相馬第一次敗給「最好對得上的故事」。
+
 [場景：吉祥寺地方分署審查會場，上午，雨後陰天。長桌前坐著審查人員，旁聽席只有寥寥幾人，空氣冷而安靜，桌上擺著一份厚厚的整合摘要。日光燈管把所有人的臉照得偏白，會場裡瀰漫著紙張與冷氣混合的氣味。這裡的安靜不是肅穆，而是所有人都在等著開口的那種沉默——翻一頁紙都顯得太響。]
 - **Background Prompt:** Local Japanese review-board hearing room on a cloudy morning after rain, long table, sparse gallery seats, thick case-summary folder, cold fluorescent light, no readable text.
 - **BGM:** bgm_review_board_loss

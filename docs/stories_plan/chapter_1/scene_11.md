@@ -1,5 +1,7 @@
 # Scene 11: 結案後日常與章末鉤子
 
+- **Summary:** 三宅獲釋後以過甜的金木犀拿鐵向相馬道謝；夜裡，無法解開的 ZW_A16.lock 與無主藍傘留下更大的案件陰影。
+
 [場景：吉祥寺雨鐘咖啡館，午後。雨剛停，窗外天色微亮。店內桌椅已收拾過半，吧台後靜悄悄的，空氣裡還留著淡淡咖啡香。]
 - **Background Prompt:** Rain Bell cafe after the rain in the afternoon, half-reset tables, quiet counter, soft daylight through wet windows, gentle aftermath, no readable signage.
 - **BGM:** bgm_chapter_close

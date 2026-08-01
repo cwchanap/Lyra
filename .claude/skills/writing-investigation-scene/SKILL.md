@@ -36,6 +36,8 @@ Every `investigation_scene_<N>.md` follows this top-to-bottom order:
 ```
 # Scene N: <title>
 
+- **Summary:** <one-sentence player recap copy, not a beat list>
+
 ## Intro                         (intro narration — H2)
 
 ## Sub-location: ... {#id}       (one or more — H2)
@@ -55,6 +57,9 @@ Every `investigation_scene_<N>.md` follows this top-to-bottom order:
 
 ## Outro                         (outro narration — H2)
 ```
+
+The `- **Summary:**` line appears directly after the H1. It is one sentence of
+player-facing recap copy, not a beat list or authoring notes.
 
 ## Heading hierarchy reference
 
