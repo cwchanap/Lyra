@@ -1,10 +1,10 @@
-use super::capture::{capture_checkpoint_v1, CapturedCheckpointV1};
+use super::capture::{capture_checkpoint_v2, CapturedCheckpointV2};
 use super::schema::{
     AcquisitionEventStateV1, AudioCueSnapshotV1, AuthorizationProgressSnapshotV1,
     CrossExamSnapshotV1, DialogueHistoryEntryV1, DialogueHistorySnapshotV1, FactProgressSnapshotV1,
     InventorySnapshotV1, InventoryTargetV1, LastVisualCueSnapshotV1, ObjectiveProgressSnapshotV1,
-    QuestionProgressSnapshotV1, RecordKind, SaveEnvelopeV1, SaveSlotRef, SaveSnapshotV1,
-    SaveSummary, SaveType, SceneProgressSnapshotV1, StoryStateSnapshotV1,
+    QuestionProgressSnapshotV1, RecordKind, SaveEnvelopeV2, SaveSlotRef, SaveSnapshotV1,
+    SaveSummaryV2, SaveType, SceneProgressSnapshotV1, StoryStateSnapshotV1,
 };
 use crate::game::content_manifest::ContentManifest;
 use crate::game::dialogue::{DialogueHistory, DIALOGUE_HISTORY_LIMIT};
@@ -100,7 +100,7 @@ impl ResumableStateAdapter for StoryState {
 pub(crate) fn validate_save_summary(
     definitions: &CurrentDefinitions,
     snapshot: &SaveSnapshotV1,
-    summary: &SaveSummary,
+    summary: &SaveSummaryV2,
 ) -> Result<(), GameError> {
     let (_, chapter) = exactly_one_chapter(definitions, &snapshot.chapter_id)?;
     let scene = definitions
@@ -108,26 +108,47 @@ pub(crate) fn validate_save_summary(
         .get(&(snapshot.chapter_id.clone(), snapshot.scene_id.clone()))
         .ok_or_else(GameError::missing_save_definition)?;
     let (_, scene_title) = scene_json_identity(scene);
+    let scene_summary = match scene {
+        SceneJson::Linear(scene) => &scene.summary,
+        SceneJson::Investigation(scene) => &scene.summary,
+        SceneJson::Interrogation(scene) => &scene.summary,
+    };
     let active_primary_objective_id = snapshot.story_state.active_primary_objective_id.clone();
-    let active_primary_objective_label = active_primary_objective_id
+    let active_primary_objective_copy = active_primary_objective_id
         .as_deref()
         .map(|id| {
             definitions
                 .story_catalog
                 .objective(id)
-                .map(|objective| objective.label.clone())
+                .map(|objective| (objective.label.clone(), objective.summary.clone()))
                 .ok_or_else(GameError::missing_save_definition)
         })
         .transpose()?;
-    let expected = SaveSummary {
-        chapter_id: snapshot.chapter_id.clone(),
-        chapter_title: chapter.title.clone(),
-        scene_id: snapshot.scene_id.clone(),
-        scene_title: scene_title.to_owned(),
-        active_primary_objective_id,
-        active_primary_objective_label,
-    };
-    if summary != &expected {
+    let (active_primary_objective_label, active_primary_objective_summary) =
+        match active_primary_objective_copy {
+            Some((label, objective_summary)) => (Some(label), Some(objective_summary)),
+            None => (None, None),
+        };
+    let recap_copy_matches = summary
+        .chapter_summary
+        .as_ref()
+        .is_none_or(|value| value == &chapter.summary)
+        && summary
+            .scene_summary
+            .as_ref()
+            .is_none_or(|value| value == scene_summary)
+        && summary
+            .active_primary_objective_summary
+            .as_ref()
+            .is_none_or(|value| Some(value) == active_primary_objective_summary.as_ref());
+    if summary.chapter_id != snapshot.chapter_id
+        || summary.chapter_title != chapter.title
+        || summary.scene_id != snapshot.scene_id
+        || summary.scene_title != scene_title
+        || summary.active_primary_objective_id != active_primary_objective_id
+        || summary.active_primary_objective_label != active_primary_objective_label
+        || !recap_copy_matches
+    {
         return Err(invalid_progress(
             "Save summary does not match the saved packaged state.",
         ));
@@ -195,7 +216,7 @@ pub(crate) fn load_current_definitions(
 pub(crate) fn build_restore_candidate(
     resources_dir: PathBuf,
     definitions: &CurrentDefinitions,
-    envelope: SaveEnvelopeV1,
+    envelope: SaveEnvelopeV2,
 ) -> Result<RestoredGameCandidate, GameError> {
     if resources_dir != definitions.resources_dir {
         return Err(GameError::save_discovery_unavailable());
@@ -307,22 +328,19 @@ pub(crate) fn build_restore_candidate(
 
     // The capture boundary is intentionally independent from restore. Re-run
     // its exhaustive invariants on the detached candidate and demand exact
-    // equality so duplicate IDs, reordered coordinates, or normalization
-    // cannot be smuggled through reconstruction.
-    let CapturedCheckpointV1 {
-        summary: recaptured_summary,
+    // snapshot equality so duplicate IDs, reordered coordinates, or
+    // normalization cannot be smuggled through reconstruction. Migrated V1
+    // recap copy remains null by contract, so summary validation happens
+    // against packaged definitions above rather than by exact recapture.
+    let CapturedCheckpointV2 {
+        summary: _,
         snapshot: recaptured_snapshot,
-    } = capture_checkpoint_v1(&engine).map_err(|error| {
+    } = capture_checkpoint_v2(&engine).map_err(|error| {
         invalid_progress(format!("Restored candidate is invalid: {}", error.message))
     })?;
     if recaptured_snapshot != envelope.snapshot {
         return Err(invalid_progress(
             "Restored candidate does not recapture to the exact saved snapshot.",
-        ));
-    }
-    if recaptured_summary != envelope.summary {
-        return Err(invalid_progress(
-            "Save summary does not match the restored packaged state.",
         ));
     }
     // Build the public view as the final fallible validation boundary. This
@@ -1421,13 +1439,13 @@ mod tests {
     use crate::game::dialogue_queue::{
         ActiveDialogueQueue, DialogueSegment, DialogueSegmentOriginV1,
     };
-    use crate::game::save::capture::{capture_checkpoint_v1, CapturedCheckpointV1};
+    use crate::game::save::capture::{capture_checkpoint_v2, CapturedCheckpointV2};
     use crate::game::save::schema::{
         AcquisitionEventStateV1, AudioCueSnapshotV1, CharacterTopicRefV1, CrossExamSnapshotV1,
         DialogueHistoryEntryV1, EvidenceInventoryEntryV1, InterrogationOverrideRefV1,
         InvestigationOverrideRefV1, ObjectiveProgressSnapshotV1, RecordKind, SaveEnvelopeV1,
-        SaveSlotRef, SaveType, SceneProgressSnapshotV1, StatementInventoryEntryV1,
-        ThumbnailDescriptorV1,
+        SaveEnvelopeV2, SaveSlotRef, SaveSummaryV1, SaveType, SceneProgressSnapshotV1,
+        StatementInventoryEntryV1, ThumbnailDescriptorV1,
     };
     use crate::game::scenes::interrogation::CrossExam;
     use crate::game::scenes::SceneRuntime;
@@ -1443,14 +1461,14 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     const SAVE_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
-    type SaveMutation = Box<dyn FnOnce(&mut SaveEnvelopeV1)>;
+    type SaveMutation = Box<dyn FnOnce(&mut SaveEnvelopeV2)>;
 
     fn envelope_from_checkpoint(
         engine: &GameEngine,
-        checkpoint: CapturedCheckpointV1,
-    ) -> SaveEnvelopeV1 {
-        SaveEnvelopeV1 {
-            schema_version: 1,
+        checkpoint: CapturedCheckpointV2,
+    ) -> SaveEnvelopeV2 {
+        SaveEnvelopeV2 {
+            schema_version: 2,
             content_revision: engine.content_revision().into(),
             save_id: SAVE_ID.into(),
             save_type: SaveType::Manual,
@@ -1463,8 +1481,8 @@ mod tests {
         }
     }
 
-    fn envelope(engine: &GameEngine) -> SaveEnvelopeV1 {
-        envelope_from_checkpoint(engine, capture_checkpoint_v1(engine).unwrap())
+    fn envelope(engine: &GameEngine) -> SaveEnvelopeV2 {
+        envelope_from_checkpoint(engine, capture_checkpoint_v2(engine).unwrap())
     }
 
     fn resources_and_engine() -> (tempfile::TempDir, PathBuf, GameEngine) {
@@ -1476,7 +1494,7 @@ mod tests {
     fn round_trip(
         resources: PathBuf,
         engine: &GameEngine,
-    ) -> (SaveEnvelopeV1, RestoredGameCandidate) {
+    ) -> (SaveEnvelopeV2, RestoredGameCandidate) {
         let original = envelope(engine);
         let encoded = serde_json::to_vec(&original).unwrap();
         let parsed = crate::game::save::schema::parse_current_envelope(&encoded).unwrap();
@@ -1487,7 +1505,7 @@ mod tests {
 
     fn assert_round_trip(resources: PathBuf, engine: &GameEngine) {
         let (original, restored) = round_trip(resources, engine);
-        let recaptured = capture_checkpoint_v1(&restored.engine).unwrap();
+        let recaptured = capture_checkpoint_v2(&restored.engine).unwrap();
         assert_eq!(recaptured.snapshot, original.snapshot);
         assert_eq!(recaptured.summary, original.summary);
         assert_eq!(
@@ -1509,15 +1527,15 @@ mod tests {
     fn assert_rejected_without_live_mutation(
         resources: &Path,
         engine: &GameEngine,
-        mutate: impl FnOnce(&mut SaveEnvelopeV1),
+        mutate: impl FnOnce(&mut SaveEnvelopeV2),
     ) -> String {
-        let before = serde_json::to_vec(&capture_checkpoint_v1(engine).unwrap()).unwrap();
+        let before = serde_json::to_vec(&capture_checkpoint_v2(engine).unwrap()).unwrap();
         let mut save = envelope(engine);
         mutate(&mut save);
         let definitions = load_current_definitions(resources).unwrap();
         let error =
             build_restore_candidate(resources.to_path_buf(), &definitions, save).unwrap_err();
-        let after = serde_json::to_vec(&capture_checkpoint_v1(engine).unwrap()).unwrap();
+        let after = serde_json::to_vec(&capture_checkpoint_v2(engine).unwrap()).unwrap();
         assert_eq!(after, before, "failed restore mutated the live engine");
         error.code
     }
@@ -1555,13 +1573,13 @@ mod tests {
     fn exact_revision_and_location_are_resolved_from_the_current_package() {
         let (_guard, resources, engine) = resources_and_engine();
         for mutate in [
-            |save: &mut SaveEnvelopeV1| {
+            |save: &mut SaveEnvelopeV2| {
                 save.content_revision =
                     "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".into()
             },
-            |save: &mut SaveEnvelopeV1| save.snapshot.chapter_id = "missing_chapter".into(),
-            |save: &mut SaveEnvelopeV1| save.snapshot.scene_id = "missing_scene".into(),
-            |save: &mut SaveEnvelopeV1| {
+            |save: &mut SaveEnvelopeV2| save.snapshot.chapter_id = "missing_chapter".into(),
+            |save: &mut SaveEnvelopeV2| save.snapshot.scene_id = "missing_scene".into(),
+            |save: &mut SaveEnvelopeV2| {
                 save.snapshot.scene = SceneProgressSnapshotV1::Investigation {
                     intro_played: false,
                     outro_played: false,
@@ -1578,6 +1596,48 @@ mod tests {
                 ""
             );
         }
+    }
+
+    #[test]
+    fn migrated_v1_with_matching_revision_restores_and_recaptures_exactly() {
+        let (_guard, resources, engine) = resources_and_engine();
+        let checkpoint = capture_checkpoint_v2(&engine).unwrap();
+        let original_snapshot = checkpoint.snapshot.clone();
+        let original = SaveEnvelopeV1 {
+            schema_version: 1,
+            content_revision: engine.content_revision().into(),
+            save_id: SAVE_ID.into(),
+            save_type: SaveType::Manual,
+            slot: 1,
+            saved_at: "2026-07-26T12:34:56Z".into(),
+            display_name: "Frozen V1 restore fixture".into(),
+            thumbnail: ThumbnailDescriptorV1::Unavailable,
+            summary: SaveSummaryV1 {
+                chapter_id: checkpoint.summary.chapter_id,
+                chapter_title: checkpoint.summary.chapter_title,
+                scene_id: checkpoint.summary.scene_id,
+                scene_title: checkpoint.summary.scene_title,
+                active_primary_objective_id: checkpoint.summary.active_primary_objective_id,
+                active_primary_objective_label: checkpoint.summary.active_primary_objective_label,
+            },
+            snapshot: checkpoint.snapshot,
+        };
+        let migrated = crate::game::save::migrations::migrate_to_current(
+            &serde_json::to_vec(&original).unwrap(),
+        )
+        .unwrap();
+        let parsed = crate::game::save::schema::parse_current_envelope(
+            &serde_json::to_vec(&migrated).unwrap(),
+        )
+        .unwrap();
+        let definitions = load_current_definitions(&resources).unwrap();
+
+        let restored = build_restore_candidate(resources, &definitions, parsed).unwrap();
+
+        assert_eq!(
+            capture_checkpoint_v2(&restored.engine).unwrap().snapshot,
+            original_snapshot
+        );
     }
 
     #[test]
@@ -1989,13 +2049,13 @@ mod tests {
     fn first_view_does_not_duplicate_history_and_saved_token_advances_once() {
         let (_guard, resources, engine) = resources_and_engine();
         let (_, mut restored) = round_trip(resources, &engine);
-        let before = capture_checkpoint_v1(&restored.engine).unwrap();
+        let before = capture_checkpoint_v2(&restored.engine).unwrap();
         let saved_token = restored.engine.current_queue_token().unwrap();
 
         restored.engine.view().unwrap();
         restored.engine.view().unwrap();
         assert_eq!(
-            capture_checkpoint_v1(&restored.engine).unwrap(),
+            capture_checkpoint_v2(&restored.engine).unwrap(),
             before,
             "read-only first views must not append the current frame"
         );
@@ -2004,12 +2064,12 @@ mod tests {
             .engine
             .advance_dialogue(saved_token.clone())
             .unwrap();
-        let after_advance = capture_checkpoint_v1(&restored.engine).unwrap();
+        let after_advance = capture_checkpoint_v2(&restored.engine).unwrap();
         let current_token = restored.engine.current_queue_token().unwrap();
         assert_ne!(current_token, saved_token);
         restored.engine.advance_dialogue(saved_token).unwrap();
         assert_eq!(
-            capture_checkpoint_v1(&restored.engine).unwrap(),
+            capture_checkpoint_v2(&restored.engine).unwrap(),
             after_advance,
             "the consumed save token must be stale and non-mutating"
         );
@@ -2603,7 +2663,7 @@ mod tests {
                 &["fact_supporting".into()],
             )
             .unwrap();
-        let original = capture_checkpoint_v1(&engine).unwrap();
+        let original = capture_checkpoint_v2(&engine).unwrap();
         let original_inventory = engine.inventory.clone();
         let definitions = load_current_definitions(&resources).unwrap();
         let encoded =
@@ -2679,9 +2739,9 @@ mod tests {
             BTreeSet::from(["video_versions".into(), "witness_accounts".into()])
         );
         assert_eq!(
-            capture_checkpoint_v1(&restored.engine).unwrap(),
+            capture_checkpoint_v2(&restored.engine).unwrap(),
             original,
-            "definition rejoin must preserve exact v1 recapture"
+            "definition rejoin must preserve exact recapture"
         );
 
         let redacted = restored.engine.view().unwrap();
@@ -2733,7 +2793,7 @@ mod tests {
     fn current_definition_loading_rejects_scene_catalog_provenance_drift() {
         let (_guard, resources) = provenance_save_fixture_resources();
         let engine = GameEngine::new_started(resources.clone()).unwrap();
-        let checkpoint = capture_checkpoint_v1(&engine).unwrap();
+        let checkpoint = capture_checkpoint_v2(&engine).unwrap();
         let save = envelope_from_checkpoint(&engine, checkpoint);
         let scene_path = resources.join("chapter_1/investigation_scene_1.json");
         let mut scene: serde_json::Value =
@@ -2754,7 +2814,7 @@ mod tests {
     fn current_definition_loading_rejects_catalog_record_omitted_from_owning_scene() {
         let (_guard, resources) = provenance_save_fixture_resources();
         let engine = GameEngine::new_started(resources.clone()).unwrap();
-        let checkpoint = capture_checkpoint_v1(&engine).unwrap();
+        let checkpoint = capture_checkpoint_v2(&engine).unwrap();
         let save = envelope_from_checkpoint(&engine, checkpoint);
         let scene_path = resources.join("chapter_1/investigation_scene_1.json");
         let mut scene: serde_json::Value =

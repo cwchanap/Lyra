@@ -1,8 +1,8 @@
-use super::capture::CapturedCheckpointV1;
+use super::capture::CapturedCheckpointV2;
 #[cfg(feature = "e2e")]
 use super::e2e_faults::{E2ePersistenceFaultBoundary, E2ePersistenceFaultState};
 use super::schema::{
-    SaveDiagnosticView, SaveEnvelopeV1, SaveSlotRef, SaveSlotView, SaveType, ThumbnailDescriptorV1,
+    SaveDiagnosticView, SaveEnvelopeV2, SaveSlotRef, SaveSlotView, SaveType, ThumbnailDescriptorV1,
     ThumbnailDiagnosticView, ThumbnailUnavailableReason,
 };
 use super::storage::{
@@ -246,7 +246,7 @@ pub(crate) struct AutosaveWriteReceipt {
 pub(crate) struct AutosaveCapture {
     job: AutosaveWriteJob,
     slots: Vec<SaveSlotView>,
-    checkpoint: Option<CapturedCheckpointV1>,
+    checkpoint: Option<CapturedCheckpointV2>,
     content_revision: Option<String>,
 }
 
@@ -263,7 +263,7 @@ impl AutosaveCapture {
     pub(crate) fn captured(
         job: AutosaveWriteJob,
         slots: Vec<SaveSlotView>,
-        checkpoint: CapturedCheckpointV1,
+        checkpoint: CapturedCheckpointV2,
         content_revision: String,
     ) -> Self {
         Self {
@@ -274,7 +274,7 @@ impl AutosaveCapture {
         }
     }
 
-    pub(crate) fn captured_checkpoint(&self) -> Result<(CapturedCheckpointV1, String), GameError> {
+    pub(crate) fn captured_checkpoint(&self) -> Result<(CapturedCheckpointV2, String), GameError> {
         self.checkpoint
             .clone()
             .zip(self.content_revision.clone())
@@ -285,7 +285,7 @@ impl AutosaveCapture {
         self,
         target: SaveSlotRef,
         save_id: String,
-        mut envelope: SaveEnvelopeV1,
+        mut envelope: SaveEnvelopeV2,
     ) -> Result<AutosaveRegisteredIntent, GameError> {
         let envelope_matches_target = match target {
             SaveSlotRef::Auto { slot } => {
@@ -422,7 +422,7 @@ pub(crate) struct AutosaveCommittedWrite {
 impl AutosaveCommittedWrite {
     fn from_envelope(
         expected: AutosaveWriteReceipt,
-        envelope: &SaveEnvelopeV1,
+        envelope: &SaveEnvelopeV2,
         cleanup_diagnostic: Option<GameError>,
     ) -> Result<Self, GameError> {
         let envelope_matches_target = match expected.slot {

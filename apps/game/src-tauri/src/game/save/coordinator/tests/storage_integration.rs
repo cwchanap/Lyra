@@ -4,7 +4,7 @@ use super::super::{
     PersistenceHealthView, SaveCoordinator, SaveSlotRef, AUTOSAVE_DEBOUNCE,
 };
 use crate::game::save::schema::{
-    parse_current_envelope, SaveEnvelopeV1, SaveSlotStatusView, SaveSlotView, SaveType,
+    parse_current_envelope, SaveEnvelopeV2, SaveSlotStatusView, SaveSlotView, SaveType,
 };
 use crate::game::save::storage::{
     clean_orphaned_save_files, ProductionSaveFilesystem, SaveFileMetadata, SaveFilesystem,
@@ -432,7 +432,7 @@ fn empty_autosave_slots() -> Vec<SaveSlotView> {
         .collect()
 }
 
-fn autosave_envelope(save_id: &str, target: SaveSlotRef, durable_revision: u64) -> SaveEnvelopeV1 {
+fn autosave_envelope(save_id: &str, target: SaveSlotRef, durable_revision: u64) -> SaveEnvelopeV2 {
     let mut envelope = representative_save_envelope();
     envelope.save_id = save_id.into();
     envelope.snapshot.durable_revision = durable_revision;
@@ -621,6 +621,9 @@ async fn real_staged_write_uses_s_w_g_s_and_receipt_from_committed_envelope() {
 
     let envelope =
         parse_current_envelope(&backend.fs.read(&backend.slot_path(1)).unwrap()).unwrap();
+    let persisted: serde_json::Value =
+        serde_json::from_slice(&backend.fs.read(&backend.slot_path(1)).unwrap()).unwrap();
+    assert_eq!(persisted["schemaVersion"], serde_json::json!(2));
     let receipt = coordinator.last_successful_write().unwrap();
     assert_eq!(receipt.session_generation, 4);
     assert_eq!(receipt.durable_revision, envelope.snapshot.durable_revision);

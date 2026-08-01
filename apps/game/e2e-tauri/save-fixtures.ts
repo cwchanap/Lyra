@@ -147,8 +147,22 @@ export type SaveE2eVisualCueSnapshot = {
   bgs: { channel: "bgs"; assetId: string | null } | null;
 };
 
-export type SaveE2eSaveEnvelope = {
-  schemaVersion: number;
+type SaveE2eSaveSummaryV1 = {
+  chapterId: string;
+  chapterTitle: string;
+  sceneId: string;
+  sceneTitle: string;
+  activePrimaryObjectiveId: string | null;
+  activePrimaryObjectiveLabel: string | null;
+};
+
+type SaveE2eSaveSummaryV2 = SaveE2eSaveSummaryV1 & {
+  chapterSummary: string | null;
+  sceneSummary: string | null;
+  activePrimaryObjectiveSummary: string | null;
+};
+
+type SaveE2eSaveEnvelopeBase = {
   contentRevision: string;
   saveId: string;
   saveType: "auto" | "manual";
@@ -156,14 +170,6 @@ export type SaveE2eSaveEnvelope = {
   savedAt: string;
   displayName: string;
   thumbnail: SaveE2eThumbnailDescriptor;
-  summary: {
-    chapterId: string;
-    chapterTitle: string;
-    sceneId: string;
-    sceneTitle: string;
-    activePrimaryObjectiveId: string | null;
-    activePrimaryObjectiveLabel: string | null;
-  };
   snapshot: {
     chapterId: string;
     sceneId: string;
@@ -178,6 +184,20 @@ export type SaveE2eSaveEnvelope = {
     [key: string]: unknown;
   };
 };
+
+/** Frozen schema-v1 shape retained for migration fixtures only. */
+export type SaveE2eSaveEnvelopeV1 = SaveE2eSaveEnvelopeBase & {
+  schemaVersion: 1;
+  summary: SaveE2eSaveSummaryV1;
+};
+
+/** Current envelope shape produced by every new manual save and autosave. */
+export type SaveE2eSaveEnvelopeV2 = SaveE2eSaveEnvelopeBase & {
+  schemaVersion: 2;
+  summary: SaveE2eSaveSummaryV2;
+};
+
+export type SaveE2eSaveEnvelope = SaveE2eSaveEnvelopeV1 | SaveE2eSaveEnvelopeV2;
 
 export type SaveE2eOwnershipSnapshot = {
   slots: Array<{

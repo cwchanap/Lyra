@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use tauri::path::BaseDirectory;
 use tauri::{Emitter, Manager};
 
-use game::save::capture::{capture_checkpoint_v1, CapturedCheckpointV1};
+use game::save::capture::{capture_checkpoint_v2, CapturedCheckpointV2};
 #[cfg(feature = "e2e")]
 use game::save::coordinator::ExclusivePersistenceIntent;
 use game::save::coordinator::{
@@ -28,7 +28,7 @@ use game::save::restore::{
 };
 use game::save::schema::{
     suggested_display_name, validate_manual_display_name, SaveBrowserView, SaveDiagnosticView,
-    SaveDiscoveryStatusView, SaveEnvelopeV1, SaveSlotRef, SaveSlotStatusView, SaveSlotView,
+    SaveDiscoveryStatusView, SaveEnvelopeV2, SaveSlotRef, SaveSlotStatusView, SaveSlotView,
     SaveType, ThumbnailDescriptorV1, MAX_THUMBNAIL_BYTES, SAVE_SCHEMA_VERSION,
 };
 #[cfg(feature = "e2e")]
@@ -188,17 +188,17 @@ impl ApplicationPersistence {
 
     fn envelope(
         &self,
-        checkpoint: CapturedCheckpointV1,
+        checkpoint: CapturedCheckpointV2,
         content_revision: String,
         reference: SaveSlotRef,
         save_id: String,
         display_name: String,
-    ) -> Result<SaveEnvelopeV1, GameError> {
+    ) -> Result<SaveEnvelopeV2, GameError> {
         let (save_type, slot) = match reference {
             SaveSlotRef::Auto { slot } => (SaveType::Auto, slot),
             SaveSlotRef::Manual { slot } => (SaveType::Manual, slot),
         };
-        Ok(SaveEnvelopeV1 {
+        Ok(SaveEnvelopeV2 {
             schema_version: SAVE_SCHEMA_VERSION,
             content_revision,
             save_id,
@@ -235,7 +235,7 @@ impl AutosaveBackend for ApplicationPersistence {
                     return Err(GameError::save_write_failed());
                 }
                 (
-                    capture_checkpoint_v1(engine)?,
+                    capture_checkpoint_v2(engine)?,
                     self.discovery.definitions.content_revision().to_owned(),
                 )
             };
@@ -1035,7 +1035,7 @@ async fn save_manual_core(
         (
             session.persistence.generation,
             engine.durable_revision(),
-            capture_checkpoint_v1(engine)?,
+            capture_checkpoint_v2(engine)?,
         )
     };
     let purpose = ThumbnailCapturePurpose::ManualSave {

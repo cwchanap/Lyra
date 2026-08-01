@@ -21,8 +21,8 @@ pub(super) fn test_content_manifest() -> crate::game::content_manifest::ContentM
     crate::game::content_manifest::ContentManifest::for_test()
 }
 
-pub(super) fn representative_save_envelope() -> crate::game::save::schema::SaveEnvelopeV1 {
-    serde_json::from_str(include_str!(
+pub(super) fn representative_save_envelope() -> crate::game::save::schema::SaveEnvelopeV2 {
+    crate::game::save::migrations::migrate_to_current(include_bytes!(
         "../../tests/fixtures/saves/v1-representative.json"
     ))
     .unwrap()
