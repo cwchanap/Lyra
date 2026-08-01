@@ -41,6 +41,8 @@ import Page from "./+page.svelte";
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   fetch: vi.fn(),
+  saveNameSummary: vi.fn(),
+  saveConfirmationSummary: vi.fn(),
   audioPreferences: {
     muted: false,
     bgmVolume: 0.5,
@@ -77,6 +79,47 @@ vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
   retryLockedGameplayAudio: mocks.retryLockedGameplayAudio,
   disposeGameplayAudio: mocks.disposeGameplayAudio,
 }));
+
+vi.mock("$lib/components/SaveNameDialog.svelte", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("$lib/components/SaveNameDialog.svelte")
+    >();
+  const Actual = actual.default as unknown as (
+    anchor: Node,
+    props: Record<string, unknown>,
+  ) => unknown;
+  return {
+    ...actual,
+    default: (anchor: Node, props: Record<string, unknown>) => {
+      mocks.saveNameSummary(props.currentSummary);
+      return Actual(anchor, props);
+    },
+  };
+});
+
+vi.mock(
+  "$lib/components/SaveConfirmationDialog.svelte",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("$lib/components/SaveConfirmationDialog.svelte")
+      >();
+    const Actual = actual.default as unknown as (
+      anchor: Node,
+      props: Record<string, unknown>,
+    ) => unknown;
+    return {
+      ...actual,
+      default: (anchor: Node, props: Record<string, unknown>) => {
+        if (props.kind === "overwrite") {
+          mocks.saveConfirmationSummary(props.currentSummary);
+        }
+        return Actual(anchor, props);
+      },
+    };
+  },
+);
 
 beforeEach(() => {
   acquisitionController.clear();
@@ -1378,6 +1421,8 @@ describe("+page in-game persistence browser", () => {
     async ({ objectives, expectedLabel, unexpectedLabel }) => {
       const user = userEvent.setup();
       const state = currentState();
+      state.chapter.summary = "目前章節摘要";
+      state.scene.summary = "目前場景摘要";
       state.story.objectives = objectives;
       gameState.value = state;
       const saves = titleDiscovery();
@@ -1417,6 +1462,20 @@ describe("+page in-game persistence browser", () => {
       const nameDialog = await screen.findByRole("dialog", {
         name: "命名存檔",
       });
+      const expectedCurrentSummary = {
+        chapterId: "chapter_1",
+        chapterTitle: "雨夜的第一份證詞",
+        chapterSummary: "目前章節摘要",
+        sceneId: "scene_1",
+        sceneTitle: "序章",
+        sceneSummary: "目前場景摘要",
+        activePrimaryObjectiveId: objectives[0]?.id ?? null,
+        activePrimaryObjectiveLabel: objectives[0]?.label ?? null,
+        activePrimaryObjectiveSummary: objectives[0]?.summary ?? null,
+      };
+      expect(mocks.saveNameSummary).toHaveBeenLastCalledWith(
+        expectedCurrentSummary,
+      );
       await user.click(
         within(nameDialog).getByRole("button", { name: "繼續" }),
       );
@@ -1424,6 +1483,9 @@ describe("+page in-game persistence browser", () => {
       const current = await screen.findByRole("region", {
         name: "目前遊戲",
       });
+      expect(mocks.saveConfirmationSummary).toHaveBeenLastCalledWith(
+        expectedCurrentSummary,
+      );
       expect(current).toHaveTextContent(expectedLabel);
       expect(current).not.toHaveTextContent(unexpectedLabel);
     },

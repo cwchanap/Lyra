@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type { SaveBrowserOpenResultView } from "$lib/persistence/types";
+  import SaveRecapDetails from "$lib/components/SaveRecapDetails.svelte";
 
   type Props = {
     onNewGame: () => void;
@@ -32,6 +33,25 @@
     discovery?.browser.discovery.type === "available" &&
       discovery.browser.slots.some((slot) => slot.status.type !== "empty"),
   );
+  let continueSlot = $derived.by(() => {
+    const reference = discovery?.continueCandidate;
+    if (!reference) return null;
+    return (
+      discovery?.browser.slots.find(
+        (slot) =>
+          slot.reference.type === reference.type &&
+          slot.reference.slot === reference.slot,
+      ) ?? null
+    );
+  });
+  let continueMetadata = $derived(
+    continueSlot?.status.type === "valid"
+      ? continueSlot.status.metadata
+      : continueSlot?.status.type === "invalid"
+        ? continueSlot.status.metadata
+        : null,
+  );
+  let continueSummary = $derived(continueMetadata?.summary ?? null);
 
   onMount(() => {
     const tickClock = () => {
@@ -372,20 +392,33 @@
     </section>
 
     <nav class="deck" aria-label="選單項目">
-      <button
-        class="card primary"
-        type="button"
-        aria-label="繼續遊戲"
-        onclick={onContinue}
-        disabled={disabled || !onContinue || !diskActionsAvailable}
-      >
-        <span class="num">01</span>
-        <span class="label">
-          <span class="zh" data-text="繼續遊戲">繼續遊戲</span>
-          <span class="sub">CONTINUE&nbsp;·&nbsp;<b>最新的存檔</b></span>
-        </span>
-        <span class="chip">LOAD</span>
-      </button>
+      <div class="continue-entry">
+        <button
+          class="card primary"
+          type="button"
+          aria-label="繼續遊戲"
+          onclick={onContinue}
+          disabled={disabled || !onContinue || !diskActionsAvailable}
+        >
+          <span class="num">01</span>
+          <span class="label">
+            <span class="zh" data-text="繼續遊戲">繼續遊戲</span>
+            <span class="sub">CONTINUE&nbsp;·&nbsp;<b>最新的存檔</b></span>
+          </span>
+          <span class="chip">LOAD</span>
+        </button>
+
+        {#if continueSlot && continueMetadata && continueSummary}
+          <section class="continue-recap" aria-label="繼續遊戲摘要">
+            <SaveRecapDetails
+              slotType={continueSlot.reference.type}
+              savedAt={continueMetadata.savedAt}
+              summary={continueSummary}
+              density="expanded"
+            />
+          </section>
+        {/if}
+      </div>
 
       <button
         class="card"
@@ -923,6 +956,28 @@
     padding-right: 8px;
   }
 
+  .continue-entry {
+    position: relative;
+  }
+
+  .continue-entry > .card {
+    width: 100%;
+  }
+
+  .continue-recap {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    right: calc(100% + clamp(24px, 4vw, 64px));
+    box-sizing: border-box;
+    width: min(38vw, 440px);
+    padding: 16px 18px;
+    border: 1px solid var(--rule-strong);
+    border-left: 2px solid var(--crimson);
+    background: rgb(8 11 14 / 88%);
+    box-shadow: 0 14px 36px rgb(0 0 0 / 42%);
+  }
+
   .card {
     position: relative;
     display: grid;
@@ -1165,6 +1220,11 @@
     .deck {
       grid-column: 1;
       grid-row: 3;
+    }
+    .continue-recap {
+      position: static;
+      width: 100%;
+      margin-top: 12px;
     }
     .title-block {
       right: 4%;
