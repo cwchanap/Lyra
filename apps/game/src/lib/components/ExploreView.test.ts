@@ -168,4 +168,78 @@ describe("ExploreView", () => {
       ).not.toBe(0);
     });
   });
+
+  it("anchors the navigator and objective in a shared container instead of pinning each at the same top offset", async () => {
+    // Regression guard for the exploration HUD overlap: the navigator and
+    // the primary objective must share one positioned container (`.explore-hud`,
+    // laid out as a wrapping flex row) so they can never independently pin the
+    // same `top` and collide. With many locations the navigator wraps taller;
+    // the objective flows after it instead of overlapping. jsdom does not
+    // compute stylesheet layout, so this asserts the DOM contract the CSS
+    // depends on: both HUDs share a single `.explore-hud` host, in order.
+    const manySublocations: SublocationView[] = Array.from(
+      { length: 8 },
+      (_, index) => ({
+        id: `loc_${index}`,
+        label: `地點 ${index + 1}`,
+        sceneTag: `場景 ${index + 1}`,
+        hotspots: [],
+        characters: [],
+      }),
+    );
+    const scene: SceneView & { kind: "investigation" } = {
+      kind: "investigation",
+      id: "inv_scene",
+      title: "調査開始",
+      index: 0,
+      total: 1,
+      currentSublocationId: "loc_0",
+      visibleSublocations: manySublocations,
+    };
+    const hud = createRawSnippet(() => ({
+      render: () =>
+        '<section class="primary-objective-hud"><p>追查雨夜目擊者</p></section>',
+    }));
+
+    render(ExploreView, {
+      scene,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+      onEnterSublocation: vi.fn(),
+      hud,
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("navigation", { name: "地點導航" }),
+      ).toBeInTheDocument();
+    });
+
+    const navigation = screen.getByRole("navigation", { name: "地點導航" });
+    const objectiveHud = document.querySelector(
+      ".primary-objective-hud",
+    ) as HTMLElement | null;
+    expect(objectiveHud).not.toBeNull();
+
+    // Both HUDs resolve to the SAME `.explore-hud` ancestor — the single
+    // positioned host — rather than each anchoring itself independently.
+    const navHost = navigation.closest(".explore-hud");
+    const objectiveHost = objectiveHud!.closest(".explore-hud");
+    expect(navHost).not.toBeNull();
+    expect(navHost).toBe(objectiveHost);
+    expect(navHost!.parentElement).toBe(document.querySelector(".scene-hud"));
+
+    // The objective follows the navigator in document order; when the wrapped
+    // navigator grows tall the objective flows after it instead of overlapping.
+    expect(
+      navigation.compareDocumentPosition(objectiveHud!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+
+    // The navigator keeps its scene styling and its wrapping chip row, so a
+    // long location list grows the navigator height (which the shared host
+    // accounts for).
+    expect(navigation).toHaveClass("scene");
+    expect(navigation.querySelector(".chips")).not.toBeNull();
+  });
 });

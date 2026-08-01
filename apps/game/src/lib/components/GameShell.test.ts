@@ -396,6 +396,58 @@ describe("GameShell", () => {
     }
   });
 
+  it("routes Escape to a submenu's internal layer before closing the submenu", async () => {
+    const testName =
+      "routes Escape to a submenu's internal layer before closing the submenu";
+
+    // A submenu (production: Case File relation navigation) may host its own
+    // internal layer that claims Escape via the coordinator. While the
+    // submenu is open, Escape must step back within that layer — not close
+    // the submenu. Only once the internal layer is gone does Escape close
+    // the submenu. This pins the "close one layer per Escape" contract for
+    // the submenu branch.
+    try {
+      const user = userEvent.setup();
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        menuContent: "menu inventory slot",
+      });
+
+      await user.keyboard("{Escape}");
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+      await user.click(
+        within(dialog).getByRole("button", { name: /案件檔案/ }),
+      );
+      expect(
+        await screen.findByRole("dialog", { name: "案件檔案" }),
+      ).toBeInTheDocument();
+
+      const submenuLayerCloser = vi.fn();
+      const releaseSubmenuLayer = claimEscape(submenuLayerCloser);
+
+      await user.keyboard("{Escape}");
+      // The submenu's internal layer consumed the Escape...
+      expect(submenuLayerCloser).toHaveBeenCalledTimes(1);
+      // ...so the submenu stayed open (it did not step back to the root menu).
+      expect(
+        screen.getByRole("dialog", { name: "案件檔案" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("menu inventory slot")).toBeInTheDocument();
+
+      releaseSubmenuLayer();
+
+      // With the internal layer gone, the next Escape closes the submenu.
+      await user.keyboard("{Escape}");
+      expect(
+        await screen.findByRole("dialog", { name: "遊戲選單" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("menu inventory slot")).not.toBeInTheDocument();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
   it("returns focus to the originating submenu button on BACK click", async () => {
     const testName =
       "returns focus to the originating submenu button on BACK click";

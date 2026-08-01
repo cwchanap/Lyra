@@ -9,6 +9,7 @@
     CaseFileSection,
   } from "$lib/case-file/types";
   import type { GameStateView } from "$lib/state/types";
+  import { claimEscape } from "$lib/state/escape-coordinator";
   import CaseFileAuthorizationDetail from "./CaseFileAuthorizationDetail.svelte";
   import CaseFileFactDetail from "./CaseFileFactDetail.svelte";
   import CaseFileItemList from "./CaseFileItemList.svelte";
@@ -179,6 +180,16 @@
         : fallbackSelection(target.section);
     focusDetailHeading();
   }
+
+  // While an internal relation layer is active (返回上一項 visible), claim
+  // Escape so GameShell's global router steps back within the Case File
+  // before closing the submenu — one Escape per layer. The claim
+  // auto-releases when backTarget clears (goBack, selectSection, or unmount),
+  // so it can never trap the player out of closing the submenu.
+  $effect(() => {
+    if (backTarget === null) return;
+    return claimEscape(goBack);
+  });
 
   function supportItems(keys: CaseFileKey[]): CaseFileItem[] {
     return keys.flatMap((key) => {

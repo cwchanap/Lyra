@@ -185,8 +185,28 @@
   {/if}
 
   {#if reexamineAvailable}
-    <button type="button" disabled={!canReexamine} onclick={reexamine}
-      >重新檢視</button
+    {#if !reexamineEnabled}
+      <p id="case-file-reexamine-note" class="reexamine-note">
+        重新檢視僅可在調查或訊問期間使用。
+      </p>
+    {/if}
+    <button
+      type="button"
+      disabled={!canReexamine}
+      onclick={reexamine}
+      aria-describedby={!reexamineEnabled
+        ? "case-file-reexamine-note"
+        : undefined}>重新檢視</button
     >
   {/if}
 </div>
+
+<style>
+  .reexamine-note {
+    margin: 0;
+    color: var(--bone-faint);
+    font-family: var(--serif-jp);
+    font-size: 13px;
+    font-style: italic;
+  }
+</style>

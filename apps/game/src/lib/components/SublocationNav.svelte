@@ -47,11 +47,7 @@
   }
 
   .nav.scene {
-    position: fixed;
-    left: clamp(20px, 3vw, 40px);
-    top: 76px;
-    z-index: 8;
-    max-width: min(760px, calc(100vw - 40px));
+    max-width: min(760px, 100%);
     padding: 10px 12px;
     border: 1px solid var(--rule-strong);
     background: rgba(20, 20, 31, 0.72);
@@ -124,15 +120,5 @@
   .active-mark {
     color: var(--crimson);
     font-size: 11px;
-  }
-
-  @media (max-width: 720px) {
-    /* lyra-mobile-breakpoint — see tokens.css. */
-    .nav.scene {
-      right: 12px;
-      left: 12px;
-      top: 72px;
-      max-width: none;
-    }
   }
 </style>

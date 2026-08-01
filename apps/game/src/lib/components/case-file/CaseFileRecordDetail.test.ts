@@ -227,8 +227,33 @@ describe("CaseFileRecordDetail", () => {
     ).toBeInTheDocument();
     const reexamine = screen.getByRole("button", { name: "重新檢視" });
     expect(reexamine).toBeDisabled();
+    // A transient in-flight disable (disabled=true) is NOT a mode block, so
+    // the mode explanation must stay absent.
+    expect(reexamine).not.toHaveAttribute("aria-describedby");
+    expect(
+      screen.queryByText("重新檢視僅可在調查或訊問期間使用。"),
+    ).not.toBeInTheDocument();
     await user.click(reexamine);
     expect(onReexamineEvidence).not.toHaveBeenCalled();
+  });
+
+  it("explains why re-examination is unavailable when the mode does not support it", () => {
+    // canReexamineCaseRecords gates re-examination to explore/interrogation.
+    // In every other mode the Case File still opens, so the disabled action
+    // must carry an explanation rather than rendering as a silent dead button.
+    renderDetail(recordItem(evidenceRecord()), {
+      reexamineEnabled: false,
+    });
+
+    const reexamine = screen.getByRole("button", { name: "重新檢視" });
+    expect(reexamine).toBeDisabled();
+    expect(reexamine).toHaveAttribute(
+      "aria-describedby",
+      "case-file-reexamine-note",
+    );
+    expect(
+      screen.getByText("重新檢視僅可在調查或訊問期間使用。"),
+    ).toBeInTheDocument();
   });
 
   it("keeps a record list row selectable while re-examination is disabled", async () => {

@@ -40,9 +40,9 @@
   <p>類別：{item.fact.category}</p>
   <p>來源：<span>{origin}</span></p>
 
-  {#if supportingRecords.length > 0}
-    <section aria-label="直接支持紀錄">
-      <h3>直接支持紀錄</h3>
+  <section aria-label="直接支持紀錄">
+    <h3>直接支持紀錄</h3>
+    {#if supportingRecords.length > 0}
       <ul>
         {#each supportingRecords as support (support.key)}
           <li>
@@ -55,12 +55,14 @@
           </li>
         {/each}
       </ul>
-    </section>
-  {/if}
+    {:else}
+      <p class="support-empty">沒有可顯示的已取得直接支持紀錄。</p>
+    {/if}
+  </section>
 
-  {#if supportingFacts.length > 0}
-    <section aria-label="直接支持事實">
-      <h3>直接支持事實</h3>
+  <section aria-label="直接支持事實">
+    <h3>直接支持事實</h3>
+    {#if supportingFacts.length > 0}
       <ul>
         {#each supportingFacts as support (support.key)}
           <li>
@@ -73,6 +75,18 @@
           </li>
         {/each}
       </ul>
-    </section>
-  {/if}
+    {:else}
+      <p class="support-empty">沒有可顯示的已確認直接支持事實。</p>
+    {/if}
+  </section>
 </div>
+
+<style>
+  .support-empty {
+    margin: 0;
+    color: var(--bone-faint);
+    font-family: var(--serif-jp);
+    font-size: 13px;
+    font-style: italic;
+  }
+</style>

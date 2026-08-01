@@ -250,8 +250,11 @@
     // focused.
     //
     // Priority: submenu screens step back to the root menu before the menu
-    // closes, because the submenu is the topmost layer. The root menu itself
-    // still closes before consulting any background overlay claim.
+    // closes, because the submenu is the topmost layer. A submenu may also
+    // host its own internal layer (Case File relation navigation) that claims
+    // Escape via the escape-coordinator; that claim steps back within the
+    // submenu before the submenu itself closes. The root menu itself still
+    // closes before consulting any background overlay claim.
     // Then, if a nested overlay (e.g. the investigation topic popover) has
     // claimed Escape via the escape-coordinator, one Escape closes that
     // overlay instead of opening the menu — "close one layer per Escape."
@@ -282,6 +285,15 @@
 
       if (open) {
         if (activeMenuPanel !== null) {
+          // A submenu may host its own internal layer — e.g. Case File
+          // relation navigation ("返回上一項") — that claims Escape via the
+          // escape-coordinator. Step back within that layer before closing
+          // the submenu, honoring "close one layer per Escape" so a player
+          // who followed a supporting-record or supersession link returns to
+          // the source item instead of being bounced to the root menu.
+          if (closeTopmostEscapeClaim()) {
+            return;
+          }
           closeMenuPanel();
           return;
         }
