@@ -544,6 +544,7 @@ mod tests {
                 "type": "linear",
                 "id": "scene_1",
                 "title": "反轉調查",
+                "summary": "反轉調查",
                 "queue": [{"kind": "line", "speaker": "Narrator", "text": "..."}],
             })
             .to_string(),
@@ -591,6 +592,7 @@ mod tests {
                 "type": "linear",
                 "id": "scene_1",
                 "title": "Test scene",
+                "summary": "Test scene",
                 "queue": [{"kind": "line", "speaker": "Narrator", "text": "..."}],
             })
             .to_string(),
