@@ -22,6 +22,8 @@ const mkLinearScene = (id: string): ASTLinearScene => ({
   kind: "linearScene",
   id,
   title: id,
+  summary: id,
+  summaryAuthored: false,
   queue: [],
   assetRefs: [],
   sourceFile: `${id}.md`,
@@ -34,6 +36,8 @@ const mkInvestigationScene = (
   kind: "investigationScene",
   id: overrides.id ?? "i",
   title: overrides.title ?? "i",
+  summary: overrides.summary ?? overrides.title ?? "i",
+  summaryAuthored: overrides.summaryAuthored ?? false,
   intro: [],
   sublocations: [
     {
@@ -206,6 +210,8 @@ const mkInterrogationScene = (
     kind: "interrogationScene",
     id: "interrogation_scene_1",
     title: "Interrogation",
+    summary: overrides.summary ?? overrides.title ?? "Interrogation",
+    summaryAuthored: overrides.summaryAuthored ?? false,
     intro: [],
     phases: phases as ASTInterrogationPhase[],
     evidenceManifest: [],

@@ -367,6 +367,8 @@ describe("buildSaveContentManifest", () => {
         kind: "linearScene",
         id: "scene_0",
         title: "Opening",
+        summary: "Opening",
+        summaryAuthored: false,
         queue: [],
         assetRefs,
         sourceFile: "chapter_1/scene_0.md",

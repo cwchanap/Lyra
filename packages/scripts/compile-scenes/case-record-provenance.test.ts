@@ -312,6 +312,8 @@ function caseRecordScene(
       kind: "investigationScene",
       id: sceneId,
       title: "Investigation",
+      summary: "Investigation",
+      summaryAuthored: false,
       intro: [],
       sublocations: [],
       evidenceManifest,

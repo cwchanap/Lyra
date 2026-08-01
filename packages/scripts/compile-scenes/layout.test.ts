@@ -17,6 +17,8 @@ function minimalScene(): ASTInvestigationScene {
     kind: "investigationScene",
     id: "investigation_scene_1",
     title: "Test Investigation",
+    summary: "Test Investigation",
+    summaryAuthored: false,
     intro: [],
     sublocations: [
       {

@@ -64,6 +64,8 @@ function mismatchScene(chapterId: string): ASTInvestigationScene {
     kind: "investigationScene",
     id: "investigation_scene_1",
     title: "Mismatch",
+    summary: "Mismatch",
+    summaryAuthored: false,
     intro: [],
     sublocations: [],
     evidenceManifest: [
@@ -270,6 +272,8 @@ describe("emitter", () => {
           kind: "investigationScene",
           id: "investigation_scene_4",
           title: "Investigation",
+          summary: "Investigation",
+          summaryAuthored: false,
           intro: [],
           sublocations: [],
           evidenceManifest: [
@@ -310,6 +314,8 @@ describe("emitter", () => {
           kind: "interrogationScene",
           id: "interrogation_scene_3",
           title: "Interrogation",
+          summary: "Interrogation",
+          summaryAuthored: false,
           intro: [],
           phases: [],
           evidenceManifest: [
@@ -397,6 +403,8 @@ describe("emitter", () => {
       kind: "investigationScene",
       id: "investigation_scene_1",
       title: "Provenance",
+      summary: "Provenance",
+      summaryAuthored: false,
       intro: [],
       sublocations: [],
       evidenceManifest: [
@@ -750,6 +758,8 @@ describe("emitter", () => {
       kind: "linearScene",
       id: "scene_0",
       title: "接案",
+      summary: "接案",
+      summaryAuthored: false,
       queue: [
         { kind: "sceneTag", text: "街道" },
         { kind: "line", speaker: "A", text: "hi" },
@@ -793,6 +803,8 @@ describe("emitter", () => {
       kind: "linearScene",
       id: "scene_portrait",
       title: "Portrait",
+      summary: "Portrait",
+      summaryAuthored: false,
       queue: [
         {
           kind: "line",
@@ -828,6 +840,8 @@ describe("emitter", () => {
       kind: "investigationScene",
       id: "i",
       title: "t",
+      summary: "t",
+      summaryAuthored: false,
       intro: [],
       sublocations: [
         {
@@ -956,6 +970,8 @@ describe("emitter", () => {
       kind: "interrogationScene",
       id: "interrogation_scene_1",
       title: "詢問",
+      summary: "詢問",
+      summaryAuthored: false,
       intro: [],
       phases: [
         {
