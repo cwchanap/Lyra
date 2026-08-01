@@ -283,16 +283,16 @@ describe("CaseFileRecordDetail", () => {
       disabled: false,
     });
 
-    initial.resolve({
-      assetId: "evidence.old",
-      type: "evidence",
-      url: "/assets/evidence/old.png",
-      placeholder: false,
-    });
     current.resolve({
       assetId: "evidence.current",
       type: "evidence",
       url: "/assets/evidence/current.png",
+      placeholder: false,
+    });
+    initial.resolve({
+      assetId: "evidence.old",
+      type: "evidence",
+      url: "/assets/evidence/old.png",
       placeholder: false,
     });
 

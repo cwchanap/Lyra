@@ -35,8 +35,8 @@
     gameplayInert?: boolean;
     menuContent?: string | null;
     // When set, renders a focusable <button> inside the menu slot. Mirrors
-    // production's CaseFilePanel, whose record controls are
-    // focusable controls the focus trap must include in its Tab cycle. The
+    // production's CaseFilePanel, whose record controls are focusable
+    // elements that the focus trap must include in its Tab cycle. The
     // default <p> slot content is non-focusable, so without this knob the
     // focus-trap test never exercises a focusable slot element.
     menuExtraButtonLabel?: string | null;

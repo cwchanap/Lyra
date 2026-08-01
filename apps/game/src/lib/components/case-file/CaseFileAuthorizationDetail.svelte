@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { CaseFileAuthorizationItem } from "$lib/case-file/types";
+  import { caseFileItemLabel } from "$lib/case-file/labels";
 
   let { item }: { item: CaseFileAuthorizationItem } = $props();
   const origin = $derived(
@@ -15,7 +16,7 @@
   aria-labelledby="case-file-tab-authorizations"
 >
   <h2 id="case-file-detail-heading" data-case-file-detail-heading tabindex="-1">
-    授權：{item.authorization.label}
+    授權：{caseFileItemLabel(item)}
   </h2>
   <p>授權人：{item.authorization.grantingAuthority}</p>
   <p>許可範圍：{item.authorization.summary}</p>

@@ -56,9 +56,12 @@ export async function ensureCaseFileViewport(): Promise<CssViewport> {
           timeoutMsg: "Case File viewport did not reach its CSS target.",
         },
       );
-    } catch {
+    } catch (error) {
       // The next iteration compensates for platform chrome from the observed
       // CSS shortfall rather than assuming a fixed title-bar size.
+      console.log(
+        `[CaseFileE2E] viewport attempt ${attempt + 1} failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
     if (meetsCaseFileViewportTarget(viewport)) {
       console.log(

@@ -41,7 +41,7 @@
   let panel = $state<HTMLElement>();
   let model = $derived<CaseFileModel>(buildCaseFileModel(gameState));
   let selectedItem = $derived(
-    model.itemsByKey.get(selectedKey ?? "objective:missing") ?? null,
+    selectedKey === null ? null : (model.itemsByKey.get(selectedKey) ?? null),
   );
 
   function itemsFor(targetSection: CaseFileSection): CaseFileItem[] {

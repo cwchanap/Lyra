@@ -1377,12 +1377,12 @@ mod tests {
 
     #[test]
     fn duplicate_scene_ids_are_rejected_by_lookup_and_startup() {
-        // Defense-in-depth for review comment #7: the navigation index build
-        // rejects duplicate scene ids per chapter, but find_scene_runtime_by_id
-        // must also resolve targets unambiguously so a jump never silently
-        // lands on the "first" of two same-id scenes. Build a chapter with two
-        // files carrying the same id and assert both the helper and
-        // jump_to_scene surface a typed duplicateSceneTarget error.
+        // Defense-in-depth: the navigation index build rejects duplicate scene
+        // ids per chapter, but find_scene_runtime_by_id must also resolve
+        // targets unambiguously so a lookup never silently lands on the
+        // "first" of two same-id scenes. Build a chapter with two files
+        // carrying the same id and assert both find_scene_runtime_by_id and
+        // GameEngine::new_started surface a typed duplicateSceneTarget error.
         use std::fs;
         use std::sync::atomic::{AtomicU64, Ordering};
 
