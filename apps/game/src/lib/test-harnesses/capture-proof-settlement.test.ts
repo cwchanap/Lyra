@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   captureProofCommandIsSettled,
   captureProofDialogueTextIsStable,
+  captureProofNativeAutosaveIsReady,
   captureProofRecoveryTargetMatches,
 } from "./capture-proof-settlement";
 
@@ -40,6 +41,32 @@ describe("capture proof command settlement", () => {
         completedGeneration: 5,
         commandStatus: "idle",
         advanceAriaDisabled: null,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("capture proof native autosave hand-off", () => {
+  it("requires a fresh available envelope beyond frontend command settlement", () => {
+    expect(
+      captureProofNativeAutosaveIsReady({
+        priorSaveIds: ["autosave-before"],
+        currentSaveId: "autosave-before",
+        currentThumbnailType: "available",
+      }),
+    ).toBe(false);
+    expect(
+      captureProofNativeAutosaveIsReady({
+        priorSaveIds: ["autosave-before"],
+        currentSaveId: "autosave-after",
+        currentThumbnailType: "unavailable",
+      }),
+    ).toBe(false);
+    expect(
+      captureProofNativeAutosaveIsReady({
+        priorSaveIds: ["autosave-before"],
+        currentSaveId: "autosave-after",
+        currentThumbnailType: "available",
       }),
     ).toBe(true);
   });

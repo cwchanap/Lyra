@@ -13,6 +13,18 @@ export function captureProofCommandIsSettled(input: {
   );
 }
 
+export function captureProofNativeAutosaveIsReady(input: {
+  priorSaveIds: readonly string[];
+  currentSaveId: string | null;
+  currentThumbnailType: "available" | "unavailable" | null;
+}): boolean {
+  return (
+    input.currentSaveId !== null &&
+    !input.priorSaveIds.includes(input.currentSaveId) &&
+    input.currentThumbnailType === "available"
+  );
+}
+
 export function captureProofDialogueTextIsStable(input: {
   before: string;
   after: string;

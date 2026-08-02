@@ -4,14 +4,18 @@ import {
   advanceDialogueSelector,
   elementExists,
   getPackagedGameState,
+  jumpToProductionScene,
   resetCaptureProofStorage,
   startCaptureProofAtScene,
+  waitForPersistenceIdle,
   waitTypewriterIdle,
 } from "./helpers";
+import { autosaveSlots, newestAutosaveSlot } from "./save-fixtures";
 import { anchors } from "./production-anchors";
 import {
   captureProofCommandIsSettled,
   captureProofDialogueTextIsStable,
+  captureProofNativeAutosaveIsReady,
   captureProofRecoveryTargetMatches,
 } from "../src/lib/test-harnesses/capture-proof-settlement";
 
@@ -42,6 +46,57 @@ type CaptureWrapperStatus = {
   embeddedFontChunkCount: number;
   embeddedZhHantCodePointCount: number;
 };
+
+type FreshNativeAutosave = {
+  fixedSlotName: string;
+  saveId: string;
+  savedAt: string;
+  thumbnailType: "available" | "unavailable";
+  modifiedAtMs: number | null;
+};
+
+function autosaveSaveIds(): string[] {
+  return autosaveSlots().flatMap((slot) =>
+    slot.envelope === null ? [] : [slot.envelope.saveId],
+  );
+}
+
+function newestNativeAutosave(): FreshNativeAutosave | null {
+  const slot = newestAutosaveSlot();
+  const envelope = slot?.envelope;
+  if (!slot || !envelope) return null;
+  return {
+    fixedSlotName: slot.fixedSlotName,
+    saveId: envelope.saveId,
+    savedAt: envelope.savedAt,
+    thumbnailType: envelope.thumbnail.type,
+    modifiedAtMs: slot.modifiedAtMs,
+  };
+}
+
+async function waitForFreshNativeAutosave(
+  priorSaveIds: readonly string[],
+  context: string,
+): Promise<FreshNativeAutosave> {
+  const deadline = Date.now() + 30000;
+  let observed: FreshNativeAutosave | null = null;
+  let readError: string | null = null;
+  while (Date.now() < deadline) {
+    try {
+      const newest = newestNativeAutosave();
+      if (newest !== null) {
+        observed = newest;
+        if (!priorSaveIds.includes(newest.saveId)) return newest;
+      }
+    } catch (error) {
+      readError = error instanceof Error ? error.message : String(error);
+    }
+    await browser.pause(100);
+  }
+  throw new Error(
+    `${context} did not commit a fresh native autosave envelope; priorSaveIds=${JSON.stringify(priorSaveIds)} observed=${JSON.stringify(observed)} readError=${JSON.stringify(readError)}`,
+  );
+}
 
 async function captureWrapperStatus(): Promise<CaptureWrapperStatus> {
   return browser.execute((probe: string) => {
@@ -633,89 +688,132 @@ async function exportProofThumbnailArtifact(): Promise<string> {
 
 describe("packaged gameplay thumbnail proof", () => {
   it("captures the real gameplay root and keeps failure injection one-shot", async () => {
-    await resetCaptureProofStorage();
-    await startCaptureProofAtScene(
-      anchors.captureProof.sceneId,
-      anchors.captureProof.sceneEntryDialogue,
-    );
-    await browser.waitUntil(
-      async () => elementExists(anchors.captureProof.probe),
-      {
-        timeout: 10000,
-        timeoutMsg: "packaged capture proof probe did not mount",
-      },
-    );
-    await waitForDialogueText(anchors.captureProof.preSwapDialogue);
-
-    const rootAspect = await browser.execute((selector: string) => {
-      const root = document.querySelector(selector);
-      if (!root) return 0;
-      const rect = root.getBoundingClientRect();
-      return rect.width / rect.height;
-    }, anchors.captureProof.root);
-
-    const captureBeforeSwap = await captureWrapperStatus();
-    await advanceCaptureProofDialogueOnce();
-    const transition = await browser.waitUntil(
-      async () =>
-        browser.execute(
-          (oldFragment: string, newestFragment: string) => {
-            const layers = Array.from(
-              document.querySelectorAll(
-                ".portrait-shell [data-save-crossfade-layer]",
-              ),
-            ) as HTMLImageElement[];
-            return {
-              leaving: layers.some(
-                (layer) =>
-                  layer.src.includes(oldFragment) &&
-                  layer.dataset.saveCrossfadeState === "leaving",
-              ),
-              newest: layers.some(
-                (layer) =>
-                  layer.src.includes(newestFragment) &&
-                  layer.dataset.saveCrossfadeState === "visible" &&
-                  layer.dataset.saveCrossfadeOrder ===
-                    layer.dataset.saveCrossfadeRequest,
-              ),
-            };
+    let rootAspect: number | null = null;
+    const unavailableInitialCaptures: Array<{
+      nativeAutosave: FreshNativeAutosave;
+      captureBeforeSwap: CaptureWrapperStatus;
+      captureAfterSwap: CaptureWrapperStatus;
+    }> = [];
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      if (attempt === 1) {
+        await resetCaptureProofStorage();
+        await startCaptureProofAtScene(
+          anchors.captureProof.sceneId,
+          anchors.captureProof.sceneEntryDialogue,
+        );
+        await browser.waitUntil(
+          async () => elementExists(anchors.captureProof.probe),
+          {
+            timeout: 10000,
+            timeoutMsg: "packaged capture proof probe did not mount",
           },
-          anchors.captureProof.leavingPortrait,
-          anchors.captureProof.newestPortrait,
-        ),
-      {
-        timeout: 1400,
-        interval: 25,
-        timeoutMsg:
-          "production portrait swap never exposed leaving + newest metadata",
-      },
-    );
-    expect(transition).toEqual({ leaving: true, newest: true });
+        );
+      } else {
+        await waitForPersistenceIdle();
+        await jumpToProductionScene(anchors.captureProof.sceneId);
+      }
+      await waitForDialogueText(anchors.captureProof.preSwapDialogue);
 
-    const captureAfterSwap = await captureWrapperStatus();
-    if (captureAfterSwap.calls <= captureBeforeSwap.calls) {
-      throw new Error(
-        `capture proof wrapper recorded no capture request before list_saves; baseline=${JSON.stringify(captureBeforeSwap)} current=${JSON.stringify(captureAfterSwap)}`,
+      const attemptRootAspect = await browser.execute((selector: string) => {
+        const root = document.querySelector(selector);
+        if (!root) return 0;
+        const rect = root.getBoundingClientRect();
+        return rect.width / rect.height;
+      }, anchors.captureProof.root);
+
+      await waitForPersistenceIdle();
+      const captureBeforeSwap = await captureWrapperStatus();
+      const autosaveIdsBeforeSwap = autosaveSaveIds();
+      await advanceCaptureProofDialogueOnce();
+      const transition = await browser.waitUntil(
+        async () =>
+          browser.execute(
+            (oldFragment: string, newestFragment: string) => {
+              const layers = Array.from(
+                document.querySelectorAll(
+                  ".portrait-shell [data-save-crossfade-layer]",
+                ),
+              ) as HTMLImageElement[];
+              return {
+                leaving: layers.some(
+                  (layer) =>
+                    layer.src.includes(oldFragment) &&
+                    layer.dataset.saveCrossfadeState === "leaving",
+                ),
+                newest: layers.some(
+                  (layer) =>
+                    layer.src.includes(newestFragment) &&
+                    layer.dataset.saveCrossfadeState === "visible" &&
+                    layer.dataset.saveCrossfadeOrder ===
+                      layer.dataset.saveCrossfadeRequest,
+                ),
+              };
+            },
+            anchors.captureProof.leavingPortrait,
+            anchors.captureProof.newestPortrait,
+          ),
+        {
+          timeout: 1400,
+          interval: 25,
+          timeoutMsg:
+            "production portrait swap never exposed leaving + newest metadata",
+        },
+      );
+      expect(transition).toEqual({ leaving: true, newest: true });
+
+      const captureAfterSwap = await captureWrapperStatus();
+      if (captureAfterSwap.calls <= captureBeforeSwap.calls) {
+        throw new Error(
+          `capture proof wrapper recorded no capture request before list_saves; baseline=${JSON.stringify(captureBeforeSwap)} current=${JSON.stringify(captureAfterSwap)}`,
+        );
+      }
+      if (captureAfterSwap.available <= captureBeforeSwap.available) {
+        throw new Error(
+          `capture proof wrapper recorded no available capture before list_saves; baseline=${JSON.stringify(captureBeforeSwap)} current=${JSON.stringify(captureAfterSwap)}`,
+        );
+      }
+      if (captureAfterSwap.lastClosedReason !== "") {
+        throw new Error(
+          `capture proof wrapper closed unavailable before list_saves; baseline=${JSON.stringify(captureBeforeSwap)} current=${JSON.stringify(captureAfterSwap)}`,
+        );
+      }
+      if (
+        captureAfterSwap.embeddedZhHantCodePointCount < 1 ||
+        captureAfterSwap.embeddedFontChunkCount < 1 ||
+        captureAfterSwap.embeddedFontCssBytes < 1 ||
+        captureAfterSwap.embeddedFontCssBytes > 2_000_000
+      ) {
+        throw new Error(
+          `capture proof did not use a bounded embedded zh-Hant font subset: ${JSON.stringify(captureAfterSwap)}`,
+        );
+      }
+
+      const nativeAutosave = await waitForFreshNativeAutosave(
+        autosaveIdsBeforeSwap,
+        `capture proof attempt ${attempt}`,
+      );
+      if (
+        captureProofNativeAutosaveIsReady({
+          priorSaveIds: autosaveIdsBeforeSwap,
+          currentSaveId: nativeAutosave.saveId,
+          currentThumbnailType: nativeAutosave.thumbnailType,
+        })
+      ) {
+        rootAspect = attemptRootAspect;
+        break;
+      }
+      unavailableInitialCaptures.push({
+        nativeAutosave,
+        captureBeforeSwap,
+        captureAfterSwap,
+      });
+      console.warn(
+        `[capture proof] attempt ${attempt} committed an unavailable thumbnail; replaying the same capture transition once: ${JSON.stringify({ nativeAutosave, captureBeforeSwap, captureAfterSwap })}`,
       );
     }
-    if (captureAfterSwap.available <= captureBeforeSwap.available) {
+    if (rootAspect === null) {
       throw new Error(
-        `capture proof wrapper recorded no available capture before list_saves; baseline=${JSON.stringify(captureBeforeSwap)} current=${JSON.stringify(captureAfterSwap)}`,
-      );
-    }
-    if (captureAfterSwap.lastClosedReason !== "") {
-      throw new Error(
-        `capture proof wrapper closed unavailable before list_saves; baseline=${JSON.stringify(captureBeforeSwap)} current=${JSON.stringify(captureAfterSwap)}`,
-      );
-    }
-    if (
-      captureAfterSwap.embeddedZhHantCodePointCount < 1 ||
-      captureAfterSwap.embeddedFontChunkCount < 1 ||
-      captureAfterSwap.embeddedFontCssBytes < 1 ||
-      captureAfterSwap.embeddedFontCssBytes > 2_000_000
-    ) {
-      throw new Error(
-        `capture proof did not use a bounded embedded zh-Hant font subset: ${JSON.stringify(captureAfterSwap)}`,
+        `capture proof exhausted its bounded fresh-capture retry; unavailable=${JSON.stringify(unavailableInitialCaptures)}`,
       );
     }
 
