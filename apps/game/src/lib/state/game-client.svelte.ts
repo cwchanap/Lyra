@@ -15,6 +15,12 @@ import {
   gameplayThumbnailCapture,
   pinThumbnailCaptureDeadline,
 } from "$lib/persistence/thumbnail-capture";
+import {
+  coordinateE2eCheckpointLoad,
+  type E2eCheckpointId,
+  type E2eCheckpointProjection,
+  type E2eLoadCheckpointResult,
+} from "$lib/e2e/checkpoints";
 import type {
   AcquisitionAcknowledgementPhase,
   ExitStatusView,
@@ -213,6 +219,50 @@ async function applyGameplayCommandResult(
     console.warn("[Persistence] Detached thumbnail capture failed", error);
   });
   return result.state;
+}
+
+export async function loadE2eCheckpointThroughClient(
+  id: E2eCheckpointId,
+  previousGeneration: number,
+  hooks: {
+    applyProjection: (projection: E2eCheckpointProjection) => void;
+    publishGeneration: (generation: number) => void;
+  },
+): Promise<E2eLoadCheckpointResult> {
+  if (!import.meta.env.VITE_E2E) {
+    throw new Error("Packaged checkpoints are unavailable in this build.");
+  }
+  if (gameState.inFlight) {
+    throw new Error("A game command is already in progress.");
+  }
+
+  gameState.inFlight = true;
+  gameState.loading = true;
+  try {
+    return await coordinateE2eCheckpointLoad(id, previousGeneration, {
+      load: (selectedId) =>
+        invoke<E2eLoadCheckpointResult>("e2e_load_checkpoint", {
+          id: selectedId,
+        }),
+      applyState: async (state) => {
+        presentationState.sessionEpoch += 1;
+        gameState.error = null;
+        await applyGameplayCommandResult({
+          state,
+          thumbnailCapture: null,
+        });
+      },
+      applyProjection: hooks.applyProjection,
+      settleProjection: tick,
+      publishGeneration: hooks.publishGeneration,
+    });
+  } catch (error) {
+    gameState.error = normalizeError(error);
+    throw error;
+  } finally {
+    gameState.loading = false;
+    gameState.inFlight = false;
+  }
 }
 
 async function dispatchGameCommand(

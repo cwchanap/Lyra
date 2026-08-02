@@ -39,16 +39,26 @@ test("smoke owns only the packaged title-to-dialogue check", () => {
   assert.deepEqual(phase.specs, ["./e2e-tauri/smoke.e2e.ts"]);
 });
 
-test("gameplay retains every pre-existing ordinary packaged spec", () => {
+test("gameplay owns the focused checkpoint-backed packaged specs", () => {
   const [phase] = buildE2ePhasePlan(["gameplay"], {
     gameplay: "/tmp/gameplay",
   });
 
   assert.deepEqual(phase.specs, [
     "./e2e-tauri/app.e2e.ts",
+    "./e2e-tauri/case-file.e2e.ts",
+    "./e2e-tauri/checkpoint-contract.e2e.ts",
     "./e2e-tauri/investigation-layout.e2e.ts",
     "./e2e-tauri/scene-navigation-gate.e2e.ts",
   ]);
+});
+
+test("production journey owns exactly the one genuine fresh-install spec", () => {
+  const [phase] = buildE2ePhasePlan(["production-journey"], {
+    productionJourney: "/tmp/production-journey",
+  });
+
+  assert.deepEqual(phase.specs, ["./e2e-tauri/production-journey.e2e.ts"]);
 });
 
 test("normalizes duplicate requested suites into canonical order", () => {

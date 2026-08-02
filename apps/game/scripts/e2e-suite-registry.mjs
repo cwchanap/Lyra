@@ -6,6 +6,8 @@ export const E2E_SMOKE_SPECS = Object.freeze(["./e2e-tauri/smoke.e2e.ts"]);
 
 const gameplaySpecs = Object.freeze([
   "./e2e-tauri/app.e2e.ts",
+  "./e2e-tauri/case-file.e2e.ts",
+  "./e2e-tauri/checkpoint-contract.e2e.ts",
   "./e2e-tauri/investigation-layout.e2e.ts",
   "./e2e-tauri/scene-navigation-gate.e2e.ts",
 ]);
@@ -48,9 +50,14 @@ export const E2E_SUITE_DEFINITIONS = Object.freeze([
       phase("ordinary", "ordinary", "gameplay", gameplaySpecs),
     ]),
   }),
-  // This leaf suite reserves stable CI routing ownership for the dedicated
-  // fresh-install production journey added later.
-  Object.freeze({ id: "production-journey", phases: Object.freeze([]) }),
+  Object.freeze({
+    id: "production-journey",
+    phases: Object.freeze([
+      phase("production-journey", "production-journey", "productionJourney", [
+        "./e2e-tauri/production-journey.e2e.ts",
+      ]),
+    ]),
+  }),
   Object.freeze({
     id: "capture-proof",
     phases: Object.freeze([

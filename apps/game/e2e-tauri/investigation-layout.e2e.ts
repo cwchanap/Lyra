@@ -1,9 +1,9 @@
 import {
-  advanceDialogueSelector,
   collectKagamiSummaryEvidence,
-  drainToInvestigationExplore,
+  dismissAllPendingAcquisitions,
   elementExists,
   jsClick,
+  loadPackagedCheckpoint,
   openGameMenu,
   resetE2eStorage,
 } from "./helpers";
@@ -14,37 +14,21 @@ describe("investigation layout surface", () => {
     await resetE2eStorage();
   });
 
-  it("clicks a placed investigation hotspot", async () => {
-    await drainToInvestigationExplore();
+  it("collects a placed investigation hotspot through the real player UI", async () => {
+    await loadPackagedCheckpoint("chapter-1-investigation-explore");
     const hotspotSel = `button[aria-label="${anchors.hotspotEvidence.label}"]`;
     await browser.waitUntil(async () => elementExists(hotspotSel), {
       timeout: 15000,
     });
-    await jsClick(hotspotSel);
-
-    await browser.waitUntil(
-      async () => {
-        const popup = await browser.execute((heading: string) => {
-          return Array.from(document.querySelectorAll('[role="dialog"]')).some(
-            (d) =>
-              Array.from(d.querySelectorAll("h2")).some((h) =>
-                (h.textContent ?? "").includes(heading),
-              ),
-          );
-        }, anchors.evidenceAcquired);
-        if (popup) return true;
-        return elementExists(advanceDialogueSelector);
-      },
-      {
-        timeout: 15000,
-        timeoutMsg:
-          "expected acquisition popup or dialogue after hotspot click",
-      },
-    );
+    await collectKagamiSummaryEvidence();
+    const inspected = await browser.execute((selector: string) => {
+      return document.querySelector(selector)?.classList.contains("inspected");
+    }, hotspotSel);
+    expect(inspected).toBe(true);
   });
 
   it("highlights a placed investigation character on hover", async () => {
-    await drainToInvestigationExplore();
+    await loadPackagedCheckpoint("chapter-1-investigation-explore");
     const characterSel = `button[aria-label="${anchors.character.label}"]`;
     await browser.waitUntil(async () => elementExists(characterSel), {
       timeout: 15000,
@@ -86,9 +70,8 @@ describe("investigation layout surface", () => {
   });
 
   it("Escape closes the topic popover before opening the game menu", async () => {
-    await drainToInvestigationExplore();
-    // commission topic starts locked until kagami_summary is revealed.
-    await collectKagamiSummaryEvidence();
+    await loadPackagedCheckpoint("chapter-1-investigation-with-kagami-summary");
+    await dismissAllPendingAcquisitions({ cap: 1 });
 
     const characterSel = `button[aria-label="${anchors.character.label}"]`;
     await browser.waitUntil(async () => elementExists(characterSel), {
