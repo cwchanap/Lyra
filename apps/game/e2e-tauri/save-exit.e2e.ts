@@ -42,7 +42,6 @@ import type { ExitStatusView } from "$lib/persistence/types";
 const EXIT_PHASES = [
   SAVE_E2E_PHASE_NAMES.exitCloseSeed,
   SAVE_E2E_PHASE_NAMES.exitCloseResume,
-  SAVE_E2E_PHASE_NAMES.exitQuitSeed,
   SAVE_E2E_PHASE_NAMES.exitQuitResume,
   SAVE_E2E_PHASE_NAMES.exitFailureBypass,
   SAVE_E2E_PHASE_NAMES.exitFinalVerification,
@@ -129,6 +128,16 @@ async function seedSuccessfulExit(source: "close" | "quit"): Promise<void> {
     [source]: saved,
   });
   await requestAndFinish(source);
+}
+
+async function seedQuitFromResumedGameplay(): Promise<void> {
+  const inherited = readSaveE2eExpectation<ExitControl>("exit-state");
+  const saved = await mutateBeforeDebounce();
+  writeSaveE2eExpectation("exit-state", {
+    ...inherited,
+    quit: saved,
+  });
+  await requestAndFinish("quit");
 }
 
 async function resumeSuccessfulExit(source: "close" | "quit"): Promise<void> {
@@ -298,8 +307,7 @@ describe("save exit lifecycle", () => {
       await seedSuccessfulExit("close");
     } else if (phase === SAVE_E2E_PHASE_NAMES.exitCloseResume) {
       await resumeSuccessfulExit("close");
-    } else if (phase === SAVE_E2E_PHASE_NAMES.exitQuitSeed) {
-      await seedSuccessfulExit("quit");
+      await seedQuitFromResumedGameplay();
     } else if (phase === SAVE_E2E_PHASE_NAMES.exitQuitResume) {
       await resumeSuccessfulExit("quit");
       await exitDuringActiveAcknowledgement();

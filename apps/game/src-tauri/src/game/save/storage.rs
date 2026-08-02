@@ -3219,6 +3219,90 @@ mod tests {
     }
 
     #[test]
+    fn presentation_sidecar_failures_allow_owned_replacement_then_selected_delete() {
+        let (_guard, _resources, context, template) = discovery_fixture();
+        let fs = FakeFilesystem::new();
+        let (reference, old_thumbnail) = thumbnail_slot(&fs, &template);
+        let (untouched, untouched_thumbnail) = envelope_for_slot(&template, 6, true);
+        let untouched_reference = SaveSlotRef::Manual { slot: 2 };
+        fs.put_file(
+            slot_path(untouched_reference),
+            serde_json::to_vec(&untouched).unwrap(),
+            UNIX_EPOCH + Duration::from_secs(22),
+        );
+        fs.put_file(
+            sidecar_path(&untouched.save_id),
+            untouched_thumbnail.unwrap(),
+            UNIX_EPOCH + Duration::from_secs(23),
+        );
+        let old_save_id = "550e8400-e29b-41d4-a716-446655440005";
+
+        fs.state
+            .lock()
+            .unwrap()
+            .files
+            .remove(&sidecar_path(old_save_id));
+        let missing = discover_saves(&fs, &root(), &context);
+        assert!(matches!(
+            &missing.slots[5].status,
+            SaveSlotStatusView::Valid { metadata }
+                if metadata.thumbnail == ThumbnailAvailabilityView::Unavailable {
+                    reason: ThumbnailUnavailableReason::Missing,
+                }
+        ));
+
+        let mut corrupt_thumbnail = old_thumbnail;
+        corrupt_thumbnail[20] ^= 1;
+        fs.put_file(
+            sidecar_path(old_save_id),
+            corrupt_thumbnail,
+            UNIX_EPOCH + Duration::from_secs(24),
+        );
+        let corrupt = discover_saves(&fs, &root(), &context);
+        assert!(matches!(
+            &corrupt.slots[5].status,
+            SaveSlotStatusView::Valid { metadata }
+                if metadata.thumbnail == ThumbnailAvailabilityView::Unavailable {
+                    reason: ThumbnailUnavailableReason::Corrupt,
+                }
+        ));
+
+        let prepared = prepare_slot_write(
+            &fs,
+            &root(),
+            request(
+                reference,
+                Some(ManualSlotExpectation::Occupied {
+                    observation: OccupiedSlotExpectation {
+                        save_id: Some(old_save_id.into()),
+                        modified_at: None,
+                    },
+                }),
+            ),
+        )
+        .unwrap();
+        let replacement = commit_prepared_slot_write(&fs, &root(), prepared).unwrap();
+        assert_eq!(replacement.committed_envelope.save_id, NEW_SAVE_ID);
+        assert!(fs.exists(&sidecar_path(NEW_SAVE_ID)));
+        assert!(!fs.exists(&sidecar_path(old_save_id)));
+
+        delete_slot(
+            &fs,
+            &root(),
+            reference,
+            OccupiedSlotExpectation {
+                save_id: Some(NEW_SAVE_ID.into()),
+                modified_at: None,
+            },
+        )
+        .unwrap();
+        assert!(!fs.exists(&slot_path(reference)));
+        assert!(!fs.exists(&sidecar_path(NEW_SAVE_ID)));
+        assert!(fs.exists(&slot_path(untouched_reference)));
+        assert!(fs.exists(&sidecar_path(&untouched.save_id)));
+    }
+
+    #[test]
     fn browser_view_never_serializes_paths_or_thumbnail_object_ids() {
         let (_guard, _resources, context, template) = discovery_fixture();
         let fs = FakeFilesystem::new();

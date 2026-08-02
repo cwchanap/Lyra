@@ -319,6 +319,49 @@ test("--full orders proof, seed, resume, management, and exit with isolated root
   }
 });
 
+test("the consolidated persistence path retains every disk-mutation and restart boundary", () => {
+  const capture = holder("lyra-save-e2e-");
+  const persistence = holder("lyra-save-e2e-");
+  const plan = buildSaveE2ePhasePlan({
+    mode: "--full",
+    captureProofAppDataDir: capture,
+    persistenceAppDataDir: persistence,
+  });
+
+  assert.deepEqual(
+    plan.map(({ id, before }) => ({ id, before })),
+    [
+      { id: "capture-proof", before: undefined },
+      { id: "save-seed", before: undefined },
+      { id: "save-resume", before: undefined },
+      { id: "management-seed", before: undefined },
+      {
+        id: "management-corrupt-newest",
+        before: { type: "corrupt-slot", fixedSlotName: "autosave-1" },
+      },
+      {
+        id: "management-missing-thumbnail",
+        before: {
+          type: "remove-observed-sidecar",
+          fixedSlotName: "manual-1",
+        },
+      },
+      {
+        id: "management-corrupt-thumbnail",
+        before: {
+          type: "corrupt-observed-sidecar",
+          fixedSlotName: "manual-2",
+        },
+      },
+      { id: "exit-close-seed", before: undefined },
+      { id: "exit-close-resume", before: undefined },
+      { id: "exit-quit-resume", before: undefined },
+      { id: "exit-failure-bypass", before: undefined },
+      { id: "exit-final-verification", before: undefined },
+    ],
+  );
+});
+
 test("a failing persistence phase captures backend logs and artifacts before guarded cleanup", () => {
   const capture = holder("lyra-save-e2e-");
   const persistence = holder("lyra-save-e2e-");

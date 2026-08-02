@@ -278,6 +278,53 @@ test("runner retry preserves a failed attempt while using fresh roots and output
   for (const root of roots) assert.equal(existsSync(root), false);
 });
 
+test("runner applies an external mutation before starting its fresh discovery child", async () => {
+  const runDirectory = holder();
+  const roots = [];
+  const events = [];
+  await runE2eRunner({
+    suiteIds: ["save-management"],
+    riskSelectedSuites: ["save-management"],
+    attempts: 1,
+    forcedFull: false,
+    runDirectory,
+    supervisor: { cancelledSignal: null },
+    runGuard: async () => ({ exitCode: 0 }),
+    rootKeys: ["persistence"],
+    createRoot() {
+      const root = createSaveE2eAppDataDir();
+      roots.push(root);
+      return root;
+    },
+    buildPhasePlan(_suiteIds, directories) {
+      return [
+        {
+          id: "management-corrupt-newest",
+          root: "persistence",
+          appDataDir: directories.persistence,
+          before: { type: "corrupt-slot", fixedSlotName: "autosave-1" },
+        },
+      ];
+    },
+    suiteForPhase: () => "save-management",
+    applyCheckpoint(phase) {
+      events.push(`mutate:${phase.id}`);
+    },
+    createOutputDirectory: () => runDirectory,
+    async runPhase(phase) {
+      events.push(`spawn:${phase.id}`);
+      return { exitCode: 0 };
+    },
+    captureFailureArtifacts() {},
+  });
+
+  assert.deepEqual(events, [
+    "mutate:management-corrupt-newest",
+    "spawn:management-corrupt-newest",
+  ]);
+  for (const root of roots) assert.equal(existsSync(root), false);
+});
+
 test("runner cancellation writes diagnostics and cleans only its owned root", async () => {
   const runDirectory = holder();
   const roots = [];
