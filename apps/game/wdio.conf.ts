@@ -20,10 +20,9 @@ export const config: WebdriverIO.Config = {
   // runner so it can own and revalidate the app-data directory lifecycle.
   specs: [...SAVE_E2E_ORDINARY_SPECS],
   maxInstances: 1,
-  // Phased save E2E owns persistent app-data across process boundaries. WDIO
-  // spec retries reuse that directory, so a partial seed contaminates the retry.
-  // Keep retries only for standalone/non-phased CI specs.
-  specFileRetries: process.env.CI && !process.env.LYRA_SAVE_E2E_PHASE ? 2 : 0,
+  // Runner-managed retries allocate a fresh guarded root, retain first-attempt
+  // diagnostics, and never let WDIO retry against contaminated app data.
+  specFileRetries: 0,
   specFileRetriesDelay: 5,
   capabilities: [
     {

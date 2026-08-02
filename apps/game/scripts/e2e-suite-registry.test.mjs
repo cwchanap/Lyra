@@ -5,6 +5,7 @@ import {
   E2E_SUITE_IDS,
   E2E_SUITE_DEFINITIONS,
   buildE2ePhasePlan,
+  e2eSuiteGuardedRoots,
   normalizeE2eSuiteIds,
   resolveE2eSuiteSelection,
   validateE2ePhaseOwnership,
@@ -45,6 +46,17 @@ test("rejects an unknown suite before resolving a plan", () => {
 
 test("the full selector resolves every suite in canonical order", () => {
   assert.deepEqual(resolveE2eSuiteSelection({ full: true }), E2E_SUITE_IDS);
+});
+
+test("the full selector reserves independent guarded roots for every CI suite class", () => {
+  assert.deepEqual(e2eSuiteGuardedRoots(E2E_SUITE_IDS), [
+    "smoke",
+    "gameplay",
+    "productionJourney",
+    "capture",
+    "persistence",
+    "exit",
+  ]);
 });
 
 test("runner accepts only one selection mode and one or two attempts", () => {
@@ -103,9 +115,9 @@ test("runner validates selected suite definitions before its binary guard or roo
   );
 
   assert.notEqual(validation, -1);
-  assert.equal(validation < runnerSource.indexOf("const guard ="), true);
+  assert.equal(validation < runnerSource.indexOf("const guard = await"), true);
   assert.equal(
-    validation < runnerSource.indexOf("directories[root] = createRoot()"),
+    validation < runnerSource.indexOf("ownership = createRunOwnership"),
     true,
   );
 });
