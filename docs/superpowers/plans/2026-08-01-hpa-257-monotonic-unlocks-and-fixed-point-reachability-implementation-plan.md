@@ -637,7 +637,7 @@ Expected: FAIL on new fixture compile or output assertion.
 
 - [ ] **Step 4: Make emitter mappings exhaustive without rewriting nodes**
 
-Use the AST values directly where possible. If helper switches exist, add explicit `at_least` and story-target branches. Do not flatten expressions, sort children, reorder targets, or copy catalog prose into scene JSON.
+Use the AST values directly where possible. Add explicit `at_least` and story-target branches to any helper switch that transforms the unions. Do not flatten expressions, sort children, reorder targets, or copy catalog prose into scene JSON.
 
 - [ ] **Step 5: Run snapshots and commit**
 
@@ -789,6 +789,8 @@ Cover:
 bunx vitest run --config vitest.scripts.config.ts packages/scripts/compile-scenes/reachability.test.ts
 ```
 
+Expected: FAIL because producer indexing, SCC checks, and positive fixed-point evaluation are not implemented.
+
 - [ ] **Step 3: Implement producer indexing and SCC detection**
 
 Create producer-to-consumer edges only for authored positive atoms and implicit prerequisites. Keep `mayExecuteBeforeKeys` out of SCC input. Emit one stable `positiveDependencyCycle` per SCC and one `positiveSelfReference` for a single-node self-loop.
@@ -869,6 +871,8 @@ Use two initially available hotspots and cover both concrete orders for:
 ```bash
 bunx vitest run --config vitest.scripts.config.ts packages/scripts/compile-scenes/reachability.test.ts
 ```
+
+Expected: FAIL because ordered batch transfer and primary abstract state are not implemented.
 
 - [ ] **Step 4: Implement the lattice and self-excluding equations**
 
@@ -1032,6 +1036,8 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml game::schema
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml game::loader
 ```
 
+Expected: FAIL because the Rust wire variants and story-aware loader checks are absent.
+
 - [ ] **Step 4: Implement concrete Serde contracts**
 
 Add `AtLeast { count, conditions }` to both concrete unlock enums and story predicate variants to each. Add:
@@ -1039,7 +1045,7 @@ Add `AtLeast { count, conditions }` to both concrete unlock enums and story pred
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub enum StoryRevealTarget { /* exact design variants */ }
+pub enum StoryRevealTarget { /* exact variants listed in the design §7.3 */ }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -1104,6 +1110,8 @@ bunx vitest run --config vitest.scripts.config.ts packages/scripts/compile-scene
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml unlock_expression_semantics
 ```
 
+Expected: FAIL because the fixture, threshold evaluator, and story context are absent.
+
 - [ ] **Step 4: Implement shared story context composition**
 
 ```rust
@@ -1163,6 +1171,8 @@ Create a batch whose final grant fails and assert exact restoration of inventory
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml game::reveals
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml story_reveal_transaction
 ```
+
+Expected: FAIL because story dispatch and the transaction-level fixture do not exist.
 
 - [ ] **Step 4: Implement the dispatcher without duplicating HPA-255**
 
@@ -1237,6 +1247,8 @@ Execute A-before-B and B-before-A separately for the synthetic primary fixtures 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml hpa_257
 ```
+
+Expected: FAIL because the focused HPA-257 round-trip and order tests have not been added.
 
 - [ ] **Step 4: Add only test support required for exact recapture**
 
