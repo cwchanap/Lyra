@@ -140,10 +140,23 @@ test("stable aggregate downloads every manifest and runs the pure validator", ()
   assert.equal(resultDownload.with.path, "${{ runner.temp }}/e2e-results");
 
   const validate = namedStep(aggregate, "Validate E2E manifests and routing");
+  assert.equal(validate.env.PLAN_RESULT, "${{ needs.e2e-plan.result }}");
+  assert.equal(
+    validate.env.SHOULD_RUN,
+    "${{ needs.e2e-plan.outputs.should_run }}",
+  );
+  assert.equal(
+    validate.env.EXECUTION_RESULT,
+    "${{ needs.e2e-execution.result }}",
+  );
   assert.match(validate.run, /scripts\/e2e-ci-results\.mjs/);
   assert.match(validate.run, /--plan-file/);
   assert.match(validate.run, /--results-directory/);
   assert.match(validate.run, /--analysis-file/);
+  assert.match(
+    validate.run,
+    /\[\[ "\$SHOULD_RUN" == "true" && "\$EXECUTION_RESULT" != "success" \]\]/,
+  );
   const upload = namedStep(aggregate, "Upload E2E aggregate analysis");
   assert.equal(upload.if, "${{ always() }}");
   assert.equal(upload.with.name, "tauri-e2e-analysis");
