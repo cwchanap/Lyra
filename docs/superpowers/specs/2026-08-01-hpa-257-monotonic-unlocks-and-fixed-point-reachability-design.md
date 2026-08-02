@@ -127,37 +127,39 @@ checking.
 35. Scene adapters explicitly provide strict-order predecessors and conservative
     may-execute-before relationships. The generic analyzer does not infer
     free-order behavior from graph shape alone.
-36. The primary abstract domain tracks possible and guaranteed active/completed
+36. Free-order events are one-shot. A mutual may-before relation means either
+    event may run first; it never licenses abstract replay such as A -> B -> A.
+37. The primary abstract domain tracks possible and guaranteed active/completed
     values. It does not enumerate every event permutation.
-37. Free-order ambiguity cannot cause a dynamic order-dependent hard error unless
+38. Free-order ambiguity cannot cause a dynamic order-dependent hard error unless
     invalidity is proven for all valid modeled inputs.
-38. A transition that succeeds for some modeled orders and fails for others emits
+39. A transition that succeeds for some modeled orders and fails for others emits
     a deterministic warning and contributes effects only to the successful
     abstract paths.
-39. A mandatory path that depends on an order-conditional primary effect is not
+40. A mandatory path that depends on an order-conditional primary effect is not
     silently accepted; its producer warning identifies the ambiguity.
-40. Unknown/secondary primary targets and reserved IDs are order-independent hard
+41. Unknown/secondary primary targets and reserved IDs are order-independent hard
     errors.
-41. A next primary that is guaranteed already completed is an always-invalid hard
+42. A next primary that is guaranteed already completed is an always-invalid hard
     error. A next primary that may already be completed is order-dependent and
     warns.
-42. Compiler primary analysis assumes a valid HPA-255 state. Corrupt states whose
+43. Compiler primary analysis assumes a valid HPA-255 state. Corrupt states whose
     active ID is absent from objective progress remain runtime/restore errors and
     are not treated as authorable paths.
-43. Existing legacy local reachability diagnostics retain their codes and
+44. Existing legacy local reachability diagnostics retain their codes and
     severity.
-44. Newly modeled unreachable mandatory content is an error; explicitly optional
+45. Newly modeled unreachable mandatory content is an error; explicitly optional
     unreachable content is a warning.
-45. Migration-origin mutations are not authored reachability producers unless a
+46. Migration-origin mutations are not authored reachability producers unless a
     fixture explicitly seeds their resulting progress.
-46. The story catalog schema remains version 2. HPA-257 adds validation but no
+47. The story catalog schema remains version 2. HPA-257 adds validation but no
     catalog field.
-47. The save schema remains version 2. HPA-257 adds no generic applied-event
+48. The save schema remains version 2. HPA-257 adds no generic applied-event
     ledger; subsystem trigger progress remains authoritative.
-48. `@lyra/scene-types` continues to own only the current scene-local editor
+49. `@lyra/scene-types` continues to own only the current scene-local editor
     contract. Global story mutations and hidden analysis data remain outside it.
-49. HPA-257 adds no frontend component, IPC command, or production story edit.
-50. TypeScript and Rust expression evaluators are separate implementations but
+50. HPA-257 adds no frontend component, IPC command, or production story edit.
+51. TypeScript and Rust expression evaluators are separate implementations but
     must pass one semantics-parity fixture corpus.
 
 ## 3. Current repository constraints
@@ -761,10 +763,13 @@ type ReachabilityNode = {
 `strictPredecessorKeys` means the predecessor must execute/complete before this
 node on every runtime path represented by the adapter.
 
-`mayExecuteBeforeKeys` is a conservative superset of nodes that can execute
-before this node on at least one legal path/order. It includes strict
-predecessors and eligible free-order peers. A compact region representation is
-allowed internally, but normalized tests assert the same relation.
+`mayExecuteBeforeKeys` is a conservative superset of other one-shot nodes that
+can execute before this node on at least one legal path/order. It excludes the
+node itself, includes strict predecessors and eligible free-order peers, and is
+interpreted as an ordering relation—not as permission to replay a member.
+
+A compact region representation is allowed internally, but normalized tests
+assert the same relation.
 
 `freeOrderRegionId` groups mutually orderable exploration events for diagnostics
 and fixture readability. Membership alone does not imply every pair is
@@ -864,28 +869,39 @@ Meaning:
 The domain is path-insensitive but not corpus-global. Unrelated nodes that cannot
 execute before this node do not contribute.
 
-### 11.3 Free-order policy
+### 11.3 Free-order policy and one-shot region summaries
 
 HPA-257 chooses a conservative hybrid of over-approximation and narrowed hard
 claims:
 
-1. Scene adapters include every primary transition that may execute earlier in
-   `mayExecuteBeforeKeys`, including free-order peers.
-2. Their outputs propagate to the node's `mayActivePrimaryIds` and
-   `mayCompletedPrimaryIds` through a monotone fixed point, even when may-before
-   relations are mutual.
-3. Free-order peer outputs never establish `mustActive` or `mustCompleted` by
+1. Scene adapters include every other primary transition that may execute earlier
+   in `mayExecuteBeforeKeys`, including free-order peers.
+2. A free-order region is summarized as one-shot member possibilities. For a
+   node N, the summary may include effects from a subset of other members that
+   can legally precede N; N's own output never feeds back into N through a
+   mutual relation.
+3. The analyzer does not traverse mutual may-before pairs as an executable cycle
+   and does not model A -> B -> A. Each trigger/event appears at most once in a
+   modeled ordering.
+4. Positive prerequisite edges inside a region still establish strict order. If
+   B requires an atom produced by A, A -> B is handled as a prerequisite, not as
+   an unconstrained peer permutation.
+5. When exact correlation among several independent members would require
+   enumerating permutations, the region summary widens `may*`, clears affected
+   `must*`, marks `orderAmbiguous`, and emits/propagates the ordering warning.
+6. Free-order peer effects never establish `mustActive` or `mustCompleted` by
    themselves.
-4. An order-dependent invalidity is a warning, not an always-invalid error.
-5. A hard dynamic error is emitted only when invalidity follows from catalog
+7. A hard dynamic error is emitted only when invalidity follows from catalog
    facts plus `must*` state and no modeled valid input remains.
-6. Effects from at least one modeled successful order may contribute to positive
+8. Effects from at least one modeled successful order may contribute to positive
    may-reachability; the warning remains attached to the producer and is included
    in mandatory-path diagnostics.
 
 This preserves free exploration without pretending to prove all permutations.
-It also prevents the earlier under-approximation where sibling hotspot A could
-change the active primary before hotspot B but B saw only the scene-entry value.
+It also prevents both the earlier under-approximation—where sibling hotspot A
+could change the active primary before B but B saw only scene entry—and the
+opposite replay bug where mutual may-before relations would execute a one-shot
+trigger twice.
 
 Authors are encouraged—but not required—to linearize primary transitions. A
 primary transition in a free-order region is acceptable when its order-dependent
@@ -1009,7 +1025,7 @@ state cannot be authored through HPA-255's valid mutation sequence. Runtime
 mutation, snapshot restore, and catalog/state validation retain defense-in-depth
 for corrupt or hand-edited state.
 
-### 11.10 Outer fixed point
+### 11.10 Outer fixed point and convergence
 
 Conceptually:
 
@@ -1020,7 +1036,7 @@ repeat
   recompute node input may/must summaries from:
     strict predecessors,
     positive prerequisite producers,
-    adapter-provided may-before peers,
+    one-shot adapter-provided free-order region summaries,
     current successful node outputs
 
   mark nodes whose conditions/prerequisites are may-satisfiable
@@ -1029,7 +1045,7 @@ repeat
     simulate its complete ordered reveal batch provisionally
     publish successful may/must positive and primary outputs
 
-until no reachable node, atom, primary candidate, or completion fact changes
+until the product-lattice state is unchanged
 ```
 
 The finite domains are:
@@ -1037,10 +1053,20 @@ The finite domains are:
 - parsed node keys;
 - finite positive atoms;
 - finite objective IDs plus null;
-- finite may/must membership bits.
+- finite may/must membership bits;
+- finite concrete-or-unknown active values.
 
-All published sets only gain members; concrete `mustActive` may degrade once to
-`unknown`. Convergence therefore does not require an authored iteration cap.
+Convergence uses the normal product order:
+
+- `may*` sets grow by inclusion;
+- `must*` sets shrink by reverse inclusion as additional paths/orders are found;
+- concrete `mustActive` may degrade to `unknown` and never becomes concrete again
+  within the same analysis run;
+- reachable-node membership only grows.
+
+Every component has finite height. The one-shot region summary prevents a mutual
+may-before relation from creating an unbounded event-replay sequence. No authored
+iteration cap is required.
 
 ### 11.11 Mandatory-path reporting under ambiguity
 
@@ -1077,9 +1103,9 @@ An external seed does not legalize the dependency cycle.
 
 ### 12.3 Free-order relation is separate
 
-Mutual `mayExecuteBeforeKeys` edges are execution-order possibilities, not
-positive prerequisites. They may form cycles and are solved by §11's monotone
-primary fixed point. They must not trigger `positiveDependencyCycle`.
+Mutual `mayExecuteBeforeKeys` pairs are execution-order possibilities, not
+positive prerequisites. They may be symmetric, are summarized as one-shot region
+possibilities, and must not trigger `positiveDependencyCycle`.
 
 ### 12.4 Diagnostics
 
@@ -1220,6 +1246,7 @@ Investigation/interrogation adapters must expose:
 - possible and guaranteed local outputs already computed by specialized logic;
 - strict predecessor keys;
 - conservative may-execute-before keys/free-order region identity;
+- one-shot member identity so region summaries cannot replay a trigger;
 - represented authority, currently null;
 - source file/line and stable target indexes.
 
@@ -1356,7 +1383,10 @@ Cover both runtime orders for:
 3. hotspot A completes A; hotspot B later attempts to set A;
 4. B before A and A before B;
 5. a strict dependency edge A -> B turning a may condition into must state;
-6. two unrelated regions not contaminating each other's candidate sets.
+6. two unrelated regions not contaminating each other's candidate sets;
+7. mutual may-before pairs never feed A's output back into A or model A -> B -> A;
+8. three free-order one-shot members widen to an ambiguity warning without
+   enumerating permutations.
 
 Expected diagnostics:
 
@@ -1469,32 +1499,37 @@ must interpret the same sequence provisionally.
 Rejected because free-order siblings can execute before one another without an
 unlock edge. Adapters must expose runtime ordering.
 
-### 19.8 Require total linearization of all primary transitions
+### 19.8 Traverse mutual may-before pairs as a normal graph cycle
+
+Rejected because it replays one-shot events abstractly and can invent A -> B -> A.
+Free-order regions use one-shot summaries instead.
+
+### 19.9 Require total linearization of all primary transitions
 
 Rejected because it would unnecessarily remove investigation freedom. The
 chosen may/must analysis warns on order dependence and hard-fails only proven
 invalid transitions.
 
-### 19.9 Exhaustive objective-order state-space search
+### 19.10 Exhaustive objective-order state-space search
 
 Rejected because the parent contract explicitly excludes exhaustive ordering
 proof. HPA-257 uses finite path-insensitive may/must summaries.
 
-### 19.10 Corpus-global possible-primary set
+### 19.11 Corpus-global possible-primary set
 
 Rejected because unrelated branches polluted warnings and did not model local
 runtime ordering accurately.
 
-### 19.11 Compiler-only primary `completeObjective` restriction
+### 19.12 Compiler-only primary `completeObjective` restriction
 
 Rejected because hand-edited resources could invoke HPA-255's broader internal
 API. Rust repeats the authored-contract check.
 
-### 19.12 Replace specialized scene analysis
+### 19.13 Replace specialized scene analysis
 
 Rejected because existing validators encode stronger gameplay-specific facts.
 
-### 19.13 Generic applied-event ledger or save bump
+### 19.14 Generic applied-event ledger or save bump
 
 Rejected because subsystem trigger progress already owns replay state.
 
@@ -1508,7 +1543,7 @@ Rejected because subsystem trigger progress already owns replay state.
 | Atomic/idempotent reveal dispatch | §§8, 11.4, 17.4/17.7 |
 | HPA-255 owns primary transitions | §§2, 8.2, 17.7 |
 | Fixed point accounts for `setPrimaryObjective` | §11 joint analysis |
-| No exhaustive ordering claim | §§11.3, 11.11, 19.9 |
+| No exhaustive ordering claim | §§11.3, 11.11, 19.10 |
 | Free-order investigation represented | §§10.2–10.3, 11.3, 17.5 |
 | Invalid refs/counts/self-reference/cycles fail with locations | §§5, 12, 14 |
 | Required unreachable paths fail | §13 |
@@ -1528,15 +1563,18 @@ At minimum:
 5. add story target parser, duplicate/conflict rules, and scene-family matrix;
 6. add reserved objective ID and Rust authored-target defense;
 7. define `AnalysisDefinitionRegistry` and normalized scene adapters;
-8. expose strict/may-before ordering from investigation/interrogation analyses;
+8. expose strict/may-before ordering and one-shot region identity from
+   investigation/interrogation analyses;
 9. implement ordered provisional batch simulation and diagnostics;
-10. implement joint positive/primary may/must fixed point;
-11. add free-order, strict-order, completed-next, and disjoint-region fixtures;
+10. implement joint positive/primary may/must fixed point with one-shot region
+    summaries;
+11. add free-order, strict-order, completed-next, no-replay, and disjoint-region
+    fixtures;
 12. integrate runtime dispatcher, authority validation, and trigger guard;
 13. add ownership/source tests, atomic rollback, and save/restore coverage;
 14. update authoring skills and run final whole-branch verification.
 
 The implementation plan may refine private helper names, but it may not change
 the grammar, wire shapes, scene-family matrix, ordered-batch semantics,
-free-order policy, mutation ownership, cycle policy, or compatibility decisions
-fixed here.
+free-order one-shot policy, mutation ownership, cycle policy, or compatibility
+decisions fixed here.
