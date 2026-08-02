@@ -356,6 +356,29 @@ impl AutosaveBackend for ApplicationPersistence {
 }
 
 impl ApplicationPersistence {
+    async fn run_storage_write_if_session_current<T, F>(
+        &self,
+        session_generation: u64,
+        write: F,
+    ) -> Result<T, GameError>
+    where
+        T: Send,
+        F: FnOnce(&dyn SaveFilesystem, &std::path::Path) -> Result<T, GameError> + Send,
+    {
+        let _gate = self.replacement_gate.lock().await;
+        let current = self
+            .session
+            .lock()
+            .map_err(|_| GameError::unavailable())?
+            .persistence
+            .generation
+            == session_generation;
+        if !current {
+            return Err(GameError::save_write_failed());
+        }
+        write(self.fs.as_ref(), &self.root)
+    }
+
     fn commit_current(
         &self,
         prepared: AutosavePreparedWrite,
@@ -1150,56 +1173,70 @@ async fn save_manual_core(
         thumbnail,
         expected_manual: Some(expectation),
     };
-    let fs = Arc::clone(&persistence.fs);
-    let root = persistence.root.clone();
     let (result_tx, result_rx) = tokio::sync::oneshot::channel();
-    state
+    if !state
         .coordinator
-        .publish_persistence_health(PersistenceHealthView::Pending);
+        .publish_persistence_health_for_session(session_generation, PersistenceHealthView::Pending)
+    {
+        return Err(GameError::save_write_failed());
+    }
+    let writer_persistence = Arc::clone(&persistence);
     if let Err(error) = state
         .coordinator
         .reserve_manual_writer(Box::pin(async move {
-            let result = prepare_slot_write(fs.as_ref(), &root, request)
-                .and_then(|prepared| commit_prepared_slot_write(fs.as_ref(), &root, prepared));
+            let result = writer_persistence
+                .run_storage_write_if_session_current(session_generation, move |fs, root| {
+                    prepare_slot_write(fs, root, request)
+                        .and_then(|prepared| commit_prepared_slot_write(fs, root, prepared))
+                })
+                .await;
             let _ = result_tx.send(result);
         }))
     {
-        state
-            .coordinator
-            .publish_persistence_health(PersistenceHealthView::Degraded {
+        state.coordinator.publish_persistence_health_for_session(
+            session_generation,
+            PersistenceHealthView::Degraded {
                 diagnostic: error.clone(),
-            });
+            },
+        );
         return Err(error);
     }
     let outcome = match result_rx.await {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(error)) => {
-            state
-                .coordinator
-                .publish_persistence_health(PersistenceHealthView::Degraded {
+            state.coordinator.publish_persistence_health_for_session(
+                session_generation,
+                PersistenceHealthView::Degraded {
                     diagnostic: error.clone(),
-                });
+                },
+            );
             return Err(error);
         }
         Err(_) => {
             let error = GameError::save_write_failed();
-            state
-                .coordinator
-                .publish_persistence_health(PersistenceHealthView::Degraded {
+            state.coordinator.publish_persistence_health_for_session(
+                session_generation,
+                PersistenceHealthView::Degraded {
                     diagnostic: error.clone(),
-                });
+                },
+            );
             return Err(error);
         }
     };
-    state.coordinator.publish_persistence_health(
+    if !state.coordinator.publish_persistence_health_for_session(
+        session_generation,
         outcome
             .cleanup_diagnostic
             .clone()
             .map(|diagnostic| PersistenceHealthView::Degraded { diagnostic })
             .unwrap_or(PersistenceHealthView::Healthy),
-    );
+    ) {
+        return Err(GameError::save_write_failed());
+    }
     let browser = persistence.discover();
-    state.coordinator.complete_discovery_attempt()?;
+    state
+        .coordinator
+        .complete_discovery_attempt_for_session(session_generation)?;
     let saved_slot = browser
         .slots
         .iter()
@@ -1452,63 +1489,83 @@ async fn delete_save_core(
     reference: SaveSlotRef,
     expectation: OccupiedSlotExpectation,
 ) -> Result<SaveBrowserOpenResultView, GameError> {
-    state
-        .session
-        .lock()
-        .map_err(|_| unavailable_error())?
-        .ensure_persistence_available()?;
+    let session_generation = {
+        let session = state.session.lock().map_err(|_| unavailable_error())?;
+        session.ensure_persistence_available()?;
+        session.persistence.generation
+    };
     let persistence = state
         .persistence
         .as_ref()
         .cloned()
         .ok_or_else(GameError::save_discovery_unavailable)?;
-    let fs = Arc::clone(&persistence.fs);
-    let root = persistence.root.clone();
     let (result_tx, result_rx) = tokio::sync::oneshot::channel();
-    state
+    if !state
         .coordinator
-        .publish_persistence_health(PersistenceHealthView::Pending);
+        .publish_persistence_health_for_session(session_generation, PersistenceHealthView::Pending)
+    {
+        return Err(GameError::save_write_failed());
+    }
+    let writer_persistence = Arc::clone(&persistence);
     if let Err(error) = state
         .coordinator
         .reserve_delete_writer(Box::pin(async move {
-            let result = delete_slot(fs.as_ref(), &root, reference, expectation);
+            let result = writer_persistence
+                .run_storage_write_if_session_current(session_generation, move |fs, root| {
+                    delete_slot(fs, root, reference, expectation)
+                })
+                .await;
             let _ = result_tx.send(result);
         }))
     {
-        state
-            .coordinator
-            .publish_persistence_health(PersistenceHealthView::Degraded {
+        state.coordinator.publish_persistence_health_for_session(
+            session_generation,
+            PersistenceHealthView::Degraded {
                 diagnostic: error.clone(),
-            });
+            },
+        );
         return Err(error);
     }
     let outcome = match result_rx.await {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(error)) => {
-            state
-                .coordinator
-                .publish_persistence_health(PersistenceHealthView::Degraded {
+            state.coordinator.publish_persistence_health_for_session(
+                session_generation,
+                PersistenceHealthView::Degraded {
                     diagnostic: error.clone(),
-                });
+                },
+            );
             return Err(error);
         }
         Err(_) => {
             let error = GameError::save_write_failed();
-            state
-                .coordinator
-                .publish_persistence_health(PersistenceHealthView::Degraded {
+            state.coordinator.publish_persistence_health_for_session(
+                session_generation,
+                PersistenceHealthView::Degraded {
                     diagnostic: error.clone(),
-                });
+                },
+            );
             return Err(error);
         }
     };
-    state.coordinator.publish_persistence_health(
+    if !state.coordinator.publish_persistence_health_for_session(
+        session_generation,
         outcome
             .cleanup_diagnostic
             .map(|diagnostic| PersistenceHealthView::Degraded { diagnostic })
             .unwrap_or(PersistenceHealthView::Healthy),
-    );
-    fresh_ready_browser(state)
+    ) {
+        return Err(GameError::save_write_failed());
+    }
+    let browser = persistence.discover();
+    state
+        .coordinator
+        .complete_discovery_attempt_for_session(session_generation)?;
+    Ok(SaveBrowserOpenResultView {
+        continue_candidate: select_continue_candidate(&browser.slots),
+        browser,
+        preflight: SaveBrowserPreflightView::Ready,
+    })
 }
 
 #[tauri::command]
@@ -2958,6 +3015,91 @@ mod tests {
             removes: AtomicUsize,
         }
 
+        #[cfg(feature = "e2e")]
+        struct PausedDeleteFilesystem {
+            inner: ProductionSaveFilesystem,
+            armed: AtomicBool,
+            entered: tokio::sync::Notify,
+            released: AtomicBool,
+            release: Condvar,
+            release_lock: Mutex<()>,
+        }
+
+        #[cfg(feature = "e2e")]
+        impl PausedDeleteFilesystem {
+            fn new() -> Self {
+                Self {
+                    inner: ProductionSaveFilesystem,
+                    armed: AtomicBool::new(false),
+                    entered: tokio::sync::Notify::new(),
+                    released: AtomicBool::new(false),
+                    release: Condvar::new(),
+                    release_lock: Mutex::new(()),
+                }
+            }
+
+            fn arm(&self) {
+                self.armed.store(true, Ordering::SeqCst);
+            }
+
+            fn release(&self) {
+                self.released.store(true, Ordering::SeqCst);
+                self.release.notify_all();
+            }
+        }
+
+        #[cfg(feature = "e2e")]
+        impl SaveFilesystem for PausedDeleteFilesystem {
+            fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+                self.inner.create_dir_all(path)
+            }
+
+            fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+                self.inner.read(path)
+            }
+
+            fn read_prefix(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
+                self.inner.read_prefix(path, limit)
+            }
+
+            fn metadata(&self, path: &Path) -> io::Result<SaveFileMetadata> {
+                self.inner.metadata(path)
+            }
+
+            fn list_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
+                self.inner.list_dir(path)
+            }
+
+            fn stage_atomic(
+                &self,
+                path: &Path,
+                bytes: &[u8],
+            ) -> io::Result<Box<dyn StagedAtomicWrite>> {
+                self.inner.stage_atomic(path, bytes)
+            }
+
+            fn remove_file(&self, path: &Path) -> io::Result<()> {
+                if self.armed.load(Ordering::SeqCst)
+                    && path.extension().and_then(|extension| extension.to_str()) == Some("json")
+                {
+                    self.entered.notify_one();
+                    let mut guard = self.release_lock.lock().unwrap();
+                    while !self.released.load(Ordering::SeqCst) {
+                        guard = self.release.wait(guard).unwrap();
+                    }
+                }
+                self.inner.remove_file(path)
+            }
+
+            fn sync_dir(&self, path: &Path) -> io::Result<()> {
+                if self.armed.load(Ordering::SeqCst) {
+                    Err(io::Error::other("controlled post-delete sync failure"))
+                } else {
+                    self.inner.sync_dir(path)
+                }
+            }
+        }
+
         impl RemoveCountingFilesystem {
             fn new() -> Self {
                 Self {
@@ -3931,6 +4073,87 @@ mod tests {
                     .status,
                 SaveSlotStatusView::Empty
             ));
+        }
+
+        #[cfg(feature = "e2e")]
+        #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+        async fn checkpoint_replacement_fences_an_active_real_delete_before_storage_commit() {
+            let (_guard, resources) = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let fs = Arc::new(PausedDeleteFilesystem::new());
+            let app = Arc::new(
+                build_app_state_with_storage(
+                    resources.clone(),
+                    temporary.path().join("saves"),
+                    fs.clone(),
+                )
+                .unwrap(),
+            );
+            start_game_core(&app, GameEngine::new_started(resources.clone()).unwrap())
+                .await
+                .unwrap();
+            let saved = seed_manual(&app, 1, "Must survive checkpoint replacement").await;
+            let save_id = valid_save_id(&saved.saved_slot);
+            let slot_path = temporary.path().join("saves/manual-1.json");
+            assert!(slot_path.exists());
+            fs.arm();
+
+            let gate = app.replacement_gate.clone().lock_owned().await;
+            let replacement_app = Arc::clone(&app);
+            let mut replacement = tokio::spawn(async move {
+                replacement_app
+                    .coordinator
+                    .replace_session_for_e2e(
+                        &replacement_app,
+                        GameEngine::new_started(resources).unwrap(),
+                    )
+                    .await
+            });
+            assert!(
+                tokio::time::timeout(Duration::from_millis(20), &mut replacement)
+                    .await
+                    .is_err(),
+                "replacement must be queued behind the held gate"
+            );
+
+            let delete_app = Arc::clone(&app);
+            let delete = tokio::spawn(async move {
+                delete_save_core(
+                    &delete_app,
+                    SaveSlotRef::Manual { slot: 1 },
+                    OccupiedSlotExpectation {
+                        save_id: Some(save_id),
+                        modified_at: None,
+                    },
+                )
+                .await
+            });
+            let active_delete_reached_storage =
+                tokio::time::timeout(Duration::from_millis(50), fs.entered.notified())
+                    .await
+                    .is_ok();
+
+            drop(gate);
+            let replacement = tokio::time::timeout(Duration::from_secs(1), &mut replacement)
+                .await
+                .expect("replacement must complete while the stale delete is paused")
+                .unwrap()
+                .unwrap();
+            assert_eq!(replacement.generation, 2);
+            fs.release();
+            let delete_error = delete.await.unwrap().unwrap_err();
+
+            assert!(
+                !active_delete_reached_storage,
+                "a delete queued behind replacement must not reach its write boundary"
+            );
+            assert_eq!(delete_error.code, "saveWriteFailed");
+            assert!(slot_path.exists(), "stale delete must not remove the save");
+            assert_eq!(
+                app.coordinator.persistence_health(),
+                PersistenceHealthView::Healthy,
+                "stale completion must not repopulate replacement state"
+            );
         }
 
         #[tokio::test]

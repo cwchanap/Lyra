@@ -2119,6 +2119,21 @@ impl SaveCoordinator {
 
     pub(crate) fn complete_discovery_attempt(&self) -> Result<u64, GameError> {
         let mut state = self.lock_state()?;
+        Self::complete_discovery_attempt_locked(&mut state)
+    }
+
+    pub(crate) fn complete_discovery_attempt_for_session(
+        &self,
+        session_generation: u64,
+    ) -> Result<u64, GameError> {
+        let mut state = self.lock_state()?;
+        if state.next_session_generation != session_generation {
+            return Err(GameError::save_write_failed());
+        }
+        Self::complete_discovery_attempt_locked(&mut state)
+    }
+
+    fn complete_discovery_attempt_locked(state: &mut CoordinatorState) -> Result<u64, GameError> {
         state.discovery_generation = state
             .discovery_generation
             .checked_add(1)
@@ -3430,6 +3445,26 @@ impl SaveCoordinator {
         for subscriber in subscribers {
             subscriber(view.clone());
         }
+    }
+
+    pub(crate) fn publish_persistence_health_for_session(
+        &self,
+        session_generation: u64,
+        view: PersistenceHealthView,
+    ) -> bool {
+        let Ok(mut state) = self.state.lock() else {
+            return false;
+        };
+        if state.next_session_generation != session_generation {
+            return false;
+        }
+        state.persistence_health = view.clone();
+        let subscribers = state.health_subscribers.clone();
+        drop(state);
+        for subscriber in subscribers {
+            subscriber(view.clone());
+        }
+        true
     }
 
     fn schedule_autosave(
