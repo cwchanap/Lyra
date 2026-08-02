@@ -1,6 +1,6 @@
 # HPA-516 Tauri E2E CI optimization — baseline and execution record
 
-**Status:** baseline only; no E2E implementation behavior changed.
+**Status:** implementation record in progress; Task 9 owns final matrix timing.
 
 **Merge base:** `origin/main` at `2b9d528f11c7ea2b4db6e907b0340da3291d5736`.
 
@@ -52,6 +52,56 @@ non-fatal Case File viewport retry (`CSS viewport 1280x720 at DPR 2`) during
 `app.e2e.ts`; that spec then passed. This one host-specific observation is not
 a CI comparison or a new performance claim; retain 37m41s as the planning
 reference until the measured merge gate is complete.
+
+## Task 8 persistence phase consolidation
+
+The persistence-only child-process plan is reduced from 15 to exactly 11:
+2 save-core, 4 save-management, and 5 exit-lifecycle processes. The isolated
+`capture-proof` process is unchanged and is not part of that 15→11 comparison.
+
+| Previous phase | Decision | Resulting proof owner |
+| --- | --- | --- |
+| `save-seed` | retain | Real save and capture write disk state. |
+| `save-resume` | retain | A fresh process discovers and resumes it. |
+| `management-seed` | retain, self-contained | Seeds its own manual slots, thumbnails, rotation, and overwrite state. |
+| `management-corrupt-newest` | retain | Runner corrupts JSON before fresh discovery; that process also recovers an older autosave. |
+| `management-recover-older` | merge | Runs after invalid-newest UI proof in `management-corrupt-newest`. |
+| `management-missing-thumbnail` | retain | Runner removes the observed `manual-1` sidecar before fresh discovery. |
+| `management-restore-thumbnail` | move lower | Rust storage and `SaveCard` rerender sequences own replacement/restoration. |
+| `management-corrupt-thumbnail` | retain | Runner corrupts the independently seeded `manual-2` sidecar before fresh discovery; UI deletion follows fallback/load proof. |
+| `management-delete` | merge | Runs after corrupt-thumbnail discovery and load in the same child. |
+| `exit-close-seed` | retain | Native close terminates before the debounce can flush normally. |
+| `exit-close-resume` | retain, merge quit seed | Fresh process verifies close flush, then mutates and requests explicit quit. |
+| `exit-quit-seed` | merge | Seeded after close-resume proof without crossing a terminating boundary. |
+| `exit-quit-resume` | retain | Fresh process verifies explicit quit and exits during active acknowledgement. |
+| `exit-failure-bypass` | retain | Fresh process proves acknowledgement completion and the bypass exit path. |
+| `exit-final-verification` | retain | Fresh process proves bypassed progress was not persisted. |
+
+The retained order is `save-seed`, `save-resume`, `management-seed`,
+`management-corrupt-newest`, `management-missing-thumbnail`,
+`management-corrupt-thumbnail`, `exit-close-seed`, `exit-close-resume`,
+`exit-quit-resume`, `exit-failure-bypass`, and
+`exit-final-verification`. Runner-owned JSON and sidecar mutations still occur
+before the corresponding fresh WDIO child starts. Task 9 will record the
+post-consolidation packaged runtime and full-matrix wall-clock measurements.
+
+Direct Task 8 desktop evidence on 2026-08-02 passed all eleven retained
+persistence children:
+
+- Save-core run `8e136990-b574-42e9-af41-3cc10067d6f0`: 2 processes,
+  185.379s wall, no retry.
+- Save-management run `bbd6b2af-95fd-448c-8df2-4f2f27ffac88`: 4 processes,
+  33.249s wall, no retry.
+- Exit-lifecycle run `ff0c0b86-a64a-4ac7-b70e-3b5068483424`: 5 processes,
+  32.046s wall, no retry.
+
+The immediately preceding exit-lifecycle attempt
+`e3a851a5-18fe-4fa0-adfd-0a84a0d24185` ended in `exit-close-seed` when native
+close completed before WebDriver returned from `execute/sync`, yielding
+`ECONNREFUSED`. The bounded unchanged rerun passed all five processes; Task 9
+must count this observation in its warm-cache flake/retry record. These three
+direct suite timings verify the process topology and boundaries, but they are
+not a substitute for Task 9's combined full-matrix measurement.
 
 ## Ordered draft-PR plan and verification checklist
 

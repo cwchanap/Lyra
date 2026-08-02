@@ -90,9 +90,6 @@ export const E2E_SUITE_DEFINITIONS = Object.freeze([
         ["./e2e-tauri/save-management.e2e.ts"],
         { type: "corrupt-slot", fixedSlotName: "autosave-1" },
       ),
-      phase("management-recover-older", "management", "persistence", [
-        "./e2e-tauri/save-management.e2e.ts",
-      ]),
       phase(
         "management-missing-thumbnail",
         "management",
@@ -100,19 +97,13 @@ export const E2E_SUITE_DEFINITIONS = Object.freeze([
         ["./e2e-tauri/save-management.e2e.ts"],
         { type: "remove-observed-sidecar", fixedSlotName: "manual-1" },
       ),
-      phase("management-restore-thumbnail", "management", "persistence", [
-        "./e2e-tauri/save-management.e2e.ts",
-      ]),
       phase(
         "management-corrupt-thumbnail",
         "management",
         "persistence",
         ["./e2e-tauri/save-management.e2e.ts"],
-        { type: "corrupt-observed-sidecar", fixedSlotName: "manual-1" },
+        { type: "corrupt-observed-sidecar", fixedSlotName: "manual-2" },
       ),
-      phase("management-delete", "management", "persistence", [
-        "./e2e-tauri/save-management.e2e.ts",
-      ]),
     ]),
   }),
   Object.freeze({
@@ -124,7 +115,6 @@ export const E2E_SUITE_DEFINITIONS = Object.freeze([
       phase("exit-close-resume", "exit", "exit", [
         "./e2e-tauri/save-exit.e2e.ts",
       ]),
-      phase("exit-quit-seed", "exit", "exit", ["./e2e-tauri/save-exit.e2e.ts"]),
       phase("exit-quit-resume", "exit", "exit", [
         "./e2e-tauri/save-exit.e2e.ts",
       ]),

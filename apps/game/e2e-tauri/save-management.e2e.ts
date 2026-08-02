@@ -14,6 +14,7 @@ import {
   loadTitleSlot,
   openGameMenu,
   openTitleLoadBrowser,
+  resetE2eStorageWithStoryClearance,
   returnToTitle,
   saveCardText,
   saveManualSlot,
@@ -53,11 +54,8 @@ import type {
 const MANAGEMENT_PHASES = [
   SAVE_E2E_PHASE_NAMES.managementSeed,
   SAVE_E2E_PHASE_NAMES.managementCorruptNewest,
-  SAVE_E2E_PHASE_NAMES.managementRecoverOlder,
   SAVE_E2E_PHASE_NAMES.managementMissingThumbnail,
-  SAVE_E2E_PHASE_NAMES.managementRestoreThumbnail,
   SAVE_E2E_PHASE_NAMES.managementCorruptThumbnail,
-  SAVE_E2E_PHASE_NAMES.managementDelete,
 ] as const;
 
 type ManagementControl = {
@@ -70,12 +68,35 @@ type ManagementControl = {
   [key: string]: unknown;
 };
 
+async function seedOwnedManualSlotWithThumbnail(
+  slot: 1 | 2,
+  displayName: string,
+): Promise<void> {
+  let overwrite = readSaveE2eEnvelope(`manual-${slot}`) !== null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const previousId = readSaveE2eEnvelope(`manual-${slot}`)?.saveId ?? null;
+    await saveManualSlot(slot, displayName, overwrite);
+    const envelope = await waitForSaveE2eEnvelope(
+      `manual-${slot}`,
+      (candidate) =>
+        candidate.saveId !== previousId &&
+        candidate.displayName === displayName,
+    );
+    await closePersistenceBrowserToGameplay();
+    if (envelope.thumbnail.type === "available") return;
+    overwrite = true;
+  }
+  throw new Error(`manual-${slot} did not acquire an owned thumbnail sidecar`);
+}
+
 async function seedRotationAndOverwrite(): Promise<void> {
-  const inherited =
-    readSaveE2eExpectation<Record<string, unknown>>("management-state");
   await waitForShell();
+  await resetE2eStorageWithStoryClearance();
   await startFromMenu();
   const documentIdentity = await currentPackagedDocumentIdentity();
+
+  await seedOwnedManualSlotWithThumbnail(1, anchors.unicodeSave.unicodeName);
+  await seedOwnedManualSlotWithThumbnail(2, "管理流程手動存檔二");
 
   const observedRecoveryPoints = new Map<string, number>();
   for (let attempt = 0; attempt < 12; attempt++) {
@@ -201,7 +222,11 @@ async function seedRotationAndOverwrite(): Promise<void> {
   const captureUnavailableControl = anchors.captureProof.forceUnavailable;
   expect(await elementExists(captureUnavailableControl)).toBe(true);
   await jsClick(captureUnavailableControl);
-  await saveManualSlot(3, "預覽不可用但可載入", true);
+  await saveManualSlot(
+    3,
+    "預覽不可用但可載入",
+    readSaveE2eEnvelope("manual-3") !== null,
+  );
   const unavailable = await waitForSaveE2eEnvelope(
     "manual-3",
     (envelope) =>
@@ -222,7 +247,6 @@ async function seedRotationAndOverwrite(): Promise<void> {
     slots: rotation.slots.filter((slot) => slot.fixedSlotName !== "autosave-1"),
   })!.fixedSlotName;
   writeSaveE2eExpectation("management-state", {
-    ...inherited,
     seedDocumentIdentity: documentIdentity,
     rotation,
     rotationSaveIds: [...observedRecoveryPoints.keys()],
@@ -306,16 +330,21 @@ async function proveCorruptNewest(): Promise<void> {
   ).toBe('{"broken":');
 }
 
-async function recoverOlder(): Promise<void> {
+async function recoverOlderFromOpenBrowser(): Promise<void> {
   const control = readSaveE2eExpectation<ManagementControl>("management-state");
   const recovery = control.recoverySlot;
   if (!recovery?.startsWith("autosave-")) {
     throw new Error("management recovery slot is missing");
   }
   const slotNumber = Number(recovery.replace("autosave-", ""));
-  await waitForShell();
-  await loadTitleSlot("auto", slotNumber);
-  expect((await getPackagedGameState()).scene.id.length).toBeGreaterThan(0);
+  const recoveryEnvelope = readSaveE2eEnvelope(recovery);
+  if (!recoveryEnvelope) throw new Error("management recovery save is missing");
+  await clickSaveCardButton("auto", slotNumber, "載入");
+  await waitForPackagedGameState(
+    (state) => state.scene.id === recoveryEnvelope.summary.sceneId,
+    30000,
+    "older autosave did not load after invalid-newest discovery",
+  );
   expect(
     readSaveE2eOwnershipSnapshot().slots.find(
       (slot) => slot.fixedSlotName === "autosave-1",
@@ -326,80 +355,47 @@ async function recoverOlder(): Promise<void> {
 
 async function proveThumbnailFallback(
   expectedPhase: "missing" | "corrupt",
+  slot: 1 | 2,
 ): Promise<void> {
   await waitForShell();
   await openTitleLoadBrowser();
-  expect(await saveCardText("manual", 1)).toContain(anchors.previewUnavailable);
-  await clickSaveCardButton("manual", 1, "載入");
+  expect(await saveCardText("manual", slot)).toContain(
+    anchors.previewUnavailable,
+  );
+  await clickSaveCardButton("manual", slot, "載入");
+  await browser.waitUntil(async () => elementExists("[data-gameplay-root]"), {
+    timeout: 30000,
+    timeoutMsg:
+      "manual save with presentation-only thumbnail failure did not render gameplay",
+  });
+  const envelope = readSaveE2eEnvelope(`manual-${slot}`);
+  if (!envelope) throw new Error(`manual-${slot} envelope is missing`);
   const state = await waitForPackagedGameState(
-    () => true,
+    (candidate) => candidate.scene.id === envelope.summary.sceneId,
     30000,
     "manual save with presentation-only thumbnail failure did not load",
   );
   expect(state.scene.id.length).toBeGreaterThan(0);
-  const envelope = readSaveE2eEnvelope("manual-1");
-  expect(envelope?.thumbnail.type).toBe("available");
+  expect(envelope.thumbnail.type).toBe("available");
   if (expectedPhase === "missing") {
-    expect(existsSync(resolveSaveE2eFixedSlotSidecar("manual-1"))).toBe(false);
+    expect(existsSync(resolveSaveE2eFixedSlotSidecar(`manual-${slot}`))).toBe(
+      false,
+    );
   } else {
-    expect(existsSync(resolveSaveE2eFixedSlotSidecar("manual-1"))).toBe(true);
+    expect(existsSync(resolveSaveE2eFixedSlotSidecar(`manual-${slot}`))).toBe(
+      true,
+    );
   }
   await returnToTitle();
 }
 
-async function restoreThumbnail(): Promise<void> {
-  await waitForShell();
-  await loadTitleSlot("manual", 1);
-  let previousId = readSaveE2eEnvelope("manual-1")?.saveId;
-  if (!previousId)
-    throw new Error("thumbnail restoration source save is missing");
-
-  let restored: ReturnType<typeof readSaveE2eEnvelope> = null;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    await saveManualSlot(1, anchors.unicodeSave.unicodeName, true);
-    const overwritten = await waitForSaveE2eEnvelope(
-      "manual-1",
-      (envelope) => envelope.saveId !== previousId,
-    );
-    if (overwritten.thumbnail.type === "available") {
-      restored = overwritten;
-      break;
-    }
-    previousId = overwritten.saveId;
-    await closePersistenceBrowserToGameplay();
-  }
-
-  if (!restored) {
-    const diagnostic = await browser.execute((probe: string) => {
-      const element = document.querySelector(probe);
-      return {
-        reason:
-          element?.getAttribute("data-capture-proof-last-closed-reason") ??
-          null,
-        renderDiagnostic:
-          element?.getAttribute("data-capture-proof-last-render-diagnostic") ??
-          null,
-        calls: Number(element?.getAttribute("data-capture-proof-calls") ?? "0"),
-        available: Number(
-          element?.getAttribute("data-capture-proof-available") ?? "0",
-        ),
-      };
-    }, anchors.captureProof.probe);
-    throw new Error(
-      `manual-1 thumbnail remained unavailable after 3 overwrites: ${JSON.stringify(diagnostic)}`,
-    );
-  }
-
-  expect(existsSync(resolveSaveE2eFixedSlotSidecar("manual-1"))).toBe(true);
-  expect(restored.thumbnail.type).toBe("available");
-  await closePersistenceBrowserToGameplay();
-  await returnToTitle();
-}
-
-async function deleteOwnedManual(): Promise<void> {
+async function deleteOwnedManual(slot: 1 | 2): Promise<void> {
   await waitForShell();
   const before = readSaveE2eOwnershipSnapshot();
-  const target = before.slots.find((slot) => slot.fixedSlotName === "manual-1");
+  const fixedSlotName = `manual-${slot}` as const;
+  const target = before.slots.find(
+    (candidate) => candidate.fixedSlotName === fixedSlotName,
+  );
   if (!target?.envelope || !target.sidecarPath) {
     throw new Error("delete target has no owned sidecar");
   }
@@ -407,18 +403,18 @@ async function deleteOwnedManual(): Promise<void> {
   const targetSidecarName = basename(target.sidecarPath);
   const sidecarsBeforeDelete = readdirSync(sidecarDirectory).toSorted();
   await openTitleLoadBrowser();
-  await clickSaveCardButton("manual", 1, "刪除");
-  await waitForDialog("刪除手動存檔 1");
+  await clickSaveCardButton("manual", slot, "刪除");
+  await waitForDialog(`刪除手動存檔 ${slot}`);
   await clickButton(anchors.confirmDelete);
   await browser.waitUntil(
-    async () => (await saveCardText("manual", 1)).includes("空白存檔"),
-    { timeout: 30000, timeoutMsg: "manual slot 1 did not become empty" },
+    async () => (await saveCardText("manual", slot)).includes("空白存檔"),
+    { timeout: 30000, timeoutMsg: `manual slot ${slot} did not become empty` },
   );
-  expect(readSaveE2eEnvelope("manual-1")).toBeNull();
+  expect(readSaveE2eEnvelope(fixedSlotName)).toBeNull();
   expect(existsSync(target.sidecarPath)).toBe(false);
   const after = readSaveE2eOwnershipSnapshot();
   for (const prior of before.slots.filter(
-    (slot) => slot.fixedSlotName !== "manual-1",
+    (candidate) => candidate.fixedSlotName !== fixedSlotName,
   )) {
     const current = after.slots.find(
       (slot) => slot.fixedSlotName === prior.fixedSlotName,
@@ -440,16 +436,12 @@ describe("save management", () => {
       await seedRotationAndOverwrite();
     } else if (phase === SAVE_E2E_PHASE_NAMES.managementCorruptNewest) {
       await proveCorruptNewest();
-    } else if (phase === SAVE_E2E_PHASE_NAMES.managementRecoverOlder) {
-      await recoverOlder();
+      await recoverOlderFromOpenBrowser();
     } else if (phase === SAVE_E2E_PHASE_NAMES.managementMissingThumbnail) {
-      await proveThumbnailFallback("missing");
-    } else if (phase === SAVE_E2E_PHASE_NAMES.managementRestoreThumbnail) {
-      await restoreThumbnail();
+      await proveThumbnailFallback("missing", 1);
     } else if (phase === SAVE_E2E_PHASE_NAMES.managementCorruptThumbnail) {
-      await proveThumbnailFallback("corrupt");
-    } else if (phase === SAVE_E2E_PHASE_NAMES.managementDelete) {
-      await deleteOwnedManual();
+      await proveThumbnailFallback("corrupt", 2);
+      await deleteOwnedManual(2);
     } else {
       throw new Error(`unexpected management phase ${String(phase)}`);
     }

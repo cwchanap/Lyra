@@ -308,6 +308,62 @@ describe("SaveCard", () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:save-1");
   });
 
+  it("rerenders a failed sidecar through owned replacement and selected deletion", async () => {
+    const readThumbnail = vi
+      .fn()
+      .mockResolvedValue(new Uint8Array([137, 80, 78, 71]));
+    const rendered = render(SaveCard, {
+      slot: validSlot("11111111-1111-4111-8111-111111111114", {
+        displayName: "缺少預覽的存檔",
+        thumbnail: { type: "unavailable", reason: "missing" },
+      }),
+      mode: "titleLoad",
+      readThumbnail,
+    });
+
+    expect(screen.getByText("無法顯示預覽")).toBeInTheDocument();
+    expect(readThumbnail).not.toHaveBeenCalled();
+
+    await rendered.rerender({
+      slot: validSlot("11111111-1111-4111-8111-111111111114", {
+        displayName: "損壞預覽的存檔",
+        thumbnail: { type: "unavailable", reason: "corrupt" },
+      }),
+      mode: "titleLoad",
+      readThumbnail,
+    });
+    expect(screen.getByText("無法顯示預覽")).toBeInTheDocument();
+    expect(readThumbnail).not.toHaveBeenCalled();
+
+    await rendered.rerender({
+      slot: validSlot("22222222-2222-4222-8222-222222222224", {
+        displayName: "新擁有的預覽",
+      }),
+      mode: "titleLoad",
+      readThumbnail,
+    });
+    expect(
+      await screen.findByRole("img", { name: "新擁有的預覽的預覽" }),
+    ).toHaveAttribute("src", "blob:save-1");
+    expect(readThumbnail).toHaveBeenCalledWith(
+      { type: "manual", slot: 1 },
+      "22222222-2222-4222-8222-222222222224",
+    );
+
+    await rendered.rerender({
+      slot: {
+        reference: { type: "manual", slot: 1 },
+        modifiedAt: null,
+        status: { type: "empty" },
+      },
+      mode: "titleLoad",
+      readThumbnail,
+    });
+    expect(screen.getByText("空白存檔")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:save-1");
+  });
+
   it("revokes its Blob URL on unmount", async () => {
     const rendered = render(SaveCard, {
       slot: validSlot(),

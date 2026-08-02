@@ -61,6 +61,34 @@ test("production journey owns exactly the one genuine fresh-install spec", () =>
   assert.deepEqual(phase.specs, ["./e2e-tauri/production-journey.e2e.ts"]);
 });
 
+test("persistence suites retain exactly eleven native restart boundaries", () => {
+  const phases = buildE2ePhasePlan(
+    ["save-core", "save-management", "exit-lifecycle"],
+    {
+      persistence: "/tmp/persistence",
+      exit: "/tmp/exit",
+    },
+  );
+
+  assert.deepEqual(
+    phases.map(({ id }) => id),
+    [
+      "save-seed",
+      "save-resume",
+      "management-seed",
+      "management-corrupt-newest",
+      "management-missing-thumbnail",
+      "management-corrupt-thumbnail",
+      "exit-close-seed",
+      "exit-close-resume",
+      "exit-quit-resume",
+      "exit-failure-bypass",
+      "exit-final-verification",
+    ],
+  );
+  assert.equal(phases.length, 11);
+});
+
 test("normalizes duplicate requested suites into canonical order", () => {
   assert.deepEqual(
     normalizeE2eSuiteIds(["save-management", "smoke", "smoke"]),
