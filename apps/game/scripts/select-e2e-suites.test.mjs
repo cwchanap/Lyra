@@ -28,13 +28,54 @@ test("keeps code routing when documentation and UI changes are mixed", () => {
   assert.equal(plan.skip, false);
 });
 
-test("routes general UI changes to smoke", () => {
+test("routes unrelated general UI changes to smoke", () => {
   assert.deepEqual(
     selectE2eSuites({
-      changedPaths: ["apps/game/src/routes/+page.svelte"],
+      changedPaths: ["apps/game/src/lib/components/MainMenu.svelte"],
     }).suiteIds,
     ["smoke"],
   );
+});
+
+test("routes each acquisition acknowledgement surface to its direct lifecycle coverage", () => {
+  for (const changedPath of [
+    "apps/game/src/lib/components/AcquisitionPopup.svelte",
+    "apps/game/src/lib/state/acquisition-controller.svelte.ts",
+  ]) {
+    const plan = selectE2eSuites({ changedPaths: [changedPath] });
+
+    assert.deepEqual(plan.riskSelectedSuites, [
+      "smoke",
+      "gameplay",
+      "production-journey",
+      "save-core",
+      "exit-lifecycle",
+    ]);
+    assert.equal(plan.forcedFull, false);
+    assert.equal(plan.suiteIds.includes("capture-proof"), false);
+    assert.equal(plan.suiteIds.includes("save-management"), false);
+  }
+});
+
+test("routes dialogue, crossfade, and page shells through every dependent suite", () => {
+  for (const changedPath of [
+    "apps/game/src/lib/components/DialogueBox.svelte",
+    "apps/game/src/lib/components/CrossfadeImage.svelte",
+    "apps/game/src/routes/+page.svelte",
+  ]) {
+    const plan = selectE2eSuites({ changedPaths: [changedPath] });
+
+    assert.deepEqual(plan.riskSelectedSuites, [
+      "smoke",
+      "gameplay",
+      "production-journey",
+      "capture-proof",
+      "save-core",
+      "save-management",
+      "exit-lifecycle",
+    ]);
+    assert.equal(plan.forcedFull, false);
+  }
 });
 
 test("routes gameplay changes through the focused and fresh-journey suites", () => {
@@ -156,7 +197,7 @@ test("routes the PR-32 save and recap risk union without gameplay", () => {
 
 test("manual full coverage adds to automatic routing without suppressing it", () => {
   const plan = selectE2eSuites({
-    changedPaths: ["apps/game/src/routes/+page.svelte"],
+    changedPaths: ["apps/game/src/lib/components/MainMenu.svelte"],
     forceFull: true,
   });
 
