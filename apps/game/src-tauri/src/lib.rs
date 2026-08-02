@@ -4237,6 +4237,38 @@ mod tests {
 
             assert_eq!(error.code, "staleSaveSelection");
             assert_eq!(session_observation(&app), after_drift);
+
+            let saved = seed_manual(&app, 1, "Live session remains writable").await;
+            assert_eq!(
+                app.coordinator.persistence_health(),
+                PersistenceHealthView::Healthy
+            );
+            let save_id = valid_save_id(&saved.saved_slot);
+            let deleted = delete_save_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                OccupiedSlotExpectation {
+                    save_id: Some(save_id),
+                    modified_at: None,
+                },
+            )
+            .await
+            .unwrap();
+            assert!(matches!(deleted.preflight, SaveBrowserPreflightView::Ready));
+            assert!(matches!(
+                deleted
+                    .browser
+                    .slots
+                    .iter()
+                    .find(|slot| slot.reference == SaveSlotRef::Manual { slot: 1 })
+                    .unwrap()
+                    .status,
+                SaveSlotStatusView::Empty
+            ));
+            assert_eq!(
+                app.coordinator.persistence_health(),
+                PersistenceHealthView::Healthy
+            );
         }
 
         #[tokio::test]

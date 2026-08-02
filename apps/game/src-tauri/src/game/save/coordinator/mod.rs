@@ -2038,9 +2038,9 @@ impl SaveCoordinator {
         }
         let view = engine.view()?;
         let _gate = app.replacement_gate.lock().await;
-        let generation = self.next_session_generation()?;
         let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
         session.ensure_persistence_available()?;
+        let generation = self.next_session_generation()?;
         let autosave_target = match autosave_target {
             Some(target @ SaveSlotRef::Auto { .. }) => Some(target),
             Some(SaveSlotRef::Manual { .. }) | None => None,
@@ -2070,7 +2070,6 @@ impl SaveCoordinator {
     ) -> Result<crate::game::GameStateView, GameError> {
         let view = engine.view()?;
         let _gate = app.replacement_gate.lock().await;
-        let generation = self.next_session_generation()?;
         let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
         session.ensure_persistence_available()?;
         if session.persistence.generation != expected.generation
@@ -2078,6 +2077,7 @@ impl SaveCoordinator {
         {
             return Err(GameError::stale_save_selection());
         }
+        let generation = self.next_session_generation()?;
         let autosave_target = match autosave_target {
             Some(target @ SaveSlotRef::Auto { .. }) => Some(target),
             Some(SaveSlotRef::Manual { .. }) | None => None,
@@ -2092,9 +2092,9 @@ impl SaveCoordinator {
             session.ensure_persistence_available()?;
         }
         let _gate = app.replacement_gate.lock().await;
-        let generation = self.next_session_generation()?;
         let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
         session.ensure_persistence_available()?;
+        let generation = self.next_session_generation()?;
         *session = AppSession::empty_at_generation(generation);
         Ok(generation)
     }
@@ -2105,7 +2105,6 @@ impl SaveCoordinator {
         expected: SessionTransitionIdentity,
     ) -> Result<u64, GameError> {
         let _gate = app.replacement_gate.lock().await;
-        let generation = self.next_session_generation()?;
         let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
         session.ensure_persistence_available()?;
         if session.persistence.generation != expected.generation
@@ -2113,6 +2112,7 @@ impl SaveCoordinator {
         {
             return Err(GameError::stale_persistence_failure_token());
         }
+        let generation = self.next_session_generation()?;
         *session = AppSession::empty_at_generation(generation);
         Ok(generation)
     }
