@@ -1,4 +1,5 @@
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -137,6 +138,10 @@ export function createRunOwnership({
   rootKeys,
   createRoot,
   startedAt = new Date().toISOString(),
+  writeOwnership = writeRunOwnership,
+  writeRootMarker = writeRootOwnershipMarker,
+  removeRoot = removeSaveE2eAppDataDir,
+  now = () => new Date().toISOString(),
 }) {
   if (
     typeof ownershipPath !== "string" ||
@@ -154,19 +159,51 @@ export function createRunOwnership({
     startedAt,
     roots: [],
   };
-  writeRunOwnership(ownershipPath, ownership);
+  writeOwnership(ownershipPath, ownership);
   for (const key of rootKeys) {
-    const appDataDir = assertSafeSaveE2eAppDataDir(createRoot());
-    const entry = {
-      key,
-      appDataDir,
-      cleanup: { state: "pending" },
-    };
-    writeRootOwnershipMarker(entry, runId);
-    ownership.roots.push(entry);
-    // Persist after every allocation: a cancellation can only clean roots that
-    // are already recorded as owned by this run.
-    writeRunOwnership(ownershipPath, ownership);
+    let entry;
+    try {
+      const appDataDir = assertSafeSaveE2eAppDataDir(createRoot());
+      entry = {
+        key,
+        appDataDir,
+        cleanup: { state: "pending" },
+      };
+      // Persist the allocation before marker initialization so cleanup has an
+      // authoritative record even if an initialization write fails.
+      ownership.roots.push(entry);
+      writeOwnership(ownershipPath, ownership);
+      writeRootMarker(entry, runId);
+    } catch (error) {
+      if (entry) {
+        try {
+          removeRoot(assertSafeSaveE2eAppDataDir(entry.appDataDir));
+          entry.cleanup = { state: "removed", finishedAt: now() };
+        } catch (cleanupError) {
+          entry.cleanup = {
+            state: "failed",
+            finishedAt: now(),
+            message:
+              cleanupError instanceof Error
+                ? cleanupError.message
+                : String(cleanupError),
+          };
+        }
+        // A failed initial manifest write is retried after guarded rollback,
+        // so diagnostics still say whether the freshly allocated root was
+        // removed. Do not replace the initialization failure if this record
+        // write itself cannot be recovered.
+        try {
+          writeOwnership(ownershipPath, ownership);
+        } catch (recordError) {
+          console.error(
+            "e2e ownership rollback could not be recorded:",
+            recordError,
+          );
+        }
+      }
+      throw error;
+    }
   }
   return ownership;
 }
@@ -234,6 +271,224 @@ export function cleanupOwnedE2eRoots(
   }
   if (errors.length > 0) throw errors[0];
   return ownership;
+}
+
+function createRunnerResult({
+  runId,
+  suiteIds,
+  riskSelectedSuites,
+  forcedFull,
+  start,
+}) {
+  return {
+    schemaVersion: E2E_RUN_RESULT_SCHEMA_VERSION,
+    runId,
+    selectedSuites: suiteIds,
+    riskSelectedSuites,
+    forcedFull,
+    phase: null,
+    suite: null,
+    attempt: null,
+    durationMs: 0,
+    result: "running",
+    exitCode: null,
+    firstFailedSuite: null,
+    processCount: 0,
+    start,
+    finish: null,
+    phaseResults: [],
+  };
+}
+
+export async function runE2eAttempt({
+  attempt,
+  runDirectory,
+  result,
+  resultPath,
+  supervisor,
+  suiteIds,
+  rootKeys,
+  createRoot,
+  buildPhasePlan,
+  suiteForPhase,
+  applyCheckpoint,
+  createOutputDirectory = createAttemptOutputDirectory,
+  runPhase,
+  captureFailureArtifacts,
+  createOwnership = createRunOwnership,
+  cleanupRoots = cleanupOwnedE2eRoots,
+  rootByKey = ownedRootByKey,
+  writeResult = writeRunResult,
+  now = () => new Date().toISOString(),
+}) {
+  const attemptDirectory = path.join(runDirectory, `attempt-${attempt}`);
+  const ownershipPath = path.join(attemptDirectory, "run-ownership.json");
+  let ownership;
+  let exitCode = 0;
+  try {
+    ownership = createOwnership({
+      ownershipPath,
+      runId: result.runId,
+      rootKeys,
+      createRoot,
+    });
+    const directories = Object.fromEntries(
+      ownership.roots.map(({ key }) => [key, rootByKey(ownership, key)]),
+    );
+    const phases = buildPhasePlan(suiteIds, directories);
+    for (const phase of phases) {
+      if (supervisor.cancelledSignal) {
+        exitCode = supervisor.cancelledSignal === "SIGINT" ? 130 : 143;
+        break;
+      }
+      try {
+        applyCheckpoint(phase);
+        const outputDirectory = createOutputDirectory({
+          runDirectory,
+          rootKey: phase.root,
+          phase: phase.id,
+          attempt,
+        });
+        const start = now();
+        const startedMs = Date.now();
+        const child = await runPhase(phase, { attempt, outputDirectory });
+        const phaseResult = {
+          phase: phase.id,
+          suite: suiteForPhase(phase.id),
+          attempt,
+          durationMs: Date.now() - startedMs,
+          result: child.exitCode === 0 ? "passed" : "failed",
+          exitCode: child.exitCode,
+          start,
+          finish: now(),
+          outputDirectory,
+        };
+        result.phase = phaseResult.phase;
+        result.suite = phaseResult.suite;
+        result.attempt = attempt;
+        result.durationMs = phaseResult.durationMs;
+        result.result = phaseResult.result;
+        result.exitCode = phaseResult.exitCode;
+        result.processCount += 1;
+        result.phaseResults.push(phaseResult);
+        if (child.exitCode !== 0 && result.firstFailedSuite === null)
+          result.firstFailedSuite = phaseResult.suite;
+        writeResult(resultPath, result);
+        if (child.exitCode !== 0) {
+          captureFailureArtifacts({
+            phase,
+            code: child.exitCode,
+            attempt,
+            runDirectory,
+          });
+          exitCode = child.exitCode;
+          break;
+        }
+      } catch (error) {
+        console.error(`save e2e phase ${phase.id} setup failed:`, error);
+        result.phase = phase.id;
+        result.suite = suiteForPhase(phase.id);
+        result.attempt = attempt;
+        result.result = "failed";
+        result.exitCode = 1;
+        result.firstFailedSuite ??= result.suite;
+        writeResult(resultPath, result);
+        exitCode = 1;
+        break;
+      }
+    }
+  } finally {
+    if (ownership || existsSync(ownershipPath)) {
+      try {
+        cleanupRoots(ownershipPath);
+      } catch (error) {
+        console.error("save e2e app data cleanup failed:", error);
+        exitCode ||= 1;
+      }
+    }
+  }
+  return exitCode;
+}
+
+export async function runE2eRunner({
+  suiteIds,
+  riskSelectedSuites,
+  attempts,
+  forcedFull,
+  runDirectory,
+  supervisor,
+  runGuard,
+  rootKeys,
+  createRoot,
+  buildPhasePlan,
+  suiteForPhase,
+  applyCheckpoint,
+  createOutputDirectory,
+  runPhase,
+  captureFailureArtifacts,
+  createRun = createRunId,
+  writeResult = writeRunResult,
+  now = () => new Date().toISOString(),
+  runAttempt = runE2eAttempt,
+}) {
+  mkdirSync(runDirectory, { recursive: true });
+  const runId = createRun();
+  const resultPath = path.join(runDirectory, "run-result.json");
+  const result = createRunnerResult({
+    runId,
+    suiteIds,
+    riskSelectedSuites,
+    forcedFull,
+    start: now(),
+  });
+  let exitCode = 1;
+  try {
+    const guard = await runGuard();
+    if (guard.exitCode !== 0) {
+      result.phase = "binary-guard";
+      result.result = "failed";
+      result.exitCode = guard.exitCode;
+      exitCode = guard.exitCode;
+    } else {
+      for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        exitCode = await runAttempt({
+          attempt,
+          runDirectory,
+          result,
+          resultPath,
+          supervisor,
+          suiteIds,
+          rootKeys,
+          createRoot,
+          buildPhasePlan,
+          suiteForPhase,
+          applyCheckpoint,
+          createOutputDirectory,
+          runPhase,
+          captureFailureArtifacts,
+          writeResult,
+          now,
+        });
+        if (exitCode === 0 || supervisor.cancelledSignal) break;
+      }
+      result.result = exitCode === 0 ? "passed" : "failed";
+      result.exitCode = exitCode;
+    }
+  } catch (error) {
+    console.error("save e2e runner failed:", error);
+    result.result = "failed";
+    result.exitCode = 1;
+    exitCode = 1;
+  } finally {
+    if (supervisor.cancelledSignal) {
+      exitCode = supervisor.cancelledSignal === "SIGINT" ? 130 : 143;
+      result.result = "cancelled";
+      result.exitCode = exitCode;
+    }
+    result.finish = now();
+    writeResult(resultPath, result);
+  }
+  return { exitCode, result, resultPath, runDirectory };
 }
 
 export function writeRunResult(resultPath, result) {
