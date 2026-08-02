@@ -134,6 +134,36 @@ test("treats playable story and compiler inputs as production-journey risks", ()
   );
 });
 
+test("preserves the risky source when a rename moves it onto a documentation path", () => {
+  // git diff --no-renames emits both sides of a rename as a delete + add.
+  // The deleted side is the old story source (a story-and-compiler risk); the
+  // added side is a documentation destination that the selector would
+  // otherwise treat as documentation-only and skip. Including both paths must
+  // keep the story routing instead of under-selecting as a documentation
+  // change.
+  const plan = selectE2eSuites({
+    changedPaths: [
+      "static/stories_plan/chapter_1/scene_1.md",
+      "docs/archive/chapter_1_scene_1.md",
+    ],
+  });
+
+  assert.deepEqual(plan.suiteIds, ["smoke", "gameplay", "production-journey"]);
+  assert.equal(plan.skip, false);
+  assert.equal(plan.forcedFull, false);
+});
+
+test("does not route a documentation destination alone when the risky source is absent", () => {
+  // Confirms the rename test above is meaningful: without the deleted source
+  // path, the documentation destination alone is correctly skipped.
+  const plan = selectE2eSuites({
+    changedPaths: ["docs/archive/chapter_1_scene_1.md"],
+  });
+
+  assert.deepEqual(plan.suiteIds, []);
+  assert.equal(plan.skip, true);
+});
+
 test("routes the live scene compiler entrypoint as a story risk", () => {
   assert.deepEqual(
     selectE2eSuites({

@@ -228,9 +228,15 @@ jobs:
         run: |
           changed_paths="$RUNNER_TEMP/e2e-changed-paths.txt"
           if [[ -n "$BASE_SHA" && "$BASE_SHA" != "0000000000000000000000000000000000000000" ]]; then
-            git diff --name-only "$BASE_SHA" "$HEAD_SHA" > "$changed_paths"
+            # Three-dot form diffs the merge base of BASE_SHA and HEAD_SHA
+            # against HEAD_SHA, so only PR-side changes are selected even when
+            # main advances after the branch diverged. --no-renames emits both
+            # sides of a rename (delete + add) so a risky source moved onto a
+            # documentation destination still surfaces its old path to the
+            # selector instead of being under-selected as documentation.
+            git diff --no-renames --name-only "$BASE_SHA...$HEAD_SHA" > "$changed_paths"
           else
-            git diff-tree --no-commit-id --name-only -r "$HEAD_SHA" > "$changed_paths"
+            git diff-tree --no-renames --no-commit-id --name-only -r "$HEAD_SHA" > "$changed_paths"
           fi
 
       - id: plan
@@ -261,6 +267,11 @@ jobs:
           path: ${{ runner.temp }}/e2e-plan/
           retention-days: 7
           if-no-files-found: ignore
+          # Re-running a failed planner job re-executes this always() step.
+          # upload-artifact@v4 treats a fixed existing name as an error by
+          # default, so a passing rerun would fail at upload. overwrite lets
+          # the rerun replace the prior attempt's artifact.
+          overwrite: true
 
   e2e-execution:
     name: Tauri E2E execution (${{ matrix.chainId }})
@@ -377,6 +388,10 @@ jobs:
             ${{ runner.temp }}/e2e-metrics/
           retention-days: 7
           if-no-files-found: warn
+          # A failed chain still reaches this always() step, so re-running the
+          # failed job re-uploads the same tauri-e2e-<chain> name. overwrite
+          # avoids a duplicate-name error on the rerun.
+          overwrite: true
 
   e2e:
     name: Tauri E2E
@@ -432,3 +447,7 @@ jobs:
           path: ${{ runner.temp }}/e2e-analysis/
           retention-days: 7
           if-no-files-found: warn
+          # The aggregate job runs on every workflow run via always(), so a
+          # full rerun re-uploads this fixed name. overwrite avoids a
+          # duplicate-name error on the rerun.
+          overwrite: true

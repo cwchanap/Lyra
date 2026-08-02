@@ -67,6 +67,28 @@ test("planner publishes the dynamic matrix and every chain suite file", () => {
   assert.equal(upload.if, "${{ always() }}");
   assert.equal(upload.with.name, "e2e-plan");
   assert.equal(upload.with.path, "${{ runner.temp }}/e2e-plan/");
+  assert.equal(
+    upload.with.overwrite,
+    true,
+    "Upload E2E plan must overwrite so a failed-job rerun can replace the prior artifact",
+  );
+});
+
+test("changed paths are collected from the merge base without rename detection", () => {
+  const plan = loadWorkflow().jobs["e2e-plan"];
+  const collect = namedStep(plan, "Collect changed paths").run;
+  // Three-dot form diffs merge-base(BASE_SHA, HEAD_SHA) against HEAD_SHA, so
+  // base-branch-only changes after divergence are excluded.
+  assert.match(
+    collect,
+    /git diff --no-renames --name-only "\$BASE_SHA\.\.\.\$HEAD_SHA"/,
+  );
+  // --no-renames on the new-branch fallback keeps single-commit renames from
+  // hiding the deleted side of a moved risky source.
+  assert.match(
+    collect,
+    /git diff-tree --no-renames --no-commit-id --name-only -r "\$HEAD_SHA"/,
+  );
 });
 
 test("execution is a non-fail-fast isolated chain matrix", () => {
@@ -122,6 +144,11 @@ test("execution is a non-fail-fast isolated chain matrix", () => {
   assert.equal(upload.with.name, "${{ matrix.artifactName }}");
   assert.equal(upload.with["if-no-files-found"], "warn");
   assert.match(upload.with.path, /\$\{\{ runner\.temp \}\}\/e2e-metrics\//);
+  assert.equal(
+    upload.with.overwrite,
+    true,
+    "Upload chain evidence must overwrite so a failed-chain rerun can replace the prior artifact",
+  );
 });
 
 test("stable aggregate downloads every manifest and runs the pure validator", () => {
@@ -161,6 +188,11 @@ test("stable aggregate downloads every manifest and runs the pure validator", ()
   const upload = namedStep(aggregate, "Upload E2E aggregate analysis");
   assert.equal(upload.if, "${{ always() }}");
   assert.equal(upload.with.name, "tauri-e2e-analysis");
+  assert.equal(
+    upload.with.overwrite,
+    true,
+    "Upload E2E aggregate analysis must overwrite so a full rerun can replace the prior artifact",
+  );
 });
 
 test("direct smoke and full commands remain intentionally distinct", () => {
