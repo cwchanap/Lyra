@@ -229,11 +229,19 @@ export function validateE2ePhaseSequence(phases) {
   return true;
 }
 
+export function validateSelectedE2eSuiteDefinitions(suiteIds) {
+  const selected = normalizeE2eSuiteIds(suiteIds);
+  const phases = selected.flatMap((id) => definitionsById.get(id).phases);
+  for (const phaseToValidate of phases)
+    validateE2ePhaseOwnership(phaseToValidate);
+  validateE2ePhaseSequence(phases);
+  return selected;
+}
+
 export function buildE2ePhasePlan(suiteIds, appDataDirectories) {
-  const phases = normalizeE2eSuiteIds(suiteIds).flatMap(
+  const phases = validateSelectedE2eSuiteDefinitions(suiteIds).flatMap(
     (id) => definitionsById.get(id).phases,
   );
-  for (const definition of phases) validateE2ePhaseOwnership(definition);
   return phases.map((definition) => {
     const result = {
       id: definition.id,

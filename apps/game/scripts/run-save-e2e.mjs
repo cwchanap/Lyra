@@ -15,6 +15,7 @@ import {
 import {
   buildE2ePhasePlan,
   e2eSuitePhaseRoots,
+  validateSelectedE2eSuiteDefinitions,
 } from "./e2e-suite-registry.mjs";
 import {
   parseRunnerArguments,
@@ -25,6 +26,7 @@ let suiteIds;
 try {
   const options = parseRunnerArguments(process.argv.slice(2));
   suiteIds = resolveRunnerSelection(options);
+  suiteIds = validateSelectedE2eSuiteDefinitions(suiteIds);
 } catch (error) {
   console.error(
     `Usage: node scripts/run-save-e2e.mjs (--suite <id> [... ]|--suite-file /absolute/path/to/e2e-suites.json|--full) [--attempts 1|2]\n${error.message}`,
