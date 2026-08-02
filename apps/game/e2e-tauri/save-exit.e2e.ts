@@ -16,6 +16,7 @@ import {
   requestApplicationQuit,
   requestApplicationQuitWhenAcknowledging,
   requestWindowClose,
+  resetE2eStorageWithStoryClearance,
   settlePackagedCommand,
   startAcquisitionAcknowledgement,
   startFromMenu,
@@ -309,6 +310,7 @@ describe("save exit lifecycle", () => {
   it("proves the closed exit phase", async () => {
     const phase = assertSaveE2ePhase(EXIT_PHASES);
     if (phase === SAVE_E2E_PHASE_NAMES.exitCloseSeed) {
+      await resetE2eStorageWithStoryClearance();
       await seedSuccessfulExit("close");
     } else if (phase === SAVE_E2E_PHASE_NAMES.exitCloseResume) {
       await resumeSuccessfulExit("close");
