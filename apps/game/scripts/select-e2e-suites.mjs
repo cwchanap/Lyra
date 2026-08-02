@@ -122,6 +122,15 @@ export const E2E_RISK_RULES = Object.freeze([
     ],
     suiteIds: E2E_SUITE_IDS,
   }),
+  // +layout.svelte installs window.__lyraE2e and renders the checkpoint-
+  // generation marker that loadPackagedCheckpoint() waits on. Every gameplay
+  // spec calls loadPackagedCheckpoint(); smoke does not. Without this rule a
+  // bridge-only break passes smoke while gameplay fails on nightly/full CI.
+  freezeRule({
+    id: "checkpoint-bridge-surface",
+    patterns: ["apps/game/src/routes/+layout.svelte"],
+    suiteIds: ["smoke", "gameplay"],
+  }),
   freezeRule({
     id: "general-ui",
     patterns: [

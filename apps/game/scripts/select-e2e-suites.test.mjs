@@ -28,6 +28,19 @@ test("keeps code routing when documentation and UI changes are mixed", () => {
   assert.equal(plan.skip, false);
 });
 
+test("routes the checkpoint bridge layout to smoke and gameplay", () => {
+  // +layout.svelte installs window.__lyraE2e and renders the checkpoint-
+  // generation marker that loadPackagedCheckpoint() waits on. Only gameplay
+  // specs call loadPackagedCheckpoint(); smoke does not. A bridge-only break
+  // must therefore select gameplay, not just smoke.
+  const plan = selectE2eSuites({
+    changedPaths: ["apps/game/src/routes/+layout.svelte"],
+  });
+
+  assert.deepEqual(plan.suiteIds, ["smoke", "gameplay"]);
+  assert.equal(plan.forcedFull, false);
+});
+
 test("routes unrelated general UI changes to smoke", () => {
   assert.deepEqual(
     selectE2eSuites({
