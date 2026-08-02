@@ -12,6 +12,30 @@ pub struct GameError {
 }
 
 impl GameError {
+    #[cfg(feature = "e2e")]
+    pub fn e2e_checkpoint_replay_limit_exceeded() -> Self {
+        Self::new(
+            "e2eCheckpointReplayLimitExceeded",
+            "E2E checkpoint replay exceeded its bounded operation limit.",
+        )
+    }
+
+    #[cfg(feature = "e2e")]
+    pub fn e2e_checkpoint_anchor_missing() -> Self {
+        Self::new(
+            "e2eCheckpointAnchorMissing",
+            "E2E checkpoint authored anchor is missing from packaged content.",
+        )
+    }
+
+    #[cfg(feature = "e2e")]
+    pub fn e2e_checkpoint_unreachable() -> Self {
+        Self::new(
+            "e2eCheckpointUnreachable",
+            "E2E checkpoint target is unreachable through bounded player operations.",
+        )
+    }
+
     pub fn unsafe_e2e_app_data_root() -> Self {
         Self::new(
             "unsafeE2eAppDataRoot",

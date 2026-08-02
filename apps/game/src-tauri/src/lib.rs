@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex};
 use tauri::path::BaseDirectory;
 use tauri::{Emitter, Manager};
 
+#[cfg(feature = "e2e")]
+use game::e2e_checkpoints::{build_checkpoint, CheckpointId, CheckpointProjection};
 use game::save::capture::{capture_checkpoint_v2, CapturedCheckpointV2};
 #[cfg(feature = "e2e")]
 use game::save::coordinator::ExclusivePersistenceIntent;
@@ -49,6 +51,15 @@ use serde::Serialize;
 pub(crate) struct GameplayCommandResultView {
     pub(crate) state: GameStateView,
     pub(crate) thumbnail_capture: Option<ThumbnailCaptureRequestView>,
+}
+
+#[cfg(feature = "e2e")]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct E2eLoadCheckpointResult {
+    pub(crate) generation: u64,
+    pub(crate) state: GameStateView,
+    pub(crate) projection: CheckpointProjection,
 }
 
 #[derive(Debug, Serialize)]
@@ -98,6 +109,49 @@ mod e2e_persistence_fault_command_tests {
             1,
         )
         .is_err());
+    }
+}
+
+#[cfg(all(test, feature = "e2e"))]
+mod e2e_checkpoint_command_tests {
+    use super::{build_app_state_with_storage, e2e_load_checkpoint_core, ProductionSaveFilesystem};
+    use crate::game::e2e_checkpoints::CheckpointId;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn command_builds_replaces_and_returns_one_consistent_checkpoint_transaction() {
+        let resources = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/scenes");
+        let save_root = tempfile::tempdir().unwrap();
+        let state = build_app_state_with_storage(
+            resources,
+            save_root.path().to_path_buf(),
+            Arc::new(ProductionSaveFilesystem),
+        )
+        .unwrap();
+
+        let result = e2e_load_checkpoint_core(&state, CheckpointId::SceneNavigationEligible)
+            .await
+            .unwrap();
+
+        assert_eq!(result.generation, 1);
+        assert!(result.projection.scene_navigation_eligible);
+        assert_eq!(result.projection.scene_id, "investigation_scene_1");
+        assert_eq!(result.state.chapter.id, result.projection.chapter_id);
+        let session = state.session.lock().unwrap();
+        assert_eq!(session.persistence.generation, result.generation);
+        assert_eq!(
+            session.persistence.flush_baseline_revision,
+            result.projection.durable_revision
+        );
+        assert_eq!(
+            session.durable_revision(),
+            Some(result.projection.durable_revision)
+        );
+        assert_eq!(
+            serde_json::to_value(session.engine.as_ref().unwrap().view().unwrap()).unwrap(),
+            serde_json::to_value(result.state).unwrap()
+        );
     }
 }
 
@@ -627,6 +681,33 @@ fn e2e_set_persistence_fault_core(
     occurrence_count: u8,
 ) -> Result<(), GameError> {
     coordinator.arm_e2e_persistence_fault(boundary, occurrence_count)
+}
+
+#[cfg(feature = "e2e")]
+async fn e2e_load_checkpoint_core(
+    state: &AppState,
+    id: CheckpointId,
+) -> Result<E2eLoadCheckpointResult, GameError> {
+    let checkpoint = build_checkpoint(state.resources_dir.clone(), id)?;
+    let projection = checkpoint.projection;
+    let replacement = state
+        .coordinator
+        .replace_session_for_e2e(state, checkpoint.engine)
+        .await?;
+    Ok(E2eLoadCheckpointResult {
+        generation: replacement.generation,
+        state: replacement.state,
+        projection,
+    })
+}
+
+#[cfg(feature = "e2e")]
+#[tauri::command]
+async fn e2e_load_checkpoint(
+    state: tauri::State<'_, AppState>,
+    id: CheckpointId,
+) -> Result<E2eLoadCheckpointResult, GameError> {
+    e2e_load_checkpoint_core(&state, id).await
 }
 
 #[cfg(feature = "e2e")]
@@ -2287,6 +2368,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            #[cfg(feature = "e2e")]
+            e2e_load_checkpoint,
             #[cfg(feature = "e2e")]
             e2e_set_persistence_fault,
             #[cfg(feature = "e2e")]

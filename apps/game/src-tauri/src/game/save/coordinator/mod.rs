@@ -892,6 +892,22 @@ struct WriterQueue {
 }
 
 impl WriterQueue {
+    #[cfg(feature = "e2e")]
+    fn invalidate_queued_for_e2e(&self) -> Result<u64, GameError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| GameError::save_write_failed())?;
+        let minimum_cleanup_attempt = state
+            .next_cleanup_attempt
+            .checked_add(1)
+            .ok_or_else(GameError::save_write_failed)?;
+        state.acknowledgements.clear();
+        state.ordinary.clear();
+        state.next_cleanup_attempt = minimum_cleanup_attempt;
+        Ok(minimum_cleanup_attempt)
+    }
+
     fn enqueue(
         self: &Arc<Self>,
         scheduler: Arc<dyn CoordinatorTaskScheduler>,
@@ -1137,6 +1153,7 @@ struct CoordinatorState {
     last_successful_write: Option<AutosaveWriteReceipt>,
     failed_write: Option<BackgroundWriteFailure>,
     cleanup_failure: Option<CleanupFailure>,
+    minimum_cleanup_attempt: u64,
     failure_challenges: HashMap<Uuid, PersistenceFailureChallenge>,
     failure_token_source: FailureTokenSource,
     exit_status: ExitStatusView,
@@ -1162,6 +1179,7 @@ impl Default for CoordinatorState {
             last_successful_write: None,
             failed_write: None,
             cleanup_failure: None,
+            minimum_cleanup_attempt: 0,
             failure_challenges: HashMap::new(),
             failure_token_source: FailureTokenSource::Random,
             exit_status: ExitStatusView::Idle,
@@ -1248,6 +1266,12 @@ pub(crate) struct SaveCoordinator {
     exclusive_updates: Arc<Notify>,
     #[cfg(feature = "e2e")]
     e2e_persistence_faults: Arc<E2ePersistenceFaultState>,
+}
+
+#[cfg(feature = "e2e")]
+pub(crate) struct E2eSessionReplacement {
+    pub(crate) generation: u64,
+    pub(crate) state: crate::game::GameStateView,
 }
 
 struct ExitAttemptRecoveryGuard {
@@ -1920,6 +1944,86 @@ impl SaveCoordinator {
             .checked_add(1)
             .ok_or_else(GameError::save_write_failed)?;
         Ok(state.next_session_generation)
+    }
+
+    #[cfg(feature = "e2e")]
+    pub(crate) async fn replace_session_for_e2e(
+        &self,
+        app: &crate::AppState,
+        engine: GameEngine,
+    ) -> Result<E2eSessionReplacement, GameError> {
+        let view = engine.view()?;
+        {
+            let session = app.session.lock().map_err(|_| GameError::unavailable())?;
+            session.ensure_persistence_available()?;
+        }
+        {
+            let state = self.lock_state()?;
+            if state.exit_status == ExitStatusView::Saving {
+                return Err(GameError::persistence_operation_in_progress());
+            }
+        }
+
+        let _gate = app.replacement_gate.lock().await;
+        let _exit_transition = self
+            .exit_transition
+            .lock()
+            .map_err(|_| GameError::unavailable())?;
+        let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
+        session.ensure_persistence_available()?;
+        let mut state = self.lock_state()?;
+        if state.exit_status == ExitStatusView::Saving {
+            return Err(GameError::persistence_operation_in_progress());
+        }
+        let generation = state
+            .next_session_generation
+            .checked_add(1)
+            .ok_or_else(GameError::save_write_failed)?;
+        // Keep the coordinator state locked while invalidating the writer queue and
+        // installing the session. An active stale writer therefore cannot enqueue a
+        // follow-up between queue invalidation and the generation fence becoming live.
+        let minimum_cleanup_attempt = self.writer_queue.invalidate_queued_for_e2e()?;
+        state.next_session_generation = generation;
+        state.discovery_generation = state.discovery_generation.wrapping_add(1);
+        state.next_autosave_serial = state.next_autosave_serial.wrapping_add(1);
+        state.tickets.clear();
+        state.latest_by_intent.clear();
+        state.pending_autosave = None;
+        state.registered_autosave_targets.clear();
+        state.last_successful_write = None;
+        state.failed_write = None;
+        state.cleanup_failure = None;
+        state.minimum_cleanup_attempt = minimum_cleanup_attempt;
+        state.failure_challenges.clear();
+        state.persistence_health = PersistenceHealthView::Healthy;
+        state.thumbnail_activity = ThumbnailActivityView::Idle;
+        state.exit_status = ExitStatusView::Idle;
+        state.programmatic_exit_bypass = false;
+        state.exit_action_in_progress = false;
+        let health_subscribers = state.health_subscribers.clone();
+        let activity_subscribers = state.activity_subscribers.clone();
+        let exit_subscribers = state.exit_subscribers.clone();
+        *session = AppSession::installed(engine, generation, None);
+        self.e2e_persistence_faults.reset();
+        self.fail_next_schedule.store(false, Ordering::SeqCst);
+        self.fail_next_exit_prerequisite
+            .store(false, Ordering::SeqCst);
+        self.fail_next_cancel_guard_clear
+            .store(false, Ordering::SeqCst);
+        self.fail_next_exit_challenge.store(false, Ordering::SeqCst);
+        drop(state);
+        drop(session);
+
+        publish_health(&health_subscribers, &PersistenceHealthView::Healthy);
+        publish_activity(&activity_subscribers, &ThumbnailActivityView::Idle);
+        publish_exit(&exit_subscribers, &ExitStatusView::Idle);
+        self.ticket_updates.notify_waiters();
+        self.exclusive_updates.notify_waiters();
+
+        Ok(E2eSessionReplacement {
+            generation,
+            state: view,
+        })
     }
 
     pub(crate) async fn install_session(
@@ -3042,6 +3146,9 @@ impl SaveCoordinator {
         target: SaveSlotRef,
     ) -> Result<(), GameError> {
         let mut state = self.lock_state()?;
+        if session_generation < state.next_session_generation {
+            return Ok(());
+        }
         let identity = (session_generation, durable_revision);
         if state
             .registered_autosave_targets
@@ -3594,6 +3701,9 @@ impl SaveCoordinator {
         cleanup_diagnostic: Option<GameError>,
     ) {
         let (health, subscribers, cleanup_retry) = if let Ok(mut state) = self.state.lock() {
+            if receipt.session_generation < state.next_session_generation {
+                return;
+            }
             let completed_is_current = state
                 .pending_autosave
                 .as_ref()
@@ -3657,6 +3767,9 @@ impl SaveCoordinator {
         cleanup_diagnostic: Option<GameError>,
     ) {
         let (health, subscribers, cleanup_retry) = if let Ok(mut state) = self.state.lock() {
+            if receipt.session_generation < state.next_session_generation {
+                return;
+            }
             let receipt_identity = (receipt.session_generation, receipt.durable_revision);
             state
                 .registered_autosave_targets
@@ -3753,6 +3866,15 @@ impl SaveCoordinator {
 
     fn record_cleanup_failure(&self, owner: CleanupOwner, error: GameError) {
         let publication = if let Ok(mut state) = self.state.lock() {
+            let stale = match &owner {
+                CleanupOwner::Receipt(receipt) => {
+                    receipt.session_generation < state.next_session_generation
+                }
+                CleanupOwner::Attempt(attempt) => *attempt < state.minimum_cleanup_attempt,
+            };
+            if stale {
+                return;
+            }
             let replace = state
                 .cleanup_failure
                 .as_ref()
@@ -3783,6 +3905,9 @@ impl SaveCoordinator {
         error: GameError,
     ) {
         let publication = if let Ok(mut state) = self.state.lock() {
+            if session_generation < state.next_session_generation {
+                return;
+            }
             let failed = (session_generation, durable_revision);
             if state.pending_autosave.as_ref().is_some_and(|pending| {
                 pending.session_generation == session_generation
@@ -3823,6 +3948,9 @@ impl SaveCoordinator {
         let failed = (session_generation, durable_revision);
         let activity = capture_unavailable_activity();
         let (health_publication, activity_subscribers) = if let Ok(mut state) = self.state.lock() {
+            if session_generation < state.next_session_generation {
+                return;
+            }
             let health_publication = if state
                 .failed_write
                 .as_ref()
@@ -4260,6 +4388,8 @@ fn thumbnail_ticket_expiry_task(
 mod tests {
     mod acknowledgement;
     mod debounce;
+    #[cfg(feature = "e2e")]
+    mod e2e_replacement;
     mod exit_lifecycle;
     mod failure_token;
     mod flush;
