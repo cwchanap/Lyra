@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -11,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { analyzeE2eCiResults } from "./e2e-ci-results.mjs";
+import { runE2eAttempt, runE2eRunner } from "./e2e-runner-lifecycle.mjs";
 
 const PHASES_BY_SUITE = {
   smoke: ["smoke"],
@@ -129,7 +131,11 @@ function result({
     suite: phaseResults.at(-1)?.suite ?? null,
     attempt: finalAttempt,
     durationMs: phaseResults.at(-1)?.durationMs ?? 0,
-    runnerWallTimeMs: 500,
+    runnerWallTimeMs:
+      phaseResults.reduce(
+        (total, phaseResult) => total + phaseResult.durationMs,
+        0,
+      ) + 100,
     testOnlyTimeMs: phaseResults.reduce(
       (total, phaseResult) => total + phaseResult.durationMs,
       0,
@@ -168,6 +174,57 @@ const smokeChain = {
   artifactName: "tauri-e2e-gameplay",
 };
 
+async function produceSmokeResult({
+  attempts = 1,
+  supervisor = { cancelledSignal: null },
+  guardExitCode = 0,
+  applyCheckpoint = () => {},
+  cleanupRoots = () => {},
+} = {}) {
+  const runDirectory = mkdtempSync(
+    path.join(os.tmpdir(), "lyra-e2e-producer-result-"),
+  );
+  try {
+    const runner = await runE2eRunner({
+      chainId: "gameplay",
+      suiteIds: ["smoke"],
+      riskSelectedSuites: ["smoke"],
+      attempts,
+      forcedFull: false,
+      plannerReason: null,
+      runDirectory,
+      supervisor,
+      runGuard: async () => ({ exitCode: guardExitCode }),
+      rootKeys: ["smoke"],
+      createRoot: () => path.join(runDirectory, "unused-root"),
+      buildPhasePlan: (_suiteIds, directories) => [
+        { id: "smoke", root: "smoke", appDataDir: directories.smoke },
+      ],
+      suiteForPhase: () => "smoke",
+      applyCheckpoint,
+      createOutputDirectory: () => runDirectory,
+      runPhase: async () => ({ exitCode: 0 }),
+      captureFailureArtifacts() {},
+      runAttempt: (options) =>
+        runE2eAttempt({
+          ...options,
+          createOwnership: ({ rootKeys }) => ({
+            roots: rootKeys.map((key) => ({
+              key,
+              appDataDir: path.join(runDirectory, key),
+            })),
+          }),
+          cleanupRoots,
+          rootByKey: (ownership, key) =>
+            ownership.roots.find((root) => root.key === key).appDataDir,
+        }),
+    });
+    return structuredClone(runner.result);
+  } finally {
+    rmSync(runDirectory, { recursive: true, force: true });
+  }
+}
+
 test("accepts a complete smoke-only matrix", () => {
   const analysis = analyzeE2eCiResults({
     plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
@@ -177,6 +234,155 @@ test("accepts a complete smoke-only matrix", () => {
   assert.equal(analysis.status, "passed");
   assert.deepEqual(analysis.errors, []);
   assert.deepEqual(analysis.expectedChainIds, ["gameplay"]);
+});
+
+test("accepts a producer retry after setup fails before a phase result exists", async () => {
+  let checkpointCalls = 0;
+  const produced = await produceSmokeResult({
+    attempts: 2,
+    applyCheckpoint() {
+      checkpointCalls += 1;
+      if (checkpointCalls === 1) throw new Error("checkpoint setup failed");
+    },
+  });
+  assert.deepEqual(produced.firstAttemptFailures, [
+    { phase: "smoke", suite: "smoke", exitCode: 1 },
+  ]);
+  assert.deepEqual(produced.recoveredFlakes, ["smoke"]);
+  assert.deepEqual(
+    produced.phaseResults.map(({ attempt, result: phaseResult }) => ({
+      attempt,
+      result: phaseResult,
+    })),
+    [{ attempt: 2, result: "passed" }],
+  );
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [produced],
+  });
+  assert.equal(analysis.status, "passed");
+  assert.deepEqual(analysis.errors, []);
+  assert.deepEqual(analysis.routingAudit.recoveredFlakes, [
+    { chainId: "gameplay", suite: "smoke" },
+  ]);
+});
+
+test("accepts a producer pre-phase cancellation as structurally valid", async () => {
+  const produced = await produceSmokeResult({
+    supervisor: { cancelledSignal: "SIGTERM" },
+  });
+  assert.equal(produced.result, "cancelled");
+  assert.deepEqual(produced.phaseResults, []);
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [produced],
+  });
+  assert.equal(analysis.status, "failed");
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "cancelled-chain"),
+    true,
+  );
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    false,
+  );
+});
+
+test("recognizes a producer cleanup-triggered retry without inventing a phase failure", async () => {
+  let cleanupCalls = 0;
+  const produced = await produceSmokeResult({
+    attempts: 2,
+    cleanupRoots() {
+      cleanupCalls += 1;
+      if (cleanupCalls === 1) throw new Error("cleanup blocked");
+    },
+  });
+  assert.equal(produced.result, "passed");
+  assert.deepEqual(
+    produced.phaseResults.map(({ attempt, result: phaseResult }) => ({
+      attempt,
+      result: phaseResult,
+    })),
+    [
+      { attempt: 1, result: "passed" },
+      { attempt: 2, result: "passed" },
+    ],
+  );
+  assert.deepEqual(produced.cleanup, {
+    state: "failed",
+    attempts: [
+      { attempt: 1, state: "failed" },
+      { attempt: 2, state: "removed" },
+    ],
+  });
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [produced],
+  });
+  assert.equal(analysis.status, "failed");
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "cleanup-failed"),
+    true,
+  );
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    false,
+  );
+});
+
+test("accepts the producer binary-guard failure shape only as an operational failure", async () => {
+  const produced = await produceSmokeResult({ guardExitCode: 17 });
+  assert.deepEqual(produced.attempts, {
+    configured: 1,
+    used: 0,
+    retries: 0,
+  });
+  assert.deepEqual(produced.cleanup, { state: "not-required", attempts: [] });
+  assert.equal(produced.phase, "binary-guard");
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [produced],
+  });
+  assert.equal(analysis.status, "failed");
+  assert.deepEqual(
+    analysis.errors.map(({ code }) => code),
+    ["failed-chain"],
+  );
+});
+
+test("rejects a binary-guard manifest with a malformed cleanup container", async () => {
+  const malformed = await produceSmokeResult({ guardExitCode: 17 });
+  malformed.cleanup.attempts = null;
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [malformed],
+  });
+  assert.equal(analysis.status, "failed");
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
+  );
+});
+
+test("rejects attempts-used zero outside the producer binary guard", () => {
+  const malformed = result({ chainId: "gameplay", suites: ["smoke"] });
+  malformed.attempts = { configured: 1, used: 0, retries: 0 };
+  malformed.cleanup = { state: "not-required", attempts: [] };
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [malformed],
+  });
+  assert.equal(analysis.status, "failed");
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
+  );
 });
 
 test("accepts persistence-heavy routing only when all three chains are complete", () => {
@@ -689,6 +895,69 @@ test("rejects contradictory terminal, phase, timing, retry, and cleanup evidence
   }
 });
 
+test("rejects a terminal exit code that disagrees with its failed final phase", () => {
+  const gameplaySuites = ["smoke", "gameplay", "production-journey"];
+  const forcedPlan = plan({
+    suites: [
+      ...gameplaySuites,
+      "capture-proof",
+      "save-core",
+      "save-management",
+      "exit-lifecycle",
+    ],
+    chains: [
+      { chainId: "gameplay", suiteIds: gameplaySuites },
+      {
+        chainId: "persistence",
+        suiteIds: ["capture-proof", "save-core", "save-management"],
+      },
+      { chainId: "exit", suiteIds: ["exit-lifecycle"] },
+    ],
+    risk: ["smoke"],
+    forcedFull: true,
+    reason: "manual-override",
+  });
+  const contradictory = result({
+    chainId: "gameplay",
+    suites: gameplaySuites,
+    risk: ["smoke"],
+    forcedFull: true,
+    reason: "manual-override",
+    terminal: "failed",
+    finalFailedSuite: "production-journey",
+  });
+  contradictory.exitCode = 29;
+
+  const analysis = analyzeE2eCiResults({
+    plan: forcedPlan,
+    results: [contradictory],
+  });
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
+  );
+  assert.deepEqual(analysis.routingAudit.finalFailures[0], {
+    chainId: "gameplay",
+    suite: null,
+    classification: "indeterminate",
+  });
+});
+
+test("rejects runner wall time shorter than summed test-only time", () => {
+  const malformed = result({ chainId: "gameplay", suites: ["smoke"] });
+  malformed.runnerWallTimeMs = malformed.testOnlyTimeMs - 1;
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [malformed],
+  });
+  assert.equal(analysis.status, "failed");
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
+  );
+});
+
 test("rejects wrong canonical phase order on every represented attempt", () => {
   const suites = ["smoke", "gameplay", "production-journey"];
   const validPlan = plan({
@@ -801,6 +1070,50 @@ test("invented forced-full failure evidence remains indeterminate", () => {
     suite: null,
     classification: "indeterminate",
   });
+});
+
+test("CLI writes failed analysis and summary for a null planner matrix entry", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "lyra-e2e-analysis-"));
+  try {
+    const planFile = path.join(directory, "e2e-plan.json");
+    const resultsDirectory = path.join(directory, "results");
+    const analysisFile = path.join(directory, "analysis.json");
+    const summaryFile = path.join(directory, "summary.md");
+    mkdirSync(resultsDirectory);
+    const malformedPlan = plan({ suites: ["smoke"], chains: [smokeChain] });
+    malformedPlan.matrix.include = [null];
+    writeFileSync(planFile, JSON.stringify(malformedPlan));
+
+    const execution = spawnSync(
+      process.execPath,
+      [
+        new URL("./e2e-ci-results.mjs", import.meta.url).pathname,
+        "--plan-file",
+        planFile,
+        "--results-directory",
+        resultsDirectory,
+        "--analysis-file",
+        analysisFile,
+      ],
+      {
+        env: { ...process.env, GITHUB_STEP_SUMMARY: summaryFile },
+        encoding: "utf8",
+      },
+    );
+
+    assert.equal(execution.status, 1);
+    assert.equal(existsSync(analysisFile), true);
+    assert.equal(existsSync(summaryFile), true);
+    const analysis = JSON.parse(readFileSync(analysisFile, "utf8"));
+    assert.equal(analysis.status, "failed");
+    assert.equal(
+      analysis.errors.some(({ code }) => code === "malformed-plan"),
+      true,
+    );
+    assert.match(readFileSync(summaryFile, "utf8"), /malformed-plan/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("malformed attempts return failed analysis without throwing", () => {
