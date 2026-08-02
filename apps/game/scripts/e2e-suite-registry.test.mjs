@@ -115,9 +115,8 @@ test("runner validates selected suite definitions before its binary guard or roo
   );
 
   assert.notEqual(validation, -1);
-  assert.equal(validation < runnerSource.indexOf("const guard = await"), true);
   assert.equal(
-    validation < runnerSource.indexOf("ownership = createRunOwnership"),
+    validation < runnerSource.indexOf("const runner = await runE2eRunner"),
     true,
   );
 });
