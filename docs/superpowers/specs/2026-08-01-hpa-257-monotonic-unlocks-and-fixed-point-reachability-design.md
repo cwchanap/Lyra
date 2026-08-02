@@ -1,6 +1,6 @@
 # HPA-257 Monotonic Unlocks and Fixed-Point Reachability Design
 
-**Status:** Ready for review; revised after codebase alignment, self-review, and PR feedback  
+**Status:** Ready for review; revised after codebase alignment, self-review, and two PR-feedback passes  
 **Issue:** HPA-257 — Extend monotonic reveal/unlock expressions and add fixed-point reachability  
 **Date:** 2026-08-01
 
@@ -20,30 +20,35 @@ This focused design refines:
   recapture implementation;
 - the merged HPA-256 provenance, source-group, immutable supersession, and
   support-lineage contract;
-- the merged HPA-258 Case File, active-objective HUD, and save-recap work.
+- the merged HPA-258 Case File, objective HUD, and save-recap work.
 
 HPA-257 extends Lyra's existing positive unlock grammar and reveal pipeline so
 content can depend on durable story state without introducing mutable negative
-gates. It also adds compiler-wide positive fixed-point analysis that proves
-mandatory progression has an authored path and identifies optional dead content.
+gates. It adds a compiler-wide positive reachability analysis, ordered abstract
+reveal-batch interpretation, and a conservative primary-objective analysis that
+accounts for both strict sequencing and free-order exploration.
 
 This slice delivers:
 
-- shared parsing of `and`, `or`, parentheses, and `at_least`;
+- shared parsing of `and`, `or`, parentheses, and first-class nested
+  `at_least(count, ...)`;
 - positive predicates for asserted facts, resolved global questions, completed
   objectives, completed qualified analysis scenes/boards, and granted
   authorizations;
-- source-located validation of every new reference and count;
-- story-state reveal targets materialized through HPA-255 mutations;
-- one atomic/idempotent reveal pipeline shared by existing and future scene
-  runtimes;
+- explicit story-state reveal targets delegated to HPA-255 mutations;
+- one atomic/idempotent reveal pipeline shared by investigation,
+  interrogation, and future scene runtimes;
+- exact authored-order abstract interpretation of targets inside one reveal
+  list;
 - explicit authority-origin validation for authorization grants;
-- a normalized whole-corpus reachability graph and finite positive fixed point;
-- a separate per-node primary-objective abstract dataflow over the acyclic
-  dependency graph;
-- required-content errors and optional-content warnings;
-- strict self-reference and positive dependency-cycle rejection;
-- compiler, Rust, source-boundary, compatibility, and save/restore tests.
+- normalized whole-corpus positive reachability over existing specialized scene
+  analyses;
+- adapter-defined strict-order and free-order execution relations;
+- conservative may/must primary-objective state without exhaustive ordering
+  enumeration;
+- source-located errors for impossible required paths and deterministic warnings
+  for order-dependent paths;
+- compiler, Rust, ownership, compatibility, and save/restore tests.
 
 It does not add analysis-scene Markdown, analysis runtime/UI, request-denial
 mechanics, production story-state content, generic flags, arbitrary negation,
@@ -52,113 +57,108 @@ checking.
 
 ## 2. Approved decisions
 
-1. Ordinary authored progression remains positive and monotonic. Once a block
-   becomes visible or unlocked, no supported mutation can hide or re-lock it.
+1. Ordinary authored progression remains positive and monotonic. Once content is
+   visible or unlocked, no supported mutation hides or re-locks it.
 2. The language does not add generic `not`, inequality, absence predicates,
    mutable negative flags, or active-primary-objective predicates.
-3. Existing investigation and interrogation expression strings compile to the
-   same JSON trees and retain the same runtime meaning.
-4. `and` continues to bind more tightly than `or`; parentheses continue to
-   override precedence.
-5. `at_least(count, conditions...)` is a first-class n-ary expression node and
-   is not expanded into combinations of binary `and`/`or` nodes.
-6. `at_least` requires a positive base-10 integer count, a non-empty condition
-   list, and `count <= conditions.length`.
-7. Structurally duplicate child conditions inside one `at_least` are invalid;
-   one true condition cannot be authored twice to inflate the threshold.
-8. Nested `at_least`, `and`, `or`, and parentheses are supported in every unlock
-   context.
-9. The compiler shares combinator parsing internally but preserves separate
-   context-specific predicate unions. A predicate valid in one scene family is
-   not automatically valid in every scene family.
-10. Durable fact, global-question, objective, and authorization references use
-    game-global catalog IDs.
-11. Analysis scene and board completion references are always qualified. The
-    authoring form uses `@` separators and the emitted form uses structured
-    chapter/scene/board fields.
-12. HPA-257 defines qualified analysis reference types and registry interfaces;
-    HPA-259 supplies production analysis definitions and completes their
-    referential validation.
-13. Existing `question:<id> answered` remains the interrogation-local predicate.
-    The new global predicate is `question:<id> resolved`.
-14. Existing scene-local reveal target syntax remains valid without migration.
-15. New story reveal targets use explicit mutation-oriented prefixes such as
-    `assert_fact:` and `grant_authorization:`.
-16. An authored reveal batch is ordered for deterministic runtime processing but
-    becomes externally visible only after the whole command commits.
-17. Unlock conditions are re-evaluated after the reveal transaction, not between
-    individual targets in the same list.
-18. Runtime atomicity is owned by the existing `EngineRollbackSnapshot` command
-    transaction. Any failed target restores all rollback-tracked state.
-19. Runtime idempotence is composed from durable one-shot trigger state,
-    inventory/local-set behavior, and HPA-255's
-    `MutationOutcome::Changed | Unchanged` results.
-20. A reveal list is dispatched only when its owning trigger transitions from
-    not-consumed to consumed/completed. Re-examination, re-entry, repeated
-    correct submission, or repeated command delivery does not invoke the list a
-    second time.
-21. HPA-255 remains the sole owner of every story-state mutation.
-22. HPA-257's dispatcher calls `StoryState::set_primary_objective`; it never
-    writes objective progress or `active_primary_objective_id` directly.
-23. HPA-257 does not weaken HPA-255's rejection of
-    `completeCurrent: true` when the current and next primary are identical. The
-    one-shot trigger guard prevents an already-committed transition from being
-    re-invoked as a replay.
-24. Authored `complete_objective` may target only secondary objectives. Primary
-    completion is expressed through `set_primary_objective` with
-    `completeCurrent: true`.
-25. `reveal_objective` may reveal either objective kind without activating it.
-26. `set_primary_objective` accepts a primary objective ID or the reserved
-    literal `null`, plus an optional `complete_current` marker.
-27. Objective ID `null` is reserved and invalid in `story_catalog.md`. Compiler
-    and Rust catalog validation reject it so the clear-primary literal cannot
-    shadow a real objective.
-28. Question resolution is explicit. Asserting a candidate fact does not
-    automatically resolve questions that list it.
-29. An `assert_fact` target carries the fact intent only. The caller supplies
-    assertion origin and context-derived supporting records/facts.
-30. Existing investigation/interrogation scene-event assertions may use empty
-    support. Analysis templates may impose stronger support rules.
-31. Authorization grants require a represented authority context whose identity
-    matches the definition's `grantingAuthority`.
-32. Current investigation/interrogation blocks do not implicitly represent an
-    authority. HPA-264 owns the production request/hearing surface.
-33. Reachability is a finite, positive, existence-oriented may-analysis: it asks
-    whether at least one authored positive path can reach content.
-34. Existing investigation/interrogation specialized analyzers remain
-    authoritative for contradiction availability, forced optional phases,
-    guaranteed inventory intersections, and outro completion.
-35. The whole-corpus layer consumes normalized outputs from those analyzers; it
-    does not reimplement them.
-36. Direct self-reference and multi-node positive dependency cycles are rejected
-    strictly, even if a separate branch could seed one member.
-37. Existing legacy scene-local reachability errors retain their current error
-    behavior and codes.
-38. Newly modeled optional content produces a warning when unreachable;
-    mandatory content produces an error.
-39. A mandatory authorization requirement with no reachable matching authority
-    grant is an error.
-40. The compiler does not claim exhaustive proof of every possible ordering of
-    `setPrimaryObjective` events.
-41. Primary-objective analysis is a per-node, path-insensitive finite dataflow.
-    Candidate primaries are propagated only along dependency paths that can feed
-    the node, rather than through one corpus-global candidate set.
-42. At real merge points, candidate sets are unioned without retaining complete
-    path correlation. Ambiguous completion therefore remains conservative and
-    is surfaced as a warning.
-43. Runtime uniqueness remains structural through HPA-255's single
-    `activePrimaryObjectiveId` scalar.
-44. The story catalog schema remains version 2; reserving one semantic objective
-    ID does not add or remove a wire field.
-45. The save schema remains version 2. HPA-257 adds no generic reveal-event
-    ledger; one-shot ownership stays in subsystem progress state.
-46. Existing authored chapters require no migration and emit byte-identical
-    unlock/reveal JSON where they do not opt into new syntax.
-47. `@lyra/scene-types` does not gain global story definitions, hidden analysis
-    data, or the whole story reveal union.
-48. HPA-257 adds no frontend component or IPC command.
-49. No production `story_catalog.md` or Chapter 1 story file is changed in this
-    slice.
+3. Existing investigation/interrogation unlock expressions retain byte-identical
+   emitted JSON and runtime meaning.
+4. `and` binds more tightly than `or`; parentheses override precedence.
+5. `at_least` is an n-ary wire node and is never expanded into combinations of
+   binary `and`/`or` nodes.
+6. `at_least` requires a positive base-10 integer count, a non-empty child list,
+   and `count <= conditions.length`.
+7. Structurally duplicate `at_least` children are invalid. General Boolean
+   equivalence and commutative normalization are explicit non-goals.
+8. Investigation and interrogation opt into the shared story predicate and
+   story-target grammar by default in HPA-257. There is no per-file opt-in flag.
+9. Linear scenes do not opt in because their current format has no unlock or
+   reveal metadata.
+10. HPA-257 defines analysis reference/adapter interfaces and synthetic fixtures;
+    HPA-259 owns production analysis definitions and authoring.
+11. Existing interrogation-local `question:<id> answered` remains distinct from
+    global `question:<id> resolved`.
+12. Analysis scene/board references are fully qualified and never inferred from
+    a bare local ID.
+13. New story targets use mutation-oriented prefixes such as `assert_fact:` and
+    `set_primary_objective:` rather than overloading local target syntax.
+14. Objective ID `null` is reserved and invalid in `story_catalog.md` because
+    `set_primary_objective:null` means clear the active primary.
+15. Reveal targets are processed in authored list order, but their effects become
+    externally visible only if the whole gameplay command commits.
+16. Earlier targets in one list may satisfy prerequisites of later targets.
+17. If a later target fails, runtime rollback and compiler abstract simulation
+    discard every provisional effect from that list.
+18. Unlock conditions are re-evaluated after the complete reveal transaction,
+    never between targets in the same list.
+19. Runtime idempotence is owned by durable one-shot trigger progress plus
+    existing inventory/local-set behavior and HPA-255 mutation outcomes.
+20. A consumed trigger never redispatches its reveal list on re-examination,
+    re-entry, repeated correct submission, or repeated command delivery.
+21. HPA-255 remains the sole owner of story-state mutation semantics.
+22. The dispatcher calls `StoryState::set_primary_objective`; it never writes
+    objective progress or `active_primary_objective_id` directly.
+23. HPA-257 preserves HPA-255's rejection of completing the current primary while
+    retaining that same primary as next.
+24. Authored `complete_objective` may target only a secondary objective.
+25. Compiler startup validation and the Rust dispatcher both reject a primary
+    `completeObjective` target before calling HPA-255.
+26. Question resolution is explicit. Asserting a resolver-candidate fact does not
+    automatically resolve a question.
+27. Fact targets name propositions only. Scene/analysis adapters supply assertion
+    origin and support materialization.
+28. Current investigation/interrogation adapters provide no represented authority
+    context. A `grant_authorization` target in either family is therefore a
+    compile error in HPA-257.
+29. HPA-264 owns the production authority-event surface. HPA-257 owns target
+    parsing, runtime dispatch, authority matching, and grant-path validation.
+30. Existing specialized investigation/interrogation analyzers remain
+    authoritative for local gameplay semantics and guaranteed-flow results.
+31. The whole-corpus layer consumes normalized outputs from those analyzers; it
+    does not replace them.
+32. Positive dependency self-reference and multi-node cycles are rejected
+    strictly, even if an external branch could seed a member.
+33. Free-order execution relations are not positive dependency edges and are not
+    rejected as cycles. Mutual may-before relationships are expected in an
+    exploration region.
+34. Primary-objective flow is not a post-processing pass over a completed
+    positive fixed point. Positive reachability and primary abstract state are
+    solved together because primary completion may unlock more content.
+35. Scene adapters explicitly provide strict-order predecessors and conservative
+    may-execute-before relationships. The generic analyzer does not infer
+    free-order behavior from graph shape alone.
+36. The primary abstract domain tracks possible and guaranteed active/completed
+    values. It does not enumerate every event permutation.
+37. Free-order ambiguity cannot cause a dynamic order-dependent hard error unless
+    invalidity is proven for all valid modeled inputs.
+38. A transition that succeeds for some modeled orders and fails for others emits
+    a deterministic warning and contributes effects only to the successful
+    abstract paths.
+39. A mandatory path that depends on an order-conditional primary effect is not
+    silently accepted; its producer warning identifies the ambiguity.
+40. Unknown/secondary primary targets and reserved IDs are order-independent hard
+    errors.
+41. A next primary that is guaranteed already completed is an always-invalid hard
+    error. A next primary that may already be completed is order-dependent and
+    warns.
+42. Compiler primary analysis assumes a valid HPA-255 state. Corrupt states whose
+    active ID is absent from objective progress remain runtime/restore errors and
+    are not treated as authorable paths.
+43. Existing legacy local reachability diagnostics retain their codes and
+    severity.
+44. Newly modeled unreachable mandatory content is an error; explicitly optional
+    unreachable content is a warning.
+45. Migration-origin mutations are not authored reachability producers unless a
+    fixture explicitly seeds their resulting progress.
+46. The story catalog schema remains version 2. HPA-257 adds validation but no
+    catalog field.
+47. The save schema remains version 2. HPA-257 adds no generic applied-event
+    ledger; subsystem trigger progress remains authoritative.
+48. `@lyra/scene-types` continues to own only the current scene-local editor
+    contract. Global story mutations and hidden analysis data remain outside it.
+49. HPA-257 adds no frontend component, IPC command, or production story edit.
+50. TypeScript and Rust expression evaluators are separate implementations but
+    must pass one semantics-parity fixture corpus.
 
 ## 3. Current repository constraints
 
@@ -166,61 +166,86 @@ checking.
 
 The current compiler:
 
-- parses investigation and interrogation unlock expressions through parallel
-  recursive-descent paths in `parser-unlock.ts`;
-- supports binary `and`/`or`, parentheses, and context-specific predicates;
+- has parallel investigation/interrogation recursive-descent paths in
+  `parser-unlock.ts`;
+- supports binary `and`/`or` and parentheses but no threshold node;
+- uses `consumeWord` with a current boundary of whitespace or parentheses, so
+  comma must become a delimiter for `at_least` or the parser must switch to an
+  equivalent token-kind implementation;
 - models investigation and interrogation expressions as separate recursive
   unions in `types.ts`;
-- parses reveal lists independently in investigation and interrogation parsers;
-- validates scene-local references and global evidence/statement IDs in
-  `validator.ts`;
-- contains specialized fixed-point logic for investigation block reachability,
-  guaranteed inventory, interrogation completion, contradiction availability,
+- parses reveal lists separately in `parser-investigation.ts` and
+  `parser-interrogation.ts`;
+- contains substantial specialized reachability logic for investigation blocks,
+  inventory guarantees, interrogation completion, contradiction availability,
   and forced optional phases;
-- already has a non-blocking warning channel;
-- emits generated scene JSON without a standalone scene-schema version;
+- has a deterministic non-blocking warning channel;
 - computes package content identity from canonical emitted resources.
 
-HPA-257 closes three duplication risks without erasing scene-local scope:
-
-1. combinator parsing is duplicated between scene families;
-2. expression evaluation is duplicated in compiler helpers and Rust evaluators;
-3. reveal application is split between investigation and interrogation paths.
+The implementation must share combinator and story-target parsing without
+flattening context-specific predicate/target validity.
 
 ### 3.2 Runtime
 
 The current runtime:
 
-- mirrors the two expression trees in `game/schema.rs`;
-- evaluates them through separate traits/functions in `game/unlock.rs`;
-- applies scene reveals in `game/reveals.rs`;
-- owns command rollback through the extracted transaction seam;
-- owns inventory acquisition and durable acquisition events through the shared
-  acquisition context;
-- owns sparse durable story state and the active-primary scalar in `game/story/`;
-- exposes HPA-255 mutation methods only inside `crate::game`;
-- persists story state, scene progress, inventory, dialogue, and acquisitions
-  through the existing save system.
+- mirrors scene-specific expression trees in `game/schema.rs`;
+- evaluates them through separate Rust paths in `game/unlock.rs`;
+- applies investigation/interrogation reveals in `game/reveals.rs`;
+- processes current reveal targets in authored order;
+- owns atomic command rollback through `EngineRollbackSnapshot`;
+- owns evidence/statement acquisition through `AcquisitionCtx`;
+- stores facts, questions, objectives, authorizations, and the one active primary
+  in `game/story/`;
+- exposes HPA-255 mutation methods with `pub(in crate::game)` visibility;
+- persists local trigger progress, story state, inventory, dialogue, and
+  acquisition state through save schema v2.
 
-`StoryState` fields are not a public mutation surface for `game/reveals.rs`.
-Rust module privacy and an explicit source-level test protect that boundary.
+HPA-255 currently rejects:
 
-### 3.3 Existing scene behavior
+- unknown next objective IDs;
+- secondary next objectives;
+- next primaries already completed;
+- `completeCurrent` when current and next are the same non-null ID;
+- completing an active objective whose progress entry is missing.
 
-Existing Chapter 1 content uses only legacy local predicates and targets. Its
-compiled expression/reveal JSON is a compatibility golden. HPA-257 must not:
+HPA-257's compiler models the first four author-reachable conditions. The fifth
+is excluded by the valid-state invariant and remains runtime defense-in-depth.
 
-- reorder or flatten existing binary expression nodes;
-- rewrite legacy reveal lists;
-- change the meaning of `question answered` or `phase completed`;
-- change which existing blocks are required or unreachable;
-- change existing dialogue/acquisition ordering.
+### 3.3 Free-order gameplay
+
+Investigation blocks are often executable in either order after entering a
+location. Interrogation also contains authored choices whose runtime order is not
+fully represented by a producer-to-consumer unlock graph.
+
+Therefore this graph is insufficient by itself:
+
+```text
+entry -> hotspot_a
+entry -> hotspot_b
+```
+
+If both hotspots contain primary transitions, either may precede the other at
+runtime even though neither has an unlock edge to its sibling. Scene adapters
+must provide that execution relationship explicitly.
+
+### 3.4 Legacy behavior
+
+Existing Chapter 1 content uses only legacy local predicates/targets. HPA-257
+must not:
+
+- reorder or flatten existing expression trees;
+- rewrite existing reveal lists;
+- change local question/phase meanings;
+- change required/unreachable classification;
+- change first-use versus re-examination dialogue ordering;
+- change generated content revision when new syntax is unused.
 
 ## 4. Goals and invariants
 
 ### 4.1 Positive monotonicity
 
-Every author-visible predicate observes state that can move only from false to
+Every author-visible unlock predicate observes progress that only moves false to
 true:
 
 - evidence collected;
@@ -232,45 +257,38 @@ true:
 - fact asserted;
 - global question resolved;
 - objective completed;
-- analysis board completed;
-- analysis scene completed;
+- analysis scene/board completed;
 - authorization granted.
 
-`setPrimaryObjective` may replace or clear the active scalar, but active state is
-not an unlock predicate. It may reveal a next objective and complete the current
-objective; neither removes positive progress.
-
-For every supported expression `E` and valid authored mutation `m`:
+Active-primary replacement is not observable by unlock expressions. For every
+supported expression `E` and valid positive mutation `m`:
 
 ```text
-E(state) = true  ⇒  E(m(state)) = true
+E(state) = true  =>  E(m(state)) = true
 ```
 
-### 4.2 Definitions, progress, and effects remain separate
+### 4.2 Definition, progress, and effect separation
 
-- Catalog and scene files define IDs, copy, expressions, and effects.
-- Runtime state stores acquired/revealed/completed/granted progress only.
-- Unlock expressions inspect progress and never mutate it.
-- Reveal targets describe effects without copying catalog prose.
-- Saves store stable IDs and progress, not expression source text.
+- Catalog/scene files define IDs, labels, conditions, and effects.
+- Runtime state stores acquired/revealed/completed/granted progress.
+- Expressions inspect progress and never mutate it.
+- Targets describe effects and never copy catalog prose.
+- Saves store stable IDs/progress, not expression source text.
 
 ### 4.3 One mutation owner
 
-The reveal layer resolves targets and supplies context, while mutation semantics
-remain owned by:
+Mutation semantics remain owned by:
 
 - `Inventory`/`AcquisitionCtx` for evidence and statements;
-- scene-state methods for local visibility/completion;
-- HPA-255 `StoryState` methods for story targets.
+- local scene-state methods for local visibility/completion;
+- HPA-255 `StoryState` methods for global progress.
 
-No second fact, question, objective, or authorization state machine is added.
+The reveal layer resolves targets, supplies context, and enforces authored-target
+restrictions that are intentionally narrower than HPA-255's internal API.
 
 ## 5. Positive expression authoring grammar
 
 ### 5.1 Grammar
-
-The shared parser recognizes this grammar, parameterized by the allowed
-predicate set:
 
 ```text
 expr          := or_expr
@@ -283,13 +301,33 @@ at_least      := "at_least" "(" count "," expr ("," expr)* ")"
 count         := base-10 positive integer
 ```
 
-The comma after `count` and at least one child expression are required.
-Whitespace may appear around delimiters and operators. `at_least(...)` is an
-atom; each child is a full expression.
+`and > or`. `at_least` is an atom, while each child is a full expression.
+Whitespace is optional around commas and parentheses. The parser must accept:
 
-### 5.2 Legacy predicates
+```text
+at_least(1,fact:a asserted)
+at_least(2, fact:a asserted,fact:b asserted)
+```
 
-Investigation continues to allow:
+The implementation plan must explicitly update comma tokenization/word-boundary
+behavior and add no-whitespace comma tests.
+
+### 5.2 Scene-family matrix
+
+| Scene/runtime family | Story predicates | Story targets | Authority grant in HPA-257 |
+|---|---|---|---|
+| Investigation | enabled by default | enabled by default | parsed, then rejected because authority context is null |
+| Interrogation | enabled by default | enabled by default | parsed, then rejected because authority context is null |
+| Linear scene | not supported; no unlock/reveal metadata | not supported | not supported |
+| Synthetic analysis fixture | enabled through analysis registry adapter | enabled through fixture adapter | allowed only when fixture registers matching authority context |
+| Production analysis | HPA-259 | HPA-259 runtime integration | no institutional grant unless a later authority adapter supplies context |
+| Production request/hearing | future HPA-264 adapter | future HPA-264 adapter | allowed with matching represented authority |
+
+There is no `Enable Story Predicates` metadata flag.
+
+### 5.3 Legacy predicates
+
+Investigation:
 
 ```text
 evidence:<id> collected
@@ -298,7 +336,7 @@ topic:<character_id>@<topic_id> discussed
 hotspot:<id> investigated
 ```
 
-Interrogation continues to allow:
+Interrogation:
 
 ```text
 evidence:<id> collected
@@ -307,9 +345,7 @@ question:<local_question_id> answered
 phase:<local_phase_id> completed
 ```
 
-### 5.3 Shared story predicates
-
-A scene family that opts into the shared story set may use:
+### 5.4 Shared story predicates
 
 ```text
 fact:<id> asserted
@@ -320,41 +356,19 @@ analysis_scene:<chapter_id>@<scene_id> completed
 analysis_board:<chapter_id>@<scene_id>@<board_id> completed
 ```
 
-Examples:
+`objective_revealed:<id>` is an internal reachability atom only. There is no
+`objective:<id> revealed` authoring predicate in HPA-257.
 
-```text
-fact:door_timeline_conflict asserted and
-objective:prepare_narrow_lock_request completed
+### 5.5 Qualified analysis references
 
-at_least(
-  2,
-  fact:door_timeline_conflict asserted,
-  question:who_entered_first resolved,
-  authorization:narrow_lock_export granted
-)
-
-at_least(
-  2,
-  fact:a asserted,
-  (fact:b asserted or fact:c asserted),
-  at_least(
-    1,
-    objective:request_ready completed,
-    authorization:limited_export granted
-  )
-)
-```
-
-### 5.4 Qualified analysis references
-
-Authoring uses slug segments separated by `@`:
+Authoring uses `@`-qualified slug segments:
 
 ```text
 analysis_scene:chapter_1@analysis_scene_8_5 completed
 analysis_board:chapter_1@analysis_scene_8_5@source_board completed
 ```
 
-Emitted values are structured:
+Emitted references are structured:
 
 ```ts
 type AnalysisSceneRef = {
@@ -369,63 +383,46 @@ type AnalysisBoardRef = {
 };
 ```
 
-Every segment uses `^[a-z0-9_]+$`. Missing, extra, empty, or bare local segments
-are errors. Until HPA-259 registers production definitions, a production
-analysis predicate is unresolved; synthetic HPA-257 fixtures register qualified
-definitions directly.
+Every segment matches `^[a-z0-9_]+$`. Missing, extra, empty, or bare local
+segments fail. HPA-257 fixtures register definitions through the
+`AnalysisDefinitionRegistry` hook named in §15.1; HPA-259 provides production
+registrations.
 
-### 5.5 `at_least` validation and meaning
+### 5.6 `at_least` validation
 
-The compiler rejects:
+Reject:
 
-- count `0`;
-- negative, signed, decimal, hexadecimal, or fractional counts;
-- an empty condition list;
-- count larger than the child count;
-- structurally duplicate normalized child expressions;
-- missing commas or closing parentheses.
+- zero, negative, signed, decimal, hexadecimal, or fractional counts;
+- an empty child list;
+- count larger than child count;
+- structurally duplicate normalized children;
+- malformed delimiters.
 
-Structural duplicate means equality of emitted child trees after redundant
-parentheses are removed. The compiler deliberately does not reorder commutative
-`and`/`or` children or prove general Boolean equivalence. Therefore these are
-structurally different and remain accepted:
+Structural equality compares emitted child trees after redundant parentheses are
+removed. It does not reorder commutative children. Therefore these remain
+accepted as structurally different:
 
 ```text
 (fact:a asserted or fact:b asserted)
 (fact:b asserted or fact:a asserted)
 ```
 
-This tradeoff avoids a Boolean-normalization subsystem. It catches the common
-accidental duplicate while permitting semantically overlapping expressions.
-Runtime counts child positions whose expressions evaluate true.
+Runtime counts true child positions.
 
-Valid edges include:
-
-```text
-at_least(1, fact:a asserted)
-at_least(3, fact:a asserted, fact:b asserted, fact:c asserted)
-```
-
-### 5.6 No negative forms
+### 5.7 No negative or active forms
 
 These remain invalid:
 
 ```text
 not fact:a asserted
-fact:a not asserted
 objective:a incomplete
 authorization:a missing
 active_primary_objective:a
 ```
 
-Temporary presentation state, active selection, the current primary, and absence
-are not authored unlock conditions.
-
 ## 6. Compiler and wire expression model
 
-### 6.1 Compiler-internal generic core
-
-The compiler may use:
+### 6.1 Compiler core
 
 ```ts
 type PositiveExpression<Predicate> =
@@ -442,7 +439,7 @@ type PositiveExpression<Predicate> =
   | Predicate;
 ```
 
-Concrete context unions remain separate:
+Concrete unions remain context-specific:
 
 ```ts
 type InvestigationUnlockExpr = PositiveExpression<
@@ -454,12 +451,9 @@ type InterrogationUnlockExpr = PositiveExpression<
 >;
 ```
 
-The generic is compiler-internal; it does not require generic published wire
-types or movement into `@lyra/scene-types`.
-
 ### 6.2 Emitted JSON
 
-Legacy binary nodes remain byte-identical. The new n-ary node is:
+Legacy binary nodes remain byte-identical. New threshold shape:
 
 ```json
 {
@@ -473,7 +467,7 @@ Legacy binary nodes remain byte-identical. The new n-ary node is:
 }
 ```
 
-New predicate shapes are:
+New story predicate shapes:
 
 ```ts
 type StoryPredicate =
@@ -494,27 +488,29 @@ type StoryPredicate =
   | { predicate: "authorization_granted"; id: string };
 ```
 
-### 6.3 Rust schema and startup validation
+### 6.3 Rust schema/startup validation
 
 Rust keeps concrete investigation/interrogation enums so serde rejects
-context-invalid predicates. Both gain `AtLeast` and shared story predicate
-variants.
+context-invalid local predicates. Both gain `AtLeast` and story variants.
 
-Defense-in-depth startup validation checks:
+Startup semantic validation checks:
 
-- positive count, non-empty conditions, and count not exceeding length;
-- no structurally duplicate children;
+- threshold count/children/duplicates;
 - qualified slug segments;
-- referenced catalog/analysis definitions;
-- reserved objective ID `null` in the loaded catalog.
+- catalog/analysis references;
+- reserved objective ID `null`;
+- primary `completeObjective` targets;
+- target kind restrictions and authority context registered in the emitted
+  definition.
 
-The compiler remains responsible for source-located authoring diagnostics.
+Compiler diagnostics remain source-located; runtime loading protects against
+hand-edited resources.
 
 ## 7. Story reveal authoring contract
 
 ### 7.1 Existing local targets
 
-Current bracketed forms remain valid in their existing scene contexts:
+Current forms remain valid in their current families:
 
 ```text
 [evidence:<id>]
@@ -526,9 +522,7 @@ Current bracketed forms remain valid in their existing scene contexts:
 [phase:<local_phase_id>]
 ```
 
-### 7.2 New story targets and reserved `null`
-
-New forms are:
+### 7.2 Story targets
 
 ```text
 [assert_fact:<fact_id>]
@@ -543,29 +537,11 @@ New forms are:
 [grant_authorization:<authorization_id>]
 ```
 
-`null` is a reserved literal only for `set_primary_objective`; it means clear the
-active primary. It is not an objective ID. Because `null` otherwise satisfies
-the repository slug grammar, HPA-257 adds explicit catalog validation:
+`null` is reserved only in `set_primary_objective`. Compiler catalog validation
+rejects objective heading `{#null}` at its source line; Rust rejects the same
+catalog condition. Other typed namespaces may use slug `null`.
 
-- an objective heading with `{#null}` fails at the heading line;
-- the runtime rejects a hand-edited catalog containing objective ID `null`;
-- other typed namespaces may still use slug `null` because they do not collide
-  with this target grammar.
-
-Target items remain comma-separated in the existing `Reveals` list. The
-semicolon belongs only to `complete_current`.
-
-Examples:
-
-```text
-- **Reveals:** [assert_fact:door_timeline_conflict, resolve_question:who_entered_first@door_timeline_conflict]
-
-- **Reveals:** [complete_objective:prepare_request, set_primary_objective:present_request; complete_current]
-
-- **Reveals:** [grant_authorization:narrow_lock_export]
-```
-
-### 7.3 Emitted story target union
+### 7.3 Wire union
 
 ```ts
 type StoryRevealTarget =
@@ -582,13 +558,40 @@ type StoryRevealTarget =
   | { kind: "grantAuthorization"; authorizationId: string };
 ```
 
-Compiler scene JSON composes the existing local target union with this story
-union. `@lyra/scene-types` retains the local subset.
+Compiler scene JSON composes the local union with `StoryRevealTarget` without
+moving the global union into `@lyra/scene-types`.
 
-### 7.4 Fact support materialization
+### 7.4 Exact duplicate/conflict rules
 
-`assertFact` names the proposition; it does not copy support into the token. The
-runtime dispatcher receives:
+Normalize every story target to its discriminant and fields.
+
+- Two targets with the same discriminant and identical normalized fields are
+  exact duplicates and fail `duplicateStoryRevealTarget`.
+- Two `assertFact` targets for the same fact are duplicates.
+- Two `resolveQuestion` targets with the same question and fact are duplicates.
+- Two `resolveQuestion` targets with the same question but different facts are
+  conflicting and fail `conflictingQuestionResolution`.
+- More than one `setPrimaryObjective` target is invalid regardless of whether
+  fields are equal; exact equality reports duplicate, differing fields report
+  `multiplePrimaryTransitions`.
+- Different discriminants are not duplicates. For example,
+  `revealObjective:X` followed by `completeObjective:X` is interpreted in order.
+- Existing local-target duplicate behavior is unchanged.
+
+### 7.5 Context-free validation
+
+Before reachability:
+
+- resolve every target definition;
+- validate question resolver membership in `resolvedByFactIds`;
+- validate non-null set-primary target kind;
+- reject primary `completeObjective`;
+- enforce duplicate/conflict rules;
+- enforce authority-context presence/match.
+
+This phase does not assume a current primary or completed-objective set.
+
+### 7.6 Fact support materialization
 
 ```ts
 type FactSupport = {
@@ -603,145 +606,89 @@ type StoryRevealMaterializationContext = {
 };
 ```
 
-For current scene events, absent support materializes as empty lists. Future
-analysis resolution supplies accepted support through the same interface.
-HPA-257 never infers support from nearby inventory or dialogue.
-
-### 7.5 Context-free batch validation
-
-Before reachability analysis, one reveal list is validated without assuming a
-current primary objective. The compiler rejects:
-
-- duplicate identical story targets;
-- two different `resolveQuestion` targets for one question;
-- more than one `setPrimaryObjective` target;
-- `completeObjective` targeting a primary objective;
-- unresolved target definitions;
-- an authorization grant outside registered authority context;
-- authority mismatch.
-
-This phase does **not** reject
-`set_primary_objective:X; complete_current` merely because `X` could be current.
-Whether that transition is always invalid, conditionally invalid, or valid
-depends on primary-objective dataflow and is decided in §11.
-
-### 7.6 Flow-informed transition validation
-
-After positive reachability and dependency-cycle validation, the primary
-abstract pass evaluates each reachable `setPrimaryObjective` producer against
-its per-node input candidates:
-
-- no valid candidate state: hard error;
-- valid and invalid candidate states: conservative ordering warning, and only
-  valid candidates contribute abstract outputs;
-- all candidate states valid: no transition diagnostic.
-
-This keeps local batch validation independent from fixed-point state while still
-catching a uniquely provable runtime rejection.
+Current scene events may supply empty support. Future analysis adapters supply
+accepted support. HPA-257 never infers support from nearby inventory/dialogue.
 
 ## 8. Runtime reveal pipeline
 
-### 8.1 Trigger guard and shared dispatcher
+### 8.1 Trigger guard
 
-Every reveal list has a durable one-shot trigger supplied by its scene runtime,
-including first investigation entry/inspection/discussion, first interrogation
-breakthrough, future board completion, and future authority events.
+Every reveal list has an owning durable one-shot trigger, including first
+sublocation entry, first hotspot inspection, first topic discussion, first
+interrogation breakthrough, and future board/authority-event completion.
 
-The owner checks and transitions consumed/completed state inside the same command
-transaction before invoking the shared dispatcher. Re-examination and completed
-review paths do not invoke reveals.
+Inside one command transaction, the runtime:
 
-Conceptually:
-
-```rust
-fn apply_story_reveals(
-    catalog: &StoryCatalog,
-    state: &mut StoryState,
-    targets: &[StoryRevealTarget],
-    context: &StoryRevealMaterializationContext,
-) -> Result<StoryRevealOutcome, GameError>;
-```
-
-Existing investigation/interrogation functions remain thin wrappers that:
-
-1. verify the owning trigger has not fired;
-2. transition durable trigger progress;
-3. begin with authored trigger dialogue;
-4. process targets in authored order;
-5. delegate inventory targets to `AcquisitionCtx`;
-6. delegate local targets to scene state;
-7. delegate story targets to `apply_story_reveals`;
-8. append first-acquisition dialogue only on change;
-9. return ordered dialogue segments to the existing queue installer.
+1. verifies the trigger is unconsumed;
+2. transitions trigger progress provisionally;
+3. processes targets in authored order;
+4. installs dialogue/results only after successful processing;
+5. rolls back trigger and every other field on error.
 
 No generic `appliedStoryEventIds` ledger is added.
 
-### 8.2 Mutation mapping
+### 8.2 Shared dispatcher and mutation map
 
-| Story target | HPA-255 mutation |
+`game/reveals.rs` remains the integration owner.
+
+| Story target | Runtime action |
 |---|---|
-| `assertFact` | `StoryState::assert_fact` |
-| `revealQuestion` | `StoryState::reveal_question` |
-| `resolveQuestion` | `StoryState::resolve_question` |
-| `revealObjective` | `StoryState::reveal_objective` |
-| `completeObjective` | `StoryState::complete_objective` |
-| `setPrimaryObjective` | `StoryState::set_primary_objective` |
-| `grantAuthorization` | `StoryState::grant_authorization` |
+| `assertFact` | validate materialization, call `StoryState::assert_fact` |
+| `revealQuestion` | call `StoryState::reveal_question` |
+| `resolveQuestion` | call `StoryState::resolve_question` |
+| `revealObjective` | call `StoryState::reveal_objective` |
+| `completeObjective` | verify secondary, then call `StoryState::complete_objective` |
+| `setPrimaryObjective` | call `StoryState::set_primary_objective` |
+| `grantAuthorization` | verify represented authority, then call `StoryState::grant_authorization` |
 
-The dispatcher adds only context validation not owned by HPA-255, such as
-represented-authority matching and fact-support materialization.
+The secondary-objective check is repeated in Rust even though HPA-255's internal
+`complete_objective` can complete a primary. Authored resources intentionally use
+a narrower contract than the internal mutation API.
 
-### 8.3 Assertion origin
+### 8.3 Authority context
 
-Story mutations receive a durable origin built from the triggering block:
-
-- investigation sublocation, hotspot, or topic;
-- interrogation phase, inquiry question, or testimony line;
-- future story event or analysis board.
-
-The existing HPA-255 `StoryEventBlockKind` contract is reused. HPA-257 does not
-add an origin variant.
-
-### 8.4 Authority context
-
-`grantAuthorization` requires:
+A grant requires:
 
 1. an authorization definition;
-2. non-null represented-authority identity from the caller's registered event;
-3. exact equality with `grantingAuthority`;
-4. a normal scene/analysis assertion origin.
+2. a non-null represented authority supplied by a registered adapter;
+3. equality with `grantingAuthority`;
+4. a valid assertion origin.
 
-Mismatch fails the transaction. Ordinary hotspots, topics, and analysis
-workbenches cannot grant institutional authority merely by listing the target.
-Migrations continue to call HPA-255 directly.
+Investigation and interrogation supply `representedAuthority = null` in
+HPA-257. Therefore every grant target in those families fails compilation and
+runtime startup validation. Synthetic fixtures may register authority context;
+production authority events arrive with HPA-264.
 
-### 8.5 Atomicity
+Migration APIs may call HPA-255 directly. Migration progress is not an authored
+producer in static analysis unless explicitly included in fixture seeds.
 
-Trigger transition and reveal dispatch run in the same command transaction. If
-the final effect fails, the trigger remains unconsumed and no earlier local,
-inventory, story, acquisition, or dialogue effect remains installed.
+### 8.4 Atomicity
 
-The dispatcher never exposes partial success.
+Target methods may validate/mutate one effect at a time, but command-level
+rollback owns batch atomicity. A failure on the final target restores:
 
-### 8.6 Idempotence
+- trigger progress;
+- local scene progress/overrides;
+- inventory and acquisition events;
+- story facts/questions/objectives/authorizations;
+- active primary;
+- dialogue/history and command generation state.
 
-Idempotence is defined at the complete authored-event boundary:
+### 8.5 Idempotence
 
-- consumed/completed triggers skip dispatch;
-- repeated command delivery returns existing state without replay;
+Idempotence is defined at the authored-event boundary:
+
+- consumed triggers skip dispatch;
 - distinct valid fact events may union support while preserving first origin;
-- repeated question reveal/resolution and grants use HPA-255 semantics;
+- repeated question reveal/resolution and grant use HPA-255 outcomes;
 - resolver replacement remains invalid;
 - repeated inventory targets do not append acquisition dialogue/events;
-- local override sets do not duplicate entries;
-- a committed `completeCurrent` transition is never replayed, so HPA-255's
-  same-current/next rejection remains intact.
+- local sets do not duplicate entries;
+- committed `completeCurrent` transitions are never replayed.
 
 ## 9. Runtime expression evaluation
 
-### 9.1 Context split
-
-Rust retains scene-local evaluation methods and composes them with:
+Rust composes scene-local contexts with:
 
 ```rust
 trait StoryUnlockContext {
@@ -759,40 +706,35 @@ trait StoryUnlockContext {
 }
 ```
 
-HPA-259 supplies analysis completion state.
-
-### 9.2 `at_least`
+For `at_least`:
 
 ```text
-true_count = number of child conditions evaluating true
-result = true_count >= count
+true_count := number of true child expressions
+result := true_count >= count
 ```
 
-The evaluator may short-circuit and has no side effects.
+Evaluation is side-effect-free and may short-circuit.
 
-### 9.3 Monotonic property tests
+A shared fixture corpus is evaluated by TypeScript and Rust against identical
+truth assignments. Expected Boolean results must match for legacy predicates,
+story predicates, nesting, thresholds, and mixed combinators.
 
-Representative expression trees receive every supported positive mutation.
-Once true, an expression must remain true. Tests include nested thresholds,
-local/story predicates, and mixed binary trees. Active-primary replacement
-cannot affect truth because active status is not observable.
-
-## 10. Whole-corpus reachability architecture
+## 10. Normalized reachability and ordering model
 
 ### 10.1 Specialized analysis remains authoritative
 
-The generic graph does not reimplement:
+Existing scene analyzers continue to decide:
 
-- investigation sublocation/hotspot/topic reachability;
-- guaranteed versus obtainable entry reveals;
-- contradiction target availability;
+- local block reachability;
+- guaranteed versus obtainable inventory;
+- contradiction availability;
 - intersections across alternative correct lines;
-- required/effectively-forced optional phases;
-- explicit/automatic outro completion.
+- required/effectively forced optional phases;
+- scene outro completion.
 
-Specialized analyzers expose normalized nodes and effects.
+They export normalized nodes rather than being replaced.
 
-### 10.2 Normalized node model
+### 10.2 Node model
 
 ```ts
 type ReachabilityRequirement = "mandatory" | "optional";
@@ -803,17 +745,52 @@ type ReachabilityNode = {
   initiallyReachable: boolean;
   condition: PositiveExpression<ReachabilityPredicate> | null;
   implicitPrerequisites: ReachabilityPredicate[];
-  effects: ReachabilityEffect[];
+  effects: ReachabilityEffect[]; // authored order retained
   representedAuthority: string | null;
+
+  // Runtime ordering supplied by the scene adapter.
+  strictPredecessorKeys: string[];
+  mayExecuteBeforeKeys: string[];
+  freeOrderRegionId: string | null;
+
   sourceFile: string;
   line: number;
 };
 ```
 
-Adapters provide stable keys, locations, conditions, prerequisites, effects, and
-requirement classification. The normalized module does not parse Markdown.
+`strictPredecessorKeys` means the predecessor must execute/complete before this
+node on every runtime path represented by the adapter.
 
-### 10.3 Positive atoms
+`mayExecuteBeforeKeys` is a conservative superset of nodes that can execute
+before this node on at least one legal path/order. It includes strict
+predecessors and eligible free-order peers. A compact region representation is
+allowed internally, but normalized tests assert the same relation.
+
+`freeOrderRegionId` groups mutually orderable exploration events for diagnostics
+and fixture readability. Membership alone does not imply every pair is
+orderable; the adapter's may-before relation is authoritative.
+
+### 10.3 Edge ownership
+
+Primary-flow ordering uses four distinct sources:
+
+1. **Strict scene/chapter sequencing** supplied by adapters, including earlier
+   scene completion before later scene entry.
+2. **Positive prerequisite producers** that can satisfy unlock conditions or
+   implicit prerequisites.
+3. **Free-order may-before pairs** supplied by specialized adapters for events
+   that players can execute in either order.
+4. **Authored target order inside one node**, handled locally by §11.4 and not
+   represented as inter-node edges.
+
+The generic analyzer must not infer free-order siblings merely because two nodes
+share an entry predecessor. Investigation/interrogation adapters know their
+runtime navigation and provide the relation.
+
+Positive dependency SCC validation uses prerequisite edges only. It does not run
+on mutual free-order may-before pairs.
+
+### 10.4 Positive atoms
 
 The finite atom set includes:
 
@@ -826,610 +803,740 @@ question_answered:<chapter>@<scene>@<id>
 phase_completed:<chapter>@<scene>@<id>
 fact_asserted:<id>
 question_resolved:<id>
-objective_revealed:<id>
+objective_revealed:<id>       # internal only
 objective_completed:<id>
 authorization_granted:<id>
 analysis_scene_completed:<chapter>@<scene>
 analysis_board_completed:<chapter>@<scene>@<board>
 ```
 
-Internal atoms such as objective revealed or node reached need not become
-user-visible predicates.
-
-### 10.4 Seeds
+### 10.5 Seeds
 
 Seeds include:
 
-- the first playable story entry according to current sequencing;
-- authored `unlocked` blocks within an entered scene;
-- initial/auto state supplied by specialized analyzers.
+- first playable story entry under current sequencing;
+- authored initially unlocked local blocks once their scene is entered;
+- initial/automatic progress reported by specialized analyzers;
+- explicit synthetic fixture progress.
 
-Catalog definitions alone do not seed facts, questions, objectives, or grants.
+Catalog definitions and migration possibilities do not seed progress.
 
-### 10.5 Positive fixed-point algorithm
+## 11. Joint positive and primary abstract interpretation
 
-```text
-reachable_nodes := initially reachable nodes
-positive_atoms  := guaranteed effects of initial nodes
+### 11.1 Why the analyses are joint
 
-repeat
-  for each not-yet-reachable node in deterministic key order
-    if condition and implicit prerequisites are satisfied
-      mark node reachable
+A primary transition may complete an objective; that objective may unlock a new
+node; that node may produce another primary transition. Therefore the compiler
+cannot finish positive reachability first and run primary flow only afterward.
 
-  for each newly reachable node in deterministic key order
-    validate/apply positive non-primary effects to abstract state
+The implementation solves a finite joint abstract state until stable.
 
-until no node or positive atom is added
-```
-
-Node and atom domains are finite and only grow, so convergence is guaranteed.
-An implementation guard may detect compiler bugs but is not an authored-content
-iteration limit.
-
-Primary-objective effects participate in reachability through target validation,
-objective-revealed outputs, and the separate dataflow in §11. The positive
-fixed point does not use one corpus-global active-primary set.
-
-### 10.6 Implicit effect prerequisites
-
-Examples:
-
-- `resolveQuestion(q, f)` requires `fact_asserted:f`;
-- explicit supporting facts require assertion;
-- grants require matching authority context;
-- analysis effects may require accepted board completion;
-- scene completion requires specialized proof of completable state.
-
-Adapters expose these prerequisites so the graph never credits an effect that
-runtime would reject.
-
-### 10.7 Possible versus guaranteed results
-
-| Question | Owner |
-|---|---|
-| Can some valid positive path reach this node/effect? | HPA-257 fixed point |
-| Is a record/reveal unavoidable before a legacy scene? | specialized guaranteed-flow analysis |
-| Which primary can be active before this particular node? | §11 per-node may-dataflow |
-| Does every transition ordering complete the same primary? | not promised |
-| Does runtime keep zero or one active primary? | HPA-255 scalar mutation |
-
-## 11. Primary-objective abstract dataflow
-
-### 11.1 Target and reserved-ID validation
-
-Before the dataflow:
-
-- objective ID `null` is rejected in compiler and Rust catalog validation;
-- a non-null target must exist and be primary;
-- `completeObjective` may not target a primary;
-- one batch may contain at most one primary transition.
-
-### 11.2 Dataflow domain
-
-After strict dependency-cycle validation, the reachability dependency graph is
-acyclic. The compiler evaluates a finite path-insensitive dataflow over reachable
-nodes in deterministic topological order.
-
-For each node:
+### 11.2 Per-node abstract state
 
 ```ts
 type PrimaryCandidate = string | null;
+type KnownPrimary = PrimaryCandidate | "unknown";
 
-type PrimaryFlow = {
-  before: Set<PrimaryCandidate>;
-  after: Set<PrimaryCandidate>;
+type NodeAbstractState = {
+  mayAtoms: Set<ReachabilityAtom>;
+  mustAtoms: Set<ReachabilityAtom>;
+
+  mayActivePrimaryIds: Set<PrimaryCandidate>;
+  mustActivePrimaryId: KnownPrimary;
+  mayCompletedPrimaryIds: Set<string>;
+  mustCompletedPrimaryIds: Set<string>;
+
+  orderAmbiguous: boolean;
 };
 ```
 
-Initial entry nodes begin with `{ null }`. A node's `before` set is the union of
-`after` sets from reachable dependency predecessors that can feed it. This means
-unrelated disjoint branches do not pollute each other merely because both exist
-somewhere in the corpus.
+Meaning:
 
-At a real dependency merge, union is intentionally path-insensitive. The pass
-retains possible scalar values, not complete event-order histories.
+- `may*` contains every value/progress the analysis conservatively believes can
+  occur before the node on some modeled path/order.
+- `must*` contains only values/progress guaranteed before the node on every
+  modeled path/order represented by strict predecessors.
+- free-order peer effects contribute to `may*`, not `must*`, unless the adapter
+  also marks a strict relation.
+- `mustActivePrimaryId` is a concrete value only when all strict inputs agree and
+  no may-before primary transition can intervene; otherwise it is `unknown`.
 
-### 11.3 Transfer without a primary transition
+The domain is path-insensitive but not corpus-global. Unrelated nodes that cannot
+execute before this node do not contribute.
 
-A node with no `setPrimaryObjective` effect passes candidates through unchanged:
+### 11.3 Free-order policy
+
+HPA-257 chooses a conservative hybrid of over-approximation and narrowed hard
+claims:
+
+1. Scene adapters include every primary transition that may execute earlier in
+   `mayExecuteBeforeKeys`, including free-order peers.
+2. Their outputs propagate to the node's `mayActivePrimaryIds` and
+   `mayCompletedPrimaryIds` through a monotone fixed point, even when may-before
+   relations are mutual.
+3. Free-order peer outputs never establish `mustActive` or `mustCompleted` by
+   themselves.
+4. An order-dependent invalidity is a warning, not an always-invalid error.
+5. A hard dynamic error is emitted only when invalidity follows from catalog
+   facts plus `must*` state and no modeled valid input remains.
+6. Effects from at least one modeled successful order may contribute to positive
+   may-reachability; the warning remains attached to the producer and is included
+   in mandatory-path diagnostics.
+
+This preserves free exploration without pretending to prove all permutations.
+It also prevents the earlier under-approximation where sibling hotspot A could
+change the active primary before hotspot B but B saw only the scene-entry value.
+
+Authors are encouraged—but not required—to linearize primary transitions. A
+primary transition in a free-order region is acceptable when its order-dependent
+behavior is intentional and reviewed.
+
+### 11.4 Ordered reveal-batch simulation
+
+For each reachable node, the analyzer creates a provisional copy of its input
+abstract state and interprets targets in authored list order.
+
+Rules:
+
+1. Earlier target effects are immediately visible to later targets in the same
+   provisional batch.
+2. An implicit prerequisite may be satisfied by input state or an earlier target.
+3. A target that is impossible for every modeled provisional input makes the
+   complete batch always invalid.
+4. A target that succeeds for some inputs and fails for others makes the batch
+   order-dependent.
+5. Provisional effects are committed to the node output only after at least one
+   modeled input completes the entire list.
+6. If no input completes, no target from the list contributes an atom or primary
+   output, mirroring runtime rollback.
+7. After a may-fail target, later `must*` outputs are retained only when they hold
+   on every surviving successful abstract input.
+
+Therefore:
 
 ```text
-after := before
+[resolve_question:q@f, assert_fact:f]
 ```
 
-### 11.4 Transfer for `completeCurrent = false`
-
-For:
+is always invalid when `f` is not already available before the node, while:
 
 ```text
-setPrimaryObjective(false, X)
+[assert_fact:f, resolve_question:q@f]
 ```
 
-all valid incoming paths produce:
-
-```text
-after := { X }
-```
-
-where `X` may be `null`. A non-null `X` also produces
-`objective_revealed:X`.
-
-### 11.5 Transfer for `completeCurrent = true`
-
-For:
-
-```text
-setPrimaryObjective(true, X)
-```
-
-an incoming candidate is invalid only when it is non-null and equals non-null
-`X`, matching HPA-255's current-equals-next rejection. `null` input is valid;
-there is simply no current objective to complete.
-
-Partition `before` into valid and invalid candidates:
-
-- every valid non-null current candidate is possibly completed;
-- valid inputs produce `after := { X }`;
-- invalid candidates produce no abstract output because runtime rejects them.
+is valid because the first target satisfies the second target's prerequisite.
 
 Diagnostics:
 
-1. **All candidates invalid:** `primaryObjectiveTransitionAlwaysInvalid` error.
-   The transition has no runtime-valid path.
-2. **Some valid, some invalid:**
-   `primaryObjectiveOrderingNotExhaustive` warning. The existence-oriented
-   analysis credits outputs from valid candidates only.
-3. **All candidates valid:** no transition diagnostic.
+- no modeled input completes the batch:
+  `storyRevealBatchAlwaysInvalid` error;
+- some inputs complete and some fail:
+  `storyRevealBatchOrderDependent` warning.
 
-This is the flow-informed validation previously left ambiguous in local batch
-rules.
+A reachable optional node is not exempt from an always-invalid batch: executing
+it would still fail at runtime. An unreachable optional node receives its normal
+unreachable warning and is not used to derive dynamic batch conclusions.
 
-### 11.6 Conservative merge warning
+### 11.5 Positive expression may/must evaluation
 
-The warning is intentionally conservative at merge points. If two predecessor
-paths can feed the same completion node with different current primaries, the
-pass unions them and does not prove which transition happened last.
+For each expression `E`:
 
-It no longer warns because of a completely unrelated branch that cannot feed the
-node. It may still warn when branches merge or when independent prerequisites
-can be achieved in multiple orders.
+- `mayTrue(E)` asks whether `E` can be true using may-atoms;
+- `mustTrue(E)` asks whether `E` is true using must-atoms.
 
-There is no warning-suppression directive in HPA-257. Authors reduce ambiguity by
-placing `complete_current` on a branch-specific event before the merge, or by
-adding an explicit transition event whose incoming dependencies establish a
-single valid current primary. If the story intentionally permits several valid
-orders, the non-blocking warning remains accepted documentation of that fact.
+For binary nodes, apply normal Boolean rules. For `at_least(n, children)`:
 
-This preserves the non-goal of exhaustive combinatorial objective model
-checking while keeping warning signal useful.
+- may-true when at least `n` children are may-true;
+- must-true when at least `n` children are must-true.
+
+Node may-reachability uses may-true. Existing specialized guaranteed-flow
+analysis remains authoritative where all-path proof is required.
+
+### 11.6 Primary transfer: no transition
+
+A node without `setPrimaryObjective` passes primary abstract state through. Its
+other ordered targets may still add completed-secondary atoms.
+
+### 11.7 Primary transfer: `completeCurrent = false`
+
+For `setPrimaryObjective(false, X)`:
+
+Order-independent validation first ensures `X` is null or an existing primary.
+
+Dynamic cases:
+
+- non-null `X` in `mustCompletedPrimaryIds`:
+  `primaryObjectiveTransitionAlwaysInvalid`; no successful output;
+- non-null `X` in `mayCompletedPrimaryIds` but not must-completed:
+  `primaryObjectiveOrderingNotExhaustive`; successful abstract paths produce
+  active `X`;
+- otherwise: successful paths produce active `X`.
+
+A non-null successful next target also produces internal
+`objective_revealed:X`.
+
+### 11.8 Primary transfer: `completeCurrent = true`
+
+For `setPrimaryObjective(true, X)`, an input is invalid when:
+
+- non-null next `X` is already completed on that input; or
+- current active is the same non-null `X`.
+
+Compiler classification:
+
+- `X` in must-completed, or concrete `mustActive == X`:
+  always invalid hard error;
+- `X` in may-completed but not must-completed, or `mayActive` contains `X` while
+  another valid current candidate/null is possible:
+  ordering warning;
+- only valid candidates:
+  no transition warning.
+
+On successful abstract paths:
+
+- each possible non-null current ID other than `X` becomes may-completed;
+- an ID becomes must-completed only when every surviving successful input has
+  that same current ID;
+- output active becomes `X`, including null;
+- non-null `X` becomes revealed.
+
+The analysis does not credit outputs from invalid candidates.
+
+### 11.9 Valid-state assumption
+
+The compiler does not model an active ID absent from objective progress. Such a
+state cannot be authored through HPA-255's valid mutation sequence. Runtime
+mutation, snapshot restore, and catalog/state validation retain defense-in-depth
+for corrupt or hand-edited state.
+
+### 11.10 Outer fixed point
+
+Conceptually:
+
+```text
+initialize seed node states
+
+repeat
+  recompute node input may/must summaries from:
+    strict predecessors,
+    positive prerequisite producers,
+    adapter-provided may-before peers,
+    current successful node outputs
+
+  mark nodes whose conditions/prerequisites are may-satisfiable
+
+  for each newly reachable or changed-input node:
+    simulate its complete ordered reveal batch provisionally
+    publish successful may/must positive and primary outputs
+
+until no reachable node, atom, primary candidate, or completion fact changes
+```
+
+The finite domains are:
+
+- parsed node keys;
+- finite positive atoms;
+- finite objective IDs plus null;
+- finite may/must membership bits.
+
+All published sets only gain members; concrete `mustActive` may degrade once to
+`unknown`. Convergence therefore does not require an authored iteration cap.
+
+### 11.11 Mandatory-path reporting under ambiguity
+
+The fixed point is existence-oriented. If a mandatory consumer becomes reachable
+only through a producer carrying `storyRevealBatchOrderDependent` or
+`primaryObjectiveOrderingNotExhaustive`, compilation succeeds with the warning;
+the warning message lists the mandatory consumer(s) relying on that conditional
+output.
+
+HPA-257 does not claim every free-order execution succeeds. It does guarantee
+that order ambiguity is not silent and that hard always-invalid claims are made
+only when supported by the abstract `must*` state.
 
 ## 12. Cycle and self-reference validation
 
-### 12.1 Dependency graph
+### 12.1 Positive dependency graph
 
-The compiler creates producer-to-consumer edges for positive atoms and implicit
-prerequisites. Local identities are qualified; global state can cross scenes and
-chapters. Every producer referenced by `or` or `at_least` participates in strict
-cycle analysis.
+Create producer-to-consumer edges for positive expression atoms and implicit
+prerequisites. Qualify local identities by chapter/scene/block.
 
-### 12.2 Rejection policy
+For `or` and `at_least`, every referenced producer participates in strict cycle
+analysis. The policy is intentionally conservative.
+
+### 12.2 Rejection
 
 Reject:
 
-- a node depending on an atom produced only by itself;
+- direct node self-dependency;
 - fact support transitively depending on the asserted fact;
-- a strongly connected component with multiple nodes;
-- a self-loop in a one-node component.
+- a multi-node positive-dependency SCC;
+- a one-node SCC with a self-loop.
 
-An external seed does not legalize a cycle. Authors must introduce a one-way seed
-or remove the backward dependency.
+An external seed does not legalize the dependency cycle.
 
-### 12.3 Diagnostics
+### 12.3 Free-order relation is separate
 
-One canonical diagnostic is emitted per SCC with a stable minimal cycle path.
-Legacy `lockedBlockUnreachable` errors remain and duplicate generic errors are
-suppressed for the same legacy block.
+Mutual `mayExecuteBeforeKeys` edges are execution-order possibilities, not
+positive prerequisites. They may form cycles and are solved by §11's monotone
+primary fixed point. They must not trigger `positiveDependencyCycle`.
+
+### 12.4 Diagnostics
+
+Emit one canonical cycle diagnostic per SCC with a stable minimal path. Suppress
+duplicate generic reachability errors where a legacy specialized validator has
+already reported the same block.
 
 ## 13. Mandatory, optional, and authorization reachability
 
-### 13.1 Requirement classification
+### 13.1 Classification
 
-Adapters classify nodes:
+Adapters classify:
 
-- legacy entry/completion retains specialized semantics;
-- legacy locked blocks retain current error behavior;
-- required analysis boards/cards are mandatory;
-- optional boards/cards are optional;
-- grants required by mandatory content are mandatory outputs;
-- catalog definitions alone are not gameplay nodes.
+- existing entry/completion according to current specialized semantics;
+- existing locked investigation/interrogation blocks with current error behavior;
+- future required analysis nodes as mandatory;
+- future side content as optional;
+- grant outputs required by mandatory consumers as mandatory producers.
+
+Catalog definitions alone are not gameplay nodes.
 
 ### 13.2 Post-convergence diagnostics
 
-After convergence:
+- unreachable new mandatory node: `requiredContentUnreachable` error;
+- unreachable optional node: `optionalContentUnreachable` warning;
+- mandatory authorization with no reachable matching grant:
+  `mandatoryAuthorizationUnreachable` error;
+- reachable batch with no successful abstract input:
+  `storyRevealBatchAlwaysInvalid` error;
+- order-conditional batch/primary transition: deterministic warning;
+- unsatisfied semantic references/kinds: source-located hard error regardless of
+  optionality.
 
-- unreachable new mandatory node: error;
-- unreachable new optional node: warning;
-- mandatory atom with no reachable producer: error;
-- reachable effect with unsatisfied implicit prerequisites: error;
-- optional atom noise is represented by its optional consumer warning, not a
-  second duplicate warning.
+### 13.3 Authorization path
 
-### 13.3 Authorization gates
-
-For mandatory `authorization:<id> granted` conditions, verify:
+For a mandatory `authorization:<id> granted` condition, verify:
 
 1. definition exists;
-2. a `grantAuthorization` producer exists;
-3. producer authority matches;
+2. a grant producer exists;
+3. producer's represented authority matches `grantingAuthority`;
 4. at least one matching producer is reachable.
 
-Failure is `mandatoryAuthorizationUnreachable`. Optional gates use
-`optionalContentUnreachable`.
+Investigation/interrogation grant targets are not candidates because their
+adapter authority context is null.
 
-## 14. Reference and semantic validation
+## 14. Validation and diagnostic contract
 
-### 14.1 Story predicates
+### 14.1 Reference validation
 
-Resolve facts, global questions, objectives, authorizations, and qualified
-analysis refs against their typed registries. Typed namespaces may reuse slugs.
+Validate typed references against:
 
-### 14.2 Catalog reservation
+- `StoryCatalog.facts`;
+- `StoryCatalog.questions`;
+- `StoryCatalog.objectives`;
+- `StoryCatalog.authorizations`;
+- `AnalysisDefinitionRegistry` for qualified analysis refs.
 
-HPA-257 extends catalog semantic validation with:
+Typed namespaces may reuse a slug except objective ID `null`, which is reserved.
 
-```text
-objective id "null" is reserved by set_primary_objective and cannot be authored
-```
-
-Compiler diagnostics use the objective heading source location. Rust catalog
-loading rejects the same condition as defense-in-depth. The catalog wire version
-remains 2.
-
-### 14.3 Story reveal targets
-
-Validate:
-
-- every target definition;
-- question resolver membership in `resolvedByFactIds`;
-- secondary kind for `completeObjective`;
-- primary kind for non-null set-primary targets;
-- matching authority context;
-- context-supplied support references and support acyclicity.
-
-### 14.4 Source locations and warnings
-
-Every compiler diagnostic includes source file and one-based line. Metadata
-errors use the metadata line; the reserved objective ID uses its heading line.
-
-Warnings are deterministic and non-blocking:
-
-- `optionalContentUnreachable`;
-- `primaryObjectiveOrderingNotExhaustive`.
-
-## 15. Diagnostic code contract
+### 14.2 New/reserved diagnostic codes
 
 | Code | Severity | Meaning |
 |---|---|---|
 | `unlockAtLeastInvalidCount` | error | count is not a positive base-10 integer |
-| `unlockAtLeastEmptyConditions` | error | no child condition |
+| `unlockAtLeastEmptyConditions` | error | no child expression |
 | `unlockAtLeastCountExceedsConditions` | error | count exceeds child count |
 | `unlockAtLeastDuplicateCondition` | error | structurally duplicate child |
-| `unresolvedStoryPredicate` | error | global typed reference missing |
+| `unresolvedStoryPredicate` | error | typed story predicate reference missing |
 | `unresolvedAnalysisPredicate` | error | qualified analysis reference missing |
-| `storyRevealUnresolved` | error | story target definition missing |
-| `invalidQuestionResolutionTarget` | error | fact cannot resolve question |
+| `storyRevealUnresolved` | error | story target reference missing |
 | `reservedObjectiveId` | error | objective ID `null` is reserved |
-| `primaryObjectiveCompletionRequiresSet` | error | direct complete names primary |
-| `invalidPrimaryObjectiveTarget` | error | set-primary target missing/secondary |
-| `primaryObjectiveTransitionAlwaysInvalid` | error | every incoming candidate causes HPA-255 rejection |
-| `duplicateStoryRevealTarget` | error | duplicate/contradictory local batch target |
-| `authorizationGrantOutsideAuthorityEvent` | error | no authority context |
-| `authorizationGrantAuthorityMismatch` | error | authority differs from definition |
-| `positiveSelfReference` | error | direct positive self-dependency |
-| `positiveDependencyCycle` | error | multi-node positive SCC |
-| `requiredContentUnreachable` | error | mandatory new node unreachable |
-| `mandatoryAuthorizationUnreachable` | error | required grant path unreachable |
-| `optionalContentUnreachable` | warning | optional new node unreachable |
-| `primaryObjectiveOrderingNotExhaustive` | warning | some incoming primary candidates are ambiguous or invalid |
+| `invalidQuestionResolutionTarget` | error | fact cannot resolve named question |
+| `primaryObjectiveCompletionRequiresSet` | error | authored complete target names primary |
+| `invalidPrimaryObjectiveTarget` | error | next target missing or secondary |
+| `duplicateStoryRevealTarget` | error | exact normalized duplicate |
+| `conflictingQuestionResolution` | error | one question has different resolvers in one batch |
+| `multiplePrimaryTransitions` | error | batch contains multiple set-primary targets |
+| `authorizationGrantOutsideAuthorityEvent` | error | represented authority absent |
+| `authorizationGrantAuthorityMismatch` | error | represented authority differs from definition |
+| `storyRevealBatchAlwaysInvalid` | error | no modeled input completes ordered batch |
+| `storyRevealBatchOrderDependent` | warning | some modeled inputs complete and some fail |
+| `primaryObjectiveTransitionAlwaysInvalid` | error | transition invalid for all modeled inputs |
+| `primaryObjectiveOrderingNotExhaustive` | warning | free/branch order can change transition validity |
+| `positiveSelfReference` | error | effect/condition depends on itself |
+| `positiveDependencyCycle` | error | positive prerequisite SCC |
+| `requiredContentUnreachable` | error | mandatory node not reached |
+| `mandatoryAuthorizationUnreachable` | error | required grant path missing |
+| `optionalContentUnreachable` | warning | optional node not reached |
 
-Legacy codes remain where applicable.
+Legacy codes remain unchanged where they already cover the same local condition.
 
-## 16. Module ownership
+### 14.3 Stable ordering
 
-### 16.1 Compiler
+Errors/warnings sort by:
+
+1. normalized source path;
+2. one-based line;
+3. diagnostic code;
+4. stable node key;
+5. target index when applicable.
+
+This order is part of compiler golden tests and prevents warning flapping.
+
+## 15. Module ownership
+
+### 15.1 Compiler
 
 Expected focused changes:
 
 ```text
 packages/scripts/compile-scenes/
-  types.ts                 concrete predicates/targets and shared aliases
-  parser-unlock.ts         shared recursion + context predicate adapters
-  parser-investigation.ts  shared reveal-target parser consumer
-  parser-interrogation.ts  shared reveal-target parser consumer
-  parser-reveals.ts        shared local/story reveal grammar
-  validator.ts             retain specialized validation; invoke corpus passes
-  reachability.ts          positive fixed point, cycles, per-node primary flow
-  story-catalog.ts         target validation + reserved objective ID
-  emitter.ts               emit new nodes; preserve legacy output
+  types.ts
+  parser-unlock.ts
+  parser-investigation.ts
+  parser-interrogation.ts
+  parser-reveals.ts                 # new shared local/story target parser
+  parser-story-catalog.ts           # existing catalog parser/validation owner
+  analysis-definition-registry.ts   # narrow HPA-257 synthetic/production hook
+  validator.ts                      # retains specialized validation
+  reachability.ts                   # normalized nodes, SCCs, joint fixed point
+  emitter.ts
 ```
 
-The implementation plan may refine private helper filenames but may not duplicate
-the story grammar in each parser.
+Exact private filenames may be refined by the implementation plan, but the plan
+must use the existing `parser-story-catalog.ts` name rather than introducing a
+parallel `story-catalog.ts` parser.
 
-### 16.2 Shared package boundary
+`AnalysisDefinitionRegistry` minimally resolves qualified scene/board refs and
+exposes fixture registration. It contains no hidden production solution data;
+HPA-259 owns production population.
 
-`packages/scene-types/src/index.ts` continues to own editor-shared local values.
-The current union may be renamed internally to `SceneLocalRevealTarget` while
-retaining `RevealTarget` as a compatibility alias. Story targets stay in compiler
-and runtime schema ownership.
+### 15.2 Adapter contract
 
-### 16.3 Rust
+Investigation/interrogation adapters must expose:
+
+- normalized local conditions/effects;
+- mandatory/optional classification;
+- possible and guaranteed local outputs already computed by specialized logic;
+- strict predecessor keys;
+- conservative may-execute-before keys/free-order region identity;
+- represented authority, currently null;
+- source file/line and stable target indexes.
+
+Two adapter implementations presented the same scene AST must emit deterministic
+normalized output.
+
+### 15.3 Shared package boundary
+
+`packages/scene-types/src/index.ts` retains its current scene-local reveal union.
+A compatibility alias may rename it `SceneLocalRevealTarget`, but global story
+mutations remain compiler/runtime-owned.
+
+### 15.4 Rust
+
+Expected focused changes:
 
 ```text
 apps/game/src-tauri/src/game/
-  schema.rs                new expression/target wire variants
-  unlock.rs                story predicates and at_least evaluation
-  reveals.rs               shared dispatcher and scene adapters
-  story/catalog.rs         reserved objective ID defense-in-depth
-  story/mutations.rs       HPA-255 implementation remains sole owner
-  save/                    tests only; no version change
+  schema.rs
+  unlock.rs
+  reveals.rs
+  story/              # reuse HPA-255 mutations; narrow accessors/tests only
+  save/               # integration tests only; no HPA-257 schema bump
 ```
 
-### 16.4 Frontend and IPC
+`reveals.rs` or a nearby focused helper owns authored-target restrictions,
+authority validation, support materialization, and dispatch. HPA-255 mutation
+implementations stay in `story/mutations.rs`.
 
-No new frontend type, component, or command is required. Existing commands return
-new views after committed mutations.
+### 15.5 Frontend/IPC
 
-## 17. Save, restore, and content compatibility
+No frontend state type or command registration changes are required. Existing
+commands return refreshed `GameStateView` after committed mutations.
 
-### 17.1 Save schema
+## 16. Save, restore, and content compatibility
 
-HPA-257 adds no generic mutable field. Saves already contain the relevant
-inventory, scene progress, story state, dialogue/acquisition state, and future
-analysis progress through HPA-260 ownership.
+### 16.1 Save schema
 
-Therefore:
+HPA-257 adds no generic mutable field. Current saves already contain:
 
-- current save schema remains version 2;
+- inventory/acquisition state;
+- investigation/interrogation trigger/local progress;
+- facts/questions/objectives/authorizations/active primary;
+- dialogue and transaction-related persisted state.
+
+Future analysis trigger progress remains owned by HPA-260. Therefore:
+
+- save schema remains version 2 for HPA-257;
 - no migration is added;
-- `StoryState::from_snapshot` remains the story-state validation gate;
 - restore remains transactional;
-- recapture must reproduce the same public view.
+- matching-revision recapture must reproduce the same public state;
+- consumed triggers remain consumed after restore.
 
-### 17.2 Content identity
+### 16.2 Content identity
 
-Legacy content emits identical JSON, so compiler refactoring alone does not alter
-content revision. Authored use of a new predicate, target, or `at_least` changes
-the emitted resource and therefore the existing content revision naturally.
+Legacy content emits byte-identical resources and keeps its content revision.
+Using a new expression or target naturally changes emitted resources and package
+content revision through the existing manifest algorithm.
 
-### 17.3 Round-trip requirement
+### 16.3 Round-trip fixture
 
-A fixture must:
+A synthetic integration path must:
 
 1. collect evidence;
 2. assert a fact;
 3. resolve a question;
 4. complete a secondary objective;
-5. transition the primary through HPA-255;
-6. grant authorization from matching authority context;
-7. unlock content through nested `at_least`;
-8. save, restart, load, and preserve story, trigger, and unlocked state;
-9. repeat the gameplay command and prove the consumed trigger prevents
-   redispatch.
+5. execute valid and order-conditional primary transitions;
+6. grant authorization from a matching synthetic authority event;
+7. unlock later content through nested `at_least`;
+8. save/restart/load;
+9. preserve positive progress, active objective, trigger consumption, and
+   unlocked content;
+10. repeat the original command and prove no redispatch.
 
 No previously unlocked block may become locked after restore.
 
-## 18. Test strategy
+## 17. Test strategy
 
-### 18.1 Parser compatibility
+### 17.1 Legacy characterization
 
-- snapshot every existing legacy expression;
-- preserve associativity and precedence;
-- compile Chapter 1 and all legacy fixtures unchanged;
-- reject shared predicates in contexts that have not opted in.
+- snapshot every current valid expression/tree;
+- prove current associativity and precedence;
+- compile existing Chapter 1 unchanged;
+- assert existing reveal arrays/dialogue ordering unchanged;
+- assert content revision unchanged when new syntax is unused.
 
-### 18.2 `at_least`
-
-Cover one-of-one, all-of-N, nested thresholds, mixed binary children, thresholds
-inside binary expressions, invalid counts, empty lists, structural duplicates,
-and Rust short-circuit behavior.
-
-Include an explicit accepted case proving that commutatively reordered binary
-children are not treated as structural duplicates. This locks the intentional
-tradeoff without adding semantic equivalence solving.
-
-### 18.3 Reference, catalog, and target validation
+### 17.2 Parser and `at_least`
 
 Cover:
 
-- unresolved typed and qualified refs;
-- malformed analysis refs;
-- duplicate synthetic analysis definitions;
-- objective ID `null` rejected at catalog heading and Rust load;
-- invalid question resolver;
-- secondary set-primary target;
-- direct primary completion;
-- duplicate story targets;
-- grant context absence/mismatch.
+- no-whitespace commas;
+- one-of-one and all-of-N;
+- nested thresholds and mixed binary children;
+- invalid counts/empty children/duplicates;
+- reordered semantically equivalent `or` children remain accepted;
+- malformed delimiters and trailing tokens.
 
-### 18.4 Reachability and cycles
+### 17.3 Scene-family matrix
+
+- investigation story predicate/target accepted without opt-in flag;
+- interrogation story predicate/target accepted without flag;
+- linear metadata rejected as today;
+- investigation/interrogation grants rejected for null authority context;
+- synthetic authority fixture accepted when authority matches;
+- production analysis ref unresolved until registry registration.
+
+### 17.4 Ordered batch semantics
+
+Compiler and Rust fixtures cover:
+
+```text
+[resolve_question:q@f, assert_fact:f]  # fail if f absent before batch
+[assert_fact:f, resolve_question:q@f]  # succeed
+```
+
+Also cover:
+
+- a later failure discards every earlier provisional effect;
+- some valid/some invalid abstract inputs emit order-dependent warning;
+- no valid input emits always-invalid error and no output atoms;
+- mandatory consumer dependency is named by the producer warning;
+- exact duplicate/conflict target rules.
+
+### 17.5 Free-order primary behavior
+
+Synthetic investigation fixture: two initially available hotspots in one
+free-order region.
+
+Cover both runtime orders for:
+
+1. hotspot A sets primary A; hotspot B completes current and sets B;
+2. hotspot A sets primary A; hotspot B completes current and sets A;
+3. hotspot A completes A; hotspot B later attempts to set A;
+4. B before A and A before B;
+5. a strict dependency edge A -> B turning a may condition into must state;
+6. two unrelated regions not contaminating each other's candidate sets.
+
+Expected diagnostics:
+
+- free-order valid/invalid mix: warning, never false always-invalid error;
+- strict same-current/next: always-invalid error;
+- strict completed-next: always-invalid error;
+- free-order maybe-completed next: warning;
+- unrelated disjoint branch: no warning.
+
+### 17.6 Positive reachability
 
 Cover:
 
-- multi-iteration positive chains;
-- nested `at_least` fed by separate branches;
-- direct and multi-node cycles;
-- seeded-but-cyclic rejection;
-- unreachable mandatory/optional nodes;
-- authorization producer absent, unreachable, and reachable;
-- no duplicate generic diagnostics for legacy blocks.
+- multi-iteration evidence -> fact -> question -> objective -> grant chain;
+- threshold branches contributing across iterations;
+- direct self-reference and longer SCCs;
+- externally seeded dependency cycle still rejected;
+- unreachable mandatory and optional nodes;
+- authority producer absent, mismatched, unreachable, and reachable;
+- no duplicate legacy/generic diagnostics.
 
-### 18.5 Primary-objective dataflow
+### 17.7 Runtime defense and ownership
 
-Cover:
+- Rust rejects primary `completeObjective` at resource validation and dispatcher;
+- unknown/secondary/completed next primary follows HPA-255 behavior;
+- corrupt active-without-progress remains a runtime/restore error fixture, not a
+  compiler authoring state;
+- mixed-batch final failure rolls back every transaction field;
+- repeated gameplay command skips consumed trigger;
+- source test proves dispatcher calls `set_primary_objective` and contains no
+  direct writes to objective maps/active field.
 
-- null → A;
-- A → B with and without completion;
-- A → null with completion;
-- invalid secondary target;
-- uniquely known A → A with completion produces
-  `primaryObjectiveTransitionAlwaysInvalid`;
-- candidate `{A, B}` entering `completeCurrent,next=A` produces one conservative
-  warning and credits only the B path;
-- disjoint A and B branches that never feed the same node do **not** warn;
-- a real merge of A/B candidates warns;
-- branch-specific completion before merge avoids the warning;
-- runtime zero-or-one invariant after every transition;
-- replay of a consumed completion trigger skips dispatch.
+### 17.8 TypeScript/Rust semantic parity
 
-### 18.6 Atomicity and idempotence
+One serialized fixture corpus provides expression trees, truth assignments, and
+expected results. Both implementations run it. Include legacy nodes, every story
+predicate, nested `at_least`, mixed operators, and short-circuit-equivalent cases.
 
-A mixed batch forced to fail on its final target must roll back trigger progress,
-inventory, acquisitions, local overrides, story state, active primary, dialogue,
-and generation state. A repeated successful gameplay command must skip dispatch
-and create no duplicate effect.
+### 17.9 Verification gate
 
-### 18.7 Ownership guard
+Implementation PR must pass:
 
-Tests prove:
+- `bun run scenes:compile`;
+- complete compiler/workspace tests;
+- complete Rust tests;
+- TypeScript/Svelte/Rust checks;
+- ESLint, Prettier, rustfmt, and warnings-denied Clippy;
+- content-revision goldens;
+- targeted save/restore integration.
 
-1. dispatcher behavior matches HPA-255 transition outcomes;
-2. source contains a call to `set_primary_objective` and no direct writes to
-   objective progress or `active_primary_objective_id`;
-3. Rust privacy continues to enforce the field boundary.
+Packaged Tauri E2E is required only if implementation changes an existing
+player-visible authored path or command timing; the implementation plan must make
+that decision explicitly.
 
-### 18.8 Verification gate
+## 18. Authoring guidance changes
 
-The implementation PR passes scene compilation, full compiler/Rust/workspace
-tests, TypeScript/Svelte/Rust checks, formatting/linting, content-revision
-goldens, and targeted save/restore coverage. Packaged E2E is required only if an
-existing player-visible path or command timing changes.
+Update:
 
-## 19. Authoring guidance changes
+- `.claude/skills/writing-investigation-scene/SKILL.md`;
+- `.claude/skills/writing-interrogation-scene/SKILL.md`;
+- the future HPA-259 analysis skill.
 
-Update canonical investigation/interrogation skills and the future analysis
-skill with:
+Guidance must include:
 
-- shared story predicates;
-- qualified analysis syntax;
-- `at_least` examples and invalid counts;
-- structural rather than semantic duplicate detection;
-- the prohibition on negative gates;
-- story reveal target forms;
-- `null` reserved as an objective ID;
-- primary mutation ownership and one-shot replay behavior;
-- context-free batch validation versus flow-informed transition validation;
-- authority-event grant restriction;
-- strict cycle policy;
-- optional-unreachable warnings;
-- the conservative merge nature of
-  `primaryObjectiveOrderingNotExhaustive`;
-- guidance to move completion before a merge or establish a unique primary when
-  practical;
-- the statement that definitions do not imply initial progress.
+- exact story predicates/targets and scene-family matrix;
+- qualified analysis reference syntax;
+- comma-safe `at_least` examples and invalid counts;
+- no generic negative gates;
+- reserved objective ID `null`;
+- objective revealed is not an author predicate;
+- primary completion only through set-primary;
+- ordered target-list semantics and atomic rollback;
+- one-shot trigger ownership;
+- investigation/interrogation cannot grant authorization;
+- strict positive-cycle policy;
+- free-order primary warnings and recommended branch linearization;
+- deterministic optional-unreachable warnings;
+- definitions/migrations do not imply initial progress.
 
-No duplicate `.agents/skills` source is introduced without a separate repository
-policy change.
+## 19. Rejected alternatives
 
-## 20. Rejected alternatives
+### 19.1 One unrestricted expression union
 
-### 20.1 One unrestricted expression union
+Rejected because local predicates need context-specific validation.
 
-Rejected because local predicates cannot be evaluated in every scene family.
+### 19.2 Expand thresholds into binary trees
 
-### 20.2 Expand `at_least` into binary Boolean combinations
+Rejected because expansion is combinatorial and harms diagnostics.
 
-Rejected due combinatorial expansion and damaged diagnostics.
+### 19.3 Generic negation or string flags
 
-### 20.3 Generic `not` or string flags
+Rejected because it breaks monotonicity and duplicates typed state.
 
-Rejected because they break monotonic truth or duplicate typed state.
+### 19.4 Duplicate primary mutation logic
 
-### 20.4 Semantic Boolean-equivalence detection
+Rejected because HPA-255 owns transition semantics and the active scalar.
 
-Rejected. Structural duplicate detection catches common author mistakes without
-normalizing commutative/associative Boolean expressions or introducing a theorem
-solver.
+### 19.5 Make low-level `completeCurrent` independently replayable
 
-### 20.5 Duplicate primary-objective mutation logic
+Rejected because trigger-level idempotence preserves HPA-255's valid rejection
+rules without objective-history heuristics.
 
-Rejected because HPA-255 owns validation, replacement/completion, and the scalar.
+### 19.6 Treat reveal targets inside one list as an unordered set
 
-### 20.6 Make low-level `completeCurrent` independently replayable
+Rejected because runtime is authored-order sensitive and atomic. Static analysis
+must interpret the same sequence provisionally.
 
-Rejected. Idempotence belongs to the owning durable event; HPA-255's invalid
-same-current/next rule remains unchanged.
+### 19.7 Primary flow from unlock dependencies only
 
-### 20.7 Automatic question resolution
+Rejected because free-order siblings can execute before one another without an
+unlock edge. Adapters must expose runtime ordering.
 
-Rejected because resolver choice and story timing are authored decisions.
+### 19.8 Require total linearization of all primary transitions
 
-### 20.8 Let any block grant authorization
+Rejected because it would unnecessarily remove investigation freedom. The
+chosen may/must analysis warns on order dependence and hard-fails only proven
+invalid transitions.
 
-Rejected because represented institutions, not internal analysis, grant access.
+### 19.9 Exhaustive objective-order state-space search
 
-### 20.9 Replace specialized reachability analysis
+Rejected because the parent contract explicitly excludes exhaustive ordering
+proof. HPA-257 uses finite path-insensitive may/must summaries.
 
-Rejected because existing analyzers encode gameplay semantics the generic graph
-must consume rather than reconstruct.
+### 19.10 Corpus-global possible-primary set
 
-### 20.10 Allow externally seeded cycles
+Rejected because unrelated branches polluted warnings and did not model local
+runtime ordering accurately.
 
-Rejected for deterministic authoring and diagnostics.
+### 19.11 Compiler-only primary `completeObjective` restriction
 
-### 20.11 One corpus-global possible-primary set
+Rejected because hand-edited resources could invoke HPA-255's broader internal
+API. Rust repeats the authored-contract check.
 
-Rejected because unrelated disjoint branches would pollute every later
-completion warning. Per-node propagation reduces false positives while retaining
-path-insensitive union at actual merges.
+### 19.12 Replace specialized scene analysis
 
-### 20.12 Exhaustive objective state-space search
+Rejected because existing validators encode stronger gameplay-specific facts.
 
-Rejected because the contract promises structural runtime uniqueness, not proof
-of every event ordering.
+### 19.13 Generic applied-event ledger or save bump
 
-### 20.13 Generic applied-story-event ledger or save bump
+Rejected because subsystem trigger progress already owns replay state.
 
-Rejected because subsystem-owned trigger progress and existing story fields
-already persist the resulting state.
+## 20. Acceptance-criteria mapping
 
-## 21. Acceptance-criteria mapping
-
-| HPA-257 acceptance criterion | Design mechanism |
+| HPA-257 requirement | Design mechanism |
 |---|---|
-| Existing expressions compile/behave identically | context wrappers and legacy JSON goldens |
-| Invalid counts fail with locations | §5.5 and diagnostic contract |
-| Unresolved/ambiguous refs fail | §§5.4, 14 |
-| Cycles/self-reference fail | §12 strict SCC policy |
-| Unreachable required content fails | §13 |
-| Authority gates without grant paths fail | §13.3 |
-| Primary transitions included in fixed analysis | §11 per-node dataflow |
-| No exhaustive ordering claim | §§10.7, 11.6 |
-| Objective mutation delegated | §§8.2, 18.7 |
-| No re-locking | §4.1 property |
-| Atomic/idempotent dispatch | §§8.1, 8.5–8.6, 18.6 |
-| Nested `at_least` compiler/Rust tested | §18.2 |
-| Save/load preserves monotonic state | §17.3 |
+| Legacy unlock behavior unchanged | §§3.4, 6, 17.1 |
+| Positive fact/question/objective/analysis/grant predicates | §§5–6 |
+| Nested `at_least` and invalid counts | §§5.1, 5.6, 17.2 |
+| Atomic/idempotent reveal dispatch | §§8, 11.4, 17.4/17.7 |
+| HPA-255 owns primary transitions | §§2, 8.2, 17.7 |
+| Fixed point accounts for `setPrimaryObjective` | §11 joint analysis |
+| No exhaustive ordering claim | §§11.3, 11.11, 19.9 |
+| Free-order investigation represented | §§10.2–10.3, 11.3, 17.5 |
+| Invalid refs/counts/self-reference/cycles fail with locations | §§5, 12, 14 |
+| Required unreachable paths fail | §13 |
+| Authority gates need matching grant path | §§8.3, 13.3 |
+| No relock after mutation/save | §§4.1, 16.3 |
+| Compiler/Rust semantics remain aligned | §§9, 17.8 |
 
-## 22. Implementation-plan handoff
+## 21. Implementation-plan handoff
 
-The executable TDD plan must separate:
+The implementation plan must use small TDD slices and name exact current files.
+At minimum:
 
-1. legacy parser characterization and shared combinator extraction;
-2. `at_least` parser/types/emission/Rust serde;
-3. shared story predicates and reference validation;
-4. shared story reveal target parsing and catalog validation, including reserved
-   objective ID `null`;
-5. normalized positive reachability and strict cycle diagnostics;
-6. investigation/interrogation adapters without deleting specialized analyses;
-7. per-node primary-objective dataflow and transition diagnostics;
-8. Rust story predicate evaluation;
-9. one-shot trigger integration, atomic dispatch, and authority validation;
-10. primary-objective delegation/source guard;
-11. save/restore, compatibility, authoring guidance, and whole-branch gates.
+1. characterize legacy parser/emission/runtime behavior;
+2. extract shared combinator parser and fix comma delimiter handling;
+3. add `at_least` types/emission/Rust serde/parity fixtures;
+4. add shared story predicates and typed reference validation;
+5. add story target parser, duplicate/conflict rules, and scene-family matrix;
+6. add reserved objective ID and Rust authored-target defense;
+7. define `AnalysisDefinitionRegistry` and normalized scene adapters;
+8. expose strict/may-before ordering from investigation/interrogation analyses;
+9. implement ordered provisional batch simulation and diagnostics;
+10. implement joint positive/primary may/must fixed point;
+11. add free-order, strict-order, completed-next, and disjoint-region fixtures;
+12. integrate runtime dispatcher, authority validation, and trigger guard;
+13. add ownership/source tests, atomic rollback, and save/restore coverage;
+14. update authoring skills and run final whole-branch verification.
 
-The implementation plan must re-read `main` and name exact files/tests. It may
-refine private helper names but may not change the grammar, wire shapes,
-ownership, reserved-ID rule, cycle policy, primary dataflow semantics,
-trigger-idempotence boundary, or compatibility decisions fixed here.
+The implementation plan may refine private helper names, but it may not change
+the grammar, wire shapes, scene-family matrix, ordered-batch semantics,
+free-order policy, mutation ownership, cycle policy, or compatibility decisions
+fixed here.
