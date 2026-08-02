@@ -1,4 +1,14 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { analyzeE2eCiResults } from "./e2e-ci-results.mjs";
 
@@ -57,24 +67,46 @@ function result({
   cleanupState = "removed",
 }) {
   const finalAttempt = recoveredFlakes.length > 0 ? 2 : 1;
-  const finalPhases = suites.flatMap((suite) =>
+  let finalPhases = suites.flatMap((suite) =>
     PHASES_BY_SUITE[suite].map((phase, index) => ({
       phase,
       suite,
       attempt: finalAttempt,
       durationMs: 100 + index,
-      result:
-        terminal === "passed" || suite !== finalFailedSuite
-          ? "passed"
-          : "failed",
-      exitCode: suite === finalFailedSuite ? 1 : 0,
+      result: "passed",
+      exitCode: 0,
       start: "2026-08-02T00:00:00.000Z",
       finish: "2026-08-02T00:00:01.000Z",
       outputDirectory: `/tmp/${chainId}/${suite}`,
     })),
   );
+  if (terminal === "failed") {
+    const failedIndex = finalPhases.findIndex(
+      ({ suite }) => suite === finalFailedSuite,
+    );
+    if (failedIndex >= 0) {
+      finalPhases = finalPhases.slice(0, failedIndex + 1);
+      finalPhases.at(-1).result = "failed";
+      finalPhases.at(-1).exitCode = 1;
+    }
+  } else if (terminal === "cancelled" && finalPhases.length > 0) {
+    finalPhases.at(-1).result = "failed";
+    finalPhases.at(-1).exitCode = 143;
+  }
+  const recordedFirstAttemptFailures =
+    finalAttempt > 1
+      ? firstAttemptFailures
+      : finalPhases.at(-1)?.result === "failed"
+        ? [
+            {
+              phase: finalPhases.at(-1).phase,
+              suite: finalPhases.at(-1).suite,
+              exitCode: finalPhases.at(-1).exitCode,
+            },
+          ]
+        : [];
   const phaseResults = [
-    ...firstAttemptFailures.map((failure, index) => ({
+    ...(finalAttempt > 1 ? firstAttemptFailures : []).map((failure, index) => ({
       ...failure,
       attempt: 1,
       durationMs: 50 + index,
@@ -109,14 +141,17 @@ function result({
       used: recoveredFlakes.length > 0 ? 2 : 1,
       retries: recoveredFlakes.length > 0 ? 1 : 0,
     },
-    firstAttemptFailures,
+    firstAttemptFailures: recordedFirstAttemptFailures,
     recoveredFlakes,
     finalFailedSuite,
     phaseCount: phaseResults.length,
     processCount: phaseResults.length,
     cleanup: {
       state: cleanupState,
-      attempts: [{ attempt: 1, state: cleanupState }],
+      attempts: Array.from({ length: finalAttempt }, (_, index) => ({
+        attempt: index + 1,
+        state: cleanupState,
+      })),
     },
     start: "2026-08-02T00:00:00.000Z",
     finish: "2026-08-02T00:00:01.000Z",
@@ -346,14 +381,26 @@ test("counts a recovered first-attempt failure as a flake, not a routing failure
 });
 
 test("classifies a forced-full failure already selected by risk as covered", () => {
+  const gameplaySuites = ["smoke", "gameplay", "production-journey"];
   const analysis = analyzeE2eCiResults({
     plan: plan({
-      suites: ["smoke", "gameplay", "production-journey"],
+      suites: [
+        ...gameplaySuites,
+        "capture-proof",
+        "save-core",
+        "save-management",
+        "exit-lifecycle",
+      ],
       chains: [
         {
           chainId: "gameplay",
-          suiteIds: ["smoke", "gameplay", "production-journey"],
+          suiteIds: gameplaySuites,
         },
+        {
+          chainId: "persistence",
+          suiteIds: ["capture-proof", "save-core", "save-management"],
+        },
+        { chainId: "exit", suiteIds: ["exit-lifecycle"] },
       ],
       risk: ["smoke", "gameplay"],
       forcedFull: true,
@@ -362,7 +409,7 @@ test("classifies a forced-full failure already selected by risk as covered", () 
     results: [
       result({
         chainId: "gameplay",
-        suites: ["smoke", "gameplay", "production-journey"],
+        suites: gameplaySuites,
         risk: ["smoke", "gameplay"],
         forcedFull: true,
         reason: "manual-override",
@@ -373,24 +420,39 @@ test("classifies a forced-full failure already selected by risk as covered", () 
   });
 
   assert.equal(analysis.status, "failed");
-  assert.deepEqual(analysis.routingAudit.finalFailures, [
+  assert.deepEqual(
+    analysis.routingAudit.finalFailures.find(
+      ({ chainId }) => chainId === "gameplay",
+    ),
     {
       chainId: "gameplay",
       suite: "gameplay",
       classification: "covered-by-risk-selection",
     },
-  ]);
+  );
 });
 
 test("classifies a forced-full failure outside risk selection as a routing gap", () => {
+  const gameplaySuites = ["smoke", "gameplay", "production-journey"];
   const analysis = analyzeE2eCiResults({
     plan: plan({
-      suites: ["smoke", "gameplay", "production-journey"],
+      suites: [
+        ...gameplaySuites,
+        "capture-proof",
+        "save-core",
+        "save-management",
+        "exit-lifecycle",
+      ],
       chains: [
         {
           chainId: "gameplay",
-          suiteIds: ["smoke", "gameplay", "production-journey"],
+          suiteIds: gameplaySuites,
         },
+        {
+          chainId: "persistence",
+          suiteIds: ["capture-proof", "save-core", "save-management"],
+        },
+        { chainId: "exit", suiteIds: ["exit-lifecycle"] },
       ],
       risk: ["smoke"],
       forcedFull: true,
@@ -399,7 +461,7 @@ test("classifies a forced-full failure outside risk selection as a routing gap",
     results: [
       result({
         chainId: "gameplay",
-        suites: ["smoke", "gameplay", "production-journey"],
+        suites: gameplaySuites,
         risk: ["smoke"],
         forcedFull: true,
         reason: "manual-override",
@@ -410,13 +472,16 @@ test("classifies a forced-full failure outside risk selection as a routing gap",
   });
 
   assert.equal(analysis.status, "failed");
-  assert.deepEqual(analysis.routingAudit.finalFailures, [
+  assert.deepEqual(
+    analysis.routingAudit.finalFailures.find(
+      ({ chainId }) => chainId === "gameplay",
+    ),
     {
       chainId: "gameplay",
       suite: "production-journey",
       classification: "routing-gap",
     },
-  ]);
+  );
 });
 
 test("fails closed on duplicate, unknown, malformed, nonterminal, and dirty-cleanup evidence", () => {
@@ -494,4 +559,308 @@ test("marks malformed forced-full failure evidence indeterminate", () => {
   assert.deepEqual(analysis.routingAudit.finalFailures, [
     { chainId: "gameplay", suite: null, classification: "indeterminate" },
   ]);
+});
+
+test("rejects contradictory planner execution modes", () => {
+  const fullSuites = [
+    "smoke",
+    "gameplay",
+    "production-journey",
+    "capture-proof",
+    "save-core",
+    "save-management",
+    "exit-lifecycle",
+  ];
+  const fullChains = [
+    {
+      chainId: "gameplay",
+      suiteIds: ["smoke", "gameplay", "production-journey"],
+    },
+    {
+      chainId: "persistence",
+      suiteIds: ["capture-proof", "save-core", "save-management"],
+    },
+    { chainId: "exit", suiteIds: ["exit-lifecycle"] },
+  ];
+  const fixtures = [
+    plan({
+      suites: ["smoke"],
+      chains: [smokeChain],
+      risk: ["smoke"],
+      forcedFull: true,
+      reason: "manual-override",
+    }),
+    plan({
+      suites: fullSuites,
+      chains: fullChains,
+      risk: ["smoke"],
+      forcedFull: true,
+      reason: null,
+    }),
+    plan({
+      suites: ["smoke", "gameplay"],
+      chains: [{ chainId: "gameplay", suiteIds: ["smoke", "gameplay"] }],
+      risk: ["smoke"],
+    }),
+    plan({
+      suites: ["smoke"],
+      chains: [smokeChain],
+      risk: ["smoke"],
+      reason: "unexpected-reason",
+    }),
+    plan({ suites: [], chains: [], risk: ["smoke"] }),
+    plan({
+      suites: [],
+      chains: [],
+      risk: [],
+      forcedFull: true,
+      reason: "manual-override",
+    }),
+  ];
+
+  for (const invalidPlan of fixtures) {
+    const analysis = analyzeE2eCiResults({ plan: invalidPlan, results: [] });
+    assert.equal(analysis.status, "failed");
+    assert.equal(
+      analysis.errors.some(({ code }) => code === "malformed-plan"),
+      true,
+    );
+  }
+});
+
+test("rejects contradictory terminal, phase, timing, retry, and cleanup evidence", () => {
+  const validPlan = plan({ suites: ["smoke"], chains: [smokeChain] });
+  const passed = result({ chainId: "gameplay", suites: ["smoke"] });
+  const failed = result({
+    chainId: "gameplay",
+    suites: ["smoke"],
+    terminal: "failed",
+    finalFailedSuite: "smoke",
+  });
+  const recovered = result({
+    chainId: "gameplay",
+    suites: ["smoke"],
+    firstAttemptFailures: [{ phase: "smoke", suite: "smoke", exitCode: 23 }],
+    recoveredFlakes: ["smoke"],
+  });
+  const fixtures = [
+    { ...passed, exitCode: 1 },
+    { ...failed, exitCode: 0 },
+    {
+      ...passed,
+      phaseResults: [{ ...passed.phaseResults[0], exitCode: 9 }],
+    },
+    {
+      ...failed,
+      phaseResults: [{ ...failed.phaseResults[0], exitCode: 0 }],
+    },
+    {
+      ...passed,
+      phaseResults: [{ ...passed.phaseResults[0], phase: "invented-phase" }],
+    },
+    { ...passed, phaseResults: [null] },
+    {
+      ...passed,
+      attempts: { configured: 2, used: 2, retries: 1 },
+    },
+    { ...recovered, firstAttemptFailures: [], recoveredFlakes: [] },
+    { ...recovered, recoveredFlakes: [] },
+    {
+      ...recovered,
+      cleanup: {
+        state: "removed",
+        attempts: [{ attempt: 1, state: "removed" }],
+      },
+    },
+    { ...passed, cleanup: { state: "removed", attempts: [null] } },
+    { ...passed, testOnlyTimeMs: passed.testOnlyTimeMs + 1 },
+  ];
+
+  for (const invalidResult of fixtures) {
+    const analysis = analyzeE2eCiResults({
+      plan: validPlan,
+      results: [invalidResult],
+    });
+    assert.equal(analysis.status, "failed");
+    assert.equal(
+      analysis.errors.some(({ code }) => code === "malformed-chain"),
+      true,
+    );
+  }
+});
+
+test("rejects wrong canonical phase order on every represented attempt", () => {
+  const suites = ["smoke", "gameplay", "production-journey"];
+  const validPlan = plan({
+    suites,
+    chains: [{ chainId: "gameplay", suiteIds: suites }],
+  });
+  const validResult = result({ chainId: "gameplay", suites });
+  const reordered = {
+    ...validResult,
+    phaseResults: [
+      validResult.phaseResults[1],
+      validResult.phaseResults[0],
+      validResult.phaseResults[2],
+    ],
+  };
+
+  const analysis = analyzeE2eCiResults({
+    plan: validPlan,
+    results: [reordered],
+  });
+  assert.equal(analysis.status, "failed");
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
+  );
+});
+
+test("rejects phase evidence outside or out of represented attempt order", () => {
+  const validPlan = plan({ suites: ["smoke"], chains: [smokeChain] });
+  const retried = result({
+    chainId: "gameplay",
+    suites: ["smoke"],
+    firstAttemptFailures: [{ phase: "smoke", suite: "smoke", exitCode: 23 }],
+    recoveredFlakes: ["smoke"],
+  });
+  const fixtures = [
+    {
+      ...retried,
+      phaseResults: [retried.phaseResults[1], retried.phaseResults[0]],
+    },
+    {
+      ...retried,
+      phaseResults: [
+        ...retried.phaseResults,
+        { ...retried.phaseResults[1], attempt: 3 },
+      ],
+      phaseCount: 3,
+      processCount: 3,
+      testOnlyTimeMs:
+        retried.testOnlyTimeMs + retried.phaseResults[1].durationMs,
+      phase: retried.phaseResults[1].phase,
+      suite: retried.phaseResults[1].suite,
+      attempt: 3,
+      durationMs: retried.phaseResults[1].durationMs,
+    },
+  ];
+
+  for (const invalidResult of fixtures) {
+    const analysis = analyzeE2eCiResults({
+      plan: validPlan,
+      results: [invalidResult],
+    });
+    assert.equal(analysis.status, "failed");
+    assert.equal(
+      analysis.errors.some(({ code }) => code === "malformed-chain"),
+      true,
+    );
+  }
+});
+
+test("invented forced-full failure evidence remains indeterminate", () => {
+  const suites = ["smoke", "gameplay", "production-journey"];
+  const forcedPlan = plan({
+    suites: [
+      ...suites,
+      "capture-proof",
+      "save-core",
+      "save-management",
+      "exit-lifecycle",
+    ],
+    chains: [
+      { chainId: "gameplay", suiteIds: suites },
+      {
+        chainId: "persistence",
+        suiteIds: ["capture-proof", "save-core", "save-management"],
+      },
+      { chainId: "exit", suiteIds: ["exit-lifecycle"] },
+    ],
+    risk: ["smoke"],
+    forcedFull: true,
+    reason: "manual-override",
+  });
+  const invalidFailure = result({
+    chainId: "gameplay",
+    suites,
+    risk: ["smoke"],
+    forcedFull: true,
+    reason: "manual-override",
+    terminal: "failed",
+    finalFailedSuite: "production-journey",
+  });
+  invalidFailure.phaseResults.at(-1).phase = "invented-phase";
+
+  const analysis = analyzeE2eCiResults({
+    plan: forcedPlan,
+    results: [invalidFailure],
+  });
+  assert.deepEqual(analysis.routingAudit.finalFailures[0], {
+    chainId: "gameplay",
+    suite: null,
+    classification: "indeterminate",
+  });
+});
+
+test("malformed attempts return failed analysis without throwing", () => {
+  const malformed = result({ chainId: "gameplay", suites: ["smoke"] });
+  malformed.attempts = null;
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [malformed],
+  });
+
+  assert.equal(analysis.status, "failed");
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
+  );
+});
+
+test("CLI writes analysis and step summary for malformed result evidence", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "lyra-e2e-analysis-"));
+  try {
+    const planFile = path.join(directory, "e2e-plan.json");
+    const resultsDirectory = path.join(directory, "results");
+    const analysisFile = path.join(directory, "analysis.json");
+    const summaryFile = path.join(directory, "summary.md");
+    mkdirSync(resultsDirectory);
+    writeFileSync(
+      planFile,
+      JSON.stringify(plan({ suites: ["smoke"], chains: [smokeChain] })),
+    );
+    const malformed = result({ chainId: "gameplay", suites: ["smoke"] });
+    malformed.attempts = null;
+    writeFileSync(
+      path.join(resultsDirectory, "run-result.json"),
+      JSON.stringify(malformed),
+    );
+
+    const execution = spawnSync(
+      process.execPath,
+      [
+        new URL("./e2e-ci-results.mjs", import.meta.url).pathname,
+        "--plan-file",
+        planFile,
+        "--results-directory",
+        resultsDirectory,
+        "--analysis-file",
+        analysisFile,
+      ],
+      {
+        env: { ...process.env, GITHUB_STEP_SUMMARY: summaryFile },
+        encoding: "utf8",
+      },
+    );
+
+    assert.equal(execution.status, 1, execution.stderr);
+    assert.equal(
+      JSON.parse(readFileSync(analysisFile, "utf8")).status,
+      "failed",
+    );
+    assert.match(readFileSync(summaryFile, "utf8"), /Status: \*\*failed\*\*/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
