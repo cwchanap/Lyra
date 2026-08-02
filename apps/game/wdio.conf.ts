@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SAVE_E2E_ORDINARY_SPECS } from "./scripts/e2e-suite-registry.mjs";
+import { E2E_SMOKE_SPECS } from "./scripts/e2e-suite-registry.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Dedicated e2e target dir (CARGO_TARGET_DIR=src-tauri/target-e2e) so that
@@ -15,10 +15,10 @@ const appBinaryPath = path.join(
 
 export const config: WebdriverIO.Config = {
   runner: "local",
-  // The default configuration is deliberately ordinary-only. Every
-  // save e2e spec process is selected explicitly by the guarded phased
-  // runner so it can own and revalidate the app-data directory lifecycle.
-  specs: [...SAVE_E2E_ORDINARY_SPECS],
+  // The default is the fast packaged smoke check. Every non-smoke process
+  // passes an explicit spec through the guarded suite runner, which owns and
+  // revalidates the app-data directory lifecycle.
+  specs: [...E2E_SMOKE_SPECS],
   maxInstances: 1,
   // Runner-managed retries allocate a fresh guarded root, retain first-attempt
   // diagnostics, and never let WDIO retry against contaminated app data.

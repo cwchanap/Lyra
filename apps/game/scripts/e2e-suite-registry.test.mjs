@@ -33,6 +33,24 @@ test("registry definitions are immutable", () => {
   assert.equal(Object.isFrozen(E2E_SUITE_DEFINITIONS[0].phases), true);
 });
 
+test("smoke owns only the packaged title-to-dialogue check", () => {
+  const [phase] = buildE2ePhasePlan(["smoke"], { smoke: "/tmp/smoke" });
+
+  assert.deepEqual(phase.specs, ["./e2e-tauri/smoke.e2e.ts"]);
+});
+
+test("gameplay retains every pre-existing ordinary packaged spec", () => {
+  const [phase] = buildE2ePhasePlan(["gameplay"], {
+    gameplay: "/tmp/gameplay",
+  });
+
+  assert.deepEqual(phase.specs, [
+    "./e2e-tauri/app.e2e.ts",
+    "./e2e-tauri/investigation-layout.e2e.ts",
+    "./e2e-tauri/scene-navigation-gate.e2e.ts",
+  ]);
+});
+
 test("normalizes duplicate requested suites into canonical order", () => {
   assert.deepEqual(
     normalizeE2eSuiteIds(["save-management", "smoke", "smoke"]),
