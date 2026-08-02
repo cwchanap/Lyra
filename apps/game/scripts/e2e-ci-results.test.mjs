@@ -618,6 +618,44 @@ test("accepts a producer retry after setup fails before a phase result exists", 
   ]);
 });
 
+test("accepts a producer retry after ownership allocation fails before any phase", async () => {
+  const produced = await produceSmokeResult({
+    attempts: 2,
+    ownershipMode: (attempt) => (attempt === 1 ? "actual" : "stub"),
+    createRoot() {
+      throw new Error("attempt-one allocation blocked");
+    },
+  });
+  assert.deepEqual(produced.firstAttemptFailures, [
+    { phase: "smoke", suite: "smoke", exitCode: 1 },
+  ]);
+  assert.deepEqual(produced.recoveredFlakes, ["smoke"]);
+  assert.deepEqual(
+    produced.phaseResults.map(({ attempt, result: phaseResult }) => ({
+      attempt,
+      result: phaseResult,
+    })),
+    [{ attempt: 2, result: "passed" }],
+  );
+  assert.deepEqual(produced.cleanup, {
+    state: "removed",
+    attempts: [
+      { attempt: 1, state: "removed" },
+      { attempt: 2, state: "removed" },
+    ],
+  });
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [produced],
+  });
+  assert.equal(analysis.status, "passed");
+  assert.deepEqual(analysis.errors, []);
+  assert.deepEqual(analysis.routingAudit.recoveredFlakes, [
+    { chainId: "gameplay", suite: "smoke" },
+  ]);
+});
+
 test("accepts a producer pre-phase cancellation as structurally valid", async () => {
   const produced = await produceSmokeResult({
     supervisor: { cancelledSignal: "SIGTERM" },
@@ -2119,6 +2157,46 @@ test("CLI writes failed analysis and summary for a null planner matrix entry", (
       true,
     );
     assert.match(readFileSync(summaryFile, "utf8"), /malformed-plan/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("CLI surfaces why the plan evidence could not be read", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "lyra-e2e-analysis-"));
+  try {
+    const planFile = path.join(directory, "e2e-plan.json");
+    const resultsDirectory = path.join(directory, "results");
+    const analysisFile = path.join(directory, "analysis.json");
+    const summaryFile = path.join(directory, "summary.md");
+    mkdirSync(resultsDirectory);
+    writeFileSync(planFile, '{"planner":'); // intentionally broken JSON
+
+    const execution = spawnSync(
+      process.execPath,
+      [
+        new URL("./e2e-ci-results.mjs", import.meta.url).pathname,
+        "--plan-file",
+        planFile,
+        "--results-directory",
+        resultsDirectory,
+        "--analysis-file",
+        analysisFile,
+      ],
+      {
+        env: { ...process.env, GITHUB_STEP_SUMMARY: summaryFile },
+        encoding: "utf8",
+      },
+    );
+
+    assert.equal(execution.status, 1);
+    const analysis = JSON.parse(readFileSync(analysisFile, "utf8"));
+    const planIssue = analysis.errors.find(
+      ({ code }) => code === "malformed-plan",
+    );
+    assert.equal(typeof planIssue, "object");
+    assert.match(planIssue.message, /could not be read/);
+    assert.match(planIssue.message, /Unexpected end of JSON input|expected/i);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

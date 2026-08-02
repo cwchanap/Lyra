@@ -1,7 +1,6 @@
 import type { E2eCheckpointId } from "./checkpoints";
+import { E2E_CHECKPOINT_APPLIED_EVENT } from "./checkpoints";
 import { loadE2eCheckpointThroughClient } from "$lib/state/game-client.svelte";
-
-export const E2E_CHECKPOINT_APPLIED_EVENT = "lyra:e2e-checkpoint-applied";
 
 export type E2eCheckpointBrowserBridge = {
   loadCheckpoint: (id: E2eCheckpointId) => Promise<void>;

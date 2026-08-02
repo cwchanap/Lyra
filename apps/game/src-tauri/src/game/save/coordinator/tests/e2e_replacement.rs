@@ -1,8 +1,9 @@
 use super::super::{
     AppSession, AutosaveWriteReceipt, BackgroundWriteFailure, CleanupFailure, CleanupOwner,
     ExclusivePersistenceIntent, ExitStatusView, FailureChallengeIdentity, PendingAutosave,
-    PersistenceBypassOperation, PersistenceHealthView, SaveCoordinator, ThumbnailActivityView,
-    ThumbnailCapturePurpose, WriterJobClass, WriterQueueProbe,
+    PersistenceBypassOperation, PersistenceFailureTokenView, PersistenceHealthView,
+    SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose, WriterJobClass,
+    WriterQueueProbe,
 };
 use crate::game::save::e2e_faults::E2ePersistenceFaultBoundary;
 use crate::game::save::schema::SaveSlotRef;
@@ -97,10 +98,9 @@ async fn replacement_atomically_installs_a_fresh_session_and_resets_contaminated
         state.reserve_failure_challenge(PersistenceBypassOperation::StartWithoutSaving, identity);
         state.exit_status = ExitStatusView::Failed {
             diagnostic: GameError::save_write_failed(),
-            failure_token: serde_json::from_value(serde_json::json!(
-                "00000000-0000-4000-8000-000000000001"
-            ))
-            .unwrap(),
+            failure_token: PersistenceFailureTokenView(
+                "00000000-0000-4000-8000-000000000001".into(),
+            ),
         };
         state.programmatic_exit_bypass = true;
         state.exit_action_in_progress = true;
@@ -272,7 +272,16 @@ async fn replacement_drops_queued_writers_and_ignores_an_active_stale_completion
         }),
         GameError::save_sync_failed(),
     );
+    app.coordinator
+        .record_cleanup_failure(CleanupOwner::Attempt(0), GameError::save_sync_failed());
     assert!(app.coordinator.last_successful_write().is_none());
+    assert!(app
+        .coordinator
+        .state
+        .lock()
+        .unwrap()
+        .cleanup_failure
+        .is_none());
     assert_eq!(
         app.coordinator.persistence_health(),
         PersistenceHealthView::Healthy

@@ -323,7 +323,7 @@ export function buildSaveE2ePhasePlan({
   const suitesByMode = {
     "--ordinary": ["gameplay"],
     "--capture-proof": ["capture-proof"],
-    "--full": [
+    "--persistence": [
       "capture-proof",
       "save-core",
       "save-management",
@@ -332,15 +332,13 @@ export function buildSaveE2ePhasePlan({
   };
   const suites = suitesByMode[mode];
   if (!suites) throw new Error(`Unknown save e2e mode: ${String(mode)}`);
+  const ordinaryRoot =
+    ordinaryAppDataDir === undefined
+      ? undefined
+      : assertSafeSaveE2eAppDataDir(ordinaryAppDataDir);
   return buildE2ePhasePlan(suites, {
-    gameplay:
-      ordinaryAppDataDir === undefined
-        ? undefined
-        : assertSafeSaveE2eAppDataDir(ordinaryAppDataDir),
-    ordinary:
-      ordinaryAppDataDir === undefined
-        ? undefined
-        : assertSafeSaveE2eAppDataDir(ordinaryAppDataDir),
+    gameplay: ordinaryRoot,
+    ordinary: ordinaryRoot,
     captureProof:
       captureProofAppDataDir === undefined
         ? undefined
@@ -381,16 +379,17 @@ export function executeSaveE2ePhasePlan(
   if (!Array.isArray(phases) || phases.length === 0) {
     throw new Error("Unknown save e2e phase plan.");
   }
-  const roots = [
-    ...new Set(phases.map((phaseToValidate) => phaseToValidate.appDataDir)),
-  ];
   let exitCode = 0;
+  let roots = [];
   try {
     for (const phaseToValidate of phases) {
       validateE2ePhaseOwnership(phaseToValidate);
       assertSafeSaveE2eAppDataDir(phaseToValidate.appDataDir);
     }
     validateE2ePhaseSequence(phases);
+    roots = [
+      ...new Set(phases.map((phaseToValidate) => phaseToValidate.appDataDir)),
+    ];
     for (const currentPhase of phases) {
       exitCode = spawnPhase(currentPhase);
       if (exitCode !== 0) {

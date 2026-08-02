@@ -983,7 +983,7 @@ export async function returnToTitle(): Promise<void> {
   await openGameMenu();
   await clickButton(anchors.returnToTitle);
   await waitForPackagedDomTransition(
-    '[aria-label="主選單"]',
+    `[aria-label="${anchors.mainMenu}"]`,
     "[data-gameplay-root]",
     "title screen did not appear",
   );
@@ -994,7 +994,7 @@ export async function continueFromTitle(): Promise<void> {
   await clickButton(anchors.continueGame);
   await waitForPackagedDomTransition(
     "[data-gameplay-root]",
-    '[aria-label="主選單"]',
+    `[aria-label="${anchors.mainMenu}"]`,
     "Continue did not leave the title screen",
   );
   await waitForPackagedGameState(
@@ -1021,7 +1021,7 @@ export async function loadTitleSlot(
   await clickButton(`選擇${type === "auto" ? "自動存檔" : "手動存檔"} ${slot}`);
   await waitForPackagedDomTransition(
     "[data-gameplay-root]",
-    '[aria-label="主選單"]',
+    `[aria-label="${anchors.mainMenu}"]`,
     `title load of ${type}-${slot} did not install gameplay`,
   );
   await waitForPackagedGameState(
@@ -1582,7 +1582,7 @@ export async function startFromMenu(): Promise<void> {
   } catch (e) {
     // Surface the on-screen error banner (if any) so resource/IPC failures
     // are diagnosable instead of just "did not appear after start".
-    const diag = await browser.execute(async () => {
+    const diag = await browser.execute(async (mainMenuLabel: string) => {
       const banner = document.querySelector("[role='alert'], .error-banner");
       const diagnosticWindow = window as Window & {
         __TAURI_INTERNALS__?: TauriInternals;
@@ -1609,7 +1609,8 @@ export async function startFromMenu(): Promise<void> {
         url: window.location.href,
         documentIdentity:
           document.documentElement.dataset.saveDocumentIdentity ?? null,
-        titleVisible: document.querySelector('[aria-label="主選單"]') !== null,
+        titleVisible:
+          document.querySelector(`[aria-label="${mainMenuLabel}"]`) !== null,
         gameplayRootVisible:
           document.querySelector("[data-gameplay-root]") !== null,
         captureRootVisible:
@@ -1627,7 +1628,7 @@ export async function startFromMenu(): Promise<void> {
         })),
         nativeState,
       };
-    });
+    }, anchors.mainMenu);
     console.error("[startFromMenu diagnostic]", JSON.stringify(diag));
     throw e;
   }

@@ -3283,6 +3283,7 @@ mod tests {
         .unwrap();
         let replacement = commit_prepared_slot_write(&fs, &root(), prepared).unwrap();
         assert_eq!(replacement.committed_envelope.save_id, NEW_SAVE_ID);
+        assert!(replacement.cleanup_diagnostic.is_none());
         assert!(fs.exists(&sidecar_path(NEW_SAVE_ID)));
         assert!(!fs.exists(&sidecar_path(old_save_id)));
 

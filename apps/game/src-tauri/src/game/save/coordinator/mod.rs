@@ -2163,7 +2163,7 @@ impl SaveCoordinator {
     ) -> Result<u64, GameError> {
         let mut state = self.lock_state()?;
         if state.next_session_generation != session_generation {
-            return Err(GameError::save_write_failed());
+            return Err(GameError::stale_session_generation());
         }
         Self::complete_discovery_attempt_locked(&mut state)
     }
@@ -3500,12 +3500,9 @@ impl SaveCoordinator {
         if state.next_session_generation != session_generation {
             return false;
         }
-        state.persistence_health = view.clone();
-        let subscribers = state.health_subscribers.clone();
+        let subscribers = set_persistence_health(&mut state, view.clone());
         drop(state);
-        for subscriber in subscribers {
-            subscriber(view.clone());
-        }
+        publish_health(&subscribers, &view);
         true
     }
 

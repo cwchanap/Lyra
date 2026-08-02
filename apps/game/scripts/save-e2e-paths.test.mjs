@@ -275,11 +275,11 @@ test("--capture-proof yields only the packaged capture proof", () => {
   ]);
 });
 
-test("--full orders proof, seed, resume, management, and exit with isolated roots", () => {
+test("--persistence orders proof, seed, resume, management, and exit with isolated roots", () => {
   const capture = holder("lyra-save-e2e-");
   const persistence = holder("lyra-save-e2e-");
   const plan = buildSaveE2ePhasePlan({
-    mode: "--full",
+    mode: "--persistence",
     captureProofAppDataDir: capture,
     persistenceAppDataDir: persistence,
   });
@@ -323,7 +323,7 @@ test("the consolidated persistence path retains every disk-mutation and restart 
   const capture = holder("lyra-save-e2e-");
   const persistence = holder("lyra-save-e2e-");
   const plan = buildSaveE2ePhasePlan({
-    mode: "--full",
+    mode: "--persistence",
     captureProofAppDataDir: capture,
     persistenceAppDataDir: persistence,
   });
@@ -366,7 +366,7 @@ test("a failing persistence phase captures backend logs and artifacts before gua
   const capture = holder("lyra-save-e2e-");
   const persistence = holder("lyra-save-e2e-");
   const phases = buildSaveE2ePhasePlan({
-    mode: "--full",
+    mode: "--persistence",
     captureProofAppDataDir: capture,
     persistenceAppDataDir: persistence,
   });

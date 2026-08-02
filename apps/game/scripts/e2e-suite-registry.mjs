@@ -148,11 +148,15 @@ export const E2E_SUITE_DEFINITIONS = Object.freeze([
 const definitionsById = new Map(
   E2E_SUITE_DEFINITIONS.map((definition) => [definition.id, definition]),
 );
-const phasesById = new Map(
-  E2E_SUITE_DEFINITIONS.flatMap((definition) =>
-    definition.phases.map((item) => [item.id, item]),
-  ),
-);
+const phasesById = new Map();
+for (const item of E2E_SUITE_DEFINITIONS.flatMap((definition) =>
+  definition.phases.map((candidate) => candidate),
+)) {
+  if (phasesById.has(item.id)) {
+    throw new Error(`Duplicate save e2e phase id: ${item.id}`);
+  }
+  phasesById.set(item.id, item);
+}
 const canonicalPhaseIds = E2E_SUITE_DEFINITIONS.flatMap((definition) =>
   definition.phases.map((item) => item.id),
 );
@@ -294,20 +298,19 @@ export function e2eSuitePhaseRoots(suiteIds) {
   ];
 }
 
-const guardedRootBySuiteId = Object.freeze({
-  smoke: "smoke",
-  gameplay: "gameplay",
-  "production-journey": "productionJourney",
-  "capture-proof": "capture",
-  "save-core": "persistence",
-  "save-management": "persistence",
-  "exit-lifecycle": "exit",
-});
+const guardedRootBySuiteId = Object.freeze(
+  Object.fromEntries(
+    E2E_SUITE_DEFINITIONS.map((definition) => [
+      definition.id,
+      Object.freeze([...new Set(definition.phases.map((item) => item.root))]),
+    ]),
+  ),
+);
 
 export function e2eSuiteGuardedRoots(suiteIds) {
   return [
     ...new Set(
-      normalizeE2eSuiteIds(suiteIds).map(
+      normalizeE2eSuiteIds(suiteIds).flatMap(
         (suiteId) => guardedRootBySuiteId[suiteId],
       ),
     ),

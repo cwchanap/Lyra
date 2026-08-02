@@ -374,7 +374,7 @@ impl ApplicationPersistence {
             .generation
             == session_generation;
         if !current {
-            return Err(GameError::save_write_failed());
+            return Err(GameError::stale_session_generation());
         }
         write(self.fs.as_ref(), &self.root)
     }
@@ -3043,6 +3043,7 @@ mod tests {
             }
 
             fn release(&self) {
+                let _guard = self.release_lock.lock().unwrap();
                 self.released.store(true, Ordering::SeqCst);
                 self.release.notify_all();
             }
@@ -4147,7 +4148,7 @@ mod tests {
                 !active_delete_reached_storage,
                 "a delete queued behind replacement must not reach its write boundary"
             );
-            assert_eq!(delete_error.code, "saveWriteFailed");
+            assert_eq!(delete_error.code, "staleSessionGeneration");
             assert!(slot_path.exists(), "stale delete must not remove the save");
             assert_eq!(
                 app.coordinator.persistence_health(),

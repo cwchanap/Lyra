@@ -6,7 +6,10 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { partitionE2eSuitesByChain } from "./e2e-suite-registry.mjs";
+import {
+  E2E_CHAIN_IDS,
+  partitionE2eSuitesByChain,
+} from "./e2e-suite-registry.mjs";
 import { selectE2eSuites } from "./select-e2e-suites.mjs";
 
 export const E2E_CI_PLANNER_SCHEMA_VERSION = 1;
@@ -16,6 +19,17 @@ const CHAIN_EXECUTION = Object.freeze({
   persistence: Object.freeze({ timeoutMinutes: 15 }),
   exit: Object.freeze({ timeoutMinutes: 8 }),
 });
+
+for (const chainId of E2E_CHAIN_IDS) {
+  const execution = CHAIN_EXECUTION[chainId];
+  if (
+    !execution ||
+    typeof execution.timeoutMinutes !== "number" ||
+    execution.timeoutMinutes <= 0
+  ) {
+    throw new Error(`E2E chain lacks an execution budget: ${String(chainId)}`);
+  }
+}
 
 function assertAbsolutePath(value, optionName) {
   if (typeof value !== "string" || !path.isAbsolute(value))

@@ -1,5 +1,8 @@
 import type { GameStateView } from "$lib/state/types";
 
+/** Dispatched on the window when a checkpoint projection is applied. */
+export const E2E_CHECKPOINT_APPLIED_EVENT = "lyra:e2e-checkpoint-applied";
+
 export const E2E_CHECKPOINT_IDS = [
   "chapter-1-right-portrait-dialogue",
   "chapter-1-investigation-explore",

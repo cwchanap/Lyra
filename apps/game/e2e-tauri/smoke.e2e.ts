@@ -5,9 +5,10 @@ import {
   settlePackagedCommand,
   startFromMenu,
 } from "./helpers";
+import { anchors } from "./production-anchors";
 
 async function cleanTitleState() {
-  return browser.execute(() => {
+  return browser.execute((mainMenuLabel: string) => {
     const button = (label: string) =>
       Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
         (candidate) => candidate.getAttribute("aria-label") === label,
@@ -16,14 +17,15 @@ async function cleanTitleState() {
     const loadButton = button("載入遊戲");
     const newGameButton = button("開始新遊戲");
     return {
-      titleVisible: document.querySelector('[aria-label="主選單"]') !== null,
+      titleVisible:
+        document.querySelector(`[aria-label="${mainMenuLabel}"]`) !== null,
       hasContinueRecap:
         document.querySelector('[aria-label="繼續遊戲摘要"]') !== null,
       continueDisabled: continueButton?.disabled ?? false,
       loadDisabled: loadButton?.disabled ?? false,
       newGameEnabled: newGameButton !== null && !newGameButton.disabled,
     };
-  });
+  }, anchors.mainMenu);
 }
 
 describe("packaged smoke", () => {

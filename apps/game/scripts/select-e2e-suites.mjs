@@ -17,11 +17,15 @@ export const E2E_RISK_RULES = Object.freeze([
     patterns: [
       ".github/workflows/ci.yml",
       "apps/game/e2e-tauri/**",
+      "apps/game/scripts/*.test.mjs",
       "apps/game/scripts/build-e2e.mjs",
       "apps/game/scripts/cleanup-e2e-roots.mjs",
       "apps/game/scripts/e2e-*.mjs",
+      "apps/game/scripts/plan-e2e-ci.mjs",
+      "apps/game/scripts/require-e2e-binary.mjs",
       "apps/game/scripts/run-save-e2e.mjs",
       "apps/game/scripts/save-e2e-paths.mjs",
+      "apps/game/scripts/select-e2e-suites.mjs",
       "apps/game/wdio.conf.ts",
       "apps/game/package.json",
     ],
@@ -130,12 +134,14 @@ export const E2E_RISK_RULES = Object.freeze([
   }),
 ]);
 
+const GLOBSTAR_SENTINEL = "\u0000";
+
 function patternMatches(pattern, changedPath) {
   const escaped = pattern
     .replace(/[|\\{}()[\]^$+?.]/g, "\\$&")
-    .replaceAll("**", "\\u0000")
+    .replaceAll("**", GLOBSTAR_SENTINEL)
     .replaceAll("*", "[^/]*")
-    .replaceAll("\\u0000", ".*");
+    .replaceAll(GLOBSTAR_SENTINEL, ".*");
   return new RegExp(`^${escaped}$`).test(changedPath);
 }
 

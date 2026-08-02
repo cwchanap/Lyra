@@ -451,3 +451,59 @@ test("cleanup failure fails the runner without blaming the last passing suite", 
   assert.equal(runner.result.cleanup.state, "failed");
   holders.push(...roots);
 });
+
+test("ownership allocation failure is a retryable attempt failure", async () => {
+  const runDirectory = holder();
+  const roots = [];
+  let ownershipCalls = 0;
+  const runner = await runE2eRunner({
+    chainId: "gameplay",
+    suiteIds: ["smoke"],
+    riskSelectedSuites: ["smoke"],
+    attempts: 2,
+    forcedFull: false,
+    runDirectory,
+    supervisor: { cancelledSignal: null },
+    runGuard: async () => ({ exitCode: 0 }),
+    rootKeys: ["smoke"],
+    createRoot() {
+      const root = createSaveE2eAppDataDir();
+      roots.push(root);
+      return root;
+    },
+    buildPhasePlan(_suiteIds, directories) {
+      return [{ id: "smoke", root: "smoke", appDataDir: directories.smoke }];
+    },
+    suiteForPhase: () => "smoke",
+    applyCheckpoint() {},
+    createOutputDirectory: () => runDirectory,
+    async runPhase() {
+      return { exitCode: 0 };
+    },
+    captureFailureArtifacts() {},
+    runAttempt: (options) =>
+      runE2eAttempt({
+        ...options,
+        createOwnership(details) {
+          ownershipCalls += 1;
+          if (ownershipCalls === 1)
+            throw new Error("ownership allocation failed");
+          return createRunOwnership(details);
+        },
+      }),
+  });
+
+  assert.equal(runner.exitCode, 0);
+  assert.equal(runner.result.result, "passed");
+  assert.deepEqual(runner.result.attempts, {
+    configured: 2,
+    used: 2,
+    retries: 1,
+  });
+  assert.deepEqual(runner.result.firstAttemptFailures, [
+    { phase: "smoke", suite: "smoke", exitCode: 1 },
+  ]);
+  assert.deepEqual(runner.result.recoveredFlakes, ["smoke"]);
+  assert.equal(runner.result.phaseCount, 1);
+  for (const root of roots) assert.equal(existsSync(root), false);
+});

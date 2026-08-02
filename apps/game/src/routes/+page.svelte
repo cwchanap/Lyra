@@ -82,7 +82,10 @@
     packagedCaptureUnavailableReason,
   } from "$lib/persistence/thumbnail-capture";
   import { acquisitionController } from "$lib/state/acquisition-controller.svelte";
-  import type { E2eCheckpointProjection } from "$lib/e2e/checkpoints";
+  import {
+    E2E_CHECKPOINT_APPLIED_EVENT,
+    type E2eCheckpointProjection,
+  } from "$lib/e2e/checkpoints";
   import { onDestroy, onMount, tick, untrack } from "svelte";
 
   async function handleExit() {
@@ -122,12 +125,12 @@
         if (projection.sceneNavigationEligible) saveStoryClearedOnce();
       };
       window.addEventListener(
-        "lyra:e2e-checkpoint-applied",
+        E2E_CHECKPOINT_APPLIED_EVENT,
         applyCheckpointProjection,
       );
       return () => {
         window.removeEventListener(
-          "lyra:e2e-checkpoint-applied",
+          E2E_CHECKPOINT_APPLIED_EVENT,
           applyCheckpointProjection,
         );
       };

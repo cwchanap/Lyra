@@ -86,29 +86,30 @@ test("execution is a non-fail-fast isolated chain matrix", () => {
 
   const initialize = namedStep(execution, "Initialize chain metrics");
   assert.match(initialize.run, /e2e-ci-metrics\.mjs initialize/);
-  assert.match(initialize.run, /--chain-id "\$\{\{ matrix\.chainId \}\}"/);
+  assert.equal(initialize.env.CHAIN_ID, "${{ matrix.chainId }}");
+  assert.match(initialize.run, /--chain-id "\$CHAIN_ID"/);
 
   const cache = namedStep(execution, "Rust cache");
   assert.equal(cache.id, "rust-cache");
   assert.equal(cache.with["prefix-key"], "${{ matrix.cacheKey }}");
   const setup = namedStep(execution, "Record setup and restored cache");
   assert.match(setup.run, /e2e-ci-metrics\.mjs setup/);
-  assert.match(
-    setup.run,
-    /--cache-hit "\$\{\{ steps\.rust-cache\.outputs\.cache-hit \}\}"/,
+  assert.equal(setup.env.CHAIN_ID, "${{ matrix.chainId }}");
+  assert.equal(
+    setup.env.RUST_CACHE_HIT,
+    "${{ steps.rust-cache.outputs.cache-hit }}",
   );
+  assert.match(setup.run, /--cache-hit "\$RUST_CACHE_HIT"/);
   const build = namedStep(execution, "Build Tauri E2E binary");
   assert.match(build.run, /e2e-ci-metrics\.mjs run/);
+  assert.equal(build.env.CHAIN_ID, "${{ matrix.chainId }}");
   assert.match(build.run, /--stage build/);
   assert.match(build.run, /-- node apps\/game\/scripts\/build-e2e\.mjs/);
   const run = namedStep(execution, "Run selected Tauri E2E chain").run;
   assert.match(run, /e2e-ci-metrics\.mjs run/);
   assert.match(run, /--stage test/);
-  assert.match(
-    run,
-    /--suite-file "\$RUNNER_TEMP\/e2e-plan\/\$\{\{ matrix\.suiteFile \}\}"/,
-  );
-  assert.match(run, /--chain-id "\$\{\{ matrix\.chainId \}\}"/);
+  assert.match(run, /--suite-file "\$RUNNER_TEMP\/e2e-plan\/\$SUITE_FILE"/);
+  assert.match(run, /--chain-id "\$CHAIN_ID"/);
   assert.match(run, /--plan-file "\$RUNNER_TEMP\/e2e-plan\/e2e-plan\.json"/);
   assert.match(run, /--attempts 2/);
 
