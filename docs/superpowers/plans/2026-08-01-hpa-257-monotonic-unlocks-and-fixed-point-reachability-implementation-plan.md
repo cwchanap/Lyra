@@ -913,8 +913,14 @@ git commit -m "feat: add joint story progression fixed point"
 - Modify: `packages/scripts/compile-scenes/orchestrator.ts:1-430`
 - Modify: `packages/scripts/compile-scenes.test.ts`
 - Modify: `packages/scripts/compile-scenes/validator.test.ts`
-- Create fixtures under: `packages/scripts/__fixtures__/invalid/`
-- Create warning fixtures under: `packages/scripts/__fixtures__/hpa_257_warnings/`
+- Create: `packages/scripts/__fixtures__/invalid/hpa_257_positive_self_reference/`
+- Create: `packages/scripts/__fixtures__/invalid/hpa_257_positive_dependency_cycle/`
+- Create: `packages/scripts/__fixtures__/invalid/hpa_257_required_content_unreachable/`
+- Create: `packages/scripts/__fixtures__/invalid/hpa_257_mandatory_authorization_unreachable/`
+- Create: `packages/scripts/__fixtures__/invalid/hpa_257_story_reveal_batch_always_invalid/`
+- Create: `packages/scripts/__fixtures__/invalid/hpa_257_primary_transition_always_invalid/`
+- Create: `packages/scripts/__fixtures__/hpa_257_warnings/optional_unreachable/`
+- Create: `packages/scripts/__fixtures__/hpa_257_warnings/primary_order_dependent/`
 
 **Interfaces:**
 - Consumes: `buildReachabilityNodes`, `analyzeReachability`, `createAnalysisDefinitionRegistry`, and optional synthetic definitions on `CompileOptions`.
@@ -922,16 +928,16 @@ git commit -m "feat: add joint story progression fixed point"
 
 - [ ] **Step 1: Add end-to-end failing fixtures for every severity**
 
-Add focused invalid fixture directories whose `expected-error.txt` names:
+Each invalid directory contains a minimal `story_catalog.md`, `chapter_1/chapter.md`, one scene file, and `expected-error.txt` with exactly one primary code:
 
-- `positiveSelfReference`;
-- `positiveDependencyCycle`;
-- `requiredContentUnreachable`;
-- `mandatoryAuthorizationUnreachable`;
-- `storyRevealBatchAlwaysInvalid`;
-- `primaryObjectiveTransitionAlwaysInvalid`.
+- `hpa_257_positive_self_reference` → `positiveSelfReference`;
+- `hpa_257_positive_dependency_cycle` → `positiveDependencyCycle`;
+- `hpa_257_required_content_unreachable` → `requiredContentUnreachable`;
+- `hpa_257_mandatory_authorization_unreachable` → `mandatoryAuthorizationUnreachable`;
+- `hpa_257_story_reveal_batch_always_invalid` → `storyRevealBatchAlwaysInvalid`;
+- `hpa_257_primary_transition_always_invalid` → `primaryObjectiveTransitionAlwaysInvalid`.
 
-Add valid-warning fixtures for optional unreachable and order-dependent primary flow.
+The warning directories contain valid compilable corpora whose expected warning snapshots cover `optionalContentUnreachable` and `primaryObjectiveOrderingNotExhaustive`.
 
 - [ ] **Step 2: Run the compiler suite and verify failures**
 
@@ -1040,12 +1046,28 @@ Expected: FAIL because the Rust wire variants and story-aware loader checks are 
 
 - [ ] **Step 4: Implement concrete Serde contracts**
 
-Add `AtLeast { count, conditions }` to both concrete unlock enums and story predicate variants to each. Add:
+Add `AtLeast { count: usize, conditions: Vec<UnlockExpr> }` to `UnlockExpr` and `AtLeast { count: usize, conditions: Vec<InterrogationUnlockExpr> }` to `InterrogationUnlockExpr`. Add the complete story target contract:
 
 ```rust
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub enum StoryRevealTarget { /* exact variants listed in the design §7.3 */ }
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum StoryRevealTarget {
+    AssertFact { fact_id: String },
+    RevealQuestion { question_id: String },
+    ResolveQuestion { question_id: String, fact_id: String },
+    RevealObjective { objective_id: String },
+    CompleteObjective { objective_id: String },
+    SetPrimaryObjective {
+        complete_current: bool,
+        next_objective_id: Option<String>,
+    },
+    GrantAuthorization { authorization_id: String },
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -1053,9 +1075,16 @@ pub enum InvestigationRevealTarget {
     Local(RevealTarget),
     Story(StoryRevealTarget),
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CombinedInterrogationRevealTarget {
+    Local(InterrogationRevealTarget),
+    Story(StoryRevealTarget),
+}
 ```
 
-Use the equivalent wrapper for interrogation. Change scene JSON reveal arrays to the combined wrappers.
+Change investigation scene JSON reveal arrays to `Vec<InvestigationRevealTarget>` and interrogation reveal arrays to `Vec<CombinedInterrogationRevealTarget>`.
 
 Extend `load_scene_with_catalog` to validate story predicates/targets against the loaded catalog after structural/local validation. Keep `decode_scene_json_without_catalog_for_test` limited to structural checks.
 
