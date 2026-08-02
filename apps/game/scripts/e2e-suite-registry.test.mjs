@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   E2E_SUITE_IDS,
@@ -90,4 +91,21 @@ test("phase ownership rejects an approved spec in the wrong phase before launch"
   const [phase] = buildE2ePhasePlan(["smoke"], { ordinary: "/tmp/owned" });
   phase.specs = ["./e2e-tauri/capture-proof.e2e.ts"];
   assert.throws(() => validateE2ePhaseOwnership(phase), /phase plan/i);
+});
+
+test("runner validates selected suite definitions before its binary guard or roots", () => {
+  const runnerSource = readFileSync(
+    new URL("./run-save-e2e.mjs", import.meta.url),
+    "utf8",
+  );
+  const validation = runnerSource.indexOf(
+    "validateSelectedE2eSuiteDefinitions(suiteIds)",
+  );
+
+  assert.notEqual(validation, -1);
+  assert.equal(validation < runnerSource.indexOf("const guard ="), true);
+  assert.equal(
+    validation < runnerSource.indexOf("directories[root] = createRoot()"),
+    true,
+  );
 });
