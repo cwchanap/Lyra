@@ -7,6 +7,8 @@ pub mod command_tx;
 mod content_manifest;
 pub mod dialogue;
 mod dialogue_queue;
+#[cfg(feature = "e2e")]
+pub(crate) mod e2e_checkpoints;
 pub mod error;
 pub mod loader;
 pub mod navigation;

@@ -57,6 +57,14 @@ impl E2ePersistenceFaultState {
             Ok(())
         }
     }
+
+    pub(crate) fn reset(&self) {
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *pending = None;
+    }
 }
 
 pub(crate) struct E2eFaultingSaveFilesystem {
