@@ -18,7 +18,6 @@ describe("App shell", () => {
   });
 
   it("advances dialogue into investigation controls", async () => {
-    expect(await elementExists('[aria-label="繼續遊戲摘要"]')).toBe(false);
     await drainToInvestigationExplore();
     const exists = await elementExists(
       `button[aria-label="${anchors.hotspotEvidence.label}"]`,

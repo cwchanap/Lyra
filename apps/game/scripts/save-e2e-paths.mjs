@@ -321,7 +321,7 @@ export function buildSaveE2ePhasePlan({
   persistenceAppDataDir,
 }) {
   const suitesByMode = {
-    "--ordinary": ["smoke"],
+    "--ordinary": ["gameplay"],
     "--capture-proof": ["capture-proof"],
     "--full": [
       "capture-proof",
@@ -333,6 +333,10 @@ export function buildSaveE2ePhasePlan({
   const suites = suitesByMode[mode];
   if (!suites) throw new Error(`Unknown save e2e mode: ${String(mode)}`);
   return buildE2ePhasePlan(suites, {
+    gameplay:
+      ordinaryAppDataDir === undefined
+        ? undefined
+        : assertSafeSaveE2eAppDataDir(ordinaryAppDataDir),
     ordinary:
       ordinaryAppDataDir === undefined
         ? undefined

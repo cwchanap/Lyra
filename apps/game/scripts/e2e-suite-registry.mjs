@@ -2,7 +2,9 @@ const BACKEND_LOG_ENVIRONMENT = Object.freeze({
   LYRA_E2E_CAPTURE_BACKEND_LOGS: "1",
 });
 
-const ordinarySpecs = Object.freeze([
+export const E2E_SMOKE_SPECS = Object.freeze(["./e2e-tauri/smoke.e2e.ts"]);
+
+const gameplaySpecs = Object.freeze([
   "./e2e-tauri/app.e2e.ts",
   "./e2e-tauri/investigation-layout.e2e.ts",
   "./e2e-tauri/scene-navigation-gate.e2e.ts",
@@ -38,13 +40,16 @@ export const E2E_SUITE_IDS = Object.freeze([
 export const E2E_SUITE_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: "smoke",
+    phases: Object.freeze([phase("smoke", "smoke", "smoke", E2E_SMOKE_SPECS)]),
+  }),
+  Object.freeze({
+    id: "gameplay",
     phases: Object.freeze([
-      phase("ordinary", "ordinary", "smoke", ordinarySpecs),
+      phase("ordinary", "ordinary", "gameplay", gameplaySpecs),
     ]),
   }),
-  // These two leaf suites intentionally have no current packaged spec. Their
-  // IDs reserve stable CI routing ownership for the focused suites added later.
-  Object.freeze({ id: "gameplay", phases: Object.freeze([]) }),
+  // This leaf suite reserves stable CI routing ownership for the dedicated
+  // fresh-install production journey added later.
   Object.freeze({ id: "production-journey", phases: Object.freeze([]) }),
   Object.freeze({
     id: "capture-proof",
@@ -153,15 +158,13 @@ const fixedSlotNames = new Set([
   "manual-3",
 ]);
 
-export const SAVE_E2E_ORDINARY_SPECS = ordinarySpecs;
+export const SAVE_E2E_ORDINARY_SPECS = gameplaySpecs;
 export const SAVE_E2E_PHASE_NAMES = Object.freeze(
   Object.fromEntries(
-    [...phasesById.keys()]
-      .filter((id) => id !== "ordinary")
-      .map((id) => [
-        id.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase()),
-        id,
-      ]),
+    [...phasesById.keys()].map((id) => [
+      id.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase()),
+      id,
+    ]),
   ),
 );
 
