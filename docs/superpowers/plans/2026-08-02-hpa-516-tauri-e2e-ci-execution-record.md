@@ -1,7 +1,8 @@
 # HPA-516 Tauri E2E CI optimization — baseline and execution record
 
-**Status:** local Task 9 implementation complete; pushed warm-cache matrix gate
-and final timing evidence pending.
+**Status:** three qualifying pushed warm-cache full matrices are recorded below.
+Once this documentation commit is pushed, its final CI run is tracked separately
+and does not enter the source-timing medians.
 
 **Merge base:** `origin/main` at `2b9d528f11c7ea2b4db6e907b0340da3291d5736`.
 
@@ -144,29 +145,59 @@ forced-full final failure is classified as `covered-by-risk-selection`,
 `routing-gap`, or `indeterminate`; recovered first-attempt failures are flakes,
 not routing failures.
 
-### Required pushed warm-cache evidence — pending
+### Qualifying pushed warm-cache evidence
 
-No pushed Task 9 matrix has been measured yet. Local direct Task 8 runs and the
-older 22m33 complete-command observation do not qualify. The controller must
-push the reviewed branch, then record at least three successful warm-cache
-full matrices below. Cold-cache and failed runs remain useful diagnostics but
-must not be included in the median.
+All qualifying samples use reviewed source `1ca6cf38934849a1b1c8ecb5b4318c3b8b9bd6b6`.
+Each plan selected all seven canonical suites across the `gameplay`,
+`persistence`, and `exit` chains; every metrics artifact was schema-v1,
+complete, warm-cache (`cacheHit: true` with nonzero restored bytes), and
+zero-exit. Each aggregate reported `errors: []`, 15 canonical
+phases/processes, removed guarded roots, zero runner retries, and zero
+recovered flakes. Values in `G/P/E` order are gameplay / persistence / exit;
+all durations are milliseconds unless shown otherwise.
 
-| Qualifying sample | Workflow run ID/link | Cache restored size | Setup | Build | Parallel wall | Summed test-only | Process count | Retries | Recovered flakes | Exception |
+| Qualifying sample | Workflow / plan reason | Cache restored G/P/E (B) | Setup G/P/E | Build G/P/E | Test G/P/E | Parallel wall | Summed test-only | Processes | Retries / flakes | Exception |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Warm 1 | pending | pending | pending | pending | pending | pending | 15 expected | pending | pending | pending |
-| Warm 2 | pending | pending | pending | pending | pending | pending | 15 expected | pending | pending | pending |
-| Warm 3 | pending | pending | pending | pending | pending | pending | 15 expected | pending | pending | pending |
-| Median | derived after three qualifying runs | derived | derived | derived | derived | derived | 15 expected | derived | derived | list any measured threshold exception |
+| Warm 1 | [30749664216](https://github.com/cwchanap/Lyra/actions/runs/30749664216), `e2e-infrastructure` | 2,779,181,056 / 2,779,193,344 / 2,779,176,960 | 59,393 / 42,216 / 54,056 | 61,952 / 66,836 / 51,065 | 661,023 / 507,312 / 168,445 | 657,553 | 1,329,570 | 15 | 0 / 0 | ordinary gameplay 323,271ms, 23,271ms over 5m |
+| Warm 2 | [30750226686](https://github.com/cwchanap/Lyra/actions/runs/30750226686), `manual-override` | 2,779,181,056 / 2,779,176,960 / 2,779,176,960 | 35,170 / 35,717 / 56,218 | 59,649 / 70,973 / 47,246 | 504,420 / 504,898 / 167,814 | 504,387 | 1,173,078 | 15 | 0 / 0 | none |
+| Warm 3 | [30758366955](https://github.com/cwchanap/Lyra/actions/runs/30758366955), `manual-override` | 2,779,185,152 / 2,779,172,864 / 2,779,185,152 | 50,206 / 85,774 / 51,166 | 57,815 / 52,489 / 59,490 | 567,200 / 443,284 / 203,117 | 564,447 | 1,209,650 | 15 | 0 / 0 | none |
+| Median | derived from these three only | 2,779,181,056 / 2,779,176,960 / 2,779,176,960 | 50,206 / 42,216 / 54,056 | 59,649 / 66,836 / 51,065 | 567,200 / 504,898 / 168,445 | 564,447 | 1,209,650 | 15 | 0 / 0 | see measured exception below |
 
-For each raw artifact, record cache/setup/build/test values exactly as emitted,
-including units and the chain that produced them. The merge gate targets remain
-smoke <=3m, gameplay <=5m, typical selected UI/gameplay <=8m,
-persistence-heavy <=15m, and full parallel matrix <=20m. Any miss requires a
-measured exception here; an estimate is not evidence. The Task 8
-`e3a851a5-18fe-4fa0-adfd-0a84a0d24185` `ECONNREFUSED` observation must be
-reported separately from the qualifying three-run median because it preceded
-this matrix and was not a successful warm-cache sample.
+Raw artifact IDs, retained for seven days from their runs: Warm 1 plan
+`8834017779`, exit `8834068561`, persistence `8834129382`, gameplay
+`8834163343`, aggregate `8834166471`; Warm 2 plan `8834192421`, exit
+`8834248508`, gameplay `8834308229`, persistence `8834310364`, aggregate
+`8834313080`; Warm 3 plan `8836651875`, exit `8836713361`, persistence
+`8836764741`, gameplay `8836783930`, aggregate `8836787272`.
+
+Measured phase evidence and gate assessment:
+
+- Smoke median: 99,961ms (target <=180,000ms); Warm 1/2/3 were
+  101,250 / 99,961 / 38,334ms.
+- Ordinary gameplay median: 268,882ms (target <=300,000ms); Warm 1/2/3 were
+  323,271 / 174,179 / 268,882ms. Warm 1 is the recorded 23,271ms exception;
+  the clean sample remains in the median rather than being discarded.
+- Typical selected UI/gameplay (smoke + ordinary) median: 307,216ms (target
+  <=480,000ms); Warm 1/2/3 were 424,521 / 274,140 / 307,216ms.
+- Persistence-heavy runner-wall median: 504,387ms (target <=900,000ms);
+  Warm 1/2/3 were 504,681 / 504,387 / 442,529ms.
+- Full parallel matrix median: 564,447ms (target <=1,200,000ms); Warm 1/2/3
+  were 657,553 / 504,387 / 564,447ms.
+
+Run 273 (`30757615371`) is deliberately excluded: although its aggregate was
+green, `capture-proof` failed once and recovered in a fresh process, producing
+16 processes, one retry, and one recovered flake. Its first attempt wrote a
+real newest autosave with `thumbnail: unavailable` after an early WebDriver
+script timeout; the unchanged source passed the second process attempt and the
+other two clean samples. The artifact lacks the delegate's unavailable reason,
+so this is recorded as a WebKit/driver degradation diagnostic, not a more
+specific product root-cause claim. The earlier successful `6f3176d` sample set
+(runs 267–269) remains valid for its source but is superseded by the
+review-hardening commit and is not mixed into this median.
+
+The Task 8 `e3a851a5-18fe-4fa0-adfd-0a84a0d24185` `ECONNREFUSED` observation
+also remains separate from this three-run median: it preceded this matrix and
+was not a successful warm-cache sample.
 
 ## Ordered draft-PR plan and verification checklist
 
