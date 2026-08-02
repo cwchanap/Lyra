@@ -34,6 +34,7 @@
 
 - `packages/scripts/compile-scenes/parser-reveals.ts` — shared investigation/interrogation local-target parsing plus story-target grammar.
 - `packages/scripts/compile-scenes/parser-reveals.test.ts` — target syntax, duplicate/conflict, family-matrix, and modifier tests.
+- `packages/scripts/compile-scenes/parser-story-catalog.test.ts` — parser-level reserved-ID and source-location tests.
 - `packages/scripts/compile-scenes/analysis-definition-registry.ts` — qualified analysis scene/board resolution and deterministic fixture registration.
 - `packages/scripts/compile-scenes/analysis-definition-registry.test.ts` — registry duplicate and lookup tests.
 - `packages/scripts/compile-scenes/reachability.ts` — normalized nodes, dependency SCCs, ordered abstract batches, free-order summaries, and joint fixed point.
@@ -42,14 +43,14 @@
 
 ### Existing compiler owners
 
-- `packages/scripts/compile-scenes/types.ts` — concrete AST/JSON expression and reveal unions.
+- `packages/scripts/compile-scenes/types.ts` — concrete AST/JSON expression and reveal unions; analysis-reference fields remain inline in story predicate variants to avoid reversing the existing `story-catalog.ts` dependency.
 - `packages/scripts/compile-scenes/parser-unlock.ts` — shared recursive parser with family-specific predicate adapters.
 - `packages/scripts/compile-scenes/parser-investigation.ts` — investigation AST integration only; private reveal parser removed.
 - `packages/scripts/compile-scenes/parser-interrogation.ts` — interrogation AST integration only; private reveal parser removed.
 - `packages/scripts/compile-scenes/parser-story-catalog.ts` — Markdown/source-line parsing, including objective `{#null}` rejection.
-- `packages/scripts/compile-scenes/story-catalog.ts` — semantic catalog/ref/target validation; reuse existing board and set-primary helpers.
+- `packages/scripts/compile-scenes/story-catalog.ts` — semantic catalog/ref/target validation; owns `AnalysisSceneRef`, existing `AnalysisBoardRef`, and their validators.
 - `packages/scripts/compile-scenes/validator.ts` — existing specialized local gameplay validation plus deterministic adapter data.
-- `packages/scripts/compile-scenes/orchestrator.ts` — invokes the new analyzer and merges errors/warnings.
+- `packages/scripts/compile-scenes/orchestrator.ts` — accepts optional synthetic analysis definitions, invokes the new analyzer, and merges errors/warnings.
 - `packages/scripts/compile-scenes/emitter.ts` — emits the expanded concrete unions without rewriting legacy nodes.
 
 ### Existing Rust owners
@@ -62,7 +63,7 @@
 - `apps/game/src-tauri/src/game/reveals.rs` — story-effect dispatcher and existing local/inventory orchestration.
 - `apps/game/src-tauri/src/game/mod.rs` — transaction-owned trigger guards and materialization contexts.
 - `apps/game/src-tauri/src/game/story/mutations.rs` — unchanged HPA-255 mutation semantics.
-- `apps/game/src-tauri/src/game/save/` — focused round-trip tests only; no schema change.
+- `apps/game/src-tauri/src/game/save/capture.rs` and `restore.rs` — focused round-trip tests only; no schema change.
 
 ---
 
@@ -214,10 +215,10 @@ it("parses nested at_least with no whitespace around commas", () => {
 });
 
 it.each([
-  ["at_least(0, hotspot:a investigated)", "unlockAtLeastInvalidCount"],
-  ["at_least(2, hotspot:a investigated)", "unlockAtLeastCountExceedsConditions"],
+  ["at_least(0,hotspot:a investigated)", "unlockAtLeastInvalidCount"],
+  ["at_least(2,hotspot:a investigated)", "unlockAtLeastCountExceedsConditions"],
   ["at_least(1)", "unlockAtLeastEmptyConditions"],
-  ["at_least(2, hotspot:a investigated, hotspot:a investigated)", "unlockAtLeastDuplicateCondition"],
+  ["at_least(2,hotspot:a investigated,hotspot:a investigated)", "unlockAtLeastDuplicateCondition"],
 ])("rejects invalid threshold %s", (source, code) => {
   const result = parseUnlockExpr(source, "threshold.md", 9);
   expect(result.ok).toBe(false);
@@ -304,7 +305,7 @@ git commit -m "feat: add shared positive unlock parser and thresholds"
 
 **Interfaces:**
 - Consumes: `PositiveExpression<P>`, existing `AnalysisBoardRef`, `validateAnalysisBoardRef`, `validateSetPrimaryObjectiveTarget`, and `validateStoryCatalog`.
-- Produces: `StoryPredicate`, `AnalysisSceneRef`, `validateAnalysisSceneRef`, and `AnalysisDefinitionRegistry`.
+- Produces: inline analysis predicate wire fields in `types.ts`, plus `AnalysisSceneRef`, `validateAnalysisSceneRef`, and `AnalysisDefinitionRegistry` from their existing catalog/registry owners.
 
 - [ ] **Step 1: Write failing parser and catalog tests**
 
@@ -352,24 +353,33 @@ bunx vitest run --config vitest.scripts.config.ts \
 
 Expected: FAIL because story predicates, scene refs, reserved ID handling, and registry do not exist.
 
-- [ ] **Step 3: Implement the concrete story predicate union**
+- [ ] **Step 3: Implement the concrete story predicate union without reversing catalog dependencies**
+
+In `types.ts`, keep qualified reference fields inline:
 
 ```ts
-export type AnalysisSceneRef = { chapterId: string; sceneId: string };
-
 export type StoryPredicate =
   | { predicate: "fact_asserted"; id: string }
   | { predicate: "question_resolved"; id: string }
   | { predicate: "objective_completed"; id: string }
   | { predicate: "authorization_granted"; id: string }
-  | ({ predicate: "analysis_scene_completed" } & AnalysisSceneRef)
-  | ({ predicate: "analysis_board_completed" } & AnalysisBoardRef);
+  | {
+      predicate: "analysis_scene_completed";
+      chapterId: string;
+      sceneId: string;
+    }
+  | {
+      predicate: "analysis_board_completed";
+      chapterId: string;
+      sceneId: string;
+      boardId: string;
+    };
 
 export type UnlockExpr = PositiveExpression<InvestigationLocalPredicate | StoryPredicate>;
 export type InterrogationUnlockExpr = PositiveExpression<InterrogationLocalPredicate | StoryPredicate>;
 ```
 
-Extend both predicate adapters in `parser-unlock.ts`; keep `question:<id> answered` local and `question:<id> resolved` global by matching the final verb.
+Do not import `AnalysisBoardRef` from `story-catalog.ts` into `types.ts`, because `story-catalog.ts` already imports compiler AST types. Extend both predicate adapters in `parser-unlock.ts`; keep `question:<id> answered` local and `question:<id> resolved` global by matching the final verb.
 
 - [ ] **Step 4: Extend existing catalog owners and add the registry**
 
@@ -384,7 +394,7 @@ export function validateAnalysisSceneRef(
 ): CompileError[];
 ```
 
-Create a deterministic registry:
+Create a deterministic registry that imports both reference types from `story-catalog.ts`:
 
 ```ts
 export type AnalysisDefinitionRegistry = {
@@ -561,7 +571,7 @@ Rules:
 
 - [ ] **Step 4: Thread the catalog through the compiler validation boundary**
 
-Do not add catalog state to every legacy helper. Add a focused story-target pass invoked by a new exported validator helper or by the later reachability adapter. Investigation/interrogation use `representedAuthority: null`; synthetic analysis fixtures pass a registry-supplied authority.
+Do not add catalog state to every legacy helper. Add a focused story-target pass invoked by the normalized adapter builder. Investigation/interrogation pass `representedAuthority: null`; synthetic analysis registrations supply a matching authority only in tests.
 
 - [ ] **Step 5: Run and commit**
 
@@ -654,7 +664,7 @@ Expected: new fixture passes; pre-HPA-257 snapshots remain unchanged.
 
 **Interfaces:**
 - Consumes: scene ASTs, existing specialized investigation/interrogation analysis results, catalog, and analysis registry.
-- Produces: `ReachabilityNode[]` with stable keys, authored target order, strict predecessors, complete may-before sets, one-shot region identity, and legacy classification.
+- Produces: explicit reachability atom/predicate/effect types and `ReachabilityNode[]` with stable keys, authored target order, strict predecessors, complete may-before sets, one-shot region identity, and legacy classification.
 
 - [ ] **Step 1: Write adapter tests before implementing the model**
 
@@ -679,9 +689,28 @@ bunx vitest run --config vitest.scripts.config.ts packages/scripts/compile-scene
 
 Expected: FAIL because normalized nodes do not exist.
 
-- [ ] **Step 3: Define the model**
+- [ ] **Step 3: Define every normalized type before using it**
 
 ```ts
+export type ReachabilityAtom = string;
+
+export type ReachabilityPredicate = {
+  predicate: "atom";
+  atom: ReachabilityAtom;
+};
+
+export type ReachabilityEffect =
+  | {
+      kind: "addAtom";
+      atom: ReachabilityAtom;
+      targetIndex: number;
+    }
+  | {
+      kind: "story";
+      target: StoryRevealTarget;
+      targetIndex: number;
+    };
+
 export type ReachabilityNode = {
   key: string;
   requirement: "mandatory" | "optional";
@@ -699,7 +728,9 @@ export type ReachabilityNode = {
 };
 ```
 
-Expose one deterministic builder:
+The adapter converts every local/story predicate to a canonical atom string before analysis, so the fixed point never needs scene-family-specific switches.
+
+- [ ] **Step 4: Expose one deterministic builder and reuse specialized analysis**
 
 ```ts
 export function buildReachabilityNodes(input: {
@@ -710,9 +741,7 @@ export function buildReachabilityNodes(input: {
 }): ReachabilityNode[];
 ```
 
-- [ ] **Step 4: Reuse specialized analysis rather than duplicating it**
-
-Extract only the minimum pure summaries currently calculated inside `validator.ts` so both the existing diagnostics and the adapter consume the same results. Preserve the current validator error codes and behavior. Mark nodes using only legacy syntax as `legacyCompatibilityMode: true`; these nodes may feed analysis but receive no new optional/order warnings.
+Extract only the minimum pure summaries currently calculated inside `validator.ts` so both existing diagnostics and the adapter consume the same results. Preserve current validator error codes and behavior. Mark nodes using only legacy syntax as `legacyCompatibilityMode: true`; these nodes may feed analysis but receive no new optional/order warnings.
 
 - [ ] **Step 5: Run and commit**
 
@@ -769,12 +798,12 @@ Create producer-to-consumer edges only for authored positive atoms and implicit 
 ```ts
 export function evaluateMay(
   expression: PositiveExpression<ReachabilityPredicate>,
-  atoms: ReadonlySet<string>,
+  atoms: ReadonlySet<ReachabilityAtom>,
 ): boolean;
 
 export function evaluateMust(
   expression: PositiveExpression<ReachabilityPredicate>,
-  atoms: ReadonlySet<string>,
+  atoms: ReadonlySet<ReachabilityAtom>,
 ): boolean;
 ```
 
@@ -877,13 +906,14 @@ git commit -m "feat: add joint story progression fixed point"
 ### Task 10: Integrate Reachability into the Compiler and Stabilize Diagnostics
 
 **Files:**
-- Modify: `packages/scripts/compile-scenes/orchestrator.ts:360-430`
-- Modify: `packages/scripts/compile-scenes/orchestrator.test.ts` if present, otherwise `packages/scripts/compile-scenes.test.ts`
+- Modify: `packages/scripts/compile-scenes/orchestrator.ts:1-430`
 - Modify: `packages/scripts/compile-scenes.test.ts`
 - Modify: `packages/scripts/compile-scenes/validator.test.ts`
+- Create fixtures under: `packages/scripts/__fixtures__/invalid/`
+- Create warning fixtures under: `packages/scripts/__fixtures__/hpa_257_warnings/`
 
 **Interfaces:**
-- Consumes: `buildReachabilityNodes` and `analyzeReachability`.
+- Consumes: `buildReachabilityNodes`, `analyzeReachability`, `createAnalysisDefinitionRegistry`, and optional synthetic definitions on `CompileOptions`.
 - Produces: compiler errors/warnings merged through the existing `CompileResult` contract with stable ordering.
 
 - [ ] **Step 1: Add end-to-end failing fixtures for every severity**
@@ -907,22 +937,44 @@ bunx vitest run --config vitest.scripts.config.ts packages/scripts/compile-scene
 
 Expected: new fixtures do not yet produce the required results.
 
-- [ ] **Step 3: Invoke the analyzer after existing semantic validation**
+- [ ] **Step 3: Add explicit registry injection and invoke the analyzer**
 
-In `orchestrator.ts`, after `validate(...)` and `validateStoryCatalog(...)`, build the analysis registry and call:
+Extend `CompileOptions`:
 
 ```ts
-const progression = analyzeReachability({
+export type CompileOptions = {
+  sourceRoot: string | string[];
+  outputRoot: string;
+  assetConfigRoot?: string;
+  assetOutputRoot?: string;
+  repoRoot?: string;
+  analysisRegistry?: AnalysisDefinitionRegistry;
+};
+```
+
+Construct the production-empty default once:
+
+```ts
+const analysisRegistry =
+  opts.analysisRegistry ??
+  createAnalysisDefinitionRegistry({ scenes: [], boards: [] });
+```
+
+After existing `validate(...)` and `validateStoryCatalog(...)` succeed for referenced targets, call:
+
+```ts
+const nodes = buildReachabilityNodes({
   chapters,
   scenes,
   catalog: storyCatalog,
   analysisRegistry,
 });
+const progression = analyzeReachability({ nodes, catalog: storyCatalog });
 errors.push(...progression.errors);
 warnings.push(...progression.warnings);
 ```
 
-Do not run effect simulation for unresolved or semantically invalid targets. Sort the final new diagnostics with the contract order before returning.
+Do not run effect simulation for unresolved or semantically invalid targets. Sort final new diagnostics with the contract order before returning. Production CLI calls do not supply `analysisRegistry`; tests inject synthetic definitions; HPA-259 later supplies production registrations.
 
 - [ ] **Step 4: Assert legacy zero-diagnostic compatibility**
 
@@ -936,6 +988,7 @@ bun run check:scripts
 bun run scenes:compile
 git add packages/scripts/compile-scenes/orchestrator.ts \
   packages/scripts/compile-scenes.test.ts \
+  packages/scripts/compile-scenes/validator.test.ts \
   packages/scripts/__fixtures__
 git commit -m "feat: integrate monotonic reachability into scene compilation"
 ```
@@ -969,6 +1022,8 @@ Create hand-edited resource JSON cases for:
 - invalid/duplicate threshold child;
 - unknown/secondary set-primary target;
 - objective ID `null` in catalog.
+
+For analysis predicates, HPA-257 startup validates wire shape and slug segments but rejects packaged investigation/interrogation content because no runtime analysis registry exists yet. HPA-259 must replace that rejection with resolution against its production registry rather than changing the wire shape.
 
 - [ ] **Step 3: Run and verify failure**
 
@@ -1062,7 +1117,7 @@ pub trait StoryUnlockContext {
 }
 ```
 
-Change evaluator signatures to accept local and story contexts. Implement `AtLeast` with a true-count short circuit. Update investigation/interrogation scene methods and GameEngine call sites to pass `StoryState` or a focused read adapter. HPA-257 may return false for analysis completion until HPA-259/HPA-260 provide runtime completion state; the wire and trait contract remain stable.
+Change evaluator signatures to accept local and story contexts. Implement `AtLeast` with a true-count short circuit. Update investigation/interrogation scene methods and GameEngine call sites to pass `StoryState` or a focused read adapter. HPA-257 returns false for analysis completion because HPA-259/HPA-260 do not yet provide runtime completion state; packaged investigation/interrogation analysis predicates are rejected at startup by Task 11, so this fallback is reachable only in direct synthetic evaluator tests.
 
 - [ ] **Step 5: Run and commit**
 
@@ -1111,9 +1166,14 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml story_reveal_transacti
 
 - [ ] **Step 4: Implement the dispatcher without duplicating HPA-255**
 
-Add a focused materialization type:
+Add focused materialization types:
 
 ```rust
+pub(super) struct FactSupport {
+    pub supporting_records: Vec<InventoryTarget>,
+    pub supporting_fact_ids: Vec<String>,
+}
+
 pub(super) struct StoryRevealMaterializationContext<'a> {
     pub origin: AssertionOrigin,
     pub fact_support_by_id: &'a BTreeMap<String, FactSupport>,
@@ -1141,7 +1201,7 @@ Run:
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml game::reveals
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml game::mod
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml story_reveal_transaction
 cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml --all --check
 git add apps/game/src-tauri/src/game/reveals.rs \
   apps/game/src-tauri/src/game/mod.rs \
@@ -1157,7 +1217,6 @@ git commit -m "feat: dispatch atomic monotonic story reveals"
 **Files:**
 - Modify: `apps/game/src-tauri/src/game/save/capture.rs`
 - Modify: `apps/game/src-tauri/src/game/save/restore.rs`
-- Modify: `apps/game/src-tauri/src/game/save/tests.rs` if present, otherwise add focused tests to the owning modules
 - Modify: `apps/game/src-tauri/src/game/test_support.rs`
 - Modify: `packages/scripts/compile-scenes/reachability.test.ts`
 
@@ -1167,7 +1226,7 @@ git commit -m "feat: dispatch atomic monotonic story reveals"
 
 - [ ] **Step 1: Write a concrete successful round-trip test**
 
-Drive a synthetic game through evidence acquisition, fact assertion, question resolution, secondary completion, one valid primary transition order, synthetic authority grant, and nested-threshold unlock. Save, reconstruct the engine, restore, and compare the exact public view and relevant internal trigger/story snapshots.
+Add focused inline tests in `capture.rs` and `restore.rs`. Drive a synthetic game through evidence acquisition, fact assertion, question resolution, secondary completion, one valid primary transition order, synthetic authority grant, and nested-threshold unlock. Save, reconstruct the engine, restore, and compare the exact public view and relevant internal trigger/story snapshots.
 
 - [ ] **Step 2: Write concrete free-order runtime tests**
 
@@ -1181,7 +1240,7 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml hpa_257
 
 - [ ] **Step 4: Add only test support required for exact recapture**
 
-Do not change `SAVE_SCHEMA_VERSION`, save envelope fields, or migration code. Reuse existing inventory/local progress/StoryState snapshot fields. If a helper is required, expose it only under `#[cfg(test)]` from `test_support.rs`.
+Do not change `SAVE_SCHEMA_VERSION`, save envelope fields, or migration code. Reuse existing inventory/local progress/StoryState snapshot fields. Expose any new setup or inspection helper only under `#[cfg(test)]` from `test_support.rs`.
 
 - [ ] **Step 5: Run and commit**
 
@@ -1189,7 +1248,8 @@ Do not change `SAVE_SCHEMA_VERSION`, save envelope fields, or migration code. Re
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml hpa_257
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml
 cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml --all --check
-git add apps/game/src-tauri/src/game/save \
+git add apps/game/src-tauri/src/game/save/capture.rs \
+  apps/game/src-tauri/src/game/save/restore.rs \
   apps/game/src-tauri/src/game/test_support.rs \
   packages/scripts/compile-scenes/reachability.test.ts
 git commit -m "test: prove HPA-257 save and order semantics"
@@ -1202,8 +1262,7 @@ git commit -m "test: prove HPA-257 save and order semantics"
 **Files:**
 - Modify: `.claude/skills/writing-investigation-scene/SKILL.md`
 - Modify: `.claude/skills/writing-interrogation-scene/SKILL.md`
-- Modify: `docs/superpowers/specs/2026-08-01-hpa-257-monotonic-unlocks-and-fixed-point-reachability-design.md` only if implementation exposes a wording mismatch; behavior changes require design review, not silent edits
-- Modify: PR description/checklist
+- Update: PR description/checklist
 
 **Interfaces:**
 - Consumes: final compiler/runtime syntax and diagnostics.
@@ -1248,7 +1307,7 @@ bun run lint:all
 
 Expected: all Rust tests pass; ESLint, Prettier, rustfmt, and warnings-denied Clippy pass.
 
-Packaged Tauri E2E is not required unless implementation changes an existing production player path or command timing. If the implementation introduces such a change, run `bun run test:e2e`; otherwise record the synthetic compiler/runtime/save evidence as the acceptance path.
+Packaged Tauri E2E is not required because this plan uses synthetic content and does not change a production player path or command timing. A discovered production-path or timing change is a scope change: stop, return to design review, and add a separate packaged E2E gate before continuing.
 
 - [ ] **Step 5: Review the complete diff and commit guidance**
 
@@ -1263,7 +1322,8 @@ git diff --stat main...HEAD
 Confirm there is no catalog/save schema bump, frontend/IPC change, production story edit, generated resource JSON, direct HPA-255 field mutation, or duplicate `.agents/skills` source.
 
 ```bash
-git add .claude/skills docs/superpowers/specs
+git add .claude/skills/writing-investigation-scene/SKILL.md \
+  .claude/skills/writing-interrogation-scene/SKILL.md
 git commit -m "docs: document monotonic story progression authoring"
 ```
 
