@@ -287,10 +287,12 @@ jobs:
           bun-version: "1.3.1"
 
       - name: Initialize chain metrics
+        env:
+          CHAIN_ID: ${{ matrix.chainId }}
         run: |
           node apps/game/scripts/e2e-ci-metrics.mjs initialize \
-            --file "$RUNNER_TEMP/e2e-metrics/${{ matrix.chainId }}.json" \
-            --chain-id "${{ matrix.chainId }}"
+            --file "$RUNNER_TEMP/e2e-metrics/$CHAIN_ID.json" \
+            --chain-id "$CHAIN_ID"
 
       - name: Install system dependencies
         run: |
@@ -318,11 +320,14 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Record setup and restored cache
+        env:
+          CHAIN_ID: ${{ matrix.chainId }}
+          RUST_CACHE_HIT: ${{ steps.rust-cache.outputs.cache-hit }}
         run: |
           node apps/game/scripts/e2e-ci-metrics.mjs setup \
-            --file "$RUNNER_TEMP/e2e-metrics/${{ matrix.chainId }}.json" \
+            --file "$RUNNER_TEMP/e2e-metrics/$CHAIN_ID.json" \
             --cache-directory "$PWD/apps/game/src-tauri/target-e2e" \
-            --cache-hit "${{ steps.rust-cache.outputs.cache-hit }}"
+            --cache-hit "$RUST_CACHE_HIT"
 
       - name: Download E2E plan
         uses: actions/download-artifact@v4
@@ -331,20 +336,25 @@ jobs:
           path: ${{ runner.temp }}/e2e-plan
 
       - name: Build Tauri E2E binary
+        env:
+          CHAIN_ID: ${{ matrix.chainId }}
         run: |
           node apps/game/scripts/e2e-ci-metrics.mjs run \
-            --file "$RUNNER_TEMP/e2e-metrics/${{ matrix.chainId }}.json" \
+            --file "$RUNNER_TEMP/e2e-metrics/$CHAIN_ID.json" \
             --stage build \
             -- node apps/game/scripts/build-e2e.mjs
 
       - name: Run selected Tauri E2E chain
+        env:
+          CHAIN_ID: ${{ matrix.chainId }}
+          SUITE_FILE: ${{ matrix.suiteFile }}
         run: |
           node apps/game/scripts/e2e-ci-metrics.mjs run \
-            --file "$RUNNER_TEMP/e2e-metrics/${{ matrix.chainId }}.json" \
+            --file "$RUNNER_TEMP/e2e-metrics/$CHAIN_ID.json" \
             --stage test \
             -- xvfb-run -a node apps/game/scripts/run-save-e2e.mjs \
-              --suite-file "$RUNNER_TEMP/e2e-plan/${{ matrix.suiteFile }}" \
-              --chain-id "${{ matrix.chainId }}" \
+              --suite-file "$RUNNER_TEMP/e2e-plan/$SUITE_FILE" \
+              --chain-id "$CHAIN_ID" \
               --plan-file "$RUNNER_TEMP/e2e-plan/e2e-plan.json" \
               --attempts 2
 

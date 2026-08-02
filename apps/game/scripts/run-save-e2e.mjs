@@ -154,4 +154,9 @@ async function main() {
   }
 }
 
-await main();
+try {
+  await main();
+} catch (error) {
+  console.error("save e2e runner failed:", error);
+  process.exitCode = 1;
+}

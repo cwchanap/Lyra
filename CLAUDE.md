@@ -89,13 +89,22 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   chains: `gameplay` owns `smoke`, `gameplay`, and `production-journey`;
   `persistence` owns `capture-proof`, `save-core`, and `save-management`; and
   `exit` owns `exit-lifecycle`. Persistence phases remain serial inside their
-  chain. Reproduce a selector decision with
-  `node apps/game/scripts/plan-e2e-ci.mjs --changed-paths-file <absolute-file>
---suite-file <absolute-file> --report-file <absolute-file> --matrix-file
-<absolute-file> --chain-directory <absolute-directory> --event-name
-pull_request`. The `ci:full-e2e` PR label, main, tags, nightly, and manual
+  chain. Reproduce a selector decision with:
+
+  ```sh
+  node apps/game/scripts/plan-e2e-ci.mjs \
+    --changed-paths-file <absolute-file> \
+    --suite-file <absolute-file> \
+    --report-file <absolute-file> \
+    --matrix-file <absolute-file> \
+    --chain-directory <absolute-directory> \
+    --event-name pull_request
+  ```
+
+  The `ci:full-e2e` PR label, main, tags, nightly, and manual
   dispatch force the full registry without erasing the risk-selected suite
   list used by the routing audit.
+
 - CI chain runs require both the Rust `e2e` feature and `VITE_E2E=true`.
   Checkpoint IPC and its frontend bridge are absent from ordinary builds; do
   not use `dev:game` as checkpoint evidence. The packaged checkpoint contract

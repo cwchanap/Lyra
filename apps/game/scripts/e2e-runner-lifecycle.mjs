@@ -342,12 +342,36 @@ export async function runE2eAttempt({
   result.attempts.retries = Math.max(0, result.attempts.used - 1);
   result.finalFailedSuite = null;
   try {
-    ownership = createOwnership({
-      ownershipPath,
-      runId: result.runId,
-      rootKeys,
-      createRoot,
-    });
+    try {
+      ownership = createOwnership({
+        ownershipPath,
+        runId: result.runId,
+        rootKeys,
+        createRoot,
+      });
+    } catch (error) {
+      console.error(
+        `save e2e attempt ${attempt} ownership setup failed:`,
+        error,
+      );
+      result.result = "failed";
+      result.exitCode = 1;
+      if (attempt === 1 && result.attempts.configured > 1) {
+        const firstCanonicalPhase = buildPhasePlan(suiteIds, {})[0];
+        const phaseId = firstCanonicalPhase?.id ?? null;
+        const phaseSuite = phaseId === null ? null : suiteForPhase(phaseId);
+        result.phase = phaseId;
+        result.suite = phaseSuite;
+        result.attempt = attempt;
+        result.firstAttemptFailures.push({
+          phase: phaseId,
+          suite: phaseSuite,
+          exitCode: 1,
+        });
+      }
+      writeResult(resultPath, result);
+      return 1;
+    }
     const directories = Object.fromEntries(
       ownership.roots.map(({ key }) => [key, rootByKey(ownership, key)]),
     );
@@ -562,11 +586,13 @@ function signalExitCode(signal) {
 }
 
 export function createChildSupervisor({ processRef = process } = {}) {
-  let activeChild = null;
+  const activeChildren = new Set();
   let cancelledSignal = null;
   const forwardSignal = (signal) => {
     cancelledSignal ??= signal;
-    if (activeChild && !activeChild.killed) activeChild.kill(signal);
+    for (const child of activeChildren) {
+      if (!child.killed) child.kill(signal);
+    }
   };
   const onSigint = () => forwardSignal("SIGINT");
   const onSigterm = () => forwardSignal("SIGTERM");
@@ -580,12 +606,12 @@ export function createChildSupervisor({ processRef = process } = {}) {
     run({ command, args, options, spawnImpl }) {
       return new Promise((resolve) => {
         const child = spawnImpl(command, args, options);
-        activeChild = child;
+        activeChildren.add(child);
         let completed = false;
         const finish = (exitCode, signal = null) => {
           if (completed) return;
           completed = true;
-          if (activeChild === child) activeChild = null;
+          activeChildren.delete(child);
           resolve({
             exitCode:
               typeof exitCode === "number"

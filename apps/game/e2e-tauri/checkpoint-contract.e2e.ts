@@ -42,7 +42,9 @@ describe("packaged checkpoint contract", () => {
         timeoutMsg: "right portrait checkpoint did not render",
       },
     );
-    expect(await elementExists('button[aria-label="推進對話"]')).toBe(true);
+    expect(
+      await elementExists(`button[aria-label="${anchors.advanceDialogue}"]`),
+    ).toBe(true);
   });
 
   it("renders the investigation explore checkpoint", async () => {

@@ -12,7 +12,9 @@ import { anchors, DIALOGUE_DRAIN_CAP } from "./production-anchors";
 describe("fresh production journey", () => {
   it("progresses from title through authored dialogue and real acquisition into investigation", async () => {
     await resetE2eStorage();
-    expect(await elementExists('[aria-label="主選單"]')).toBe(true);
+    expect(await elementExists(`[aria-label="${anchors.mainMenu}"]`)).toBe(
+      true,
+    );
 
     await startFromMenu();
     expect(await lastVisibleDialogueText()).not.toBe("");

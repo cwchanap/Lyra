@@ -74,7 +74,7 @@ function error(code, message, chainId) {
   };
 }
 
-function validatePlanner(plan) {
+function validatePlanner(plan, planReadError = null) {
   const errors = [];
   if (
     !plan ||
@@ -88,7 +88,14 @@ function validatePlanner(plan) {
     (plan.planner.reason !== null && typeof plan.planner.reason !== "string")
   ) {
     return {
-      errors: [error("malformed-plan", "E2E planner evidence is malformed.")],
+      errors: [
+        error(
+          "malformed-plan",
+          planReadError === null
+            ? "E2E planner evidence is malformed."
+            : `E2E planner evidence could not be read: ${planReadError}`,
+        ),
+      ],
       expectedChains: [],
     };
   }
@@ -824,8 +831,13 @@ function validateResult(result, expected, planner) {
   };
 }
 
-export function analyzeE2eCiResults({ plan, results, metrics = [] }) {
-  const planValidation = validatePlanner(plan);
+export function analyzeE2eCiResults({
+  plan,
+  results,
+  metrics = [],
+  planReadError = null,
+}) {
+  const planValidation = validatePlanner(plan, planReadError);
   const errors = [...planValidation.errors];
   const expectedChainIds = planValidation.expectedChains.map(({ id }) => id);
   const resultList = Array.isArray(results) ? results : [];
@@ -1129,7 +1141,8 @@ function markdownSummary(analysis) {
 
 function runCli() {
   const options = parseArguments(process.argv.slice(2));
-  let plan;
+  let plan = null;
+  let planReadError = null;
   const results = [];
   const metrics = [];
   try {
@@ -1137,8 +1150,8 @@ function runCli() {
     if (!planMetadata.isFile() || planMetadata.isSymbolicLink())
       throw new Error("Plan evidence is not a regular file.");
     plan = JSON.parse(readFileSync(options.planFile, "utf8"));
-  } catch {
-    plan = null;
+  } catch (error) {
+    planReadError = error instanceof Error ? error.message : String(error);
   }
   try {
     for (const resultFile of findResultFiles(options.resultsDirectory)) {
@@ -1165,7 +1178,12 @@ function runCli() {
     // An absent or unreadable result directory is equivalent to no terminal
     // manifests and is reported by the same fail-closed missing-chain path.
   }
-  const analysis = analyzeE2eCiResults({ plan, results, metrics });
+  const analysis = analyzeE2eCiResults({
+    plan,
+    results,
+    metrics,
+    planReadError,
+  });
   mkdirSync(path.dirname(options.analysisFile), { recursive: true });
   writeFileSync(options.analysisFile, `${JSON.stringify(analysis, null, 2)}\n`);
   if (process.env.GITHUB_STEP_SUMMARY)

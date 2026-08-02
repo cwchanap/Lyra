@@ -160,6 +160,32 @@ test("forces the complete registry for E2E infrastructure", () => {
   assert.equal(plan.forcedFullReason, "e2e-infrastructure");
 });
 
+test("forces the complete registry for planner scripts and their contract tests", () => {
+  for (const changedPath of [
+    "apps/game/scripts/plan-e2e-ci.mjs",
+    "apps/game/scripts/require-e2e-binary.mjs",
+    "apps/game/scripts/select-e2e-suites.mjs",
+    "apps/game/scripts/select-e2e-suites.test.mjs",
+  ]) {
+    const plan = selectE2eSuites({ changedPaths: [changedPath] });
+
+    assert.deepEqual(
+      plan.suiteIds,
+      [
+        "smoke",
+        "gameplay",
+        "production-journey",
+        "capture-proof",
+        "save-core",
+        "save-management",
+        "exit-lifecycle",
+      ],
+      changedPath,
+    );
+    assert.equal(plan.forcedFullReason, "e2e-infrastructure", changedPath);
+  }
+});
+
 test("forces the complete registry for an unknown non-documentation path", () => {
   const plan = selectE2eSuites({ changedPaths: ["infra/new-runner.nix"] });
 

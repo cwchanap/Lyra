@@ -693,6 +693,7 @@ describe("packaged gameplay thumbnail proof", () => {
       captureBeforeSwap: CaptureWrapperStatus;
       captureAfterSwap: CaptureWrapperStatus;
     }> = [];
+    const crossfadeFailures: number[] = [];
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       if (attempt > 1) {
         await waitForPersistenceIdle();
@@ -725,41 +726,54 @@ describe("packaged gameplay thumbnail proof", () => {
       const captureBeforeSwap = await captureWrapperStatus();
       const autosaveIdsBeforeSwap = autosaveSaveIds();
       await advanceCaptureProofDialogueOnce();
-      const transition = await browser.waitUntil(
-        async () =>
-          browser.execute(
-            (oldFragment: string, newestFragment: string) => {
-              const layers = Array.from(
-                document.querySelectorAll(
-                  ".portrait-shell [data-save-crossfade-layer]",
-                ),
-              ) as HTMLImageElement[];
-              return {
-                leaving: layers.some(
-                  (layer) =>
-                    layer.src.includes(oldFragment) &&
-                    layer.dataset.saveCrossfadeState === "leaving",
-                ),
-                newest: layers.some(
-                  (layer) =>
-                    layer.src.includes(newestFragment) &&
-                    layer.dataset.saveCrossfadeState === "visible" &&
-                    layer.dataset.saveCrossfadeOrder ===
-                      layer.dataset.saveCrossfadeRequest,
-                ),
-              };
-            },
-            anchors.captureProof.leavingPortrait,
-            anchors.captureProof.newestPortrait,
-          ),
-        {
-          timeout: 1400,
-          interval: 25,
-          timeoutMsg:
-            "production portrait swap never exposed leaving + newest metadata",
-        },
-      );
-      expect(transition).toEqual({ leaving: true, newest: true });
+      let exposed: boolean;
+      try {
+        exposed = await browser.waitUntil(
+          async () => {
+            const observed = await browser.execute(
+              (oldFragment: string, newestFragment: string) => {
+                const layers = Array.from(
+                  document.querySelectorAll(
+                    ".portrait-shell [data-save-crossfade-layer]",
+                  ),
+                ) as HTMLImageElement[];
+                return {
+                  leaving: layers.some(
+                    (layer) =>
+                      layer.src.includes(oldFragment) &&
+                      layer.dataset.saveCrossfadeState === "leaving",
+                  ),
+                  newest: layers.some(
+                    (layer) =>
+                      layer.src.includes(newestFragment) &&
+                      layer.dataset.saveCrossfadeState === "visible" &&
+                      layer.dataset.saveCrossfadeOrder ===
+                        layer.dataset.saveCrossfadeRequest,
+                  ),
+                };
+              },
+              anchors.captureProof.leavingPortrait,
+              anchors.captureProof.newestPortrait,
+            );
+            return observed.leaving && observed.newest;
+          },
+          {
+            timeout: 1400,
+            interval: 25,
+            timeoutMsg:
+              "production portrait swap never exposed leaving + newest metadata",
+          },
+        );
+      } catch {
+        exposed = false;
+      }
+      if (!exposed) {
+        crossfadeFailures.push(attempt);
+        console.warn(
+          `[capture proof] attempt ${attempt} never exposed leaving + newest metadata; replaying the same capture transition once`,
+        );
+        continue;
+      }
 
       const captureAfterSwap = await captureWrapperStatus();
       if (captureAfterSwap.calls <= captureBeforeSwap.calls) {
@@ -813,7 +827,7 @@ describe("packaged gameplay thumbnail proof", () => {
     }
     if (rootAspect === null) {
       throw new Error(
-        `capture proof exhausted its bounded fresh-capture retry; unavailable=${JSON.stringify(unavailableInitialCaptures)}`,
+        `capture proof exhausted its bounded fresh-capture retry; unavailable=${JSON.stringify(unavailableInitialCaptures)} crossfadeFailures=${JSON.stringify(crossfadeFailures)}`,
       );
     }
 

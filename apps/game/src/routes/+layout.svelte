@@ -5,6 +5,7 @@
 
   let { children }: { children: Snippet } = $props();
   let checkpointGeneration = $state(0);
+  let bridgeActive = $state(false);
 
   // E2E-only: import @wdio/tauri-plugin so its auto-init sets
   // window.__wdio_original_core__, which @wdio/tauri-service's focus hook
@@ -20,16 +21,20 @@
           dispose = installPackagedE2eCheckpointBridge(window, (generation) => {
             checkpointGeneration = generation;
           });
+          bridgeActive = true;
         },
       );
-      return () => dispose?.();
+      return () => {
+        bridgeActive = false;
+        dispose?.();
+      };
     });
   }
 </script>
 
 {@render children()}
 
-{#if import.meta.env.VITE_E2E}
+{#if import.meta.env.VITE_E2E && bridgeActive}
   <output
     hidden
     data-e2e-checkpoint-generation={checkpointGeneration}

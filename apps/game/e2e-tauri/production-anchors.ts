@@ -12,6 +12,7 @@ export const DIALOGUE_DRAIN_CAP = 600;
  */
 export const anchors = {
   startButton: "開始新遊戲",
+  mainMenu: "主選單",
   continueGame: "繼續遊戲",
   loadGame: "載入遊戲",
   newGame: "開始新遊戲",

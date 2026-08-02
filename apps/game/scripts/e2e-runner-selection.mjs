@@ -112,7 +112,7 @@ export function resolveRunnerPlannerMetadata(
   const planner = plan?.planner;
   const matrixEntries = plan?.matrix?.include;
   const matchingEntries = Array.isArray(matrixEntries)
-    ? matrixEntries.filter(({ chainId }) => chainId === options.chainId)
+    ? matrixEntries.filter((entry) => entry?.chainId === options.chainId)
     : [];
   const matchingEntry = matchingEntries[0];
   if (

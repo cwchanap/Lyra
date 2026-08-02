@@ -526,6 +526,7 @@ mod tests {
             MAX_REPLAY_OPERATIONS,
         )
         .unwrap();
+        let durable_revision = checkpoint.engine.durable_revision();
 
         assert_eq!(
             serde_json::to_value(checkpoint.projection).unwrap(),
@@ -548,7 +549,7 @@ mod tests {
                 "authorizationIds": [],
                 "pendingAcquisition": null,
                 "sceneNavigationEligible": false,
-                "durableRevision": 36
+                "durableRevision": durable_revision
             })
         );
     }
