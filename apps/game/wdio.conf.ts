@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SAVE_E2E_ORDINARY_SPECS } from "./scripts/save-e2e-paths.mjs";
+import { SAVE_E2E_ORDINARY_SPECS } from "./scripts/e2e-suite-registry.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Dedicated e2e target dir (CARGO_TARGET_DIR=src-tauri/target-e2e) so that
