@@ -110,7 +110,7 @@ The canonical leaf registry is partitioned once, without duplicates or gaps:
 
 | Chain | Canonical suites | Full process count | CI timeout | Cache prefix |
 | --- | --- | ---: | ---: | --- |
-| `gameplay` | `smoke`, `gameplay`, `production-journey` | 3 | 14m | `tauri-e2e-gameplay-v1` |
+| `gameplay` | `smoke`, `gameplay`, `production-journey` | 3 | 15m | `tauri-e2e-gameplay-v1` |
 | `persistence` | `capture-proof`, `save-core`, `save-management` | 7 | 15m | `tauri-e2e-persistence-v1` |
 | `exit` | `exit-lifecycle` | 5 | 8m | `tauri-e2e-exit-v1` |
 
