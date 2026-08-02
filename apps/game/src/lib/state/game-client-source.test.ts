@@ -4,6 +4,7 @@ import type {
   GameplaySfxEvent,
 } from "$lib/audio/sfx-events";
 import type { GameplayCommandResultView } from "$lib/persistence/types";
+import type { E2eCheckpointProjection } from "$lib/e2e/checkpoints";
 import { MUTATING_GAMEPLAY_COMMANDS } from "./game-client.svelte";
 import type { GameStateView, QuestionView } from "./types";
 
@@ -148,6 +149,7 @@ beforeEach(() => {
 
 afterEach(() => {
   Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+  vi.unstubAllEnvs();
 });
 
 describe("game client audio events", () => {
@@ -909,5 +911,227 @@ describe("game client interrogation commands", () => {
       "complete_interrogation_phase",
       {},
     );
+  });
+});
+
+describe("loadE2eCheckpointThroughClient packaged checkpoint bridge", () => {
+  const CHECKPOINT_ID = "chapter-1-investigation-explore";
+  const projection = {
+    chapterId: "chapter_1",
+    sceneId: "scene_1",
+    mode: "explore",
+    dialogue: null,
+    sublocationId: "main",
+    evidenceIds: [],
+    statementIds: [],
+    objectives: [],
+    authorizationIds: [],
+    pendingAcquisition: null,
+    sceneNavigationEligible: false,
+    durableRevision: 1,
+  } as E2eCheckpointProjection;
+
+  function checkpointResult(
+    generation: number,
+    next: GameStateView,
+  ): {
+    generation: number;
+    state: GameStateView;
+    projection: E2eCheckpointProjection;
+  } {
+    return { generation, state: next, projection };
+  }
+
+  async function loadE2eClient(
+    initialState: GameStateView | null = state("initial"),
+  ): Promise<GameClientModule> {
+    vi.stubEnv("VITE_E2E", "true");
+    return loadGameClient(initialState);
+  }
+
+  it("throws when packaged checkpoints are unavailable in this build", async () => {
+    // VITE_E2E is unset in the unit-test environment by default.
+    const client = await loadGameClient(state("initial"));
+
+    await expect(
+      client.loadE2eCheckpointThroughClient(CHECKPOINT_ID, 0, {
+        applyProjection: vi.fn(),
+        publishGeneration: vi.fn(),
+      }),
+    ).rejects.toThrow("Packaged checkpoints are unavailable in this build.");
+
+    // The guard throws before the try/finally, so it must not touch state.
+    expect(client.gameState.inFlight).toBe(false);
+    expect(client.gameState.loading).toBe(false);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it("refuses to load while another command is already in flight", async () => {
+    const client = await loadE2eClient(state("initial"));
+    client.gameState.inFlight = true;
+    client.gameState.loading = true;
+
+    await expect(
+      client.loadE2eCheckpointThroughClient(CHECKPOINT_ID, 0, {
+        applyProjection: vi.fn(),
+        publishGeneration: vi.fn(),
+      }),
+    ).rejects.toThrow("A game command is already in progress.");
+
+    // The guard throws before the try/finally, so the existing in-flight
+    // command's flags must survive (no clobbering).
+    expect(client.gameState.inFlight).toBe(true);
+    expect(client.gameState.loading).toBe(true);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it("applies state, projection, and generation on a successful load", async () => {
+    const next = state("checkpoint");
+    const client = await loadE2eClient(state("initial"));
+    const applyProjection = vi.fn();
+    const publishGeneration = vi.fn();
+    mocks.invoke.mockResolvedValueOnce(checkpointResult(7, next));
+
+    const result = await client.loadE2eCheckpointThroughClient(
+      CHECKPOINT_ID,
+      6,
+      { applyProjection, publishGeneration },
+    );
+
+    expect(result).toEqual(checkpointResult(7, next));
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "e2e_load_checkpoint",
+      { id: CHECKPOINT_ID },
+    );
+    expect(client.gameState.value).toEqual(next);
+    expect(client.gameState.error).toBeNull();
+    expect(client.gameState.inFlight).toBe(false);
+    expect(client.gameState.loading).toBe(false);
+    expect(applyProjection).toHaveBeenCalledExactlyOnceWith(projection);
+    expect(publishGeneration).toHaveBeenCalledExactlyOnceWith(7);
+  });
+
+  it("records the backend load failure and recovers inFlight/loading", async () => {
+    const client = await loadE2eClient(state("initial"));
+    const applyProjection = vi.fn();
+    const publishGeneration = vi.fn();
+    mocks.invoke.mockRejectedValueOnce({
+      code: "checkpointMissing",
+      message: "Checkpoint not found.",
+    });
+
+    await expect(
+      client.loadE2eCheckpointThroughClient(CHECKPOINT_ID, 0, {
+        applyProjection,
+        publishGeneration,
+      }),
+    ).rejects.toThrow("Checkpoint not found.");
+
+    expect(client.gameState.error).toBe("Checkpoint not found.");
+    expect(client.gameState.inFlight).toBe(false);
+    expect(client.gameState.loading).toBe(false);
+    expect(applyProjection).not.toHaveBeenCalled();
+    expect(publishGeneration).not.toHaveBeenCalled();
+  });
+
+  it("records a non-advancing generation and recovers inFlight/loading", async () => {
+    const next = state("checkpoint");
+    const client = await loadE2eClient(state("initial"));
+    const applyProjection = vi.fn();
+    const publishGeneration = vi.fn();
+    // Backend returns a generation that does not advance past the previous one.
+    mocks.invoke.mockResolvedValueOnce(checkpointResult(5, next));
+
+    await expect(
+      client.loadE2eCheckpointThroughClient(CHECKPOINT_ID, 5, {
+        applyProjection,
+        publishGeneration,
+      }),
+    ).rejects.toThrow("Checkpoint generation 5 did not advance past 5.");
+
+    expect(client.gameState.error).toBe(
+      "Checkpoint generation 5 did not advance past 5.",
+    );
+    expect(client.gameState.inFlight).toBe(false);
+    expect(client.gameState.loading).toBe(false);
+    // applyState runs after the generation check, so neither hook fires.
+    expect(applyProjection).not.toHaveBeenCalled();
+    expect(publishGeneration).not.toHaveBeenCalled();
+  });
+
+  it("records an applyState failure and recovers inFlight/loading", async () => {
+    const next = state("checkpoint");
+    const client = await loadE2eClient(state("initial"));
+    const applyProjection = vi.fn();
+    const publishGeneration = vi.fn();
+    mocks.invoke.mockResolvedValueOnce(checkpointResult(7, next));
+    // applyState awaits applyGameplayCommandResult, which awaits tick. Rejecting
+    // the first tick call fails applyState before projection settlement.
+    mocks.tick.mockRejectedValueOnce(new Error("applyState tick failed"));
+
+    await expect(
+      client.loadE2eCheckpointThroughClient(CHECKPOINT_ID, 6, {
+        applyProjection,
+        publishGeneration,
+      }),
+    ).rejects.toThrow("applyState tick failed");
+
+    expect(client.gameState.error).toBe("applyState tick failed");
+    expect(client.gameState.inFlight).toBe(false);
+    expect(client.gameState.loading).toBe(false);
+    // applyState failed before applyProjection/settleProjection/publishGeneration.
+    expect(applyProjection).not.toHaveBeenCalled();
+    expect(publishGeneration).not.toHaveBeenCalled();
+  });
+
+  it("records a projection settlement failure and recovers inFlight/loading", async () => {
+    const next = state("checkpoint");
+    const client = await loadE2eClient(state("initial"));
+    const applyProjection = vi.fn();
+    const publishGeneration = vi.fn();
+    mocks.invoke.mockResolvedValueOnce(checkpointResult(7, next));
+    // First tick resolves (applyState succeeds); second tick rejects
+    // (settleProjection fails after applyProjection).
+    mocks.tick.mockResolvedValueOnce(undefined);
+    mocks.tick.mockRejectedValueOnce(new Error("settlement tick failed"));
+
+    await expect(
+      client.loadE2eCheckpointThroughClient(CHECKPOINT_ID, 6, {
+        applyProjection,
+        publishGeneration,
+      }),
+    ).rejects.toThrow("settlement tick failed");
+
+    expect(client.gameState.error).toBe("settlement tick failed");
+    expect(client.gameState.inFlight).toBe(false);
+    expect(client.gameState.loading).toBe(false);
+    // applyProjection fires before settleProjection; publishGeneration does not.
+    expect(applyProjection).toHaveBeenCalledExactlyOnceWith(projection);
+    expect(publishGeneration).not.toHaveBeenCalled();
+  });
+
+  it("records a generation publication failure and recovers inFlight/loading", async () => {
+    const next = state("checkpoint");
+    const client = await loadE2eClient(state("initial"));
+    const applyProjection = vi.fn();
+    const publishGeneration = vi.fn(() => {
+      throw new Error("generation publication failed");
+    });
+    mocks.invoke.mockResolvedValueOnce(checkpointResult(7, next));
+
+    await expect(
+      client.loadE2eCheckpointThroughClient(CHECKPOINT_ID, 6, {
+        applyProjection,
+        publishGeneration,
+      }),
+    ).rejects.toThrow("generation publication failed");
+
+    expect(client.gameState.error).toBe("generation publication failed");
+    expect(client.gameState.inFlight).toBe(false);
+    expect(client.gameState.loading).toBe(false);
+    // State and projection were already applied; only publication threw.
+    expect(client.gameState.value).toEqual(next);
+    expect(applyProjection).toHaveBeenCalledExactlyOnceWith(projection);
+    expect(publishGeneration).toHaveBeenCalledExactlyOnceWith(7);
   });
 });
