@@ -31,7 +31,7 @@ function canonicalTimestamp(value) {
   return new Date(timestamp).toISOString() === value ? timestamp : null;
 }
 
-function validOutputDirectory(value, { attempt, phase, root }) {
+function outputDirectoryRunDirectory(value, { attempt, phase, root }) {
   if (
     typeof value !== "string" ||
     value.length === 0 ||
@@ -45,20 +45,24 @@ function validOutputDirectory(value, { attempt, phase, root }) {
     !path.isAbsolute(value) ||
     path.normalize(value) !== value
   ) {
-    return false;
+    return null;
   }
-  const expectedSuffix = path.join(
-    "outputs",
-    `attempt-${attempt}`,
-    root,
-    phase,
-  );
-  const prefix = value.slice(0, -expectedSuffix.length);
-  return (
-    value.endsWith(expectedSuffix) &&
-    prefix.length > path.parse(value).root.length &&
-    prefix.endsWith(path.sep)
-  );
+  const rootDirectory = path.dirname(value);
+  const attemptDirectory = path.dirname(rootDirectory);
+  const outputsDirectory = path.dirname(attemptDirectory);
+  const runDirectory = path.dirname(outputsDirectory);
+  if (
+    path.basename(value) !== phase ||
+    path.basename(rootDirectory) !== root ||
+    path.basename(attemptDirectory) !== `attempt-${attempt}` ||
+    path.basename(outputsDirectory) !== "outputs" ||
+    runDirectory === path.parse(runDirectory).root ||
+    path.join(runDirectory, "outputs", `attempt-${attempt}`, root, phase) !==
+      value
+  ) {
+    return null;
+  }
+  return runDirectory;
 }
 
 function error(code, message, chainId) {
@@ -217,9 +221,8 @@ function validateResult(result, expected, planner) {
     attempts.used <= attempts.configured &&
     attempts.retries === attempts.used - 1;
   const terminalResult = result?.result;
-  const binaryGuardManifest =
-    ["failed", "cancelled"].includes(terminalResult) &&
-    result?.phase === "binary-guard" &&
+  const cancelledExitValid = [130, 143].includes(result?.exitCode);
+  const zeroAttemptEnvelope =
     result?.suite === null &&
     result?.attempt === null &&
     result?.durationMs === 0 &&
@@ -238,9 +241,28 @@ function validateResult(result, expected, planner) {
     result?.cleanup?.state === "not-required" &&
     Array.isArray(result?.cleanup?.attempts) &&
     cleanupAttempts.length === 0;
-  const preRootFailureManifest =
-    terminalResult === "failed" &&
-    result?.exitCode === 1 &&
+  const binaryGuardManifest =
+    ["failed", "cancelled"].includes(terminalResult) &&
+    result?.phase === "binary-guard" &&
+    zeroAttemptEnvelope;
+  const guardInvocationFailureManifest =
+    result?.phase === null &&
+    zeroAttemptEnvelope &&
+    ((terminalResult === "failed" && result?.exitCode === 1) ||
+      (terminalResult === "cancelled" && cancelledExitValid));
+  const noAttemptCleanup =
+    result?.cleanup?.state === "not-required" &&
+    Array.isArray(result?.cleanup?.attempts) &&
+    cleanupAttempts.length === 0;
+  const singleAttemptCleanup =
+    Array.isArray(result?.cleanup?.attempts) &&
+    cleanupAttempts.length === 1 &&
+    cleanupAttempts[0]?.attempt === 1 &&
+    ["removed", "failed"].includes(cleanupAttempts[0]?.state) &&
+    result?.cleanup?.state === cleanupAttempts[0].state;
+  const prePhaseTerminalManifest =
+    ((terminalResult === "failed" && result?.exitCode === 1) ||
+      (terminalResult === "cancelled" && cancelledExitValid)) &&
     result?.phase === null &&
     result?.suite === null &&
     result?.attempt === null &&
@@ -254,18 +276,19 @@ function validateResult(result, expected, planner) {
     recoveredFlakes.length === 0 &&
     result?.finalFailedSuite === null &&
     phaseResults.length === 0 &&
-    result?.cleanup?.state === "not-required" &&
-    Array.isArray(result?.cleanup?.attempts) &&
-    cleanupAttempts.length === 0;
-  const phaseAttemptManifest = ordinaryAttemptsValid && !preRootFailureManifest;
-  const attemptsValid = ordinaryAttemptsValid || binaryGuardManifest;
+    (noAttemptCleanup || singleAttemptCleanup);
+  const phaseAttemptManifest =
+    ordinaryAttemptsValid && !prePhaseTerminalManifest;
+  const zeroAttemptTerminalManifest =
+    binaryGuardManifest || guardInvocationFailureManifest;
+  const attemptsValid = ordinaryAttemptsValid || zeroAttemptTerminalManifest;
   const runnerStart = canonicalTimestamp(result?.start);
   const runnerFinish = canonicalTimestamp(result?.finish);
   const terminalExitValid =
     Number.isInteger(result?.exitCode) &&
     ((terminalResult === "passed" && result.exitCode === 0) ||
-      (["failed", "cancelled"].includes(terminalResult) &&
-        result.exitCode !== 0));
+      (terminalResult === "failed" && result.exitCode !== 0) ||
+      (terminalResult === "cancelled" && cancelledExitValid));
   if (
     !result ||
     typeof result !== "object" ||
@@ -330,10 +353,23 @@ function validateResult(result, expected, planner) {
     canonicalPhases.map((phase) => [phase.phase, phase]),
   );
   let phasesValid = true;
+  let phaseRunDirectory = null;
+  let previousPhaseFinish = null;
   for (const phaseResult of phaseResults) {
     const canonical = canonicalById.get(phaseResult?.phase);
     const phaseStart = canonicalTimestamp(phaseResult?.start);
     const phaseFinish = canonicalTimestamp(phaseResult?.finish);
+    const outputRunDirectory = outputDirectoryRunDirectory(
+      phaseResult?.outputDirectory,
+      {
+        attempt: phaseResult?.attempt,
+        phase: phaseResult?.phase,
+        root: canonical?.root,
+      },
+    );
+    const outputRunDirectoryMatches =
+      outputRunDirectory !== null &&
+      (phaseRunDirectory === null || phaseRunDirectory === outputRunDirectory);
     const exitValid =
       Number.isInteger(phaseResult?.exitCode) &&
       ((phaseResult?.result === "passed" && phaseResult.exitCode === 0) ||
@@ -352,16 +388,22 @@ function validateResult(result, expected, planner) {
       phaseStart === null ||
       phaseFinish === null ||
       phaseStart > phaseFinish ||
+      (phaseStart !== null &&
+        phaseFinish !== null &&
+        phaseResult.durationMs > phaseFinish - phaseStart) ||
+      (previousPhaseFinish !== null &&
+        phaseStart !== null &&
+        phaseStart < previousPhaseFinish) ||
       (runnerStart !== null && phaseStart < runnerStart) ||
       (runnerFinish !== null && phaseFinish > runnerFinish) ||
-      !validOutputDirectory(phaseResult.outputDirectory, {
-        attempt: phaseResult.attempt,
-        phase: phaseResult.phase,
-        root: canonical?.root,
-      })
+      !outputRunDirectoryMatches
     ) {
       phasesValid = false;
     }
+    if (phaseRunDirectory === null && outputRunDirectory !== null) {
+      phaseRunDirectory = outputRunDirectory;
+    }
+    if (phaseFinish !== null) previousPhaseFinish = phaseFinish;
   }
   if (!phasesValid)
     malformed("E2E chain phase evidence is malformed or non-canonical.");
@@ -481,15 +523,23 @@ function validateResult(result, expected, planner) {
   const finalGroup = attemptGroups.at(-1) ?? [];
   const finalPhase = finalGroup.at(-1);
   const finalUnrecordedPhase = canonicalPhases[finalGroup.length];
-  const terminalSetupFailure =
+  const terminalSetupContextMatches =
     phaseAttemptManifest &&
-    terminalResult === "failed" &&
     finalGroup.every(({ result: phaseResult }) => phaseResult === "passed") &&
     result?.phase === finalUnrecordedPhase?.phase &&
     result?.suite === finalUnrecordedPhase?.suite &&
     result?.attempt === attempts.used &&
+    result?.durationMs === (phaseResults.at(-1)?.durationMs ?? 0);
+  const terminalSetupFailure =
+    terminalSetupContextMatches &&
+    terminalResult === "failed" &&
     result?.exitCode === 1 &&
     result?.finalFailedSuite === finalUnrecordedPhase?.suite;
+  const terminalCancelledSetupFailure =
+    terminalSetupContextMatches &&
+    terminalResult === "cancelled" &&
+    cancelledExitValid &&
+    result?.finalFailedSuite === null;
   const terminalPhaseSummaryMatches =
     finalPhase !== undefined &&
     result?.phase === finalPhase.phase &&
@@ -506,6 +556,7 @@ function validateResult(result, expected, planner) {
   if (
     phaseAttemptManifest &&
     !terminalSetupFailure &&
+    !terminalCancelledSetupFailure &&
     !terminalPhaseSummaryMatches &&
     !emptyCancellationSummary
   ) {
@@ -546,14 +597,15 @@ function validateResult(result, expected, planner) {
     }
   }
 
-  if (
-    !binaryGuardManifest &&
-    !preRootFailureManifest &&
-    (result?.cleanup?.state !== "removed" ||
-      !Array.isArray(result?.cleanup?.attempts) ||
-      result.cleanup.attempts.length === 0 ||
-      result.cleanup.attempts.some((entry) => entry?.state !== "removed"))
-  ) {
+  const cleanupNotRequired =
+    zeroAttemptTerminalManifest ||
+    (prePhaseTerminalManifest && noAttemptCleanup);
+  const cleanupProvesRemoval =
+    result?.cleanup?.state === "removed" &&
+    Array.isArray(result?.cleanup?.attempts) &&
+    result.cleanup.attempts.length > 0 &&
+    result.cleanup.attempts.every((entry) => entry?.state === "removed");
+  if (!cleanupNotRequired && !cleanupProvesRemoval) {
     evidenceErrors.push(
       error(
         "cleanup-failed",

@@ -12,7 +12,17 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { analyzeE2eCiResults } from "./e2e-ci-results.mjs";
-import { runE2eAttempt, runE2eRunner } from "./e2e-runner-lifecycle.mjs";
+import {
+  createRunOwnership,
+  runE2eAttempt,
+  runE2eRunner,
+} from "./e2e-runner-lifecycle.mjs";
+
+const FIXTURE_START_MS = Date.parse("2026-08-02T00:00:00.000Z");
+
+function fixtureTimestamp(step) {
+  return new Date(FIXTURE_START_MS + step * 1_000).toISOString();
+}
 
 const PHASES_BY_SUITE = {
   smoke: ["smoke"],
@@ -147,7 +157,11 @@ function result({
       outputDirectory: outputDirectoryFor(chainId, 1, failure.phase),
     })),
     ...finalPhases,
-  ];
+  ].map((phaseResult, index) => ({
+    ...phaseResult,
+    start: fixtureTimestamp(index),
+    finish: fixtureTimestamp(index + 1),
+  }));
   return {
     schemaVersion: 2,
     runId: `${chainId}-run`,
@@ -188,8 +202,8 @@ function result({
         state: cleanupState,
       })),
     },
-    start: "2026-08-02T00:00:00.000Z",
-    finish: "2026-08-02T00:00:01.000Z",
+    start: fixtureTimestamp(0),
+    finish: fixtureTimestamp(Math.max(phaseResults.length, 1)),
     phaseResults,
   };
 }
@@ -204,13 +218,23 @@ const smokeChain = {
 };
 
 async function produceSmokeResult({
+  suiteIds = ["smoke"],
+  phasePlan = suiteIds.flatMap((suite) =>
+    PHASES_BY_SUITE[suite].map((id) => ({
+      id,
+      root: ROOT_BY_PHASE[id],
+      suite,
+    })),
+  ),
   attempts = 1,
   supervisor = { cancelledSignal: null },
   guardExitCode = 0,
+  runGuard = async () => ({ exitCode: guardExitCode }),
   applyCheckpoint = () => {},
   cleanupRoots = () => {},
   runPhase = async () => ({ exitCode: 0 }),
-  ownershipError = null,
+  ownershipMode = "stub",
+  createRoot = () => path.join(os.tmpdir(), "unused-root"),
 } = {}) {
   const runDirectory = mkdtempSync(
     path.join(os.tmpdir(), "lyra-e2e-producer-result-"),
@@ -218,38 +242,55 @@ async function produceSmokeResult({
   try {
     const runner = await runE2eRunner({
       chainId: "gameplay",
-      suiteIds: ["smoke"],
-      riskSelectedSuites: ["smoke"],
+      suiteIds,
+      riskSelectedSuites: suiteIds,
       attempts,
       forcedFull: false,
       plannerReason: null,
       runDirectory,
       supervisor,
-      runGuard: async () => ({ exitCode: guardExitCode }),
-      rootKeys: ["smoke"],
-      createRoot: () => path.join(runDirectory, "unused-root"),
-      buildPhasePlan: (_suiteIds, directories) => [
-        { id: "smoke", root: "smoke", appDataDir: directories.smoke },
-      ],
-      suiteForPhase: () => "smoke",
+      runGuard,
+      rootKeys: [...new Set(phasePlan.map(({ root }) => root))],
+      createRoot,
+      buildPhasePlan: (_suiteIds, directories) =>
+        phasePlan.map(({ id, root }) => ({
+          id,
+          root,
+          appDataDir: directories[root],
+        })),
+      suiteForPhase: (phaseId) =>
+        phasePlan.find(({ id }) => id === phaseId).suite,
       applyCheckpoint,
       runPhase,
       captureFailureArtifacts() {},
       runAttempt: (options) =>
         runE2eAttempt({
           ...options,
-          createOwnership: ({ rootKeys }) => {
-            if (ownershipError) throw ownershipError;
-            return {
-              roots: rootKeys.map((key) => ({
-                key,
-                appDataDir: path.join(runDirectory, key),
-              })),
-            };
-          },
-          cleanupRoots,
-          rootByKey: (ownership, key) =>
-            ownership.roots.find((root) => root.key === key).appDataDir,
+          ...(ownershipMode === "stub"
+            ? {
+                createOwnership: ({ rootKeys }) => {
+                  return {
+                    roots: rootKeys.map((key) => ({
+                      key,
+                      appDataDir: path.join(runDirectory, key),
+                    })),
+                  };
+                },
+                cleanupRoots,
+                rootByKey: (ownership, key) =>
+                  ownership.roots.find((root) => root.key === key).appDataDir,
+              }
+            : ownershipMode === "no-manifest"
+              ? {
+                  createOwnership: (ownershipOptions) =>
+                    createRunOwnership({
+                      ...ownershipOptions,
+                      writeOwnership() {
+                        throw new Error("initial ownership write blocked");
+                      },
+                    }),
+                }
+              : {}),
         }),
     });
     return structuredClone(runner.result);
@@ -412,6 +453,63 @@ test("accepts producer cancellation during the binary guard", async () => {
   );
 });
 
+test("accepts producer guard invocation rejection with or without cancellation", async () => {
+  const failed = await produceSmokeResult({
+    runGuard: async () => {
+      throw new Error("guard invocation rejected");
+    },
+  });
+  assert.equal(failed.result, "failed");
+  assert.equal(failed.exitCode, 1);
+  assert.equal(failed.phase, null);
+  assert.deepEqual(failed.attempts, {
+    configured: 1,
+    used: 0,
+    retries: 0,
+  });
+  assert.deepEqual(failed.cleanup, { state: "not-required", attempts: [] });
+
+  const supervisor = { cancelledSignal: null };
+  const cancelled = await produceSmokeResult({
+    supervisor,
+    runGuard: async () => {
+      supervisor.cancelledSignal = "SIGINT";
+      throw new Error("guard invocation cancelled");
+    },
+  });
+  assert.equal(cancelled.result, "cancelled");
+  assert.equal(cancelled.exitCode, 130);
+  assert.equal(cancelled.phase, null);
+  assert.deepEqual(cancelled.attempts, {
+    configured: 1,
+    used: 0,
+    retries: 0,
+  });
+
+  for (const produced of [failed, cancelled]) {
+    const analysis = analyzeE2eCiResults({
+      plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+      results: [produced],
+    });
+    assert.equal(analysis.status, "failed");
+    assert.equal(
+      analysis.errors.some(({ code }) => code === "malformed-chain"),
+      false,
+    );
+  }
+
+  const malformed = structuredClone(failed);
+  malformed.exitCode = 2;
+  const malformedAnalysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [malformed],
+  });
+  assert.equal(
+    malformedAnalysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
+  );
+});
+
 test("accepts a cancellation signal that overwrites a failed child exit", async () => {
   const supervisor = { cancelledSignal: null };
   const produced = await produceSmokeResult({
@@ -440,31 +538,157 @@ test("accepts a cancellation signal that overwrites a failed child exit", async 
   );
 });
 
-test("accepts only the producer pre-root ownership failure envelope", async () => {
+test("accepts producer cancellation overlay on an unrecorded setup failure", async () => {
+  const supervisor = { cancelledSignal: null };
   const produced = await produceSmokeResult({
-    ownershipError: new Error("ownership allocation blocked"),
+    supervisor,
+    applyCheckpoint() {
+      supervisor.cancelledSignal = "SIGTERM";
+      throw new Error("checkpoint failed while cancellation arrived");
+    },
   });
-  assert.equal(produced.result, "failed");
-  assert.equal(produced.exitCode, 1);
-  assert.deepEqual(produced.attempts, {
-    configured: 1,
-    used: 1,
-    retries: 0,
-  });
-  assert.equal(produced.phase, null);
+  assert.equal(produced.result, "cancelled");
+  assert.equal(produced.exitCode, 143);
+  assert.equal(produced.phase, "smoke");
+  assert.equal(produced.suite, "smoke");
+  assert.equal(produced.attempt, 1);
   assert.deepEqual(produced.phaseResults, []);
-  assert.deepEqual(produced.cleanup, { state: "not-required", attempts: [] });
+  assert.deepEqual(produced.firstAttemptFailures, [
+    { phase: "smoke", suite: "smoke", exitCode: 1 },
+  ]);
 
-  const validAnalysis = analyzeE2eCiResults({
+  const analysis = analyzeE2eCiResults({
     plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
     results: [produced],
   });
+  assert.equal(analysis.status, "failed");
   assert.deepEqual(
-    validAnalysis.errors.map(({ code }) => code),
-    ["failed-chain"],
+    analysis.errors.map(({ code }) => code),
+    ["cancelled-chain"],
   );
+  assert.deepEqual(analysis.routingAudit.finalFailures, [
+    {
+      chainId: "gameplay",
+      suite: null,
+      classification: "indeterminate",
+    },
+  ]);
+});
 
-  const malformed = structuredClone(produced);
+test("accepts setup cancellation after a recorded canonical phase prefix", async () => {
+  const supervisor = { cancelledSignal: null };
+  const suites = ["smoke", "gameplay"];
+  const produced = await produceSmokeResult({
+    suiteIds: suites,
+    supervisor,
+    applyCheckpoint(phase) {
+      if (phase.id !== "ordinary") return;
+      supervisor.cancelledSignal = "SIGINT";
+      throw new Error("second phase setup cancelled");
+    },
+  });
+  assert.equal(produced.result, "cancelled");
+  assert.equal(produced.exitCode, 130);
+  assert.deepEqual(
+    produced.phaseResults.map(({ phase, result: phaseResult }) => ({
+      phase,
+      result: phaseResult,
+    })),
+    [{ phase: "smoke", result: "passed" }],
+  );
+  assert.equal(produced.phase, "ordinary");
+  assert.equal(produced.suite, "gameplay");
+  assert.equal(produced.durationMs, produced.phaseResults[0].durationMs);
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({
+      suites,
+      chains: [{ chainId: "gameplay", suiteIds: suites }],
+    }),
+    results: [produced],
+  });
+  assert.deepEqual(
+    analysis.errors.map(({ code }) => code),
+    ["cancelled-chain"],
+  );
+  assert.deepEqual(analysis.routingAudit.finalFailures, [
+    {
+      chainId: "gameplay",
+      suite: null,
+      classification: "indeterminate",
+    },
+  ]);
+});
+
+test("rejects cancelled terminal exits outside producer signal codes", async () => {
+  const supervisor = { cancelledSignal: null };
+  const malformed = await produceSmokeResult({
+    supervisor,
+    runPhase: async () => {
+      supervisor.cancelledSignal = "SIGTERM";
+      return { exitCode: 23 };
+    },
+  });
+  malformed.exitCode = 17;
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [malformed],
+  });
+  assert.equal(analysis.status, "failed");
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
+  );
+  assert.deepEqual(analysis.routingAudit.finalFailures, [
+    {
+      chainId: "gameplay",
+      suite: null,
+      classification: "indeterminate",
+    },
+  ]);
+});
+
+test("accepts both producer pre-root ownership manifest lifecycles", async () => {
+  const noManifest = await produceSmokeResult({
+    ownershipMode: "no-manifest",
+  });
+  const emptyManifest = await produceSmokeResult({
+    ownershipMode: "actual",
+    createRoot() {
+      throw new Error("ownership allocation blocked after empty manifest");
+    },
+  });
+  assert.deepEqual(noManifest.cleanup, {
+    state: "not-required",
+    attempts: [],
+  });
+  assert.deepEqual(emptyManifest.cleanup, {
+    state: "removed",
+    attempts: [{ attempt: 1, state: "removed" }],
+  });
+
+  for (const produced of [noManifest, emptyManifest]) {
+    assert.equal(produced.result, "failed");
+    assert.equal(produced.exitCode, 1);
+    assert.deepEqual(produced.attempts, {
+      configured: 1,
+      used: 1,
+      retries: 0,
+    });
+    assert.equal(produced.phase, null);
+    assert.deepEqual(produced.phaseResults, []);
+    const analysis = analyzeE2eCiResults({
+      plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+      results: [produced],
+    });
+    assert.deepEqual(
+      analysis.errors.map(({ code }) => code),
+      ["failed-chain"],
+    );
+  }
+
+  const malformed = structuredClone(emptyManifest);
   malformed.exitCode = 2;
   const malformedAnalysis = analyzeE2eCiResults({
     plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
@@ -472,6 +696,19 @@ test("accepts only the producer pre-root ownership failure envelope", async () =
   });
   assert.equal(
     malformedAnalysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
+  );
+
+  const malformedCleanup = structuredClone(noManifest);
+  malformedCleanup.cleanup = { state: "removed", attempts: [] };
+  const malformedCleanupAnalysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [malformedCleanup],
+  });
+  assert.equal(
+    malformedCleanupAnalysis.errors.some(
+      ({ code }) => code === "malformed-chain",
+    ),
     true,
   );
 });
@@ -1157,6 +1394,77 @@ test("rejects malformed top-level and phase timing or artifact envelopes", () =>
   }
 });
 
+test("rejects producer-impossible phase chronology and split run roots", async (t) => {
+  const suites = ["smoke", "gameplay"];
+  const validPlan = plan({
+    suites,
+    chains: [{ chainId: "gameplay", suiteIds: suites }],
+  });
+  const fixtures = [
+    {
+      name: "duration exceeds its timestamp envelope",
+      mutate(malformed) {
+        const phase = malformed.phaseResults.at(-1);
+        const delta = 1_001 - phase.durationMs;
+        phase.durationMs = 1_001;
+        malformed.durationMs = phase.durationMs;
+        malformed.testOnlyTimeMs += delta;
+        malformed.runnerWallTimeMs = malformed.testOnlyTimeMs + 100;
+      },
+    },
+    {
+      name: "recorded phases overlap",
+      mutate(malformed) {
+        malformed.phaseResults[1].start = new Date(
+          FIXTURE_START_MS + 500,
+        ).toISOString();
+      },
+    },
+    {
+      name: "phase artifacts use different run directories",
+      mutate(malformed) {
+        malformed.phaseResults[1].outputDirectory = path.join(
+          os.tmpdir(),
+          "different-gameplay-run",
+          "outputs",
+          "attempt-1",
+          "gameplay",
+          "ordinary",
+        );
+      },
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    await t.test(fixture.name, () => {
+      const malformed = result({
+        chainId: "gameplay",
+        suites,
+        terminal: "failed",
+        finalFailedSuite: "gameplay",
+      });
+      fixture.mutate(malformed);
+
+      const analysis = analyzeE2eCiResults({
+        plan: validPlan,
+        results: [malformed],
+      });
+      assert.equal(analysis.status, "failed");
+      assert.equal(
+        analysis.errors.some(({ code }) => code === "malformed-chain"),
+        true,
+      );
+      assert.deepEqual(analysis.routingAudit.finalFailures, [
+        {
+          chainId: "gameplay",
+          suite: null,
+          classification: "indeterminate",
+        },
+      ]);
+    });
+  }
+});
+
 test("keeps forced-full routing indeterminate for malformed phase artifacts", () => {
   const gameplaySuites = ["smoke", "gameplay", "production-journey"];
   const forcedPlan = plan({
@@ -1386,6 +1694,73 @@ test("CLI writes failed artifacts for malformed phase timing and output paths", 
     const malformed = result({ chainId: "gameplay", suites: ["smoke"] });
     malformed.phaseResults[0].start = "not-a-timestamp";
     malformed.phaseResults[0].outputDirectory = null;
+    writeFileSync(
+      path.join(resultsDirectory, "run-result.json"),
+      JSON.stringify(malformed),
+    );
+
+    const execution = spawnSync(
+      process.execPath,
+      [
+        new URL("./e2e-ci-results.mjs", import.meta.url).pathname,
+        "--plan-file",
+        planFile,
+        "--results-directory",
+        resultsDirectory,
+        "--analysis-file",
+        analysisFile,
+      ],
+      {
+        env: { ...process.env, GITHUB_STEP_SUMMARY: summaryFile },
+        encoding: "utf8",
+      },
+    );
+
+    assert.equal(execution.status, 1);
+    assert.equal(existsSync(analysisFile), true);
+    assert.equal(existsSync(summaryFile), true);
+    const analysis = JSON.parse(readFileSync(analysisFile, "utf8"));
+    assert.equal(analysis.status, "failed");
+    assert.equal(
+      analysis.errors.some(({ code }) => code === "malformed-chain"),
+      true,
+    );
+    assert.match(readFileSync(summaryFile, "utf8"), /malformed-chain/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("CLI fails closed for overlapping phases and split run roots", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "lyra-e2e-analysis-"));
+  try {
+    const planFile = path.join(directory, "e2e-plan.json");
+    const resultsDirectory = path.join(directory, "results");
+    const analysisFile = path.join(directory, "analysis.json");
+    const summaryFile = path.join(directory, "summary.md");
+    const suites = ["smoke", "gameplay"];
+    mkdirSync(resultsDirectory);
+    writeFileSync(
+      planFile,
+      JSON.stringify(
+        plan({
+          suites,
+          chains: [{ chainId: "gameplay", suiteIds: suites }],
+        }),
+      ),
+    );
+    const malformed = result({ chainId: "gameplay", suites });
+    malformed.phaseResults[1].start = new Date(
+      FIXTURE_START_MS + 500,
+    ).toISOString();
+    malformed.phaseResults[1].outputDirectory = path.join(
+      os.tmpdir(),
+      "different-gameplay-run",
+      "outputs",
+      "attempt-1",
+      "gameplay",
+      "ordinary",
+    );
     writeFileSync(
       path.join(resultsDirectory, "run-result.json"),
       JSON.stringify(malformed),
