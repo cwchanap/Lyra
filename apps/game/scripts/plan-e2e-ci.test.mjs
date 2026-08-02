@@ -133,7 +133,7 @@ test("writes persistence-heavy routing as three isolated canonical chains", () =
 });
 
 test("smoke-only routing emits only the gameplay chain", () => {
-  const fixture = withPlan(["apps/game/src/routes/+page.svelte"]);
+  const fixture = withPlan(["apps/game/src/lib/components/MainMenu.svelte"]);
   try {
     assert.deepEqual(fixture.plan.expectedChainIds, ["gameplay"]);
     assert.deepEqual(fixture.readJson(fixture.paths.matrixFile).include, [
@@ -152,7 +152,7 @@ test("smoke-only routing emits only the gameplay chain", () => {
 });
 
 test("forced full routing emits every chain while retaining the risk selection", () => {
-  const fixture = withPlan(["apps/game/src/routes/+page.svelte"], {
+  const fixture = withPlan(["apps/game/src/lib/components/MainMenu.svelte"], {
     forceFull: true,
   });
   try {

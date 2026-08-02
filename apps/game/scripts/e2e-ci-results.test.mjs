@@ -11,7 +11,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { analyzeE2eCiResults } from "./e2e-ci-results.mjs";
+import { analyzeE2eCiResults as analyzeRawE2eCiResults } from "./e2e-ci-results.mjs";
 import {
   createRunOwnership,
   runE2eAttempt,
@@ -208,6 +208,54 @@ function result({
   };
 }
 
+function metric({
+  chainId,
+  source = path.join("/e2e-metrics", `${chainId}.json`),
+  startedAtMs = 1_000,
+  setup = {
+    finishedAtMs: 1_100,
+    durationMs: 100,
+    cacheHit: true,
+    restoredCacheBytes: 8_192,
+  },
+  build = {
+    startedAtMs: 1_200,
+    finishedAtMs: 1_300,
+    durationMs: 100,
+    exitCode: 0,
+  },
+  test = {
+    startedAtMs: 1_400,
+    finishedAtMs: 1_500,
+    durationMs: 100,
+    exitCode: 0,
+  },
+} = {}) {
+  return {
+    schemaVersion: 1,
+    chainId,
+    startedAtMs,
+    setup,
+    build,
+    test,
+    source,
+  };
+}
+
+function metricsForPlan(planEvidence) {
+  const expectedChainIds = Array.isArray(planEvidence?.expectedChainIds)
+    ? [...new Set(planEvidence.expectedChainIds)]
+    : [];
+  return expectedChainIds.map((chainId) => metric({ chainId }));
+}
+
+function analyzeE2eCiResults({ metrics, ...input }) {
+  return analyzeRawE2eCiResults({
+    ...input,
+    metrics: metrics ?? metricsForPlan(input.plan),
+  });
+}
+
 const smokeChain = {
   chainId: "gameplay",
   suiteIds: ["smoke"],
@@ -313,6 +361,229 @@ test("accepts a complete smoke-only matrix", () => {
   assert.equal(analysis.status, "passed");
   assert.deepEqual(analysis.errors, []);
   assert.deepEqual(analysis.expectedChainIds, ["gameplay"]);
+});
+
+test("requires one complete metrics envelope for each passed chain", () => {
+  const validPlan = plan({ suites: ["smoke"], chains: [smokeChain] });
+  const passedResult = result({ chainId: "gameplay", suites: ["smoke"] });
+
+  const missing = analyzeRawE2eCiResults({
+    plan: validPlan,
+    results: [passedResult],
+    metrics: [],
+  });
+  assert.equal(missing.status, "failed");
+  assert.equal(
+    missing.errors.some(({ code }) => code === "missing-metric"),
+    true,
+  );
+
+  const partialMetric = metric({ chainId: "gameplay" });
+  delete partialMetric.test;
+  const partial = analyzeRawE2eCiResults({
+    plan: validPlan,
+    results: [passedResult],
+    metrics: [partialMetric],
+  });
+  assert.equal(partial.status, "failed");
+  assert.equal(
+    partial.errors.some(({ code }) => code === "incomplete-metric"),
+    true,
+  );
+
+  const complete = analyzeRawE2eCiResults({
+    plan: validPlan,
+    results: [passedResult],
+    metrics: [metric({ chainId: "gameplay" })],
+  });
+  assert.equal(complete.status, "passed");
+  assert.deepEqual(complete.errors, []);
+});
+
+test("rejects malformed, duplicate, unknown, and misnamed metric evidence", () => {
+  const validPlan = plan({ suites: ["smoke"], chains: [smokeChain] });
+  const passedResult = result({ chainId: "gameplay", suites: ["smoke"] });
+  const cases = [
+    {
+      code: "malformed-metric",
+      metrics: [{ ...metric({ chainId: "gameplay" }), schemaVersion: 2 }],
+    },
+    {
+      code: "duplicate-metric",
+      metrics: [
+        metric({ chainId: "gameplay" }),
+        metric({ chainId: "gameplay" }),
+      ],
+    },
+    {
+      code: "unknown-metric",
+      metrics: [
+        metric({ chainId: "gameplay" }),
+        metric({ chainId: "persistence" }),
+      ],
+    },
+    {
+      code: "malformed-metric",
+      metrics: [
+        metric({
+          chainId: "gameplay",
+          source: "/e2e-metrics/not-gameplay.json",
+        }),
+      ],
+    },
+    {
+      code: "malformed-metric",
+      metrics: [
+        metric({
+          chainId: "gameplay",
+          test: {
+            startedAtMs: 1_400,
+            finishedAtMs: 1_500,
+            durationMs: 99,
+            exitCode: 0,
+          },
+        }),
+      ],
+    },
+  ];
+
+  for (const fixture of cases) {
+    const analysis = analyzeRawE2eCiResults({
+      plan: validPlan,
+      results: [passedResult],
+      metrics: fixture.metrics,
+    });
+    assert.equal(analysis.status, "failed", fixture.code);
+    assert.equal(
+      analysis.errors.some(({ code }) => code === fixture.code),
+      true,
+      fixture.code,
+    );
+  }
+});
+
+test("allows structurally complete partial metrics for failed chains", () => {
+  const failedMetric = metric({ chainId: "gameplay" });
+  failedMetric.build.exitCode = 1;
+  delete failedMetric.test;
+  const analysis = analyzeRawE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [
+      result({
+        chainId: "gameplay",
+        suites: ["smoke"],
+        terminal: "failed",
+        finalFailedSuite: "smoke",
+      }),
+    ],
+    metrics: [failedMetric],
+  });
+
+  assert.deepEqual(
+    analysis.errors.map(({ code }) => code),
+    ["failed-chain"],
+  );
+});
+
+test("allows initialized metrics for a valid cancelled chain", () => {
+  const initializedMetrics = metric({ chainId: "gameplay" });
+  delete initializedMetrics.setup;
+  delete initializedMetrics.build;
+  delete initializedMetrics.test;
+  const analysis = analyzeRawE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [
+      result({
+        chainId: "gameplay",
+        suites: ["smoke"],
+        terminal: "cancelled",
+      }),
+    ],
+    metrics: [initializedMetrics],
+  });
+
+  assert.deepEqual(
+    analysis.errors.map(({ code }) => code),
+    ["cancelled-chain"],
+  );
+});
+
+test("rejects impossible metric stage sequences and passed-chain failures", () => {
+  const validPlan = plan({ suites: ["smoke"], chains: [smokeChain] });
+  const passedResult = result({ chainId: "gameplay", suites: ["smoke"] });
+  const fixtures = [
+    {
+      name: "build without setup",
+      mutate(metrics) {
+        delete metrics.setup;
+      },
+      code: "malformed-metric",
+    },
+    {
+      name: "test after failed build",
+      mutate(metrics) {
+        metrics.build.exitCode = 1;
+      },
+      code: "malformed-metric",
+    },
+    {
+      name: "build before setup finishes",
+      mutate(metrics) {
+        metrics.build.startedAtMs = 1_050;
+        metrics.build.finishedAtMs = 1_150;
+      },
+      code: "malformed-metric",
+    },
+    {
+      name: "passed runner with a failing test metric",
+      mutate(metrics) {
+        metrics.test.exitCode = 1;
+      },
+      code: "incomplete-metric",
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const metrics = metric({ chainId: "gameplay" });
+    fixture.mutate(metrics);
+    const analysis = analyzeRawE2eCiResults({
+      plan: validPlan,
+      results: [passedResult],
+      metrics: [metrics],
+    });
+    assert.equal(analysis.status, "failed", fixture.name);
+    assert.equal(
+      analysis.errors.some(({ code }) => code === fixture.code),
+      true,
+      fixture.name,
+    );
+  }
+});
+
+test("does not demand a final test metric from an interrupted malformed runner manifest", () => {
+  const interrupted = result({ chainId: "gameplay", suites: ["smoke"] });
+  interrupted.phaseResults = [];
+  const partialMetric = metric({ chainId: "gameplay" });
+  delete partialMetric.test;
+  const analysis = analyzeRawE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [interrupted],
+    metrics: [partialMetric],
+  });
+
+  assert.equal(analysis.status, "failed");
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
+  );
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "incomplete-metric"),
+    false,
+  );
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-metric"),
+    false,
+  );
 });
 
 test("accepts a producer retry after setup fails before a phase result exists", async () => {
@@ -2029,6 +2300,74 @@ test("CLI writes analysis and step summary for malformed result evidence", () =>
       "failed",
     );
     assert.match(readFileSync(summaryFile, "utf8"), /Status: \*\*failed\*\*/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("CLI recursively validates artifact metrics and fails closed when they are absent", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "lyra-e2e-analysis-"));
+  try {
+    const planFile = path.join(directory, "e2e-plan.json");
+    const resultsDirectory = path.join(directory, "results");
+    const artifactDirectory = path.join(resultsDirectory, "tauri-e2e-gameplay");
+    const resultDirectory = path.join(
+      artifactDirectory,
+      "e2e-artifacts",
+      "save-e2e",
+      "runs",
+      "gameplay",
+    );
+    const metricsDirectory = path.join(
+      artifactDirectory,
+      "_temp",
+      "e2e-metrics",
+    );
+    const metricsFile = path.join(metricsDirectory, "gameplay.json");
+    const analysisFile = path.join(directory, "analysis.json");
+    const missingAnalysisFile = path.join(directory, "missing-analysis.json");
+    mkdirSync(resultDirectory, { recursive: true });
+    mkdirSync(metricsDirectory, { recursive: true });
+    writeFileSync(
+      planFile,
+      JSON.stringify(plan({ suites: ["smoke"], chains: [smokeChain] })),
+    );
+    writeFileSync(
+      path.join(resultDirectory, "run-result.json"),
+      JSON.stringify(result({ chainId: "gameplay", suites: ["smoke"] })),
+    );
+    const nestedMetrics = metric({ chainId: "gameplay" });
+    delete nestedMetrics.source;
+    writeFileSync(metricsFile, JSON.stringify(nestedMetrics));
+
+    const execute = (outputFile) =>
+      spawnSync(
+        process.execPath,
+        [
+          new URL("./e2e-ci-results.mjs", import.meta.url).pathname,
+          "--plan-file",
+          planFile,
+          "--results-directory",
+          resultsDirectory,
+          "--analysis-file",
+          outputFile,
+        ],
+        { encoding: "utf8" },
+      );
+
+    assert.equal(execute(analysisFile).status, 0);
+    assert.equal(
+      JSON.parse(readFileSync(analysisFile, "utf8")).status,
+      "passed",
+    );
+
+    rmSync(metricsFile);
+    assert.equal(execute(missingAnalysisFile).status, 1);
+    const missing = JSON.parse(readFileSync(missingAnalysisFile, "utf8"));
+    assert.equal(
+      missing.errors.some(({ code }) => code === "missing-metric"),
+      true,
+    );
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

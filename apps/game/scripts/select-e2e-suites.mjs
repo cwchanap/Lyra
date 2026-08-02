@@ -91,6 +91,33 @@ export const E2E_RISK_RULES = Object.freeze([
     ],
     suiteIds: ["smoke", "gameplay", "production-journey"],
   }),
+  // These acknowledgement surfaces bridge gameplay progress and persistence
+  // without being exercised by the capture-proof or manual-save suites.
+  freezeRule({
+    id: "acquisition-acknowledgement",
+    patterns: [
+      "apps/game/src/lib/components/AcquisitionPopup.svelte",
+      "apps/game/src/lib/state/acquisition-controller.svelte.ts",
+    ],
+    suiteIds: [
+      "smoke",
+      "gameplay",
+      "production-journey",
+      "save-core",
+      "exit-lifecycle",
+    ],
+  }),
+  // The dialogue root and its crossfade are both capture-proven persistence
+  // carriers and the common progression surface for every packaged suite.
+  freezeRule({
+    id: "dialogue-capture-surface",
+    patterns: [
+      "apps/game/src/lib/components/DialogueBox.svelte",
+      "apps/game/src/lib/components/CrossfadeImage.svelte",
+      "apps/game/src/routes/+page.svelte",
+    ],
+    suiteIds: E2E_SUITE_IDS,
+  }),
   freezeRule({
     id: "general-ui",
     patterns: [

@@ -16,6 +16,7 @@ import {
   normalizeE2eSuiteIds,
   partitionE2eSuitesByChain,
 } from "./e2e-suite-registry.mjs";
+import { E2E_CI_METRICS_SCHEMA_VERSION } from "./e2e-ci-metrics.mjs";
 import { E2E_RUN_RESULT_SCHEMA_VERSION } from "./e2e-runner-lifecycle.mjs";
 
 export const E2E_CI_ANALYSIS_SCHEMA_VERSION = 1;
@@ -192,6 +193,139 @@ function validatePlanner(plan) {
     }
   }
   return { errors, expectedChains };
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNonNegativeInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function hasOwn(value, key) {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function validateMetricsRecord(metrics, chainId) {
+  const errors = [];
+  const malformed = (message) =>
+    errors.push(error("malformed-metric", message, chainId));
+  if (!isPlainObject(metrics)) {
+    malformed("E2E metrics evidence is not an object.");
+    return { errors, complete: false };
+  }
+  if (metrics.schemaVersion !== E2E_CI_METRICS_SCHEMA_VERSION)
+    malformed("E2E metrics schema version is invalid.");
+  if (metrics.chainId !== chainId)
+    malformed("E2E metrics chain does not match the expected chain.");
+  if (
+    typeof metrics.source !== "string" ||
+    metrics.source.length === 0 ||
+    metrics.source.includes("\0") ||
+    !path.isAbsolute(metrics.source) ||
+    path.normalize(metrics.source) !== metrics.source ||
+    path.basename(path.dirname(metrics.source)) !== "e2e-metrics" ||
+    path.basename(metrics.source) !== `${chainId}.json`
+  ) {
+    malformed("E2E metrics evidence does not have the expected artifact path.");
+  }
+  const startedAtMsValid = isNonNegativeInteger(metrics.startedAtMs);
+  if (!startedAtMsValid)
+    malformed("E2E metrics start time must be a non-negative integer.");
+
+  const hasSetup = hasOwn(metrics, "setup");
+  const hasBuild = hasOwn(metrics, "build");
+  const hasTest = hasOwn(metrics, "test");
+  if (hasBuild && !hasSetup)
+    malformed("E2E build metrics require completed setup metrics.");
+  if (hasTest && !hasBuild)
+    malformed("E2E test metrics require completed build metrics.");
+
+  let setupValid = false;
+  let setupFinishedAtMs = null;
+  if (hasSetup) {
+    const setup = metrics.setup;
+    const setupShapeValid =
+      isPlainObject(setup) &&
+      isNonNegativeInteger(setup.finishedAtMs) &&
+      isNonNegativeInteger(setup.durationMs) &&
+      typeof setup.cacheHit === "boolean" &&
+      isNonNegativeInteger(setup.restoredCacheBytes);
+    if (!setupShapeValid) {
+      malformed("E2E setup metrics are malformed.");
+    } else if (
+      !startedAtMsValid ||
+      setup.finishedAtMs < metrics.startedAtMs ||
+      setup.durationMs !== setup.finishedAtMs - metrics.startedAtMs
+    ) {
+      malformed("E2E setup metrics have an invalid duration or ordering.");
+    } else {
+      setupValid = true;
+      setupFinishedAtMs = setup.finishedAtMs;
+    }
+  }
+
+  let buildValid = false;
+  let buildFinishedAtMs = null;
+  let buildExitCode = null;
+  if (hasBuild) {
+    const build = metrics.build;
+    const buildShapeValid =
+      isPlainObject(build) &&
+      isNonNegativeInteger(build.startedAtMs) &&
+      isNonNegativeInteger(build.finishedAtMs) &&
+      isNonNegativeInteger(build.durationMs) &&
+      isNonNegativeInteger(build.exitCode);
+    if (!buildShapeValid) {
+      malformed("E2E build metrics are malformed.");
+    } else if (
+      !setupValid ||
+      build.startedAtMs < setupFinishedAtMs ||
+      build.finishedAtMs < build.startedAtMs ||
+      build.durationMs !== build.finishedAtMs - build.startedAtMs
+    ) {
+      malformed("E2E build metrics have an invalid duration or ordering.");
+    } else {
+      buildValid = true;
+      buildFinishedAtMs = build.finishedAtMs;
+      buildExitCode = build.exitCode;
+    }
+  }
+
+  let testValid = false;
+  let testExitCode = null;
+  if (hasTest) {
+    const test = metrics.test;
+    const testShapeValid =
+      isPlainObject(test) &&
+      isNonNegativeInteger(test.startedAtMs) &&
+      isNonNegativeInteger(test.finishedAtMs) &&
+      isNonNegativeInteger(test.durationMs) &&
+      isNonNegativeInteger(test.exitCode);
+    if (!testShapeValid) {
+      malformed("E2E test metrics are malformed.");
+    } else if (
+      !buildValid ||
+      buildExitCode !== 0 ||
+      test.startedAtMs < buildFinishedAtMs ||
+      test.finishedAtMs < test.startedAtMs ||
+      test.durationMs !== test.finishedAtMs - test.startedAtMs
+    ) {
+      malformed("E2E test metrics have an invalid duration or ordering.");
+    } else {
+      testValid = true;
+      testExitCode = test.exitCode;
+    }
+  }
+
+  return {
+    errors,
+    complete:
+      hasSetup && hasBuild && hasTest && setupValid && buildValid && testValid,
+    buildExitCode,
+    testExitCode,
+  };
 }
 
 function validateResult(result, expected, planner) {
@@ -690,13 +824,18 @@ function validateResult(result, expected, planner) {
   };
 }
 
-export function analyzeE2eCiResults({ plan, results }) {
+export function analyzeE2eCiResults({ plan, results, metrics = [] }) {
   const planValidation = validatePlanner(plan);
   const errors = [...planValidation.errors];
   const expectedChainIds = planValidation.expectedChains.map(({ id }) => id);
   const resultList = Array.isArray(results) ? results : [];
+  const metricsList = Array.isArray(metrics) ? metrics : [];
   if (!Array.isArray(results))
     errors.push(error("malformed-chain", "E2E result evidence is malformed."));
+  if (!Array.isArray(metrics))
+    errors.push(
+      error("malformed-metric", "E2E metrics evidence is malformed."),
+    );
 
   const resultsByChain = new Map();
   for (const result of resultList) {
@@ -722,12 +861,41 @@ export function analyzeE2eCiResults({ plan, results }) {
     resultsByChain.set(chainId, existing);
   }
 
+  const metricsByChain = new Map();
+  for (const metricsRecord of metricsList) {
+    if (!isPlainObject(metricsRecord) || metricsRecord.malformed === true) {
+      errors.push(
+        error("malformed-metric", "E2E metrics evidence is malformed."),
+      );
+      continue;
+    }
+    const chainId = metricsRecord.chainId;
+    if (
+      !E2E_CHAIN_IDS.includes(chainId) ||
+      !expectedChainIds.includes(chainId)
+    ) {
+      errors.push(
+        error(
+          "unknown-metric",
+          "E2E metrics evidence names an unexpected chain.",
+          typeof chainId === "string" ? chainId : undefined,
+        ),
+      );
+      continue;
+    }
+    const existing = metricsByChain.get(chainId) ?? [];
+    existing.push(metricsRecord);
+    metricsByChain.set(chainId, existing);
+  }
+
   const chainSummaries = [];
   const recoveredFlakes = [];
   const finalFailures = [];
   for (const expected of planValidation.expectedChains) {
-    const matches = resultsByChain.get(expected.id) ?? [];
-    if (matches.length === 0) {
+    const resultMatches = resultsByChain.get(expected.id) ?? [];
+    let result = null;
+    let resultValidation = null;
+    if (resultMatches.length === 0) {
       errors.push(
         error(
           "missing-chain",
@@ -742,9 +910,7 @@ export function analyzeE2eCiResults({ plan, results }) {
           classification: "indeterminate",
         });
       }
-      continue;
-    }
-    if (matches.length > 1) {
+    } else if (resultMatches.length > 1) {
       errors.push(
         error(
           "duplicate-chain",
@@ -752,44 +918,89 @@ export function analyzeE2eCiResults({ plan, results }) {
           expected.id,
         ),
       );
+    } else {
+      result = resultMatches[0];
+      resultValidation = validateResult(result, expected, plan.planner);
+      errors.push(...resultValidation.errors);
+      for (const suite of resultValidation.recoveredFlakes) {
+        recoveredFlakes.push({ chainId: expected.id, suite });
+      }
+      if (result.result === "failed" || result.result === "cancelled") {
+        const suite = resultValidation.routingSuite;
+        let classification = "indeterminate";
+        if (
+          suite !== null &&
+          planValidation.errors.length === 0 &&
+          plan.planner.forcedFull
+        ) {
+          classification = plan.planner.riskSelectedSuites.includes(suite)
+            ? "covered-by-risk-selection"
+            : "routing-gap";
+        }
+        finalFailures.push({ chainId: expected.id, suite, classification });
+      }
+      chainSummaries.push({
+        chainId: expected.id,
+        selectedSuites: result.selectedSuites,
+        result: result.result,
+        runnerWallTimeMs: result.runnerWallTimeMs,
+        testOnlyTimeMs: result.testOnlyTimeMs,
+        attempts:
+          result.attempts !== null && typeof result.attempts === "object"
+            ? result.attempts
+            : null,
+        phaseCount: Number.isInteger(result.phaseCount) ? result.phaseCount : 0,
+        processCount: Number.isInteger(result.processCount)
+          ? result.processCount
+          : 0,
+        cleanupState: result.cleanup?.state,
+      });
+    }
+
+    const metricMatches = metricsByChain.get(expected.id) ?? [];
+    if (metricMatches.length === 0) {
+      errors.push(
+        error(
+          "missing-metric",
+          "Expected E2E chain metrics evidence is absent.",
+          expected.id,
+        ),
+      );
       continue;
     }
-    const result = matches[0];
-    const resultValidation = validateResult(result, expected, plan.planner);
-    errors.push(...resultValidation.errors);
-    for (const suite of resultValidation.recoveredFlakes) {
-      recoveredFlakes.push({ chainId: expected.id, suite });
+    if (metricMatches.length > 1) {
+      errors.push(
+        error(
+          "duplicate-metric",
+          "Expected E2E chain has duplicate metrics manifests.",
+          expected.id,
+        ),
+      );
+      continue;
     }
-    if (result.result === "failed" || result.result === "cancelled") {
-      const suite = resultValidation.routingSuite;
-      let classification = "indeterminate";
-      if (
-        suite !== null &&
-        planValidation.errors.length === 0 &&
-        plan.planner.forcedFull
-      ) {
-        classification = plan.planner.riskSelectedSuites.includes(suite)
-          ? "covered-by-risk-selection"
-          : "routing-gap";
-      }
-      finalFailures.push({ chainId: expected.id, suite, classification });
+    const metricsValidation = validateMetricsRecord(
+      metricMatches[0],
+      expected.id,
+    );
+    errors.push(...metricsValidation.errors);
+    if (
+      result !== null &&
+      resultValidation !== null &&
+      result.result === "passed" &&
+      resultValidation.errors.length === 0 &&
+      metricsValidation.errors.length === 0 &&
+      (!metricsValidation.complete ||
+        metricsValidation.buildExitCode !== 0 ||
+        metricsValidation.testExitCode !== 0)
+    ) {
+      errors.push(
+        error(
+          "incomplete-metric",
+          "A passed E2E chain requires complete successful setup, build, and test metrics.",
+          expected.id,
+        ),
+      );
     }
-    chainSummaries.push({
-      chainId: expected.id,
-      selectedSuites: result.selectedSuites,
-      result: result.result,
-      runnerWallTimeMs: result.runnerWallTimeMs,
-      testOnlyTimeMs: result.testOnlyTimeMs,
-      attempts:
-        result.attempts !== null && typeof result.attempts === "object"
-          ? result.attempts
-          : null,
-      phaseCount: Number.isInteger(result.phaseCount) ? result.phaseCount : 0,
-      processCount: Number.isInteger(result.processCount)
-        ? result.processCount
-        : 0,
-      cleanupState: result.cleanup?.state,
-    });
   }
 
   const terminalResults = chainSummaries.filter(({ runnerWallTimeMs }) =>
@@ -839,16 +1050,32 @@ export function analyzeE2eCiResults({ plan, results }) {
   };
 }
 
-function findResultFiles(directory) {
+function findEvidenceFiles(directory, predicate) {
   const files = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const destination = path.join(directory, entry.name);
     if (entry.isSymbolicLink()) continue;
-    if (entry.isDirectory()) files.push(...findResultFiles(destination));
-    else if (entry.isFile() && entry.name === "run-result.json")
-      files.push(destination);
+    if (entry.isDirectory())
+      files.push(...findEvidenceFiles(destination, predicate));
+    else if (entry.isFile() && predicate(destination)) files.push(destination);
   }
   return files.sort();
+}
+
+function findResultFiles(directory) {
+  return findEvidenceFiles(
+    directory,
+    (file) => path.basename(file) === "run-result.json",
+  );
+}
+
+function findMetricFiles(directory) {
+  return findEvidenceFiles(
+    directory,
+    (file) =>
+      path.basename(path.dirname(file)) === "e2e-metrics" &&
+      path.extname(file) === ".json",
+  );
 }
 
 function parseArguments(args) {
@@ -904,6 +1131,7 @@ function runCli() {
   const options = parseArguments(process.argv.slice(2));
   let plan;
   const results = [];
+  const metrics = [];
   try {
     const planMetadata = lstatSync(options.planFile);
     if (!planMetadata.isFile() || planMetadata.isSymbolicLink())
@@ -920,11 +1148,24 @@ function runCli() {
         results.push({ source: resultFile, malformed: true });
       }
     }
+    for (const metricsFile of findMetricFiles(options.resultsDirectory)) {
+      const chainId = path.basename(metricsFile, ".json");
+      try {
+        const parsed = JSON.parse(readFileSync(metricsFile, "utf8"));
+        metrics.push(
+          isPlainObject(parsed)
+            ? { ...parsed, source: metricsFile }
+            : { chainId, malformed: true, source: metricsFile },
+        );
+      } catch {
+        metrics.push({ chainId, malformed: true, source: metricsFile });
+      }
+    }
   } catch {
     // An absent or unreadable result directory is equivalent to no terminal
     // manifests and is reported by the same fail-closed missing-chain path.
   }
-  const analysis = analyzeE2eCiResults({ plan, results });
+  const analysis = analyzeE2eCiResults({ plan, results, metrics });
   mkdirSync(path.dirname(options.analysisFile), { recursive: true });
   writeFileSync(options.analysisFile, `${JSON.stringify(analysis, null, 2)}\n`);
   if (process.env.GITHUB_STEP_SUMMARY)
