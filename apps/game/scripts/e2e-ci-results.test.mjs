@@ -35,6 +35,35 @@ const PHASES_BY_SUITE = {
   ],
 };
 
+const ROOT_BY_PHASE = {
+  smoke: "smoke",
+  ordinary: "gameplay",
+  "production-journey": "productionJourney",
+  "capture-proof": "capture",
+  "save-seed": "persistence",
+  "save-resume": "persistence",
+  "management-seed": "persistence",
+  "management-corrupt-newest": "persistence",
+  "management-missing-thumbnail": "persistence",
+  "management-corrupt-thumbnail": "persistence",
+  "exit-close-seed": "exit",
+  "exit-close-resume": "exit",
+  "exit-quit-resume": "exit",
+  "exit-failure-bypass": "exit",
+  "exit-final-verification": "exit",
+};
+
+function outputDirectoryFor(chainId, attempt, phase) {
+  return path.join(
+    os.tmpdir(),
+    `${chainId}-run`,
+    "outputs",
+    `attempt-${attempt}`,
+    ROOT_BY_PHASE[phase],
+    phase,
+  );
+}
+
 function plan({
   suites,
   chains,
@@ -79,7 +108,7 @@ function result({
       exitCode: 0,
       start: "2026-08-02T00:00:00.000Z",
       finish: "2026-08-02T00:00:01.000Z",
-      outputDirectory: `/tmp/${chainId}/${suite}`,
+      outputDirectory: outputDirectoryFor(chainId, finalAttempt, phase),
     })),
   );
   if (terminal === "failed") {
@@ -115,7 +144,7 @@ function result({
       result: "failed",
       start: "2026-08-02T00:00:00.000Z",
       finish: "2026-08-02T00:00:01.000Z",
-      outputDirectory: `/tmp/${chainId}/attempt-1`,
+      outputDirectory: outputDirectoryFor(chainId, 1, failure.phase),
     })),
     ...finalPhases,
   ];
@@ -180,6 +209,8 @@ async function produceSmokeResult({
   guardExitCode = 0,
   applyCheckpoint = () => {},
   cleanupRoots = () => {},
+  runPhase = async () => ({ exitCode: 0 }),
+  ownershipError = null,
 } = {}) {
   const runDirectory = mkdtempSync(
     path.join(os.tmpdir(), "lyra-e2e-producer-result-"),
@@ -202,18 +233,20 @@ async function produceSmokeResult({
       ],
       suiteForPhase: () => "smoke",
       applyCheckpoint,
-      createOutputDirectory: () => runDirectory,
-      runPhase: async () => ({ exitCode: 0 }),
+      runPhase,
       captureFailureArtifacts() {},
       runAttempt: (options) =>
         runE2eAttempt({
           ...options,
-          createOwnership: ({ rootKeys }) => ({
-            roots: rootKeys.map((key) => ({
-              key,
-              appDataDir: path.join(runDirectory, key),
-            })),
-          }),
+          createOwnership: ({ rootKeys }) => {
+            if (ownershipError) throw ownershipError;
+            return {
+              roots: rootKeys.map((key) => ({
+                key,
+                appDataDir: path.join(runDirectory, key),
+              })),
+            };
+          },
           cleanupRoots,
           rootByKey: (ownership, key) =>
             ownership.roots.find((root) => root.key === key).appDataDir,
@@ -351,6 +384,95 @@ test("accepts the producer binary-guard failure shape only as an operational fai
   assert.deepEqual(
     analysis.errors.map(({ code }) => code),
     ["failed-chain"],
+  );
+});
+
+test("accepts producer cancellation during the binary guard", async () => {
+  const produced = await produceSmokeResult({
+    guardExitCode: 143,
+    supervisor: { cancelledSignal: "SIGTERM" },
+  });
+  assert.equal(produced.result, "cancelled");
+  assert.equal(produced.phase, "binary-guard");
+  assert.deepEqual(produced.attempts, {
+    configured: 1,
+    used: 0,
+    retries: 0,
+  });
+  assert.deepEqual(produced.cleanup, { state: "not-required", attempts: [] });
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [produced],
+  });
+  assert.equal(analysis.status, "failed");
+  assert.deepEqual(
+    analysis.errors.map(({ code }) => code),
+    ["cancelled-chain"],
+  );
+});
+
+test("accepts a cancellation signal that overwrites a failed child exit", async () => {
+  const supervisor = { cancelledSignal: null };
+  const produced = await produceSmokeResult({
+    supervisor,
+    runPhase: async () => {
+      supervisor.cancelledSignal = "SIGTERM";
+      return { exitCode: 23 };
+    },
+  });
+  assert.equal(produced.result, "cancelled");
+  assert.equal(produced.exitCode, 143);
+  assert.equal(produced.phaseResults[0].exitCode, 23);
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [produced],
+  });
+  assert.equal(analysis.status, "failed");
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "cancelled-chain"),
+    true,
+  );
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    false,
+  );
+});
+
+test("accepts only the producer pre-root ownership failure envelope", async () => {
+  const produced = await produceSmokeResult({
+    ownershipError: new Error("ownership allocation blocked"),
+  });
+  assert.equal(produced.result, "failed");
+  assert.equal(produced.exitCode, 1);
+  assert.deepEqual(produced.attempts, {
+    configured: 1,
+    used: 1,
+    retries: 0,
+  });
+  assert.equal(produced.phase, null);
+  assert.deepEqual(produced.phaseResults, []);
+  assert.deepEqual(produced.cleanup, { state: "not-required", attempts: [] });
+
+  const validAnalysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [produced],
+  });
+  assert.deepEqual(
+    validAnalysis.errors.map(({ code }) => code),
+    ["failed-chain"],
+  );
+
+  const malformed = structuredClone(produced);
+  malformed.exitCode = 2;
+  const malformedAnalysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [malformed],
+  });
+  assert.equal(
+    malformedAnalysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
   );
 });
 
@@ -958,6 +1080,139 @@ test("rejects runner wall time shorter than summed test-only time", () => {
   );
 });
 
+test("rejects malformed top-level and phase timing or artifact envelopes", () => {
+  const validPlan = plan({ suites: ["smoke"], chains: [smokeChain] });
+  const fixtures = [];
+
+  const nonCanonicalStart = result({
+    chainId: "gameplay",
+    suites: ["smoke"],
+  });
+  nonCanonicalStart.start = "2026-08-02";
+  fixtures.push(nonCanonicalStart);
+
+  const reversedRunner = result({ chainId: "gameplay", suites: ["smoke"] });
+  reversedRunner.start = "2026-08-02T00:00:02.000Z";
+  fixtures.push(reversedRunner);
+
+  const fractionalRunner = result({
+    chainId: "gameplay",
+    suites: ["smoke"],
+  });
+  fractionalRunner.runnerWallTimeMs += 0.5;
+  fixtures.push(fractionalRunner);
+
+  const nonCanonicalPhaseStart = result({
+    chainId: "gameplay",
+    suites: ["smoke"],
+  });
+  nonCanonicalPhaseStart.phaseResults[0].start = "not-a-timestamp";
+  fixtures.push(nonCanonicalPhaseStart);
+
+  const reversedPhase = result({ chainId: "gameplay", suites: ["smoke"] });
+  reversedPhase.phaseResults[0].start = "2026-08-02T00:00:02.000Z";
+  fixtures.push(reversedPhase);
+
+  const phaseOutsideRunner = result({
+    chainId: "gameplay",
+    suites: ["smoke"],
+  });
+  phaseOutsideRunner.phaseResults[0].start = "2026-08-01T23:59:59.000Z";
+  fixtures.push(phaseOutsideRunner);
+
+  const fractionalPhase = result({
+    chainId: "gameplay",
+    suites: ["smoke"],
+  });
+  fractionalPhase.phaseResults[0].durationMs = 100.5;
+  fractionalPhase.durationMs = 100.5;
+  fractionalPhase.testOnlyTimeMs = 100.5;
+  fractionalPhase.runnerWallTimeMs = 201;
+  fixtures.push(fractionalPhase);
+
+  for (const outputDirectory of [
+    "",
+    "relative/outputs/attempt-1/smoke/smoke",
+    path.join(os.tmpdir(), "invented-output"),
+    null,
+  ]) {
+    const malformedPath = result({
+      chainId: "gameplay",
+      suites: ["smoke"],
+    });
+    malformedPath.phaseResults[0].outputDirectory = outputDirectory;
+    fixtures.push(malformedPath);
+  }
+
+  for (const malformed of fixtures) {
+    const analysis = analyzeE2eCiResults({
+      plan: validPlan,
+      results: [malformed],
+    });
+    assert.equal(analysis.status, "failed");
+    assert.equal(
+      analysis.errors.some(({ code }) => code === "malformed-chain"),
+      true,
+    );
+  }
+});
+
+test("keeps forced-full routing indeterminate for malformed phase artifacts", () => {
+  const gameplaySuites = ["smoke", "gameplay", "production-journey"];
+  const forcedPlan = plan({
+    suites: [
+      ...gameplaySuites,
+      "capture-proof",
+      "save-core",
+      "save-management",
+      "exit-lifecycle",
+    ],
+    chains: [
+      { chainId: "gameplay", suiteIds: gameplaySuites },
+      {
+        chainId: "persistence",
+        suiteIds: ["capture-proof", "save-core", "save-management"],
+      },
+      { chainId: "exit", suiteIds: ["exit-lifecycle"] },
+    ],
+    risk: ["smoke"],
+    forcedFull: true,
+    reason: "manual-override",
+  });
+  const malformed = result({
+    chainId: "gameplay",
+    suites: gameplaySuites,
+    risk: ["smoke"],
+    forcedFull: true,
+    reason: "manual-override",
+    terminal: "failed",
+    finalFailedSuite: "production-journey",
+  });
+  malformed.phaseResults.at(-1).outputDirectory = path.join(
+    os.tmpdir(),
+    "invented-output",
+  );
+
+  const analysis = analyzeE2eCiResults({
+    plan: forcedPlan,
+    results: [malformed],
+  });
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
+  );
+  assert.deepEqual(
+    analysis.routingAudit.finalFailures.find(
+      ({ chainId }) => chainId === "gameplay",
+    ),
+    {
+      chainId: "gameplay",
+      suite: null,
+      classification: "indeterminate",
+    },
+  );
+});
+
 test("rejects wrong canonical phase order on every represented attempt", () => {
   const suites = ["smoke", "gameplay", "production-journey"];
   const validPlan = plan({
@@ -1111,6 +1366,58 @@ test("CLI writes failed analysis and summary for a null planner matrix entry", (
       true,
     );
     assert.match(readFileSync(summaryFile, "utf8"), /malformed-plan/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("CLI writes failed artifacts for malformed phase timing and output paths", () => {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "lyra-e2e-analysis-"));
+  try {
+    const planFile = path.join(directory, "e2e-plan.json");
+    const resultsDirectory = path.join(directory, "results");
+    const analysisFile = path.join(directory, "analysis.json");
+    const summaryFile = path.join(directory, "summary.md");
+    mkdirSync(resultsDirectory);
+    writeFileSync(
+      planFile,
+      JSON.stringify(plan({ suites: ["smoke"], chains: [smokeChain] })),
+    );
+    const malformed = result({ chainId: "gameplay", suites: ["smoke"] });
+    malformed.phaseResults[0].start = "not-a-timestamp";
+    malformed.phaseResults[0].outputDirectory = null;
+    writeFileSync(
+      path.join(resultsDirectory, "run-result.json"),
+      JSON.stringify(malformed),
+    );
+
+    const execution = spawnSync(
+      process.execPath,
+      [
+        new URL("./e2e-ci-results.mjs", import.meta.url).pathname,
+        "--plan-file",
+        planFile,
+        "--results-directory",
+        resultsDirectory,
+        "--analysis-file",
+        analysisFile,
+      ],
+      {
+        env: { ...process.env, GITHUB_STEP_SUMMARY: summaryFile },
+        encoding: "utf8",
+      },
+    );
+
+    assert.equal(execution.status, 1);
+    assert.equal(existsSync(analysisFile), true);
+    assert.equal(existsSync(summaryFile), true);
+    const analysis = JSON.parse(readFileSync(analysisFile, "utf8"));
+    assert.equal(analysis.status, "failed");
+    assert.equal(
+      analysis.errors.some(({ code }) => code === "malformed-chain"),
+      true,
+    );
+    assert.match(readFileSync(summaryFile, "utf8"), /malformed-chain/);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
