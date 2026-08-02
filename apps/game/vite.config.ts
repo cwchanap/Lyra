@@ -24,7 +24,10 @@ export default defineConfig(async () => ({
       reporter: ["lcov"],
       reportsDirectory: "coverage",
       include: ["src/lib/**/*.svelte", "src/lib/**/*.ts"],
-      exclude: ["src/lib/test-harnesses/PackagedCaptureProofProbe.svelte"],
+      exclude: [
+        "src/lib/e2e/**",
+        "src/lib/test-harnesses/PackagedCaptureProofProbe.svelte",
+      ],
     },
   },
 
