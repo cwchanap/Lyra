@@ -396,6 +396,8 @@ jobs:
       - name: Validate E2E manifests and routing
         env:
           PLAN_RESULT: ${{ needs.e2e-plan.result }}
+          SHOULD_RUN: ${{ needs.e2e-plan.outputs.should_run }}
+          EXECUTION_RESULT: ${{ needs.e2e-execution.result }}
         run: |
           validator_status=0
           node apps/game/scripts/e2e-ci-results.mjs \
@@ -404,6 +406,10 @@ jobs:
             --analysis-file "$RUNNER_TEMP/e2e-analysis/e2e-analysis.json" || validator_status=$?
           if [[ "$PLAN_RESULT" != "success" ]]; then
             echo "E2E planning did not complete successfully: $PLAN_RESULT"
+            exit 1
+          fi
+          if [[ "$SHOULD_RUN" == "true" && "$EXECUTION_RESULT" != "success" ]]; then
+            echo "E2E matrix execution did not complete successfully: $EXECUTION_RESULT"
             exit 1
           fi
           exit "$validator_status"

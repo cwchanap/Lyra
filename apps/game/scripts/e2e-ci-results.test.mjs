@@ -263,10 +263,14 @@ async function produceSmokeResult({
       applyCheckpoint,
       runPhase,
       captureFailureArtifacts() {},
-      runAttempt: (options) =>
-        runE2eAttempt({
+      runAttempt: (options) => {
+        const attemptOwnershipMode =
+          typeof ownershipMode === "function"
+            ? ownershipMode(options.attempt)
+            : ownershipMode;
+        return runE2eAttempt({
           ...options,
-          ...(ownershipMode === "stub"
+          ...(attemptOwnershipMode === "stub"
             ? {
                 createOwnership: ({ rootKeys }) => {
                   return {
@@ -280,7 +284,7 @@ async function produceSmokeResult({
                 rootByKey: (ownership, key) =>
                   ownership.roots.find((root) => root.key === key).appDataDir,
               }
-            : ownershipMode === "no-manifest"
+            : attemptOwnershipMode === "no-manifest"
               ? {
                   createOwnership: (ownershipOptions) =>
                     createRunOwnership({
@@ -291,7 +295,8 @@ async function produceSmokeResult({
                     }),
                 }
               : {}),
-        }),
+        });
+      },
     });
     return structuredClone(runner.result);
   } finally {
@@ -513,6 +518,7 @@ test("accepts producer guard invocation rejection with or without cancellation",
 test("accepts a cancellation signal that overwrites a failed child exit", async () => {
   const supervisor = { cancelledSignal: null };
   const produced = await produceSmokeResult({
+    attempts: 2,
     supervisor,
     runPhase: async () => {
       supervisor.cancelledSignal = "SIGTERM";
@@ -522,6 +528,11 @@ test("accepts a cancellation signal that overwrites a failed child exit", async 
   assert.equal(produced.result, "cancelled");
   assert.equal(produced.exitCode, 143);
   assert.equal(produced.phaseResults[0].exitCode, 23);
+  assert.deepEqual(produced.attempts, {
+    configured: 2,
+    used: 1,
+    retries: 0,
+  });
 
   const analysis = analyzeE2eCiResults({
     plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
@@ -711,6 +722,169 @@ test("accepts both producer pre-root ownership manifest lifecycles", async () =>
     ),
     true,
   );
+});
+
+test("accepts attempt-two pre-root failure with retained attempt-one evidence", async () => {
+  const produced = await produceSmokeResult({
+    attempts: 2,
+    ownershipMode: (attempt) => (attempt === 2 ? "no-manifest" : "stub"),
+    runPhase: async (_phase, { attempt }) => ({
+      exitCode: attempt === 1 ? 23 : 0,
+    }),
+  });
+  assert.equal(produced.result, "failed");
+  assert.equal(produced.exitCode, 1);
+  assert.deepEqual(produced.attempts, {
+    configured: 2,
+    used: 2,
+    retries: 1,
+  });
+  assert.equal(produced.phase, "smoke");
+  assert.equal(produced.suite, "smoke");
+  assert.equal(produced.attempt, 1);
+  assert.equal(produced.finalFailedSuite, null);
+  assert.deepEqual(
+    produced.phaseResults.map(
+      ({ phase, attempt, result: phaseResult, exitCode }) => ({
+        phase,
+        attempt,
+        result: phaseResult,
+        exitCode,
+      }),
+    ),
+    [{ phase: "smoke", attempt: 1, result: "failed", exitCode: 23 }],
+  );
+  assert.deepEqual(produced.cleanup, {
+    state: "removed",
+    attempts: [{ attempt: 1, state: "removed" }],
+  });
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [produced],
+  });
+  assert.deepEqual(
+    analysis.errors.map(({ code }) => code),
+    ["failed-chain"],
+  );
+  assert.deepEqual(analysis.routingAudit.finalFailures, [
+    {
+      chainId: "gameplay",
+      suite: null,
+      classification: "indeterminate",
+    },
+  ]);
+});
+
+test("accepts attempt-two pre-phase failure after every producer retry cause", async (t) => {
+  await t.test(
+    "empty ownership manifest after a recorded phase failure",
+    async () => {
+      const produced = await produceSmokeResult({
+        attempts: 2,
+        ownershipMode: (attempt) => (attempt === 2 ? "actual" : "stub"),
+        createRoot() {
+          throw new Error("attempt-two allocation blocked");
+        },
+        runPhase: async (_phase, { attempt }) => ({
+          exitCode: attempt === 1 ? 23 : 0,
+        }),
+      });
+      assert.deepEqual(produced.cleanup, {
+        state: "removed",
+        attempts: [
+          { attempt: 1, state: "removed" },
+          { attempt: 2, state: "removed" },
+        ],
+      });
+      const analysis = analyzeE2eCiResults({
+        plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+        results: [produced],
+      });
+      assert.deepEqual(
+        analysis.errors.map(({ code }) => code),
+        ["failed-chain"],
+      );
+    },
+  );
+
+  await t.test("unrecorded first-attempt setup failure", async () => {
+    let checkpointCalls = 0;
+    const produced = await produceSmokeResult({
+      attempts: 2,
+      ownershipMode: (attempt) => (attempt === 2 ? "no-manifest" : "stub"),
+      applyCheckpoint() {
+        checkpointCalls += 1;
+        if (checkpointCalls === 1) throw new Error("setup blocked");
+      },
+    });
+    assert.deepEqual(produced.phaseResults, []);
+    assert.deepEqual(produced.firstAttemptFailures, [
+      { phase: "smoke", suite: "smoke", exitCode: 1 },
+    ]);
+    const analysis = analyzeE2eCiResults({
+      plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+      results: [produced],
+    });
+    assert.deepEqual(
+      analysis.errors.map(({ code }) => code),
+      ["failed-chain"],
+    );
+  });
+
+  await t.test("first-attempt cleanup failure", async () => {
+    let cleanupCalls = 0;
+    const produced = await produceSmokeResult({
+      attempts: 2,
+      ownershipMode: (attempt) => (attempt === 2 ? "no-manifest" : "stub"),
+      cleanupRoots() {
+        cleanupCalls += 1;
+        if (cleanupCalls === 1) throw new Error("cleanup blocked");
+      },
+    });
+    assert.deepEqual(produced.cleanup, {
+      state: "failed",
+      attempts: [{ attempt: 1, state: "failed" }],
+    });
+    const analysis = analyzeE2eCiResults({
+      plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+      results: [produced],
+    });
+    assert.equal(
+      analysis.errors.some(({ code }) => code === "malformed-chain"),
+      false,
+    );
+    assert.equal(
+      analysis.errors.some(({ code }) => code === "cleanup-failed"),
+      true,
+    );
+  });
+});
+
+test("rejects routable ordinary failures before configured retries are exhausted", () => {
+  const forged = result({
+    chainId: "gameplay",
+    suites: ["smoke"],
+    terminal: "failed",
+    finalFailedSuite: "smoke",
+  });
+  forged.attempts = { configured: 2, used: 1, retries: 0 };
+
+  const analysis = analyzeE2eCiResults({
+    plan: plan({ suites: ["smoke"], chains: [smokeChain] }),
+    results: [forged],
+  });
+  assert.equal(
+    analysis.errors.some(({ code }) => code === "malformed-chain"),
+    true,
+  );
+  assert.deepEqual(analysis.routingAudit.finalFailures, [
+    {
+      chainId: "gameplay",
+      suite: null,
+      classification: "indeterminate",
+    },
+  ]);
 });
 
 test("rejects a binary-guard manifest with a malformed cleanup container", async () => {

@@ -485,6 +485,33 @@ function validateResult(result, expected, planner) {
   if (!equalJson(recoveredFlakes, expectedRecoveredFlakes))
     malformed("E2E recovered-flake evidence is inconsistent.");
 
+  const finalGroup = attemptGroups.at(-1) ?? [];
+  const finalPhase = finalGroup.at(-1);
+  const finalUnrecordedPhase = canonicalPhases[finalGroup.length];
+  const lastRecordedPhase = phaseResults.at(-1);
+  const retainedRecordedPhaseSummary =
+    lastRecordedPhase !== null &&
+    typeof lastRecordedPhase === "object" &&
+    result?.phase === lastRecordedPhase.phase &&
+    result?.suite === lastRecordedPhase.suite &&
+    result?.attempt === lastRecordedPhase.attempt &&
+    result?.durationMs === lastRecordedPhase.durationMs;
+  const retainedFirstSetupSummary =
+    unrecordedFirstAttemptFailure &&
+    result?.phase === firstUnrecordedPhase?.phase &&
+    result?.suite === firstUnrecordedPhase?.suite &&
+    result?.attempt === 1 &&
+    result?.durationMs === (lastRecordedPhase?.durationMs ?? 0);
+  const retryPrePhaseTerminalManifest =
+    phaseAttemptManifest &&
+    attempts.configured === 2 &&
+    attempts.used === 2 &&
+    finalGroup.length === 0 &&
+    ((terminalResult === "failed" && result?.exitCode === 1) ||
+      (terminalResult === "cancelled" && cancelledExitValid)) &&
+    result?.finalFailedSuite === null &&
+    (retainedRecordedPhaseSummary || retainedFirstSetupSummary);
+
   if (phaseAttemptManifest) {
     const expectedCleanupAttempts = Array.from(
       { length: attempts.used },
@@ -499,8 +526,12 @@ function validateResult(result, expected, planner) {
     )
       ? "failed"
       : "removed";
+    const cleanupNumbersValid =
+      equalJson(cleanupNumbers, expectedCleanupAttempts) ||
+      (retryPrePhaseTerminalManifest &&
+        equalJson(cleanupNumbers, expectedCleanupAttempts.slice(0, -1)));
     const cleanupEvidenceValid =
-      equalJson(cleanupNumbers, expectedCleanupAttempts) &&
+      cleanupNumbersValid &&
       cleanupStatesValid &&
       result?.cleanup?.state === derivedCleanupState;
     if (!cleanupEvidenceValid) {
@@ -520,9 +551,6 @@ function validateResult(result, expected, planner) {
     }
   }
 
-  const finalGroup = attemptGroups.at(-1) ?? [];
-  const finalPhase = finalGroup.at(-1);
-  const finalUnrecordedPhase = canonicalPhases[finalGroup.length];
   const terminalSetupContextMatches =
     phaseAttemptManifest &&
     finalGroup.every(({ result: phaseResult }) => phaseResult === "passed") &&
@@ -557,6 +585,7 @@ function validateResult(result, expected, planner) {
     phaseAttemptManifest &&
     !terminalSetupFailure &&
     !terminalCancelledSetupFailure &&
+    !retryPrePhaseTerminalManifest &&
     !terminalPhaseSummaryMatches &&
     !emptyCancellationSummary
   ) {
@@ -571,6 +600,14 @@ function validateResult(result, expected, planner) {
     result.exitCode !== finalPhase.exitCode
   ) {
     malformed("E2E terminal exit code disagrees with its failed final phase.");
+  }
+  if (
+    phaseAttemptManifest &&
+    terminalResult === "failed" &&
+    terminalFailedPhase &&
+    attempts.used !== attempts.configured
+  ) {
+    malformed("E2E terminal phase failure did not exhaust configured retries.");
   }
 
   if (phaseAttemptManifest && phasesValid) {
@@ -591,6 +628,7 @@ function validateResult(result, expected, planner) {
       terminalResult === "failed" &&
       !terminalFailedPhase &&
       !terminalSetupFailure &&
+      !retryPrePhaseTerminalManifest &&
       !finalCleanupFailed
     ) {
       malformed("E2E terminal result does not match its final phase.");
