@@ -93,6 +93,15 @@ test("treats playable story and compiler inputs as production-journey risks", ()
   );
 });
 
+test("routes the live scene compiler entrypoint as a story risk", () => {
+  assert.deepEqual(
+    selectE2eSuites({
+      changedPaths: ["packages/scripts/compile-scenes.ts"],
+    }).suiteIds,
+    ["smoke", "gameplay", "production-journey"],
+  );
+});
+
 test("forces the complete registry for E2E infrastructure", () => {
   const plan = selectE2eSuites({
     changedPaths: ["apps/game/wdio.conf.ts"],

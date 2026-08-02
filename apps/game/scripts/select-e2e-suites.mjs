@@ -33,6 +33,7 @@ export const E2E_RISK_RULES = Object.freeze([
     patterns: [
       "docs/stories_plan/chapter_*/**",
       "static/stories_plan/chapter_*/**",
+      "packages/scripts/compile-scenes.ts",
       "packages/scripts/compile-scenes/**",
       "packages/scene-types/**",
       "static/assets/config/**",
