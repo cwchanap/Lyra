@@ -8,6 +8,7 @@ import { parseDocument } from "yaml";
 const workflowPath = fileURLToPath(
   new URL("../../../.github/workflows/ci.yml", import.meta.url),
 );
+const packagePath = fileURLToPath(new URL("../package.json", import.meta.url));
 
 function loadWorkflow() {
   const document = parseDocument(readFileSync(workflowPath, "utf8"));
@@ -27,6 +28,25 @@ function aggregateResult(run, environment) {
     encoding: "utf8",
   });
 }
+
+test("workflow runs the explicit E2E CI contract command", () => {
+  const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
+  assert.equal(
+    packageJson.scripts["test:e2e:ci-contracts"],
+    [
+      "node --test",
+      "scripts/select-e2e-suites.test.mjs",
+      "scripts/plan-e2e-ci.test.mjs",
+      "scripts/e2e-ci-workflow.test.mjs",
+    ].join(" "),
+  );
+
+  const plan = loadWorkflow().jobs["e2e-plan"];
+  assert.equal(
+    namedStep(plan, "Run E2E CI contracts").run,
+    "bun run --cwd apps/game test:e2e:ci-contracts",
+  );
+});
 
 test("workflow routes planned suites through an always-validated aggregate gate", () => {
   const workflow = loadWorkflow();
@@ -89,6 +109,24 @@ test("aggregate gate passes only intentional docs skips and complete executions"
     ],
     [
       {
+        PLAN_RESULT: "success",
+        SHOULD_RUN: "",
+        EXECUTION_RESULT: "skipped",
+        MANIFEST_PRESENT: "",
+      },
+      1,
+    ],
+    [
+      {
+        PLAN_RESULT: "success",
+        SHOULD_RUN: "maybe",
+        EXECUTION_RESULT: "skipped",
+        MANIFEST_PRESENT: "",
+      },
+      1,
+    ],
+    [
+      {
         PLAN_RESULT: "failure",
         SHOULD_RUN: "",
         EXECUTION_RESULT: "skipped",
@@ -101,6 +139,15 @@ test("aggregate gate passes only intentional docs skips and complete executions"
         PLAN_RESULT: "success",
         SHOULD_RUN: "true",
         EXECUTION_RESULT: "cancelled",
+        MANIFEST_PRESENT: "true",
+      },
+      1,
+    ],
+    [
+      {
+        PLAN_RESULT: "success",
+        SHOULD_RUN: "true",
+        EXECUTION_RESULT: "failure",
         MANIFEST_PRESENT: "true",
       },
       1,
