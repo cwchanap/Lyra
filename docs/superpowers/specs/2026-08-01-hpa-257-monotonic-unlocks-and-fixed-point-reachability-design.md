@@ -101,8 +101,8 @@ checking.
 23. HPA-257 preserves HPA-255's rejection of completing the current primary while
     retaining that same primary as next.
 24. Authored `complete_objective` may target only a secondary objective.
-25. Compiler startup validation and the Rust dispatcher both reject a primary
-    `completeObjective` target before calling HPA-255.
+25. Compiler semantic validation, Rust startup validation, and the Rust dispatcher
+    all reject a primary `completeObjective` target before calling HPA-255.
 26. Question resolution is explicit. Asserting a resolver-candidate fact does not
     automatically resolve a question.
 27. Fact targets name propositions only. Scene/analysis adapters supply assertion
