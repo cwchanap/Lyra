@@ -1072,9 +1072,9 @@ iteration cap is required.
 
 The fixed point is existence-oriented. If a mandatory consumer becomes reachable
 only through a producer carrying `storyRevealBatchOrderDependent` or
-`primaryObjectiveOrderingNotExhaustive`, compilation succeeds with the warning;
-the warning message lists the mandatory consumer(s) relying on that conditional
-output.
+`primaryObjectiveOrderingNotExhaustive`, compilation succeeds while retaining the
+producer warning; the warning message lists the mandatory consumer(s) relying on
+that conditional output.
 
 HPA-257 does not claim every free-order execution succeeds. It does guarantee
 that order ambiguity is not silent and that hard always-invalid claims are made
