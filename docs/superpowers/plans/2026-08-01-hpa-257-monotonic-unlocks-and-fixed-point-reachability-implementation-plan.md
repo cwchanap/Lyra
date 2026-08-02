@@ -8,6 +8,8 @@
 
 **Tech Stack:** Bun 1.3.1, TypeScript 5.6, Vitest 4, existing scene compiler, Rust/Serde, Tauri 2 game runtime, existing save schema v2.
 
+**Plan Review Status:** Spec coverage, placeholder, file-ownership, type-consistency, and execution-command reviews completed on 2026-08-01. No unresolved implementation choice remains in this document.
+
 ## Global Constraints
 
 - Existing investigation/interrogation expressions, reveal arrays, emitted JSON, diagnostics, warning count, and `contentRevision` remain byte-for-byte unchanged when new syntax is unused.
