@@ -39,7 +39,7 @@ export const E2E_SUITE_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: "smoke",
     phases: Object.freeze([
-      phase("ordinary", "ordinary", "ordinary", ordinarySpecs),
+      phase("ordinary", "ordinary", "smoke", ordinarySpecs),
     ]),
   }),
   // These two leaf suites intentionally have no current packaged spec. Their
@@ -49,7 +49,7 @@ export const E2E_SUITE_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: "capture-proof",
     phases: Object.freeze([
-      phase("capture-proof", "capture-proof", "captureProof", [
+      phase("capture-proof", "capture-proof", "capture", [
         "./e2e-tauri/capture-proof.e2e.ts",
       ]),
     ]),
@@ -106,22 +106,20 @@ export const E2E_SUITE_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: "exit-lifecycle",
     phases: Object.freeze([
-      phase("exit-close-seed", "exit", "persistence", [
+      phase("exit-close-seed", "exit", "exit", [
         "./e2e-tauri/save-exit.e2e.ts",
       ]),
-      phase("exit-close-resume", "exit", "persistence", [
+      phase("exit-close-resume", "exit", "exit", [
         "./e2e-tauri/save-exit.e2e.ts",
       ]),
-      phase("exit-quit-seed", "exit", "persistence", [
+      phase("exit-quit-seed", "exit", "exit", ["./e2e-tauri/save-exit.e2e.ts"]),
+      phase("exit-quit-resume", "exit", "exit", [
         "./e2e-tauri/save-exit.e2e.ts",
       ]),
-      phase("exit-quit-resume", "exit", "persistence", [
+      phase("exit-failure-bypass", "exit", "exit", [
         "./e2e-tauri/save-exit.e2e.ts",
       ]),
-      phase("exit-failure-bypass", "exit", "persistence", [
-        "./e2e-tauri/save-exit.e2e.ts",
-      ]),
-      phase("exit-final-verification", "exit", "persistence", [
+      phase("exit-final-verification", "exit", "exit", [
         "./e2e-tauri/save-exit.e2e.ts",
       ]),
     ]),
@@ -246,7 +244,15 @@ export function buildE2ePhasePlan(suiteIds, appDataDirectories) {
     const result = {
       id: definition.id,
       group: definition.group,
-      appDataDir: appDataDirectories[definition.root],
+      appDataDir:
+        appDataDirectories[definition.root] ??
+        appDataDirectories[
+          {
+            smoke: "ordinary",
+            capture: "captureProof",
+            exit: "persistence",
+          }[definition.root]
+        ],
       specs: [...definition.specs],
       environment: { ...definition.environment },
       ...(definition.before === undefined
@@ -269,4 +275,32 @@ export function e2eSuitePhaseRoots(suiteIds) {
       ),
     ),
   ];
+}
+
+const guardedRootBySuiteId = Object.freeze({
+  smoke: "smoke",
+  gameplay: "gameplay",
+  "production-journey": "productionJourney",
+  "capture-proof": "capture",
+  "save-core": "persistence",
+  "save-management": "persistence",
+  "exit-lifecycle": "exit",
+});
+
+export function e2eSuiteGuardedRoots(suiteIds) {
+  return [
+    ...new Set(
+      normalizeE2eSuiteIds(suiteIds).map(
+        (suiteId) => guardedRootBySuiteId[suiteId],
+      ),
+    ),
+  ];
+}
+
+export function e2eSuiteForPhase(phaseId) {
+  const suite = E2E_SUITE_DEFINITIONS.find((definition) =>
+    definition.phases.some((phaseDefinition) => phaseDefinition.id === phaseId),
+  );
+  if (!suite) throw new Error(`Unknown e2e phase: ${String(phaseId)}`);
+  return suite.id;
 }
