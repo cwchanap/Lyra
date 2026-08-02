@@ -17,6 +17,7 @@ import {
   createChildSupervisor,
   createRunOwnership,
   readRunOwnership,
+  runE2eAttempt,
   runE2eRunner,
 } from "./e2e-runner-lifecycle.mjs";
 import { createSaveE2eAppDataDir } from "./save-e2e-paths.mjs";
@@ -222,11 +223,14 @@ test("runner retry preserves a failed attempt while using fresh roots and output
   const roots = [];
   const outputs = [];
   const captured = [];
+  let clockMs = 1_000;
   const runner = await runE2eRunner({
+    chainId: "gameplay",
     suiteIds: ["smoke"],
     riskSelectedSuites: ["smoke"],
     attempts: 2,
     forcedFull: false,
+    plannerReason: null,
     runDirectory,
     supervisor: { cancelledSignal: null },
     runGuard: async () => ({ exitCode: 0 }),
@@ -252,16 +256,44 @@ test("runner retry preserves a failed attempt while using fresh roots and output
       return output;
     },
     async runPhase(_phase, { attempt }) {
+      clockMs += attempt === 1 ? 40 : 30;
       return { exitCode: attempt === 1 ? 23 : 0 };
     },
     captureFailureArtifacts(details) {
       captured.push(details);
       assert.equal(existsSync(details.phase.appDataDir), true);
     },
+    nowMs: () => clockMs,
   });
 
   assert.equal(runner.exitCode, 0);
-  assert.equal(runner.result.firstFailedSuite, "smoke");
+  assert.equal(runner.result.schemaVersion, 2);
+  assert.equal(runner.result.chainId, "gameplay");
+  assert.deepEqual(runner.result.selectedSuites, ["smoke"]);
+  assert.deepEqual(runner.result.riskSelectedSuites, ["smoke"]);
+  assert.equal(runner.result.forcedFull, false);
+  assert.equal(runner.result.reason, null);
+  assert.equal(runner.result.runnerWallTimeMs, 70);
+  assert.equal(runner.result.testOnlyTimeMs, 70);
+  assert.deepEqual(runner.result.attempts, {
+    configured: 2,
+    used: 2,
+    retries: 1,
+  });
+  assert.deepEqual(runner.result.firstAttemptFailures, [
+    { phase: "ordinary", suite: "smoke", exitCode: 23 },
+  ]);
+  assert.deepEqual(runner.result.recoveredFlakes, ["smoke"]);
+  assert.equal(runner.result.finalFailedSuite, null);
+  assert.equal(runner.result.phaseCount, 2);
+  assert.equal(runner.result.processCount, 2);
+  assert.deepEqual(runner.result.cleanup, {
+    state: "removed",
+    attempts: [
+      { attempt: 1, state: "removed" },
+      { attempt: 2, state: "removed" },
+    ],
+  });
   assert.deepEqual(
     runner.result.phaseResults.map(({ attempt, exitCode }) => [
       attempt,
@@ -364,8 +396,58 @@ test("runner cancellation writes diagnostics and cleans only its owned root", as
   );
   assert.equal(runner.exitCode, 143);
   assert.equal(manifest.result, "cancelled");
+  assert.equal(manifest.finalFailedSuite, null);
+  assert.deepEqual(manifest.recoveredFlakes, []);
+  assert.deepEqual(manifest.cleanup, {
+    state: "removed",
+    attempts: [{ attempt: 1, state: "removed" }],
+  });
   assert.equal(manifest.phaseResults.length, 1);
   assert.equal(ownership.roots[0].cleanup.state, "removed");
   assert.equal(existsSync(roots[0]), false);
   assert.equal(existsSync(foreignRoot), true);
+});
+
+test("cleanup failure fails the runner without blaming the last passing suite", async () => {
+  const runDirectory = holder();
+  const roots = [];
+  const runner = await runE2eRunner({
+    chainId: "gameplay",
+    suiteIds: ["smoke"],
+    riskSelectedSuites: ["smoke"],
+    attempts: 1,
+    forcedFull: false,
+    runDirectory,
+    supervisor: { cancelledSignal: null },
+    runGuard: async () => ({ exitCode: 0 }),
+    rootKeys: ["smoke"],
+    createRoot() {
+      const root = createSaveE2eAppDataDir();
+      roots.push(root);
+      return root;
+    },
+    buildPhasePlan(_suiteIds, directories) {
+      return [{ id: "smoke", root: "smoke", appDataDir: directories.smoke }];
+    },
+    suiteForPhase: () => "smoke",
+    applyCheckpoint() {},
+    createOutputDirectory: () => runDirectory,
+    async runPhase() {
+      return { exitCode: 0 };
+    },
+    captureFailureArtifacts() {},
+    runAttempt: (options) =>
+      runE2eAttempt({
+        ...options,
+        cleanupRoots() {
+          throw new Error("cleanup blocked");
+        },
+      }),
+  });
+
+  assert.equal(runner.exitCode, 1);
+  assert.equal(runner.result.result, "failed");
+  assert.equal(runner.result.finalFailedSuite, null);
+  assert.equal(runner.result.cleanup.state, "failed");
+  holders.push(...roots);
 });

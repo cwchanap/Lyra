@@ -14,7 +14,7 @@ import {
 } from "./save-e2e-paths.mjs";
 
 export const E2E_RUN_OWNERSHIP_SCHEMA_VERSION = 1;
-export const E2E_RUN_RESULT_SCHEMA_VERSION = 1;
+export const E2E_RUN_RESULT_SCHEMA_VERSION = 2;
 const ROOT_OWNERSHIP_MARKER = ".lyra-e2e-runner-owner.json";
 
 function ownershipError() {
@@ -275,25 +275,37 @@ export function cleanupOwnedE2eRoots(
 
 function createRunnerResult({
   runId,
+  chainId,
   suiteIds,
   riskSelectedSuites,
   forcedFull,
+  plannerReason,
+  attempts,
   start,
 }) {
   return {
     schemaVersion: E2E_RUN_RESULT_SCHEMA_VERSION,
     runId,
+    chainId,
     selectedSuites: suiteIds,
     riskSelectedSuites,
     forcedFull,
+    reason: plannerReason,
     phase: null,
     suite: null,
     attempt: null,
     durationMs: 0,
+    runnerWallTimeMs: 0,
+    testOnlyTimeMs: 0,
     result: "running",
     exitCode: null,
-    firstFailedSuite: null,
+    attempts: { configured: attempts, used: 0, retries: 0 },
+    firstAttemptFailures: [],
+    recoveredFlakes: [],
+    finalFailedSuite: null,
+    phaseCount: 0,
     processCount: 0,
+    cleanup: { state: "pending", attempts: [] },
     start,
     finish: null,
     phaseResults: [],
@@ -320,11 +332,15 @@ export async function runE2eAttempt({
   rootByKey = ownedRootByKey,
   writeResult = writeRunResult,
   now = () => new Date().toISOString(),
+  nowMs = Date.now,
 }) {
   const attemptDirectory = path.join(runDirectory, `attempt-${attempt}`);
   const ownershipPath = path.join(attemptDirectory, "run-ownership.json");
   let ownership;
   let exitCode = 0;
+  result.attempts.used = Math.max(result.attempts.used, attempt);
+  result.attempts.retries = Math.max(0, result.attempts.used - 1);
+  result.finalFailedSuite = null;
   try {
     ownership = createOwnership({
       ownershipPath,
@@ -350,13 +366,13 @@ export async function runE2eAttempt({
           attempt,
         });
         const start = now();
-        const startedMs = Date.now();
+        const startedMs = nowMs();
         const child = await runPhase(phase, { attempt, outputDirectory });
         const phaseResult = {
           phase: phase.id,
           suite: suiteForPhase(phase.id),
           attempt,
-          durationMs: Date.now() - startedMs,
+          durationMs: nowMs() - startedMs,
           result: child.exitCode === 0 ? "passed" : "failed",
           exitCode: child.exitCode,
           start,
@@ -369,10 +385,18 @@ export async function runE2eAttempt({
         result.durationMs = phaseResult.durationMs;
         result.result = phaseResult.result;
         result.exitCode = phaseResult.exitCode;
+        result.testOnlyTimeMs += phaseResult.durationMs;
+        result.phaseCount += 1;
         result.processCount += 1;
         result.phaseResults.push(phaseResult);
-        if (child.exitCode !== 0 && result.firstFailedSuite === null)
-          result.firstFailedSuite = phaseResult.suite;
+        if (child.exitCode !== 0 && attempt === 1) {
+          result.firstAttemptFailures.push({
+            phase: phaseResult.phase,
+            suite: phaseResult.suite,
+            exitCode: phaseResult.exitCode,
+          });
+        }
+        if (child.exitCode !== 0) result.finalFailedSuite = phaseResult.suite;
         writeResult(resultPath, result);
         if (child.exitCode !== 0) {
           captureFailureArtifacts({
@@ -391,7 +415,14 @@ export async function runE2eAttempt({
         result.attempt = attempt;
         result.result = "failed";
         result.exitCode = 1;
-        result.firstFailedSuite ??= result.suite;
+        if (attempt === 1) {
+          result.firstAttemptFailures.push({
+            phase: result.phase,
+            suite: result.suite,
+            exitCode: 1,
+          });
+        }
+        result.finalFailedSuite = result.suite;
         writeResult(resultPath, result);
         exitCode = 1;
         break;
@@ -401,20 +432,29 @@ export async function runE2eAttempt({
     if (ownership || existsSync(ownershipPath)) {
       try {
         cleanupRoots(ownershipPath);
+        result.cleanup.attempts.push({ attempt, state: "removed" });
       } catch (error) {
         console.error("save e2e app data cleanup failed:", error);
+        result.cleanup.attempts.push({ attempt, state: "failed" });
         exitCode ||= 1;
       }
     }
+    result.cleanup.state = result.cleanup.attempts.some(
+      ({ state }) => state === "failed",
+    )
+      ? "failed"
+      : "removed";
   }
   return exitCode;
 }
 
 export async function runE2eRunner({
+  chainId = "direct",
   suiteIds,
   riskSelectedSuites,
   attempts,
   forcedFull,
+  plannerReason = null,
   runDirectory,
   supervisor,
   runGuard,
@@ -429,16 +469,21 @@ export async function runE2eRunner({
   createRun = createRunId,
   writeResult = writeRunResult,
   now = () => new Date().toISOString(),
+  nowMs = Date.now,
   runAttempt = runE2eAttempt,
 }) {
   mkdirSync(runDirectory, { recursive: true });
   const runId = createRun();
   const resultPath = path.join(runDirectory, "run-result.json");
+  const runnerStartedMs = nowMs();
   const result = createRunnerResult({
     runId,
+    chainId,
     suiteIds,
     riskSelectedSuites,
     forcedFull,
+    plannerReason,
+    attempts,
     start: now(),
   });
   let exitCode = 1;
@@ -468,11 +513,17 @@ export async function runE2eRunner({
           captureFailureArtifacts,
           writeResult,
           now,
+          nowMs,
         });
         if (exitCode === 0 || supervisor.cancelledSignal) break;
       }
       result.result = exitCode === 0 ? "passed" : "failed";
       result.exitCode = exitCode;
+      if (exitCode === 0) result.finalFailedSuite = null;
+      result.recoveredFlakes =
+        exitCode === 0
+          ? [...new Set(result.firstAttemptFailures.map(({ suite }) => suite))]
+          : [];
     }
   } catch (error) {
     console.error("save e2e runner failed:", error);
@@ -484,7 +535,11 @@ export async function runE2eRunner({
       exitCode = supervisor.cancelledSignal === "SIGINT" ? 130 : 143;
       result.result = "cancelled";
       result.exitCode = exitCode;
+      result.finalFailedSuite = null;
     }
+    if (result.cleanup.attempts.length === 0)
+      result.cleanup.state = "not-required";
+    result.runnerWallTimeMs = nowMs() - runnerStartedMs;
     result.finish = now();
     writeResult(resultPath, result);
   }

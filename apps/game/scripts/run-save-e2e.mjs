@@ -18,6 +18,7 @@ import {
 } from "./e2e-suite-registry.mjs";
 import {
   parseRunnerArguments,
+  resolveRunnerPlannerMetadata,
   resolveRunnerSelection,
 } from "./e2e-runner-selection.mjs";
 import {
@@ -28,13 +29,15 @@ import {
 
 let options;
 let suiteIds;
+let plannerMetadata;
 try {
   options = parseRunnerArguments(process.argv.slice(2));
   suiteIds = resolveRunnerSelection(options);
   suiteIds = validateSelectedE2eSuiteDefinitions(suiteIds);
+  plannerMetadata = resolveRunnerPlannerMetadata(options, suiteIds);
 } catch (error) {
   console.error(
-    `Usage: node scripts/run-save-e2e.mjs (--suite <id> [... ]|--suite-file /absolute/path/to/e2e-suites.json|--full) [--attempts 1|2]\n${error.message}`,
+    `Usage: node scripts/run-save-e2e.mjs (--suite <id> [... ]|--suite-file /absolute/path/to/e2e-suites.json|--full) [--attempts 1|2] [--chain-id <id> --plan-file /absolute/path/to/e2e-plan.json]\n${error.message}`,
   );
   process.exit(2);
 }
@@ -95,10 +98,12 @@ async function main() {
   const supervisor = createChildSupervisor();
   try {
     const runner = await runE2eRunner({
+      chainId: plannerMetadata.chainId,
       suiteIds,
-      riskSelectedSuites: options.full ? [] : suiteIds,
+      riskSelectedSuites: plannerMetadata.riskSelectedSuites,
       attempts: options.attempts,
-      forcedFull: options.full === true,
+      forcedFull: plannerMetadata.forcedFull,
+      plannerReason: plannerMetadata.reason,
       runDirectory,
       supervisor,
       runGuard: () =>

@@ -33,7 +33,7 @@
     "test:e2e:save-management:run": "node scripts/run-save-e2e.mjs --suite save-management",
     "test:e2e:exit-lifecycle:run": "node scripts/run-save-e2e.mjs --suite exit-lifecycle",
     "test:e2e:run": "bun run test:e2e:smoke:run",
-    "test:e2e:ci-contracts": "node --test scripts/select-e2e-suites.test.mjs scripts/plan-e2e-ci.test.mjs scripts/e2e-ci-workflow.test.mjs",
+    "test:e2e:ci-contracts": "node --test scripts/e2e-suite-registry.test.mjs scripts/e2e-runner-lifecycle.test.mjs scripts/save-e2e-paths.test.mjs scripts/select-e2e-suites.test.mjs scripts/plan-e2e-ci.test.mjs scripts/e2e-ci-metrics.test.mjs scripts/e2e-ci-results.test.mjs scripts/e2e-ci-workflow.test.mjs",
     "check:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --all --check",
     "rust:fmt:fix": "cargo fmt --manifest-path src-tauri/Cargo.toml --all",

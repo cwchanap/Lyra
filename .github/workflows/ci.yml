@@ -203,6 +203,8 @@ jobs:
     outputs:
       should_run: ${{ steps.plan.outputs.should_run }}
       forced_full: ${{ steps.plan.outputs.forced_full }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      expected_chain_ids: ${{ steps.plan.outputs.expected_chain_ids }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -245,6 +247,8 @@ jobs:
             --changed-paths-file "$RUNNER_TEMP/e2e-changed-paths.txt" \
             --suite-file "$RUNNER_TEMP/e2e-plan/e2e-suites.json" \
             --report-file "$RUNNER_TEMP/e2e-plan/e2e-plan.json" \
+            --matrix-file "$RUNNER_TEMP/e2e-plan/e2e-matrix.json" \
+            --chain-directory "$RUNNER_TEMP/e2e-plan/chains" \
             --event-name "$GITHUB_EVENT_NAME" \
             --ref "$GITHUB_REF" \
             "${selector_args[@]}"
@@ -259,14 +263,16 @@ jobs:
           if-no-files-found: ignore
 
   e2e-execution:
-    name: Tauri E2E execution
+    name: Tauri E2E execution (${{ matrix.chainId }})
     needs: e2e-plan
     if: ${{ needs.e2e-plan.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeoutMinutes }}
     permissions:
       contents: read
-    outputs:
-      manifest_present: ${{ steps.manifest.outputs.present }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.e2e-plan.outputs.matrix) }}
     env:
       # Dedicated target dir for e2e builds so rust-cache caches it
       # separately from the normal debug target used by other jobs.
@@ -279,6 +285,12 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.1"
+
+      - name: Initialize chain metrics
+        run: |
+          node apps/game/scripts/e2e-ci-metrics.mjs initialize \
+            --file "$RUNNER_TEMP/e2e-metrics/${{ matrix.chainId }}.json" \
+            --chain-id "${{ matrix.chainId }}"
 
       - name: Install system dependencies
         run: |
@@ -296,12 +308,21 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Rust cache
+        id: rust-cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/game/src-tauri -> target-e2e
+          prefix-key: ${{ matrix.cacheKey }}
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Record setup and restored cache
+        run: |
+          node apps/game/scripts/e2e-ci-metrics.mjs setup \
+            --file "$RUNNER_TEMP/e2e-metrics/${{ matrix.chainId }}.json" \
+            --cache-directory "$PWD/apps/game/src-tauri/target-e2e" \
+            --cache-hit "${{ steps.rust-cache.outputs.cache-hit }}"
 
       - name: Download E2E plan
         uses: actions/download-artifact@v4
@@ -310,20 +331,22 @@ jobs:
           path: ${{ runner.temp }}/e2e-plan
 
       - name: Build Tauri E2E binary
-        run: node apps/game/scripts/build-e2e.mjs
-
-      - name: Run selected Tauri E2E suites
-        run: xvfb-run -a node apps/game/scripts/run-save-e2e.mjs --suite-file "$RUNNER_TEMP/e2e-plan/e2e-suites.json"
-
-      - id: manifest
-        name: Verify E2E run manifest
-        if: ${{ always() }}
         run: |
-          if find apps/game/e2e-artifacts/save-e2e/runs -name run-result.json -print -quit | grep -q .; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
+          node apps/game/scripts/e2e-ci-metrics.mjs run \
+            --file "$RUNNER_TEMP/e2e-metrics/${{ matrix.chainId }}.json" \
+            --stage build \
+            -- node apps/game/scripts/build-e2e.mjs
+
+      - name: Run selected Tauri E2E chain
+        run: |
+          node apps/game/scripts/e2e-ci-metrics.mjs run \
+            --file "$RUNNER_TEMP/e2e-metrics/${{ matrix.chainId }}.json" \
+            --stage test \
+            -- xvfb-run -a node apps/game/scripts/run-save-e2e.mjs \
+              --suite-file "$RUNNER_TEMP/e2e-plan/${{ matrix.suiteFile }}" \
+              --chain-id "${{ matrix.chainId }}" \
+              --plan-file "$RUNNER_TEMP/e2e-plan/e2e-plan.json" \
+              --attempts 2
 
       - name: Run guarded post-cleanup
         if: ${{ always() }}
@@ -332,17 +355,18 @@ jobs:
             node apps/game/scripts/cleanup-e2e-roots.mjs "$ownership"
           done < <(find "$PWD/apps/game/e2e-artifacts/save-e2e/runs" -name run-ownership.json -type f -print 2>/dev/null || true)
 
-      - name: Upload WDIO logs
+      - name: Upload chain evidence
         uses: actions/upload-artifact@v4
         if: ${{ always() }}
         with:
-          name: tauri-e2e-logs
+          name: ${{ matrix.artifactName }}
           path: |
             apps/game/*.log
             apps/game/logs/
             apps/game/e2e-artifacts/
+            ${{ runner.temp }}/e2e-metrics/
           retention-days: 7
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
   e2e:
     name: Tauri E2E
@@ -350,30 +374,45 @@ jobs:
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
-      - name: Validate E2E gate result
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download E2E plan
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: e2e-plan
+          path: ${{ runner.temp }}/e2e-plan
+
+      - name: Download chain evidence
+        uses: actions/download-artifact@v4
+        if: ${{ needs.e2e-plan.outputs.should_run == 'true' }}
+        continue-on-error: true
+        with:
+          pattern: tauri-e2e-*
+          path: ${{ runner.temp }}/e2e-results
+
+      - name: Validate E2E manifests and routing
         env:
           PLAN_RESULT: ${{ needs.e2e-plan.result }}
-          SHOULD_RUN: ${{ needs.e2e-plan.outputs.should_run }}
-          EXECUTION_RESULT: ${{ needs.e2e-execution.result }}
-          MANIFEST_PRESENT: ${{ needs.e2e-execution.outputs.manifest_present }}
         run: |
+          validator_status=0
+          node apps/game/scripts/e2e-ci-results.mjs \
+            --plan-file "$RUNNER_TEMP/e2e-plan/e2e-plan.json" \
+            --results-directory "$RUNNER_TEMP/e2e-results" \
+            --analysis-file "$RUNNER_TEMP/e2e-analysis/e2e-analysis.json" || validator_status=$?
           if [[ "$PLAN_RESULT" != "success" ]]; then
             echo "E2E planning did not complete successfully: $PLAN_RESULT"
             exit 1
           fi
-          if [[ "$SHOULD_RUN" == "false" ]]; then
-            echo "Documentation-only change: packaged E2E intentionally skipped."
-            exit 0
-          fi
-          if [[ "$SHOULD_RUN" != "true" ]]; then
-            echo "E2E planner returned an invalid run decision: $SHOULD_RUN"
-            exit 1
-          fi
-          if [[ "$EXECUTION_RESULT" != "success" ]]; then
-            echo "Selected E2E execution did not complete successfully: $EXECUTION_RESULT"
-            exit 1
-          fi
-          if [[ "$MANIFEST_PRESENT" != "true" ]]; then
-            echo "Selected E2E execution did not publish its expected run-result.json manifest."
-            exit 1
-          fi
+          exit "$validator_status"
+
+      - name: Upload E2E aggregate analysis
+        uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: tauri-e2e-analysis
+          path: ${{ runner.temp }}/e2e-analysis/
+          retention-days: 7
+          if-no-files-found: warn
