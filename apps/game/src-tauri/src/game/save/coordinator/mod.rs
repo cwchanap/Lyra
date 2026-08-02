@@ -3493,17 +3493,15 @@ impl SaveCoordinator {
         &self,
         session_generation: u64,
         view: PersistenceHealthView,
-    ) -> bool {
-        let Ok(mut state) = self.state.lock() else {
-            return false;
-        };
+    ) -> Result<(), GameError> {
+        let mut state = self.lock_state()?;
         if state.next_session_generation != session_generation {
-            return false;
+            return Err(GameError::stale_session_generation());
         }
         let subscribers = set_persistence_health(&mut state, view.clone());
         drop(state);
         publish_health(&subscribers, &view);
-        true
+        Ok(())
     }
 
     fn schedule_autosave(

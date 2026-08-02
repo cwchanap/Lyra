@@ -1174,12 +1174,10 @@ async fn save_manual_core(
         expected_manual: Some(expectation),
     };
     let (result_tx, result_rx) = tokio::sync::oneshot::channel();
-    if !state
-        .coordinator
-        .publish_persistence_health_for_session(session_generation, PersistenceHealthView::Pending)
-    {
-        return Err(GameError::save_write_failed());
-    }
+    state.coordinator.publish_persistence_health_for_session(
+        session_generation,
+        PersistenceHealthView::Pending,
+    )?;
     let writer_persistence = Arc::clone(&persistence);
     if let Err(error) = state
         .coordinator
@@ -1193,7 +1191,7 @@ async fn save_manual_core(
             let _ = result_tx.send(result);
         }))
     {
-        state.coordinator.publish_persistence_health_for_session(
+        let _ = state.coordinator.publish_persistence_health_for_session(
             session_generation,
             PersistenceHealthView::Degraded {
                 diagnostic: error.clone(),
@@ -1204,7 +1202,7 @@ async fn save_manual_core(
     let outcome = match result_rx.await {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(error)) => {
-            state.coordinator.publish_persistence_health_for_session(
+            let _ = state.coordinator.publish_persistence_health_for_session(
                 session_generation,
                 PersistenceHealthView::Degraded {
                     diagnostic: error.clone(),
@@ -1214,7 +1212,7 @@ async fn save_manual_core(
         }
         Err(_) => {
             let error = GameError::save_write_failed();
-            state.coordinator.publish_persistence_health_for_session(
+            let _ = state.coordinator.publish_persistence_health_for_session(
                 session_generation,
                 PersistenceHealthView::Degraded {
                     diagnostic: error.clone(),
@@ -1223,16 +1221,14 @@ async fn save_manual_core(
             return Err(error);
         }
     };
-    if !state.coordinator.publish_persistence_health_for_session(
+    state.coordinator.publish_persistence_health_for_session(
         session_generation,
         outcome
             .cleanup_diagnostic
             .clone()
             .map(|diagnostic| PersistenceHealthView::Degraded { diagnostic })
             .unwrap_or(PersistenceHealthView::Healthy),
-    ) {
-        return Err(GameError::save_write_failed());
-    }
+    )?;
     let browser = persistence.discover();
     state
         .coordinator
@@ -1500,12 +1496,10 @@ async fn delete_save_core(
         .cloned()
         .ok_or_else(GameError::save_discovery_unavailable)?;
     let (result_tx, result_rx) = tokio::sync::oneshot::channel();
-    if !state
-        .coordinator
-        .publish_persistence_health_for_session(session_generation, PersistenceHealthView::Pending)
-    {
-        return Err(GameError::save_write_failed());
-    }
+    state.coordinator.publish_persistence_health_for_session(
+        session_generation,
+        PersistenceHealthView::Pending,
+    )?;
     let writer_persistence = Arc::clone(&persistence);
     if let Err(error) = state
         .coordinator
@@ -1518,7 +1512,7 @@ async fn delete_save_core(
             let _ = result_tx.send(result);
         }))
     {
-        state.coordinator.publish_persistence_health_for_session(
+        let _ = state.coordinator.publish_persistence_health_for_session(
             session_generation,
             PersistenceHealthView::Degraded {
                 diagnostic: error.clone(),
@@ -1529,7 +1523,7 @@ async fn delete_save_core(
     let outcome = match result_rx.await {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(error)) => {
-            state.coordinator.publish_persistence_health_for_session(
+            let _ = state.coordinator.publish_persistence_health_for_session(
                 session_generation,
                 PersistenceHealthView::Degraded {
                     diagnostic: error.clone(),
@@ -1539,7 +1533,7 @@ async fn delete_save_core(
         }
         Err(_) => {
             let error = GameError::save_write_failed();
-            state.coordinator.publish_persistence_health_for_session(
+            let _ = state.coordinator.publish_persistence_health_for_session(
                 session_generation,
                 PersistenceHealthView::Degraded {
                     diagnostic: error.clone(),
@@ -1548,15 +1542,13 @@ async fn delete_save_core(
             return Err(error);
         }
     };
-    if !state.coordinator.publish_persistence_health_for_session(
+    state.coordinator.publish_persistence_health_for_session(
         session_generation,
         outcome
             .cleanup_diagnostic
             .map(|diagnostic| PersistenceHealthView::Degraded { diagnostic })
             .unwrap_or(PersistenceHealthView::Healthy),
-    ) {
-        return Err(GameError::save_write_failed());
-    }
+    )?;
     let browser = persistence.discover();
     state
         .coordinator
@@ -5516,6 +5508,234 @@ mod tests {
                 }
             }
             panic!("unterminated body for {name}");
+        }
+
+        // Wraps ProductionSaveFilesystem and bumps the coordinator's session
+        // generation after the first successful sync_dir, simulating checkpoint
+        // replacement winning immediately after the storage operation settles
+        // but before the final health publication.
+        struct GenerationBumpingFilesystem {
+            inner: ProductionSaveFilesystem,
+            coordinator: Arc<Mutex<Option<SaveCoordinator>>>,
+            armed: AtomicBool,
+        }
+
+        impl GenerationBumpingFilesystem {
+            fn new(coordinator: Arc<Mutex<Option<SaveCoordinator>>>) -> Self {
+                Self {
+                    inner: ProductionSaveFilesystem,
+                    coordinator,
+                    armed: AtomicBool::new(false),
+                }
+            }
+
+            fn arm(&self) {
+                self.armed.store(true, Ordering::SeqCst);
+            }
+        }
+
+        impl SaveFilesystem for GenerationBumpingFilesystem {
+            fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+                self.inner.create_dir_all(path)
+            }
+            fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+                self.inner.read(path)
+            }
+            fn read_prefix(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
+                self.inner.read_prefix(path, limit)
+            }
+            fn metadata(&self, path: &Path) -> io::Result<SaveFileMetadata> {
+                self.inner.metadata(path)
+            }
+            fn list_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
+                self.inner.list_dir(path)
+            }
+            fn stage_atomic(
+                &self,
+                path: &Path,
+                bytes: &[u8],
+            ) -> io::Result<Box<dyn StagedAtomicWrite>> {
+                self.inner.stage_atomic(path, bytes)
+            }
+            fn remove_file(&self, path: &Path) -> io::Result<()> {
+                self.inner.remove_file(path)
+            }
+            fn sync_dir(&self, path: &Path) -> io::Result<()> {
+                let result = self.inner.sync_dir(path);
+                if result.is_ok() && self.armed.swap(false, Ordering::SeqCst) {
+                    if let Some(coordinator) = self.coordinator.lock().unwrap().as_ref() {
+                        let _ = coordinator.next_session_generation();
+                    }
+                }
+                result
+            }
+        }
+
+        #[tokio::test]
+        async fn manual_save_reports_stale_session_when_replacement_wins_before_initial_publication(
+        ) {
+            let (_guard, resources) = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+
+            // Simulate replacement winning before the initial Pending
+            // publication. No write was attempted, so the caller must see
+            // staleSessionGeneration, not saveWriteFailed.
+            app.coordinator.next_session_generation().unwrap();
+
+            let ticket = app
+                .coordinator
+                .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
+                .unwrap();
+            app.coordinator
+                .report_thumbnail_failure(&ticket.ticket)
+                .unwrap();
+
+            let error = save_manual_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                "Stale".into(),
+                ManualSlotExpectation::Empty,
+                ticket.ticket,
+            )
+            .await
+            .unwrap_err();
+
+            assert_eq!(error.code, "staleSessionGeneration");
+        }
+
+        #[tokio::test]
+        async fn manual_save_reports_stale_session_when_replacement_wins_after_storage_settles() {
+            let shared_coordinator: Arc<Mutex<Option<SaveCoordinator>>> =
+                Arc::new(Mutex::new(None));
+            let bumping_fs = Arc::new(GenerationBumpingFilesystem::new(Arc::clone(
+                &shared_coordinator,
+            )));
+            let bumping_fs_dyn: Arc<dyn SaveFilesystem> = bumping_fs.clone();
+            let (_guard, resources) = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                bumping_fs_dyn,
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+
+            // Share the coordinator so the filesystem can bump the generation
+            // during the storage write, simulating replacement winning after
+            // the write settles but before the final health publication.
+            *shared_coordinator.lock().unwrap() = Some(app.coordinator.clone());
+            bumping_fs.arm();
+
+            let ticket = app
+                .coordinator
+                .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
+                .unwrap();
+            app.coordinator
+                .report_thumbnail_failure(&ticket.ticket)
+                .unwrap();
+
+            let error = save_manual_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                "Written then stale".into(),
+                ManualSlotExpectation::Empty,
+                ticket.ticket,
+            )
+            .await
+            .unwrap_err();
+
+            assert_eq!(error.code, "staleSessionGeneration");
+        }
+
+        #[tokio::test]
+        async fn delete_save_reports_stale_session_when_replacement_wins_before_initial_publication(
+        ) {
+            let (_guard, resources) = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                Arc::new(ProductionSaveFilesystem),
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            let saved = seed_manual(&app, 1, "To delete").await;
+            let save_id = valid_save_id(&saved.saved_slot);
+
+            // Simulate replacement winning before the initial Pending
+            // publication. No delete was attempted, so the caller must see
+            // staleSessionGeneration, not saveWriteFailed.
+            app.coordinator.next_session_generation().unwrap();
+
+            let error = delete_save_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                OccupiedSlotExpectation {
+                    save_id: Some(save_id),
+                    modified_at: None,
+                },
+            )
+            .await
+            .unwrap_err();
+
+            assert_eq!(error.code, "staleSessionGeneration");
+        }
+
+        #[tokio::test]
+        async fn delete_save_reports_stale_session_when_replacement_wins_after_storage_settles() {
+            let shared_coordinator: Arc<Mutex<Option<SaveCoordinator>>> =
+                Arc::new(Mutex::new(None));
+            let bumping_fs = Arc::new(GenerationBumpingFilesystem::new(Arc::clone(
+                &shared_coordinator,
+            )));
+            let bumping_fs_dyn: Arc<dyn SaveFilesystem> = bumping_fs.clone();
+            let (_guard, resources) = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = build_app_state_with_storage(
+                resources.clone(),
+                temporary.path().join("saves"),
+                bumping_fs_dyn,
+            )
+            .unwrap();
+            start_game_core(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            let saved = seed_manual(&app, 1, "To delete").await;
+            let save_id = valid_save_id(&saved.saved_slot);
+
+            // Share the coordinator so the filesystem can bump the generation
+            // during the delete storage operation, simulating replacement
+            // winning after the delete settles but before the final health
+            // publication.
+            *shared_coordinator.lock().unwrap() = Some(app.coordinator.clone());
+            bumping_fs.arm();
+
+            let error = delete_save_core(
+                &app,
+                SaveSlotRef::Manual { slot: 1 },
+                OccupiedSlotExpectation {
+                    save_id: Some(save_id),
+                    modified_at: None,
+                },
+            )
+            .await
+            .unwrap_err();
+
+            assert_eq!(error.code, "staleSessionGeneration");
         }
     }
 
