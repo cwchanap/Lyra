@@ -10,6 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   E2E_CHAIN_IDS,
+  E2E_SUITE_IDS,
   buildE2ePhasePlan,
   e2eSuiteForPhase,
   normalizeE2eSuiteIds,
@@ -54,7 +55,10 @@ function validatePlanner(plan) {
     if (
       plan.skip !== true ||
       plan.expectedChainIds.length !== 0 ||
-      plan.matrix.include.length !== 0
+      plan.matrix.include.length !== 0 ||
+      plan.planner.riskSelectedSuites.length !== 0 ||
+      plan.planner.forcedFull !== false ||
+      plan.planner.reason !== null
     ) {
       errors.push(
         error(
@@ -64,6 +68,12 @@ function validatePlanner(plan) {
       );
     }
     return { errors, expectedChains: [] };
+  }
+
+  if (plan.skip !== false) {
+    errors.push(
+      error("malformed-plan", "A non-empty E2E plan cannot be skipped."),
+    );
   }
 
   let canonicalSuites;
@@ -84,6 +94,31 @@ function validatePlanner(plan) {
   ) {
     errors.push(
       error("malformed-plan", "E2E planner suites are not canonical."),
+    );
+  }
+
+  if (plan.planner.forcedFull) {
+    if (
+      !equalJson(canonicalSuites, E2E_SUITE_IDS) ||
+      typeof plan.planner.reason !== "string" ||
+      plan.planner.reason.trim().length === 0
+    ) {
+      errors.push(
+        error(
+          "malformed-plan",
+          "Forced-full E2E plans require the full registry and a reason.",
+        ),
+      );
+    }
+  } else if (
+    !equalJson(canonicalSuites, canonicalRiskSuites) ||
+    plan.planner.reason !== null
+  ) {
+    errors.push(
+      error(
+        "malformed-plan",
+        "Risk-selected E2E plans must match their canonical risk suites.",
+      ),
     );
   }
 
@@ -119,8 +154,37 @@ function validatePlanner(plan) {
 }
 
 function validateResult(result, expected, planner) {
-  const errors = [];
+  const evidenceErrors = [];
   const chainId = expected.id;
+  const malformed = (message) =>
+    evidenceErrors.push(error("malformed-chain", message, chainId));
+  const phaseResults = Array.isArray(result?.phaseResults)
+    ? result.phaseResults
+    : [];
+  const firstAttemptFailures = Array.isArray(result?.firstAttemptFailures)
+    ? result.firstAttemptFailures
+    : [];
+  const recoveredFlakes = Array.isArray(result?.recoveredFlakes)
+    ? result.recoveredFlakes
+    : [];
+  const cleanupAttempts = Array.isArray(result?.cleanup?.attempts)
+    ? result.cleanup.attempts
+    : [];
+  const attempts = result?.attempts;
+  const attemptsValid =
+    attempts !== null &&
+    typeof attempts === "object" &&
+    [1, 2].includes(attempts.configured) &&
+    Number.isInteger(attempts.used) &&
+    attempts.used >= 1 &&
+    attempts.used <= attempts.configured &&
+    attempts.retries === attempts.used - 1;
+  const terminalResult = result?.result;
+  const terminalExitValid =
+    Number.isInteger(result?.exitCode) &&
+    ((terminalResult === "passed" && result.exitCode === 0) ||
+      (["failed", "cancelled"].includes(terminalResult) &&
+        result.exitCode !== 0));
   if (
     !result ||
     typeof result !== "object" ||
@@ -128,7 +192,8 @@ function validateResult(result, expected, planner) {
     typeof result.runId !== "string" ||
     result.runId.length === 0 ||
     result.chainId !== chainId ||
-    !["passed", "failed", "cancelled"].includes(result.result) ||
+    !["passed", "failed", "cancelled"].includes(terminalResult) ||
+    !terminalExitValid ||
     typeof result.start !== "string" ||
     typeof result.finish !== "string" ||
     !Number.isFinite(result.runnerWallTimeMs) ||
@@ -140,26 +205,17 @@ function validateResult(result, expected, planner) {
     !Number.isInteger(result.processCount) ||
     result.processCount < 0 ||
     !Array.isArray(result.phaseResults) ||
-    result.phaseCount !== result.phaseResults.length ||
-    result.processCount !== result.phaseResults.length ||
-    !result.attempts ||
-    !Number.isInteger(result.attempts.configured) ||
-    !Number.isInteger(result.attempts.used) ||
-    !Number.isInteger(result.attempts.retries) ||
-    result.attempts.configured < 1 ||
-    result.attempts.used < 1 ||
-    result.attempts.used > result.attempts.configured ||
-    result.attempts.retries !== result.attempts.used - 1 ||
+    result.phaseCount !== phaseResults.length ||
+    result.processCount !== phaseResults.length ||
+    !attemptsValid ||
     !Array.isArray(result.firstAttemptFailures) ||
     !Array.isArray(result.recoveredFlakes)
   ) {
-    errors.push(
-      error("malformed-chain", "E2E chain manifest is malformed.", chainId),
-    );
+    malformed("E2E chain manifest is malformed.");
   }
 
   if (!equalJson(result?.selectedSuites, expected.suiteIds)) {
-    errors.push(
+    evidenceErrors.push(
       error(
         "wrong-suite",
         "E2E chain ran suites outside its canonical ownership.",
@@ -172,7 +228,7 @@ function validateResult(result, expected, planner) {
     result?.forcedFull !== planner.forcedFull ||
     result?.reason !== planner.reason
   ) {
-    errors.push(
+    evidenceErrors.push(
       error(
         "malformed-chain",
         "E2E chain planner metadata does not match the plan.",
@@ -182,67 +238,153 @@ function validateResult(result, expected, planner) {
   }
 
   const selectedSuites = new Set(expected.suiteIds);
-  const invalidPhase = result?.phaseResults?.some(
-    (phaseResult) =>
+  const canonicalPhases = buildE2ePhasePlan(expected.suiteIds, {}).map(
+    ({ id }) => ({ phase: id, suite: e2eSuiteForPhase(id) }),
+  );
+  const canonicalById = new Map(
+    canonicalPhases.map((phase) => [phase.phase, phase]),
+  );
+  let phasesValid = true;
+  for (const phaseResult of phaseResults) {
+    const canonical = canonicalById.get(phaseResult?.phase);
+    const exitValid =
+      Number.isInteger(phaseResult?.exitCode) &&
+      ((phaseResult?.result === "passed" && phaseResult.exitCode === 0) ||
+        (phaseResult?.result === "failed" && phaseResult.exitCode !== 0));
+    if (
       !phaseResult ||
+      canonical?.suite !== phaseResult.suite ||
       !selectedSuites.has(phaseResult.suite) ||
-      typeof phaseResult.phase !== "string" ||
       !Number.isInteger(phaseResult.attempt) ||
       phaseResult.attempt < 1 ||
+      (attemptsValid && phaseResult.attempt > attempts.used) ||
       !Number.isFinite(phaseResult.durationMs) ||
       phaseResult.durationMs < 0 ||
-      !["passed", "failed"].includes(phaseResult.result),
+      !["passed", "failed"].includes(phaseResult.result) ||
+      !exitValid
+    ) {
+      phasesValid = false;
+    }
+  }
+  if (!phasesValid)
+    malformed("E2E chain phase evidence is malformed or non-canonical.");
+
+  const durationSum = phaseResults.reduce(
+    (total, phaseResult) =>
+      total +
+      (Number.isFinite(phaseResult?.durationMs) ? phaseResult.durationMs : 0),
+    0,
   );
-  const invalidFirstFailure = result?.firstAttemptFailures?.some(
-    (failure) =>
-      !failure ||
-      typeof failure.phase !== "string" ||
-      !selectedSuites.has(failure.suite) ||
-      !Number.isInteger(failure.exitCode) ||
-      failure.exitCode === 0,
-  );
-  const firstFailedSuites = new Set(
-    result?.firstAttemptFailures?.map(({ suite }) => suite) ?? [],
-  );
-  const invalidRecoveredFlake = result?.recoveredFlakes?.some(
-    (suite) =>
-      !selectedSuites.has(suite) ||
-      !firstFailedSuites.has(suite) ||
-      result.result !== "passed",
-  );
-  if (invalidPhase || invalidFirstFailure || invalidRecoveredFlake) {
-    errors.push(
-      error(
-        "malformed-chain",
-        "E2E chain phase or retry evidence is malformed.",
-        chainId,
-      ),
+  if (result?.testOnlyTimeMs !== durationSum)
+    malformed("E2E test-only timing does not match phase evidence.");
+
+  let attemptGroups = [];
+  if (attemptsValid && phasesValid) {
+    attemptGroups = Array.from({ length: attempts.used }, (_, index) =>
+      phaseResults.filter(({ attempt }) => attempt === index + 1),
     );
+    const phasesInAttemptOrder = attemptGroups.flat();
+    if (
+      phasesInAttemptOrder.length !== phaseResults.length ||
+      phaseResults.some(
+        (phaseResult, index) => phaseResult !== phasesInAttemptOrder[index],
+      )
+    ) {
+      malformed("E2E phase evidence is outside represented attempt order.");
+    }
+    for (let index = 0; index < attemptGroups.length; index += 1) {
+      const attemptNumber = index + 1;
+      const group = attemptGroups[index];
+      const signature = group.map(({ phase, suite }) => ({ phase, suite }));
+      const expectedPrefix = canonicalPhases.slice(0, group.length);
+      const failedIndexes = group.flatMap(
+        ({ result: phaseResult }, phaseIndex) =>
+          phaseResult === "failed" ? [phaseIndex] : [],
+      );
+      if (
+        group.length === 0 ||
+        group.length > canonicalPhases.length ||
+        !equalJson(signature, expectedPrefix) ||
+        failedIndexes.some((phaseIndex) => phaseIndex !== group.length - 1) ||
+        failedIndexes.length > 1 ||
+        (attemptNumber < attempts.used && failedIndexes.length !== 1)
+      ) {
+        malformed(
+          "E2E attempt phases are missing, reordered, or contradictory.",
+        );
+        break;
+      }
+    }
   }
 
-  if (result?.result === "passed") {
-    const expectedFinalPhases = buildE2ePhasePlan(expected.suiteIds, {}).map(
-      ({ id }) => ({
-        phase: id,
-        suite: e2eSuiteForPhase(id),
-        result: "passed",
-      }),
+  const firstAttemptFailureEvidence = (attemptGroups[0] ?? [])
+    .filter(({ result: phaseResult }) => phaseResult === "failed")
+    .map(({ phase, suite, exitCode }) => ({ phase, suite, exitCode }));
+  if (!equalJson(firstAttemptFailures, firstAttemptFailureEvidence))
+    malformed("E2E first-attempt failure evidence is inconsistent.");
+
+  const expectedRecoveredFlakes =
+    terminalResult === "passed" && attemptsValid && attempts.used > 1
+      ? [...new Set(firstAttemptFailureEvidence.map(({ suite }) => suite))]
+      : [];
+  if (!equalJson(recoveredFlakes, expectedRecoveredFlakes))
+    malformed("E2E recovered-flake evidence is inconsistent.");
+
+  if (attemptsValid) {
+    const expectedCleanupAttempts = Array.from(
+      { length: attempts.used },
+      (_, index) => index + 1,
     );
-    const actualFinalPhases = result.phaseResults
-      .filter(({ attempt }) => attempt === result.attempts.used)
-      .map(({ phase, suite, result: phaseResult }) => ({
-        phase,
-        suite,
-        result: phaseResult,
-      }));
-    if (!equalJson(actualFinalPhases, expectedFinalPhases)) {
-      errors.push(
+    const cleanupNumbers = cleanupAttempts.map((entry) => entry?.attempt);
+    const cleanupStatesValid = cleanupAttempts.every((entry) =>
+      ["removed", "failed"].includes(entry?.state),
+    );
+    const derivedCleanupState = cleanupAttempts.some(
+      (entry) => entry?.state === "failed",
+    )
+      ? "failed"
+      : "removed";
+    if (
+      !equalJson(cleanupNumbers, expectedCleanupAttempts) ||
+      !cleanupStatesValid ||
+      result?.cleanup?.state !== derivedCleanupState
+    ) {
+      malformed("E2E cleanup attempts do not match represented attempts.");
+    }
+  }
+
+  const lastPhase = phaseResults.at(-1);
+  if (
+    lastPhase &&
+    (result?.phase !== lastPhase.phase ||
+      result?.suite !== lastPhase.suite ||
+      result?.attempt !== lastPhase.attempt ||
+      result?.durationMs !== lastPhase.durationMs)
+  ) {
+    malformed("E2E terminal phase summary is inconsistent.");
+  }
+
+  if (attemptsValid && phasesValid && attemptGroups.length > 0) {
+    const finalGroup = attemptGroups.at(-1);
+    const finalPhase = finalGroup.at(-1);
+    if (
+      terminalResult === "passed" &&
+      (finalGroup.length !== canonicalPhases.length ||
+        finalGroup.some(({ result: phaseResult }) => phaseResult !== "passed"))
+    ) {
+      evidenceErrors.push(
         error(
           "incomplete-chain",
-          "E2E chain omitted or reordered a mandatory final-attempt phase.",
+          "E2E chain omitted or failed a mandatory final-attempt phase.",
           chainId,
         ),
       );
+    } else if (
+      ["failed", "cancelled"].includes(terminalResult) &&
+      result?.cleanup?.state !== "failed" &&
+      finalPhase?.result !== "failed"
+    ) {
+      malformed("E2E terminal result does not match its final phase.");
     }
   }
 
@@ -250,9 +392,9 @@ function validateResult(result, expected, planner) {
     result?.cleanup?.state !== "removed" ||
     !Array.isArray(result?.cleanup?.attempts) ||
     result.cleanup.attempts.length === 0 ||
-    result.cleanup.attempts.some(({ state }) => state !== "removed")
+    result.cleanup.attempts.some((entry) => entry?.state !== "removed")
   ) {
-    errors.push(
+    evidenceErrors.push(
       error(
         "cleanup-failed",
         "E2E chain did not prove guarded root cleanup.",
@@ -261,11 +403,6 @@ function validateResult(result, expected, planner) {
     );
   }
 
-  if (result?.result === "cancelled") {
-    errors.push(error("cancelled-chain", "E2E chain was cancelled.", chainId));
-  } else if (result?.result === "failed") {
-    errors.push(error("failed-chain", "E2E chain failed.", chainId));
-  }
   const validFailedSuite = selectedSuites.has(result?.finalFailedSuite);
   const validInfrastructureFailure =
     result?.result === "failed" &&
@@ -278,7 +415,7 @@ function validateResult(result, expected, planner) {
       !validFailedSuite &&
       !validInfrastructureFailure)
   ) {
-    errors.push(
+    evidenceErrors.push(
       error(
         "malformed-chain",
         "E2E final failure evidence is malformed.",
@@ -286,7 +423,24 @@ function validateResult(result, expected, planner) {
       ),
     );
   }
-  return errors;
+  const errors = [...evidenceErrors];
+  const routingSuite =
+    evidenceErrors.length === 0 &&
+    terminalResult === "failed" &&
+    lastPhase?.result === "failed" &&
+    lastPhase.suite === result.finalFailedSuite
+      ? result.finalFailedSuite
+      : null;
+  if (terminalResult === "cancelled") {
+    errors.push(error("cancelled-chain", "E2E chain was cancelled.", chainId));
+  } else if (terminalResult === "failed") {
+    errors.push(error("failed-chain", "E2E chain failed.", chainId));
+  }
+  return {
+    errors,
+    routingSuite,
+    recoveredFlakes: evidenceErrors.length === 0 ? expectedRecoveredFlakes : [],
+  };
 }
 
 export function analyzeE2eCiResults({ plan, results }) {
@@ -354,17 +508,19 @@ export function analyzeE2eCiResults({ plan, results }) {
       continue;
     }
     const result = matches[0];
-    const resultErrors = validateResult(result, expected, plan.planner);
-    errors.push(...resultErrors);
-    for (const suite of result.recoveredFlakes ?? []) {
+    const resultValidation = validateResult(result, expected, plan.planner);
+    errors.push(...resultValidation.errors);
+    for (const suite of resultValidation.recoveredFlakes) {
       recoveredFlakes.push({ chainId: expected.id, suite });
     }
     if (result.result === "failed" || result.result === "cancelled") {
-      const suite = expected.suiteIds.includes(result.finalFailedSuite)
-        ? result.finalFailedSuite
-        : null;
+      const suite = resultValidation.routingSuite;
       let classification = "indeterminate";
-      if (suite !== null && plan.planner.forcedFull) {
+      if (
+        suite !== null &&
+        planValidation.errors.length === 0 &&
+        plan.planner.forcedFull
+      ) {
         classification = plan.planner.riskSelectedSuites.includes(suite)
           ? "covered-by-risk-selection"
           : "routing-gap";
@@ -377,9 +533,14 @@ export function analyzeE2eCiResults({ plan, results }) {
       result: result.result,
       runnerWallTimeMs: result.runnerWallTimeMs,
       testOnlyTimeMs: result.testOnlyTimeMs,
-      attempts: result.attempts,
-      phaseCount: result.phaseCount,
-      processCount: result.processCount,
+      attempts:
+        result.attempts !== null && typeof result.attempts === "object"
+          ? result.attempts
+          : null,
+      phaseCount: Number.isInteger(result.phaseCount) ? result.phaseCount : 0,
+      processCount: Number.isInteger(result.processCount)
+        ? result.processCount
+        : 0,
       cleanupState: result.cleanup?.state,
     });
   }
@@ -421,7 +582,8 @@ export function analyzeE2eCiResults({ plan, results }) {
         0,
       ),
       retries: terminalResults.reduce(
-        (total, { attempts }) => total + attempts.retries,
+        (total, { attempts }) =>
+          total + (Number.isInteger(attempts?.retries) ? attempts.retries : 0),
         0,
       ),
       recoveredFlakes: recoveredFlakes.length,
