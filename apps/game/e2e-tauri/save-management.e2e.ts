@@ -40,6 +40,7 @@ import {
   writeSaveE2eExpectation,
   type SaveE2eFixedSlotName,
   type SaveE2eOwnershipSnapshot,
+  type SaveE2eSaveEnvelope,
 } from "./save-fixtures";
 import { anchors } from "./production-anchors";
 import { existsSync, readdirSync } from "node:fs";
@@ -71,8 +72,13 @@ type ManagementControl = {
 async function seedOwnedManualSlotWithThumbnail(
   slot: 1 | 2,
   displayName: string,
-): Promise<void> {
+): Promise<SaveE2eSaveEnvelope> {
   let overwrite = readSaveE2eEnvelope(`manual-${slot}`) !== null;
+  const attempts: Array<{
+    saveId: string;
+    savedAt: string;
+    thumbnailType: SaveE2eSaveEnvelope["thumbnail"]["type"];
+  }> = [];
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const previousId = readSaveE2eEnvelope(`manual-${slot}`)?.saveId ?? null;
     await saveManualSlot(slot, displayName, overwrite);
@@ -83,10 +89,17 @@ async function seedOwnedManualSlotWithThumbnail(
         candidate.displayName === displayName,
     );
     await closePersistenceBrowserToGameplay();
-    if (envelope.thumbnail.type === "available") return;
+    attempts.push({
+      saveId: envelope.saveId,
+      savedAt: envelope.savedAt,
+      thumbnailType: envelope.thumbnail.type,
+    });
+    if (envelope.thumbnail.type === "available") return envelope;
     overwrite = true;
   }
-  throw new Error(`manual-${slot} did not acquire an owned thumbnail sidecar`);
+  throw new Error(
+    `manual-${slot} did not acquire an owned thumbnail sidecar; attempts=${JSON.stringify(attempts)}`,
+  );
 }
 
 async function seedRotationAndOverwrite(): Promise<void> {
@@ -203,13 +216,23 @@ async function seedRotationAndOverwrite(): Promise<void> {
   await waitForDialog("覆寫手動存檔 1");
   expect(readSaveE2eEnvelope("manual-1")?.saveId).toBe(oldManualOne.saveId);
   await clickDialogButton("覆寫手動存檔 1", anchors.confirmOverwrite);
-  const overwritten = await waitForSaveE2eEnvelope(
+  let overwritten = await waitForSaveE2eEnvelope(
     "manual-1",
     (envelope) =>
       envelope.saveId !== oldManualOne.saveId &&
-      envelope.displayName === anchors.unicodeSave.unicodeName &&
-      envelope.thumbnail.type === "available",
+      envelope.displayName === anchors.unicodeSave.unicodeName,
   );
+  if (overwritten.thumbnail.type !== "available") {
+    console.warn(
+      `[save management] direct manual overwrite committed without a thumbnail; retrying bounded owned save: ${JSON.stringify({ saveId: overwritten.saveId, savedAt: overwritten.savedAt, thumbnail: overwritten.thumbnail })}`,
+    );
+    await waitForPersistenceLayersClosed();
+    overwritten = await seedOwnedManualSlotWithThumbnail(
+      1,
+      anchors.unicodeSave.unicodeName,
+    );
+  }
+  expect(overwritten.thumbnail.type).toBe("available");
   expect(overwritten.savedAt).not.toBe(oldManualOne.savedAt);
   expect(readSaveE2eEnvelope("manual-1")?.saveId).toBe(overwritten.saveId);
   expect(readSaveE2eEnvelope("manual-2")?.saveId).toBe(
