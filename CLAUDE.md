@@ -73,13 +73,48 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   `bun run --cwd apps/game test src/lib/state/mode.test.ts` or a single case with
   `bun run --cwd apps/game test -t "test name"`.
 - `bun run test:e2e` - build a **debug** Tauri binary with Cargo feature
-  `e2e` (embedded WebDriver, identifier `com.chanwaichan.lyra.e2e`) and run
-  WebdriverIO specs under `apps/game/e2e-tauri/`. Production scene resources
-  and a production frontend bundle (`import.meta.env.DEV === false`) are used;
-  ordinary `dev:game` does **not** enable the WebDriver plugin.
-- `bun run --cwd apps/game test:e2e:run` - re-run WDIO against an already-built
-  e2e binary. A guard (`apps/game/scripts/require-e2e-binary.mjs`) fails fast
-  with a clear message if the debug binary is missing.
+  `e2e` (embedded WebDriver, identifier `com.chanwaichan.lyra.e2e`) and run the
+  complete canonical registry through `test:e2e:all:run`. Production scene
+  resources and a production frontend bundle (`import.meta.env.DEV === false`)
+  are used. This is the full local reproduction command; it is deliberately
+  different from `bun run --cwd apps/game test:e2e:run`, which is the
+  already-built packaged **smoke-only** compatibility command.
+- Direct already-built suite reproduction uses
+  `bun run --cwd apps/game test:e2e:<suite>:run` where available, or
+  `node apps/game/scripts/run-save-e2e.mjs --suite <suite-id>`. Use
+  `node apps/game/scripts/run-save-e2e.mjs --full` for every suite. A guard
+  (`apps/game/scripts/require-e2e-binary.mjs`) fails fast with a clear message
+  if the E2E binary is missing.
+- CI selects leaf suites in canonical order, then partitions them into closed
+  chains: `gameplay` owns `smoke`, `gameplay`, and `production-journey`;
+  `persistence` owns `capture-proof`, `save-core`, and `save-management`; and
+  `exit` owns `exit-lifecycle`. Persistence phases remain serial inside their
+  chain. Reproduce a selector decision with
+  `node apps/game/scripts/plan-e2e-ci.mjs --changed-paths-file <absolute-file>
+--suite-file <absolute-file> --report-file <absolute-file> --matrix-file
+<absolute-file> --chain-directory <absolute-directory> --event-name
+pull_request`. The `ci:full-e2e` PR label, main, tags, nightly, and manual
+  dispatch force the full registry without erasing the risk-selected suite
+  list used by the routing audit.
+- CI chain runs require both the Rust `e2e` feature and `VITE_E2E=true`.
+  Checkpoint IPC and its frontend bridge are absent from ordinary builds; do
+  not use `dev:game` as checkpoint evidence. The packaged checkpoint contract
+  must travel through the frontend's normal game-state application path.
+- Each runner writes
+  `apps/game/e2e-artifacts/save-e2e/runs/<run-id>/run-result.json`; guarded root
+  ownership and cleanup are recorded under each
+  `attempt-<n>/run-ownership.json`. CI uploads one uniquely named artifact per
+  chain plus `tauri-e2e-analysis`, whose validator fails closed on missing,
+  duplicate, unknown, malformed, cancelled, failed, incomplete, or
+  cleanup-failed chain evidence. Cleanup only reads validated ownership
+  manifests and never broadens its target from caller input.
+- To reproduce a CI failure, download `e2e-plan` and the failing chain
+  artifact, run that chain's absolute suite file with the recorded
+  `--chain-id`, `--plan-file`, and `--attempts 2`, then inspect its
+  `run-result.json`, `<chain-id>.json` setup/cache/build/test metrics, attempt
+  output directories, and copied failure root. A
+  recovered first-attempt failure is reported as a flake; only the final
+  terminal failure participates in the routing-gap classification.
 - `bun run --cwd apps/game check:e2e` - type-check the WDIO e2e specs and
   `wdio.conf.ts` via `tsconfig.e2e.json` (separate from svelte-check, which
   excludes `e2e-tauri/**`). Wired into CI after svelte-check.

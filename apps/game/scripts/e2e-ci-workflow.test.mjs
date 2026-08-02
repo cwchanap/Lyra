@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { parseDocument } from "yaml";
@@ -22,21 +21,19 @@ function namedStep(job, name) {
   return step;
 }
 
-function aggregateResult(run, environment) {
-  return spawnSync("/bin/bash", ["-e", "-c", run], {
-    env: { ...process.env, ...environment },
-    encoding: "utf8",
-  });
-}
-
-test("workflow runs the explicit E2E CI contract command", () => {
+test("workflow runs every E2E CI contract from the planner job", () => {
   const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
   assert.equal(
     packageJson.scripts["test:e2e:ci-contracts"],
     [
       "node --test",
+      "scripts/e2e-suite-registry.test.mjs",
+      "scripts/e2e-runner-lifecycle.test.mjs",
+      "scripts/save-e2e-paths.test.mjs",
       "scripts/select-e2e-suites.test.mjs",
       "scripts/plan-e2e-ci.test.mjs",
+      "scripts/e2e-ci-metrics.test.mjs",
+      "scripts/e2e-ci-results.test.mjs",
       "scripts/e2e-ci-workflow.test.mjs",
     ].join(" "),
   );
@@ -48,130 +45,119 @@ test("workflow runs the explicit E2E CI contract command", () => {
   );
 });
 
-test("workflow routes planned suites through an always-validated aggregate gate", () => {
-  const workflow = loadWorkflow();
-  assert.deepEqual(workflow.on.pull_request.types, [
-    "opened",
-    "synchronize",
-    "reopened",
-    "labeled",
-    "unlabeled",
-  ]);
-  assert.equal(Array.isArray(workflow.on.schedule), true);
-  assert.ok(Object.hasOwn(workflow.on, "workflow_dispatch"));
-  assert.deepEqual(workflow.on.push.tags, ["*"]);
+test("planner publishes the dynamic matrix and every chain suite file", () => {
+  const plan = loadWorkflow().jobs["e2e-plan"];
+  assert.equal(plan.outputs.should_run, "${{ steps.plan.outputs.should_run }}");
+  assert.equal(plan.outputs.matrix, "${{ steps.plan.outputs.matrix }}");
+  assert.equal(
+    plan.outputs.expected_chain_ids,
+    "${{ steps.plan.outputs.expected_chain_ids }}",
+  );
+  const selector = namedStep(plan, "Select packaged E2E suites").run;
+  assert.match(
+    selector,
+    /--suite-file "\$RUNNER_TEMP\/e2e-plan\/e2e-suites\.json"/,
+  );
+  assert.match(
+    selector,
+    /--matrix-file "\$RUNNER_TEMP\/e2e-plan\/e2e-matrix\.json"/,
+  );
+  assert.match(selector, /--chain-directory "\$RUNNER_TEMP\/e2e-plan\/chains"/);
+  const upload = namedStep(plan, "Upload E2E plan");
+  assert.equal(upload.if, "${{ always() }}");
+  assert.equal(upload.with.name, "e2e-plan");
+  assert.equal(upload.with.path, "${{ runner.temp }}/e2e-plan/");
+});
 
-  const plan = workflow.jobs["e2e-plan"];
-  const execution = workflow.jobs["e2e-execution"];
-  const aggregate = workflow.jobs.e2e;
+test("execution is a non-fail-fast isolated chain matrix", () => {
+  const execution = loadWorkflow().jobs["e2e-execution"];
   assert.equal(execution.needs, "e2e-plan");
   assert.equal(
     execution.if,
     "${{ needs.e2e-plan.outputs.should_run == 'true' }}",
   );
-  assert.deepEqual(aggregate.needs, ["e2e-plan", "e2e-execution"]);
-  assert.equal(aggregate.name, "Tauri E2E");
-  assert.equal(aggregate.if, "${{ always() }}");
-
-  const planUpload = namedStep(plan, "Upload E2E plan");
-  const download = namedStep(execution, "Download E2E plan");
-  assert.equal(planUpload.if, "${{ always() }}");
-  assert.equal(planUpload.with.name, "e2e-plan");
-  assert.equal(planUpload.with.path, "${{ runner.temp }}/e2e-plan/");
-  assert.equal(download.with.name, planUpload.with.name);
-  assert.equal(download.with.path, "${{ runner.temp }}/e2e-plan");
-
-  const selectedRun = namedStep(execution, "Run selected Tauri E2E suites");
-  assert.match(
-    selectedRun.run,
-    /--suite-file "\$RUNNER_TEMP\/e2e-plan\/e2e-suites\.json"/,
+  assert.equal(execution.strategy["fail-fast"], false);
+  assert.equal(
+    execution.strategy.matrix,
+    "${{ fromJSON(needs.e2e-plan.outputs.matrix) }}",
   );
+  assert.equal(execution["timeout-minutes"], "${{ matrix.timeoutMinutes }}");
+  assert.equal(execution.name, "Tauri E2E execution (${{ matrix.chainId }})");
+
+  const initialize = namedStep(execution, "Initialize chain metrics");
+  assert.match(initialize.run, /e2e-ci-metrics\.mjs initialize/);
+  assert.match(initialize.run, /--chain-id "\$\{\{ matrix\.chainId \}\}"/);
+
+  const cache = namedStep(execution, "Rust cache");
+  assert.equal(cache.id, "rust-cache");
+  assert.equal(cache.with["prefix-key"], "${{ matrix.cacheKey }}");
+  const setup = namedStep(execution, "Record setup and restored cache");
+  assert.match(setup.run, /e2e-ci-metrics\.mjs setup/);
+  assert.match(
+    setup.run,
+    /--cache-hit "\$\{\{ steps\.rust-cache\.outputs\.cache-hit \}\}"/,
+  );
+  const build = namedStep(execution, "Build Tauri E2E binary");
+  assert.match(build.run, /e2e-ci-metrics\.mjs run/);
+  assert.match(build.run, /--stage build/);
+  assert.match(build.run, /-- node apps\/game\/scripts\/build-e2e\.mjs/);
+  const run = namedStep(execution, "Run selected Tauri E2E chain").run;
+  assert.match(run, /e2e-ci-metrics\.mjs run/);
+  assert.match(run, /--stage test/);
+  assert.match(
+    run,
+    /--suite-file "\$RUNNER_TEMP\/e2e-plan\/\$\{\{ matrix\.suiteFile \}\}"/,
+  );
+  assert.match(run, /--chain-id "\$\{\{ matrix\.chainId \}\}"/);
+  assert.match(run, /--plan-file "\$RUNNER_TEMP\/e2e-plan\/e2e-plan\.json"/);
+  assert.match(run, /--attempts 2/);
+
   assert.equal(
     namedStep(execution, "Run guarded post-cleanup").if,
     "${{ always() }}",
   );
-  assert.equal(namedStep(execution, "Upload WDIO logs").if, "${{ always() }}");
+  const upload = namedStep(execution, "Upload chain evidence");
+  assert.equal(upload.if, "${{ always() }}");
+  assert.equal(upload.with.name, "${{ matrix.artifactName }}");
+  assert.equal(upload.with["if-no-files-found"], "warn");
+  assert.match(upload.with.path, /\$\{\{ runner\.temp \}\}\/e2e-metrics\//);
 });
 
-test("aggregate gate passes only intentional docs skips and complete executions", () => {
+test("stable aggregate downloads every manifest and runs the pure validator", () => {
   const aggregate = loadWorkflow().jobs.e2e;
-  const run = namedStep(aggregate, "Validate E2E gate result").run;
+  assert.equal(aggregate.name, "Tauri E2E");
+  assert.equal(aggregate.if, "${{ always() }}");
+  assert.deepEqual(aggregate.needs, ["e2e-plan", "e2e-execution"]);
 
-  for (const [environment, expectedStatus] of [
-    [
-      {
-        PLAN_RESULT: "success",
-        SHOULD_RUN: "false",
-        EXECUTION_RESULT: "skipped",
-        MANIFEST_PRESENT: "",
-      },
-      0,
-    ],
-    [
-      {
-        PLAN_RESULT: "success",
-        SHOULD_RUN: "",
-        EXECUTION_RESULT: "skipped",
-        MANIFEST_PRESENT: "",
-      },
-      1,
-    ],
-    [
-      {
-        PLAN_RESULT: "success",
-        SHOULD_RUN: "maybe",
-        EXECUTION_RESULT: "skipped",
-        MANIFEST_PRESENT: "",
-      },
-      1,
-    ],
-    [
-      {
-        PLAN_RESULT: "failure",
-        SHOULD_RUN: "",
-        EXECUTION_RESULT: "skipped",
-        MANIFEST_PRESENT: "",
-      },
-      1,
-    ],
-    [
-      {
-        PLAN_RESULT: "success",
-        SHOULD_RUN: "true",
-        EXECUTION_RESULT: "cancelled",
-        MANIFEST_PRESENT: "true",
-      },
-      1,
-    ],
-    [
-      {
-        PLAN_RESULT: "success",
-        SHOULD_RUN: "true",
-        EXECUTION_RESULT: "failure",
-        MANIFEST_PRESENT: "true",
-      },
-      1,
-    ],
-    [
-      {
-        PLAN_RESULT: "success",
-        SHOULD_RUN: "true",
-        EXECUTION_RESULT: "success",
-        MANIFEST_PRESENT: "false",
-      },
-      1,
-    ],
-    [
-      {
-        PLAN_RESULT: "success",
-        SHOULD_RUN: "true",
-        EXECUTION_RESULT: "success",
-        MANIFEST_PRESENT: "true",
-      },
-      0,
-    ],
-  ]) {
-    const result = aggregateResult(run, environment);
-    assert.equal(result.status, expectedStatus, result.stderr);
-  }
+  const planDownload = namedStep(aggregate, "Download E2E plan");
+  assert.equal(planDownload.with.name, "e2e-plan");
+  const resultDownload = namedStep(aggregate, "Download chain evidence");
+  assert.equal(
+    resultDownload.if,
+    "${{ needs.e2e-plan.outputs.should_run == 'true' }}",
+  );
+  assert.equal(resultDownload.with.pattern, "tauri-e2e-*");
+  assert.equal(resultDownload.with.path, "${{ runner.temp }}/e2e-results");
+
+  const validate = namedStep(aggregate, "Validate E2E manifests and routing");
+  assert.match(validate.run, /scripts\/e2e-ci-results\.mjs/);
+  assert.match(validate.run, /--plan-file/);
+  assert.match(validate.run, /--results-directory/);
+  assert.match(validate.run, /--analysis-file/);
+  const upload = namedStep(aggregate, "Upload E2E aggregate analysis");
+  assert.equal(upload.if, "${{ always() }}");
+  assert.equal(upload.with.name, "tauri-e2e-analysis");
+});
+
+test("direct smoke and full commands remain intentionally distinct", () => {
+  const scripts = JSON.parse(readFileSync(packagePath, "utf8")).scripts;
+  assert.equal(
+    scripts["test:e2e:smoke:run"],
+    "node scripts/run-save-e2e.mjs --suite smoke",
+  );
+  assert.equal(
+    scripts["test:e2e:all:run"],
+    "node scripts/run-save-e2e.mjs --full",
+  );
+  assert.equal(scripts["test:e2e:run"], "bun run test:e2e:smoke:run");
 });

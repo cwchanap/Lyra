@@ -1,6 +1,7 @@
 # HPA-516 Tauri E2E CI optimization — baseline and execution record
 
-**Status:** implementation record in progress; Task 9 owns final matrix timing.
+**Status:** local Task 9 implementation complete; pushed warm-cache matrix gate
+and final timing evidence pending.
 
 **Merge base:** `origin/main` at `2b9d528f11c7ea2b4db6e907b0340da3291d5736`.
 
@@ -102,6 +103,70 @@ close completed before WebDriver returned from `execute/sync`, yielding
 must count this observation in its warm-cache flake/retry record. These three
 direct suite timings verify the process topology and boundaries, but they are
 not a substitute for Task 9's combined full-matrix measurement.
+
+## Task 9 parallel chain and aggregate contract
+
+The canonical leaf registry is partitioned once, without duplicates or gaps:
+
+| Chain | Canonical suites | Full process count | CI timeout | Cache prefix |
+| --- | --- | ---: | ---: | --- |
+| `gameplay` | `smoke`, `gameplay`, `production-journey` | 3 | 8m | `tauri-e2e-gameplay-v1` |
+| `persistence` | `capture-proof`, `save-core`, `save-management` | 7 | 15m | `tauri-e2e-persistence-v1` |
+| `exit` | `exit-lifecycle` | 5 | 8m | `tauri-e2e-exit-v1` |
+
+The complete full matrix therefore has 15 packaged WDIO child processes
+across three isolated desktop runners. The persistence behavior frozen by Task
+8 remains exactly 2 save-core + 4 save-management + 5 exit-lifecycle = 11
+processes; capture proof remains its separate unchanged process. Persistence
+phases never execute in parallel with another phase in the same chain.
+
+The planner artifact now contains the overall canonical suite file, one suite
+file per selected chain, `e2e-matrix.json`, expected chain IDs, and stable
+risk-selected/forced-full/reason metadata. Documentation-only changes emit an
+intentional empty matrix. Each selected chain gets its own runner, guarded
+roots, cache prefix, hard timeout, result manifest, and uniquely named
+artifact. The always-running aggregate retains the required `Tauri E2E` job
+name and validates manifest content rather than artifact presence.
+
+Each chain artifact also carries a schema-versioned metrics JSON with raw setup
+duration, cache-hit status, restored cache bytes, build duration/exit code, and
+test-wrapper duration/exit code. These values pair with the runner manifest's
+test-only duration and are the source for the warm-sample table below.
+
+Runner result schema v2 records chain/suite ownership, total runner wall time,
+summed WDIO child time, attempts and retries, first-attempt failures, recovered
+flakes, final failed suite, phase/process counts, cleanup state, and the actual
+planner metadata. A passed chain must contain the complete canonical final
+attempt phase sequence: 3 gameplay, 7 persistence, or 5 exit processes in a
+full matrix. The pure aggregate fails closed on missing, duplicate, unknown,
+malformed, cancelled, failed, incomplete, or cleanup-failed evidence. A
+forced-full final failure is classified as `covered-by-risk-selection`,
+`routing-gap`, or `indeterminate`; recovered first-attempt failures are flakes,
+not routing failures.
+
+### Required pushed warm-cache evidence — pending
+
+No pushed Task 9 matrix has been measured yet. Local direct Task 8 runs and the
+older 22m33 complete-command observation do not qualify. The controller must
+push the reviewed branch, then record at least three successful warm-cache
+full matrices below. Cold-cache and failed runs remain useful diagnostics but
+must not be included in the median.
+
+| Qualifying sample | Workflow run ID/link | Cache restored size | Setup | Build | Parallel wall | Summed test-only | Process count | Retries | Recovered flakes | Exception |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Warm 1 | pending | pending | pending | pending | pending | pending | 15 expected | pending | pending | pending |
+| Warm 2 | pending | pending | pending | pending | pending | pending | 15 expected | pending | pending | pending |
+| Warm 3 | pending | pending | pending | pending | pending | pending | 15 expected | pending | pending | pending |
+| Median | derived after three qualifying runs | derived | derived | derived | derived | derived | 15 expected | derived | derived | list any measured threshold exception |
+
+For each raw artifact, record cache/setup/build/test values exactly as emitted,
+including units and the chain that produced them. The merge gate targets remain
+smoke <=3m, gameplay <=5m, typical selected UI/gameplay <=8m,
+persistence-heavy <=15m, and full parallel matrix <=20m. Any miss requires a
+measured exception here; an estimate is not evidence. The Task 8
+`e3a851a5-18fe-4fa0-adfd-0a84a0d24185` `ECONNREFUSED` observation must be
+reported separately from the qualifying three-run median because it preceded
+this matrix and was not a successful warm-cache sample.
 
 ## Ordered draft-PR plan and verification checklist
 

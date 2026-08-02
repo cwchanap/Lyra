@@ -2,16 +2,20 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  E2E_CHAIN_DEFINITIONS,
+  E2E_CHAIN_IDS,
   E2E_SUITE_IDS,
   E2E_SUITE_DEFINITIONS,
   buildE2ePhasePlan,
   e2eSuiteGuardedRoots,
   normalizeE2eSuiteIds,
+  partitionE2eSuitesByChain,
   resolveE2eSuiteSelection,
   validateE2ePhaseOwnership,
 } from "./e2e-suite-registry.mjs";
 import {
   parseRunnerArguments,
+  resolveRunnerPlannerMetadata,
   resolveRunnerSelection,
 } from "./e2e-runner-selection.mjs";
 
@@ -31,6 +35,100 @@ test("registry definitions are immutable", () => {
   assert.equal(Object.isFrozen(E2E_SUITE_DEFINITIONS), true);
   assert.equal(Object.isFrozen(E2E_SUITE_DEFINITIONS[0]), true);
   assert.equal(Object.isFrozen(E2E_SUITE_DEFINITIONS[0].phases), true);
+});
+
+test("chain registry owns every canonical suite exactly once", () => {
+  assert.deepEqual(E2E_CHAIN_IDS, ["gameplay", "persistence", "exit"]);
+  assert.equal(Object.isFrozen(E2E_CHAIN_DEFINITIONS), true);
+  assert.equal(
+    E2E_CHAIN_DEFINITIONS.every(
+      (definition) =>
+        Object.isFrozen(definition) && Object.isFrozen(definition.suiteIds),
+    ),
+    true,
+  );
+  assert.deepEqual(
+    E2E_CHAIN_DEFINITIONS.map(({ id, suiteIds }) => ({ id, suiteIds })),
+    [
+      {
+        id: "gameplay",
+        suiteIds: ["smoke", "gameplay", "production-journey"],
+      },
+      {
+        id: "persistence",
+        suiteIds: ["capture-proof", "save-core", "save-management"],
+      },
+      { id: "exit", suiteIds: ["exit-lifecycle"] },
+    ],
+  );
+  const ownedSuites = E2E_CHAIN_DEFINITIONS.flatMap(({ suiteIds }) => suiteIds);
+  assert.deepEqual(ownedSuites, E2E_SUITE_IDS);
+  assert.equal(new Set(ownedSuites).size, ownedSuites.length);
+});
+
+test("partitions risk-selected suites into canonical non-empty chains", () => {
+  assert.deepEqual(
+    partitionE2eSuitesByChain([
+      "exit-lifecycle",
+      "smoke",
+      "save-management",
+      "smoke",
+    ]),
+    [
+      {
+        id: "gameplay",
+        suiteIds: ["smoke"],
+        guardedRoots: ["smoke"],
+      },
+      {
+        id: "persistence",
+        suiteIds: ["save-management"],
+        guardedRoots: ["persistence"],
+      },
+      {
+        id: "exit",
+        suiteIds: ["exit-lifecycle"],
+        guardedRoots: ["exit"],
+      },
+    ],
+  );
+  assert.deepEqual(partitionE2eSuitesByChain(["capture-proof"]), [
+    {
+      id: "persistence",
+      suiteIds: ["capture-proof"],
+      guardedRoots: ["capture"],
+    },
+  ]);
+});
+
+test("full chain partition retains the frozen Task 8 persistence boundaries", () => {
+  const chains = partitionE2eSuitesByChain(E2E_SUITE_IDS);
+  assert.deepEqual(
+    chains.map(({ id, guardedRoots }) => ({ id, guardedRoots })),
+    [
+      {
+        id: "gameplay",
+        guardedRoots: ["smoke", "gameplay", "productionJourney"],
+      },
+      {
+        id: "persistence",
+        guardedRoots: ["capture", "persistence"],
+      },
+      { id: "exit", guardedRoots: ["exit"] },
+    ],
+  );
+  const processCounts = Object.fromEntries(
+    chains.map(({ id, suiteIds }) => [
+      id,
+      buildE2ePhasePlan(suiteIds, {}).length,
+    ]),
+  );
+  assert.deepEqual(processCounts, { gameplay: 3, persistence: 7, exit: 5 });
+  assert.equal(
+    buildE2ePhasePlan(["save-core", "save-management", "exit-lifecycle"], {})
+      .length,
+    11,
+  );
 });
 
 test("smoke owns only the packaged title-to-dialogue check", () => {
@@ -152,6 +250,112 @@ test("suite-file selection rejects invalid JSON and non-array contents", () => {
         readFile: () => JSON.stringify({ suite: "smoke" }),
       }),
     /json array/i,
+  );
+});
+
+test("runner binds a chain suite file to the planner metadata that selected it", () => {
+  const options = parseRunnerArguments([
+    "--suite-file",
+    "/tmp/e2e-plan/chains/persistence-suites.json",
+    "--chain-id",
+    "persistence",
+    "--plan-file",
+    "/tmp/e2e-plan/e2e-plan.json",
+  ]);
+  const metadata = resolveRunnerPlannerMetadata(
+    options,
+    ["capture-proof", "save-core", "save-management"],
+    {
+      readFile: () =>
+        JSON.stringify({
+          planner: {
+            schemaVersion: 1,
+            riskSelectedSuites: ["smoke", "capture-proof", "save-core"],
+            forcedFull: true,
+            reason: "manual-override",
+          },
+          expectedChainIds: ["gameplay", "persistence", "exit"],
+          matrix: {
+            include: [
+              {
+                chainId: "persistence",
+                suiteIds: ["capture-proof", "save-core", "save-management"],
+              },
+            ],
+          },
+        }),
+    },
+  );
+
+  assert.deepEqual(metadata, {
+    chainId: "persistence",
+    riskSelectedSuites: ["smoke", "capture-proof", "save-core"],
+    forcedFull: true,
+    reason: "manual-override",
+  });
+});
+
+test("runner rejects a chain whose suite file disagrees with the planner", () => {
+  const options = parseRunnerArguments([
+    "--suite-file",
+    "/tmp/e2e-plan/chains/gameplay-suites.json",
+    "--chain-id",
+    "gameplay",
+    "--plan-file",
+    "/tmp/e2e-plan/e2e-plan.json",
+  ]);
+  assert.throws(
+    () =>
+      resolveRunnerPlannerMetadata(options, ["smoke", "gameplay"], {
+        readFile: () =>
+          JSON.stringify({
+            planner: {
+              schemaVersion: 1,
+              riskSelectedSuites: ["smoke"],
+              forcedFull: false,
+              reason: null,
+            },
+            expectedChainIds: ["gameplay"],
+            matrix: {
+              include: [{ chainId: "gameplay", suiteIds: ["smoke"] }],
+            },
+          }),
+      }),
+    /planner metadata/i,
+  );
+});
+
+test("runner preserves an empty risk selection for scheduled forced-full coverage", () => {
+  const options = parseRunnerArguments([
+    "--suite-file",
+    "/tmp/e2e-plan/chains/exit-suites.json",
+    "--chain-id",
+    "exit",
+    "--plan-file",
+    "/tmp/e2e-plan/e2e-plan.json",
+  ]);
+  assert.deepEqual(
+    resolveRunnerPlannerMetadata(options, ["exit-lifecycle"], {
+      readFile: () =>
+        JSON.stringify({
+          planner: {
+            schemaVersion: 1,
+            riskSelectedSuites: [],
+            forcedFull: true,
+            reason: "nightly",
+          },
+          expectedChainIds: ["gameplay", "persistence", "exit"],
+          matrix: {
+            include: [{ chainId: "exit", suiteIds: ["exit-lifecycle"] }],
+          },
+        }),
+    }),
+    {
+      chainId: "exit",
+      riskSelectedSuites: [],
+      forcedFull: true,
+      reason: "nightly",
+    },
   );
 });
 
