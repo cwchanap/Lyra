@@ -436,7 +436,7 @@ type AnalysisBoardRef = {
 in `story-catalog.ts`, together with `validateAnalysisBoardRef` and the existing
 `invalidAnalysisBoardRef` diagnostic. HPA-257 reuses that type and validator.
 
-HPA-257 may add the parallel scene-level form when required:
+HPA-257 adds the parallel scene-level form in `story-catalog.ts`:
 
 ```ts
 type AnalysisSceneRef = {
@@ -445,11 +445,14 @@ type AnalysisSceneRef = {
 };
 ```
 
+together with `validateAnalysisSceneRef` and
+`invalidAnalysisSceneRef`.
+
 Every segment matches `^[a-z0-9_]+$`. Missing, extra, empty, or bare local
-segments fail with the existing board diagnostic or a parallel
-`invalidAnalysisSceneRef` for scene-only refs. HPA-257 fixtures register
-resolvable definitions through the `AnalysisDefinitionRegistry` hook named in
-§15.1; HPA-259 provides production registrations.
+segments fail with the existing board diagnostic or the new scene diagnostic.
+HPA-257 fixtures register resolvable definitions through the
+`AnalysisDefinitionRegistry` hook named in §15.1; HPA-259 provides production
+registrations.
 
 ### 5.6 `at_least` validation
 
@@ -584,8 +587,14 @@ The JSON contract is versioned and data-only:
   "schemaVersion": 1,
   "cases": [
     {
-      "name": "nested threshold",
-      "expression": { "op": "at_least", "count": 1, "conditions": [] },
+      "name": "single fact threshold",
+      "expression": {
+        "op": "at_least",
+        "count": 1,
+        "conditions": [
+          { "predicate": "fact_asserted", "id": "fact_a" }
+        ]
+      },
       "truths": { "fact_asserted:fact_a": true },
       "expected": true
     }
@@ -593,11 +602,10 @@ The JSON contract is versioned and data-only:
 }
 ```
 
-The illustrative expression above is shortened; committed cases must contain
-valid complete wire trees. Each case contains a unique name, one concrete wire
-expression, a normalized atom-key-to-Boolean truth assignment, and one expected
-Boolean result. TypeScript and Rust deserialize and evaluate the same bytes.
-Neither test suite maintains a translated copy.
+Each case contains a unique name, one valid concrete wire expression, a
+normalized atom-key-to-Boolean truth assignment, and one expected Boolean result.
+TypeScript and Rust deserialize and evaluate the same bytes. Neither test suite
+maintains a translated copy.
 
 ## 7. Story reveal authoring contract
 
@@ -1290,9 +1298,9 @@ Existing compiler contracts reused by HPA-257:
 | `validateStoryCatalog` | cross-definition semantic validation and reserved-ID defense |
 | `AnalysisBoardRef` | structured chapter/scene/board reference type |
 
-HPA-257 adds a parallel `invalidAnalysisSceneRef` only if the new scene-level
-reference cannot reuse a more general ref validator without weakening the
-existing board diagnostic.
+HPA-257 adds `AnalysisSceneRef`, `validateAnalysisSceneRef`, and
+`invalidAnalysisSceneRef` beside the existing board-ref contracts in
+`story-catalog.ts`.
 
 ### 14.2 New diagnostic codes
 
@@ -1366,8 +1374,9 @@ packages/shared/fixtures/
 Ownership is binding:
 
 - extend `parser-story-catalog.ts` for heading-level reserved-ID diagnostics;
-- extend `story-catalog.ts` for semantic reserved-ID defense and reuse its
-  existing `AnalysisBoardRef`, `validateAnalysisBoardRef`,
+- extend `story-catalog.ts` for semantic reserved-ID defense, add
+  `AnalysisSceneRef`/`validateAnalysisSceneRef`, and reuse its existing
+  `AnalysisBoardRef`, `validateAnalysisBoardRef`,
   `validateSetPrimaryObjectiveTarget`, and `validateStoryCatalog` exports;
 - do not introduce a third catalog parser or duplicate the existing validators;
 - `analysis-definition-registry.ts` resolves qualified scene/board definitions
@@ -1741,7 +1750,8 @@ minimum:
 5. add story target parser, duplicate/conflict rules, and scene-family matrix;
 6. extend `parser-story-catalog.ts` and `story-catalog.ts` for reserved `null` at
    their respective syntax/semantic boundaries;
-7. add Rust authored-target defense;
+7. add `AnalysisSceneRef`/`validateAnalysisSceneRef` beside the existing board
+   contracts and add Rust authored-target defense;
 8. define `AnalysisDefinitionRegistry` and normalized scene adapters;
 9. expose strict/may-before ordering, complete member sets, region IDs, and
    one-shot member identity;
