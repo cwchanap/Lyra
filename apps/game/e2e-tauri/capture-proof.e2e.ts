@@ -4,7 +4,6 @@ import {
   advanceDialogueSelector,
   elementExists,
   getPackagedGameState,
-  jumpToProductionScene,
   resetCaptureProofStorage,
   startCaptureProofAtScene,
   waitForPersistenceIdle,
@@ -695,23 +694,24 @@ describe("packaged gameplay thumbnail proof", () => {
       captureAfterSwap: CaptureWrapperStatus;
     }> = [];
     for (let attempt = 1; attempt <= 2; attempt += 1) {
-      if (attempt === 1) {
-        await resetCaptureProofStorage();
-        await startCaptureProofAtScene(
-          anchors.captureProof.sceneId,
-          anchors.captureProof.sceneEntryDialogue,
-        );
-        await browser.waitUntil(
-          async () => elementExists(anchors.captureProof.probe),
-          {
-            timeout: 10000,
-            timeoutMsg: "packaged capture proof probe did not mount",
-          },
-        );
-      } else {
+      if (attempt > 1) {
         await waitForPersistenceIdle();
-        await jumpToProductionScene(anchors.captureProof.sceneId);
       }
+      // Replay from a fresh document rather than jumpToProductionScene: the
+      // latter awaits an embedded-WebDriver async script which can starve the
+      // same bridge needed to settle the scene-navigation command.
+      await resetCaptureProofStorage();
+      await startCaptureProofAtScene(
+        anchors.captureProof.sceneId,
+        anchors.captureProof.sceneEntryDialogue,
+      );
+      await browser.waitUntil(
+        async () => elementExists(anchors.captureProof.probe),
+        {
+          timeout: 10000,
+          timeoutMsg: "packaged capture proof probe did not mount",
+        },
+      );
       await waitForDialogueText(anchors.captureProof.preSwapDialogue);
 
       const attemptRootAspect = await browser.execute((selector: string) => {
