@@ -1,5 +1,4 @@
 import {
-  SAVE_E2E_PHASE_NAMES as nodePhaseNames,
   assertNoUnknownSaveE2eSidecars as assertNoUnknownSidecars,
   assertSafeSaveE2eAppDataDir,
   corruptSaveE2eObservedSidecar as corruptObservedSidecar,
@@ -10,6 +9,7 @@ import {
   resolveSaveE2eObservedSidecar as resolveObservedSidecar,
   writeSaveE2eControlExpectation as writeControlExpectation,
 } from "../scripts/save-e2e-paths.mjs";
+import { SAVE_E2E_PHASE_NAMES as nodePhaseNames } from "../scripts/e2e-suite-registry.mjs";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 

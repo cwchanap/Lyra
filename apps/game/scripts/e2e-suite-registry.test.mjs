@@ -1,0 +1,93 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  E2E_SUITE_IDS,
+  E2E_SUITE_DEFINITIONS,
+  buildE2ePhasePlan,
+  normalizeE2eSuiteIds,
+  resolveE2eSuiteSelection,
+  validateE2ePhaseOwnership,
+} from "./e2e-suite-registry.mjs";
+import {
+  parseRunnerArguments,
+  resolveRunnerSelection,
+} from "./e2e-runner-selection.mjs";
+
+test("registry exposes the canonical leaf suite order", () => {
+  assert.deepEqual(E2E_SUITE_IDS, [
+    "smoke",
+    "gameplay",
+    "production-journey",
+    "capture-proof",
+    "save-core",
+    "save-management",
+    "exit-lifecycle",
+  ]);
+});
+
+test("registry definitions are immutable", () => {
+  assert.equal(Object.isFrozen(E2E_SUITE_DEFINITIONS), true);
+  assert.equal(Object.isFrozen(E2E_SUITE_DEFINITIONS[0]), true);
+  assert.equal(Object.isFrozen(E2E_SUITE_DEFINITIONS[0].phases), true);
+});
+
+test("normalizes duplicate requested suites into canonical order", () => {
+  assert.deepEqual(
+    normalizeE2eSuiteIds(["save-management", "smoke", "smoke"]),
+    ["smoke", "save-management"],
+  );
+});
+
+test("rejects an unknown suite before resolving a plan", () => {
+  assert.throws(() => normalizeE2eSuiteIds(["unknown"]), /unknown e2e suite/i);
+});
+
+test("the full selector resolves every suite in canonical order", () => {
+  assert.deepEqual(resolveE2eSuiteSelection({ full: true }), E2E_SUITE_IDS);
+});
+
+test("runner accepts only one selection mode and one or two attempts", () => {
+  assert.deepEqual(
+    parseRunnerArguments([
+      "--suite",
+      "save-core",
+      "--suite",
+      "smoke",
+      "--attempts",
+      "2",
+    ]),
+    { suiteIds: ["save-core", "smoke"], attempts: 2 },
+  );
+  assert.throws(
+    () => parseRunnerArguments(["--full", "--suite", "smoke"]),
+    /mutually exclusive/i,
+  );
+  assert.throws(
+    () => parseRunnerArguments(["--full", "--attempts", "3"]),
+    /attempts/i,
+  );
+});
+
+test("suite-file selection rejects invalid JSON and non-array contents", () => {
+  const invalid = parseRunnerArguments([
+    "--suite-file",
+    "/tmp/e2e-suites.json",
+  ]);
+  assert.throws(
+    () => resolveRunnerSelection(invalid, { readFile: () => "{" }),
+    /invalid e2e suite file/i,
+  );
+  assert.throws(
+    () =>
+      resolveRunnerSelection(invalid, {
+        readFile: () => JSON.stringify({ suite: "smoke" }),
+      }),
+    /json array/i,
+  );
+});
+
+test("phase ownership rejects an approved spec in the wrong phase before launch", () => {
+  const [phase] = buildE2ePhasePlan(["smoke"], { ordinary: "/tmp/owned" });
+  phase.specs = ["./e2e-tauri/capture-proof.e2e.ts"];
+  assert.throws(() => validateE2ePhaseOwnership(phase), /phase plan/i);
+});

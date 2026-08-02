@@ -5,7 +5,6 @@ import path from "node:path";
 import {
   assertSafeSaveE2eAppDataDir,
   buildSaveE2ePhaseEnvironment,
-  buildSaveE2ePhasePlan,
   corruptSaveE2eObservedSidecar,
   corruptSaveE2eSlot,
   createSaveE2eAppDataDir,
@@ -13,12 +12,22 @@ import {
   removeSaveE2eAppDataDir,
   removeSaveE2eObservedSidecar,
 } from "./save-e2e-paths.mjs";
+import {
+  buildE2ePhasePlan,
+  e2eSuitePhaseRoots,
+} from "./e2e-suite-registry.mjs";
+import {
+  parseRunnerArguments,
+  resolveRunnerSelection,
+} from "./e2e-runner-selection.mjs";
 
-const mode = process.argv[2];
-const supportedModes = new Set(["--ordinary", "--capture-proof", "--full"]);
-if (process.argv.length !== 3 || !supportedModes.has(mode)) {
+let suiteIds;
+try {
+  const options = parseRunnerArguments(process.argv.slice(2));
+  suiteIds = resolveRunnerSelection(options);
+} catch (error) {
   console.error(
-    "Usage: node scripts/run-save-e2e.mjs --ordinary|--capture-proof|--full",
+    `Usage: node scripts/run-save-e2e.mjs (--suite <id> [... ]|--suite-file /absolute/path/to/e2e-suites.json|--full) [--attempts 1|2]\n${error.message}`,
   );
   process.exit(2);
 }
@@ -136,24 +145,10 @@ function captureFailureArtifacts(phase, code) {
 }
 
 try {
-  let phasePlan;
-  if (mode === "--ordinary") {
-    phasePlan = buildSaveE2ePhasePlan({
-      mode,
-      ordinaryAppDataDir: createRoot(),
-    });
-  } else if (mode === "--capture-proof") {
-    phasePlan = buildSaveE2ePhasePlan({
-      mode,
-      captureProofAppDataDir: createRoot(),
-    });
-  } else {
-    phasePlan = buildSaveE2ePhasePlan({
-      mode,
-      captureProofAppDataDir: createRoot(),
-      persistenceAppDataDir: createRoot(),
-    });
-  }
+  const directories = {};
+  for (const root of e2eSuitePhaseRoots(suiteIds))
+    directories[root] = createRoot();
+  const phasePlan = buildE2ePhasePlan(suiteIds, directories);
 
   exitCode = executeSaveE2ePhasePlan(phasePlan, {
     spawnPhase,

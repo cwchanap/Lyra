@@ -13,75 +13,17 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
+import {
+  buildE2ePhasePlan,
+  SAVE_E2E_ORDINARY_SPECS,
+  SAVE_E2E_PHASE_NAMES,
+  validateE2ePhaseOwnership,
+  validateE2ePhaseSequence,
+} from "./e2e-suite-registry.mjs";
+
+export { SAVE_E2E_ORDINARY_SPECS, SAVE_E2E_PHASE_NAMES };
 
 export const SAVE_E2E_E2E_DIRECTORY_PREFIX = "lyra-save-e2e-";
-export const SAVE_E2E_ORDINARY_SPECS = Object.freeze([
-  "./e2e-tauri/app.e2e.ts",
-  "./e2e-tauri/investigation-layout.e2e.ts",
-  "./e2e-tauri/scene-navigation-gate.e2e.ts",
-]);
-export const SAVE_E2E_PHASE_NAMES = Object.freeze({
-  captureProof: "capture-proof",
-  saveSeed: "save-seed",
-  saveResume: "save-resume",
-  managementSeed: "management-seed",
-  managementCorruptNewest: "management-corrupt-newest",
-  managementRecoverOlder: "management-recover-older",
-  managementMissingThumbnail: "management-missing-thumbnail",
-  managementRestoreThumbnail: "management-restore-thumbnail",
-  managementCorruptThumbnail: "management-corrupt-thumbnail",
-  managementDelete: "management-delete",
-  exitCloseSeed: "exit-close-seed",
-  exitCloseResume: "exit-close-resume",
-  exitQuitSeed: "exit-quit-seed",
-  exitQuitResume: "exit-quit-resume",
-  exitFailureBypass: "exit-failure-bypass",
-  exitFinalVerification: "exit-final-verification",
-});
-
-const SAVE_E2E_CAPTURE_SPEC = "./e2e-tauri/capture-proof.e2e.ts";
-const SAVE_E2E_SEED_SPEC = "./e2e-tauri/save-seed.e2e.ts";
-const SAVE_E2E_RESUME_SPEC = "./e2e-tauri/save-resume.e2e.ts";
-const SAVE_E2E_MANAGEMENT_SPEC = "./e2e-tauri/save-management.e2e.ts";
-const SAVE_E2E_EXIT_SPEC = "./e2e-tauri/save-exit.e2e.ts";
-const SAVE_E2E_APPROVED_SPECS = new Set([
-  ...SAVE_E2E_ORDINARY_SPECS,
-  SAVE_E2E_CAPTURE_SPEC,
-  SAVE_E2E_SEED_SPEC,
-  SAVE_E2E_RESUME_SPEC,
-  SAVE_E2E_MANAGEMENT_SPEC,
-  SAVE_E2E_EXIT_SPEC,
-]);
-const SAVE_E2E_APPROVED_PHASES = new Set([
-  "ordinary",
-  ...Object.values(SAVE_E2E_PHASE_NAMES),
-]);
-const SAVE_E2E_APPROVED_GROUPS = new Set([
-  "ordinary",
-  "capture-proof",
-  "seed",
-  "resume",
-  "management",
-  "exit",
-]);
-const SAVE_E2E_FULL_PHASE_ORDER = Object.freeze([
-  SAVE_E2E_PHASE_NAMES.captureProof,
-  SAVE_E2E_PHASE_NAMES.saveSeed,
-  SAVE_E2E_PHASE_NAMES.saveResume,
-  SAVE_E2E_PHASE_NAMES.managementSeed,
-  SAVE_E2E_PHASE_NAMES.managementCorruptNewest,
-  SAVE_E2E_PHASE_NAMES.managementRecoverOlder,
-  SAVE_E2E_PHASE_NAMES.managementMissingThumbnail,
-  SAVE_E2E_PHASE_NAMES.managementRestoreThumbnail,
-  SAVE_E2E_PHASE_NAMES.managementCorruptThumbnail,
-  SAVE_E2E_PHASE_NAMES.managementDelete,
-  SAVE_E2E_PHASE_NAMES.exitCloseSeed,
-  SAVE_E2E_PHASE_NAMES.exitCloseResume,
-  SAVE_E2E_PHASE_NAMES.exitQuitSeed,
-  SAVE_E2E_PHASE_NAMES.exitQuitResume,
-  SAVE_E2E_PHASE_NAMES.exitFailureBypass,
-  SAVE_E2E_PHASE_NAMES.exitFinalVerification,
-]);
 const SAVE_E2E_FIXED_SLOT_NAMES = Object.freeze([
   "autosave-1",
   "autosave-2",
@@ -98,9 +40,6 @@ const SAVE_E2E_CONTROL_EXPECTATIONS = new Set([
   "management-state",
   "exit-state",
 ]);
-const SAVE_E2E_BACKEND_LOG_ENVIRONMENT = Object.freeze({
-  LYRA_E2E_CAPTURE_BACKEND_LOGS: "1",
-});
 const CANONICAL_UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -375,267 +314,46 @@ export function readSaveE2eControlExpectation(appDataDir, expectationName) {
   return JSON.parse(readFileSync(source, "utf8"));
 }
 
-function phase(
-  id,
-  group,
-  appDataDir,
-  specs,
-  environment = { ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT },
-  before,
-) {
-  const result = {
-    id,
-    group,
-    appDataDir: assertSafeSaveE2eAppDataDir(appDataDir),
-    specs,
-    environment,
-  };
-  if (before) result.before = before;
-  return result;
-}
-
-function managementPhase(id, appDataDir, before) {
-  return phase(
-    id,
-    "management",
-    appDataDir,
-    [SAVE_E2E_MANAGEMENT_SPEC],
-    {
-      ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT,
-      LYRA_SAVE_E2E_PHASE: id,
-    },
-    before,
-  );
-}
-
-function exitPhase(id, appDataDir) {
-  return phase(id, "exit", appDataDir, [SAVE_E2E_EXIT_SPEC], {
-    ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT,
-    LYRA_SAVE_E2E_PHASE: id,
-  });
-}
-
 export function buildSaveE2ePhasePlan({
   mode,
   ordinaryAppDataDir,
   captureProofAppDataDir,
   persistenceAppDataDir,
 }) {
-  if (mode === "--ordinary") {
-    return [
-      phase("ordinary", "ordinary", ordinaryAppDataDir, [
-        ...SAVE_E2E_ORDINARY_SPECS,
-      ]),
-    ];
-  }
-  if (mode === "--capture-proof") {
-    return [
-      phase(
-        SAVE_E2E_PHASE_NAMES.captureProof,
-        "capture-proof",
-        captureProofAppDataDir,
-        [SAVE_E2E_CAPTURE_SPEC],
-        { ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT },
-      ),
-    ];
-  }
-  if (mode !== "--full") {
-    throw new Error(`Unknown save e2e mode: ${String(mode)}`);
-  }
-
-  return [
-    phase(
-      SAVE_E2E_PHASE_NAMES.captureProof,
+  const suitesByMode = {
+    "--ordinary": ["smoke"],
+    "--capture-proof": ["capture-proof"],
+    "--full": [
       "capture-proof",
-      captureProofAppDataDir,
-      [SAVE_E2E_CAPTURE_SPEC],
-      { ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT },
-    ),
-    phase(SAVE_E2E_PHASE_NAMES.saveSeed, "seed", persistenceAppDataDir, [
-      SAVE_E2E_SEED_SPEC,
-    ]),
-    phase(SAVE_E2E_PHASE_NAMES.saveResume, "resume", persistenceAppDataDir, [
-      SAVE_E2E_RESUME_SPEC,
-    ]),
-    managementPhase(SAVE_E2E_PHASE_NAMES.managementSeed, persistenceAppDataDir),
-    managementPhase(
-      SAVE_E2E_PHASE_NAMES.managementCorruptNewest,
-      persistenceAppDataDir,
-      { type: "corrupt-slot", fixedSlotName: "autosave-1" },
-    ),
-    managementPhase(
-      SAVE_E2E_PHASE_NAMES.managementRecoverOlder,
-      persistenceAppDataDir,
-    ),
-    managementPhase(
-      SAVE_E2E_PHASE_NAMES.managementMissingThumbnail,
-      persistenceAppDataDir,
-      { type: "remove-observed-sidecar", fixedSlotName: "manual-1" },
-    ),
-    managementPhase(
-      SAVE_E2E_PHASE_NAMES.managementRestoreThumbnail,
-      persistenceAppDataDir,
-    ),
-    managementPhase(
-      SAVE_E2E_PHASE_NAMES.managementCorruptThumbnail,
-      persistenceAppDataDir,
-      { type: "corrupt-observed-sidecar", fixedSlotName: "manual-1" },
-    ),
-    managementPhase(
-      SAVE_E2E_PHASE_NAMES.managementDelete,
-      persistenceAppDataDir,
-    ),
-    exitPhase(SAVE_E2E_PHASE_NAMES.exitCloseSeed, persistenceAppDataDir),
-    exitPhase(SAVE_E2E_PHASE_NAMES.exitCloseResume, persistenceAppDataDir),
-    exitPhase(SAVE_E2E_PHASE_NAMES.exitQuitSeed, persistenceAppDataDir),
-    exitPhase(SAVE_E2E_PHASE_NAMES.exitQuitResume, persistenceAppDataDir),
-    exitPhase(SAVE_E2E_PHASE_NAMES.exitFailureBypass, persistenceAppDataDir),
-    exitPhase(
-      SAVE_E2E_PHASE_NAMES.exitFinalVerification,
-      persistenceAppDataDir,
-    ),
-  ];
-}
-
-function validatePhase(phaseToValidate) {
-  if (
-    !phaseToValidate ||
-    typeof phaseToValidate !== "object" ||
-    !SAVE_E2E_APPROVED_PHASES.has(phaseToValidate.id) ||
-    !SAVE_E2E_APPROVED_GROUPS.has(phaseToValidate.group)
-  ) {
-    throw new Error("Unknown save e2e phase.");
-  }
-  assertSafeSaveE2eAppDataDir(phaseToValidate.appDataDir);
-  if (
-    !Array.isArray(phaseToValidate.specs) ||
-    phaseToValidate.specs.length === 0
-  ) {
-    throw new Error("Unknown save e2e spec.");
-  }
-  for (const spec of phaseToValidate.specs) {
-    if (!SAVE_E2E_APPROVED_SPECS.has(spec)) {
-      throw new Error(`Unknown save e2e spec: ${String(spec)}`);
-    }
-  }
-  if (phaseToValidate.before !== undefined) {
-    const action = phaseToValidate.before;
-    if (
-      !action ||
-      typeof action !== "object" ||
-      ![
-        "corrupt-slot",
-        "remove-observed-sidecar",
-        "corrupt-observed-sidecar",
-      ].includes(action.type) ||
-      !SAVE_E2E_FIXED_SLOT_NAME_SET.has(action.fixedSlotName)
-    ) {
-      throw new Error("Unknown save e2e checkpoint action.");
-    }
-  }
-  const environment = phaseToValidate.environment;
-  if (!environment || typeof environment !== "object") {
-    throw new Error("Unknown save e2e phase environment.");
-  }
-  const expectedEnvironment =
-    phaseToValidate.group === "management" || phaseToValidate.group === "exit"
-      ? {
-          ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT,
-          LYRA_SAVE_E2E_PHASE: phaseToValidate.id,
-        }
-      : { ...SAVE_E2E_BACKEND_LOG_ENVIRONMENT };
-  if (JSON.stringify(environment) !== JSON.stringify(expectedEnvironment)) {
-    throw new Error("Unknown save e2e phase environment.");
-  }
-  const expected = expectedPhaseShape(phaseToValidate.id);
-  if (
-    phaseToValidate.group !== expected.group ||
-    JSON.stringify(phaseToValidate.specs) !== JSON.stringify(expected.specs) ||
-    JSON.stringify(phaseToValidate.before) !== JSON.stringify(expected.before)
-  ) {
-    throw new Error("Invalid save e2e phase plan.");
-  }
-}
-
-function expectedPhaseShape(id) {
-  if (id === "ordinary") {
-    return {
-      group: "ordinary",
-      specs: [...SAVE_E2E_ORDINARY_SPECS],
-      before: undefined,
-    };
-  }
-  if (id === SAVE_E2E_PHASE_NAMES.captureProof) {
-    return {
-      group: "capture-proof",
-      specs: [SAVE_E2E_CAPTURE_SPEC],
-      before: undefined,
-    };
-  }
-  if (id === SAVE_E2E_PHASE_NAMES.saveSeed) {
-    return { group: "seed", specs: [SAVE_E2E_SEED_SPEC], before: undefined };
-  }
-  if (id === SAVE_E2E_PHASE_NAMES.saveResume) {
-    return {
-      group: "resume",
-      specs: [SAVE_E2E_RESUME_SPEC],
-      before: undefined,
-    };
-  }
-  const managementBefore = new Map([
-    [
-      SAVE_E2E_PHASE_NAMES.managementCorruptNewest,
-      { type: "corrupt-slot", fixedSlotName: "autosave-1" },
+      "save-core",
+      "save-management",
+      "exit-lifecycle",
     ],
-    [
-      SAVE_E2E_PHASE_NAMES.managementMissingThumbnail,
-      { type: "remove-observed-sidecar", fixedSlotName: "manual-1" },
-    ],
-    [
-      SAVE_E2E_PHASE_NAMES.managementCorruptThumbnail,
-      { type: "corrupt-observed-sidecar", fixedSlotName: "manual-1" },
-    ],
-  ]);
-  if (id.startsWith("management-")) {
-    return {
-      group: "management",
-      specs: [SAVE_E2E_MANAGEMENT_SPEC],
-      before: managementBefore.get(id),
-    };
-  }
-  return { group: "exit", specs: [SAVE_E2E_EXIT_SPEC], before: undefined };
-}
-
-function validatePhaseSequence(phases) {
-  const ids = phases.map((phaseToValidate) => phaseToValidate.id);
-  const ordinary = ["ordinary"];
-  const captureOnly = [SAVE_E2E_PHASE_NAMES.captureProof];
-  if (
-    JSON.stringify(ids) === JSON.stringify(ordinary) ||
-    JSON.stringify(ids) === JSON.stringify(captureOnly)
-  ) {
-    return;
-  }
-  if (JSON.stringify(ids) !== JSON.stringify(SAVE_E2E_FULL_PHASE_ORDER)) {
-    throw new Error("Invalid save e2e phase plan.");
-  }
-  const captureRoot = phases[0].appDataDir;
-  const persistenceRoot = phases[1].appDataDir;
-  if (
-    captureRoot === persistenceRoot ||
-    phases.slice(1).some((phaseToValidate) => {
-      return phaseToValidate.appDataDir !== persistenceRoot;
-    })
-  ) {
-    throw new Error("Invalid save e2e phase plan roots.");
-  }
+  };
+  const suites = suitesByMode[mode];
+  if (!suites) throw new Error(`Unknown save e2e mode: ${String(mode)}`);
+  return buildE2ePhasePlan(suites, {
+    ordinary:
+      ordinaryAppDataDir === undefined
+        ? undefined
+        : assertSafeSaveE2eAppDataDir(ordinaryAppDataDir),
+    captureProof:
+      captureProofAppDataDir === undefined
+        ? undefined
+        : assertSafeSaveE2eAppDataDir(captureProofAppDataDir),
+    persistence:
+      persistenceAppDataDir === undefined
+        ? undefined
+        : assertSafeSaveE2eAppDataDir(persistenceAppDataDir),
+  });
 }
 
 export function buildSaveE2ePhaseEnvironment(
   phaseToRun,
   { baseEnvironment = process.env, outputDirectory },
 ) {
-  validatePhase(phaseToRun);
+  validateE2ePhaseOwnership(phaseToRun);
+  assertSafeSaveE2eAppDataDir(phaseToRun.appDataDir);
   if (typeof outputDirectory !== "string" || outputDirectory.length === 0) {
     throw new Error("Unknown save e2e output directory.");
   }
@@ -664,8 +382,11 @@ export function executeSaveE2ePhasePlan(
   ];
   let exitCode = 0;
   try {
-    for (const phaseToValidate of phases) validatePhase(phaseToValidate);
-    validatePhaseSequence(phases);
+    for (const phaseToValidate of phases) {
+      validateE2ePhaseOwnership(phaseToValidate);
+      assertSafeSaveE2eAppDataDir(phaseToValidate.appDataDir);
+    }
+    validateE2ePhaseSequence(phases);
     for (const currentPhase of phases) {
       exitCode = spawnPhase(currentPhase);
       if (exitCode !== 0) {
