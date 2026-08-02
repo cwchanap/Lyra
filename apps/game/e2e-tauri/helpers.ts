@@ -16,6 +16,7 @@ import type {
 } from "$lib/persistence/types";
 import type { GameStateView, PendingAcquisitionView } from "$lib/state/types";
 import type { E2eCheckpointId } from "$lib/e2e/checkpoints";
+import { drainPendingAcquisitionsWithinCap } from "$lib/e2e/pending-acquisition-drain";
 
 type TauriInternals = {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -954,28 +955,28 @@ export async function dismissAllPendingAcquisitions(
   options: { cap?: number; forceCaptureUnavailable?: boolean } = {},
 ): Promise<void> {
   const { cap = 50, forceCaptureUnavailable = false } = options;
-  for (let index = 0; index < cap; index += 1) {
-    const state = await getPackagedGameState();
-    const current = state.pendingAcquisition;
-    if (!current) {
+  await drainPendingAcquisitionsWithinCap({
+    cap,
+    readCurrent: async () => {
+      const state = await getPackagedGameState();
+      const current = state.pendingAcquisition;
+      if (current) return current;
       await waitForNoDialog(anchors.evidenceAcquired, 90000);
       await waitForPersistenceIdle();
-      if ((await getPackagedGameState()).pendingAcquisition === null) return;
-      continue;
-    }
-    if (forceCaptureUnavailable) {
-      await jsClick(anchors.captureProof.forceUnavailable);
-    }
-    await acknowledgeAcquisitionDomFirst(current);
-    await waitForPackagedGameState(
-      (next) => next.pendingAcquisition?.id !== current.id,
-      30000,
-      `acquisition ${current.id} did not advance`,
-    );
-  }
-  throw new Error(
-    `pending acquisitions did not drain within the cap of ${cap}`,
-  );
+      return (await getPackagedGameState()).pendingAcquisition;
+    },
+    acknowledge: async (current) => {
+      if (forceCaptureUnavailable) {
+        await jsClick(anchors.captureProof.forceUnavailable);
+      }
+      await acknowledgeAcquisitionDomFirst(current);
+      await waitForPackagedGameState(
+        (next) => next.pendingAcquisition?.id !== current.id,
+        30000,
+        `acquisition ${current.id} did not advance`,
+      );
+    },
+  });
 }
 
 export async function returnToTitle(): Promise<void> {
