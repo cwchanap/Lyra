@@ -47,12 +47,50 @@ pub(crate) enum ThumbnailCapturePurpose {
 
 #[cfg(all(test, feature = "e2e"))]
 mod e2e_fault_boundary_tests {
-    use super::SaveCoordinator;
+    use super::{AppSession, PendingAutosave, SaveCoordinator, ThumbnailCapturePurpose};
     use crate::game::save::e2e_faults::E2ePersistenceFaultBoundary;
+    use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+    use tokio::time::Instant;
 
     #[tokio::test]
-    async fn exit_flush_consumes_the_closed_fault_before_persistence_work() {
-        let coordinator = SaveCoordinator::new();
+    async fn exit_flush_fault_cancels_pending_autosave_before_failing() {
+        let mut engine =
+            empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
+        engine.durable_revision = 4;
+        let session = Arc::new(Mutex::new(AppSession::installed(engine, 4, None)));
+        session
+            .lock()
+            .unwrap()
+            .engine
+            .as_mut()
+            .unwrap()
+            .durable_revision = 5;
+        let coordinator = SaveCoordinator::for_application(
+            Arc::clone(&session),
+            Arc::new(tokio::sync::Mutex::new(())),
+        );
+        let purpose = ThumbnailCapturePurpose::Autosave {
+            session_generation: 4,
+            durable_revision: 5,
+        };
+        let capture = coordinator.prepare_thumbnail(purpose.clone()).unwrap();
+        {
+            let mut state = coordinator.state.lock().unwrap();
+            state.next_autosave_serial = 1;
+            state.pending_autosave = Some(PendingAutosave {
+                serial: 1,
+                session_generation: 4,
+                durable_revision: 5,
+                ticket: capture.ticket,
+                purpose,
+                debounce_deadline: Instant::now() + Duration::from_secs(30),
+                capture_deadline: Instant::now() + Duration::from_secs(30),
+            });
+        }
+        session.lock().unwrap().persistence.exit_flush_requested = true;
+
         coordinator
             .arm_e2e_persistence_fault(E2ePersistenceFaultBoundary::ExitFlush, 1)
             .unwrap();
@@ -60,6 +98,7 @@ mod e2e_fault_boundary_tests {
         let error = coordinator.flush_for_exit().await.unwrap_err();
 
         assert_eq!(error.code, "saveWriteFailed");
+        assert!(coordinator.state.lock().unwrap().pending_autosave.is_none());
         assert!(coordinator
             .e2e_persistence_faults
             .fire(E2ePersistenceFaultBoundary::ExitFlush)
@@ -1839,10 +1878,6 @@ impl SaveCoordinator {
     }
 
     async fn flush_for_exit(&self) -> Result<(), GameError> {
-        #[cfg(feature = "e2e")]
-        self.e2e_persistence_faults
-            .fire(E2ePersistenceFaultBoundary::ExitFlush)
-            .map_err(|_| GameError::save_write_failed())?;
         let application = self
             .exit_application
             .as_ref()
@@ -2610,6 +2645,13 @@ impl SaveCoordinator {
         let thumbnail = self
             .cancel_pending_autosave_covered_by_flush(session_generation, flush_revision)?
             .unwrap_or(CaptureTerminalResult::Unavailable);
+
+        #[cfg(feature = "e2e")]
+        if operation == FlushOperation::Exit {
+            self.e2e_persistence_faults
+                .fire(E2ePersistenceFaultBoundary::ExitFlush)
+                .map_err(|_| GameError::save_write_failed())?;
+        }
 
         let (result_tx, result_rx) = tokio::sync::oneshot::channel();
         let coordinator = self.clone();
