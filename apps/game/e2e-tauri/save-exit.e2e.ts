@@ -22,7 +22,6 @@ import {
   waitForAcquisitionOrdinal,
   waitForDialog,
   waitForExitSavingDomWhileAlive,
-  waitForExitSavingWhileAlive,
   waitForNoDialog,
   waitForPackagedDisconnect,
   waitForPackagedGameState,
@@ -105,9 +104,15 @@ async function mutateBeforeDebounce(): Promise<ExitCheckpoint> {
 }
 
 async function requestAndFinish(source: "close" | "quit"): Promise<void> {
-  if (source === "close") await requestWindowClose();
-  else await requestApplicationQuit();
-  await waitForExitSavingWhileAlive();
+  try {
+    if (source === "close") await requestWindowClose();
+    else await requestApplicationQuit();
+  } catch (error) {
+    // A successful close/quit can terminate the embedded WebDriver before its
+    // request returns. The following fresh-process phase proves the mutation
+    // persisted; preserve non-disconnect failures as real test failures.
+    if (!isPackagedDisconnectError(error)) throw error;
+  }
   await waitForPackagedDisconnect();
 }
 
