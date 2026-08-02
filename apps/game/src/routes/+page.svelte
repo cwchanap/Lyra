@@ -82,6 +82,7 @@
     packagedCaptureUnavailableReason,
   } from "$lib/persistence/thumbnail-capture";
   import { acquisitionController } from "$lib/state/acquisition-controller.svelte";
+  import type { E2eCheckpointProjection } from "$lib/e2e/checkpoints";
   import { onDestroy, onMount, tick, untrack } from "svelte";
 
   async function handleExit() {
@@ -111,6 +112,27 @@
   // programmatically (see handleReexamine*).
   let gameMenuOpen = $state(false);
   let storyClearedOnce = $state(loadStoryClearedOnce());
+
+  if (import.meta.env.VITE_E2E) {
+    onMount(() => {
+      const applyCheckpointProjection = (event: Event) => {
+        const projection = (event as CustomEvent<E2eCheckpointProjection>)
+          .detail;
+        storyClearedOnce = projection.sceneNavigationEligible;
+        if (projection.sceneNavigationEligible) saveStoryClearedOnce();
+      };
+      window.addEventListener(
+        "lyra:e2e-checkpoint-applied",
+        applyCheckpointProjection,
+      );
+      return () => {
+        window.removeEventListener(
+          "lyra:e2e-checkpoint-applied",
+          applyCheckpointProjection,
+        );
+      };
+    });
+  }
   let sceneNavigationIndex = $state<SceneNavigationIndex | null>(null);
   let sceneNavigationLoading = $state(false);
   let sceneNavigationRequested = $state(false);

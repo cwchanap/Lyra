@@ -15,9 +15,14 @@ import type {
   SaveBrowserOpenResultView,
 } from "$lib/persistence/types";
 import type { GameStateView, PendingAcquisitionView } from "$lib/state/types";
+import type { E2eCheckpointId } from "$lib/e2e/checkpoints";
 
 type TauriInternals = {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+};
+
+type E2eCheckpointBrowserBridge = {
+  loadCheckpoint: (id: E2eCheckpointId) => Promise<void>;
 };
 
 type CssViewport = CssViewportSize & {
@@ -133,6 +138,67 @@ export async function invokePackagedCommand<T>(
     throw new Error(message, { cause: payload });
   }
   return result.value as T;
+}
+
+export async function loadPackagedCheckpoint(
+  id: E2eCheckpointId,
+): Promise<void> {
+  const selector = "[data-e2e-checkpoint-generation]";
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        return (
+          (window as Window & { __lyraE2e?: E2eCheckpointBrowserBridge })
+            .__lyraE2e !== undefined
+        );
+      }),
+    {
+      timeout: 30000,
+      timeoutMsg: "packaged checkpoint frontend bridge did not initialize",
+    },
+  );
+  const previousGeneration = await browser.execute((markerSelector: string) => {
+    const marker = document.querySelector(markerSelector);
+    return Number(marker?.getAttribute("data-e2e-checkpoint-generation") ?? 0);
+  }, selector);
+  const settlement = await browser.execute(async (selectedId) => {
+    const bridge = (
+      window as Window & { __lyraE2e?: E2eCheckpointBrowserBridge }
+    ).__lyraE2e;
+    if (!bridge) {
+      return { ok: false as const, message: "bridge unavailable" };
+    }
+    try {
+      await bridge.loadCheckpoint(selectedId);
+      return { ok: true as const };
+    } catch (error) {
+      return {
+        ok: false as const,
+        message: error instanceof Error ? error.message : JSON.stringify(error),
+      };
+    }
+  }, id);
+  if (!settlement.ok) {
+    throw new Error(`loadPackagedCheckpoint(${id}): ${settlement.message}`);
+  }
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (markerSelector: string, prior: number) => {
+          const marker = document.querySelector(markerSelector);
+          const next = Number(
+            marker?.getAttribute("data-e2e-checkpoint-generation") ?? 0,
+          );
+          return next > prior;
+        },
+        selector,
+        previousGeneration,
+      ),
+    {
+      timeout: 90000,
+      timeoutMsg: `checkpoint ${id} did not publish a new rendered generation`,
+    },
+  );
 }
 
 export type PackagedCommandSettlement<T> =

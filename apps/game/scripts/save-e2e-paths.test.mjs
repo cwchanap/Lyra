@@ -220,6 +220,8 @@ test("--ordinary yields only the existing non-HPA specs with one guarded root", 
       appDataDir: realpathSync(ordinary),
       specs: [
         "./e2e-tauri/app.e2e.ts",
+        "./e2e-tauri/case-file.e2e.ts",
+        "./e2e-tauri/checkpoint-contract.e2e.ts",
         "./e2e-tauri/investigation-layout.e2e.ts",
         "./e2e-tauri/scene-navigation-gate.e2e.ts",
       ],

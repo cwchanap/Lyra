@@ -1,8 +1,7 @@
 import {
+  loadPackagedCheckpoint,
   openGameMenu,
   resetE2eStorage,
-  seedStoryCleared,
-  startFromMenu,
 } from "./helpers";
 import { anchors } from "./production-anchors";
 
@@ -38,7 +37,7 @@ async function menuHasSceneButton(
 describe("Scene navigation prod eligibility gate", () => {
   it("hides Scene Select when the story has not been cleared", async () => {
     await resetE2eStorage();
-    await startFromMenu();
+    await loadPackagedCheckpoint("chapter-1-scene-navigation-locked");
     await openGameMenu();
     const present = await menuHasSceneButton(
       anchors.gameMenu,
@@ -49,8 +48,7 @@ describe("Scene navigation prod eligibility gate", () => {
 
   it("shows Scene Select once the story has been cleared", async () => {
     await resetE2eStorage();
-    await seedStoryCleared();
-    await startFromMenu();
+    await loadPackagedCheckpoint("chapter-1-scene-navigation-eligible");
     await openGameMenu();
     await browser.waitUntil(
       async () => menuHasSceneButton(anchors.gameMenu, anchors.sceneSelect),
