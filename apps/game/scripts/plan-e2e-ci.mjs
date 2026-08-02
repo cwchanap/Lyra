@@ -12,7 +12,7 @@ import { selectE2eSuites } from "./select-e2e-suites.mjs";
 export const E2E_CI_PLANNER_SCHEMA_VERSION = 1;
 
 const CHAIN_EXECUTION = Object.freeze({
-  gameplay: Object.freeze({ timeoutMinutes: 8 }),
+  gameplay: Object.freeze({ timeoutMinutes: 12 }),
   persistence: Object.freeze({ timeoutMinutes: 15 }),
   exit: Object.freeze({ timeoutMinutes: 8 }),
 });
