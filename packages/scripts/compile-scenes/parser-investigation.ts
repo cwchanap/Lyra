@@ -23,6 +23,7 @@ import {
   VISUAL_ASSET_METADATA_KEYS,
 } from "./parser-assets";
 import { parseUnlockExpr } from "./parser-unlock";
+import { parseRevealsList } from "./parser-reveals";
 import {
   parseEvidenceManifest,
   parseStatementManifest,
@@ -39,7 +40,7 @@ import type {
   CompileError,
   DialogueItem,
   EvidenceSource,
-  RevealTarget,
+  InvestigationRevealTarget,
   UnlockExpr,
 } from "./types";
 
@@ -244,8 +245,13 @@ function parseSublocation(
     unlock = r.value;
   }
   const reveals = meta.value.Reveals
-    ? parseRevealsList(meta.value.Reveals, cur.sourceFile, head.line)
-    : { ok: true as const, value: [] as RevealTarget[] };
+    ? parseRevealsList({
+        family: "investigation",
+        raw: meta.value.Reveals,
+        sourceFile: cur.sourceFile,
+        line: head.line,
+      })
+    : { ok: true as const, value: [] as InvestigationRevealTarget[] };
   if (!reveals.ok) return reveals;
 
   let sceneTag: string | null = null;
@@ -416,8 +422,13 @@ function parseHotspot(
     unlock = r.value;
   }
   const reveals = meta.value.Reveals
-    ? parseRevealsList(meta.value.Reveals, cur.sourceFile, head.line)
-    : { ok: true as const, value: [] as RevealTarget[] };
+    ? parseRevealsList({
+        family: "investigation",
+        raw: meta.value.Reveals,
+        sourceFile: cur.sourceFile,
+        line: head.line,
+      })
+    : { ok: true as const, value: [] as InvestigationRevealTarget[] };
   if (!reveals.ok) return reveals;
   const evidenceSource = parseEvidenceSource(
     meta.value["Evidence Source"],
@@ -625,8 +636,13 @@ function parseTopic(
     unlock = r.value;
   }
   const reveals = meta.value.Reveals
-    ? parseRevealsList(meta.value.Reveals, cur.sourceFile, head.line)
-    : { ok: true as const, value: [] as RevealTarget[] };
+    ? parseRevealsList({
+        family: "investigation",
+        raw: meta.value.Reveals,
+        sourceFile: cur.sourceFile,
+        line: head.line,
+      })
+    : { ok: true as const, value: [] as InvestigationRevealTarget[] };
   if (!reveals.ok) return reveals;
 
   const topicRes = consumeDialogueUntilHeading(cur, 4);
@@ -819,71 +835,6 @@ function consumeOptionalOnReexamine(
   const r = consumeDialogueUntilHeading(cur, expectedLevel);
   if (!r.ok) return r;
   return { ok: true, value: r.value };
-}
-
-function parseRevealsList(
-  raw: string,
-  sourceFile: string,
-  line: number,
-): { ok: true; value: RevealTarget[] } | { ok: false; error: CompileError } {
-  const m = /^\[(.*)\]\s*$/.exec(raw.trim());
-  if (!m)
-    return fail(
-      sourceFile,
-      line,
-      "revealsMalformed",
-      `Reveals value must be a [list]. Got: ${raw}`,
-    );
-  const items = (m[1] ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const out: RevealTarget[] = [];
-  for (const item of items) {
-    const target = parseRevealTarget(item, sourceFile, line);
-    if (!target.ok) return target;
-    out.push(target.value);
-  }
-  return { ok: true, value: out };
-}
-
-function parseRevealTarget(
-  raw: string,
-  sourceFile: string,
-  line: number,
-): { ok: true; value: RevealTarget } | { ok: false; error: CompileError } {
-  const m = /^(evidence|statement|hotspot|sublocation|topic):(.+)$/.exec(raw);
-  if (!m)
-    return fail(
-      sourceFile,
-      line,
-      "revealUnknownPrefix",
-      `Unknown reveal target prefix: ${raw}`,
-    );
-  const kind = m[1] as RevealTarget["kind"];
-  const tail = m[2] ?? "";
-  if (kind === "topic") {
-    const mt = /^([a-z0-9_]+)@([a-z0-9_]+)$/.exec(tail);
-    if (!mt)
-      return fail(
-        sourceFile,
-        line,
-        "revealTopicMalformed",
-        `Topic reveal must be topic:<char>@<topic>. Got: ${raw}`,
-      );
-    return {
-      ok: true,
-      value: { kind: "topic", characterId: mt[1] ?? "", topicId: mt[2] ?? "" },
-    };
-  }
-  if (!/^[a-z0-9_]+$/.test(tail))
-    return fail(
-      sourceFile,
-      line,
-      "revealIdMalformed",
-      `Reveal id must be snake_case slug: ${raw}`,
-    );
-  return { ok: true, value: { kind, id: tail } };
 }
 
 function describe(tok: Token): string {

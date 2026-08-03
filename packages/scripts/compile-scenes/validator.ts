@@ -21,13 +21,16 @@ import type {
   ASTLinearScene,
   ASTSublocation,
   CompileError,
+  InterrogationLocalRevealTarget,
   InterrogationLocalPredicate,
   InterrogationRevealTarget,
   InterrogationUnlockExpr,
+  InvestigationRevealTarget,
   InvestigationLocalPredicate,
   InventoryTarget,
   PositiveExpression,
   RevealTarget,
+  StoryRevealTarget,
   StoryPredicate,
   UnlockExpr,
 } from "./types";
@@ -84,6 +87,40 @@ function isStoryPredicate(
     default:
       return false;
   }
+}
+
+function isStoryRevealTarget(
+  target: InvestigationRevealTarget | InterrogationRevealTarget,
+): target is StoryRevealTarget {
+  switch (target.kind) {
+    case "assertFact":
+    case "revealQuestion":
+    case "resolveQuestion":
+    case "revealObjective":
+    case "completeObjective":
+    case "setPrimaryObjective":
+    case "grantAuthorization":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function localInvestigationReveals(
+  reveals: InvestigationRevealTarget[],
+): RevealTarget[] {
+  return reveals.filter(
+    (reveal): reveal is RevealTarget => !isStoryRevealTarget(reveal),
+  );
+}
+
+function localInterrogationReveals(
+  reveals: InterrogationRevealTarget[],
+): InterrogationLocalRevealTarget[] {
+  return reveals.filter(
+    (reveal): reveal is InterrogationLocalRevealTarget =>
+      !isStoryRevealTarget(reveal),
+  );
 }
 
 function atLeastSatisfiable<P>(
@@ -379,7 +416,7 @@ function validateInterrogationScene(
     line: number,
     reveals: InterrogationRevealTarget[],
   ) => {
-    for (const reveal of reveals) {
+    for (const reveal of localInterrogationReveals(reveals)) {
       const targetKey = interrogationRevealKey(reveal);
       switch (reveal.kind) {
         case "evidence":
@@ -1705,10 +1742,11 @@ function addInterrogationRevealsToState(
 function commonInterrogationReveals(
   paths: InterrogationRevealTarget[][],
 ): InterrogationRevealTarget[] {
-  const first = paths.at(0);
+  const localPaths = paths.map(localInterrogationReveals);
+  const first = localPaths.at(0);
   if (!first) return [];
   let common = new Set(first.map(interrogationRevealKey));
-  for (const path of paths.slice(1)) {
+  for (const path of localPaths.slice(1)) {
     const keys = new Set(path.map(interrogationRevealKey));
     common = new Set([...common].filter((key) => keys.has(key)));
   }
@@ -1719,8 +1757,11 @@ function inventoryAtom(target: InventoryTarget): string {
   return `${target.kind}:${target.id}`;
 }
 
-function addInventoryReveals(out: Set<string>, reveals: RevealTarget[]): void {
-  for (const reveal of reveals) {
+function addInventoryReveals(
+  out: Set<string>,
+  reveals: InvestigationRevealTarget[],
+): void {
+  for (const reveal of localInvestigationReveals(reveals)) {
     if (reveal.kind === "evidence") out.add(`evidence:${reveal.id}`);
     if (reveal.kind === "statement") out.add(`statement:${reveal.id}`);
   }
@@ -1905,9 +1946,9 @@ function validateInvestigationScene(
     source: string,
     sourceSublocationId: string,
     line: number,
-    list: RevealTarget[],
+    list: InvestigationRevealTarget[],
   ) => {
-    for (const r of list) {
+    for (const r of localInvestigationReveals(list)) {
       const key = revealKey(r);
       switch (r.kind) {
         case "evidence":
@@ -2350,15 +2391,16 @@ function collectReachableAtomsAcrossReachableSublocations(
       // mandatory (player must enter it). When mandatorySubs is not provided,
       // all entry reveals are included (obtainable/reachability analysis).
       if (!mandatorySubs || mandatorySubs.has(sub.id)) {
-        allReveals.push(...sub.reveals);
+        allReveals.push(...localInvestigationReveals(sub.reveals));
       }
       for (const h of sub.hotspots) {
-        if (reachable.has(`hotspot:${h.id}`)) allReveals.push(...h.reveals);
+        if (reachable.has(`hotspot:${h.id}`))
+          allReveals.push(...localInvestigationReveals(h.reveals));
       }
       for (const c of sub.characters) {
         for (const t of c.topics) {
           if (reachable.has(`topic:${c.id}@${t.id}`))
-            allReveals.push(...t.reveals);
+            allReveals.push(...localInvestigationReveals(t.reveals));
         }
       }
     }
@@ -2433,14 +2475,17 @@ function collectRevealsFromReachableBlocks(
   // (the player must enter it for auto-outro). When mandatorySubs is not
   // provided, all entry reveals are included (obtainable/reachability analysis).
   const reveals: RevealTarget[] =
-    !mandatorySubs || mandatorySubs.has(sub.id) ? [...sub.reveals] : [];
+    !mandatorySubs || mandatorySubs.has(sub.id)
+      ? localInvestigationReveals(sub.reveals)
+      : [];
   for (const h of sub.hotspots) {
-    if (reachableAtoms.has(`hotspot:${h.id}`)) reveals.push(...h.reveals);
+    if (reachableAtoms.has(`hotspot:${h.id}`))
+      reveals.push(...localInvestigationReveals(h.reveals));
   }
   for (const c of sub.characters) {
     for (const t of c.topics) {
       if (reachableAtoms.has(`topic:${c.id}@${t.id}`))
-        reveals.push(...t.reveals);
+        reveals.push(...localInvestigationReveals(t.reveals));
     }
   }
   return reveals;
@@ -2745,6 +2790,6 @@ function revealKey(r: RevealTarget): string {
   }
 }
 
-function interrogationRevealKey(r: InterrogationRevealTarget): string {
+function interrogationRevealKey(r: InterrogationLocalRevealTarget): string {
   return `${r.kind}:${r.id}`;
 }

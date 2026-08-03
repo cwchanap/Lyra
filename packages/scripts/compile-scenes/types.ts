@@ -171,10 +171,29 @@ export type ASTCaseRecordProvenance = {
   supersedes: Located<InventoryTarget> | null;
 };
 
-export type InterrogationRevealTarget =
+export type StoryRevealTarget =
+  | { kind: "assertFact"; factId: string }
+  | { kind: "revealQuestion"; questionId: string }
+  | { kind: "resolveQuestion"; questionId: string; factId: string }
+  | { kind: "revealObjective"; objectiveId: string }
+  | { kind: "completeObjective"; objectiveId: string }
+  | {
+      kind: "setPrimaryObjective";
+      completeCurrent: boolean;
+      nextObjectiveId: string | null;
+    }
+  | { kind: "grantAuthorization"; authorizationId: string };
+
+export type InvestigationRevealTarget = RevealTarget | StoryRevealTarget;
+
+export type InterrogationLocalRevealTarget =
   | InventoryTarget
   | { kind: "question"; id: string }
   | { kind: "phase"; id: string };
+
+export type InterrogationRevealTarget =
+  | InterrogationLocalRevealTarget
+  | StoryRevealTarget;
 
 export type PositiveExpression<P> =
   | {
@@ -315,7 +334,7 @@ export type ASTSublocation = Located<{
   label: string;
   status: "locked" | "unlocked";
   unlock: UnlockExpr | null;
-  reveals: RevealTarget[];
+  reveals: InvestigationRevealTarget[];
   sceneTag: string;
   assetCue: VisualAssetCue | null;
   transitionDialogue: DialogueItem[];
@@ -329,7 +348,7 @@ export type ASTHotspot = Located<{
   description: string;
   status: "locked" | "unlocked";
   unlock: UnlockExpr | null;
-  reveals: RevealTarget[];
+  reveals: InvestigationRevealTarget[];
   evidenceSource: EvidenceSource | null;
   sceneSourcePrompt: string | null;
   inspectDialogue: DialogueItem[];
@@ -351,7 +370,7 @@ export type ASTTopic = Located<{
   label: string;
   status: "locked" | "unlocked";
   unlock: UnlockExpr | null;
-  reveals: RevealTarget[];
+  reveals: InvestigationRevealTarget[];
   topicDialogue: DialogueItem[];
   onReexamine: DialogueItem[] | null;
 }>;
@@ -484,7 +503,7 @@ export type JSONInvestigationScene = {
     label: string;
     status: "locked" | "unlocked";
     unlock: UnlockExpr | null;
-    reveals: RevealTarget[];
+    reveals: InvestigationRevealTarget[];
     sceneTag: string;
     backgroundAssetId: string | null;
     bgm: AudioCue | null;
@@ -496,7 +515,7 @@ export type JSONInvestigationScene = {
       description: string;
       status: "locked" | "unlocked";
       unlock: UnlockExpr | null;
-      reveals: RevealTarget[];
+      reveals: InvestigationRevealTarget[];
       evidenceSource: EvidenceSource | null;
       sceneSourcePrompt: string | null;
       inspectDialogue: JSONDialogueItem[];
@@ -514,7 +533,7 @@ export type JSONInvestigationScene = {
         label: string;
         status: "locked" | "unlocked";
         unlock: UnlockExpr | null;
-        reveals: RevealTarget[];
+        reveals: InvestigationRevealTarget[];
         topicDialogue: JSONDialogueItem[];
         onReexamine: JSONDialogueItem[] | null;
       }>;

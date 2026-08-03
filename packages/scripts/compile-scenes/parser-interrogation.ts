@@ -32,6 +32,7 @@ import {
   parseStatementManifest,
 } from "./parser-manifest";
 import { parseInterrogationUnlockExpr } from "./parser-unlock";
+import { parseRevealsList } from "./parser-reveals";
 import type {
   ASTEvidence,
   ASTInquiryPhase,
@@ -472,11 +473,12 @@ function parseInquiryQuestion(
     unlock = r.value;
   }
   const reveals = meta.value.Reveals
-    ? parseInterrogationRevealsList(
-        meta.value.Reveals,
-        cur.sourceFile,
-        head.line,
-      )
+    ? parseRevealsList({
+        family: "interrogation",
+        raw: meta.value.Reveals,
+        sourceFile: cur.sourceFile,
+        line: head.line,
+      })
     : { ok: true as const, value: [] as InterrogationRevealTarget[] };
   if (!reveals.ok) return reveals;
   const required = parseBoolean(
@@ -802,11 +804,12 @@ function parseTestimonyLine(
   // it arrives here as just another metadata key on this Line block -- there
   // is no nesting to thread through.
   const reveals = meta.value.Reveals
-    ? parseInterrogationRevealsList(
-        meta.value.Reveals,
-        cur.sourceFile,
-        head.line,
-      )
+    ? parseRevealsList({
+        family: "interrogation",
+        raw: meta.value.Reveals,
+        sourceFile: cur.sourceFile,
+        line: head.line,
+      })
     : { ok: true as const, value: [] as InterrogationRevealTarget[] };
   if (!reveals.ok) return reveals;
 
@@ -959,11 +962,12 @@ function parseCommonPhaseMeta(phaseMeta: PhaseMeta):
     unlock = r.value;
   }
   const reveals = phaseMeta.meta.Reveals
-    ? parseInterrogationRevealsList(
-        phaseMeta.meta.Reveals,
-        phaseMeta.head.sourceFile,
-        phaseMeta.head.line,
-      )
+    ? parseRevealsList({
+        family: "interrogation",
+        raw: phaseMeta.meta.Reveals,
+        sourceFile: phaseMeta.head.sourceFile,
+        line: phaseMeta.head.line,
+      })
     : { ok: true as const, value: [] as InterrogationRevealTarget[] };
   if (!reveals.ok) return reveals;
   return {
@@ -1202,54 +1206,6 @@ function parseDialogueFieldValue(
       `Expected dialogue text (e.g. **Name**：...); got: ${raw}`,
     );
   return { ok: true, value: items };
-}
-
-function parseInterrogationRevealsList(
-  raw: string,
-  sourceFile: string,
-  line: number,
-):
-  | { ok: true; value: InterrogationRevealTarget[] }
-  | { ok: false; error: CompileError } {
-  const m = /^\[(.*)\]\s*$/.exec(raw.trim());
-  if (!m)
-    return fail(
-      sourceFile,
-      line,
-      "interrogationRevealUnknownTarget",
-      `Reveals value must be a [list]. Got: ${raw}`,
-    );
-  const items = (m[1] ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const out: InterrogationRevealTarget[] = [];
-  for (const item of items) {
-    const target = parseInterrogationRevealTarget(item, sourceFile, line);
-    if (!target.ok) return target;
-    out.push(target.value);
-  }
-  return { ok: true, value: out };
-}
-
-function parseInterrogationRevealTarget(
-  raw: string,
-  sourceFile: string,
-  line: number,
-):
-  | { ok: true; value: InterrogationRevealTarget }
-  | { ok: false; error: CompileError } {
-  const m = /^(evidence|statement|question|phase):([a-z0-9_]+)$/.exec(raw);
-  if (!m)
-    return fail(
-      sourceFile,
-      line,
-      "interrogationRevealUnknownTarget",
-      `Unknown interrogation reveal target: ${raw}`,
-    );
-  const kind = m[1] as InterrogationRevealTarget["kind"];
-  const id = m[2] ?? "";
-  return { ok: true, value: { kind, id } };
 }
 
 function parseInventoryTarget(
