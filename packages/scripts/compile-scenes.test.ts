@@ -1264,6 +1264,35 @@ describe("compile (global story catalog)", () => {
 });
 
 describe("compile (tracked production corpus compatibility)", () => {
+  it("keeps the Chapter 1 warning and save-content manifest baseline", () => {
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-live-baseline-"),
+    );
+    try {
+      const repoRoot = resolve(".");
+      const result = compile({
+        sourceRoot: resolve(repoRoot, "docs/stories_plan"),
+        outputRoot: outRoot,
+        assetConfigRoot: resolve(repoRoot, "static/assets/config"),
+        repoRoot,
+      });
+      if (!result.ok) {
+        throw new Error(
+          "Live corpus compile failed:\n" + formatErrors(result.errors),
+        );
+      }
+
+      expect({
+        warnings: result.warnings,
+        manifest: JSON.parse(
+          readFileSync(resolve(outRoot, "save_content_manifest.json"), "utf-8"),
+        ),
+      }).toMatchSnapshot();
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
   it("emits neutral provenance and no source groups without story migration", () => {
     const outRoot = mkdtempSync(
       resolve(tmpdir(), "scene-compile-live-provenance-"),
