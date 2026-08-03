@@ -1,5 +1,10 @@
-import type { ASTStoryCatalog, CompileError, Located } from "./types";
-import type { SceneRecord } from "./validator";
+import type {
+  ASTStoryCatalog,
+  CompileError,
+  Located,
+  StoryRevealTarget,
+} from "./types";
+import { buildStoryRevealTargetBatches, type SceneRecord } from "./validator";
 
 export type AnalysisBoardRef = {
   chapterId: string;
@@ -22,7 +27,7 @@ const ID_RE = /^[a-z0-9_]+$/;
 
 export function validateStoryCatalog(
   catalog: ASTStoryCatalog,
-  _scenes: SceneRecord[],
+  scenes: SceneRecord[],
 ): CompileError[] {
   const errors: CompileError[] = [];
   const facts = indexDefinitions("Fact", catalog.facts, errors);
@@ -52,6 +57,98 @@ export function validateStoryCatalog(
         line: reference.line,
       });
     }
+  }
+
+  for (const batch of buildStoryRevealTargetBatches(scenes)) {
+    errors.push(
+      ...validateStoryRevealTargets({
+        ...batch,
+        catalog,
+      }),
+    );
+  }
+
+  return errors;
+}
+
+export function validateStoryRevealTargets(input: {
+  targets: StoryRevealTarget[];
+  catalog: ASTStoryCatalog;
+  representedAuthority: string | null;
+  location: Located<unknown>;
+}): CompileError[] {
+  const errors: CompileError[] = [];
+  const factsById = new Set(input.catalog.facts.map((fact) => fact.id));
+  const questionsById = new Map(
+    input.catalog.questions.map((question) => [question.id, question]),
+  );
+  const objectivesById = new Map(
+    input.catalog.objectives.map((objective) => [objective.id, objective]),
+  );
+  const authorizationsById = new Map(
+    input.catalog.authorizations.map((authorization) => [
+      authorization.id,
+      authorization,
+    ]),
+  );
+  const seenTargets = new Set<string>();
+  const resolverByQuestion = new Map<string, string>();
+  let primaryTransition: StoryRevealTarget | null = null;
+
+  for (const target of input.targets) {
+    errors.push(
+      ...validateStoryRevealTargetDefinition({
+        target,
+        factsById,
+        questionsById,
+        objectivesById,
+        authorizationsById,
+        representedAuthority: input.representedAuthority,
+        location: input.location,
+        catalog: input.catalog,
+      }),
+    );
+
+    const key = storyRevealTargetKey(target);
+    const duplicate = seenTargets.has(key);
+    if (duplicate) {
+      errors.push(
+        storyRevealTargetError(
+          input.location,
+          "duplicateStoryRevealTarget",
+          `Duplicate story reveal target: ${key}`,
+        ),
+      );
+    }
+
+    if (target.kind === "resolveQuestion") {
+      const previousFactId = resolverByQuestion.get(target.questionId);
+      if (previousFactId !== undefined && previousFactId !== target.factId) {
+        errors.push(
+          storyRevealTargetError(
+            input.location,
+            "conflictingQuestionResolution",
+            `Question ${target.questionId} resolves to both ${previousFactId} and ${target.factId}.`,
+          ),
+        );
+      }
+      resolverByQuestion.set(target.questionId, target.factId);
+    }
+
+    if (target.kind === "setPrimaryObjective") {
+      if (primaryTransition !== null && !duplicate) {
+        errors.push(
+          storyRevealTargetError(
+            input.location,
+            "multiplePrimaryTransitions",
+            "Reveal list contains multiple set_primary_objective targets.",
+          ),
+        );
+      }
+      if (primaryTransition === null) primaryTransition = target;
+    }
+
+    seenTargets.add(key);
   }
 
   return errors;
@@ -115,6 +212,160 @@ export function validateSetPrimaryObjectiveTarget(
       line: location.line,
     },
   ];
+}
+
+function validateStoryRevealTargetDefinition(input: {
+  target: StoryRevealTarget;
+  factsById: Set<string>;
+  questionsById: Map<string, ASTStoryCatalog["questions"][number]>;
+  objectivesById: Map<string, ASTStoryCatalog["objectives"][number]>;
+  authorizationsById: Map<string, ASTStoryCatalog["authorizations"][number]>;
+  representedAuthority: string | null;
+  location: Located<unknown>;
+  catalog: ASTStoryCatalog;
+}): CompileError[] {
+  const { target, location } = input;
+
+  switch (target.kind) {
+    case "assertFact":
+      return input.factsById.has(target.factId)
+        ? []
+        : [storyRevealUnresolved(location, "fact", target.factId)];
+    case "revealQuestion":
+      return input.questionsById.has(target.questionId)
+        ? []
+        : [storyRevealUnresolved(location, "question", target.questionId)];
+    case "resolveQuestion": {
+      const errors: CompileError[] = [];
+      const question = input.questionsById.get(target.questionId);
+      if (!question) {
+        errors.push(
+          storyRevealUnresolved(location, "question", target.questionId),
+        );
+      }
+      if (!input.factsById.has(target.factId)) {
+        errors.push(storyRevealUnresolved(location, "fact", target.factId));
+      } else if (
+        question &&
+        !question.resolvedByFactIds.some(
+          (candidate) => candidate.id === target.factId,
+        )
+      ) {
+        errors.push(
+          storyRevealTargetError(
+            location,
+            "invalidQuestionResolutionTarget",
+            `Fact "${target.factId}" cannot resolve question "${target.questionId}".`,
+          ),
+        );
+      }
+      return errors;
+    }
+    case "revealObjective":
+      return input.objectivesById.has(target.objectiveId)
+        ? []
+        : [storyRevealUnresolved(location, "objective", target.objectiveId)];
+    case "completeObjective": {
+      const objective = input.objectivesById.get(target.objectiveId);
+      if (!objective) {
+        return [
+          storyRevealUnresolved(location, "objective", target.objectiveId),
+        ];
+      }
+      if (objective.kind === "secondary") return [];
+      return [
+        storyRevealTargetError(
+          location,
+          "primaryObjectiveCompletionRequiresSet",
+          `Primary objective "${target.objectiveId}" must be completed through set_primary_objective.`,
+        ),
+      ];
+    }
+    case "setPrimaryObjective":
+      return target.nextObjectiveId === null
+        ? []
+        : validateSetPrimaryObjectiveTarget(
+            input.catalog,
+            target.nextObjectiveId,
+            location,
+          );
+    case "grantAuthorization": {
+      const authorization = input.authorizationsById.get(
+        target.authorizationId,
+      );
+      if (!authorization) {
+        return [
+          storyRevealUnresolved(
+            location,
+            "authorization",
+            target.authorizationId,
+          ),
+        ];
+      }
+      if (input.representedAuthority === null) {
+        return [
+          storyRevealTargetError(
+            location,
+            "authorizationGrantOutsideAuthorityEvent",
+            `Authorization "${target.authorizationId}" can only be granted by an authority event.`,
+          ),
+        ];
+      }
+      if (input.representedAuthority !== authorization.grantingAuthority) {
+        return [
+          storyRevealTargetError(
+            location,
+            "authorizationGrantAuthorityMismatch",
+            `Authorization "${target.authorizationId}" requires authority "${authorization.grantingAuthority}", but this target is represented by "${input.representedAuthority}".`,
+          ),
+        ];
+      }
+      return [];
+    }
+  }
+}
+
+function storyRevealUnresolved(
+  location: Located<unknown>,
+  definitionKind: string,
+  id: string,
+): CompileError {
+  return storyRevealTargetError(
+    location,
+    "storyRevealUnresolved",
+    `Story reveal target references unknown ${definitionKind} "${id}".`,
+  );
+}
+
+function storyRevealTargetError(
+  location: Located<unknown>,
+  code: string,
+  message: string,
+): CompileError {
+  return {
+    code,
+    message,
+    sourceFile: location.sourceFile,
+    line: location.line,
+  };
+}
+
+function storyRevealTargetKey(target: StoryRevealTarget): string {
+  switch (target.kind) {
+    case "assertFact":
+      return `${target.kind}:${target.factId}`;
+    case "revealQuestion":
+      return `${target.kind}:${target.questionId}`;
+    case "resolveQuestion":
+      return `${target.kind}:${target.questionId}@${target.factId}`;
+    case "revealObjective":
+    case "completeObjective":
+      return `${target.kind}:${target.objectiveId}`;
+    case "setPrimaryObjective":
+      return `${target.kind}:${target.nextObjectiveId ?? "null"}:${target.completeCurrent}`;
+    case "grantAuthorization":
+      return `${target.kind}:${target.authorizationId}`;
+  }
 }
 
 function indexDefinitions<T extends LocatedDefinition>(

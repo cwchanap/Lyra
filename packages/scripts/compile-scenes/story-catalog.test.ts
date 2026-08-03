@@ -5,8 +5,9 @@ import {
   validateAnalysisSceneRef,
   validateSetPrimaryObjectiveTarget,
   validateStoryCatalog,
+  validateStoryRevealTargets,
 } from "./story-catalog";
-import type { ASTStoryCatalog, Located } from "./types";
+import type { ASTStoryCatalog, Located, StoryRevealTarget } from "./types";
 
 function catalogWithDuplicate(
   kind: "fact" | "question" | "objective" | "authorization" | "sourceGroup",
@@ -100,6 +101,84 @@ function catalogWithDuplicate(
       break;
   }
 
+  return catalog;
+}
+
+function catalogForStoryRevealTargets(): ASTStoryCatalog {
+  const catalog = emptyStoryCatalog("story_catalog.md");
+  catalog.facts = [
+    {
+      id: "fact_a",
+      label: "Fact A",
+      summary: "First fact.",
+      details: "First fact details.",
+      category: "test",
+      sourceFile: "story_catalog.md",
+      line: 3,
+    },
+    {
+      id: "fact_b",
+      label: "Fact B",
+      summary: "Second fact.",
+      details: "Second fact details.",
+      category: "test",
+      sourceFile: "story_catalog.md",
+      line: 9,
+    },
+  ];
+  catalog.questions = [
+    {
+      id: "question_a",
+      label: "Question A",
+      summary: "Resolve with Fact A.",
+      resolvedByFactIds: [
+        { id: "fact_a", sourceFile: "story_catalog.md", line: 16 },
+      ],
+      sourceFile: "story_catalog.md",
+      line: 13,
+    },
+    {
+      id: "question_b",
+      label: "Question B",
+      summary: "Resolve with either fact.",
+      resolvedByFactIds: [
+        { id: "fact_a", sourceFile: "story_catalog.md", line: 24 },
+        { id: "fact_b", sourceFile: "story_catalog.md", line: 25 },
+      ],
+      sourceFile: "story_catalog.md",
+      line: 21,
+    },
+  ];
+  catalog.objectives = [
+    {
+      id: "primary_a",
+      label: "Primary A",
+      summary: "Primary objective.",
+      kind: "primary",
+      sortOrder: 1,
+      sourceFile: "story_catalog.md",
+      line: 30,
+    },
+    {
+      id: "secondary_a",
+      label: "Secondary A",
+      summary: "Secondary objective.",
+      kind: "secondary",
+      sortOrder: 2,
+      sourceFile: "story_catalog.md",
+      line: 36,
+    },
+  ];
+  catalog.authorizations = [
+    {
+      id: "search_warrant",
+      label: "Search warrant",
+      summary: "A test authorization.",
+      grantingAuthority: "Inspector Kuroda",
+      sourceFile: "story_catalog.md",
+      line: 42,
+    },
+  ];
   return catalog;
 }
 
@@ -300,4 +379,182 @@ describe("primary objective target validation", () => {
       ]);
     },
   );
+});
+
+describe("story reveal target validation", () => {
+  const catalog = catalogForStoryRevealTargets();
+  const location: Located<unknown> = {
+    sourceFile: "story-reveals.md",
+    line: 51,
+  };
+
+  const validateTargets = (
+    targets: StoryRevealTarget[],
+    representedAuthority: string | null = null,
+  ) =>
+    validateStoryRevealTargets({
+      targets,
+      catalog,
+      representedAuthority,
+      location,
+    });
+
+  it("accepts every resolved target with matching synthetic authority", () => {
+    expect(
+      validateTargets(
+        [
+          { kind: "assertFact", factId: "fact_a" },
+          { kind: "revealQuestion", questionId: "question_a" },
+          {
+            kind: "resolveQuestion",
+            questionId: "question_a",
+            factId: "fact_a",
+          },
+          { kind: "revealObjective", objectiveId: "secondary_a" },
+          { kind: "completeObjective", objectiveId: "secondary_a" },
+          {
+            kind: "setPrimaryObjective",
+            nextObjectiveId: "primary_a",
+            completeCurrent: true,
+          },
+          { kind: "grantAuthorization", authorizationId: "search_warrant" },
+        ],
+        "Inspector Kuroda",
+      ),
+    ).toEqual([]);
+  });
+
+  it("reports missing typed story target references at the reveal location", () => {
+    expect(
+      validateTargets([
+        { kind: "assertFact", factId: "missing_fact" },
+        { kind: "revealQuestion", questionId: "missing_question" },
+        {
+          kind: "resolveQuestion",
+          questionId: "question_a",
+          factId: "missing_fact",
+        },
+        { kind: "revealObjective", objectiveId: "missing_objective" },
+        { kind: "completeObjective", objectiveId: "missing_objective" },
+        {
+          kind: "grantAuthorization",
+          authorizationId: "missing_authorization",
+        },
+      ]),
+    ).toEqual(
+      Array.from({ length: 6 }, () =>
+        expect.objectContaining({
+          code: "storyRevealUnresolved",
+          sourceFile: "story-reveals.md",
+          line: 51,
+        }),
+      ),
+    );
+  });
+
+  it("rejects a resolver fact that is not listed for its question", () => {
+    expect(
+      validateTargets([
+        {
+          kind: "resolveQuestion",
+          questionId: "question_a",
+          factId: "fact_b",
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        code: "invalidQuestionResolutionTarget",
+        sourceFile: "story-reveals.md",
+        line: 51,
+      }),
+    ]);
+  });
+
+  it("requires primary objective completion to use set-primary", () => {
+    expect(
+      validateTargets([
+        { kind: "completeObjective", objectiveId: "primary_a" },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        code: "primaryObjectiveCompletionRequiresSet",
+        sourceFile: "story-reveals.md",
+        line: 51,
+      }),
+    ]);
+  });
+
+  it("delegates non-null set-primary targets to the existing helper", () => {
+    expect(
+      validateTargets([
+        {
+          kind: "setPrimaryObjective",
+          nextObjectiveId: "secondary_a",
+          completeCurrent: false,
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        code: "invalidPrimaryObjectiveTarget",
+        sourceFile: "story-reveals.md",
+        line: 51,
+      }),
+    ]);
+  });
+
+  it("requires matching represented authority for authorization grants", () => {
+    const target: StoryRevealTarget = {
+      kind: "grantAuthorization",
+      authorizationId: "search_warrant",
+    };
+
+    expect(validateTargets([target])).toEqual([
+      expect.objectContaining({
+        code: "authorizationGrantOutsideAuthorityEvent",
+        sourceFile: "story-reveals.md",
+        line: 51,
+      }),
+    ]);
+    expect(validateTargets([target], "Deputy Sato")).toEqual([
+      expect.objectContaining({
+        code: "authorizationGrantAuthorityMismatch",
+        sourceFile: "story-reveals.md",
+        line: 51,
+      }),
+    ]);
+    expect(validateTargets([target], "Inspector Kuroda")).toEqual([]);
+  });
+
+  it("defends hand-built batches against duplicate, resolver, and primary conflicts", () => {
+    expect(
+      validateTargets([
+        { kind: "assertFact", factId: "fact_a" },
+        { kind: "assertFact", factId: "fact_a" },
+        {
+          kind: "resolveQuestion",
+          questionId: "question_b",
+          factId: "fact_a",
+        },
+        {
+          kind: "resolveQuestion",
+          questionId: "question_b",
+          factId: "fact_b",
+        },
+        {
+          kind: "setPrimaryObjective",
+          nextObjectiveId: "primary_a",
+          completeCurrent: false,
+        },
+        {
+          kind: "setPrimaryObjective",
+          nextObjectiveId: null,
+          completeCurrent: false,
+        },
+      ]).map((error) => error.code),
+    ).toEqual([
+      "duplicateStoryRevealTarget",
+      "conflictingQuestionResolution",
+      "multiplePrimaryTransitions",
+    ]);
+  });
 });
