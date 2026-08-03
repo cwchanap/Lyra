@@ -163,14 +163,16 @@ export function analyzeReachability(input: {
   }
 
   const mustNodes = mandatoryScenarioNodes(nodes);
-  const mustScenario = solveJointScenario({
-    nodes: mustNodes,
-    selection: new Map(),
-    catalog: input.catalog,
-    producerKeysByAtom,
-  });
-  const mustReachableNodeKeys = new Set(mustScenario.outputsByNodeKey.keys());
-  const mustAtoms = atomsFromScenario(mustScenario, "mustAtoms");
+  const mustScenarios = exclusiveOutcomeSelections(nodes).map((selection) =>
+    solveJointScenario({
+      nodes: mustNodes,
+      selection,
+      catalog: input.catalog,
+      producerKeysByAtom,
+    }),
+  );
+  const mustReachableNodeKeys = intersectScenarioOutputKeys(mustScenarios);
+  const mustAtoms = intersectScenarioAtoms(mustScenarios, "mustAtoms");
   const primaryObjectiveIds = new Set(
     input.catalog.objectives
       .filter((objective) => objective.kind === "primary")
@@ -180,9 +182,9 @@ export function analyzeReachability(input: {
     mustAtoms,
     primaryObjectiveIds,
   );
-  const mustActivePrimary = mustActiveFromScenario(
+  const mustActivePrimary = mustActiveAcrossScenarios(
     mustReachableNodeKeys,
-    mustScenario,
+    mustScenarios,
   );
 
   const errors = [...cycleDiagnostics];
@@ -660,6 +662,7 @@ function stateBeforeNode(input: {
       const state = input.outputsByNodeKey.get(producerKey);
       if (
         producerKey !== input.node.key &&
+        !strictlyDependsOn(producerKey, input.node.key, input.nodesByKey) &&
         state !== undefined &&
         state.mayAtoms.has(atom) &&
         !entryStates.includes(state)
@@ -1215,18 +1218,7 @@ function intersectInto<T>(target: Set<T>, source: ReadonlySet<T>): void {
 function mandatoryScenarioNodes(
   nodes: readonly ReachabilityNode[],
 ): ReachabilityNode[] {
-  const identityCounts = new Map<string, number>();
-  for (const node of nodes) {
-    identityCounts.set(
-      node.oneShotEventId,
-      (identityCounts.get(node.oneShotEventId) ?? 0) + 1,
-    );
-  }
-  return nodes.filter(
-    (node) =>
-      node.requirement === "mandatory" &&
-      (identityCounts.get(node.oneShotEventId) ?? 0) === 1,
-  );
+  return nodes.filter((node) => node.requirement === "mandatory");
 }
 
 function atomsFromScenario(
@@ -1236,6 +1228,31 @@ function atomsFromScenario(
   const atoms = new Set<ReachabilityAtom>();
   for (const state of scenario.outputsByNodeKey.values()) {
     addAll(atoms, state[field]);
+  }
+  return atoms;
+}
+
+function intersectScenarioOutputKeys(
+  scenarios: readonly JointScenario[],
+): Set<string> {
+  if (scenarios.length === 0) return new Set();
+  const keys = new Set(scenarios[0]!.outputsByNodeKey.keys());
+  for (const scenario of scenarios.slice(1)) {
+    for (const key of keys) {
+      if (!scenario.outputsByNodeKey.has(key)) keys.delete(key);
+    }
+  }
+  return keys;
+}
+
+function intersectScenarioAtoms(
+  scenarios: readonly JointScenario[],
+  field: "mayAtoms" | "mustAtoms",
+): Set<ReachabilityAtom> {
+  if (scenarios.length === 0) return new Set();
+  const atoms = atomsFromScenario(scenarios[0]!, field);
+  for (const scenario of scenarios.slice(1)) {
+    intersectInto(atoms, atomsFromScenario(scenario, field));
   }
   return atoms;
 }
@@ -1252,6 +1269,20 @@ function mustActiveFromScenario(
     if (state !== undefined) {
       result = meetMustActive(result, state.mustActivePrimary);
     }
+  }
+  return result;
+}
+
+function mustActiveAcrossScenarios(
+  mustReachableNodeKeys: ReadonlySet<string>,
+  scenarios: readonly JointScenario[],
+): MustActivePrimary {
+  let result: MustActivePrimary = { kind: "uninitialized" };
+  for (const scenario of scenarios) {
+    result = meetMustActive(
+      result,
+      mustActiveFromScenario(mustReachableNodeKeys, scenario),
+    );
   }
   return result;
 }

@@ -1225,6 +1225,91 @@ describe("joint primary fixed point", () => {
 });
 
 describe("Task 9 fixed-point regressions", () => {
+  it("does not use a strict successor as dynamic completion provenance for its consumer", () => {
+    const result = analyzeSynthetic(
+      [
+        primaryTransitionNode("seed", false, "primary_a", {
+          initiallyReachable: true,
+        }),
+        primaryTransitionNode("next", true, "primary_b", {
+          strictPredecessorKeys: ["seed"],
+        }),
+        primaryTransitionNode("consumer", false, "primary_c", {
+          condition: atomExpression("objective_completed:primary_a"),
+        }),
+        primaryTransitionNode("successor", true, null, {
+          strictPredecessorKeys: ["consumer"],
+        }),
+      ],
+      primaryCatalog(),
+    );
+
+    expect(result.warnings).not.toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveOrderingNotExhaustive",
+        nodeKey: "consumer",
+      }),
+    );
+    expect(result.warnings).not.toContainEqual(
+      expect.objectContaining({
+        code: "storyRevealBatchOrderDependent",
+        nodeKey: "consumer",
+      }),
+    );
+    expect(result.mayCompletedPrimaryIds).toEqual(
+      new Set(["primary_a", "primary_c"]),
+    );
+  });
+
+  it("keeps common effects from mandatory shared one-shot alternatives in must state", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("left", {
+        oneShotEventId: "choice",
+        initiallyReachable: true,
+        effects: [addAtom("common")],
+      }),
+      syntheticNode("right", {
+        oneShotEventId: "choice",
+        initiallyReachable: true,
+        effects: [addAtom("common")],
+      }),
+      syntheticNode("consumer", {
+        condition: atomExpression("common"),
+        effects: [addAtom("after-common")],
+      }),
+    ]);
+
+    expect(result.mustReachableNodeKeys).not.toContain("left");
+    expect(result.mustReachableNodeKeys).not.toContain("right");
+    expect(result.mustReachableNodeKeys).toContain("consumer");
+    expect(result.mustAtoms).toContain("common");
+    expect(result.mustAtoms).toContain("after-common");
+  });
+
+  it("does not guarantee a mandatory alternative when an optional sibling can consume the event", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("mandatory", {
+        oneShotEventId: "choice",
+        initiallyReachable: true,
+        effects: [addAtom("common")],
+      }),
+      syntheticNode("optional", {
+        oneShotEventId: "choice",
+        requirement: "optional",
+        initiallyReachable: true,
+      }),
+      syntheticNode("consumer", {
+        condition: atomExpression("common"),
+        effects: [addAtom("after-common")],
+      }),
+    ]);
+
+    expect(result.mayAtoms).toContain("after-common");
+    expect(result.mustReachableNodeKeys).not.toContain("consumer");
+    expect(result.mustAtoms).not.toContain("common");
+    expect(result.mustAtoms).not.toContain("after-common");
+  });
+
   it("does not reintroduce a free-order subject through a strict-after peer summary", () => {
     const result = analyzeSynthetic(
       [
@@ -1810,6 +1895,15 @@ function primaryCatalog(): ASTStoryCatalog {
       sortOrder: 2,
       sourceFile: "story_catalog.md",
       line: 6,
+    },
+    {
+      id: "primary_c",
+      label: "Primary C",
+      summary: "summary",
+      kind: "primary",
+      sortOrder: 3,
+      sourceFile: "story_catalog.md",
+      line: 7,
     },
   ];
   return catalog;
