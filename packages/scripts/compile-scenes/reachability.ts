@@ -1,6 +1,7 @@
 import type { AnalysisDefinitionRegistry } from "./analysis-definition-registry";
 import type {
   ASTChapter,
+  CompileError,
   ASTInquiryQuestion,
   ASTInterrogationScene,
   ASTInvestigationScene,
@@ -57,6 +58,645 @@ export type ReachabilityNode = {
   sourceFile: string;
   line: number;
 };
+
+export type ReachabilityDiagnostic = CompileError & {
+  nodeKey: string;
+  targetIndex: number | null;
+};
+
+export type ReachabilityAnalysis = {
+  producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>;
+  reachableNodeKeys: Set<string>;
+  mustReachableNodeKeys: Set<string>;
+  mayAtoms: Set<ReachabilityAtom>;
+  mustAtoms: Set<ReachabilityAtom>;
+  errors: ReachabilityDiagnostic[];
+  warnings: ReachabilityDiagnostic[];
+};
+
+export function evaluateMay(
+  expression: PositiveExpression<ReachabilityPredicate>,
+  atoms: ReadonlySet<ReachabilityAtom>,
+): boolean {
+  return evaluatePositive(expression, atoms);
+}
+
+export function evaluateMust(
+  expression: PositiveExpression<ReachabilityPredicate>,
+  atoms: ReadonlySet<ReachabilityAtom>,
+): boolean {
+  return evaluatePositive(expression, atoms);
+}
+
+/**
+ * Runs the positive-only architecture checkpoint. Ordered batch validity and
+ * primary-objective transfer deliberately remain Task 9 responsibilities; at
+ * this layer story targets contribute only their potential monotonic atoms.
+ */
+export function analyzeReachability(input: {
+  nodes: ReachabilityNode[];
+  catalog: ASTStoryCatalog;
+}): ReachabilityAnalysis {
+  const nodes = [...input.nodes].sort((left, right) =>
+    left.key.localeCompare(right.key),
+  );
+  const producerKeysByAtom = buildPositiveProducerIndex(nodes);
+  const dependencyEdges = buildPositiveDependencyEdges(
+    nodes,
+    producerKeysByAtom,
+  );
+  const cycleDiagnostics = positiveCycleDiagnostics(nodes, dependencyEdges);
+  const cycleNodeKeys = new Set(
+    stronglyConnectedComponents(nodes, dependencyEdges)
+      .filter(
+        (component) =>
+          component.length > 1 ||
+          (component.length === 1 &&
+            (dependencyEdges.get(component[0]!) ?? []).includes(component[0]!)),
+      )
+      .flat(),
+  );
+  const authorizationDefinitions = new Map(
+    input.catalog.authorizations.map((definition) => [
+      definition.id,
+      definition,
+    ]),
+  );
+
+  const reachableNodeKeys = new Set<string>();
+  const mayAtoms = new Set<ReachabilityAtom>();
+  for (const selection of exclusiveOutcomeSelections(nodes)) {
+    const scenario = solveMayScenario({
+      nodes,
+      selection,
+      authorizationDefinitions,
+    });
+    addAll(reachableNodeKeys, scenario.reachableNodeKeys);
+    addAll(mayAtoms, scenario.atoms);
+  }
+
+  const must = solveMustReachability({ nodes, authorizationDefinitions });
+  const errors = [...cycleDiagnostics];
+  const warnings: ReachabilityDiagnostic[] = [];
+
+  for (const node of nodes) {
+    if (
+      reachableNodeKeys.has(node.key) ||
+      cycleNodeKeys.has(node.key) ||
+      node.legacyCompatibilityMode
+    ) {
+      continue;
+    }
+    if (node.requirement === "optional") {
+      warnings.push(
+        diagnostic(
+          node,
+          "optionalContentUnreachable",
+          `Optional content "${node.key}" is unreachable.`,
+        ),
+      );
+      continue;
+    }
+
+    const authorizationFailure = mandatoryAuthorizationFailure({
+      node,
+      nodes,
+      reachableNodeKeys,
+      authorizationDefinitions,
+    });
+    if (authorizationFailure !== null) {
+      errors.push(authorizationFailure);
+      continue;
+    }
+    errors.push(
+      diagnostic(
+        node,
+        "requiredContentUnreachable",
+        `Required content "${node.key}" is unreachable.`,
+      ),
+    );
+  }
+
+  return {
+    producerKeysByAtom,
+    reachableNodeKeys,
+    mustReachableNodeKeys: must.reachableNodeKeys,
+    mayAtoms,
+    mustAtoms: must.atoms,
+    errors,
+    warnings,
+  };
+}
+
+export function buildPositiveProducerIndex(
+  nodes: readonly ReachabilityNode[],
+): ReadonlyMap<ReachabilityAtom, readonly string[]> {
+  const mutable = new Map<ReachabilityAtom, string[]>();
+  for (const node of [...nodes].sort((left, right) =>
+    left.key.localeCompare(right.key),
+  )) {
+    for (const atom of potentialEffectAtoms(node)) {
+      const producers = mutable.get(atom) ?? [];
+      if (!producers.includes(node.key)) producers.push(node.key);
+      mutable.set(atom, producers);
+    }
+  }
+  return new Map(
+    [...mutable].map(([atom, producerKeys]) => [
+      atom,
+      producerKeys.sort((left, right) => left.localeCompare(right)),
+    ]),
+  );
+}
+
+function evaluatePositive(
+  expression: PositiveExpression<ReachabilityPredicate>,
+  atoms: ReadonlySet<ReachabilityAtom>,
+): boolean {
+  if (!("op" in expression)) return atoms.has(expression.atom);
+  if (expression.op === "at_least") {
+    let satisfied = 0;
+    for (const condition of expression.conditions) {
+      if (evaluatePositive(condition, atoms)) satisfied += 1;
+      if (satisfied >= expression.count) return true;
+    }
+    return false;
+  }
+  if (expression.op === "and") {
+    return (
+      evaluatePositive(expression.left, atoms) &&
+      evaluatePositive(expression.right, atoms)
+    );
+  }
+  return (
+    evaluatePositive(expression.left, atoms) ||
+    evaluatePositive(expression.right, atoms)
+  );
+}
+
+function buildPositiveDependencyEdges(
+  nodes: readonly ReachabilityNode[],
+  producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>,
+): Map<string, string[]> {
+  const edges = new Map(
+    nodes.map((node) => [node.key, [] as string[]] as const),
+  );
+  for (const consumer of nodes) {
+    const prerequisites = uniquePredicates([
+      ...expressionPredicates(consumer.condition),
+      ...consumer.implicitPrerequisites,
+    ]);
+    for (const prerequisite of prerequisites) {
+      for (const producerKey of producerKeysByAtom.get(prerequisite.atom) ??
+        []) {
+        const consumers = edges.get(producerKey);
+        if (consumers === undefined || consumers.includes(consumer.key))
+          continue;
+        consumers.push(consumer.key);
+      }
+    }
+  }
+  for (const consumers of edges.values()) {
+    consumers.sort((left, right) => left.localeCompare(right));
+  }
+  return edges;
+}
+
+function positiveCycleDiagnostics(
+  nodes: readonly ReachabilityNode[],
+  edges: ReadonlyMap<string, readonly string[]>,
+): ReachabilityDiagnostic[] {
+  const nodesByKey = new Map(nodes.map((node) => [node.key, node]));
+  return stronglyConnectedComponents(nodes, edges)
+    .flatMap((component) => {
+      const selfLoop =
+        component.length === 1 &&
+        (edges.get(component[0]!) ?? []).includes(component[0]!);
+      if (component.length === 1 && !selfLoop) return [];
+      const node = nodesByKey.get(component[0]!)!;
+      if (selfLoop) {
+        return [
+          diagnostic(
+            node,
+            "positiveSelfReference",
+            `Positive dependency for "${node.key}" refers to an atom produced by the same node.`,
+          ),
+        ];
+      }
+      const path = stableMinimalCycle(component, edges);
+      return [
+        diagnostic(
+          node,
+          "positiveDependencyCycle",
+          `Positive dependency cycle: ${path.join(" -> ")}.`,
+        ),
+      ];
+    })
+    .sort((left, right) => left.nodeKey.localeCompare(right.nodeKey));
+}
+
+function stronglyConnectedComponents(
+  nodes: readonly ReachabilityNode[],
+  edges: ReadonlyMap<string, readonly string[]>,
+): string[][] {
+  let nextIndex = 0;
+  const indexes = new Map<string, number>();
+  const lowLinks = new Map<string, number>();
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+  const components: string[][] = [];
+
+  const visit = (key: string): void => {
+    indexes.set(key, nextIndex);
+    lowLinks.set(key, nextIndex);
+    nextIndex += 1;
+    stack.push(key);
+    onStack.add(key);
+
+    for (const consumerKey of edges.get(key) ?? []) {
+      if (!indexes.has(consumerKey)) {
+        visit(consumerKey);
+        lowLinks.set(
+          key,
+          Math.min(lowLinks.get(key)!, lowLinks.get(consumerKey)!),
+        );
+      } else if (onStack.has(consumerKey)) {
+        lowLinks.set(
+          key,
+          Math.min(lowLinks.get(key)!, indexes.get(consumerKey)!),
+        );
+      }
+    }
+
+    if (lowLinks.get(key) !== indexes.get(key)) return;
+    const component: string[] = [];
+    while (stack.length > 0) {
+      const member = stack.pop()!;
+      onStack.delete(member);
+      component.push(member);
+      if (member === key) break;
+    }
+    component.sort((left, right) => left.localeCompare(right));
+    components.push(component);
+  };
+
+  for (const node of [...nodes].sort((left, right) =>
+    left.key.localeCompare(right.key),
+  )) {
+    if (!indexes.has(node.key)) visit(node.key);
+  }
+  return components.sort((left, right) => left[0]!.localeCompare(right[0]!));
+}
+
+function stableMinimalCycle(
+  component: readonly string[],
+  edges: ReadonlyMap<string, readonly string[]>,
+): string[] {
+  const start = component[0]!;
+  const members = new Set(component);
+  const queue: string[][] = [[start]];
+  while (queue.length > 0) {
+    const path = queue.shift()!;
+    const tail = path[path.length - 1]!;
+    for (const next of edges.get(tail) ?? []) {
+      if (!members.has(next)) continue;
+      if (next === start && path.length > 1) return [...path, start];
+      if (!path.includes(next)) queue.push([...path, next]);
+    }
+  }
+  return [...component, start];
+}
+
+function exclusiveOutcomeSelections(
+  nodes: readonly ReachabilityNode[],
+): Array<ReadonlyMap<string, string>> {
+  const groups = new Map<string, string[]>();
+  for (const node of nodes) {
+    const members = groups.get(node.oneShotEventId) ?? [];
+    members.push(node.key);
+    groups.set(node.oneShotEventId, members);
+  }
+  const alternatives = [...groups]
+    .filter(([, members]) => members.length > 1)
+    .map(([eventId, members]) => ({
+      eventId,
+      members: members.sort((left, right) => left.localeCompare(right)),
+    }))
+    .sort((left, right) => left.eventId.localeCompare(right.eventId));
+  if (alternatives.length === 0) return [new Map()];
+
+  let selections: Array<Map<string, string>> = [new Map()];
+  for (const alternative of alternatives) {
+    selections = selections.flatMap((selection) =>
+      alternative.members.map((member) => {
+        const next = new Map(selection);
+        next.set(alternative.eventId, member);
+        return next;
+      }),
+    );
+  }
+  return selections;
+}
+
+function solveMayScenario(input: {
+  nodes: readonly ReachabilityNode[];
+  selection: ReadonlyMap<string, string>;
+  authorizationDefinitions: ReadonlyMap<
+    string,
+    ASTStoryCatalog["authorizations"][number]
+  >;
+}): { reachableNodeKeys: Set<string>; atoms: Set<ReachabilityAtom> } {
+  const reachableNodeKeys = new Set<string>();
+  const atoms = new Set<ReachabilityAtom>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const node of input.nodes) {
+      if (reachableNodeKeys.has(node.key)) continue;
+      const selected = input.selection.get(node.oneShotEventId);
+      if (selected !== undefined && selected !== node.key) continue;
+      if (!nodeMayExecute(node, reachableNodeKeys, atoms)) continue;
+      reachableNodeKeys.add(node.key);
+      changed = true;
+      for (const atom of executableEffectAtoms(
+        node,
+        input.authorizationDefinitions,
+      )) {
+        if (atoms.has(atom)) continue;
+        atoms.add(atom);
+        changed = true;
+      }
+    }
+  }
+  return { reachableNodeKeys, atoms };
+}
+
+function solveMustReachability(input: {
+  nodes: readonly ReachabilityNode[];
+  authorizationDefinitions: ReadonlyMap<
+    string,
+    ASTStoryCatalog["authorizations"][number]
+  >;
+}): { reachableNodeKeys: Set<string>; atoms: Set<ReachabilityAtom> } {
+  const identityCounts = new Map<string, number>();
+  for (const node of input.nodes) {
+    identityCounts.set(
+      node.oneShotEventId,
+      (identityCounts.get(node.oneShotEventId) ?? 0) + 1,
+    );
+  }
+  const reachableNodeKeys = new Set<string>();
+  const atoms = new Set<ReachabilityAtom>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const node of input.nodes) {
+      if (
+        node.requirement !== "mandatory" ||
+        reachableNodeKeys.has(node.key) ||
+        (identityCounts.get(node.oneShotEventId) ?? 0) > 1 ||
+        !nodeMustExecute(node, reachableNodeKeys, atoms)
+      ) {
+        continue;
+      }
+      reachableNodeKeys.add(node.key);
+      changed = true;
+      for (const atom of executableEffectAtoms(
+        node,
+        input.authorizationDefinitions,
+      )) {
+        if (atoms.has(atom)) continue;
+        atoms.add(atom);
+        changed = true;
+      }
+    }
+  }
+  return { reachableNodeKeys, atoms };
+}
+
+function nodeMayExecute(
+  node: ReachabilityNode,
+  reachableNodeKeys: ReadonlySet<string>,
+  atoms: ReadonlySet<ReachabilityAtom>,
+): boolean {
+  return nodeCanExecute(node, reachableNodeKeys, atoms, evaluateMay);
+}
+
+function nodeMustExecute(
+  node: ReachabilityNode,
+  reachableNodeKeys: ReadonlySet<string>,
+  atoms: ReadonlySet<ReachabilityAtom>,
+): boolean {
+  return nodeCanExecute(node, reachableNodeKeys, atoms, evaluateMust);
+}
+
+function nodeCanExecute(
+  node: ReachabilityNode,
+  reachableNodeKeys: ReadonlySet<string>,
+  atoms: ReadonlySet<ReachabilityAtom>,
+  evaluate: typeof evaluateMay,
+): boolean {
+  if (node.initiallyReachable && node.strictPredecessorKeys.length === 0) {
+    return true;
+  }
+  if (
+    node.strictPredecessorKeys.some(
+      (predecessorKey) => !reachableNodeKeys.has(predecessorKey),
+    )
+  ) {
+    return false;
+  }
+  if (
+    !node.initiallyReachable &&
+    node.strictPredecessorKeys.length === 0 &&
+    node.condition === null &&
+    node.implicitPrerequisites.length === 0
+  ) {
+    return false;
+  }
+  if (node.condition !== null && !evaluate(node.condition, atoms)) return false;
+  return node.implicitPrerequisites.every((predicate) =>
+    atoms.has(predicate.atom),
+  );
+}
+
+function potentialEffectAtoms(node: ReachabilityNode): ReachabilityAtom[] {
+  return unique(
+    node.effects.flatMap((effect) => {
+      if (effect.kind === "addAtom") return [effect.atom];
+      switch (effect.target.kind) {
+        case "assertFact":
+          return [`fact_asserted:${effect.target.factId}`];
+        case "resolveQuestion":
+          return [`question_resolved:${effect.target.questionId}`];
+        case "revealObjective":
+          return [`objective_revealed:${effect.target.objectiveId}`];
+        case "completeObjective":
+          return [`objective_completed:${effect.target.objectiveId}`];
+        case "setPrimaryObjective":
+          return effect.target.nextObjectiveId === null
+            ? []
+            : [`objective_revealed:${effect.target.nextObjectiveId}`];
+        case "grantAuthorization":
+          return [`authorization_granted:${effect.target.authorizationId}`];
+        case "revealQuestion":
+          return [];
+      }
+    }),
+  );
+}
+
+function executableEffectAtoms(
+  node: ReachabilityNode,
+  authorizationDefinitions: ReadonlyMap<
+    string,
+    ASTStoryCatalog["authorizations"][number]
+  >,
+): ReachabilityAtom[] {
+  return unique(
+    node.effects.flatMap((effect) => {
+      if (effect.kind === "addAtom") return [effect.atom];
+      if (effect.target.kind !== "grantAuthorization") {
+        return potentialStoryEffectAtoms(effect.target);
+      }
+      const definition = authorizationDefinitions.get(
+        effect.target.authorizationId,
+      );
+      return definition !== undefined &&
+        node.representedAuthority === definition.grantingAuthority
+        ? [`authorization_granted:${effect.target.authorizationId}`]
+        : [];
+    }),
+  );
+}
+
+function potentialStoryEffectAtoms(
+  target: StoryRevealTarget,
+): ReachabilityAtom[] {
+  switch (target.kind) {
+    case "assertFact":
+      return [`fact_asserted:${target.factId}`];
+    case "resolveQuestion":
+      return [`question_resolved:${target.questionId}`];
+    case "revealObjective":
+      return [`objective_revealed:${target.objectiveId}`];
+    case "completeObjective":
+      return [`objective_completed:${target.objectiveId}`];
+    case "setPrimaryObjective":
+      return target.nextObjectiveId === null
+        ? []
+        : [`objective_revealed:${target.nextObjectiveId}`];
+    case "grantAuthorization":
+      return [`authorization_granted:${target.authorizationId}`];
+    case "revealQuestion":
+      return [];
+  }
+}
+
+function mandatoryAuthorizationFailure(input: {
+  node: ReachabilityNode;
+  nodes: readonly ReachabilityNode[];
+  reachableNodeKeys: ReadonlySet<string>;
+  authorizationDefinitions: ReadonlyMap<
+    string,
+    ASTStoryCatalog["authorizations"][number]
+  >;
+}): ReachabilityDiagnostic | null {
+  const requiredAuthorizationIds = unique(
+    [
+      ...requiredExpressionPredicates(input.node.condition),
+      ...input.node.implicitPrerequisites,
+    ].flatMap((predicate) => {
+      const prefix = "authorization_granted:";
+      return predicate.atom.startsWith(prefix)
+        ? [predicate.atom.slice(prefix.length)]
+        : [];
+    }),
+  );
+  for (const authorizationId of requiredAuthorizationIds) {
+    const definition = input.authorizationDefinitions.get(authorizationId);
+    if (definition === undefined) {
+      return diagnostic(
+        input.node,
+        "mandatoryAuthorizationUnreachable",
+        `Mandatory authorization "${authorizationId}" has no catalog definition.`,
+      );
+    }
+    const producers = input.nodes.filter((candidate) =>
+      candidate.effects.some(
+        (effect) =>
+          effect.kind === "story" &&
+          effect.target.kind === "grantAuthorization" &&
+          effect.target.authorizationId === authorizationId,
+      ),
+    );
+    if (producers.length === 0) {
+      return diagnostic(
+        input.node,
+        "mandatoryAuthorizationUnreachable",
+        `Mandatory authorization "${authorizationId}" has no authored grant producer.`,
+      );
+    }
+    const matching = producers.filter(
+      (producer) =>
+        producer.representedAuthority === definition.grantingAuthority,
+    );
+    if (matching.length === 0) {
+      return diagnostic(
+        input.node,
+        "mandatoryAuthorizationUnreachable",
+        `Grant producers for mandatory authorization "${authorizationId}" do not match required authority "${definition.grantingAuthority}".`,
+      );
+    }
+    if (
+      matching.every((producer) => !input.reachableNodeKeys.has(producer.key))
+    ) {
+      return diagnostic(
+        input.node,
+        "mandatoryAuthorizationUnreachable",
+        `Mandatory authorization "${authorizationId}" has no reachable matching grant producer.`,
+      );
+    }
+  }
+  return null;
+}
+
+function expressionPredicates(
+  expression: PositiveExpression<ReachabilityPredicate> | null,
+): ReachabilityPredicate[] {
+  if (expression === null) return [];
+  if (!("op" in expression)) return [expression];
+  if (expression.op === "at_least") {
+    return uniquePredicates(
+      expression.conditions.flatMap((condition) =>
+        expressionPredicates(condition),
+      ),
+    );
+  }
+  return uniquePredicates([
+    ...expressionPredicates(expression.left),
+    ...expressionPredicates(expression.right),
+  ]);
+}
+
+function diagnostic(
+  node: ReachabilityNode,
+  code: string,
+  message: string,
+): ReachabilityDiagnostic {
+  return {
+    code,
+    message,
+    sourceFile: node.sourceFile,
+    line: node.line,
+    nodeKey: node.key,
+    targetIndex: null,
+  };
+}
+
+function addAll<T>(target: Set<T>, source: ReadonlySet<T>): void {
+  for (const value of source) target.add(value);
+}
 
 type SceneScope = {
   chapterId: string;
