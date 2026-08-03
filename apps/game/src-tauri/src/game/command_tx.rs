@@ -195,8 +195,8 @@ impl GameEngine {
 mod tests {
     use super::*;
     use crate::game::schema::{
-        EvidenceJson, HotspotJson, InvestigationSceneJson, LockStatus, OutroJson, OutroUnlock,
-        RevealTarget, SceneType, SublocationJson, UnlockExpr,
+        EvidenceJson, HotspotJson, InvestigationRevealTarget, InvestigationSceneJson, LockStatus,
+        OutroJson, OutroUnlock, RevealTarget, SceneType, SublocationJson, UnlockExpr,
     };
     use crate::game::state::{EvidenceRecord, SceneRef, StatementRecord};
     use crate::game::test_support::*;
@@ -970,7 +970,9 @@ mod tests {
                 label: "Room".into(),
                 status: LockStatus::Unlocked,
                 unlock: None,
-                reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                reveals: vec![InvestigationRevealTarget::Local(RevealTarget::Evidence {
+                    id: "note".into(),
+                })],
                 scene_tag: "room".into(),
                 flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 transition_dialogue: vec![],
@@ -1124,7 +1126,9 @@ mod tests {
                     description: "Desk".into(),
                     status: LockStatus::Unlocked,
                     unlock: None,
-                    reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                    reveals: vec![InvestigationRevealTarget::Local(RevealTarget::Evidence {
+                        id: "note".into(),
+                    })],
                     layout: None,
                     inspect_dialogue: vec![],
                     on_reexamine: None,

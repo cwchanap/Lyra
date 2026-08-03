@@ -166,6 +166,35 @@ pub(super) fn catalog_with_case_records_and_source_groups(
     crate::game::story::StoryCatalog::load(dir.path()).unwrap()
 }
 
+/// A compact, typed story catalog fixture for loader tests that exercise
+/// authored story predicates and targets independently of case-record
+/// provenance. The catalog is loaded through the production deserializer so
+/// tests retain the same schema boundary as packaged resources.
+pub(super) fn catalog_with_story_definitions(
+    facts: Vec<serde_json::Value>,
+    questions: Vec<serde_json::Value>,
+    objectives: Vec<serde_json::Value>,
+    authorizations: Vec<serde_json::Value>,
+) -> crate::game::story::StoryCatalog {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("story_catalog.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schemaVersion": 2,
+            "facts": facts,
+            "questions": questions,
+            "objectives": objectives,
+            "authorizations": authorizations,
+            "sourceGroups": [],
+            "evidenceIndex": [],
+            "statementsIndex": [],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    crate::game::story::StoryCatalog::load(dir.path()).unwrap()
+}
+
 pub(crate) fn investigation_scene_with_intro(
     id: &str,
     intro: Vec<DialogueItem>,
@@ -1588,9 +1617,11 @@ pub(super) fn empty_inquiry_interrogation_scene() -> InterrogationSceneJson {
             required: true,
             status: LockStatus::Unlocked,
             unlock: None,
-            reveals: vec![crate::game::schema::InterrogationRevealTarget::Evidence {
-                id: "note".into(),
-            }],
+            reveals: vec![
+                crate::game::schema::CombinedInterrogationRevealTarget::Local(
+                    crate::game::schema::InterrogationRevealTarget::Evidence { id: "note".into() },
+                ),
+            ],
             scene_tag: "interrogation_room".into(),
             flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
             entry_dialogue: vec![DialogueItem::Line {
@@ -1667,9 +1698,11 @@ pub(super) fn locked_inventory_unlocked_interrogation_scene() -> InterrogationSc
                 _predicate: crate::game::schema::PredicateEvidenceCollected::X,
                 id: "key".into(),
             }),
-            reveals: vec![crate::game::schema::InterrogationRevealTarget::Evidence {
-                id: "note".into(),
-            }],
+            reveals: vec![
+                crate::game::schema::CombinedInterrogationRevealTarget::Local(
+                    crate::game::schema::InterrogationRevealTarget::Evidence { id: "note".into() },
+                ),
+            ],
             scene_tag: "interrogation_room".into(),
             flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
             entry_dialogue: vec![DialogueItem::Line {
@@ -1735,9 +1768,13 @@ pub(super) fn source_order_inventory_unlocked_interrogation_scene() -> Interroga
                     _predicate: crate::game::schema::PredicateEvidenceCollected::X,
                     id: "key".into(),
                 }),
-                reveals: vec![crate::game::schema::InterrogationRevealTarget::Evidence {
-                    id: "early_note".into(),
-                }],
+                reveals: vec![
+                    crate::game::schema::CombinedInterrogationRevealTarget::Local(
+                        crate::game::schema::InterrogationRevealTarget::Evidence {
+                            id: "early_note".into(),
+                        },
+                    ),
+                ],
                 scene_tag: "early_room".into(),
                 flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![DialogueItem::Line {
@@ -1763,9 +1800,13 @@ pub(super) fn source_order_inventory_unlocked_interrogation_scene() -> Interroga
                 required: true,
                 status: LockStatus::Unlocked,
                 unlock: None,
-                reveals: vec![crate::game::schema::InterrogationRevealTarget::Evidence {
-                    id: "late_note".into(),
-                }],
+                reveals: vec![
+                    crate::game::schema::CombinedInterrogationRevealTarget::Local(
+                        crate::game::schema::InterrogationRevealTarget::Evidence {
+                            id: "late_note".into(),
+                        },
+                    ),
+                ],
                 scene_tag: "late_room".into(),
                 flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 entry_dialogue: vec![DialogueItem::Line {

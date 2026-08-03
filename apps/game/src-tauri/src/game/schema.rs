@@ -147,6 +147,46 @@ pub enum RevealTarget {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum StoryRevealTarget {
+    AssertFact {
+        fact_id: String,
+    },
+    RevealQuestion {
+        question_id: String,
+    },
+    ResolveQuestion {
+        question_id: String,
+        fact_id: String,
+    },
+    RevealObjective {
+        objective_id: String,
+    },
+    CompleteObjective {
+        objective_id: String,
+    },
+    SetPrimaryObjective {
+        complete_current: bool,
+        next_objective_id: Option<String>,
+    },
+    GrantAuthorization {
+        authorization_id: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum InvestigationRevealTarget {
+    Local(RevealTarget),
+    Story(StoryRevealTarget),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum InventoryTarget {
     Evidence { id: String },
@@ -188,6 +228,13 @@ pub enum InterrogationRevealTarget {
     Phase { id: String },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CombinedInterrogationRevealTarget {
+    Local(InterrogationRevealTarget),
+    Story(StoryRevealTarget),
+}
+
 /// `unlock` JSON values are either the literal string "auto" (Outro auto-mode)
 /// or a tagged tree of predicates and combinators. We represent that as an
 /// untagged enum.
@@ -216,6 +263,12 @@ pub enum AutoMarker {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged, rename_all_fields = "camelCase")]
 pub enum UnlockExpr {
+    AtLeast {
+        #[serde(rename = "op")]
+        _op: AtLeastOperator,
+        count: usize,
+        conditions: Vec<UnlockExpr>,
+    },
     Combinator {
         op: Combinator,
         left: Box<UnlockExpr>,
@@ -242,11 +295,50 @@ pub enum UnlockExpr {
         _predicate: PredicateHotspotInvestigated,
         id: String,
     },
+    FactAsserted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateFactAsserted,
+        id: String,
+    },
+    QuestionResolved {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateQuestionResolved,
+        id: String,
+    },
+    ObjectiveCompleted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateObjectiveCompleted,
+        id: String,
+    },
+    AuthorizationGranted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateAuthorizationGranted,
+        id: String,
+    },
+    AnalysisSceneCompleted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateAnalysisSceneCompleted,
+        chapter_id: String,
+        scene_id: String,
+    },
+    AnalysisBoardCompleted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateAnalysisBoardCompleted,
+        chapter_id: String,
+        scene_id: String,
+        board_id: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged, rename_all_fields = "camelCase")]
 pub enum InterrogationUnlockExpr {
+    AtLeast {
+        #[serde(rename = "op")]
+        _op: AtLeastOperator,
+        count: usize,
+        conditions: Vec<InterrogationUnlockExpr>,
+    },
     Combinator {
         op: Combinator,
         left: Box<InterrogationUnlockExpr>,
@@ -272,6 +364,39 @@ pub enum InterrogationUnlockExpr {
         _predicate: PredicatePhaseCompleted,
         id: String,
     },
+    FactAsserted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateFactAsserted,
+        id: String,
+    },
+    QuestionResolved {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateQuestionResolved,
+        id: String,
+    },
+    ObjectiveCompleted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateObjectiveCompleted,
+        id: String,
+    },
+    AuthorizationGranted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateAuthorizationGranted,
+        id: String,
+    },
+    AnalysisSceneCompleted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateAnalysisSceneCompleted,
+        chapter_id: String,
+        scene_id: String,
+    },
+    AnalysisBoardCompleted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateAnalysisBoardCompleted,
+        chapter_id: String,
+        scene_id: String,
+        board_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -279,6 +404,12 @@ pub enum InterrogationUnlockExpr {
 pub enum Combinator {
     And,
     Or,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AtLeastOperator {
+    #[serde(rename = "at_least")]
+    AtLeast,
 }
 
 // Marker enums for each predicate kind, so serde's untagged dispatch picks the
@@ -311,6 +442,36 @@ pub enum PredicateQuestionAnswered {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PredicatePhaseCompleted {
     #[serde(rename = "phase_completed")]
+    X,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PredicateFactAsserted {
+    #[serde(rename = "fact_asserted")]
+    X,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PredicateQuestionResolved {
+    #[serde(rename = "question_resolved")]
+    X,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PredicateObjectiveCompleted {
+    #[serde(rename = "objective_completed")]
+    X,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PredicateAuthorizationGranted {
+    #[serde(rename = "authorization_granted")]
+    X,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PredicateAnalysisSceneCompleted {
+    #[serde(rename = "analysis_scene_completed")]
+    X,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PredicateAnalysisBoardCompleted {
+    #[serde(rename = "analysis_board_completed")]
     X,
 }
 
@@ -426,7 +587,7 @@ pub enum InterrogationPhaseJson {
         required: bool,
         status: LockStatus,
         unlock: Option<InterrogationUnlockExpr>,
-        reveals: Vec<InterrogationRevealTarget>,
+        reveals: Vec<CombinedInterrogationRevealTarget>,
         scene_tag: String,
         #[serde(flatten)]
         flattened_asset_cue: VisualAssetCueJson,
@@ -453,7 +614,7 @@ pub struct InquiryQuestionJson {
     pub status: LockStatus,
     pub required: bool,
     pub unlock: Option<InterrogationUnlockExpr>,
-    pub reveals: Vec<InterrogationRevealTarget>,
+    pub reveals: Vec<CombinedInterrogationRevealTarget>,
     pub testimony: TestimonyJson,
 }
 
@@ -486,7 +647,7 @@ pub struct TestimonyLineJson {
     #[serde(default)]
     pub on_wrong_evidence: Vec<DialogueItem>,
     #[serde(default)]
-    pub reveals: Vec<InterrogationRevealTarget>,
+    pub reveals: Vec<CombinedInterrogationRevealTarget>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -496,7 +657,7 @@ pub struct SublocationJson {
     pub label: String,
     pub status: LockStatus,
     pub unlock: Option<UnlockExpr>,
-    pub reveals: Vec<RevealTarget>,
+    pub reveals: Vec<InvestigationRevealTarget>,
     pub scene_tag: String,
     #[serde(flatten)]
     pub flattened_asset_cue: VisualAssetCueJson,
@@ -529,7 +690,7 @@ pub struct HotspotJson {
     pub description: String,
     pub status: LockStatus,
     pub unlock: Option<UnlockExpr>,
-    pub reveals: Vec<RevealTarget>,
+    pub reveals: Vec<InvestigationRevealTarget>,
     #[serde(default)]
     pub layout: Option<HotspotLayoutJson>,
     pub inspect_dialogue: Vec<DialogueItem>,
@@ -555,7 +716,7 @@ pub struct TopicJson {
     pub label: String,
     pub status: LockStatus,
     pub unlock: Option<UnlockExpr>,
-    pub reveals: Vec<RevealTarget>,
+    pub reveals: Vec<InvestigationRevealTarget>,
     pub topic_dialogue: Vec<DialogueItem>,
     pub on_reexamine: Option<Vec<DialogueItem>>,
 }
@@ -712,6 +873,7 @@ fn append_record_dialogue_groups<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use std::collections::BTreeSet;
 
     #[test]
@@ -897,6 +1059,190 @@ mod tests {
             UnlockExpr::Combinator { op, .. } => assert_eq!(op, Combinator::And),
             _ => panic!("expected Combinator"),
         }
+    }
+
+    // Break caught: an emitted HPA-257 expression can contain a nested
+    // threshold plus every cross-scene predicate, but the old Rust wire types
+    // only accept the legacy local binary tree.
+    #[test]
+    fn deserializes_story_predicates_and_nested_thresholds_for_both_scene_families() {
+        let expression = json!({
+            "op": "at_least",
+            "count": 2,
+            "conditions": [
+                { "predicate": "fact_asserted", "id": "fact_a" },
+                {
+                    "op": "and",
+                    "left": { "predicate": "question_resolved", "id": "question_a" },
+                    "right": {
+                        "op": "at_least",
+                        "count": 1,
+                        "conditions": [
+                            { "predicate": "objective_completed", "id": "objective_a" },
+                            { "predicate": "authorization_granted", "id": "authorization_a" }
+                        ]
+                    }
+                },
+                {
+                    "op": "or",
+                    "left": {
+                        "predicate": "analysis_scene_completed",
+                        "chapterId": "chapter_1",
+                        "sceneId": "analysis_scene_1"
+                    },
+                    "right": {
+                        "predicate": "analysis_board_completed",
+                        "chapterId": "chapter_1",
+                        "sceneId": "analysis_scene_1",
+                        "boardId": "board_1"
+                    }
+                }
+            ]
+        });
+
+        let investigation: UnlockExpr = serde_json::from_value(expression.clone()).unwrap();
+        let interrogation: InterrogationUnlockExpr =
+            serde_json::from_value(expression.clone()).unwrap();
+
+        assert_eq!(serde_json::to_value(investigation).unwrap(), expression);
+        assert_eq!(serde_json::to_value(interrogation).unwrap(), expression);
+    }
+
+    // Break caught: story effects emitted into either investigation or
+    // interrogation reveal arrays are rejected before Rust can preserve their
+    // exact wire order, including the reserved null primary transition.
+    #[test]
+    fn deserializes_every_story_target_and_preserves_null_primary_transition() {
+        let targets = json!([
+            { "kind": "assertFact", "factId": "fact_a" },
+            { "kind": "revealQuestion", "questionId": "question_a" },
+            { "kind": "resolveQuestion", "questionId": "question_a", "factId": "fact_a" },
+            { "kind": "revealObjective", "objectiveId": "objective_secondary" },
+            { "kind": "completeObjective", "objectiveId": "objective_secondary" },
+            {
+                "kind": "setPrimaryObjective",
+                "completeCurrent": true,
+                "nextObjectiveId": null
+            },
+            { "kind": "grantAuthorization", "authorizationId": "authorization_a" }
+        ]);
+        let investigation = serde_json::from_value::<SceneJson>(json!({
+            "type": "investigation",
+            "id": "investigation_scene_1",
+            "title": "Investigation",
+            "summary": "Fixture scene summary.",
+            "intro": [],
+            "sublocations": [{
+                "id": "room",
+                "label": "Room",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": targets.clone(),
+                "sceneTag": "Room",
+                "transitionDialogue": [],
+                "hotspots": [],
+                "characters": []
+            }],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": "auto", "dialogue": [] }
+        }))
+        .unwrap();
+        let interrogation = serde_json::from_value::<SceneJson>(json!({
+            "type": "interrogation",
+            "id": "interrogation_scene_1",
+            "title": "Interrogation",
+            "summary": "Fixture scene summary.",
+            "intro": [],
+            "phases": [{
+                "kind": "inquiry",
+                "id": "phase_1",
+                "label": "Phase",
+                "subject": { "id": "suspect", "name": "Suspect", "role": "Suspect", "bio": "Bio" },
+                "required": true,
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": targets.clone(),
+                "sceneTag": "Room",
+                "entryDialogue": [],
+                "complete": "auto",
+                "questions": []
+            }],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": "auto", "dialogue": [] }
+        }))
+        .unwrap();
+
+        let SceneJson::Investigation(investigation) = investigation else {
+            panic!("expected investigation scene")
+        };
+        let SceneJson::Interrogation(interrogation) = interrogation else {
+            panic!("expected interrogation scene")
+        };
+        let InterrogationPhaseJson::Inquiry { reveals, .. } = &interrogation.phases[0];
+
+        assert_eq!(
+            serde_json::to_value(&investigation.sublocations[0].reveals).unwrap(),
+            targets
+        );
+        assert_eq!(serde_json::to_value(reveals).unwrap(), targets);
+    }
+
+    #[test]
+    fn rejects_non_integral_or_missing_threshold_counts() {
+        for malformed in [
+            json!({
+                "op": "at_least",
+                "count": "2",
+                "conditions": [{ "predicate": "evidence_collected", "id": "note" }]
+            }),
+            json!({
+                "op": "at_least",
+                "count": 1.5,
+                "conditions": [{ "predicate": "evidence_collected", "id": "note" }]
+            }),
+            json!({
+                "op": "at_least",
+                "conditions": [{ "predicate": "evidence_collected", "id": "note" }]
+            }),
+        ] {
+            assert!(serde_json::from_value::<UnlockExpr>(malformed.clone()).is_err());
+            assert!(serde_json::from_value::<InterrogationUnlockExpr>(malformed).is_err());
+        }
+    }
+
+    #[test]
+    fn legacy_unlock_and_local_reveal_shapes_round_trip_exactly() {
+        let unlock = json!({
+            "op": "and",
+            "left": { "predicate": "hotspot_investigated", "id": "desk" },
+            "right": { "predicate": "statement_acquired", "id": "alibi" }
+        });
+        let investigation_reveals = json!([
+            { "kind": "evidence", "id": "receipt" },
+            { "kind": "topic", "characterId": "witness", "topicId": "motive" }
+        ]);
+        let interrogation_reveals = json!([
+            { "kind": "statement", "id": "denial" },
+            { "kind": "question", "id": "whereabouts" }
+        ]);
+
+        let parsed_unlock: UnlockExpr = serde_json::from_value(unlock.clone()).unwrap();
+        let parsed_investigation: Vec<RevealTarget> =
+            serde_json::from_value(investigation_reveals.clone()).unwrap();
+        let parsed_interrogation: Vec<InterrogationRevealTarget> =
+            serde_json::from_value(interrogation_reveals.clone()).unwrap();
+
+        assert_eq!(serde_json::to_value(parsed_unlock).unwrap(), unlock);
+        assert_eq!(
+            serde_json::to_value(parsed_investigation).unwrap(),
+            investigation_reveals
+        );
+        assert_eq!(
+            serde_json::to_value(parsed_interrogation).unwrap(),
+            interrogation_reveals
+        );
     }
 
     #[test]

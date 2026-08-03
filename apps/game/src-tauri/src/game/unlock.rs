@@ -22,6 +22,16 @@ pub fn evaluate(expr: &UnlockExpr, ctx: &dyn UnlockContext) -> bool {
             ..
         } => ctx.topic_discussed(character_id, topic_id),
         UnlockExpr::HotspotInvestigated { id, .. } => ctx.hotspot_investigated(id),
+        // Task 11 makes the expanded HPA-257 wire shape loadable. Task 12 is
+        // the sole owner of StoryUnlockContext and threshold evaluation, so
+        // every new expression fails closed until that context exists.
+        UnlockExpr::AtLeast { .. }
+        | UnlockExpr::FactAsserted { .. }
+        | UnlockExpr::QuestionResolved { .. }
+        | UnlockExpr::ObjectiveCompleted { .. }
+        | UnlockExpr::AuthorizationGranted { .. }
+        | UnlockExpr::AnalysisSceneCompleted { .. }
+        | UnlockExpr::AnalysisBoardCompleted { .. } => false,
     }
 }
 
@@ -49,6 +59,15 @@ pub fn evaluate_interrogation(
         InterrogationUnlockExpr::StatementAcquired { id, .. } => ctx.statement_acquired(id),
         InterrogationUnlockExpr::QuestionAnswered { id, .. } => ctx.question_answered(id),
         InterrogationUnlockExpr::PhaseCompleted { id, .. } => ctx.phase_completed(id),
+        // See the investigation evaluator above: no new expression can gain
+        // availability through the legacy local-only context before Task 12.
+        InterrogationUnlockExpr::AtLeast { .. }
+        | InterrogationUnlockExpr::FactAsserted { .. }
+        | InterrogationUnlockExpr::QuestionResolved { .. }
+        | InterrogationUnlockExpr::ObjectiveCompleted { .. }
+        | InterrogationUnlockExpr::AuthorizationGranted { .. }
+        | InterrogationUnlockExpr::AnalysisSceneCompleted { .. }
+        | InterrogationUnlockExpr::AnalysisBoardCompleted { .. } => false,
     }
 }
 
@@ -56,8 +75,10 @@ pub fn evaluate_interrogation(
 mod tests {
     use super::*;
     use crate::game::schema::{
-        PredicateEvidenceCollected, PredicateHotspotInvestigated, PredicatePhaseCompleted,
-        PredicateQuestionAnswered, PredicateStatementAcquired,
+        AtLeastOperator, PredicateAnalysisBoardCompleted, PredicateAnalysisSceneCompleted,
+        PredicateAuthorizationGranted, PredicateEvidenceCollected, PredicateFactAsserted,
+        PredicateHotspotInvestigated, PredicateObjectiveCompleted, PredicatePhaseCompleted,
+        PredicateQuestionAnswered, PredicateQuestionResolved, PredicateStatementAcquired,
     };
 
     struct TestState {
@@ -217,6 +238,94 @@ mod tests {
                 hotspots: vec![]
             }
         ));
+    }
+
+    // Break caught: until Task 12 introduces a StoryUnlockContext and real
+    // threshold semantics, newly-deserializable HPA-257 expressions must not
+    // accidentally unlock content through the legacy local evaluator.
+    #[test]
+    fn hpa_257_expression_variants_fail_closed_until_task_12() {
+        let local_ctx = TestState {
+            evidence: vec!["note".into()],
+            hotspots: vec![],
+        };
+        let interrogation_ctx = interrogation_ctx(&["note"], &[], &[], &[]);
+
+        let investigation_expressions = [
+            UnlockExpr::AtLeast {
+                _op: AtLeastOperator::AtLeast,
+                count: 1,
+                conditions: vec![evidence("note")],
+            },
+            UnlockExpr::FactAsserted {
+                _predicate: PredicateFactAsserted::X,
+                id: "fact_a".into(),
+            },
+            UnlockExpr::QuestionResolved {
+                _predicate: PredicateQuestionResolved::X,
+                id: "question_a".into(),
+            },
+            UnlockExpr::ObjectiveCompleted {
+                _predicate: PredicateObjectiveCompleted::X,
+                id: "objective_a".into(),
+            },
+            UnlockExpr::AuthorizationGranted {
+                _predicate: PredicateAuthorizationGranted::X,
+                id: "authorization_a".into(),
+            },
+            UnlockExpr::AnalysisSceneCompleted {
+                _predicate: PredicateAnalysisSceneCompleted::X,
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+            },
+            UnlockExpr::AnalysisBoardCompleted {
+                _predicate: PredicateAnalysisBoardCompleted::X,
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+                board_id: "board_1".into(),
+            },
+        ];
+        let interrogation_expressions = [
+            InterrogationUnlockExpr::AtLeast {
+                _op: AtLeastOperator::AtLeast,
+                count: 1,
+                conditions: vec![interrogation_evidence("note")],
+            },
+            InterrogationUnlockExpr::FactAsserted {
+                _predicate: PredicateFactAsserted::X,
+                id: "fact_a".into(),
+            },
+            InterrogationUnlockExpr::QuestionResolved {
+                _predicate: PredicateQuestionResolved::X,
+                id: "question_a".into(),
+            },
+            InterrogationUnlockExpr::ObjectiveCompleted {
+                _predicate: PredicateObjectiveCompleted::X,
+                id: "objective_a".into(),
+            },
+            InterrogationUnlockExpr::AuthorizationGranted {
+                _predicate: PredicateAuthorizationGranted::X,
+                id: "authorization_a".into(),
+            },
+            InterrogationUnlockExpr::AnalysisSceneCompleted {
+                _predicate: PredicateAnalysisSceneCompleted::X,
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+            },
+            InterrogationUnlockExpr::AnalysisBoardCompleted {
+                _predicate: PredicateAnalysisBoardCompleted::X,
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+                board_id: "board_1".into(),
+            },
+        ];
+
+        assert!(investigation_expressions
+            .iter()
+            .all(|expr| !evaluate(expr, &local_ctx)));
+        assert!(interrogation_expressions
+            .iter()
+            .all(|expr| !evaluate_interrogation(expr, &interrogation_ctx)));
     }
 
     #[test]
