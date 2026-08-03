@@ -2168,11 +2168,10 @@ function addEffectAndRevealPredecessors(nodes: NodeDraft[]): void {
         node.key,
       );
     }
-    for (const effect of node.effects) {
-      if (effect.kind !== "addAtom") continue;
-      const producers = producersByAtom.get(effect.atom) ?? [];
+    for (const atom of potentialEffectAtoms(node)) {
+      const producers = producersByAtom.get(atom) ?? [];
       producers.push(node.key);
-      producersByAtom.set(effect.atom, unique(producers));
+      producersByAtom.set(atom, unique(producers));
     }
   }
 

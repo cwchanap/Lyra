@@ -39,7 +39,10 @@ import {
   parseInvestigationLayoutJson,
 } from "./layout";
 import { validate, type SceneRecord } from "./validator";
-import { validateStoryCatalog } from "./story-catalog";
+import {
+  validateStoryCatalog,
+  validateStoryPredicateReferences,
+} from "./story-catalog";
 import {
   createAnalysisDefinitionRegistry,
   type AnalysisDefinitionRegistry,
@@ -399,7 +402,16 @@ export function compile(opts: CompileOptions): CompileResult {
     failedParseFiles,
   });
   const storyCatalogErrors = validateStoryCatalog(storyCatalog, scenes);
-  errors.push(...validationErrors, ...storyCatalogErrors);
+  const storyPredicateReferenceErrors = validateStoryPredicateReferences({
+    catalog: storyCatalog,
+    scenes,
+    analysisRegistry,
+  });
+  errors.push(
+    ...validationErrors,
+    ...storyCatalogErrors,
+    ...storyPredicateReferenceErrors,
+  );
   // The abstract-effect simulation relies on the normal validator/catalog
   // boundary having resolved every modeled target. Do not attempt it over a
   // partial or semantically invalid corpus.

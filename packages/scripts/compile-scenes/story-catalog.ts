@@ -2,9 +2,15 @@ import type {
   ASTStoryCatalog,
   CompileError,
   Located,
+  StoryPredicate,
   StoryRevealTarget,
 } from "./types";
-import { buildStoryRevealTargetBatches, type SceneRecord } from "./validator";
+import type { AnalysisDefinitionRegistry } from "./analysis-definition-registry";
+import {
+  buildStoryPredicateReferences,
+  buildStoryRevealTargetBatches,
+  type SceneRecord,
+} from "./validator";
 
 export type AnalysisBoardRef = {
   chapterId: string;
@@ -152,6 +158,127 @@ export function validateStoryRevealTargets(input: {
   }
 
   return errors;
+}
+
+export function validateStoryPredicateReferences(input: {
+  catalog: ASTStoryCatalog;
+  scenes: SceneRecord[];
+  analysisRegistry: AnalysisDefinitionRegistry;
+}): CompileError[] {
+  const facts = new Set(input.catalog.facts.map((definition) => definition.id));
+  const questions = new Set(
+    input.catalog.questions.map((definition) => definition.id),
+  );
+  const objectives = new Set(
+    input.catalog.objectives.map((definition) => definition.id),
+  );
+  const authorizations = new Set(
+    input.catalog.authorizations.map((definition) => definition.id),
+  );
+
+  return buildStoryPredicateReferences(input.scenes).flatMap(
+    ({ predicate, location }) =>
+      validateStoryPredicateReference({
+        predicate,
+        location,
+        facts,
+        questions,
+        objectives,
+        authorizations,
+        analysisRegistry: input.analysisRegistry,
+      }),
+  );
+}
+
+function validateStoryPredicateReference(input: {
+  predicate: StoryPredicate;
+  location: Located<unknown>;
+  facts: ReadonlySet<string>;
+  questions: ReadonlySet<string>;
+  objectives: ReadonlySet<string>;
+  authorizations: ReadonlySet<string>;
+  analysisRegistry: AnalysisDefinitionRegistry;
+}): CompileError[] {
+  const { predicate, location } = input;
+  switch (predicate.predicate) {
+    case "fact_asserted":
+      return input.facts.has(predicate.id)
+        ? []
+        : [unresolvedStoryPredicate(location, "fact", predicate.id)];
+    case "question_resolved":
+      return input.questions.has(predicate.id)
+        ? []
+        : [unresolvedStoryPredicate(location, "question", predicate.id)];
+    case "objective_completed":
+      return input.objectives.has(predicate.id)
+        ? []
+        : [unresolvedStoryPredicate(location, "objective", predicate.id)];
+    case "authorization_granted":
+      return input.authorizations.has(predicate.id)
+        ? []
+        : [unresolvedStoryPredicate(location, "authorization", predicate.id)];
+    case "analysis_scene_completed": {
+      const ref: AnalysisSceneRef = {
+        chapterId: predicate.chapterId,
+        sceneId: predicate.sceneId,
+      };
+      const shapeErrors = validateAnalysisSceneRef(ref, location);
+      if (shapeErrors.length > 0) return shapeErrors;
+      return input.analysisRegistry.hasScene(ref)
+        ? []
+        : [
+            unresolvedAnalysisPredicate(
+              location,
+              "scene",
+              `${ref.chapterId}@${ref.sceneId}`,
+            ),
+          ];
+    }
+    case "analysis_board_completed": {
+      const ref: AnalysisBoardRef = {
+        chapterId: predicate.chapterId,
+        sceneId: predicate.sceneId,
+        boardId: predicate.boardId,
+      };
+      const shapeErrors = validateAnalysisBoardRef(ref, location);
+      if (shapeErrors.length > 0) return shapeErrors;
+      return input.analysisRegistry.hasBoard(ref)
+        ? []
+        : [
+            unresolvedAnalysisPredicate(
+              location,
+              "board",
+              `${ref.chapterId}@${ref.sceneId}@${ref.boardId}`,
+            ),
+          ];
+    }
+  }
+}
+
+function unresolvedStoryPredicate(
+  location: Located<unknown>,
+  definitionKind: string,
+  id: string,
+): CompileError {
+  return {
+    code: "unresolvedStoryPredicate",
+    message: `Story predicate references unknown ${definitionKind} "${id}".`,
+    sourceFile: location.sourceFile,
+    line: location.line,
+  };
+}
+
+function unresolvedAnalysisPredicate(
+  location: Located<unknown>,
+  definitionKind: "scene" | "board",
+  qualifiedId: string,
+): CompileError {
+  return {
+    code: "unresolvedAnalysisPredicate",
+    message: `Analysis ${definitionKind} predicate references unregistered definition "${qualifiedId}".`,
+    sourceFile: location.sourceFile,
+    line: location.line,
+  };
 }
 
 export function validateAnalysisBoardRef(

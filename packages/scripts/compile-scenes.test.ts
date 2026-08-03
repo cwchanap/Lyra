@@ -346,22 +346,32 @@ describe("compile (end-to-end against valid fixture)", () => {
     }
   });
 
-  it("accepts an injected synthetic analysis registry", () => {
+  it("accepts qualified analysis predicates only with an injected synthetic registry", () => {
     const outRoot = mkdtempSync(
       resolve(tmpdir(), "scene-compile-hpa-257-registry-"),
     );
     try {
       const result = compile({
-        sourceRoot: "packages/scripts/__fixtures__/hpa_257_valid",
+        sourceRoot:
+          "packages/scripts/__fixtures__/invalid/hpa_257_absent_analysis_registration",
         outputRoot: outRoot,
         analysisRegistry: createAnalysisDefinitionRegistry({
           scenes: [{ chapterId: "chapter_9", sceneId: "analysis_scene_1" }],
-          boards: [],
+          boards: [
+            {
+              chapterId: "chapter_9",
+              sceneId: "analysis_scene_1",
+              boardId: "board_1",
+            },
+          ],
         }),
       });
       if (!result.ok) {
         throw new Error("Compile failed:\n" + formatErrors(result.errors));
       }
+      expect(hpa257DiagnosticCodes(result.warnings)).toEqual([
+        "optionalContentUnreachable",
+      ]);
     } finally {
       rmSync(outRoot, { recursive: true, force: true });
     }
@@ -595,6 +605,62 @@ describe("HPA-257 compiler diagnostics", () => {
       expect(hpa257DiagnosticCodes(result.errors)).toEqual([]);
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects every unknown typed story predicate before reachability", () => {
+    const sourceRoot = resolve(
+      "packages/scripts/__fixtures__/invalid/hpa_257_unknown_story_predicates",
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-hpa-257-unknown-predicates-"),
+    );
+    try {
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+
+      const referenceErrors = result.errors.filter(
+        (error) => error.code === "unresolvedStoryPredicate",
+      );
+      expect(referenceErrors).toHaveLength(4);
+      expect(referenceErrors.map((error) => error.message)).toEqual([
+        expect.stringContaining('unknown fact "missing_fact"'),
+        expect.stringContaining('unknown question "missing_question"'),
+        expect.stringContaining('unknown objective "missing_objective"'),
+        expect.stringContaining(
+          'unknown authorization "missing_authorization"',
+        ),
+      ]);
+      expect(hpa257DiagnosticCodes(result.errors)).toEqual([]);
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unregistered qualified analysis predicates before reachability", () => {
+    const sourceRoot = resolve(
+      "packages/scripts/__fixtures__/invalid/hpa_257_absent_analysis_registration",
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-hpa-257-missing-analysis-"),
+    );
+    try {
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+
+      expect(
+        result.errors
+          .filter((error) => error.code === "unresolvedAnalysisPredicate")
+          .map((error) => error.message),
+      ).toEqual([
+        expect.stringContaining("chapter_9@analysis_scene_1"),
+        expect.stringContaining("chapter_9@analysis_scene_1@board_1"),
+      ]);
+      expect(hpa257DiagnosticCodes(result.errors)).toEqual([]);
+    } finally {
       rmSync(outRoot, { recursive: true, force: true });
     }
   });

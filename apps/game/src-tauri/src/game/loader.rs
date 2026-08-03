@@ -8,7 +8,7 @@ use crate::game::schema::{
     RevealTarget, SceneJson, StoryRevealTarget, UnlockExpr,
 };
 use crate::game::story::{ObjectiveKind, StoryCatalog};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -554,12 +554,17 @@ fn validate_story_investigation_reveals(
     catalog: &StoryCatalog,
     file_rel: &str,
 ) -> Result<(), GameError> {
-    for reveal in reveals {
-        if let InvestigationRevealTarget::Story(target) = reveal {
-            validate_story_reveal_target(target, catalog, file_rel)?;
-        }
+    let targets = reveals
+        .iter()
+        .filter_map(|reveal| match reveal {
+            InvestigationRevealTarget::Story(target) => Some(target),
+            InvestigationRevealTarget::Local(_) => None,
+        })
+        .collect::<Vec<_>>();
+    for target in &targets {
+        validate_story_reveal_target(target, catalog, file_rel)?;
     }
-    Ok(())
+    validate_story_reveal_batch(&targets, file_rel)
 }
 
 fn validate_story_interrogation_reveals(
@@ -567,12 +572,90 @@ fn validate_story_interrogation_reveals(
     catalog: &StoryCatalog,
     file_rel: &str,
 ) -> Result<(), GameError> {
-    for reveal in reveals {
-        if let CombinedInterrogationRevealTarget::Story(target) = reveal {
-            validate_story_reveal_target(target, catalog, file_rel)?;
+    let targets = reveals
+        .iter()
+        .filter_map(|reveal| match reveal {
+            CombinedInterrogationRevealTarget::Story(target) => Some(target),
+            CombinedInterrogationRevealTarget::Local(_) => None,
+        })
+        .collect::<Vec<_>>();
+    for target in &targets {
+        validate_story_reveal_target(target, catalog, file_rel)?;
+    }
+    validate_story_reveal_batch(&targets, file_rel)
+}
+
+fn validate_story_reveal_batch(
+    targets: &[&StoryRevealTarget],
+    file_rel: &str,
+) -> Result<(), GameError> {
+    let mut seen_targets = HashSet::new();
+    let mut resolver_by_question = HashMap::<String, String>::new();
+    let mut has_primary_transition = false;
+
+    for target in targets {
+        let key = story_reveal_target_key(target);
+        if !seen_targets.insert(key.clone()) {
+            return Err(GameError::scene_validation_failed(format!(
+                "{file_rel}: duplicate story reveal target: {key}",
+            )));
+        }
+
+        if let StoryRevealTarget::ResolveQuestion {
+            question_id,
+            fact_id,
+        } = target
+        {
+            if let Some(previous_fact_id) = resolver_by_question.get(question_id) {
+                if previous_fact_id != fact_id {
+                    return Err(GameError::scene_validation_failed(format!(
+                        "{file_rel}: conflicting question resolution for question:{question_id}: fact:{previous_fact_id} and fact:{fact_id}",
+                    )));
+                }
+            }
+            resolver_by_question.insert(question_id.clone(), fact_id.clone());
+        }
+
+        if matches!(target, StoryRevealTarget::SetPrimaryObjective { .. }) {
+            if has_primary_transition {
+                return Err(GameError::scene_validation_failed(format!(
+                    "{file_rel}: reveal batch contains multiple setPrimaryObjective targets",
+                )));
+            }
+            has_primary_transition = true;
         }
     }
+
     Ok(())
+}
+
+fn story_reveal_target_key(target: &StoryRevealTarget) -> String {
+    match target {
+        StoryRevealTarget::AssertFact { fact_id } => format!("assertFact:{fact_id}"),
+        StoryRevealTarget::RevealQuestion { question_id } => {
+            format!("revealQuestion:{question_id}")
+        }
+        StoryRevealTarget::ResolveQuestion {
+            question_id,
+            fact_id,
+        } => format!("resolveQuestion:{question_id}@{fact_id}"),
+        StoryRevealTarget::RevealObjective { objective_id } => {
+            format!("revealObjective:{objective_id}")
+        }
+        StoryRevealTarget::CompleteObjective { objective_id } => {
+            format!("completeObjective:{objective_id}")
+        }
+        StoryRevealTarget::SetPrimaryObjective {
+            complete_current,
+            next_objective_id,
+        } => format!(
+            "setPrimaryObjective:{}:{complete_current}",
+            next_objective_id.as_deref().unwrap_or("null")
+        ),
+        StoryRevealTarget::GrantAuthorization { authorization_id } => {
+            format!("grantAuthorization:{authorization_id}")
+        }
+    }
 }
 
 fn validate_story_unlock_expr(
@@ -929,7 +1012,7 @@ mod tests {
         }
     }
 
-    fn story_catalog_for_loader() -> StoryCatalog {
+    fn story_catalog_for_loader_with_resolvers(resolved_by_fact_ids: &[&str]) -> StoryCatalog {
         catalog_with_story_definitions(
             vec![
                 json!({
@@ -951,7 +1034,7 @@ mod tests {
                 "id": "question_a",
                 "label": "Question A",
                 "summary": "Question A summary",
-                "resolvedByFactIds": ["fact_a"],
+                "resolvedByFactIds": resolved_by_fact_ids,
             })],
             vec![
                 json!({
@@ -976,6 +1059,10 @@ mod tests {
                 "grantingAuthority": "analysis_authority",
             })],
         )
+    }
+
+    fn story_catalog_for_loader() -> StoryCatalog {
+        story_catalog_for_loader_with_resolvers(&["fact_a"])
     }
 
     fn write_scene_json(resources_dir: &Path, file_name: &str, scene: Value) {
@@ -1863,21 +1950,77 @@ mod tests {
 
     #[test]
     fn accepts_catalog_resolved_non_authorization_story_targets_including_null_primary() {
-        let resources = unique_temp_dir();
-        write_scene_json(
-            &resources,
-            "investigation_scene_1.json",
-            story_investigation_scene(
-                json!(null),
+        for primary_target in [
+            json!({
+                "kind": "setPrimaryObjective",
+                "completeCurrent": true,
+                "nextObjectiveId": "objective_primary"
+            }),
+            json!({
+                "kind": "setPrimaryObjective",
+                "completeCurrent": false,
+                "nextObjectiveId": null
+            }),
+        ] {
+            let resources = unique_temp_dir();
+            write_scene_json(
+                &resources,
+                "investigation_scene_1.json",
+                story_investigation_scene(
+                    json!(null),
+                    json!([
+                        { "kind": "assertFact", "factId": "fact_a" },
+                        { "kind": "revealQuestion", "questionId": "question_a" },
+                        { "kind": "resolveQuestion", "questionId": "question_a", "factId": "fact_a" },
+                        { "kind": "revealObjective", "objectiveId": "objective_secondary" },
+                        { "kind": "completeObjective", "objectiveId": "objective_secondary" },
+                        primary_target
+                    ]),
+                ),
+            );
+            let catalog = story_catalog_for_loader();
+
+            let scene = load_scene_with_catalog(
+                &resources,
+                &catalog,
+                "chapter_1",
+                "chapter_1/investigation_scene_1.json",
+            )
+            .unwrap();
+
+            assert!(matches!(scene, SceneJson::Investigation(_)));
+            let _ = fs::remove_dir_all(resources);
+        }
+    }
+
+    // Break caught: hand-edited JSON bypasses the compiler parser's
+    // reveal-list normalization and reaches startup with a batch the compiler
+    // would reject before ordered dispatch.
+    #[test]
+    fn rejects_story_reveal_batch_conflicts_in_both_scene_families() {
+        let cases = [
+            (
+                "duplicate target",
                 json!([
                     { "kind": "assertFact", "factId": "fact_a" },
-                    { "kind": "revealQuestion", "questionId": "question_a" },
+                    { "kind": "assertFact", "factId": "fact_a" }
+                ]),
+                "duplicate story reveal target",
+            ),
+            (
+                "conflicting question resolvers",
+                json!([
                     { "kind": "resolveQuestion", "questionId": "question_a", "factId": "fact_a" },
-                    { "kind": "revealObjective", "objectiveId": "objective_secondary" },
-                    { "kind": "completeObjective", "objectiveId": "objective_secondary" },
+                    { "kind": "resolveQuestion", "questionId": "question_a", "factId": "fact_b" }
+                ]),
+                "conflicting question resolution",
+            ),
+            (
+                "multiple primary transitions",
+                json!([
                     {
                         "kind": "setPrimaryObjective",
-                        "completeCurrent": true,
+                        "completeCurrent": false,
                         "nextObjectiveId": "objective_primary"
                     },
                     {
@@ -1886,20 +2029,41 @@ mod tests {
                         "nextObjectiveId": null
                     }
                 ]),
+                "multiple setPrimaryObjective targets",
             ),
-        );
-        let catalog = story_catalog_for_loader();
+        ];
 
-        let scene = load_scene_with_catalog(
-            &resources,
-            &catalog,
-            "chapter_1",
-            "chapter_1/investigation_scene_1.json",
-        )
-        .unwrap();
+        for (case_name, reveals, expected) in cases {
+            for (file_name, scene) in [
+                (
+                    "investigation_scene_1.json",
+                    story_investigation_scene(json!(null), reveals.clone()),
+                ),
+                (
+                    "interrogation_scene_1.json",
+                    story_interrogation_scene(json!(null), reveals.clone()),
+                ),
+            ] {
+                let resources = unique_temp_dir();
+                write_scene_json(&resources, file_name, scene);
+                let catalog = story_catalog_for_loader_with_resolvers(&["fact_a", "fact_b"]);
 
-        assert!(matches!(scene, SceneJson::Investigation(_)));
-        let _ = fs::remove_dir_all(resources);
+                let error = load_scene_with_catalog(
+                    &resources,
+                    &catalog,
+                    "chapter_1",
+                    &format!("chapter_1/{file_name}"),
+                )
+                .unwrap_err();
+
+                assert_eq!(error.code, "sceneValidationFailed", "{case_name}");
+                assert!(
+                    error.message.contains(expected),
+                    "{case_name} in {file_name}: {error:?}"
+                );
+                let _ = fs::remove_dir_all(resources);
+            }
+        }
     }
 
     // Break caught: neither investigation nor interrogation carries an
