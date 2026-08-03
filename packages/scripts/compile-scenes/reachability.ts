@@ -61,6 +61,7 @@ type SceneScope = {
 type NodeDraft = ReachabilityNode & {
   inboundTargetKey: string | null;
   revealedTargetKeys: string[];
+  requiresInboundReveal: boolean;
 };
 
 /**
@@ -77,7 +78,7 @@ export function buildReachabilityNodes(input: {
 }): ReachabilityNode[] {
   const records = orderedSceneRecords(input.chapters, input.scenes);
   const nodes: NodeDraft[] = [];
-  let previousMandatoryKeys: string[] = [];
+  let previousOutroKey: string | null = null;
   let firstScene = true;
 
   for (const record of records) {
@@ -85,13 +86,11 @@ export function buildReachabilityNodes(input: {
     const sceneNodes = buildSceneNodes({
       record,
       scope,
-      entryPredecessors: previousMandatoryKeys,
+      entryPredecessors: previousOutroKey === null ? [] : [previousOutroKey],
       firstScene,
     });
     nodes.push(...sceneNodes);
-    previousMandatoryKeys = sceneNodes
-      .filter((node) => node.requirement === "mandatory")
-      .map((node) => node.key);
+    previousOutroKey = `${scope.prefix}/outro`;
     firstScene = false;
   }
 
@@ -102,6 +101,7 @@ export function buildReachabilityNodes(input: {
     ({
       inboundTargetKey: _inboundTargetKey,
       revealedTargetKeys: _revealedTargetKeys,
+      requiresInboundReveal: _requiresInboundReveal,
       ...node
     }) => node,
   );
@@ -161,6 +161,15 @@ function buildSceneNodes(input: {
         sourceFile: record.ast.sourceFile,
         line: record.ast.line,
       }),
+      node({
+        key: `${scope.prefix}/outro`,
+        requirement: "mandatory",
+        legacyCompatibilityMode: true,
+        initiallyReachable: false,
+        strictPredecessorKeys: [`${scope.prefix}/entry`],
+        sourceFile: record.ast.sourceFile,
+        line: record.ast.line,
+      }),
     ];
   }
   if (record.ast.kind === "investigationScene") {
@@ -206,6 +215,7 @@ function buildInvestigationNodes(input: {
       inboundTargetKey: entrySublocation
         ? `sublocation:${entrySublocation.id}`
         : null,
+      requiresInboundReveal: false,
       sourceFile: entrySublocation?.sourceFile ?? scene.sourceFile,
       line: entrySublocation?.line ?? scene.line,
     }),
@@ -251,6 +261,7 @@ function buildInvestigationNodes(input: {
           ),
           strictPredecessorKeys: [entryKey],
           inboundTargetKey: `sublocation:${sublocation.id}`,
+          requiresInboundReveal: sublocation.status === "locked",
           sourceFile: sublocation.sourceFile,
           line: sublocation.line,
         }),
@@ -281,6 +292,7 @@ function buildInvestigationNodes(input: {
           strictPredecessorKeys: [sublocationKey],
           freeOrderRegionId: regionId,
           inboundTargetKey: `hotspot:${hotspot.id}`,
+          requiresInboundReveal: hotspot.status === "locked",
           sourceFile: hotspot.sourceFile,
           line: hotspot.line,
         }),
@@ -316,6 +328,7 @@ function buildInvestigationNodes(input: {
             strictPredecessorKeys: [sublocationKey],
             freeOrderRegionId: regionId,
             inboundTargetKey: `topic:${character.id}@${topic.id}`,
+            requiresInboundReveal: topic.status === "locked",
             sourceFile: topic.sourceFile,
             line: topic.line,
           }),
@@ -323,6 +336,31 @@ function buildInvestigationNodes(input: {
       }
     }
   }
+
+  const outroCondition =
+    scene.outro.unlock === "auto"
+      ? null
+      : normalizeInvestigationExpression(scene.outro.unlock, scope);
+  nodes.push(
+    node({
+      key: `${scope.prefix}/outro`,
+      requirement: "mandatory",
+      legacyCompatibilityMode:
+        scene.outro.unlock === "auto" || expressionIsLegacy(scene.outro.unlock),
+      initiallyReachable: false,
+      condition: outroCondition,
+      implicitPrerequisites:
+        scene.outro.unlock === "auto"
+          ? [...mandatoryAtoms].map((atom) => ({
+              predicate: "atom" as const,
+              atom,
+            }))
+          : [],
+      strictPredecessorKeys: [entryKey],
+      sourceFile: scene.sourceFile,
+      line: scene.line,
+    }),
+  );
 
   return nodes;
 }
@@ -349,113 +387,183 @@ function buildInterrogationNodes(input: {
   );
 
   for (const phase of scene.phases) {
-    const phaseKey = `${scope.prefix}/phase:${phase.id}`;
+    const phaseEntryKey = `${scope.prefix}/phase:${phase.id}:entry`;
+    const phaseCompleteKey = `${scope.prefix}/phase:${phase.id}:complete`;
     const phaseAtom = interrogationPhaseAtom(scope, phase.id);
-    const phasePrerequisites =
-      phase.complete === "auto"
-        ? phase.questions
-            .filter((question) => question.required)
-            .map((question) => ({
-              predicate: "atom" as const,
-              atom: interrogationQuestionAtom(scope, question.id),
-            }))
-        : requiredExpressionPredicates(
-            normalizeInterrogationExpression(phase.complete, scope),
-          );
+
     nodes.push(
       node({
-        key: phaseKey,
+        key: phaseEntryKey,
         requirement: phase.required ? "mandatory" : "optional",
         legacyCompatibilityMode:
-          expressionIsLegacy(phase.unlock) &&
-          (phase.complete === "auto" || expressionIsLegacy(phase.complete)) &&
-          revealsAreLegacy(phase.reveals),
+          expressionIsLegacy(phase.unlock) && revealsAreLegacy(phase.reveals),
         initiallyReachable: phase.status === "unlocked",
         condition: normalizeInterrogationExpression(phase.unlock, scope),
-        implicitPrerequisites: phasePrerequisites,
-        effects: [
-          ...effectsFromInterrogationReveals(phase.reveals, scope),
-          addAtomEffect(phaseAtom, phase.reveals.length),
-        ],
+        effects: effectsFromInterrogationReveals(phase.reveals, scope),
         revealedTargetKeys: inboundTargetsFromInterrogationReveals(
           phase.reveals,
         ),
         strictPredecessorKeys: [entryKey],
         inboundTargetKey: `phase:${phase.id}`,
+        requiresInboundReveal: phase.status === "locked",
         sourceFile: phase.sourceFile,
         line: phase.line,
       }),
     );
 
     for (const question of phase.questions) {
-      const questionKey = `${scope.prefix}/question:${question.id}`;
-      const questionAtom = interrogationQuestionAtom(scope, question.id);
+      const questionEntryKey = `${scope.prefix}/question:${question.id}:entry`;
       nodes.push(
         node({
-          key: questionKey,
+          key: questionEntryKey,
           requirement:
             phase.required && question.required ? "mandatory" : "optional",
-          legacyCompatibilityMode:
-            expressionIsLegacy(question.unlock) &&
-            revealsAreLegacy(question.reveals) &&
-            question.testimony.lines.every((line) =>
-              revealsAreLegacy(line.reveals),
-            ),
+          legacyCompatibilityMode: expressionIsLegacy(question.unlock),
           initiallyReachable: question.status === "unlocked",
           condition: normalizeInterrogationExpression(question.unlock, scope),
-          effects: [
-            addAtomEffect(questionAtom, -1),
-            ...effectsFromInterrogationReveals(question.reveals, scope),
-          ],
-          revealedTargetKeys: inboundTargetsFromInterrogationReveals(
-            question.reveals,
-          ),
-          strictPredecessorKeys: [phaseKey],
+          strictPredecessorKeys: [phaseEntryKey],
           freeOrderRegionId: `${scope.prefix}/phase:${phase.id}`,
           inboundTargetKey: `question:${question.id}`,
+          requiresInboundReveal: question.status === "locked",
           sourceFile: question.sourceFile,
           line: question.line,
         }),
       );
-      nodes.push(...buildTestimonyLineNodes(question, scope, questionKey));
+      nodes.push(
+        ...buildQuestionBreakthroughNodes({
+          question,
+          scope,
+          questionEntryKey,
+          mandatory: phase.required && question.required,
+        }),
+      );
     }
+
+    const completionCondition =
+      phase.complete === "auto"
+        ? null
+        : normalizeInterrogationExpression(phase.complete, scope);
+    nodes.push(
+      node({
+        key: phaseCompleteKey,
+        requirement: phase.required ? "mandatory" : "optional",
+        legacyCompatibilityMode:
+          phase.complete === "auto" || expressionIsLegacy(phase.complete),
+        initiallyReachable: false,
+        condition: completionCondition,
+        implicitPrerequisites:
+          phase.complete === "auto"
+            ? phase.questions
+                .filter((question) => question.required)
+                .map((question) => ({
+                  predicate: "atom" as const,
+                  atom: interrogationQuestionAtom(scope, question.id),
+                }))
+            : [],
+        effects: [addAtomEffect(phaseAtom, 0)],
+        strictPredecessorKeys: [phaseEntryKey],
+        sourceFile: phase.sourceFile,
+        line: phase.line,
+      }),
+    );
   }
+
+  const outroCondition =
+    scene.outro.unlock === "auto"
+      ? null
+      : normalizeInterrogationExpression(scene.outro.unlock, scope);
+  nodes.push(
+    node({
+      key: `${scope.prefix}/outro`,
+      requirement: "mandatory",
+      legacyCompatibilityMode:
+        scene.outro.unlock === "auto" || expressionIsLegacy(scene.outro.unlock),
+      initiallyReachable: false,
+      condition: outroCondition,
+      implicitPrerequisites:
+        scene.outro.unlock === "auto"
+          ? scene.phases
+              .filter((phase) => phase.required)
+              .map((phase) => ({
+                predicate: "atom" as const,
+                atom: interrogationPhaseAtom(scope, phase.id),
+              }))
+          : [],
+      strictPredecessorKeys: [entryKey],
+      sourceFile: scene.sourceFile,
+      line: scene.line,
+    }),
+  );
 
   return nodes;
 }
 
-function buildTestimonyLineNodes(
-  question: ASTInquiryQuestion,
-  scope: SceneScope,
-  questionKey: string,
-): NodeDraft[] {
-  return question.testimony.lines.flatMap((line) => {
-    if (line.reveals.length === 0) return [];
-    const contradiction = line.contradiction;
+function buildQuestionBreakthroughNodes(input: {
+  question: ASTInquiryQuestion;
+  scope: SceneScope;
+  questionEntryKey: string;
+  mandatory: boolean;
+}): NodeDraft[] {
+  const { question, scope, questionEntryKey } = input;
+  const questionAtom = interrogationQuestionAtom(scope, question.id);
+  const correctLines = question.testimony.lines.filter(
+    (line) => line.contradiction !== null && line.onCorrect !== null,
+  );
+
+  if (correctLines.length === 0) {
     return [
       node({
-        key: `${scope.prefix}/line:${question.id}:${line.id}`,
-        requirement: "optional",
-        legacyCompatibilityMode: revealsAreLegacy(line.reveals),
-        initiallyReachable: contradiction === null,
-        implicitPrerequisites:
-          contradiction === null
-            ? []
-            : [
-                {
-                  predicate: "atom",
-                  atom: `${contradiction.kind}:${contradiction.id}`,
-                },
-              ],
-        effects: effectsFromInterrogationReveals(line.reveals, scope),
+        key: `${scope.prefix}/question:${question.id}:breakthrough`,
+        requirement: input.mandatory ? "mandatory" : "optional",
+        legacyCompatibilityMode: revealsAreLegacy(question.reveals),
+        initiallyReachable: false,
+        effects: [
+          ...effectsFromInterrogationReveals(question.reveals, scope),
+          addAtomEffect(questionAtom, question.reveals.length),
+        ],
         revealedTargetKeys: inboundTargetsFromInterrogationReveals(
-          line.reveals,
+          question.reveals,
         ),
-        strictPredecessorKeys: [questionKey],
-        sourceFile: line.sourceFile,
-        line: line.line,
+        strictPredecessorKeys: [questionEntryKey],
+        sourceFile: question.sourceFile,
+        line: question.line,
       }),
     ];
+  }
+
+  return correctLines.map((line) => {
+    const contradiction = line.contradiction!;
+    const combinedTargetCount = line.reveals.length + question.reveals.length;
+    return node({
+      key: `${scope.prefix}/question:${question.id}:line:${line.id}:breakthrough`,
+      requirement:
+        input.mandatory && correctLines.length === 1 ? "mandatory" : "optional",
+      legacyCompatibilityMode:
+        revealsAreLegacy(line.reveals) && revealsAreLegacy(question.reveals),
+      initiallyReachable: false,
+      implicitPrerequisites: [
+        {
+          predicate: "atom",
+          atom: `${contradiction.kind}:${contradiction.id}`,
+        },
+      ],
+      effects: [
+        ...effectsFromInterrogationReveals(line.reveals, scope),
+        ...effectsFromInterrogationReveals(
+          question.reveals,
+          scope,
+          line.reveals.length,
+        ),
+        addAtomEffect(questionAtom, combinedTargetCount),
+      ],
+      revealedTargetKeys: [
+        ...inboundTargetsFromInterrogationReveals(line.reveals),
+        ...inboundTargetsFromInterrogationReveals(question.reveals),
+      ],
+      strictPredecessorKeys: [questionEntryKey],
+      sourceFile: line.sourceFile,
+      line: line.line,
+    });
   });
 }
 
@@ -479,6 +587,7 @@ function node(
         | "freeOrderRegionId"
         | "inboundTargetKey"
         | "revealedTargetKeys"
+        | "requiresInboundReveal"
       >
     >,
 ): NodeDraft {
@@ -491,6 +600,7 @@ function node(
     freeOrderRegionId: null,
     inboundTargetKey: null,
     revealedTargetKeys: [],
+    requiresInboundReveal: false,
     ...input,
     strictPredecessorKeys: unique(input.strictPredecessorKeys ?? []),
   };
@@ -522,6 +632,7 @@ function addEffectAndRevealPredecessors(nodes: NodeDraft[]): void {
       );
       if (target === undefined || target === source.key) continue;
       const targetNode = nodes.find((candidate) => candidate.key === target)!;
+      if (!targetNode.requiresInboundReveal) continue;
       targetNode.strictPredecessorKeys = unique([
         ...targetNode.strictPredecessorKeys,
         source.key,
@@ -742,25 +853,32 @@ function effectsFromInvestigationReveals(
 function effectsFromInterrogationReveals(
   reveals: InterrogationRevealTarget[],
   scope: SceneScope,
+  targetIndexOffset = 0,
 ): ReachabilityEffect[] {
   return reveals.flatMap((target, targetIndex) => {
+    const normalizedTargetIndex = targetIndex + targetIndexOffset;
     if (isStoryRevealTarget(target)) {
-      return [{ kind: "story", target, targetIndex }];
+      return [{ kind: "story", target, targetIndex: normalizedTargetIndex }];
     }
     switch (target.kind) {
       case "evidence":
       case "statement":
-        return [addAtomEffect(`${target.kind}:${target.id}`, targetIndex)];
+        return [
+          addAtomEffect(`${target.kind}:${target.id}`, normalizedTargetIndex),
+        ];
       case "question":
         return [
           addAtomEffect(
             interrogationQuestionAtom(scope, target.id),
-            targetIndex,
+            normalizedTargetIndex,
           ),
         ];
       case "phase":
         return [
-          addAtomEffect(interrogationPhaseAtom(scope, target.id), targetIndex),
+          addAtomEffect(
+            interrogationPhaseAtom(scope, target.id),
+            normalizedTargetIndex,
+          ),
         ];
     }
   });
