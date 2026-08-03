@@ -450,6 +450,49 @@ fn unavailable_error() -> GameError {
     GameError::unavailable()
 }
 
+// The writer future was dropped before sending a result. The only
+// coordinator-driven drop path is `invalidate_queued_for_e2e()` during
+// session replacement, which advances the generation first. If the
+// generation has moved on, the drop was replacement — not a storage write
+// attempt — so return the typed stale result and skip the Degraded
+// publication (replacement already published Healthy). A genuine runtime
+// cancellation leaves the generation unchanged and falls through to
+// saveWriteFailed after publishing Degraded.
+fn classify_dropped_writer(state: &AppState, session_generation: u64) -> GameError {
+    let current_generation = match state.session.lock() {
+        Ok(session) => session.persistence.generation,
+        Err(_) => return unavailable_error(),
+    };
+    if current_generation != session_generation {
+        return GameError::stale_session_generation();
+    }
+    let error = GameError::save_write_failed();
+    let _ = state.coordinator.publish_persistence_health_for_session(
+        session_generation,
+        PersistenceHealthView::Degraded {
+            diagnostic: error.clone(),
+        },
+    );
+    error
+}
+
+// Publishes the terminal health for a completed storage write: Degraded when
+// the write surfaced a cleanup diagnostic, Healthy otherwise. Cloning the
+// diagnostic keeps the caller's `outcome` usable after the publication.
+fn publish_write_outcome_health(
+    state: &AppState,
+    session_generation: u64,
+    cleanup_diagnostic: &Option<GameError>,
+) -> Result<(), GameError> {
+    state.coordinator.publish_persistence_health_for_session(
+        session_generation,
+        cleanup_diagnostic
+            .clone()
+            .map(|diagnostic| PersistenceHealthView::Degraded { diagnostic })
+            .unwrap_or(PersistenceHealthView::Healthy),
+    )
+}
+
 fn read_game_state(state: &AppState) -> Result<GameStateView, GameError> {
     let session = state.session.lock().map_err(|_| unavailable_error())?;
     session.ensure_rendered_state_available()?;
@@ -1211,41 +1254,10 @@ async fn save_manual_core(
             return Err(error);
         }
         Err(_) => {
-            // The writer future was dropped before sending a result. The
-            // only coordinator-driven drop path is
-            // `invalidate_queued_for_e2e()` during session replacement,
-            // which advances the generation first. If the generation has
-            // moved on, the drop was replacement — not a storage write
-            // attempt — so return the typed stale result and skip the
-            // Degraded publication (replacement already published
-            // Healthy). A genuine runtime cancellation leaves the
-            // generation unchanged and falls through to saveWriteFailed.
-            let current_generation = state
-                .session
-                .lock()
-                .map(|session| session.persistence.generation)
-                .map_err(|_| unavailable_error())?;
-            if current_generation != session_generation {
-                return Err(GameError::stale_session_generation());
-            }
-            let error = GameError::save_write_failed();
-            let _ = state.coordinator.publish_persistence_health_for_session(
-                session_generation,
-                PersistenceHealthView::Degraded {
-                    diagnostic: error.clone(),
-                },
-            );
-            return Err(error);
+            return Err(classify_dropped_writer(state, session_generation));
         }
     };
-    state.coordinator.publish_persistence_health_for_session(
-        session_generation,
-        outcome
-            .cleanup_diagnostic
-            .clone()
-            .map(|diagnostic| PersistenceHealthView::Degraded { diagnostic })
-            .unwrap_or(PersistenceHealthView::Healthy),
-    )?;
+    publish_write_outcome_health(state, session_generation, &outcome.cleanup_diagnostic)?;
     let browser = persistence.discover();
     state
         .coordinator
@@ -1549,40 +1561,10 @@ async fn delete_save_core(
             return Err(error);
         }
         Err(_) => {
-            // The writer future was dropped before sending a result. The
-            // only coordinator-driven drop path is
-            // `invalidate_queued_for_e2e()` during session replacement,
-            // which advances the generation first. If the generation has
-            // moved on, the drop was replacement — not a storage write
-            // attempt — so return the typed stale result and skip the
-            // Degraded publication (replacement already published
-            // Healthy). A genuine runtime cancellation leaves the
-            // generation unchanged and falls through to saveWriteFailed.
-            let current_generation = state
-                .session
-                .lock()
-                .map(|session| session.persistence.generation)
-                .map_err(|_| unavailable_error())?;
-            if current_generation != session_generation {
-                return Err(GameError::stale_session_generation());
-            }
-            let error = GameError::save_write_failed();
-            let _ = state.coordinator.publish_persistence_health_for_session(
-                session_generation,
-                PersistenceHealthView::Degraded {
-                    diagnostic: error.clone(),
-                },
-            );
-            return Err(error);
+            return Err(classify_dropped_writer(state, session_generation));
         }
     };
-    state.coordinator.publish_persistence_health_for_session(
-        session_generation,
-        outcome
-            .cleanup_diagnostic
-            .map(|diagnostic| PersistenceHealthView::Degraded { diagnostic })
-            .unwrap_or(PersistenceHealthView::Healthy),
-    )?;
+    publish_write_outcome_health(state, session_generation, &outcome.cleanup_diagnostic)?;
     let browser = persistence.discover();
     state
         .coordinator
