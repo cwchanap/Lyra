@@ -48,8 +48,9 @@ use schema::{
 };
 use state::{ChapterManifest, Inventory};
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use story::{StoryCatalog, StoryState, StoryStateView};
+use story::{AssertionOrigin, StoryCatalog, StoryEventBlockKind, StoryState, StoryStateView};
 use story_location::StoryLocationIndex;
 use view::{
     AudioCueView, ChapterView, CharacterView, CrossExamView, HotspotView, InquiryQuestionView,
@@ -750,9 +751,17 @@ impl GameEngine {
                 reveals.clone(),
             )
         };
-        // HPA-257 introduces story reveal wrappers before Task 13 owns their
-        // atomic dispatcher. Reject them before phase entry is consumed.
-        reveals::preflight_interrogation_reveals(&reveals)?;
+        let fact_support_by_id = BTreeMap::new();
+        let story_context = reveals::StoryRevealMaterializationContext {
+            origin: AssertionOrigin::SceneEvent {
+                chapter_id: chapter_id.into(),
+                scene_id: self.scene.id().into(),
+                block_kind: StoryEventBlockKind::InterrogationPhase,
+                block_id: phase_id.clone(),
+            },
+            fact_support_by_id: &fact_support_by_id,
+            represented_authority: None,
+        };
         let queue_items = {
             let scene = match &mut self.scene {
                 SceneRuntime::Interrogation(scene) => scene,
@@ -775,6 +784,8 @@ impl GameEngine {
                     command_id,
                     next_ordinal,
                 },
+                &mut self.story_state,
+                &story_context,
                 trigger_segment,
                 &reveals,
                 chapter_id,
@@ -814,11 +825,17 @@ impl GameEngine {
         let Some((id, scene_tag, asset_cue, transition, sub_reveals, first_entry)) = chosen else {
             return Ok(());
         };
-        // Do not mark the first sublocation entry before the Task 13 story
-        // dispatcher is available for this mixed reveal batch.
-        if first_entry {
-            reveals::preflight_investigation_reveals(&sub_reveals)?;
-        }
+        let fact_support_by_id = BTreeMap::new();
+        let story_context = reveals::StoryRevealMaterializationContext {
+            origin: AssertionOrigin::SceneEvent {
+                chapter_id: chapter_id.clone(),
+                scene_id: self.scene.id().into(),
+                block_kind: StoryEventBlockKind::Sublocation,
+                block_id: id.clone(),
+            },
+            fact_support_by_id: &fact_support_by_id,
+            represented_authority: None,
+        };
 
         // Phase 2 — write: mutate scene + inventory; reveals fire on first entry.
         let queue_items = {
@@ -844,6 +861,8 @@ impl GameEngine {
                         command_id,
                         next_ordinal,
                     },
+                    &mut self.story_state,
+                    &story_context,
                     trigger_segment,
                     &sub_reveals,
                     &chapter_id,
@@ -904,14 +923,20 @@ impl GameEngine {
             let first_time = !inv.inspected_hotspots.contains(hotspot_id);
             (hot_def, first_time)
         };
-        if first_time {
-            // Preserve the trigger when a Task 11 story wrapper is present.
-            reveals::preflight_investigation_reveals(&hot_def.reveals)?;
-        }
-
         self.command_tx(|engine, command_id, next_ordinal| {
             // Phase 2 — compute: build queue (mutates scene + inventory together).
             let queue_items = if first_time {
+                let fact_support_by_id = BTreeMap::new();
+                let story_context = reveals::StoryRevealMaterializationContext {
+                    origin: AssertionOrigin::SceneEvent {
+                        chapter_id: chapter_id.clone(),
+                        scene_id: engine.scene.id().into(),
+                        block_kind: StoryEventBlockKind::Hotspot,
+                        block_id: hotspot_id.into(),
+                    },
+                    fact_support_by_id: &fact_support_by_id,
+                    represented_authority: None,
+                };
                 let inv = match &mut engine.scene {
                     SceneRuntime::Investigation(i) => i,
                     _ => {
@@ -936,6 +961,8 @@ impl GameEngine {
                         command_id,
                         next_ordinal,
                     },
+                    &mut engine.story_state,
+                    &story_context,
                     trigger_segment,
                     &hot_def.reveals,
                     &chapter_id,
@@ -1014,13 +1041,19 @@ impl GameEngine {
                 .contains(&(character_id.into(), topic_id.into()));
             (topic, first_time)
         };
-        if first_time {
-            // Preserve the trigger when a Task 11 story wrapper is present.
-            reveals::preflight_investigation_reveals(&topic.reveals)?;
-        }
-
         self.command_tx(|engine, command_id, next_ordinal| {
             let queue_items = if first_time {
+                let fact_support_by_id = BTreeMap::new();
+                let story_context = reveals::StoryRevealMaterializationContext {
+                    origin: AssertionOrigin::SceneEvent {
+                        chapter_id: chapter_id.clone(),
+                        scene_id: engine.scene.id().into(),
+                        block_kind: StoryEventBlockKind::Topic,
+                        block_id: topic_id.into(),
+                    },
+                    fact_support_by_id: &fact_support_by_id,
+                    represented_authority: None,
+                };
                 let inv = match &mut engine.scene {
                     SceneRuntime::Investigation(i) => i,
                     _ => {
@@ -1045,6 +1078,8 @@ impl GameEngine {
                         command_id,
                         next_ordinal,
                     },
+                    &mut engine.story_state,
+                    &story_context,
                     trigger_segment,
                     &topic.reveals,
                     &chapter_id,
@@ -1108,14 +1143,19 @@ impl GameEngine {
                 first_entry,
             )
         };
-        if first_entry {
-            // Do not consume a first entry until Task 13 can atomically apply
-            // the story half of this union.
-            reveals::preflight_investigation_reveals(&sub_reveals)?;
-        }
-
         self.command_tx(|engine, command_id, next_ordinal| {
             let queue_items = if first_entry {
+                let fact_support_by_id = BTreeMap::new();
+                let story_context = reveals::StoryRevealMaterializationContext {
+                    origin: AssertionOrigin::SceneEvent {
+                        chapter_id: chapter_id.clone(),
+                        scene_id: engine.scene.id().into(),
+                        block_kind: StoryEventBlockKind::Sublocation,
+                        block_id: sublocation_id.into(),
+                    },
+                    fact_support_by_id: &fact_support_by_id,
+                    represented_authority: None,
+                };
                 let inv = match &mut engine.scene {
                     SceneRuntime::Investigation(i) => i,
                     _ => {
@@ -1141,6 +1181,8 @@ impl GameEngine {
                         command_id,
                         next_ordinal,
                     },
+                    &mut engine.story_state,
+                    &story_context,
                     trigger_segment,
                     &sub_reveals,
                     &chapter_id,
@@ -1292,10 +1334,6 @@ impl GameEngine {
                         ))
                     }
                 };
-                // `begin_question` auto-breaks questions with no visible
-                // contradiction, which immediately consumes their
-                // question-level reveal trigger. Preflight that path before
-                // changing cross-examination state.
                 let already_broken = scene.is_question_broken(question_id);
                 let auto_break_reveals = scene.question(question_id).and_then(|question| {
                     let has_visible_contradiction = question.testimony.lines.iter().any(|line| {
@@ -1305,11 +1343,9 @@ impl GameEngine {
                                 .iter()
                                 .any(|item| !matches!(item, DialogueItem::SceneTag { .. }))
                     });
-                    (already_broken || !has_visible_contradiction).then(|| question.reveals.clone())
+                    (!already_broken && !has_visible_contradiction)
+                        .then(|| question.reveals.clone())
                 });
-                if let Some(reveals) = &auto_break_reveals {
-                    reveals::preflight_interrogation_reveals(reveals)?;
-                }
                 scene.begin_question(question_id);
                 let phase_id = scene.current_phase_id.clone().ok_or_else(|| {
                     GameError::internal("question started without a current phase".into())
@@ -1330,8 +1366,18 @@ impl GameEngine {
                 // A no-contradiction (honest) question auto-breaks the moment
                 // it is asked. There is no `On Correct` line to carry its
                 // reveals, so fire the question-level reveals here.
-                if scene.is_question_broken(question_id) {
-                    let reveals = auto_break_reveals.unwrap_or_default();
+                if let Some(reveals) = auto_break_reveals {
+                    let fact_support_by_id = BTreeMap::new();
+                    let story_context = reveals::StoryRevealMaterializationContext {
+                        origin: AssertionOrigin::SceneEvent {
+                            chapter_id: chapter_id.clone(),
+                            scene_id: scene_id.clone(),
+                            block_kind: StoryEventBlockKind::InquiryQuestion,
+                            block_id: question_id.into(),
+                        },
+                        fact_support_by_id: &fact_support_by_id,
+                        represented_authority: None,
+                    };
                     let queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
                         &mut AcquisitionCtx {
@@ -1341,6 +1387,8 @@ impl GameEngine {
                             command_id,
                             next_ordinal,
                         },
+                        &mut engine.story_state,
+                        &story_context,
                         line_segment,
                         &reveals,
                         &chapter_id,
@@ -1349,6 +1397,10 @@ impl GameEngine {
                     // guard in `playing_unbroken_line_id` already returns None,
                     // but set `line_content_start` past the queue as
                     // defense-in-depth so the cursor check would also suppress.
+                    let start = ActiveDialogueQueue::flattened_segment_start(&queue, queue.len())?;
+                    (queue, start)
+                } else if scene.is_question_broken(question_id) {
+                    let queue: Vec<_> = line_segment.into_iter().collect();
                     let start = ActiveDialogueQueue::flattened_segment_start(&queue, queue.len())?;
                     (queue, start)
                 } else {
@@ -1550,20 +1602,17 @@ impl GameEngine {
                         .as_ref()
                         .map(|line| line.on_correct.clone())
                         .unwrap_or_default();
-                    let mut reveals = line
+                    let line_reveals = line
                         .as_ref()
                         .map(|line| line.reveals.clone())
                         .unwrap_or_default();
                     // Breaking the question also fires its question-level
                     // reveals (the runtime otherwise only applies phase-entry
                     // and line-level `On Correct` reveals).
-                    if let Some(question) = scene.question(&question_id) {
-                        reveals.extend(question.reveals.iter().cloned());
-                    }
-                    // `record_break` follows this call, so reject a mixed
-                    // batch before either its local half or the trigger state
-                    // can be consumed.
-                    reveals::preflight_interrogation_reveals(&reveals)?;
+                    let question_reveals = scene
+                        .question(&question_id)
+                        .map(|question| question.reveals.clone())
+                        .unwrap_or_default();
                     let trigger_segment = interrogation_segment(
                         &chapter_id,
                         &scene_id,
@@ -1571,7 +1620,18 @@ impl GameEngine {
                         format!("question:{question_id}:line:{active_line_id}:onCorrect"),
                         on_correct,
                     );
-                    let queue = reveals::apply_interrogation_reveals_and_build_queue(
+                    let fact_support_by_id = BTreeMap::new();
+                    let line_story_context = reveals::StoryRevealMaterializationContext {
+                        origin: AssertionOrigin::SceneEvent {
+                            chapter_id: chapter_id.clone(),
+                            scene_id: scene_id.clone(),
+                            block_kind: StoryEventBlockKind::TestimonyLine,
+                            block_id: active_line_id.clone(),
+                        },
+                        fact_support_by_id: &fact_support_by_id,
+                        represented_authority: None,
+                    };
+                    let mut queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
                         &mut AcquisitionCtx {
                             catalog: &engine.story_catalog,
@@ -1580,10 +1640,37 @@ impl GameEngine {
                             command_id,
                             next_ordinal,
                         },
+                        &mut engine.story_state,
+                        &line_story_context,
                         trigger_segment,
-                        &reveals,
+                        &line_reveals,
                         &chapter_id,
                     )?;
+                    let question_story_context = reveals::StoryRevealMaterializationContext {
+                        origin: AssertionOrigin::SceneEvent {
+                            chapter_id: chapter_id.clone(),
+                            scene_id,
+                            block_kind: StoryEventBlockKind::InquiryQuestion,
+                            block_id: question_id.clone(),
+                        },
+                        fact_support_by_id: &fact_support_by_id,
+                        represented_authority: None,
+                    };
+                    queue.extend(reveals::apply_interrogation_reveals_and_build_queue(
+                        scene,
+                        &mut AcquisitionCtx {
+                            catalog: &engine.story_catalog,
+                            inventory: &mut engine.inventory,
+                            pending_events: &mut engine.pending_acquisition_events,
+                            command_id,
+                            next_ordinal,
+                        },
+                        &mut engine.story_state,
+                        &question_story_context,
+                        None,
+                        &question_reveals,
+                        &chapter_id,
+                    )?);
                     scene.record_break(&question_id);
                     queue
                 } else {
@@ -4049,7 +4136,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
     }
 
     #[test]
-    fn story_hotspot_batch_rejects_before_consuming_the_inspection_trigger() {
+    fn story_hotspot_batch_rolls_back_unknown_story_target_and_inspection_trigger() {
         let mut scene = investigation_scene_with_intro("investigation_scene_1", vec![]);
         scene.sublocations[0].hotspots.push(HotspotJson {
             id: "desk".into(),
@@ -4089,7 +4176,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
 
         let error = engine.inspect_hotspot("desk").unwrap_err();
 
-        assert_eq!(error.code, "sceneValidationFailed");
+        assert_eq!(error.code, "unknownStoryFact");
         let SceneRuntime::Investigation(scene) = &engine.scene else {
             panic!("expected investigation scene");
         };
@@ -4098,7 +4185,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
     }
 
     #[test]
-    fn story_auto_break_batch_rejects_before_consuming_the_question_trigger() {
+    fn story_auto_break_batch_rolls_back_unknown_story_target_and_question_trigger() {
         let mut definition = two_line_question_scene();
         let InterrogationPhaseJson::Inquiry { questions, .. } = &mut definition.phases[0];
         let question = questions.first_mut().expect("fixture question");
@@ -4116,13 +4203,190 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
 
         let error = engine.ask_interrogation_question("alibi").unwrap_err();
 
-        assert_eq!(error.code, "sceneValidationFailed");
+        assert_eq!(error.code, "unknownStoryFact");
         let SceneRuntime::Interrogation(scene) = &engine.scene else {
             panic!("expected interrogation scene");
         };
         assert!(!scene.is_question_broken("alibi"));
         assert!(matches!(scene.cross_exam(), CrossExam::Idle));
         assert!(!engine.inventory.has_evidence("unrelated"));
+    }
+
+    // Break caught: a final story-target failure commits earlier local/story
+    // effects or consumes the hotspot trigger instead of restoring the whole
+    // enclosing command transaction.
+    #[test]
+    fn story_reveal_transaction_rolls_back_mixed_batch_and_command_generation() {
+        let mut scene = investigation_scene_with_intro("investigation_scene_1", vec![]);
+        scene.sublocations[0].hotspots.push(HotspotJson {
+            id: "desk".into(),
+            label: "Desk".into(),
+            description: "Desk".into(),
+            status: LockStatus::Unlocked,
+            unlock: None,
+            reveals: vec![
+                InvestigationRevealTarget::Local(RevealTarget::Evidence { id: "note".into() }),
+                InvestigationRevealTarget::Local(RevealTarget::Hotspot {
+                    id: "hidden".into(),
+                }),
+                InvestigationRevealTarget::Story(StoryRevealTarget::RevealObjective {
+                    objective_id: "primary_a".into(),
+                }),
+                InvestigationRevealTarget::Story(StoryRevealTarget::SetPrimaryObjective {
+                    complete_current: false,
+                    next_objective_id: Some("primary_a".into()),
+                }),
+                InvestigationRevealTarget::Story(StoryRevealTarget::AssertFact {
+                    fact_id: "fact_a".into(),
+                }),
+                InvestigationRevealTarget::Story(StoryRevealTarget::GrantAuthorization {
+                    authorization_id: "authorization_a".into(),
+                }),
+            ],
+            layout: None,
+            inspect_dialogue: vec![DialogueItem::Action {
+                text: "inspect".into(),
+            }],
+            on_reexamine: None,
+        });
+        scene.evidence_manifest.push(EvidenceJson {
+            id: "note".into(),
+            name: "Note".into(),
+            description: "Note".into(),
+            details: "Note".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
+            image_asset_id: None,
+            on_collect: vec![DialogueItem::Action {
+                text: "collect".into(),
+            }],
+            on_reexamine: None,
+        });
+        scene.outro = OutroJson {
+            unlock: OutroUnlock::Expr(UnlockExpr::HotspotInvestigated {
+                _predicate: crate::game::schema::PredicateHotspotInvestigated::X,
+                id: "never".into(),
+            }),
+            dialogue: vec![],
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.story_catalog = catalog_with_story_definitions_and_case_records(
+            vec![serde_json::json!({
+                "id": "fact_a",
+                "label": "Fact",
+                "summary": "Fact",
+                "details": "Fact",
+                "category": "test"
+            })],
+            vec![],
+            vec![serde_json::json!({
+                "id": "primary_a",
+                "label": "Primary",
+                "summary": "Primary",
+                "kind": "primary",
+                "sortOrder": 0
+            })],
+            vec![serde_json::json!({
+                "id": "authorization_a",
+                "label": "Authorization",
+                "summary": "Authorization",
+                "grantingAuthority": "Police"
+            })],
+            vec![(
+                "note",
+                "chapter_1",
+                "investigation_scene_1",
+                crate::game::provenance::CaseRecordProvenance::default(),
+            )],
+            vec![],
+        );
+        engine.prime_initial_queue().unwrap();
+
+        let inventory_before = format!("{:?}", engine.inventory);
+        let story_before = engine.story_state.clone();
+        let events_before = engine.pending_acquisition_events.clone();
+        let history_before = format!("{:?}", engine.history);
+        let queue_before = format!(
+            "{:?}",
+            match &engine.scene {
+                SceneRuntime::Investigation(scene) => &scene.pending_queue,
+                _ => panic!("expected investigation scene"),
+            }
+        );
+        let next_queue_gen_before = engine.next_queue_gen;
+        let durable_revision_before = engine.durable_revision;
+
+        let error = engine.inspect_hotspot("desk").unwrap_err();
+
+        assert_eq!(error.code, "sceneValidationFailed");
+        assert!(error.message.contains("requires a represented authority"));
+        assert_eq!(format!("{:?}", engine.inventory), inventory_before);
+        assert_eq!(engine.story_state, story_before);
+        assert_eq!(engine.pending_acquisition_events, events_before);
+        assert_eq!(format!("{:?}", engine.history), history_before);
+        assert_eq!(engine.next_queue_gen, next_queue_gen_before);
+        assert_eq!(engine.durable_revision, durable_revision_before);
+        let SceneRuntime::Investigation(scene) = &engine.scene else {
+            panic!("expected investigation scene");
+        };
+        assert!(!scene.inspected_hotspots.contains("desk"));
+        assert!(!scene.unlocked_overrides.contains("hotspot:hidden"));
+        assert_eq!(format!("{:?}", scene.pending_queue), queue_before);
+    }
+
+    // Break caught: asking an already auto-broken question replays its
+    // complete-current transition instead of treating the question progress
+    // as the durable one-shot trigger.
+    #[test]
+    fn story_reveal_transaction_auto_break_replay_skips_dispatch() {
+        let mut definition = two_line_question_scene();
+        let InterrogationPhaseJson::Inquiry { questions, .. } = &mut definition.phases[0];
+        let question = questions.first_mut().expect("fixture question");
+        question.testimony.lines.clear();
+        question.reveals = vec![CombinedInterrogationRevealTarget::Story(
+            StoryRevealTarget::SetPrimaryObjective {
+                complete_current: true,
+                next_objective_id: Some("primary_b".into()),
+            },
+        )];
+        let mut engine = empty_engine_with_interrogation_scene(definition, 1);
+        engine.story_catalog = catalog_with_story_definitions(
+            vec![],
+            vec![],
+            vec![
+                serde_json::json!({
+                    "id": "primary_a",
+                    "label": "Primary A",
+                    "summary": "Primary A",
+                    "kind": "primary",
+                    "sortOrder": 0
+                }),
+                serde_json::json!({
+                    "id": "primary_b",
+                    "label": "Primary B",
+                    "summary": "Primary B",
+                    "kind": "primary",
+                    "sortOrder": 1
+                }),
+            ],
+            vec![],
+        );
+        engine
+            .story_state
+            .set_primary_objective(&engine.story_catalog, false, Some("primary_a"))
+            .unwrap();
+        engine.prime_initial_queue().unwrap();
+
+        engine.ask_interrogation_question("alibi").unwrap();
+        let after_first = engine.story_state.snapshot();
+        assert!(after_first.objectives["primary_a"].completed);
+        assert!(!after_first.objectives["primary_b"].completed);
+        assert_eq!(
+            after_first.active_primary_objective_id.as_deref(),
+            Some("primary_b")
+        );
+
+        engine.ask_interrogation_question("alibi").unwrap();
+        assert_eq!(engine.story_state.snapshot(), after_first);
     }
 
     #[test]

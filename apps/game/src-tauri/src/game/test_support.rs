@@ -176,7 +176,43 @@ pub(super) fn catalog_with_story_definitions(
     objectives: Vec<serde_json::Value>,
     authorizations: Vec<serde_json::Value>,
 ) -> crate::game::story::StoryCatalog {
+    catalog_with_story_definitions_and_case_records(
+        facts,
+        questions,
+        objectives,
+        authorizations,
+        vec![],
+        vec![],
+    )
+}
+
+pub(super) fn catalog_with_story_definitions_and_case_records(
+    facts: Vec<serde_json::Value>,
+    questions: Vec<serde_json::Value>,
+    objectives: Vec<serde_json::Value>,
+    authorizations: Vec<serde_json::Value>,
+    evidence: Vec<(
+        &str,
+        &str,
+        &str,
+        crate::game::provenance::CaseRecordProvenance,
+    )>,
+    statements: Vec<(
+        &str,
+        &str,
+        &str,
+        crate::game::provenance::CaseRecordProvenance,
+    )>,
+) -> crate::game::story::StoryCatalog {
     let dir = tempfile::tempdir().unwrap();
+    let record_json = |(id, chapter_id, scene_id, provenance)| {
+        serde_json::json!({
+            "id": id,
+            "chapterId": chapter_id,
+            "sceneId": scene_id,
+            "provenance": provenance,
+        })
+    };
     std::fs::write(
         dir.path().join("story_catalog.json"),
         serde_json::to_vec_pretty(&serde_json::json!({
@@ -186,8 +222,8 @@ pub(super) fn catalog_with_story_definitions(
             "objectives": objectives,
             "authorizations": authorizations,
             "sourceGroups": [],
-            "evidenceIndex": [],
-            "statementsIndex": [],
+            "evidenceIndex": evidence.into_iter().map(record_json).collect::<Vec<_>>(),
+            "statementsIndex": statements.into_iter().map(record_json).collect::<Vec<_>>(),
         }))
         .unwrap(),
     )

@@ -4,22 +4,129 @@ use crate::game::dialogue_queue::{DialogueSegment, DialogueSegmentOriginV1};
 use crate::game::scenes::interrogation::InterrogationSceneState;
 use crate::game::scenes::investigation::InvestigationSceneState;
 use crate::game::schema::{
-    CombinedInterrogationRevealTarget, InterrogationRevealTarget, InvestigationRevealTarget,
-    RevealTarget,
+    CombinedInterrogationRevealTarget, InterrogationRevealTarget, InventoryTarget,
+    InvestigationRevealTarget, RevealTarget, StoryRevealTarget,
+};
+use crate::game::story::{
+    AssertionOrigin, MutationOutcome, ObjectiveKind, StoryCatalog, StoryState,
 };
 use crate::game::GameError;
+use std::collections::BTreeMap;
 
-/// Task 11 owns the wire union, but Task 13 owns the atomic story-state
-/// dispatcher. Keep the legacy reveal applicator usable by its existing local
-/// callers while making a mixed batch fail closed before any local target can
-/// mutate inventory or scene overrides.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(super) struct FactSupport {
+    pub supporting_records: Vec<InventoryTarget>,
+    pub supporting_fact_ids: Vec<String>,
+}
+
+pub(super) struct StoryRevealMaterializationContext<'a> {
+    pub origin: AssertionOrigin,
+    pub fact_support_by_id: &'a BTreeMap<String, FactSupport>,
+    pub represented_authority: Option<&'a str>,
+}
+
+pub(super) fn apply_story_reveal(
+    catalog: &StoryCatalog,
+    story_state: &mut StoryState,
+    target: &StoryRevealTarget,
+    context: &StoryRevealMaterializationContext<'_>,
+) -> Result<MutationOutcome, GameError> {
+    match target {
+        StoryRevealTarget::AssertFact { fact_id } => {
+            let support = context
+                .fact_support_by_id
+                .get(fact_id)
+                .cloned()
+                .unwrap_or_default();
+            story_state.assert_fact(
+                catalog,
+                fact_id,
+                context.origin.clone(),
+                &support.supporting_records,
+                &support.supporting_fact_ids,
+            )
+        }
+        StoryRevealTarget::RevealQuestion { question_id } => {
+            story_state.reveal_question(catalog, question_id)
+        }
+        StoryRevealTarget::ResolveQuestion {
+            question_id,
+            fact_id,
+        } => story_state.resolve_question(catalog, question_id, fact_id),
+        StoryRevealTarget::RevealObjective { objective_id } => {
+            story_state.reveal_objective(catalog, objective_id)
+        }
+        StoryRevealTarget::CompleteObjective { objective_id } => {
+            if catalog
+                .objective(objective_id)
+                .is_some_and(|definition| definition.kind == ObjectiveKind::Primary)
+            {
+                return Err(GameError::invalid_primary_objective_transition(format!(
+                    "completeObjective only accepts secondary objectives; '{objective_id}' is primary"
+                )));
+            }
+            story_state.complete_objective(catalog, objective_id)
+        }
+        StoryRevealTarget::SetPrimaryObjective {
+            complete_current,
+            next_objective_id,
+        } => story_state.set_primary_objective(
+            catalog,
+            *complete_current,
+            next_objective_id.as_deref(),
+        ),
+        StoryRevealTarget::GrantAuthorization { authorization_id } => {
+            let Some(definition) = catalog.authorization(authorization_id) else {
+                return story_state.grant_authorization(
+                    catalog,
+                    authorization_id,
+                    context.origin.clone(),
+                );
+            };
+            let Some(represented_authority) = context.represented_authority else {
+                return Err(GameError::scene_validation_failed(format!(
+                    "grantAuthorization for '{authorization_id}' requires a represented authority"
+                )));
+            };
+            if represented_authority != definition.granting_authority {
+                return Err(GameError::scene_validation_failed(format!(
+                    "grantAuthorization for '{authorization_id}' represents '{represented_authority}', expected '{}'",
+                    definition.granting_authority
+                )));
+            }
+            story_state.grant_authorization(catalog, authorization_id, context.origin.clone())
+        }
+    }
+}
+
+#[allow(dead_code)] // Kept as the focused batch API for future non-scene adapters.
+pub(super) fn apply_story_reveals(
+    catalog: &StoryCatalog,
+    story_state: &mut StoryState,
+    targets: &[StoryRevealTarget],
+    context: &StoryRevealMaterializationContext<'_>,
+) -> Result<MutationOutcome, GameError> {
+    let mut outcome = MutationOutcome::Unchanged;
+    for target in targets {
+        if apply_story_reveal(catalog, story_state, target, context)? == MutationOutcome::Changed {
+            outcome = MutationOutcome::Changed;
+        }
+    }
+    Ok(outcome)
+}
+
 pub(super) trait InvestigationRevealItem {
     fn local_target(&self) -> Option<&RevealTarget>;
+    fn story_target(&self) -> Option<&StoryRevealTarget>;
 }
 
 impl InvestigationRevealItem for RevealTarget {
     fn local_target(&self) -> Option<&RevealTarget> {
         Some(self)
+    }
+
+    fn story_target(&self) -> Option<&StoryRevealTarget> {
+        None
     }
 }
 
@@ -30,15 +137,27 @@ impl InvestigationRevealItem for InvestigationRevealTarget {
             Self::Story(_) => None,
         }
     }
+
+    fn story_target(&self) -> Option<&StoryRevealTarget> {
+        match self {
+            Self::Local(_) => None,
+            Self::Story(target) => Some(target),
+        }
+    }
 }
 
 pub(super) trait InterrogationRevealItem {
     fn local_target(&self) -> Option<&InterrogationRevealTarget>;
+    fn story_target(&self) -> Option<&StoryRevealTarget>;
 }
 
 impl InterrogationRevealItem for InterrogationRevealTarget {
     fn local_target(&self) -> Option<&InterrogationRevealTarget> {
         Some(self)
+    }
+
+    fn story_target(&self) -> Option<&StoryRevealTarget> {
+        None
     }
 }
 
@@ -49,64 +168,34 @@ impl InterrogationRevealItem for CombinedInterrogationRevealTarget {
             Self::Story(_) => None,
         }
     }
-}
 
-fn story_reveal_dispatch_unavailable() -> GameError {
-    GameError::scene_validation_failed(
-        "story reveal dispatch is unavailable before HPA-257 Task 13".into(),
-    )
-}
-
-fn preflight_investigation_reveal_items<T: InvestigationRevealItem>(
-    reveals: &[T],
-) -> Result<(), GameError> {
-    if reveals.iter().any(|target| target.local_target().is_none()) {
-        return Err(story_reveal_dispatch_unavailable());
+    fn story_target(&self) -> Option<&StoryRevealTarget> {
+        match self {
+            Self::Local(_) => None,
+            Self::Story(target) => Some(target),
+        }
     }
-    Ok(())
-}
-
-fn preflight_interrogation_reveal_items<T: InterrogationRevealItem>(
-    reveals: &[T],
-) -> Result<(), GameError> {
-    if reveals.iter().any(|target| target.local_target().is_none()) {
-        return Err(story_reveal_dispatch_unavailable());
-    }
-    Ok(())
-}
-
-/// Run this before consuming an investigation trigger that carries the new
-/// Task 11 union. Task 13 replaces this with an atomic local-plus-story
-/// dispatcher.
-pub(super) fn preflight_investigation_reveals(
-    reveals: &[InvestigationRevealTarget],
-) -> Result<(), GameError> {
-    preflight_investigation_reveal_items(reveals)
-}
-
-/// Run this before consuming an interrogation trigger that carries the new
-/// Task 11 union. Task 13 replaces this with an atomic local-plus-story
-/// dispatcher.
-pub(super) fn preflight_interrogation_reveals(
-    reveals: &[CombinedInterrogationRevealTarget],
-) -> Result<(), GameError> {
-    preflight_interrogation_reveal_items(reveals)
 }
 
 pub(super) fn apply_reveals_and_build_queue<T: InvestigationRevealItem>(
     scene: &mut InvestigationSceneState,
     acq: &mut AcquisitionCtx,
+    story_state: &mut StoryState,
+    story_context: &StoryRevealMaterializationContext<'_>,
     trigger_segment: Option<DialogueSegment>,
     reveals: &[T],
     chapter_id: &str,
 ) -> Result<Vec<DialogueSegment>, GameError> {
-    preflight_investigation_reveal_items(reveals)?;
     let mut segments: Vec<DialogueSegment> = trigger_segment.into_iter().collect();
     for r in reveals {
-        let r = r
-            .local_target()
-            .ok_or_else(story_reveal_dispatch_unavailable)?;
-        match r {
+        let Some(local_target) = r.local_target() else {
+            let story_target = r.story_target().ok_or_else(|| {
+                GameError::internal("reveal target is neither local nor story".into())
+            })?;
+            apply_story_reveal(acq.catalog, story_state, story_target, story_context)?;
+            continue;
+        };
+        match local_target {
             RevealTarget::Evidence { id } => {
                 if let Some(def) = scene.def.evidence_manifest.iter().find(|e| e.id == *id) {
                     let newly_added = acq.evidence(def, chapter_id, &scene.def.id)?;
@@ -157,17 +246,22 @@ pub(super) fn apply_reveals_and_build_queue<T: InvestigationRevealItem>(
 pub(super) fn apply_interrogation_reveals_and_build_queue<T: InterrogationRevealItem>(
     scene: &mut InterrogationSceneState,
     acq: &mut AcquisitionCtx,
+    story_state: &mut StoryState,
+    story_context: &StoryRevealMaterializationContext<'_>,
     trigger_segment: Option<DialogueSegment>,
     reveals: &[T],
     chapter_id: &str,
 ) -> Result<Vec<DialogueSegment>, GameError> {
-    preflight_interrogation_reveal_items(reveals)?;
     let mut segments: Vec<DialogueSegment> = trigger_segment.into_iter().collect();
     for r in reveals {
-        let r = r
-            .local_target()
-            .ok_or_else(story_reveal_dispatch_unavailable)?;
-        match r {
+        let Some(local_target) = r.local_target() else {
+            let story_target = r.story_target().ok_or_else(|| {
+                GameError::internal("reveal target is neither local nor story".into())
+            })?;
+            apply_story_reveal(acq.catalog, story_state, story_target, story_context)?;
+            continue;
+        };
+        match local_target {
             InterrogationRevealTarget::Evidence { id } => {
                 if let Some(def) = scene.def.evidence_manifest.iter().find(|e| e.id == *id) {
                     let newly_added = acq.evidence(def, chapter_id, &scene.def.id)?;
@@ -221,7 +315,11 @@ mod tests {
         StoryRevealTarget,
     };
     use crate::game::state::Inventory;
-    use crate::game::test_support::catalog_with_case_records;
+    use crate::game::story::{AssertionOrigin, StoryEventBlockKind, StoryState};
+    use crate::game::test_support::{
+        catalog_with_case_records, catalog_with_story_definitions_and_case_records,
+    };
+    use std::collections::BTreeMap;
 
     fn evidence_def(id: &str) -> EvidenceJson {
         EvidenceJson {
@@ -319,14 +417,468 @@ mod tests {
         )
     }
 
-    // Break caught: an HPA-257 story target arrives in a mixed batch after a
-    // legacy local target, and the legacy path mutates inventory before Task
-    // 13 has an atomic story dispatcher to own the whole batch.
+    fn apply_investigation_reveals_for_test<T: InvestigationRevealItem>(
+        scene: &mut InvestigationSceneState,
+        acq: &mut AcquisitionCtx,
+        trigger_segment: Option<DialogueSegment>,
+        reveals: &[T],
+        chapter_id: &str,
+    ) -> Result<Vec<DialogueSegment>, GameError> {
+        let mut story_state = StoryState::default();
+        let fact_support_by_id = BTreeMap::new();
+        let context = StoryRevealMaterializationContext {
+            origin: story_origin("legacy"),
+            fact_support_by_id: &fact_support_by_id,
+            represented_authority: None,
+        };
+        apply_reveals_and_build_queue(
+            scene,
+            acq,
+            &mut story_state,
+            &context,
+            trigger_segment,
+            reveals,
+            chapter_id,
+        )
+    }
+
+    fn apply_interrogation_reveals_for_test<T: InterrogationRevealItem>(
+        scene: &mut InterrogationSceneState,
+        acq: &mut AcquisitionCtx,
+        trigger_segment: Option<DialogueSegment>,
+        reveals: &[T],
+        chapter_id: &str,
+    ) -> Result<Vec<DialogueSegment>, GameError> {
+        let mut story_state = StoryState::default();
+        let fact_support_by_id = BTreeMap::new();
+        let context = StoryRevealMaterializationContext {
+            origin: story_origin("legacy"),
+            fact_support_by_id: &fact_support_by_id,
+            represented_authority: None,
+        };
+        apply_interrogation_reveals_and_build_queue(
+            scene,
+            acq,
+            &mut story_state,
+            &context,
+            trigger_segment,
+            reveals,
+            chapter_id,
+        )
+    }
+
+    fn story_catalog() -> crate::game::story::StoryCatalog {
+        catalog_with_story_definitions_and_case_records(
+            vec![
+                serde_json::json!({
+                    "id": "fact_support",
+                    "label": "Support",
+                    "summary": "Support",
+                    "details": "Support",
+                    "category": "test"
+                }),
+                serde_json::json!({
+                    "id": "fact_main",
+                    "label": "Main",
+                    "summary": "Main",
+                    "details": "Main",
+                    "category": "test"
+                }),
+            ],
+            vec![serde_json::json!({
+                "id": "question_a",
+                "label": "Question",
+                "summary": "Question",
+                "resolvedByFactIds": ["fact_main"]
+            })],
+            vec![
+                serde_json::json!({
+                    "id": "primary_a",
+                    "label": "Primary A",
+                    "summary": "Primary A",
+                    "kind": "primary",
+                    "sortOrder": 0
+                }),
+                serde_json::json!({
+                    "id": "primary_b",
+                    "label": "Primary B",
+                    "summary": "Primary B",
+                    "kind": "primary",
+                    "sortOrder": 1
+                }),
+                serde_json::json!({
+                    "id": "secondary_a",
+                    "label": "Secondary",
+                    "summary": "Secondary",
+                    "kind": "secondary",
+                    "sortOrder": 2
+                }),
+            ],
+            vec![serde_json::json!({
+                "id": "authorization_a",
+                "label": "Authorization",
+                "summary": "Authorization",
+                "grantingAuthority": "Police"
+            })],
+            vec![
+                (
+                    "record_a",
+                    "chapter_1",
+                    "investigation_scene_1",
+                    crate::game::provenance::CaseRecordProvenance::default(),
+                ),
+                (
+                    "record_b",
+                    "chapter_1",
+                    "investigation_scene_1",
+                    crate::game::provenance::CaseRecordProvenance::default(),
+                ),
+            ],
+            vec![],
+        )
+    }
+
+    fn story_origin(block_id: &str) -> AssertionOrigin {
+        AssertionOrigin::SceneEvent {
+            chapter_id: "chapter_1".into(),
+            scene_id: "investigation_scene_1".into(),
+            block_kind: StoryEventBlockKind::Hotspot,
+            block_id: block_id.into(),
+        }
+    }
+
+    // Break caught: dispatcher reorders a resolver ahead of its authored fact
+    // assertion, or omits one of the HPA-257 target-to-mutation mappings.
     #[test]
-    fn investigation_mixed_batch_rejects_before_any_local_reveal_mutates() {
-        let catalog = evidence_catalog("i", &["coffee"]);
+    fn story_reveals_dispatch_every_target_in_author_order() {
+        let catalog = story_catalog();
+        let mut state = StoryState::default();
+        let support = BTreeMap::from([(
+            "fact_main".into(),
+            FactSupport {
+                supporting_records: vec![],
+                supporting_fact_ids: vec!["fact_support".into()],
+            },
+        )]);
+        let seed_context = StoryRevealMaterializationContext {
+            origin: story_origin("seed"),
+            fact_support_by_id: &BTreeMap::new(),
+            represented_authority: None,
+        };
+        apply_story_reveal(
+            &catalog,
+            &mut state,
+            &StoryRevealTarget::AssertFact {
+                fact_id: "fact_support".into(),
+            },
+            &seed_context,
+        )
+        .unwrap();
+        let context = StoryRevealMaterializationContext {
+            origin: story_origin("ordered"),
+            fact_support_by_id: &support,
+            represented_authority: Some("Police"),
+        };
+
+        apply_story_reveals(
+            &catalog,
+            &mut state,
+            &[
+                StoryRevealTarget::AssertFact {
+                    fact_id: "fact_main".into(),
+                },
+                StoryRevealTarget::RevealQuestion {
+                    question_id: "question_a".into(),
+                },
+                StoryRevealTarget::ResolveQuestion {
+                    question_id: "question_a".into(),
+                    fact_id: "fact_main".into(),
+                },
+                StoryRevealTarget::RevealObjective {
+                    objective_id: "secondary_a".into(),
+                },
+                StoryRevealTarget::CompleteObjective {
+                    objective_id: "secondary_a".into(),
+                },
+                StoryRevealTarget::GrantAuthorization {
+                    authorization_id: "authorization_a".into(),
+                },
+            ],
+            &context,
+        )
+        .unwrap();
+
+        let snapshot = state.snapshot();
+        assert_eq!(
+            snapshot.questions["question_a"]
+                .resolved_by_fact_id
+                .as_deref(),
+            Some("fact_main")
+        );
+        assert!(snapshot.objectives["secondary_a"].completed);
+        assert!(snapshot.authorizations.contains_key("authorization_a"));
+        assert_eq!(
+            snapshot.facts["fact_main"].supporting_fact_ids,
+            std::collections::BTreeSet::from(["fact_support".into()])
+        );
+    }
+
+    // Break caught: HPA-257 bypasses HPA-255's set-primary transition method
+    // or loses complete-current/null-next semantics.
+    #[test]
+    fn story_reveal_set_primary_uses_hpa_255_transition_semantics() {
+        let catalog = story_catalog();
+        let mut state = StoryState::default();
+        let empty_support = BTreeMap::new();
+        let context = StoryRevealMaterializationContext {
+            origin: story_origin("primary"),
+            fact_support_by_id: &empty_support,
+            represented_authority: None,
+        };
+
+        apply_story_reveal(
+            &catalog,
+            &mut state,
+            &StoryRevealTarget::SetPrimaryObjective {
+                complete_current: false,
+                next_objective_id: Some("primary_a".into()),
+            },
+            &context,
+        )
+        .unwrap();
+        apply_story_reveal(
+            &catalog,
+            &mut state,
+            &StoryRevealTarget::SetPrimaryObjective {
+                complete_current: true,
+                next_objective_id: Some("primary_b".into()),
+            },
+            &context,
+        )
+        .unwrap();
+        apply_story_reveal(
+            &catalog,
+            &mut state,
+            &StoryRevealTarget::SetPrimaryObjective {
+                complete_current: true,
+                next_objective_id: None,
+            },
+            &context,
+        )
+        .unwrap();
+
+        let snapshot = state.snapshot();
+        assert!(snapshot.objectives["primary_a"].completed);
+        assert!(snapshot.objectives["primary_b"].completed);
+        assert_eq!(snapshot.active_primary_objective_id, None);
+    }
+
+    // Break caught: resolveQuestion bypasses HPA-255's asserted-resolver
+    // prerequisite when reached through the authored dispatcher.
+    #[test]
+    fn story_reveal_question_resolution_requires_an_asserted_resolver() {
+        let catalog = story_catalog();
+        let mut state = StoryState::default();
+        let empty_support = BTreeMap::new();
+        let context = StoryRevealMaterializationContext {
+            origin: story_origin("resolver"),
+            fact_support_by_id: &empty_support,
+            represented_authority: None,
+        };
+
+        let error = apply_story_reveal(
+            &catalog,
+            &mut state,
+            &StoryRevealTarget::ResolveQuestion {
+                question_id: "question_a".into(),
+                fact_id: "fact_main".into(),
+            },
+            &context,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, "invalidQuestionResolutionFact");
+        assert_eq!(state, StoryState::default());
+    }
+
+    // Break caught: direct completeObjective broadens HPA-255's internal API
+    // and completes a primary objective from authored reveal syntax.
+    #[test]
+    fn story_reveal_direct_completion_rejects_primary_objectives() {
+        let catalog = story_catalog();
+        let mut state = StoryState::default();
+        let empty_support = BTreeMap::new();
+        let context = StoryRevealMaterializationContext {
+            origin: story_origin("complete"),
+            fact_support_by_id: &empty_support,
+            represented_authority: None,
+        };
+
+        let error = apply_story_reveal(
+            &catalog,
+            &mut state,
+            &StoryRevealTarget::CompleteObjective {
+                objective_id: "primary_a".into(),
+            },
+            &context,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, "invalidPrimaryObjectiveTransition");
+        assert_eq!(state, StoryState::default());
+    }
+
+    // Break caught: grantAuthorization ignores the adapter's represented
+    // authority, allowing ordinary scene triggers to mint authority progress.
+    #[test]
+    fn story_reveal_authorization_requires_matching_represented_authority() {
+        let catalog = story_catalog();
+        for represented_authority in [None, Some("Court")] {
+            let mut state = StoryState::default();
+            let empty_support = BTreeMap::new();
+            let context = StoryRevealMaterializationContext {
+                origin: story_origin("grant"),
+                fact_support_by_id: &empty_support,
+                represented_authority,
+            };
+            let error = apply_story_reveal(
+                &catalog,
+                &mut state,
+                &StoryRevealTarget::GrantAuthorization {
+                    authorization_id: "authorization_a".into(),
+                },
+                &context,
+            )
+            .unwrap_err();
+            assert_eq!(error.code, "sceneValidationFailed");
+            assert_eq!(state, StoryState::default());
+        }
+    }
+
+    // Break caught: repeated valid fact events replace provenance/support
+    // instead of preserving the first origin and unioning direct support.
+    #[test]
+    fn story_reveal_fact_materialization_preserves_origin_and_unions_support() {
+        let catalog = story_catalog();
+        let mut state = StoryState::default();
+        let empty_support = BTreeMap::new();
+        let seed_context = StoryRevealMaterializationContext {
+            origin: story_origin("seed"),
+            fact_support_by_id: &empty_support,
+            represented_authority: None,
+        };
+        apply_story_reveal(
+            &catalog,
+            &mut state,
+            &StoryRevealTarget::AssertFact {
+                fact_id: "fact_support".into(),
+            },
+            &seed_context,
+        )
+        .unwrap();
+
+        let first_support = BTreeMap::from([(
+            "fact_main".into(),
+            FactSupport {
+                supporting_records: vec![InventoryTarget::Evidence {
+                    id: "record_a".into(),
+                }],
+                supporting_fact_ids: vec![],
+            },
+        )]);
+        let first_origin = story_origin("first");
+        apply_story_reveal(
+            &catalog,
+            &mut state,
+            &StoryRevealTarget::AssertFact {
+                fact_id: "fact_main".into(),
+            },
+            &StoryRevealMaterializationContext {
+                origin: first_origin.clone(),
+                fact_support_by_id: &first_support,
+                represented_authority: None,
+            },
+        )
+        .unwrap();
+        let second_support = BTreeMap::from([(
+            "fact_main".into(),
+            FactSupport {
+                supporting_records: vec![InventoryTarget::Evidence {
+                    id: "record_b".into(),
+                }],
+                supporting_fact_ids: vec!["fact_support".into()],
+            },
+        )]);
+        apply_story_reveal(
+            &catalog,
+            &mut state,
+            &StoryRevealTarget::AssertFact {
+                fact_id: "fact_main".into(),
+            },
+            &StoryRevealMaterializationContext {
+                origin: story_origin("second"),
+                fact_support_by_id: &second_support,
+                represented_authority: None,
+            },
+        )
+        .unwrap();
+
+        let fact = &state.snapshot().facts["fact_main"];
+        assert_eq!(fact.first_origin, first_origin);
+        assert_eq!(
+            fact.supporting_records,
+            std::collections::BTreeSet::from([
+                InventoryTarget::Evidence {
+                    id: "record_a".into(),
+                },
+                InventoryTarget::Evidence {
+                    id: "record_b".into(),
+                },
+            ])
+        );
+        assert_eq!(
+            fact.supporting_fact_ids,
+            std::collections::BTreeSet::from(["fact_support".into()])
+        );
+    }
+
+    #[test]
+    fn reveal_dispatcher_delegates_primary_mutation() {
+        let source = include_str!("reveals.rs");
+        let production_source = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("reveals source has a production section");
+        let direct_active_primary_assignment = ["active_primary", "_objective_id ="].concat();
+        let direct_objective_insert = ["objectives", ".insert("].concat();
+        assert!(production_source.contains(".set_primary_objective("));
+        assert!(!production_source.contains(&direct_active_primary_assignment));
+        assert!(!production_source.contains(&direct_objective_insert));
+    }
+
+    // Break caught: the investigation wrapper handles only one half of a
+    // mixed local/story batch instead of preserving authored order.
+    #[test]
+    fn investigation_mixed_batch_dispatches_local_and_story_targets() {
+        let catalog = catalog_with_story_definitions_and_case_records(
+            vec![serde_json::json!({
+                "id": "fact_a", "label": "Fact", "summary": "Fact",
+                "details": "Fact", "category": "test"
+            })],
+            vec![],
+            vec![],
+            vec![],
+            vec![(
+                "coffee",
+                "chapter_1",
+                "i",
+                crate::game::provenance::CaseRecordProvenance::default(),
+            )],
+            vec![],
+        );
         let mut scene = empty_scene_with_evidence(vec![evidence_def("coffee")]);
         let mut inventory = Inventory::default();
+        let mut story_state = StoryState::default();
         let mut events = Vec::new();
         let mut next_ordinal = 0;
         let mut acquisition = AcquisitionCtx {
@@ -344,27 +896,53 @@ mod tests {
                 fact_id: "fact_a".into(),
             }),
         ];
+        let fact_support_by_id = BTreeMap::new();
+        let context = StoryRevealMaterializationContext {
+            origin: story_origin("desk"),
+            fact_support_by_id: &fact_support_by_id,
+            represented_authority: None,
+        };
 
-        let error = apply_reveals_and_build_queue(
+        apply_reveals_and_build_queue(
             &mut scene,
             &mut acquisition,
+            &mut story_state,
+            &context,
             None,
             &reveals,
             "chapter_1",
         )
-        .unwrap_err();
+        .unwrap();
 
-        assert_eq!(error.code, "sceneValidationFailed");
-        assert!(!inventory.has_evidence("coffee"));
-        assert!(events.is_empty());
-        assert_eq!(next_ordinal, 0);
+        assert!(inventory.has_evidence("coffee"));
+        assert!(story_state.snapshot().facts.contains_key("fact_a"));
+        assert_eq!(events.len(), 1);
+        assert_eq!(next_ordinal, 1);
     }
 
+    // Break caught: the interrogation wrapper drops story variants after
+    // applying its local inventory reveal.
     #[test]
-    fn interrogation_mixed_batch_rejects_before_any_local_reveal_mutates() {
-        let catalog = evidence_catalog("interrogation", &["coffee"]);
+    fn interrogation_mixed_batch_dispatches_local_and_story_targets() {
+        let catalog = catalog_with_story_definitions_and_case_records(
+            vec![serde_json::json!({
+                "id": "fact_a", "label": "Fact", "summary": "Fact",
+                "details": "Fact", "category": "test"
+            })],
+            vec![],
+            vec![],
+            vec![],
+            vec![(
+                "coffee",
+                "chapter_1",
+                "interrogation",
+                crate::game::provenance::CaseRecordProvenance::default(),
+            )],
+            vec![],
+        );
         let mut scene = empty_interrogation_scene_with_evidence(vec![evidence_def("coffee")]);
         let mut inventory = Inventory::default();
+        let mut story_state = StoryState::default();
         let mut events = Vec::new();
         let mut next_ordinal = 0;
         let mut acquisition = AcquisitionCtx {
@@ -382,20 +960,33 @@ mod tests {
                 fact_id: "fact_a".into(),
             }),
         ];
+        let fact_support_by_id = BTreeMap::new();
+        let context = StoryRevealMaterializationContext {
+            origin: AssertionOrigin::SceneEvent {
+                chapter_id: "chapter_1".into(),
+                scene_id: "interrogation".into(),
+                block_kind: StoryEventBlockKind::InquiryQuestion,
+                block_id: "question".into(),
+            },
+            fact_support_by_id: &fact_support_by_id,
+            represented_authority: None,
+        };
 
-        let error = apply_interrogation_reveals_and_build_queue(
+        apply_interrogation_reveals_and_build_queue(
             &mut scene,
             &mut acquisition,
+            &mut story_state,
+            &context,
             None,
             &reveals,
             "chapter_1",
         )
-        .unwrap_err();
+        .unwrap();
 
-        assert_eq!(error.code, "sceneValidationFailed");
-        assert!(!inventory.has_evidence("coffee"));
-        assert!(events.is_empty());
-        assert_eq!(next_ordinal, 0);
+        assert!(inventory.has_evidence("coffee"));
+        assert!(story_state.snapshot().facts.contains_key("fact_a"));
+        assert_eq!(events.len(), 1);
+        assert_eq!(next_ordinal, 1);
     }
 
     // Break caught: a reveal swallows the catalog mismatch and commits an
@@ -425,7 +1016,7 @@ mod tests {
             next_ordinal: &mut next_ordinal,
         };
 
-        let error = apply_reveals_and_build_queue(
+        let error = apply_investigation_reveals_for_test(
             &mut scene,
             &mut acq,
             None,
@@ -456,7 +1047,7 @@ mod tests {
             command_id: 1,
             next_ordinal: &mut next_ordinal,
         };
-        let queue = apply_reveals_and_build_queue(
+        let queue = apply_investigation_reveals_for_test(
             &mut scene,
             &mut acq,
             investigation_trigger(vec![DialogueItem::Line {
@@ -489,7 +1080,7 @@ mod tests {
             command_id: 1,
             next_ordinal: &mut next_ordinal,
         };
-        let queue = apply_reveals_and_build_queue(
+        let queue = apply_investigation_reveals_for_test(
             &mut scene,
             &mut acq,
             investigation_trigger(vec![DialogueItem::Line {
@@ -536,7 +1127,7 @@ mod tests {
             command_id: 1,
             next_ordinal: &mut next_ordinal,
         };
-        let _ = apply_reveals_and_build_queue(
+        let _ = apply_investigation_reveals_for_test(
             &mut scene,
             &mut acq,
             None,
@@ -546,7 +1137,7 @@ mod tests {
             "chapter_1",
         )
         .unwrap();
-        let queue2 = apply_reveals_and_build_queue(
+        let queue2 = apply_investigation_reveals_for_test(
             &mut scene,
             &mut acq,
             None,
@@ -573,7 +1164,7 @@ mod tests {
             command_id: 1,
             next_ordinal: &mut next_ordinal,
         };
-        let queue = apply_reveals_and_build_queue(
+        let queue = apply_investigation_reveals_for_test(
             &mut scene,
             &mut acq,
             None,
@@ -601,7 +1192,7 @@ mod tests {
             command_id: 1,
             next_ordinal: &mut next_ordinal,
         };
-        let queue = apply_interrogation_reveals_and_build_queue(
+        let queue = apply_interrogation_reveals_for_test(
             &mut scene,
             &mut acq,
             interrogation_trigger(vec![DialogueItem::Line {
@@ -633,7 +1224,7 @@ mod tests {
             command_id: 1,
             next_ordinal: &mut next_ordinal,
         };
-        let queue = apply_interrogation_reveals_and_build_queue(
+        let queue = apply_interrogation_reveals_for_test(
             &mut scene,
             &mut acq,
             None,
