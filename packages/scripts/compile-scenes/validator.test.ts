@@ -3048,6 +3048,59 @@ describe("validator", () => {
     ).toBeUndefined();
   });
 
+  it("guarantees a threshold predicate required by enough child conditions", () => {
+    const prior = mkGuaranteeingInvestigation("a");
+    prior.ast.evidenceManifest = [
+      mkEvidence("a", "room"),
+      mkEvidence("b", "room"),
+    ];
+    prior.ast.sublocations[0]!.hotspots[0]!.id = "h";
+    prior.ast.sublocations[0]!.hotspots[0]!.reveals = [
+      { kind: "evidence", id: "a" },
+      { kind: "evidence", id: "b" },
+    ];
+    prior.ast.outro = {
+      unlock: {
+        op: "at_least",
+        count: 2,
+        conditions: [
+          { predicate: "evidence_collected", id: "a" },
+          {
+            op: "and",
+            left: { predicate: "evidence_collected", id: "a" },
+            right: { predicate: "hotspot_investigated", id: "h" },
+          },
+          { predicate: "evidence_collected", id: "b" },
+        ],
+      },
+      dialogue: [],
+    };
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "p",
+          questions: [
+            mkQuestion({
+              id: "q",
+              testimony: mkTestimony([
+                mkContradictionLine("l", { kind: "evidence", id: "a" }),
+              ]),
+            }),
+          ],
+        }),
+      ],
+    });
+
+    const errors = validateInterrogation(scene, [prior]);
+    expect(
+      errors.find(
+        (error) =>
+          error.code === "crossSceneInventoryNotGuaranteed" &&
+          error.message.includes("evidence:a"),
+      ),
+    ).toBeUndefined();
+  });
+
   // ---- Outro predicate reachability ----
 
   it("rejects an interrogation outro requiring evidence never obtainable in the scene", () => {
