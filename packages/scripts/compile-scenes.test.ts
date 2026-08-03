@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
+import { createAnalysisDefinitionRegistry } from "./compile-scenes/analysis-definition-registry";
 import { enrichScenesWithAssets } from "./compile-scenes/assets/enrich";
 import type { AssetConfig } from "./compile-scenes/assets/config";
 import { parseChapter } from "./compile-scenes/parser-chapter";
@@ -47,6 +48,26 @@ const NEUTRAL_CASE_RECORD_PROVENANCE = {
   proofCapabilities: [],
   supersedesRecordId: null,
 };
+
+const HPA_257_DIAGNOSTIC_CODES = new Set([
+  "positiveSelfReference",
+  "positiveDependencyCycle",
+  "requiredContentUnreachable",
+  "mandatoryAuthorizationUnreachable",
+  "storyRevealBatchAlwaysInvalid",
+  "storyRevealBatchOrderDependent",
+  "primaryObjectiveTransitionAlwaysInvalid",
+  "primaryObjectiveOrderingNotExhaustive",
+  "optionalContentUnreachable",
+]);
+
+function hpa257DiagnosticCodes(
+  diagnostics: ReadonlyArray<{ code: string }>,
+): string[] {
+  return diagnostics
+    .filter((diagnostic) => HPA_257_DIAGNOSTIC_CODES.has(diagnostic.code))
+    .map((diagnostic) => diagnostic.code);
+}
 
 function annotateCoffeeWithSourceGroup(sourceRoot: string): void {
   const scenePath = resolve(sourceRoot, "chapter_1/investigation_scene_1.md");
@@ -246,7 +267,6 @@ describe("compile (end-to-end against valid fixture)", () => {
         ],
       });
       expect(investigation.sublocations[0].hotspots[0].reveals).toEqual([
-        { kind: "assertFact", factId: "door_conflict" },
         { kind: "revealQuestion", questionId: "who_entered" },
         {
           kind: "resolveQuestion",
@@ -258,13 +278,13 @@ describe("compile (end-to-end against valid fixture)", () => {
         {
           kind: "setPrimaryObjective",
           completeCurrent: true,
-          nextObjectiveId: "present_request",
+          nextObjectiveId: null,
         },
       ]);
       expect(investigation.sublocations[0].hotspots[0].reveals).toContainEqual({
         kind: "setPrimaryObjective",
         completeCurrent: true,
-        nextObjectiveId: "present_request",
+        nextObjectiveId: null,
       });
       expect(investigation.sublocations[0].hotspots[1].unlock).toEqual({
         op: "at_least",
@@ -308,13 +328,7 @@ describe("compile (end-to-end against valid fixture)", () => {
         ],
       });
       expect(interrogation.phases[0].reveals).toEqual([
-        { kind: "assertFact", factId: "door_conflict" },
         { kind: "revealQuestion", questionId: "who_entered" },
-        {
-          kind: "resolveQuestion",
-          questionId: "who_entered",
-          factId: "door_conflict",
-        },
         { kind: "revealObjective", objectiveId: "verify_alibi" },
         { kind: "completeObjective", objectiveId: "verify_alibi" },
         {
@@ -327,6 +341,27 @@ describe("compile (end-to-end against valid fixture)", () => {
         predicate: "fact_asserted",
         id: "door_conflict",
       });
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts an injected synthetic analysis registry", () => {
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-hpa-257-registry-"),
+    );
+    try {
+      const result = compile({
+        sourceRoot: "packages/scripts/__fixtures__/hpa_257_valid",
+        outputRoot: outRoot,
+        analysisRegistry: createAnalysisDefinitionRegistry({
+          scenes: [{ chapterId: "chapter_9", sceneId: "analysis_scene_1" }],
+          boards: [],
+        }),
+      });
+      if (!result.ok) {
+        throw new Error("Compile failed:\n" + formatErrors(result.errors));
+      }
     } finally {
       rmSync(outRoot, { recursive: true, force: true });
     }
@@ -456,6 +491,113 @@ describe("invalid fixtures: each one fails with a specific error code", () => {
       }
     });
   }
+});
+
+describe("HPA-257 compiler diagnostics", () => {
+  const WARNING_ROOT = "packages/scripts/__fixtures__/hpa_257_warnings";
+  const warningFixtures = readdirSync(WARNING_ROOT)
+    .filter((name) => statSync(resolve(WARNING_ROOT, name)).isDirectory())
+    .sort((left, right) => left.localeCompare(right));
+
+  for (const name of warningFixtures) {
+    it(`returns the expected reachability warning snapshot for "${name}"`, () => {
+      const sourceRoot = resolve(WARNING_ROOT, name);
+      const expectedWarningCodes = readFileSync(
+        resolve(sourceRoot, "expected-warning.txt"),
+        "utf-8",
+      )
+        .trim()
+        .split(/\r?\n/)
+        .filter(Boolean);
+      const outRoot = mkdtempSync(
+        resolve(tmpdir(), `scene-compile-hpa-257-warning-${name}-`),
+      );
+      try {
+        const result = compile({ sourceRoot, outputRoot: outRoot });
+        if (!result.ok) {
+          throw new Error("Compile failed:\n" + formatErrors(result.errors));
+        }
+        expect(hpa257DiagnosticCodes(result.warnings)).toEqual(
+          expectedWarningCodes,
+        );
+      } finally {
+        rmSync(outRoot, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it("sorts new reachability errors by source location before the normalized node key", () => {
+    const sourceRoot = resolve(
+      "packages/scripts/__fixtures__/invalid/hpa_257_positive_self_reference",
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-hpa-257-diagnostic-order-"),
+    );
+    try {
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(
+        result.errors
+          .filter((error) => error.code === "positiveSelfReference")
+          .map(({ sourceFile, line, code }) => ({ sourceFile, line, code })),
+      ).toEqual([
+        {
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 9,
+          code: "positiveSelfReference",
+        },
+        {
+          sourceFile: "chapter_1/investigation_scene_1.md",
+          line: 18,
+          code: "positiveSelfReference",
+        },
+      ]);
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("skips abstract effect simulation after semantic reference validation fails", () => {
+    const fixtureRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-hpa-257-invalid-reference-"),
+    );
+    const sourceRoot = resolve(fixtureRoot, "fixture");
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-hpa-257-invalid-reference-output-"),
+    );
+    try {
+      cpSync(
+        resolve(
+          "packages/scripts/__fixtures__/invalid/hpa_257_positive_self_reference",
+        ),
+        sourceRoot,
+        { recursive: true },
+      );
+      const scenePath = resolve(
+        sourceRoot,
+        "chapter_1/investigation_scene_1.md",
+      );
+      writeFileSync(
+        scenePath,
+        readFileSync(scenePath, "utf-8").replace(
+          "[assert_fact:zeta_loop]",
+          "[assert_fact:zeta_loop, assert_fact:unknown_fact]",
+        ),
+      );
+
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(
+        result.errors.some((error) => error.message.includes("unknown_fact")),
+      ).toBe(true);
+      expect(hpa257DiagnosticCodes(result.errors)).toEqual([]);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("compile parse failure handling", () => {
@@ -1390,6 +1532,8 @@ describe("compile (tracked production corpus compatibility)", () => {
           "Live corpus compile failed:\n" + formatErrors(result.errors),
         );
       }
+
+      expect(hpa257DiagnosticCodes(result.warnings)).toEqual([]);
 
       expect({
         warnings: result.warnings,
