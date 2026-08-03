@@ -1211,6 +1211,23 @@ async fn save_manual_core(
             return Err(error);
         }
         Err(_) => {
+            // The writer future was dropped before sending a result. The
+            // only coordinator-driven drop path is
+            // `invalidate_queued_for_e2e()` during session replacement,
+            // which advances the generation first. If the generation has
+            // moved on, the drop was replacement — not a storage write
+            // attempt — so return the typed stale result and skip the
+            // Degraded publication (replacement already published
+            // Healthy). A genuine runtime cancellation leaves the
+            // generation unchanged and falls through to saveWriteFailed.
+            let current_generation = state
+                .session
+                .lock()
+                .map(|session| session.persistence.generation)
+                .map_err(|_| unavailable_error())?;
+            if current_generation != session_generation {
+                return Err(GameError::stale_session_generation());
+            }
             let error = GameError::save_write_failed();
             let _ = state.coordinator.publish_persistence_health_for_session(
                 session_generation,
@@ -1532,6 +1549,23 @@ async fn delete_save_core(
             return Err(error);
         }
         Err(_) => {
+            // The writer future was dropped before sending a result. The
+            // only coordinator-driven drop path is
+            // `invalidate_queued_for_e2e()` during session replacement,
+            // which advances the generation first. If the generation has
+            // moved on, the drop was replacement — not a storage write
+            // attempt — so return the typed stale result and skip the
+            // Degraded publication (replacement already published
+            // Healthy). A genuine runtime cancellation leaves the
+            // generation unchanged and falls through to saveWriteFailed.
+            let current_generation = state
+                .session
+                .lock()
+                .map(|session| session.persistence.generation)
+                .map_err(|_| unavailable_error())?;
+            if current_generation != session_generation {
+                return Err(GameError::stale_session_generation());
+            }
             let error = GameError::save_write_failed();
             let _ = state.coordinator.publish_persistence_health_for_session(
                 session_generation,
@@ -4146,6 +4180,109 @@ mod tests {
                 app.coordinator.persistence_health(),
                 PersistenceHealthView::Healthy,
                 "stale completion must not repopulate replacement state"
+            );
+        }
+
+        #[cfg(feature = "e2e")]
+        #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+        async fn replacement_invalidating_queued_delete_returns_stale_session_generation() {
+            let (_guard, resources) = save_capture_fixture_resources();
+            let temporary = tempfile::tempdir().unwrap();
+            let app = Arc::new(
+                build_app_state_with_storage(
+                    resources.clone(),
+                    temporary.path().join("saves"),
+                    Arc::new(ProductionSaveFilesystem),
+                )
+                .unwrap(),
+            );
+            start_game_core(&app, GameEngine::new_started(resources.clone()).unwrap())
+                .await
+                .unwrap();
+            let saved = seed_manual(&app, 1, "Must survive queued-delete invalidation").await;
+            let save_id = valid_save_id(&saved.saved_slot);
+            let slot_path = temporary.path().join("saves/manual-1.json");
+            assert!(slot_path.exists());
+
+            // Hold the writer queue active with a placeholder
+            // acknowledgement writer that does not hold the replacement
+            // gate, so replacement can proceed while the queued delete
+            // sits behind it in the ordinary queue.
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            let (turn_tx, turn_rx) = tokio::sync::oneshot::channel();
+            app.coordinator
+                .reserve_acknowledgement_writer(Box::pin(async move {
+                    let _ = turn_tx.send(());
+                    let _ = release_rx.await;
+                }))
+                .unwrap();
+            turn_rx
+                .await
+                .expect("placeholder writer must become active");
+
+            // Start delete_save_core — its writer is queued behind the
+            // placeholder because the queue is already running.
+            let delete_app = Arc::clone(&app);
+            let delete = tokio::spawn(async move {
+                delete_save_core(
+                    &delete_app,
+                    SaveSlotRef::Manual { slot: 1 },
+                    OccupiedSlotExpectation {
+                        save_id: Some(save_id),
+                        modified_at: None,
+                    },
+                )
+                .await
+            });
+
+            // Wait for delete_save_core to publish Pending health,
+            // confirming it has started. Then yield briefly to let its
+            // synchronous reserve_delete_writer call enqueue the writer
+            // before replacement clears the queue.
+            let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
+            loop {
+                if app.coordinator.persistence_health() == PersistenceHealthView::Pending {
+                    break;
+                }
+                if tokio::time::Instant::now() >= deadline {
+                    panic!("delete_save_core did not publish Pending health in time");
+                }
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+
+            // Replace the session — this invalidates the queued delete
+            // writer, dropping its future and closing the result channel.
+            let replacement = app
+                .coordinator
+                .replace_session_for_e2e(&app, GameEngine::new_started(resources).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(replacement.generation, 2);
+
+            // Release the placeholder writer so the worker can drain.
+            let _ = release_tx.send(());
+
+            // The queued delete must resolve with staleSessionGeneration,
+            // not saveWriteFailed — no storage write was attempted and
+            // replacement was the actual cause of the channel close.
+            let delete_error = delete.await.unwrap().unwrap_err();
+            assert_eq!(
+                delete_error.code, "staleSessionGeneration",
+                "invalidated queued delete must return staleSessionGeneration, not saveWriteFailed"
+            );
+
+            // The save slot must not have been deleted.
+            assert!(
+                slot_path.exists(),
+                "invalidated queued delete must not remove the save"
+            );
+
+            // Replacement health must remain Healthy.
+            assert_eq!(
+                app.coordinator.persistence_health(),
+                PersistenceHealthView::Healthy,
+                "replacement health must remain Healthy after invalidating queued delete"
             );
         }
 
