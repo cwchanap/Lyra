@@ -317,15 +317,23 @@ Reveals: [evidence:cooling_coffee, statement:hayasaka_says_alive, topic:hayasaka
 
 Only on blocks with `Status: locked`. A boolean expression that, when satisfied, flips the target to unlocked.
 
-**Atomic predicates:**
+**Scene-local atomic predicates:**
 - `evidence:<id> collected`
 - `statement:<id> acquired`
 - `topic:<character-id>@<topic-id> discussed`
 - `hotspot:<id> investigated`
 
-**Combinators (use sparingly — long unlock chains usually mean a pacing problem):**
+HPA-257 also accepts the shared global story predicates documented below. They
+are not local substitutes: `question:<id> resolved`, for example, is global
+catalog progress, whereas this scene family has no local `question answered`
+predicate.
+
+**Positive combinators (use sparingly — long unlock chains usually mean a pacing problem):**
 - `<a> and <b>` — both required
 - `<a> or <b>` — either suffices
+- `at_least(<positive-count>, <condition>, ...)` — enough child conditions
+  must hold; children may themselves be grouped or nested `at_least`
+  expressions.
 
 ### Interaction: `Reveals` and `Unlock` are mutually exclusive per chain
 
@@ -350,6 +358,122 @@ For a Hotspot with multiple evidence reveals, the editor and runtime both treat
 that `Reveals` list as the evidence-to-hotspot correlation. Keep the order
 intentional; it controls the sequence of collection dialogue.
 
+## HPA-257 global story progression
+
+This is the canonical shared contract for investigation and interrogation
+authoring. It extends only `Unlock:` / `Reveals:` on those two scene families;
+linear scenes do not gain this metadata and there is no enable flag. Keep the
+existing scene-local forms above in their own family — HPA-257 does not turn
+local IDs into cross-scene references.
+
+### Positive expression grammar
+
+`Unlock:` (and interrogation `Complete:`) accepts positive expressions using
+`and`, `or`, parentheses, and nested `at_least`:
+
+```text
+at_least(2,fact:timeline asserted,(question:who_entered resolved or objective:check_alibi completed))
+```
+
+Whitespace is optional around commas and parentheses, so both
+`at_least(1,fact:timeline asserted)` and
+`at_least(2, fact:timeline asserted, fact:camera asserted)` are valid. The
+count must be a positive base-10 integer, cannot exceed the number of child
+conditions, and the child expressions cannot contain structural duplicates.
+Use only positive progress; `not ...`, `objective:<id> incomplete`,
+`authorization:<id> missing`, `active_primary_objective:<id>`, and
+`objective:<id> revealed` are not authoring predicates.
+
+The exact shared story predicates are:
+
+```text
+fact:<id> asserted
+question:<id> resolved
+objective:<id> completed
+authorization:<id> granted
+analysis_scene:<chapter_id>@<scene_id> completed
+analysis_board:<chapter_id>@<scene_id>@<board_id> completed
+```
+
+`question:<id> resolved` is global story state, not an interrogation-local
+`question:<id> answered` predicate. Analysis references always need all shown
+slug segments; a bare scene or board ID is invalid. Their syntax is fixed now,
+but packaged production investigation/interrogation content has no HPA-259
+analysis registry or completion adapter yet and rejects them. Use analysis
+predicates only in the synthetic fixture boundary until that future work lands.
+
+### Story targets in `Reveals:`
+
+Alongside the existing local targets, both scene families accept these exact
+story targets:
+
+```text
+assert_fact:<fact_id>
+reveal_question:<question_id>
+resolve_question:<question_id>@<fact_id>
+reveal_objective:<objective_id>
+complete_objective:<secondary_objective_id>
+set_primary_objective:<primary_objective_id>
+set_primary_objective:<primary_objective_id>; complete_current
+set_primary_objective:null
+set_primary_objective:null; complete_current
+grant_authorization:<authorization_id>
+```
+
+All typed IDs must resolve in `story_catalog.md`. `resolve_question` always
+names its resolver fact explicitly: the fact must exist, be asserted before
+that target runs (or appear earlier in the same ordered list), and be listed in
+the Question's `Resolved By: [fact:<id>, ...]` catalog field. The compiler does
+not infer a resolver from nearby evidence or dialogue.
+
+`complete_objective:<id>` is direct completion for **secondary** objectives
+only. A primary transition uses `set_primary_objective:` and the existing
+primary-transition rules; a non-null target must be a primary objective.
+`null` is a special value only in `set_primary_objective:null`, where it clears
+the active primary. It is not a valid Objective ID — a catalog heading `{#null}`
+is rejected — and it is never a generic placeholder.
+
+### Ordered, atomic, one-shot behavior
+
+Treat every `Reveals:` list as an **ordered atomic transaction**, not a set.
+Mixed local and story targets keep their authored order, and an earlier target
+may satisfy a later target's prerequisite:
+
+```text
+[assert_fact:timeline, resolve_question:who_entered@timeline]  # valid
+[resolve_question:who_entered@timeline, assert_fact:timeline]  # invalid unless timeline was already asserted
+```
+
+If a later target fails, the whole trigger rolls back: earlier inventory,
+local, dialogue, fact, objective, and authorization effects do not commit.
+Unlock conditions are reconsidered only after the complete list commits.
+Do not duplicate a story target, resolve one question with conflicting facts,
+or place more than one `set_primary_objective:` target in one list.
+
+The owning gameplay trigger is durable and one-shot. Once its first committed
+entry, inspection, discussion, phase event, auto-break, or correct breakthrough
+has fired its list, re-entry, re-examination, repeated answer, or repeated
+command delivery never dispatches that list again. Do not design progress around
+replaying a prior reveal event.
+
+### Reachability, cycle, and order policy
+
+HPA-257 rejects every **positive dependency** self-cycle or multi-node cycle,
+even when an external seed appears reachable. That includes cycles hidden in an
+`or` or nested `at_least`; write a real seed and forward progression instead.
+Free-order exploration choices are not themselves positive cycles, but an
+order-sensitive story batch or primary transition can produce an ordering
+warning. Make a prerequisite explicit or linearize the branch when its outcome
+must be deterministic.
+
+New HPA-257 mandatory content that cannot be reached is an error; optional
+content warns when unreachable. Optionality never excuses unknown references,
+an invalid atomic batch, or an order-sensitive primary transition. Legacy-only
+content keeps its existing diagnostics until it opts into an HPA-257
+predicate/target.
+
+Do not author authorization:<id> granted as a production unlock gate in HPA-257/HPA-259 content. No production authority event can grant it until HPA-264; mandatory use fails compilation and optional use warns.
+
 ## Sub-location semantics
 
 - **Entry point:** the first `## Sub-location:` block declared in the file is where the player starts. Its `Status` *must* be `unlocked`.
@@ -364,18 +488,19 @@ intentional; it controls the sequence of collection dialogue.
 
 - **Evidence and statement IDs are game-global.** A single ID like `evidence:blue_umbrella` may be declared in only one scene file across the entire game (one chapter, one investigation scene). Compile-time duplicate declarations are an error.
 - **Hotspot, topic, and sub-location IDs are scene-local.** They may repeat across different scene files freely. Cross-scene references to these kinds are not supported.
-- **`Reveals:` targets must always resolve to a declaration in the *same scene file*** — for all five kinds (`evidence:`, `statement:`, `topic:`, `hotspot:`, `sublocation:`). A reveal newly *adds* an item or unlocks a block; it requires the definition to be physically present in this scene's JSON output.
-- **`Unlock:` predicates must also resolve to a declaration in the same scene file** in v1. Cross-chapter unlock predicates are disallowed (compile error). This is a v1 restriction — see the spec for rationale.
+- **Scene-local `Reveals:` targets must resolve to a declaration in the *same scene file*** — this applies to the five local kinds (`evidence:`, `statement:`, `topic:`, `hotspot:`, `sublocation:`). A local reveal newly adds an item or unlocks a block, so its definition must be present in this scene's JSON output. HPA-257 story targets instead resolve through `story_catalog.md` as documented above.
+- **Scene-local `Unlock:` predicates must resolve to a declaration in the same scene file** in v1. HPA-257 global story predicates resolve through the story catalog rather than crossing into another scene's local IDs; production analysis predicates remain unavailable until their future registry/runtime work exists.
 
 ## Parser validation guarantees
 
 The parser/validator checks the following — author with them in mind:
 
-- Every `Reveals:` target resolves to a declared ID in the same file.
-- Every `Unlock:` predicate references a declared ID in the same file.
+- Every scene-local `Reveals:` target resolves to a declared ID in the same file; every HPA-257 story target resolves to its typed story-catalog definition.
+- Every scene-local `Unlock:` predicate references a declared ID in the same file; every HPA-257 story predicate resolves through its typed catalog contract.
 - Every investigation evidence item declares `Source Sublocation`.
 - Every evidence reveal happens from the evidence item's declared source sub-location.
-- No circular dependencies (A unlocks B, B unlocks A).
+- No positive dependency self-cycle or multi-node cycle, including one hidden
+  inside `or` or `at_least`.
 - Every block with `Status: locked` is unlockable via at least one path (`Unlock:` on itself **or** inbound `Reveals` from another block).
 - The first `## Sub-location:` block in the file is `Status: unlocked`.
 - No target has both an inbound `Reveals` and an `Unlock` (warning).

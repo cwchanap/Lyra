@@ -331,19 +331,136 @@ lines:
 | `question:<id>` | Unlocks a locked question in this interrogation scene. |
 | `phase:<id>` | Unlocks a locked phase in this interrogation scene. |
 
-Interrogation `Unlock` and `Complete` expressions only support:
+Interrogation `Unlock` and `Complete` expressions support these **local**
+predicates:
 
 - `evidence:<id> collected`
 - `statement:<id> acquired`
 - `question:<id> answered`
 - `phase:<id> completed`
-- `<a> and <b>`
-- `<a> or <b>`
 
 `question:<id> answered` means that question's testimony has been **broken**
 — the player presented the correct evidence on one of its `Contradiction`
 lines. Hotspot, topic, and sub-location predicates are investigation-only. Do
 not use them in interrogation scenes.
+
+The HPA-257 global predicates and positive combinators below are available in
+both scene families. `question:<id> resolved` is global catalog progress and
+is deliberately distinct from this interrogation-local `answered` form.
+
+### HPA-257 monotonic story progression
+
+This is the shared investigation/interrogation contract for `Unlock:` and
+`Complete:` expressions and for story targets in `Reveals:`. It does not alter
+the existing local grammar, add a metadata flag, or add unlock/reveal metadata
+to linear scenes.
+
+#### Positive expression grammar
+
+Use only positive expressions: `and`, `or`, parentheses, and nested
+`at_least` are valid. For example:
+
+```text
+at_least(2,fact:camera asserted,(question:who_left resolved or objective:check_alibi completed))
+```
+
+Whitespace is optional around commas and parentheses, so
+`at_least(1,fact:camera asserted)` is valid just like
+`at_least(2, fact:camera asserted, fact:door asserted)`. `at_least` requires a
+positive base-10 count no greater than its child count; its child expressions
+may nest, but cannot be structural duplicates. Negative and active-state forms
+are not supported: do not write `not ...`, `objective:<id> incomplete`,
+`authorization:<id> missing`, `active_primary_objective:<id>`, or
+`objective:<id> revealed`.
+
+The exact global story predicates are:
+
+```text
+fact:<id> asserted
+question:<id> resolved
+objective:<id> completed
+authorization:<id> granted
+analysis_scene:<chapter_id>@<scene_id> completed
+analysis_board:<chapter_id>@<scene_id>@<board_id> completed
+```
+
+Analysis predicates require the shown fully qualified slug segments. Their
+syntax is present now, but packaged production investigation/interrogation
+content has no HPA-259 analysis registry or completion adapter and rejects
+them. They are for the synthetic fixture boundary only until future HPA-259
+work provides the production contract; do not author them in shipped content.
+
+#### Story targets in `Reveals:`
+
+In addition to the local `evidence:`, `statement:`, `question:`, and `phase:`
+targets, a phase, question, or correct-line reveal list may use:
+
+```text
+assert_fact:<fact_id>
+reveal_question:<question_id>
+resolve_question:<question_id>@<fact_id>
+reveal_objective:<objective_id>
+complete_objective:<secondary_objective_id>
+set_primary_objective:<primary_objective_id>
+set_primary_objective:<primary_objective_id>; complete_current
+set_primary_objective:null
+set_primary_objective:null; complete_current
+grant_authorization:<authorization_id>
+```
+
+Each typed ID must resolve in `story_catalog.md`. `resolve_question` has an
+explicit resolver requirement: its `fact_id` must exist, already be asserted
+when that target runs (or be asserted earlier in the same ordered list), and
+appear in the Question's `Resolved By: [fact:<id>, ...]` field. Do not expect
+the compiler to infer a resolver from testimony or evidence proximity.
+
+`complete_objective:<id>` directly completes **secondary** objectives only.
+Primary transitions must use `set_primary_objective:`; any non-null next target
+must be a primary objective. `null` has exactly one special target use:
+`set_primary_objective:null` clears the active primary. `{#null}` is forbidden
+as an Objective catalog ID, and `null` is not a generic placeholder.
+
+#### Ordered transaction and one-shot boundary
+
+Every mixed local/story `Reveals:` list is an authored **ordered atomic
+transaction**, never an unordered set. Earlier targets can make later targets
+legal:
+
+```text
+[assert_fact:camera, resolve_question:who_left@camera]  # valid
+[resolve_question:who_left@camera, assert_fact:camera]  # invalid unless camera was already asserted
+```
+
+If any later target fails, every provisional earlier effect rolls back,
+including local state, inventory/dialogue, facts, objectives, and
+authorizations. Conditions are re-evaluated only after the full list commits.
+Avoid duplicate story targets, conflicting resolver facts for one question, and
+more than one `set_primary_objective:` target in a list.
+
+The owning first-entry, auto-break, or correct-break trigger is durable and
+one-shot. A committed trigger does not redispatch its list when the player
+re-asks, repeats a correct submission, re-enters, or the command is delivered
+again. Do not model a later branch as if it can replay a prior breakthrough.
+
+#### Reachability and phase-order limits
+
+Positive self-dependencies and multi-node positive cycles are compilation
+errors, even if an outside seed also reaches the cycle. This includes a cycle
+hidden inside `or` or nested `at_least`; create a real forward seed instead.
+Free-order choices are not cycles, but an order-sensitive story batch or
+primary transition can warn. Make the prerequisite strict or linearize the
+branch when its result must be deterministic. New unreachable mandatory
+HPA-257 content errors and optional content warns; optionality never excuses an
+unknown reference or an invalid atomic batch.
+
+The current interrogation analysis proves only the statically unlocked phase
+schedule: required phases before optional phases, in author order within each
+priority. It does **not** model every conditional ordering produced when a
+previously locked phase becomes dynamically unlocked. Do not rely on that
+unmodeled scheduling to make an order-sensitive primary transition safe;
+express an explicit prerequisite or make the branch order-insensitive.
+
+Do not author authorization:<id> granted as a production unlock gate in HPA-257/HPA-259 content. No production authority event can grant it until HPA-264; mandatory use fails compilation and optional use warns.
 
 ## Contradiction guarantee (critical — the Beat-10 trap)
 
