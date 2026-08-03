@@ -1147,6 +1147,61 @@ describe("joint primary fixed point", () => {
     );
   });
 
+  it("matches the valid and invalid concrete orders of the runtime same-A fixture", () => {
+    const aThenB = analyzeSynthetic(
+      [
+        primaryTransitionNode("a", false, "primary_a", {
+          initiallyReachable: true,
+        }),
+        primaryTransitionNode("b", true, "primary_a", {
+          strictPredecessorKeys: ["a"],
+        }),
+      ],
+      primaryCatalog(),
+    );
+    const bThenA = analyzeSynthetic(
+      [
+        primaryTransitionNode("b", true, "primary_a", {
+          initiallyReachable: true,
+        }),
+        primaryTransitionNode("a", false, "primary_a", {
+          strictPredecessorKeys: ["b"],
+        }),
+      ],
+      primaryCatalog(),
+    );
+    const freeOrder = analyzeSynthetic(
+      freeOrderPrimaryPeers(
+        { completeCurrent: false, nextObjectiveId: "primary_a" },
+        { completeCurrent: true, nextObjectiveId: "primary_a" },
+      ),
+      primaryCatalog(),
+    );
+
+    expect(aThenB.errors).toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveTransitionAlwaysInvalid",
+        nodeKey: "b",
+      }),
+    );
+    expect(bThenA.errors).not.toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveTransitionAlwaysInvalid",
+      }),
+    );
+    expect(freeOrder.errors).not.toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveTransitionAlwaysInvalid",
+      }),
+    );
+    expect(freeOrder.warnings).toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveOrderingNotExhaustive",
+        nodeKey: "b",
+      }),
+    );
+  });
+
   it("hard-fails a strict attempt to reactivate an already completed primary", () => {
     const result = analyzeSynthetic(
       [

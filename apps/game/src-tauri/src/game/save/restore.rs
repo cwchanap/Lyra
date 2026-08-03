@@ -1449,6 +1449,7 @@ mod tests {
     use crate::game::state::{EvidenceRecord, StatementRecord};
     use crate::game::support_lineage::SupportLineage;
     use crate::game::test_support::{
+        drive_hpa_257_positive_progression, hpa_257_fixture_resources,
         provenance_save_fixture_resources, save_capture_fixture_resources,
     };
     use crate::game::view::ModeView;
@@ -2595,6 +2596,96 @@ mod tests {
             .unwrap();
 
         assert_round_trip(resources, &engine);
+    }
+
+    // Break caught: successful HPA-257 progress restores the static package
+    // but loses a positive story fact, consumed trigger, active primary, or a
+    // later nested-threshold unlock.
+    #[test]
+    fn hpa_257_save_reconstruct_restore_preserves_public_and_internal_progress() {
+        let (_guard, resources) = hpa_257_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        drive_hpa_257_positive_progression(&mut engine);
+
+        let original_view = serde_json::to_value(engine.view().unwrap()).unwrap();
+        let original_checkpoint = capture_checkpoint_v2(&engine).unwrap();
+        let original_story = engine.story_state.snapshot();
+        let original_trigger_snapshot = original_checkpoint.snapshot.scene.clone();
+
+        let (saved, mut restored) = round_trip(resources, &engine);
+
+        assert_eq!(saved.schema_version, 2);
+        assert_eq!(
+            serde_json::to_value(restored.engine.view().unwrap()).unwrap(),
+            original_view,
+            "restore must reproduce the exact public state"
+        );
+        assert_eq!(
+            restored.engine.story_state.snapshot(),
+            original_story,
+            "story progress must be restored through the existing snapshot"
+        );
+        let recaptured = capture_checkpoint_v2(&restored.engine).unwrap();
+        assert_eq!(recaptured.snapshot, original_checkpoint.snapshot);
+        assert_eq!(recaptured.snapshot.scene, original_trigger_snapshot);
+
+        let story_before_reinspect = restored.engine.story_state.snapshot();
+        let trigger_before_reinspect = recaptured.snapshot.scene;
+        restored.engine.inspect_hotspot("evidence").unwrap();
+        assert_eq!(
+            restored.engine.story_state.snapshot(),
+            story_before_reinspect,
+            "the consumed evidence trigger must not redispatch story progress"
+        );
+        assert_eq!(
+            capture_checkpoint_v2(&restored.engine)
+                .unwrap()
+                .snapshot
+                .scene,
+            trigger_before_reinspect,
+            "reinspection must not consume a second trigger"
+        );
+    }
+
+    // Break caught: the runtime incorrectly accepts the concrete A-before-B
+    // order that the compiler's same-current/next synthetic fixture marks
+    // invalid.
+    #[test]
+    fn hpa_257_runtime_free_order_a_before_b_is_invalid() {
+        let (_guard, resources) = hpa_257_fixture_resources();
+        let mut engine = GameEngine::new_started(resources).unwrap();
+        engine.enter_sublocation("free_order").unwrap();
+        engine.inspect_hotspot("order_a").unwrap();
+        let before_b = capture_checkpoint_v2(&engine).unwrap();
+
+        let error = engine.inspect_hotspot("order_b").unwrap_err();
+
+        assert_eq!(error.code, "invalidPrimaryObjectiveTransition");
+        assert_eq!(capture_checkpoint_v2(&engine).unwrap(), before_b);
+    }
+
+    // Break caught: the runtime rejects the concrete B-before-A order even
+    // though there is no current primary to complete when B first runs.
+    #[test]
+    fn hpa_257_runtime_free_order_b_before_a_is_valid() {
+        let (_guard, resources) = hpa_257_fixture_resources();
+        let mut engine = GameEngine::new_started(resources).unwrap();
+        engine.enter_sublocation("free_order").unwrap();
+
+        engine.inspect_hotspot("order_b").unwrap();
+        engine.inspect_hotspot("order_a").unwrap();
+
+        let snapshot = engine.story_state.snapshot();
+        assert_eq!(
+            snapshot.active_primary_objective_id.as_deref(),
+            Some("primary_a")
+        );
+        assert!(!snapshot.objectives["primary_a"].completed);
+        let SceneRuntime::Investigation(scene) = &engine.scene else {
+            panic!("expected HPA-257 investigation scene")
+        };
+        assert!(scene.inspected_hotspots.contains("order_a"));
+        assert!(scene.inspected_hotspots.contains("order_b"));
     }
 
     #[test]
