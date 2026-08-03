@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { emptyStoryCatalog } from "./parser-story-catalog";
 import { validateStoryCatalog } from "./story-catalog";
-import { buildStoryRevealTargetBatches, validate } from "./validator";
+import {
+  buildStoryRevealTargetBatches,
+  isStoryPredicate,
+  isStoryRevealTarget,
+  localInterrogationReveals,
+  localInvestigationReveals,
+  validate,
+} from "./validator";
 import type {
   ASTChapter,
   ASTEvidence,
@@ -279,6 +286,35 @@ const mkStoryTargetCatalog = (): ASTStoryCatalog => {
 
 describe("validator", () => {
   describe("story reveal target batches", () => {
+    it("exposes the same local/story classification used by specialized validation", () => {
+      expect(
+        localInvestigationReveals([
+          { kind: "evidence", id: "receipt" },
+          { kind: "assertFact", factId: "fact_a" },
+          { kind: "hotspot", id: "desk" },
+        ]),
+      ).toEqual([
+        { kind: "evidence", id: "receipt" },
+        { kind: "hotspot", id: "desk" },
+      ]);
+      expect(
+        localInterrogationReveals([
+          { kind: "question", id: "alibi" },
+          { kind: "resolveQuestion", questionId: "who", factId: "fact_a" },
+          { kind: "phase", id: "timeline" },
+        ]),
+      ).toEqual([
+        { kind: "question", id: "alibi" },
+        { kind: "phase", id: "timeline" },
+      ]);
+      expect(
+        isStoryRevealTarget({ kind: "assertFact", factId: "fact_a" }),
+      ).toBe(true);
+      expect(
+        isStoryPredicate({ predicate: "fact_asserted", id: "fact_a" }),
+      ).toBe(true);
+    });
+
     it("preserves authored story-target order while normalizing scene batches", () => {
       const investigation = mkInvestigationScene();
       investigation.sublocations[0]!.reveals = [
