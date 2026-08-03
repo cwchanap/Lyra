@@ -117,6 +117,60 @@ describe("parseUnlockExpr", () => {
     });
   });
 
+  it("parses nested at_least with no whitespace around commas", () => {
+    expect(
+      parseUnlockExpr(
+        "at_least(2,hotspot:a investigated,at_least(1,evidence:b collected))",
+        "threshold.md",
+        8,
+      ),
+    ).toEqual({
+      ok: true,
+      value: {
+        op: "at_least",
+        count: 2,
+        conditions: [
+          { predicate: "hotspot_investigated", id: "a" },
+          {
+            op: "at_least",
+            count: 1,
+            conditions: [{ predicate: "evidence_collected", id: "b" }],
+          },
+        ],
+      },
+    });
+  });
+
+  it.each([
+    ["at_least(0,hotspot:a investigated)", "unlockAtLeastInvalidCount"],
+    [
+      "at_least(2,hotspot:a investigated)",
+      "unlockAtLeastCountExceedsConditions",
+    ],
+    ["at_least(1)", "unlockAtLeastEmptyConditions"],
+    [
+      "at_least(2,hotspot:a investigated,hotspot:a investigated)",
+      "unlockAtLeastDuplicateCondition",
+    ],
+  ])("rejects invalid threshold %s", (source, code) => {
+    const result = parseUnlockExpr(source, "threshold.md", 9);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe(code);
+  });
+
+  it("rejects structural duplicates after parentheses are discarded", () => {
+    expect(
+      parseUnlockExpr(
+        "at_least(2,hotspot:a investigated,(hotspot:a investigated))",
+        "threshold.md",
+        10,
+      ),
+    ).toMatchObject({
+      ok: false,
+      error: { code: "unlockAtLeastDuplicateCondition" },
+    });
+  });
+
   it("keeps generic predicate diagnostics at the supplied source location", () => {
     expect(parseUnlockExpr("foo:bar baz", "legacy.md", 19)).toEqual({
       ok: false,

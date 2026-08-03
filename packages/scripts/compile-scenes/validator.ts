@@ -24,6 +24,7 @@ import type {
   InterrogationRevealTarget,
   InterrogationUnlockExpr,
   InventoryTarget,
+  PositiveExpression,
   RevealTarget,
   UnlockExpr,
 } from "./types";
@@ -62,6 +63,56 @@ type CorpusContext = {
   >;
   guaranteedInventoryBeforeScene: Map<string, Set<string>>;
 };
+
+function atLeastSatisfiable<P>(
+  count: number,
+  conditions: PositiveExpression<P>[],
+  isSatisfiable: (condition: PositiveExpression<P>) => boolean,
+): boolean {
+  let satisfied = 0;
+  for (const condition of conditions) {
+    if (!isSatisfiable(condition)) continue;
+    satisfied += 1;
+    if (satisfied >= count) return true;
+  }
+  return false;
+}
+
+function collectAtLeastConditionErrors<P>(
+  count: number,
+  conditions: PositiveExpression<P>[],
+  collectErrors: (condition: PositiveExpression<P>) => CompileError[],
+): CompileError[] {
+  let satisfied = 0;
+  const errors: CompileError[] = [];
+  for (const condition of conditions) {
+    const conditionErrors = collectErrors(condition);
+    if (conditionErrors.length === 0) {
+      satisfied += 1;
+    } else {
+      errors.push(...conditionErrors);
+    }
+  }
+  return satisfied >= count ? [] : errors;
+}
+
+function requiredAtLeastPredicates<P>(
+  count: number,
+  conditions: PositiveExpression<P>[],
+  required: (condition: PositiveExpression<P>) => Set<string>,
+): Set<string> {
+  const conditionRequirements = conditions.map(required);
+  if (count === conditionRequirements.length) {
+    return new Set(conditionRequirements.flatMap((items) => [...items]));
+  }
+  // Existing callers need only must-have items. When any child may be skipped,
+  // retain the predicates required by every child rather than over-claiming.
+  const [first, ...rest] = conditionRequirements;
+  if (!first) return new Set<string>();
+  return new Set(
+    [...first].filter((item) => rest.every((set) => set.has(item))),
+  );
+}
 
 export function validate(input: ValidatorInput): CompileError[] {
   const errors: CompileError[] = [];
@@ -646,6 +697,14 @@ function collectInterrogationOutroUnlockErrors(
   flow: InterrogationInventoryAnalysis,
 ): CompileError[] {
   if ("op" in expr) {
+    if (expr.op === "at_least") {
+      return collectAtLeastConditionErrors(
+        expr.count,
+        expr.conditions,
+        (condition) =>
+          collectInterrogationOutroUnlockErrors(condition, scene, flow),
+      );
+    }
     const leftErrors = collectInterrogationOutroUnlockErrors(
       expr.left,
       scene,
@@ -929,6 +988,13 @@ function requiredInteractionReveals(
   scene: ASTInvestigationScene,
 ): Set<string> {
   if ("op" in expr) {
+    if (expr.op === "at_least") {
+      return requiredAtLeastPredicates(
+        expr.count,
+        expr.conditions,
+        (condition) => requiredInteractionReveals(condition, scene),
+      );
+    }
     const left = requiredInteractionReveals(expr.left, scene);
     const right = requiredInteractionReveals(expr.right, scene);
     if (expr.op === "and") return new Set([...left, ...right]);
@@ -1255,6 +1321,11 @@ function cloneProducesNeededOutroAtom(
   >,
 ): boolean {
   if ("op" in expr) {
+    if (expr.op === "at_least") {
+      return expr.conditions.some((condition) =>
+        cloneProducesNeededOutroAtom(condition, base, clone),
+      );
+    }
     return (
       cloneProducesNeededOutroAtom(expr.left, base, clone) ||
       cloneProducesNeededOutroAtom(expr.right, base, clone)
@@ -1549,6 +1620,11 @@ function interrogationUnlockSatisfiable(
   >,
 ): boolean {
   if ("op" in expr) {
+    if (expr.op === "at_least") {
+      return atLeastSatisfiable(expr.count, expr.conditions, (condition) =>
+        interrogationUnlockSatisfiable(condition, state),
+      );
+    }
     if (expr.op === "and") {
       return (
         interrogationUnlockSatisfiable(expr.left, state) &&
@@ -1632,6 +1708,13 @@ function addInterrogationInventoryReveals(
 
 function requiredInventoryPredicates(expr: UnlockExpr): Set<string> {
   if ("op" in expr) {
+    if (expr.op === "at_least") {
+      return requiredAtLeastPredicates(
+        expr.count,
+        expr.conditions,
+        requiredInventoryPredicates,
+      );
+    }
     const left = requiredInventoryPredicates(expr.left);
     const right = requiredInventoryPredicates(expr.right);
     if (expr.op === "and") return new Set([...left, ...right]);
@@ -2349,6 +2432,17 @@ function isSubUnlockSatisfiable(
   reachableAtoms: Set<string>,
 ): boolean {
   if ("op" in expr) {
+    if (expr.op === "at_least") {
+      return atLeastSatisfiable(expr.count, expr.conditions, (condition) =>
+        isSubUnlockSatisfiable(
+          condition,
+          reachableSubs,
+          scene,
+          reachableItems,
+          reachableAtoms,
+        ),
+      );
+    }
     if (expr.op === "and") {
       return (
         isSubUnlockSatisfiable(
@@ -2429,6 +2523,11 @@ function isUnlockSatisfiable(
   reachable: Set<string>,
 ): boolean {
   if ("op" in expr) {
+    if (expr.op === "at_least") {
+      return atLeastSatisfiable(expr.count, expr.conditions, (condition) =>
+        isUnlockSatisfiable(condition, reachable),
+      );
+    }
     if (expr.op === "and") {
       return (
         isUnlockSatisfiable(expr.left, reachable) &&
@@ -2460,6 +2559,19 @@ function collectOutroUnlockErrors(
   reachableAtoms: Set<string>,
 ): CompileError[] {
   if ("op" in expr) {
+    if (expr.op === "at_least") {
+      return collectAtLeastConditionErrors(
+        expr.count,
+        expr.conditions,
+        (condition) =>
+          collectOutroUnlockErrors(
+            condition,
+            scene,
+            reachableSubs,
+            reachableAtoms,
+          ),
+      );
+    }
     const leftErrors = collectOutroUnlockErrors(
       expr.left,
       scene,
@@ -2563,6 +2675,10 @@ function walkUnlock(
   fn: (atom: Extract<UnlockExpr, { predicate: string }>) => void,
 ): void {
   if ("op" in expr) {
+    if (expr.op === "at_least") {
+      for (const condition of expr.conditions) walkUnlock(condition, fn);
+      return;
+    }
     walkUnlock(expr.left, fn);
     walkUnlock(expr.right, fn);
   } else {
@@ -2575,6 +2691,11 @@ function walkInterrogationUnlock(
   fn: (atom: Extract<InterrogationUnlockExpr, { predicate: string }>) => void,
 ): void {
   if ("op" in expr) {
+    if (expr.op === "at_least") {
+      for (const condition of expr.conditions)
+        walkInterrogationUnlock(condition, fn);
+      return;
+    }
     walkInterrogationUnlock(expr.left, fn);
     walkInterrogationUnlock(expr.right, fn);
   } else {

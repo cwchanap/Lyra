@@ -176,23 +176,31 @@ export type InterrogationRevealTarget =
   | { kind: "question"; id: string }
   | { kind: "phase"; id: string };
 
-export type UnlockExpr =
-  | { op: "and" | "or"; left: UnlockExpr; right: UnlockExpr }
+export type PositiveExpression<P> =
+  | {
+      op: "and" | "or";
+      left: PositiveExpression<P>;
+      right: PositiveExpression<P>;
+    }
+  | { op: "at_least"; count: number; conditions: PositiveExpression<P>[] }
+  | P;
+
+export type InvestigationLocalPredicate =
   | { predicate: "evidence_collected"; id: string }
   | { predicate: "statement_acquired"; id: string }
   | { predicate: "topic_discussed"; characterId: string; topicId: string }
   | { predicate: "hotspot_investigated"; id: string };
 
-export type InterrogationUnlockExpr =
-  | {
-      op: "and" | "or";
-      left: InterrogationUnlockExpr;
-      right: InterrogationUnlockExpr;
-    }
+export type InterrogationLocalPredicate =
   | { predicate: "evidence_collected"; id: string }
   | { predicate: "statement_acquired"; id: string }
   | { predicate: "question_answered"; id: string }
   | { predicate: "phase_completed"; id: string };
+
+export type UnlockExpr = PositiveExpression<InvestigationLocalPredicate>;
+
+export type InterrogationUnlockExpr =
+  PositiveExpression<InterrogationLocalPredicate>;
 
 // ----- AST: per-file parser output -------------------------------------------
 

@@ -7,7 +7,8 @@
 //   expr  := or
 //   or    := and ( "or" and )*
 //   and   := atom ( "and" atom )*
-//   atom  := "(" expr ")" | predicate
+//   atom  := "(" expr ")" | at_least | predicate
+//   at_least := "at_least" "(" count "," expr ("," expr)* ")"
 //   pred  := "evidence:"  ID " collected"
 //          | "statement:" ID " acquired"
 //          | "topic:"     ID "@" ID " discussed"
@@ -24,7 +25,10 @@
 
 import type {
   CompileError,
+  InterrogationLocalPredicate,
   InterrogationUnlockExpr,
+  InvestigationLocalPredicate,
+  PositiveExpression,
   UnlockExpr,
 } from "./types";
 
@@ -35,6 +39,16 @@ export type ParseResult =
 export type InterrogationParseResult =
   | { ok: true; value: InterrogationUnlockExpr }
   | { ok: false; error: CompileError };
+
+type PositiveParseResult<P> =
+  | { ok: true; value: PositiveExpression<P> }
+  | { ok: false; error: CompileError };
+
+type PredicateParseResult<P> =
+  | { ok: true; value: P }
+  | { ok: false; error: CompileError };
+
+type PredicateParser<P> = (tokens: Tokens) => PredicateParseResult<P>;
 
 const ID_RE = /[a-z0-9_]+/y;
 
@@ -62,7 +76,7 @@ class Tokens {
     if (
       this.src.startsWith(word, this.i) &&
       (this.i + word.length === this.src.length ||
-        /\s|[()]/.test(this.src[this.i + word.length] ?? ""))
+        /\s|[(),]/.test(this.src[this.i + word.length] ?? ""))
     ) {
       this.i += word.length;
       return true;
@@ -92,26 +106,12 @@ export function parseUnlockExpr(
   sourceFile: string,
   line: number,
 ): ParseResult {
-  const tokens = new Tokens(source.trim(), sourceFile, line);
-  if (tokens.atEnd()) {
-    return failure(
-      sourceFile,
-      line,
-      "unlockEmpty",
-      "Unlock expression is empty.",
-    );
-  }
-  const expr = parseOr(tokens);
-  if (!expr.ok) return expr;
-  if (!tokens.atEnd()) {
-    return failure(
-      sourceFile,
-      line,
-      "unlockTrailing",
-      `Trailing tokens after parsed expression: "${tokens.peek()}"`,
-    );
-  }
-  return expr;
+  return parsePositiveExpression(
+    source,
+    sourceFile,
+    line,
+    parseInvestigationPredicate,
+  );
 }
 
 export function parseInterrogationUnlockExpr(
@@ -119,6 +119,20 @@ export function parseInterrogationUnlockExpr(
   sourceFile: string,
   line: number,
 ): InterrogationParseResult {
+  return parsePositiveExpression(
+    source,
+    sourceFile,
+    line,
+    parseInterrogationPredicate,
+  );
+}
+
+function parsePositiveExpression<P>(
+  source: string,
+  sourceFile: string,
+  line: number,
+  parsePredicate: PredicateParser<P>,
+): PositiveParseResult<P> {
   const tokens = new Tokens(source.trim(), sourceFile, line);
   if (tokens.atEnd()) {
     return failure(
@@ -128,7 +142,7 @@ export function parseInterrogationUnlockExpr(
       "Unlock expression is empty.",
     );
   }
-  const expr = parseInterrogationOr(tokens);
+  const expr = parseOr(tokens, parsePredicate);
   if (!expr.ok) return expr;
   if (!tokens.atEnd()) {
     return failure(
@@ -141,11 +155,14 @@ export function parseInterrogationUnlockExpr(
   return expr;
 }
 
-function parseOr(t: Tokens): ParseResult {
-  let left = parseAnd(t);
+function parseOr<P>(
+  t: Tokens,
+  parsePredicate: PredicateParser<P>,
+): PositiveParseResult<P> {
+  let left = parseAnd(t, parsePredicate);
   if (!left.ok) return left;
   while (t.consumeWord("or")) {
-    const right = parseAnd(t);
+    const right = parseAnd(t, parsePredicate);
     if (!right.ok) return right;
     left = {
       ok: true,
@@ -155,11 +172,14 @@ function parseOr(t: Tokens): ParseResult {
   return left;
 }
 
-function parseAnd(t: Tokens): ParseResult {
-  let left = parseAtom(t);
+function parseAnd<P>(
+  t: Tokens,
+  parsePredicate: PredicateParser<P>,
+): PositiveParseResult<P> {
+  let left = parseAtom(t, parsePredicate);
   if (!left.ok) return left;
   while (t.consumeWord("and")) {
-    const right = parseAtom(t);
+    const right = parseAtom(t, parsePredicate);
     if (!right.ok) return right;
     left = {
       ok: true,
@@ -169,9 +189,12 @@ function parseAnd(t: Tokens): ParseResult {
   return left;
 }
 
-function parseAtom(t: Tokens): ParseResult {
+function parseAtom<P>(
+  t: Tokens,
+  parsePredicate: PredicateParser<P>,
+): PositiveParseResult<P> {
   if (t.consume("(")) {
-    const inner = parseOr(t);
+    const inner = parseOr(t, parsePredicate);
     if (!inner.ok) return inner;
     if (!t.consume(")")) {
       return failure(
@@ -183,10 +206,103 @@ function parseAtom(t: Tokens): ParseResult {
     }
     return inner;
   }
+  if (t.consumeWord("at_least")) return parseAtLeast(t, parsePredicate);
   return parsePredicate(t);
 }
 
-function parsePredicate(t: Tokens): ParseResult {
+function parseAtLeast<P>(
+  t: Tokens,
+  parsePredicate: PredicateParser<P>,
+): PositiveParseResult<P> {
+  if (!t.consume("(")) {
+    return failure(
+      t.sourceFile,
+      t.line,
+      "unlockAtLeastInvalidCount",
+      "at_least requires a positive base-10 integer count.",
+    );
+  }
+
+  const countText = t.consumeId();
+  const count = countText == null ? Number.NaN : Number(countText);
+  if (
+    countText == null ||
+    !/^[0-9]+$/.test(countText) ||
+    !Number.isSafeInteger(count) ||
+    count < 1
+  ) {
+    return failure(
+      t.sourceFile,
+      t.line,
+      "unlockAtLeastInvalidCount",
+      "at_least count must be a positive base-10 integer.",
+    );
+  }
+
+  if (!t.consume(",")) {
+    return failure(
+      t.sourceFile,
+      t.line,
+      "unlockAtLeastEmptyConditions",
+      "at_least requires at least one condition.",
+    );
+  }
+
+  const conditions: PositiveExpression<P>[] = [];
+  while (true) {
+    if (t.consume(")")) {
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockAtLeastEmptyConditions",
+        "at_least requires at least one condition.",
+      );
+    }
+
+    const condition = parseOr(t, parsePredicate);
+    if (!condition.ok) return condition;
+    conditions.push(condition.value);
+
+    if (t.consume(")")) break;
+    if (!t.consume(",")) {
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockUnclosedParen",
+        "Missing closing paren.",
+      );
+    }
+  }
+
+  if (count > conditions.length) {
+    return failure(
+      t.sourceFile,
+      t.line,
+      "unlockAtLeastCountExceedsConditions",
+      "at_least count exceeds its number of conditions.",
+    );
+  }
+
+  const seenConditions = new Set<string>();
+  for (const condition of conditions) {
+    const key = JSON.stringify(condition);
+    if (seenConditions.has(key)) {
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockAtLeastDuplicateCondition",
+        "at_least conditions must not contain structural duplicates.",
+      );
+    }
+    seenConditions.add(key);
+  }
+
+  return { ok: true, value: { op: "at_least", count, conditions } };
+}
+
+function parseInvestigationPredicate(
+  t: Tokens,
+): PredicateParseResult<InvestigationLocalPredicate> {
   if (t.consume("evidence:")) {
     const id = t.consumeId();
     if (!id)
@@ -285,52 +401,9 @@ function parsePredicate(t: Tokens): ParseResult {
   );
 }
 
-function parseInterrogationOr(t: Tokens): InterrogationParseResult {
-  let left = parseInterrogationAnd(t);
-  if (!left.ok) return left;
-  while (t.consumeWord("or")) {
-    const right = parseInterrogationAnd(t);
-    if (!right.ok) return right;
-    left = {
-      ok: true,
-      value: { op: "or", left: left.value, right: right.value },
-    };
-  }
-  return left;
-}
-
-function parseInterrogationAnd(t: Tokens): InterrogationParseResult {
-  let left = parseInterrogationAtom(t);
-  if (!left.ok) return left;
-  while (t.consumeWord("and")) {
-    const right = parseInterrogationAtom(t);
-    if (!right.ok) return right;
-    left = {
-      ok: true,
-      value: { op: "and", left: left.value, right: right.value },
-    };
-  }
-  return left;
-}
-
-function parseInterrogationAtom(t: Tokens): InterrogationParseResult {
-  if (t.consume("(")) {
-    const inner = parseInterrogationOr(t);
-    if (!inner.ok) return inner;
-    if (!t.consume(")")) {
-      return failure(
-        t.sourceFile,
-        t.line,
-        "unlockUnclosedParen",
-        "Missing closing paren.",
-      );
-    }
-    return inner;
-  }
-  return parseInterrogationPredicate(t);
-}
-
-function parseInterrogationPredicate(t: Tokens): InterrogationParseResult {
+function parseInterrogationPredicate(
+  t: Tokens,
+): PredicateParseResult<InterrogationLocalPredicate> {
   if (t.consume("evidence:")) {
     const id = t.consumeId();
     if (!id)
