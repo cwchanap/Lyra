@@ -117,21 +117,6 @@ export function analyzeReachability(input: {
     left.key.localeCompare(right.key),
   );
   const producerKeysByAtom = buildAnalysisProducerIndex(nodes, input.catalog);
-  const dependencyEdges = buildPositiveDependencyEdges(
-    nodes,
-    producerKeysByAtom,
-  );
-  const cycleDiagnostics = positiveCycleDiagnostics(nodes, dependencyEdges);
-  const cycleNodeKeys = new Set(
-    stronglyConnectedComponents(nodes, dependencyEdges)
-      .filter(
-        (component) =>
-          component.length > 1 ||
-          (component.length === 1 &&
-            (dependencyEdges.get(component[0]!) ?? []).includes(component[0]!)),
-      )
-      .flat(),
-  );
   const authorizationDefinitions = new Map(
     input.catalog.authorizations.map((definition) => [
       definition.id,
@@ -162,6 +147,26 @@ export function analyzeReachability(input: {
     addAll(mayCompletedPrimaryIds, scenario.mayCompletedPrimaryIds);
   }
 
+  const observedProducerKeysByAtom = buildObservedProducerIndex(
+    nodes,
+    scenarios,
+  );
+  const dependencyEdges = buildPositiveDependencyEdges(
+    nodes,
+    observedProducerKeysByAtom,
+  );
+  const cycleDiagnostics = positiveCycleDiagnostics(nodes, dependencyEdges);
+  const cycleNodeKeys = new Set(
+    stronglyConnectedComponents(nodes, dependencyEdges)
+      .filter(
+        (component) =>
+          component.length > 1 ||
+          (component.length === 1 &&
+            (dependencyEdges.get(component[0]!) ?? []).includes(component[0]!)),
+      )
+      .flat(),
+  );
+
   const mustNodes = mandatoryScenarioNodes(nodes);
   const mustScenarios = exclusiveOutcomeSelections(nodes).map((selection) =>
     solveJointScenario({
@@ -182,10 +187,7 @@ export function analyzeReachability(input: {
     mustAtoms,
     primaryObjectiveIds,
   );
-  const mustActivePrimary = mustActiveAcrossScenarios(
-    mustReachableNodeKeys,
-    mustScenarios,
-  );
+  const mustActivePrimary = mustActiveAcrossScenarios(mustNodes, mustScenarios);
 
   const errors = [...cycleDiagnostics];
   const warnings: ReachabilityDiagnostic[] = [];
@@ -310,6 +312,35 @@ function buildAnalysisProducerIndex(
   );
 }
 
+function buildObservedProducerIndex(
+  nodes: readonly ReachabilityNode[],
+  scenarios: readonly JointScenario[],
+): ReadonlyMap<ReachabilityAtom, readonly string[]> {
+  const mutable = new Map<ReachabilityAtom, string[]>(
+    [...buildPositiveProducerIndex(nodes)].map(([atom, keys]) => [
+      atom,
+      [...keys],
+    ]),
+  );
+  for (const scenario of scenarios) {
+    for (const [nodeKey, atoms] of scenario.producedAtomsByNodeKey) {
+      for (const atom of atoms) {
+        const producers = mutable.get(atom) ?? [];
+        if (!producers.includes(nodeKey)) producers.push(nodeKey);
+        mutable.set(atom, producers);
+      }
+    }
+  }
+  return new Map(
+    [...mutable]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([atom, keys]) => [
+        atom,
+        keys.sort((left, right) => left.localeCompare(right)),
+      ]),
+  );
+}
+
 function evaluatePositive(
   expression: PositiveExpression<ReachabilityPredicate>,
   atoms: ReadonlySet<ReachabilityAtom>,
@@ -359,6 +390,25 @@ function buildPositiveDependencyEdges(
   }
   for (const consumers of edges.values()) {
     consumers.sort((left, right) => left.localeCompare(right));
+  }
+  return edges;
+}
+
+function buildCausalDependencyEdges(
+  nodes: readonly ReachabilityNode[],
+  producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>,
+): Map<string, string[]> {
+  const edges = buildPositiveDependencyEdges(nodes, producerKeysByAtom);
+  for (const node of nodes) {
+    for (const predecessorKey of node.strictPredecessorKeys) {
+      const successors = edges.get(predecessorKey);
+      if (successors !== undefined && !successors.includes(node.key)) {
+        successors.push(node.key);
+      }
+    }
+  }
+  for (const successors of edges.values()) {
+    successors.sort((left, right) => left.localeCompare(right));
   }
   return edges;
 }
@@ -507,6 +557,7 @@ function exclusiveOutcomeSelections(
 type JointScenario = {
   reachableNodeKeys: Set<string>;
   outputsByNodeKey: Map<string, NodeAbstractState>;
+  producedAtomsByNodeKey: Map<string, Set<ReachabilityAtom>>;
   mayAtoms: Set<ReachabilityAtom>;
   mayActivePrimaryIds: Set<PrimaryCandidate>;
   mayCompletedPrimaryIds: Set<string>;
@@ -540,6 +591,7 @@ function solveJointScenario(input: {
   );
   const reachableNodeKeys = new Set<string>();
   const outputsByNodeKey = new Map<string, NodeAbstractState>();
+  const producedAtomsByNodeKey = new Map<string, Set<ReachabilityAtom>>();
 
   let changed = true;
   while (changed) {
@@ -554,6 +606,7 @@ function solveJointScenario(input: {
         nodesByKey,
         reachableNodeKeys,
         outputsByNodeKey,
+        producedAtomsByNodeKey,
         selection: input.selection,
         producerKeysByAtom: input.producerKeysByAtom,
         primaryObjectiveIds,
@@ -574,6 +627,14 @@ function solveJointScenario(input: {
         diagnostics: false,
       });
       if (transferred.state === null) continue;
+      const producedAtoms = producedAtomsByNodeKey.get(node.key) ?? new Set();
+      const previousProducedCount = producedAtoms.size;
+      addAll(
+        producedAtoms,
+        setDifference(transferred.state.mayAtoms, before.mayAtoms),
+      );
+      producedAtomsByNodeKey.set(node.key, producedAtoms);
+      if (producedAtoms.size !== previousProducedCount) changed = true;
       const previous = outputsByNodeKey.get(node.key);
       const next = publishState(previous, transferred.state);
       if (previous === undefined || !statesEqual(previous, next)) {
@@ -595,6 +656,7 @@ function solveJointScenario(input: {
       nodesByKey,
       reachableNodeKeys,
       outputsByNodeKey,
+      producedAtomsByNodeKey,
       selection: input.selection,
       producerKeysByAtom: input.producerKeysByAtom,
       primaryObjectiveIds,
@@ -623,6 +685,7 @@ function solveJointScenario(input: {
   return {
     reachableNodeKeys,
     outputsByNodeKey,
+    producedAtomsByNodeKey,
     mayAtoms,
     mayActivePrimaryIds,
     mayCompletedPrimaryIds,
@@ -637,6 +700,7 @@ function stateBeforeNode(input: {
   nodesByKey: ReadonlyMap<string, ReachabilityNode>;
   reachableNodeKeys: ReadonlySet<string>;
   outputsByNodeKey: ReadonlyMap<string, NodeAbstractState>;
+  producedAtomsByNodeKey: ReadonlyMap<string, ReadonlySet<ReachabilityAtom>>;
   selection: ReadonlyMap<string, string>;
   producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>;
   primaryObjectiveIds: ReadonlySet<string>;
@@ -662,7 +726,7 @@ function stateBeforeNode(input: {
       const state = input.outputsByNodeKey.get(producerKey);
       if (
         producerKey !== input.node.key &&
-        !strictlyDependsOn(producerKey, input.node.key, input.nodesByKey) &&
+        input.producedAtomsByNodeKey.get(producerKey)?.has(atom) === true &&
         state !== undefined &&
         state.mayAtoms.has(atom) &&
         !entryStates.includes(state)
@@ -1258,13 +1322,22 @@ function intersectScenarioAtoms(
 }
 
 function mustActiveFromScenario(
-  mustReachableNodeKeys: ReadonlySet<string>,
+  nodes: readonly ReachabilityNode[],
   scenario: JointScenario,
 ): MustActivePrimary {
+  const successfulNodeKeys = new Set(scenario.outputsByNodeKey.keys());
+  const producerKeysByAtom = buildObservedProducerIndex(nodes, [scenario]);
+  const causalEdges = buildCausalDependencyEdges(nodes, producerKeysByAtom);
+  const outcomeNodeKeys = [...successfulNodeKeys]
+    .filter(
+      (key) =>
+        !(causalEdges.get(key) ?? []).some((successorKey) =>
+          successfulNodeKeys.has(successorKey),
+        ),
+    )
+    .sort((left, right) => left.localeCompare(right));
   let result: MustActivePrimary = { kind: "uninitialized" };
-  for (const key of [...mustReachableNodeKeys].sort((left, right) =>
-    left.localeCompare(right),
-  )) {
+  for (const key of outcomeNodeKeys) {
     const state = scenario.outputsByNodeKey.get(key);
     if (state !== undefined) {
       result = meetMustActive(result, state.mustActivePrimary);
@@ -1274,15 +1347,12 @@ function mustActiveFromScenario(
 }
 
 function mustActiveAcrossScenarios(
-  mustReachableNodeKeys: ReadonlySet<string>,
+  nodes: readonly ReachabilityNode[],
   scenarios: readonly JointScenario[],
 ): MustActivePrimary {
   let result: MustActivePrimary = { kind: "uninitialized" };
   for (const scenario of scenarios) {
-    result = meetMustActive(
-      result,
-      mustActiveFromScenario(mustReachableNodeKeys, scenario),
-    );
+    result = meetMustActive(result, mustActiveFromScenario(nodes, scenario));
   }
   return result;
 }
