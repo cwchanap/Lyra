@@ -615,6 +615,83 @@ describe("buildReachabilityNodes", () => {
       mayExecuteBeforeKeys: ["chapter_1/investigation_scene_1/hotspot:a"],
     });
   });
+
+  it("keeps story-effect prerequisites causal inside a free-order region", () => {
+    const factProducer = hotspot("a", {
+      reveals: [
+        { kind: "assertFact", factId: "fact_a" },
+        {
+          kind: "setPrimaryObjective",
+          completeCurrent: true,
+          nextObjectiveId: "primary_a",
+        },
+      ],
+    });
+    const dependentSetter = hotspot("b", {
+      reveals: [
+        {
+          kind: "setPrimaryObjective",
+          completeCurrent: false,
+          nextObjectiveId: "primary_b",
+        },
+      ],
+    });
+    dependentSetter.status = "locked";
+    dependentSetter.unlock = { predicate: "fact_asserted", id: "fact_a" };
+    const impossibleCompletionConsumer = hotspot("c");
+    impossibleCompletionConsumer.status = "locked";
+    impossibleCompletionConsumer.unlock = {
+      predicate: "objective_completed",
+      id: "primary_b",
+    };
+    const scene = investigationScene({
+      sublocations: [
+        sublocation("main", [
+          factProducer,
+          dependentSetter,
+          impossibleCompletionConsumer,
+        ]),
+      ],
+    });
+    const catalog = primaryCatalog();
+    const nodes = buildReachabilityNodes({
+      chapters: [chapter("chapter_1", ["investigation_scene_1.md"])],
+      scenes: [record("chapter_1", "investigation_scene_1.md", scene)],
+      catalog,
+      analysisRegistry: createAnalysisDefinitionRegistry({
+        scenes: [],
+        boards: [],
+      }),
+    });
+    const nodesByKey = new Map(nodes.map((node) => [node.key, node]));
+    const producerKey = "chapter_1/investigation_scene_1/hotspot:a";
+    const setterKey = "chapter_1/investigation_scene_1/hotspot:b";
+    const consumerKey = "chapter_1/investigation_scene_1/hotspot:c";
+
+    expect(nodesByKey.get(setterKey)).toMatchObject({
+      strictPredecessorKeys: [
+        "chapter_1/investigation_scene_1/entry",
+        producerKey,
+      ],
+    });
+    expect(nodesByKey.get(setterKey)?.mayExecuteBeforeKeys).toContain(
+      producerKey,
+    );
+    expect(nodesByKey.get(producerKey)?.mayExecuteBeforeKeys).not.toContain(
+      setterKey,
+    );
+
+    const result = analyzeReachability({ nodes, catalog });
+    expect(result.mayCompletedPrimaryIds).not.toContain("primary_b");
+    expect(result.mayAtoms).not.toContain("objective_completed:primary_b");
+    expect(result.reachableNodeKeys).not.toContain(consumerKey);
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: "requiredContentUnreachable",
+        nodeKey: consumerKey,
+      }),
+    );
+  });
 });
 
 describe("positive dependency and base reachability", () => {

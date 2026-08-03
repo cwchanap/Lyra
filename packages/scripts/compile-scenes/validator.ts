@@ -49,6 +49,11 @@ export type StoryRevealTargetBatch = {
   location: Located<unknown>;
 };
 
+export type StoryPredicateReference = {
+  predicate: StoryPredicate;
+  location: Located<unknown>;
+};
+
 export type ValidatorInput = {
   chapters: ASTChapter[];
   scenes: SceneRecord[];
@@ -180,6 +185,82 @@ export function buildStoryRevealTargetBatches(
   }
 
   return batches;
+}
+
+export function buildStoryPredicateReferences(
+  scenes: SceneRecord[],
+): StoryPredicateReference[] {
+  const references: StoryPredicateReference[] = [];
+  const addExpression = (
+    expression: UnlockExpr | InterrogationUnlockExpr | null,
+    location: Located<unknown>,
+  ) => {
+    if (expression === null) return;
+    walkStoryPredicateReferences(expression, (predicate) => {
+      references.push({
+        predicate,
+        location: {
+          sourceFile: location.sourceFile,
+          line: location.line,
+        },
+      });
+    });
+  };
+
+  for (const rec of scenes) {
+    if (rec.ast.kind === "investigationScene") {
+      for (const sublocation of rec.ast.sublocations) {
+        addExpression(sublocation.unlock, sublocation);
+        for (const hotspot of sublocation.hotspots) {
+          addExpression(hotspot.unlock, hotspot);
+        }
+        for (const character of sublocation.characters) {
+          for (const topic of character.topics) {
+            addExpression(topic.unlock, topic);
+          }
+        }
+      }
+      if (rec.ast.outro.unlock !== "auto") {
+        addExpression(rec.ast.outro.unlock, rec.ast);
+      }
+      continue;
+    }
+
+    if (rec.ast.kind === "interrogationScene") {
+      for (const phase of rec.ast.phases) {
+        addExpression(phase.unlock, phase);
+        if (phase.complete !== "auto") {
+          addExpression(phase.complete, phase);
+        }
+        for (const question of phase.questions) {
+          addExpression(question.unlock, question);
+        }
+      }
+      if (rec.ast.outro.unlock !== "auto") {
+        addExpression(rec.ast.outro.unlock, rec.ast);
+      }
+    }
+  }
+
+  return references;
+}
+
+function walkStoryPredicateReferences(
+  expression: UnlockExpr | InterrogationUnlockExpr,
+  visit: (predicate: StoryPredicate) => void,
+): void {
+  if (!("op" in expression)) {
+    if (isStoryPredicate(expression)) visit(expression);
+    return;
+  }
+  if (expression.op === "at_least") {
+    for (const condition of expression.conditions) {
+      walkStoryPredicateReferences(condition, visit);
+    }
+    return;
+  }
+  walkStoryPredicateReferences(expression.left, visit);
+  walkStoryPredicateReferences(expression.right, visit);
 }
 
 function atLeastSatisfiable<P>(
