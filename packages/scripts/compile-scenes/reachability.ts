@@ -273,6 +273,11 @@ function positiveCycleDiagnostics(
         component.length === 1 &&
         (edges.get(component[0]!) ?? []).includes(component[0]!);
       if (component.length === 1 && !selfLoop) return [];
+      if (
+        component.every((key) => nodesByKey.get(key)!.legacyCompatibilityMode)
+      ) {
+        return [];
+      }
       const node = nodesByKey.get(component[0]!)!;
       if (selfLoop) {
         return [

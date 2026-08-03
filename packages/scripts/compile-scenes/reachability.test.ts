@@ -512,6 +512,55 @@ describe("positive dependency and base reachability", () => {
     ]);
   });
 
+  it("suppresses a positive self-reference on a legacy-only node", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("legacy-self", {
+        legacyCompatibilityMode: true,
+        condition: atomExpression("fact_asserted:legacy_self"),
+        effects: [addAtom("fact_asserted:legacy_self")],
+      }),
+    ]);
+
+    expect(result.errors).toEqual([]);
+  });
+
+  it("suppresses a positive dependency cycle when every member is legacy-only", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("legacy-a", {
+        legacyCompatibilityMode: true,
+        condition: atomExpression("legacy-b"),
+        effects: [addAtom("legacy-a")],
+      }),
+      syntheticNode("legacy-b", {
+        legacyCompatibilityMode: true,
+        condition: atomExpression("legacy-a"),
+        effects: [addAtom("legacy-b")],
+      }),
+    ]);
+
+    expect(result.errors).toEqual([]);
+  });
+
+  it("preserves a positive dependency diagnostic for a mixed legacy/new SCC", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("legacy", {
+        legacyCompatibilityMode: true,
+        condition: atomExpression("new"),
+        effects: [addAtom("legacy")],
+      }),
+      syntheticNode("new", {
+        condition: atomExpression("legacy"),
+        effects: [addAtom("new")],
+      }),
+    ]);
+
+    expect(
+      result.errors.filter(
+        (diagnostic) => diagnostic.code === "positiveDependencyCycle",
+      ),
+    ).toEqual([expect.objectContaining({ code: "positiveDependencyCycle" })]);
+  });
+
   it("emits one stable diagnostic for two-node and longer positive SCCs", () => {
     const twoNode = analyzeSynthetic([
       syntheticNode("b", {
