@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { validate } from "./validator";
+import { emptyStoryCatalog } from "./parser-story-catalog";
+import { validateStoryCatalog } from "./story-catalog";
+import { buildStoryRevealTargetBatches, validate } from "./validator";
 import type {
   ASTChapter,
   ASTEvidence,
@@ -9,6 +11,7 @@ import type {
   ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
+  ASTStoryCatalog,
   ASTTestimony,
   ASTTestimonyLine,
   DialogueItem,
@@ -259,7 +262,136 @@ const mkChapter = (number: number, sceneFiles: string[]): ASTChapter => ({
   line: 1,
 });
 
+const mkStoryTargetCatalog = (): ASTStoryCatalog => {
+  const catalog = emptyStoryCatalog("story_catalog.md");
+  catalog.authorizations = [
+    {
+      id: "search_warrant",
+      label: "Search warrant",
+      summary: "A test authorization.",
+      grantingAuthority: "Inspector Kuroda",
+      sourceFile: "story_catalog.md",
+      line: 3,
+    },
+  ];
+  return catalog;
+};
+
 describe("validator", () => {
+  describe("story reveal target batches", () => {
+    it("preserves authored story-target order while normalizing scene batches", () => {
+      const investigation = mkInvestigationScene();
+      investigation.sublocations[0]!.reveals = [
+        { kind: "assertFact", factId: "fact_a" },
+        { kind: "revealObjective", objectiveId: "secondary_a" },
+      ];
+      investigation.sublocations[0]!.hotspots[0]!.reveals = [
+        { kind: "grantAuthorization", authorizationId: "search_warrant" },
+      ];
+      const interrogation = mkInterrogationScene({
+        phases: [
+          mkInquiryPhase({
+            reveals: [
+              { kind: "revealQuestion", questionId: "question_a" },
+              {
+                kind: "resolveQuestion",
+                questionId: "question_a",
+                factId: "fact_a",
+              },
+            ],
+          }),
+        ],
+      });
+
+      expect(
+        buildStoryRevealTargetBatches([
+          {
+            chapterId: "chapter_1",
+            file: "investigation_scene_1.md",
+            ast: investigation,
+          },
+          {
+            chapterId: "chapter_1",
+            file: "interrogation_scene_1.md",
+            ast: interrogation,
+          },
+        ]),
+      ).toEqual([
+        {
+          targets: [
+            { kind: "assertFact", factId: "fact_a" },
+            { kind: "revealObjective", objectiveId: "secondary_a" },
+          ],
+          representedAuthority: null,
+          location: { sourceFile: "i.md", line: 2 },
+        },
+        {
+          targets: [
+            { kind: "grantAuthorization", authorizationId: "search_warrant" },
+          ],
+          representedAuthority: null,
+          location: { sourceFile: "i.md", line: 4 },
+        },
+        {
+          targets: [
+            { kind: "revealQuestion", questionId: "question_a" },
+            {
+              kind: "resolveQuestion",
+              questionId: "question_a",
+              factId: "fact_a",
+            },
+          ],
+          representedAuthority: null,
+          location: { sourceFile: "interrogation_scene_1.md", line: 1 },
+        },
+      ]);
+    });
+
+    it("routes investigation and interrogation grants through null-authority validation", () => {
+      const investigation = mkInvestigationScene();
+      investigation.sublocations[0]!.hotspots[0]!.reveals = [
+        { kind: "grantAuthorization", authorizationId: "search_warrant" },
+      ];
+      const interrogation = mkInterrogationScene({
+        phases: [
+          mkInquiryPhase({
+            reveals: [
+              {
+                kind: "grantAuthorization",
+                authorizationId: "search_warrant",
+              },
+            ],
+          }),
+        ],
+      });
+
+      const errors = validateStoryCatalog(mkStoryTargetCatalog(), [
+        {
+          chapterId: "chapter_1",
+          file: "investigation_scene_1.md",
+          ast: investigation,
+        },
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: interrogation,
+        },
+      ]);
+
+      expect(
+        errors.filter(
+          (error) => error.code === "authorizationGrantOutsideAuthorityEvent",
+        ),
+      ).toEqual([
+        expect.objectContaining({ sourceFile: "i.md", line: 4 }),
+        expect.objectContaining({
+          sourceFile: "interrogation_scene_1.md",
+          line: 1,
+        }),
+      ]);
+    });
+  });
+
   it("rejects duplicate scene IDs within one chapter at the second scene", () => {
     const errors = validate({
       chapters: [mkChapter(1, ["scene_a.md", "scene_b.md"])],

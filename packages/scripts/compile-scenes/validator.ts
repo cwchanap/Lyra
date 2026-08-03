@@ -28,6 +28,7 @@ import type {
   InvestigationRevealTarget,
   InvestigationLocalPredicate,
   InventoryTarget,
+  Located,
   PositiveExpression,
   RevealTarget,
   StoryRevealTarget,
@@ -40,6 +41,12 @@ export type SceneRecord = {
   chapterId: string;
   file: string;
   ast: ASTLinearScene | ASTInvestigationScene | ASTInterrogationScene;
+};
+
+export type StoryRevealTargetBatch = {
+  targets: StoryRevealTarget[];
+  representedAuthority: string | null;
+  location: Located<unknown>;
 };
 
 export type ValidatorInput = {
@@ -121,6 +128,58 @@ function localInterrogationReveals(
     (reveal): reveal is InterrogationLocalRevealTarget =>
       !isStoryRevealTarget(reveal),
   );
+}
+
+export function buildStoryRevealTargetBatches(
+  scenes: SceneRecord[],
+): StoryRevealTargetBatch[] {
+  const batches: StoryRevealTargetBatch[] = [];
+
+  const addBatch = (
+    reveals: InvestigationRevealTarget[] | InterrogationRevealTarget[],
+    location: Located<unknown>,
+  ) => {
+    const targets = reveals.filter(isStoryRevealTarget);
+    if (targets.length === 0) return;
+    batches.push({
+      targets,
+      // Investigation and interrogation have no represented authority in
+      // HPA-257. Future registered authority-event adapters own that context.
+      representedAuthority: null,
+      location: { sourceFile: location.sourceFile, line: location.line },
+    });
+  };
+
+  for (const rec of scenes) {
+    if (rec.ast.kind === "investigationScene") {
+      for (const sublocation of rec.ast.sublocations) {
+        addBatch(sublocation.reveals, sublocation);
+        for (const hotspot of sublocation.hotspots) {
+          addBatch(hotspot.reveals, hotspot);
+        }
+        for (const character of sublocation.characters) {
+          for (const topic of character.topics) {
+            addBatch(topic.reveals, topic);
+          }
+        }
+      }
+      continue;
+    }
+
+    if (rec.ast.kind === "interrogationScene") {
+      for (const phase of rec.ast.phases) {
+        addBatch(phase.reveals, phase);
+        for (const question of phase.questions) {
+          addBatch(question.reveals, question);
+          for (const line of question.testimony.lines) {
+            addBatch(line.reveals, line);
+          }
+        }
+      }
+    }
+  }
+
+  return batches;
 }
 
 function atLeastSatisfiable<P>(
