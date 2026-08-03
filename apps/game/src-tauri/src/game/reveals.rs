@@ -1243,4 +1243,238 @@ mod tests {
         assert!(scene.unlocked_overrides.contains("question:hidden"));
         assert!(scene.unlocked_overrides.contains("phase:testimony"));
     }
+
+    // HPA-257 regression: a local reveal of a hotspot/topic/question/phase
+    // target only unlocks the block at runtime; it must NOT investigate,
+    // discuss, answer, or complete it. The revealed target's own execution
+    // path remains the sole producer of the corresponding completion state.
+    // This locks in the runtime half of the contract that the compiler
+    // reachability adapter now relies on (see reachability.ts: a local reveal
+    // no longer publishes the completion atom).
+    fn investigation_scene_with_locked_blocks() -> InvestigationSceneState {
+        let json = serde_json::json!({
+            "id": "i",
+            "title": "i",
+            "summary": "Summary",
+            "intro": [],
+            "sublocations": [{
+                "id": "main",
+                "label": "Main",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "main",
+                "transitionDialogue": [],
+                "hotspots": [{
+                    "id": "h_locked",
+                    "label": "Locked",
+                    "description": "desc",
+                    "status": "locked",
+                    "unlock": null,
+                    "reveals": [],
+                    "inspectDialogue": [],
+                    "onReexamine": null
+                }],
+                "characters": [{
+                    "id": "c",
+                    "name": "C",
+                    "role": "Witness",
+                    "bio": "bio",
+                    "topics": [{
+                        "id": "t_locked",
+                        "label": "Locked",
+                        "status": "locked",
+                        "unlock": null,
+                        "reveals": [],
+                        "topicDialogue": [],
+                        "onReexamine": null
+                    }]
+                }]
+            }],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": "auto", "dialogue": [] }
+        });
+        InvestigationSceneState::from_json(serde_json::from_value(json).unwrap(), 1)
+    }
+
+    fn interrogation_scene_with_locked_blocks() -> InterrogationSceneState {
+        let json = serde_json::json!({
+            "id": "interrogation",
+            "title": "Interrogation",
+            "summary": "Summary",
+            "intro": [],
+            "phases": [
+                {
+                    "kind": "inquiry",
+                    "id": "p1",
+                    "label": "P1",
+                    "subject": { "id": "suspect", "name": "Suspect", "role": "Witness", "bio": "bio" },
+                    "required": true,
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "p1",
+                    "entryDialogue": [],
+                    "complete": "auto",
+                    "questions": [{
+                        "id": "q1",
+                        "label": "Q1",
+                        "status": "unlocked",
+                        "required": false,
+                        "unlock": null,
+                        "reveals": [],
+                        "testimony": {
+                            "onLoop": [],
+                            "lines": [{ "id": "l", "label": "L", "content": [], "contradiction": null }]
+                        }
+                    }]
+                },
+                {
+                    "kind": "inquiry",
+                    "id": "p2",
+                    "label": "P2",
+                    "subject": { "id": "suspect2", "name": "Suspect2", "role": "Witness", "bio": "bio" },
+                    "required": false,
+                    "status": "locked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "p2",
+                    "entryDialogue": [],
+                    "complete": "auto",
+                    "questions": [{
+                        "id": "q2",
+                        "label": "Q2",
+                        "status": "locked",
+                        "required": false,
+                        "unlock": null,
+                        "reveals": [],
+                        "testimony": {
+                            "onLoop": [],
+                            "lines": [{ "id": "l2", "label": "L2", "content": [], "contradiction": null }]
+                        }
+                    }]
+                }
+            ],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": "auto", "dialogue": [] }
+        });
+        InterrogationSceneState::from_json(serde_json::from_value(json).unwrap(), 1)
+    }
+
+    #[test]
+    fn investigation_hotspot_reveal_unlocks_without_investigating() {
+        let catalog = evidence_catalog("i", &[]);
+        let mut scene = investigation_scene_with_locked_blocks();
+        let mut inv = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
+        let mut acq = AcquisitionCtx {
+            catalog: &catalog,
+            inventory: &mut inv,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
+        };
+        apply_investigation_reveals_for_test(
+            &mut scene,
+            &mut acq,
+            None,
+            &[RevealTarget::Hotspot {
+                id: "h_locked".into(),
+            }],
+            "chapter_1",
+        )
+        .unwrap();
+
+        assert!(scene.unlocked_overrides.contains("hotspot:h_locked"));
+        assert!(!scene.inspected_hotspots.contains("h_locked"));
+    }
+
+    #[test]
+    fn investigation_topic_reveal_unlocks_without_discussing() {
+        let catalog = evidence_catalog("i", &[]);
+        let mut scene = investigation_scene_with_locked_blocks();
+        let mut inv = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
+        let mut acq = AcquisitionCtx {
+            catalog: &catalog,
+            inventory: &mut inv,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
+        };
+        apply_investigation_reveals_for_test(
+            &mut scene,
+            &mut acq,
+            None,
+            &[RevealTarget::Topic {
+                character_id: "c".into(),
+                topic_id: "t_locked".into(),
+            }],
+            "chapter_1",
+        )
+        .unwrap();
+
+        assert!(scene.unlocked_overrides.contains("topic:c@t_locked"));
+        assert!(!scene
+            .discussed_topics
+            .contains(&("c".into(), "t_locked".into())));
+    }
+
+    #[test]
+    fn interrogation_question_reveal_unlocks_without_answering() {
+        let catalog = evidence_catalog("interrogation", &[]);
+        let mut scene = interrogation_scene_with_locked_blocks();
+        let mut inv = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
+        let mut acq = AcquisitionCtx {
+            catalog: &catalog,
+            inventory: &mut inv,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
+        };
+        apply_interrogation_reveals_for_test(
+            &mut scene,
+            &mut acq,
+            None,
+            &[InterrogationRevealTarget::Question { id: "q2".into() }],
+            "chapter_1",
+        )
+        .unwrap();
+
+        assert!(scene.unlocked_overrides.contains("question:q2"));
+        assert!(!scene.broken_questions.contains("q2"));
+    }
+
+    #[test]
+    fn interrogation_phase_reveal_unlocks_without_completing() {
+        let catalog = evidence_catalog("interrogation", &[]);
+        let mut scene = interrogation_scene_with_locked_blocks();
+        let mut inv = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
+        let mut acq = AcquisitionCtx {
+            catalog: &catalog,
+            inventory: &mut inv,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
+        };
+        apply_interrogation_reveals_for_test(
+            &mut scene,
+            &mut acq,
+            None,
+            &[InterrogationRevealTarget::Phase { id: "p2".into() }],
+            "chapter_1",
+        )
+        .unwrap();
+
+        assert!(scene.unlocked_overrides.contains("phase:p2"));
+        assert!(!scene.completed_phases.contains("p2"));
+    }
 }

@@ -124,7 +124,8 @@ export function analyzeReachability(input: {
     ]),
   );
 
-  const exclusiveSelections = exclusiveOutcomeSelections(nodes);
+  const exclusiveOutcome = exclusiveOutcomeSelections(nodes);
+  const exclusiveSelections = exclusiveOutcome.selections;
 
   const scenarios: JointScenario[] = [];
   for (const selection of exclusiveSelections) {
@@ -193,6 +194,20 @@ export function analyzeReachability(input: {
 
   const errors = [...cycleDiagnostics];
   const warnings: ReachabilityDiagnostic[] = [];
+  if (exclusiveOutcome.overflowed && nodes.length > 0) {
+    warnings.push(
+      diagnostic(
+        nodes[0]!,
+        "scenarioLimitExceeded",
+        `Reachability scenario enumeration exceeded the limit of ${exclusiveOutcome.limit} ` +
+          `joint scenarios (enumerated ${exclusiveOutcome.enumeratedCount} before stopping). ` +
+          `The may/must fixpoint was solved only for the enumerated subset, so unreachable-content ` +
+          `and cycle diagnostics may be incomplete. Reduce one-shot event fan-out (e.g. merge ` +
+          `interrogation testimony-line reveals that each carry distinct one-shot events, or ` +
+          `split the chapter) and recompile.`,
+      ),
+    );
+  }
   for (const scenario of scenarios) {
     for (const error of scenario.errors) pushDiagnostic(errors, error);
     for (const warning of scenario.warnings) pushDiagnostic(warnings, warning);
@@ -546,9 +561,31 @@ function stableMinimalCycle(
   return [...component, start];
 }
 
+/**
+ * Hard cap on the number of joint scenarios the reachability analysis will
+ * enumerate. The Cartesian product of one-shot-event alternatives grows as
+ * 2^N (each event with 2+ mutually-exclusive outcomes doubles the space),
+ * and `analyzeReachability` solves the full joint fixpoint twice (once for
+ * `may` and once for `must`). Beyond this cap the cost is prohibitive and
+ * almost always indicates a structural mistake (e.g. many independent
+ * interrogation questions whose testimony lines each carry distinct
+ * one-shot reveal events). When the cap is hit we stop expanding, run the
+ * scenarios enumerated so far, and emit a `scenarioLimitExceeded` warning
+ * so the author can refactor (split the chapter, reduce one-shot fan-out,
+ * or merge events) instead of waiting on an exponential compile.
+ */
+const SCENARIO_LIMIT = 4096;
+
+type ExclusiveOutcomeSelections = {
+  selections: Array<ReadonlyMap<string, string>>;
+  overflowed: boolean;
+  limit: number;
+  enumeratedCount: number;
+};
+
 function exclusiveOutcomeSelections(
   nodes: readonly ReachabilityNode[],
-): Array<ReadonlyMap<string, string>> {
+): ExclusiveOutcomeSelections {
   const groups = new Map<string, string[]>();
   for (const node of nodes) {
     const members = groups.get(node.oneShotEventId) ?? [];
@@ -562,10 +599,23 @@ function exclusiveOutcomeSelections(
       members: members.sort((left, right) => left.localeCompare(right)),
     }))
     .sort((left, right) => left.eventId.localeCompare(right.eventId));
-  if (alternatives.length === 0) return [new Map()];
+  if (alternatives.length === 0) {
+    return {
+      selections: [new Map()],
+      overflowed: false,
+      limit: SCENARIO_LIMIT,
+      enumeratedCount: 1,
+    };
+  }
 
   let selections: Array<Map<string, string>> = [new Map()];
+  let overflowed = false;
   for (const alternative of alternatives) {
+    const nextCount = selections.length * alternative.members.length;
+    if (nextCount > SCENARIO_LIMIT) {
+      overflowed = true;
+      break;
+    }
     selections = selections.flatMap((selection) =>
       alternative.members.map((member) => {
         const next = new Map(selection);
@@ -574,7 +624,12 @@ function exclusiveOutcomeSelections(
       }),
     );
   }
-  return selections;
+  return {
+    selections,
+    overflowed,
+    limit: SCENARIO_LIMIT,
+    enumeratedCount: selections.length,
+  };
 }
 
 type JointScenario = {
@@ -2376,7 +2431,7 @@ function storyPredicateAtom(predicate: StoryPredicate): ReachabilityAtom {
 
 function effectsFromInvestigationReveals(
   reveals: InvestigationRevealTarget[],
-  scope: SceneScope,
+  _scope: SceneScope,
 ): ReachabilityEffect[] {
   return reveals.flatMap((target, targetIndex) => {
     if (isStoryRevealTarget(target)) {
@@ -2386,20 +2441,18 @@ function effectsFromInvestigationReveals(
       case "evidence":
       case "statement":
         return [addAtomEffect(`${target.kind}:${target.id}`, targetIndex)];
+      // Local hotspot/topic reveals only unlock those blocks at runtime; they
+      // do not investigate or discuss them. Their own normalized execution
+      // nodes remain the sole producers of the corresponding completion atoms
+      // (investigationHotspotAtom/investigationTopicAtom). Availability is
+      // modeled by inboundTargetsFromInvestigationReveals below, which wires
+      // the revealer as a strict predecessor of the revealed target when that
+      // target requires an inbound reveal. Emitting the completion atom here
+      // would let the fixed-point analyzer satisfy downstream predicates
+      // (e.g. hotspot_investigated/topic_discussed) before the player executes
+      // the revealed target, hiding real deadlocks.
       case "hotspot":
-        return [
-          addAtomEffect(
-            investigationHotspotAtom(scope, target.id),
-            targetIndex,
-          ),
-        ];
       case "topic":
-        return [
-          addAtomEffect(
-            investigationTopicAtom(scope, target.characterId, target.topicId),
-            targetIndex,
-          ),
-        ];
       case "sublocation":
         return [];
     }
@@ -2422,20 +2475,19 @@ function effectsFromInterrogationReveals(
         return [
           addAtomEffect(`${target.kind}:${target.id}`, normalizedTargetIndex),
         ];
+      // Local question/phase reveals only unlock those blocks at runtime; they
+      // do not answer or complete them. Their own normalized execution nodes
+      // remain the sole producers of the corresponding completion atoms
+      // (interrogationQuestionAtom/interrogationPhaseAtom). Availability is
+      // modeled by inboundTargetsFromInterrogationReveals below, which wires
+      // the revealer as a strict predecessor of the revealed target when that
+      // target requires an inbound reveal. Emitting the completion atom here
+      // would let the fixed-point analyzer satisfy downstream predicates
+      // (e.g. question_answered/phase_completed) before the player executes
+      // the revealed target, hiding real deadlocks.
       case "question":
-        return [
-          addAtomEffect(
-            interrogationQuestionAtom(scope, target.id),
-            normalizedTargetIndex,
-          ),
-        ];
       case "phase":
-        return [
-          addAtomEffect(
-            interrogationPhaseAtom(scope, target.id),
-            normalizedTargetIndex,
-          ),
-        ];
+        return [];
     }
   });
 }

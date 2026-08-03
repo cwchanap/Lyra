@@ -2168,7 +2168,7 @@ mod tests {
                 "facts": [],
                 "questions": [],
                 "objectives": [{
-                    "id": null,
+                    "id": "null",
                     "label": "Broken objective",
                     "summary": "Broken objective summary",
                     "kind": "primary",
@@ -2185,7 +2185,13 @@ mod tests {
 
         let error = StoryCatalog::load(&resources).unwrap_err();
 
-        assert_eq!(error.code, "storyCatalogLoadFailed");
+        assert_eq!(error.code, "storyCatalogValidationFailed");
+        assert!(
+            error
+                .message
+                .contains("reserved for setPrimaryObjective:null"),
+            "{error:?}"
+        );
         let _ = fs::remove_dir_all(resources);
     }
 }

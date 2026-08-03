@@ -1208,12 +1208,21 @@ fn story_block_exists(scene: &SceneJson, kind: StoryEventBlockKind, block_id: &s
             .iter()
             .flat_map(|item| &item.hotspots)
             .any(|item| item.id == block_id),
-        (SceneJson::Investigation(scene), StoryEventBlockKind::Topic) => scene
-            .sublocations
-            .iter()
-            .flat_map(|item| &item.characters)
-            .flat_map(|item| &item.topics)
-            .any(|item| item.id == block_id),
+        (SceneJson::Investigation(scene), StoryEventBlockKind::Topic) => {
+            // Topic block ids are qualified as `character_id@topic_id` (see
+            // mod.rs interview_topic), because two characters may share a
+            // topic id. A bare topic id (from a pre-qualification save) does
+            // not match either segment and is treated as a missing block.
+            let Some((character_id, topic_id)) = block_id.split_once('@') else {
+                return false;
+            };
+            scene
+                .sublocations
+                .iter()
+                .flat_map(|item| &item.characters)
+                .find(|character| character.id == character_id)
+                .is_some_and(|character| character.topics.iter().any(|topic| topic.id == topic_id))
+        }
         (SceneJson::Interrogation(scene), StoryEventBlockKind::InterrogationPhase) => {
             scene.phases.iter().any(|phase| {
                 let InterrogationPhaseJson::Inquiry { id, .. } = phase;
@@ -2552,7 +2561,7 @@ mod tests {
                     chapter_id: "chapter_1".into(),
                     scene_id: "investigation_scene_1".into(),
                     block_kind: StoryEventBlockKind::Topic,
-                    block_id: "alibi".into(),
+                    block_id: "witness@alibi".into(),
                 },
                 &[
                     InventoryTarget::Evidence {
@@ -2745,7 +2754,7 @@ mod tests {
                     chapter_id: "chapter_1".into(),
                     scene_id: "investigation_scene_1".into(),
                     block_kind: StoryEventBlockKind::Topic,
-                    block_id: "alibi".into(),
+                    block_id: "witness@alibi".into(),
                 },
                 &[InventoryTarget::Evidence {
                     id: "chain_exhibit".into(),

@@ -9,6 +9,7 @@ import {
 } from "./reachability";
 import type {
   ASTChapter,
+  ASTCharacter,
   ASTHotspot,
   ASTInquiryPhase,
   ASTInquiryQuestion,
@@ -18,6 +19,7 @@ import type {
   ASTStoryCatalog,
   ASTSublocation,
   ASTTestimonyLine,
+  ASTTopic,
   InvestigationRevealTarget,
 } from "./types";
 import type { SceneRecord } from "./validator";
@@ -614,6 +616,156 @@ describe("buildReachabilityNodes", () => {
       strictPredecessorKeys: ["chapter_1/investigation_scene_1/entry"],
       mayExecuteBeforeKeys: ["chapter_1/investigation_scene_1/hotspot:a"],
     });
+  });
+
+  // Local reveals of hotspot/topic/question/phase targets only unlock those
+  // blocks at runtime; they do not investigate/discuss/answer/complete them.
+  // The revealed target's own normalized execution node must remain the sole
+  // producer of the corresponding completion atom, otherwise the fixed-point
+  // analyzer would satisfy downstream predicates before the player executes
+  // the revealed target and could hide a real deadlock.
+  it("does not let a local hotspot reveal satisfy hotspot_investigated before the target is executed", () => {
+    const scene = investigationScene({
+      sublocations: [
+        sublocation("main", [
+          hotspot("a", {
+            reveals: [{ kind: "hotspot", id: "b" }],
+          }),
+          hotspot("b", {
+            status: "locked",
+            unlock: { predicate: "fact_asserted", id: "fact_a" },
+          }),
+          hotspot("c", {
+            status: "locked",
+            unlock: { predicate: "hotspot_investigated", id: "b" },
+          }),
+        ]),
+      ],
+    });
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["investigation_scene_1.md"])],
+      [record("chapter_1", "investigation_scene_1.md", scene)],
+    );
+    const result = analyzeReachability({ nodes, catalog: storyCatalog() });
+
+    expect(result.mayAtoms).not.toContain(
+      "hotspot:chapter_1@investigation_scene_1@b",
+    );
+    expect(result.reachableNodeKeys).not.toContain(
+      "chapter_1/investigation_scene_1/hotspot:c",
+    );
+  });
+
+  it("does not let a local topic reveal satisfy topic_discussed before the target is executed", () => {
+    const main = sublocation("main", [
+      hotspot("a", {
+        reveals: [{ kind: "topic", characterId: "cx", topicId: "ty" }],
+      }),
+      hotspot("c", {
+        status: "locked",
+        unlock: {
+          predicate: "topic_discussed",
+          characterId: "cx",
+          topicId: "ty",
+        },
+      }),
+    ]);
+    main.characters = [
+      character("cx", [
+        topic("ty", {
+          status: "locked",
+          unlock: { predicate: "fact_asserted", id: "fact_a" },
+        }),
+      ]),
+    ];
+    const scene = investigationScene({ sublocations: [main] });
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["investigation_scene_1.md"])],
+      [record("chapter_1", "investigation_scene_1.md", scene)],
+    );
+    const result = analyzeReachability({ nodes, catalog: storyCatalog() });
+
+    expect(result.mayAtoms).not.toContain(
+      "topic:chapter_1@investigation_scene_1@cx@ty",
+    );
+    expect(result.reachableNodeKeys).not.toContain(
+      "chapter_1/investigation_scene_1/hotspot:c",
+    );
+  });
+
+  it("does not let a local question reveal satisfy question_answered before the target is executed", () => {
+    const scene = interrogationScene([
+      inquiryPhase({
+        id: "first",
+        questions: [
+          inquiryQuestion({
+            id: "revealer",
+            required: false,
+            reveals: [{ kind: "question", id: "target" }],
+          }),
+          inquiryQuestion({
+            id: "consumer",
+            required: false,
+            status: "locked",
+            unlock: { predicate: "question_answered", id: "target" },
+          }),
+        ],
+      }),
+      inquiryPhase({
+        id: "second",
+        status: "locked",
+        unlock: { predicate: "fact_asserted", id: "fact_a" },
+        questions: [inquiryQuestion({ id: "target", status: "locked" })],
+      }),
+    ]);
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["interrogation_scene_1.md"])],
+      [record("chapter_1", "interrogation_scene_1.md", scene)],
+    );
+    const result = analyzeReachability({ nodes, catalog: storyCatalog() });
+
+    expect(result.mayAtoms).not.toContain(
+      "question_answered:chapter_1@interrogation_scene_1@target",
+    );
+    expect(result.reachableNodeKeys).not.toContain(
+      "chapter_1/interrogation_scene_1/question:consumer:entry",
+    );
+  });
+
+  it("does not let a local phase reveal satisfy phase_completed before the target is executed", () => {
+    const scene = interrogationScene([
+      inquiryPhase({
+        id: "first",
+        reveals: [{ kind: "phase", id: "second" }],
+        questions: [
+          inquiryQuestion({ id: "revealer", required: false }),
+          inquiryQuestion({
+            id: "consumer",
+            required: false,
+            status: "locked",
+            unlock: { predicate: "phase_completed", id: "second" },
+          }),
+        ],
+      }),
+      inquiryPhase({
+        id: "second",
+        status: "locked",
+        unlock: { predicate: "fact_asserted", id: "fact_a" },
+        questions: [inquiryQuestion({ id: "second_question" })],
+      }),
+    ]);
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["interrogation_scene_1.md"])],
+      [record("chapter_1", "interrogation_scene_1.md", scene)],
+    );
+    const result = analyzeReachability({ nodes, catalog: storyCatalog() });
+
+    expect(result.mayAtoms).not.toContain(
+      "phase_completed:chapter_1@interrogation_scene_1@second",
+    );
+    expect(result.reachableNodeKeys).not.toContain(
+      "chapter_1/interrogation_scene_1/question:consumer:entry",
+    );
   });
 
   it("keeps story-effect prerequisites causal inside a free-order region", () => {
@@ -2197,6 +2349,33 @@ function sublocation(
   };
 }
 
+function character(id: string, topics: ASTTopic[]): ASTCharacter {
+  return {
+    id,
+    name: id,
+    role: "Witness",
+    bio: "bio",
+    topics,
+    sourceFile: "chapter_1/investigation_scene_1.md",
+    line: 3,
+  };
+}
+
+function topic(id: string, overrides: Partial<ASTTopic> = {}): ASTTopic {
+  return {
+    id,
+    label: id,
+    status: "unlocked",
+    unlock: null,
+    reveals: [],
+    topicDialogue: [],
+    onReexamine: null,
+    sourceFile: "chapter_1/investigation_scene_1.md",
+    line: 4,
+    ...overrides,
+  };
+}
+
 function hotspot(
   id: string,
   overrides: {
@@ -2305,3 +2484,71 @@ function primaryCatalog(): ASTStoryCatalog {
   ];
   return catalog;
 }
+
+describe("scenario limit", () => {
+  it("emits scenarioLimitExceeded and stops expanding when the Cartesian product exceeds the cap", () => {
+    // 13 one-shot events with 2 alternatives each => 2^13 = 8192 scenarios,
+    // which exceeds the 4096 cap. The enumerator must stop early and emit a
+    // single scenarioLimitExceeded warning rather than solving 8192 fixpoints.
+    const eventCount = 13;
+    const nodes: ReachabilityNode[] = [];
+    for (let index = 0; index < eventCount; index += 1) {
+      const eventId = `event_${index}`;
+      nodes.push(
+        syntheticNode(`${eventId}_a`, {
+          oneShotEventId: eventId,
+          initiallyReachable: true,
+          effects: [addAtom(`atom_${index}_a`)],
+        }),
+      );
+      nodes.push(
+        syntheticNode(`${eventId}_b`, {
+          oneShotEventId: eventId,
+          initiallyReachable: true,
+          effects: [addAtom(`atom_${index}_b`)],
+        }),
+      );
+    }
+
+    const result = analyzeSynthetic(nodes);
+
+    const limitWarnings = result.warnings.filter(
+      (warning) => warning.code === "scenarioLimitExceeded",
+    );
+    expect(limitWarnings).toHaveLength(1);
+    expect(limitWarnings[0]!.message).toContain("4096");
+    // The may-atom set still reflects the enumerated subset; it must not be
+    // empty (the first event's alternatives are always enumerated).
+    expect(result.mayAtoms.size).toBeGreaterThan(0);
+  });
+
+  it("does not emit scenarioLimitExceeded when the product fits under the cap", () => {
+    // 10 one-shot events with 2 alternatives each => 2^10 = 1024 scenarios,
+    // which is under the 4096 cap.
+    const eventCount = 10;
+    const nodes: ReachabilityNode[] = [];
+    for (let index = 0; index < eventCount; index += 1) {
+      const eventId = `event_${index}`;
+      nodes.push(
+        syntheticNode(`${eventId}_a`, {
+          oneShotEventId: eventId,
+          initiallyReachable: true,
+          effects: [addAtom(`atom_${index}_a`)],
+        }),
+      );
+      nodes.push(
+        syntheticNode(`${eventId}_b`, {
+          oneShotEventId: eventId,
+          initiallyReachable: true,
+          effects: [addAtom(`atom_${index}_b`)],
+        }),
+      );
+    }
+
+    const result = analyzeSynthetic(nodes);
+
+    expect(
+      result.warnings.filter((w) => w.code === "scenarioLimitExceeded"),
+    ).toHaveLength(0);
+  });
+});

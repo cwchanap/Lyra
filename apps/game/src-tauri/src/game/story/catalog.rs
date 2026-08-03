@@ -395,6 +395,18 @@ impl StoryCatalog {
 
         let mut objectives = Vec::with_capacity(objective_json.len());
         for definition in objective_json {
+            // "null" is the reserved sentinel for set_primary_objective:null
+            // (clearing the active primary). The compiler rejects an objective
+            // with this id (see parser-story-catalog.ts); the runtime loader
+            // must reject it too so a hand-edited resource package cannot
+            // define a primary objective named "null" and then reference it
+            // through nextObjectiveId: "null".
+            if definition.id == "null" {
+                return Err(GameError::story_catalog_validation_failed(
+                    path,
+                    "Objective id 'null' is reserved for setPrimaryObjective:null.".into(),
+                ));
+            }
             let kind = match definition.kind.as_str() {
                 "primary" => ObjectiveKind::Primary,
                 "secondary" => ObjectiveKind::Secondary,
