@@ -1,5 +1,80 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseInterrogationUnlockExpr, parseUnlockExpr } from "./parser-unlock";
+import type { InterrogationUnlockExpr, UnlockExpr } from "./types";
+
+type SemanticExpression = UnlockExpr | InterrogationUnlockExpr;
+
+type SemanticFixture = {
+  schemaVersion: number;
+  cases: Array<{
+    name: string;
+    family: "investigation" | "interrogation";
+    expression: SemanticExpression;
+    truth: Record<string, boolean>;
+    expected: boolean;
+  }>;
+};
+
+function loadUnlockExpressionSemanticsFixture(): SemanticFixture {
+  const fixtureBytes = readFileSync(
+    new URL(
+      "../../shared/fixtures/unlock-expression-semantics.json",
+      import.meta.url,
+    ),
+  );
+  return JSON.parse(fixtureBytes.toString("utf8")) as SemanticFixture;
+}
+
+function evaluateSemanticExpression(
+  expression: SemanticExpression,
+  truth: Record<string, boolean>,
+): boolean {
+  if ("op" in expression) {
+    if (expression.op === "at_least") {
+      let trueCount = 0;
+      for (const condition of expression.conditions) {
+        if (!evaluateSemanticExpression(condition, truth)) continue;
+        trueCount += 1;
+        if (trueCount >= expression.count) return true;
+      }
+      return false;
+    }
+    if (expression.op === "and") {
+      return (
+        evaluateSemanticExpression(expression.left, truth) &&
+        evaluateSemanticExpression(expression.right, truth)
+      );
+    }
+    return (
+      evaluateSemanticExpression(expression.left, truth) ||
+      evaluateSemanticExpression(expression.right, truth)
+    );
+  }
+
+  switch (expression.predicate) {
+    case "topic_discussed":
+      return (
+        truth[
+          `${expression.predicate}:${expression.characterId}@${expression.topicId}`
+        ] === true
+      );
+    case "analysis_scene_completed":
+      return (
+        truth[
+          `${expression.predicate}:${expression.chapterId}@${expression.sceneId}`
+        ] === true
+      );
+    case "analysis_board_completed":
+      return (
+        truth[
+          `${expression.predicate}:${expression.chapterId}@${expression.sceneId}@${expression.boardId}`
+        ] === true
+      );
+    default:
+      return truth[`${expression.predicate}:${expression.id}`] === true;
+  }
+}
 
 describe("parseUnlockExpr", () => {
   it("parses a single evidence_collected predicate", () => {
@@ -359,4 +434,18 @@ describe("story predicate support", () => {
       });
     },
   );
+});
+
+describe("shared unlock expression semantics fixture", () => {
+  it("evaluates every v1 case from the shared fixture bytes", () => {
+    const fixture = loadUnlockExpressionSemanticsFixture();
+
+    expect(fixture.schemaVersion).toBe(1);
+    for (const semanticCase of fixture.cases) {
+      expect(
+        evaluateSemanticExpression(semanticCase.expression, semanticCase.truth),
+        semanticCase.name,
+      ).toBe(semanticCase.expected);
+    }
+  });
 });

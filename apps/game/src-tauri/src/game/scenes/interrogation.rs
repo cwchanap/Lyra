@@ -6,7 +6,7 @@ use crate::game::schema::{
     InterrogationSceneJson, InterrogationUnlockExpr, LockStatus, TestimonyLineJson,
 };
 use crate::game::state::Inventory;
-use crate::game::unlock::{self, InterrogationUnlockContext};
+use crate::game::unlock::{self, InterrogationUnlockContext, StoryUnlockContext};
 
 pub(crate) const RESTORED_CONSUMED_INTRO_QUEUE_GEN: u64 = 0;
 
@@ -341,7 +341,11 @@ impl InterrogationSceneState {
         &self.entered_phases
     }
 
-    pub fn refresh_phase_completion(&mut self, inventory: &Inventory) {
+    pub fn refresh_phase_completion(
+        &mut self,
+        inventory: &Inventory,
+        story: &impl StoryUnlockContext,
+    ) {
         let completed: Vec<String> = {
             let ctx = InterrogationSceneAndInventoryCtx {
                 scene: self,
@@ -350,17 +354,21 @@ impl InterrogationSceneState {
             self.def
                 .phases
                 .iter()
-                .filter(|phase| self.phase_complete(phase, &ctx))
+                .filter(|phase| self.phase_complete(phase, &ctx, story))
                 .map(|phase| phase_id(phase).to_string())
                 .collect()
         };
         for id in completed {
             self.completed_phases.insert(id);
         }
-        self.refresh_current_phase(inventory);
+        self.refresh_current_phase(inventory, story);
     }
 
-    pub fn refresh_current_phase(&mut self, inventory: &Inventory) {
+    pub fn refresh_current_phase(
+        &mut self,
+        inventory: &Inventory,
+        story: &impl StoryUnlockContext,
+    ) {
         let next = {
             let ctx = InterrogationSceneAndInventoryCtx {
                 scene: self,
@@ -371,12 +379,12 @@ impl InterrogationSceneState {
                 .iter()
                 .find(|phase| {
                     phase_required(phase)
-                        && self.is_phase_unlocked(phase, &ctx)
+                        && self.is_phase_unlocked(phase, &ctx, story)
                         && !self.completed_phases.contains(phase_id(phase))
                 })
                 .or_else(|| {
                     self.def.phases.iter().find(|phase| {
-                        self.is_phase_unlocked(phase, &ctx)
+                        self.is_phase_unlocked(phase, &ctx, story)
                             && !self.completed_phases.contains(phase_id(phase))
                     })
                 })
@@ -388,33 +396,38 @@ impl InterrogationSceneState {
     pub fn is_phase_unlocked(
         &self,
         phase: &InterrogationPhaseJson,
-        ctx: &impl InterrogationUnlockContext,
+        local: &impl InterrogationUnlockContext,
+        story: &impl StoryUnlockContext,
     ) -> bool {
         self.is_block_unlocked(
             &format!("phase:{}", phase_id(phase)),
             phase_status(phase),
             phase_unlock(phase),
-            ctx,
+            local,
+            story,
         )
     }
 
     pub fn is_question_unlocked(
         &self,
         question: &InquiryQuestionJson,
-        ctx: &impl InterrogationUnlockContext,
+        local: &impl InterrogationUnlockContext,
+        story: &impl StoryUnlockContext,
     ) -> bool {
         self.is_block_unlocked(
             &format!("question:{}", question.id),
             question.status,
             question.unlock.as_ref(),
-            ctx,
+            local,
+            story,
         )
     }
 
     pub fn phase_complete(
         &self,
         phase: &InterrogationPhaseJson,
-        ctx: &impl InterrogationUnlockContext,
+        local: &impl InterrogationUnlockContext,
+        story: &impl StoryUnlockContext,
     ) -> bool {
         let id = phase_id(phase);
         if self.completed_phases.contains(id) {
@@ -427,7 +440,9 @@ impl InterrogationSceneState {
             // `current_phase_can_complete`). Only an explicit `Complete:`
             // expression completes without a manual trigger.
             InterrogationOutroUnlock::Auto(_) => false,
-            InterrogationOutroUnlock::Expr(expr) => unlock::evaluate_interrogation(expr, ctx),
+            InterrogationOutroUnlock::Expr(expr) => {
+                unlock::evaluate_interrogation(expr, local, story)
+            }
         }
     }
 
@@ -473,7 +488,11 @@ impl InterrogationSceneState {
         Some(current_id)
     }
 
-    pub fn outro_satisfied(&self, ctx: &impl InterrogationUnlockContext) -> bool {
+    pub fn outro_satisfied(
+        &self,
+        local: &impl InterrogationUnlockContext,
+        story: &impl StoryUnlockContext,
+    ) -> bool {
         match &self.def.outro.unlock {
             InterrogationOutroUnlock::Auto(_) => self
                 .def
@@ -481,7 +500,9 @@ impl InterrogationSceneState {
                 .iter()
                 .filter(|phase| phase_required(phase))
                 .all(|phase| self.completed_phases.contains(phase_id(phase))),
-            InterrogationOutroUnlock::Expr(expr) => unlock::evaluate_interrogation(expr, ctx),
+            InterrogationOutroUnlock::Expr(expr) => {
+                unlock::evaluate_interrogation(expr, local, story)
+            }
         }
     }
 
@@ -490,7 +511,8 @@ impl InterrogationSceneState {
         key: &str,
         status: LockStatus,
         unlock: Option<&InterrogationUnlockExpr>,
-        ctx: &impl InterrogationUnlockContext,
+        local: &impl InterrogationUnlockContext,
+        story: &impl StoryUnlockContext,
     ) -> bool {
         match status {
             LockStatus::Unlocked => true,
@@ -498,7 +520,7 @@ impl InterrogationSceneState {
                 if self.unlocked_overrides.contains(key) {
                     return true;
                 }
-                unlock.is_some_and(|expr| unlock::evaluate_interrogation(expr, ctx))
+                unlock.is_some_and(|expr| unlock::evaluate_interrogation(expr, local, story))
             }
         }
     }
@@ -561,6 +583,40 @@ mod tests {
         LockStatus, SubjectJson, TestimonyJson, TestimonyLineJson,
     };
     use crate::game::state::Inventory;
+    use crate::game::unlock::StoryUnlockContext;
+
+    struct NoStoryUnlockContext;
+
+    impl StoryUnlockContext for NoStoryUnlockContext {
+        fn fact_asserted(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn question_resolved(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn objective_completed(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn analysis_scene_completed(&self, _chapter_id: &str, _scene_id: &str) -> bool {
+            false
+        }
+
+        fn analysis_board_completed(
+            &self,
+            _chapter_id: &str,
+            _scene_id: &str,
+            _board_id: &str,
+        ) -> bool {
+            false
+        }
+
+        fn authorization_granted(&self, _id: &str) -> bool {
+            false
+        }
+    }
 
     fn subject() -> SubjectJson {
         SubjectJson {
@@ -820,12 +876,12 @@ mod tests {
     fn phase_completes_after_manual_completion() {
         let mut scene = InterrogationSceneState::from_json(two_line_question_scene(), 1);
         scene.record_break("alibi");
-        scene.refresh_phase_completion(&Inventory::default());
+        scene.refresh_phase_completion(&Inventory::default(), &NoStoryUnlockContext);
         // Auto phases do not complete on their own; only manual completion does.
         assert!(!scene.completed_phases.contains("press"));
         assert!(scene.current_phase_can_complete());
         scene.complete_current_phase();
-        scene.refresh_phase_completion(&Inventory::default());
+        scene.refresh_phase_completion(&Inventory::default(), &NoStoryUnlockContext);
         assert!(scene.completed_phases.contains("press"));
     }
 
@@ -834,11 +890,11 @@ mod tests {
         let mut scene = InterrogationSceneState::from_json(one_question_inquiry_scene(), 1);
         assert_eq!(scene.current_phase_id().as_deref(), Some("inquiry"));
         scene.record_break("reason");
-        scene.refresh_phase_completion(&Inventory::default());
+        scene.refresh_phase_completion(&Inventory::default(), &NoStoryUnlockContext);
         assert!(!scene.completed_phases.contains("inquiry"));
         assert!(scene.current_phase_can_complete());
         scene.complete_current_phase();
-        scene.refresh_phase_completion(&Inventory::default());
+        scene.refresh_phase_completion(&Inventory::default(), &NoStoryUnlockContext);
         assert!(scene.completed_phases.contains("inquiry"));
     }
 
@@ -924,14 +980,14 @@ mod tests {
 
         // Break only the unlocked question — phase should NOT complete.
         scene.record_break("unlocked_q");
-        scene.refresh_phase_completion(&inventory);
+        scene.refresh_phase_completion(&inventory, &NoStoryUnlockContext);
 
         let ctx = InterrogationSceneAndInventoryCtx {
             scene: &scene,
             inventory: &inventory,
         };
         assert!(!scene.completed_phases.contains("inquiry"));
-        assert!(!scene.phase_complete(&scene.def.phases[0], &ctx));
+        assert!(!scene.phase_complete(&scene.def.phases[0], &ctx, &NoStoryUnlockContext));
     }
 
     #[test]
@@ -979,10 +1035,10 @@ mod tests {
 
         // Break the unlocked phase's question and manually complete it.
         scene.record_break("q1");
-        scene.refresh_phase_completion(&inventory);
+        scene.refresh_phase_completion(&inventory, &NoStoryUnlockContext);
         assert!(scene.current_phase_can_complete());
         scene.complete_current_phase();
-        scene.refresh_phase_completion(&inventory);
+        scene.refresh_phase_completion(&inventory, &NoStoryUnlockContext);
 
         assert!(scene.completed_phases.contains("unlocked_inquiry"));
 
@@ -991,7 +1047,7 @@ mod tests {
             inventory: &inventory,
         };
         // Outro should NOT be satisfied — locked required phase is still incomplete.
-        assert!(!scene.outro_satisfied(&ctx));
+        assert!(!scene.outro_satisfied(&ctx, &NoStoryUnlockContext));
     }
 
     #[test]
@@ -1066,10 +1122,10 @@ mod tests {
 
         // Break then manually complete the required phase.
         scene.record_break("reason");
-        scene.refresh_phase_completion(&inventory);
+        scene.refresh_phase_completion(&inventory, &NoStoryUnlockContext);
         assert!(scene.current_phase_can_complete());
         scene.complete_current_phase();
-        scene.refresh_phase_completion(&inventory);
+        scene.refresh_phase_completion(&inventory, &NoStoryUnlockContext);
         assert!(scene.completed_phases.contains("required_phase"));
 
         // After completing required, the optional phase becomes current.
@@ -1104,7 +1160,7 @@ mod tests {
             inventory: &inventory,
         };
 
-        assert!(scene.outro_satisfied(&ctx));
+        assert!(scene.outro_satisfied(&ctx, &NoStoryUnlockContext));
     }
 
     #[test]
@@ -1169,7 +1225,7 @@ mod tests {
 
         // Break the required question — this unlocks the optional follow-up.
         scene.record_break("required_q");
-        scene.refresh_phase_completion(&inventory);
+        scene.refresh_phase_completion(&inventory, &NoStoryUnlockContext);
 
         // Auto phases never complete on their own.
         assert!(
@@ -1185,7 +1241,7 @@ mod tests {
 
         // Completing the phase works without ever breaking the follow-up.
         scene.complete_current_phase();
-        scene.refresh_phase_completion(&inventory);
+        scene.refresh_phase_completion(&inventory, &NoStoryUnlockContext);
         assert!(scene.completed_phases.contains("inquiry"));
     }
 

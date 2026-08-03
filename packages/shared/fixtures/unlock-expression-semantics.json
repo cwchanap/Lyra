@@ -1,0 +1,276 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "investigation legacy predicates all satisfy",
+      "family": "investigation",
+      "expression": {
+        "op": "and",
+        "left": {
+          "op": "and",
+          "left": { "predicate": "evidence_collected", "id": "receipt" },
+          "right": { "predicate": "statement_acquired", "id": "alibi" }
+        },
+        "right": {
+          "op": "and",
+          "left": {
+            "predicate": "topic_discussed",
+            "characterId": "witness",
+            "topicId": "motive"
+          },
+          "right": { "predicate": "hotspot_investigated", "id": "desk" }
+        }
+      },
+      "truth": {
+        "evidence_collected:receipt": true,
+        "statement_acquired:alibi": true,
+        "topic_discussed:witness@motive": true,
+        "hotspot_investigated:desk": true
+      },
+      "expected": true
+    },
+    {
+      "name": "interrogation legacy predicates all satisfy",
+      "family": "interrogation",
+      "expression": {
+        "op": "and",
+        "left": {
+          "op": "and",
+          "left": { "predicate": "evidence_collected", "id": "receipt" },
+          "right": { "predicate": "statement_acquired", "id": "alibi" }
+        },
+        "right": {
+          "op": "and",
+          "left": { "predicate": "question_answered", "id": "question_a" },
+          "right": { "predicate": "phase_completed", "id": "phase_a" }
+        }
+      },
+      "truth": {
+        "evidence_collected:receipt": true,
+        "statement_acquired:alibi": true,
+        "question_answered:question_a": true,
+        "phase_completed:phase_a": true
+      },
+      "expected": true
+    },
+    {
+      "name": "all story predicates satisfy in synthetic context",
+      "family": "investigation",
+      "expression": {
+        "op": "at_least",
+        "count": 6,
+        "conditions": [
+          { "predicate": "fact_asserted", "id": "fact_a" },
+          { "predicate": "question_resolved", "id": "question_a" },
+          { "predicate": "objective_completed", "id": "objective_a" },
+          {
+            "predicate": "authorization_granted",
+            "id": "authorization_a"
+          },
+          {
+            "predicate": "analysis_scene_completed",
+            "chapterId": "chapter_1",
+            "sceneId": "analysis_scene_1"
+          },
+          {
+            "predicate": "analysis_board_completed",
+            "chapterId": "chapter_1",
+            "sceneId": "analysis_scene_1",
+            "boardId": "board_1"
+          }
+        ]
+      },
+      "truth": {
+        "fact_asserted:fact_a": true,
+        "question_resolved:question_a": true,
+        "objective_completed:objective_a": true,
+        "authorization_granted:authorization_a": true,
+        "analysis_scene_completed:chapter_1@analysis_scene_1": true,
+        "analysis_board_completed:chapter_1@analysis_scene_1@board_1": true
+      },
+      "expected": true
+    },
+    {
+      "name": "all story predicates satisfy in synthetic interrogation context",
+      "family": "interrogation",
+      "expression": {
+        "op": "at_least",
+        "count": 6,
+        "conditions": [
+          { "predicate": "fact_asserted", "id": "fact_a" },
+          { "predicate": "question_resolved", "id": "question_a" },
+          { "predicate": "objective_completed", "id": "objective_a" },
+          {
+            "predicate": "authorization_granted",
+            "id": "authorization_a"
+          },
+          {
+            "predicate": "analysis_scene_completed",
+            "chapterId": "chapter_1",
+            "sceneId": "analysis_scene_1"
+          },
+          {
+            "predicate": "analysis_board_completed",
+            "chapterId": "chapter_1",
+            "sceneId": "analysis_scene_1",
+            "boardId": "board_1"
+          }
+        ]
+      },
+      "truth": {
+        "fact_asserted:fact_a": true,
+        "question_resolved:question_a": true,
+        "objective_completed:objective_a": true,
+        "authorization_granted:authorization_a": true,
+        "analysis_scene_completed:chapter_1@analysis_scene_1": true,
+        "analysis_board_completed:chapter_1@analysis_scene_1@board_1": true
+      },
+      "expected": true
+    },
+    {
+      "name": "investigation nested threshold composes with mixed operators",
+      "family": "investigation",
+      "expression": {
+        "op": "at_least",
+        "count": 2,
+        "conditions": [
+          {
+            "op": "and",
+            "left": { "predicate": "evidence_collected", "id": "receipt" },
+            "right": { "predicate": "fact_asserted", "id": "fact_a" }
+          },
+          {
+            "op": "or",
+            "left": { "predicate": "hotspot_investigated", "id": "desk" },
+            "right": {
+              "predicate": "authorization_granted",
+              "id": "authorization_a"
+            }
+          },
+          {
+            "op": "at_least",
+            "count": 1,
+            "conditions": [
+              {
+                "predicate": "topic_discussed",
+                "characterId": "witness",
+                "topicId": "motive"
+              },
+              {
+                "predicate": "objective_completed",
+                "id": "objective_a"
+              }
+            ]
+          }
+        ]
+      },
+      "truth": {
+        "evidence_collected:receipt": true,
+        "fact_asserted:fact_a": true,
+        "hotspot_investigated:desk": false,
+        "authorization_granted:authorization_a": false,
+        "topic_discussed:witness@motive": false,
+        "objective_completed:objective_a": true
+      },
+      "expected": true
+    },
+    {
+      "name": "interrogation nested threshold composes with mixed operators",
+      "family": "interrogation",
+      "expression": {
+        "op": "at_least",
+        "count": 2,
+        "conditions": [
+          {
+            "op": "and",
+            "left": { "predicate": "question_answered", "id": "question_a" },
+            "right": { "predicate": "fact_asserted", "id": "fact_a" }
+          },
+          {
+            "op": "or",
+            "left": { "predicate": "phase_completed", "id": "phase_a" },
+            "right": {
+              "predicate": "analysis_scene_completed",
+              "chapterId": "chapter_1",
+              "sceneId": "analysis_scene_1"
+            }
+          },
+          {
+            "op": "at_least",
+            "count": 1,
+            "conditions": [
+              { "predicate": "statement_acquired", "id": "alibi" },
+              {
+                "predicate": "analysis_board_completed",
+                "chapterId": "chapter_1",
+                "sceneId": "analysis_scene_1",
+                "boardId": "board_1"
+              }
+            ]
+          }
+        ]
+      },
+      "truth": {
+        "question_answered:question_a": true,
+        "fact_asserted:fact_a": true,
+        "phase_completed:phase_a": false,
+        "analysis_scene_completed:chapter_1@analysis_scene_1": false,
+        "statement_acquired:alibi": true,
+        "analysis_board_completed:chapter_1@analysis_scene_1@board_1": false
+      },
+      "expected": true
+    },
+    {
+      "name": "threshold succeeds once count is reached before trailing false condition",
+      "family": "investigation",
+      "expression": {
+        "op": "at_least",
+        "count": 2,
+        "conditions": [
+          { "predicate": "fact_asserted", "id": "fact_a" },
+          { "predicate": "objective_completed", "id": "objective_a" },
+          {
+            "predicate": "analysis_board_completed",
+            "chapterId": "chapter_1",
+            "sceneId": "analysis_scene_1",
+            "boardId": "board_1"
+          }
+        ]
+      },
+      "truth": {
+        "fact_asserted:fact_a": true,
+        "objective_completed:objective_a": true,
+        "analysis_board_completed:chapter_1@analysis_scene_1@board_1": false
+      },
+      "expected": true
+    },
+    {
+      "name": "threshold fails when its count cannot be reached",
+      "family": "interrogation",
+      "expression": {
+        "op": "at_least",
+        "count": 3,
+        "conditions": [
+          { "predicate": "evidence_collected", "id": "receipt" },
+          { "predicate": "question_resolved", "id": "question_a" },
+          {
+            "predicate": "authorization_granted",
+            "id": "authorization_a"
+          },
+          {
+            "predicate": "analysis_scene_completed",
+            "chapterId": "chapter_1",
+            "sceneId": "analysis_scene_1"
+          }
+        ]
+      },
+      "truth": {
+        "evidence_collected:receipt": true,
+        "question_resolved:question_a": true,
+        "authorization_granted:authorization_a": false,
+        "analysis_scene_completed:chapter_1@analysis_scene_1": false
+      },
+      "expected": false
+    }
+  ]
+}

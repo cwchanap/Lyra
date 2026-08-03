@@ -541,7 +541,7 @@ impl GameEngine {
                 scene: inv,
                 inventory: &self.inventory,
             };
-            let sat = inv.outro_satisfied(&ctx);
+            let sat = inv.outro_satisfied(&ctx, &self.story_state);
             (
                 sat,
                 inv.outro_played,
@@ -605,7 +605,7 @@ impl GameEngine {
             if scene.outro_played {
                 return Ok(true);
             }
-            scene.refresh_current_phase(&self.inventory);
+            scene.refresh_current_phase(&self.inventory, &self.story_state);
         }
 
         if self.should_enter_current_interrogation_phase()
@@ -619,7 +619,7 @@ impl GameEngine {
                 SceneRuntime::Interrogation(scene) => scene,
                 _ => return Ok(false),
             };
-            scene.refresh_phase_completion(&self.inventory);
+            scene.refresh_phase_completion(&self.inventory, &self.story_state);
         }
 
         if self.should_enter_current_interrogation_phase()
@@ -638,7 +638,7 @@ impl GameEngine {
                 inventory: &self.inventory,
             };
             (
-                scene.outro_satisfied(&ctx),
+                scene.outro_satisfied(&ctx, &self.story_state),
                 scene.def.outro.dialogue.clone(),
             )
         };
@@ -702,7 +702,7 @@ impl GameEngine {
             scene,
             inventory: &self.inventory,
         };
-        !scene.outro_satisfied(&ctx)
+        !scene.outro_satisfied(&ctx, &self.story_state)
     }
 
     fn try_enter_current_interrogation_phase(
@@ -897,6 +897,7 @@ impl GameEngine {
                 hot_def.status,
                 hot_def.unlock.as_ref(),
                 &ctx,
+                &self.story_state,
             ) {
                 return Err(GameError::locked_hotspot(hotspot_id));
             }
@@ -999,7 +1000,13 @@ impl GameEngine {
                 scene: inv,
                 inventory: &self.inventory,
             };
-            if !inv.is_block_unlocked(&key, topic.status, topic.unlock.as_ref(), &ctx) {
+            if !inv.is_block_unlocked(
+                &key,
+                topic.status,
+                topic.unlock.as_ref(),
+                &ctx,
+                &self.story_state,
+            ) {
                 return Err(GameError::locked_topic(character_id, topic_id));
             }
             let first_time = !inv
@@ -1088,6 +1095,7 @@ impl GameEngine {
                 def.status,
                 def.unlock.as_ref(),
                 &ctx,
+                &self.story_state,
             ) {
                 return Err(GameError::locked_sublocation(sublocation_id));
             }
@@ -1269,7 +1277,7 @@ impl GameEngine {
                 scene,
                 inventory: &self.inventory,
             };
-            if !scene.is_question_unlocked(question, &ctx) {
+            if !scene.is_question_unlocked(question, &ctx, &self.story_state) {
                 return Err(GameError::locked_interrogation_question(question_id));
             }
         }
@@ -1356,7 +1364,7 @@ impl GameEngine {
                 next_ordinal,
             )?;
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
-                scene.refresh_phase_completion(&engine.inventory);
+                scene.refresh_phase_completion(&engine.inventory, &engine.story_state);
             }
             Ok(CommandMutation::Changed)
         })
@@ -1633,7 +1641,7 @@ impl GameEngine {
 
             engine.install_or_exhaust(segments, command_id, next_ordinal)?;
             if let SceneRuntime::Interrogation(scene) = &mut engine.scene {
-                scene.refresh_phase_completion(&engine.inventory);
+                scene.refresh_phase_completion(&engine.inventory, &engine.story_state);
             }
             Ok(CommandMutation::Changed)
         })
@@ -1911,6 +1919,7 @@ impl GameEngine {
                             s.status,
                             s.unlock.as_ref(),
                             &ctx,
+                            &self.story_state,
                         )
                     })
                     .map(|s| SublocationView {
@@ -1926,6 +1935,7 @@ impl GameEngine {
                                     h.status,
                                     h.unlock.as_ref(),
                                     &ctx,
+                                    &self.story_state,
                                 )
                             })
                             .map(|h| HotspotView {
@@ -1954,6 +1964,7 @@ impl GameEngine {
                                             t.status,
                                             t.unlock.as_ref(),
                                             &ctx,
+                                            &self.story_state,
                                         )
                                     })
                                     .map(|t| TopicView {
@@ -2030,7 +2041,7 @@ impl GameEngine {
                     .def
                     .phases
                     .iter()
-                    .filter(|phase| scene.is_phase_unlocked(phase, &ctx))
+                    .filter(|phase| scene.is_phase_unlocked(phase, &ctx, &self.story_state))
                     .map(|phase| {
                         let InterrogationPhaseJson::Inquiry {
                             id,
@@ -2054,7 +2065,9 @@ impl GameEngine {
                             },
                             questions: questions
                                 .iter()
-                                .filter(|question| scene.is_question_unlocked(question, &ctx))
+                                .filter(|question| {
+                                    scene.is_question_unlocked(question, &ctx, &self.story_state)
+                                })
                                 .map(|question| InquiryQuestionView {
                                     id: question.id.clone(),
                                     label: question.label.clone(),
