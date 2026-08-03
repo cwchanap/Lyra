@@ -1502,7 +1502,7 @@ describe("joint primary fixed point", () => {
   });
 });
 
-describe("Task 9 fixed-point regressions", () => {
+describe("fixed-point provenance and must-state regressions", () => {
   it("does not use a positive successor as dynamic completion provenance for its consumer", () => {
     const result = analyzeSynthetic(
       [
@@ -2199,7 +2199,11 @@ function sublocation(
 
 function hotspot(
   id: string,
-  overrides: { reveals?: InvestigationRevealTarget[] } = {},
+  overrides: {
+    reveals?: InvestigationRevealTarget[];
+    status?: ASTHotspot["status"];
+    unlock?: ASTHotspot["unlock"];
+  } = {},
 ): ASTHotspot {
   return {
     id,
@@ -2207,7 +2211,7 @@ function hotspot(
     description: id,
     status: "unlocked",
     unlock: null,
-    reveals: overrides.reveals ?? [],
+    reveals: [],
     evidenceSource: null,
     sceneSourcePrompt: null,
     inspectDialogue: [],
@@ -2215,6 +2219,7 @@ function hotspot(
     layout: null,
     sourceFile: "chapter_1/investigation_scene_1.md",
     line: id === "a" ? 3 : 4,
+    ...overrides,
   };
 }
 

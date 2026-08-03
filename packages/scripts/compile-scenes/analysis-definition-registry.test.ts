@@ -47,6 +47,7 @@ describe("createAnalysisDefinitionRegistry", () => {
 
   it.each([
     {
+      name: "duplicate scene",
       scenes: [
         { chapterId: "chapter_1", sceneId: "analysis_scene_8_5" },
         { chapterId: "chapter_1", sceneId: "analysis_scene_8_5" },
@@ -54,6 +55,7 @@ describe("createAnalysisDefinitionRegistry", () => {
       boards: [],
     },
     {
+      name: "duplicate board",
       scenes: [],
       boards: [
         {
@@ -68,7 +70,7 @@ describe("createAnalysisDefinitionRegistry", () => {
         },
       ],
     },
-  ])("rejects duplicate qualified definitions", (input) => {
+  ])("rejects duplicate qualified definitions ($name)", (input) => {
     expect(() => createAnalysisDefinitionRegistry(input)).toThrow(
       /Duplicate analysis (scene|board) definition/,
     );

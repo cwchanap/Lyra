@@ -124,8 +124,10 @@ export function analyzeReachability(input: {
     ]),
   );
 
+  const exclusiveSelections = exclusiveOutcomeSelections(nodes);
+
   const scenarios: JointScenario[] = [];
-  for (const selection of exclusiveOutcomeSelections(nodes)) {
+  for (const selection of exclusiveSelections) {
     scenarios.push(
       solveJointScenario({
         nodes,
@@ -168,7 +170,7 @@ export function analyzeReachability(input: {
   );
 
   const mustNodes = mandatoryScenarioNodes(nodes);
-  const mustScenarios = exclusiveOutcomeSelections(nodes).map((selection) =>
+  const mustScenarios = exclusiveSelections.map((selection) =>
     solveJointScenario({
       nodes: mustNodes,
       selection,
@@ -2160,6 +2162,9 @@ function node(
 function addEffectAndRevealPredecessors(nodes: NodeDraft[]): void {
   const producersByAtom = new Map<string, string[]>();
   const nodesByInboundTarget = new Map<string, string>();
+  const nodesByKey = new Map<string, NodeDraft>(
+    nodes.map((node) => [node.key, node]),
+  );
 
   for (const node of nodes) {
     if (node.inboundTargetKey !== null) {
@@ -2181,8 +2186,9 @@ function addEffectAndRevealPredecessors(nodes: NodeDraft[]): void {
         `${scenePrefix(source.key)}:${localTarget}`,
       );
       if (target === undefined || target === source.key) continue;
-      const targetNode = nodes.find((candidate) => candidate.key === target)!;
-      if (!targetNode.requiresInboundReveal) continue;
+      const targetNode = nodesByKey.get(target);
+      if (targetNode === undefined || !targetNode.requiresInboundReveal)
+        continue;
       targetNode.strictPredecessorKeys = unique([
         ...targetNode.strictPredecessorKeys,
         source.key,

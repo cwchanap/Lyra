@@ -219,8 +219,8 @@ function parseAtLeast<P>(
     return failure(
       t.sourceFile,
       t.line,
-      "unlockAtLeastInvalidCount",
-      "at_least requires a positive base-10 integer count.",
+      "unlockAtLeastMissingParen",
+      "at_least requires a parenthesized argument list.",
     );
   }
 

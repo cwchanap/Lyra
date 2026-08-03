@@ -588,6 +588,7 @@ The JSON contract is versioned and data-only:
   "cases": [
     {
       "name": "single fact threshold",
+      "family": "investigation",
       "expression": {
         "op": "at_least",
         "count": 1,
@@ -595,15 +596,16 @@ The JSON contract is versioned and data-only:
           { "predicate": "fact_asserted", "id": "fact_a" }
         ]
       },
-      "truths": { "fact_asserted:fact_a": true },
+      "truth": { "fact_asserted:fact_a": true },
       "expected": true
     }
   ]
 }
 ```
 
-Each case contains a unique name, one valid concrete wire expression, a
-normalized atom-key-to-Boolean truth assignment, and one expected Boolean result.
+Each case contains a unique name, a family (`investigation` or
+`interrogation`), one valid concrete wire expression, a normalized
+atom-key-to-Boolean truth assignment, and one expected Boolean result.
 TypeScript and Rust deserialize and evaluate the same bytes. Neither test suite
 maintains a translated copy.
 
@@ -1306,6 +1308,7 @@ HPA-257 adds `AnalysisSceneRef`, `validateAnalysisSceneRef`, and
 
 | Code | Severity | Meaning |
 |---|---|---|
+| `unlockAtLeastMissingParen` | error | `at_least` not followed by a parenthesized argument list |
 | `unlockAtLeastInvalidCount` | error | count is not a positive base-10 integer |
 | `unlockAtLeastEmptyConditions` | error | no child expression |
 | `unlockAtLeastCountExceedsConditions` | error | count exceeds child count |
