@@ -1127,6 +1127,7 @@ mod tests {
     use crate::game::schema::{AudioChannelJson, AudioCueJson, DialogueItem};
     use crate::game::state::{EvidenceRecord, StatementRecord};
     use crate::game::test_support::{
+        drive_hpa_257_positive_progression, hpa_257_fixture_resources,
         provenance_save_fixture_resources, save_capture_fixture_resources,
     };
     use crate::game::view::QueueToken;
@@ -1262,6 +1263,85 @@ mod tests {
         assert_eq!(
             captured.pointer("/summary/activePrimaryObjectiveSummary"),
             Some(&serde_json::Value::Null)
+        );
+    }
+
+    // Break caught: the HPA-257 progression is captured through an ad-hoc
+    // field, omits durable trigger/story state, or loses the nested-threshold
+    // unlock that the existing snapshot already represents.
+    #[test]
+    fn hpa_257_capture_uses_existing_snapshot_fields_for_positive_progress() {
+        let (_guard, resources) = hpa_257_fixture_resources();
+        let mut engine = GameEngine::new_started(resources).unwrap();
+        drive_hpa_257_positive_progression(&mut engine);
+
+        let captured = capture_checkpoint_v2(&engine).unwrap();
+
+        assert_eq!(captured.snapshot.chapter_id, "chapter_hpa_257");
+        assert_eq!(captured.snapshot.scene_id, "investigation_hpa_257");
+        assert_eq!(
+            captured
+                .snapshot
+                .inventory
+                .evidence
+                .iter()
+                .map(|entry| entry.record_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["evidence_a"]
+        );
+
+        let story = &captured.snapshot.story_state;
+        assert!(story.facts.contains_key("fact_a"));
+        assert_eq!(
+            story.questions["question_a"].resolved_by_fact_id.as_deref(),
+            Some("fact_a")
+        );
+        assert!(story.objectives["secondary_a"].completed);
+        assert!(story.objectives["primary_a"].completed);
+        assert!(!story.objectives["primary_b"].completed);
+        assert_eq!(
+            story.active_primary_objective_id.as_deref(),
+            Some("primary_b")
+        );
+        assert!(story.authorizations.contains_key("authorization_court"));
+
+        let SceneProgressSnapshotV1::Investigation {
+            current_sublocation_id,
+            inspected_hotspot_ids,
+            entered_sublocation_ids,
+            ..
+        } = &captured.snapshot.scene
+        else {
+            panic!("expected HPA-257 investigation progress")
+        };
+        assert_eq!(current_sublocation_id.as_deref(), Some("progress"));
+        assert_eq!(
+            inspected_hotspot_ids,
+            &vec![
+                "evidence".to_string(),
+                "primary_advance".to_string(),
+                "primary_start".to_string(),
+                "resolve".to_string(),
+            ]
+        );
+        assert_eq!(entered_sublocation_ids, &vec!["progress".to_string()]);
+
+        let view = serde_json::to_value(engine.view().unwrap()).unwrap();
+        let hotspot_ids = view["scene"]["visibleSublocations"][0]["hotspots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|hotspot| hotspot["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            hotspot_ids,
+            vec![
+                "evidence",
+                "resolve",
+                "primary_start",
+                "primary_advance",
+                "threshold",
+            ]
         );
     }
 

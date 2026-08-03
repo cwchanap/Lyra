@@ -952,6 +952,286 @@ pub(crate) fn save_capture_fixture_resources() -> (tempfile::TempDir, PathBuf) {
     (dir, resources)
 }
 
+/// Synthetic HPA-257 package used only by save/restore and runtime-order
+/// coverage. It deliberately keeps the authority grant out of the
+/// investigation payload: HPA-257 investigation adapters have no represented
+/// authority, so the matching synthetic event is injected by the test helper
+/// below.
+#[cfg(test)]
+pub(crate) fn hpa_257_fixture_resources() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let resources = dir.path().to_path_buf();
+    let chapter_dir = resources.join("chapter_hpa_257");
+    std::fs::create_dir_all(&chapter_dir).unwrap();
+    write_content_manifest(&resources);
+
+    std::fs::write(
+        resources.join("chapters.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "chapters": [{
+                "id": "chapter_hpa_257",
+                "title": "HPA-257 synthetic chapter",
+                "summary": "Save/restore and concrete-order fixture.",
+                "scenes": [{
+                    "type": "investigation",
+                    "file": "chapter_hpa_257/investigation_hpa_257.json"
+                }]
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let evidence_provenance = neutral_provenance_json();
+    std::fs::write(
+        resources.join("story_catalog.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schemaVersion": 2,
+            "facts": [{
+                "id": "fact_a",
+                "label": "Synthetic fact",
+                "summary": "Collected evidence establishes the fact.",
+                "details": "Only used by HPA-257 tests.",
+                "category": "test"
+            }],
+            "questions": [{
+                "id": "question_a",
+                "label": "Synthetic question",
+                "summary": "Resolved by the collected fact.",
+                "resolvedByFactIds": ["fact_a"]
+            }],
+            "objectives": [{
+                "id": "primary_a",
+                "label": "Primary A",
+                "summary": "Initial primary objective.",
+                "kind": "primary",
+                "sortOrder": 1
+            }, {
+                "id": "primary_b",
+                "label": "Primary B",
+                "summary": "Successor primary objective.",
+                "kind": "primary",
+                "sortOrder": 2
+            }, {
+                "id": "secondary_a",
+                "label": "Secondary A",
+                "summary": "Completed in the ordered reveal batch.",
+                "kind": "secondary",
+                "sortOrder": 3
+            }],
+            "authorizations": [{
+                "id": "authorization_court",
+                "label": "Synthetic court authorization",
+                "summary": "Granted only by the synthetic authority event.",
+                "grantingAuthority": "Synthetic Court"
+            }],
+            "sourceGroups": [],
+            "evidenceIndex": [{
+                "id": "evidence_a",
+                "chapterId": "chapter_hpa_257",
+                "sceneId": "investigation_hpa_257",
+                "provenance": evidence_provenance
+            }],
+            "statementsIndex": []
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    std::fs::write(
+        chapter_dir.join("investigation_hpa_257.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "type": "investigation",
+            "id": "investigation_hpa_257",
+            "title": "HPA-257 investigation",
+            "summary": "Synthetic runtime progression.",
+            "intro": [],
+            "sublocations": [{
+                "id": "progress",
+                "label": "Progress path",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "progress",
+                "transitionDialogue": [],
+                "hotspots": [{
+                    "id": "evidence",
+                    "label": "Evidence",
+                    "description": "Collect evidence and assert the fact.",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [
+                        {"kind": "evidence", "id": "evidence_a"},
+                        {"kind": "assertFact", "factId": "fact_a"}
+                    ],
+                    "inspectDialogue": [],
+                    "onReexamine": null
+                }, {
+                    "id": "resolve",
+                    "label": "Resolve",
+                    "description": "Resolve the question and secondary objective.",
+                    "status": "locked",
+                    "unlock": {"predicate": "fact_asserted", "id": "fact_a"},
+                    "reveals": [
+                        {"kind": "revealQuestion", "questionId": "question_a"},
+                        {"kind": "resolveQuestion", "questionId": "question_a", "factId": "fact_a"},
+                        {"kind": "revealObjective", "objectiveId": "secondary_a"},
+                        {"kind": "completeObjective", "objectiveId": "secondary_a"}
+                    ],
+                    "inspectDialogue": [],
+                    "onReexamine": null
+                }, {
+                    "id": "primary_start",
+                    "label": "Start primary",
+                    "description": "Set primary A.",
+                    "status": "locked",
+                    "unlock": {"predicate": "question_resolved", "id": "question_a"},
+                    "reveals": [{
+                        "kind": "setPrimaryObjective",
+                        "completeCurrent": false,
+                        "nextObjectiveId": "primary_a"
+                    }],
+                    "inspectDialogue": [],
+                    "onReexamine": null
+                }, {
+                    "id": "primary_advance",
+                    "label": "Advance primary",
+                    "description": "Complete A and set B.",
+                    "status": "locked",
+                    "unlock": {"predicate": "question_resolved", "id": "question_a"},
+                    "reveals": [{
+                        "kind": "setPrimaryObjective",
+                        "completeCurrent": true,
+                        "nextObjectiveId": "primary_b"
+                    }],
+                    "inspectDialogue": [],
+                    "onReexamine": null
+                }, {
+                    "id": "authority_event",
+                    "label": "Synthetic authority event",
+                    "description": "Origin anchor for the test-only authority adapter.",
+                    "status": "locked",
+                    "unlock": null,
+                    "reveals": [],
+                    "inspectDialogue": [],
+                    "onReexamine": null
+                }, {
+                    "id": "threshold",
+                    "label": "Nested threshold",
+                    "description": "Visible only after all positive progress is present.",
+                    "status": "locked",
+                    "unlock": {
+                        "op": "at_least",
+                        "count": 3,
+                        "conditions": [
+                            {"predicate": "fact_asserted", "id": "fact_a"},
+                            {"predicate": "authorization_granted", "id": "authorization_court"},
+                            {
+                                "op": "at_least",
+                                "count": 3,
+                                "conditions": [
+                                    {"predicate": "question_resolved", "id": "question_a"},
+                                    {"predicate": "objective_completed", "id": "secondary_a"},
+                                    {"predicate": "objective_completed", "id": "primary_a"}
+                                ]
+                            }
+                        ]
+                    },
+                    "reveals": [],
+                    "inspectDialogue": [],
+                    "onReexamine": null
+                }],
+                "characters": []
+            }, {
+                "id": "free_order",
+                "label": "Free-order path",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "free-order",
+                "transitionDialogue": [],
+                "hotspots": [{
+                    "id": "order_a",
+                    "label": "A",
+                    "description": "Set primary A.",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [{
+                        "kind": "setPrimaryObjective",
+                        "completeCurrent": false,
+                        "nextObjectiveId": "primary_a"
+                    }],
+                    "inspectDialogue": [],
+                    "onReexamine": null
+                }, {
+                    "id": "order_b",
+                    "label": "B",
+                    "description": "Complete current and set primary A.",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [{
+                        "kind": "setPrimaryObjective",
+                        "completeCurrent": true,
+                        "nextObjectiveId": "primary_a"
+                    }],
+                    "inspectDialogue": [],
+                    "onReexamine": null
+                }],
+                "characters": []
+            }],
+            "evidenceManifest": [{
+                "id": "evidence_a",
+                "name": "Synthetic evidence",
+                "description": "Evidence for the fact.",
+                "details": "Only used by HPA-257 tests.",
+                "provenance": neutral_provenance_json(),
+                "imageAssetId": null,
+                "onCollect": [],
+                "onReexamine": null
+            }],
+            "statementManifest": [],
+            "outro": {
+                "unlock": {"predicate": "hotspot_investigated", "id": "threshold"},
+                "dialogue": []
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    (dir, resources)
+}
+
+#[cfg(test)]
+pub(crate) fn drive_hpa_257_positive_progression(engine: &mut GameEngine) {
+    engine.enter_sublocation("progress").unwrap();
+    engine.inspect_hotspot("evidence").unwrap();
+    engine.inspect_hotspot("resolve").unwrap();
+    engine.inspect_hotspot("primary_start").unwrap();
+    engine.inspect_hotspot("primary_advance").unwrap();
+
+    let fact_support_by_id = std::collections::BTreeMap::new();
+    let context = crate::game::reveals::StoryRevealMaterializationContext {
+        origin: crate::game::story::AssertionOrigin::SceneEvent {
+            chapter_id: "chapter_hpa_257".into(),
+            scene_id: "investigation_hpa_257".into(),
+            block_kind: crate::game::story::StoryEventBlockKind::Hotspot,
+            block_id: "authority_event".into(),
+        },
+        fact_support_by_id: &fact_support_by_id,
+        represented_authority: Some("Synthetic Court"),
+    };
+    crate::game::reveals::apply_story_reveal(
+        &engine.story_catalog,
+        &mut engine.story_state,
+        &crate::game::schema::StoryRevealTarget::GrantAuthorization {
+            authorization_id: "authorization_court".into(),
+        },
+        &context,
+    )
+    .unwrap();
+}
+
 pub(super) fn case_file_acceptance_fixture_resources() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let resources = dir.path().to_path_buf();
