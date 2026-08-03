@@ -96,9 +96,37 @@ describe("parseUnlockExpr", () => {
     });
   });
 
-  it("rejects an unknown predicate kind", () => {
-    const result = parseUnlockExpr("foo:bar baz", "test.md", 5);
-    expect(result.ok).toBe(false);
+  it("keeps legacy binary trees left-associated", () => {
+    expect(
+      parseUnlockExpr(
+        "hotspot:a investigated and hotspot:b investigated and hotspot:c investigated",
+        "legacy.md",
+        17,
+      ),
+    ).toEqual({
+      ok: true,
+      value: {
+        op: "and",
+        left: {
+          op: "and",
+          left: { predicate: "hotspot_investigated", id: "a" },
+          right: { predicate: "hotspot_investigated", id: "b" },
+        },
+        right: { predicate: "hotspot_investigated", id: "c" },
+      },
+    });
+  });
+
+  it("keeps generic predicate diagnostics at the supplied source location", () => {
+    expect(parseUnlockExpr("foo:bar baz", "legacy.md", 19)).toEqual({
+      ok: false,
+      error: {
+        code: "unlockUnknownPredicate",
+        message: 'Unknown predicate prefix at: "foo:bar baz"',
+        sourceFile: "legacy.md",
+        line: 19,
+      },
+    });
   });
 
   it("rejects malformed input", () => {
@@ -155,13 +183,32 @@ describe("parseInterrogationUnlockExpr", () => {
     });
   });
 
-  it("keeps interrogation unlocks limited to inventory, question, and phase predicates", () => {
+  it("keeps parentheses authoritative", () => {
     const result = parseInterrogationUnlockExpr(
-      "hotspot:counter investigated",
-      "interrogation_scene_2.md",
-      20,
+      "question:q answered and (phase:p completed or evidence:e collected)",
+      "legacy.md",
+      23,
     );
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe("unlockUnknownPredicate");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toMatchObject({ op: "and" });
+  });
+
+  it("keeps interrogation unlocks limited to inventory, question, and phase predicates", () => {
+    expect(
+      parseInterrogationUnlockExpr(
+        "hotspot:counter investigated",
+        "interrogation_scene_2.md",
+        20,
+      ),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: "unlockUnknownPredicate",
+        message: 'Unknown predicate prefix at: "hotspot:counter investigated"',
+        sourceFile: "interrogation_scene_2.md",
+        line: 20,
+      },
+    });
   });
 });

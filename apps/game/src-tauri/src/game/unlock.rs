@@ -220,6 +220,13 @@ mod tests {
     }
 
     #[test]
+    fn legacy_unlock_json_round_trips_without_shape_change() {
+        let raw = r#"{"op":"and","left":{"predicate":"evidence_collected","id":"receipt"},"right":{"predicate":"hotspot_investigated","id":"desk"}}"#;
+        let parsed: UnlockExpr = serde_json::from_str(raw).unwrap();
+        assert_eq!(serde_json::to_string(&parsed).unwrap(), raw);
+    }
+
+    #[test]
     fn interrogation_question_and_phase_predicates_match_scene_state() {
         let expr = InterrogationUnlockExpr::Combinator {
             op: Combinator::And,
