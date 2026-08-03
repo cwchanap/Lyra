@@ -197,10 +197,30 @@ export type InterrogationLocalPredicate =
   | { predicate: "question_answered"; id: string }
   | { predicate: "phase_completed"; id: string };
 
-export type UnlockExpr = PositiveExpression<InvestigationLocalPredicate>;
+export type StoryPredicate =
+  | { predicate: "fact_asserted"; id: string }
+  | { predicate: "question_resolved"; id: string }
+  | { predicate: "objective_completed"; id: string }
+  | { predicate: "authorization_granted"; id: string }
+  | {
+      predicate: "analysis_scene_completed";
+      chapterId: string;
+      sceneId: string;
+    }
+  | {
+      predicate: "analysis_board_completed";
+      chapterId: string;
+      sceneId: string;
+      boardId: string;
+    };
 
-export type InterrogationUnlockExpr =
-  PositiveExpression<InterrogationLocalPredicate>;
+export type UnlockExpr = PositiveExpression<
+  InvestigationLocalPredicate | StoryPredicate
+>;
+
+export type InterrogationUnlockExpr = PositiveExpression<
+  InterrogationLocalPredicate | StoryPredicate
+>;
 
 // ----- AST: per-file parser output -------------------------------------------
 

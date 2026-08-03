@@ -340,13 +340,21 @@ export function parseStoryCatalog(
           `Invalid global definition id: ${id}.`,
         );
       }
+      const reservedObjectiveId = kind === "Objective" && id === "null";
+      if (reservedObjectiveId) {
+        report(
+          line,
+          "reservedObjectiveId",
+          'Objective id "null" is reserved for set_primary_objective:null.',
+        );
+      }
       currentItem = {
         kind,
         id,
         label,
         line,
         fields: new Map(),
-        invalid: !ID_RE.test(id),
+        invalid: !ID_RE.test(id) || reservedObjectiveId,
       };
       continue;
     }
