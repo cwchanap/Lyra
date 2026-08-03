@@ -4242,7 +4242,12 @@ mod tests {
             // sleep after `Pending` would let replacement clear an empty
             // queue and let the delete run through the normal stale-storage
             // guard later, masking the channel-close branch under test.
-            app.coordinator.wait_for_queued_delete_writer().await;
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                app.coordinator.wait_for_queued_delete_writer(),
+            )
+            .await
+            .expect("delete writer must be queued before replacement");
 
             // Replace the session — this invalidates the queued delete
             // writer, dropping its future and closing the result channel.
