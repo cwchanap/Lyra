@@ -101,16 +101,21 @@ function requiredAtLeastPredicates<P>(
   conditions: PositiveExpression<P>[],
   required: (condition: PositiveExpression<P>) => Set<string>,
 ): Set<string> {
-  const conditionRequirements = conditions.map(required);
-  if (count === conditionRequirements.length) {
-    return new Set(conditionRequirements.flatMap((items) => [...items]));
+  const requiredChildCount = conditions.length - count + 1;
+  const occurrences = new Map<string, number>();
+  for (const condition of conditions) {
+    for (const item of required(condition)) {
+      occurrences.set(item, (occurrences.get(item) ?? 0) + 1);
+    }
   }
-  // Existing callers need only must-have items. When any child may be skipped,
-  // retain the predicates required by every child rather than over-claiming.
-  const [first, ...rest] = conditionRequirements;
-  if (!first) return new Set<string>();
+
+  // With only positive operators, an atom is mandatory for a threshold iff
+  // fewer than `count` children can be satisfied without it: it must be
+  // mandatory in at least `conditions.length - count + 1` children.
   return new Set(
-    [...first].filter((item) => rest.every((set) => set.has(item))),
+    [...occurrences].flatMap(([item, occurrenceCount]) =>
+      occurrenceCount >= requiredChildCount ? [item] : [],
+    ),
   );
 }
 
