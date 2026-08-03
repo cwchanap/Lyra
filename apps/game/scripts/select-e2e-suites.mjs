@@ -150,6 +150,11 @@ function patternMatches(pattern, changedPath) {
     .replace(/[|\\{}()[\]^$+?.]/g, "\\$&")
     .replaceAll("**", GLOBSTAR_SENTINEL)
     .replaceAll("*", "[^/]*")
+    // A mid-pattern globstar between slashes ("a/**/b") matches zero or more
+    // directory segments, so "a/b" and "a/x/b" both match. Replace the
+    // sentinel wrapped in slashes with an optional captured path before
+    // falling back to the trailing/standalone globstar expansion below.
+    .replaceAll(`/${GLOBSTAR_SENTINEL}/`, "(/.*)?")
     .replaceAll(GLOBSTAR_SENTINEL, ".*");
   return new RegExp(`^${escaped}$`).test(changedPath);
 }

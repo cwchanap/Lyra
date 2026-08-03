@@ -135,6 +135,45 @@ test("routes exit lifecycle changes without selecting unrelated investigation co
   );
 });
 
+test("mid-pattern globstar matches exit files directly under coordinator and persistence", () => {
+  // `coordinator/**/exit*.rs` and `persistence/**/exit*.ts` use a mid-pattern
+  // globstar that must match zero directory segments as well as one or more.
+  // For the coordinator rule, the persistence rule excludes
+  // `coordinator/**/exit*.rs`, so an exit file directly under coordinator
+  // routes only to exit-lifecycle. Before the globstar fix, the zero-segment
+  // path missed the exclusion and the exit-lifecycle rule and instead pulled
+  // in the full persistence suite.
+  for (const changedPath of [
+    "apps/game/src-tauri/src/game/save/coordinator/exit_handler.rs",
+    "apps/game/src-tauri/src/game/save/coordinator/tests/exit_lifecycle.rs",
+  ]) {
+    const plan = selectE2eSuites({ changedPaths: [changedPath] });
+
+    assert.deepEqual(plan.suiteIds, ["smoke", "exit-lifecycle"], changedPath);
+  }
+  // The persistence rule does not exclude `persistence/**/exit*.ts`, so exit
+  // files under persistence remain covered by the full persistence suite
+  // union (exit-lifecycle is already a member) at every depth.
+  for (const changedPath of [
+    "apps/game/src/lib/persistence/exit_controller.ts",
+    "apps/game/src/lib/persistence/exit/exit_controller.ts",
+  ]) {
+    const plan = selectE2eSuites({ changedPaths: [changedPath] });
+
+    assert.deepEqual(
+      plan.suiteIds,
+      [
+        "smoke",
+        "capture-proof",
+        "save-core",
+        "save-management",
+        "exit-lifecycle",
+      ],
+      changedPath,
+    );
+  }
+});
+
 test("treats playable story and compiler inputs as production-journey risks", () => {
   assert.deepEqual(
     selectE2eSuites({

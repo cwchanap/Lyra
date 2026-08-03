@@ -3561,7 +3561,16 @@ impl SaveCoordinator {
         view: PersistenceHealthView,
     ) -> Result<(), GameError> {
         let mut state = self.lock_state()?;
-        if state.next_session_generation != session_generation {
+        // `next_session_generation` is the replacement high-water mark: a
+        // session whose generation is strictly older was replaced. Equality
+        // is the normal case (production installs advance the mark to match
+        // the session); a newer generation never occurs in production, so `<`
+        // identifies exactly the stale case. This mirrors the `<` guards in
+        // `record_registered_autosave_target` and `record_schedule_failure`
+        // and lets the autosave scheduling path route its Pending publication
+        // here without rejecting sessions whose generation the test fixtures
+        // install ahead of the mark.
+        if session_generation < state.next_session_generation {
             return Err(GameError::stale_session_generation());
         }
         let subscribers = set_persistence_health(&mut state, view.clone());
@@ -3590,6 +3599,20 @@ impl SaveCoordinator {
         let debounce_deadline = Instant::now() + AUTOSAVE_DEBOUNCE;
         let pending = {
             let mut state = self.lock_state()?;
+            // Reject stale sessions before mutating coordinator state. A
+            // replacement (`replace_session_for_e2e`) advances
+            // `next_session_generation` and clears `pending_autosave`; an
+            // autosave scheduled for a prior generation must not reinstall a
+            // stale pending entry or overwrite the Healthy state replacement
+            // published. `<` (not `!=`) matches the high-water-mark semantic
+            // used by `record_registered_autosave_target` and
+            // `record_schedule_failure`, so a session whose generation is
+            // current or ahead of the mark still schedules. The subsequent
+            // `publish_persistence_health_for_session` re-checks under the
+            // lock so a replacement racing the health publication is ignored.
+            if session_generation < state.next_session_generation {
+                return Err(GameError::stale_session_generation());
+            }
             if !allow_unchanged_retry
                 && state.failed_write.as_ref().is_some_and(|failure| {
                     let (failed_generation, failed_revision) = failure.identity;
@@ -3611,7 +3634,10 @@ impl SaveCoordinator {
             state.pending_autosave = Some(pending.clone());
             pending
         };
-        self.publish_persistence_health(PersistenceHealthView::Pending);
+        self.publish_persistence_health_for_session(
+            session_generation,
+            PersistenceHealthView::Pending,
+        )?;
         let coordinator = self.clone();
         self.task_scheduler.spawn(Box::pin(async move {
             tokio::time::sleep_until(pending.debounce_deadline).await;
