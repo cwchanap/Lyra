@@ -1342,3 +1342,79 @@ async fn storage_faults_before_temporary_gate_and_replacement_degrade_without_ad
         assert!(coordinator.autosave_target(1).is_none(), "{point:?}");
     }
 }
+
+#[tokio::test(start_paused = true)]
+async fn stale_session_generation_fence_rejects_autosave_without_reinstalling_pending_or_overwriting_health(
+) {
+    // `replace_session_for_e2e` advances `next_session_generation`, clears
+    // `pending_autosave`, and publishes `Healthy`. An autosave scheduled for
+    // the prior generation must not reinstall a stale pending entry or
+    // overwrite the replacement's `Healthy` publication. The fence uses `<`
+    // (not `!=`) so a session whose generation equals the high-water mark
+    // still schedules normally.
+    let backend = Arc::new(RecordingBackend::default());
+    let coordinator = SaveCoordinator::with_backend(backend.clone());
+
+    // Simulate the post-replacement coordinator state that
+    // `replace_session_for_e2e` installs under its locks.
+    {
+        let mut state = coordinator.state.lock().unwrap();
+        state.next_session_generation = 2;
+        state.pending_autosave = None;
+        state.persistence_health = PersistenceHealthView::Healthy;
+    }
+
+    // An older session generation returns `staleSessionGeneration` and does
+    // not reinstall `pending_autosave` or touch `next_autosave_serial`.
+    let stale_purpose = ThumbnailCapturePurpose::Autosave {
+        session_generation: 1,
+        durable_revision: 11,
+    };
+    let serial_before = coordinator.state.lock().unwrap().next_autosave_serial;
+    let stale_error = coordinator
+        .schedule_autosave(
+            stale_purpose,
+            "stale-ticket".into(),
+            tokio::time::Instant::now() + Duration::from_secs(10),
+            false,
+        )
+        .unwrap_err();
+    assert_eq!(stale_error.code, "staleSessionGeneration");
+    {
+        let state = coordinator.state.lock().unwrap();
+        assert!(
+            state.pending_autosave.is_none(),
+            "stale schedule must not reinstall pending_autosave"
+        );
+        assert_eq!(
+            state.next_autosave_serial, serial_before,
+            "stale schedule must not advance next_autosave_serial"
+        );
+    }
+    // Replacement health remains `Healthy`: the stale call's
+    // `record_schedule_failure` partner is also fenced and must not degrade.
+    assert_eq!(
+        coordinator.persistence_health(),
+        PersistenceHealthView::Healthy
+    );
+
+    // The current generation still schedules normally through the public
+    // `notify_durable_commit` path, reinstalling a pending entry and
+    // publishing `Pending`.
+    let current_request = coordinator
+        .notify_durable_commit(2, 20)
+        .expect("current generation must schedule");
+    assert!(coordinator.state.lock().unwrap().pending_autosave.is_some());
+    assert_eq!(
+        coordinator.persistence_health(),
+        PersistenceHealthView::Pending
+    );
+    // The stale ticket never entered the coordinator's ticket table; the
+    // current request's ticket is the live autosave intent.
+    assert!(coordinator
+        .state
+        .lock()
+        .unwrap()
+        .tickets
+        .contains_key(&current_request.ticket));
+}

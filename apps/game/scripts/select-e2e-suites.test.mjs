@@ -174,6 +174,33 @@ test("mid-pattern globstar matches exit files directly under coordinator and per
   }
 });
 
+test("mid-pattern globstar does not match a basename that merely ends with the suffix", () => {
+  // `coordinator/**/exit*.rs` must only match files whose segment starts with
+  // `exit`, not files like `pre_exit.rs` whose basename ends with `exit`. A
+  // replacement that consumed the trailing slash (e.g. `(/.*)?`) would let the
+  // optional group eat `/pre_` and the suffix match `exit.rs`, incorrectly
+  // excluding these persistence files from the full persistence suite and
+  // routing them only to `smoke` plus `exit-lifecycle`.
+  for (const changedPath of [
+    "apps/game/src-tauri/src/game/save/coordinator/pre_exit.rs",
+    "apps/game/src-tauri/src/game/save/coordinator/tests/pre_exit.rs",
+  ]) {
+    const plan = selectE2eSuites({ changedPaths: [changedPath] });
+
+    assert.deepEqual(
+      plan.suiteIds,
+      [
+        "smoke",
+        "capture-proof",
+        "save-core",
+        "save-management",
+        "exit-lifecycle",
+      ],
+      changedPath,
+    );
+  }
+});
+
 test("treats playable story and compiler inputs as production-journey risks", () => {
   assert.deepEqual(
     selectE2eSuites({
