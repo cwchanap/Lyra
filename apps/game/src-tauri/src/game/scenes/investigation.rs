@@ -1,7 +1,7 @@
 // src-tauri/src/game/scenes/investigation.rs
 use crate::game::dialogue_queue::ActiveDialogueQueue;
 use crate::game::schema::{InvestigationSceneJson, LockStatus, OutroUnlock, UnlockExpr};
-use crate::game::unlock::{self, UnlockContext};
+use crate::game::unlock::{self, StoryUnlockContext, UnlockContext};
 use std::collections::HashSet;
 
 pub(crate) const RESTORED_CONSUMED_INTRO_QUEUE_GEN: u64 = 0;
@@ -43,18 +43,27 @@ impl InvestigationSceneState {
         &self.def.title
     }
 
-    pub fn outro_satisfied(&self, ctx: &impl UnlockContext) -> bool {
+    pub fn outro_satisfied(
+        &self,
+        local: &impl UnlockContext,
+        story: &impl StoryUnlockContext,
+    ) -> bool {
         match &self.def.outro.unlock {
             OutroUnlock::Auto(_) => {
-                self.all_unlocked_hotspots_inspected(ctx) && self.all_unlocked_topics_discussed(ctx)
+                self.all_unlocked_hotspots_inspected(local, story)
+                    && self.all_unlocked_topics_discussed(local, story)
             }
-            OutroUnlock::Expr(expr) => unlock::evaluate(expr, ctx),
+            OutroUnlock::Expr(expr) => unlock::evaluate(expr, local, story),
         }
     }
 
-    fn all_unlocked_hotspots_inspected(&self, ctx: &impl UnlockContext) -> bool {
+    fn all_unlocked_hotspots_inspected(
+        &self,
+        local: &impl UnlockContext,
+        story: &impl StoryUnlockContext,
+    ) -> bool {
         for sub in &self.def.sublocations {
-            if !self.is_sublocation_unlocked(&sub.id, ctx) {
+            if !self.is_sublocation_unlocked(&sub.id, local, story) {
                 continue;
             }
             for h in &sub.hotspots {
@@ -62,7 +71,8 @@ impl InvestigationSceneState {
                     &format!("hotspot:{}", h.id),
                     h.status,
                     h.unlock.as_ref(),
-                    ctx,
+                    local,
+                    story,
                 ) && !self.inspected_hotspots.contains(&h.id)
                 {
                     return false;
@@ -72,9 +82,13 @@ impl InvestigationSceneState {
         true
     }
 
-    fn all_unlocked_topics_discussed(&self, ctx: &impl UnlockContext) -> bool {
+    fn all_unlocked_topics_discussed(
+        &self,
+        local: &impl UnlockContext,
+        story: &impl StoryUnlockContext,
+    ) -> bool {
         for sub in &self.def.sublocations {
-            if !self.is_sublocation_unlocked(&sub.id, ctx) {
+            if !self.is_sublocation_unlocked(&sub.id, local, story) {
                 continue;
             }
             for c in &sub.characters {
@@ -83,7 +97,8 @@ impl InvestigationSceneState {
                         &format!("topic:{}@{}", c.id, t.id),
                         t.status,
                         t.unlock.as_ref(),
-                        ctx,
+                        local,
+                        story,
                     ) && !self
                         .discussed_topics
                         .contains(&(c.id.clone(), t.id.clone()))
@@ -96,12 +111,17 @@ impl InvestigationSceneState {
         true
     }
 
-    pub fn is_sublocation_unlocked(&self, id: &str, ctx: &impl UnlockContext) -> bool {
+    pub fn is_sublocation_unlocked(
+        &self,
+        id: &str,
+        local: &impl UnlockContext,
+        story: &impl StoryUnlockContext,
+    ) -> bool {
         let key = format!("sublocation:{id}");
         let def = self.def.sublocations.iter().find(|s| s.id == id);
         match def {
             None => false,
-            Some(s) => self.is_block_unlocked(&key, s.status, s.unlock.as_ref(), ctx),
+            Some(s) => self.is_block_unlocked(&key, s.status, s.unlock.as_ref(), local, story),
         }
     }
 
@@ -110,7 +130,8 @@ impl InvestigationSceneState {
         key: &str,
         status: LockStatus,
         unlock: Option<&UnlockExpr>,
-        ctx: &impl UnlockContext,
+        local: &impl UnlockContext,
+        story: &impl StoryUnlockContext,
     ) -> bool {
         match status {
             LockStatus::Unlocked => true,
@@ -119,7 +140,7 @@ impl InvestigationSceneState {
                     return true;
                 }
                 match unlock {
-                    Some(expr) => unlock::evaluate(expr, ctx),
+                    Some(expr) => unlock::evaluate(expr, local, story),
                     None => false,
                 }
             }

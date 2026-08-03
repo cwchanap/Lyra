@@ -8,30 +8,53 @@ pub trait UnlockContext {
     fn hotspot_investigated(&self, id: &str) -> bool;
 }
 
-pub fn evaluate(expr: &UnlockExpr, ctx: &dyn UnlockContext) -> bool {
+pub trait StoryUnlockContext {
+    fn fact_asserted(&self, id: &str) -> bool;
+    fn question_resolved(&self, id: &str) -> bool;
+    fn objective_completed(&self, id: &str) -> bool;
+    fn analysis_scene_completed(&self, chapter_id: &str, scene_id: &str) -> bool;
+    fn analysis_board_completed(&self, chapter_id: &str, scene_id: &str, board_id: &str) -> bool;
+    fn authorization_granted(&self, id: &str) -> bool;
+}
+
+pub fn evaluate(
+    expr: &UnlockExpr,
+    local: &dyn UnlockContext,
+    story: &dyn StoryUnlockContext,
+) -> bool {
     match expr {
         UnlockExpr::Combinator { op, left, right } => match op {
-            Combinator::And => evaluate(left, ctx) && evaluate(right, ctx),
-            Combinator::Or => evaluate(left, ctx) || evaluate(right, ctx),
+            Combinator::And => evaluate(left, local, story) && evaluate(right, local, story),
+            Combinator::Or => evaluate(left, local, story) || evaluate(right, local, story),
         },
-        UnlockExpr::EvidenceCollected { id, .. } => ctx.evidence_collected(id),
-        UnlockExpr::StatementAcquired { id, .. } => ctx.statement_acquired(id),
+        UnlockExpr::AtLeast {
+            count, conditions, ..
+        } => evaluate_at_least(conditions, *count, |condition| {
+            evaluate(condition, local, story)
+        }),
+        UnlockExpr::EvidenceCollected { id, .. } => local.evidence_collected(id),
+        UnlockExpr::StatementAcquired { id, .. } => local.statement_acquired(id),
         UnlockExpr::TopicDiscussed {
             character_id,
             topic_id,
             ..
-        } => ctx.topic_discussed(character_id, topic_id),
-        UnlockExpr::HotspotInvestigated { id, .. } => ctx.hotspot_investigated(id),
-        // Task 11 makes the expanded HPA-257 wire shape loadable. Task 12 is
-        // the sole owner of StoryUnlockContext and threshold evaluation, so
-        // every new expression fails closed until that context exists.
-        UnlockExpr::AtLeast { .. }
-        | UnlockExpr::FactAsserted { .. }
-        | UnlockExpr::QuestionResolved { .. }
-        | UnlockExpr::ObjectiveCompleted { .. }
-        | UnlockExpr::AuthorizationGranted { .. }
-        | UnlockExpr::AnalysisSceneCompleted { .. }
-        | UnlockExpr::AnalysisBoardCompleted { .. } => false,
+        } => local.topic_discussed(character_id, topic_id),
+        UnlockExpr::HotspotInvestigated { id, .. } => local.hotspot_investigated(id),
+        UnlockExpr::FactAsserted { id, .. } => story.fact_asserted(id),
+        UnlockExpr::QuestionResolved { id, .. } => story.question_resolved(id),
+        UnlockExpr::ObjectiveCompleted { id, .. } => story.objective_completed(id),
+        UnlockExpr::AuthorizationGranted { id, .. } => story.authorization_granted(id),
+        UnlockExpr::AnalysisSceneCompleted {
+            chapter_id,
+            scene_id,
+            ..
+        } => story.analysis_scene_completed(chapter_id, scene_id),
+        UnlockExpr::AnalysisBoardCompleted {
+            chapter_id,
+            scene_id,
+            board_id,
+            ..
+        } => story.analysis_board_completed(chapter_id, scene_id, board_id),
     }
 }
 
@@ -44,31 +67,67 @@ pub trait InterrogationUnlockContext {
 
 pub fn evaluate_interrogation(
     expr: &InterrogationUnlockExpr,
-    ctx: &dyn InterrogationUnlockContext,
+    local: &dyn InterrogationUnlockContext,
+    story: &dyn StoryUnlockContext,
 ) -> bool {
     match expr {
         InterrogationUnlockExpr::Combinator { op, left, right } => match op {
             Combinator::And => {
-                evaluate_interrogation(left, ctx) && evaluate_interrogation(right, ctx)
+                evaluate_interrogation(left, local, story)
+                    && evaluate_interrogation(right, local, story)
             }
             Combinator::Or => {
-                evaluate_interrogation(left, ctx) || evaluate_interrogation(right, ctx)
+                evaluate_interrogation(left, local, story)
+                    || evaluate_interrogation(right, local, story)
             }
         },
-        InterrogationUnlockExpr::EvidenceCollected { id, .. } => ctx.evidence_collected(id),
-        InterrogationUnlockExpr::StatementAcquired { id, .. } => ctx.statement_acquired(id),
-        InterrogationUnlockExpr::QuestionAnswered { id, .. } => ctx.question_answered(id),
-        InterrogationUnlockExpr::PhaseCompleted { id, .. } => ctx.phase_completed(id),
-        // See the investigation evaluator above: no new expression can gain
-        // availability through the legacy local-only context before Task 12.
-        InterrogationUnlockExpr::AtLeast { .. }
-        | InterrogationUnlockExpr::FactAsserted { .. }
-        | InterrogationUnlockExpr::QuestionResolved { .. }
-        | InterrogationUnlockExpr::ObjectiveCompleted { .. }
-        | InterrogationUnlockExpr::AuthorizationGranted { .. }
-        | InterrogationUnlockExpr::AnalysisSceneCompleted { .. }
-        | InterrogationUnlockExpr::AnalysisBoardCompleted { .. } => false,
+        InterrogationUnlockExpr::AtLeast {
+            count, conditions, ..
+        } => evaluate_at_least(conditions, *count, |condition| {
+            evaluate_interrogation(condition, local, story)
+        }),
+        InterrogationUnlockExpr::EvidenceCollected { id, .. } => local.evidence_collected(id),
+        InterrogationUnlockExpr::StatementAcquired { id, .. } => local.statement_acquired(id),
+        InterrogationUnlockExpr::QuestionAnswered { id, .. } => local.question_answered(id),
+        InterrogationUnlockExpr::PhaseCompleted { id, .. } => local.phase_completed(id),
+        InterrogationUnlockExpr::FactAsserted { id, .. } => story.fact_asserted(id),
+        InterrogationUnlockExpr::QuestionResolved { id, .. } => story.question_resolved(id),
+        InterrogationUnlockExpr::ObjectiveCompleted { id, .. } => story.objective_completed(id),
+        InterrogationUnlockExpr::AuthorizationGranted { id, .. } => story.authorization_granted(id),
+        InterrogationUnlockExpr::AnalysisSceneCompleted {
+            chapter_id,
+            scene_id,
+            ..
+        } => story.analysis_scene_completed(chapter_id, scene_id),
+        InterrogationUnlockExpr::AnalysisBoardCompleted {
+            chapter_id,
+            scene_id,
+            board_id,
+            ..
+        } => story.analysis_board_completed(chapter_id, scene_id, board_id),
     }
+}
+
+fn evaluate_at_least<T>(
+    conditions: &[T],
+    count: usize,
+    evaluate_condition: impl Fn(&T) -> bool,
+) -> bool {
+    if count == 0 {
+        return false;
+    }
+
+    let mut true_count = 0;
+    for condition in conditions {
+        if !evaluate_condition(condition) {
+            continue;
+        }
+        true_count += 1;
+        if true_count >= count {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -76,10 +135,191 @@ mod tests {
     use super::*;
     use crate::game::schema::{
         AtLeastOperator, PredicateAnalysisBoardCompleted, PredicateAnalysisSceneCompleted,
-        PredicateAuthorizationGranted, PredicateEvidenceCollected, PredicateFactAsserted,
-        PredicateHotspotInvestigated, PredicateObjectiveCompleted, PredicatePhaseCompleted,
-        PredicateQuestionAnswered, PredicateQuestionResolved, PredicateStatementAcquired,
+        PredicateEvidenceCollected, PredicateHotspotInvestigated, PredicatePhaseCompleted,
+        PredicateQuestionAnswered, PredicateStatementAcquired,
     };
+    use crate::game::story::StoryState;
+    use serde::Deserialize;
+    use std::collections::BTreeMap;
+
+    const CASES: &str =
+        include_str!("../../../../../packages/shared/fixtures/unlock-expression-semantics.json");
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct UnlockExpressionSemanticsFixture {
+        schema_version: u32,
+        cases: Vec<UnlockExpressionSemanticsCase>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct UnlockExpressionSemanticsCase {
+        name: String,
+        family: UnlockExpressionFamily,
+        expression: serde_json::Value,
+        truth: BTreeMap<String, bool>,
+        expected: bool,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "lowercase")]
+    enum UnlockExpressionFamily {
+        Investigation,
+        Interrogation,
+    }
+
+    struct FixtureContext {
+        truth: BTreeMap<String, bool>,
+    }
+
+    impl FixtureContext {
+        fn matches(&self, key: String) -> bool {
+            self.truth.get(&key).copied().unwrap_or(false)
+        }
+    }
+
+    impl UnlockContext for FixtureContext {
+        fn evidence_collected(&self, id: &str) -> bool {
+            self.matches(format!("evidence_collected:{id}"))
+        }
+
+        fn statement_acquired(&self, id: &str) -> bool {
+            self.matches(format!("statement_acquired:{id}"))
+        }
+
+        fn topic_discussed(&self, character_id: &str, topic_id: &str) -> bool {
+            self.matches(format!("topic_discussed:{character_id}@{topic_id}"))
+        }
+
+        fn hotspot_investigated(&self, id: &str) -> bool {
+            self.matches(format!("hotspot_investigated:{id}"))
+        }
+    }
+
+    impl InterrogationUnlockContext for FixtureContext {
+        fn evidence_collected(&self, id: &str) -> bool {
+            self.matches(format!("evidence_collected:{id}"))
+        }
+
+        fn statement_acquired(&self, id: &str) -> bool {
+            self.matches(format!("statement_acquired:{id}"))
+        }
+
+        fn question_answered(&self, id: &str) -> bool {
+            self.matches(format!("question_answered:{id}"))
+        }
+
+        fn phase_completed(&self, id: &str) -> bool {
+            self.matches(format!("phase_completed:{id}"))
+        }
+    }
+
+    impl StoryUnlockContext for FixtureContext {
+        fn fact_asserted(&self, id: &str) -> bool {
+            self.matches(format!("fact_asserted:{id}"))
+        }
+
+        fn question_resolved(&self, id: &str) -> bool {
+            self.matches(format!("question_resolved:{id}"))
+        }
+
+        fn objective_completed(&self, id: &str) -> bool {
+            self.matches(format!("objective_completed:{id}"))
+        }
+
+        fn analysis_scene_completed(&self, chapter_id: &str, scene_id: &str) -> bool {
+            self.matches(format!("analysis_scene_completed:{chapter_id}@{scene_id}"))
+        }
+
+        fn analysis_board_completed(
+            &self,
+            chapter_id: &str,
+            scene_id: &str,
+            board_id: &str,
+        ) -> bool {
+            self.matches(format!(
+                "analysis_board_completed:{chapter_id}@{scene_id}@{board_id}"
+            ))
+        }
+
+        fn authorization_granted(&self, id: &str) -> bool {
+            self.matches(format!("authorization_granted:{id}"))
+        }
+    }
+
+    struct StopAfterFirstTrueContext;
+
+    impl UnlockContext for StopAfterFirstTrueContext {
+        fn evidence_collected(&self, id: &str) -> bool {
+            match id {
+                "present" => true,
+                "must_not_evaluate" => panic!("threshold did not short-circuit"),
+                _ => false,
+            }
+        }
+
+        fn statement_acquired(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn topic_discussed(&self, _character_id: &str, _topic_id: &str) -> bool {
+            false
+        }
+
+        fn hotspot_investigated(&self, _id: &str) -> bool {
+            false
+        }
+    }
+
+    impl InterrogationUnlockContext for StopAfterFirstTrueContext {
+        fn evidence_collected(&self, id: &str) -> bool {
+            UnlockContext::evidence_collected(self, id)
+        }
+
+        fn statement_acquired(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn question_answered(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn phase_completed(&self, _id: &str) -> bool {
+            false
+        }
+    }
+
+    impl StoryUnlockContext for StopAfterFirstTrueContext {
+        fn fact_asserted(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn question_resolved(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn objective_completed(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn analysis_scene_completed(&self, _chapter_id: &str, _scene_id: &str) -> bool {
+            false
+        }
+
+        fn analysis_board_completed(
+            &self,
+            _chapter_id: &str,
+            _scene_id: &str,
+            _board_id: &str,
+        ) -> bool {
+            false
+        }
+
+        fn authorization_granted(&self, _id: &str) -> bool {
+            false
+        }
+    }
 
     struct TestState {
         evidence: Vec<String>,
@@ -178,13 +418,66 @@ mod tests {
     }
 
     #[test]
+    fn unlock_expression_semantics_match_shared_v1_fixture() {
+        let fixture: UnlockExpressionSemanticsFixture = serde_json::from_str(CASES).unwrap();
+        assert_eq!(fixture.schema_version, 1);
+
+        for case in fixture.cases {
+            let UnlockExpressionSemanticsCase {
+                name,
+                family,
+                expression,
+                truth,
+                expected,
+            } = case;
+            let ctx = FixtureContext { truth };
+            let actual = match family {
+                UnlockExpressionFamily::Investigation => {
+                    let expression: UnlockExpr = serde_json::from_value(expression).unwrap();
+                    evaluate(&expression, &ctx, &ctx)
+                }
+                UnlockExpressionFamily::Interrogation => {
+                    let expression: InterrogationUnlockExpr =
+                        serde_json::from_value(expression).unwrap();
+                    evaluate_interrogation(&expression, &ctx, &ctx)
+                }
+            };
+            assert_eq!(actual, expected, "fixture case {name}");
+        }
+    }
+
+    // Break caught: evaluating every threshold child after the required true
+    // count has already been reached can trigger a forbidden downstream read.
+    #[test]
+    fn at_least_short_circuits_after_reaching_its_true_count() {
+        let investigation = UnlockExpr::AtLeast {
+            _op: AtLeastOperator::AtLeast,
+            count: 1,
+            conditions: vec![evidence("present"), evidence("must_not_evaluate")],
+        };
+        let interrogation = InterrogationUnlockExpr::AtLeast {
+            _op: AtLeastOperator::AtLeast,
+            count: 1,
+            conditions: vec![
+                interrogation_evidence("present"),
+                interrogation_evidence("must_not_evaluate"),
+            ],
+        };
+        let ctx = StopAfterFirstTrueContext;
+
+        assert!(evaluate(&investigation, &ctx, &ctx));
+        assert!(evaluate_interrogation(&interrogation, &ctx, &ctx));
+    }
+
+    #[test]
     fn evidence_collected_predicate_is_true_when_in_inventory() {
         let ctx = TestState {
             evidence: vec!["foo".into()],
             hotspots: vec![],
         };
-        assert!(evaluate(&evidence("foo"), &ctx));
-        assert!(!evaluate(&evidence("bar"), &ctx));
+        let story = StoryState::default();
+        assert!(evaluate(&evidence("foo"), &ctx, &story));
+        assert!(!evaluate(&evidence("bar"), &ctx, &story));
     }
 
     #[test]
@@ -194,19 +487,22 @@ mod tests {
             left: Box::new(evidence("foo")),
             right: Box::new(hotspot("x")),
         };
+        let story = StoryState::default();
         assert!(evaluate(
             &expr,
             &TestState {
                 evidence: vec!["foo".into()],
                 hotspots: vec!["x".into()]
-            }
+            },
+            &story,
         ));
         assert!(!evaluate(
             &expr,
             &TestState {
                 evidence: vec!["foo".into()],
                 hotspots: vec![]
-            }
+            },
+            &story,
         ));
     }
 
@@ -217,115 +513,79 @@ mod tests {
             left: Box::new(evidence("foo")),
             right: Box::new(hotspot("x")),
         };
+        let story = StoryState::default();
         assert!(evaluate(
             &expr,
             &TestState {
                 evidence: vec!["foo".into()],
                 hotspots: vec![]
-            }
+            },
+            &story,
         ));
         assert!(evaluate(
             &expr,
             &TestState {
                 evidence: vec![],
                 hotspots: vec!["x".into()]
-            }
+            },
+            &story,
         ));
         assert!(!evaluate(
             &expr,
             &TestState {
                 evidence: vec![],
                 hotspots: vec![]
-            }
+            },
+            &story,
         ));
     }
 
-    // Break caught: until Task 12 introduces a StoryUnlockContext and real
-    // threshold semantics, newly-deserializable HPA-257 expressions must not
-    // accidentally unlock content through the legacy local evaluator.
+    // Break caught: HPA-259/HPA-260 have not supplied production analysis
+    // completion state yet, so these predicates must remain unavailable even
+    // though synthetic semantic-fixture contexts can exercise the wire shape.
     #[test]
-    fn hpa_257_expression_variants_fail_closed_until_task_12() {
+    fn story_state_defers_analysis_predicates_until_analysis_runtime_exists() {
         let local_ctx = TestState {
             evidence: vec!["note".into()],
             hotspots: vec![],
         };
         let interrogation_ctx = interrogation_ctx(&["note"], &[], &[], &[]);
+        let story = StoryState::default();
+        let investigation_scene = UnlockExpr::AnalysisSceneCompleted {
+            _predicate: PredicateAnalysisSceneCompleted::X,
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+        };
+        let investigation_board = UnlockExpr::AnalysisBoardCompleted {
+            _predicate: PredicateAnalysisBoardCompleted::X,
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+            board_id: "board_1".into(),
+        };
+        let interrogation_scene = InterrogationUnlockExpr::AnalysisSceneCompleted {
+            _predicate: PredicateAnalysisSceneCompleted::X,
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+        };
+        let interrogation_board = InterrogationUnlockExpr::AnalysisBoardCompleted {
+            _predicate: PredicateAnalysisBoardCompleted::X,
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+            board_id: "board_1".into(),
+        };
 
-        let investigation_expressions = [
-            UnlockExpr::AtLeast {
-                _op: AtLeastOperator::AtLeast,
-                count: 1,
-                conditions: vec![evidence("note")],
-            },
-            UnlockExpr::FactAsserted {
-                _predicate: PredicateFactAsserted::X,
-                id: "fact_a".into(),
-            },
-            UnlockExpr::QuestionResolved {
-                _predicate: PredicateQuestionResolved::X,
-                id: "question_a".into(),
-            },
-            UnlockExpr::ObjectiveCompleted {
-                _predicate: PredicateObjectiveCompleted::X,
-                id: "objective_a".into(),
-            },
-            UnlockExpr::AuthorizationGranted {
-                _predicate: PredicateAuthorizationGranted::X,
-                id: "authorization_a".into(),
-            },
-            UnlockExpr::AnalysisSceneCompleted {
-                _predicate: PredicateAnalysisSceneCompleted::X,
-                chapter_id: "chapter_1".into(),
-                scene_id: "analysis_scene_1".into(),
-            },
-            UnlockExpr::AnalysisBoardCompleted {
-                _predicate: PredicateAnalysisBoardCompleted::X,
-                chapter_id: "chapter_1".into(),
-                scene_id: "analysis_scene_1".into(),
-                board_id: "board_1".into(),
-            },
-        ];
-        let interrogation_expressions = [
-            InterrogationUnlockExpr::AtLeast {
-                _op: AtLeastOperator::AtLeast,
-                count: 1,
-                conditions: vec![interrogation_evidence("note")],
-            },
-            InterrogationUnlockExpr::FactAsserted {
-                _predicate: PredicateFactAsserted::X,
-                id: "fact_a".into(),
-            },
-            InterrogationUnlockExpr::QuestionResolved {
-                _predicate: PredicateQuestionResolved::X,
-                id: "question_a".into(),
-            },
-            InterrogationUnlockExpr::ObjectiveCompleted {
-                _predicate: PredicateObjectiveCompleted::X,
-                id: "objective_a".into(),
-            },
-            InterrogationUnlockExpr::AuthorizationGranted {
-                _predicate: PredicateAuthorizationGranted::X,
-                id: "authorization_a".into(),
-            },
-            InterrogationUnlockExpr::AnalysisSceneCompleted {
-                _predicate: PredicateAnalysisSceneCompleted::X,
-                chapter_id: "chapter_1".into(),
-                scene_id: "analysis_scene_1".into(),
-            },
-            InterrogationUnlockExpr::AnalysisBoardCompleted {
-                _predicate: PredicateAnalysisBoardCompleted::X,
-                chapter_id: "chapter_1".into(),
-                scene_id: "analysis_scene_1".into(),
-                board_id: "board_1".into(),
-            },
-        ];
-
-        assert!(investigation_expressions
-            .iter()
-            .all(|expr| !evaluate(expr, &local_ctx)));
-        assert!(interrogation_expressions
-            .iter()
-            .all(|expr| !evaluate_interrogation(expr, &interrogation_ctx)));
+        assert!(!evaluate(&investigation_scene, &local_ctx, &story));
+        assert!(!evaluate(&investigation_board, &local_ctx, &story));
+        assert!(!evaluate_interrogation(
+            &interrogation_scene,
+            &interrogation_ctx,
+            &story,
+        ));
+        assert!(!evaluate_interrogation(
+            &interrogation_board,
+            &interrogation_ctx,
+            &story,
+        ));
     }
 
     #[test]
@@ -342,6 +602,7 @@ mod tests {
             left: Box::new(question("hidden_discarded_beans")),
             right: Box::new(phase("wakatsuki_inquiry")),
         };
+        let story = StoryState::default();
         assert!(evaluate_interrogation(
             &expr,
             &interrogation_ctx(
@@ -350,10 +611,12 @@ mod tests {
                 &["hidden_discarded_beans"],
                 &["wakatsuki_inquiry"]
             ),
+            &story,
         ));
         assert!(!evaluate_interrogation(
             &expr,
             &interrogation_ctx(&[], &[], &["hidden_discarded_beans"], &[]),
+            &story,
         ));
     }
 
@@ -364,17 +627,21 @@ mod tests {
             left: Box::new(interrogation_evidence("receipt")),
             right: Box::new(interrogation_statement("alibi")),
         };
+        let story = StoryState::default();
         assert!(evaluate_interrogation(
             &expr,
             &interrogation_ctx(&["receipt"], &[], &[], &[]),
+            &story,
         ));
         assert!(evaluate_interrogation(
             &expr,
             &interrogation_ctx(&[], &["alibi"], &[], &[]),
+            &story,
         ));
         assert!(!evaluate_interrogation(
             &expr,
             &interrogation_ctx(&[], &[], &[], &[]),
+            &story,
         ));
     }
 }

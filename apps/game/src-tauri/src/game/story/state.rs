@@ -1,5 +1,6 @@
 use super::catalog::{ObjectiveKind, StoryCatalog};
 use crate::game::schema::InventoryTarget;
+use crate::game::unlock::StoryUnlockContext;
 use crate::game::GameError;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -37,6 +38,45 @@ pub(in crate::game) struct StoryState {
     pub(super) objectives: BTreeMap<String, ObjectiveProgress>,
     pub(super) authorizations: BTreeMap<String, AuthorizationProgress>,
     pub(super) active_primary_objective_id: Option<String>,
+}
+
+impl StoryUnlockContext for StoryState {
+    fn fact_asserted(&self, id: &str) -> bool {
+        self.facts.contains_key(id)
+    }
+
+    fn question_resolved(&self, id: &str) -> bool {
+        self.questions
+            .get(id)
+            .is_some_and(|progress| progress.resolved_by_fact_id.is_some())
+    }
+
+    fn objective_completed(&self, id: &str) -> bool {
+        self.objectives
+            .get(id)
+            .is_some_and(|progress| progress.completed)
+    }
+
+    fn analysis_scene_completed(&self, _chapter_id: &str, _scene_id: &str) -> bool {
+        // HPA-259 owns analysis-scene completion state. Until that runtime
+        // contract exists, HPA-257 must not infer completion from StoryState.
+        false
+    }
+
+    fn analysis_board_completed(
+        &self,
+        _chapter_id: &str,
+        _scene_id: &str,
+        _board_id: &str,
+    ) -> bool {
+        // HPA-260 owns analysis-board completion state. Keep the production
+        // fallback fail-closed while synthetic evaluator tests exercise it.
+        false
+    }
+
+    fn authorization_granted(&self, id: &str) -> bool {
+        self.authorizations.contains_key(id)
+    }
 }
 
 impl FactProgress {
