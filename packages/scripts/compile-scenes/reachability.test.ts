@@ -1224,6 +1224,166 @@ describe("joint primary fixed point", () => {
   });
 });
 
+describe("Task 9 fixed-point regressions", () => {
+  it("does not reintroduce a free-order subject through a strict-after peer summary", () => {
+    const result = analyzeSynthetic(
+      [
+        primaryTransitionNode("seed", false, "primary_a", {
+          initiallyReachable: true,
+        }),
+        primaryTransitionNode("a", true, null, {
+          strictPredecessorKeys: ["seed"],
+        }),
+        primaryTransitionNode("k", false, "primary_b", {
+          strictPredecessorKeys: ["a"],
+        }),
+        syntheticNode("observer", {
+          initiallyReachable: true,
+          mayExecuteBeforeKeys: ["a", "k"],
+          freeOrderRegionId: "region",
+        }),
+        syntheticNode("y-consumer", {
+          condition: atomExpression("objective_completed:primary_b"),
+        }),
+      ],
+      primaryCatalog(),
+    );
+
+    expect(result.mayCompletedPrimaryIds).toEqual(new Set(["primary_a"]));
+    expect(result.mayAtoms).not.toContain("objective_completed:primary_b");
+    expect(result.reachableNodeKeys).not.toContain("y-consumer");
+  });
+
+  it("does not feed a strict successor's cumulative state back into its prerequisite producer", () => {
+    const result = analyzeSynthetic(
+      [
+        syntheticNode("seed", {
+          initiallyReachable: true,
+          effects: [addAtom("x")],
+        }),
+        primaryTransitionNode("activate-a", false, "primary_a", {
+          condition: atomExpression("x"),
+        }),
+        primaryTransitionNode("complete-a", true, null, {
+          strictPredecessorKeys: ["activate-a"],
+        }),
+      ],
+      primaryCatalog(),
+    );
+
+    expect(result.warnings).not.toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveOrderingNotExhaustive",
+        nodeKey: "activate-a",
+      }),
+    );
+    expect(result.warnings).not.toContainEqual(
+      expect.objectContaining({
+        code: "storyRevealBatchOrderDependent",
+        nodeKey: "activate-a",
+      }),
+    );
+    expect(result.mustCompletedPrimaryIds).toContain("primary_a");
+  });
+
+  it("does not make an optional positive producer or its mandatory consumer must-reachable", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("optional", {
+        requirement: "optional",
+        initiallyReachable: true,
+        effects: [addAtom("a")],
+      }),
+      syntheticNode("consumer", {
+        condition: atomExpression("a"),
+        effects: [addAtom("b")],
+      }),
+    ]);
+
+    expect(result.mayAtoms).toEqual(new Set(["a", "b"]));
+    expect(result.mustReachableNodeKeys).not.toContain("consumer");
+    expect(result.mustAtoms).not.toContain("a");
+    expect(result.mustAtoms).not.toContain("b");
+  });
+
+  it("does not make a primary completion mandatory through an optional setter", () => {
+    const result = analyzeSynthetic(
+      [
+        primaryTransitionNode("optional-setter", false, "primary_a", {
+          requirement: "optional",
+          initiallyReachable: true,
+        }),
+        primaryTransitionNode("completion", true, null, {
+          condition: atomExpression("objective_revealed:primary_a"),
+        }),
+      ],
+      primaryCatalog(),
+    );
+
+    expect(result.mayCompletedPrimaryIds).toContain("primary_a");
+    expect(result.mustReachableNodeKeys).not.toContain("completion");
+    expect(result.mustCompletedPrimaryIds).not.toContain("primary_a");
+    expect(result.mustAtoms).not.toContain("objective_completed:primary_a");
+  });
+
+  it.each([
+    {
+      name: "conjunction",
+      condition: {
+        op: "and" as const,
+        left: atomExpression("fact_asserted:fact_a"),
+        right: atomExpression("gate"),
+      },
+    },
+    {
+      name: "threshold",
+      condition: {
+        op: "at_least" as const,
+        count: 2,
+        conditions: [
+          atomExpression("fact_asserted:fact_a"),
+          atomExpression("gate"),
+          atomExpression("missing"),
+        ],
+      },
+    },
+  ])(
+    "preserves must inputs across mandatory $name producers",
+    ({ condition }) => {
+      const result = analyzeSynthetic([
+        syntheticNode("fact", {
+          initiallyReachable: true,
+          effects: [storyEffect({ kind: "assertFact", factId: "fact_a" }, 0)],
+        }),
+        syntheticNode("gate", {
+          initiallyReachable: true,
+          effects: [addAtom("gate")],
+        }),
+        syntheticNode("resolver", {
+          condition,
+          effects: [
+            storyEffect(
+              {
+                kind: "resolveQuestion",
+                questionId: "question_a",
+                factId: "fact_a",
+              },
+              0,
+            ),
+          ],
+        }),
+      ]);
+
+      expect(result.warnings).not.toContainEqual(
+        expect.objectContaining({
+          code: "storyRevealBatchOrderDependent",
+          nodeKey: "resolver",
+        }),
+      );
+      expect(result.mustAtoms).toContain("question_resolved:question_a");
+    },
+  );
+});
+
 function buildNodes(chapters: ASTChapter[], scenes: SceneRecord[]) {
   return buildReachabilityNodes({
     chapters,
