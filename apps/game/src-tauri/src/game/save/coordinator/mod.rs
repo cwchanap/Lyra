@@ -1175,6 +1175,24 @@ impl ThumbnailCapturePurpose {
             Self::AcquisitionAcknowledgement { .. } => CaptureIntent::AcquisitionAcknowledgement,
         }
     }
+
+    /// The session generation this capture purpose belongs to. Every variant
+    /// carries one so the coordinator can reject a stale-generation capture
+    /// atomically before issuing its ticket, before `latest_by_intent` /
+    /// `tickets` / thumbnail activity are mutated.
+    fn session_generation(&self) -> u64 {
+        match self {
+            Self::Autosave {
+                session_generation, ..
+            }
+            | Self::ManualSave {
+                session_generation, ..
+            }
+            | Self::AcquisitionAcknowledgement {
+                session_generation, ..
+            } => *session_generation,
+        }
+    }
 }
 
 struct TicketRecord {
@@ -4164,6 +4182,19 @@ impl SaveCoordinator {
         let ticket = Uuid::new_v4().hyphenated().to_string();
         let intent = purpose.intent();
         let mut state = self.lock_state()?;
+        // Reject a stale-generation capture atomically, before any coordinator
+        // state is mutated. `next_session_generation` is the replacement
+        // high-water mark; a capture for a prior generation must not insert a
+        // ticket, supersede `latest_by_intent`, or publish `Capturing`, because
+        // the late `schedule_autosave` / `record_schedule_failure` fences would
+        // otherwise leave that stale ticket installed (and, for the autosave
+        // intent, evict a live replacement-session ticket). `<` (not `!=`)
+        // matches the high-water-mark semantic used by `schedule_autosave` and
+        // `record_schedule_failure`, so a current-or-ahead generation still
+        // issues normally.
+        if purpose.session_generation() < state.next_session_generation {
+            return Err(GameError::stale_session_generation());
+        }
         if let Some(superseded) = state.latest_by_intent.insert(intent, ticket.clone()) {
             state.tickets.remove(&superseded);
         }
