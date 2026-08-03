@@ -307,6 +307,22 @@ describe("compile (end-to-end against valid fixture)", () => {
           },
         ],
       });
+      expect(interrogation.phases[0].reveals).toEqual([
+        { kind: "assertFact", factId: "door_conflict" },
+        { kind: "revealQuestion", questionId: "who_entered" },
+        {
+          kind: "resolveQuestion",
+          questionId: "who_entered",
+          factId: "door_conflict",
+        },
+        { kind: "revealObjective", objectiveId: "verify_alibi" },
+        { kind: "completeObjective", objectiveId: "verify_alibi" },
+        {
+          kind: "setPrimaryObjective",
+          completeCurrent: true,
+          nextObjectiveId: "present_request",
+        },
+      ]);
       expect(interrogation.phases[0].questions[0].unlock).toEqual({
         predicate: "fact_asserted",
         id: "door_conflict",
