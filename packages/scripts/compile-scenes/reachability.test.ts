@@ -1365,6 +1365,41 @@ describe("Task 9 fixed-point regressions", () => {
     });
   });
 
+  it("does not use a redundant static effect as terminal causal provenance", () => {
+    const result = analyzeSynthetic(
+      [
+        syntheticNode("seed-x", {
+          initiallyReachable: true,
+          effects: [addAtom("x")],
+        }),
+        syntheticNode("advance-a", {
+          strictPredecessorKeys: ["seed-x"],
+          mayExecuteBeforeKeys: ["consumer-b"],
+          freeOrderRegionId: "region",
+          effects: [
+            storyEffect(
+              {
+                kind: "setPrimaryObjective",
+                completeCurrent: false,
+                nextObjectiveId: "primary_a",
+              },
+              0,
+            ),
+            addAtom("x"),
+          ],
+        }),
+        primaryTransitionNode("consumer-b", false, "primary_b", {
+          condition: atomExpression("x"),
+          mayExecuteBeforeKeys: ["advance-a"],
+          freeOrderRegionId: "region",
+        }),
+      ],
+      primaryCatalog(),
+    );
+
+    expect(result.mustActivePrimary).toEqual({ kind: "unknown" });
+  });
+
   it("does not guarantee a mandatory alternative when an optional sibling can consume the event", () => {
     const result = analyzeSynthetic([
       syntheticNode("mandatory", {
