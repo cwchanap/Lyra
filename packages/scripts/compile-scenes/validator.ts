@@ -21,11 +21,14 @@ import type {
   ASTLinearScene,
   ASTSublocation,
   CompileError,
+  InterrogationLocalPredicate,
   InterrogationRevealTarget,
   InterrogationUnlockExpr,
+  InvestigationLocalPredicate,
   InventoryTarget,
   PositiveExpression,
   RevealTarget,
+  StoryPredicate,
   UnlockExpr,
 } from "./types";
 import { INVENTORY_PHASE_ID } from "./dialogue-segment-origins";
@@ -63,6 +66,25 @@ type CorpusContext = {
   >;
   guaranteedInventoryBeforeScene: Map<string, Set<string>>;
 };
+
+function isStoryPredicate(
+  predicate:
+    | InvestigationLocalPredicate
+    | InterrogationLocalPredicate
+    | StoryPredicate,
+): predicate is StoryPredicate {
+  switch (predicate.predicate) {
+    case "fact_asserted":
+    case "question_resolved":
+    case "objective_completed":
+    case "authorization_granted":
+    case "analysis_scene_completed":
+    case "analysis_board_completed":
+      return true;
+    default:
+      return false;
+  }
+}
 
 function atLeastSatisfiable<P>(
   count: number,
@@ -727,13 +749,14 @@ function collectInterrogationOutroUnlockErrors(
       ? []
       : [...leftErrors, ...rightErrors];
   }
+  if (isStoryPredicate(expr)) return [];
   return interrogationOutroPredicateReachable(expr, scene, flow)
     ? []
     : [interrogationOutroPredicateUnreachableError(expr, scene)];
 }
 
 function interrogationOutroPredicateReachable(
-  pred: Extract<InterrogationUnlockExpr, { predicate: string }>,
+  pred: InterrogationLocalPredicate,
   scene: ASTInterrogationScene,
   flow: InterrogationInventoryAnalysis,
 ): boolean {
@@ -753,7 +776,7 @@ function interrogationOutroPredicateReachable(
 }
 
 function interrogationOutroPredicateUnreachableError(
-  pred: Extract<InterrogationUnlockExpr, { predicate: string }>,
+  pred: InterrogationLocalPredicate,
   scene: ASTInterrogationScene,
 ): CompileError {
   switch (pred.predicate) {
@@ -1336,6 +1359,7 @@ function cloneProducesNeededOutroAtom(
       cloneProducesNeededOutroAtom(expr.right, base, clone)
     );
   }
+  if (isStoryPredicate(expr)) return false;
   switch (expr.predicate) {
     case "evidence_collected": {
       const atom = `evidence:${expr.id}`;
@@ -1641,6 +1665,7 @@ function interrogationUnlockSatisfiable(
       interrogationUnlockSatisfiable(expr.right, state)
     );
   }
+  if (isStoryPredicate(expr)) return true;
   switch (expr.predicate) {
     case "evidence_collected":
       return state.inventory.has(`evidence:${expr.id}`);
@@ -2483,6 +2508,7 @@ function isSubUnlockSatisfiable(
       )
     );
   }
+  if (isStoryPredicate(expr)) return true;
   switch (expr.predicate) {
     case "hotspot_investigated": {
       // Find which sub-location contains this hotspot and check reachability.
@@ -2545,6 +2571,7 @@ function isUnlockSatisfiable(
       isUnlockSatisfiable(expr.right, reachable)
     );
   }
+  if (isStoryPredicate(expr)) return true;
   switch (expr.predicate) {
     case "hotspot_investigated":
       return reachable.has(`hotspot:${expr.id}`);
@@ -2596,13 +2623,14 @@ function collectOutroUnlockErrors(
       ? []
       : [...leftErrors, ...rightErrors];
   }
+  if (isStoryPredicate(expr)) return [];
   return outroPredicateReachable(expr, scene, reachableSubs, reachableAtoms)
     ? []
     : [outroPredicateUnreachableError(expr, scene)];
 }
 
 function outroPredicateReachable(
-  pred: Extract<UnlockExpr, { predicate: string }>,
+  pred: InvestigationLocalPredicate,
   scene: ASTInvestigationScene,
   reachableSubs: Set<string>,
   reachableAtoms: Set<string>,
@@ -2640,7 +2668,7 @@ function outroPredicateReachable(
 }
 
 function outroPredicateUnreachableError(
-  pred: Extract<UnlockExpr, { predicate: string }>,
+  pred: InvestigationLocalPredicate,
   scene: ASTInvestigationScene,
 ): CompileError {
   switch (pred.predicate) {

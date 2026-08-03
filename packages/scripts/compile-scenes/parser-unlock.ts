@@ -29,6 +29,7 @@ import type {
   InterrogationUnlockExpr,
   InvestigationLocalPredicate,
   PositiveExpression,
+  StoryPredicate,
   UnlockExpr,
 } from "./types";
 
@@ -302,7 +303,7 @@ function parseAtLeast<P>(
 
 function parseInvestigationPredicate(
   t: Tokens,
-): PredicateParseResult<InvestigationLocalPredicate> {
+): PredicateParseResult<InvestigationLocalPredicate | StoryPredicate> {
   if (t.consume("evidence:")) {
     const id = t.consumeId();
     if (!id)
@@ -393,17 +394,12 @@ function parseInvestigationPredicate(
       );
     return { ok: true, value: { predicate: "hotspot_investigated", id } };
   }
-  return failure(
-    t.sourceFile,
-    t.line,
-    "unlockUnknownPredicate",
-    `Unknown predicate prefix at: "${t.peek()}"`,
-  );
+  return parseStoryPredicate(t);
 }
 
 function parseInterrogationPredicate(
   t: Tokens,
-): PredicateParseResult<InterrogationLocalPredicate> {
+): PredicateParseResult<InterrogationLocalPredicate | StoryPredicate> {
   if (t.consume("evidence:")) {
     const id = t.consumeId();
     if (!id)
@@ -449,14 +445,18 @@ function parseInterrogationPredicate(
         "unlockMissingId",
         "Missing question id.",
       );
-    if (!t.consumeWord("answered"))
-      return failure(
-        t.sourceFile,
-        t.line,
-        "unlockMissingVerb",
-        `Expected "answered" after question:${id}.`,
-      );
-    return { ok: true, value: { predicate: "question_answered", id } };
+    if (t.consumeWord("answered")) {
+      return { ok: true, value: { predicate: "question_answered", id } };
+    }
+    if (t.consumeWord("resolved")) {
+      return { ok: true, value: { predicate: "question_resolved", id } };
+    }
+    return failure(
+      t.sourceFile,
+      t.line,
+      "unlockMissingVerb",
+      `Expected "answered" or "resolved" after question:${id}.`,
+    );
   }
   if (t.consume("phase:")) {
     const id = t.consumeId();
@@ -475,6 +475,174 @@ function parseInterrogationPredicate(
         `Expected "completed" after phase:${id}.`,
       );
     return { ok: true, value: { predicate: "phase_completed", id } };
+  }
+  return parseStoryPredicate(t);
+}
+
+function parseStoryPredicate(t: Tokens): PredicateParseResult<StoryPredicate> {
+  if (t.consume("fact:")) {
+    const id = t.consumeId();
+    if (!id)
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingId",
+        "Missing fact id.",
+      );
+    if (!t.consumeWord("asserted"))
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingVerb",
+        `Expected "asserted" after fact:${id}.`,
+      );
+    return { ok: true, value: { predicate: "fact_asserted", id } };
+  }
+  if (t.consume("question:")) {
+    const id = t.consumeId();
+    if (!id)
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingId",
+        "Missing question id.",
+      );
+    if (!t.consumeWord("resolved"))
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingVerb",
+        `Expected "resolved" after question:${id}.`,
+      );
+    return { ok: true, value: { predicate: "question_resolved", id } };
+  }
+  if (t.consume("objective:")) {
+    const id = t.consumeId();
+    if (!id)
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingId",
+        "Missing objective id.",
+      );
+    if (!t.consumeWord("completed"))
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingVerb",
+        `Expected "completed" after objective:${id}.`,
+      );
+    return { ok: true, value: { predicate: "objective_completed", id } };
+  }
+  if (t.consume("authorization:")) {
+    const id = t.consumeId();
+    if (!id)
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingId",
+        "Missing authorization id.",
+      );
+    if (!t.consumeWord("granted"))
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingVerb",
+        `Expected "granted" after authorization:${id}.`,
+      );
+    return { ok: true, value: { predicate: "authorization_granted", id } };
+  }
+  if (t.consume("analysis_scene:")) {
+    const chapterId = t.consumeId();
+    if (!chapterId)
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingId",
+        "Missing analysis scene chapter id.",
+      );
+    if (!t.consume("@"))
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingAnalysisSeparator",
+        "Analysis scene predicates require <chapter>@<scene>.",
+      );
+    const sceneId = t.consumeId();
+    if (!sceneId)
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingId",
+        "Missing analysis scene id.",
+      );
+    if (!t.consumeWord("completed"))
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingVerb",
+        `Expected "completed" after analysis_scene:${chapterId}@${sceneId}.`,
+      );
+    return {
+      ok: true,
+      value: { predicate: "analysis_scene_completed", chapterId, sceneId },
+    };
+  }
+  if (t.consume("analysis_board:")) {
+    const chapterId = t.consumeId();
+    if (!chapterId)
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingId",
+        "Missing analysis board chapter id.",
+      );
+    if (!t.consume("@"))
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingAnalysisSeparator",
+        "Analysis board predicates require <chapter>@<scene>@<board>.",
+      );
+    const sceneId = t.consumeId();
+    if (!sceneId)
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingId",
+        "Missing analysis board scene id.",
+      );
+    if (!t.consume("@"))
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingAnalysisSeparator",
+        "Analysis board predicates require <chapter>@<scene>@<board>.",
+      );
+    const boardId = t.consumeId();
+    if (!boardId)
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingId",
+        "Missing analysis board id.",
+      );
+    if (!t.consumeWord("completed"))
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingVerb",
+        `Expected "completed" after analysis_board:${chapterId}@${sceneId}@${boardId}.`,
+      );
+    return {
+      ok: true,
+      value: {
+        predicate: "analysis_board_completed",
+        chapterId,
+        sceneId,
+        boardId,
+      },
+    };
   }
   return failure(
     t.sourceFile,

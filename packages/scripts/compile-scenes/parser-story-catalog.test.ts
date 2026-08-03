@@ -202,6 +202,31 @@ ${validFact("first")}`),
     });
   });
 
+  it("rejects the reserved objective ID null at its heading line", () => {
+    const result = parseStoryCatalog(
+      `# Story Catalog
+
+## Objectives
+
+### Objective: Clear the active objective {#null}
+- **Summary:** Clear the active primary objective.
+- **Kind:** primary
+- **Sort Order:** 1`,
+      SOURCE_FILE,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          code: "reservedObjectiveId",
+          sourceFile: SOURCE_FILE,
+          line: 5,
+        }),
+      );
+    }
+  });
+
   it("creates an empty catalog for an absent authored file", () => {
     expect(emptyStoryCatalog(SOURCE_FILE)).toEqual({
       facts: [],

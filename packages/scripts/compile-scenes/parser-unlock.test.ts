@@ -266,3 +266,65 @@ describe("parseInterrogationUnlockExpr", () => {
     });
   });
 });
+
+describe("story predicate support", () => {
+  it.each([
+    [
+      "fact:door_conflict asserted",
+      { predicate: "fact_asserted", id: "door_conflict" },
+    ],
+    [
+      "question:who_entered resolved",
+      { predicate: "question_resolved", id: "who_entered" },
+    ],
+    [
+      "objective:prepare_request completed",
+      { predicate: "objective_completed", id: "prepare_request" },
+    ],
+    [
+      "authorization:narrow_export granted",
+      { predicate: "authorization_granted", id: "narrow_export" },
+    ],
+  ])("parses story predicate %s in both scene families", (source, expected) => {
+    expect(parseUnlockExpr(source, "story.md", 4)).toEqual({
+      ok: true,
+      value: expected,
+    });
+    expect(parseInterrogationUnlockExpr(source, "story.md", 4)).toEqual({
+      ok: true,
+      value: expected,
+    });
+  });
+
+  it.each([
+    [
+      "analysis_scene:chapter_1@analysis_scene_8_5 completed",
+      {
+        predicate: "analysis_scene_completed",
+        chapterId: "chapter_1",
+        sceneId: "analysis_scene_8_5",
+      },
+    ],
+    [
+      "analysis_board:chapter_1@analysis_scene_8_5@source_board completed",
+      {
+        predicate: "analysis_board_completed",
+        chapterId: "chapter_1",
+        sceneId: "analysis_scene_8_5",
+        boardId: "source_board",
+      },
+    ],
+  ])(
+    "parses qualified analysis predicate %s in both scene families",
+    (source, expected) => {
+      expect(parseUnlockExpr(source, "story.md", 4)).toEqual({
+        ok: true,
+        value: expected,
+      });
+      expect(parseInterrogationUnlockExpr(source, "story.md", 4)).toEqual({
+        ok: true,
+        value: expected,
+      });
+    },
+  );
+});

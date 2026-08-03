@@ -7,6 +7,11 @@ export type AnalysisBoardRef = {
   boardId: string;
 };
 
+export type AnalysisSceneRef = {
+  chapterId: string;
+  sceneId: string;
+};
+
 type LocatedDefinition = {
   id: string;
   sourceFile: string;
@@ -25,6 +30,17 @@ export function validateStoryCatalog(
   indexDefinitions("Objective", catalog.objectives, errors);
   indexDefinitions("Authorization", catalog.authorizations, errors);
   indexDefinitions("Source Group", catalog.sourceGroups, errors);
+
+  for (const objective of catalog.objectives) {
+    if (objective.id !== "null") continue;
+    errors.push({
+      code: "reservedObjectiveId",
+      message:
+        'Objective id "null" is reserved for set_primary_objective:null.',
+      sourceFile: objective.sourceFile,
+      line: objective.line,
+    });
+  }
 
   for (const question of catalog.questions) {
     for (const reference of question.resolvedByFactIds) {
@@ -45,11 +61,7 @@ export function validateAnalysisBoardRef(
   ref: AnalysisBoardRef,
   location: Located<unknown>,
 ): CompileError[] {
-  if (
-    ID_RE.test(ref.chapterId) &&
-    ID_RE.test(ref.sceneId) &&
-    ID_RE.test(ref.boardId)
-  ) {
+  if (hasValidAnalysisRefSegments(ref.chapterId, ref.sceneId, ref.boardId)) {
     return [];
   }
 
@@ -58,6 +70,23 @@ export function validateAnalysisBoardRef(
       code: "invalidAnalysisBoardRef",
       message:
         "Analysis board references require non-empty slug chapterId, sceneId, and boardId segments.",
+      sourceFile: location.sourceFile,
+      line: location.line,
+    },
+  ];
+}
+
+export function validateAnalysisSceneRef(
+  ref: AnalysisSceneRef,
+  location: Located<unknown>,
+): CompileError[] {
+  if (hasValidAnalysisRefSegments(ref.chapterId, ref.sceneId)) return [];
+
+  return [
+    {
+      code: "invalidAnalysisSceneRef",
+      message:
+        "Analysis scene references require non-empty slug chapterId and sceneId segments.",
       sourceFile: location.sourceFile,
       line: location.line,
     },
@@ -108,4 +137,8 @@ function indexDefinitions<T extends LocatedDefinition>(
     index.set(definition.id, definition);
   }
   return index;
+}
+
+function hasValidAnalysisRefSegments(...segments: string[]): boolean {
+  return segments.every((segment) => ID_RE.test(segment));
 }

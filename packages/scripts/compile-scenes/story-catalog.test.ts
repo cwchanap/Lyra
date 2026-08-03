@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { emptyStoryCatalog } from "./parser-story-catalog";
 import {
   validateAnalysisBoardRef,
+  validateAnalysisSceneRef,
   validateSetPrimaryObjectiveTarget,
   validateStoryCatalog,
 } from "./story-catalog";
@@ -146,6 +147,64 @@ describe("story catalog validation", () => {
         line: 14,
       }),
     );
+  });
+
+  it("rejects hand-built objectives with the reserved null ID", () => {
+    const catalog = emptyStoryCatalog("story_catalog.md");
+    catalog.objectives.push({
+      id: "null",
+      label: "Clear the active objective",
+      summary: "Reserved sentinel.",
+      kind: "primary",
+      sortOrder: 1,
+      sourceFile: "story_catalog.md",
+      line: 17,
+    });
+
+    expect(validateStoryCatalog(catalog, [])).toContainEqual(
+      expect.objectContaining({
+        code: "reservedObjectiveId",
+        sourceFile: "story_catalog.md",
+        line: 17,
+      }),
+    );
+  });
+});
+
+describe("analysis scene reference validation", () => {
+  const location: Located<unknown> = {
+    sourceFile: "scene.md",
+    line: 7,
+  };
+
+  it("accepts a fully qualified slug-only reference", () => {
+    expect(
+      validateAnalysisSceneRef(
+        { chapterId: "chapter_1", sceneId: "analysis_scene_8_5" },
+        location,
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ["chapterId", ""],
+    ["chapterId", "Chapter_1"],
+    ["sceneId", "scene-1"],
+    ["sceneId", "scene space"],
+  ] as const)("rejects an invalid %s segment", (field, value) => {
+    const ref = {
+      chapterId: "chapter_1",
+      sceneId: "analysis_scene_8_5",
+      [field]: value,
+    };
+
+    expect(validateAnalysisSceneRef(ref, location)).toEqual([
+      expect.objectContaining({
+        code: "invalidAnalysisSceneRef",
+        sourceFile: "scene.md",
+        line: 7,
+      }),
+    ]);
   });
 });
 

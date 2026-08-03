@@ -338,6 +338,62 @@ describe("validator", () => {
     expect(errors).toEqual([]);
   });
 
+  it("defers story predicates from legacy investigation-local reachability", () => {
+    const scene = mkInvestigationScene({ id: "story_gated_investigation" });
+    scene.sublocations[0]!.hotspots[0]!.status = "locked";
+    scene.sublocations[0]!.hotspots[0]!.unlock = {
+      predicate: "fact_asserted",
+      id: "door_conflict",
+    };
+    scene.sublocations.push({
+      id: "story_gated_room",
+      label: "Story-gated room",
+      status: "locked",
+      unlock: { predicate: "fact_asserted", id: "door_conflict" },
+      reveals: [],
+      sceneTag: "tag",
+      assetCue: null,
+      transitionDialogue: [],
+      hotspots: [],
+      characters: [],
+      sourceFile: "i.md",
+      line: 10,
+    });
+    scene.outro = {
+      unlock: { predicate: "fact_asserted", id: "door_conflict" },
+      dialogue: [],
+    };
+
+    expect(
+      validate({
+        chapters: [mkChapter(1, ["i.md"])],
+        scenes: [{ chapterId: "chapter_1", file: "i.md", ast: scene }],
+      }),
+    ).toEqual([]);
+  });
+
+  it("defers story predicates from legacy interrogation-local reachability", () => {
+    const scene = mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          questions: [
+            mkQuestion({
+              id: "story_gated_question",
+              status: "locked",
+              unlock: { predicate: "fact_asserted", id: "door_conflict" },
+            }),
+          ],
+        }),
+      ],
+      outro: {
+        unlock: { predicate: "fact_asserted", id: "door_conflict" },
+        dialogue: [],
+      },
+    });
+
+    expect(validateInterrogation(scene)).toEqual([]);
+  });
+
   it("rejects a chapter manifest pointing to a non-existent scene file", () => {
     const errors = validate({
       chapters: [mkChapter(1, ["missing.md"])],
