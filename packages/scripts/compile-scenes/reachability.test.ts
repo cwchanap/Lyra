@@ -312,6 +312,152 @@ describe("buildReachabilityNodes", () => {
     });
   });
 
+  it("does not let a later statically unlocked phase reveal satisfy the current phase", () => {
+    const scene = interrogationScene([
+      inquiryPhase({
+        id: "first",
+        questions: [
+          inquiryQuestion({
+            id: "needs_late_fact",
+            status: "locked",
+            unlock: { predicate: "fact_asserted", id: "fact_a" },
+          }),
+        ],
+      }),
+      inquiryPhase({
+        id: "later",
+        reveals: [{ kind: "assertFact", factId: "fact_a" }],
+        questions: [inquiryQuestion({ id: "later_question" })],
+      }),
+    ]);
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["interrogation_scene_1.md"])],
+      [record("chapter_1", "interrogation_scene_1.md", scene)],
+    );
+    const result = analyzeReachability({ nodes, catalog: storyCatalog() });
+
+    expect(
+      nodes.find(
+        (node) =>
+          node.key === "chapter_1/interrogation_scene_1/phase:later:entry",
+      ),
+    ).toMatchObject({
+      strictPredecessorKeys: [
+        "chapter_1/interrogation_scene_1/entry",
+        "chapter_1/interrogation_scene_1/phase:first:complete",
+      ],
+    });
+    expect(result.reachableNodeKeys).not.toContain(
+      "chapter_1/interrogation_scene_1/phase:later:entry",
+    );
+    expect(result.reachableNodeKeys).not.toContain(
+      "chapter_1/interrogation_scene_1/question:needs_late_fact:entry",
+    );
+    expect(result.mayAtoms).not.toContain("fact_asserted:fact_a");
+  });
+
+  it("hands off to a later statically unlocked phase after current completion", () => {
+    const scene = interrogationScene([
+      inquiryPhase({
+        id: "first",
+        questions: [inquiryQuestion({ id: "first_question" })],
+      }),
+      inquiryPhase({
+        id: "later",
+        reveals: [{ kind: "assertFact", factId: "fact_a" }],
+        questions: [inquiryQuestion({ id: "later_question" })],
+      }),
+    ]);
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["interrogation_scene_1.md"])],
+      [record("chapter_1", "interrogation_scene_1.md", scene)],
+    );
+    const result = analyzeReachability({ nodes, catalog: storyCatalog() });
+    const firstCompleteKey =
+      "chapter_1/interrogation_scene_1/phase:first:complete";
+    const laterEntryKey = "chapter_1/interrogation_scene_1/phase:later:entry";
+
+    expect(nodes.find((node) => node.key === laterEntryKey)).toMatchObject({
+      strictPredecessorKeys: [
+        "chapter_1/interrogation_scene_1/entry",
+        firstCompleteKey,
+      ],
+    });
+    expect(
+      nodes.findIndex((node) => node.key === firstCompleteKey),
+    ).toBeLessThan(nodes.findIndex((node) => node.key === laterEntryKey));
+    expect(result.reachableNodeKeys).toContain(firstCompleteKey);
+    expect(result.reachableNodeKeys).toContain(laterEntryKey);
+    expect(result.mayAtoms).toContain("fact_asserted:fact_a");
+  });
+
+  it("keeps a later phase eligible when an earlier phase is statically locked", () => {
+    const scene = interrogationScene([
+      inquiryPhase({
+        id: "locked_first",
+        status: "locked",
+        unlock: { predicate: "fact_asserted", id: "fact_a" },
+        questions: [inquiryQuestion({ id: "locked_question" })],
+      }),
+      inquiryPhase({
+        id: "available_later",
+        questions: [inquiryQuestion({ id: "available_question" })],
+      }),
+    ]);
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["interrogation_scene_1.md"])],
+      [record("chapter_1", "interrogation_scene_1.md", scene)],
+    );
+    const result = analyzeReachability({ nodes, catalog: storyCatalog() });
+    const laterEntryKey =
+      "chapter_1/interrogation_scene_1/phase:available_later:entry";
+
+    expect(nodes.find((node) => node.key === laterEntryKey)).toMatchObject({
+      strictPredecessorKeys: ["chapter_1/interrogation_scene_1/entry"],
+    });
+    expect(result.reachableNodeKeys).toContain(laterEntryKey);
+  });
+
+  it("uses required-before-optional runtime priority for guaranteed phase handoff", () => {
+    const scene = interrogationScene([
+      inquiryPhase({
+        id: "optional_first",
+        required: false,
+        questions: [inquiryQuestion({ id: "optional_question" })],
+      }),
+      inquiryPhase({
+        id: "required_later",
+        questions: [inquiryQuestion({ id: "required_question" })],
+      }),
+    ]);
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["interrogation_scene_1.md"])],
+      [record("chapter_1", "interrogation_scene_1.md", scene)],
+    );
+
+    expect(
+      nodes.find(
+        (node) =>
+          node.key ===
+          "chapter_1/interrogation_scene_1/phase:required_later:entry",
+      ),
+    ).toMatchObject({
+      strictPredecessorKeys: ["chapter_1/interrogation_scene_1/entry"],
+    });
+    expect(
+      nodes.find(
+        (node) =>
+          node.key ===
+          "chapter_1/interrogation_scene_1/phase:optional_first:entry",
+      ),
+    ).toMatchObject({
+      strictPredecessorKeys: [
+        "chapter_1/interrogation_scene_1/entry",
+        "chapter_1/interrogation_scene_1/phase:required_later:complete",
+      ],
+    });
+  });
+
   it("keeps each correct testimony alternative as one ordered breakthrough batch", () => {
     const question = inquiryQuestion({
       id: "contradiction",

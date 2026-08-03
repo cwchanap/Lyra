@@ -1910,10 +1910,29 @@ function buildInterrogationNodes(input: {
     }),
   );
 
+  const phaseEntryPredecessors = new Map<string, string>();
+  let previousGuaranteedPhaseCompleteKey: string | null = null;
+  const runtimePhaseOrder = [
+    ...scene.phases.filter((phase) => phase.required),
+    ...scene.phases.filter((phase) => !phase.required),
+  ];
+  for (const phase of runtimePhaseOrder) {
+    if (previousGuaranteedPhaseCompleteKey !== null) {
+      phaseEntryPredecessors.set(phase.id, previousGuaranteedPhaseCompleteKey);
+    }
+    // Rust may skip a statically locked phase. Only an unconditionally
+    // unlocked phase is guaranteed to become current and block every later
+    // phase in required-before-optional, author-preserving scheduler order.
+    if (phase.status === "unlocked") {
+      previousGuaranteedPhaseCompleteKey = `${scope.prefix}/phase:${phase.id}:complete`;
+    }
+  }
+
   for (const phase of scene.phases) {
     const phaseEntryKey = `${scope.prefix}/phase:${phase.id}:entry`;
     const phaseCompleteKey = `${scope.prefix}/phase:${phase.id}:complete`;
     const phaseAtom = interrogationPhaseAtom(scope, phase.id);
+    const serializedEntryPredecessor = phaseEntryPredecessors.get(phase.id);
 
     nodes.push(
       node({
@@ -1927,7 +1946,12 @@ function buildInterrogationNodes(input: {
         revealedTargetKeys: inboundTargetsFromInterrogationReveals(
           phase.reveals,
         ),
-        strictPredecessorKeys: [entryKey],
+        strictPredecessorKeys: [
+          entryKey,
+          ...(serializedEntryPredecessor === undefined
+            ? []
+            : [serializedEntryPredecessor]),
+        ],
         inboundTargetKey: `phase:${phase.id}`,
         requiresInboundReveal: phase.status === "locked",
         sourceFile: phase.sourceFile,
