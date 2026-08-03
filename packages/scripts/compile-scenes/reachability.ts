@@ -341,6 +341,27 @@ function buildObservedProducerIndex(
   );
 }
 
+function buildScenarioProducerIndex(
+  scenario: JointScenario,
+): ReadonlyMap<ReachabilityAtom, readonly string[]> {
+  const mutable = new Map<ReachabilityAtom, string[]>();
+  for (const [nodeKey, atoms] of scenario.producedAtomsByNodeKey) {
+    for (const atom of atoms) {
+      const producers = mutable.get(atom) ?? [];
+      producers.push(nodeKey);
+      mutable.set(atom, producers);
+    }
+  }
+  return new Map(
+    [...mutable]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([atom, keys]) => [
+        atom,
+        keys.sort((left, right) => left.localeCompare(right)),
+      ]),
+  );
+}
+
 function evaluatePositive(
   expression: PositiveExpression<ReachabilityPredicate>,
   atoms: ReadonlySet<ReachabilityAtom>,
@@ -1326,7 +1347,7 @@ function mustActiveFromScenario(
   scenario: JointScenario,
 ): MustActivePrimary {
   const successfulNodeKeys = new Set(scenario.outputsByNodeKey.keys());
-  const producerKeysByAtom = buildObservedProducerIndex(nodes, [scenario]);
+  const producerKeysByAtom = buildScenarioProducerIndex(scenario);
   const causalEdges = buildCausalDependencyEdges(nodes, producerKeysByAtom);
   const outcomeNodeKeys = [...successfulNodeKeys]
     .filter(
