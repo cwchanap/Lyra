@@ -393,7 +393,8 @@ work provides the production contract; do not author them in shipped content.
 #### Story targets in `Reveals:`
 
 In addition to the local `evidence:`, `statement:`, `question:`, and `phase:`
-targets, a phase, question, or correct-line reveal list may use:
+targets, a phase, question, or correct-line list recognizes these story-target
+spellings:
 
 ```text
 assert_fact:<fact_id>
@@ -407,6 +408,14 @@ set_primary_objective:null
 set_primary_objective:null; complete_current
 grant_authorization:<authorization_id>
 ```
+
+`grant_authorization:<authorization_id>` is **syntax-only** for current
+investigation/interrogation content. Every such production reveal batch has
+`representedAuthority: null`, so HPA-257 rejects it with
+`authorizationGrantOutsideAuthorityEvent` at compilation/startup validation.
+Do not put it in a production scene list. The only exceptions are a synthetic
+fixture with matching represented authority or a future HPA-264 authority-event
+adapter.
 
 Each typed ID must resolve in `story_catalog.md`. `resolve_question` has an
 explicit resolver requirement: its `fact_id` must exist, already be asserted
