@@ -125,6 +125,41 @@ export function analyzeReachability(input: {
   );
 
   const exclusiveOutcome = exclusiveOutcomeSelections(nodes);
+  // When the Cartesian product of one-shot alternatives exceeds SCENARIO_LIMIT,
+  // the enumerator stops before assigning the remaining one-shot groups. An
+  // absent selection entry means NO alternative is filtered out (see
+  // solveJointScenario), so every alternative of each unassigned group would
+  // execute together in the same scenario. That violates the runtime
+  // one-shot mutual-exclusion contract and can publish impossible combinations
+  // (e.g. a conjunction of two atoms that only distinct alternatives of the
+  // same event produce). Rather than emit unsound partial reachability, fail
+  // the compile: the author must reduce one-shot fan-out and recompile, at
+  // which point the full fixpoint runs.
+  if (exclusiveOutcome.overflowed && nodes.length > 0) {
+    const overflowError: ReachabilityDiagnostic = diagnostic(
+      nodes[0]!,
+      "scenarioLimitExceeded",
+      `Reachability scenario enumeration exceeded the limit of ${exclusiveOutcome.limit} ` +
+        `joint scenarios (enumerated ${exclusiveOutcome.enumeratedCount} before stopping). ` +
+        `One-shot mutual exclusion is not preserved across the unenumerated alternatives, ` +
+        `so reachability results would be unsound. Reduce one-shot event fan-out (e.g. merge ` +
+        `interrogation testimony-line reveals that each carry distinct one-shot events, or ` +
+        `split the chapter) and recompile.`,
+    );
+    return {
+      producerKeysByAtom,
+      reachableNodeKeys: new Set(),
+      mustReachableNodeKeys: new Set(),
+      mayAtoms: new Set(),
+      mustAtoms: new Set(),
+      mayActivePrimaryIds: new Set(),
+      mustActivePrimary: { kind: "uninitialized" },
+      mayCompletedPrimaryIds: new Set(),
+      mustCompletedPrimaryIds: new Set(),
+      errors: [overflowError],
+      warnings: [],
+    };
+  }
   const exclusiveSelections = exclusiveOutcome.selections;
 
   const scenarios: JointScenario[] = [];
@@ -194,20 +229,6 @@ export function analyzeReachability(input: {
 
   const errors = [...cycleDiagnostics];
   const warnings: ReachabilityDiagnostic[] = [];
-  if (exclusiveOutcome.overflowed && nodes.length > 0) {
-    warnings.push(
-      diagnostic(
-        nodes[0]!,
-        "scenarioLimitExceeded",
-        `Reachability scenario enumeration exceeded the limit of ${exclusiveOutcome.limit} ` +
-          `joint scenarios (enumerated ${exclusiveOutcome.enumeratedCount} before stopping). ` +
-          `The may/must fixpoint was solved only for the enumerated subset, so unreachable-content ` +
-          `and cycle diagnostics may be incomplete. Reduce one-shot event fan-out (e.g. merge ` +
-          `interrogation testimony-line reveals that each carry distinct one-shot events, or ` +
-          `split the chapter) and recompile.`,
-      ),
-    );
-  }
   for (const scenario of scenarios) {
     for (const error of scenario.errors) pushDiagnostic(errors, error);
     for (const warning of scenario.warnings) pushDiagnostic(warnings, warning);
@@ -569,10 +590,13 @@ function stableMinimalCycle(
  * `may` and once for `must`). Beyond this cap the cost is prohibitive and
  * almost always indicates a structural mistake (e.g. many independent
  * interrogation questions whose testimony lines each carry distinct
- * one-shot reveal events). When the cap is hit we stop expanding, run the
- * scenarios enumerated so far, and emit a `scenarioLimitExceeded` warning
- * so the author can refactor (split the chapter, reduce one-shot fan-out,
- * or merge events) instead of waiting on an exponential compile.
+ * one-shot reveal events). When the cap is hit we stop expanding and fail the
+ * compile with a `scenarioLimitExceeded` error. We do NOT solve the enumerated
+ * subset: the unenumerated one-shot groups would have no selection entry, so
+ * their alternatives would run together and violate the runtime mutual-
+ * exclusion contract. The author must refactor (split the chapter, reduce
+ * one-shot fan-out, or merge events) and recompile instead of waiting on an
+ * exponential compile.
  */
 const SCENARIO_LIMIT = 4096;
 
