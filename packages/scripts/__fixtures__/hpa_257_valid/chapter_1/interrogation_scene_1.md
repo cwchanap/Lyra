@@ -10,7 +10,7 @@
 - **Required:** false
 - **Status:** locked
 - **Unlock:** at_least(2, question:who_entered resolved, at_least(1, objective:prepare_request completed, authorization:narrow_export granted))
-- **Reveals:** [assert_fact:door_conflict, reveal_question:who_entered, resolve_question:who_entered@door_conflict, reveal_objective:verify_alibi, complete_objective:verify_alibi, set_primary_objective:present_request; complete_current]
+- **Reveals:** [reveal_question:who_entered, reveal_objective:verify_alibi, complete_objective:verify_alibi, set_primary_objective:present_request; complete_current]
 
 [場景：臨時詢問室，夜晚。]
 

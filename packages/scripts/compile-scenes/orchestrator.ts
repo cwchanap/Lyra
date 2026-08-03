@@ -41,6 +41,15 @@ import {
 import { validate, type SceneRecord } from "./validator";
 import { validateStoryCatalog } from "./story-catalog";
 import {
+  createAnalysisDefinitionRegistry,
+  type AnalysisDefinitionRegistry,
+} from "./analysis-definition-registry";
+import {
+  analyzeReachability,
+  buildReachabilityNodes,
+  type ReachabilityDiagnostic,
+} from "./reachability";
+import {
   CaseRecordEmissionError,
   emitChaptersIndex,
   emitInterrogationScene,
@@ -83,6 +92,11 @@ export type CompileOptions = {
    * `process.cwd()` when omitted for backward compatibility.
    */
   repoRoot?: string;
+  /**
+   * Synthetic analysis definitions used only by compiler fixtures until
+   * HPA-259 supplies production registrations.
+   */
+  analysisRegistry?: AnalysisDefinitionRegistry;
 };
 
 export type AssetReport = {
@@ -110,6 +124,9 @@ export type CompileResult =
   | { ok: false; errors: CompileError[] };
 
 export function compile(opts: CompileOptions): CompileResult {
+  const analysisRegistry =
+    opts.analysisRegistry ??
+    createAnalysisDefinitionRegistry({ scenes: [], boards: [] });
   const chapters: ASTChapter[] = [];
   const scenes: SceneRecord[] = [];
   const errors: CompileError[] = [];
@@ -375,10 +392,28 @@ export function compile(opts: CompileOptions): CompileResult {
   }
 
   // 4. Validate.
-  errors.push(
-    ...validate({ chapters, scenes, skippedReservedFiles, failedParseFiles }),
-  );
-  errors.push(...validateStoryCatalog(storyCatalog, scenes));
+  const validationErrors = validate({
+    chapters,
+    scenes,
+    skippedReservedFiles,
+    failedParseFiles,
+  });
+  const storyCatalogErrors = validateStoryCatalog(storyCatalog, scenes);
+  errors.push(...validationErrors, ...storyCatalogErrors);
+  // The abstract-effect simulation relies on the normal validator/catalog
+  // boundary having resolved every modeled target. Do not attempt it over a
+  // partial or semantically invalid corpus.
+  if (errors.length === 0) {
+    const nodes = buildReachabilityNodes({
+      chapters,
+      scenes,
+      catalog: storyCatalog,
+      analysisRegistry,
+    });
+    const progression = analyzeReachability({ nodes, catalog: storyCatalog });
+    errors.push(...sortReachabilityDiagnostics(progression.errors));
+    warnings.push(...sortReachabilityDiagnostics(progression.warnings));
+  }
   const caseRecordResult = compileCaseRecordCorpus(storyCatalog, scenes);
   if (caseRecordResult.ok) {
     warnings.push(...caseRecordResult.value.warnings);
@@ -530,6 +565,34 @@ function byChapterNumber(a: string, b: string): number {
   const an = Number(a.replace("chapter_", ""));
   const bn = Number(b.replace("chapter_", ""));
   return an - bn;
+}
+
+function sortReachabilityDiagnostics(
+  diagnostics: ReachabilityDiagnostic[],
+): ReachabilityDiagnostic[] {
+  return [...diagnostics].sort((left, right) => {
+    const sourceOrder = compareDiagnosticText(
+      normalizedDiagnosticPath(left.sourceFile),
+      normalizedDiagnosticPath(right.sourceFile),
+    );
+    if (sourceOrder !== 0) return sourceOrder;
+    if (left.line !== right.line) return left.line - right.line;
+    const codeOrder = compareDiagnosticText(left.code, right.code);
+    if (codeOrder !== 0) return codeOrder;
+    const nodeOrder = compareDiagnosticText(left.nodeKey, right.nodeKey);
+    if (nodeOrder !== 0) return nodeOrder;
+    return (left.targetIndex ?? -1) - (right.targetIndex ?? -1);
+  });
+}
+
+function normalizedDiagnosticPath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function compareDiagnosticText(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 export function formatErrors(errors: CompileError[]): string {
