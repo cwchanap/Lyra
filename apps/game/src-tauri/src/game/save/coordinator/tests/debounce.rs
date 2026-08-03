@@ -1418,3 +1418,119 @@ async fn stale_session_generation_fence_rejects_autosave_without_reinstalling_pe
         .tickets
         .contains_key(&current_request.ticket));
 }
+
+#[tokio::test(start_paused = true)]
+async fn stale_notify_durable_commit_is_rejected_before_mutating_coordinator_state() {
+    // The public `notify_durable_commit` path must enforce the generation
+    // fence atomically inside `issue_thumbnail`, before a stale ticket is
+    // issued. Otherwise the stale call would insert a ticket, supersede
+    // `latest_by_intent[Autosave]`, and publish `Capturing`, and the late
+    // `record_schedule_failure` fence (which early-returns on stale
+    // generations) would leave all of that installed.
+    let backend = Arc::new(RecordingBackend::default());
+    let coordinator = SaveCoordinator::with_backend(backend.clone());
+
+    // Simulate the post-replacement coordinator state that
+    // `replace_session_for_e2e` installs under its locks.
+    let serial_before = {
+        let mut state = coordinator.state.lock().unwrap();
+        state.next_session_generation = 2;
+        state.pending_autosave = None;
+        state.persistence_health = PersistenceHealthView::Healthy;
+        state.thumbnail_activity = ThumbnailActivityView::Idle;
+        state.next_autosave_serial
+    };
+
+    // An older-session durable commit through the public path returns `None`
+    // and must not touch any coordinator state.
+    assert!(coordinator.notify_durable_commit(1, 11).is_none());
+
+    let state = coordinator.state.lock().unwrap();
+    assert!(
+        state.tickets.is_empty(),
+        "stale notify must not issue a ticket"
+    );
+    assert!(
+        state.latest_by_intent.is_empty(),
+        "stale notify must not install a latest-intent ticket"
+    );
+    assert!(
+        state.pending_autosave.is_none(),
+        "stale notify must not install a pending autosave"
+    );
+    assert_eq!(
+        state.next_autosave_serial, serial_before,
+        "stale notify must not advance next_autosave_serial"
+    );
+    drop(state);
+    assert_eq!(
+        coordinator.persistence_health(),
+        PersistenceHealthView::Healthy,
+        "stale notify must not degrade health"
+    );
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Idle,
+        "stale notify must not publish Capturing"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn stale_notify_durable_commit_cannot_supersede_live_replacement_autosave_ticket() {
+    // Supersession regression: an old-session completion must not overwrite or
+    // cancel the replacement session's live autosave intent. Both the stale
+    // and the live autosave share `CaptureIntent::Autosave`, so without the
+    // atomic fence in `issue_thumbnail` the stale call would evict the live
+    // ticket from `latest_by_intent` and remove it from `tickets`, leaving the
+    // replacement session's pending autosave referencing a missing ticket.
+    let backend = Arc::new(RecordingBackend::default());
+    let coordinator = SaveCoordinator::with_backend(backend.clone());
+
+    {
+        let mut state = coordinator.state.lock().unwrap();
+        state.next_session_generation = 2;
+        state.pending_autosave = None;
+        state.persistence_health = PersistenceHealthView::Healthy;
+        state.thumbnail_activity = ThumbnailActivityView::Idle;
+    }
+
+    // Schedule a valid generation-2 autosave through the public path and
+    // retain its ticket as the live replacement intent.
+    let live_request = coordinator
+        .notify_durable_commit(2, 20)
+        .expect("current generation must schedule");
+    let live_pending = coordinator
+        .state
+        .lock()
+        .unwrap()
+        .pending_autosave
+        .clone()
+        .expect("live autosave must be pending");
+    assert_eq!(live_pending.ticket, live_request.ticket);
+
+    // An older-session durable commit arrives through the public path. It must
+    // be rejected atomically and must not disturb the live intent.
+    assert!(coordinator.notify_durable_commit(1, 11).is_none());
+
+    let state = coordinator.state.lock().unwrap();
+    assert!(
+        state.tickets.contains_key(&live_request.ticket),
+        "live replacement ticket must remain in tickets"
+    );
+    assert_eq!(
+        state.latest_by_intent.get(&CaptureIntent::Autosave),
+        Some(&live_request.ticket),
+        "latest autosave intent must still point at the live ticket"
+    );
+    let pending_after = state.pending_autosave.as_ref();
+    assert!(
+        pending_after.is_some_and(|pending| pending.ticket == live_request.ticket),
+        "pending autosave must still reference the live ticket"
+    );
+    drop(state);
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Capturing,
+        "thumbnail activity must still reflect the live capture"
+    );
+}

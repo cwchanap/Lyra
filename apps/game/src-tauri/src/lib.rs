@@ -5718,26 +5718,17 @@ mod tests {
 
             // Simulate replacement winning before the initial Pending
             // publication. No write was attempted, so the caller must see
-            // staleSessionGeneration, not saveWriteFailed.
+            // staleSessionGeneration, not saveWriteFailed. The generation fence
+            // lives inside `issue_thumbnail`, so the stale session is caught
+            // atomically at thumbnail preparation -- before a stale ticket is
+            // issued, before `latest_by_intent` is superseded, and before any
+            // Pending publication -- rather than leaking into `save_manual`.
             app.coordinator.next_session_generation().unwrap();
 
-            let ticket = app
+            let error = app
                 .coordinator
                 .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
-                .unwrap();
-            app.coordinator
-                .report_thumbnail_failure(&ticket.ticket)
-                .unwrap();
-
-            let error = save_manual_core(
-                &app,
-                SaveSlotRef::Manual { slot: 1 },
-                "Stale".into(),
-                ManualSlotExpectation::Empty,
-                ticket.ticket,
-            )
-            .await
-            .unwrap_err();
+                .unwrap_err();
 
             assert_eq!(error.code, "staleSessionGeneration");
         }
