@@ -38,6 +38,12 @@ export type ReachabilityEffect =
 
 export type ReachabilityNode = {
   key: string;
+  /**
+   * Durable runtime trigger identity. Distinct nodes with the same value are
+   * mutually exclusive outcomes of one one-shot event; analysis may commit at
+   * most one of them.
+   */
+  oneShotEventId: string;
   requirement: "mandatory" | "optional";
   legacyCompatibilityMode: boolean;
   initiallyReachable: boolean;
@@ -536,6 +542,7 @@ function buildQuestionBreakthroughNodes(input: {
     const combinedTargetCount = line.reveals.length + question.reveals.length;
     return node({
       key: `${scope.prefix}/question:${question.id}:line:${line.id}:breakthrough`,
+      oneShotEventId: `${scope.prefix}/question:${question.id}:breakthrough`,
       requirement:
         input.mandatory && correctLines.length === 1 ? "mandatory" : "optional",
       legacyCompatibilityMode:
@@ -581,6 +588,7 @@ function node(
       Pick<
         NodeDraft,
         | "condition"
+        | "oneShotEventId"
         | "implicitPrerequisites"
         | "effects"
         | "strictPredecessorKeys"
@@ -592,6 +600,7 @@ function node(
     >,
 ): NodeDraft {
   return {
+    oneShotEventId: input.key,
     condition: null,
     implicitPrerequisites: [],
     effects: [],

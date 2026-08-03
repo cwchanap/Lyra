@@ -359,21 +359,29 @@ describe("buildReachabilityNodes", () => {
     expect(
       breakthroughs.map((node) => ({
         key: node.key,
+        oneShotEventId: node.oneShotEventId,
         mayExecuteBeforeKeys: node.mayExecuteBeforeKeys,
         freeOrderRegionId: node.freeOrderRegionId,
       })),
     ).toEqual([
       {
         key: "chapter_1/interrogation_scene_1/question:contradiction:line:left:breakthrough",
+        oneShotEventId:
+          "chapter_1/interrogation_scene_1/question:contradiction:breakthrough",
         mayExecuteBeforeKeys: [],
         freeOrderRegionId: null,
       },
       {
         key: "chapter_1/interrogation_scene_1/question:contradiction:line:right:breakthrough",
+        oneShotEventId:
+          "chapter_1/interrogation_scene_1/question:contradiction:breakthrough",
         mayExecuteBeforeKeys: [],
         freeOrderRegionId: null,
       },
     ]);
+    expect(new Set(breakthroughs.map((node) => node.oneShotEventId)).size).toBe(
+      1,
+    );
   });
 
   it("retains an explicit interrogation outro expression on its completion node", () => {
