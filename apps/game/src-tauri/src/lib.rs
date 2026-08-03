@@ -4235,21 +4235,14 @@ mod tests {
                 .await
             });
 
-            // Wait for delete_save_core to publish Pending health,
-            // confirming it has started. Then yield briefly to let its
-            // synchronous reserve_delete_writer call enqueue the writer
-            // before replacement clears the queue.
-            let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
-            loop {
-                if app.coordinator.persistence_health() == PersistenceHealthView::Pending {
-                    break;
-                }
-                if tokio::time::Instant::now() >= deadline {
-                    panic!("delete_save_core did not publish Pending health in time");
-                }
-                tokio::time::sleep(Duration::from_millis(1)).await;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            // Deterministically confirm the DeleteSave writer is queued
+            // before replacement runs. `delete_save_core` publishes
+            // `Pending` *before* calling `reserve_delete_writer`, so polling
+            // health alone does not prove the writer is enqueued — a fixed
+            // sleep after `Pending` would let replacement clear an empty
+            // queue and let the delete run through the normal stale-storage
+            // guard later, masking the channel-close branch under test.
+            app.coordinator.wait_for_queued_delete_writer().await;
 
             // Replace the session — this invalidates the queued delete
             // writer, dropping its future and closing the result channel.
@@ -4260,13 +4253,22 @@ mod tests {
                 .unwrap();
             assert_eq!(replacement.generation, 2);
 
-            // Release the placeholder writer so the worker can drain.
-            let _ = release_tx.send(());
-
-            // The queued delete must resolve with staleSessionGeneration,
-            // not saveWriteFailed — no storage write was attempted and
-            // replacement was the actual cause of the channel close.
-            let delete_error = delete.await.unwrap().unwrap_err();
+            // Await the delete result with a bounded timeout *while the
+            // placeholder writer is still blocked*. The worker cannot drain
+            // the queue, so the only way the delete resolves here is the
+            // `result_rx.await -> Err(_)` channel-close branch: replacement
+            // dropped the queued future. If the placeholder were released
+            // first, the delete could instead run through the normal
+            // stale-storage guard and still return staleSessionGeneration,
+            // hiding the path under test.
+            let delete_error = tokio::time::timeout(
+                Duration::from_secs(2),
+                delete,
+            )
+            .await
+            .expect("invalidated queued delete must resolve while the placeholder writer is still blocked")
+            .unwrap()
+            .unwrap_err();
             assert_eq!(
                 delete_error.code, "staleSessionGeneration",
                 "invalidated queued delete must return staleSessionGeneration, not saveWriteFailed"
@@ -4277,6 +4279,10 @@ mod tests {
                 slot_path.exists(),
                 "invalidated queued delete must not remove the save"
             );
+
+            // Release the placeholder writer so the worker can drain and
+            // the runtime can shut down cleanly.
+            let _ = release_tx.send(());
 
             // Replacement health must remain Healthy.
             assert_eq!(
