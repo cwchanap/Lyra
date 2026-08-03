@@ -183,6 +183,20 @@ describe("parseUnlockExpr", () => {
     });
   });
 
+  it("keeps unsupported legacy question predicates unknown", () => {
+    expect(
+      parseUnlockExpr("question:who_entered answered", "legacy.md", 20),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: "unlockUnknownPredicate",
+        message: 'Unknown predicate prefix at: "question:who_entered answered"',
+        sourceFile: "legacy.md",
+        line: 20,
+      },
+    });
+  });
+
   it("rejects malformed input", () => {
     const result = parseUnlockExpr("evidence: collected", "test.md", 5);
     expect(result.ok).toBe(false);
@@ -262,6 +276,24 @@ describe("parseInterrogationUnlockExpr", () => {
         message: 'Unknown predicate prefix at: "hotspot:counter investigated"',
         sourceFile: "interrogation_scene_2.md",
         line: 20,
+      },
+    });
+  });
+
+  it("keeps the legacy diagnostic for a non-resolved question verb", () => {
+    expect(
+      parseInterrogationUnlockExpr(
+        "question:who_entered pending",
+        "legacy.md",
+        24,
+      ),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: "unlockMissingVerb",
+        message: 'Expected "answered" after question:who_entered.',
+        sourceFile: "legacy.md",
+        line: 24,
       },
     });
   });
