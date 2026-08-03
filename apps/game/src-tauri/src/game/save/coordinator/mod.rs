@@ -923,11 +923,31 @@ struct WriterQueueState {
     ordinary: VecDeque<QueuedWriterJob>,
 }
 
-#[derive(Default)]
 struct WriterQueue {
     state: Mutex<WriterQueueState>,
     #[cfg(test)]
     cleanup_before_lock: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    /// Test-only notification fired whenever a `WriterJobClass::DeleteSave`
+    /// job is placed into the ordinary queue. Tests await
+    /// [`Self::wait_for_queued_delete`] to deterministically confirm the
+    /// delete writer is queued before driving replacement, replacing the
+    /// racy "publish Pending then sleep" pattern — `delete_save_core`
+    /// publishes `Pending` *before* calling `reserve_delete_writer`, so
+    /// observing `Pending` alone does not prove the writer is enqueued.
+    #[cfg(test)]
+    delete_enqueued: Notify,
+}
+
+impl Default for WriterQueue {
+    fn default() -> Self {
+        Self {
+            state: Mutex::new(WriterQueueState::default()),
+            #[cfg(test)]
+            cleanup_before_lock: Mutex::new(None),
+            #[cfg(test)]
+            delete_enqueued: Notify::new(),
+        }
+    }
 }
 
 impl WriterQueue {
@@ -953,6 +973,8 @@ impl WriterQueue {
         class: WriterJobClass,
         run: CoordinatorFuture<'static, ()>,
     ) -> Result<(), GameError> {
+        #[cfg(test)]
+        let enqueued_delete = matches!(class, WriterJobClass::DeleteSave);
         {
             let mut state = self
                 .state
@@ -960,6 +982,10 @@ impl WriterQueue {
                 .map_err(|_| GameError::save_write_failed())?;
             if state.running {
                 Self::enqueue_locked(&mut state, class, run);
+                #[cfg(test)]
+                if enqueued_delete {
+                    self.delete_enqueued.notify_one();
+                }
                 return Ok(());
             }
         }
@@ -969,11 +995,40 @@ impl WriterQueue {
             .lock()
             .map_err(|_| GameError::save_write_failed())?;
         let start_worker = Self::enqueue_locked(&mut state, class, run);
+        #[cfg(test)]
+        if enqueued_delete {
+            self.delete_enqueued.notify_one();
+        }
         drop(state);
         if start_worker {
             start.send(()).map_err(|_| GameError::save_write_failed())?;
         }
         Ok(())
+    }
+
+    /// Test-only: block until a `WriterJobClass::DeleteSave` job is present
+    /// in the ordinary queue. Uses a check-then-wait loop against
+    /// [`Self::delete_enqueued`] so a notification issued before the wait
+    /// begins is not lost (`Notify::notify_one` stores a permit that the
+    /// next `Notified` future consumes).
+    #[cfg(test)]
+    async fn wait_for_queued_delete(&self) {
+        loop {
+            {
+                let state = self
+                    .state
+                    .lock()
+                    .expect("writer queue state mutex must not be poisoned");
+                if state
+                    .ordinary
+                    .iter()
+                    .any(|job| matches!(job.class, WriterJobClass::DeleteSave))
+                {
+                    return;
+                }
+            }
+            self.delete_enqueued.notified().await;
+        }
     }
 
     fn enqueue_cleanup<F>(
@@ -3265,6 +3320,17 @@ impl SaveCoordinator {
             WriterJobClass::DeleteSave,
             run,
         )
+    }
+
+    /// Test-only: deterministically wait until a `DeleteSave` writer job has
+    /// been enqueued by a prior `reserve_delete_writer` call. Replacement
+    /// tests use this instead of polling `PersistenceHealthView::Pending`
+    /// (which is published *before* the writer is enqueued) plus a fixed
+    /// sleep, so they can prove replacement dropped the queued future
+    /// rather than clearing an empty queue.
+    #[cfg(test)]
+    pub(crate) async fn wait_for_queued_delete_writer(&self) {
+        self.writer_queue.wait_for_queued_delete().await;
     }
 
     pub(crate) fn enqueue_orphan_cleanup(&self) -> Result<(), GameError> {
