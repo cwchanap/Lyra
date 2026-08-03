@@ -77,7 +77,7 @@ type CorpusContext = {
   guaranteedInventoryBeforeScene: Map<string, Set<string>>;
 };
 
-function isStoryPredicate(
+export function isStoryPredicate(
   predicate:
     | InvestigationLocalPredicate
     | InterrogationLocalPredicate
@@ -96,7 +96,7 @@ function isStoryPredicate(
   }
 }
 
-function isStoryRevealTarget(
+export function isStoryRevealTarget(
   target: InvestigationRevealTarget | InterrogationRevealTarget,
 ): target is StoryRevealTarget {
   switch (target.kind) {
@@ -113,7 +113,7 @@ function isStoryRevealTarget(
   }
 }
 
-function localInvestigationReveals(
+export function localInvestigationReveals(
   reveals: InvestigationRevealTarget[],
 ): RevealTarget[] {
   return reveals.filter(
@@ -121,7 +121,7 @@ function localInvestigationReveals(
   );
 }
 
-function localInterrogationReveals(
+export function localInterrogationReveals(
   reveals: InterrogationRevealTarget[],
 ): InterrogationLocalRevealTarget[] {
   return reveals.filter(
