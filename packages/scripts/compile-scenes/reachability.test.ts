@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createAnalysisDefinitionRegistry } from "./analysis-definition-registry";
-import { buildReachabilityNodes } from "./reachability";
+import {
+  analyzeReachability,
+  buildReachabilityNodes,
+  evaluateMay,
+  evaluateMust,
+  type ReachabilityNode,
+} from "./reachability";
 import type {
   ASTChapter,
   ASTHotspot,
@@ -465,6 +471,281 @@ describe("buildReachabilityNodes", () => {
   });
 });
 
+describe("positive dependency and base reachability", () => {
+  it("evaluates nested positive thresholds against may and must atoms", () => {
+    const expression = {
+      op: "at_least" as const,
+      count: 2,
+      conditions: [
+        atomExpression("a"),
+        {
+          op: "at_least" as const,
+          count: 2,
+          conditions: [
+            atomExpression("b"),
+            atomExpression("c"),
+            atomExpression("d"),
+          ],
+        },
+        atomExpression("e"),
+      ],
+    };
+
+    expect(evaluateMay(expression, new Set(["a", "b", "c"]))).toBe(true);
+    expect(evaluateMust(expression, new Set(["a", "b"]))).toBe(false);
+    expect(evaluateMust(expression, new Set(["a", "b", "c"]))).toBe(true);
+  });
+
+  it("rejects a direct positive self-reference", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("self", {
+        condition: atomExpression("fact_asserted:self"),
+        effects: [addAtom("fact_asserted:self")],
+      }),
+    ]);
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        code: "positiveSelfReference",
+        nodeKey: "self",
+      }),
+    ]);
+  });
+
+  it("emits one stable diagnostic for two-node and longer positive SCCs", () => {
+    const twoNode = analyzeSynthetic([
+      syntheticNode("b", {
+        condition: atomExpression("a"),
+        effects: [addAtom("b")],
+      }),
+      syntheticNode("a", {
+        condition: atomExpression("b"),
+        effects: [addAtom("a")],
+      }),
+    ]);
+    const longer = analyzeSynthetic([
+      syntheticNode("c", {
+        condition: atomExpression("b"),
+        effects: [addAtom("c")],
+      }),
+      syntheticNode("a", {
+        condition: atomExpression("c"),
+        effects: [addAtom("a")],
+      }),
+      syntheticNode("b", {
+        condition: atomExpression("a"),
+        effects: [addAtom("b")],
+      }),
+    ]);
+
+    expect(
+      twoNode.errors.filter(
+        (diagnostic) => diagnostic.code === "positiveDependencyCycle",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        nodeKey: "a",
+        message: expect.stringContaining("a -> b -> a"),
+      }),
+    ]);
+    expect(
+      longer.errors.filter(
+        (diagnostic) => diagnostic.code === "positiveDependencyCycle",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        nodeKey: "a",
+        message: expect.stringContaining("a -> b -> c -> a"),
+      }),
+    ]);
+  });
+
+  it("rejects a positive cycle even when one member is externally seeded", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("a", {
+        initiallyReachable: true,
+        condition: atomExpression("b"),
+        effects: [addAtom("a")],
+      }),
+      syntheticNode("b", {
+        condition: atomExpression("a"),
+        effects: [addAtom("b")],
+      }),
+    ]);
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({ code: "positiveDependencyCycle" }),
+    );
+  });
+
+  it("keeps may-before relations out of positive SCC input", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("a", {
+        initiallyReachable: true,
+        effects: [addAtom("a")],
+        mayExecuteBeforeKeys: ["b"],
+      }),
+      syntheticNode("b", {
+        condition: atomExpression("a"),
+        mayExecuteBeforeKeys: ["a"],
+      }),
+    ]);
+
+    expect(
+      result.errors.some((diagnostic) =>
+        diagnostic.code.startsWith("positive"),
+      ),
+    ).toBe(false);
+  });
+
+  it("reaches a nested threshold only after deterministic fixed-point iterations", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("seed", {
+        initiallyReachable: true,
+        effects: [addAtom("a")],
+      }),
+      syntheticNode("second", {
+        condition: atomExpression("a"),
+        effects: [addAtom("b"), addAtom("c")],
+      }),
+      syntheticNode("threshold", {
+        condition: {
+          op: "at_least",
+          count: 2,
+          conditions: [
+            atomExpression("a"),
+            {
+              op: "at_least",
+              count: 2,
+              conditions: [atomExpression("b"), atomExpression("c")],
+            },
+          ],
+        },
+        effects: [addAtom("done")],
+      }),
+    ]);
+
+    expect(result.reachableNodeKeys).toEqual(
+      new Set(["seed", "second", "threshold"]),
+    );
+    expect(result.mayAtoms).toContain("done");
+  });
+
+  it("does not combine mutually exclusive one-shot outcomes", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("left", {
+        oneShotEventId: "breakthrough",
+        initiallyReachable: true,
+        effects: [addAtom("left")],
+      }),
+      syntheticNode("right", {
+        oneShotEventId: "breakthrough",
+        initiallyReachable: true,
+        effects: [addAtom("right")],
+      }),
+      syntheticNode("impossible-threshold", {
+        condition: {
+          op: "at_least",
+          count: 2,
+          conditions: [atomExpression("left"), atomExpression("right")],
+        },
+      }),
+    ]);
+
+    expect(result.reachableNodeKeys).not.toContain("impossible-threshold");
+  });
+
+  it("reports unreachable new mandatory and optional nodes", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("mandatory", {
+        condition: atomExpression("missing"),
+      }),
+      syntheticNode("optional", {
+        requirement: "optional",
+        condition: atomExpression("missing"),
+      }),
+    ]);
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: "requiredContentUnreachable",
+        nodeKey: "mandatory",
+      }),
+    );
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: "optionalContentUnreachable",
+        nodeKey: "optional",
+      }),
+    );
+  });
+
+  it("suppresses new reachability diagnostics for legacy-only nodes", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("legacy-mandatory", {
+        legacyCompatibilityMode: true,
+        condition: atomExpression("missing"),
+      }),
+      syntheticNode("legacy-optional", {
+        requirement: "optional",
+        legacyCompatibilityMode: true,
+        condition: atomExpression("missing"),
+      }),
+    ]);
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it.each([
+    {
+      name: "no grant producer",
+      producer: null,
+      message: "no authored grant producer",
+    },
+    {
+      name: "mismatched authority",
+      producer: syntheticGrantProducer("grant", "other_authority", true),
+      message: 'do not match required authority "court"',
+    },
+    {
+      name: "unreachable matching producer",
+      producer: syntheticGrantProducer("grant", "court", false),
+      message: "has no reachable matching grant producer",
+    },
+  ])("rejects mandatory authorization with $name", ({ producer, message }) => {
+    const result = analyzeSynthetic(
+      [
+        ...(producer === null ? [] : [producer]),
+        mandatoryAuthorizationConsumer(),
+      ],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        code: "mandatoryAuthorizationUnreachable",
+        nodeKey: "consumer",
+        message: expect.stringContaining(message),
+      }),
+    ]);
+  });
+
+  it("accepts a reachable synthetic grant from the represented authority", () => {
+    const result = analyzeSynthetic(
+      [
+        syntheticGrantProducer("grant", "court", true),
+        mandatoryAuthorizationConsumer(),
+      ],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.reachableNodeKeys).toContain("consumer");
+    expect(result.mayAtoms).toContain("authorization_granted:permit");
+  });
+});
+
 function buildNodes(chapters: ASTChapter[], scenes: SceneRecord[]) {
   return buildReachabilityNodes({
     chapters,
@@ -475,6 +756,85 @@ function buildNodes(chapters: ASTChapter[], scenes: SceneRecord[]) {
       boards: [],
     }),
   });
+}
+
+function analyzeSynthetic(nodes: ReachabilityNode[], catalog = storyCatalog()) {
+  return analyzeReachability({ nodes, catalog });
+}
+
+function syntheticNode(
+  key: string,
+  overrides: Partial<ReachabilityNode> = {},
+): ReachabilityNode {
+  return {
+    key,
+    oneShotEventId: key,
+    requirement: "mandatory",
+    legacyCompatibilityMode: false,
+    initiallyReachable: false,
+    condition: null,
+    implicitPrerequisites: [],
+    effects: [],
+    representedAuthority: null,
+    strictPredecessorKeys: [],
+    mayExecuteBeforeKeys: [],
+    freeOrderRegionId: null,
+    sourceFile: "synthetic.md",
+    line: 1,
+    ...overrides,
+  };
+}
+
+function atomExpression(atom: string) {
+  return { predicate: "atom" as const, atom };
+}
+
+function addAtom(atom: string) {
+  return { kind: "addAtom" as const, atom, targetIndex: 0 };
+}
+
+function mandatoryAuthorizationConsumer(): ReachabilityNode {
+  return syntheticNode("consumer", {
+    condition: atomExpression("authorization_granted:permit"),
+  });
+}
+
+function syntheticGrantProducer(
+  key: string,
+  representedAuthority: string,
+  initiallyReachable: boolean,
+): ReachabilityNode {
+  return syntheticNode(key, {
+    requirement: "optional",
+    legacyCompatibilityMode: true,
+    initiallyReachable,
+    representedAuthority,
+    effects: [
+      {
+        kind: "story",
+        target: { kind: "grantAuthorization", authorizationId: "permit" },
+        targetIndex: 0,
+      },
+    ],
+  });
+}
+
+function catalogWithAuthorization(
+  id: string,
+  grantingAuthority: string,
+): ASTStoryCatalog {
+  const catalog = storyCatalog();
+  catalog.authorizations = [
+    {
+      id,
+      label: id,
+      summary: "summary",
+      grantingAuthority,
+      sourceFile: "story_catalog.md",
+      line: 8,
+    },
+  ];
+  return catalog;
 }
 
 function chapter(
