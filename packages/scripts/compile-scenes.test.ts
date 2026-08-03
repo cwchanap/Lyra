@@ -223,6 +223,99 @@ describe("compile (end-to-end against valid fixture)", () => {
     }
   });
 
+  it("emits HPA-257 expressions and ordered story targets without reshaping them", () => {
+    const outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-hpa-257-"));
+    const readJson = (path: string) =>
+      JSON.parse(readFileSync(resolve(outRoot, path), "utf-8"));
+    try {
+      const result = compile({
+        sourceRoot: "packages/scripts/__fixtures__/hpa_257_valid",
+        outputRoot: outRoot,
+      });
+      if (!result.ok) {
+        throw new Error("Compile failed:\n" + formatErrors(result.errors));
+      }
+
+      const investigation = readJson("chapter_1/investigation_scene_1.json");
+      expect(investigation.sublocations[0].hotspots[0].unlock).toEqual({
+        op: "at_least",
+        count: 2,
+        conditions: [
+          { predicate: "fact_asserted", id: "door_conflict" },
+          { predicate: "objective_completed", id: "prepare_request" },
+        ],
+      });
+      expect(investigation.sublocations[0].hotspots[0].reveals).toEqual([
+        { kind: "assertFact", factId: "door_conflict" },
+        { kind: "revealQuestion", questionId: "who_entered" },
+        {
+          kind: "resolveQuestion",
+          questionId: "who_entered",
+          factId: "door_conflict",
+        },
+        { kind: "revealObjective", objectiveId: "verify_alibi" },
+        { kind: "completeObjective", objectiveId: "verify_alibi" },
+        {
+          kind: "setPrimaryObjective",
+          completeCurrent: true,
+          nextObjectiveId: "present_request",
+        },
+      ]);
+      expect(investigation.sublocations[0].hotspots[0].reveals).toContainEqual({
+        kind: "setPrimaryObjective",
+        completeCurrent: true,
+        nextObjectiveId: "present_request",
+      });
+      expect(investigation.sublocations[0].hotspots[1].unlock).toEqual({
+        op: "at_least",
+        count: 2,
+        conditions: [
+          { predicate: "question_resolved", id: "who_entered" },
+          {
+            op: "at_least",
+            count: 1,
+            conditions: [
+              { predicate: "fact_asserted", id: "door_conflict" },
+              {
+                predicate: "objective_completed",
+                id: "prepare_request",
+              },
+            ],
+          },
+        ],
+      });
+
+      const interrogation = readJson("chapter_1/interrogation_scene_1.json");
+      expect(interrogation.phases[0].unlock).toEqual({
+        op: "at_least",
+        count: 2,
+        conditions: [
+          { predicate: "question_resolved", id: "who_entered" },
+          {
+            op: "at_least",
+            count: 1,
+            conditions: [
+              {
+                predicate: "objective_completed",
+                id: "prepare_request",
+              },
+              {
+                predicate: "authorization_granted",
+                id: "narrow_export",
+              },
+            ],
+          },
+        ],
+      });
+      expect(interrogation.phases[0].questions[0].unlock).toEqual({
+        predicate: "fact_asserted",
+        id: "door_conflict",
+      });
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
   it("emits story asset manifest for an asset-enabled fixture", () => {
     const outRoot = mkdtempSync(
       resolve(tmpdir(), "scene-compile-assets-scenes-"),
