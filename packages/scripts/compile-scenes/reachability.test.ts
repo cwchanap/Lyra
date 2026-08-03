@@ -2486,10 +2486,11 @@ function primaryCatalog(): ASTStoryCatalog {
 }
 
 describe("scenario limit", () => {
-  it("emits scenarioLimitExceeded and stops expanding when the Cartesian product exceeds the cap", () => {
+  it("fails with a scenarioLimitExceeded error and emits no partial reachability when the Cartesian product exceeds the cap", () => {
     // 13 one-shot events with 2 alternatives each => 2^13 = 8192 scenarios,
-    // which exceeds the 4096 cap. The enumerator must stop early and emit a
-    // single scenarioLimitExceeded warning rather than solving 8192 fixpoints.
+    // which exceeds the 4096 cap. The enumerator must stop early and fail the
+    // compile with a single scenarioLimitExceeded error rather than solving
+    // partial selections whose one-shot mutual exclusion is not preserved.
     const eventCount = 13;
     const nodes: ReachabilityNode[] = [];
     for (let index = 0; index < eventCount; index += 1) {
@@ -2512,14 +2513,86 @@ describe("scenario limit", () => {
 
     const result = analyzeSynthetic(nodes);
 
-    const limitWarnings = result.warnings.filter(
-      (warning) => warning.code === "scenarioLimitExceeded",
+    const limitErrors = result.errors.filter(
+      (error) => error.code === "scenarioLimitExceeded",
     );
-    expect(limitWarnings).toHaveLength(1);
-    expect(limitWarnings[0]!.message).toContain("4096");
-    // The may-atom set still reflects the enumerated subset; it must not be
-    // empty (the first event's alternatives are always enumerated).
-    expect(result.mayAtoms.size).toBeGreaterThan(0);
+    expect(limitErrors).toHaveLength(1);
+    expect(limitErrors[0]!.message).toContain("4096");
+    expect(
+      result.warnings.filter((w) => w.code === "scenarioLimitExceeded"),
+    ).toHaveLength(0);
+    // No partial reachability is published: the short-circuit returns empty
+    // result sets so unsound combinations cannot leak into packaged content.
+    expect(result.reachableNodeKeys.size).toBe(0);
+    expect(result.mayAtoms.size).toBe(0);
+  });
+
+  it("does not accept the conjunction of distinct atoms from a one-shot group skipped by overflow", () => {
+    // 12 one-shot events with 2 alternatives each fit under the cap (2^12 =
+    // 4096). A 13th event (event_12) would push the product to 8192 > 4096, so
+    // the enumerator stops BEFORE assigning event_12. Under the old behavior,
+    // an absent selection let both event_12 alternatives run together, so a
+    // downstream node requiring their distinct atoms (left AND right) was
+    // falsely reported reachable even though runtime can choose only one.
+    // The compile must fail before producing such reachability results.
+    const fillerCount = 12;
+    const nodes: ReachabilityNode[] = [];
+    for (let index = 0; index < fillerCount; index += 1) {
+      const eventId = `event_${String(index).padStart(2, "0")}`;
+      nodes.push(
+        syntheticNode(`${eventId}_a`, {
+          oneShotEventId: eventId,
+          initiallyReachable: true,
+          effects: [addAtom(`filler_${index}_a`)],
+        }),
+      );
+      nodes.push(
+        syntheticNode(`${eventId}_b`, {
+          oneShotEventId: eventId,
+          initiallyReachable: true,
+          effects: [addAtom(`filler_${index}_b`)],
+        }),
+      );
+    }
+    // The 13th event is the one skipped by overflow; its two alternatives
+    // produce distinct atoms `left` and `right`.
+    nodes.push(
+      syntheticNode("event_12_a", {
+        oneShotEventId: "event_12",
+        initiallyReachable: true,
+        effects: [addAtom("left")],
+      }),
+    );
+    nodes.push(
+      syntheticNode("event_12_b", {
+        oneShotEventId: "event_12",
+        initiallyReachable: true,
+        effects: [addAtom("right")],
+      }),
+    );
+    // A mandatory node requiring both `left` and `right`. Runtime can never
+    // satisfy this because event_12 is one-shot (only one alternative fires).
+    nodes.push(
+      syntheticNode("needs_left_and_right", {
+        requirement: "mandatory",
+        condition: {
+          op: "and" as const,
+          left: atomExpression("left"),
+          right: atomExpression("right"),
+        },
+      }),
+    );
+
+    const result = analyzeSynthetic(nodes);
+
+    expect(
+      result.errors.filter((e) => e.code === "scenarioLimitExceeded"),
+    ).toHaveLength(1);
+    // The short-circuit publishes no reachability, so the impossible
+    // conjunction is never accepted.
+    expect(result.reachableNodeKeys.has("needs_left_and_right")).toBe(false);
+    expect(result.mayAtoms.has("left")).toBe(false);
+    expect(result.mayAtoms.has("right")).toBe(false);
   });
 
   it("does not emit scenarioLimitExceeded when the product fits under the cap", () => {
