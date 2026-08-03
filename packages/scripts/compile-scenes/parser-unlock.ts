@@ -304,6 +304,7 @@ function parseAtLeast<P>(
 function parseInvestigationPredicate(
   t: Tokens,
 ): PredicateParseResult<InvestigationLocalPredicate | StoryPredicate> {
+  const predicateSource = t.peek();
   if (t.consume("evidence:")) {
     const id = t.consumeId();
     if (!id)
@@ -394,6 +395,18 @@ function parseInvestigationPredicate(
       );
     return { ok: true, value: { predicate: "hotspot_investigated", id } };
   }
+  if (t.consume("question:")) {
+    const id = t.consumeId();
+    if (id && t.consumeWord("resolved")) {
+      return { ok: true, value: { predicate: "question_resolved", id } };
+    }
+    return failure(
+      t.sourceFile,
+      t.line,
+      "unlockUnknownPredicate",
+      `Unknown predicate prefix at: "${predicateSource}"`,
+    );
+  }
   return parseStoryPredicate(t);
 }
 
@@ -455,7 +468,7 @@ function parseInterrogationPredicate(
       t.sourceFile,
       t.line,
       "unlockMissingVerb",
-      `Expected "answered" or "resolved" after question:${id}.`,
+      `Expected "answered" after question:${id}.`,
     );
   }
   if (t.consume("phase:")) {
@@ -497,24 +510,6 @@ function parseStoryPredicate(t: Tokens): PredicateParseResult<StoryPredicate> {
         `Expected "asserted" after fact:${id}.`,
       );
     return { ok: true, value: { predicate: "fact_asserted", id } };
-  }
-  if (t.consume("question:")) {
-    const id = t.consumeId();
-    if (!id)
-      return failure(
-        t.sourceFile,
-        t.line,
-        "unlockMissingId",
-        "Missing question id.",
-      );
-    if (!t.consumeWord("resolved"))
-      return failure(
-        t.sourceFile,
-        t.line,
-        "unlockMissingVerb",
-        `Expected "resolved" after question:${id}.`,
-      );
-    return { ok: true, value: { predicate: "question_resolved", id } };
   }
   if (t.consume("objective:")) {
     const id = t.consumeId();
