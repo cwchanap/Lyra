@@ -3,18 +3,109 @@ use crate::game::acquisition::AcquisitionCtx;
 use crate::game::dialogue_queue::{DialogueSegment, DialogueSegmentOriginV1};
 use crate::game::scenes::interrogation::InterrogationSceneState;
 use crate::game::scenes::investigation::InvestigationSceneState;
-use crate::game::schema::{InterrogationRevealTarget, RevealTarget};
+use crate::game::schema::{
+    CombinedInterrogationRevealTarget, InterrogationRevealTarget, InvestigationRevealTarget,
+    RevealTarget,
+};
 use crate::game::GameError;
 
-pub(super) fn apply_reveals_and_build_queue(
+/// Task 11 owns the wire union, but Task 13 owns the atomic story-state
+/// dispatcher. Keep the legacy reveal applicator usable by its existing local
+/// callers while making a mixed batch fail closed before any local target can
+/// mutate inventory or scene overrides.
+pub(super) trait InvestigationRevealItem {
+    fn local_target(&self) -> Option<&RevealTarget>;
+}
+
+impl InvestigationRevealItem for RevealTarget {
+    fn local_target(&self) -> Option<&RevealTarget> {
+        Some(self)
+    }
+}
+
+impl InvestigationRevealItem for InvestigationRevealTarget {
+    fn local_target(&self) -> Option<&RevealTarget> {
+        match self {
+            Self::Local(target) => Some(target),
+            Self::Story(_) => None,
+        }
+    }
+}
+
+pub(super) trait InterrogationRevealItem {
+    fn local_target(&self) -> Option<&InterrogationRevealTarget>;
+}
+
+impl InterrogationRevealItem for InterrogationRevealTarget {
+    fn local_target(&self) -> Option<&InterrogationRevealTarget> {
+        Some(self)
+    }
+}
+
+impl InterrogationRevealItem for CombinedInterrogationRevealTarget {
+    fn local_target(&self) -> Option<&InterrogationRevealTarget> {
+        match self {
+            Self::Local(target) => Some(target),
+            Self::Story(_) => None,
+        }
+    }
+}
+
+fn story_reveal_dispatch_unavailable() -> GameError {
+    GameError::scene_validation_failed(
+        "story reveal dispatch is unavailable before HPA-257 Task 13".into(),
+    )
+}
+
+fn preflight_investigation_reveal_items<T: InvestigationRevealItem>(
+    reveals: &[T],
+) -> Result<(), GameError> {
+    if reveals.iter().any(|target| target.local_target().is_none()) {
+        return Err(story_reveal_dispatch_unavailable());
+    }
+    Ok(())
+}
+
+fn preflight_interrogation_reveal_items<T: InterrogationRevealItem>(
+    reveals: &[T],
+) -> Result<(), GameError> {
+    if reveals.iter().any(|target| target.local_target().is_none()) {
+        return Err(story_reveal_dispatch_unavailable());
+    }
+    Ok(())
+}
+
+/// Run this before consuming an investigation trigger that carries the new
+/// Task 11 union. Task 13 replaces this with an atomic local-plus-story
+/// dispatcher.
+pub(super) fn preflight_investigation_reveals(
+    reveals: &[InvestigationRevealTarget],
+) -> Result<(), GameError> {
+    preflight_investigation_reveal_items(reveals)
+}
+
+/// Run this before consuming an interrogation trigger that carries the new
+/// Task 11 union. Task 13 replaces this with an atomic local-plus-story
+/// dispatcher.
+pub(super) fn preflight_interrogation_reveals(
+    reveals: &[CombinedInterrogationRevealTarget],
+) -> Result<(), GameError> {
+    preflight_interrogation_reveal_items(reveals)
+}
+
+pub(super) fn apply_reveals_and_build_queue<T: InvestigationRevealItem>(
     scene: &mut InvestigationSceneState,
     acq: &mut AcquisitionCtx,
     trigger_segment: Option<DialogueSegment>,
-    reveals: &[RevealTarget],
+    reveals: &[T],
     chapter_id: &str,
 ) -> Result<Vec<DialogueSegment>, GameError> {
+    preflight_investigation_reveal_items(reveals)?;
     let mut segments: Vec<DialogueSegment> = trigger_segment.into_iter().collect();
     for r in reveals {
+        let r = r
+            .local_target()
+            .ok_or_else(story_reveal_dispatch_unavailable)?;
         match r {
             RevealTarget::Evidence { id } => {
                 if let Some(def) = scene.def.evidence_manifest.iter().find(|e| e.id == *id) {
@@ -63,15 +154,19 @@ pub(super) fn apply_reveals_and_build_queue(
     Ok(segments)
 }
 
-pub(super) fn apply_interrogation_reveals_and_build_queue(
+pub(super) fn apply_interrogation_reveals_and_build_queue<T: InterrogationRevealItem>(
     scene: &mut InterrogationSceneState,
     acq: &mut AcquisitionCtx,
     trigger_segment: Option<DialogueSegment>,
-    reveals: &[InterrogationRevealTarget],
+    reveals: &[T],
     chapter_id: &str,
 ) -> Result<Vec<DialogueSegment>, GameError> {
+    preflight_interrogation_reveal_items(reveals)?;
     let mut segments: Vec<DialogueSegment> = trigger_segment.into_iter().collect();
     for r in reveals {
+        let r = r
+            .local_target()
+            .ok_or_else(story_reveal_dispatch_unavailable)?;
         match r {
             InterrogationRevealTarget::Evidence { id } => {
                 if let Some(def) = scene.def.evidence_manifest.iter().find(|e| e.id == *id) {
@@ -120,8 +215,10 @@ pub(super) fn apply_interrogation_reveals_and_build_queue(
 mod tests {
     use super::*;
     use crate::game::schema::{
-        AutoMarker, DialogueItem, EvidenceJson, InterrogationOutroJson, InterrogationOutroUnlock,
-        InterrogationSceneJson, InvestigationSceneJson, OutroJson, OutroUnlock,
+        AutoMarker, CombinedInterrogationRevealTarget, DialogueItem, EvidenceJson,
+        InterrogationOutroJson, InterrogationOutroUnlock, InterrogationSceneJson,
+        InvestigationRevealTarget, InvestigationSceneJson, OutroJson, OutroUnlock,
+        StoryRevealTarget,
     };
     use crate::game::state::Inventory;
     use crate::game::test_support::catalog_with_case_records;
@@ -220,6 +317,85 @@ mod tests {
             },
             items,
         )
+    }
+
+    // Break caught: an HPA-257 story target arrives in a mixed batch after a
+    // legacy local target, and the legacy path mutates inventory before Task
+    // 13 has an atomic story dispatcher to own the whole batch.
+    #[test]
+    fn investigation_mixed_batch_rejects_before_any_local_reveal_mutates() {
+        let catalog = evidence_catalog("i", &["coffee"]);
+        let mut scene = empty_scene_with_evidence(vec![evidence_def("coffee")]);
+        let mut inventory = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
+        let mut acquisition = AcquisitionCtx {
+            catalog: &catalog,
+            inventory: &mut inventory,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
+        };
+        let reveals = [
+            InvestigationRevealTarget::Local(RevealTarget::Evidence {
+                id: "coffee".into(),
+            }),
+            InvestigationRevealTarget::Story(StoryRevealTarget::AssertFact {
+                fact_id: "fact_a".into(),
+            }),
+        ];
+
+        let error = apply_reveals_and_build_queue(
+            &mut scene,
+            &mut acquisition,
+            None,
+            &reveals,
+            "chapter_1",
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, "sceneValidationFailed");
+        assert!(!inventory.has_evidence("coffee"));
+        assert!(events.is_empty());
+        assert_eq!(next_ordinal, 0);
+    }
+
+    #[test]
+    fn interrogation_mixed_batch_rejects_before_any_local_reveal_mutates() {
+        let catalog = evidence_catalog("interrogation", &["coffee"]);
+        let mut scene = empty_interrogation_scene_with_evidence(vec![evidence_def("coffee")]);
+        let mut inventory = Inventory::default();
+        let mut events = Vec::new();
+        let mut next_ordinal = 0;
+        let mut acquisition = AcquisitionCtx {
+            catalog: &catalog,
+            inventory: &mut inventory,
+            pending_events: &mut events,
+            command_id: 1,
+            next_ordinal: &mut next_ordinal,
+        };
+        let reveals = [
+            CombinedInterrogationRevealTarget::Local(InterrogationRevealTarget::Evidence {
+                id: "coffee".into(),
+            }),
+            CombinedInterrogationRevealTarget::Story(StoryRevealTarget::AssertFact {
+                fact_id: "fact_a".into(),
+            }),
+        ];
+
+        let error = apply_interrogation_reveals_and_build_queue(
+            &mut scene,
+            &mut acquisition,
+            None,
+            &reveals,
+            "chapter_1",
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, "sceneValidationFailed");
+        assert!(!inventory.has_evidence("coffee"));
+        assert!(events.is_empty());
+        assert_eq!(next_ordinal, 0);
     }
 
     // Break caught: a reveal swallows the catalog mismatch and commits an

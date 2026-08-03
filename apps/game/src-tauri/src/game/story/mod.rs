@@ -5,7 +5,7 @@ mod view;
 
 pub(crate) use catalog::StoryCatalog;
 #[allow(unused_imports)]
-pub(in crate::game) use catalog::{CaseRecordDefinition, SourceGroupDefinition};
+pub(in crate::game) use catalog::{CaseRecordDefinition, ObjectiveKind, SourceGroupDefinition};
 #[allow(unused_imports)]
 pub(in crate::game) use mutations::MutationOutcome;
 #[allow(unused_imports)]

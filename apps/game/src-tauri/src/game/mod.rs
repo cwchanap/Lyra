@@ -750,6 +750,9 @@ impl GameEngine {
                 reveals.clone(),
             )
         };
+        // HPA-257 introduces story reveal wrappers before Task 13 owns their
+        // atomic dispatcher. Reject them before phase entry is consumed.
+        reveals::preflight_interrogation_reveals(&reveals)?;
         let queue_items = {
             let scene = match &mut self.scene {
                 SceneRuntime::Interrogation(scene) => scene,
@@ -803,13 +806,19 @@ impl GameEngine {
                         s.visual_asset_cue(),
                         s.transition_dialogue.clone(),
                         s.reveals.clone(),
+                        !inv.entered_sublocations.contains(&s.id),
                     )
                 }),
             _ => None,
         };
-        let Some((id, scene_tag, asset_cue, transition, sub_reveals)) = chosen else {
+        let Some((id, scene_tag, asset_cue, transition, sub_reveals, first_entry)) = chosen else {
             return Ok(());
         };
+        // Do not mark the first sublocation entry before the Task 13 story
+        // dispatcher is available for this mixed reveal batch.
+        if first_entry {
+            reveals::preflight_investigation_reveals(&sub_reveals)?;
+        }
 
         // Phase 2 — write: mutate scene + inventory; reveals fire on first entry.
         let queue_items = {
@@ -817,7 +826,6 @@ impl GameEngine {
                 SceneRuntime::Investigation(i) => i,
                 _ => return Ok(()),
             };
-            let first_entry = !inv.entered_sublocations.contains(&id);
             inv.current_sublocation_id = Some(id.clone());
             inv.record_sublocation_entered(&id);
             if first_entry {
@@ -895,6 +903,10 @@ impl GameEngine {
             let first_time = !inv.inspected_hotspots.contains(hotspot_id);
             (hot_def, first_time)
         };
+        if first_time {
+            // Preserve the trigger when a Task 11 story wrapper is present.
+            reveals::preflight_investigation_reveals(&hot_def.reveals)?;
+        }
 
         self.command_tx(|engine, command_id, next_ordinal| {
             // Phase 2 — compute: build queue (mutates scene + inventory together).
@@ -995,6 +1007,10 @@ impl GameEngine {
                 .contains(&(character_id.into(), topic_id.into()));
             (topic, first_time)
         };
+        if first_time {
+            // Preserve the trigger when a Task 11 story wrapper is present.
+            reveals::preflight_investigation_reveals(&topic.reveals)?;
+        }
 
         self.command_tx(|engine, command_id, next_ordinal| {
             let queue_items = if first_time {
@@ -1084,6 +1100,11 @@ impl GameEngine {
                 first_entry,
             )
         };
+        if first_entry {
+            // Do not consume a first entry until Task 13 can atomically apply
+            // the story half of this union.
+            reveals::preflight_investigation_reveals(&sub_reveals)?;
+        }
 
         self.command_tx(|engine, command_id, next_ordinal| {
             let queue_items = if first_entry {
@@ -1263,6 +1284,24 @@ impl GameEngine {
                         ))
                     }
                 };
+                // `begin_question` auto-breaks questions with no visible
+                // contradiction, which immediately consumes their
+                // question-level reveal trigger. Preflight that path before
+                // changing cross-examination state.
+                let already_broken = scene.is_question_broken(question_id);
+                let auto_break_reveals = scene.question(question_id).and_then(|question| {
+                    let has_visible_contradiction = question.testimony.lines.iter().any(|line| {
+                        line.contradiction.is_some()
+                            && line
+                                .content
+                                .iter()
+                                .any(|item| !matches!(item, DialogueItem::SceneTag { .. }))
+                    });
+                    (already_broken || !has_visible_contradiction).then(|| question.reveals.clone())
+                });
+                if let Some(reveals) = &auto_break_reveals {
+                    reveals::preflight_interrogation_reveals(reveals)?;
+                }
                 scene.begin_question(question_id);
                 let phase_id = scene.current_phase_id.clone().ok_or_else(|| {
                     GameError::internal("question started without a current phase".into())
@@ -1284,10 +1323,7 @@ impl GameEngine {
                 // it is asked. There is no `On Correct` line to carry its
                 // reveals, so fire the question-level reveals here.
                 if scene.is_question_broken(question_id) {
-                    let reveals = scene
-                        .question(question_id)
-                        .map(|question| question.reveals.clone())
-                        .unwrap_or_default();
+                    let reveals = auto_break_reveals.unwrap_or_default();
                     let queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
                         &mut AcquisitionCtx {
@@ -1516,6 +1552,10 @@ impl GameEngine {
                     if let Some(question) = scene.question(&question_id) {
                         reveals.extend(question.reveals.iter().cloned());
                     }
+                    // `record_break` follows this call, so reject a mixed
+                    // batch before either its local half or the trigger state
+                    // can be consumed.
+                    reveals::preflight_interrogation_reveals(&reveals)?;
                     let trigger_segment = interrogation_segment(
                         &chapter_id,
                         &scene_id,
@@ -2083,12 +2123,13 @@ mod tests {
     use crate::game::dialogue_queue::DialogueSegmentOriginV1;
     use crate::game::scenes::interrogation::InterrogationSceneState;
     use crate::game::schema::{
-        AudioChannelJson, AudioCueJson, AutoMarker, CharacterJson, EvidenceJson, HotspotJson,
-        InquiryQuestionJson, InterrogationOutroJson, InterrogationOutroUnlock,
-        InterrogationPhaseJson, InterrogationRevealTarget, InterrogationSceneJson, InventoryTarget,
-        InvestigationSceneJson, LockStatus, OutroJson, OutroUnlock, RevealTarget, SceneJson,
-        SceneType, StatementJson, SublocationJson, TestimonyJson, TestimonyLineJson, TopicJson,
-        UnlockExpr, VisualAssetCueJson,
+        AudioChannelJson, AudioCueJson, AutoMarker, CharacterJson,
+        CombinedInterrogationRevealTarget, EvidenceJson, HotspotJson, InquiryQuestionJson,
+        InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
+        InterrogationRevealTarget, InterrogationSceneJson, InventoryTarget,
+        InvestigationRevealTarget, InvestigationSceneJson, LockStatus, OutroJson, OutroUnlock,
+        RevealTarget, SceneJson, SceneType, StatementJson, StoryRevealTarget, SublocationJson,
+        TestimonyJson, TestimonyLineJson, TopicJson, UnlockExpr, VisualAssetCueJson,
     };
     use crate::game::state::{EvidenceRecord, SceneRef, StatementRecord};
 
@@ -2171,10 +2212,12 @@ mod tests {
                     status: LockStatus::Unlocked,
                     unlock: None,
                     reveals: vec![
-                        RevealTarget::Evidence {
+                        InvestigationRevealTarget::Local(RevealTarget::Evidence {
                             id: "receipt".into(),
-                        },
-                        RevealTarget::Statement { id: "alibi".into() },
+                        }),
+                        InvestigationRevealTarget::Local(RevealTarget::Statement {
+                            id: "alibi".into(),
+                        }),
                     ],
                     layout: None,
                     inspect_dialogue: vec![DialogueItem::Action {
@@ -3548,7 +3591,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let inquiry_phase = |id: &str,
                              required: bool,
                              question_id: &str,
-                             reveals: Vec<InterrogationRevealTarget>,
+                             reveals: Vec<CombinedInterrogationRevealTarget>,
                              entry_dialogue: Vec<DialogueItem>| {
             InterrogationPhaseJson::Inquiry {
                 id: id.into(),
@@ -3585,9 +3628,11 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                     "optional_inquiry",
                     false,
                     "optional_q",
-                    vec![InterrogationRevealTarget::Evidence {
-                        id: "optional_leak".into(),
-                    }],
+                    vec![CombinedInterrogationRevealTarget::Local(
+                        InterrogationRevealTarget::Evidence {
+                            id: "optional_leak".into(),
+                        },
+                    )],
                     vec![DialogueItem::Line {
                         speaker: "A".into(),
                         text: "optional entry".into(),
@@ -3654,33 +3699,34 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         // rejected — otherwise its reveals would fire before the phase's
         // entry dialogue and before the engine accounts for it as a
         // cross-exam in the current phase.
-        let inquiry_phase = |id: &str,
-                             required: bool,
-                             question_id: &str,
-                             reveals: Vec<InterrogationRevealTarget>| {
-            InterrogationPhaseJson::Inquiry {
-                id: id.into(),
-                label: id.into(),
-                subject: subject(),
-                required,
-                status: LockStatus::Unlocked,
-                unlock: None,
-                reveals,
-                scene_tag: "interrogation_room".into(),
-                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
-                entry_dialogue: vec![],
-                complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
-                questions: vec![crate::game::schema::InquiryQuestionJson {
-                    id: question_id.into(),
-                    label: question_id.into(),
+        let inquiry_phase =
+            |id: &str,
+             required: bool,
+             question_id: &str,
+             reveals: Vec<CombinedInterrogationRevealTarget>| {
+                InterrogationPhaseJson::Inquiry {
+                    id: id.into(),
+                    label: id.into(),
+                    subject: subject(),
+                    required,
                     status: LockStatus::Unlocked,
-                    required: true,
                     unlock: None,
-                    reveals: vec![],
-                    testimony: empty_testimony(),
-                }],
-            }
-        };
+                    reveals,
+                    scene_tag: "interrogation_room".into(),
+                    flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
+                    entry_dialogue: vec![],
+                    complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+                    questions: vec![crate::game::schema::InquiryQuestionJson {
+                        id: question_id.into(),
+                        label: question_id.into(),
+                        status: LockStatus::Unlocked,
+                        required: true,
+                        unlock: None,
+                        reveals: vec![],
+                        testimony: empty_testimony(),
+                    }],
+                }
+            };
         let scene = InterrogationSceneJson {
             id: "interrogation_scene_1".into(),
             title: "Interrogation".into(),
@@ -3693,9 +3739,11 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                     "optional_inquiry",
                     false,
                     "optional_q",
-                    vec![InterrogationRevealTarget::Evidence {
-                        id: "optional_leak".into(),
-                    }],
+                    vec![CombinedInterrogationRevealTarget::Local(
+                        InterrogationRevealTarget::Evidence {
+                            id: "optional_leak".into(),
+                        },
+                    )],
                 ),
             ],
             evidence_manifest: vec![EvidenceJson {
@@ -3988,6 +4036,83 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
     }
 
     #[test]
+    fn story_hotspot_batch_rejects_before_consuming_the_inspection_trigger() {
+        let mut scene = investigation_scene_with_intro("investigation_scene_1", vec![]);
+        scene.sublocations[0].hotspots.push(HotspotJson {
+            id: "desk".into(),
+            label: "Desk".into(),
+            description: "Desk".into(),
+            status: LockStatus::Unlocked,
+            unlock: None,
+            reveals: vec![
+                InvestigationRevealTarget::Local(RevealTarget::Evidence { id: "note".into() }),
+                InvestigationRevealTarget::Story(StoryRevealTarget::AssertFact {
+                    fact_id: "fact_a".into(),
+                }),
+            ],
+            layout: None,
+            inspect_dialogue: vec![],
+            on_reexamine: None,
+        });
+        scene.evidence_manifest.push(EvidenceJson {
+            id: "note".into(),
+            name: "Note".into(),
+            description: "Note".into(),
+            details: "Note".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
+            image_asset_id: None,
+            on_collect: vec![],
+            on_reexamine: None,
+        });
+        scene.outro = OutroJson {
+            unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
+                _predicate: crate::game::schema::PredicateEvidenceCollected::X,
+                id: "note".into(),
+            }),
+            dialogue: vec![],
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.prime_initial_queue().unwrap();
+
+        let error = engine.inspect_hotspot("desk").unwrap_err();
+
+        assert_eq!(error.code, "sceneValidationFailed");
+        let SceneRuntime::Investigation(scene) = &engine.scene else {
+            panic!("expected investigation scene");
+        };
+        assert!(!scene.inspected_hotspots.contains("desk"));
+        assert!(!engine.inventory.has_evidence("note"));
+    }
+
+    #[test]
+    fn story_auto_break_batch_rejects_before_consuming_the_question_trigger() {
+        let mut definition = two_line_question_scene();
+        let InterrogationPhaseJson::Inquiry { questions, .. } = &mut definition.phases[0];
+        let question = questions.first_mut().expect("fixture question");
+        question.testimony.lines.clear();
+        question.reveals = vec![
+            CombinedInterrogationRevealTarget::Local(InterrogationRevealTarget::Evidence {
+                id: "unrelated".into(),
+            }),
+            CombinedInterrogationRevealTarget::Story(StoryRevealTarget::AssertFact {
+                fact_id: "fact_a".into(),
+            }),
+        ];
+        let mut engine = empty_engine_with_interrogation_scene(definition, 1);
+        engine.prime_initial_queue().unwrap();
+
+        let error = engine.ask_interrogation_question("alibi").unwrap_err();
+
+        assert_eq!(error.code, "sceneValidationFailed");
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(!scene.is_question_broken("alibi"));
+        assert!(matches!(scene.cross_exam(), CrossExam::Idle));
+        assert!(!engine.inventory.has_evidence("unrelated"));
+    }
+
+    #[test]
     fn present_interrogation_evidence_rejects_when_not_presenting_before_missing_inventory() {
         // cross_exam is Idle (no ask/challenge yet) — the "must be
         // Presenting" guard should fire before the inventory-target lookup,
@@ -4025,7 +4150,9 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                     description: "Desk".into(),
                     status: LockStatus::Unlocked,
                     unlock: None,
-                    reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                    reveals: vec![InvestigationRevealTarget::Local(RevealTarget::Evidence {
+                        id: "note".into(),
+                    })],
                     layout: None,
                     inspect_dialogue: vec![],
                     on_reexamine: None,
@@ -4087,9 +4214,9 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                         label: "Alibi".into(),
                         status: LockStatus::Unlocked,
                         unlock: None,
-                        reveals: vec![RevealTarget::Statement {
+                        reveals: vec![InvestigationRevealTarget::Local(RevealTarget::Statement {
                             id: "alibi_statement".into(),
-                        }],
+                        })],
                         topic_dialogue: vec![],
                         on_reexamine: None,
                     }],
@@ -4260,7 +4387,9 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                     label: "Room B".into(),
                     status: LockStatus::Unlocked,
                     unlock: None,
-                    reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                    reveals: vec![InvestigationRevealTarget::Local(RevealTarget::Evidence {
+                        id: "note".into(),
+                    })],
                     scene_tag: "room_b".into(),
                     flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                     transition_dialogue: vec![],
@@ -4311,7 +4440,9 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 label: "Room".into(),
                 status: LockStatus::Unlocked,
                 unlock: None,
-                reveals: vec![RevealTarget::Evidence { id: "note".into() }],
+                reveals: vec![InvestigationRevealTarget::Local(RevealTarget::Evidence {
+                    id: "note".into(),
+                })],
                 scene_tag: "room".into(),
                 flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
                 transition_dialogue: vec![],
@@ -4409,9 +4540,11 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                                 portrait: None,
                             }],
                             on_wrong_evidence: vec![],
-                            reveals: vec![InterrogationRevealTarget::Statement {
-                                id: "acquired_stmt".into(),
-                            }],
+                            reveals: vec![CombinedInterrogationRevealTarget::Local(
+                                InterrogationRevealTarget::Statement {
+                                    id: "acquired_stmt".into(),
+                                },
+                            )],
                         }],
                     },
                 }],
@@ -4563,9 +4696,11 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                     status: LockStatus::Unlocked,
                     required: true,
                     unlock: None,
-                    reveals: vec![InterrogationRevealTarget::Statement {
-                        id: "revealed_stmt".into(),
-                    }],
+                    reveals: vec![CombinedInterrogationRevealTarget::Local(
+                        InterrogationRevealTarget::Statement {
+                            id: "revealed_stmt".into(),
+                        },
+                    )],
                     testimony: TestimonyJson {
                         on_loop: vec![],
                         loop_prompt: vec![],
@@ -4690,9 +4825,11 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                         status: LockStatus::Unlocked,
                         required: false,
                         unlock: None,
-                        reveals: vec![InterrogationRevealTarget::Statement {
-                            id: "revealed_stmt".into(),
-                        }],
+                        reveals: vec![CombinedInterrogationRevealTarget::Local(
+                            InterrogationRevealTarget::Statement {
+                                id: "revealed_stmt".into(),
+                            },
+                        )],
                         testimony: TestimonyJson {
                             on_loop: vec![],
                             loop_prompt: vec![],
