@@ -233,6 +233,18 @@ describe("parseUnlockExpr", () => {
     if (!result.ok) expect(result.error.code).toBe(code);
   });
 
+  it("reports a missing opening parenthesis, not an invalid count", () => {
+    const result = parseUnlockExpr(
+      "at_least 1,hotspot:a investigated)",
+      "threshold.md",
+      11,
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "unlockAtLeastMissingParen" },
+    });
+  });
+
   it("rejects structural duplicates after parentheses are discarded", () => {
     expect(
       parseUnlockExpr(
@@ -441,6 +453,7 @@ describe("shared unlock expression semantics fixture", () => {
     const fixture = loadUnlockExpressionSemanticsFixture();
 
     expect(fixture.schemaVersion).toBe(1);
+    expect(fixture.cases).toHaveLength(8);
     for (const semanticCase of fixture.cases) {
       expect(
         evaluateSemanticExpression(semanticCase.expression, semanticCase.truth),

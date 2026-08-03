@@ -343,10 +343,13 @@ export function validateSetPrimaryObjectiveTarget(
 
 function validateStoryRevealTargetDefinition(input: {
   target: StoryRevealTarget;
-  factsById: Set<string>;
-  questionsById: Map<string, ASTStoryCatalog["questions"][number]>;
-  objectivesById: Map<string, ASTStoryCatalog["objectives"][number]>;
-  authorizationsById: Map<string, ASTStoryCatalog["authorizations"][number]>;
+  factsById: ReadonlySet<string>;
+  questionsById: ReadonlyMap<string, ASTStoryCatalog["questions"][number]>;
+  objectivesById: ReadonlyMap<string, ASTStoryCatalog["objectives"][number]>;
+  authorizationsById: ReadonlyMap<
+    string,
+    ASTStoryCatalog["authorizations"][number]
+  >;
   representedAuthority: string | null;
   location: Located<unknown>;
   catalog: ASTStoryCatalog;
