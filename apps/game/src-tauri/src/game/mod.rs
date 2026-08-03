@@ -1049,7 +1049,11 @@ impl GameEngine {
                         chapter_id: chapter_id.clone(),
                         scene_id: engine.scene.id().into(),
                         block_kind: StoryEventBlockKind::Topic,
-                        block_id: topic_id.into(),
+                        // Two characters may legally share a topic id, so the
+                        // topic block id is qualified by its owning character
+                        // to keep fact provenance unambiguous across the save
+                        // wire format and restore validation.
+                        block_id: format!("{character_id}@{topic_id}"),
                     },
                     fact_support_by_id: &fact_support_by_id,
                     represented_authority: None,

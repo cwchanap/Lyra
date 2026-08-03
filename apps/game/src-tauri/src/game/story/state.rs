@@ -198,11 +198,15 @@ impl AssertionOrigin {
                 block_id,
                 ..
             } => {
-                validate_origin_segments(&[
-                    ("chapterId", chapter_id),
-                    ("sceneId", scene_id),
-                    ("blockId", block_id),
-                ])?;
+                validate_origin_segments(&[("chapterId", chapter_id), ("sceneId", scene_id)])?;
+                // The topic block id is qualified as `character_id@topic_id`
+                // (see mod.rs interview_topic), so `@` is permitted here and
+                // only here; chapter/scene ids remain plain slugs.
+                if !is_block_id_slug(block_id) {
+                    return Err(format!(
+                        "assertion origin blockId '{block_id}' must match ^[a-z0-9_]+(@[a-z0-9_]+)?$"
+                    ));
+                }
                 Ok((Some(chapter_id.clone()), Some(scene_id.clone())))
             }
             Self::AnalysisBoard {
@@ -243,6 +247,24 @@ fn is_slug(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+}
+
+/// Like `is_slug`, but also permits a single `@` separator so that topic
+/// block ids of the form `character_id@topic_id` validate.
+#[allow(dead_code)]
+fn is_block_id_slug(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    let mut parts = value.split('@');
+    let first = parts.next();
+    let second = parts.next();
+    let rest = parts.next();
+    match (first, second, rest) {
+        (Some(first), None, None) => is_slug(first),
+        (Some(first), Some(second), None) => is_slug(first) && is_slug(second),
+        _ => false,
+    }
 }
 
 #[allow(dead_code)]
