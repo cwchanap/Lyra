@@ -146,6 +146,7 @@ export function analyzeReachability(input: {
         nodes,
         selection,
         catalog: input.catalog,
+        producerKeysByAtom,
       }),
     );
   }
@@ -161,8 +162,15 @@ export function analyzeReachability(input: {
     addAll(mayCompletedPrimaryIds, scenario.mayCompletedPrimaryIds);
   }
 
-  const mustReachableNodeKeys = intersectScenarioReachability(nodes, scenarios);
-  const mustAtoms = mustAtomsFromScenarios(mustReachableNodeKeys, scenarios);
+  const mustNodes = mandatoryScenarioNodes(nodes);
+  const mustScenario = solveJointScenario({
+    nodes: mustNodes,
+    selection: new Map(),
+    catalog: input.catalog,
+    producerKeysByAtom,
+  });
+  const mustReachableNodeKeys = new Set(mustScenario.outputsByNodeKey.keys());
+  const mustAtoms = atomsFromScenario(mustScenario, "mustAtoms");
   const primaryObjectiveIds = new Set(
     input.catalog.objectives
       .filter((objective) => objective.kind === "primary")
@@ -172,9 +180,9 @@ export function analyzeReachability(input: {
     mustAtoms,
     primaryObjectiveIds,
   );
-  const mustActivePrimary = mustActiveFromScenarios(
+  const mustActivePrimary = mustActiveFromScenario(
     mustReachableNodeKeys,
-    scenarios,
+    mustScenario,
   );
 
   const errors = [...cycleDiagnostics];
@@ -514,6 +522,7 @@ function solveJointScenario(input: {
   nodes: readonly ReachabilityNode[];
   selection: ReadonlyMap<string, string>;
   catalog: ASTStoryCatalog;
+  producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>;
 }): JointScenario {
   const nodesByKey = new Map(input.nodes.map((node) => [node.key, node]));
   const authorizationDefinitions = new Map(
@@ -544,6 +553,7 @@ function solveJointScenario(input: {
         reachableNodeKeys,
         outputsByNodeKey,
         selection: input.selection,
+        producerKeysByAtom: input.producerKeysByAtom,
         primaryObjectiveIds,
         authorizationDefinitions,
       });
@@ -584,6 +594,7 @@ function solveJointScenario(input: {
       reachableNodeKeys,
       outputsByNodeKey,
       selection: input.selection,
+      producerKeysByAtom: input.producerKeysByAtom,
       primaryObjectiveIds,
       authorizationDefinitions,
     });
@@ -625,6 +636,7 @@ function stateBeforeNode(input: {
   reachableNodeKeys: ReadonlySet<string>;
   outputsByNodeKey: ReadonlyMap<string, NodeAbstractState>;
   selection: ReadonlyMap<string, string>;
+  producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>;
   primaryObjectiveIds: ReadonlySet<string>;
   authorizationDefinitions: ReadonlyMap<
     string,
@@ -644,9 +656,11 @@ function stateBeforeNode(input: {
     ].map((predicate) => predicate.atom),
   );
   for (const atom of prerequisiteAtoms) {
-    for (const [producerKey, state] of input.outputsByNodeKey) {
+    for (const producerKey of input.producerKeysByAtom.get(atom) ?? []) {
+      const state = input.outputsByNodeKey.get(producerKey);
       if (
         producerKey !== input.node.key &&
+        state !== undefined &&
         state.mayAtoms.has(atom) &&
         !entryStates.includes(state)
       ) {
@@ -669,23 +683,34 @@ function stateBeforeNode(input: {
       return selected === undefined || selected === peer.key;
     })
     .sort((left, right) => left.localeCompare(right));
-  if (peerKeys.length === 0) return entry;
+  if (peerKeys.length === 0) {
+    refineMustForSatisfiedRequirements(
+      entry,
+      input.node,
+      input.primaryObjectiveIds,
+    );
+    return entry;
+  }
 
-  const summaries = new Map<string, NodeAbstractState>();
+  const contributions = new Map<string, NodeAbstractState>();
   let changed = true;
   while (changed) {
     changed = false;
     for (const peerKey of peerKeys) {
       const peer = input.nodesByKey.get(peerKey)!;
-      const peerInputs = [
-        entry,
-        ...peerKeys.flatMap((otherKey) => {
-          if (otherKey === peerKey) return [];
-          const summary = summaries.get(otherKey);
-          return summary === undefined ? [] : [summary];
-        }),
-      ];
-      const peerInput = joinInputStates(peerInputs);
+      const peerContributions = peerKeys.flatMap((otherKey) => {
+        // A strict successor cannot execute before its predecessor. Excluding
+        // it here also prevents predecessor -> successor -> predecessor replay.
+        if (
+          otherKey === peerKey ||
+          strictlyDependsOn(otherKey, peerKey, input.nodesByKey)
+        ) {
+          return [];
+        }
+        const contribution = contributions.get(otherKey);
+        return contribution === undefined ? [] : [contribution];
+      });
+      const peerInput = applyPeerContributions(entry, peerContributions);
       const transferred = transferBatch({
         node: peer,
         input: peerInput,
@@ -694,30 +719,139 @@ function stateBeforeNode(input: {
         diagnostics: false,
       });
       if (transferred.state === null) continue;
-      const previous = summaries.get(peerKey);
-      const next = publishState(previous, transferred.state);
+      const computed = peerContribution(peerInput, transferred.state);
+      const previous = contributions.get(peerKey);
+      const next = publishPeerContribution(previous, computed);
       if (previous === undefined || !statesEqual(previous, next)) {
-        summaries.set(peerKey, next);
+        contributions.set(peerKey, next);
         changed = true;
       }
     }
   }
 
-  const before = cloneState(entry);
-  let primaryCanChange = false;
-  for (const summary of summaries.values()) {
-    addAll(before.mayAtoms, summary.mayAtoms);
-    addAll(before.mayActivePrimaryIds, summary.mayActivePrimaryIds);
-    addAll(before.mayCompletedPrimaryIds, summary.mayCompletedPrimaryIds);
-    if (!setsEqual(summary.mayActivePrimaryIds, entry.mayActivePrimaryIds)) {
-      primaryCanChange = true;
-    }
-    before.orderAmbiguous ||= summary.orderAmbiguous;
-  }
-  if (primaryCanChange) before.mustActivePrimary = { kind: "unknown" };
-  before.orderAmbiguous ||= summaries.size > 1;
+  const before = applyPeerContributions(entry, [...contributions.values()]);
+  before.orderAmbiguous ||= contributions.size > 1;
+  refineMustForSatisfiedRequirements(
+    before,
+    input.node,
+    input.primaryObjectiveIds,
+  );
   synchronizeCompletionAtoms(before);
   return before;
+}
+
+function peerContribution(
+  input: NodeAbstractState,
+  output: NodeAbstractState,
+): NodeAbstractState {
+  // Store only progress caused by this one-shot member. Carrying its complete
+  // input state would let another member return inherited progress to it.
+  return {
+    mayAtoms: setDifference(output.mayAtoms, input.mayAtoms),
+    mustAtoms: new Set(),
+    mayActivePrimaryIds: setsEqual(
+      output.mayActivePrimaryIds,
+      input.mayActivePrimaryIds,
+    )
+      ? new Set()
+      : new Set(output.mayActivePrimaryIds),
+    mustActivePrimary: { kind: "uninitialized" },
+    mayCompletedPrimaryIds: setDifference(
+      output.mayCompletedPrimaryIds,
+      input.mayCompletedPrimaryIds,
+    ),
+    mustCompletedPrimaryIds: new Set(),
+    orderAmbiguous: output.orderAmbiguous,
+  };
+}
+
+function publishPeerContribution(
+  previous: NodeAbstractState | undefined,
+  computed: NodeAbstractState,
+): NodeAbstractState {
+  if (previous === undefined) return cloneState(computed);
+  const next = cloneState(previous);
+  addAll(next.mayAtoms, computed.mayAtoms);
+  addAll(next.mayActivePrimaryIds, computed.mayActivePrimaryIds);
+  addAll(next.mayCompletedPrimaryIds, computed.mayCompletedPrimaryIds);
+  next.orderAmbiguous ||= computed.orderAmbiguous;
+  return next;
+}
+
+function applyPeerContributions(
+  entry: NodeAbstractState,
+  contributions: readonly NodeAbstractState[],
+): NodeAbstractState {
+  const state = cloneState(entry);
+  let primaryCanChange = false;
+  for (const contribution of contributions) {
+    addAll(state.mayAtoms, contribution.mayAtoms);
+    addAll(state.mayCompletedPrimaryIds, contribution.mayCompletedPrimaryIds);
+    if (contribution.mayActivePrimaryIds.size > 0) {
+      addAll(state.mayActivePrimaryIds, contribution.mayActivePrimaryIds);
+      primaryCanChange = true;
+    }
+    state.orderAmbiguous ||= contribution.orderAmbiguous;
+  }
+  if (primaryCanChange) state.mustActivePrimary = { kind: "unknown" };
+  synchronizeCompletionAtoms(state);
+  return state;
+}
+
+function strictlyDependsOn(
+  candidateKey: string,
+  predecessorKey: string,
+  nodesByKey: ReadonlyMap<string, ReachabilityNode>,
+  visited = new Set<string>(),
+): boolean {
+  const candidate = nodesByKey.get(candidateKey);
+  if (candidate === undefined || visited.has(candidateKey)) return false;
+  if (candidate.strictPredecessorKeys.includes(predecessorKey)) return true;
+  visited.add(candidateKey);
+  return candidate.strictPredecessorKeys.some((key) =>
+    strictlyDependsOn(key, predecessorKey, nodesByKey, visited),
+  );
+}
+
+function refineMustForSatisfiedRequirements(
+  state: NodeAbstractState,
+  node: ReachabilityNode,
+  primaryObjectiveIds: ReadonlySet<string>,
+): void {
+  const requiredAtoms = [...node.implicitPrerequisites]
+    .map((predicate) => predicate.atom)
+    .filter((atom) => state.mayAtoms.has(atom));
+  if (node.condition !== null && evaluateMay(node.condition, state.mayAtoms)) {
+    // An atom is guaranteed on every currently modeled satisfying input when
+    // removing it makes the complete positive expression false.
+    for (const predicate of expressionPredicates(node.condition)) {
+      if (!state.mayAtoms.has(predicate.atom)) continue;
+      const withoutCandidate = new Set(state.mayAtoms);
+      withoutCandidate.delete(predicate.atom);
+      if (!evaluateMay(node.condition, withoutCandidate)) {
+        requiredAtoms.push(predicate.atom);
+      }
+    }
+  }
+
+  for (const atom of unique(requiredAtoms)) {
+    state.mustAtoms.add(atom);
+    const prefix = "objective_completed:";
+    if (
+      atom.startsWith(prefix) &&
+      primaryObjectiveIds.has(atom.slice(prefix.length))
+    ) {
+      state.mustCompletedPrimaryIds.add(atom.slice(prefix.length));
+    }
+  }
+  synchronizeCompletionAtoms(state);
+}
+
+function setDifference<T>(
+  values: ReadonlySet<T>,
+  excluded: ReadonlySet<T>,
+): Set<T> {
+  return new Set([...values].filter((value) => !excluded.has(value)));
 }
 
 function transferBatch(input: {
@@ -1078,11 +1212,9 @@ function intersectInto<T>(target: Set<T>, source: ReadonlySet<T>): void {
   }
 }
 
-function intersectScenarioReachability(
+function mandatoryScenarioNodes(
   nodes: readonly ReachabilityNode[],
-  scenarios: readonly JointScenario[],
-): Set<string> {
-  if (scenarios.length === 0) return new Set();
+): ReachabilityNode[] {
   const identityCounts = new Map<string, number>();
   for (const node of nodes) {
     identityCounts.set(
@@ -1090,50 +1222,35 @@ function intersectScenarioReachability(
       (identityCounts.get(node.oneShotEventId) ?? 0) + 1,
     );
   }
-  return new Set(
-    nodes
-      .filter((node) => node.requirement === "mandatory")
-      .filter((node) => (identityCounts.get(node.oneShotEventId) ?? 0) === 1)
-      .filter((node) =>
-        scenarios.every((scenario) => scenario.outputsByNodeKey.has(node.key)),
-      )
-      .map((node) => node.key),
+  return nodes.filter(
+    (node) =>
+      node.requirement === "mandatory" &&
+      (identityCounts.get(node.oneShotEventId) ?? 0) === 1,
   );
 }
 
-function mustAtomsFromScenarios(
-  mustReachableNodeKeys: ReadonlySet<string>,
-  scenarios: readonly JointScenario[],
+function atomsFromScenario(
+  scenario: JointScenario,
+  field: "mayAtoms" | "mustAtoms",
 ): Set<ReachabilityAtom> {
   const atoms = new Set<ReachabilityAtom>();
-  for (const key of mustReachableNodeKeys) {
-    const states = scenarios.flatMap((scenario) => {
-      const state = scenario.outputsByNodeKey.get(key);
-      return state === undefined ? [] : [state];
-    });
-    if (states.length !== scenarios.length || states.length === 0) continue;
-    const nodeMust = new Set(states[0]!.mustAtoms);
-    for (const state of states.slice(1)) {
-      intersectInto(nodeMust, state.mustAtoms);
-    }
-    addAll(atoms, nodeMust);
+  for (const state of scenario.outputsByNodeKey.values()) {
+    addAll(atoms, state[field]);
   }
   return atoms;
 }
 
-function mustActiveFromScenarios(
+function mustActiveFromScenario(
   mustReachableNodeKeys: ReadonlySet<string>,
-  scenarios: readonly JointScenario[],
+  scenario: JointScenario,
 ): MustActivePrimary {
   let result: MustActivePrimary = { kind: "uninitialized" };
   for (const key of [...mustReachableNodeKeys].sort((left, right) =>
     left.localeCompare(right),
   )) {
-    for (const scenario of scenarios) {
-      const state = scenario.outputsByNodeKey.get(key);
-      if (state !== undefined) {
-        result = meetMustActive(result, state.mustActivePrimary);
-      }
+    const state = scenario.outputsByNodeKey.get(key);
+    if (state !== undefined) {
+      result = meetMustActive(result, state.mustActivePrimary);
     }
   }
   return result;
