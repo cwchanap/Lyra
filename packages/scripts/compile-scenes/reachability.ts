@@ -64,12 +64,33 @@ export type ReachabilityDiagnostic = CompileError & {
   targetIndex: number | null;
 };
 
+export type PrimaryCandidate = string | null;
+
+export type MustActivePrimary =
+  | { kind: "uninitialized" }
+  | { kind: "known"; id: PrimaryCandidate }
+  | { kind: "unknown" };
+
+type NodeAbstractState = {
+  mayAtoms: Set<ReachabilityAtom>;
+  mustAtoms: Set<ReachabilityAtom>;
+  mayActivePrimaryIds: Set<PrimaryCandidate>;
+  mustActivePrimary: MustActivePrimary;
+  mayCompletedPrimaryIds: Set<string>;
+  mustCompletedPrimaryIds: Set<string>;
+  orderAmbiguous: boolean;
+};
+
 export type ReachabilityAnalysis = {
   producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>;
   reachableNodeKeys: Set<string>;
   mustReachableNodeKeys: Set<string>;
   mayAtoms: Set<ReachabilityAtom>;
   mustAtoms: Set<ReachabilityAtom>;
+  mayActivePrimaryIds: Set<PrimaryCandidate>;
+  mustActivePrimary: MustActivePrimary;
+  mayCompletedPrimaryIds: Set<string>;
+  mustCompletedPrimaryIds: Set<string>;
   errors: ReachabilityDiagnostic[];
   warnings: ReachabilityDiagnostic[];
 };
@@ -88,11 +109,6 @@ export function evaluateMust(
   return evaluatePositive(expression, atoms);
 }
 
-/**
- * Runs the positive-only architecture checkpoint. Ordered batch validity and
- * primary-objective transfer deliberately remain Task 9 responsibilities; at
- * this layer story targets contribute only their potential monotonic atoms.
- */
 export function analyzeReachability(input: {
   nodes: ReachabilityNode[];
   catalog: ASTStoryCatalog;
@@ -100,7 +116,7 @@ export function analyzeReachability(input: {
   const nodes = [...input.nodes].sort((left, right) =>
     left.key.localeCompare(right.key),
   );
-  const producerKeysByAtom = buildPositiveProducerIndex(nodes);
+  const producerKeysByAtom = buildAnalysisProducerIndex(nodes, input.catalog);
   const dependencyEdges = buildPositiveDependencyEdges(
     nodes,
     producerKeysByAtom,
@@ -123,21 +139,50 @@ export function analyzeReachability(input: {
     ]),
   );
 
-  const reachableNodeKeys = new Set<string>();
-  const mayAtoms = new Set<ReachabilityAtom>();
+  const scenarios: JointScenario[] = [];
   for (const selection of exclusiveOutcomeSelections(nodes)) {
-    const scenario = solveMayScenario({
-      nodes,
-      selection,
-      authorizationDefinitions,
-    });
-    addAll(reachableNodeKeys, scenario.reachableNodeKeys);
-    addAll(mayAtoms, scenario.atoms);
+    scenarios.push(
+      solveJointScenario({
+        nodes,
+        selection,
+        catalog: input.catalog,
+      }),
+    );
   }
 
-  const must = solveMustReachability({ nodes, authorizationDefinitions });
+  const reachableNodeKeys = new Set<string>();
+  const mayAtoms = new Set<ReachabilityAtom>();
+  const mayActivePrimaryIds = new Set<PrimaryCandidate>();
+  const mayCompletedPrimaryIds = new Set<string>();
+  for (const scenario of scenarios) {
+    addAll(reachableNodeKeys, scenario.reachableNodeKeys);
+    addAll(mayAtoms, scenario.mayAtoms);
+    addAll(mayActivePrimaryIds, scenario.mayActivePrimaryIds);
+    addAll(mayCompletedPrimaryIds, scenario.mayCompletedPrimaryIds);
+  }
+
+  const mustReachableNodeKeys = intersectScenarioReachability(nodes, scenarios);
+  const mustAtoms = mustAtomsFromScenarios(mustReachableNodeKeys, scenarios);
+  const primaryObjectiveIds = new Set(
+    input.catalog.objectives
+      .filter((objective) => objective.kind === "primary")
+      .map((objective) => objective.id),
+  );
+  const mustCompletedPrimaryIds = completedPrimaryIds(
+    mustAtoms,
+    primaryObjectiveIds,
+  );
+  const mustActivePrimary = mustActiveFromScenarios(
+    mustReachableNodeKeys,
+    scenarios,
+  );
+
   const errors = [...cycleDiagnostics];
   const warnings: ReachabilityDiagnostic[] = [];
+  for (const scenario of scenarios) {
+    for (const error of scenario.errors) pushDiagnostic(errors, error);
+    for (const warning of scenario.warnings) pushDiagnostic(warnings, warning);
+  }
 
   for (const node of nodes) {
     if (
@@ -159,8 +204,8 @@ export function analyzeReachability(input: {
     }
 
     const authorizationFailure = mandatoryAuthorizationFailure({
-      node,
       nodes,
+      node,
       reachableNodeKeys,
       authorizationDefinitions,
     });
@@ -180,9 +225,13 @@ export function analyzeReachability(input: {
   return {
     producerKeysByAtom,
     reachableNodeKeys,
-    mustReachableNodeKeys: must.reachableNodeKeys,
+    mustReachableNodeKeys,
     mayAtoms,
-    mustAtoms: must.atoms,
+    mustAtoms,
+    mayActivePrimaryIds,
+    mustActivePrimary,
+    mayCompletedPrimaryIds,
+    mustCompletedPrimaryIds,
     errors,
     warnings,
   };
@@ -206,6 +255,48 @@ export function buildPositiveProducerIndex(
       atom,
       producerKeys.sort((left, right) => left.localeCompare(right)),
     ]),
+  );
+}
+
+function buildAnalysisProducerIndex(
+  nodes: readonly ReachabilityNode[],
+  catalog: ASTStoryCatalog,
+): ReadonlyMap<ReachabilityAtom, readonly string[]> {
+  const mutable = new Map<string, string[]>(
+    [...buildPositiveProducerIndex(nodes)].map(([atom, keys]) => [
+      atom,
+      [...keys],
+    ]),
+  );
+  const primaryIds = catalog.objectives
+    .filter((objective) => objective.kind === "primary")
+    .map((objective) => objective.id)
+    .sort((left, right) => left.localeCompare(right));
+  for (const node of nodes) {
+    if (
+      !node.effects.some(
+        (effect) =>
+          effect.kind === "story" &&
+          effect.target.kind === "setPrimaryObjective" &&
+          effect.target.completeCurrent,
+      )
+    ) {
+      continue;
+    }
+    for (const primaryId of primaryIds) {
+      const atom = `objective_completed:${primaryId}`;
+      const producers = mutable.get(atom) ?? [];
+      if (!producers.includes(node.key)) producers.push(node.key);
+      mutable.set(atom, producers);
+    }
+  }
+  return new Map(
+    [...mutable]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([atom, keys]) => [
+        atom,
+        keys.sort((left, right) => left.localeCompare(right)),
+      ]),
   );
 }
 
@@ -403,80 +494,678 @@ function exclusiveOutcomeSelections(
   return selections;
 }
 
-function solveMayScenario(input: {
+type JointScenario = {
+  reachableNodeKeys: Set<string>;
+  outputsByNodeKey: Map<string, NodeAbstractState>;
+  mayAtoms: Set<ReachabilityAtom>;
+  mayActivePrimaryIds: Set<PrimaryCandidate>;
+  mayCompletedPrimaryIds: Set<string>;
+  errors: ReachabilityDiagnostic[];
+  warnings: ReachabilityDiagnostic[];
+};
+
+type BatchTransfer = {
+  state: NodeAbstractState | null;
+  errors: ReachabilityDiagnostic[];
+  warnings: ReachabilityDiagnostic[];
+};
+
+function solveJointScenario(input: {
   nodes: readonly ReachabilityNode[];
   selection: ReadonlyMap<string, string>;
-  authorizationDefinitions: ReadonlyMap<
-    string,
-    ASTStoryCatalog["authorizations"][number]
-  >;
-}): { reachableNodeKeys: Set<string>; atoms: Set<ReachabilityAtom> } {
+  catalog: ASTStoryCatalog;
+}): JointScenario {
+  const nodesByKey = new Map(input.nodes.map((node) => [node.key, node]));
+  const authorizationDefinitions = new Map(
+    input.catalog.authorizations.map((definition) => [
+      definition.id,
+      definition,
+    ]),
+  );
+  const primaryObjectiveIds = new Set(
+    input.catalog.objectives
+      .filter((objective) => objective.kind === "primary")
+      .map((objective) => objective.id),
+  );
   const reachableNodeKeys = new Set<string>();
-  const atoms = new Set<ReachabilityAtom>();
+  const outputsByNodeKey = new Map<string, NodeAbstractState>();
+
   let changed = true;
   while (changed) {
     changed = false;
     for (const node of input.nodes) {
-      if (reachableNodeKeys.has(node.key)) continue;
       const selected = input.selection.get(node.oneShotEventId);
       if (selected !== undefined && selected !== node.key) continue;
-      if (!nodeMayExecute(node, reachableNodeKeys, atoms)) continue;
-      reachableNodeKeys.add(node.key);
-      changed = true;
-      for (const atom of executableEffectAtoms(
+
+      const before = stateBeforeNode({
         node,
-        input.authorizationDefinitions,
-      )) {
-        if (atoms.has(atom)) continue;
-        atoms.add(atom);
+        nodes: input.nodes,
+        nodesByKey,
+        reachableNodeKeys,
+        outputsByNodeKey,
+        selection: input.selection,
+        primaryObjectiveIds,
+        authorizationDefinitions,
+      });
+      const successfulNodeKeys = new Set(outputsByNodeKey.keys());
+      if (!nodeMayExecute(node, successfulNodeKeys, before.mayAtoms)) continue;
+      if (!reachableNodeKeys.has(node.key)) {
+        reachableNodeKeys.add(node.key);
+        changed = true;
+      }
+
+      const transferred = transferBatch({
+        node,
+        input: before,
+        primaryObjectiveIds,
+        authorizationDefinitions,
+        diagnostics: false,
+      });
+      if (transferred.state === null) continue;
+      const previous = outputsByNodeKey.get(node.key);
+      const next = publishState(previous, transferred.state);
+      if (previous === undefined || !statesEqual(previous, next)) {
+        outputsByNodeKey.set(node.key, next);
         changed = true;
       }
     }
   }
-  return { reachableNodeKeys, atoms };
+
+  const errors: ReachabilityDiagnostic[] = [];
+  const warnings: ReachabilityDiagnostic[] = [];
+  for (const node of input.nodes) {
+    if (!reachableNodeKeys.has(node.key)) continue;
+    const selected = input.selection.get(node.oneShotEventId);
+    if (selected !== undefined && selected !== node.key) continue;
+    const before = stateBeforeNode({
+      node,
+      nodes: input.nodes,
+      nodesByKey,
+      reachableNodeKeys,
+      outputsByNodeKey,
+      selection: input.selection,
+      primaryObjectiveIds,
+      authorizationDefinitions,
+    });
+    const transferred = transferBatch({
+      node,
+      input: before,
+      primaryObjectiveIds,
+      authorizationDefinitions,
+      diagnostics: !node.legacyCompatibilityMode,
+    });
+    for (const error of transferred.errors) pushDiagnostic(errors, error);
+    for (const warning of transferred.warnings)
+      pushDiagnostic(warnings, warning);
+  }
+
+  const mayAtoms = new Set<ReachabilityAtom>();
+  const mayActivePrimaryIds = new Set<PrimaryCandidate>();
+  const mayCompletedPrimaryIds = new Set<string>();
+  for (const state of outputsByNodeKey.values()) {
+    addAll(mayAtoms, state.mayAtoms);
+    addAll(mayActivePrimaryIds, state.mayActivePrimaryIds);
+    addAll(mayCompletedPrimaryIds, state.mayCompletedPrimaryIds);
+  }
+  return {
+    reachableNodeKeys,
+    outputsByNodeKey,
+    mayAtoms,
+    mayActivePrimaryIds,
+    mayCompletedPrimaryIds,
+    errors,
+    warnings,
+  };
 }
 
-function solveMustReachability(input: {
+function stateBeforeNode(input: {
+  node: ReachabilityNode;
   nodes: readonly ReachabilityNode[];
+  nodesByKey: ReadonlyMap<string, ReachabilityNode>;
+  reachableNodeKeys: ReadonlySet<string>;
+  outputsByNodeKey: ReadonlyMap<string, NodeAbstractState>;
+  selection: ReadonlyMap<string, string>;
+  primaryObjectiveIds: ReadonlySet<string>;
   authorizationDefinitions: ReadonlyMap<
     string,
     ASTStoryCatalog["authorizations"][number]
   >;
-}): { reachableNodeKeys: Set<string>; atoms: Set<ReachabilityAtom> } {
+}): NodeAbstractState {
+  const entryStates: NodeAbstractState[] = [];
+  for (const predecessorKey of input.node.strictPredecessorKeys) {
+    const predecessor = input.outputsByNodeKey.get(predecessorKey);
+    if (predecessor !== undefined) entryStates.push(predecessor);
+  }
+
+  const prerequisiteAtoms = unique(
+    [
+      ...expressionPredicates(input.node.condition),
+      ...input.node.implicitPrerequisites,
+    ].map((predicate) => predicate.atom),
+  );
+  for (const atom of prerequisiteAtoms) {
+    for (const [producerKey, state] of input.outputsByNodeKey) {
+      if (
+        producerKey !== input.node.key &&
+        state.mayAtoms.has(atom) &&
+        !entryStates.includes(state)
+      ) {
+        entryStates.push(state);
+      }
+    }
+  }
+
+  const entry =
+    entryStates.length === 0
+      ? initialAbstractState()
+      : joinInputStates(entryStates);
+  const peerKeys = unique(input.node.mayExecuteBeforeKeys)
+    .filter((key) => key !== input.node.key)
+    .filter((key) => input.reachableNodeKeys.has(key))
+    .filter((key) => {
+      const peer = input.nodesByKey.get(key);
+      if (peer === undefined) return false;
+      const selected = input.selection.get(peer.oneShotEventId);
+      return selected === undefined || selected === peer.key;
+    })
+    .sort((left, right) => left.localeCompare(right));
+  if (peerKeys.length === 0) return entry;
+
+  const summaries = new Map<string, NodeAbstractState>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const peerKey of peerKeys) {
+      const peer = input.nodesByKey.get(peerKey)!;
+      const peerInputs = [
+        entry,
+        ...peerKeys.flatMap((otherKey) => {
+          if (otherKey === peerKey) return [];
+          const summary = summaries.get(otherKey);
+          return summary === undefined ? [] : [summary];
+        }),
+      ];
+      const peerInput = joinInputStates(peerInputs);
+      const transferred = transferBatch({
+        node: peer,
+        input: peerInput,
+        primaryObjectiveIds: input.primaryObjectiveIds,
+        authorizationDefinitions: input.authorizationDefinitions,
+        diagnostics: false,
+      });
+      if (transferred.state === null) continue;
+      const previous = summaries.get(peerKey);
+      const next = publishState(previous, transferred.state);
+      if (previous === undefined || !statesEqual(previous, next)) {
+        summaries.set(peerKey, next);
+        changed = true;
+      }
+    }
+  }
+
+  const before = cloneState(entry);
+  let primaryCanChange = false;
+  for (const summary of summaries.values()) {
+    addAll(before.mayAtoms, summary.mayAtoms);
+    addAll(before.mayActivePrimaryIds, summary.mayActivePrimaryIds);
+    addAll(before.mayCompletedPrimaryIds, summary.mayCompletedPrimaryIds);
+    if (!setsEqual(summary.mayActivePrimaryIds, entry.mayActivePrimaryIds)) {
+      primaryCanChange = true;
+    }
+    before.orderAmbiguous ||= summary.orderAmbiguous;
+  }
+  if (primaryCanChange) before.mustActivePrimary = { kind: "unknown" };
+  before.orderAmbiguous ||= summaries.size > 1;
+  synchronizeCompletionAtoms(before);
+  return before;
+}
+
+function transferBatch(input: {
+  node: ReachabilityNode;
+  input: NodeAbstractState;
+  primaryObjectiveIds: ReadonlySet<string>;
+  authorizationDefinitions: ReadonlyMap<
+    string,
+    ASTStoryCatalog["authorizations"][number]
+  >;
+  diagnostics: boolean;
+}): BatchTransfer {
+  let state = cloneState(input.input);
+  const errors: ReachabilityDiagnostic[] = [];
+  const warnings: ReachabilityDiagnostic[] = [];
+  let batchMayFail = false;
+  let batchFailureIndex: number | null = null;
+
+  for (const effect of input.node.effects) {
+    if (effect.kind === "addAtom") {
+      state.mayAtoms.add(effect.atom);
+      state.mustAtoms.add(effect.atom);
+      continue;
+    }
+
+    const target = effect.target;
+    switch (target.kind) {
+      case "assertFact":
+        state.mayAtoms.add(`fact_asserted:${target.factId}`);
+        state.mustAtoms.add(`fact_asserted:${target.factId}`);
+        break;
+      case "revealQuestion":
+        break;
+      case "resolveQuestion": {
+        const factAtom = `fact_asserted:${target.factId}`;
+        if (!state.mayAtoms.has(factAtom)) {
+          if (input.diagnostics) {
+            errors.push(
+              targetDiagnostic(
+                input.node,
+                effect.targetIndex,
+                "storyRevealBatchAlwaysInvalid",
+                `Story reveal batch for "${input.node.key}" cannot resolve question "${target.questionId}" before fact "${target.factId}" is asserted.`,
+              ),
+            );
+          }
+          return { state: null, errors, warnings };
+        }
+        if (!state.mustAtoms.has(factAtom)) {
+          batchMayFail = true;
+          batchFailureIndex ??= effect.targetIndex;
+        }
+        const atom = `question_resolved:${target.questionId}`;
+        state.mayAtoms.add(atom);
+        state.mustAtoms.add(atom);
+        break;
+      }
+      case "revealObjective": {
+        const atom = `objective_revealed:${target.objectiveId}`;
+        state.mayAtoms.add(atom);
+        state.mustAtoms.add(atom);
+        break;
+      }
+      case "completeObjective": {
+        const atom = `objective_completed:${target.objectiveId}`;
+        state.mayAtoms.add(atom);
+        state.mustAtoms.add(atom);
+        break;
+      }
+      case "grantAuthorization": {
+        const definition = input.authorizationDefinitions.get(
+          target.authorizationId,
+        );
+        if (
+          definition !== undefined &&
+          definition.grantingAuthority === input.node.representedAuthority
+        ) {
+          const atom = `authorization_granted:${target.authorizationId}`;
+          state.mayAtoms.add(atom);
+          state.mustAtoms.add(atom);
+        }
+        break;
+      }
+      case "setPrimaryObjective": {
+        if (
+          target.nextObjectiveId !== null &&
+          !input.primaryObjectiveIds.has(target.nextObjectiveId)
+        ) {
+          break;
+        }
+        const transitioned = transferPrimaryTarget(state, target);
+        if (transitioned.state === null) {
+          if (input.diagnostics) {
+            errors.push(
+              targetDiagnostic(
+                input.node,
+                effect.targetIndex,
+                "primaryObjectiveTransitionAlwaysInvalid",
+                `Primary objective transition in "${input.node.key}" is invalid for every modeled input.`,
+              ),
+            );
+            errors.push(
+              targetDiagnostic(
+                input.node,
+                effect.targetIndex,
+                "storyRevealBatchAlwaysInvalid",
+                `Story reveal batch for "${input.node.key}" has no successful modeled input.`,
+              ),
+            );
+          }
+          return { state: null, errors, warnings };
+        }
+        state = transitioned.state;
+        batchMayFail ||= transitioned.mayFail;
+        if (transitioned.mayFail) batchFailureIndex ??= effect.targetIndex;
+        if (transitioned.mayFail && input.diagnostics) {
+          warnings.push(
+            targetDiagnostic(
+              input.node,
+              effect.targetIndex,
+              "primaryObjectiveOrderingNotExhaustive",
+              `Primary objective transition in "${input.node.key}" depends on free or branch order.`,
+            ),
+          );
+        }
+        break;
+      }
+    }
+  }
+
+  if (batchMayFail) {
+    state.orderAmbiguous = true;
+    if (input.diagnostics) {
+      warnings.push(
+        targetDiagnostic(
+          input.node,
+          batchFailureIndex ?? -1,
+          "storyRevealBatchOrderDependent",
+          `Story reveal batch for "${input.node.key}" succeeds for only some modeled inputs.`,
+        ),
+      );
+    }
+  }
+  if (batchMayFail) {
+    intersectInto(state.mustAtoms, input.input.mustAtoms);
+    intersectInto(
+      state.mustCompletedPrimaryIds,
+      input.input.mustCompletedPrimaryIds,
+    );
+    state.mustActivePrimary = meetMustActive(
+      input.input.mustActivePrimary,
+      state.mustActivePrimary,
+    );
+  }
+  synchronizeCompletionAtoms(state);
+  return { state, errors, warnings };
+}
+
+function transferPrimaryTarget(
+  input: NodeAbstractState,
+  target: Extract<StoryRevealTarget, { kind: "setPrimaryObjective" }>,
+): { state: NodeAbstractState | null; mayFail: boolean } {
+  const state = cloneState(input);
+  const next = target.nextObjectiveId;
+
+  if (!target.completeCurrent) {
+    if (next !== null && state.mustCompletedPrimaryIds.has(next)) {
+      return { state: null, mayFail: false };
+    }
+    const mayFail = next !== null && state.mayCompletedPrimaryIds.has(next);
+    if (mayFail && next !== null) removeCompletedPrimary(state, next);
+    setActivePrimary(state, next);
+    revealPrimary(state, next);
+    state.orderAmbiguous ||= mayFail;
+    return { state, mayFail };
+  }
+
+  if (
+    next !== null &&
+    (state.mustCompletedPrimaryIds.has(next) ||
+      (state.mustActivePrimary.kind === "known" &&
+        state.mustActivePrimary.id === next))
+  ) {
+    return { state: null, mayFail: false };
+  }
+
+  const validCurrentIds = [...state.mayActivePrimaryIds].filter(
+    (candidate) => candidate !== next,
+  );
+  if (validCurrentIds.length === 0) {
+    return { state: null, mayFail: false };
+  }
+  const mayFail =
+    validCurrentIds.length !== state.mayActivePrimaryIds.size ||
+    (next !== null && state.mayCompletedPrimaryIds.has(next));
+  if (mayFail && next !== null) removeCompletedPrimary(state, next);
+
+  for (const current of validCurrentIds) {
+    if (current !== null) state.mayCompletedPrimaryIds.add(current);
+  }
+  if (validCurrentIds.length === 1 && validCurrentIds[0] !== null) {
+    state.mustCompletedPrimaryIds.add(validCurrentIds[0]!);
+  }
+  setActivePrimary(state, next);
+  revealPrimary(state, next);
+  state.orderAmbiguous ||= mayFail;
+  synchronizeCompletionAtoms(state);
+  return { state, mayFail };
+}
+
+function initialAbstractState(): NodeAbstractState {
+  return {
+    mayAtoms: new Set(),
+    mustAtoms: new Set(),
+    mayActivePrimaryIds: new Set([null]),
+    mustActivePrimary: { kind: "known", id: null },
+    mayCompletedPrimaryIds: new Set(),
+    mustCompletedPrimaryIds: new Set(),
+    orderAmbiguous: false,
+  };
+}
+
+function cloneState(state: NodeAbstractState): NodeAbstractState {
+  return {
+    mayAtoms: new Set(state.mayAtoms),
+    mustAtoms: new Set(state.mustAtoms),
+    mayActivePrimaryIds: new Set(state.mayActivePrimaryIds),
+    mustActivePrimary: { ...state.mustActivePrimary },
+    mayCompletedPrimaryIds: new Set(state.mayCompletedPrimaryIds),
+    mustCompletedPrimaryIds: new Set(state.mustCompletedPrimaryIds),
+    orderAmbiguous: state.orderAmbiguous,
+  };
+}
+
+function joinInputStates(
+  states: readonly NodeAbstractState[],
+): NodeAbstractState {
+  const result = cloneState(states[0] ?? initialAbstractState());
+  for (const state of states.slice(1)) {
+    addAll(result.mayAtoms, state.mayAtoms);
+    intersectInto(result.mustAtoms, state.mustAtoms);
+    addAll(result.mayActivePrimaryIds, state.mayActivePrimaryIds);
+    result.mustActivePrimary = meetMustActive(
+      result.mustActivePrimary,
+      state.mustActivePrimary,
+    );
+    addAll(result.mayCompletedPrimaryIds, state.mayCompletedPrimaryIds);
+    intersectInto(
+      result.mustCompletedPrimaryIds,
+      state.mustCompletedPrimaryIds,
+    );
+    result.orderAmbiguous ||= state.orderAmbiguous;
+  }
+  synchronizeCompletionAtoms(result);
+  return result;
+}
+
+function publishState(
+  previous: NodeAbstractState | undefined,
+  computed: NodeAbstractState,
+): NodeAbstractState {
+  if (previous === undefined) return cloneState(computed);
+  return joinInputStates([previous, computed]);
+}
+
+function setActivePrimary(
+  state: NodeAbstractState,
+  id: PrimaryCandidate,
+): void {
+  state.mayActivePrimaryIds = new Set([id]);
+  state.mustActivePrimary = { kind: "known", id };
+}
+
+function revealPrimary(state: NodeAbstractState, id: PrimaryCandidate): void {
+  if (id === null) return;
+  const atom = `objective_revealed:${id}`;
+  state.mayAtoms.add(atom);
+  state.mustAtoms.add(atom);
+}
+
+function removeCompletedPrimary(state: NodeAbstractState, id: string): void {
+  state.mayCompletedPrimaryIds.delete(id);
+  state.mustCompletedPrimaryIds.delete(id);
+  state.mayAtoms.delete(`objective_completed:${id}`);
+  state.mustAtoms.delete(`objective_completed:${id}`);
+}
+
+function synchronizeCompletionAtoms(state: NodeAbstractState): void {
+  for (const id of state.mayCompletedPrimaryIds) {
+    state.mayAtoms.add(`objective_completed:${id}`);
+  }
+  for (const id of state.mustCompletedPrimaryIds) {
+    state.mustAtoms.add(`objective_completed:${id}`);
+  }
+}
+
+function completedPrimaryIds(
+  atoms: ReadonlySet<string>,
+  primaryObjectiveIds: ReadonlySet<string>,
+): Set<string> {
+  const prefix = "objective_completed:";
+  return new Set(
+    [...atoms].flatMap((atom) =>
+      atom.startsWith(prefix) &&
+      primaryObjectiveIds.has(atom.slice(prefix.length))
+        ? [atom.slice(prefix.length)]
+        : [],
+    ),
+  );
+}
+
+function meetMustActive(
+  left: MustActivePrimary,
+  right: MustActivePrimary,
+): MustActivePrimary {
+  if (left.kind === "uninitialized") return { ...right };
+  if (right.kind === "uninitialized") return { ...left };
+  if (left.kind === "unknown" || right.kind === "unknown") {
+    return { kind: "unknown" };
+  }
+  return left.id === right.id ? { ...left } : { kind: "unknown" };
+}
+
+function statesEqual(
+  left: NodeAbstractState,
+  right: NodeAbstractState,
+): boolean {
+  return (
+    setsEqual(left.mayAtoms, right.mayAtoms) &&
+    setsEqual(left.mustAtoms, right.mustAtoms) &&
+    setsEqual(left.mayActivePrimaryIds, right.mayActivePrimaryIds) &&
+    mustActiveEqual(left.mustActivePrimary, right.mustActivePrimary) &&
+    setsEqual(left.mayCompletedPrimaryIds, right.mayCompletedPrimaryIds) &&
+    setsEqual(left.mustCompletedPrimaryIds, right.mustCompletedPrimaryIds) &&
+    left.orderAmbiguous === right.orderAmbiguous
+  );
+}
+
+function setsEqual<T>(left: ReadonlySet<T>, right: ReadonlySet<T>): boolean {
+  return (
+    left.size === right.size && [...left].every((value) => right.has(value))
+  );
+}
+
+function mustActiveEqual(
+  left: MustActivePrimary,
+  right: MustActivePrimary,
+): boolean {
+  return (
+    left.kind === right.kind &&
+    (left.kind !== "known" || (right.kind === "known" && left.id === right.id))
+  );
+}
+
+function intersectInto<T>(target: Set<T>, source: ReadonlySet<T>): void {
+  for (const value of target) {
+    if (!source.has(value)) target.delete(value);
+  }
+}
+
+function intersectScenarioReachability(
+  nodes: readonly ReachabilityNode[],
+  scenarios: readonly JointScenario[],
+): Set<string> {
+  if (scenarios.length === 0) return new Set();
   const identityCounts = new Map<string, number>();
-  for (const node of input.nodes) {
+  for (const node of nodes) {
     identityCounts.set(
       node.oneShotEventId,
       (identityCounts.get(node.oneShotEventId) ?? 0) + 1,
     );
   }
-  const reachableNodeKeys = new Set<string>();
+  return new Set(
+    nodes
+      .filter((node) => node.requirement === "mandatory")
+      .filter((node) => (identityCounts.get(node.oneShotEventId) ?? 0) === 1)
+      .filter((node) =>
+        scenarios.every((scenario) => scenario.outputsByNodeKey.has(node.key)),
+      )
+      .map((node) => node.key),
+  );
+}
+
+function mustAtomsFromScenarios(
+  mustReachableNodeKeys: ReadonlySet<string>,
+  scenarios: readonly JointScenario[],
+): Set<ReachabilityAtom> {
   const atoms = new Set<ReachabilityAtom>();
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const node of input.nodes) {
-      if (
-        node.requirement !== "mandatory" ||
-        reachableNodeKeys.has(node.key) ||
-        (identityCounts.get(node.oneShotEventId) ?? 0) > 1 ||
-        !nodeMustExecute(node, reachableNodeKeys, atoms)
-      ) {
-        continue;
-      }
-      reachableNodeKeys.add(node.key);
-      changed = true;
-      for (const atom of executableEffectAtoms(
-        node,
-        input.authorizationDefinitions,
-      )) {
-        if (atoms.has(atom)) continue;
-        atoms.add(atom);
-        changed = true;
+  for (const key of mustReachableNodeKeys) {
+    const states = scenarios.flatMap((scenario) => {
+      const state = scenario.outputsByNodeKey.get(key);
+      return state === undefined ? [] : [state];
+    });
+    if (states.length !== scenarios.length || states.length === 0) continue;
+    const nodeMust = new Set(states[0]!.mustAtoms);
+    for (const state of states.slice(1)) {
+      intersectInto(nodeMust, state.mustAtoms);
+    }
+    addAll(atoms, nodeMust);
+  }
+  return atoms;
+}
+
+function mustActiveFromScenarios(
+  mustReachableNodeKeys: ReadonlySet<string>,
+  scenarios: readonly JointScenario[],
+): MustActivePrimary {
+  let result: MustActivePrimary = { kind: "uninitialized" };
+  for (const key of [...mustReachableNodeKeys].sort((left, right) =>
+    left.localeCompare(right),
+  )) {
+    for (const scenario of scenarios) {
+      const state = scenario.outputsByNodeKey.get(key);
+      if (state !== undefined) {
+        result = meetMustActive(result, state.mustActivePrimary);
       }
     }
   }
-  return { reachableNodeKeys, atoms };
+  return result;
+}
+
+function targetDiagnostic(
+  node: ReachabilityNode,
+  targetIndex: number,
+  code: string,
+  message: string,
+): ReachabilityDiagnostic {
+  return {
+    ...diagnostic(node, code, message),
+    targetIndex,
+  };
+}
+
+function pushDiagnostic(
+  diagnostics: ReachabilityDiagnostic[],
+  candidate: ReachabilityDiagnostic,
+): void {
+  if (
+    diagnostics.some(
+      (existing) =>
+        existing.code === candidate.code &&
+        existing.nodeKey === candidate.nodeKey &&
+        existing.targetIndex === candidate.targetIndex,
+    )
+  ) {
+    return;
+  }
+  diagnostics.push(candidate);
 }
 
 function nodeMayExecute(
@@ -485,14 +1174,6 @@ function nodeMayExecute(
   atoms: ReadonlySet<ReachabilityAtom>,
 ): boolean {
   return nodeCanExecute(node, reachableNodeKeys, atoms, evaluateMay);
-}
-
-function nodeMustExecute(
-  node: ReachabilityNode,
-  reachableNodeKeys: ReadonlySet<string>,
-  atoms: ReadonlySet<ReachabilityAtom>,
-): boolean {
-  return nodeCanExecute(node, reachableNodeKeys, atoms, evaluateMust);
 }
 
 function nodeCanExecute(
@@ -549,53 +1230,6 @@ function potentialEffectAtoms(node: ReachabilityNode): ReachabilityAtom[] {
       }
     }),
   );
-}
-
-function executableEffectAtoms(
-  node: ReachabilityNode,
-  authorizationDefinitions: ReadonlyMap<
-    string,
-    ASTStoryCatalog["authorizations"][number]
-  >,
-): ReachabilityAtom[] {
-  return unique(
-    node.effects.flatMap((effect) => {
-      if (effect.kind === "addAtom") return [effect.atom];
-      if (effect.target.kind !== "grantAuthorization") {
-        return potentialStoryEffectAtoms(effect.target);
-      }
-      const definition = authorizationDefinitions.get(
-        effect.target.authorizationId,
-      );
-      return definition !== undefined &&
-        node.representedAuthority === definition.grantingAuthority
-        ? [`authorization_granted:${effect.target.authorizationId}`]
-        : [];
-    }),
-  );
-}
-
-function potentialStoryEffectAtoms(
-  target: StoryRevealTarget,
-): ReachabilityAtom[] {
-  switch (target.kind) {
-    case "assertFact":
-      return [`fact_asserted:${target.factId}`];
-    case "resolveQuestion":
-      return [`question_resolved:${target.questionId}`];
-    case "revealObjective":
-      return [`objective_revealed:${target.objectiveId}`];
-    case "completeObjective":
-      return [`objective_completed:${target.objectiveId}`];
-    case "setPrimaryObjective":
-      return target.nextObjectiveId === null
-        ? []
-        : [`objective_revealed:${target.nextObjectiveId}`];
-    case "grantAuthorization":
-      return [`authorization_granted:${target.authorizationId}`];
-    case "revealQuestion":
-      return [];
-  }
 }
 
 function mandatoryAuthorizationFailure(input: {

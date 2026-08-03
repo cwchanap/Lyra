@@ -795,6 +795,435 @@ describe("positive dependency and base reachability", () => {
   });
 });
 
+describe("ordered story batches", () => {
+  it("rejects a resolver before its supporting fact and rolls back the batch", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("batch", {
+        initiallyReachable: true,
+        effects: [
+          storyEffect(
+            {
+              kind: "resolveQuestion",
+              questionId: "question_a",
+              factId: "fact_a",
+            },
+            0,
+          ),
+          storyEffect({ kind: "assertFact", factId: "fact_a" }, 1),
+        ],
+      }),
+    ]);
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: "storyRevealBatchAlwaysInvalid",
+        nodeKey: "batch",
+      }),
+    );
+    expect(result.mayAtoms).not.toContain("fact_asserted:fact_a");
+    expect(result.mayAtoms).not.toContain("question_resolved:question_a");
+  });
+
+  it("makes an earlier provisional fact visible to a later resolver", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("batch", {
+        initiallyReachable: true,
+        effects: [
+          storyEffect({ kind: "assertFact", factId: "fact_a" }, 0),
+          storyEffect(
+            {
+              kind: "resolveQuestion",
+              questionId: "question_a",
+              factId: "fact_a",
+            },
+            1,
+          ),
+        ],
+      }),
+    ]);
+
+    expect(result.errors).toEqual([]);
+    expect(result.mayAtoms).toContain("fact_asserted:fact_a");
+    expect(result.mayAtoms).toContain("question_resolved:question_a");
+  });
+
+  it("publishes none of the earlier provisional atoms when the final target fails", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("batch", {
+        initiallyReachable: true,
+        effects: [
+          storyEffect({ kind: "assertFact", factId: "fact_a" }, 0),
+          storyEffect(
+            {
+              kind: "resolveQuestion",
+              questionId: "question_a",
+              factId: "missing_fact",
+            },
+            1,
+          ),
+        ],
+      }),
+    ]);
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({ code: "storyRevealBatchAlwaysInvalid" }),
+    );
+    expect(result.mayAtoms).not.toContain("fact_asserted:fact_a");
+  });
+
+  it("does not advance a strict successor after an always-invalid batch rolls back", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("batch", {
+        initiallyReachable: true,
+        effects: [
+          storyEffect(
+            {
+              kind: "resolveQuestion",
+              questionId: "question_a",
+              factId: "fact_a",
+            },
+            0,
+          ),
+        ],
+      }),
+      syntheticNode("successor", {
+        strictPredecessorKeys: ["batch"],
+        effects: [addAtom("advanced")],
+      }),
+    ]);
+
+    expect(result.reachableNodeKeys).not.toContain("successor");
+    expect(result.mayAtoms).not.toContain("advanced");
+  });
+
+  it("warns when a free-order fact makes the resolver batch succeed in only one order", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("fact", {
+        initiallyReachable: true,
+        effects: [storyEffect({ kind: "assertFact", factId: "fact_a" }, 0)],
+        mayExecuteBeforeKeys: ["resolver"],
+        freeOrderRegionId: "region",
+      }),
+      syntheticNode("resolver", {
+        initiallyReachable: true,
+        effects: [
+          storyEffect(
+            {
+              kind: "resolveQuestion",
+              questionId: "question_a",
+              factId: "fact_a",
+            },
+            0,
+          ),
+        ],
+        mayExecuteBeforeKeys: ["fact"],
+        freeOrderRegionId: "region",
+      }),
+    ]);
+
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: "storyRevealBatchOrderDependent",
+        nodeKey: "resolver",
+      }),
+    );
+    expect(result.mayAtoms).toContain("question_resolved:question_a");
+    expect(result.mustAtoms).not.toContain("question_resolved:question_a");
+  });
+});
+
+describe("joint primary fixed point", () => {
+  it("preserves the distinct primary outcomes of both concrete peer orders", () => {
+    const aThenB = analyzeSynthetic(
+      [
+        primaryTransitionNode("a", false, "primary_a", {
+          initiallyReachable: true,
+        }),
+        primaryTransitionNode("b", true, "primary_b", {
+          strictPredecessorKeys: ["a"],
+        }),
+      ],
+      primaryCatalog(),
+    );
+    const bThenA = analyzeSynthetic(
+      [
+        primaryTransitionNode("b", true, "primary_b", {
+          initiallyReachable: true,
+        }),
+        primaryTransitionNode("a", false, "primary_a", {
+          strictPredecessorKeys: ["b"],
+        }),
+      ],
+      primaryCatalog(),
+    );
+
+    expect(aThenB.mayCompletedPrimaryIds).toEqual(new Set(["primary_a"]));
+    expect(bThenA.mayCompletedPrimaryIds).toEqual(new Set());
+  });
+
+  it("summarizes both concrete orders when one peer sets A and another completes current into B", () => {
+    const nodes = freeOrderPrimaryPeers(
+      { completeCurrent: false, nextObjectiveId: "primary_a" },
+      { completeCurrent: true, nextObjectiveId: "primary_b" },
+    );
+
+    const forward = analyzeSynthetic(nodes, primaryCatalog());
+    const reversed = analyzeSynthetic([...nodes].reverse(), primaryCatalog());
+
+    expect(primarySummary(forward)).toEqual(primarySummary(reversed));
+    expect(forward.mayActivePrimaryIds).toEqual(
+      new Set(["primary_a", "primary_b"]),
+    );
+    expect(forward.mayCompletedPrimaryIds).toContain("primary_a");
+    expect(forward.mayAtoms).toContain("objective_completed:primary_a");
+    expect(forward.mustAtoms).not.toContain("objective_completed:primary_a");
+  });
+
+  it("warns when one peer sets A and another can complete current into the same A", () => {
+    const result = analyzeSynthetic(
+      freeOrderPrimaryPeers(
+        { completeCurrent: false, nextObjectiveId: "primary_a" },
+        { completeCurrent: true, nextObjectiveId: "primary_a" },
+      ),
+      primaryCatalog(),
+    );
+
+    expect(result.errors).not.toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveTransitionAlwaysInvalid",
+      }),
+    );
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveOrderingNotExhaustive",
+        nodeKey: "b",
+      }),
+    );
+  });
+
+  it("hard-fails a strict attempt to reactivate an already completed primary", () => {
+    const result = analyzeSynthetic(
+      [
+        primaryTransitionNode("set-a", false, "primary_a", {
+          initiallyReachable: true,
+        }),
+        primaryTransitionNode("complete-a", true, null, {
+          strictPredecessorKeys: ["set-a"],
+        }),
+        primaryTransitionNode("reactivate-a", false, "primary_a", {
+          strictPredecessorKeys: ["complete-a"],
+        }),
+      ],
+      primaryCatalog(),
+    );
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveTransitionAlwaysInvalid",
+        nodeKey: "reactivate-a",
+      }),
+    );
+    expect(result.mustCompletedPrimaryIds).toContain("primary_a");
+    expect(result.mustAtoms).toContain("objective_completed:primary_a");
+  });
+
+  it("distinguishes strict same-primary sequencing from a free-order pair", () => {
+    const strict = analyzeSynthetic(
+      [
+        primaryTransitionNode("a", false, "primary_a", {
+          initiallyReachable: true,
+        }),
+        primaryTransitionNode("b", true, "primary_a", {
+          strictPredecessorKeys: ["a"],
+        }),
+      ],
+      primaryCatalog(),
+    );
+    const free = analyzeSynthetic(
+      freeOrderPrimaryPeers(
+        { completeCurrent: false, nextObjectiveId: "primary_a" },
+        { completeCurrent: true, nextObjectiveId: "primary_a" },
+      ),
+      primaryCatalog(),
+    );
+
+    expect(strict.errors).toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveTransitionAlwaysInvalid",
+        nodeKey: "b",
+      }),
+    );
+    expect(strict.errors).toContainEqual(
+      expect.objectContaining({
+        code: "storyRevealBatchAlwaysInvalid",
+        nodeKey: "b",
+      }),
+    );
+    expect(free.errors).not.toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveTransitionAlwaysInvalid",
+      }),
+    );
+    expect(free.warnings).toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveOrderingNotExhaustive",
+      }),
+    );
+    expect(free.warnings).toContainEqual(
+      expect.objectContaining({ code: "storyRevealBatchOrderDependent" }),
+    );
+  });
+
+  it("does not contaminate primary candidates from an unrelated region", () => {
+    const result = analyzeSynthetic(
+      [
+        primaryTransitionNode("unrelated", false, "primary_a", {
+          initiallyReachable: true,
+          freeOrderRegionId: "other",
+        }),
+        primaryTransitionNode("target", true, "primary_a", {
+          initiallyReachable: true,
+          freeOrderRegionId: "target-region",
+        }),
+      ],
+      primaryCatalog(),
+    );
+
+    expect(result.warnings).not.toContainEqual(
+      expect.objectContaining({
+        code: "primaryObjectiveOrderingNotExhaustive",
+        nodeKey: "target",
+      }),
+    );
+  });
+
+  it("summarizes all three one-shot peers without replaying any member", () => {
+    const result = analyzeSynthetic(
+      [
+        primaryTransitionNode("a", false, "primary_a", {
+          initiallyReachable: true,
+          mayExecuteBeforeKeys: ["b", "c"],
+          freeOrderRegionId: "region",
+        }),
+        primaryTransitionNode("b", true, "primary_b", {
+          initiallyReachable: true,
+          mayExecuteBeforeKeys: ["a", "c"],
+          freeOrderRegionId: "region",
+        }),
+        primaryTransitionNode("c", true, null, {
+          initiallyReachable: true,
+          mayExecuteBeforeKeys: ["a", "b"],
+          freeOrderRegionId: "region",
+        }),
+      ],
+      primaryCatalog(),
+    );
+
+    expect(result.mayActivePrimaryIds).toEqual(
+      new Set([null, "primary_a", "primary_b"]),
+    );
+    expect(result.mayCompletedPrimaryIds).toEqual(
+      new Set(["primary_a", "primary_b"]),
+    );
+    expect(result.mayAtoms).toContain("objective_completed:primary_a");
+    expect(result.mayAtoms).toContain("objective_completed:primary_b");
+    expect(result.mustCompletedPrimaryIds).toEqual(new Set());
+  });
+
+  it("does not invent an A to B to A replay through mutual may-before summaries", () => {
+    const result = analyzeSynthetic(
+      freeOrderPrimaryPeers(
+        { completeCurrent: false, nextObjectiveId: "primary_a" },
+        { completeCurrent: true, nextObjectiveId: "primary_b" },
+      ),
+      primaryCatalog(),
+    );
+
+    expect(result.mayCompletedPrimaryIds).toEqual(new Set(["primary_a"]));
+    expect(result.mayAtoms).not.toContain("objective_completed:primary_b");
+  });
+
+  it("uses a primary completion atom to reach a dependent node", () => {
+    const result = analyzeSynthetic(
+      [
+        primaryTransitionNode("set-a", false, "primary_a", {
+          initiallyReachable: true,
+        }),
+        primaryTransitionNode("complete-a", true, null, {
+          strictPredecessorKeys: ["set-a"],
+        }),
+        syntheticNode("consumer", {
+          condition: atomExpression("objective_completed:primary_a"),
+          effects: [addAtom("unlocked")],
+        }),
+      ],
+      primaryCatalog(),
+    );
+
+    expect(result.reachableNodeKeys).toContain("consumer");
+    expect(result.mayAtoms).toContain("objective_completed:primary_a");
+    expect(result.mustAtoms).toContain("objective_completed:primary_a");
+    expect(result.mayAtoms).toContain("unlocked");
+  });
+
+  it("keeps a completed secondary objective out of primary helper state", () => {
+    const result = analyzeSynthetic([
+      syntheticNode("secondary", {
+        initiallyReachable: true,
+        effects: [
+          storyEffect(
+            { kind: "completeObjective", objectiveId: "objective_a" },
+            0,
+          ),
+        ],
+      }),
+    ]);
+
+    expect(result.mayAtoms).toContain("objective_completed:objective_a");
+    expect(result.mayCompletedPrimaryIds).not.toContain("objective_a");
+    expect(result.mustCompletedPrimaryIds).not.toContain("objective_a");
+  });
+
+  it("does not combine primary completions from mutually exclusive one-shot outcomes", () => {
+    const result = analyzeSynthetic(
+      [
+        primaryTransitionNode("left-set", false, "primary_a", {
+          oneShotEventId: "choice",
+          initiallyReachable: true,
+        }),
+        primaryTransitionNode("right-set", false, "primary_b", {
+          oneShotEventId: "choice",
+          initiallyReachable: true,
+        }),
+        primaryTransitionNode("left-complete", true, null, {
+          oneShotEventId: "left-complete",
+          strictPredecessorKeys: ["left-set"],
+        }),
+        primaryTransitionNode("right-complete", true, null, {
+          oneShotEventId: "right-complete",
+          strictPredecessorKeys: ["right-set"],
+        }),
+        syntheticNode("impossible", {
+          condition: {
+            op: "at_least",
+            count: 2,
+            conditions: [
+              atomExpression("objective_completed:primary_a"),
+              atomExpression("objective_completed:primary_b"),
+            ],
+          },
+        }),
+      ],
+      primaryCatalog(),
+    );
+
+    expect(result.mayCompletedPrimaryIds).toEqual(
+      new Set(["primary_a", "primary_b"]),
+    );
+    expect(result.reachableNodeKeys).not.toContain("impossible");
+  });
+});
+
 function buildNodes(chapters: ASTChapter[], scenes: SceneRecord[]) {
   return buildReachabilityNodes({
     chapters,
@@ -840,6 +1269,64 @@ function atomExpression(atom: string) {
 
 function addAtom(atom: string) {
   return { kind: "addAtom" as const, atom, targetIndex: 0 };
+}
+
+function storyEffect(
+  target: Extract<
+    ReachabilityNode["effects"][number],
+    { kind: "story" }
+  >["target"],
+  targetIndex: number,
+) {
+  return { kind: "story" as const, target, targetIndex };
+}
+
+function primaryTransitionNode(
+  key: string,
+  completeCurrent: boolean,
+  nextObjectiveId: string | null,
+  overrides: Partial<ReachabilityNode> = {},
+): ReachabilityNode {
+  return syntheticNode(key, {
+    effects: [
+      storyEffect(
+        { kind: "setPrimaryObjective", completeCurrent, nextObjectiveId },
+        0,
+      ),
+    ],
+    ...overrides,
+  });
+}
+
+function freeOrderPrimaryPeers(
+  a: { completeCurrent: boolean; nextObjectiveId: string | null },
+  b: { completeCurrent: boolean; nextObjectiveId: string | null },
+): ReachabilityNode[] {
+  return [
+    primaryTransitionNode("a", a.completeCurrent, a.nextObjectiveId, {
+      initiallyReachable: true,
+      mayExecuteBeforeKeys: ["b"],
+      freeOrderRegionId: "region",
+    }),
+    primaryTransitionNode("b", b.completeCurrent, b.nextObjectiveId, {
+      initiallyReachable: true,
+      mayExecuteBeforeKeys: ["a"],
+      freeOrderRegionId: "region",
+    }),
+  ];
+}
+
+function primarySummary(result: ReturnType<typeof analyzeSynthetic>) {
+  return {
+    mayActivePrimaryIds: result.mayActivePrimaryIds,
+    mustActivePrimary: result.mustActivePrimary,
+    mayCompletedPrimaryIds: result.mayCompletedPrimaryIds,
+    mustCompletedPrimaryIds: result.mustCompletedPrimaryIds,
+    mayAtoms: result.mayAtoms,
+    mustAtoms: result.mustAtoms,
+    errors: result.errors,
+    warnings: result.warnings,
+  };
 }
 
 function mandatoryAuthorizationConsumer(): ReachabilityNode {
@@ -1141,4 +1628,29 @@ function storyCatalog(): ASTStoryCatalog {
     sourceFile: "story_catalog.md",
     line: 1,
   };
+}
+
+function primaryCatalog(): ASTStoryCatalog {
+  const catalog = storyCatalog();
+  catalog.objectives = [
+    {
+      id: "primary_a",
+      label: "Primary A",
+      summary: "summary",
+      kind: "primary",
+      sortOrder: 1,
+      sourceFile: "story_catalog.md",
+      line: 5,
+    },
+    {
+      id: "primary_b",
+      label: "Primary B",
+      summary: "summary",
+      kind: "primary",
+      sortOrder: 2,
+      sourceFile: "story_catalog.md",
+      line: 6,
+    },
+  ];
+  return catalog;
 }
