@@ -1,10 +1,10 @@
-use super::migrations::{decode_summary_by_version, migrate_to_current};
 use super::restore::{build_restore_candidate, validate_save_summary, CurrentDefinitions};
 use super::schema::{
-    canonical_uuid_v4, parse_saved_at_utc, parse_schema_version, validate_envelope,
-    ReadableSaveMetadataView, SaveBrowserView, SaveDiscoveryStatusView, SaveEnvelopeV2,
-    SaveMetadataView, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveSnapshotV1, SaveType,
-    ThumbnailAvailabilityView, ThumbnailDescriptorV1, ThumbnailUnavailableReason,
+    canonical_uuid_v4, parse_current_envelope, parse_saved_at_utc, parse_schema_version,
+    validate_envelope, ReadableSaveMetadataView, SaveBrowserView, SaveDiscoveryStatusView,
+    SaveEnvelope, SaveMetadataView, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveSnapshot,
+    SaveSummary, SaveType, ThumbnailAvailabilityView, ThumbnailDescriptorV1,
+    ThumbnailUnavailableReason, SAVE_SCHEMA_VERSION,
 };
 use super::thumbnail::{
     parse_png_header, validate_png_bytes_for_descriptor, ValidatedThumbnail, PNG_HEADER_BYTES,
@@ -54,14 +54,14 @@ pub(crate) enum ThumbnailWrite {
 
 pub(crate) struct SlotWriteRequest {
     pub(crate) reference: SaveSlotRef,
-    pub(crate) envelope: SaveEnvelopeV2,
+    pub(crate) envelope: SaveEnvelope,
     pub(crate) thumbnail: ThumbnailWrite,
     pub(crate) expected_manual: Option<ManualSlotExpectation>,
 }
 
 #[derive(Debug)]
 pub(crate) struct SlotWriteOutcome {
-    pub(crate) committed_envelope: SaveEnvelopeV2,
+    pub(crate) committed_envelope: SaveEnvelope,
     pub(crate) cleanup_diagnostic: Option<GameError>,
 }
 
@@ -72,8 +72,8 @@ pub(crate) struct SlotDeleteOutcome {
 
 pub(crate) struct PreparedSlotWrite {
     pub(crate) reference: SaveSlotRef,
-    pub(crate) available_envelope: Option<SaveEnvelopeV2>,
-    pub(crate) unavailable_envelope: SaveEnvelopeV2,
+    pub(crate) available_envelope: Option<SaveEnvelope>,
+    pub(crate) unavailable_envelope: SaveEnvelope,
     pub(crate) expected_manual: Option<ManualSlotExpectation>,
     staged_thumbnail: Option<Box<dyn StagedAtomicWrite>>,
     staged_available_envelope: Option<Box<dyn StagedAtomicWrite>>,
@@ -427,8 +427,8 @@ pub(crate) fn read_save_thumbnail(
         }
         Err(_) => return Err(GameError::stale_save_selection()),
     };
-    let envelope = migrate_and_validate_envelope(&envelope_bytes)
-        .map_err(|_| GameError::thumbnail_corrupt())?;
+    let envelope =
+        parse_and_validate_envelope(&envelope_bytes).map_err(|_| GameError::thumbnail_corrupt())?;
     if !slot_agrees_with_envelope(reference, &envelope) || envelope.save_id != observed_save_id {
         return Err(GameError::stale_save_selection());
     }
@@ -460,7 +460,7 @@ pub(crate) fn read_save_envelope(
     root: &Path,
     reference: SaveSlotRef,
     observed_save_id: &str,
-) -> Result<SaveEnvelopeV2, GameError> {
+) -> Result<SaveEnvelope, GameError> {
     canonical_uuid_v4(observed_save_id).map_err(|_| GameError::stale_save_selection())?;
     let path = slot_path(root, reference)?;
     let bytes = match read_bounded_slot_json(fs, &path) {
@@ -468,7 +468,7 @@ pub(crate) fn read_save_envelope(
         Ok(None) => return Err(GameError::stale_save_selection()),
         Err(_) => return Err(GameError::save_read_failed()),
     };
-    let envelope = migrate_and_validate_envelope(&bytes)?;
+    let envelope = parse_and_validate_envelope(&bytes)?;
     if envelope.save_id != observed_save_id {
         return Err(GameError::stale_save_selection());
     }
@@ -660,7 +660,7 @@ fn discover_slot(
         }
     };
     let observed_saved_at = independently_valid_saved_at(&bytes);
-    let envelope = match migrate_and_validate_envelope(&bytes) {
+    let envelope = match parse_and_validate_envelope(&bytes) {
         Ok(envelope) => envelope,
         Err(error) => {
             let readable = readable_metadata(fs, root, &context.definitions, &bytes);
@@ -783,29 +783,22 @@ fn readable_metadata(
         .get("displayName")
         .and_then(Value::as_str)
         .and_then(|value| super::schema::validate_manual_display_name(value).ok());
-    let snapshot = object
-        .get("snapshot")
-        .and_then(|value| serde_json::from_value::<SaveSnapshotV1>(value.clone()).ok());
-    let summary = object
-        .get("summary")
-        .and_then(|value| {
-            let version = parse_schema_version(bytes).ok()?;
-            decode_summary_by_version(value, version)
+    let summary = (parse_schema_version(bytes).ok() == Some(SAVE_SCHEMA_VERSION))
+        .then(|| {
+            let snapshot = object
+                .get("snapshot")
+                .and_then(|value| serde_json::from_value::<SaveSnapshot>(value.clone()).ok())?;
+            let mut summary = object
+                .get("summary")
+                .and_then(|value| serde_json::from_value::<SaveSummary>(value.clone()).ok())?;
+            validate_save_summary(definitions, &snapshot, &summary).ok()?;
+            summary.scene_summary = super::capture::normalize_projected_scene_summary(
+                &snapshot.scene,
+                summary.scene_summary,
+            );
+            Some(summary)
         })
-        .filter(|summary| {
-            snapshot.as_ref().is_some_and(|snapshot| {
-                validate_save_summary(definitions, snapshot, summary).is_ok()
-            })
-        })
-        .map(|mut summary| {
-            if let Some(snapshot) = snapshot.as_ref() {
-                summary.scene_summary = super::capture::normalize_projected_scene_summary(
-                    &snapshot.scene,
-                    summary.scene_summary,
-                );
-            }
-            summary
-        });
+        .flatten();
     let descriptor = object
         .get("thumbnail")
         .and_then(|value| serde_json::from_value::<ThumbnailDescriptorV1>(value.clone()).ok());
@@ -830,13 +823,11 @@ fn independently_valid_saved_at(bytes: &[u8]) -> Option<DateTime<chrono::FixedOf
     parse_saved_at_utc(saved_at).ok()
 }
 
-fn migrate_and_validate_envelope(bytes: &[u8]) -> Result<SaveEnvelopeV2, GameError> {
-    let envelope = migrate_to_current(bytes)?;
-    validate_envelope(&envelope)?;
-    Ok(envelope)
+fn parse_and_validate_envelope(bytes: &[u8]) -> Result<SaveEnvelope, GameError> {
+    parse_current_envelope(bytes)
 }
 
-fn slot_agrees_with_envelope(reference: SaveSlotRef, envelope: &SaveEnvelopeV2) -> bool {
+fn slot_agrees_with_envelope(reference: SaveSlotRef, envelope: &SaveEnvelope) -> bool {
     matches!(
         (reference, envelope.save_type),
         (SaveSlotRef::Auto { slot }, SaveType::Auto) if slot == envelope.slot
@@ -1190,7 +1181,7 @@ fn descriptor_sidecar(root: &Path, descriptor: &ThumbnailDescriptorV1) -> Option
     }
 }
 
-fn serialize_envelope(envelope: &SaveEnvelopeV2) -> Result<Vec<u8>, GameError> {
+fn serialize_envelope(envelope: &SaveEnvelope) -> Result<Vec<u8>, GameError> {
     let mut bytes = serde_json::to_vec(envelope).map_err(|_| GameError::save_write_failed())?;
     bytes.push(b'\n');
     Ok(bytes)
@@ -1324,7 +1315,7 @@ fn validated_sidecar_from_slot(
     reference: SaveSlotRef,
     bytes: &[u8],
 ) -> Option<PathBuf> {
-    let envelope = migrate_and_validate_envelope(bytes).ok()?;
+    let envelope = parse_and_validate_envelope(bytes).ok()?;
     let agrees = matches!(
         (reference, envelope.save_type),
         (SaveSlotRef::Auto { slot }, SaveType::Auto) if slot == envelope.slot
@@ -1358,7 +1349,7 @@ fn discard_ignoring_error(staged: Option<Box<dyn StagedAtomicWrite>>) {
 mod tests {
     use super::*;
     use crate::game::save::schema::{
-        SaveEnvelopeV2, SaveSlotRef, SaveType, SceneProgressSnapshotV1, ThumbnailDescriptorV1,
+        SaveEnvelope, SaveSlotRef, SaveType, SceneProgressSnapshot, ThumbnailDescriptorV1,
     };
     use crate::game::save::thumbnail::ValidatedThumbnail;
     use crate::game::test_support::representative_save_envelope;
@@ -1705,7 +1696,7 @@ mod tests {
         root().join("thumbnails").join(format!("{save_id}.png"))
     }
 
-    fn envelope(save_id: &str, reference: SaveSlotRef) -> SaveEnvelopeV2 {
+    fn envelope(save_id: &str, reference: SaveSlotRef) -> SaveEnvelope {
         let mut envelope = representative_save_envelope();
         envelope.save_id = save_id.into();
         match reference {
@@ -1735,7 +1726,7 @@ mod tests {
         ValidatedThumbnail::from_png(png(1, 1), save_id).unwrap()
     }
 
-    fn old_envelope(reference: SaveSlotRef) -> SaveEnvelopeV2 {
+    fn old_envelope(reference: SaveSlotRef) -> SaveEnvelope {
         let mut old = envelope(OLD_SAVE_ID, reference);
         old.thumbnail = thumbnail(OLD_SAVE_ID).descriptor;
         old
@@ -1769,7 +1760,7 @@ mod tests {
         }
     }
 
-    fn committed_envelope(fs: &FakeFilesystem, reference: SaveSlotRef) -> SaveEnvelopeV2 {
+    fn committed_envelope(fs: &FakeFilesystem, reference: SaveSlotRef) -> SaveEnvelope {
         crate::game::save::schema::parse_current_envelope(&fs.bytes(&slot_path(reference)).unwrap())
             .unwrap()
     }
@@ -2654,12 +2645,12 @@ mod tests {
         tempfile::TempDir,
         PathBuf,
         SaveDiscoveryContext,
-        SaveEnvelopeV2,
+        SaveEnvelope,
     ) {
         let (_guard, resources) = crate::game::test_support::save_capture_fixture_resources();
         let engine = crate::game::GameEngine::new_started(resources.clone()).unwrap();
-        let checkpoint = crate::game::save::capture::capture_checkpoint_v2(&engine).unwrap();
-        let envelope = SaveEnvelopeV2 {
+        let checkpoint = crate::game::save::capture::capture_checkpoint(&engine).unwrap();
+        let envelope = SaveEnvelope {
             schema_version: crate::game::save::schema::SAVE_SCHEMA_VERSION,
             content_revision: engine.content_revision().into(),
             save_id: OLD_SAVE_ID.into(),
@@ -2683,116 +2674,100 @@ mod tests {
         )
     }
 
-    fn valid_v1_fixture_bytes(template: &SaveEnvelopeV2) -> Vec<u8> {
-        const FROZEN_V1: &str =
-            include_str!("../../../tests/fixtures/saves/v1-representative.json");
-        let mut source: serde_json::Value = serde_json::from_str(FROZEN_V1).unwrap();
-        let current = serde_json::to_value(template).unwrap();
-        source["contentRevision"] = current["contentRevision"].clone();
-        source["saveType"] = serde_json::json!("auto");
-        source["slot"] = serde_json::json!(1);
-        source["thumbnail"] = serde_json::json!({"type": "unavailable"});
-        source["summary"] = current["summary"].clone();
+    fn noncurrent_schema_bytes(template: &SaveEnvelope) -> Vec<u8> {
+        let mut source = serde_json::to_value(template).unwrap();
+        source["schemaVersion"] = serde_json::json!(1);
+        source["slot"] = serde_json::json!(2);
         let summary = source["summary"].as_object_mut().unwrap();
         summary.remove("chapterSummary");
         summary.remove("sceneSummary");
         summary.remove("activePrimaryObjectiveSummary");
-        source["snapshot"] = current["snapshot"].clone();
         serde_json::to_vec(&source).unwrap()
     }
 
     #[test]
-    fn discovery_migrates_valid_v1_metadata_to_public_v2_with_null_recap_copy() {
+    fn discovery_classifies_current_noncurrent_malformed_and_content_incompatible_slots() {
         let (_guard, _resources, context, template) = discovery_fixture();
         let fs = FakeFilesystem::new();
         fs.put_file(
             slot_path(SaveSlotRef::Auto { slot: 1 }),
-            valid_v1_fixture_bytes(&template),
+            serde_json::to_vec(&template).unwrap(),
             UNIX_EPOCH + Duration::from_secs(42),
         );
-
-        let view = discover_saves(&fs, &root(), &context);
-        let SaveSlotStatusView::Valid { metadata } = &view.slots[0].status else {
-            panic!("matching v1 fixture must migrate to a valid current save");
-        };
-        assert_eq!(metadata.schema_version, 2);
-        let summary = serde_json::to_value(&metadata.summary).unwrap();
-        assert_eq!(
-            summary.get("chapterSummary"),
-            Some(&serde_json::Value::Null)
-        );
-        assert_eq!(summary.get("sceneSummary"), Some(&serde_json::Value::Null));
-        assert_eq!(
-            summary.get("activePrimaryObjectiveSummary"),
-            Some(&serde_json::Value::Null)
-        );
-    }
-
-    #[test]
-    fn readable_invalid_v1_metadata_uses_migrated_v2_summary_without_fallback_copy() {
-        let (_guard, _resources, context, template) = discovery_fixture();
-        let fs = FakeFilesystem::new();
-        let mut source: serde_json::Value =
-            serde_json::from_slice(&valid_v1_fixture_bytes(&template)).unwrap();
-        source["savedAt"] = serde_json::json!("2026-07-26T05:34:56-07:00");
+        let noncurrent = noncurrent_schema_bytes(&template);
         fs.put_file(
-            slot_path(SaveSlotRef::Auto { slot: 1 }),
-            serde_json::to_vec(&source).unwrap(),
+            slot_path(SaveSlotRef::Auto { slot: 2 }),
+            noncurrent.clone(),
             UNIX_EPOCH + Duration::from_secs(43),
         );
-
-        let view = discover_saves(&fs, &root(), &context);
-        let SaveSlotStatusView::Invalid {
-            metadata: Some(metadata),
-            ..
-        } = &view.slots[0].status
-        else {
-            panic!("readable invalid v1 fixture must retain migrated metadata");
-        };
-        let summary = serde_json::to_value(metadata.summary.as_ref().unwrap()).unwrap();
-        assert_eq!(
-            summary.get("chapterSummary"),
-            Some(&serde_json::Value::Null)
-        );
-        assert_eq!(summary.get("sceneSummary"), Some(&serde_json::Value::Null));
-        assert_eq!(
-            summary.get("activePrimaryObjectiveSummary"),
-            Some(&serde_json::Value::Null)
-        );
-    }
-
-    #[test]
-    fn discovery_migrates_v1_before_enforcing_exact_content_revision() {
-        let (_guard, _resources, context, template) = discovery_fixture();
-        let fs = FakeFilesystem::new();
-        let mut old_package: serde_json::Value =
-            serde_json::from_slice(&valid_v1_fixture_bytes(&template)).unwrap();
-        old_package["contentRevision"] = serde_json::json!(
-            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-        );
         fs.put_file(
-            slot_path(SaveSlotRef::Auto { slot: 1 }),
-            serde_json::to_vec(&old_package).unwrap(),
+            slot_path(SaveSlotRef::Auto { slot: 3 }),
+            b"{broken".to_vec(),
             UNIX_EPOCH + Duration::from_secs(44),
+        );
+        let mut incompatible = template.clone();
+        incompatible.save_type = SaveType::Auto;
+        incompatible.slot = 4;
+        incompatible.content_revision =
+            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".into();
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 4 }),
+            serde_json::to_vec(&incompatible).unwrap(),
+            UNIX_EPOCH + Duration::from_secs(45),
         );
 
         let view = discover_saves(&fs, &root(), &context);
         assert!(matches!(
             view.slots[0].status,
+            SaveSlotStatusView::Valid { .. }
+        ));
+        let SaveSlotStatusView::Invalid {
+            metadata: Some(metadata),
+            diagnostic,
+        } = &view.slots[1].status
+        else {
+            panic!("noncurrent schema must remain an invalid slot");
+        };
+        assert_eq!(diagnostic.code, "unsupportedSaveSchemaVersion");
+        assert_eq!(metadata.save_id.as_deref(), Some(OLD_SAVE_ID));
+        assert_eq!(
+            metadata.saved_at.as_deref(),
+            Some("2026-07-26T12:34:56.123456789Z")
+        );
+        assert_eq!(metadata.display_name.as_deref(), Some("Discovery fixture"));
+        assert!(matches!(
+            metadata.thumbnail,
+            ThumbnailAvailabilityView::Unavailable {
+                reason: ThumbnailUnavailableReason::CaptureUnavailable
+            }
+        ));
+        assert!(metadata.summary.is_none());
+        assert!(matches!(
+            view.slots[2].status,
+            SaveSlotStatusView::Invalid { ref diagnostic, .. }
+                if diagnostic.code == "malformedSaveJson"
+        ));
+        assert!(matches!(
+            view.slots[3].status,
             SaveSlotStatusView::Invalid { ref diagnostic, .. }
                 if diagnostic.code == "incompatibleContentRevision"
         ));
+        assert_eq!(
+            fs.bytes(&slot_path(SaveSlotRef::Auto { slot: 2 })).unwrap(),
+            noncurrent,
+            "discovery must not rewrite unsupported saves"
+        );
     }
 
-    /// A pre-fix schema-v2 save may carry a non-null `sceneSummary` for a
+    /// An earlier current-format save may carry a non-null `sceneSummary` for a
     /// resumable scene. Projection must suppress it so Save Browser and
     /// Continue do not leak unrevealed plot content, without rejecting the
     /// save (which would lose progress).
     #[test]
-    fn discovery_normalizes_legacy_v2_scene_summary_for_resumable_slot() {
+    fn discovery_normalizes_pre_spoiler_fix_scene_summary_for_resumable_slot() {
         let (_guard, _resources, context, template) = discovery_fixture();
         assert!(
-            matches!(template.snapshot.scene, SceneProgressSnapshotV1::Linear),
+            matches!(template.snapshot.scene, SceneProgressSnapshot::Linear),
             "fixture must capture a resumable scene"
         );
         let mut legacy = template.clone();
@@ -2806,7 +2781,7 @@ mod tests {
 
         let view = discover_saves(&fs, &root(), &context);
         let SaveSlotStatusView::Valid { metadata } = &view.slots[0].status else {
-            panic!("legacy v2 save with matching prose must remain valid");
+            panic!("pre-spoiler-fix save with matching prose must remain valid");
         };
         let summary = serde_json::to_value(&metadata.summary).unwrap();
         assert_eq!(
@@ -2817,14 +2792,14 @@ mod tests {
     }
 
     /// The same normalization must apply to readable metadata for invalid
-    /// slots, so a pre-fix v2 save that is unreadable for an unrelated reason
+    /// slots, so an earlier current-format save that is unreadable for an unrelated reason
     /// (here: mismatched content revision) still does not leak the scene
     /// summary in its readable recap.
     #[test]
-    fn readable_invalid_v2_metadata_normalizes_legacy_scene_summary_for_resumable_slot() {
+    fn readable_invalid_metadata_normalizes_pre_spoiler_fix_scene_summary_for_resumable_slot() {
         let (_guard, _resources, context, template) = discovery_fixture();
         assert!(
-            matches!(template.snapshot.scene, SceneProgressSnapshotV1::Linear),
+            matches!(template.snapshot.scene, SceneProgressSnapshot::Linear),
             "fixture must capture a resumable scene"
         );
         let mut legacy = template.clone();
@@ -2867,10 +2842,10 @@ mod tests {
     }
 
     fn envelope_for_slot(
-        template: &SaveEnvelopeV2,
+        template: &SaveEnvelope,
         index: usize,
         with_thumbnail: bool,
-    ) -> (SaveEnvelopeV2, Option<Vec<u8>>) {
+    ) -> (SaveEnvelope, Option<Vec<u8>>) {
         let reference = slot_reference(index);
         let mut envelope = template.clone();
         envelope.save_id = format!("550e8400-e29b-41d4-a716-44665544000{index}");
@@ -3155,7 +3130,7 @@ mod tests {
         );
     }
 
-    fn thumbnail_slot(fs: &FakeFilesystem, template: &SaveEnvelopeV2) -> (SaveSlotRef, Vec<u8>) {
+    fn thumbnail_slot(fs: &FakeFilesystem, template: &SaveEnvelope) -> (SaveSlotRef, Vec<u8>) {
         let reference = SaveSlotRef::Manual { slot: 1 };
         let (mut envelope, _) = envelope_for_slot(template, 5, false);
         let bytes = png(320, 180);
@@ -3469,7 +3444,7 @@ mod tests {
 
     #[test]
     fn discovery_and_load_share_exact_schema_cursor_history_and_scene_diagnostics() {
-        type Mutation = Box<dyn Fn(&mut SaveEnvelopeV2)>;
+        type Mutation = Box<dyn Fn(&mut SaveEnvelope)>;
         let (_guard, _resources, context, template) = discovery_fixture();
         let cases: Vec<(&str, Mutation)> = vec![
             (
@@ -3488,7 +3463,7 @@ mod tests {
                 "scene progress",
                 Box::new(|save| {
                     save.snapshot.scene =
-                        crate::game::save::schema::SceneProgressSnapshotV1::Investigation {
+                        crate::game::save::schema::SceneProgressSnapshot::Investigation {
                             intro_played: false,
                             outro_played: false,
                             current_sublocation_id: None,
@@ -3709,7 +3684,7 @@ mod tests {
 
     #[test]
     fn invalid_metadata_exposes_only_authoritatively_valid_timestamp_and_summary_fields() {
-        type Mutation = Box<dyn Fn(&mut SaveEnvelopeV2)>;
+        type Mutation = Box<dyn Fn(&mut SaveEnvelope)>;
         let (_guard, _resources, context, template) = discovery_fixture();
         let cases: Vec<(&str, Mutation, bool, bool)> = vec![
             (

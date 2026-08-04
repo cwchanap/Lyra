@@ -9,8 +9,6 @@ use std::time::SystemTime;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(crate) const SAVE_SCHEMA_VERSION: u32 = 2;
-pub(crate) const SAVE_SCHEMA_VERSION_V1: u32 = 1;
-pub(crate) const SAVE_SCHEMA_VERSION_V2: u32 = 2;
 pub(crate) const MAX_THUMBNAIL_BYTES: usize = 1024 * 1024;
 pub(crate) const MAX_THUMBNAIL_WIDTH: u32 = 480;
 pub(crate) const MAX_THUMBNAIL_HEIGHT: u32 = 360;
@@ -57,17 +55,6 @@ pub(crate) enum ThumbnailDescriptorV1 {
         sha256: String,
     },
     Unavailable,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct SaveSummaryV1 {
-    pub(crate) chapter_id: String,
-    pub(crate) chapter_title: String,
-    pub(crate) scene_id: String,
-    pub(crate) scene_title: String,
-    pub(crate) active_primary_objective_id: Option<String>,
-    pub(crate) active_primary_objective_label: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -128,7 +115,7 @@ pub(crate) struct SaveMetadataView {
     pub(crate) saved_at: String,
     pub(crate) display_name: String,
     pub(crate) thumbnail: ThumbnailAvailabilityView,
-    pub(crate) summary: SaveSummaryV2,
+    pub(crate) summary: SaveSummary,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -138,7 +125,7 @@ pub(crate) struct ReadableSaveMetadataView {
     pub(crate) saved_at: Option<String>,
     pub(crate) display_name: Option<String>,
     pub(crate) thumbnail: ThumbnailAvailabilityView,
-    pub(crate) summary: Option<SaveSummaryV2>,
+    pub(crate) summary: Option<SaveSummary>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -173,22 +160,7 @@ pub(crate) struct ThumbnailDiagnosticView {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct SaveEnvelopeV1 {
-    pub(crate) schema_version: u32,
-    pub(crate) content_revision: String,
-    pub(crate) save_id: String,
-    pub(crate) save_type: SaveType,
-    pub(crate) slot: u8,
-    pub(crate) saved_at: String,
-    pub(crate) display_name: String,
-    pub(crate) thumbnail: ThumbnailDescriptorV1,
-    pub(crate) summary: SaveSummaryV1,
-    pub(crate) snapshot: SaveSnapshotV1,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct SaveSummaryV2 {
+pub(crate) struct SaveSummary {
     pub(crate) chapter_id: String,
     pub(crate) chapter_title: String,
     pub(crate) chapter_summary: Option<String>,
@@ -202,7 +174,7 @@ pub(crate) struct SaveSummaryV2 {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct SaveEnvelopeV2 {
+pub(crate) struct SaveEnvelope {
     pub(crate) schema_version: u32,
     pub(crate) content_revision: String,
     pub(crate) save_id: String,
@@ -211,16 +183,16 @@ pub(crate) struct SaveEnvelopeV2 {
     pub(crate) saved_at: String,
     pub(crate) display_name: String,
     pub(crate) thumbnail: ThumbnailDescriptorV1,
-    pub(crate) summary: SaveSummaryV2,
-    pub(crate) snapshot: SaveSnapshotV1,
+    pub(crate) summary: SaveSummary,
+    pub(crate) snapshot: SaveSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct SaveSnapshotV1 {
+pub(crate) struct SaveSnapshot {
     pub(crate) chapter_id: String,
     pub(crate) scene_id: String,
-    pub(crate) scene: SceneProgressSnapshotV1,
+    pub(crate) scene: SceneProgressSnapshot,
     pub(crate) active_dialogue: Option<ActiveDialogueStateV1>,
     pub(crate) last_visual_cue: LastVisualCueSnapshotV1,
     pub(crate) inventory: InventorySnapshotV1,
@@ -238,7 +210,7 @@ pub(crate) struct SaveSnapshotV1 {
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
-pub(crate) enum SceneProgressSnapshotV1 {
+pub(crate) enum SceneProgressSnapshot {
     Linear,
     GameComplete,
     Investigation {
@@ -540,16 +512,18 @@ pub(super) fn parse_schema_version(bytes: &[u8]) -> Result<u32, GameError> {
         .map_err(|error| GameError::new("malformedSaveJson", error.to_string()))
 }
 
-pub(crate) fn parse_current_envelope(bytes: &[u8]) -> Result<SaveEnvelopeV2, GameError> {
+pub(crate) fn parse_current_envelope(bytes: &[u8]) -> Result<SaveEnvelope, GameError> {
     let version = parse_schema_version(bytes)?;
-    super::migrations::dispatch_current(version)?;
-    let envelope = serde_json::from_slice::<SaveEnvelopeV2>(bytes)
+    if version != SAVE_SCHEMA_VERSION {
+        return Err(GameError::unsupported_save_schema_version());
+    }
+    let envelope = serde_json::from_slice::<SaveEnvelope>(bytes)
         .map_err(|error| GameError::new("malformedSaveJson", error.to_string()))?;
     validate_envelope(&envelope)?;
     Ok(envelope)
 }
 
-pub(crate) fn validate_envelope(envelope: &SaveEnvelopeV2) -> Result<(), GameError> {
+pub(crate) fn validate_envelope(envelope: &SaveEnvelope) -> Result<(), GameError> {
     if envelope.schema_version != SAVE_SCHEMA_VERSION {
         return Err(GameError::new(
             "unsupportedSaveSchemaVersion",
@@ -640,32 +614,13 @@ pub(crate) fn suggested_display_name(chapter_title: &str, scene_title: &str) -> 
 mod tests {
     use super::*;
 
-    const REPRESENTATIVE: &str =
-        include_str!("../../../tests/fixtures/saves/v1-representative.json");
-
     fn current_representative() -> String {
-        serde_json::to_string(
-            &super::super::migrations::migrate_to_current(REPRESENTATIVE.as_bytes()).unwrap(),
-        )
-        .unwrap()
+        serde_json::to_string(&crate::game::test_support::representative_save_envelope()).unwrap()
     }
 
     #[test]
-    fn v1_representative_fixture_round_trips_exactly() {
-        let save: SaveEnvelopeV1 = serde_json::from_str(REPRESENTATIVE).unwrap();
-        assert_eq!(
-            format!("{}\n", serde_json::to_string(&save).unwrap()),
-            REPRESENTATIVE
-        );
-        assert_eq!(
-            serde_json::from_str::<SaveEnvelopeV1>(REPRESENTATIVE).unwrap(),
-            save
-        );
-    }
-
-    #[test]
-    fn schema_v1_inventory_keeps_immutable_record_definitions_out_of_the_save() {
-        let mut save: SaveEnvelopeV1 = serde_json::from_str(REPRESENTATIVE).unwrap();
+    fn save_inventory_keeps_immutable_record_definitions_out_of_the_save() {
+        let mut save = crate::game::test_support::representative_save_envelope();
         save.snapshot.inventory = InventorySnapshotV1 {
             evidence: vec![
                 EvidenceInventoryEntryV1 {
@@ -692,7 +647,7 @@ mod tests {
         };
 
         let inventory = serde_json::to_value(&save).unwrap()["snapshot"]["inventory"].clone();
-        assert_eq!(SAVE_SCHEMA_VERSION_V1, 1);
+        assert_eq!(save.schema_version, SAVE_SCHEMA_VERSION);
         assert_eq!(
             inventory,
             serde_json::json!({
@@ -737,7 +692,7 @@ mod tests {
     }
 
     #[test]
-    fn current_dispatch_rejects_unknown_and_wrong_dialect_fields() {
+    fn current_parser_rejects_unknown_noncurrent_and_wrong_dialect_fields() {
         let representative = current_representative();
         let mut unknown_top_level: serde_json::Value =
             serde_json::from_str(&representative).unwrap();
@@ -757,14 +712,16 @@ mod tests {
             "malformedSaveJson"
         );
 
-        let mut future_version: serde_json::Value = serde_json::from_str(&representative).unwrap();
-        future_version["schemaVersion"] = serde_json::json!(99);
-        assert_eq!(
-            parse_current_envelope(future_version.to_string().as_bytes())
-                .unwrap_err()
-                .code,
-            "unsupportedSaveSchemaVersion"
-        );
+        for version in [1, 99] {
+            let mut noncurrent: serde_json::Value = serde_json::from_str(&representative).unwrap();
+            noncurrent["schemaVersion"] = serde_json::json!(version);
+            assert_eq!(
+                parse_current_envelope(noncurrent.to_string().as_bytes())
+                    .unwrap_err()
+                    .code,
+                "unsupportedSaveSchemaVersion"
+            );
+        }
         assert_eq!(
             parse_current_envelope(br#"{}"#).unwrap_err().code,
             "malformedSaveJson"
@@ -775,7 +732,7 @@ mod tests {
     fn closed_envelope_rejects_nested_unknown_fields_and_wrong_enum_dialect() {
         let representative = current_representative();
         let mut nested: serde_json::Value = serde_json::from_str(&representative).unwrap();
-        nested["snapshot"]["scene"]["unknown"] = serde_json::json!(true);
+        nested["snapshot"]["inventory"]["unknown"] = serde_json::json!(true);
         assert_eq!(
             parse_current_envelope(nested.to_string().as_bytes())
                 .unwrap_err()
@@ -783,9 +740,10 @@ mod tests {
             "malformedSaveJson"
         );
 
-        let wrong_enum = representative.replace("\"manual\"", "\"Manual\"");
+        let mut wrong_enum: serde_json::Value = serde_json::from_str(&representative).unwrap();
+        wrong_enum["saveType"] = serde_json::json!("Manual");
         assert_eq!(
-            parse_current_envelope(wrong_enum.as_bytes())
+            parse_current_envelope(wrong_enum.to_string().as_bytes())
                 .unwrap_err()
                 .code,
             "malformedSaveJson"
@@ -998,8 +956,15 @@ mod tests {
         );
 
         let mut invalid: serde_json::Value = serde_json::from_str(&representative).unwrap();
-        invalid["thumbnail"]["objectId"] =
-            serde_json::json!("650e8400-e29b-41d4-a716-446655440000");
+        invalid["thumbnail"] = serde_json::json!({
+            "type": "available",
+            "objectId": "650e8400-e29b-41d4-a716-446655440000",
+            "format": "png",
+            "width": 1,
+            "height": 1,
+            "byteLength": 1,
+            "sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        });
         assert_eq!(
             parse_current_envelope(invalid.to_string().as_bytes())
                 .unwrap_err()
@@ -1081,8 +1046,7 @@ mod tests {
 
     #[test]
     fn validate_envelope_rejects_unsupported_schema_version_directly() {
-        let mut envelope =
-            super::super::migrations::migrate_to_current(REPRESENTATIVE.as_bytes()).unwrap();
+        let mut envelope = crate::game::test_support::representative_save_envelope();
         envelope.schema_version = 99;
         assert_eq!(
             validate_envelope(&envelope).unwrap_err().code,

@@ -4,7 +4,7 @@ use super::super::{
     PersistenceHealthView, SaveCoordinator, SaveSlotRef, AUTOSAVE_DEBOUNCE,
 };
 use crate::game::save::schema::{
-    parse_current_envelope, SaveEnvelopeV2, SaveSlotStatusView, SaveSlotView, SaveType,
+    parse_current_envelope, SaveEnvelope, SaveSlotStatusView, SaveSlotView, SaveType,
 };
 use crate::game::save::storage::{
     clean_orphaned_save_files, ProductionSaveFilesystem, SaveFileMetadata, SaveFilesystem,
@@ -432,7 +432,7 @@ fn empty_autosave_slots() -> Vec<SaveSlotView> {
         .collect()
 }
 
-fn autosave_envelope(save_id: &str, target: SaveSlotRef, durable_revision: u64) -> SaveEnvelopeV2 {
+fn autosave_envelope(save_id: &str, target: SaveSlotRef, durable_revision: u64) -> SaveEnvelope {
     let mut envelope = representative_save_envelope();
     envelope.save_id = save_id.into();
     envelope.snapshot.durable_revision = durable_revision;

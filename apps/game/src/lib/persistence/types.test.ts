@@ -38,7 +38,7 @@ const validSlot = {
     metadata: {
       saveId: "00000000-0000-4000-8000-000000000001",
       saveType: "manual",
-      schemaVersion: 1,
+      schemaVersion: 2,
       contentRevision: "sha256:fixture",
       savedAt: "2026-07-27T08:00:00Z",
       displayName: "雨夜",

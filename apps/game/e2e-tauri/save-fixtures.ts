@@ -123,7 +123,7 @@ export type SaveE2eSceneSnapshot =
   | SaveE2eInterrogationSceneSnapshot;
 
 /**
- * Save schema v1 inventory payload. These entries intentionally remain
+ * Save inventory payload. These entries intentionally remain
  * ID-and-acquisition-origin only; immutable provenance rejoins from the exact
  * packaged content and is exposed separately by the public game-state view.
  */
@@ -147,18 +147,15 @@ export type SaveE2eVisualCueSnapshot = {
   bgs: { channel: "bgs"; assetId: string | null } | null;
 };
 
-type SaveE2eSaveSummaryV1 = {
+type SaveE2eSaveSummary = {
   chapterId: string;
   chapterTitle: string;
+  chapterSummary: string | null;
   sceneId: string;
   sceneTitle: string;
+  sceneSummary: string | null;
   activePrimaryObjectiveId: string | null;
   activePrimaryObjectiveLabel: string | null;
-};
-
-type SaveE2eSaveSummaryV2 = SaveE2eSaveSummaryV1 & {
-  chapterSummary: string | null;
-  sceneSummary: string | null;
   activePrimaryObjectiveSummary: string | null;
 };
 
@@ -185,19 +182,11 @@ type SaveE2eSaveEnvelopeBase = {
   };
 };
 
-/** Frozen schema-v1 shape retained for migration fixtures only. */
-export type SaveE2eSaveEnvelopeV1 = SaveE2eSaveEnvelopeBase & {
-  schemaVersion: 1;
-  summary: SaveE2eSaveSummaryV1;
-};
-
 /** Current envelope shape produced by every new manual save and autosave. */
-export type SaveE2eSaveEnvelopeV2 = SaveE2eSaveEnvelopeBase & {
+export type SaveE2eSaveEnvelope = SaveE2eSaveEnvelopeBase & {
   schemaVersion: 2;
-  summary: SaveE2eSaveSummaryV2;
+  summary: SaveE2eSaveSummary;
 };
-
-export type SaveE2eSaveEnvelope = SaveE2eSaveEnvelopeV1 | SaveE2eSaveEnvelopeV2;
 
 export type SaveE2eOwnershipSnapshot = {
   slots: Array<{

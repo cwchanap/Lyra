@@ -5,7 +5,7 @@ use super::super::{
     ThumbnailActivityView, ThumbnailCapturePurpose, AUTOSAVE_DEBOUNCE, THUMBNAIL_CAPTURE_TIMEOUT,
 };
 use crate::game::save::schema::{
-    SaveEnvelopeV2, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveType,
+    SaveEnvelope, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveType,
 };
 use crate::game::test_support::representative_save_envelope;
 use crate::game::GameError;
@@ -572,7 +572,7 @@ fn empty_autosave_slots() -> Vec<SaveSlotView> {
         .collect()
 }
 
-fn autosave_envelope(save_id: &str, target: SaveSlotRef, durable_revision: u64) -> SaveEnvelopeV2 {
+fn autosave_envelope(save_id: &str, target: SaveSlotRef, durable_revision: u64) -> SaveEnvelope {
     let mut envelope = representative_save_envelope();
     envelope.save_id = save_id.into();
     envelope.snapshot.durable_revision = durable_revision;

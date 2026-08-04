@@ -78,12 +78,6 @@ impl GameError {
             "Save schema version is unsupported.",
         )
     }
-    pub fn missing_save_schema_migration() -> Self {
-        Self::new(
-            "missingSaveSchemaMigration",
-            "Save schema migration is missing.",
-        )
-    }
     pub fn missing_save_definition() -> Self {
         Self::new(
             "missingSaveDefinition",
