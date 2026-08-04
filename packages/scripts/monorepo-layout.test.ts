@@ -82,6 +82,25 @@ describe("monorepo layout", () => {
     }
   });
 
+  it("routes supported game development commands through the isolated Tauri configuration", () => {
+    const rootPackage = readJson("package.json");
+    const gamePackage = readJson("apps/game/package.json");
+    const tauriDevConfig = readJson("apps/game/src-tauri/tauri.dev.conf.json");
+
+    expect(rootPackage.scripts["dev:game"]).toBe(
+      "turbo run dev:frontend dev:tauri --filter=@lyra/game",
+    );
+    expect(gamePackage.scripts["dev:tauri"]).toBe(
+      "bun run scenes:compile && tauri dev -c src-tauri/tauri.dev.conf.json",
+    );
+    expect(tauriDevConfig).toEqual({
+      identifier: "com.chanwaichan.lyra.dev",
+      build: {
+        beforeDevCommand: null,
+      },
+    });
+  });
+
   it("keeps the game app as a Tauri package inside apps/game", () => {
     const gamePackage = readJson("apps/game/package.json");
     const editorPackage = readJson("apps/layout-editor/package.json");

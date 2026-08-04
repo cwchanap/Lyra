@@ -17,7 +17,10 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   `dev:tauri` tasks as separate persistent processes.
 - `bun run dev:game` - run only the game Tauri app. Turbo starts Vite on port
   1420 and separately runs `dev:tauri`, which compiles scenes before launching
-  the Rust shell with HMR.
+  the Rust shell with HMR. Its `tauri.dev.conf.json` override uses
+  `com.chanwaichan.lyra.dev`, so Tauri development saves use a separate
+  application-data directory; see the
+  [HPA-540 pre-release save compatibility policy](docs/superpowers/specs/2026-08-03-hpa-540-pre-release-save-compatibility-policy.md).
 - `bun run dev:editor` - run only the layout editor Tauri app. Turbo starts the
   editor Vite dev server on port 1430 and separately launches its Rust shell
   with HMR.
