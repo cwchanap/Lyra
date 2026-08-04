@@ -130,6 +130,10 @@
 - **Source:** statement:manager_timing
 - **Summary:** 提供另一個可被程序固定的時間來源。
 
+### Card: KAGAMI 摘要時間 {#summary_timestamp}
+- **Source:** evidence:summary_timestamp
+- **Summary:** 顯示摘要時間，但不能獨立證明本機事件時間。
+
 ### Result Dialogue
 
 **早坂茜**：現在有兩條獨立矛盾，可以把申請送進審查。
@@ -153,10 +157,11 @@
 - `Fixed Anchors` is optional and uses one-based `card_id@position` values.
 - Every classify card appears in exactly one accepted group.
 - Accepted order is an exact permutation of every order card.
-- Every threshold card must appear in `Eligible Cards` for the Chapter 1 MVP. The selected answer is a subset evaluated against the authored minimums and provenance constraints.
+- `Eligible Cards` is a non-empty unique subset of displayed threshold cards. Displayed cards outside the set are ordinary decoys and use the same generic incorrect feedback when selected.
+- A successful threshold answer selects only eligible cards and satisfies the authored minimums and provenance constraints.
 - Threshold capability requirements are aggregate union coverage across the selected records.
 - Allowed procedural status and required source-group presence are per-record eligibility constraints.
-- Every authored card source is a reachability prerequisite for its board. Card availability and answer selection are separate concerns.
+- Every authored card source, including threshold decoys, is a reachability prerequisite for its board. Card availability and answer selection are separate concerns.
 - Scene completion is implicit after all board-completion atoms are reachable; no authored outro unlock exists in HPA-259.
 
 ## 3. Type boundaries
@@ -346,12 +351,13 @@ packages/scripts/compile-scenes.test.ts
 
 **Threshold**
 
-- eligible IDs resolve and include every threshold card exactly once
-- all threshold cards source evidence or statements
+- eligible IDs are non-empty, unique, and resolve to displayed threshold cards
+- displayed cards outside the eligible set are permitted decoys
+- all eligible cards source evidence or statements
 - minimum selected is positive and no greater than eligible count
 - minimum distinct groups is positive and no greater than minimum selected
 - every eligible record satisfies authored procedural/source-group eligibility rules
-- at least one selected subset can satisfy minimum count, distinct source groups, and aggregate proof capabilities
+- at least one subset of eligible cards can satisfy minimum count, distinct source groups, and aggregate proof capabilities
 
 The implementation may use any clear deterministic satisfiability method. Do not lock the plan to DFS, dynamic programming, or a generic constraint engine.
 
@@ -455,6 +461,7 @@ The fixture must include:
 - at least two source groups
 - `reacquired` and/or `exhibit` procedural status
 - `time` and `order` proof-capability coverage
+- at least one displayed non-eligible threshold decoy
 - a same-source pair that is individually eligible but cannot satisfy the distinct-source rule alone
 - a later predicate that resolves a qualified analysis board/scene reference without synthetic registry input
 
@@ -462,7 +469,7 @@ The fixture must include:
 
 - initially available first board
 - board-to-board unlock
-- all-card inventory prerequisites
+- all-card inventory prerequisites, including threshold decoys
 - ordered story outputs
 - scene completion after all boards
 - unavailable card source
@@ -604,6 +611,7 @@ The list is a forecast, not a requirement to touch every file. Modify semantic-d
 - [ ] No placeholder layout type is emitted or shared.
 - [ ] Result dialogue has no unused segment abstraction.
 - [ ] Feedback remains minimal and HPA-263-owned polish is deferred.
+- [ ] Threshold eligibility remains meaningful through at least one displayed decoy.
 - [ ] Parser helpers remain private until a second consumer exists.
 - [ ] Invalid tests are table-driven unless cross-file setup is necessary.
 - [ ] Rust is a wire-contract consumer, not a second authoring validator.
