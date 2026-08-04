@@ -126,9 +126,9 @@ Do not change browser-development or E2E root resolution unless a current test d
 Because the top-level types are already being edited, rename:
 
 ```text
-SaveEnvelopeV2       -> SaveEnvelope
-SaveSummaryV2        -> SaveSummary
-SaveSnapshotV1       -> SaveSnapshot
+SaveEnvelopeV2          -> SaveEnvelope
+SaveSummaryV2           -> SaveSummary
+SaveSnapshotV1          -> SaveSnapshot
 SceneProgressSnapshotV1 -> SceneProgressSnapshot
 ```
 
