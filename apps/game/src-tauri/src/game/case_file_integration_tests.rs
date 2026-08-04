@@ -1,6 +1,6 @@
-use super::save::capture::{capture_checkpoint_v2, CapturedCheckpointV2};
+use super::save::capture::{capture_checkpoint, CapturedCheckpoint};
 use super::save::restore::{build_restore_candidate, load_current_definitions};
-use super::save::schema::{SaveEnvelopeV2, SaveType, ThumbnailDescriptorV1};
+use super::save::schema::{SaveEnvelope, SaveType, ThumbnailDescriptorV1};
 use super::scenes::SceneRuntime;
 use super::schema::InventoryTarget;
 use super::story::{AssertionOrigin, StoryEventBlockKind};
@@ -134,8 +134,8 @@ fn case_file_inputs(view: &Value) -> Value {
     })
 }
 
-fn save_envelope(engine: &GameEngine, checkpoint: CapturedCheckpointV2) -> SaveEnvelopeV2 {
-    SaveEnvelopeV2 {
+fn save_envelope(engine: &GameEngine, checkpoint: CapturedCheckpoint) -> SaveEnvelope {
+    SaveEnvelope {
         schema_version: 2,
         content_revision: engine.content_manifest.content_revision().into(),
         save_id: "550e8400-e29b-41d4-a716-446655440258".into(),
@@ -325,7 +325,7 @@ fn case_file_acceptance_is_spoiler_safe_and_preserves_complete_public_inputs_on_
         );
     }
 
-    let checkpoint = capture_checkpoint_v2(&engine).unwrap();
+    let checkpoint = capture_checkpoint(&engine).unwrap();
     let definitions = load_current_definitions(&resources).unwrap();
     let restored = build_restore_candidate(
         resources,
@@ -334,9 +334,9 @@ fn case_file_acceptance_is_spoiler_safe_and_preserves_complete_public_inputs_on_
     )
     .unwrap();
     assert_eq!(
-        capture_checkpoint_v2(&restored.engine).unwrap(),
+        capture_checkpoint(&restored.engine).unwrap(),
         checkpoint,
-        "SaveSnapshotV1 capture/restore must retain exact identity"
+        "SaveSnapshot capture/restore must retain exact identity"
     );
     let after = serde_json::to_value(restored.engine.view().unwrap()).unwrap();
     assert_eq!(

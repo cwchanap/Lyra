@@ -21,11 +21,22 @@ pub(super) fn test_content_manifest() -> crate::game::content_manifest::ContentM
     crate::game::content_manifest::ContentManifest::for_test()
 }
 
-pub(super) fn representative_save_envelope() -> crate::game::save::schema::SaveEnvelopeV2 {
-    crate::game::save::migrations::migrate_to_current(include_bytes!(
-        "../../tests/fixtures/saves/v1-representative.json"
-    ))
-    .unwrap()
+pub(super) fn representative_save_envelope() -> crate::game::save::schema::SaveEnvelope {
+    let (_guard, resources) = save_capture_fixture_resources();
+    let engine = crate::game::GameEngine::new_started(resources).unwrap();
+    let checkpoint = crate::game::save::capture::capture_checkpoint(&engine).unwrap();
+    crate::game::save::schema::SaveEnvelope {
+        schema_version: crate::game::save::schema::SAVE_SCHEMA_VERSION,
+        content_revision: engine.content_revision().into(),
+        save_id: "550e8400-e29b-41d4-a716-446655440000".into(),
+        save_type: crate::game::save::schema::SaveType::Manual,
+        slot: 1,
+        saved_at: "2026-07-26T12:34:56Z".into(),
+        display_name: "Representative save".into(),
+        thumbnail: crate::game::save::schema::ThumbnailDescriptorV1::Unavailable,
+        summary: checkpoint.summary,
+        snapshot: checkpoint.snapshot,
+    }
 }
 
 /// Minimal PNG header fixture (signature + IHDR) used by save-coordinator and

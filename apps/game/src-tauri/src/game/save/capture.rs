@@ -2,8 +2,8 @@ use super::restore::ResumableStateAdapter;
 use super::schema::{
     AudioCueSnapshotV1, CharacterTopicRefV1, CrossExamSnapshotV1, DialogueHistoryEntryV1,
     DialogueHistorySnapshotV1, EvidenceInventoryEntryV1, InterrogationOverrideRefV1,
-    InventorySnapshotV1, InvestigationOverrideRefV1, LastVisualCueSnapshotV1, SaveSnapshotV1,
-    SaveSummaryV2, SceneProgressSnapshotV1, StatementInventoryEntryV1,
+    InventorySnapshotV1, InvestigationOverrideRefV1, LastVisualCueSnapshotV1, SaveSnapshot,
+    SaveSummary, SceneProgressSnapshot, StatementInventoryEntryV1,
 };
 use crate::game::dialogue::DIALOGUE_HISTORY_LIMIT;
 use crate::game::dialogue_queue::{
@@ -28,9 +28,9 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CapturedCheckpointV2 {
-    pub(crate) summary: SaveSummaryV2,
-    pub(crate) snapshot: SaveSnapshotV1,
+pub(crate) struct CapturedCheckpoint {
+    pub(crate) summary: SaveSummary,
+    pub(crate) snapshot: SaveSnapshot,
 }
 
 type SceneCache = HashMap<String, Vec<SceneJson>>;
@@ -63,9 +63,7 @@ fn chapter_scenes<'a>(
     }
 }
 
-pub(crate) fn capture_checkpoint_v2(
-    engine: &GameEngine,
-) -> Result<CapturedCheckpointV2, GameError> {
+pub(crate) fn capture_checkpoint(engine: &GameEngine) -> Result<CapturedCheckpoint, GameError> {
     // No `..`: every new engine field must be classified here before capture
     // can compile again.
     let GameEngine {
@@ -156,7 +154,7 @@ pub(crate) fn capture_checkpoint_v2(
         }
     }
 
-    let snapshot = SaveSnapshotV1 {
+    let snapshot = SaveSnapshot {
         chapter_id: location.chapter_id.clone(),
         scene_id: location.scene_id.clone(),
         scene,
@@ -199,8 +197,8 @@ pub(crate) fn capture_checkpoint_v2(
         next_queue_gen: *next_queue_gen,
         durable_revision: *durable_revision,
     };
-    Ok(CapturedCheckpointV2 {
-        summary: SaveSummaryV2 {
+    Ok(CapturedCheckpoint {
+        summary: SaveSummary {
             chapter_id: location.chapter_id,
             chapter_title: location.chapter_title,
             chapter_summary: Some(location.chapter_summary),
@@ -223,39 +221,39 @@ pub(crate) fn capture_checkpoint_v2(
 /// expose no summary, otherwise a save recap could leak unrevealed plot
 /// content and break checkpoint spoiler safety.
 fn scene_summary_for_checkpoint(
-    scene: &SceneProgressSnapshotV1,
+    scene: &SceneProgressSnapshot,
     authored_summary: &str,
 ) -> Option<String> {
     match scene {
-        SceneProgressSnapshotV1::GameComplete => Some(authored_summary.to_owned()),
-        SceneProgressSnapshotV1::Linear
-        | SceneProgressSnapshotV1::Investigation { .. }
-        | SceneProgressSnapshotV1::Interrogation { .. } => None,
+        SceneProgressSnapshot::GameComplete => Some(authored_summary.to_owned()),
+        SceneProgressSnapshot::Linear
+        | SceneProgressSnapshot::Investigation { .. }
+        | SceneProgressSnapshot::Interrogation { .. } => None,
     }
 }
 
 /// Normalize a persisted `scene_summary` for projection to the frontend.
 ///
-/// Pre-fix schema-v2 saves may carry a non-null `scene_summary` for resumable
+/// Earlier current-format saves may carry a non-null `scene_summary` for resumable
 /// scenes because `scene_summary_for_checkpoint` only started suppressing it
 /// after the spoiler-safety fix. Apply the same rule at projection time so
 /// legacy saves do not leak unrevealed plot content in Save Browser or
 /// Continue without being rejected (which would lose save progress).
 pub(crate) fn normalize_projected_scene_summary(
-    scene: &SceneProgressSnapshotV1,
+    scene: &SceneProgressSnapshot,
     scene_summary: Option<String>,
 ) -> Option<String> {
     match scene {
-        SceneProgressSnapshotV1::GameComplete => scene_summary,
-        SceneProgressSnapshotV1::Linear
-        | SceneProgressSnapshotV1::Investigation { .. }
-        | SceneProgressSnapshotV1::Interrogation { .. } => None,
+        SceneProgressSnapshot::GameComplete => scene_summary,
+        SceneProgressSnapshot::Linear
+        | SceneProgressSnapshot::Investigation { .. }
+        | SceneProgressSnapshot::Interrogation { .. } => None,
     }
 }
 
-pub(crate) fn capture_scene_progress_v1(
+pub(crate) fn capture_scene_progress(
     engine: &GameEngine,
-) -> Result<SceneProgressSnapshotV1, GameError> {
+) -> Result<SceneProgressSnapshot, GameError> {
     let mut scene_cache = SceneCache::new();
     let location = capture_location(engine, &mut scene_cache)?;
     let active_dialogue = engine.capture_active_dialogue()?;
@@ -279,9 +277,9 @@ fn capture_scene_progress_with_active(
     active_dialogue: Option<&ActiveDialogueStateV1>,
     packaged_dialogue: Option<&ActiveDialogueQueue>,
     scene_cache: &mut SceneCache,
-) -> Result<SceneProgressSnapshotV1, GameError> {
+) -> Result<SceneProgressSnapshot, GameError> {
     if engine.current_chapter_idx == engine.chapters.len() {
-        return Ok(SceneProgressSnapshotV1::GameComplete);
+        return Ok(SceneProgressSnapshot::GameComplete);
     }
     if engine.current_chapter_idx > engine.chapters.len() {
         return Err(capture_error(
@@ -297,7 +295,7 @@ fn capture_scene_progress_with_active(
                     "A linear scene exhausted without entering its successor.",
                 ));
             }
-            Ok(SceneProgressSnapshotV1::Linear)
+            Ok(SceneProgressSnapshot::Linear)
         }
         (SceneRuntime::Investigation(scene), SceneJson::Investigation(packaged)) => {
             validate_investigation_progress(scene, packaged)?;
@@ -333,7 +331,7 @@ fn capture_scene_progress_with_active(
             unlocked_overrides.sort_by(|left, right| {
                 investigation_override_key(left).cmp(&investigation_override_key(right))
             });
-            Ok(SceneProgressSnapshotV1::Investigation {
+            Ok(SceneProgressSnapshot::Investigation {
                 intro_played: scene.intro_played,
                 outro_played: scene.outro_played,
                 current_sublocation_id: scene.current_sublocation_id.clone(),
@@ -409,7 +407,7 @@ fn capture_scene_progress_with_active(
             entered_phase_ids.sort();
             let line_content_segment_index =
                 capture_line_content_segment_index(scene, &cross_exam, packaged_dialogue)?;
-            Ok(SceneProgressSnapshotV1::Interrogation {
+            Ok(SceneProgressSnapshot::Interrogation {
                 intro_played: scene.intro_played,
                 outro_played: scene.outro_played,
                 current_phase_id: scene.current_phase_id.clone(),
@@ -1159,7 +1157,7 @@ mod tests {
     };
     use crate::game::save::schema::{
         AcquisitionEventStateV1, CharacterTopicRefV1, CrossExamSnapshotV1, DialogueHistoryEntryV1,
-        InvestigationOverrideRefV1, RecordKind, SceneProgressSnapshotV1,
+        InvestigationOverrideRefV1, RecordKind, SceneProgressSnapshot,
     };
     use crate::game::scenes::interrogation::CrossExam;
     use crate::game::scenes::SceneRuntime;
@@ -1221,7 +1219,7 @@ mod tests {
         });
         engine.durable_revision = 7;
 
-        let captured = capture_checkpoint_v2(&engine).unwrap();
+        let captured = capture_checkpoint(&engine).unwrap();
 
         assert_eq!(
             serde_json::to_value(captured).unwrap(),
@@ -1289,7 +1287,7 @@ mod tests {
     fn capture_without_an_active_objective_emits_all_objective_copy_as_null() {
         let (_guard, engine) = fixture_engine();
 
-        let captured = serde_json::to_value(capture_checkpoint_v2(&engine).unwrap()).unwrap();
+        let captured = serde_json::to_value(capture_checkpoint(&engine).unwrap()).unwrap();
 
         assert_eq!(
             captured.pointer("/summary/activePrimaryObjectiveId"),
@@ -1314,7 +1312,7 @@ mod tests {
         let mut engine = GameEngine::new_started(resources).unwrap();
         drive_hpa_257_positive_progression(&mut engine);
 
-        let captured = capture_checkpoint_v2(&engine).unwrap();
+        let captured = capture_checkpoint(&engine).unwrap();
 
         assert_eq!(captured.snapshot.chapter_id, "chapter_hpa_257");
         assert_eq!(captured.snapshot.scene_id, "investigation_hpa_257");
@@ -1344,7 +1342,7 @@ mod tests {
         );
         assert!(story.authorizations.contains_key("authorization_court"));
 
-        let SceneProgressSnapshotV1::Investigation {
+        let SceneProgressSnapshot::Investigation {
             current_sublocation_id,
             inspected_hotspot_ids,
             entered_sublocation_ids,
@@ -1392,7 +1390,7 @@ mod tests {
         };
         scene.queue = None;
 
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
 
         assert_eq!(error.code, "invalidSaveCapture");
     }
@@ -1413,14 +1411,11 @@ mod tests {
         engine.current_scene_idx = 0;
         engine.history = DialogueHistory::default();
 
-        let captured = capture_checkpoint_v2(&engine).unwrap();
+        let captured = capture_checkpoint(&engine).unwrap();
 
         assert_eq!(captured.snapshot.chapter_id, "chapter_1");
         assert_eq!(captured.snapshot.scene_id, "interrogation_scene_2");
-        assert_eq!(
-            captured.snapshot.scene,
-            SceneProgressSnapshotV1::GameComplete
-        );
+        assert_eq!(captured.snapshot.scene, SceneProgressSnapshot::GameComplete);
         assert_eq!(captured.summary.chapter_title, "Chapter One");
         assert_eq!(captured.summary.scene_title, "Interrogation");
         assert_eq!(
@@ -1436,7 +1431,7 @@ mod tests {
         engine.current_chapter_idx = engine.chapters.len();
         engine.current_scene_idx = 0;
 
-        let error = capture_scene_progress_v1(&engine).unwrap_err();
+        let error = capture_scene_progress(&engine).unwrap_err();
 
         assert_eq!(error.code, "invalidSaveCapture");
     }
@@ -1517,12 +1512,12 @@ mod tests {
         engine.durable_revision = 8;
 
         let live_token = engine.current_queue_token().unwrap();
-        let captured = capture_checkpoint_v2(&engine).unwrap();
+        let captured = capture_checkpoint(&engine).unwrap();
 
         assert_eq!(captured.summary.scene_summary, None);
         assert_eq!(
             captured.snapshot.scene,
-            SceneProgressSnapshotV1::Investigation {
+            SceneProgressSnapshot::Investigation {
                 intro_played: true,
                 outro_played: false,
                 current_sublocation_id: Some("room".into()),
@@ -1651,7 +1646,7 @@ mod tests {
         engine.next_queue_gen = 13;
 
         let live_token = engine.current_queue_token().unwrap();
-        let playing = capture_checkpoint_v2(&engine).unwrap();
+        let playing = capture_checkpoint(&engine).unwrap();
         let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
             unreachable!();
         };
@@ -1659,11 +1654,11 @@ mod tests {
             question_id: "q1".into(),
             line_id: "l1".into(),
         };
-        let presenting = capture_checkpoint_v2(&engine).unwrap();
+        let presenting = capture_checkpoint(&engine).unwrap();
 
         assert_eq!(playing.summary.scene_summary, None);
         assert_eq!(presenting.summary.scene_summary, None);
-        let SceneProgressSnapshotV1::Interrogation {
+        let SceneProgressSnapshot::Interrogation {
             cross_exam,
             line_content_segment_index,
             broken_question_ids,
@@ -1693,7 +1688,7 @@ mod tests {
                 {"type":"phase","id":"phase_two"}
             ])
         );
-        let SceneProgressSnapshotV1::Interrogation { cross_exam, .. } = presenting.snapshot.scene
+        let SceneProgressSnapshot::Interrogation { cross_exam, .. } = presenting.snapshot.scene
         else {
             panic!("expected interrogation snapshot");
         };
@@ -1761,7 +1756,7 @@ mod tests {
             "Historical scene title".into(),
         );
 
-        let captured = capture_checkpoint_v2(&engine).unwrap();
+        let captured = capture_checkpoint(&engine).unwrap();
 
         assert_eq!(
             captured.snapshot.dialogue_history.entries,
@@ -1793,7 +1788,7 @@ mod tests {
         };
         scene.unlocked_overrides.insert("topic:witness".into());
         assert_eq!(
-            capture_checkpoint_v2(&engine).unwrap_err().code,
+            capture_checkpoint(&engine).unwrap_err().code,
             "invalidSaveCapture"
         );
 
@@ -1813,7 +1808,7 @@ mod tests {
             "Opening".into(),
         );
         assert_eq!(
-            capture_checkpoint_v2(&engine).unwrap_err().code,
+            capture_checkpoint(&engine).unwrap_err().code,
             "invalidSaveCapture"
         );
     }
@@ -1858,7 +1853,7 @@ mod tests {
         });
         install_raw_history(&mut engine, history_entries(50), prior_token.clone());
         assert_eq!(
-            capture_checkpoint_v2(&engine)
+            capture_checkpoint(&engine)
                 .unwrap()
                 .snapshot
                 .dialogue_history
@@ -1869,7 +1864,7 @@ mod tests {
 
         install_raw_history(&mut engine, history_entries(51), prior_token);
         assert_eq!(
-            capture_checkpoint_v2(&engine).unwrap_err().code,
+            capture_checkpoint(&engine).unwrap_err().code,
             "invalidSaveCapture"
         );
     }
@@ -1896,7 +1891,7 @@ mod tests {
         ] {
             install_raw_history(&mut engine, history_entries(1), Some(token));
             assert_eq!(
-                capture_checkpoint_v2(&engine).unwrap_err().code,
+                capture_checkpoint(&engine).unwrap_err().code,
                 "invalidSaveCapture"
             );
         }
@@ -1915,7 +1910,7 @@ mod tests {
             }),
         );
 
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
 
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("same active queue"));
@@ -1934,7 +1929,7 @@ mod tests {
             }),
         );
 
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
 
         assert_eq!(error.code, "invalidSaveCapture");
     }
@@ -1969,7 +1964,7 @@ mod tests {
             }),
         );
 
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
 
         assert_eq!(error.code, "invalidSaveCapture");
     }
@@ -1987,7 +1982,7 @@ mod tests {
         scene.intro_played = false;
         scene.pending_queue = None;
         assert_eq!(
-            capture_checkpoint_v2(&engine).unwrap_err().code,
+            capture_checkpoint(&engine).unwrap_err().code,
             "invalidSaveCapture"
         );
 
@@ -1998,7 +1993,7 @@ mod tests {
         scene.intro_queue_gen =
             crate::game::scenes::investigation::RESTORED_CONSUMED_INTRO_QUEUE_GEN;
         scene.current_sublocation_id = Some("room".into());
-        assert!(capture_checkpoint_v2(&engine).is_ok());
+        assert!(capture_checkpoint(&engine).is_ok());
     }
 
     #[test]
@@ -2028,7 +2023,7 @@ mod tests {
         scene.line_content_start = 1;
         engine.next_queue_gen = 7;
 
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
 
         assert_eq!(error.code, "invalidDialogueQueue");
     }
@@ -2065,7 +2060,7 @@ mod tests {
         scene.line_content_start = 1;
         engine.next_queue_gen = 7;
 
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
 
         assert_eq!(error.code, "invalidSaveCapture");
 
@@ -2085,7 +2080,7 @@ mod tests {
             )
             .unwrap(),
         );
-        capture_checkpoint_v2(&engine).unwrap();
+        capture_checkpoint(&engine).unwrap();
     }
 
     #[test]
@@ -2117,7 +2112,7 @@ mod tests {
         );
         engine.next_queue_gen = 7;
         assert_eq!(
-            capture_checkpoint_v2(&engine).unwrap_err().code,
+            capture_checkpoint(&engine).unwrap_err().code,
             "invalidSaveCapture"
         );
 
@@ -2125,7 +2120,7 @@ mod tests {
             unreachable!();
         };
         scene.outro_played = true;
-        let captured = capture_checkpoint_v2(&engine).unwrap();
+        let captured = capture_checkpoint(&engine).unwrap();
         assert_eq!(captured.summary.scene_summary, None);
     }
 
@@ -2161,8 +2156,8 @@ mod tests {
         scene.line_content_start = 1;
         engine.next_queue_gen = 7;
 
-        let captured = capture_checkpoint_v2(&engine).unwrap();
-        let SceneProgressSnapshotV1::Interrogation {
+        let captured = capture_checkpoint(&engine).unwrap();
+        let SceneProgressSnapshot::Interrogation {
             line_content_segment_index,
             ..
         } = captured.snapshot.scene
@@ -2214,8 +2209,8 @@ mod tests {
         );
         scene.line_content_start = 2;
 
-        let captured = capture_checkpoint_v2(&engine).unwrap();
-        let SceneProgressSnapshotV1::Interrogation {
+        let captured = capture_checkpoint(&engine).unwrap();
+        let SceneProgressSnapshot::Interrogation {
             line_content_segment_index,
             ..
         } = captured.snapshot.scene
@@ -2254,7 +2249,7 @@ mod tests {
         );
         scene.line_content_start = 0;
         assert_eq!(
-            capture_checkpoint_v2(&engine).unwrap_err().code,
+            capture_checkpoint(&engine).unwrap_err().code,
             "invalidSaveCapture"
         );
     }
@@ -2272,7 +2267,7 @@ mod tests {
         scene.intro_played = true;
         scene.current_sublocation_id = Some("missing_room".into());
         assert_eq!(
-            capture_checkpoint_v2(&engine).unwrap_err().code,
+            capture_checkpoint(&engine).unwrap_err().code,
             "invalidSaveCapture"
         );
 
@@ -2289,7 +2284,7 @@ mod tests {
             collected_in_scene_id: "interrogation_scene_2".into(),
         });
         assert_eq!(
-            capture_checkpoint_v2(&engine).unwrap_err().code,
+            capture_checkpoint(&engine).unwrap_err().code,
             "inventoryRecordDefinitionMismatch"
         );
 
@@ -2298,7 +2293,7 @@ mod tests {
             .story_state
             .insert_unknown_objective_for_test("missing");
         assert_eq!(
-            capture_checkpoint_v2(&engine).unwrap_err().code,
+            capture_checkpoint(&engine).unwrap_err().code,
             "invalidSaveCapture"
         );
 
@@ -2322,7 +2317,7 @@ mod tests {
             .unwrap(),
         );
         assert_eq!(
-            capture_checkpoint_v2(&engine).unwrap_err().code,
+            capture_checkpoint(&engine).unwrap_err().code,
             "invalidSaveCapture"
         );
     }
@@ -2351,7 +2346,7 @@ mod tests {
         engine.durable_revision = 1;
 
         assert_eq!(
-            capture_checkpoint_v2(&engine).unwrap_err().code,
+            capture_checkpoint(&engine).unwrap_err().code,
             "invalidSaveCapture"
         );
     }
@@ -2362,7 +2357,7 @@ mod tests {
         engine.history = DialogueHistory::from_persistence_parts_for_test(Vec::new(), 2, None);
 
         assert_eq!(
-            capture_checkpoint_v2(&engine).unwrap_err().code,
+            capture_checkpoint(&engine).unwrap_err().code,
             "invalidSaveCapture"
         );
     }
@@ -2378,7 +2373,7 @@ mod tests {
             .retain(|scene| scene.file.ends_with("/scene_0.json"));
         engine.chapters.push(repeated_id_chapter);
 
-        let captured = capture_checkpoint_v2(&engine).unwrap();
+        let captured = capture_checkpoint(&engine).unwrap();
 
         assert_eq!(
             captured.snapshot.dialogue_history.last_token,
@@ -2396,7 +2391,7 @@ mod tests {
         investigation
             .jump_to_scene("chapter_1", "investigation_scene_1")
             .unwrap();
-        let captured = capture_checkpoint_v2(&investigation).unwrap();
+        let captured = capture_checkpoint(&investigation).unwrap();
         assert_eq!(
             captured.snapshot.active_dialogue.unwrap().segment_origins,
             vec![DialogueSegmentOriginV1::InvestigationIntro {
@@ -2409,7 +2404,7 @@ mod tests {
         interrogation
             .jump_to_scene("chapter_1", "interrogation_scene_2")
             .unwrap();
-        let intro = capture_checkpoint_v2(&interrogation).unwrap();
+        let intro = capture_checkpoint(&interrogation).unwrap();
         assert_eq!(
             intro.snapshot.active_dialogue.unwrap().segment_origins,
             vec![DialogueSegmentOriginV1::InterrogationIntro {
@@ -2417,7 +2412,7 @@ mod tests {
                 scene_id: "interrogation_scene_2".into(),
             }]
         );
-        let SceneProgressSnapshotV1::Interrogation {
+        let SceneProgressSnapshot::Interrogation {
             line_content_segment_index,
             ..
         } = intro.snapshot.scene
@@ -2449,7 +2444,8 @@ mod tests {
         );
         scene.line_content_start = 1;
         interrogation.next_queue_gen = 7;
-        let outro = capture_checkpoint_v2(&interrogation).unwrap();
+        let outro = capture_checkpoint(&interrogation).unwrap();
+        assert_eq!(outro.summary.scene_summary, None);
         assert_eq!(
             outro.snapshot.active_dialogue.unwrap().segment_origins,
             vec![DialogueSegmentOriginV1::InterrogationOutro {
@@ -2457,7 +2453,7 @@ mod tests {
                 scene_id: "interrogation_scene_2".into(),
             }]
         );
-        let SceneProgressSnapshotV1::Interrogation {
+        let SceneProgressSnapshot::Interrogation {
             line_content_segment_index,
             ..
         } = outro.snapshot.scene
@@ -2508,7 +2504,7 @@ mod tests {
         );
         engine.next_queue_gen = 7;
 
-        let count_error = capture_checkpoint_v2(&engine).unwrap_err();
+        let count_error = capture_checkpoint(&engine).unwrap_err();
 
         assert_eq!(count_error.code, "invalidSaveCapture");
         assert!(count_error.message.contains("packaged"));
@@ -2543,7 +2539,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let order_error = capture_checkpoint_v2(&engine).unwrap_err();
+        let order_error = capture_checkpoint(&engine).unwrap_err();
 
         assert_eq!(order_error.code, "invalidSaveCapture");
         assert!(order_error.message.contains("order"));
@@ -2564,7 +2560,7 @@ mod tests {
             question_id: "q1".into(),
             line_index: 99,
         };
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Playing cross-exam coordinate"));
     }
@@ -2584,7 +2580,7 @@ mod tests {
             question_id: "q1".into(),
             line_id: "missing_line".into(),
         };
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Presenting cross-exam coordinate"));
     }
@@ -2600,7 +2596,7 @@ mod tests {
         };
         scene.intro_played = true;
         scene.current_sublocation_id = Some("missing_sub".into());
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Current investigation sublocation"));
 
@@ -2611,7 +2607,7 @@ mod tests {
         scene
             .inspected_hotspots
             .insert("missing_hotspot".to_string());
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Inspected investigation hotspot"));
 
@@ -2622,7 +2618,7 @@ mod tests {
         scene
             .discussed_topics
             .insert(("missing_char".into(), "missing_topic".into()));
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Discussed investigation topic"));
     }
@@ -2642,7 +2638,7 @@ mod tests {
         scene
             .unlocked_overrides
             .insert("hotspot:missing_hotspot".to_string());
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Investigation override hotspot"));
 
@@ -2653,7 +2649,7 @@ mod tests {
         scene
             .unlocked_overrides
             .insert("sublocation:missing_sub".to_string());
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Investigation override sublocation"));
 
@@ -2664,7 +2660,7 @@ mod tests {
         scene
             .unlocked_overrides
             .insert("topic:missing_char@missing_topic".to_string());
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Investigation override topic"));
     }
@@ -2680,7 +2676,7 @@ mod tests {
         };
         scene.intro_played = true;
         scene.current_phase_id = Some("missing_phase".into());
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Current interrogation phase"));
 
@@ -2689,7 +2685,7 @@ mod tests {
         };
         scene.current_phase_id = Some("phase_1".into());
         scene.completed_phases.insert("missing_phase".to_string());
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Interrogation phase progress"));
 
@@ -2700,7 +2696,7 @@ mod tests {
         scene
             .broken_questions
             .insert("missing_question".to_string());
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Broken interrogation question"));
 
@@ -2711,7 +2707,7 @@ mod tests {
         scene
             .unlocked_overrides
             .insert("question:missing_question".to_string());
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Interrogation override question"));
 
@@ -2722,7 +2718,7 @@ mod tests {
         scene
             .unlocked_overrides
             .insert("phase:missing_phase".to_string());
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "invalidSaveCapture");
         assert!(error.message.contains("Interrogation override phase"));
     }
@@ -2744,7 +2740,7 @@ mod tests {
             collected_in_chapter_id: "chapter_1".into(),
             collected_in_scene_id: "scene_0".into(),
         });
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "inventoryRecordDefinitionMismatch");
 
         engine.inventory.evidence.clear();
@@ -2757,7 +2753,7 @@ mod tests {
             acquired_in_chapter_id: "chapter_1".into(),
             acquired_in_scene_id: "scene_0".into(),
         });
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
         assert_eq!(error.code, "inventoryRecordDefinitionMismatch");
     }
 
@@ -2784,7 +2780,7 @@ mod tests {
         engine.inventory.evidence[0].provenance.confidence =
             crate::game::provenance::Confidence::Disputed;
 
-        let error = capture_checkpoint_v2(&engine).unwrap_err();
+        let error = capture_checkpoint(&engine).unwrap_err();
 
         assert_eq!(error.code, "inventoryRecordDefinitionMismatch");
     }

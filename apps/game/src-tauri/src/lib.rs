@@ -12,7 +12,7 @@ use tauri::{Emitter, Manager};
 
 #[cfg(feature = "e2e")]
 use game::e2e_checkpoints::{build_checkpoint, CheckpointId, CheckpointProjection};
-use game::save::capture::{capture_checkpoint_v2, CapturedCheckpointV2};
+use game::save::capture::{capture_checkpoint, CapturedCheckpoint};
 #[cfg(feature = "e2e")]
 use game::save::coordinator::ExclusivePersistenceIntent;
 use game::save::coordinator::{
@@ -30,8 +30,8 @@ use game::save::restore::{
 };
 use game::save::schema::{
     suggested_display_name, validate_manual_display_name, SaveBrowserView, SaveDiagnosticView,
-    SaveDiscoveryStatusView, SaveEnvelopeV2, SaveSlotRef, SaveSlotStatusView, SaveSlotView,
-    SaveType, ThumbnailDescriptorV1, MAX_THUMBNAIL_BYTES, SAVE_SCHEMA_VERSION,
+    SaveDiscoveryStatusView, SaveEnvelope, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveType,
+    ThumbnailDescriptorV1, MAX_THUMBNAIL_BYTES, SAVE_SCHEMA_VERSION,
 };
 #[cfg(feature = "e2e")]
 use game::save::storage::with_e2e_persistence_faults;
@@ -242,17 +242,17 @@ impl ApplicationPersistence {
 
     fn envelope(
         &self,
-        checkpoint: CapturedCheckpointV2,
+        checkpoint: CapturedCheckpoint,
         content_revision: String,
         reference: SaveSlotRef,
         save_id: String,
         display_name: String,
-    ) -> Result<SaveEnvelopeV2, GameError> {
+    ) -> Result<SaveEnvelope, GameError> {
         let (save_type, slot) = match reference {
             SaveSlotRef::Auto { slot } => (SaveType::Auto, slot),
             SaveSlotRef::Manual { slot } => (SaveType::Manual, slot),
         };
-        Ok(SaveEnvelopeV2 {
+        Ok(SaveEnvelope {
             schema_version: SAVE_SCHEMA_VERSION,
             content_revision,
             save_id,
@@ -289,7 +289,7 @@ impl AutosaveBackend for ApplicationPersistence {
                     return Err(GameError::save_write_failed());
                 }
                 (
-                    capture_checkpoint_v2(engine)?,
+                    capture_checkpoint(engine)?,
                     self.discovery.definitions.content_revision().to_owned(),
                 )
             };
@@ -1182,7 +1182,7 @@ async fn save_manual_core(
         (
             session.persistence.generation,
             engine.durable_revision(),
-            capture_checkpoint_v2(engine)?,
+            capture_checkpoint(engine)?,
         )
     };
     let purpose = ThumbnailCapturePurpose::ManualSave {
