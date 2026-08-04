@@ -181,8 +181,6 @@ function acceptanceState(): GameStateView {
           summary: "便箋時間可直接採信。",
           details: "校準紀錄與便箋互相吻合。",
           category: "時序",
-          assertedInChapterId: "synthetic_chapter",
-          assertedInSceneId: "synthetic_case_file",
           firstOrigin: {
             type: "sceneEvent",
             chapterId: "synthetic_chapter",
@@ -191,7 +189,6 @@ function acceptanceState(): GameStateView {
             blockId: "acceptance_fixture",
           },
           originContext: {
-            type: "scene",
             originKind: "sceneEvent",
             location: acceptanceLocation,
           },
@@ -213,8 +210,6 @@ function acceptanceState(): GameStateView {
           summary: "目擊筆錄支持移動路線。",
           details: "路線結論同時依賴時鐘事實。",
           category: "位置",
-          assertedInChapterId: "synthetic_chapter",
-          assertedInSceneId: "synthetic_case_file",
           firstOrigin: {
             type: "sceneEvent",
             chapterId: "synthetic_chapter",
@@ -223,7 +218,6 @@ function acceptanceState(): GameStateView {
             blockId: "acceptance_fixture",
           },
           originContext: {
-            type: "scene",
             originKind: "sceneEvent",
             location: acceptanceLocation,
           },
@@ -280,8 +274,6 @@ function acceptanceState(): GameStateView {
           label: "調閱合成檔案",
           summary: "可調閱本測試的合成來源。",
           grantingAuthority: "測試管理員",
-          grantedInChapterId: "synthetic_chapter",
-          grantedInSceneId: "synthetic_case_file",
           firstOrigin: {
             type: "sceneEvent",
             chapterId: "synthetic_chapter",
@@ -290,7 +282,6 @@ function acceptanceState(): GameStateView {
             blockId: "acceptance_fixture",
           },
           originContext: {
-            type: "scene",
             originKind: "sceneEvent",
             location: acceptanceLocation,
           },
@@ -716,7 +707,7 @@ describe("CaseFilePanel", () => {
     expect(
       screen.getByText("許可範圍：可調閱當日店內紀錄。"),
     ).toBeInTheDocument();
-    expect(screen.getByText("已匯入的進度")).toBeInTheDocument();
+    expect(screen.getByText("第一章・雨中現場")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: /證物 1 項/ }));
     await user.click(screen.getByRole("button", { name: "黑色雨傘" }));

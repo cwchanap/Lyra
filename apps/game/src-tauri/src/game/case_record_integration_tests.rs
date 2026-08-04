@@ -510,7 +510,6 @@ fn compiler_shaped_provenance_lineage_and_public_redaction_survive_exact_restore
     assert_eq!(
         fact(&before_restore, "fact_clock")["originContext"],
         json!({
-            "type": "scene",
             "originKind": "sceneEvent",
             "location": {
                 "chapterId": "chapter_1",

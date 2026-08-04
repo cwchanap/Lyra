@@ -135,8 +135,6 @@
           summary: "收據記錄了時間。",
           details: "時間與證詞矛盾。",
           category: "時間",
-          assertedInChapterId: "chapter_1",
-          assertedInSceneId: "scene_1",
           firstOrigin: {
             type: "sceneEvent",
             chapterId: "chapter_1",
@@ -145,7 +143,6 @@
             blockId: "counter",
           },
           originContext: {
-            type: "scene",
             originKind: "sceneEvent",
             location: {
               chapterId: "chapter_1",
@@ -166,8 +163,6 @@
           summary: "店內時鐘運作正常。",
           details: "維修紀錄確認沒有誤差。",
           category: "時間",
-          assertedInChapterId: "chapter_1",
-          assertedInSceneId: "scene_1",
           firstOrigin: {
             type: "sceneEvent",
             chapterId: "chapter_1",
@@ -176,7 +171,6 @@
             blockId: "clock",
           },
           originContext: {
-            type: "scene",
             originKind: "sceneEvent",
             location: {
               chapterId: "chapter_1",
@@ -211,10 +205,22 @@
           label: "調閱店內紀錄",
           summary: "可調閱當日店內紀錄。",
           grantingAuthority: "搜查課長",
-          grantedInChapterId: null,
-          grantedInSceneId: null,
-          firstOrigin: { type: "migration", migrationId: "legacy" },
-          originContext: { type: "migration" },
+          firstOrigin: {
+            type: "sceneEvent",
+            chapterId: "chapter_1",
+            sceneId: "scene_1",
+            blockKind: "hotspot",
+            blockId: "counter",
+          },
+          originContext: {
+            originKind: "sceneEvent",
+            location: {
+              chapterId: "chapter_1",
+              chapterTitle: "第一章",
+              sceneId: "scene_1",
+              sceneTitle: "雨中現場",
+            },
+          },
         },
       ],
     },

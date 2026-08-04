@@ -7,8 +7,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::game) struct FactProgress {
-    pub(super) asserted_in_chapter_id: Option<String>,
-    pub(super) asserted_in_scene_id: Option<String>,
     pub(super) first_origin: AssertionOrigin,
     pub(super) supporting_records: BTreeSet<InventoryTarget>,
     pub(super) supporting_fact_ids: BTreeSet<String>,
@@ -26,8 +24,6 @@ pub(in crate::game) struct ObjectiveProgress {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::game) struct AuthorizationProgress {
-    pub(super) granted_in_chapter_id: Option<String>,
-    pub(super) granted_in_scene_id: Option<String>,
     pub(super) first_origin: AssertionOrigin,
 }
 
@@ -107,7 +103,6 @@ impl StoryState {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct StoryStateSnapshot {
@@ -118,37 +113,29 @@ pub(crate) struct StoryStateSnapshot {
     pub active_primary_objective_id: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct FactProgressSnapshot {
-    pub asserted_in_chapter_id: Option<String>,
-    pub asserted_in_scene_id: Option<String>,
     pub first_origin: AssertionOrigin,
     pub supporting_records: BTreeSet<InventoryTarget>,
     pub supporting_fact_ids: BTreeSet<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct QuestionProgressSnapshot {
     pub resolved_by_fact_id: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ObjectiveProgressSnapshot {
     pub completed: bool,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct AuthorizationProgressSnapshot {
-    pub granted_in_chapter_id: Option<String>,
-    pub granted_in_scene_id: Option<String>,
     pub first_origin: AssertionOrigin,
 }
 
@@ -171,9 +158,6 @@ pub enum AssertionOrigin {
         scene_id: String,
         board_id: String,
     },
-    Migration {
-        migration_id: String,
-    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,9 +172,8 @@ pub enum StoryEventBlockKind {
     StoryEvent,
 }
 
-#[allow(dead_code)]
 impl AssertionOrigin {
-    pub(super) fn derived_location(&self) -> Result<(Option<String>, Option<String>), String> {
+    pub(super) fn derived_location(&self) -> Result<(String, String), String> {
         match self {
             Self::SceneEvent {
                 chapter_id,
@@ -207,7 +190,7 @@ impl AssertionOrigin {
                         "assertion origin blockId '{block_id}' must match ^[a-z0-9_]+(@[a-z0-9_]+)?$"
                     ));
                 }
-                Ok((Some(chapter_id.clone()), Some(scene_id.clone())))
+                Ok((chapter_id.clone(), scene_id.clone()))
             }
             Self::AnalysisBoard {
                 chapter_id,
@@ -219,17 +202,12 @@ impl AssertionOrigin {
                     ("sceneId", scene_id),
                     ("boardId", board_id),
                 ])?;
-                Ok((Some(chapter_id.clone()), Some(scene_id.clone())))
-            }
-            Self::Migration { migration_id } => {
-                validate_origin_segments(&[("migrationId", migration_id)])?;
-                Ok((None, None))
+                Ok((chapter_id.clone(), scene_id.clone()))
             }
         }
     }
 }
 
-#[allow(dead_code)]
 fn validate_origin_segments(segments: &[(&str, &String)]) -> Result<(), String> {
     for (name, value) in segments {
         if !is_slug(value) {
@@ -241,7 +219,6 @@ fn validate_origin_segments(segments: &[(&str, &String)]) -> Result<(), String> 
     Ok(())
 }
 
-#[allow(dead_code)]
 fn is_slug(value: &str) -> bool {
     !value.is_empty()
         && value
@@ -251,7 +228,6 @@ fn is_slug(value: &str) -> bool {
 
 /// Like `is_slug`, but also permits a single `@` separator so that topic
 /// block ids of the form `character_id@topic_id` validate.
-#[allow(dead_code)]
 fn is_block_id_slug(value: &str) -> bool {
     if value.is_empty() {
         return false;
@@ -267,7 +243,6 @@ fn is_block_id_slug(value: &str) -> bool {
     }
 }
 
-#[allow(dead_code)]
 impl StoryState {
     pub(crate) fn snapshot(&self) -> StoryStateSnapshot {
         StoryStateSnapshot {
@@ -278,8 +253,6 @@ impl StoryState {
                     (
                         id.clone(),
                         FactProgressSnapshot {
-                            asserted_in_chapter_id: progress.asserted_in_chapter_id.clone(),
-                            asserted_in_scene_id: progress.asserted_in_scene_id.clone(),
                             first_origin: progress.first_origin.clone(),
                             supporting_records: progress.supporting_records.clone(),
                             supporting_fact_ids: progress.supporting_fact_ids.clone(),
@@ -318,8 +291,6 @@ impl StoryState {
                     (
                         id.clone(),
                         AuthorizationProgressSnapshot {
-                            granted_in_chapter_id: progress.granted_in_chapter_id.clone(),
-                            granted_in_scene_id: progress.granted_in_scene_id.clone(),
                             first_origin: progress.first_origin.clone(),
                         },
                     )
@@ -343,8 +314,6 @@ impl StoryState {
                     (
                         id,
                         FactProgress {
-                            asserted_in_chapter_id: progress.asserted_in_chapter_id,
-                            asserted_in_scene_id: progress.asserted_in_scene_id,
                             first_origin: progress.first_origin,
                             supporting_records: progress.supporting_records,
                             supporting_fact_ids: progress.supporting_fact_ids,
@@ -383,8 +352,6 @@ impl StoryState {
                     (
                         id,
                         AuthorizationProgress {
-                            granted_in_chapter_id: progress.granted_in_chapter_id,
-                            granted_in_scene_id: progress.granted_in_scene_id,
                             first_origin: progress.first_origin,
                         },
                     )
@@ -401,7 +368,6 @@ impl StoryState {
     }
 }
 
-#[allow(dead_code)]
 fn validate_snapshot(
     catalog: &StoryCatalog,
     snapshot: &StoryStateSnapshot,
@@ -412,19 +378,10 @@ fn validate_snapshot(
                 "fact progress references unknown fact '{fact_id}'"
             )));
         }
-        let derived = progress
+        progress
             .first_origin
             .derived_location()
             .map_err(invalid_snapshot)?;
-        let stored = (
-            progress.asserted_in_chapter_id.clone(),
-            progress.asserted_in_scene_id.clone(),
-        );
-        if stored != derived {
-            return Err(invalid_snapshot(format!(
-                "fact '{fact_id}' stores a location that disagrees with its first origin"
-            )));
-        }
         for target in &progress.supporting_records {
             if !catalog.contains_inventory_target(target) {
                 return Err(invalid_snapshot(format!(
@@ -501,19 +458,10 @@ fn validate_snapshot(
                 "authorization progress references unknown authorization '{authorization_id}'"
             )));
         }
-        let derived = progress
+        progress
             .first_origin
             .derived_location()
             .map_err(invalid_snapshot)?;
-        let stored = (
-            progress.granted_in_chapter_id.clone(),
-            progress.granted_in_scene_id.clone(),
-        );
-        if stored != derived {
-            return Err(invalid_snapshot(format!(
-                "authorization '{authorization_id}' stores a location that disagrees with its first origin"
-            )));
-        }
     }
 
     if let Some(objective_id) = &snapshot.active_primary_objective_id {
@@ -542,7 +490,6 @@ fn validate_snapshot(
     Ok(())
 }
 
-#[allow(dead_code)]
 fn invalid_snapshot(detail: impl Into<String>) -> GameError {
     GameError::invalid_story_state_snapshot(detail)
 }
@@ -716,22 +663,7 @@ mod tests {
     }
 
     fn asserted_fact(origin: AssertionOrigin) -> FactProgressSnapshot {
-        let (chapter_id, scene_id) = match &origin {
-            AssertionOrigin::SceneEvent {
-                chapter_id,
-                scene_id,
-                ..
-            }
-            | AssertionOrigin::AnalysisBoard {
-                chapter_id,
-                scene_id,
-                ..
-            } => (Some(chapter_id.clone()), Some(scene_id.clone())),
-            AssertionOrigin::Migration { .. } => (None, None),
-        };
         FactProgressSnapshot {
-            asserted_in_chapter_id: chapter_id,
-            asserted_in_scene_id: scene_id,
             first_origin: origin,
             supporting_records: BTreeSet::new(),
             supporting_fact_ids: BTreeSet::new(),
@@ -755,8 +687,10 @@ mod tests {
                 ("fact_alpha".into(), fact_alpha),
                 (
                     "fact_beta".into(),
-                    asserted_fact(AssertionOrigin::Migration {
-                        migration_id: "legacy_import".into(),
+                    asserted_fact(AssertionOrigin::AnalysisBoard {
+                        chapter_id: "chapter_1".into(),
+                        scene_id: "scene_1".into(),
+                        board_id: "board_1".into(),
                     }),
                 ),
             ]),
@@ -779,11 +713,7 @@ mod tests {
             authorizations: BTreeMap::from([(
                 "authorization_a".into(),
                 AuthorizationProgressSnapshot {
-                    granted_in_chapter_id: None,
-                    granted_in_scene_id: None,
-                    first_origin: AssertionOrigin::Migration {
-                        migration_id: "legacy_import".into(),
-                    },
+                    first_origin: scene_origin(),
                 },
             )]),
             active_primary_objective_id: Some("primary_a".into()),
@@ -822,6 +752,26 @@ mod tests {
         let live = StoryState::from_snapshot(&catalog(), decoded).unwrap();
 
         assert_eq!(live.snapshot(), snapshot);
+    }
+
+    // Break caught: serialized story progress stores a second, mutable copy of
+    // the origin scene alongside firstOrigin, allowing the two locations to
+    // drift apart.
+    #[test]
+    fn snapshot_serializes_locations_only_with_the_origin() {
+        let encoded = serde_json::to_value(valid_snapshot()).unwrap();
+
+        let fact = encoded["facts"]["fact_alpha"].as_object().unwrap();
+        assert!(!fact.contains_key("assertedInChapterId"));
+        assert!(!fact.contains_key("assertedInSceneId"));
+        assert_eq!(fact["firstOrigin"]["chapterId"], "chapter_1");
+        assert_eq!(fact["firstOrigin"]["sceneId"], "scene_1");
+
+        let authorization = encoded["authorizations"]["authorization_a"]
+            .as_object()
+            .unwrap();
+        assert!(!authorization.contains_key("grantedInChapterId"));
+        assert!(!authorization.contains_key("grantedInSceneId"));
     }
 
     #[test]
@@ -870,16 +820,6 @@ mod tests {
                 "boardId": "board_1"
             })
         );
-        assert_eq!(
-            serde_json::to_value(AssertionOrigin::Migration {
-                migration_id: "legacy_import".into(),
-            })
-            .unwrap(),
-            serde_json::json!({
-                "type": "migration",
-                "migrationId": "legacy_import"
-            })
-        );
     }
 
     #[test]
@@ -915,11 +855,7 @@ mod tests {
                 snapshot.authorizations.insert(
                     "missing".into(),
                     AuthorizationProgressSnapshot {
-                        granted_in_chapter_id: None,
-                        granted_in_scene_id: None,
-                        first_origin: AssertionOrigin::Migration {
-                            migration_id: "legacy_import".into(),
-                        },
+                        first_origin: scene_origin(),
                     },
                 );
                 snapshot
@@ -1007,31 +943,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_origin_location_mismatches_for_facts_and_authorizations() {
-        let mut fact_mismatch = empty_snapshot();
-        let mut progress = asserted_fact(scene_origin());
-        progress.asserted_in_chapter_id = Some("chapter_2".into());
-        fact_mismatch.facts.insert("fact_alpha".into(), progress);
-        assert_eq!(reject(fact_mismatch).code, "invalidStoryStateSnapshot");
-
-        let mut authorization_mismatch = empty_snapshot();
-        authorization_mismatch.authorizations.insert(
-            "authorization_a".into(),
-            AuthorizationProgressSnapshot {
-                granted_in_chapter_id: Some("chapter_1".into()),
-                granted_in_scene_id: Some("scene_1".into()),
-                first_origin: AssertionOrigin::Migration {
-                    migration_id: "legacy_import".into(),
-                },
-            },
-        );
-        assert_eq!(
-            reject(authorization_mismatch).code,
-            "invalidStoryStateSnapshot"
-        );
-    }
-
-    #[test]
     fn rejects_malformed_ids_in_every_origin_variant() {
         let origins = [
             AssertionOrigin::SceneEvent {
@@ -1056,9 +967,6 @@ mod tests {
                 chapter_id: "chapter_1".into(),
                 scene_id: "scene_1".into(),
                 board_id: "bad board".into(),
-            },
-            AssertionOrigin::Migration {
-                migration_id: "BadMigration".into(),
             },
         ];
 

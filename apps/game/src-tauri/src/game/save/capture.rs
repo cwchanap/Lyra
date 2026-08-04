@@ -1,4 +1,3 @@
-use super::restore::ResumableStateAdapter;
 use super::schema::{
     AudioCueSnapshotV1, CharacterTopicRefV1, CrossExamSnapshotV1, DialogueHistoryEntryV1,
     DialogueHistorySnapshotV1, EvidenceInventoryEntryV1, InterrogationOverrideRefV1,
@@ -102,10 +101,9 @@ pub(crate) fn capture_checkpoint(engine: &GameEngine) -> Result<CapturedCheckpoi
         &mut scene_cache,
     )?;
     let scene_summary = scene_summary_for_checkpoint(&scene, &location.scene_summary);
-    let story_snapshot = story_state.snapshot();
-    StoryState::from_snapshot(&engine.story_catalog, story_snapshot.clone())
+    let story_state = story_state.snapshot();
+    StoryState::from_snapshot(&engine.story_catalog, story_state.clone())
         .map_err(|error| capture_error(error.message))?;
-    let story_state = story_state.capture();
     let active_primary_objective_id = story_state.active_primary_objective_id.clone();
     let active_primary_objective_copy = active_primary_objective_id
         .as_deref()

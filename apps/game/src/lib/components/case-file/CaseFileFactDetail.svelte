@@ -21,9 +21,7 @@
   } = $props();
 
   const origin = $derived(
-    item.fact.originContext.type === "migration"
-      ? "已匯入的進度"
-      : `${item.fact.originContext.location.chapterTitle}・${item.fact.originContext.location.sceneTitle}`,
+    `${item.fact.originContext.location.chapterTitle}・${item.fact.originContext.location.sceneTitle}`,
   );
 </script>
 

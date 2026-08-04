@@ -23,8 +23,6 @@ pub struct FactView {
     pub summary: String,
     pub details: String,
     pub category: String,
-    pub asserted_in_chapter_id: Option<String>,
-    pub asserted_in_scene_id: Option<String>,
     pub first_origin: AssertionOrigin,
     pub(in crate::game) origin_context: OriginContextView,
     /// Empty means no acquired direct supporting records are exposed. Internal
@@ -70,17 +68,10 @@ pub enum ObjectiveKindView {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(
-    tag = "type",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-pub(in crate::game) enum OriginContextView {
-    Scene {
-        origin_kind: OriginContextKindView,
-        location: SceneLocationContextView,
-    },
-    Migration,
+#[serde(rename_all = "camelCase")]
+pub(in crate::game) struct OriginContextView {
+    pub(in crate::game) origin_kind: OriginContextKindView,
+    pub(in crate::game) location: SceneLocationContextView,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -97,8 +88,6 @@ pub struct AuthorizationView {
     pub label: String,
     pub summary: String,
     pub granting_authority: String,
-    pub granted_in_chapter_id: Option<String>,
-    pub granted_in_scene_id: Option<String>,
     pub first_origin: AssertionOrigin,
     pub(in crate::game) origin_context: OriginContextView,
 }
@@ -132,8 +121,6 @@ impl StoryStateView {
                     summary: definition.summary.clone(),
                     details: definition.details.clone(),
                     category: definition.category.clone(),
-                    asserted_in_chapter_id: progress.asserted_in_chapter_id.clone(),
-                    asserted_in_scene_id: progress.asserted_in_scene_id.clone(),
                     first_origin: progress.first_origin.clone(),
                     origin_context: origin_context(&progress.first_origin, locations)?,
                     supporting_records,
@@ -199,8 +186,6 @@ impl StoryStateView {
                     label: definition.label.clone(),
                     summary: definition.summary.clone(),
                     granting_authority: definition.granting_authority.clone(),
-                    granted_in_chapter_id: progress.granted_in_chapter_id.clone(),
-                    granted_in_scene_id: progress.granted_in_scene_id.clone(),
                     first_origin: progress.first_origin.clone(),
                     origin_context: origin_context(&progress.first_origin, locations)?,
                 })
@@ -225,7 +210,7 @@ fn origin_context(
             chapter_id,
             scene_id,
             ..
-        } => Ok(OriginContextView::Scene {
+        } => Ok(OriginContextView {
             origin_kind: OriginContextKindView::SceneEvent,
             location: locations.resolve_scene(chapter_id, scene_id)?,
         }),
@@ -233,11 +218,10 @@ fn origin_context(
             chapter_id,
             scene_id,
             ..
-        } => Ok(OriginContextView::Scene {
+        } => Ok(OriginContextView {
             origin_kind: OriginContextKindView::AnalysisBoard,
             location: locations.resolve_scene(chapter_id, scene_id)?,
         }),
-        AssertionOrigin::Migration { .. } => Ok(OriginContextView::Migration),
     }
 }
 
@@ -283,7 +267,7 @@ mod tests {
   ],
   "authorizations": [
     {"id":"authorization_scene","label":"Scene authorization","summary":"Scene summary","grantingAuthority":"Police"},
-    {"id":"authorization_migration","label":"Migration authorization","summary":"Migration summary","grantingAuthority":"Court"},
+    {"id":"authorization_secondary","label":"Secondary authorization","summary":"Secondary summary","grantingAuthority":"Court"},
     {"id":"authorization_untouched","label":"Untouched authorization","summary":"Hidden","grantingAuthority":"Hidden"}
   ],
   "sourceGroups": [],
@@ -377,8 +361,10 @@ mod tests {
             .assert_fact(
                 catalog,
                 "fact_second",
-                AssertionOrigin::Migration {
-                    migration_id: "legacy_case".into(),
+                AssertionOrigin::AnalysisBoard {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "scene_2".into(),
+                    board_id: "timeline_board".into(),
                 },
                 &[],
                 &["fact_first".into()],
@@ -414,9 +400,12 @@ mod tests {
         state
             .grant_authorization(
                 catalog,
-                "authorization_migration",
-                AssertionOrigin::Migration {
-                    migration_id: "legacy_auth".into(),
+                "authorization_secondary",
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "scene_1".into(),
+                    block_kind: StoryEventBlockKind::Hotspot,
+                    block_id: "hotspot_clock".into(),
                 },
             )
             .unwrap();
@@ -490,7 +479,7 @@ mod tests {
 
         assert_eq!(
             view.facts[0].origin_context,
-            OriginContextView::Scene {
+            OriginContextView {
                 origin_kind: OriginContextKindView::SceneEvent,
                 location: crate::game::story_location::SceneLocationContextView {
                     chapter_id: "chapter_1".into(),
@@ -517,7 +506,7 @@ mod tests {
 
         assert!(matches!(
             view.facts[0].origin_context,
-            OriginContextView::Scene {
+            OriginContextView {
                 origin_kind: OriginContextKindView::AnalysisBoard,
                 location: crate::game::story_location::SceneLocationContextView {
                     ref chapter_title,
@@ -526,19 +515,6 @@ mod tests {
                 },
             } if chapter_title == "First chapter" && scene_title == "Second scene"
         ));
-    }
-
-    #[test]
-    fn story_state_view_migration_origin_never_requires_scene_lookup() {
-        let view = build_story_view_with_origin(
-            AssertionOrigin::Migration {
-                migration_id: "save_v1".into(),
-            },
-            &StoryLocationIndex::empty(),
-        )
-        .unwrap();
-
-        assert_eq!(view.facts[0].origin_context, OriginContextView::Migration);
     }
 
     #[test]
@@ -590,8 +566,6 @@ mod tests {
                         "summary": "First summary",
                         "details": "First details",
                         "category": "timeline",
-                        "assertedInChapterId": "chapter_1",
-                        "assertedInSceneId": "scene_1",
                         "firstOrigin": {
                             "type": "sceneEvent",
                             "chapterId": "chapter_1",
@@ -600,7 +574,6 @@ mod tests {
                             "blockId": "hotspot_clock"
                         },
                         "originContext": {
-                            "type": "scene",
                             "originKind": "sceneEvent",
                             "location": {
                                 "chapterId": "chapter_1",
@@ -622,10 +595,21 @@ mod tests {
                         "summary": "Second summary",
                         "details": "Second details",
                         "category": "motive",
-                        "assertedInChapterId": null,
-                        "assertedInSceneId": null,
-                        "firstOrigin": {"type": "migration", "migrationId": "legacy_case"},
-                        "originContext": {"type": "migration"},
+                        "firstOrigin": {
+                            "type": "analysisBoard",
+                            "chapterId": "chapter_1",
+                            "sceneId": "scene_2",
+                            "boardId": "timeline_board"
+                        },
+                        "originContext": {
+                            "originKind": "analysisBoard",
+                            "location": {
+                                "chapterId": "chapter_1",
+                                "chapterTitle": "First chapter",
+                                "sceneId": "scene_2",
+                                "sceneTitle": "Second scene"
+                            }
+                        },
                         "supportingRecords": [],
                         "supportingFactIds": ["fact_first"]
                     }
@@ -690,8 +674,6 @@ mod tests {
                         "label": "Scene authorization",
                         "summary": "Scene summary",
                         "grantingAuthority": "Police",
-                        "grantedInChapterId": "chapter_1",
-                        "grantedInSceneId": "scene_2",
                         "firstOrigin": {
                             "type": "analysisBoard",
                             "chapterId": "chapter_1",
@@ -699,7 +681,6 @@ mod tests {
                             "boardId": "timeline_board"
                         },
                         "originContext": {
-                            "type": "scene",
                             "originKind": "analysisBoard",
                             "location": {
                                 "chapterId": "chapter_1",
@@ -710,14 +691,26 @@ mod tests {
                         }
                     },
                     {
-                        "id": "authorization_migration",
-                        "label": "Migration authorization",
-                        "summary": "Migration summary",
+                        "id": "authorization_secondary",
+                        "label": "Secondary authorization",
+                        "summary": "Secondary summary",
                         "grantingAuthority": "Court",
-                        "grantedInChapterId": null,
-                        "grantedInSceneId": null,
-                        "firstOrigin": {"type": "migration", "migrationId": "legacy_auth"},
-                        "originContext": {"type": "migration"}
+                        "firstOrigin": {
+                            "type": "sceneEvent",
+                            "chapterId": "chapter_1",
+                            "sceneId": "scene_1",
+                            "blockKind": "hotspot",
+                            "blockId": "hotspot_clock"
+                        },
+                        "originContext": {
+                            "originKind": "sceneEvent",
+                            "location": {
+                                "chapterId": "chapter_1",
+                                "chapterTitle": "First chapter",
+                                "sceneId": "scene_1",
+                                "sceneTitle": "First scene"
+                            }
+                        }
                     }
                 ]
             })

@@ -1378,7 +1378,7 @@ mod tests {
 
     #[test]
     fn rollback_scope_restores_story_state_and_filtered_view_on_error() {
-        use crate::game::story::{AssertionOrigin, StoryState};
+        use crate::game::story::{AssertionOrigin, StoryEventBlockKind, StoryState};
 
         let d = story_navigation_fixture_resources();
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
@@ -1389,8 +1389,11 @@ mod tests {
             engine.story_state.assert_fact(
                 &engine.story_catalog,
                 "persistent_fact",
-                AssertionOrigin::Migration {
-                    migration_id: "failed_command".into(),
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "scene_0".into(),
+                    block_kind: StoryEventBlockKind::StoryEvent,
+                    block_id: "failed_command".into(),
                 },
                 &[],
                 &[],

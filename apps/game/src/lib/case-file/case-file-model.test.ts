@@ -239,8 +239,6 @@ describe("buildCaseFileModel", () => {
             summary: "便箋時間可直接採信。",
             details: "校準紀錄與便箋互相吻合。",
             category: "時序",
-            assertedInChapterId: "synthetic_chapter",
-            assertedInSceneId: "synthetic_case_file",
             firstOrigin: {
               type: "sceneEvent",
               chapterId: "synthetic_chapter",
@@ -249,7 +247,6 @@ describe("buildCaseFileModel", () => {
               blockId: "acceptance_fixture",
             },
             originContext: {
-              type: "scene",
               originKind: "sceneEvent",
               location: syntheticLocation,
             },
@@ -262,8 +259,6 @@ describe("buildCaseFileModel", () => {
             summary: "目擊筆錄支持移動路線。",
             details: "路線結論同時依賴時鐘事實。",
             category: "位置",
-            assertedInChapterId: "synthetic_chapter",
-            assertedInSceneId: "synthetic_case_file",
             firstOrigin: {
               type: "sceneEvent",
               chapterId: "synthetic_chapter",
@@ -272,7 +267,6 @@ describe("buildCaseFileModel", () => {
               blockId: "acceptance_fixture",
             },
             originContext: {
-              type: "scene",
               originKind: "sceneEvent",
               location: syntheticLocation,
             },
@@ -329,8 +323,6 @@ describe("buildCaseFileModel", () => {
             label: "調閱合成檔案",
             summary: "可調閱本測試的合成來源。",
             grantingAuthority: "測試管理員",
-            grantedInChapterId: "synthetic_chapter",
-            grantedInSceneId: "synthetic_case_file",
             firstOrigin: {
               type: "sceneEvent",
               chapterId: "synthetic_chapter",
@@ -339,7 +331,6 @@ describe("buildCaseFileModel", () => {
               blockId: "acceptance_fixture",
             },
             originContext: {
-              type: "scene",
               originKind: "sceneEvent",
               location: syntheticLocation,
             },
@@ -531,8 +522,6 @@ describe("buildCaseFileModel", () => {
             summary: "",
             details: "",
             category: "時序",
-            assertedInChapterId: "chapter_1",
-            assertedInSceneId: "scene_1",
             firstOrigin: {
               type: "sceneEvent",
               chapterId: "chapter_1",
@@ -541,7 +530,6 @@ describe("buildCaseFileModel", () => {
               blockId: "desk",
             },
             originContext: {
-              type: "scene",
               originKind: "sceneEvent",
               location: acquisitionContext,
             },
@@ -557,10 +545,17 @@ describe("buildCaseFileModel", () => {
             summary: "",
             details: "",
             category: "時序",
-            assertedInChapterId: null,
-            assertedInSceneId: null,
-            firstOrigin: { type: "migration", migrationId: "legacy" },
-            originContext: { type: "migration" },
+            firstOrigin: {
+              type: "sceneEvent",
+              chapterId: "chapter_1",
+              sceneId: "scene_1",
+              blockKind: "hotspot",
+              blockId: "desk",
+            },
+            originContext: {
+              originKind: "sceneEvent",
+              location: acquisitionContext,
+            },
             supportingRecords: [],
             supportingFactIds: [],
           },
@@ -602,10 +597,17 @@ describe("buildCaseFileModel", () => {
             summary: "",
             details: "",
             category: "程序",
-            assertedInChapterId: null,
-            assertedInSceneId: null,
-            firstOrigin: { type: "migration", migrationId: "legacy" },
-            originContext: { type: "migration" },
+            firstOrigin: {
+              type: "sceneEvent",
+              chapterId: "chapter_1",
+              sceneId: "scene_1",
+              blockKind: "hotspot",
+              blockId: "desk",
+            },
+            originContext: {
+              originKind: "sceneEvent",
+              location: acquisitionContext,
+            },
             supportingRecords: [{ kind: "evidence", id: "hidden" }],
             supportingFactIds: ["hidden-fact"],
           },

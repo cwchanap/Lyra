@@ -1040,7 +1040,7 @@ mod tests {
 
     #[test]
     fn story_state_persists_across_scene_and_chapter_navigation() {
-        use crate::game::story::AssertionOrigin;
+        use crate::game::story::{AssertionOrigin, StoryEventBlockKind};
 
         let d = story_navigation_fixture_resources();
         let mut engine = GameEngine::new_started(d.clone()).unwrap();
@@ -1049,8 +1049,11 @@ mod tests {
             .assert_fact(
                 &engine.story_catalog,
                 "persistent_fact",
-                AssertionOrigin::Migration {
-                    migration_id: "legacy_case".into(),
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "scene_0".into(),
+                    block_kind: StoryEventBlockKind::StoryEvent,
+                    block_id: "persistent_fact".into(),
                 },
                 &[],
                 &[],

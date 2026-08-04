@@ -11,8 +11,6 @@ function factView(overrides: Partial<FactView> = {}): FactView {
     summary: "目擊筆錄支持移動路線。",
     details: "路線結論同時依賴時鐘事實。",
     category: "位置",
-    assertedInChapterId: "chapter_1",
-    assertedInSceneId: "scene_1",
     firstOrigin: {
       type: "sceneEvent",
       chapterId: "chapter_1",
@@ -21,7 +19,6 @@ function factView(overrides: Partial<FactView> = {}): FactView {
       blockId: "fixture",
     },
     originContext: {
-      type: "scene",
       originKind: "sceneEvent",
       location: {
         chapterId: "chapter_1",
