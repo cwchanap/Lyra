@@ -4,9 +4,7 @@
 
   let { item }: { item: CaseFileAuthorizationItem } = $props();
   const origin = $derived(
-    item.authorization.originContext.type === "migration"
-      ? "已匯入的進度"
-      : `${item.authorization.originContext.location.chapterTitle}・${item.authorization.originContext.location.sceneTitle}`,
+    `${item.authorization.originContext.location.chapterTitle}・${item.authorization.originContext.location.sceneTitle}`,
   );
 </script>
 

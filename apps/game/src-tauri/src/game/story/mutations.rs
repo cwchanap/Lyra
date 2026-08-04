@@ -27,7 +27,7 @@ impl StoryState {
         if catalog.fact(fact_id).is_none() {
             return Err(GameError::unknown_story_fact(fact_id));
         }
-        let (chapter_id, scene_id) = origin
+        origin
             .derived_location()
             .map_err(GameError::invalid_assertion_origin)?;
 
@@ -79,8 +79,6 @@ impl StoryState {
                 candidate.insert(
                     fact_id.to_owned(),
                     FactProgress {
-                        asserted_in_chapter_id: chapter_id,
-                        asserted_in_scene_id: scene_id,
                         first_origin: origin,
                         supporting_records,
                         supporting_fact_ids,
@@ -301,7 +299,7 @@ impl StoryState {
         if catalog.authorization(authorization_id).is_none() {
             return Err(GameError::unknown_story_authorization(authorization_id));
         }
-        let (chapter_id, scene_id) = origin
+        origin
             .derived_location()
             .map_err(GameError::invalid_assertion_origin)?;
 
@@ -309,8 +307,6 @@ impl StoryState {
         candidate
             .entry(authorization_id.to_owned())
             .or_insert(AuthorizationProgress {
-                granted_in_chapter_id: chapter_id,
-                granted_in_scene_id: scene_id,
                 first_origin: origin,
             });
         if candidate == self.authorizations {
@@ -393,9 +389,7 @@ mod tests {
                 .assert_fact(
                     &catalog,
                     "fact_beta",
-                    AssertionOrigin::Migration {
-                        migration_id: "legacy_import".into(),
-                    },
+                    scene_origin("chapter_1", "scene_1", "event_beta"),
                     &[],
                     &[],
                 )
@@ -436,11 +430,6 @@ mod tests {
         );
 
         let progress = &state.snapshot().facts["fact_alpha"];
-        assert_eq!(
-            progress.asserted_in_chapter_id.as_deref(),
-            Some("chapter_1")
-        );
-        assert_eq!(progress.asserted_in_scene_id.as_deref(), Some("scene_1"));
         assert_eq!(progress.first_origin, first_origin);
         assert_eq!(
             progress.supporting_records,
@@ -987,8 +976,6 @@ mod tests {
         );
         let snapshot = state.snapshot();
         let progress = &snapshot.authorizations["authorization_a"];
-        assert_eq!(progress.granted_in_chapter_id.as_deref(), Some("chapter_1"));
-        assert_eq!(progress.granted_in_scene_id.as_deref(), Some("scene_1"));
         assert_eq!(progress.first_origin, first_origin.clone());
 
         let before = state.snapshot();
@@ -1019,25 +1006,9 @@ mod tests {
     }
 
     #[test]
-    fn authorization_migration_has_null_location_and_failures_preserve_state() {
+    fn authorization_invalid_origin_failures_preserve_state() {
         let catalog = catalog();
         let mut state = StoryState::default();
-
-        assert_eq!(
-            state
-                .grant_authorization(
-                    &catalog,
-                    "authorization_a",
-                    AssertionOrigin::Migration {
-                        migration_id: "legacy_import".into(),
-                    },
-                )
-                .unwrap(),
-            MutationOutcome::Changed
-        );
-        let progress = &state.snapshot().authorizations["authorization_a"];
-        assert_eq!(progress.granted_in_chapter_id, None);
-        assert_eq!(progress.granted_in_scene_id, None);
 
         let before = state.snapshot();
         let error = state
@@ -1055,8 +1026,11 @@ mod tests {
             .grant_authorization(
                 &catalog,
                 "authorization_a",
-                AssertionOrigin::Migration {
-                    migration_id: "Bad Migration".into(),
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "scene_1".into(),
+                    block_kind: StoryEventBlockKind::StoryEvent,
+                    block_id: "Bad Event".into(),
                 },
             )
             .unwrap_err();

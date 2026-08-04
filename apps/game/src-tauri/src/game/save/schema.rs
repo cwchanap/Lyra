@@ -1,10 +1,9 @@
 use crate::game::dialogue_queue::ActiveDialogueStateV1;
 use crate::game::schema::AudioChannelJson;
-use crate::game::story::AssertionOrigin;
+use crate::game::story::StoryStateSnapshot;
 use crate::game::{GameError, QueueToken};
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
 use std::time::SystemTime;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -197,7 +196,7 @@ pub(crate) struct SaveSnapshot {
     pub(crate) last_visual_cue: LastVisualCueSnapshotV1,
     pub(crate) inventory: InventorySnapshotV1,
     pub(crate) pending_acquisition_events: Vec<AcquisitionEventStateV1>,
-    pub(crate) story_state: StoryStateSnapshotV1,
+    pub(crate) story_state: StoryStateSnapshot,
     pub(crate) dialogue_history: DialogueHistorySnapshotV1,
     pub(crate) next_queue_gen: u64,
     pub(crate) durable_revision: u64,
@@ -423,58 +422,6 @@ pub(crate) struct DialogueHistorySnapshotV1 {
     pub(crate) entries: Vec<DialogueHistoryEntryV1>,
     pub(crate) next_id: u64,
     pub(crate) last_token: Option<QueueToken>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct StoryStateSnapshotV1 {
-    pub(crate) facts: BTreeMap<String, FactProgressSnapshotV1>,
-    pub(crate) questions: BTreeMap<String, QuestionProgressSnapshotV1>,
-    pub(crate) objectives: BTreeMap<String, ObjectiveProgressSnapshotV1>,
-    pub(crate) authorizations: BTreeMap<String, AuthorizationProgressSnapshotV1>,
-    pub(crate) active_primary_objective_id: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct FactProgressSnapshotV1 {
-    pub(crate) asserted_in_chapter_id: Option<String>,
-    pub(crate) asserted_in_scene_id: Option<String>,
-    pub(crate) first_origin: AssertionOrigin,
-    pub(crate) supporting_records: BTreeSet<InventoryTargetV1>,
-    pub(crate) supporting_fact_ids: BTreeSet<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct QuestionProgressSnapshotV1 {
-    pub(crate) resolved_by_fact_id: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct ObjectiveProgressSnapshotV1 {
-    pub(crate) completed: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct AuthorizationProgressSnapshotV1 {
-    pub(crate) granted_in_chapter_id: Option<String>,
-    pub(crate) granted_in_scene_id: Option<String>,
-    pub(crate) first_origin: AssertionOrigin,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(
-    tag = "type",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase",
-    deny_unknown_fields
-)]
-pub(crate) enum InventoryTargetV1 {
-    Evidence { id: String },
-    Statement { id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

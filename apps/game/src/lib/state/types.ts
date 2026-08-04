@@ -248,13 +248,10 @@ export type SourceGroupReferenceView = {
   summary: string;
 };
 
-export type OriginContextView =
-  | {
-      type: "scene";
-      originKind: "sceneEvent" | "analysisBoard";
-      location: SceneLocationContextView;
-    }
-  | { type: "migration" };
+export type OriginContextView = {
+  originKind: "sceneEvent" | "analysisBoard";
+  location: SceneLocationContextView;
+};
 
 export type CaseRecordProvenance = {
   sourceKind: SourceKind;
@@ -317,8 +314,6 @@ export type FactView = {
   summary: string;
   details: string;
   category: string;
-  assertedInChapterId: string | null;
-  assertedInSceneId: string | null;
   firstOrigin: AssertionOrigin;
   originContext: OriginContextView;
   /**
@@ -353,8 +348,6 @@ export type AuthorizationView = {
   label: string;
   summary: string;
   grantingAuthority: string;
-  grantedInChapterId: string | null;
-  grantedInSceneId: string | null;
   firstOrigin: AssertionOrigin;
   originContext: OriginContextView;
 };
@@ -372,8 +365,7 @@ export type AssertionOrigin =
       chapterId: string;
       sceneId: string;
       boardId: string;
-    }
-  | { type: "migration"; migrationId: string };
+    };
 
 export type StoryEventBlockKind =
   | "sublocation"

@@ -1,10 +1,8 @@
 use super::capture::{capture_checkpoint, CapturedCheckpoint};
 use super::schema::{
-    AcquisitionEventStateV1, AudioCueSnapshotV1, AuthorizationProgressSnapshotV1,
-    CrossExamSnapshotV1, DialogueHistoryEntryV1, DialogueHistorySnapshotV1, FactProgressSnapshotV1,
-    InventorySnapshotV1, InventoryTargetV1, LastVisualCueSnapshotV1, ObjectiveProgressSnapshotV1,
-    QuestionProgressSnapshotV1, RecordKind, SaveEnvelope, SaveSlotRef, SaveSnapshot, SaveSummary,
-    SaveType, SceneProgressSnapshot, StoryStateSnapshotV1,
+    AcquisitionEventStateV1, AudioCueSnapshotV1, CrossExamSnapshotV1, DialogueHistoryEntryV1,
+    DialogueHistorySnapshotV1, InventorySnapshotV1, LastVisualCueSnapshotV1, RecordKind,
+    SaveEnvelope, SaveSlotRef, SaveSnapshot, SaveSummary, SaveType, SceneProgressSnapshot,
 };
 use crate::game::content_manifest::ContentManifest;
 use crate::game::dialogue::{DialogueHistory, DIALOGUE_HISTORY_LIMIT};
@@ -22,13 +20,11 @@ use crate::game::scenes::linear::LinearSceneState;
 use crate::game::scenes::SceneRuntime;
 use crate::game::schema::{
     AssetTypeJson, AudioChannelJson, AudioCueJson, InterrogationPhaseJson, InterrogationSceneJson,
-    InventoryTarget, InvestigationSceneJson, SceneJson,
+    InvestigationSceneJson, SceneJson,
 };
 use crate::game::state::{ChapterManifest, Inventory};
 use crate::game::story::{
-    AssertionOrigin, AuthorizationProgressSnapshot, FactProgressSnapshot,
-    ObjectiveProgressSnapshot, QuestionProgressSnapshot, StoryCatalog, StoryEventBlockKind,
-    StoryState, StoryStateSnapshot,
+    AssertionOrigin, StoryCatalog, StoryEventBlockKind, StoryState, StoryStateSnapshot,
 };
 use crate::game::story_location::StoryLocationIndex;
 use crate::game::view::{DialogueHistoryEntry, QueueToken};
@@ -68,32 +64,6 @@ pub(crate) struct CurrentDefinitions {
 impl CurrentDefinitions {
     pub(crate) fn content_revision(&self) -> &str {
         self.content_manifest.content_revision()
-    }
-}
-
-pub(crate) trait ResumableStateAdapter: Sized {
-    type Snapshot;
-
-    fn capture(&self) -> Self::Snapshot;
-    fn restore(
-        definitions: &CurrentDefinitions,
-        snapshot: Self::Snapshot,
-    ) -> Result<Self, GameError>;
-}
-
-impl ResumableStateAdapter for StoryState {
-    type Snapshot = StoryStateSnapshotV1;
-
-    fn capture(&self) -> Self::Snapshot {
-        story_snapshot_to_v1(self.snapshot())
-    }
-
-    fn restore(
-        definitions: &CurrentDefinitions,
-        snapshot: Self::Snapshot,
-    ) -> Result<Self, GameError> {
-        validate_story_origins(definitions, &snapshot)?;
-        StoryState::from_snapshot(&definitions.story_catalog, story_snapshot_from_v1(snapshot))
     }
 }
 
@@ -251,7 +221,9 @@ pub(crate) fn build_restore_candidate(
         .ok_or_else(GameError::missing_save_definition)?;
 
     validate_visual_cues(definitions, &snapshot.last_visual_cue)?;
-    let story_state = StoryState::restore(definitions, snapshot.story_state.clone())?;
+    validate_story_origins(definitions, &snapshot.story_state)?;
+    let story_state =
+        StoryState::from_snapshot(&definitions.story_catalog, snapshot.story_state.clone())?;
     let inventory = restore_inventory(definitions, &snapshot.inventory)?;
     validate_pending_events(
         &inventory,
@@ -325,8 +297,8 @@ pub(crate) fn build_restore_candidate(
     // The capture boundary is intentionally independent from restore. Re-run
     // its exhaustive invariants on the detached candidate and demand exact
     // snapshot equality so duplicate IDs, reordered coordinates, or
-    // normalization cannot be smuggled through reconstruction. Migrated V1
-    // recap copy remains null by contract, so summary validation happens
+    // normalization cannot be smuggled through reconstruction. The recap copy
+    // remains null by contract, so summary validation happens
     // against packaged definitions above rather than by exact recapture.
     let CapturedCheckpoint {
         summary: _,
@@ -1135,7 +1107,7 @@ fn scene_asset_refs(scene: &SceneJson) -> &[crate::game::schema::AssetRefJson] {
 
 fn validate_story_origins(
     definitions: &CurrentDefinitions,
-    snapshot: &StoryStateSnapshotV1,
+    snapshot: &StoryStateSnapshot,
 ) -> Result<(), GameError> {
     let origins = snapshot
         .facts
@@ -1149,11 +1121,6 @@ fn validate_story_origins(
         );
     for origin in origins {
         match origin {
-            AssertionOrigin::Migration { migration_id } => {
-                return Err(GameError::invalid_story_state_snapshot(format!(
-                    "migration origin '{migration_id}' is unsupported because the current package has no migration registry"
-                )));
-            }
             AssertionOrigin::AnalysisBoard {
                 chapter_id,
                 scene_id,
@@ -1264,148 +1231,6 @@ fn story_block_label(kind: StoryEventBlockKind) -> &'static str {
     }
 }
 
-fn story_snapshot_from_v1(snapshot: StoryStateSnapshotV1) -> StoryStateSnapshot {
-    StoryStateSnapshot {
-        facts: snapshot
-            .facts
-            .into_iter()
-            .map(|(id, progress)| {
-                (
-                    id,
-                    FactProgressSnapshot {
-                        asserted_in_chapter_id: progress.asserted_in_chapter_id,
-                        asserted_in_scene_id: progress.asserted_in_scene_id,
-                        first_origin: progress.first_origin,
-                        supporting_records: progress
-                            .supporting_records
-                            .into_iter()
-                            .map(inventory_target_from_v1)
-                            .collect(),
-                        supporting_fact_ids: progress.supporting_fact_ids,
-                    },
-                )
-            })
-            .collect(),
-        questions: snapshot
-            .questions
-            .into_iter()
-            .map(|(id, progress)| {
-                (
-                    id,
-                    QuestionProgressSnapshot {
-                        resolved_by_fact_id: progress.resolved_by_fact_id,
-                    },
-                )
-            })
-            .collect(),
-        objectives: snapshot
-            .objectives
-            .into_iter()
-            .map(|(id, progress)| {
-                (
-                    id,
-                    ObjectiveProgressSnapshot {
-                        completed: progress.completed,
-                    },
-                )
-            })
-            .collect(),
-        authorizations: snapshot
-            .authorizations
-            .into_iter()
-            .map(|(id, progress)| {
-                (
-                    id,
-                    AuthorizationProgressSnapshot {
-                        granted_in_chapter_id: progress.granted_in_chapter_id,
-                        granted_in_scene_id: progress.granted_in_scene_id,
-                        first_origin: progress.first_origin,
-                    },
-                )
-            })
-            .collect(),
-        active_primary_objective_id: snapshot.active_primary_objective_id,
-    }
-}
-
-fn story_snapshot_to_v1(snapshot: StoryStateSnapshot) -> StoryStateSnapshotV1 {
-    StoryStateSnapshotV1 {
-        facts: snapshot
-            .facts
-            .into_iter()
-            .map(|(id, progress)| {
-                (
-                    id,
-                    FactProgressSnapshotV1 {
-                        asserted_in_chapter_id: progress.asserted_in_chapter_id,
-                        asserted_in_scene_id: progress.asserted_in_scene_id,
-                        first_origin: progress.first_origin,
-                        supporting_records: progress
-                            .supporting_records
-                            .into_iter()
-                            .map(inventory_target_to_v1)
-                            .collect(),
-                        supporting_fact_ids: progress.supporting_fact_ids,
-                    },
-                )
-            })
-            .collect(),
-        questions: snapshot
-            .questions
-            .into_iter()
-            .map(|(id, progress)| {
-                (
-                    id,
-                    QuestionProgressSnapshotV1 {
-                        resolved_by_fact_id: progress.resolved_by_fact_id,
-                    },
-                )
-            })
-            .collect(),
-        objectives: snapshot
-            .objectives
-            .into_iter()
-            .map(|(id, progress)| {
-                (
-                    id,
-                    ObjectiveProgressSnapshotV1 {
-                        completed: progress.completed,
-                    },
-                )
-            })
-            .collect(),
-        authorizations: snapshot
-            .authorizations
-            .into_iter()
-            .map(|(id, progress)| {
-                (
-                    id,
-                    AuthorizationProgressSnapshotV1 {
-                        granted_in_chapter_id: progress.granted_in_chapter_id,
-                        granted_in_scene_id: progress.granted_in_scene_id,
-                        first_origin: progress.first_origin,
-                    },
-                )
-            })
-            .collect(),
-        active_primary_objective_id: snapshot.active_primary_objective_id,
-    }
-}
-
-fn inventory_target_from_v1(target: InventoryTargetV1) -> InventoryTarget {
-    match target {
-        InventoryTargetV1::Evidence { id } => InventoryTarget::Evidence { id },
-        InventoryTargetV1::Statement { id } => InventoryTarget::Statement { id },
-    }
-}
-
-fn inventory_target_to_v1(target: InventoryTarget) -> InventoryTargetV1 {
-    match target {
-        InventoryTarget::Evidence { id } => InventoryTargetV1::Evidence { id },
-        InventoryTarget::Statement { id } => InventoryTargetV1::Statement { id },
-    }
-}
-
 fn require_unique<T>(values: &[T], label: &str) -> Result<(), GameError>
 where
     T: std::fmt::Debug + Eq + std::hash::Hash,
@@ -1448,14 +1273,14 @@ mod tests {
     use crate::game::save::schema::{
         AcquisitionEventStateV1, AudioCueSnapshotV1, CharacterTopicRefV1, CrossExamSnapshotV1,
         DialogueHistoryEntryV1, EvidenceInventoryEntryV1, InterrogationOverrideRefV1,
-        InvestigationOverrideRefV1, ObjectiveProgressSnapshotV1, RecordKind, SaveEnvelope,
-        SaveSlotRef, SaveType, SceneProgressSnapshot, StatementInventoryEntryV1,
-        ThumbnailDescriptorV1,
+        InvestigationOverrideRefV1, RecordKind, SaveEnvelope, SaveSlotRef, SaveType,
+        SceneProgressSnapshot, StatementInventoryEntryV1, ThumbnailDescriptorV1,
     };
     use crate::game::scenes::interrogation::CrossExam;
     use crate::game::scenes::SceneRuntime;
-    use crate::game::schema::{AudioChannelJson, AudioCueJson, DialogueItem};
+    use crate::game::schema::{AudioChannelJson, AudioCueJson, DialogueItem, InventoryTarget};
     use crate::game::state::{EvidenceRecord, StatementRecord};
+    use crate::game::story::{FactProgressSnapshot, ObjectiveProgressSnapshot};
     use crate::game::support_lineage::SupportLineage;
     use crate::game::test_support::{
         drive_hpa_257_positive_progression, hpa_257_fixture_resources,
@@ -1752,7 +1577,7 @@ mod tests {
             Box::new(|save| {
                 save.snapshot.story_state.objectives.insert(
                     "missing".into(),
-                    ObjectiveProgressSnapshotV1 { completed: false },
+                    ObjectiveProgressSnapshot { completed: false },
                 );
             }),
             Box::new(|save| save.summary.chapter_id = "wrong".into()),
@@ -1777,23 +1602,7 @@ mod tests {
             Box::new(|save| {
                 save.snapshot.story_state.facts.insert(
                     "fact_origin".into(),
-                    FactProgressSnapshotV1 {
-                        asserted_in_chapter_id: None,
-                        asserted_in_scene_id: None,
-                        first_origin: AssertionOrigin::Migration {
-                            migration_id: "missing_migration".into(),
-                        },
-                        supporting_records: BTreeSet::new(),
-                        supporting_fact_ids: BTreeSet::new(),
-                    },
-                );
-            }),
-            Box::new(|save| {
-                save.snapshot.story_state.facts.insert(
-                    "fact_origin".into(),
-                    FactProgressSnapshotV1 {
-                        asserted_in_chapter_id: Some("chapter_1".into()),
-                        asserted_in_scene_id: Some("scene_0".into()),
+                    FactProgressSnapshot {
                         first_origin: AssertionOrigin::AnalysisBoard {
                             chapter_id: "chapter_1".into(),
                             scene_id: "scene_0".into(),
@@ -1807,9 +1616,7 @@ mod tests {
             Box::new(|save| {
                 save.snapshot.story_state.facts.insert(
                     "fact_origin".into(),
-                    FactProgressSnapshotV1 {
-                        asserted_in_chapter_id: Some("chapter_1".into()),
-                        asserted_in_scene_id: Some("scene_0".into()),
+                    FactProgressSnapshot {
                         first_origin: AssertionOrigin::SceneEvent {
                             chapter_id: "chapter_1".into(),
                             scene_id: "scene_0".into(),
@@ -2351,10 +2158,8 @@ mod tests {
         public_value: String,
     }
 
-    impl ResumableStateAdapter for GenericResumable {
-        type Snapshot = GenericSnapshot;
-
-        fn capture(&self) -> Self::Snapshot {
+    impl GenericResumable {
+        fn capture(&self) -> GenericSnapshot {
             GenericSnapshot {
                 content_revision: self.content_revision.clone(),
                 definition_id: self.definition_id.clone(),
@@ -2366,7 +2171,7 @@ mod tests {
 
         fn restore(
             definitions: &CurrentDefinitions,
-            snapshot: Self::Snapshot,
+            snapshot: GenericSnapshot,
         ) -> Result<Self, crate::game::GameError> {
             if snapshot.content_revision != definitions.content_manifest.content_revision() {
                 return Err(crate::game::GameError::incompatible_content_revision(
@@ -2563,6 +2368,44 @@ mod tests {
             .unwrap();
 
         assert_round_trip(resources, &engine);
+    }
+
+    // Break caught: the save parser accepts a redundant persisted location
+    // even though firstOrigin already owns the authoritative scene location.
+    #[test]
+    fn save_parser_rejects_redundant_story_origin_locations() {
+        let (_guard, _resources, mut engine) = resources_and_engine();
+        engine
+            .story_state
+            .assert_fact(
+                &engine.story_catalog,
+                "fact_origin",
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    block_kind: StoryEventBlockKind::Hotspot,
+                    block_id: "desk".into(),
+                },
+                &[],
+                &[],
+            )
+            .unwrap();
+
+        let mut encoded = serde_json::to_value(envelope(&engine)).unwrap();
+        let fact = encoded["snapshot"]["storyState"]["facts"]["fact_origin"]
+            .as_object_mut()
+            .unwrap();
+        fact.insert("assertedInChapterId".into(), serde_json::json!("chapter_1"));
+        fact.insert(
+            "assertedInSceneId".into(),
+            serde_json::json!("investigation_scene_1"),
+        );
+
+        let error = crate::game::save::schema::parse_current_envelope(
+            &serde_json::to_vec(&encoded).unwrap(),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "malformedSaveJson");
     }
 
     // Break caught: successful HPA-257 progress restores the static package

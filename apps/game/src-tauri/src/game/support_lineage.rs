@@ -327,8 +327,11 @@ mod tests {
             .assert_fact(
                 catalog,
                 fact_id,
-                AssertionOrigin::Migration {
-                    migration_id: format!("migration_{fact_id}"),
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "scene_1".into(),
+                    block_kind: crate::game::story::StoryEventBlockKind::StoryEvent,
+                    block_id: "support_event".into(),
                 },
                 supporting_records,
                 &supporting_fact_ids
