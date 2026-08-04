@@ -19,7 +19,7 @@ This changes the backward-compatibility promise. It does not weaken save validat
 1. The runtime decodes one current envelope and snapshot shape.
 2. Keep the serialized `schemaVersion` discriminator at its current value. Do not renumber it for aesthetics.
 3. Breaking pre-release changes may invalidate development saves. Developers clear the development `saves/` directory when they need a clean state; no epoch or migration mechanism is maintained before release.
-4. Additive recap-cache fields may use `Option<T>` with explicit default-to-absence semantics when absence has one safe meaning.
+4. Additive recap-cache fields may use `Option<T>` with explicit default-to-absence semantics only when absence has one safe meaning.
 5. Exact package-wide `contentRevision` compatibility remains mandatory.
 6. Generated scene JSON, story catalog, and content manifests are current-only compiler outputs and are regenerated rather than migrated.
 7. Deterministic current-content checkpoints are the preferred way to reach deep implementation and test states across builds.
@@ -33,7 +33,7 @@ The supported Tauri development command uses identifier:
 com.chanwaichan.lyra.dev
 ```
 
-Tauri derives a separate application-data directory from that identifier, so both production and development may use their ordinary `saves/` child directory without a second path-versioning axis.
+Tauri derives a separate application-data directory from that identifier, so production and Tauri development may each use their ordinary `saves/` child directory without a second path-versioning axis.
 
 | Runtime | Save location policy |
 |---|---|
@@ -42,9 +42,9 @@ Tauri derives a separate application-data directory from that identifier, so bot
 | Browser development | Existing repository-local development save root |
 | E2E | Existing validated temporary override and E2E `saves/` root |
 
-Do not add `DEVELOPMENT_SAVE_EPOCH`, a runtime-channel enum, or a typed unsafe-namespace failure in HPA-540.
+Do not add `DEVELOPMENT_SAVE_EPOCH`, a runtime-channel enum, a second development path scheme, or a typed unsafe-namespace failure in HPA-540.
 
-A debug startup that accidentally uses the production identifier may emit a clear warning, but it is not blocked during the pre-release phase. The supported `bun run dev:game` path must continue loading `tauri.dev.conf.json`.
+The supported `bun run dev:game` path must continue loading `tauri.dev.conf.json`. HPA-540 does not add a debug-startup warning or block plain development commands.
 
 After a breaking change, stale development saves may appear incompatible through the existing strict parser or `contentRevision` gate. That is acceptable and intentionally loud. Developers may remove the development save directory manually.
 
@@ -56,20 +56,25 @@ Remove unshipped V1 decoding, the V1-to-V2 migration registry, migration-only fi
 
 Do not keep an empty migration framework. Introduce a legacy module only after a real shipped format requires migration.
 
+Unsupported formats remain invalid and receive the existing typed unsupported-format diagnostic. They do not expose a decoded recap from an unknown schema. Independently validated top-level metadata may remain visible where the current discovery flow already supports it.
+
 ### Rust naming decision
 
-The serialized `schemaVersion` remains `2`; Rust type names are not serialized compatibility contracts.
+The serialized `schemaVersion` remains `2`; Rust type and function names are not serialized compatibility contracts.
 
-Because HPA-540 already touches the active top-level boundary, rename these current types to unversioned names:
+Because HPA-540 already touches the active top-level boundary, use unversioned current names for:
 
-- `SaveEnvelopeV2` -> `SaveEnvelope`
-- `SaveSummaryV2` -> `SaveSummary`
-- `SaveSnapshotV1` -> `SaveSnapshot`
-- `SceneProgressSnapshotV1` -> `SceneProgressSnapshot`
+- `SaveEnvelope`
+- `SaveSummary`
+- `SaveSnapshot`
+- `SceneProgressSnapshot`
+- `CapturedCheckpoint`
+- `capture_checkpoint`
+- `capture_scene_progress`
 
 Remove the save-specific `StoryStateSnapshotV1` family and use the existing `StoryStateSnapshot` directly.
 
-Do not perform a broad rename-only sweep of lower-level `*V1` records such as dialogue-history, thumbnail, or acquisition structures unless the implementation already needs to touch them for functional reasons.
+Do not perform a broad rename-only sweep of lower-level `*V1` records such as dialogue-history, thumbnail, acquisition, or inventory structures unless functional work already touches them.
 
 ### One StoryState snapshot
 
@@ -90,8 +95,10 @@ Do not retain a parallel save-specific StoryState snapshot family, identity conv
 - `SceneEvent` contains chapter, scene, and block identity.
 - `AnalysisBoard` contains chapter, scene, and board identity.
 - Remove the unshipped `Migration` origin.
-- Collapse `derived_location` to return `(String, String)` rather than optional locations, because every remaining origin has a concrete chapter and scene.
+- `derived_location` returns a concrete `(String, String)` pair because every remaining origin has a chapter and scene.
 - Remove separately persisted asserted/granted chapter and scene fields.
+- Remove the duplicated public `assertedIn*` and `grantedIn*` fields; `originContext.location` is the public location source.
+- Replace the migration-capable tagged `OriginContextView` union with one scene-origin object containing `originKind` and `location`.
 
 Restore must still resolve every persisted origin against current packaged definitions.
 
