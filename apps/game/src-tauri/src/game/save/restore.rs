@@ -297,9 +297,11 @@ pub(crate) fn build_restore_candidate(
     // The capture boundary is intentionally independent from restore. Re-run
     // its exhaustive invariants on the detached candidate and demand exact
     // snapshot equality so duplicate IDs, reordered coordinates, or
-    // normalization cannot be smuggled through reconstruction. The recap copy
-    // remains null by contract, so summary validation happens
-    // against packaged definitions above rather than by exact recapture.
+    // normalization cannot be smuggled through reconstruction. Recap copy is
+    // optional and non-authoritative: absent prose stays absent, while any
+    // present prose was checked against packaged definitions above. Only
+    // GameComplete may retain its final-scene prose, so exact recapture checks
+    // the snapshot rather than rebuilding recap copy.
     let CapturedCheckpoint {
         summary: _,
         snapshot: recaptured_snapshot,

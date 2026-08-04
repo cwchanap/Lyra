@@ -29,7 +29,7 @@ function browser(savedAt: string, saveId = "auto-save-1"): SaveBrowserView {
           metadata: {
             saveId: "manual-save",
             saveType: "manual" as const,
-            schemaVersion: 1,
+            schemaVersion: 2,
             contentRevision: "revision",
             savedAt: "2026-01-02T00:00:00Z",
             displayName: "Manual",
@@ -56,7 +56,7 @@ function browser(savedAt: string, saveId = "auto-save-1"): SaveBrowserView {
           metadata: {
             saveId,
             saveType: "auto" as const,
-            schemaVersion: 1,
+            schemaVersion: 2,
             contentRevision: "revision",
             savedAt,
             displayName: "Autosave",

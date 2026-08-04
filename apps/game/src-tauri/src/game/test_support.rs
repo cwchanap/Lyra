@@ -39,6 +39,10 @@ pub(super) fn representative_save_envelope() -> crate::game::save::schema::SaveE
     }
 }
 
+pub(super) fn representative_save_bytes() -> Vec<u8> {
+    crate::game::save::schema::encode_current_envelope(&representative_save_envelope()).unwrap()
+}
+
 /// Minimal PNG header fixture (signature + IHDR) used by save-coordinator and
 /// thumbnail tests that only need a byte payload shaped like a PNG. Shared so
 /// the three former local copies (flush, ticket, storage_integration) cannot

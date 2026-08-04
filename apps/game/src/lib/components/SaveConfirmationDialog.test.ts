@@ -25,7 +25,7 @@ const validSlot: SaveSlotView = {
     metadata: {
       saveId: "11111111-1111-4111-8111-111111111111",
       saveType: "manual",
-      schemaVersion: 1,
+      schemaVersion: 2,
       contentRevision: `sha256:${"1".repeat(64)}`,
       savedAt: "2026-07-27T12:34:00Z",
       displayName: "舊的雨夜",

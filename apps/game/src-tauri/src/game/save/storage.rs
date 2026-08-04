@@ -1,10 +1,10 @@
 use super::restore::{build_restore_candidate, validate_save_summary, CurrentDefinitions};
 use super::schema::{
-    canonical_uuid_v4, parse_current_envelope, parse_saved_at_utc, parse_schema_version,
-    validate_envelope, ReadableSaveMetadataView, SaveBrowserView, SaveDiscoveryStatusView,
-    SaveEnvelope, SaveMetadataView, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveSnapshot,
-    SaveSummary, SaveType, ThumbnailAvailabilityView, ThumbnailDescriptorV1,
-    ThumbnailUnavailableReason, SAVE_SCHEMA_VERSION,
+    canonical_uuid_v4, encode_current_envelope, parse_current_envelope, parse_saved_at_utc,
+    parse_schema_version, validate_envelope, ReadableSaveMetadataView, SaveBrowserView,
+    SaveDiscoveryStatusView, SaveEnvelope, SaveMetadataView, SaveSlotRef, SaveSlotStatusView,
+    SaveSlotView, SaveSnapshot, SaveSummary, SaveType, ThumbnailAvailabilityView,
+    ThumbnailDescriptorV1, ThumbnailUnavailableReason, SAVE_SCHEMA_VERSION,
 };
 use super::thumbnail::{
     parse_png_header, validate_png_bytes_for_descriptor, ValidatedThumbnail, PNG_HEADER_BYTES,
@@ -931,10 +931,10 @@ pub(crate) fn prepare_slot_write(
         }
         ThumbnailWrite::Unavailable => (None, None),
     };
-    let unavailable_bytes = serialize_envelope(&unavailable_envelope)?;
+    let unavailable_bytes = encode_current_envelope(&unavailable_envelope)?;
     let available_bytes = available_envelope
         .as_ref()
-        .map(serialize_envelope)
+        .map(encode_current_envelope)
         .transpose()?;
 
     let staged_thumbnail = match thumbnail_bytes {
@@ -1179,12 +1179,6 @@ fn descriptor_sidecar(root: &Path, descriptor: &ThumbnailDescriptorV1) -> Option
         ThumbnailDescriptorV1::Available { object_id, .. } => thumbnail_path(root, object_id).ok(),
         ThumbnailDescriptorV1::Unavailable => None,
     }
-}
-
-fn serialize_envelope(envelope: &SaveEnvelope) -> Result<Vec<u8>, GameError> {
-    let mut bytes = serde_json::to_vec(envelope).map_err(|_| GameError::save_write_failed())?;
-    bytes.push(b'\n');
-    Ok(bytes)
 }
 
 fn read_bounded_slot_json(
@@ -2783,10 +2777,8 @@ mod tests {
         let SaveSlotStatusView::Valid { metadata } = &view.slots[0].status else {
             panic!("pre-spoiler-fix save with matching prose must remain valid");
         };
-        let summary = serde_json::to_value(&metadata.summary).unwrap();
         assert_eq!(
-            summary.get("sceneSummary"),
-            Some(&serde_json::Value::Null),
+            metadata.summary.scene_summary, None,
             "resumable scene summary must be suppressed at projection time"
         );
     }
@@ -2821,10 +2813,12 @@ mod tests {
         else {
             panic!("mismatched content revision must yield an invalid slot with readable metadata");
         };
-        let summary = serde_json::to_value(metadata.summary.as_ref().unwrap()).unwrap();
+        let summary = metadata
+            .summary
+            .as_ref()
+            .expect("mismatched content revision has readable recap");
         assert_eq!(
-            summary.get("sceneSummary"),
-            Some(&serde_json::Value::Null),
+            summary.scene_summary, None,
             "resumable scene summary must be suppressed in readable invalid metadata"
         );
     }

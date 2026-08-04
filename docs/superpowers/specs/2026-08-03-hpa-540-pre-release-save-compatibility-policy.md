@@ -134,8 +134,9 @@ HPA-260 adds Chapter 1 analysis state to the current model:
 
 - add `Analysis` to `SceneProgressSnapshot`;
 - persist active board, classify/order/threshold drafts, completion, result-dialogue position, and minimal feedback;
-- use the single current `StoryStateSnapshot`;
-- use `AssertionOrigin::AnalysisBoard` for accepted board outputs;
+- use the direct current `SaveEnvelope` -> `SaveSnapshot` -> `StoryStateSnapshot` model and its one strict current parser;
+- use `AssertionOrigin::AnalysisBoard` for accepted board outputs and derive their saved location from that origin instead of persisting redundant chapter/scene copies;
+- keep recap copy optional and non-authoritative: do not reconstruct absent prose or silently correct mismatched present copy;
 - do not create a new envelope/snapshot version, duplicate Analysis/StoryState DTOs, or a generic resumable-state adapter;
 - round-trip representative current analysis states exactly;
 - use deterministic checkpoints for deep analysis states across builds.
