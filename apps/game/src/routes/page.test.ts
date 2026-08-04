@@ -300,7 +300,7 @@ function validSlotStatus(saveId: string): SaveSlotStatusView {
     metadata: {
       saveId,
       saveType: "manual",
-      schemaVersion: 1,
+      schemaVersion: 2,
       contentRevision: "revision",
       savedAt: "2026-07-27T12:00:00Z",
       displayName: "新的存檔",
