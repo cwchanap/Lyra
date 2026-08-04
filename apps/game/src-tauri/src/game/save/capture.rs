@@ -215,6 +215,13 @@ pub(crate) fn capture_checkpoint_v2(
     })
 }
 
+/// Build the scene summary stored on a checkpoint.
+///
+/// Only `GameComplete` may retain the authored scene summary: at that point
+/// the entire story has been played, so the prose is no longer a spoiler.
+/// Every other scene kind (`Linear`, `Investigation`, `Interrogation`) must
+/// expose no summary, otherwise a save recap could leak unrevealed plot
+/// content and break checkpoint spoiler safety.
 fn scene_summary_for_checkpoint(
     scene: &SceneProgressSnapshotV1,
     authored_summary: &str,
