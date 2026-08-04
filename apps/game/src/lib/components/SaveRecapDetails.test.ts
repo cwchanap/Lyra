@@ -70,6 +70,33 @@ describe("SaveRecapDetails", () => {
     expect(readSaveThumbnail).not.toHaveBeenCalled();
   });
 
+  it("omits a resumable scene summary while retaining the other recap content", () => {
+    render(SaveRecapDetails, {
+      slotType: "manual",
+      savedAt: "2026-07-27T12:34:00Z",
+      summary: {
+        ...completeSummary,
+        sceneSummary: null,
+      },
+    });
+
+    expect(screen.getByText(/第一章.*雨中的證言/)).toBeInTheDocument();
+    expect(
+      screen.getByText("相馬律接下雨夜中的第一宗委託。"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("律師事務所")).toBeInTheDocument();
+    expect(
+      screen.queryByText("早坂帶來一份程序不明的調查摘要。"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("詢問目擊者")).toBeInTheDocument();
+    expect(
+      screen.getByText("釐清目擊者在雨夜看見的人影。"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByTestId("recap-summary-copy")).toHaveLength(2);
+    expect(screen.queryByText(/沒有摘要|No summary/i)).not.toBeInTheDocument();
+    expect(readSaveThumbnail).not.toHaveBeenCalled();
+  });
+
   it("omits nullable recap copy and time without inventing fallback prose", () => {
     render(SaveRecapDetails, {
       slotType: "manual",
