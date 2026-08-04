@@ -234,6 +234,25 @@ fn scene_summary_for_checkpoint(
     }
 }
 
+/// Normalize a persisted `scene_summary` for projection to the frontend.
+///
+/// Pre-fix schema-v2 saves may carry a non-null `scene_summary` for resumable
+/// scenes because `scene_summary_for_checkpoint` only started suppressing it
+/// after the spoiler-safety fix. Apply the same rule at projection time so
+/// legacy saves do not leak unrevealed plot content in Save Browser or
+/// Continue without being rejected (which would lose save progress).
+pub(crate) fn normalize_projected_scene_summary(
+    scene: &SceneProgressSnapshotV1,
+    scene_summary: Option<String>,
+) -> Option<String> {
+    match scene {
+        SceneProgressSnapshotV1::GameComplete => scene_summary,
+        SceneProgressSnapshotV1::Linear
+        | SceneProgressSnapshotV1::Investigation { .. }
+        | SceneProgressSnapshotV1::Interrogation { .. } => None,
+    }
+}
+
 pub(crate) fn capture_scene_progress_v1(
     engine: &GameEngine,
 ) -> Result<SceneProgressSnapshotV1, GameError> {
