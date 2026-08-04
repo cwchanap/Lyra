@@ -6,53 +6,70 @@ Accepted for active Chapter 1 development, subject to one precondition:
 
 > No publicly shipped Lyra build has promised save compatibility.
 
-The implementation PR must verify that precondition before deleting legacy decoding. If a released compatibility promise exists, stop and preserve that released format in a dedicated legacy module.
+The implementation PR must re-run the release audit before deleting legacy decoding. If a released compatibility promise exists, stop and preserve that released format in a dedicated legacy module.
 
 ## Decision
 
 Before the first public release, Lyra supports **one current save format**. Internal formats that were never shipped are disposable and do not receive sequential migrations.
 
-This changes the backward-compatibility promise. It does not weaken save correctness, durability, or validation.
+This changes the backward-compatibility promise. It does not weaken save validation, restore correctness, or durable-write behavior.
 
 ## Pre-release rules
 
 1. The runtime decodes one current envelope and snapshot shape.
-2. Keep the serialized `schemaVersion` discriminator at its current value unless a real product requirement changes it. Do not renumber it for aesthetics.
-3. Breaking pre-release durable-state changes increment `DEVELOPMENT_SAVE_EPOCH` and begin with a clean development namespace.
+2. Keep the serialized `schemaVersion` discriminator at its current value. Do not renumber it for aesthetics.
+3. Breaking pre-release changes may invalidate development saves. Developers clear the development `saves/` directory when they need a clean state; no epoch or migration mechanism is maintained before release.
 4. Additive recap-cache fields may use `Option<T>` with explicit default-to-absence semantics when absence has one safe meaning.
 5. Exact package-wide `contentRevision` compatibility remains mandatory.
 6. Generated scene JSON, story catalog, and content manifests are current-only compiler outputs and are regenerated rather than migrated.
 7. Deterministic current-content checkpoints are the preferred way to reach deep implementation and test states across builds.
 8. A domain has one current persistence DTO. Do not create a second save-only DTO without a shipped compatibility requirement.
 
-## Save namespaces
+## Development save isolation
 
-| Runtime | Identifier / guard | Save root |
-|---|---|---|
-| Production | release build + `com.chanwaichan.lyra` | existing configured application data `saves/` root |
-| Tauri development | debug build + `com.chanwaichan.lyra.dev` | `saves-dev/epoch-<N>/` |
-| Browser development | existing repository-local development base | `saves-dev/epoch-<N>/` under that base |
-| E2E | existing `e2e` feature, identifier, and validated temporary override | existing isolated E2E `saves/` root |
+The supported Tauri development command uses identifier:
 
-Root selection should remain direct and fail closed. A separate runtime-channel abstraction is not required.
+```text
+com.chanwaichan.lyra.dev
+```
 
-For non-E2E builds:
+Tauri derives a separate application-data directory from that identifier, so both production and development may use their ordinary `saves/` child directory without a second path-versioning axis.
 
-- release + production identifier selects the production root;
-- debug + development identifier selects the development epoch root;
-- every other build/identifier combination fails with a typed unsafe-namespace diagnostic.
+| Runtime | Save location policy |
+|---|---|
+| Production | Existing production identifier and configured application-data `saves/` root |
+| Tauri development | Development identifier and its configured application-data `saves/` root |
+| Browser development | Existing repository-local development save root |
+| E2E | Existing validated temporary override and E2E `saves/` root |
 
-Use `bun run dev:game` or the configured game Tauri development command. A bare debug startup that loads the production identifier is intentionally rejected rather than allowed to touch production saves.
+Do not add `DEVELOPMENT_SAVE_EPOCH`, a runtime-channel enum, or a typed unsafe-namespace failure in HPA-540.
 
-Changing the development epoch does not migrate, copy, or delete an older development root. Developers may inspect or remove old roots manually.
+A debug startup that accidentally uses the production identifier may emit a clear warning, but it is not blocked during the pre-release phase. The supported `bun run dev:game` path must continue loading `tauri.dev.conf.json`.
+
+After a breaking change, stale development saves may appear incompatible through the existing strict parser or `contentRevision` gate. That is acceptable and intentionally loud. Developers may remove the development save directory manually.
 
 ## Current save model
 
 ### One active format
 
-Remove unshipped V1 decoding, the V1 to V2 migration registry, migration-only fixtures, and frontend/E2E unions that only model that internal transition.
+Remove unshipped V1 decoding, the V1-to-V2 migration registry, migration-only fixtures, and tests that only model that internal transition.
 
 Do not keep an empty migration framework. Introduce a legacy module only after a real shipped format requires migration.
+
+### Rust naming decision
+
+The serialized `schemaVersion` remains `2`; Rust type names are not serialized compatibility contracts.
+
+Because HPA-540 already touches the active top-level boundary, rename these current types to unversioned names:
+
+- `SaveEnvelopeV2` -> `SaveEnvelope`
+- `SaveSummaryV2` -> `SaveSummary`
+- `SaveSnapshotV1` -> `SaveSnapshot`
+- `SceneProgressSnapshotV1` -> `SceneProgressSnapshot`
+
+Remove the save-specific `StoryStateSnapshotV1` family and use the existing `StoryStateSnapshot` directly.
+
+Do not perform a broad rename-only sweep of lower-level `*V1` records such as dialogue-history, thumbnail, or acquisition structures unless the implementation already needs to touch them for functional reasons.
 
 ### One StoryState snapshot
 
@@ -61,10 +78,10 @@ The current persistence path is:
 ```text
 StoryState
   -> StoryStateSnapshot
-  -> current SaveSnapshot
+  -> SaveSnapshot
 ```
 
-Do not retain a parallel save-specific StoryState snapshot family or identity conversion layer. A dedicated snapshot remains required; the mutable runtime object is not serialized directly.
+Do not retain a parallel save-specific StoryState snapshot family, identity conversion layer, or generic adapter with one production implementation. The mutable runtime object is not serialized directly.
 
 ### One assertion-location authority
 
@@ -72,8 +89,9 @@ Do not retain a parallel save-specific StoryState snapshot family or identity co
 
 - `SceneEvent` contains chapter, scene, and block identity.
 - `AnalysisBoard` contains chapter, scene, and board identity.
-- Chapter/scene location fields are derived from the origin rather than stored twice.
-- Remove the unshipped `Migration` origin. Add released migration provenance later only if a real shipped migration needs it.
+- Remove the unshipped `Migration` origin.
+- Collapse `derived_location` to return `(String, String)` rather than optional locations, because every remaining origin has a concrete chapter and scene.
+- Remove separately persisted asserted/granted chapter and scene fields.
 
 Restore must still resolve every persisted origin against current packaged definitions.
 
@@ -85,10 +103,10 @@ Save recap copy is presentation cache, not restore authority.
 - Optional recap prose defaults to absence.
 - HPA-540 does not reconstruct missing recap prose.
 - Valid titles and labels may still render when safe; absent prose remains absent.
-- Never rebuild an unfinished scene summary directly from the current definition, because that can reveal later authored outcomes.
+- Never rebuild an unfinished scene summary directly from the current definition.
 - Present-but-mismatched recap data remains invalid rather than being silently corrected.
 
-HPA-508 owns completion-aware spoiler safety and must merge before the final HPA-540 recap integration.
+HPA-508 owns completion-aware spoiler safety and must merge before final HPA-540 recap integration.
 
 ## First public release
 
@@ -105,44 +123,14 @@ HPA-274 and HPA-536 begin their compatibility matrices from that first shipped c
 
 HPA-260 adds Chapter 1 analysis state to the current model:
 
-- add `Analysis` to the current scene-progress snapshot;
+- add `Analysis` to `SceneProgressSnapshot`;
 - persist active board, classify/order/threshold drafts, completion, result-dialogue position, and minimal feedback;
 - use the single current `StoryStateSnapshot`;
 - use `AssertionOrigin::AnalysisBoard` for accepted board outputs;
-- do not create `SaveEnvelopeV3`, `SaveSnapshotV2`, duplicate Analysis/StoryState DTOs, or a generic resumable-state adapter;
+- do not create a new envelope/snapshot version, duplicate Analysis/StoryState DTOs, or a generic resumable-state adapter;
 - round-trip representative current analysis states exactly;
 - use deterministic checkpoints for deep analysis states across builds.
 
-## Invariants that remain mandatory
-
-HPA-540 must preserve:
-
-- atomic staged writes and directory synchronization;
-- strict bounded parsing and typed diagnostics;
-- thumbnail sidecar ownership and graceful thumbnail failure;
-- stable semantic IDs;
-- exact `contentRevision` gating;
-- detached restore before live-session replacement;
-- exact restore/recapture equality and final public-view validation;
-- exhaustive `GameEngine` capture classification;
-- session-generation and durable-revision stale-write guards;
-- serialized writer, autosave debounce, and flush behavior;
-- acquisition acknowledgement durability and rollback;
-- stale manual overwrite/delete protection;
-- corruption and incompatible-save discovery behavior;
-- production slot counts, commands, events, and player-facing save flows;
-- HPA-257 monotonic unlock and fixed-point reachability behavior.
-
 ## Non-goals
 
-HPA-540 does not:
-
-- decompose `SaveCoordinator`;
-- remove the browser HTTP development transport;
-- change compiler source roots;
-- redesign reveal enums;
-- decide the future of `SupportLineage`;
-- change E2E suite taxonomy;
-- rewrite thumbnail capture;
-- add Chapter 2 compatibility work;
-- make restore permissive to preserve development saves.
+HPA-540 does not decompose `SaveCoordinator`, remove the browser HTTP transport, change compiler source roots, redesign reveal enums, decide the future of `SupportLineage`, restructure E2E suites, rewrite thumbnail capture, add Chapter 2 compatibility work, or change HPA-257 behavior.
