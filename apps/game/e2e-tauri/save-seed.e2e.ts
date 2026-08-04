@@ -39,6 +39,8 @@ import type { SaveBrowserOpenResultView } from "$lib/persistence/types";
 describe("save seed", () => {
   it("seeds Unicode, composite, acquisition, investigation, and interrogation checkpoints", async function () {
     this.timeout(1_800_000);
+    const activeSceneAuthoredSummary =
+      "三宅母親正式委託相馬與早坂，兩人循程序爭取重新調查的機會，也明白今天真正要保住的是再次檢視證據的權利。";
     await resetE2eStorageWithStoryClearance();
     await browser.execute(() => {
       const diagnosticWindow = window as Window & {
@@ -143,6 +145,9 @@ describe("save seed", () => {
         envelope.snapshot.activeDialogue !== null &&
         envelope.snapshot.activeDialogue.itemCursor > 0,
     );
+    if (compositeEnvelope.schemaVersion !== 2) {
+      throw new Error("composite save was not written with schema version 2");
+    }
     expect(compositeEnvelope.snapshot.scene.type).toBe("investigation");
     if (compositeEnvelope.snapshot.scene.type !== "investigation") {
       throw new Error("composite save did not persist investigation progress");
@@ -158,6 +163,7 @@ describe("save seed", () => {
     expect(
       compositeEnvelope.snapshot.inventory.evidence.length,
     ).toBeGreaterThan(0);
+    expect(compositeEnvelope.summary.sceneSummary).toBeNull();
     if (compositeEnvelope.thumbnail.type === "available") {
       expect(compositeEnvelope.thumbnail.objectId).toBe(
         compositeEnvelope.saveId,
@@ -266,6 +272,11 @@ describe("save seed", () => {
       (envelope) =>
         envelope.summary.sceneId === anchors.unicodeSave.interrogationSceneId,
     );
+    if (interrogationEnvelope.schemaVersion !== 2) {
+      throw new Error(
+        "interrogation save was not written with schema version 2",
+      );
+    }
     expect(interrogationEnvelope.snapshot.scene.type).toBe("interrogation");
     if (interrogationEnvelope.snapshot.scene.type !== "interrogation") {
       throw new Error(
@@ -277,6 +288,7 @@ describe("save seed", () => {
     expect(interrogationSceneSnapshot.enteredPhaseIds.length).toBeGreaterThan(
       0,
     );
+    expect(interrogationEnvelope.summary.sceneSummary).toBeNull();
     await closePersistenceBrowserToGameplay();
 
     await jumpToProductionScene("scene_2");
@@ -307,7 +319,7 @@ describe("save seed", () => {
       throw new Error("new manual save was not written with schema version 2");
     }
     expect(unicodeEnvelope.summary.chapterSummary).not.toBeNull();
-    expect(unicodeEnvelope.summary.sceneSummary).not.toBeNull();
+    expect(unicodeEnvelope.summary.sceneSummary).toBeNull();
     const checkpoint: ExpectedResumeCheckpoint = {
       saveId: unicodeEnvelope.saveId,
       displayName: unicodeEnvelope.displayName,
@@ -365,6 +377,7 @@ describe("save seed", () => {
     ]) {
       if (field) expect(manualOneText).toContain(field);
     }
+    expect(manualOneText).not.toContain(activeSceneAuthoredSummary);
     await clickPersistenceBrowserButton("返回");
 
     const titleDiscovery =
@@ -385,7 +398,8 @@ describe("save seed", () => {
     }
     expect(continueSlot.status.metadata.schemaVersion).toBe(2);
     expect(continueSlot.status.metadata.summary.chapterSummary).not.toBeNull();
-    expect(continueSlot.status.metadata.summary.sceneSummary).not.toBeNull();
+    expect(continueSlot.status.metadata.summary.sceneSummary).toBeNull();
+    expect(continueSlot.status.metadata.saveId).toBe(unicodeEnvelope.saveId);
     const titleRecaps = await browser.execute(() =>
       Array.from(
         document.querySelectorAll<HTMLElement>('[aria-label="繼續遊戲摘要"]'),
@@ -406,5 +420,6 @@ describe("save seed", () => {
     ]) {
       if (field) expect(titleRecaps[0]).toContain(field);
     }
+    expect(titleRecaps[0]).not.toContain(activeSceneAuthoredSummary);
   });
 });
