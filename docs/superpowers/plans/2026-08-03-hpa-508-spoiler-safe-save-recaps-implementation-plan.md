@@ -2,47 +2,42 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Prevent Save Browser and Continue from exposing the active scene's authored summary until the captured scene state proves that scene is complete.
+**Goal:** Prevent Save Browser and Continue from exposing authored scene outcomes at every resumable checkpoint.
 
-**Architecture:** Keep the existing schema-v2 envelope, discovery, restore, and recap UI contracts. Derive `sceneSummary` eligibility from the already-validated `SceneProgressSnapshotV1` produced during capture, so recap copy cannot disagree with the durable scene state.
+**Architecture:** Keep the existing schema-v2, discovery, restore, and recap UI contracts. Derive `sceneSummary` from the already-validated captured `SceneProgressSnapshotV1`: only `GameComplete` receives authored final-scene prose; every resumable linear, investigation, or interrogation state receives `None`.
 
 **Tech Stack:** Rust 2021, Serde, Svelte 5, Vitest 4, WebdriverIO/Tauri E2E, Bun 1.3.1.
 
-## Global Constraints
+## Constraints
 
-- Merge order: `HPA-508 -> HPA-540 -> HPA-260`.
-- Use the current `main` names (`capture_checkpoint_v2`, `SaveSummaryV2`, `SceneProgressSnapshotV1`). HPA-540 owns their later rename.
-- No schema version, migration, persisted field, recap model, discovery fallback, or UI layout change.
-- `summary.sceneId` / `sceneTitle` and snapshot positioning remain the actual current checkpoint.
-- Chapter-summary and active-primary-objective recap behavior remain unchanged.
-- `outro_played = true` is the current investigation/interrogation completion signal; `GameComplete` is complete; valid linear checkpoints are in progress.
-- HPA-508 adds no migration-specific requirement or test. Existing migration behavior remains until HPA-540 removes it.
+- Merge order: `HPA-508 -> HPA-540 -> HPA-260`; use current `main` type names and let HPA-540 rename them later.
+- No schema, migration, persisted completion field, discovery fallback, recap model, authored-content, or UI layout change.
+- Preserve current checkpoint IDs/titles, chapter recap, objective recap, save discovery, and restore behavior.
 
 ## Current seam
 
-Capture currently copies `CapturedLocation.scene_summary` into every new `SaveSummaryV2`, even though it has already produced a validated `SceneProgressSnapshotV1` containing the completion signal.
+`outro_played` is set when a non-empty outro queue is installed. That state remains resumable while the player is reading the outro, and the engine advances the scene in the same command that drains the queue. It is therefore not a completed-scene signal.
 
-No downstream production change is needed:
+The current contracts already support the required absence:
 
-- `SaveSummaryV2.scene_summary` is already `Option<String>`.
-- `validate_save_summary` already accepts absent copy and validates authored equality only when copy is present.
-- `SaveRecapDetails.svelte` already renders scene prose only when present.
-- Existing migrated V1 recap prose is already absent.
+- `SaveSummaryV2.scene_summary` is `Option<String>`.
+- `validate_save_summary` accepts absent copy.
+- `SaveRecapDetails.svelte` renders scene prose only when present.
 
-Required eligibility:
+Required rule:
 
-| Captured scene progress | `sceneSummary` |
+| Captured progress | `sceneSummary` |
 |---|---|
 | `Linear` | `None` |
-| `Investigation { outro_played: false, .. }` | `None` |
-| `Interrogation { outro_played: false, .. }` | `None` |
-| `Investigation { outro_played: true, .. }` | authored summary |
-| `Interrogation { outro_played: true, .. }` | authored summary |
+| `Investigation { .. }`, including an active outro | `None` |
+| `Interrogation { .. }`, including an active outro | `None` |
 | `GameComplete` | retained final-scene summary |
+
+A future requirement to show a completed non-final scene needs a real completed-scene recap model or signal and is outside HPA-508.
 
 ---
 
-### Task 1: Apply the capture-owned eligibility rule
+### Task 1: Apply the capture-owned rule
 
 **Files:**
 - Modify/test: `apps/game/src-tauri/src/game/save/capture.rs`
@@ -56,29 +51,24 @@ fn scene_summary_for_checkpoint(
 ) -> Option<String>
 ```
 
-- [ ] **Write the failing capture regressions**
+- [ ] **Add failing regression assertions to existing capture tests**
 
-Update existing tests rather than creating new fixtures:
+Update existing tests without adding fixtures:
 
-- `captures_active_linear_checkpoint_as_exact_wire_value`
-  - change only `"sceneSummary"` to `null`;
-  - retain current IDs, titles, chapter/objective copy, dialogue, and snapshot expectations.
-- `captures_investigation_progress_inventory_and_composite_queue_deterministically`
-  - assert `captured.summary.scene_summary == None`.
-- `captures_interrogation_playing_and_presenting_with_stable_line_ids`
-  - assert both captured summaries are `None`.
-- `captures_game_complete_with_the_retained_final_scene_identity`
-  - assert `Some("Fixture scene summary.")`.
-- Add one completed-investigation and one completed-interrogation capture case using `fixture_engine`, `jump_to_scene`, `intro_played = true`, `outro_played = true`, and no pending queue; each expects `Some("Fixture scene summary.")`.
+- `captures_active_linear_checkpoint_as_exact_wire_value`: expect `"sceneSummary": null`.
+- `captures_investigation_progress_inventory_and_composite_queue_deterministically`: expect `None`.
+- `captures_interrogation_playing_and_presenting_with_stable_line_ids`: expect `None` for both captures.
+- `captures_an_investigation_outro_only_after_its_commit`: keep the active outro queue, capture after `outro_played = true`, and expect `None`.
+- `captures_game_complete_with_the_retained_final_scene_identity`: expect `Some("Fixture scene summary.")`.
 
-Run and confirm the unfinished cases fail before implementation:
+Run and confirm the resumable cases fail before implementation:
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
   game::save::capture::tests -- --nocapture
 ```
 
-- [ ] **Implement the minimal snapshot-based helper**
+- [ ] **Implement the exhaustive minimal helper**
 
 ```rust
 fn scene_summary_for_checkpoint(
@@ -86,15 +76,7 @@ fn scene_summary_for_checkpoint(
     authored_summary: &str,
 ) -> Option<String> {
     match scene {
-        SceneProgressSnapshotV1::GameComplete
-        | SceneProgressSnapshotV1::Investigation {
-            outro_played: true,
-            ..
-        }
-        | SceneProgressSnapshotV1::Interrogation {
-            outro_played: true,
-            ..
-        } => Some(authored_summary.to_owned()),
+        SceneProgressSnapshotV1::GameComplete => Some(authored_summary.to_owned()),
         SceneProgressSnapshotV1::Linear
         | SceneProgressSnapshotV1::Investigation { .. }
         | SceneProgressSnapshotV1::Interrogation { .. } => None,
@@ -108,7 +90,7 @@ Immediately after `capture_scene_progress_with_active` returns:
 let scene_summary = scene_summary_for_checkpoint(&scene, &location.scene_summary);
 ```
 
-Pass `scene_summary` into `SaveSummaryV2`. Do not inspect live `SceneRuntime` again or duplicate this rule in `capture_location`, storage, discovery, or restore.
+Pass that value to `SaveSummaryV2`. Do not duplicate this rule in `capture_location`, storage, discovery, or restore.
 
 - [ ] **Run the focused Rust suite green**
 
@@ -117,28 +99,18 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
   game::save::capture::tests -- --nocapture
 ```
 
-Expected: all six eligibility states match the table and checkpoint positioning remains unchanged.
-
 ---
 
-### Task 2: Lock existing rendering and packaged behavior
+### Task 2: Prove nullable rendering and packaged UI behavior
 
 **Files:**
 - Modify: `apps/game/src/lib/components/SaveRecapDetails.test.ts`
 - Modify: `apps/game/e2e-tauri/save-seed.e2e.ts`
 - Do not modify unless a test exposes a defect: `SaveRecapDetails.svelte`
-- Do not modify: `apps/game/src/lib/persistence/types.ts`
 
-- [ ] **Add scene-only nullable rendering coverage**
+- [ ] **Add scene-only nullable component coverage**
 
-Render `{ ...completeSummary, sceneSummary: null }` and assert:
-
-- chapter title and chapter summary remain;
-- scene title remains;
-- scene summary text is absent;
-- objective label and summary remain;
-- exactly two `recap-summary-copy` elements render;
-- no fallback prose is invented.
+Render `{ ...completeSummary, sceneSummary: null }` and assert that chapter/title/objective content remains, the authored scene-summary text is absent, exactly two summary-copy elements render, and no fallback prose is invented.
 
 Run:
 
@@ -147,20 +119,32 @@ bun run --cwd apps/game test \
   src/lib/components/SaveRecapDetails.test.ts
 ```
 
-Expected: PASS without changing the component.
+Expected: PASS without a production component change.
 
-- [ ] **Reuse the existing packaged save-seed flow**
+- [ ] **Update the existing packaged save-seed assertions**
 
-Add these assertions to existing checkpoints:
+Add null assertions for the existing midpoint checkpoints:
 
 ```ts
 expect(compositeEnvelope.summary.sceneSummary).toBeNull();
 expect(interrogationEnvelope.summary.sceneSummary).toBeNull();
+```
+
+Replace the current non-null assertions for the active linear save and Continue candidate:
+
+```ts
 expect(unicodeEnvelope.summary.sceneSummary).toBeNull();
 expect(continueSlot.status.metadata.summary.sceneSummary).toBeNull();
 ```
 
-They already cover midpoint investigation, presenting interrogation, active linear dialogue, and title-screen Continue. Keep all current assertions for titles, chapter/objective copy, cursor, save identity, discovery, and restore. Do not create a new E2E suite or navigation flow.
+Define the authored `scene_2` summary as a test constant and add explicit UI proof:
+
+```ts
+expect(manualOneText).not.toContain(activeSceneAuthoredSummary);
+expect(titleRecaps[0]).not.toContain(activeSceneAuthoredSummary);
+```
+
+Keep existing title, chapter-summary, objective, identity, cursor, discovery, and restore assertions. The existing conditional loops may continue to render present fields, but these negative assertions must prove the hidden scene copy is absent from both Save Browser and Continue.
 
 Type-check:
 
@@ -168,41 +152,21 @@ Type-check:
 bun run --cwd apps/game check:e2e
 ```
 
+Do not add a new E2E suite or navigation flow.
+
 ---
 
 ## Final verification
 
-Run once after integration:
-
 ```bash
-git diff --check
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml
-bun run check
 bun run --cwd apps/game check:e2e
-bun run test
 bun run lint:all
 bun run --cwd apps/game test:e2e:save
 ```
 
-If packaged E2E is unavailable, record the exact missing prerequisite and do not claim it passed.
+The targeted component test runs in Task 2. If packaged E2E is unavailable, record the exact missing prerequisite and do not claim it passed.
 
-Search for stale active-scene expectations:
+## HPA-540 handoff
 
-```bash
-rg -n \
-  'sceneSummary\).*not\.toBeNull|scene_summary:\s*Some\(location\.scene_summary\)|"sceneSummary":\s*"The detective arrives' \
-  apps/game/src-tauri/src/game/save apps/game/src/lib apps/game/e2e-tauri
-```
-
-No active linear or unfinished investigation/interrogation test may require non-null scene prose.
-
-## Review and handoff
-
-One focused implementation commit is sufficient; keep tests and behavior together.
-
-The implementation PR must state:
-
-- HPA-508 owns only completion-aware recap eligibility.
-- HPA-540 may remove the unshipped V1 path and rename current save/capture types after rebasing these assertions.
-- HPA-540 must preserve the `scene_summary_for_checkpoint` behavior.
-- No HPA-508 test makes V1-to-V2 migration a lasting compatibility requirement.
+HPA-540 may remove the unshipped V1 path and rename current save/capture types after rebasing these observable tests. It must preserve the rule: authored scene prose is absent for every resumable checkpoint and present only for `GameComplete`.
