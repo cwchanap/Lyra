@@ -10,7 +10,7 @@
 
 ## Constraints
 
-- Merge order: `HPA-508 -> HPA-540 -> HPA-260`; use current `main` type names and let HPA-540 rename them later.
+- Merge order: `HPA-508 -> HPA-540 -> HPA-260`; HPA-540 may rename current types but must preserve the observable rule below.
 - No schema, migration, persisted completion field, discovery fallback, recap model, authored-content, or UI layout change.
 - Preserve current checkpoint IDs/titles, chapter recap, objective recap, save discovery, and restore behavior.
 
@@ -24,8 +24,6 @@ The current contracts already support the required absence:
 - `validate_save_summary` accepts absent copy.
 - `SaveRecapDetails.svelte` renders scene prose only when present.
 
-Required rule:
-
 | Captured progress | `sceneSummary` |
 |---|---|
 | `Linear` | `None` |
@@ -33,7 +31,7 @@ Required rule:
 | `Interrogation { .. }`, including an active outro | `None` |
 | `GameComplete` | retained final-scene summary |
 
-A future requirement to show a completed non-final scene needs a real completed-scene recap model or signal and is outside HPA-508.
+A future requirement to show a completed non-final scene needs a real completed-scene recap signal or previous-scene model and is outside HPA-508.
 
 ---
 
@@ -42,18 +40,7 @@ A future requirement to show a completed non-final scene needs a real completed-
 **Files:**
 - Modify/test: `apps/game/src-tauri/src/game/save/capture.rs`
 
-**Produces:**
-
-```rust
-fn scene_summary_for_checkpoint(
-    scene: &SceneProgressSnapshotV1,
-    authored_summary: &str,
-) -> Option<String>
-```
-
-- [ ] **Add failing regression assertions to existing capture tests**
-
-Update existing tests without adding fixtures:
+- [ ] **Add failing assertions to existing capture tests**
 
 - `captures_active_linear_checkpoint_as_exact_wire_value`: expect `"sceneSummary": null`.
 - `captures_investigation_progress_inventory_and_composite_queue_deterministically`: expect `None`.
@@ -61,14 +48,14 @@ Update existing tests without adding fixtures:
 - `captures_an_investigation_outro_only_after_its_commit`: keep the active outro queue, capture after `outro_played = true`, and expect `None`.
 - `captures_game_complete_with_the_retained_final_scene_identity`: expect `Some("Fixture scene summary.")`.
 
-Run and confirm the resumable cases fail before implementation:
+Run and confirm the resumable cases fail:
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
   game::save::capture::tests -- --nocapture
 ```
 
-- [ ] **Implement the exhaustive minimal helper**
+- [ ] **Implement the exhaustive helper immediately after scene-progress capture**
 
 ```rust
 fn scene_summary_for_checkpoint(
@@ -84,13 +71,13 @@ fn scene_summary_for_checkpoint(
 }
 ```
 
-Immediately after `capture_scene_progress_with_active` returns:
+After `capture_scene_progress_with_active` returns:
 
 ```rust
 let scene_summary = scene_summary_for_checkpoint(&scene, &location.scene_summary);
 ```
 
-Pass that value to `SaveSummaryV2`. Do not duplicate this rule in `capture_location`, storage, discovery, or restore.
+Pass `scene_summary` to `SaveSummaryV2`. Do not duplicate the rule in `capture_location`, storage, discovery, or restore.
 
 - [ ] **Run the focused Rust suite green**
 
@@ -110,9 +97,7 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
 
 - [ ] **Add scene-only nullable component coverage**
 
-Render `{ ...completeSummary, sceneSummary: null }` and assert that chapter/title/objective content remains, the authored scene-summary text is absent, exactly two summary-copy elements render, and no fallback prose is invented.
-
-Run:
+Render `{ ...completeSummary, sceneSummary: null }`. Assert that chapter/title/objective content remains, the authored scene-summary text is absent, exactly two summary-copy elements render, and no fallback prose appears.
 
 ```bash
 bun run --cwd apps/game test \
@@ -121,9 +106,9 @@ bun run --cwd apps/game test \
 
 Expected: PASS without a production component change.
 
-- [ ] **Update the existing packaged save-seed assertions**
+- [ ] **Update the existing packaged save-seed flow**
 
-Add null assertions for the existing midpoint checkpoints:
+Add null assertions for its existing investigation and interrogation checkpoints:
 
 ```ts
 expect(compositeEnvelope.summary.sceneSummary).toBeNull();
@@ -137,16 +122,22 @@ expect(unicodeEnvelope.summary.sceneSummary).toBeNull();
 expect(continueSlot.status.metadata.summary.sceneSummary).toBeNull();
 ```
 
-Define the authored `scene_2` summary as a test constant and add explicit UI proof:
+Use the current authored `scene_2` summary as the leak sentinel:
+
+```ts
+const activeSceneAuthoredSummary =
+  "三宅母親正式委託相馬與早坂，兩人循程序爭取重新調查的機會，也明白今天真正要保住的是再次檢視證據的權利。";
+```
+
+Prove both UI surfaces hide it, and prove Continue is rendering the same save:
 
 ```ts
 expect(manualOneText).not.toContain(activeSceneAuthoredSummary);
+expect(continueSlot.status.metadata.saveId).toBe(unicodeEnvelope.saveId);
 expect(titleRecaps[0]).not.toContain(activeSceneAuthoredSummary);
 ```
 
-Keep existing title, chapter-summary, objective, identity, cursor, discovery, and restore assertions. The existing conditional loops may continue to render present fields, but these negative assertions must prove the hidden scene copy is absent from both Save Browser and Continue.
-
-Type-check:
+Keep existing title, chapter-summary, objective, cursor, discovery, and restore assertions. The conditional present-field loops may remain, but these negative assertions are the actual UI leak proof.
 
 ```bash
 bun run --cwd apps/game check:e2e
@@ -166,7 +157,3 @@ bun run --cwd apps/game test:e2e:save
 ```
 
 The targeted component test runs in Task 2. If packaged E2E is unavailable, record the exact missing prerequisite and do not claim it passed.
-
-## HPA-540 handoff
-
-HPA-540 may remove the unshipped V1 path and rename current save/capture types after rebasing these observable tests. It must preserve the rule: authored scene prose is absent for every resumable checkpoint and present only for `GameComplete`.
