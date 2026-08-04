@@ -10,123 +10,171 @@ Leave Lyra with one current pre-release save format and one current StoryState s
 
 ## Preconditions and order
 
-1. Verify that no public release, tag, installer, or documented promise requires compatibility with an existing Lyra save format.
-2. Merge and rebase on HPA-508 before final recap integration and test cleanup.
-3. Merge HPA-540 before HPA-260.
+Re-run the release audit before deleting legacy decoding:
 
-Required order:
+```bash
+git tag --list
+gh release list --repo cwchanap/Lyra
+rg -n --hidden \
+  'save compatibility|backward-compatible save|preserve player saves|released save schema|public build' \
+  README.md CLAUDE.md docs .github apps packages
+```
+
+Current expected result, based on the planning review:
+
+```text
+git tags: 0
+GitHub releases: empty
+no documented shipped-save compatibility promise
+```
+
+If the audit finds a real compatibility promise, stop and redesign the work around a released legacy module.
+
+Required merge order:
 
 ```text
 HPA-508 -> HPA-540 -> HPA-260
 ```
 
-If the release audit finds a real compatibility promise, stop and redesign the work around a released legacy module.
-
 ## Scope guard
 
-This ticket changes compatibility policy, duplicate persistence representations, and development namespace selection only.
+This ticket changes compatibility policy, duplicate persistence representations, and the supported Tauri development identifier only.
 
-Do not include:
+Do not include `SaveCoordinator` decomposition, browser HTTP transport removal, compiler source-root cleanup, reveal-enum redesign, `SupportLineage` deletion, E2E suite restructuring, thumbnail renderer work, HPA-257 changes, or Chapter 2 compatibility work.
 
-- `SaveCoordinator` decomposition;
-- browser HTTP transport removal;
-- compiler source-root cleanup;
-- reveal-enum redesign;
-- `SupportLineage` deletion;
-- E2E suite restructuring;
-- thumbnail renderer work;
-- HPA-257 scope changes;
-- Chapter 2 compatibility work.
-
-## Workstream 1: policy and release audit
+## Workstream 1: policy and repository guidance
 
 ### Changes
 
 - Keep the policy spec as the durable decision record.
 - Link it from contributor/agent guidance and the save module.
-- Record the release-audit result in the implementation PR.
-- Keep the current serialized `schemaVersion` value; do not renumber for aesthetics.
+- Record the concrete release-audit result in the implementation PR.
+- Keep serialized `schemaVersion: 2`; do not renumber for aesthetics.
+- Document the chosen Rust naming boundary:
+  - rename active top-level current types to `SaveEnvelope`, `SaveSummary`, `SaveSnapshot`, and `SceneProgressSnapshot`;
+  - use `StoryStateSnapshot` directly;
+  - do not broadly rename lower-level `*V1` records unless functional work already touches them.
 
 ### Checks
 
-- No shipped-save compatibility promise exists.
-- The repository guidance clearly separates backward compatibility from durability and restore correctness.
-- HPA-260 is explicitly prohibited from creating `SaveEnvelopeV3`, `SaveSnapshotV2`, duplicate Analysis/StoryState DTOs, or a generic resumable-state framework.
+- HPA-260 is explicitly prohibited from creating a new envelope/snapshot generation, duplicate Analysis/StoryState DTO, or generic resumable-state framework.
+- The policy does not enumerate implementation-era regression invariants that belong in this plan.
 
-## Workstream 2: isolate development save namespaces
+## Workstream 2: isolate supported Tauri development saves
 
 ### Target behavior
 
-Use direct build-mode and identifier checks; do not add a `SaveRuntimeChannel` enum unless implementation evidence shows it is necessary.
+Use the Tauri application identifier as the only development namespace mechanism.
 
 ```text
+production identifier
+  -> existing configured application-data/saves
+
+development identifier: com.chanwaichan.lyra.dev
+  -> its distinct configured application-data/saves
+
+browser development
+  -> existing repository-local save root, unchanged
+
 e2e feature
-  -> keep existing validated temporary E2E root
-
-non-e2e release + com.chanwaichan.lyra
-  -> existing production saves root
-
-non-e2e debug + com.chanwaichan.lyra.dev
-  -> saves-dev/epoch-<DEVELOPMENT_SAVE_EPOCH>
-
-any other combination
-  -> typed unsafeSaveNamespace failure
+  -> existing validated temporary E2E root, unchanged
 ```
 
-Browser development reuses the same `development_save_root(base)` helper under its existing repository-local base. Moving to `saves-dev/epoch-<N>` is an intentional one-time reset: do not copy, migrate, or automatically delete the old directory.
+Do not add:
+
+- `DEVELOPMENT_SAVE_EPOCH`;
+- a `SaveRuntimeChannel` enum;
+- `saves-dev/epoch-N` path construction;
+- a typed `unsafeSaveNamespace` startup failure;
+- a release-build-versus-development-identifier guard.
+
+### Changes
+
+- Edit `apps/game/src-tauri/tauri.dev.conf.json`, preserving existing keys, and set the top-level identifier to `com.chanwaichan.lyra.dev`.
+- Keep the normal non-E2E save root as `configured_app_data.join("saves")`; the different identifier supplies the different app-data base.
+- Confirm `bun run dev:game` and the game package's Tauri development script load `tauri.dev.conf.json`.
+- In debug builds only, optionally emit a clear startup warning when the production identifier is loaded. The warning must not introduce a new error type or block startup.
+- Document manual cleanup of the development `saves/` directory after breaking changes.
 
 ### Likely files
 
-- `apps/game/src-tauri/src/game/save/storage.rs`
-- `apps/game/src-tauri/src/game/error.rs`
-- `apps/game/src-tauri/src/lib.rs`
 - `apps/game/src-tauri/tauri.dev.conf.json`
-- `apps/game/src-tauri/examples/dev_engine_server.rs`
-- existing save-path/config contract tests
+- `apps/game/src-tauri/src/lib.rs` only if adding the debug warning
+- existing package/config contract tests
+
+Do not change browser-development or E2E root resolution unless a current test demonstrates that the identifier change requires it.
 
 ### Acceptance checks
 
-- Production, development, and E2E identifiers remain distinct.
-- `bun run dev:game` loads the development config and selects the epoch root.
-- A debug startup with the production identifier fails closed.
-- A release build cannot select the development root.
-- E2E root validation is unchanged.
-- Bumping `DEVELOPMENT_SAVE_EPOCH` selects a clean namespace without migration or deletion.
+- The supported Tauri development command uses `com.chanwaichan.lyra.dev`.
+- Production keeps `com.chanwaichan.lyra` and existing player-facing save paths.
+- Browser-development and E2E paths remain unchanged.
+- A plain debug startup using the production identifier still runs; if a warning is implemented, it is visible and tested only as needed.
+- Stale development saves remain fail-closed through the existing strict parser and `contentRevision` checks.
 
 ## Workstream 3: one current format and one current StoryState snapshot
 
 ### A. Remove unshipped compatibility machinery
 
-- Delete `SaveEnvelopeV1`, `SaveSummaryV1`, and the V1-to-V2 migration registry.
-- Delete migration-only diagnostics, fixtures, TypeScript unions, and E2E branches that no longer have callers.
+- Delete `SaveEnvelopeV1`, `SaveSummaryV1`, `SAVE_SCHEMA_VERSION_V1`, and the V1-to-V2 migration registry.
+- Delete migration-only diagnostics, the legacy V1 fixture, and tests that only characterize the unshipped transition.
 - Keep one strict current decoder and typed unsupported-format diagnostics.
 - Do not retain an empty migration abstraction.
 
-### B. Collapse StoryState persistence
+### B. Apply the explicit Rust naming decision
+
+Because the top-level types are already being edited, rename:
+
+```text
+SaveEnvelopeV2       -> SaveEnvelope
+SaveSummaryV2        -> SaveSummary
+SaveSnapshotV1       -> SaveSnapshot
+SceneProgressSnapshotV1 -> SceneProgressSnapshot
+```
+
+Keep serialized field names and `schemaVersion: 2` unchanged.
+
+Do not broaden this into a rename of every lower-level `*V1` structure.
+
+### C. Collapse StoryState persistence
 
 Target flow:
 
 ```text
 StoryState
   -> StoryStateSnapshot
-  -> current SaveSnapshot
+  -> SaveSnapshot
 ```
 
-- Embed the existing dedicated `StoryStateSnapshot` directly in the current save snapshot.
+- Embed `StoryStateSnapshot` directly in `SaveSnapshot`.
 - Remove the parallel save-specific StoryState snapshot family.
-- Remove `story_snapshot_to_v1` / `story_snapshot_from_v1` identity conversions.
-- Remove `ResumableStateAdapter` unless the implementation demonstrates at least two current production implementations with materially different behavior.
+- Remove `story_snapshot_to_v1` / `story_snapshot_from_v1` field-for-field conversions.
+- Remove `ResumableStateAdapter`; its single production implementation does not justify a trait.
 - Keep strict validation and deterministic ordering; do not serialize mutable runtime objects directly.
 
-### C. Use origin as the location authority
+### D. Use origin as the location authority
 
-- Remove duplicated persisted chapter/scene fields from fact and authorization progress.
-- Derive those locations from `AssertionOrigin` when building views and validating state.
-- Keep `SceneEvent` and `AnalysisBoard` origins.
-- Remove the unshipped `Migration` origin and migration-only helpers/tests.
+- Remove `AssertionOrigin::Migration` and migration-only helpers/tests.
+- Keep `SceneEvent` and `AnalysisBoard`.
+- Change `AssertionOrigin::derived_location` from:
+
+```rust
+Result<(Option<String>, Option<String>), String>
+```
+
+to:
+
+```rust
+Result<(String, String), String>
+```
+
+- Remove duplicated asserted/granted chapter and scene fields from fact and authorization progress/snapshots.
+- Derive location from `first_origin` for public views and validation.
 - Continue resolving origins against packaged scene/block/board definitions during restore.
 
-### D. Keep recap additive and non-authoritative
+The existing dead-code `derived_location` implementation is evidence that this derivation was already built ahead of its first caller; HPA-540 should activate and simplify it rather than introduce another representation.
+
+### E. Keep recap additive and non-authoritative
 
 Fold recap work into this workstream; it is not a separate feature phase.
 
@@ -136,15 +184,31 @@ Fold recap work into this workstream; it is not a separate feature phase.
 - Preserve HPA-508 completion-aware spoiler rules.
 - Present-but-mismatched recap copy remains invalid.
 
-### E. Replace the representative fixture without key-order surgery
+### F. Replace the representative fixture without key-order machinery
 
 - Generate `current-representative.json` through the current Rust encoder or a Rust test helper.
-- Validate the fixture by decoding it and comparing semantic typed values.
+- Validate it by decoding and comparing semantic typed values.
 - Do not use Python to reconstruct JSON declaration order.
-- Do not treat JSON object key order as a compatibility requirement before the first shipped schema.
-- Keep deterministic encoder coverage where useful, but avoid a byte-exact golden assertion whose only signal is field order.
+- Do not treat JSON object key order as a pre-release compatibility contract.
 
-### Likely files
+### G. Limit frontend/E2E edits to the actual surface
+
+Known current sites:
+
+1. `apps/game/e2e-tauri/save-fixtures.ts`
+   - remove the `SaveE2eSaveEnvelopeV1 | SaveE2eSaveEnvelopeV2` union;
+   - retain one current envelope type.
+2. `apps/game/src/lib/persistence/types.test.ts`
+   - change the representative valid metadata fixture from `schemaVersion: 1` to the current value.
+3. `apps/game/e2e-tauri/save-seed.e2e.ts`
+   - verify it compiles against the single current fixture type;
+   - do not add migration behavior if no migration-specific branch exists.
+
+`apps/game/src/lib/persistence/types.ts` already exposes `schemaVersion: number`; no production frontend type redesign is planned.
+
+After HPA-508 is rebased, remove only additional tests proven to exist solely for V1-to-V2 migration. Do not perform a broad frontend search-and-redesign exercise.
+
+### Likely runtime files
 
 - `apps/game/src-tauri/src/game/save/schema.rs`
 - `apps/game/src-tauri/src/game/save/migrations.rs` (delete)
@@ -156,28 +220,18 @@ Fold recap work into this workstream; it is not a separate feature phase.
 - `apps/game/src-tauri/src/game/story/mutations.rs`
 - `apps/game/src-tauri/src/game/story/view.rs`
 - `apps/game/src-tauri/src/game/test_support.rs`
-- current save fixtures and frontend/E2E mirrors
+- the concrete fixture/test files listed above
 
-### Acceptance checks
-
-- Only one current envelope and snapshot family remains active.
-- `SaveSnapshot` contains one `StoryStateSnapshot` representation.
-- StoryState round-trip preserves facts, questions, objectives, authorizations, support sets, first origins, and active primary objective.
-- Public case-file and authorization views remain equivalent after location deduplication.
-- Unsupported formats remain discoverable as typed invalid/incompatible saves.
-- Missing recap prose does not affect restore and cannot expose unfinished-scene outcomes.
-- Existing current manual/autosave flows still pass capture, atomic write, discovery, detached restore, exact recapture, and public-view validation.
-
-## Workstream 4: HPA-260 handoff and final verification
+## Workstream 4: HPA-260 handoff and verification
 
 ### Handoff
 
 Update HPA-260 implementation notes to require:
 
-- `Analysis` is added to the current scene-progress snapshot;
+- `Analysis` is added to `SceneProgressSnapshot`;
 - classify/order/threshold drafts use the current save model;
 - accepted outputs use `AssertionOrigin::AnalysisBoard`;
-- no new envelope/snapshot version or internal migration;
+- no new envelope/snapshot generation or internal migration;
 - no duplicate StoryState/Analysis DTO or generic adapter;
 - deterministic checkpoints provide deep analysis states across builds.
 
@@ -185,17 +239,34 @@ Update HPA-260 implementation notes to require:
 
 Run the smallest relevant tests after each logical change, especially:
 
-- save-root resolution and config-contract tests;
+- Tauri development config-contract tests;
 - StoryState snapshot/capture/restore tests;
 - current decoder/discovery tests;
 - recap spoiler-safety tests after rebasing HPA-508;
-- current frontend/E2E fixture type checks.
+- the concrete frontend/E2E fixture consumers above.
 
 Do not repeat the near-full matrix after every substep.
 
-### Final verification gate
+### Final acceptance and regression checklist
 
-Run once after all changes are integrated:
+The implementation must preserve:
+
+- atomic staged writes and directory synchronization;
+- strict bounded parsing and typed diagnostics;
+- thumbnail sidecar ownership and graceful capture failure;
+- exact `contentRevision` gating;
+- detached restore before live-session replacement;
+- exact restore/recapture equality and final public-view validation;
+- exhaustive `GameEngine` capture classification;
+- session-generation and durable-revision stale-write guards;
+- serialized writer, autosave debounce, and flush behavior;
+- acquisition acknowledgement durability and rollback;
+- stale manual overwrite/delete protection;
+- corruption and incompatible-save discovery behavior;
+- production slot counts, commands, events, and player-facing save flows;
+- HPA-257 monotonic unlock and fixed-point reachability behavior.
+
+Run one complete final gate after integration:
 
 ```bash
 bun run check:scripts
@@ -207,23 +278,24 @@ bun run lint:all
 bun run --cwd apps/game test:e2e:save
 ```
 
-If packaged save E2E is unavailable in the execution environment, record the exact missing prerequisite and run the remaining complete gate; do not claim packaged verification passed.
+If packaged save E2E is unavailable, record the exact missing prerequisite and do not claim it passed.
 
 ## Suggested PR slices
 
-These are review boundaries, not a required commit ritual:
+These are review boundaries, not required commits:
 
-1. Policy/guidance plus namespace isolation.
-2. One current decoder plus StoryState/origin simplification and recap defaults.
-3. Frontend/E2E mirror cleanup, fixture regeneration, HPA-260 handoff, and final verification fixes.
+1. Policy/guidance plus development identifier isolation.
+2. One current decoder plus top-level naming, StoryState/origin simplification, and recap defaults.
+3. Concrete frontend/E2E cleanup, fixture regeneration, HPA-260 handoff, and final verification fixes.
 
 ## Completion evidence
 
 The implementation PR should include:
 
-- the release-audit result;
-- the final namespace map and fail-closed behavior;
+- the concrete release-audit result;
+- confirmation that Tauri dev uses a separate identifier without an epoch or hard startup guard;
 - a list of removed V1/migration and duplicate StoryState surfaces;
-- confirmation that no durability/restore invariant was relaxed;
+- confirmation that `derived_location` is non-optional after removing `Migration`;
+- the final Rust naming outcome;
 - focused and final verification results;
-- confirmation that HPA-260 can add current Analysis state without a migration or duplicate DTO.
+- confirmation that no durable-write or restore invariant was relaxed.
