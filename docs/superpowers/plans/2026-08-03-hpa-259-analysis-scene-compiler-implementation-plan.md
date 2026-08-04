@@ -1,47 +1,565 @@
 # HPA-259 Analysis Scene Compiler Contract Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Use `superpowers:subagent-driven-development` or `superpowers:executing-plans`. Keep every implementation commit buildable and reviewable.
 
-**Goal:** Add a production-quality `analysis_scene_<K>.md` compiler contract that can express and validate the real Chapter 1 Beat 8.5 classify, order, and threshold boards, emit complete immutable runtime JSON, and pass Rust serde tests without implementing runtime evaluation or UI behavior.
+**Goal:** Add the smallest production-quality `analysis_scene_<K>.md` compiler contract needed for the real Chapter 1 Beat 8.5 classify, order, and threshold boards. Emit complete immutable definitions, validate them against the existing story/case-record contracts, integrate them with HPA-257 reachability, and prove Rust serde compatibility without implementing runtime evaluation or UI.
 
-**Architecture:** Markdown remains the only authored source. The compiler parses a closed `classify | order | threshold` union into source-located ASTs, validates it against the global story catalog and compiled case-record provenance, derives HPA-257 analysis definitions from parsed scenes, includes boards in fixed-point reachability, and emits deterministic answer-key-containing runtime definitions. Rust receives immutable serde definitions only; HPA-260 owns mutable scene state, evaluation, commands, persistence, and answer-key-free views.
+**Architecture:** Markdown remains the only authored source. The compiler owns parsing, semantic validation, hidden solutions, qualified analysis references, reachability adaptation, and deterministic emission. Rust owns only immutable serde definitions in HPA-259. HPA-260 owns mutable runtime state, evaluation, commands, persistence, and answer-key-free views.
 
-**Tech Stack:** TypeScript 5.6, Bun 1.3.1, Vitest 4, the existing scene tokenizer/compiler pipeline, `@lyra/scene-types`, Rust, Serde, Tauri resources.
+**YAGNI revision:** This plan deliberately removes optional-board policy, authored status flags, conditional scene outros, placeholder layout types, segmented result dialogue, contextual feedback taxonomies, duplicate Rust semantic validation, reusable parser-helper modules with only one consumer, and one-directory-per-error fixtures.
 
-## Global Constraints
+## 1. Scope and non-negotiable boundaries
 
-- The real Chapter 1 Beat 8.5 contract is the acceptance target. Do not design around Chapter 2 compare/route/chain or speculative later templates.
 - Support only `classify`, `order`, and `threshold`.
-- Keep accepted mappings, accepted orders, eligibility truth, and threshold constraints in compiler AST/runtime JSON only.
+- The Chapter 1 Beat 8.5 contract is the acceptance target.
+- Do not design around Chapter 2 compare/route/chain or later freeform templates.
+- Every authored board is mandatory in HPA-259.
+- A board with no `Unlock` is initially available.
+- A board with `Unlock` becomes available through HPA-257's existing positive-expression machinery.
+- The scene completes after every authored board completes.
+- Every authored card source must be obtainable before its board is considered reachable.
+- Accepted mappings, accepted order, eligibility truth, and threshold rules remain in compiler AST/runtime JSON only.
 - `DialogueItem` remains outside `@lyra/scene-types`.
-- Reuse HPA-257 positive expressions, ordered story reveals, and fixed-point reachability. Do not add another unlock language or graph engine.
-- HPA-255 remains the owner of objective mutation. The acceptance fixture declares `prepare_narrow_lock_request` as a **secondary** objective and completes it through the existing `complete_objective` reveal.
-- Analysis scenes have no represented authority. An authored `grant_authorization` on an analysis board must fail validation; Beat 8.5 cannot grant `narrow_lock_export`.
-- Evidence and statements are game-global records. Facts, questions, objectives, and authorizations are game-global catalog definitions. Boards are scene-local and use durable `{chapterId, sceneId, boardId}` references.
-- Threshold source-independence counting accepts evidence and statements only. Facts never manufacture an independent source.
-- Do not modify the production `docs/stories_plan/chapter_1/chapter.md` or replace `scene_8_5.md`; HPA-265 owns final content insertion.
-- Existing non-analysis chapters must compile and deserialize unchanged.
-- Do not add extension registries, plugin APIs, generic graph abstractions, Svelte workbench code, runtime board evaluators, `AnalysisSceneState`, draft/save state, or gameplay commands.
+- Do not add an `AnalysisBoardLayout` payload until a real editor/runtime-shared geometry or presentation value exists.
+- `@lyra/scene-types` gains only the `analysis` chapter-index discriminant in this ticket.
+- Analysis scenes are not represented authorities. `grant_authorization` authored on an analysis board must fail validation.
+- Beat 8.5 may complete the secondary objective `prepare_narrow_lock_request`; it must not grant `narrow_lock_export`.
+- Threshold independent-source counting uses evidence/statement records only. Facts do not manufacture source independence.
+- Do not replace production `scene_8_5.md` or edit the Chapter 1 manifest. HPA-265 owns final content insertion.
+- Do not add runtime state, evaluator, public board view, save state, Svelte workbench code, commands, plugin APIs, template registries, or generic graph abstractions.
+
+## 2. Minimal authored contract
+
+### 2.1 Scene structure
+
+```markdown
+# Scene 8.5: 短暫誤判整理點
+- **Summary:** 相馬與早坂整理目前真正成立的命題。
+
+## Intro
+
+[場景：雨鐘後場，相馬臨時整理板前。]
+**早坂茜**：先把我們能證明的東西分開。
+
+## Board: 證據包整理 {#evidence_packages}
+- **Kind:** classify
+- **Prompt:** 把每張卡放進它真正支持的命題。
+- **Reveals:** [assert_fact:miyake_known_lies_are_unrelated_to_murder, assert_fact:earlier_external_entry_exists]
+- **Incomplete Feedback:** 每張卡都必須放進一個證據包。
+- **Incorrect Feedback:** 至少有一張卡被放進錯誤命題。
+- **Hint:** 先問每一項資料真正能證明什麼。
+
+### Card: 三宅母親通話紀錄 {#miyake_call}
+- **Source:** evidence:miyake_call_record
+- **Summary:** 解釋三宅隱瞞通話的原因。
+
+### Card: L 型後場視角重演 {#l_corridor_replay}
+- **Source:** evidence:l_corridor_replay
+- **Summary:** 證明三宅當時站位看不見內側倉庫。
+
+### Card: 外包憑證事件 {#external_credential_event}
+- **Source:** evidence:external_credential_event
+- **Summary:** 證明有人比三宅更早從承包商動線進入。
+
+### Group: 三宅的小謊 {#miyake_small_lies}
+- **Description:** 只解釋生活壓力造成的隱瞞。
+- **Accepted Cards:** [miyake_call]
+
+### Group: 更早的第三者 {#earlier_third_party}
+- **Description:** 支持更早外部進入者存在的資料。
+- **Accepted Cards:** [l_corridor_replay, external_credential_event]
+
+### Result Dialogue
+
+**早坂茜**：我們洗掉的是三宅那段錯誤故事。
+**相馬律**：但還沒證明誰該被放回時間線。
+
+## Board: 本機事件順序 {#local_event_sequence}
+- **Kind:** order
+- **Prompt:** 把本機事件排回原始先後。
+- **Unlock:** analysis_board:chapter_1@analysis_scene_8_5@evidence_packages completed
+- **Accepted Order:** [event_1841, event_1842, event_1843, event_1844]
+- **Fixed Anchors:** [event_1841@1]
+- **Reveals:** [assert_fact:merge_time_is_not_event_time]
+- **Incomplete Feedback:** 所有事件都必須放進時間線。
+- **Incorrect Feedback:** 本機事件順序仍有錯誤。
+
+### Card: 維護模式開啟 {#event_1841}
+- **Source:** evidence:event_1841
+- **Summary:** 本機事件 1841。
+
+### Card: 外包憑證開門 {#event_1842}
+- **Source:** evidence:event_1842
+- **Summary:** 本機事件 1842。
+
+### Card: 員工憑證開門 {#event_1843}
+- **Source:** evidence:event_1843
+- **Summary:** 本機事件 1843。
+
+### Card: 伺服器合併完成 {#event_1844}
+- **Source:** evidence:event_1844
+- **Summary:** 本機事件 1844。
+
+### Result Dialogue
+
+**相馬律**：本機只告訴我們先後，沒有告訴我們精確秒數。
+
+## Board: 有限調取申請基礎 {#narrow_request_basis}
+- **Kind:** threshold
+- **Prompt:** 選出足以支持有限調取申請的獨立矛盾。
+- **Unlock:** analysis_board:chapter_1@analysis_scene_8_5@local_event_sequence completed
+- **Eligible Cards:** [lock_sequence, phone_notification, manager_timing]
+- **Minimum Selected:** 2
+- **Minimum Distinct Source Groups:** 2
+- **Required Proof Capabilities:** [time, order]
+- **Allowed Procedural Statuses:** [reacquired, exhibit]
+- **Require Source Group:** true
+- **Reveals:** [assert_fact:two_independent_lock_contradictions_identified, complete_objective:prepare_narrow_lock_request]
+- **Incomplete Feedback:** 至少選出兩項紀錄。
+- **Incorrect Feedback:** 這組紀錄仍不足以支持申請。
+
+### Card: 門鎖本機順序 {#lock_sequence}
+- **Source:** evidence:lock_sequence
+- **Summary:** 提供事件先後與摘要時間不一致的證明。
+
+### Card: 死者手機通知 {#phone_notification}
+- **Source:** evidence:phone_notification
+- **Summary:** 提供獨立時間錨。
+
+### Card: 店長時間證詞 {#manager_timing}
+- **Source:** statement:manager_timing
+- **Summary:** 提供另一個可被程序固定的時間來源。
+
+### Result Dialogue
+
+**早坂茜**：現在有兩條獨立矛盾，可以把申請送進審查。
+
+## Outro
+
+**相馬律**：我們只證明了第三者存在。下一步才是把那個空位填上。
+```
+
+### 2.2 Contract rules
+
+- Top-level H2 blocks are exactly `Intro`, one or more `Board: <label> {#id}`, and `Outro`.
+- Board-local H3 blocks are `Card:`, `Group:` for classify only, and one `Result Dialogue`.
+- `Result Dialogue` directly contains dialogue items; there are no result segment IDs in HPA-259.
+- Card/group IDs are local to one board. Board IDs are local to one analysis scene.
+- `Source` accepts `evidence:<id>` or `statement:<id>` only.
+- `Unlock` is optional and uses a story-only positive expression.
+- `Reveals` contains story reveal targets only.
+- `Hint` is one optional string.
+- Successful result dialogue is the accepted feedback. HPA-259 has only `Incomplete Feedback`, `Incorrect Feedback`, and optional `Hint`.
+- `Fixed Anchors` is optional and uses one-based `card_id@position` values.
+- Every classify card appears in exactly one accepted group.
+- Accepted order is an exact permutation of every order card.
+- Every threshold card must appear in `Eligible Cards` for the Chapter 1 MVP. The selected answer is a subset evaluated against the authored minimums and provenance constraints.
+- Threshold capability requirements are aggregate union coverage across the selected records.
+- Allowed procedural status and required source-group presence are per-record eligibility constraints.
+- Every authored card source is a reachability prerequisite for its board. Card availability and answer selection are separate concerns.
+- Scene completion is implicit after all board-completion atoms are reachable; no authored outro unlock exists in HPA-259.
+
+## 3. Type boundaries
+
+### Compiler-only AST
+
+Use source-located types in `packages/scripts/compile-scenes/types.ts`:
+
+```ts
+export type AnalysisUnlockExpr = PositiveExpression<StoryPredicate>;
+
+export type AnalysisCardSource =
+  | { kind: "evidence"; id: string }
+  | { kind: "statement"; id: string };
+
+export type ASTAnalysisCard = Located<{
+  id: string;
+  label: string;
+  summary: string;
+  source: Located<AnalysisCardSource>;
+}>;
+
+export type ASTAnalysisFeedback = {
+  incomplete: Located<{ value: string }>;
+  incorrect: Located<{ value: string }>;
+  hint: Located<{ value: string }> | null;
+};
+
+export type ASTAnalysisBoardCommon = Located<{
+  id: string;
+  label: string;
+  prompt: string;
+  unlock: AnalysisUnlockExpr | null;
+  cards: ASTAnalysisCard[];
+  reveals: StoryRevealTarget[];
+  feedback: ASTAnalysisFeedback;
+  resultDialogue: DialogueItem[];
+}>;
+```
+
+Define closed `ASTClassifyBoard`, `ASTOrderBoard`, and `ASTThresholdBoard` variants. Keep accepted mappings/order/eligibility and threshold constraints in these compiler-owned types.
+
+`ASTAnalysisScene` contains:
+
+```ts
+export type ASTAnalysisScene = Located<{
+  kind: "analysisScene";
+  id: string;
+  title: string;
+  summary: string;
+  summaryAuthored: boolean;
+  intro: DialogueItem[];
+  boards: AnalysisBoardAst[];
+  outro: DialogueItem[];
+  assetRefs: AssetRef[];
+}>;
+```
+
+### Emitted runtime JSON
+
+Define matching non-located immutable JSON types. `AnalysisBoardJson` contains complete hidden solutions. `JSONAnalysisScene` contains `type: "analysis"`, intro, boards, outro, summary, and asset refs.
+
+### Shared package
+
+In `@lyra/scene-types`, extend only:
+
+```ts
+type: "linear" | "investigation" | "interrogation" | "analysis";
+```
+
+Do not add `AnalysisBoardLayout`, card definitions, answer keys, reveals, feedback, or dialogue to the shared package in HPA-259.
+
+### Rust boundary
+
+Rust adds immutable serde counterparts only. Do not add `AnalysisBoardView`, `AnalysisBoardSaveState`, runtime state, or evaluator in this ticket.
+
+## 4. Lean implementation sequence
+
+### Task 1: Add the contract, parser, and deterministic emitter
+
+**Create**
+
+```text
+packages/scripts/compile-scenes/parser-analysis.ts
+packages/scripts/compile-scenes/parser-analysis.test.ts
+```
+
+**Modify as required by exhaustive handling**
+
+```text
+packages/scene-types/src/index.ts
+packages/scripts/compile-scenes/types.ts
+packages/scripts/compile-scenes/parser-unlock.ts
+packages/scripts/compile-scenes/parser-reveals.ts
+packages/scripts/compile-scenes/emitter.ts
+packages/scripts/compile-scenes/orchestrator.ts
+packages/scripts/compile-scenes/save-content-manifest.ts
+packages/scripts/compile-scenes/dialogue-segment-origins.ts
+packages/scripts/compile-scenes/semantic-defaults.ts
+packages/scripts/compile-scenes/assets/enrich.ts
+```
+
+#### Tests first
+
+- Parse the complete canonical Markdown shape above.
+- Assert source file and line for scene, boards, cards, groups, metadata, and result dialogue.
+- Reject unknown/duplicate metadata, unknown board kind, malformed anchors, local reveal targets, duplicate IDs, missing result dialogue, and missing board-family fields.
+- Assert emitted JSON preserves authored order and strips all source locations.
+- Assert dialogue origins are exactly:
+
+```ts
+{ type: "analysisIntro", chapterId, sceneId }
+{ type: "analysisResult", chapterId, sceneId, boardId }
+{ type: "analysisOutro", chapterId, sceneId }
+```
+
+#### Implementation constraints
+
+- Keep boolean, integer, list, source, and anchor parsing helpers private in `parser-analysis.ts` until another parser needs them.
+- Reuse the existing tokenizer/cursor/dialogue conversion patterns.
+- Export a story-only unlock parser by reusing HPA-257's existing positive-expression implementation.
+- Extend reveal parsing with an `analysis` family that permits story targets only.
+- Add `analysis_scene_` dispatch in the orchestrator.
+- Add the new discriminant and exhaustive branches in the same buildable task; do not intentionally leave broken unions for later tasks.
+- Do not emit layout state.
+
+#### Focused verification
+
+```bash
+bun run test:scripts -- packages/scripts/compile-scenes/parser-analysis.test.ts packages/scripts/compile-scenes/emitter.test.ts packages/scripts/compile-scenes/dialogue-segment-origins.test.ts
+bun run check:scripts
+```
+
+Suggested commit:
+
+```text
+feat: add analysis scene compiler contract
+```
 
 ---
 
-## File Map
+### Task 2: Add semantic validation and derive production definitions
 
-### Create
+**Create**
 
 ```text
-packages/scripts/compile-scenes/parser-analysis-values.ts
-packages/scripts/compile-scenes/parser-analysis-values.test.ts
+packages/scripts/compile-scenes/validator-analysis.ts
+packages/scripts/compile-scenes/validator-analysis.test.ts
+```
+
+**Modify**
+
+```text
+packages/scripts/compile-scenes/validator.ts
+packages/scripts/compile-scenes/story-catalog.ts
+packages/scripts/compile-scenes/analysis-definition-registry.ts
+packages/scripts/compile-scenes/orchestrator.ts
+packages/scripts/compile-scenes.test.ts
+```
+
+#### Validation matrix
+
+**All boards**
+
+- unique board IDs within the scene
+- unique card IDs within the board
+- source evidence/statement resolves in the compiled case-record corpus
+- unlock predicates resolve through existing catalog/analysis references
+- story reveal targets resolve
+- `grantAuthorization` is rejected because represented authority is null
+- result dialogue exists and is non-empty
+
+**Classify**
+
+- at least one group exists
+- group IDs are unique
+- every accepted card ID resolves
+- every card appears in exactly one accepted group
+
+**Order**
+
+- accepted order contains every card exactly once
+- no unknown or duplicate card IDs
+- anchor positions are in range
+- no two anchors occupy one position
+- every anchor agrees with the accepted order
+
+**Threshold**
+
+- eligible IDs resolve and include every threshold card exactly once
+- all threshold cards source evidence or statements
+- minimum selected is positive and no greater than eligible count
+- minimum distinct groups is positive and no greater than minimum selected
+- every eligible record satisfies authored procedural/source-group eligibility rules
+- at least one selected subset can satisfy minimum count, distinct source groups, and aggregate proof capabilities
+
+The implementation may use any clear deterministic satisfiability method. Do not lock the plan to DFS, dynamic programming, or a generic constraint engine.
+
+#### Registry replacement
+
+Add:
+
+```ts
+createAnalysisDefinitionRegistryFromScenes(scenes)
+```
+
+- Register parsed analysis scenes and boards using qualified chapter/scene/board IDs.
+- Remove `CompileOptions.analysisRegistry` as a production input.
+- Convert HPA-257 tests that inject synthetic analysis definitions to minimal real analysis Markdown fixtures.
+- Keep the small registry abstraction because HPA-257 already consumes it; do not add another registry layer.
+
+#### Pipeline order
+
+```text
+parse scenes
+-> general structural validation
+-> compile case-record provenance
+-> validate analysis semantics
+-> derive analysis definition registry
+-> validate story predicates/reveals
+-> run fixed-point reachability
+-> derive dialogue origins and emit
+```
+
+#### Focused verification
+
+```bash
+bun run test:scripts -- packages/scripts/compile-scenes/validator-analysis.test.ts packages/scripts/compile-scenes/story-catalog.test.ts packages/scripts/compile-scenes/analysis-definition-registry.test.ts packages/scripts/compile-scenes.test.ts
+bun run check:scripts
+```
+
+Suggested commit:
+
+```text
+feat: validate analysis scene definitions
+```
+
+---
+
+### Task 3: Adapt HPA-257 reachability and add compiler acceptance
+
+**Modify**
+
+```text
+packages/scripts/compile-scenes/reachability.ts
+packages/scripts/compile-scenes/reachability.test.ts
+packages/scripts/compile-scenes.test.ts
+```
+
+**Add one complete valid fixture corpus**
+
+```text
+packages/scripts/__fixtures__/analysis-chapter-1/
+```
+
+Use table-driven inline Markdown mutations or a small fixture builder for invalid cases. Do not create one directory for every diagnostic unless a failure genuinely requires a distinct cross-file corpus.
+
+#### Reachability adaptation
+
+For each board:
+
+- no `Unlock` means initially available
+- authored `Unlock` is evaluated by the existing HPA-257 expression solver
+- every card source adds an implicit evidence/statement availability prerequisite
+- completion adds `analysis_board_completed:<chapter>@<scene>@<board>`
+- authored reveals apply in authored order
+
+For the scene:
+
+- completion requires every board-completion atom
+- completion adds `analysis_scene_completed:<chapter>@<scene>`
+- outro dialogue is presentation following scene completion, not a separate authored unlock node
+
+Do not alter HPA-257's positive-expression language, transfer logic, scenario enumeration, or cycle detection.
+
+#### Acceptance fixture outputs
+
+```text
+evidence_packages
+  -> miyake_known_lies_are_unrelated_to_murder
+  -> earlier_external_entry_exists
+
+local_event_sequence
+  -> merge_time_is_not_event_time
+
+narrow_request_basis
+  -> two_independent_lock_contradictions_identified
+  -> complete secondary objective prepare_narrow_lock_request
+```
+
+Do not grant `narrow_lock_export`.
+
+The fixture must include:
+
+- complete classify/order/threshold definitions
+- at least two source groups
+- `reacquired` and/or `exhibit` procedural status
+- `time` and `order` proof-capability coverage
+- a same-source pair that is individually eligible but cannot satisfy the distinct-source rule alone
+- a later predicate that resolves a qualified analysis board/scene reference without synthetic registry input
+
+#### Reachability tests
+
+- initially available first board
+- board-to-board unlock
+- all-card inventory prerequisites
+- ordered story outputs
+- scene completion after all boards
+- unavailable card source
+- self-reference
+- positive cycle
+- unresolved qualified analysis reference
+- unreachable required output
+
+#### Focused verification
+
+```bash
+bun run test:scripts -- packages/scripts/compile-scenes/reachability.test.ts packages/scripts/compile-scenes.test.ts
+bun run scenes:compile
+bun run check:scripts
+```
+
+Suggested commit:
+
+```text
+feat: integrate analysis scenes with progression validation
+```
+
+---
+
+### Task 4: Add immutable Rust serde support and run regression
+
+**Modify only where required**
+
+```text
+apps/game/src-tauri/src/game/schema.rs
+apps/game/src-tauri/src/game/navigation.rs
+apps/game/src-tauri/src/game/dialogue_queue.rs
+apps/game/src-tauri/src/game/test_support.rs
+apps/game/src-tauri/src/game/loader.rs       # exhaustive decode/reference branch only
+```
+
+#### Rust scope
+
+- Add `SceneType::Analysis`.
+- Add `SceneJson::Analysis(AnalysisSceneJson)`.
+- Add closed immutable classify/order/threshold serde types matching emitted JSON.
+- Use `deny_unknown_fields` where consistent with existing schema conventions.
+- Include analysis intro, one result dialogue per board, and outro in dialogue-group enumeration.
+- Deserialize the compiler acceptance fixture and assert all three variants and hidden solution data.
+- Add the smallest explicit fail-closed branch when runtime construction/navigation encounters an analysis scene before HPA-260.
+
+#### Explicit non-scope
+
+Do not reimplement compiler semantic validation in Rust. In particular, Rust does not duplicate:
+
+- classify completeness checks
+- accepted-order permutation validation
+- anchor consistency validation
+- threshold satisfiability/provenance rules
+- story-catalog output reachability
+
+The TypeScript compiler is authoritative for authored static definitions. Rust proves wire compatibility and rejects malformed serde shape, not a second copy of the authoring rules.
+
+#### Full verification gate
+
+```bash
+bun run format:check
+bun run check:scripts
+bun run test:scripts
+bun run scenes:compile
+bun run check
+cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml --all --check
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+bun run lint:all
+```
+
+Also verify:
+
+- production Chapter 1 still lists `scene_8_5.md`
+- existing non-analysis scenes compile unchanged
+- no hidden solution fields appear in `@lyra/scene-types` or frontend public types
+- emitted analysis JSON is deterministic across two compiler runs
+
+Suggested commit:
+
+```text
+feat: accept analysis scene definitions in Rust
+```
+
+## 5. Expected file footprint
+
+### New files
+
+```text
 packages/scripts/compile-scenes/parser-analysis.ts
 packages/scripts/compile-scenes/parser-analysis.test.ts
 packages/scripts/compile-scenes/validator-analysis.ts
 packages/scripts/compile-scenes/validator-analysis.test.ts
-packages/scripts/compile-scenes/analysis-type-boundaries.test.ts
-packages/scripts/__fixtures__/analysis-valid/
-packages/scripts/__fixtures__/analysis-invalid/
+packages/scripts/__fixtures__/analysis-chapter-1/
 ```
 
-### Modify
+### Expected modified areas
 
 ```text
 packages/scene-types/src/index.ts
@@ -56,721 +574,42 @@ packages/scripts/compile-scenes/emitter.ts
 packages/scripts/compile-scenes/orchestrator.ts
 packages/scripts/compile-scenes/save-content-manifest.ts
 packages/scripts/compile-scenes/dialogue-segment-origins.ts
-packages/scripts/compile-scenes/semantic-defaults.ts        # only if exhaustive
-packages/scripts/compile-scenes/assets/enrich.ts            # only if exhaustive
 packages/scripts/compile-scenes.test.ts
 apps/game/src-tauri/src/game/schema.rs
-apps/game/src-tauri/src/game/loader.rs
-apps/game/src-tauri/src/game/navigation.rs
-apps/game/src-tauri/src/game/test_support.rs
+minimal exhaustive Rust consumers
 ```
 
-## Locked Markdown Shape
-
-```markdown
-# Scene 8.5: 短暫誤判整理點
-- **Summary:** 相馬與早坂重新整理目前已證成的內容。
-
-## Intro
-
-[場景：警署走廊，自動販賣機旁。]
-**早坂茜**：先把能證明的東西分開。
-
-## Board: 證據包 {#evidence_packages}
-- **Kind:** classify
-- **Prompt:** 把每張卡放進它真正能支持的證據包。
-- **Required:** true
-- **Status:** unlocked
-- **Reveals:** [assert_fact:miyake_known_lies_are_unrelated_to_murder]
-- **Incomplete Feedback:** 還有必要卡片沒有放置。
-- **Incorrect Feedback:** 至少有一張卡片放錯證據包。
-- **Accepted Feedback:** 證據包已成立。
-- **Hint:** 先問每一項資料真正能證明什麼。
-
-### Card: 三宅母親通話紀錄 {#miyake_call}
-- **Source:** evidence:miyake_call_record
-- **Summary:** 證明三宅隱瞞的是私人通話。
-- **Required:** true
-
-### Group: 三宅的小謊 {#miyake_small_lies}
-- **Description:** 與殺人無直接關係的隱瞞。
-- **Accepted Cards:** [miyake_call]
-
-### Result Dialogue
-
-#### Segment: 分類完成 {#accepted}
-
-**相馬律**：我們證明的是三宅為什麼說謊，不是誰殺了增田。
-
-## Board: 本機事件順序 {#local_event_sequence}
-- **Kind:** order
-- **Prompt:** 把本機事件排回原始先後。
-- **Required:** true
-- **Status:** locked
-- **Unlock:** analysis_board:chapter_1@analysis_scene_8_5@evidence_packages completed
-- **Accepted Order:** [event_1841, event_1842, event_1843, event_1844]
-- **Fixed Anchors:** [event_1841@1]
-- **Reveals:** [assert_fact:merge_time_is_not_event_time]
-- **Incomplete Feedback:** 所有必要事件都必須放入順序。
-- **Incorrect Feedback:** 本機事件順序仍有錯誤。
-- **Accepted Feedback:** 本機順序已成立。
-
-### Card: 維護模式開啟 {#event_1841}
-- **Source:** evidence:event_1841
-- **Summary:** 本機事件 1841。
-- **Required:** true
-
-### Result Dialogue
-
-#### Segment: 順序完成 {#accepted}
-
-**早坂茜**：本機只告訴我們先後，沒有告訴我們精確秒數。
-
-## Board: 有限調取申請基礎 {#narrow_request_basis}
-- **Kind:** threshold
-- **Prompt:** 選出足以支持有限調取申請的獨立矛盾。
-- **Required:** true
-- **Status:** locked
-- **Unlock:** analysis_board:chapter_1@analysis_scene_8_5@local_event_sequence completed
-- **Eligible Cards:** [lock_sequence, phone_notification, manager_timing]
-- **Minimum Selected:** 2
-- **Minimum Distinct Source Groups:** 2
-- **Required Proof Capabilities:** [time, order]
-- **Allowed Procedural Statuses:** [reacquired, exhibit]
-- **Require Source Group:** true
-- **Reveals:** [assert_fact:two_independent_lock_contradictions_identified, complete_objective:prepare_narrow_lock_request]
-- **Incomplete Feedback:** 至少選出兩項紀錄。
-- **Incorrect Feedback:** 這組紀錄不足以支持申請。
-- **Accepted Feedback:** 有限調取申請基礎已成立。
-- **Duplicate Source Feedback:** 這些紀錄沒有提供兩個獨立來源。
-- **Ineligible Feedback:** 至少一項紀錄仍不符合程序要求。
-
-### Card: 門鎖本機順序 {#lock_sequence}
-- **Source:** evidence:lock_sequence
-- **Summary:** 證明裝置只保留事件先後。
-- **Required:** false
-
-### Result Dialogue
-
-#### Segment: 申請基礎完成 {#accepted}
-
-**相馬律**：現在我們有兩條獨立矛盾，可以要求有限調取。
-
-## Outro
-- **Unlock:** auto
-
-**早坂茜**：接下來，讓審查會決定是否批准。
-```
-
-Rules:
-
-- H2 blocks are exactly `Intro`, one or more `Board: ... {#id}`, and `Outro`.
-- Board H3 blocks are `Card:`, `Group:` for classify only, and `Result Dialogue`.
-- Result Dialogue owns one or more H4 `Segment: ... {#id}` blocks.
-- Card/group/result-segment IDs are board-local.
-- `Source` accepts `evidence:<id>`, `statement:<id>`, or `fact:<id>`.
-- `Fixed Anchors` uses one-based `card_id@position` values.
-- `Unlock` is a story-only positive expression.
-- `Reveals` is a story-target-only list.
-- `Hint` is a single optional string; progressive hints remain HPA-263.
-- Threshold capability requirements use aggregate union coverage. Procedural status and source-group presence are per-record eligibility rules.
-
----
-
-### Task 1: Define the Compiler/Shared Type Boundaries
-
-**Files:**
-- Create: `packages/scripts/compile-scenes/analysis-type-boundaries.test.ts`
-- Modify: `packages/scene-types/src/index.ts`
-- Modify: `packages/scripts/compile-scenes/types.ts`
-- Modify: `packages/scripts/compile-scenes/validator.ts`
-- Modify: `packages/scripts/compile-scenes/save-content-manifest.ts`
-
-**Interfaces:**
-- Produces `AnalysisUnlockExpr`, `AnalysisCardSource`, `AnalysisBoardAst`, `ASTAnalysisScene`, `AnalysisBoardJson`, and `JSONAnalysisScene`.
-- `@lyra/scene-types` produces only the `analysis` chapter-index discriminant and a minimal automatic-layout value.
-
-- [ ] **Step 1: Add failing ownership tests**
-
-```ts
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
-import type {
-  AnalysisBoardAst,
-  AnalysisBoardJson,
-  ASTAnalysisScene,
-  JSONAnalysisScene,
-} from "./types";
-import type { AnalysisBoardLayout, ChaptersIndex } from "@lyra/scene-types";
-
-void (null as unknown as AnalysisBoardAst);
-void (null as unknown as AnalysisBoardJson);
-void (null as unknown as ASTAnalysisScene);
-void (null as unknown as JSONAnalysisScene);
-void (null as unknown as AnalysisBoardLayout);
-void (null as unknown as ChaptersIndex);
-
-describe("analysis type ownership", () => {
-  it("keeps hidden answers and runtime dialogue out of scene-types", () => {
-    const source = readFileSync("packages/scene-types/src/index.ts", "utf8");
-    expect(source).not.toMatch(/export type DialogueItem\b/);
-    expect(source).not.toMatch(/export type StoryRevealTarget\b/);
-    expect(source).not.toMatch(/acceptedCards|acceptedOrder|eligibleCardIds/);
-  });
-});
-```
-
-- [ ] **Step 2: Verify failure**
-
-```bash
-bun run test:scripts -- packages/scripts/compile-scenes/analysis-type-boundaries.test.ts
-bun run check:scripts
-```
-
-Expected: missing analysis types/discriminant.
-
-- [ ] **Step 3: Add the minimal shared subset**
-
-```ts
-export type AnalysisBoardLayout = { mode: "automatic" };
-```
-
-Extend `ChaptersIndex.scenes[].type` with `"analysis"`. Do not add board definitions, answers, reveals, dialogue, or feedback to the shared package.
-
-- [ ] **Step 4: Add compiler AST types**
-
-```ts
-export type AnalysisUnlockExpr = PositiveExpression<StoryPredicate>;
-
-export type AnalysisCardSource =
-  | { kind: "evidence"; id: string }
-  | { kind: "statement"; id: string }
-  | { kind: "fact"; id: string };
-
-export type ASTAnalysisCard = Located<{
-  id: string;
-  label: string;
-  summary: string;
-  source: Located<AnalysisCardSource>;
-  required: boolean;
-}>;
-
-export type ASTAnalysisResultSegment = Located<{
-  id: string;
-  label: string;
-  dialogue: DialogueItem[];
-}>;
-
-export type ASTAnalysisFeedback = {
-  incomplete: Located<{ value: string }>;
-  incorrect: Located<{ value: string }>;
-  accepted: Located<{ value: string }>;
-  duplicateSource: Located<{ value: string }> | null;
-  ineligible: Located<{ value: string }> | null;
-};
-```
-
-Define a source-located common board contract plus closed `ASTClassifyBoard`, `ASTOrderBoard`, and `ASTThresholdBoard` variants. Threshold stores eligible card IDs, minimum counts, proof capabilities, allowed procedural statuses, and `requireSourceGroup`.
-
-- [ ] **Step 5: Add immutable JSON equivalents**
-
-`AnalysisBoardJson` must contain the full accepted mapping/order/constraints and result dialogue. `JSONAnalysisScene` is:
-
-```ts
-export type JSONAnalysisScene = {
-  type: "analysis";
-  id: string;
-  title: string;
-  summary: string;
-  intro: JSONDialogueItem[];
-  boards: AnalysisBoardJson[];
-  outro: {
-    unlock: "auto" | AnalysisUnlockExpr;
-    dialogue: JSONDialogueItem[];
-  };
-  assetRefs: AssetRef[];
-};
-```
-
-- [ ] **Step 6: Extend compiler unions without behavior**
-
-Add `ASTAnalysisScene` to `SceneRecord`; add `JSONAnalysisScene` to emitted-scene/save-content unions. Let TypeScript expose every exhaustive switch that later tasks must update.
-
-- [ ] **Step 7: Verify and commit**
-
-```bash
-bun run test:scripts -- packages/scripts/compile-scenes/analysis-type-boundaries.test.ts
-bun run check:scripts
-git add packages/scene-types/src/index.ts packages/scripts/compile-scenes/types.ts packages/scripts/compile-scenes/validator.ts packages/scripts/compile-scenes/save-content-manifest.ts packages/scripts/compile-scenes/analysis-type-boundaries.test.ts
-git commit -m "feat: define analysis scene compiler contracts"
-```
-
----
-
-### Task 2: Parse Analysis Values and Scene Structure
-
-**Files:**
-- Create: `packages/scripts/compile-scenes/parser-analysis-values.ts`
-- Create: `packages/scripts/compile-scenes/parser-analysis-values.test.ts`
-- Create: `packages/scripts/compile-scenes/parser-analysis.ts`
-- Create: `packages/scripts/compile-scenes/parser-analysis.test.ts`
-- Modify: `packages/scripts/compile-scenes/parser-unlock.ts`
-- Modify: `packages/scripts/compile-scenes/parser-reveals.ts`
-
-**Interfaces:**
-- Produces `parseAnalysisScene(source, sourceFile, id)`.
-- Adds `parseStoryUnlockExpr(...)` by reusing the existing positive-expression parser.
-- Adds reveal family `analysis`, returning `StoryRevealTarget[]` only.
-
-- [ ] **Step 1: Write failing value-parser tests**
-
-Cover strict booleans, positive integers, non-empty `[a, b]` lists, card sources, proof-capability/status lists, and `[event_1841@1]` anchors. Reject duplicates, trailing commas, zero/negative values, unknown prefixes, and malformed anchors with exact file/line diagnostics.
-
-- [ ] **Step 2: Implement strict helpers**
-
-```ts
-export function parseAnalysisBoolean(input: LocatedText): ParseResult<boolean>;
-export function parseAnalysisPositiveInt(input: LocatedText): ParseResult<number>;
-export function parseAnalysisIdList(input: LocatedText): ParseResult<LocatedId[]>;
-export function parseAnalysisCardSource(input: LocatedText): ParseResult<Located<AnalysisCardSource>>;
-export function parseAnalysisFixedAnchors(input: LocatedText): ParseResult<LocatedAnchor[]>;
-```
-
-Use stable `analysis*` error codes.
-
-- [ ] **Step 3: Export story-only unlock parsing**
-
-```ts
-export function parseStoryUnlockExpr(
-  source: string,
-  sourceFile: string,
-  line: number,
-): PositiveParseResult<StoryPredicate> {
-  return parsePositiveExpression(source, sourceFile, line, parseStoryPredicate);
-}
-```
-
-Do not copy precedence, parentheses, `at_least`, or predicate logic.
-
-- [ ] **Step 4: Add an analysis reveal family**
-
-Extend `RevealFamily` with `analysis`. Recognized story targets parse normally. Any local target returns `analysisRevealLocalTargetNotAllowed`.
-
-- [ ] **Step 5: Write failing full-parser tests**
-
-Assert the locked Markdown shape, source lines, all three board variants, cards/groups, accepted order/anchors, threshold constraints, feedback/hint, result segments, and outro. Add one focused structural error per test: unknown heading, missing anchor, unknown kind, locked without unlock, unlocked with unlock, missing feedback, missing/empty result dialogue, classify without group, order without accepted order, threshold missing a required field.
-
-- [ ] **Step 6: Implement `parseAnalysisScene` with the existing cursor pattern**
-
-Use `tokenize` and `parseSceneHeader`. Preserve metadata locations:
-
-```ts
-type AnalysisMetadata = Map<
-  string,
-  { value: string; sourceFile: string; line: number }
->;
-```
-
-Reject duplicate and unknown metadata keys at their own lines. Convert dialogue tokens exactly as the current scene parsers do.
-
-- [ ] **Step 7: Verify and commit**
-
-```bash
-bun run test:scripts -- packages/scripts/compile-scenes/parser-analysis-values.test.ts packages/scripts/compile-scenes/parser-analysis.test.ts
-bun run check:scripts
-git add packages/scripts/compile-scenes/parser-analysis-values.ts packages/scripts/compile-scenes/parser-analysis-values.test.ts packages/scripts/compile-scenes/parser-analysis.ts packages/scripts/compile-scenes/parser-analysis.test.ts packages/scripts/compile-scenes/parser-unlock.ts packages/scripts/compile-scenes/parser-reveals.ts
-git commit -m "feat: parse analysis scene markdown"
-```
-
----
-
-### Task 3: Validate References, Solutions, and Threshold Satisfiability
-
-**Files:**
-- Create: `packages/scripts/compile-scenes/validator-analysis.ts`
-- Create: `packages/scripts/compile-scenes/validator-analysis.test.ts`
-- Modify: `packages/scripts/compile-scenes/validator.ts`
-- Modify: `packages/scripts/compile-scenes/story-catalog.ts`
-
-**Interfaces:**
-
-```ts
-export function validateAnalysisScenes(input: {
-  scenes: SceneRecord[];
-  catalog: ASTStoryCatalog;
-  caseRecords: CompiledCaseRecordCorpus;
-}): CompileError[];
-```
-
-- [ ] **Step 1: Write failing ID/reference tests**
-
-Cover duplicate board/card/group/result IDs; unresolved evidence/statement/fact sources; unresolved story predicates/reveals; and `grantAuthorization` outside authority. Assert code, file, and exact line.
-
-- [ ] **Step 2: Write failing solution tests**
-
-Classify: required card missing, assigned twice, unknown accepted card, no groups.
-
-Order: duplicate/missing/unknown cards, invalid anchor card/position, two anchors in one slot, anchor contradicting accepted order.
-
-Threshold: unknown eligible card, fact used as eligible source, count impossible, distinct groups impossible, missing source group, disallowed/unspecified procedure, missing capability coverage, no satisfying subset.
-
-- [ ] **Step 3: Implement cached indexes**
-
-Build catalog and record maps once. Use the existing typed evidence/statement record key convention; do not repeatedly scan manifests inside board loops.
-
-- [ ] **Step 4: Implement template validation**
-
-- Classify required cards must occur in exactly one accepted group. Optional cards may remain unassigned; if assigned, they may occur only once.
-- Accepted order must be an exact permutation of required cards plus any optional card explicitly included by the author.
-- Anchor positions are one-based and must match the accepted order.
-
-- [ ] **Step 5: Implement threshold eligibility/satisfiability**
-
-Per-card eligibility checks allowed procedural status and required source-group presence. Selection-level checks minimum count, distinct non-null source groups, and union coverage of required proof capabilities.
-
-Use deterministic DFS with early pruning and return only a boolean; do not emit or store accepted combinations.
-
-- [ ] **Step 6: Reuse story catalog validators**
-
-Extend `buildStoryRevealTargetBatches` with one batch per board using `representedAuthority: null`. Extend `buildStoryPredicateReferences` to walk board/outro story expressions. Existing HPA-255/HPA-257 validators remain authoritative for definitions and grants.
-
-- [ ] **Step 7: Integrate after provenance compilation**
-
-Run general scene/catalog validation, compile the case-record corpus, then call `validateAnalysisScenes`. Do not run analysis semantic validation before provenance exists.
-
-- [ ] **Step 8: Verify and commit**
-
-```bash
-bun run test:scripts -- packages/scripts/compile-scenes/validator-analysis.test.ts packages/scripts/compile-scenes/story-catalog.test.ts packages/scripts/compile-scenes/case-record-provenance.test.ts
-bun run check:scripts
-git add packages/scripts/compile-scenes/validator-analysis.ts packages/scripts/compile-scenes/validator-analysis.test.ts packages/scripts/compile-scenes/validator.ts packages/scripts/compile-scenes/story-catalog.ts
-git commit -m "feat: validate analysis board semantics"
-```
-
----
-
-### Task 4: Discover Analysis Scenes and Replace the Synthetic Registry
-
-**Files:**
-- Modify: `packages/scripts/compile-scenes/orchestrator.ts`
-- Modify: `packages/scripts/compile-scenes/analysis-definition-registry.ts`
-- Modify: `packages/scripts/compile-scenes.test.ts`
-
-**Interfaces:**
-- Produces `createAnalysisDefinitionRegistryFromScenes(scenes)`.
-- Removes `CompileOptions.analysisRegistry`.
-
-- [ ] **Step 1: Write a failing end-to-end discovery test**
-
-Compile a manifest containing `analysis_scene_8_5.md`; assert no unknown-prefix error and a later scene's qualified analysis predicate resolves without injected registry data.
-
-- [ ] **Step 2: Add orchestrator parser dispatch**
-
-```ts
-} else if (file.startsWith("analysis_scene_")) {
-  const parsed = parseAnalysisScene(source, sourceFileTag, sceneId);
-  if (!parsed.ok) {
-    errors.push(parsed.error);
-    failedParseFiles.add(sourceFileTag);
-  } else {
-    scenes.push({ chapterId: dirName, file, ast: parsed.value });
-  }
-}
-```
-
-- [ ] **Step 3: Derive the registry from parsed scenes**
-
-```ts
-export function createAnalysisDefinitionRegistryFromScenes(
-  scenes: readonly SceneRecord[],
-): AnalysisDefinitionRegistry;
-```
-
-Register every analysis scene and board using chapter/scene/board IDs. Keep the low-level registry unit tests, but remove it as a production compiler input.
-
-- [ ] **Step 4: Remove synthetic injection**
-
-Delete `CompileOptions.analysisRegistry`. Migrate HPA-257 tests to minimal real analysis Markdown fixtures.
-
-- [ ] **Step 5: Lock pipeline order**
-
-```text
-parse -> general validation -> case-record corpus -> analysis validation
-     -> derived analysis registry -> story predicate validation
-     -> fixed-point reachability -> dialogue origins/emission
-```
-
-- [ ] **Step 6: Verify and commit**
-
-```bash
-bun run test:scripts -- packages/scripts/compile-scenes.test.ts packages/scripts/compile-scenes/analysis-definition-registry.test.ts packages/scripts/compile-scenes/story-catalog.test.ts
-bun run check:scripts
-git add packages/scripts/compile-scenes/orchestrator.ts packages/scripts/compile-scenes/analysis-definition-registry.ts packages/scripts/compile-scenes.test.ts packages/scripts/compile-scenes/analysis-definition-registry.test.ts packages/scripts/compile-scenes/story-catalog.test.ts packages/scripts/__fixtures__
-git commit -m "feat: register parsed analysis scene definitions"
-```
-
----
-
-### Task 5: Add Analysis Nodes to HPA-257 Reachability
-
-**Files:**
-- Modify: `packages/scripts/compile-scenes/reachability.ts`
-- Modify: `packages/scripts/compile-scenes/reachability.test.ts`
-
-**Interfaces:**
-- Produces qualified board/scene completion atoms and applies existing ordered story reveal effects.
-
-- [ ] **Step 1: Write failing analysis reachability tests**
-
-Cover unlocked required board, board-to-board unlock, threshold output, auto outro, unavailable required record, optional-board-only mandatory output, self-reference, and two-board positive cycle.
-
-- [ ] **Step 2: Add required-card prerequisites**
-
-```ts
-function analysisRequiredCardPredicates(
-  board: AnalysisBoardAst,
-): ReachabilityPredicate[] {
-  return board.cards.filter((card) => card.required).map((card) => {
-    switch (card.source.kind) {
-      case "evidence":
-        return { predicate: "atom", atom: `evidence_collected:${card.source.id}` };
-      case "statement":
-        return { predicate: "atom", atom: `statement_acquired:${card.source.id}` };
-      case "fact":
-        return { predicate: "atom", atom: `fact_asserted:${card.source.id}` };
-    }
-  });
-}
-```
-
-- [ ] **Step 3: Implement `buildAnalysisNodes`**
-
-Each board node:
-
-- is mandatory iff `required`;
-- is initially reachable iff `Status: unlocked`;
-- uses the authored story-only unlock condition;
-- has required-card atoms as implicit prerequisites;
-- adds `analysis_board_completed:<chapter>@<scene>@<board>`;
-- applies board reveals in authored order.
-
-Auto outro requires all required board atoms and adds `analysis_scene_completed:<chapter>@<scene>`.
-
-- [ ] **Step 4: Keep the solver unchanged**
-
-Only add scene adaptation and normalization helpers. Do not alter HPA-257 scenario enumeration, cycle detection, transfer logic, or `at_least` evaluation.
-
-- [ ] **Step 5: Verify and commit**
-
-```bash
-bun run test:scripts -- packages/scripts/compile-scenes/reachability.test.ts packages/scripts/compile-scenes/story-catalog.test.ts
-bun run check:scripts
-git add packages/scripts/compile-scenes/reachability.ts packages/scripts/compile-scenes/reachability.test.ts packages/scripts/compile-scenes/orchestrator.ts
-git commit -m "feat: analyze analysis board reachability"
-```
-
----
-
-### Task 6: Emit Deterministic JSON and Dialogue Origins
-
-**Files:**
-- Modify: `packages/scripts/compile-scenes/emitter.ts`
-- Modify: `packages/scripts/compile-scenes/orchestrator.ts`
-- Modify: `packages/scripts/compile-scenes/save-content-manifest.ts`
-- Modify: `packages/scripts/compile-scenes/dialogue-segment-origins.ts`
-- Modify: `packages/scripts/compile-scenes/dialogue-segment-origins.test.ts`
-- Modify exhaustive semantic-default/asset files only when TypeScript requires it.
-
-**Interfaces:**
-- Produces `emitAnalysisScene(ast): JSONAnalysisScene`.
-- Adds stable `analysisIntro`, `analysisResult`, and `analysisOutro` origins.
-
-- [ ] **Step 1: Write failing emitter/origin tests**
-
-Assert board/card/group/result order, hidden solutions, locations stripped, automatic layout, and deterministic output. Lock origins:
-
-```ts
-{ type: "analysisIntro", chapterId, sceneId }
-{ type: "analysisResult", chapterId, sceneId, boardId, segmentId }
-{ type: "analysisOutro", chapterId, sceneId }
-```
-
-- [ ] **Step 2: Implement pure AST-to-JSON emission**
-
-Copy every array/value; never emit AST location fields. Preserve authored order. Add an explicit analysis branch to `emitSceneRecord`.
-
-- [ ] **Step 3: Extend content revision/dialogue derivation**
-
-Add `JSONAnalysisScene` to emitted bundles and include intro, board result segments, and outro in dialogue-origin collision validation/content hashing. Do not add mutable analysis save state.
-
-- [ ] **Step 4: Close exhaustive switches without new semantics**
-
-Reuse existing dialogue asset enrichment. Pass board definitions through unchanged; do not invent board asset or layout-editor rules.
-
-- [ ] **Step 5: Verify and commit**
-
-```bash
-bun run test:scripts -- packages/scripts/compile-scenes/emitter.test.ts packages/scripts/compile-scenes/dialogue-segment-origins.test.ts packages/scripts/compile-scenes.test.ts
-bun run check:scripts
-git add packages/scripts/compile-scenes/emitter.ts packages/scripts/compile-scenes/orchestrator.ts packages/scripts/compile-scenes/save-content-manifest.ts packages/scripts/compile-scenes/dialogue-segment-origins.ts packages/scripts/compile-scenes/dialogue-segment-origins.test.ts packages/scripts/compile-scenes/semantic-defaults.ts packages/scripts/compile-scenes/assets/enrich.ts packages/scripts/compile-scenes.test.ts
-git commit -m "feat: emit analysis scene runtime definitions"
-```
-
----
-
-### Task 7: Add Rust Immutable Serde Types and Fail Closed
-
-**Files:**
-- Modify: `apps/game/src-tauri/src/game/schema.rs`
-- Modify: `apps/game/src-tauri/src/game/loader.rs`
-- Modify: `apps/game/src-tauri/src/game/navigation.rs`
-- Modify: `apps/game/src-tauri/src/game/test_support.rs`
-
-**Interfaces:**
-- Produces immutable `AnalysisSceneJson`/`AnalysisBoardJson` serde definitions.
-- Does not produce runtime state, evaluator, public view, command, or save types.
-
-- [ ] **Step 1: Write failing Rust serde tests**
-
-Deserialize the emitted valid fixture and assert all three variants, hidden solutions, feedback/hint, reveals, result dialogue, and constraints. Reject unknown fields/malformed variants. Assert `scene_dialogue_groups` includes intro, ordered result segments, and outro.
-
-- [ ] **Step 2: Add scene/index variants**
-
-```rust
-pub enum SceneType {
-    Linear,
-    Investigation,
-    Interrogation,
-    Analysis,
-}
-
-pub enum SceneJson {
-    Linear(LinearSceneJson),
-    Investigation(InvestigationSceneJson),
-    Interrogation(InterrogationSceneJson),
-    Analysis(AnalysisSceneJson),
-}
-```
-
-- [ ] **Step 3: Add a closed board enum**
-
-```rust
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase", deny_unknown_fields)]
-pub enum AnalysisBoardJson {
-    Classify { /* exact emitted fields */ },
-    Order { /* exact emitted fields */ },
-    Threshold { /* exact emitted fields */ },
-}
-```
-
-Repeat common fields per variant if flattening would weaken `deny_unknown_fields` or change the compiler shape.
-
-- [ ] **Step 4: Add loader defense-in-depth checks**
-
-Reject duplicate local IDs, unresolved local solution references, malformed permutations/anchors, and obviously impossible minimums in hand-edited packaged JSON. Catalog/story references continue through existing validation seams.
-
-- [ ] **Step 5: Fail closed before HPA-260**
-
-When navigation tries to construct a runtime from `SceneJson::Analysis`, return a typed load error such as `analysis scene runtime requires HPA-260`. Do not auto-skip or map it to linear dialogue. Production Chapter 1 still uses `scene_8_5.md`, so existing gameplay remains unaffected.
-
-- [ ] **Step 6: Verify and commit**
-
-```bash
-cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml --all --check
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml
-git add apps/game/src-tauri/src/game/schema.rs apps/game/src-tauri/src/game/loader.rs apps/game/src-tauri/src/game/navigation.rs apps/game/src-tauri/src/game/test_support.rs
-git commit -m "feat: accept immutable analysis scene definitions in Rust"
-```
-
----
-
-### Task 8: Build the Chapter 1-Shaped Acceptance Corpus and Run Regression
-
-**Files:**
-- Create valid/invalid fixture corpora under `packages/scripts/__fixtures__/analysis-*`.
-- Modify: `packages/scripts/compile-scenes.test.ts`
-- Modify focused compiler/Rust tests as needed.
-
-**Interfaces:**
-- Produces the canonical HPA-259 fixture that HPA-260/HPA-261 can mirror.
-- Does not alter production Chapter 1.
-
-- [ ] **Step 1: Author the valid corpus**
-
-Use these board/output contracts:
-
-```text
-evidence_packages
-  -> miyake_known_lies_are_unrelated_to_murder
-  -> earlier_external_entry_exists
-local_event_sequence
-  -> merge_time_is_not_event_time
-narrow_request_basis
-  -> two_independent_lock_contradictions_identified
-  -> complete secondary objective prepare_narrow_lock_request
-```
-
-Do not grant `narrow_lock_export`.
-
-Include records with at least two source groups, `reacquired`/`exhibit` statuses, and `time`/`order` capability coverage. Include an individually eligible same-source pair that cannot satisfy the distinct-source rule alone.
-
-- [ ] **Step 2: Author focused invalid corpora**
-
-One primary failure per corpus: duplicate ID, missing/unresolved card, incomplete classify/order solution, impossible count, impossible source groups, missing provenance, missing capability, disallowed procedure, unreachable required board/output, and grant outside authority.
-
-- [ ] **Step 3: Add end-to-end acceptance tests**
-
-Assert the valid corpus:
-
-- compiles without synthetic registry input;
-- emits one `analysis` scene and stable qualified board refs;
-- emits byte-identical JSON on two runs;
-- passes semantic/reachability/dialogue-origin validation;
-- is accepted by Rust serde;
-- contains all four facts and the request-readiness objective output.
-
-- [ ] **Step 4: Lock legacy production behavior**
-
-Assert production Chapter 1 still lists `scene_8_5.md`, not `analysis_scene_8_5.md`, and all existing scene types compile unchanged. Assert no hidden answer-key terms are exported from `@lyra/scene-types` or frontend source.
-
-- [ ] **Step 5: Run the full gate**
-
-```bash
-bun run format:check
-bun run check:scripts
-bun run test:scripts
-bun run scenes:compile
-bun run check
-cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml --all --check
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml
-bun run lint:all
-```
-
-Expected: every command passes; production Chapter 1 remains on the existing linear Beat 8.5.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add packages/scripts/__fixtures__/analysis-valid packages/scripts/__fixtures__/analysis-invalid packages/scripts/compile-scenes.test.ts packages/scripts/compile-scenes/*.test.ts apps/game/src-tauri/src/game
-git commit -m "test: accept the Chapter 1 analysis compiler contract"
-```
-
----
-
-## Self-Review Checklist
-
-- [ ] Every HPA-259 acceptance criterion maps to a task above.
-- [ ] No `TBD`, generic plugin interface, future-template registry, or Chapter 2 field remains.
-- [ ] Type names/property names match across parser, validator, emitter, and Rust tasks.
-- [ ] Registry definitions derive only from parsed scenes.
-- [ ] Threshold semantics distinguish per-record eligibility from aggregate selection requirements.
-- [ ] `prepare_narrow_lock_request` is secondary in the acceptance fixture; `narrow_lock_export` is not granted.
-- [ ] Source-location diagnostics are asserted for every invalid family.
-- [ ] Shared/public types contain no accepted solution data.
-- [ ] Production Chapter 1 authoring is untouched.
-
-## Execution Handoff
+The list is a forecast, not a requirement to touch every file. Modify semantic-default, asset, save-reference, loader, navigation, or dialogue files only when the new discriminant makes an existing exhaustive branch require it.
+
+## 6. Definition of done
+
+- [ ] `analysis_scene_<K>.md` is accepted in chapter manifests.
+- [ ] The canonical Chapter 1 fixture expresses complete classify/order/threshold boards.
+- [ ] Parser diagnostics include accurate source file and line.
+- [ ] IDs, sources, solutions, threshold rules, provenance, reveals, and story predicates validate.
+- [ ] Parsed analysis scenes replace synthetic production registry input.
+- [ ] Qualified analysis scene/board predicates resolve.
+- [ ] HPA-257 proves board/output/scene reachability without a second solver.
+- [ ] Emitted JSON contains complete immutable hidden solutions.
+- [ ] Rust serde accepts the emitted fixture.
+- [ ] Rust does not implement evaluation or duplicate compiler semantics.
+- [ ] Shared/public types expose no answer key.
+- [ ] Existing Chapter 1 and legacy scene types compile unchanged.
+- [ ] Production `scene_8_5.md` remains untouched.
+
+## 7. Self-review checklist
+
+- [ ] Every field is exercised by the real Chapter 1 fixture.
+- [ ] No board/card optionality exists without a Chapter 1 use case.
+- [ ] No placeholder layout type is emitted or shared.
+- [ ] Result dialogue has no unused segment abstraction.
+- [ ] Feedback remains minimal and HPA-263-owned polish is deferred.
+- [ ] Parser helpers remain private until a second consumer exists.
+- [ ] Invalid tests are table-driven unless cross-file setup is necessary.
+- [ ] Rust is a wire-contract consumer, not a second authoring validator.
+- [ ] Every commit remains buildable.
+
+## 8. Execution handoff
 
 Execute on:
 
@@ -778,4 +617,4 @@ Execute on:
 jack65786656/hpa-259-add-chapter-1-analysis-scene-markdown-schema-and-validation
 ```
 
-Recommended mode: `superpowers:subagent-driven-development`, one implementation subagent per task, with specification-compliance review followed by code-quality review before advancing.
+Recommended implementation order: Task 1 through Task 4, with one specification-compliance review and one code-quality review after each green task.
