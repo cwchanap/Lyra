@@ -701,6 +701,11 @@ fn discover_slot(
         .with_readable_metadata(readable);
     }
     let thumbnail = thumbnail_availability(fs, root, &envelope.save_id, &envelope.thumbnail);
+    let mut summary = envelope.summary;
+    summary.scene_summary = super::capture::normalize_projected_scene_summary(
+        &envelope.snapshot.scene,
+        summary.scene_summary,
+    );
     SaveSlotView {
         reference,
         modified_at,
@@ -715,7 +720,7 @@ fn discover_slot(
                 saved_at: envelope.saved_at,
                 display_name: envelope.display_name,
                 thumbnail,
-                summary: envelope.summary,
+                summary,
             },
         },
     }
@@ -778,6 +783,9 @@ fn readable_metadata(
         .get("displayName")
         .and_then(Value::as_str)
         .and_then(|value| super::schema::validate_manual_display_name(value).ok());
+    let snapshot = object
+        .get("snapshot")
+        .and_then(|value| serde_json::from_value::<SaveSnapshotV1>(value.clone()).ok());
     let summary = object
         .get("summary")
         .and_then(|value| {
@@ -785,12 +793,18 @@ fn readable_metadata(
             decode_summary_by_version(value, version)
         })
         .filter(|summary| {
-            object
-                .get("snapshot")
-                .and_then(|value| serde_json::from_value::<SaveSnapshotV1>(value.clone()).ok())
-                .is_some_and(|snapshot| {
-                    validate_save_summary(definitions, &snapshot, summary).is_ok()
-                })
+            snapshot.as_ref().is_some_and(|snapshot| {
+                validate_save_summary(definitions, snapshot, summary).is_ok()
+            })
+        })
+        .map(|mut summary| {
+            if let Some(snapshot) = snapshot.as_ref() {
+                summary.scene_summary = super::capture::normalize_projected_scene_summary(
+                    &snapshot.scene,
+                    summary.scene_summary,
+                );
+            }
+            summary
         });
     let descriptor = object
         .get("thumbnail")
@@ -1343,7 +1357,9 @@ fn discard_ignoring_error(staged: Option<Box<dyn StagedAtomicWrite>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::save::schema::{SaveEnvelopeV2, SaveSlotRef, SaveType, ThumbnailDescriptorV1};
+    use crate::game::save::schema::{
+        SaveEnvelopeV2, SaveSlotRef, SaveType, SceneProgressSnapshotV1, ThumbnailDescriptorV1,
+    };
     use crate::game::save::thumbnail::ValidatedThumbnail;
     use crate::game::test_support::representative_save_envelope;
     use std::collections::{BTreeMap, BTreeSet};
@@ -2766,6 +2782,76 @@ mod tests {
             SaveSlotStatusView::Invalid { ref diagnostic, .. }
                 if diagnostic.code == "incompatibleContentRevision"
         ));
+    }
+
+    /// A pre-fix schema-v2 save may carry a non-null `sceneSummary` for a
+    /// resumable scene. Projection must suppress it so Save Browser and
+    /// Continue do not leak unrevealed plot content, without rejecting the
+    /// save (which would lose progress).
+    #[test]
+    fn discovery_normalizes_legacy_v2_scene_summary_for_resumable_slot() {
+        let (_guard, _resources, context, template) = discovery_fixture();
+        assert!(
+            matches!(template.snapshot.scene, SceneProgressSnapshotV1::Linear),
+            "fixture must capture a resumable scene"
+        );
+        let mut legacy = template.clone();
+        legacy.summary.scene_summary = Some("The detective arrives at the opening scene.".into());
+        let fs = FakeFilesystem::new();
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 1 }),
+            serde_json::to_vec(&legacy).unwrap(),
+            UNIX_EPOCH + Duration::from_secs(50),
+        );
+
+        let view = discover_saves(&fs, &root(), &context);
+        let SaveSlotStatusView::Valid { metadata } = &view.slots[0].status else {
+            panic!("legacy v2 save with matching prose must remain valid");
+        };
+        let summary = serde_json::to_value(&metadata.summary).unwrap();
+        assert_eq!(
+            summary.get("sceneSummary"),
+            Some(&serde_json::Value::Null),
+            "resumable scene summary must be suppressed at projection time"
+        );
+    }
+
+    /// The same normalization must apply to readable metadata for invalid
+    /// slots, so a pre-fix v2 save that is unreadable for an unrelated reason
+    /// (here: mismatched content revision) still does not leak the scene
+    /// summary in its readable recap.
+    #[test]
+    fn readable_invalid_v2_metadata_normalizes_legacy_scene_summary_for_resumable_slot() {
+        let (_guard, _resources, context, template) = discovery_fixture();
+        assert!(
+            matches!(template.snapshot.scene, SceneProgressSnapshotV1::Linear),
+            "fixture must capture a resumable scene"
+        );
+        let mut legacy = template.clone();
+        legacy.summary.scene_summary = Some("The detective arrives at the opening scene.".into());
+        legacy.content_revision =
+            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".into();
+        let fs = FakeFilesystem::new();
+        fs.put_file(
+            slot_path(SaveSlotRef::Auto { slot: 1 }),
+            serde_json::to_vec(&legacy).unwrap(),
+            UNIX_EPOCH + Duration::from_secs(51),
+        );
+
+        let view = discover_saves(&fs, &root(), &context);
+        let SaveSlotStatusView::Invalid {
+            metadata: Some(metadata),
+            ..
+        } = &view.slots[0].status
+        else {
+            panic!("mismatched content revision must yield an invalid slot with readable metadata");
+        };
+        let summary = serde_json::to_value(metadata.summary.as_ref().unwrap()).unwrap();
+        assert_eq!(
+            summary.get("sceneSummary"),
+            Some(&serde_json::Value::Null),
+            "resumable scene summary must be suppressed in readable invalid metadata"
+        );
     }
 
     fn slot_reference(index: usize) -> SaveSlotRef {
