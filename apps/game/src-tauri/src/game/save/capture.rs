@@ -103,6 +103,7 @@ pub(crate) fn capture_checkpoint_v2(
         packaged_dialogue.as_ref(),
         &mut scene_cache,
     )?;
+    let scene_summary = scene_summary_for_checkpoint(&scene, &location.scene_summary);
     let story_snapshot = story_state.snapshot();
     StoryState::from_snapshot(&engine.story_catalog, story_snapshot.clone())
         .map_err(|error| capture_error(error.message))?;
@@ -205,13 +206,25 @@ pub(crate) fn capture_checkpoint_v2(
             chapter_summary: Some(location.chapter_summary),
             scene_id: location.scene_id,
             scene_title: location.scene_title,
-            scene_summary: Some(location.scene_summary),
+            scene_summary,
             active_primary_objective_id,
             active_primary_objective_label,
             active_primary_objective_summary,
         },
         snapshot,
     })
+}
+
+fn scene_summary_for_checkpoint(
+    scene: &SceneProgressSnapshotV1,
+    authored_summary: &str,
+) -> Option<String> {
+    match scene {
+        SceneProgressSnapshotV1::GameComplete => Some(authored_summary.to_owned()),
+        SceneProgressSnapshotV1::Linear
+        | SceneProgressSnapshotV1::Investigation { .. }
+        | SceneProgressSnapshotV1::Interrogation { .. } => None,
+    }
 }
 
 pub(crate) fn capture_scene_progress_v1(
@@ -1193,7 +1206,7 @@ mod tests {
                     "chapterSummary": "First",
                     "sceneId": "scene_0",
                     "sceneTitle": "Opening",
-                    "sceneSummary": "The detective arrives at the opening scene.",
+                    "sceneSummary": null,
                     "activePrimaryObjectiveId": "objective_truth",
                     "activePrimaryObjectiveLabel": "Find the truth",
                     "activePrimaryObjectiveSummary": "Resolve the contradiction."
@@ -1384,6 +1397,10 @@ mod tests {
         );
         assert_eq!(captured.summary.chapter_title, "Chapter One");
         assert_eq!(captured.summary.scene_title, "Interrogation");
+        assert_eq!(
+            captured.summary.scene_summary.as_deref(),
+            Some("Fixture scene summary.")
+        );
         assert!(captured.snapshot.active_dialogue.is_none());
     }
 
@@ -1476,6 +1493,7 @@ mod tests {
         let live_token = engine.current_queue_token().unwrap();
         let captured = capture_checkpoint_v2(&engine).unwrap();
 
+        assert_eq!(captured.summary.scene_summary, None);
         assert_eq!(
             captured.snapshot.scene,
             SceneProgressSnapshotV1::Investigation {
@@ -1617,6 +1635,8 @@ mod tests {
         };
         let presenting = capture_checkpoint_v2(&engine).unwrap();
 
+        assert_eq!(playing.summary.scene_summary, None);
+        assert_eq!(presenting.summary.scene_summary, None);
         let SceneProgressSnapshotV1::Interrogation {
             cross_exam,
             line_content_segment_index,
@@ -2079,7 +2099,8 @@ mod tests {
             unreachable!();
         };
         scene.outro_played = true;
-        assert!(capture_checkpoint_v2(&engine).is_ok());
+        let captured = capture_checkpoint_v2(&engine).unwrap();
+        assert_eq!(captured.summary.scene_summary, None);
     }
 
     #[test]
