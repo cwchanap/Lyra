@@ -17,7 +17,7 @@ function metadata(reference: SaveSlotRef, saveId: string): SaveMetadataView {
   return {
     saveId,
     saveType: reference.type,
-    schemaVersion: 1,
+    schemaVersion: 2,
     contentRevision: `sha256:${"1".repeat(64)}`,
     savedAt: `2026-07-2${reference.slot}T12:00:00Z`,
     displayName: `${reference.type}-${reference.slot}`,

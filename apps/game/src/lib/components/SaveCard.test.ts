@@ -26,7 +26,7 @@ function validMetadata(
   return {
     saveId,
     saveType: "manual",
-    schemaVersion: 1,
+    schemaVersion: 2,
     contentRevision: `sha256:${"1".repeat(64)}`,
     savedAt: "2026-07-27T12:34:00Z",
     displayName: "雨夜的證言",
