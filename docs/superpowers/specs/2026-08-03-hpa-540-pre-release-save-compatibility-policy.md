@@ -46,6 +46,8 @@ Do not add `DEVELOPMENT_SAVE_EPOCH`, a runtime-channel enum, a second developmen
 
 The supported `bun run dev:game` path must continue loading `tauri.dev.conf.json`. HPA-540 does not add a debug-startup warning or block plain development commands.
 
+Existing local saves under the earlier identifier/root are neither moved nor deleted; they may be removed manually only when known to be stale development data.
+
 After a breaking change, stale development saves may appear incompatible through the existing strict parser or `contentRevision` gate. That is acceptable and intentionally loud. Developers may remove the development save directory manually.
 
 ## Current save model
