@@ -4,7 +4,7 @@
 
 **Goal:** Add the smallest production-quality `analysis_scene_<K>.md` compiler contract needed for the real Chapter 1 Beat 8.5 classify, order, and threshold boards.
 
-**Architecture:** Markdown is the authored source. TypeScript parses and validates author intent, resolves provenance and story references, normalizes hidden accepted answers into simple runtime-ready JSON, and adapts boards to the existing HPA-257 reachability solver. Rust consumes immutable definitions and compares player drafts against normalized answers. HPA-260 owns mutable runtime state, evaluation commands, persistence, and answer-key-free public views.
+**Architecture:** Markdown is the authored source. TypeScript parses and validates author intent, resolves provenance and story references, normalizes hidden accepted answers into runtime-ready JSON, and adapts boards to the existing HPA-257 reachability solver. Rust consumes immutable definitions and validates packaged analysis references. HPA-260 owns mutable runtime state, submission evaluation, persistence, and answer-key-free public views.
 
 ## 1. Project priorities
 
@@ -27,10 +27,9 @@ Explicitly do **not** add:
 - generic puzzle, graph, or constraint engines;
 - duplicate TypeScript and Rust semantic validation;
 - placeholder layout types without a current consumer;
-- security hardening for hand-edited generated resources beyond normal serde shape checks;
-- exhaustive handling of hypothetical large-card-count boards.
+- security hardening for hand-edited generated resources beyond normal serde shape and reference checks.
 
-Breaking pre-release analysis changes may invalidate generated resources and local development saves. Update the compiler, fixture, Rust schema, and downstream runtime together.
+Breaking pre-release analysis changes may invalidate generated resources and local development saves. Update the compiler, canonical fixture, Rust schema, and downstream runtime together.
 
 ## 2. Scope and ownership boundaries
 
@@ -41,9 +40,9 @@ Breaking pre-release analysis changes may invalidate generated resources and loc
 - Parse scene, board, card, group, result-dialogue, minimal feedback, and optional hint fields used by Chapter 1.
 - Reference existing evidence, statements, facts, questions, objectives, authorizations, and qualified analysis refs through existing story contracts.
 - Validate IDs, references, solutions, provenance, threshold satisfiability, story outputs, and reachability.
-- Derive the existing analysis-definition registry from parsed scenes.
+- Derive compiler and packaged-runtime analysis-definition indexes from real parsed/emitted analysis scenes.
 - Emit deterministic immutable JSON with normalized hidden answers.
-- Add Rust serde definitions and the minimum fail-closed handling before HPA-260.
+- Add Rust serde definitions and the minimum fail-closed behavior before HPA-260.
 - Keep existing non-analysis chapters compiling unchanged.
 
 ### Deferred
@@ -69,18 +68,22 @@ TypeScript semantic validation + answer normalization
     ↓
 Immutable analysis JSON + story catalog
     ↓
-Rust serde definitions
+Rust serde definitions + packaged definition index
     ↓ HPA-260
 Rust runtime state and direct answer comparison
     ↓
 Answer-key-free public view
 ```
 
-- The compiler is authoritative for authored static definitions.
-- Rust is authoritative for mutable player state and submissions.
+- The compiler is authoritative for authored static definitions and hidden accepted answers.
+- Rust is authoritative for packaged reference resolution and mutable player state.
 - Svelte never receives accepted mappings, accepted order, or threshold answer sets.
 - `DialogueItem` remains outside `@lyra/scene-types`.
 - `@lyra/scene-types` gains only the `analysis` chapter-index discriminant in HPA-259.
+
+### Intentional `AnalysisBoardLayout` deferral
+
+Linear names `AnalysisBoardLayout` as the owner for genuinely shared editor/runtime geometry or presentation values. HPA-259 intentionally does **not** create that type because Chapter 1 has no authored analysis geometry and no second consumer. This is a deliberate YAGNI interpretation of the boundary, not an accidental omission. Add the type only when HPA-261 or a later editor feature introduces a byte-identical shared value.
 
 ## 3. Minimal authored Markdown contract
 
@@ -193,11 +196,12 @@ Answer-key-free public view
 
 ### Contract rules
 
-- `Summary` is required for every analysis scene. There is no `summaryAuthored` compatibility flag.
+- `Summary` is required. There is no `summaryAuthored` compatibility flag.
 - H2 blocks are exactly `Intro`, one or more `Board: <label> {#id}`, and `Outro`.
 - Every authored board is mandatory.
-- No `Unlock` means the board is initially available.
-- An authored `Unlock` uses the existing story-only positive expression grammar.
+- No `Unlock` means initially available. An authored `Unlock` uses the existing story-only positive grammar.
+- Chapter 1 is a board chain: the first board is initially available and each later board unlocks from prior completion. Completed boards remain definitionally available for HPA-260 to reopen read-only.
+- HPA-259 does not add optional or free-order board policy. HPA-260 may still select any board that its authored unlocks currently make available.
 - The scene completes after every board completes.
 - H3 blocks are `Card:`, `Group:` for classify only, and exactly one `Result Dialogue`.
 - Result dialogue directly contains dialogue items. There are no result-segment IDs.
@@ -212,8 +216,10 @@ Answer-key-free public view
 - First-version authored feedback contains only incomplete and incorrect copy.
 - Every classify card appears in exactly one accepted group.
 - Accepted order is an exact permutation of every order card.
-- `Fixed Anchors` is optional and uses one-based `card_id@position` values.
-- For Chapter 1, every displayed threshold card is eligible. Keep `Eligible Cards` because the Linear contract requires the set, but do not invent decoy content to exercise it.
+- Every fixed anchor has a unique in-range one-based position and must satisfy `acceptedOrder[position - 1] === cardId`.
+- `Eligible Cards` is non-empty, unique, and a subset of displayed threshold card IDs.
+- The runtime/public view shows every displayed card. A displayed non-eligible card is a well-formed choice but cannot appear in an accepted selection, so HPA-260 reports ordinary incorrect feedback rather than an application error.
+- The canonical Chapter 1 fixture currently makes every displayed threshold card eligible. Do not invent decoys solely to exercise the field.
 - Threshold source independence counts evidence and statement records only.
 
 ## 4. Compiler AST and normalized runtime JSON
@@ -272,9 +278,32 @@ The threshold AST retains authored validation inputs:
 
 `ASTAnalysisScene` contains `id`, `title`, required `summary`, intro, ordered boards, outro, source location, and asset refs. It has no version, compatibility, or authored-summary fallback fields.
 
-### 4.2 Normalize answers before emitting JSON
+### 4.2 Formal threshold semantics
 
-The compiler validates authored constraints, then emits runtime-ready hidden answers.
+Let `E` be the authored eligible-card set and `S` a proposed selected-card set.
+
+Before enumeration, require:
+
+- `1 <= minimumSelected <= |E|`;
+- `1 <= minimumDistinctSourceGroups <= minimumSelected`;
+- `|E| <= MAX_THRESHOLD_ELIGIBLE_CARDS`.
+
+`S` is accepted exactly when:
+
+1. `S ⊆ E`.
+2. `|S| >= minimumSelected`.
+3. Every selected record satisfies the authored allowed procedural statuses.
+4. When `Require Source Group` is true, every selected record has a non-null `sourceGroupId`.
+5. The number of distinct **non-null** `sourceGroupId` values in `S` is at least `minimumDistinctSourceGroups`. Null never becomes a synthetic independent source, even when `Require Source Group` is false.
+6. The union of `proofCapabilities` across every record in `S` contains every `Required Proof Capabilities` value. Capabilities are aggregate across the selection; each individual record does not need to carry every required capability.
+
+Reuse HPA-256's `validateCaseRecordRequirement` for per-record procedural-status and required-source-group checks. Pass an empty `requiredProofCapabilities` list to that helper because Chapter 1 capability coverage is selection-wide, then perform the capability-union check separately.
+
+Every eligible card must pass the per-record requirement. A board with no satisfying subset is a compiler error.
+
+### 4.3 Normalize answers before emitting JSON
+
+The compiler validates authored constraints and then emits runtime-ready hidden answers once.
 
 ```text
 Classify AST groups
@@ -283,7 +312,7 @@ Classify AST groups
 Order AST
     -> acceptedOrder
 
-Threshold AST + provenance
+Threshold AST + compiled provenance
     -> acceptedSelections
 ```
 
@@ -317,14 +346,14 @@ Rules for `acceptedSelections`:
 
 - each selection contains sorted unique card IDs;
 - the outer array is deterministically sorted;
-- only selections satisfying all authored threshold constraints are emitted;
+- all and only selections satisfying §4.2 are emitted;
 - source-group, procedural-status, and proof-capability rules remain compiler concerns and are not reinterpreted by Rust;
-- straightforward subset enumeration is sufficient for the small Chapter 1 board;
-- do not add a generic constraint solver or speculative optimization framework.
+- set `MAX_THRESHOLD_ELIGIBLE_CARDS = 12` (at most 4,096 subsets). Reject a larger board with a focused compiler diagnostic and raise the limit only when real authored content requires it;
+- do not add a generic constraint solver or optimization framework.
 
-Rust HPA-260 can canonicalize the player's selection and compare it directly against `acceptedSelections`.
+Rust HPA-260 canonicalizes the player's selection and compares it directly against `acceptedSelections`.
 
-### 4.3 Shared package
+### 4.4 Shared package
 
 Only extend the chapter index:
 
@@ -334,29 +363,25 @@ type: "linear" | "investigation" | "interrogation" | "analysis";
 
 Do not add full board definitions, layout placeholders, dialogue, reveals, feedback, or answer keys to `@lyra/scene-types`.
 
-### 4.4 Rust boundary
+### 4.5 Rust boundary
 
-HPA-259 adds immutable serde counterparts only:
+HPA-259 adds immutable serde counterparts and packaged definition resolution:
 
 - `SceneType::Analysis`;
 - `SceneJson::Analysis`;
 - closed classify/order/threshold definitions;
 - dialogue-group enumeration;
-- minimum fail-closed handling before HPA-260.
+- one immutable packaged analysis scene/board definition index built once from emitted analysis JSON;
+- validation of qualified analysis predicates against that packaged index;
+- minimum fail-closed navigation handling before HPA-260.
 
-Rust does not duplicate compiler validation for:
+Rust does not duplicate compiler validation for classify completeness, order permutations, anchor consistency, threshold provenance/satisfiability, or story-output reachability.
 
-- classify completeness;
-- order permutations;
-- anchor consistency;
-- threshold provenance or satisfiability;
-- story-output reachability.
-
-Serde shape validation is sufficient for packaged immutable definitions in this pre-release project.
+Until HPA-260, analysis-completion predicate evaluation remains false because no mutable analysis completion state exists. That is separate from resolving whether the referenced packaged scene/board definition exists.
 
 ## 5. Lean implementation sequence
 
-### Task 1 — Parser, types, normalization, and emission
+### Task 1 — Compiler-only types and parser
 
 **Create**
 
@@ -365,58 +390,37 @@ packages/scripts/compile-scenes/parser-analysis.ts
 packages/scripts/compile-scenes/parser-analysis.test.ts
 ```
 
-**Modify only where required**
+**Modify**
 
 ```text
-packages/scene-types/src/index.ts
 packages/scripts/compile-scenes/types.ts
 packages/scripts/compile-scenes/parser-unlock.ts
 packages/scripts/compile-scenes/parser-reveals.ts
-packages/scripts/compile-scenes/emitter.ts
-packages/scripts/compile-scenes/orchestrator.ts
-packages/scripts/compile-scenes/save-content-manifest.ts
-packages/scripts/compile-scenes/dialogue-segment-origins.ts
-minimal exhaustive asset/default consumers
 ```
 
 Implementation:
 
+- add source-located analysis AST types without yet adding production manifest dispatch;
 - parse the complete canonical Markdown fixture;
 - keep scalar/list/source/anchor helpers private inside `parser-analysis.ts`;
 - reuse the existing tokenizer, cursor, dialogue conversion, positive-expression parser, and reveal parser;
 - add an analysis reveal family that accepts story targets only;
 - require scene summary;
-- emit normalized answer fields;
-- use stable dialogue origins:
-
-```ts
-{ type: "analysisIntro", chapterId, sceneId }
-{ type: "analysisResult", chapterId, sceneId, boardId }
-{ type: "analysisOutro", chapterId, sceneId }
-```
-
-Representative tests:
-
-- one complete valid scene;
-- one structural parser error with exact source line;
-- one malformed board-family field with exact source line;
-- deterministic normalized JSON;
-- hidden answers absent from shared types.
+- reject unknown/duplicate metadata, malformed headings/anchors, local reveal targets, duplicate local IDs, missing result dialogue, and missing board-family fields;
+- assert representative exact source-file/line diagnostics.
 
 Focused verification:
 
 ```bash
-bun run test:scripts -- packages/scripts/compile-scenes/parser-analysis.test.ts packages/scripts/compile-scenes/emitter.test.ts packages/scripts/compile-scenes/dialogue-segment-origins.test.ts
+bun run test:scripts -- packages/scripts/compile-scenes/parser-analysis.test.ts
 bun run check:scripts
 ```
 
-Suggested commit:
+Suggested commit: `feat: parse analysis scene markdown`
 
-```text
-feat: add analysis scene compiler contract
-```
+---
 
-### Task 2 — Semantic validation and production registry
+### Task 2 — Semantic validation, answer normalization, production integration, and emission
 
 **Create**
 
@@ -425,74 +429,66 @@ packages/scripts/compile-scenes/validator-analysis.ts
 packages/scripts/compile-scenes/validator-analysis.test.ts
 ```
 
-**Modify**
+**Modify only where required**
 
 ```text
+packages/scene-types/src/index.ts
 packages/scripts/compile-scenes/validator.ts
 packages/scripts/compile-scenes/story-catalog.ts
 packages/scripts/compile-scenes/analysis-definition-registry.ts
+packages/scripts/compile-scenes/emitter.ts
 packages/scripts/compile-scenes/orchestrator.ts
+packages/scripts/compile-scenes/save-content-manifest.ts
+packages/scripts/compile-scenes/dialogue-segment-origins.ts
+minimal exhaustive asset/default/layout-index consumers
 packages/scripts/compile-scenes.test.ts
 ```
 
-Validate:
+Implementation:
 
-- scene/board/card/group ID scopes;
-- evidence and statement sources;
-- story unlock predicates and reveal targets;
-- no authorization grant from an analysis board;
-- non-empty result dialogue;
-- complete classify mappings;
-- complete order permutation and valid anchors;
-- threshold eligible set, counts, provenance, and at least one satisfying selection;
-- deterministic generation of normalized threshold answers.
-
-Registry work:
-
-- add `createAnalysisDefinitionRegistryFromScenes(scenes)`;
-- remove `CompileOptions.analysisRegistry` as a production input;
-- migrate synthetic-registry compiler tests to minimal real analysis Markdown;
-- keep the existing small registry abstraction because HPA-257 already consumes it.
-
-Pipeline order:
+- make the orchestrator reorder a first-class deliverable:
 
 ```text
-parse
--> structural validation
+parse scenes
+-> general structural validation
 -> compile case-record provenance
--> analysis semantic validation + answer normalization
--> derive analysis registry
+-> validate + normalize analysis definitions once
+-> derive analysis definition registry from parsed analysis scenes
 -> validate story predicates/reveals
--> fixed-point reachability
--> dialogue origins + emission
+-> run fixed-point reachability
+-> derive dialogue origins and emit
 ```
 
-Representative tests:
+- do not emit unverified threshold answers in Task 1;
+- classify/order normalization may use pure AST data, but threshold `acceptedSelections` is produced only in this catalog/provenance-aware stage;
+- reuse `validateCaseRecordRequirement` as described in §4.2;
+- validate global source/story refs, complete solutions, fixed anchors, authority restrictions, and formal threshold semantics;
+- add `analysis_scene_` production dispatch only when validation, normalization, emission, and exhaustive consumers land together;
+- derive the existing TypeScript `AnalysisDefinitionRegistry` from parsed scenes and remove synthetic production injection;
+- emit dialogue origins exactly as:
 
-- one unresolved card source with exact line;
-- one incomplete solution with exact line;
-- one impossible threshold with exact line;
-- one invalid authorization output;
-- one qualified analysis reference resolved without injected registry data.
+```ts
+{ type: "analysisIntro", chapterId, sceneId }
+{ type: "analysisResult", chapterId, sceneId, boardId }
+{ type: "analysisOutro", chapterId, sceneId }
+```
+
+- use TypeScript exhaustiveness plus one targeted grep for three-scene-type unions/switches. Add only fail-closed/pass-through branches required by the new discriminant; do not implement layout-editor or Svelte analysis UI.
 
 Focused verification:
 
 ```bash
-bun run test:scripts -- packages/scripts/compile-scenes/validator-analysis.test.ts packages/scripts/compile-scenes/story-catalog.test.ts packages/scripts/compile-scenes/analysis-definition-registry.test.ts packages/scripts/compile-scenes.test.ts
+bun run test:scripts -- packages/scripts/compile-scenes/parser-analysis.test.ts packages/scripts/compile-scenes/validator-analysis.test.ts packages/scripts/compile-scenes/story-catalog.test.ts packages/scripts/compile-scenes/analysis-definition-registry.test.ts packages/scripts/compile-scenes/dialogue-segment-origins.test.ts packages/scripts/compile-scenes.test.ts
 bun run check:scripts
 ```
 
-Suggested commit:
+**Review checkpoint 1:** review the Markdown, AST, normalized JSON, pipeline order, and hidden-answer boundary before Rust work.
 
-```text
-feat: validate and normalize analysis definitions
-```
+Suggested commit: `feat: compile analysis scene definitions`
 
-### Checkpoint review
+---
 
-Review the Markdown contract and emitted JSON now, before writing Rust code. Confirm that HPA-260 can evaluate all three board types by direct comparison without interpreting authoring-time provenance rules.
-
-### Task 3 — Reachability and compiler acceptance
+### Task 3 — HPA-257 reachability and Chapter 1 compiler acceptance
 
 **Modify**
 
@@ -502,51 +498,32 @@ packages/scripts/compile-scenes/reachability.test.ts
 packages/scripts/compile-scenes.test.ts
 ```
 
-**Add one complete fixture corpus**
+**Add one complete valid fixture corpus**
 
 ```text
 packages/scripts/__fixtures__/analysis-chapter-1/
 ```
 
-Reachability adapter:
+The valid corpus must include:
 
-- no `Unlock` means initially available;
-- authored unlock uses the existing HPA-257 expression solver;
-- every card source is an implicit availability prerequisite;
-- completion adds the qualified board-completed atom;
-- reveals apply in authored order;
-- scene completion requires all board-completed atoms;
-- scene completion adds the qualified scene-completed atom;
-- outro is presentation after scene completion, not another unlock node.
+- a story catalog containing every referenced fact, objective, authorization, and at least two declared source groups;
+- prior investigation/interrogation manifests defining every analysis card source;
+- non-neutral HPA-256 provenance for threshold records: allowed procedural status, source-group IDs, and `time`/`order` capability coverage;
+- an authored obtainment/reveal path for **every** analysis card source so implicit prerequisites are reachable;
+- at least one pair of individually valid eligible records sharing a source group, plus another valid record from a second group, so some subsets fail independence and at least one subset succeeds;
+- a later predicate referencing the packaged analysis scene/board without synthetic registry input;
+- no `narrow_lock_export` grant.
 
-Do not change HPA-257's solver, scenario model, cycle detection, or transfer rules.
+Reachability adaptation:
 
-Canonical outputs:
-
-```text
-evidence_packages
-  -> miyake_known_lies_are_unrelated_to_murder
-  -> earlier_external_entry_exists
-
-local_event_sequence
-  -> merge_time_is_not_event_time
-
-narrow_request_basis
-  -> two_independent_lock_contradictions_identified
-  -> complete secondary objective prepare_narrow_lock_request
-```
-
-Do not grant `narrow_lock_export`.
-
-Representative tests:
-
-- first board initially available;
-- board-to-board unlock;
-- unavailable card source;
-- self-reference or positive cycle;
-- unreachable output with exact line;
-- qualified board/scene predicate resolution;
-- deterministic emitted scene and story-catalog snapshots.
+- no `Unlock` means initially reachable once every card-source prerequisite is obtainable;
+- authored `Unlock` is evaluated by the existing HPA-257 expression solver;
+- every card source is an implicit evidence/statement prerequisite;
+- board completion adds `analysis_board_completed:<chapter>@<scene>@<board>`;
+- authored reveals apply in authored order;
+- scene completion requires every board and adds `analysis_scene_completed:<chapter>@<scene>`;
+- outro dialogue follows completion and is not a separate authored unlock node;
+- do not change HPA-257's expression language, transfer logic, scenario enumeration, or cycle detection.
 
 Focused verification:
 
@@ -556,51 +533,39 @@ bun run scenes:compile
 bun run check:scripts
 ```
 
-Suggested commit:
+Suggested commit: `feat: integrate analysis progression validation`
 
-```text
-feat: integrate analysis scenes with progression validation
-```
+---
 
-### Task 4 — Rust wire compatibility and regression
+### Task 4 — Rust immutable schema, packaged analysis refs, and regression
 
-**Modify only where exhaustive handling requires it**
+**Modify only where required**
 
 ```text
 apps/game/src-tauri/src/game/schema.rs
-apps/game/src-tauri/src/game/dialogue_queue.rs
-apps/game/src-tauri/src/game/navigation.rs
-apps/game/src-tauri/src/game/test_support.rs
 apps/game/src-tauri/src/game/loader.rs
+apps/game/src-tauri/src/game/unlock.rs
+apps/game/src-tauri/src/game/navigation.rs
+apps/game/src-tauri/src/game/dialogue_queue.rs
+apps/game/src-tauri/src/game/test_support.rs
+minimal exhaustive Rust consumers
 ```
 
 Implementation:
 
 - add immutable analysis serde types matching normalized JSON;
-- deserialize the compiled scene and story catalog together;
-- assert classify mapping, order, and threshold accepted selections are loaded;
-- enumerate intro, one result dialogue per board, and outro;
-- return a clear unsupported-runtime error when navigation reaches analysis before HPA-260;
-- do not add runtime state, save snapshots, commands, evaluators, or public views.
+- build one package-backed scene/board definition index from emitted analysis scenes during package loading rather than rereading files per predicate;
+- replace HPA-257's temporary hard rejection for `analysis_scene_completed` and `analysis_board_completed` references with definition-existence checks against that index;
+- reject unknown packaged analysis refs;
+- keep analysis completion predicate evaluation false until HPA-260 adds mutable completion state;
+- enumerate intro, one result dialogue per board, and outro dialogue;
+- return a clear unsupported-runtime error if navigation reaches an analysis scene before HPA-260;
+- run Rust/TypeScript compile checks and a targeted grep for exhaustive scene-type matches, including layout-editor/Svelte mirrors. Add only the minimum compile-safe/fail-closed handling; no frontend workbench behavior;
+- deserialize the compiler fixture and load both emitted analysis scene JSON and `story_catalog.json` through the package path.
 
-Focused verification:
+Rust does not revalidate accepted mappings, accepted order, fixed anchors, provenance, accepted threshold selection generation, or reachability.
 
-```bash
-cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml --all --check
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml
-```
-
-Suggested commit:
-
-```text
-feat: accept analysis definitions in Rust
-```
-
-## 6. Verification and review cadence
-
-During development, run focused tests for the task being changed.
-
-Run the full repository gate once before the implementation PR is ready:
+Full verification gate:
 
 ```bash
 bun run format:check
@@ -613,32 +578,63 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml
 bun run lint:all
 ```
 
-Use two architecture/code-review checkpoints:
+Also verify production Chapter 1 still lists `scene_8_5.md`, existing scene types compile unchanged, generated analysis output is deterministic across two runs, and no answer-key fields appear in shared/frontend public types.
 
-1. After Tasks 1 and 2: authored contract and normalized runtime JSON.
-2. Final implementation PR review: compiler → reachability → Rust wire path.
+**Review checkpoint 2:** final compiler-to-Rust contract review before implementation PR readiness.
 
-Do not require separate specification and code-quality review passes after every task unless a task uncovers a material architectural uncertainty.
+Suggested commit: `feat: accept packaged analysis scene definitions`
+
+## 6. Linear acceptance criteria coverage
+
+Invalid coverage may be table-driven inside focused tests; one fixture directory per error is not required.
+
+| Linear requirement | Required test case |
+|---|---|
+| duplicate IDs | `analysis_duplicate_board_or_card_id` |
+| missing cards | `analysis_classify_card_unassigned` and/or `analysis_order_card_missing` |
+| unresolved references | `analysis_card_source_unresolved` and `analysis_qualified_ref_unresolved` |
+| incomplete solutions | `analysis_classify_duplicate_assignment` and `analysis_order_not_permutation` |
+| impossible thresholds | `analysis_threshold_no_accepted_selection` |
+| missing required provenance | `analysis_threshold_record_requirement_failed` |
+| unreachable outputs | `analysis_required_output_unreachable` |
+| source-located diagnostics | assert exact file/line in one structural, one reference, one solution, and one reachability case |
+| Rust scene/catalog acceptance | package-load test reads emitted analysis scene and story catalog |
+| no hidden public answer key | type/public-source regression assertion |
 
 ## 7. Definition of done
 
 - [ ] `analysis_scene_<K>.md` is accepted in chapter manifests.
-- [ ] The real Chapter 1 classify/order/threshold shape is representable without chapter-specific parser branches.
-- [ ] Summary is required; no legacy analysis fallback or compatibility flag exists.
-- [ ] Parser and semantic diagnostics report useful source file and line data.
-- [ ] IDs, sources, solutions, threshold provenance, story outputs, and qualified refs validate.
-- [ ] Threshold constraints normalize into deterministic accepted selections.
-- [ ] Parsed scenes replace synthetic production registry input.
+- [ ] The canonical Chapter 1 fixture expresses complete classify/order/threshold boards.
+- [ ] Threshold selection semantics exactly match §4.2.
+- [ ] Parser/compiler diagnostics include accurate source file and line for representative error families.
+- [ ] IDs, sources, solutions, fixed anchors, provenance, reveals, and story predicates validate.
+- [ ] The valid fixture includes real HPA-256 provenance and obtainment paths for every card.
+- [ ] Analysis validation runs after case-record provenance compilation.
+- [ ] Parsed analysis scenes replace synthetic TypeScript registry input.
+- [ ] Packaged Rust analysis scene/board refs replace HPA-257's temporary hard rejection.
 - [ ] HPA-257 proves board/output/scene reachability without a second solver.
-- [ ] Runtime JSON contains simple normalized hidden answers.
-- [ ] Rust serde accepts emitted scene and catalog snapshots.
-- [ ] Rust does not duplicate compiler semantic validation.
-- [ ] Shared/public types expose no hidden answer data.
-- [ ] Existing Chapter 1 and non-analysis scenes compile unchanged.
-- [ ] Production `scene_8_5.md` remains untouched until HPA-265.
-- [ ] No schema version, migration, plugin interface, generic evaluator, or layout placeholder is introduced.
+- [ ] Emitted JSON contains deterministic runtime-ready hidden answers.
+- [ ] Rust serde/package loading accepts the emitted scene and story catalog.
+- [ ] Rust does not implement evaluation or duplicate compiler semantics.
+- [ ] Shared/public types expose no answer key.
+- [ ] `AnalysisBoardLayout` remains intentionally absent until a real shared value exists.
+- [ ] Existing Chapter 1 and legacy scene types compile unchanged.
+- [ ] Production `scene_8_5.md` remains untouched.
 
-## 8. Execution handoff
+## 8. Self-review checklist
+
+- [ ] Every field is exercised by the real Chapter 1 fixture.
+- [ ] No board/card optionality exists without a Chapter 1 use case.
+- [ ] No placeholder layout type is emitted or shared.
+- [ ] Result dialogue has no unused segment abstraction.
+- [ ] Feedback remains minimal and HPA-263-owned polish is deferred.
+- [ ] Threshold semantics distinguish per-record requirements from aggregate capability/source-independence requirements.
+- [ ] Parser helpers remain private until a second consumer exists.
+- [ ] Invalid tests map to every Linear acceptance bullet without multiplying fixture directories.
+- [ ] Rust resolves packaged analysis definitions but does not duplicate compiler answer validation.
+- [ ] Every commit remains buildable.
+
+## 9. Execution handoff
 
 Execute on:
 
@@ -646,4 +642,4 @@ Execute on:
 jack65786656/hpa-259-add-chapter-1-analysis-scene-markdown-schema-and-validation
 ```
 
-Implementation order: Task 1 → Task 2 → checkpoint review → Task 3 → Task 4 → final review.
+Recommended implementation order: Task 1 through Task 4, with the two review checkpoints specified above.
