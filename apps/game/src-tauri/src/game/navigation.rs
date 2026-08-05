@@ -1052,7 +1052,7 @@ mod tests {
                 AssertionOrigin::SceneEvent {
                     chapter_id: "chapter_1".into(),
                     scene_id: "scene_0".into(),
-                    block_kind: StoryEventBlockKind::StoryEvent,
+                    block_kind: StoryEventBlockKind::Hotspot,
                     block_id: "persistent_fact".into(),
                 },
                 &[],

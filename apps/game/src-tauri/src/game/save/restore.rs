@@ -1641,6 +1641,90 @@ mod tests {
     }
 
     #[test]
+    fn every_accepted_assertion_origin_round_trips_through_capture_parse_and_restore() {
+        use crate::game::story::{AssertionOrigin, StoryEventBlockKind};
+
+        // Every accepted AssertionOrigin and StoryEventBlockKind must survive a
+        // full capture → parse → restore → recapture cycle. This is the
+        // symmetry guarantee: if mutation and capture accept an origin,
+        // restore must resolve it against current packaged definitions.
+        let cases: [(AssertionOrigin, &str); 6] = [
+            (
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    block_kind: StoryEventBlockKind::Sublocation,
+                    block_id: "room".into(),
+                },
+                "sublocation",
+            ),
+            (
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    block_kind: StoryEventBlockKind::Hotspot,
+                    block_id: "desk".into(),
+                },
+                "hotspot",
+            ),
+            (
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "investigation_scene_1".into(),
+                    block_kind: StoryEventBlockKind::Topic,
+                    block_id: "witness@alibi".into(),
+                },
+                "topic",
+            ),
+            (
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "interrogation_scene_2".into(),
+                    block_kind: StoryEventBlockKind::InterrogationPhase,
+                    block_id: "phase_1".into(),
+                },
+                "interrogation phase",
+            ),
+            (
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "interrogation_scene_2".into(),
+                    block_kind: StoryEventBlockKind::InquiryQuestion,
+                    block_id: "q1".into(),
+                },
+                "inquiry question",
+            ),
+            (
+                AssertionOrigin::SceneEvent {
+                    chapter_id: "chapter_1".into(),
+                    scene_id: "interrogation_scene_2".into(),
+                    block_kind: StoryEventBlockKind::TestimonyLine,
+                    block_id: "l1".into(),
+                },
+                "testimony line",
+            ),
+        ];
+
+        for (origin, label) in cases {
+            let (_guard, resources) = save_capture_fixture_resources();
+            let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+            engine
+                .story_state
+                .assert_fact(
+                    &engine.story_catalog,
+                    "fact_origin",
+                    origin.clone(),
+                    &[],
+                    &[],
+                )
+                .unwrap_or_else(|error| {
+                    panic!("assert_fact must accept {label} origin: {error:?}")
+                });
+            assert_round_trip(resources, &engine);
+        }
+    }
+
+    #[test]
     fn pending_acquisitions_require_canonical_monotonic_event_identity() {
         let (_guard, resources, mut engine) = investigation_engine();
         engine.inventory.evidence.push(EvidenceRecord {
