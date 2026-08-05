@@ -211,7 +211,7 @@ pub(crate) fn capture_checkpoint(engine: &GameEngine) -> Result<CapturedCheckpoi
     })
 }
 
-/// Whether a scene may retain a summary on a checkpoint or in a projection.
+/// Whether a scene may retain a summary on a checkpoint.
 ///
 /// Only `GameComplete` may retain the authored scene summary: at that point
 /// the entire story has been played, so the prose is no longer a spoiler.
@@ -220,7 +220,7 @@ pub(crate) fn capture_checkpoint(engine: &GameEngine) -> Result<CapturedCheckpoi
 /// content and break checkpoint spoiler safety. The exhaustive match is
 /// intentional: adding a new `SceneProgressSnapshot` variant forces a
 /// conscious spoiler-safety decision here rather than silently defaulting.
-fn scene_may_retain_summary(scene: &SceneProgressSnapshot) -> bool {
+pub(crate) fn scene_may_retain_summary(scene: &SceneProgressSnapshot) -> bool {
     match scene {
         SceneProgressSnapshot::GameComplete => true,
         SceneProgressSnapshot::Linear
@@ -236,24 +236,6 @@ fn scene_summary_for_checkpoint(
 ) -> Option<String> {
     if scene_may_retain_summary(scene) {
         Some(authored_summary.to_owned())
-    } else {
-        None
-    }
-}
-
-/// Normalize a persisted `scene_summary` for projection to the frontend.
-///
-/// Earlier current-format saves may carry a non-null `scene_summary` for resumable
-/// scenes because `scene_summary_for_checkpoint` only started suppressing it
-/// after the spoiler-safety fix. Apply the same rule at projection time so
-/// legacy saves do not leak unrevealed plot content in Save Browser or
-/// Continue without being rejected (which would lose save progress).
-pub(crate) fn normalize_projected_scene_summary(
-    scene: &SceneProgressSnapshot,
-    scene_summary: Option<String>,
-) -> Option<String> {
-    if scene_may_retain_summary(scene) {
-        scene_summary
     } else {
         None
     }

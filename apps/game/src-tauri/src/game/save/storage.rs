@@ -701,11 +701,7 @@ fn discover_slot(
         .with_readable_metadata(readable);
     }
     let thumbnail = thumbnail_availability(fs, root, &envelope.save_id, &envelope.thumbnail);
-    let mut summary = envelope.summary;
-    summary.scene_summary = super::capture::normalize_projected_scene_summary(
-        &envelope.snapshot.scene,
-        summary.scene_summary,
-    );
+    let summary = envelope.summary;
     SaveSlotView {
         reference,
         modified_at,
@@ -788,14 +784,10 @@ fn readable_metadata(
             let snapshot = object
                 .get("snapshot")
                 .and_then(|value| serde_json::from_value::<SaveSnapshot>(value.clone()).ok())?;
-            let mut summary = object
+            let summary = object
                 .get("summary")
                 .and_then(|value| serde_json::from_value::<SaveSummary>(value.clone()).ok())?;
             validate_save_summary(definitions, &snapshot, &summary).ok()?;
-            summary.scene_summary = super::capture::normalize_projected_scene_summary(
-                &snapshot.scene,
-                summary.scene_summary,
-            );
             Some(summary)
         })
         .flatten();
@@ -1338,9 +1330,7 @@ fn discard_ignoring_error(staged: Option<Box<dyn StagedAtomicWrite>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::save::schema::{
-        SaveEnvelope, SaveSlotRef, SaveType, SceneProgressSnapshot, ThumbnailDescriptorV1,
-    };
+    use crate::game::save::schema::{SaveEnvelope, SaveSlotRef, SaveType, ThumbnailDescriptorV1};
     use crate::game::save::thumbnail::ValidatedThumbnail;
     use crate::game::test_support::representative_save_envelope;
     use std::collections::{BTreeMap, BTreeSet};
@@ -2746,76 +2736,6 @@ mod tests {
             fs.bytes(&slot_path(SaveSlotRef::Auto { slot: 2 })).unwrap(),
             noncurrent,
             "discovery must not rewrite unsupported saves"
-        );
-    }
-
-    /// An earlier current-format save may carry a non-null `sceneSummary` for a
-    /// resumable scene. Projection must suppress it so Save Browser and
-    /// Continue do not leak unrevealed plot content, without rejecting the
-    /// save (which would lose progress).
-    #[test]
-    fn discovery_normalizes_pre_spoiler_fix_scene_summary_for_resumable_slot() {
-        let (_guard, _resources, context, template) = discovery_fixture();
-        assert!(
-            matches!(template.snapshot.scene, SceneProgressSnapshot::Linear),
-            "fixture must capture a resumable scene"
-        );
-        let mut legacy = template.clone();
-        legacy.summary.scene_summary = Some("The detective arrives at the opening scene.".into());
-        let fs = FakeFilesystem::new();
-        fs.put_file(
-            slot_path(SaveSlotRef::Auto { slot: 1 }),
-            serde_json::to_vec(&legacy).unwrap(),
-            UNIX_EPOCH + Duration::from_secs(50),
-        );
-
-        let view = discover_saves(&fs, &root(), &context);
-        let SaveSlotStatusView::Valid { metadata } = &view.slots[0].status else {
-            panic!("pre-spoiler-fix save with matching prose must remain valid");
-        };
-        assert_eq!(
-            metadata.summary.scene_summary, None,
-            "resumable scene summary must be suppressed at projection time"
-        );
-    }
-
-    /// The same normalization must apply to readable metadata for invalid
-    /// slots, so an earlier current-format save that is unreadable for an unrelated reason
-    /// (here: mismatched content revision) still does not leak the scene
-    /// summary in its readable recap.
-    #[test]
-    fn readable_invalid_metadata_normalizes_pre_spoiler_fix_scene_summary_for_resumable_slot() {
-        let (_guard, _resources, context, template) = discovery_fixture();
-        assert!(
-            matches!(template.snapshot.scene, SceneProgressSnapshot::Linear),
-            "fixture must capture a resumable scene"
-        );
-        let mut legacy = template.clone();
-        legacy.summary.scene_summary = Some("The detective arrives at the opening scene.".into());
-        legacy.content_revision =
-            "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".into();
-        let fs = FakeFilesystem::new();
-        fs.put_file(
-            slot_path(SaveSlotRef::Auto { slot: 1 }),
-            serde_json::to_vec(&legacy).unwrap(),
-            UNIX_EPOCH + Duration::from_secs(51),
-        );
-
-        let view = discover_saves(&fs, &root(), &context);
-        let SaveSlotStatusView::Invalid {
-            metadata: Some(metadata),
-            ..
-        } = &view.slots[0].status
-        else {
-            panic!("mismatched content revision must yield an invalid slot with readable metadata");
-        };
-        let summary = metadata
-            .summary
-            .as_ref()
-            .expect("mismatched content revision has readable recap");
-        assert_eq!(
-            summary.scene_summary, None,
-            "resumable scene summary must be suppressed in readable invalid metadata"
         );
     }
 
