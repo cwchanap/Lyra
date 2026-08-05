@@ -573,8 +573,7 @@ mod tests {
 
     #[test]
     fn representative_current_save_round_trips_typed_semantics_through_the_current_encoder() {
-        let save = parse_current_envelope(&crate::game::test_support::representative_save_bytes())
-            .unwrap();
+        let save = parse_current_envelope(&current_representative()).unwrap();
 
         assert_eq!(save.schema_version, SAVE_SCHEMA_VERSION);
         assert_eq!(save.save_type, SaveType::Manual);

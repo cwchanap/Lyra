@@ -428,7 +428,7 @@ pub(crate) fn read_save_thumbnail(
         Err(_) => return Err(GameError::stale_save_selection()),
     };
     let envelope =
-        parse_and_validate_envelope(&envelope_bytes).map_err(|_| GameError::thumbnail_corrupt())?;
+        parse_current_envelope(&envelope_bytes).map_err(|_| GameError::thumbnail_corrupt())?;
     if !slot_agrees_with_envelope(reference, &envelope) || envelope.save_id != observed_save_id {
         return Err(GameError::stale_save_selection());
     }
@@ -468,7 +468,7 @@ pub(crate) fn read_save_envelope(
         Ok(None) => return Err(GameError::stale_save_selection()),
         Err(_) => return Err(GameError::save_read_failed()),
     };
-    let envelope = parse_and_validate_envelope(&bytes)?;
+    let envelope = parse_current_envelope(&bytes)?;
     if envelope.save_id != observed_save_id {
         return Err(GameError::stale_save_selection());
     }
@@ -660,7 +660,7 @@ fn discover_slot(
         }
     };
     let observed_saved_at = independently_valid_saved_at(&bytes);
-    let envelope = match parse_and_validate_envelope(&bytes) {
+    let envelope = match parse_current_envelope(&bytes) {
         Ok(envelope) => envelope,
         Err(error) => {
             let readable = readable_metadata(fs, root, &context.definitions, &bytes);
@@ -821,10 +821,6 @@ fn independently_valid_saved_at(bytes: &[u8]) -> Option<DateTime<chrono::FixedOf
     let value = serde_json::from_slice::<Value>(bytes).ok()?;
     let saved_at = value.get("savedAt")?.as_str()?;
     parse_saved_at_utc(saved_at).ok()
-}
-
-fn parse_and_validate_envelope(bytes: &[u8]) -> Result<SaveEnvelope, GameError> {
-    parse_current_envelope(bytes)
 }
 
 fn slot_agrees_with_envelope(reference: SaveSlotRef, envelope: &SaveEnvelope) -> bool {
@@ -1309,7 +1305,7 @@ fn validated_sidecar_from_slot(
     reference: SaveSlotRef,
     bytes: &[u8],
 ) -> Option<PathBuf> {
-    let envelope = parse_and_validate_envelope(bytes).ok()?;
+    let envelope = parse_current_envelope(bytes).ok()?;
     let agrees = matches!(
         (reference, envelope.save_type),
         (SaveSlotRef::Auto { slot }, SaveType::Auto) if slot == envelope.slot
