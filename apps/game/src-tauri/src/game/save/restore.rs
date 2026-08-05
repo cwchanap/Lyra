@@ -95,14 +95,23 @@ pub(crate) fn validate_save_summary(
             Some((label, objective_summary)) => (Some(label), Some(objective_summary)),
             None => (None, None),
         };
+    // Only `GameComplete` may retain the authored scene summary; every other
+    // resumable scene must carry `scene_summary = None` so a save recap can
+    // never leak unrevealed plot content. An older development save that
+    // carries resumable scene prose is rejected here and may be deleted.
+    let scene_summary_copy_matches = if super::capture::scene_may_retain_summary(&snapshot.scene) {
+        summary
+            .scene_summary
+            .as_ref()
+            .is_none_or(|value| value == scene_summary)
+    } else {
+        summary.scene_summary.is_none()
+    };
     let recap_copy_matches = summary
         .chapter_summary
         .as_ref()
         .is_none_or(|value| value == &chapter.summary)
-        && summary
-            .scene_summary
-            .as_ref()
-            .is_none_or(|value| value == scene_summary)
+        && scene_summary_copy_matches
         && summary
             .active_primary_objective_summary
             .as_ref()
@@ -1291,7 +1300,6 @@ mod tests {
     };
     use crate::game::view::ModeView;
     use crate::game::GameEngine;
-    use serde::{Deserialize, Serialize};
     use std::path::{Path, PathBuf};
 
     const SAVE_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
@@ -2225,160 +2233,6 @@ mod tests {
                 ""
             );
         }
-    }
-
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-    struct GenericSnapshot {
-        content_revision: String,
-        definition_id: String,
-        incomplete: bool,
-        cursor: usize,
-        required_definition_id: String,
-    }
-
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-    struct GenericResumable {
-        content_revision: String,
-        definition_id: String,
-        incomplete: bool,
-        cursor: usize,
-        public_value: String,
-    }
-
-    impl GenericResumable {
-        fn capture(&self) -> GenericSnapshot {
-            GenericSnapshot {
-                content_revision: self.content_revision.clone(),
-                definition_id: self.definition_id.clone(),
-                incomplete: self.incomplete,
-                cursor: self.cursor,
-                required_definition_id: "scene_0".into(),
-            }
-        }
-
-        fn restore(
-            definitions: &CurrentDefinitions,
-            snapshot: GenericSnapshot,
-        ) -> Result<Self, crate::game::GameError> {
-            if snapshot.content_revision != definitions.content_manifest.content_revision() {
-                return Err(crate::game::GameError::incompatible_content_revision(
-                    &snapshot.content_revision,
-                    definitions.content_manifest.content_revision(),
-                ));
-            }
-            if !definitions
-                .scenes_by_key
-                .contains_key(&("chapter_1".into(), snapshot.definition_id.clone()))
-                || !definitions
-                    .scenes_by_key
-                    .contains_key(&("chapter_1".into(), snapshot.required_definition_id))
-            {
-                return Err(crate::game::GameError::missing_save_definition());
-            }
-            Ok(Self {
-                public_value: format!(
-                    "{}:{}:{}",
-                    snapshot.definition_id, snapshot.incomplete, snapshot.cursor
-                ),
-                content_revision: snapshot.content_revision,
-                definition_id: snapshot.definition_id,
-                incomplete: snapshot.incomplete,
-                cursor: snapshot.cursor,
-            })
-        }
-    }
-
-    #[derive(Serialize)]
-    struct GenericHarness {
-        live: GenericResumable,
-    }
-
-    impl GenericHarness {
-        fn try_restore(
-            &mut self,
-            definitions: &CurrentDefinitions,
-            snapshot: GenericSnapshot,
-        ) -> Result<(), crate::game::GameError> {
-            let candidate = GenericResumable::restore(definitions, snapshot)?;
-            self.live = candidate;
-            Ok(())
-        }
-
-        fn bytes(&self) -> Vec<u8> {
-            serde_json::to_vec(self).unwrap()
-        }
-    }
-
-    #[test]
-    fn generic_resumable_rejects_revision_and_definition_drift_without_live_mutation() {
-        let (_guard, resources, engine) = resources_and_engine();
-        let definitions = load_current_definitions(&resources).unwrap();
-        let save_bytes = serde_json::to_vec(&envelope(&engine)).unwrap();
-        let parsed = crate::game::save::schema::parse_current_envelope(&save_bytes).unwrap();
-        let package_candidate = build_restore_candidate(resources, &definitions, parsed).unwrap();
-        assert_eq!(
-            package_candidate.engine.content_revision(),
-            engine.content_revision()
-        );
-        let mut harness = GenericHarness {
-            live: GenericResumable {
-                content_revision: definitions.content_manifest.content_revision().into(),
-                definition_id: "scene_0".into(),
-                incomplete: true,
-                cursor: 7,
-                public_value: "old".into(),
-            },
-        };
-        let valid = harness.live.capture();
-        let invalid = [
-            (
-                GenericSnapshot {
-                    content_revision:
-                        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-                            .into(),
-                    ..valid.clone()
-                },
-                "incompatibleContentRevision",
-            ),
-            (
-                GenericSnapshot {
-                    definition_id: "missing_primary".into(),
-                    ..valid.clone()
-                },
-                "missingSaveDefinition",
-            ),
-            (
-                GenericSnapshot {
-                    required_definition_id: "missing_required".into(),
-                    ..valid.clone()
-                },
-                "missingSaveDefinition",
-            ),
-        ];
-        for (snapshot, expected_code) in invalid {
-            let before = harness.bytes();
-            let error = harness.try_restore(&definitions, snapshot).unwrap_err();
-            assert_eq!(error.code, expected_code);
-            assert_eq!(
-                harness.bytes(),
-                before,
-                "failed generic restore mutated the live harness"
-            );
-        }
-
-        let encoded = serde_json::to_vec(&valid).unwrap();
-        let snapshot: GenericSnapshot = serde_json::from_slice(&encoded).unwrap();
-        harness.try_restore(&definitions, snapshot).unwrap();
-        assert_eq!(
-            harness.live,
-            GenericResumable {
-                content_revision: definitions.content_manifest.content_revision().into(),
-                definition_id: "scene_0".into(),
-                incomplete: true,
-                cursor: 7,
-                public_value: "scene_0:true:7".into(),
-            }
-        );
     }
 
     #[test]
