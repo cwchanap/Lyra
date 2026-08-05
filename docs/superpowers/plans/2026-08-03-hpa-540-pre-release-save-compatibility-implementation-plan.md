@@ -205,7 +205,23 @@ AssertionOrigin::derived_location(
 ) -> Result<(String, String), String>
 ```
 
-Keep `SceneEvent` and `AnalysisBoard`, and continue validating every origin against current packaged scene/block/board definitions.
+Keep the `SceneEvent` and `AnalysisBoard` enum variants and their wire/public-view
+shapes so HPA-260 can introduce the package-backed board registry without a
+schema change. Two origin kinds are temporarily **rejected** from story-state
+mutation, snapshot capture, and restore until their package-backed registries
+exist; they are not validated against packaged definitions and are not
+persisted:
+
+- `AssertionOrigin::AnalysisBoard` is rejected by
+  `ensure_origin_kind_is_persistable` and by the restore-time
+  `AnalysisBoard` branch until HPA-260 adds a package-backed board registry.
+- `AssertionOrigin::SceneEvent` with `block_kind: StoryEvent` is rejected by
+  `ensure_origin_kind_is_persistable` and by the restore-time `StoryEvent`
+  block-kind branch until a package-backed story-event registry exists.
+
+The remaining `SceneEvent` block kinds (Sublocation, Hotspot, Topic,
+InterrogationPhase, InquiryQuestion, TestimonyLine) continue to be validated
+against current packaged scene/block definitions and accepted as before.
 
 The public view should not repeat the same location three ways. Remove:
 
@@ -304,6 +320,12 @@ Update HPA-260 implementation notes to require:
 - `Analysis` is added to `SceneProgressSnapshot`;
 - classify/order/threshold drafts use the current save model;
 - accepted outputs use `AssertionOrigin::AnalysisBoard`;
+- HPA-260 adds the package-backed board registry and removes the temporary
+  `AnalysisBoard` rejection from `ensure_origin_kind_is_persistable` and the
+  restore-time `AnalysisBoard` branch so the origin becomes persistable and
+  restore-validated against that registry;
+- the temporary `SceneEvent` with `block_kind: StoryEvent` rejection is **not**
+  lifted by HPA-260; it awaits a separate package-backed story-event registry;
 - no new envelope/snapshot generation or internal migration;
 - no duplicate StoryState/Analysis DTO or generic adapter;
 - deterministic checkpoints provide deep analysis states across builds.
