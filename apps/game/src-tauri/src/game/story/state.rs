@@ -173,6 +173,31 @@ pub enum StoryEventBlockKind {
 }
 
 impl AssertionOrigin {
+    /// Returns `Err` when the origin kind cannot be resolved against current
+    /// packaged definitions and therefore must not be persisted.
+    ///
+    /// `AnalysisBoard` awaits HPA-260's package-backed board registry;
+    /// `StoryEvent` awaits a package-backed story-event registry. Until those
+    /// registries exist, mutation and capture must reject these origins so
+    /// that every saved state can be restored — the persistence contract must
+    /// be symmetric.
+    pub(super) fn ensure_origin_kind_is_persistable(&self) -> Result<(), String> {
+        match self {
+            Self::AnalysisBoard { .. } => Err(
+                "analysis board origins are not persistable until HPA-260 adds a package-backed board registry"
+                    .to_string(),
+            ),
+            Self::SceneEvent {
+                block_kind: StoryEventBlockKind::StoryEvent,
+                ..
+            } => Err(
+                "story event origins are not persistable until a package-backed story event registry exists"
+                    .to_string(),
+            ),
+            _ => Ok(()),
+        }
+    }
+
     pub(super) fn derived_location(&self) -> Result<(String, String), String> {
         match self {
             Self::SceneEvent {
@@ -382,6 +407,10 @@ fn validate_snapshot(
             .first_origin
             .derived_location()
             .map_err(invalid_snapshot)?;
+        progress
+            .first_origin
+            .ensure_origin_kind_is_persistable()
+            .map_err(invalid_snapshot)?;
         for target in &progress.supporting_records {
             if !catalog.contains_inventory_target(target) {
                 return Err(invalid_snapshot(format!(
@@ -461,6 +490,10 @@ fn validate_snapshot(
         progress
             .first_origin
             .derived_location()
+            .map_err(invalid_snapshot)?;
+        progress
+            .first_origin
+            .ensure_origin_kind_is_persistable()
             .map_err(invalid_snapshot)?;
     }
 
@@ -687,10 +720,11 @@ mod tests {
                 ("fact_alpha".into(), fact_alpha),
                 (
                     "fact_beta".into(),
-                    asserted_fact(AssertionOrigin::AnalysisBoard {
+                    asserted_fact(AssertionOrigin::SceneEvent {
                         chapter_id: "chapter_1".into(),
                         scene_id: "scene_1".into(),
-                        board_id: "board_1".into(),
+                        block_kind: StoryEventBlockKind::Hotspot,
+                        block_id: "board_1".into(),
                     }),
                 ),
             ]),
@@ -976,6 +1010,52 @@ mod tests {
                 .facts
                 .insert("fact_alpha".into(), asserted_fact(origin));
             assert_eq!(reject(snapshot).code, "invalidStoryStateSnapshot");
+        }
+    }
+
+    #[test]
+    fn rejects_well_formed_but_unresolvable_origin_kinds() {
+        // These origins have valid slug segments but reference origin kinds
+        // that have no package-backed registry yet. The persistence contract
+        // must be symmetric: if restore cannot resolve them, capture and
+        // mutation must not accept them either.
+        let origins = [
+            AssertionOrigin::AnalysisBoard {
+                chapter_id: "chapter_1".into(),
+                scene_id: "scene_1".into(),
+                board_id: "board_1".into(),
+            },
+            AssertionOrigin::SceneEvent {
+                chapter_id: "chapter_1".into(),
+                scene_id: "scene_1".into(),
+                block_kind: StoryEventBlockKind::StoryEvent,
+                block_id: "block_1".into(),
+            },
+        ];
+
+        for origin in origins {
+            let mut snapshot = empty_snapshot();
+            snapshot
+                .facts
+                .insert("fact_alpha".into(), asserted_fact(origin.clone()));
+            assert_eq!(
+                reject(snapshot).code,
+                "invalidStoryStateSnapshot",
+                "validate_snapshot must reject unresolvable origin kind: {origin:?}"
+            );
+
+            let mut snapshot = empty_snapshot();
+            snapshot.authorizations.insert(
+                "authorization_a".into(),
+                AuthorizationProgressSnapshot {
+                    first_origin: origin,
+                },
+            );
+            assert_eq!(
+                reject(snapshot).code,
+                "invalidStoryStateSnapshot",
+                "validate_snapshot must reject unresolvable authorization origin kind"
+            );
         }
     }
 

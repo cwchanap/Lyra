@@ -361,10 +361,11 @@ mod tests {
             .assert_fact(
                 catalog,
                 "fact_second",
-                AssertionOrigin::AnalysisBoard {
+                AssertionOrigin::SceneEvent {
                     chapter_id: "chapter_1".into(),
                     scene_id: "scene_2".into(),
-                    board_id: "timeline_board".into(),
+                    block_kind: StoryEventBlockKind::Hotspot,
+                    block_id: "timeline_board".into(),
                 },
                 &[],
                 &["fact_first".into()],
@@ -390,10 +391,11 @@ mod tests {
             .grant_authorization(
                 catalog,
                 "authorization_scene",
-                AssertionOrigin::AnalysisBoard {
+                AssertionOrigin::SceneEvent {
                     chapter_id: "chapter_1".into(),
                     scene_id: "scene_2".into(),
-                    board_id: "timeline_board".into(),
+                    block_kind: StoryEventBlockKind::Hotspot,
+                    block_id: "timeline_board".into(),
                 },
             )
             .unwrap();
@@ -457,9 +459,18 @@ mod tests {
     ) -> Result<StoryStateView, crate::game::GameError> {
         let catalog = catalog();
         let mut state = StoryState::default();
-        state
-            .assert_fact(&catalog, "fact_first", origin, &[], &[])
-            .unwrap();
+        // Insert directly rather than going through assert_fact, because
+        // assert_fact rejects origin kinds that are not yet persistable
+        // (AnalysisBoard, StoryEvent). The view layer must still render
+        // every wire-valid origin kind, including those awaiting a registry.
+        state.facts.insert(
+            "fact_first".into(),
+            crate::game::story::FactProgress {
+                first_origin: origin,
+                supporting_records: BTreeSet::new(),
+                supporting_fact_ids: BTreeSet::new(),
+            },
+        );
         StoryStateView::from_catalog_state(&catalog, &state, &BTreeSet::new(), locations)
     }
 
@@ -596,13 +607,14 @@ mod tests {
                         "details": "Second details",
                         "category": "motive",
                         "firstOrigin": {
-                            "type": "analysisBoard",
+                            "type": "sceneEvent",
                             "chapterId": "chapter_1",
                             "sceneId": "scene_2",
-                            "boardId": "timeline_board"
+                            "blockKind": "hotspot",
+                            "blockId": "timeline_board"
                         },
                         "originContext": {
-                            "originKind": "analysisBoard",
+                            "originKind": "sceneEvent",
                             "location": {
                                 "chapterId": "chapter_1",
                                 "chapterTitle": "First chapter",
@@ -675,13 +687,14 @@ mod tests {
                         "summary": "Scene summary",
                         "grantingAuthority": "Police",
                         "firstOrigin": {
-                            "type": "analysisBoard",
+                            "type": "sceneEvent",
                             "chapterId": "chapter_1",
                             "sceneId": "scene_2",
-                            "boardId": "timeline_board"
+                            "blockKind": "hotspot",
+                            "blockId": "timeline_board"
                         },
                         "originContext": {
-                            "originKind": "analysisBoard",
+                            "originKind": "sceneEvent",
                             "location": {
                                 "chapterId": "chapter_1",
                                 "chapterTitle": "First chapter",

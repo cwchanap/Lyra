@@ -30,6 +30,9 @@ impl StoryState {
         origin
             .derived_location()
             .map_err(GameError::invalid_assertion_origin)?;
+        origin
+            .ensure_origin_kind_is_persistable()
+            .map_err(GameError::invalid_assertion_origin)?;
 
         let supporting_records = supporting_records.iter().cloned().collect::<BTreeSet<_>>();
         for target in &supporting_records {
@@ -302,6 +305,9 @@ impl StoryState {
         origin
             .derived_location()
             .map_err(GameError::invalid_assertion_origin)?;
+        origin
+            .ensure_origin_kind_is_persistable()
+            .map_err(GameError::invalid_assertion_origin)?;
 
         let mut candidate = self.authorizations.clone();
         candidate
@@ -373,7 +379,7 @@ mod tests {
         AssertionOrigin::SceneEvent {
             chapter_id: chapter_id.into(),
             scene_id: scene_id.into(),
-            block_kind: StoryEventBlockKind::StoryEvent,
+            block_kind: StoryEventBlockKind::Hotspot,
             block_id: block_id.into(),
         }
     }
@@ -415,11 +421,7 @@ mod tests {
                 .assert_fact(
                     &catalog,
                     "fact_alpha",
-                    AssertionOrigin::AnalysisBoard {
-                        chapter_id: "chapter_2".into(),
-                        scene_id: "scene_2".into(),
-                        board_id: "board_1".into(),
-                    },
+                    scene_origin("chapter_2", "scene_2", "board_1"),
                     &[InventoryTarget::Statement {
                         id: "statement_a".into(),
                     }],
@@ -993,11 +995,7 @@ mod tests {
                 .grant_authorization(
                     &catalog,
                     "authorization_a",
-                    AssertionOrigin::AnalysisBoard {
-                        chapter_id: "chapter_2".into(),
-                        scene_id: "scene_2".into(),
-                        board_id: "board_2".into(),
-                    },
+                    scene_origin("chapter_2", "scene_2", "board_2"),
                 )
                 .unwrap(),
             MutationOutcome::Unchanged
@@ -1029,12 +1027,53 @@ mod tests {
                 AssertionOrigin::SceneEvent {
                     chapter_id: "chapter_1".into(),
                     scene_id: "scene_1".into(),
-                    block_kind: StoryEventBlockKind::StoryEvent,
+                    block_kind: StoryEventBlockKind::Hotspot,
                     block_id: "Bad Event".into(),
                 },
             )
             .unwrap_err();
         assert_eq!(error.code, "invalidAssertionOrigin");
         assert_eq!(state.snapshot(), before);
+    }
+
+    #[test]
+    fn fact_and_authorization_reject_unresolvable_origin_kinds() {
+        let catalog = catalog();
+        let unresolvable_origins = [
+            AssertionOrigin::AnalysisBoard {
+                chapter_id: "chapter_1".into(),
+                scene_id: "scene_1".into(),
+                board_id: "board_1".into(),
+            },
+            AssertionOrigin::SceneEvent {
+                chapter_id: "chapter_1".into(),
+                scene_id: "scene_1".into(),
+                block_kind: StoryEventBlockKind::StoryEvent,
+                block_id: "block_1".into(),
+            },
+        ];
+
+        for origin in unresolvable_origins {
+            let mut state = StoryState::default();
+            let before = state.snapshot();
+
+            let fact_error = state
+                .assert_fact(&catalog, "fact_alpha", origin.clone(), &[], &[])
+                .unwrap_err();
+            assert_eq!(
+                fact_error.code, "invalidAssertionOrigin",
+                "assert_fact must reject unresolvable origin kind: {origin:?}"
+            );
+            assert_eq!(state.snapshot(), before);
+
+            let auth_error = state
+                .grant_authorization(&catalog, "authorization_a", origin)
+                .unwrap_err();
+            assert_eq!(
+                auth_error.code, "invalidAssertionOrigin",
+                "grant_authorization must reject unresolvable origin kind"
+            );
+            assert_eq!(state.snapshot(), before);
+        }
     }
 }
