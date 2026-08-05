@@ -102,7 +102,25 @@ Do not retain a parallel save-specific StoryState snapshot family, identity conv
 - Remove the duplicated public `assertedIn*` and `grantedIn*` fields; `originContext.location` is the public location source.
 - Replace the migration-capable tagged `OriginContextView` union with one scene-origin object containing `originKind` and `location`.
 
-Restore must still resolve every persisted origin against current packaged definitions.
+The enum variants and their wire/public-view shapes are retained so HPA-260 can
+introduce the package-backed board registry without a schema change. Until those
+registries exist, two origin kinds are intentionally **rejected** from
+story-state mutation, snapshot capture, and restore — they are not validated
+against packaged definitions and are not persisted:
+
+- `AssertionOrigin::AnalysisBoard` is rejected until HPA-260 adds a
+  package-backed board registry. HPA-260 must add that registry and then remove
+  the temporary rejection in `ensure_origin_kind_is_persistable` and the
+  restore-time `AnalysisBoard` branch.
+- `AssertionOrigin::SceneEvent` with `block_kind: StoryEvent` is rejected until
+  a package-backed story-event registry exists. The other `StoryEventBlockKind`
+  variants (Sublocation, Hotspot, Topic, InterrogationPhase, InquiryQuestion,
+  TestimonyLine) are validated against current packaged scene/block definitions
+  and accepted as before.
+
+Restore must still resolve every persisted origin against current packaged
+definitions, except for the two temporarily rejected kinds above, which restore
+rejects outright with `invalid_story_state_snapshot`.
 
 ## Recap cache
 
@@ -136,6 +154,10 @@ HPA-260 adds Chapter 1 analysis state to the current model:
 - persist active board, classify/order/threshold drafts, completion, result-dialogue position, and minimal feedback;
 - use the direct current `SaveEnvelope` -> `SaveSnapshot` -> `StoryStateSnapshot` model and its one strict current parser;
 - use `AssertionOrigin::AnalysisBoard` for accepted board outputs and derive their saved location from that origin instead of persisting redundant chapter/scene copies;
+- add the package-backed board registry and remove the temporary
+  `AnalysisBoard` rejection from `ensure_origin_kind_is_persistable` and the
+  restore-time `AnalysisBoard` branch so the origin becomes persistable and
+  restore-validated against that registry;
 - keep recap copy optional and non-authoritative: do not reconstruct absent prose or silently correct mismatched present copy;
 - do not create a new envelope/snapshot version, duplicate Analysis/StoryState DTOs, or a generic resumable-state adapter;
 - round-trip representative current analysis states exactly;
