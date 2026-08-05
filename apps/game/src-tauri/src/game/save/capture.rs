@@ -211,22 +211,33 @@ pub(crate) fn capture_checkpoint(engine: &GameEngine) -> Result<CapturedCheckpoi
     })
 }
 
-/// Build the scene summary stored on a checkpoint.
+/// Whether a scene may retain a summary on a checkpoint or in a projection.
 ///
 /// Only `GameComplete` may retain the authored scene summary: at that point
 /// the entire story has been played, so the prose is no longer a spoiler.
 /// Every other scene kind (`Linear`, `Investigation`, `Interrogation`) must
 /// expose no summary, otherwise a save recap could leak unrevealed plot
-/// content and break checkpoint spoiler safety.
+/// content and break checkpoint spoiler safety. The exhaustive match is
+/// intentional: adding a new `SceneProgressSnapshot` variant forces a
+/// conscious spoiler-safety decision here rather than silently defaulting.
+fn scene_may_retain_summary(scene: &SceneProgressSnapshot) -> bool {
+    match scene {
+        SceneProgressSnapshot::GameComplete => true,
+        SceneProgressSnapshot::Linear
+        | SceneProgressSnapshot::Investigation { .. }
+        | SceneProgressSnapshot::Interrogation { .. } => false,
+    }
+}
+
+/// Build the scene summary stored on a checkpoint.
 fn scene_summary_for_checkpoint(
     scene: &SceneProgressSnapshot,
     authored_summary: &str,
 ) -> Option<String> {
-    match scene {
-        SceneProgressSnapshot::GameComplete => Some(authored_summary.to_owned()),
-        SceneProgressSnapshot::Linear
-        | SceneProgressSnapshot::Investigation { .. }
-        | SceneProgressSnapshot::Interrogation { .. } => None,
+    if scene_may_retain_summary(scene) {
+        Some(authored_summary.to_owned())
+    } else {
+        None
     }
 }
 
@@ -241,11 +252,10 @@ pub(crate) fn normalize_projected_scene_summary(
     scene: &SceneProgressSnapshot,
     scene_summary: Option<String>,
 ) -> Option<String> {
-    match scene {
-        SceneProgressSnapshot::GameComplete => scene_summary,
-        SceneProgressSnapshot::Linear
-        | SceneProgressSnapshot::Investigation { .. }
-        | SceneProgressSnapshot::Interrogation { .. } => None,
+    if scene_may_retain_summary(scene) {
+        scene_summary
+    } else {
+        None
     }
 }
 

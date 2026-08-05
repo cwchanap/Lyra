@@ -97,7 +97,7 @@ Do not retain a parallel save-specific StoryState snapshot family, identity conv
 - `SceneEvent` contains chapter, scene, and block identity.
 - `AnalysisBoard` contains chapter, scene, and board identity.
 - Remove the unshipped `Migration` origin.
-- `derived_location` returns a concrete `(String, String)` pair because every remaining origin has a chapter and scene.
+- `derived_location` returns `Result<(String, String), String>`, where the success tuple is `(chapter_id, scene_id)`, because every remaining origin has a chapter and scene; the `Err` carries the segment-validation message.
 - Remove separately persisted asserted/granted chapter and scene fields.
 - Remove the duplicated public `assertedIn*` and `grantedIn*` fields; `originContext.location` is the public location source.
 - Replace the migration-capable tagged `OriginContextView` union with one scene-origin object containing `originKind` and `location`.

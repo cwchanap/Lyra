@@ -1277,6 +1277,7 @@ mod tests {
         DialogueHistoryEntryV1, EvidenceInventoryEntryV1, InterrogationOverrideRefV1,
         InvestigationOverrideRefV1, RecordKind, SaveEnvelope, SaveSlotRef, SaveType,
         SceneProgressSnapshot, StatementInventoryEntryV1, ThumbnailDescriptorV1,
+        SAVE_SCHEMA_VERSION,
     };
     use crate::game::scenes::interrogation::CrossExam;
     use crate::game::scenes::SceneRuntime;
@@ -1301,7 +1302,7 @@ mod tests {
         checkpoint: CapturedCheckpoint,
     ) -> SaveEnvelope {
         SaveEnvelope {
-            schema_version: 2,
+            schema_version: SAVE_SCHEMA_VERSION,
             content_revision: engine.content_revision().into(),
             save_id: SAVE_ID.into(),
             save_type: SaveType::Manual,
