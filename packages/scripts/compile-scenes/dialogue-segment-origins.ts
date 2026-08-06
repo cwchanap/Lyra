@@ -125,10 +125,10 @@ function deriveAnalysisSegments(
         type: "analysisResult" as const,
         chapterId,
         sceneId: scene.id,
-        boardId: board.id,
+        boardId: board.common.id,
       },
-      items: board.resultDialogue,
-      ...sourceFields(authoredBoardsById?.get(board.id)),
+      items: board.common.resultDialogue,
+      ...sourceFields(authoredBoardsById?.get(board.common.id)),
     })),
     {
       origin: { type: "analysisOutro", chapterId, sceneId: scene.id },

@@ -384,10 +384,12 @@ export function compile(opts: CompileOptions): CompileResult {
     });
     const enriched = enrichScenesWithAssets({
       scenes,
+      analysisScenes,
       config: assetConfig.value,
       ...(opts.repoRoot === undefined ? {} : { repoRoot: opts.repoRoot }),
     });
     scenes.splice(0, scenes.length, ...enriched.scenes);
+    analysisScenes.splice(0, analysisScenes.length, ...enriched.analysisScenes);
     errors.push(...enriched.errors);
     assetReport = makeAssetReport(enriched.manifest, [
       ...configWarnings,
@@ -398,6 +400,7 @@ export function compile(opts: CompileOptions): CompileResult {
       errors.push(
         ...validateSaveContentReferences({
           scenes,
+          analysisScenes,
           config: assetConfig.value,
           manifest: enriched.manifest,
         }),

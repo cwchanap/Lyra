@@ -749,6 +749,7 @@ export type JSONAnalysisScene = {
   id: string;
   title: string;
   summary: string;
+  assetRefs: AssetRef[];
   intro: JSONDialogueItem[];
   boards: JSONAnalysisBoard[];
   outro: JSONDialogueItem[];
@@ -776,20 +777,23 @@ export type JSONAnalysisBoardCommon = {
   resultDialogue: JSONDialogueItem[];
 };
 
-export type JSONClassifyBoard = JSONAnalysisBoardCommon & {
+export type JSONClassifyBoard = {
   kind: "classify";
+  common: JSONAnalysisBoardCommon;
   groups: Array<{ id: string; label: string; description: string }>;
   acceptedGroupByCard: Record<string, string>;
 };
 
-export type JSONOrderBoard = JSONAnalysisBoardCommon & {
+export type JSONOrderBoard = {
   kind: "order";
+  common: JSONAnalysisBoardCommon;
   acceptedOrder: string[];
   fixedAnchors: Array<{ cardId: string; position: number }>;
 };
 
-export type JSONThresholdBoard = JSONAnalysisBoardCommon & {
+export type JSONThresholdBoard = {
   kind: "threshold";
+  common: JSONAnalysisBoardCommon;
   minimumSelected: number;
   acceptedSelections: string[][];
 };

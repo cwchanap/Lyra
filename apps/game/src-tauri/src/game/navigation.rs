@@ -663,19 +663,22 @@ mod tests {
                 "id": "{id}",
                 "title": "Analysis",
                 "summary": "Immutable analysis fixture.",
+                "assetRefs": [],
                 "intro": [],
                 "boards": [{{
-                    "id": "board_1",
-                    "label": "Board",
                     "kind": "classify",
-                    "prompt": "Classify.",
-                    "unlock": null,
-                    "reveals": [],
-                    "feedback": {{"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null}},
-                    "cards": [],
+                    "common": {{
+                        "id": "board_1",
+                        "label": "Board",
+                        "prompt": "Classify.",
+                        "unlock": null,
+                        "reveals": [],
+                        "feedback": {{"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null}},
+                        "cards": [],
+                        "resultDialogue": []
+                    }},
                     "groups": [],
-                    "acceptedGroupByCard": {{}},
-                    "resultDialogue": []
+                    "acceptedGroupByCard": {{}}
                 }}],
                 "outro": []
             }}"#

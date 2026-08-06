@@ -253,7 +253,9 @@ describe("analysis semantic validation", () => {
           boards: [
             {
               kind: "classify",
-              id: "classify_board",
+              common: {
+                id: "classify_board",
+              },
               acceptedGroupByCard: {
                 card_a: "group_1",
                 card_b: "group_2",

@@ -16,6 +16,7 @@ import {
   type AssetManifestEntry,
 } from "./manifest";
 import type {
+  ASTAnalysisBoard,
   ASTCharacter,
   ASTEvidence,
   ASTHotspot,
@@ -30,6 +31,7 @@ import type {
   EvidenceImageCue,
   VisualAssetCue,
 } from "../types";
+import type { AnalysisSceneRecord } from "../types";
 import type { SceneRecord } from "../validator";
 
 type ManifestDraft = {
@@ -42,6 +44,7 @@ type ManifestDraft = {
 
 export type AssetEnrichmentResult = {
   scenes: SceneRecord[];
+  analysisScenes: AnalysisSceneRecord[];
   manifest: AssetManifest;
   warnings: CompileError[];
   errors: CompileError[];
@@ -49,6 +52,7 @@ export type AssetEnrichmentResult = {
 
 export function enrichScenesWithAssets(input: {
   scenes: SceneRecord[];
+  analysisScenes?: AnalysisSceneRecord[];
   config: AssetConfig;
   /**
    * Repository root that manifest `expectedPath` values are relative to.
@@ -58,9 +62,13 @@ export function enrichScenesWithAssets(input: {
    */
   repoRoot?: string;
 }): AssetEnrichmentResult {
+  const analysisScenes = input.analysisScenes ?? [];
   if (!input.config.enabled) {
     return {
       scenes: input.scenes.map((scene) => stripAssetData(scene)),
+      analysisScenes: analysisScenes.map((scene) =>
+        stripAnalysisAssetData(scene),
+      ),
       manifest: buildAssetManifest({ entries: [], config: input.config }),
       warnings: [],
       errors: [],
@@ -73,6 +81,9 @@ export function enrichScenesWithAssets(input: {
   const scenes = input.scenes.map((scene) =>
     enrichScene(scene, input.config, requests, errors, corpusState),
   );
+  const enrichedAnalysisScenes = analysisScenes.map((scene) =>
+    enrichAnalysisScene(scene, input.config, requests, errors, corpusState),
+  );
   const manifest = buildAssetManifest({
     entries: [...requests.values()],
     config: input.config,
@@ -81,6 +92,7 @@ export function enrichScenesWithAssets(input: {
 
   return {
     scenes,
+    analysisScenes: enrichedAnalysisScenes,
     manifest,
     warnings,
     errors,
@@ -124,8 +136,61 @@ function enrichScene(
   return { ...scene, ast: { ...ast, assetRefs: [...refs.values()] } };
 }
 
+function enrichAnalysisScene(
+  scene: AnalysisSceneRecord,
+  config: AssetConfig,
+  requests: Map<string, ManifestDraft>,
+  errors: CompileError[],
+  corpusState: { hadVisualCue: boolean },
+): AnalysisSceneRecord {
+  const refs = new Map<string, AssetRef>();
+  const context: EnrichContext = {
+    scene: {
+      chapterId: scene.chapterId,
+      ast: scene.ast,
+    },
+    config,
+    requests,
+    errors,
+    refs,
+    tagIndex: 0,
+    hadVisualCue: corpusState.hadVisualCue,
+    corpusState,
+  };
+
+  const intro = enrichDialogue(scene.ast.intro, context);
+  const boards = scene.ast.boards.map((board) =>
+    enrichAnalysisBoard(board, context),
+  );
+  const outro = enrichDialogue(scene.ast.outro, context);
+
+  return {
+    ...scene,
+    ast: {
+      ...scene.ast,
+      intro,
+      boards,
+      outro,
+      assetRefs: [...refs.values()],
+    },
+  };
+}
+
+function enrichAnalysisBoard(
+  board: ASTAnalysisBoard,
+  context: EnrichContext,
+): ASTAnalysisBoard {
+  const enrichedResultDialogue = enrichDialogue(board.resultDialogue, context);
+  return { ...board, resultDialogue: enrichedResultDialogue };
+}
+
+type EnrichSceneContext = {
+  chapterId: string;
+  ast: { sourceFile: string; line: number; id: string };
+};
+
 type EnrichContext = {
-  scene: SceneRecord;
+  scene: EnrichSceneContext;
   config: AssetConfig;
   requests: Map<string, ManifestDraft>;
   errors: CompileError[];
@@ -395,6 +460,24 @@ function stripAssetData(scene: SceneRecord): SceneRecord {
     };
   }
   return { ...scene, ast: { ...stripInterrogationScene(ast), assetRefs: [] } };
+}
+
+function stripAnalysisAssetData(
+  scene: AnalysisSceneRecord,
+): AnalysisSceneRecord {
+  return {
+    ...scene,
+    ast: {
+      ...scene.ast,
+      intro: stripDialogue(scene.ast.intro),
+      boards: scene.ast.boards.map((board) => ({
+        ...board,
+        resultDialogue: stripDialogue(board.resultDialogue),
+      })),
+      outro: stripDialogue(scene.ast.outro),
+      assetRefs: [],
+    },
+  };
 }
 
 function stripLinearScene(

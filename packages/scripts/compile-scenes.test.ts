@@ -529,10 +529,13 @@ describe("compile (end-to-end against valid fixture)", () => {
         id: "analysis_scene_1",
         title: "證據分析",
         summary: "將已取得的材料整理成可驗證的結論。",
+        assetRefs: [],
         boards: [
           {
-            id: "classify_board",
             kind: "classify",
+            common: {
+              id: "classify_board",
+            },
             groups: [
               {
                 id: "timeline_group",
@@ -543,24 +546,28 @@ describe("compile (end-to-end against valid fixture)", () => {
             acceptedGroupByCard: { coffee_card: "timeline_group" },
           },
           {
-            id: "order_board",
             kind: "order",
+            common: {
+              id: "order_board",
+            },
             acceptedOrder: ["coffee_card"],
             fixedAnchors: [{ cardId: "coffee_card", position: 1 }],
           },
           {
-            id: "threshold_board",
             kind: "threshold",
+            common: {
+              id: "threshold_board",
+            },
             minimumSelected: 1,
             acceptedSelections: [["coffee_card"]],
           },
         ],
       });
-      expect(analysis.boards.map((board: { id: string }) => board.id)).toEqual([
-        "classify_board",
-        "order_board",
-        "threshold_board",
-      ]);
+      expect(
+        analysis.boards.map(
+          (board: { common: { id: string } }) => board.common.id,
+        ),
+      ).toEqual(["classify_board", "order_board", "threshold_board"]);
       expect(analysis.boards[0].groups[0]).not.toHaveProperty("acceptedCards");
       expect(analysis.boards[2]).not.toHaveProperty(
         "minimumDistinctSourceGroups",
@@ -645,7 +652,11 @@ describe("compile (end-to-end against valid fixture)", () => {
       ]);
 
       const analysis = readJson("chapter_1/analysis_scene_8_5.json");
-      expect(analysis.boards.map((board: { id: string }) => board.id)).toEqual([
+      expect(
+        analysis.boards.map(
+          (board: { common: { id: string } }) => board.common.id,
+        ),
+      ).toEqual([
         "evidence_packages",
         "local_event_sequence",
         "narrow_request_basis",
