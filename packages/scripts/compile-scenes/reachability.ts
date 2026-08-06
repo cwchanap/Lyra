@@ -1863,7 +1863,7 @@ function buildAnalysisNodes(input: {
         key: boardKey,
         requirement: "mandatory",
         legacyCompatibilityMode: false,
-        initiallyReachable: board.unlock === null && input.firstScene,
+        initiallyReachable: false,
         condition: normalizeAnalysisExpression(board.unlock),
         implicitPrerequisites: uniquePredicates(
           board.cards.map((card) => ({
