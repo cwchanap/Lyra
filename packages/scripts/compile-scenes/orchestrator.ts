@@ -457,6 +457,8 @@ export function compile(opts: CompileOptions): CompileResult {
       scenes,
       catalog: storyCatalog,
       analysisRegistry,
+      analysisScenes,
+      normalizedAnalysisScenes: normalizedAnalysisScenes ?? [],
     });
     const progression = analyzeReachability({ nodes, catalog: storyCatalog });
     errors.push(...sortReachabilityDiagnostics(progression.errors));
