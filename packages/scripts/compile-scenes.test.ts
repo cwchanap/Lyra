@@ -14,7 +14,6 @@ import {
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
-import { createAnalysisDefinitionRegistryFromScenes } from "./compile-scenes/analysis-definition-registry";
 import { enrichScenesWithAssets } from "./compile-scenes/assets/enrich";
 import type { AssetConfig } from "./compile-scenes/assets/config";
 import { parseChapter } from "./compile-scenes/parser-chapter";
@@ -22,9 +21,7 @@ import { parseAnalysisScene } from "./compile-scenes/parser-analysis";
 import { parseInterrogationScene } from "./compile-scenes/parser-interrogation";
 import { parseInvestigationScene } from "./compile-scenes/parser-investigation";
 import { parseLinearScene } from "./compile-scenes/parser-linear";
-import { emptyStoryCatalog } from "./compile-scenes/parser-story-catalog";
 import { buildSaveContentManifest } from "./compile-scenes/save-content-manifest";
-import { validateStoryPredicateReferences } from "./compile-scenes/story-catalog";
 import type { SceneRecord } from "./compile-scenes/validator";
 
 const VALID_STORY_CATALOG = readFileSync(
@@ -118,13 +115,17 @@ describe("production Chapter 1 authoring", () => {
       const sourceFile = `chapter_1/${sceneFile}`;
       const source = readFileSync(resolve(chapterDir, sceneFile), "utf-8");
       const id = sceneFile.replace(/\.md$/, "");
-      const parsed = sceneFile.startsWith("investigation_scene_")
-        ? parseInvestigationScene(source, sourceFile, id)
-        : sceneFile.startsWith("interrogation_scene_")
-          ? parseInterrogationScene(source, sourceFile, id)
-          : parseLinearScene(source, sourceFile, id);
+      const parsed = sceneFile.startsWith("analysis_scene_")
+        ? parseAnalysisScene(source, sourceFile, id)
+        : sceneFile.startsWith("investigation_scene_")
+          ? parseInvestigationScene(source, sourceFile, id)
+          : sceneFile.startsWith("interrogation_scene_")
+            ? parseInterrogationScene(source, sourceFile, id)
+            : parseLinearScene(source, sourceFile, id);
       if (!parsed.ok) throw new Error(formatErrors([parsed.error]));
-      return !parsed.value.summaryAuthored;
+      return (
+        parsed.value.kind !== "analysisScene" && !parsed.value.summaryAuthored
+      );
     });
 
     expect(
@@ -360,65 +361,258 @@ describe("compile (end-to-end against valid fixture)", () => {
     }
   });
 
-  it("resolves a later qualified analysis predicate from genuine parsed scenes", () => {
-    // Break caught: synthetic CompileOptions injection could make the old
-    // fixture pass while authored analysis files never supplied definitions.
-    const source = (boardId: string, unlock?: string) =>
-      [
-        "# Scene 1: 分析",
-        "- **Summary:** 測試分析。",
-        "## Intro",
-        "**相馬律**：開始吧。",
-        `## Board: 分析 {#${boardId}}`,
-        "- **Kind:** classify",
-        "- **Prompt:** 整理卡片。",
-        ...(unlock ? [`- **Unlock:** ${unlock}`] : []),
-        "- **Reveals:** []",
-        "- **Incomplete Feedback:** 尚未完成。",
-        "- **Incorrect Feedback:** 不正確。",
-        "### Card: 卡片 {#card_a}",
-        "- **Source:** evidence:record_a",
-        "- **Summary:** 材料摘要。",
-        "### Group: 分類 {#group_a}",
-        "- **Description:** 分類說明。",
-        "- **Accepted Cards:** [card_a]",
-        "### Result Dialogue",
-        "**相馬律**：完成。",
-        "## Outro",
-        "**相馬律**：下一步。",
-      ].join("\n");
-    const first = parseAnalysisScene(
-      source("board_1"),
-      "chapter_9/analysis_scene_1.md",
-      "analysis_scene_1",
+  it("compiles manifest-owned analysis scenes into normalized output, catalog refs, and the content revision", () => {
+    // Break caught: analysis definitions could validate in isolation while
+    // production manifests still reject the files or omit their JSON from
+    // the chapter bundle and save-content hash.
+    const sourceRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-analysis-source-"),
     );
-    const later = parseAnalysisScene(
-      source(
-        "board_2",
-        "analysis_board:chapter_9@analysis_scene_1@board_1 completed",
-      ),
-      "chapter_9/analysis_scene_2.md",
-      "analysis_scene_2",
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-analysis-out-"),
     );
-    if (!first.ok || !later.ok)
-      throw new Error("analysis fixture parse failed");
+    const readJson = (path: string) =>
+      JSON.parse(readFileSync(resolve(outRoot, path), "utf-8"));
+    const firstAnalysis = [
+      "# Scene 1: 證據分析",
+      "- **Summary:** 將已取得的材料整理成可驗證的結論。",
+      "",
+      "## Intro",
+      "",
+      "**相馬律**：先把手上的材料排好。",
+      "",
+      "## Board: 材料分類 {#classify_board}",
+      "",
+      "- **Kind:** classify",
+      "- **Prompt:** 將卡片放入正確分類。",
+      "- **Reveals:** []",
+      "- **Incomplete Feedback:** 還有卡片沒有分類。",
+      "- **Incorrect Feedback:** 這個分類不對。",
+      "",
+      "### Card: 熱咖啡 {#coffee_card}",
+      "",
+      "- **Source:** evidence:coffee",
+      "- **Summary:** 杯中的咖啡仍然溫熱。",
+      "",
+      "### Group: 時間線 {#timeline_group}",
+      "",
+      "- **Description:** 可用來判斷事件順序的材料。",
+      "- **Accepted Cards:** [coffee_card]",
+      "",
+      "### Result Dialogue",
+      "",
+      "**相馬律**：分類完成。",
+      "",
+      "## Board: 發現順序 {#order_board}",
+      "",
+      "- **Kind:** order",
+      "- **Prompt:** 將卡片排成正確順序。",
+      "- **Reveals:** []",
+      "- **Incomplete Feedback:** 順序還沒有完成。",
+      "- **Incorrect Feedback:** 這個順序不對。",
+      "- **Accepted Order:** [coffee_card]",
+      "- **Fixed Anchors:** [coffee_card@1]",
+      "",
+      "### Card: 熱咖啡 {#coffee_card}",
+      "",
+      "- **Source:** evidence:coffee",
+      "- **Summary:** 杯中的咖啡仍然溫熱。",
+      "",
+      "### Result Dialogue",
+      "",
+      "**相馬律**：順序完成。",
+      "",
+      "## Board: 關鍵材料 {#threshold_board}",
+      "",
+      "- **Kind:** threshold",
+      "- **Prompt:** 選出足以支持結論的材料。",
+      "- **Reveals:** []",
+      "- **Incomplete Feedback:** 還需要更多材料。",
+      "- **Incorrect Feedback:** 這些材料不足以支持結論。",
+      "- **Eligible Cards:** [coffee_card]",
+      "- **Minimum Selected:** 1",
+      "- **Minimum Distinct Source Groups:** 0",
+      "- **Required Proof Capabilities:** []",
+      "- **Allowed Procedural Statuses:** [unspecified]",
+      "- **Require Source Group:** false",
+      "",
+      "### Card: 熱咖啡 {#coffee_card}",
+      "",
+      "- **Source:** evidence:coffee",
+      "- **Summary:** 杯中的咖啡仍然溫熱。",
+      "",
+      "### Result Dialogue",
+      "",
+      "**相馬律**：材料足夠。",
+      "",
+      "## Outro",
+      "",
+      "**相馬律**：下一步可以驗證時間線。",
+    ].join("\n");
+    const laterAnalysis = [
+      "# Scene 1: 後續分析",
+      "- **Summary:** 以前一塊分析板的結果確認下一項推論。",
+      "",
+      "## Intro",
+      "",
+      "**相馬律**：前一項結論已經成立。",
+      "",
+      "## Board: 後續分類 {#later_board}",
+      "",
+      "- **Kind:** classify",
+      "- **Prompt:** 再確認一次材料分類。",
+      "- **Unlock:** analysis_board:chapter_1@analysis_scene_1@classify_board completed",
+      "- **Reveals:** []",
+      "- **Incomplete Feedback:** 還沒有完成分類。",
+      "- **Incorrect Feedback:** 分類不正確。",
+      "",
+      "### Card: 熱咖啡 {#coffee_card}",
+      "",
+      "- **Source:** evidence:coffee",
+      "- **Summary:** 杯中的咖啡仍然溫熱。",
+      "",
+      "### Group: 時間線 {#timeline_group}",
+      "",
+      "- **Description:** 可用來判斷事件順序的材料。",
+      "- **Accepted Cards:** [coffee_card]",
+      "",
+      "### Result Dialogue",
+      "",
+      "**相馬律**：後續分類完成。",
+      "",
+      "## Outro",
+      "",
+      "**相馬律**：推論可以繼續。",
+    ].join("\n");
 
-    const scenes = [
-      { chapterId: "chapter_9", file: "analysis_scene_1.md", ast: first.value },
-      { chapterId: "chapter_9", file: "analysis_scene_2.md", ast: later.value },
-    ];
-    const unlock = later.value.boards[0]?.unlock;
-    if (!unlock || "op" in unlock.value)
-      throw new Error("expected leaf unlock");
+    try {
+      cpSync("packages/scripts/__fixtures__/valid", sourceRoot, {
+        recursive: true,
+      });
+      const chapterRoot = resolve(sourceRoot, "chapter_1");
+      writeFileSync(
+        resolve(chapterRoot, "chapter.md"),
+        [
+          "# Chapter 1: 測試章節",
+          "",
+          "**Summary:** 一個用來驗證分析場景整合的最小章節。",
+          "",
+          "## Scenes",
+          "",
+          "1. scene_0.md",
+          "2. investigation_scene_1.md",
+          "3. analysis_scene_1.md",
+          "4. analysis_scene_2.md",
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(resolve(chapterRoot, "analysis_scene_1.md"), firstAnalysis);
+      writeFileSync(resolve(chapterRoot, "analysis_scene_2.md"), laterAnalysis);
 
-    expect(
-      validateStoryPredicateReferences({
-        catalog: emptyStoryCatalog("story_catalog.md"),
-        scenes: [],
-        analysisRegistry: createAnalysisDefinitionRegistryFromScenes(scenes),
-        additionalReferences: [{ predicate: unlock.value, location: unlock }],
-      }),
-    ).toEqual([]);
+      const first = compile({ sourceRoot, outputRoot: outRoot });
+      if (!first.ok) throw new Error(formatErrors(first.errors));
+
+      expect(first.scenesCompiled).toBe(4);
+      expect(readJson("chapters.json").chapters[0].scenes).toEqual([
+        { type: "linear", file: "chapter_1/scene_0.json" },
+        {
+          type: "investigation",
+          file: "chapter_1/investigation_scene_1.json",
+        },
+        { type: "analysis", file: "chapter_1/analysis_scene_1.json" },
+        { type: "analysis", file: "chapter_1/analysis_scene_2.json" },
+      ]);
+
+      const analysis = readJson("chapter_1/analysis_scene_1.json");
+      expect(analysis).toMatchObject({
+        type: "analysis",
+        id: "analysis_scene_1",
+        title: "證據分析",
+        summary: "將已取得的材料整理成可驗證的結論。",
+        boards: [
+          {
+            id: "classify_board",
+            kind: "classify",
+            groups: [
+              {
+                id: "timeline_group",
+                label: "時間線",
+                description: "可用來判斷事件順序的材料。",
+              },
+            ],
+            acceptedGroupByCard: { coffee_card: "timeline_group" },
+          },
+          {
+            id: "order_board",
+            kind: "order",
+            acceptedOrder: ["coffee_card"],
+            fixedAnchors: [{ cardId: "coffee_card", position: 1 }],
+          },
+          {
+            id: "threshold_board",
+            kind: "threshold",
+            minimumSelected: 1,
+            acceptedSelections: [["coffee_card"]],
+          },
+        ],
+      });
+      expect(analysis.boards.map((board: { id: string }) => board.id)).toEqual([
+        "classify_board",
+        "order_board",
+        "threshold_board",
+      ]);
+      expect(analysis.boards[0].groups[0]).not.toHaveProperty("acceptedCards");
+      expect(analysis.boards[2]).not.toHaveProperty(
+        "minimumDistinctSourceGroups",
+      );
+      expect(analysis.boards[2]).not.toHaveProperty(
+        "requiredProofCapabilities",
+      );
+
+      const catalog = readJson("story_catalog.json");
+      expect(catalog.analysisScenes).toEqual([
+        { chapterId: "chapter_1", sceneId: "analysis_scene_1" },
+        { chapterId: "chapter_1", sceneId: "analysis_scene_2" },
+      ]);
+      expect(catalog.analysisBoards).toEqual([
+        {
+          chapterId: "chapter_1",
+          sceneId: "analysis_scene_1",
+          boardId: "classify_board",
+        },
+        {
+          chapterId: "chapter_1",
+          sceneId: "analysis_scene_1",
+          boardId: "order_board",
+        },
+        {
+          chapterId: "chapter_1",
+          sceneId: "analysis_scene_1",
+          boardId: "threshold_board",
+        },
+        {
+          chapterId: "chapter_1",
+          sceneId: "analysis_scene_2",
+          boardId: "later_board",
+        },
+      ]);
+
+      const firstRevision = readJson(
+        "save_content_manifest.json",
+      ).contentRevision;
+      writeFileSync(
+        resolve(chapterRoot, "analysis_scene_1.md"),
+        firstAnalysis.replace("分類完成。", "分類完成（修訂）。"),
+      );
+      const changed = compile({ sourceRoot, outputRoot: outRoot });
+      if (!changed.ok) throw new Error(formatErrors(changed.errors));
+      expect(readJson("save_content_manifest.json").contentRevision).not.toBe(
+        firstRevision,
+      );
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
   });
 
   it("emits story asset manifest for an asset-enabled fixture", () => {
@@ -791,6 +985,48 @@ describe("HPA-257 compiler diagnostics", () => {
 });
 
 describe("compile parse failure handling", () => {
+  it("keeps analysis parse failures source-located without adding a manifest-missing error", () => {
+    // Break caught: dispatch could report a generic unknown or missing file
+    // instead of the parser's authored location, obscuring the repair.
+    const sourceRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-analysis-parse-fail-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-analysis-parse-fail-out-"),
+    );
+    try {
+      const chapterRoot = resolve(sourceRoot, "chapter_1");
+      mkdirSync(chapterRoot, { recursive: true });
+      writeFileSync(
+        resolve(chapterRoot, "chapter.md"),
+        "# Chapter 1: Analysis parse failure\n\n**Summary:** Tests parser locations.\n\n## Scenes\n\n1. analysis_scene_1.md\n",
+      );
+      writeFileSync(
+        resolve(chapterRoot, "analysis_scene_1.md"),
+        "# Scene 1: Missing summary\n\n## Intro\n\n**相馬律**：開始。\n",
+      );
+
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          code: "analysisSceneMissingSummary",
+          sourceFile: "chapter_1/analysis_scene_1.md",
+          line: 1,
+        }),
+      );
+      expect(
+        result.errors.some(
+          (error) => error.code === "chapterManifestMissingFile",
+        ),
+      ).toBe(false);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
   it("does not report a manifest missing-file error for a scene that failed to parse", () => {
     const sourceRoot = mkdtempSync(
       resolve(tmpdir(), "scene-compile-parse-fail-"),

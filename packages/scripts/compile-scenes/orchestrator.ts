@@ -32,6 +32,7 @@ import { parseChapter } from "./parser-chapter";
 import { parseLinearScene } from "./parser-linear";
 import { parseInvestigationScene } from "./parser-investigation";
 import { parseInterrogationScene } from "./parser-interrogation";
+import { parseAnalysisScene } from "./parser-analysis";
 import { emptyStoryCatalog, parseStoryCatalog } from "./parser-story-catalog";
 import {
   applyInvestigationLayout,
@@ -44,7 +45,10 @@ import {
   validateStoryPredicateReferences,
 } from "./story-catalog";
 import { createAnalysisDefinitionRegistryFromScenes } from "./analysis-definition-registry";
-import { validateAnalysisScenes } from "./validator-analysis";
+import {
+  validateAnalysisScenes,
+  type NormalizedAnalysisScene,
+} from "./validator-analysis";
 import {
   analyzeReachability,
   buildReachabilityNodes,
@@ -53,6 +57,7 @@ import {
 import {
   CaseRecordEmissionError,
   emitChaptersIndex,
+  emitAnalysisScene,
   emitInterrogationScene,
   emitInvestigationScene,
   emitLinearScene,
@@ -64,7 +69,10 @@ import {
   type EmittedSceneJsonV1,
   type SaveContentBundleV1,
 } from "./save-content-manifest";
-import { validateDerivedDialogueOriginCollisions } from "./dialogue-segment-origins";
+import {
+  validateDerivedDialogueOriginCollisions,
+  type EmittedSceneRecordV1,
+} from "./dialogue-segment-origins";
 import { materializeSemanticDefaults } from "./semantic-defaults";
 import { validateSaveContentReferences } from "./save-content-references";
 import type {
@@ -328,6 +336,14 @@ export function compile(opts: CompileOptions): CompileResult {
           errors.push(parsed.error);
           failedParseFiles.add(sourceFileTag);
         } else scenes.push({ chapterId: dirName, file, ast: parsed.value });
+      } else if (file.startsWith("analysis_scene_")) {
+        const parsed = parseAnalysisScene(source, sourceFileTag, sceneId);
+        if (!parsed.ok) {
+          errors.push(parsed.error);
+          failedParseFiles.add(sourceFileTag);
+        } else {
+          analysisScenes.push({ chapterId: dirName, file, ast: parsed.value });
+        }
       } else {
         errors.push({
           code: "sceneFileUnknownType",
@@ -396,6 +412,7 @@ export function compile(opts: CompileOptions): CompileResult {
   const validationErrors = validate({
     chapters,
     scenes,
+    analysisScenes,
     skippedReservedFiles,
     failedParseFiles,
   });
@@ -416,6 +433,7 @@ export function compile(opts: CompileOptions): CompileResult {
   // before (and alongside) the existing reachability analysis.
   const shouldAnalyzeReachability = errors.length === 0;
   const caseRecordResult = compileCaseRecordCorpus(storyCatalog, scenes);
+  let normalizedAnalysisScenes: NormalizedAnalysisScene[] | null = null;
   if (caseRecordResult.ok) {
     warnings.push(...caseRecordResult.value.warnings);
     const analysisValidation = validateAnalysisScenes({
@@ -424,7 +442,11 @@ export function compile(opts: CompileOptions): CompileResult {
       caseRecords: caseRecordResult.value,
       analysisRegistry,
     });
-    if (!analysisValidation.ok) errors.push(...analysisValidation.errors);
+    if (analysisValidation.ok) {
+      normalizedAnalysisScenes = analysisValidation.value;
+    } else {
+      errors.push(...analysisValidation.errors);
+    }
   } else {
     errors.push(...caseRecordResult.errors);
   }
@@ -442,14 +464,30 @@ export function compile(opts: CompileOptions): CompileResult {
   }
   if (caseRecordResult.ok) {
     try {
-      errors.push(
-        ...validateDerivedDialogueOriginCollisions(
-          scenes.map((rec) => ({
+      const emittedForOriginValidation: EmittedSceneRecordV1[] = scenes.map(
+        (rec) => ({
+          chapterId: rec.chapterId,
+          json: emitSceneRecord(rec, caseRecordResult.value),
+          sourceAst: rec.ast,
+        }),
+      );
+      if (normalizedAnalysisScenes !== null) {
+        for (const [index, rec] of analysisScenes.entries()) {
+          const normalized = normalizedAnalysisScenes[index];
+          if (!normalized) {
+            throw new Error(
+              `Missing normalized analysis scene for ${rec.chapterId}/${rec.file}.`,
+            );
+          }
+          emittedForOriginValidation.push({
             chapterId: rec.chapterId,
-            json: emitSceneRecord(rec, caseRecordResult.value),
+            json: emitAnalysisScene(normalized),
             sourceAst: rec.ast,
-          })),
-        ),
+          });
+        }
+      }
+      errors.push(
+        ...validateDerivedDialogueOriginCollisions(emittedForOriginValidation),
       );
     } catch (error) {
       if (!(error instanceof CaseRecordEmissionError)) throw error;
@@ -460,6 +498,9 @@ export function compile(opts: CompileOptions): CompileResult {
   if (errors.length > 0) return { ok: false, errors };
   if (!caseRecordResult.ok) {
     throw new Error("case record corpus failed without compiler errors");
+  }
+  if (normalizedAnalysisScenes === null) {
+    throw new Error("analysis normalization failed without compiler errors");
   }
   const caseRecords = caseRecordResult.value;
 
@@ -488,15 +529,36 @@ export function compile(opts: CompileOptions): CompileResult {
   }
 
   const emittedChapters: SaveContentBundleV1["chapters"] = [];
+  const sceneRecordsByManifestKey = new Map<string, SceneRecord>(
+    scenes.map((rec) => [`${rec.chapterId}/${rec.file}`, rec] as const),
+  );
+  const emittedAnalysisByManifestKey = new Map<string, EmittedSceneJsonV1>(
+    analysisScenes.map((rec, index) => {
+      const normalized = normalizedAnalysisScenes[index];
+      if (!normalized) {
+        throw new Error(
+          `Missing normalized analysis scene for ${rec.chapterId}/${rec.file}.`,
+        );
+      }
+      return [
+        `${rec.chapterId}/${rec.file}`,
+        emitAnalysisScene(normalized),
+      ] as const;
+    }),
+  );
   for (const chapter of chapters) {
     const emittedScenes: EmittedSceneJsonV1[] = [];
-    for (const rec of scenes) {
-      if (rec.chapterId !== chapter.dirName) continue;
-      const json = emitSceneRecord(rec, caseRecords);
+    for (const file of chapter.sceneFiles) {
+      const key = `${chapter.dirName}/${file}`;
+      const rec = sceneRecordsByManifestKey.get(key);
+      const json = rec
+        ? emitSceneRecord(rec, caseRecords)
+        : emittedAnalysisByManifestKey.get(key);
+      if (!json) continue;
       const outFile = resolve(
         opts.outputRoot,
-        rec.chapterId,
-        rec.file.replace(/\.md$/, ".json"),
+        chapter.dirName,
+        file.replace(/\.md$/, ".json"),
       );
       mkdirSync(dirname(outFile), { recursive: true });
       writeFileSync(outFile, JSON.stringify(json, null, 2) + "\n");
@@ -553,7 +615,7 @@ export function compile(opts: CompileOptions): CompileResult {
   return {
     ok: true,
     chaptersCompiled: chapters.length,
-    scenesCompiled: scenes.length,
+    scenesCompiled: scenes.length + analysisScenes.length,
     assetReport,
     warnings,
   };

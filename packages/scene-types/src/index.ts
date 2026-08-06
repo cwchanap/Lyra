@@ -90,7 +90,7 @@ export type ChaptersIndex = {
     title: string;
     summary: string;
     scenes: Array<{
-      type: "linear" | "investigation" | "interrogation";
+      type: "linear" | "investigation" | "interrogation" | "analysis";
       file: string;
     }>;
   }>;

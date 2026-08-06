@@ -11,6 +11,7 @@ import type {
   ASTInterrogationScene,
   ASTInvestigationScene,
   CompiledCaseRecordCorpus,
+  JSONAnalysisScene,
 } from "./types";
 
 function corpusForAst(
@@ -81,6 +82,84 @@ function interrogationWithEveryCarrier() {
 }
 
 describe("deriveDialogueSegments", () => {
+  it("enumerates analysis intro, every board result, and outro with stable origins", () => {
+    // Break caught: a new analysis board dialogue carrier could be omitted
+    // from save collision checks while the scene otherwise emits correctly.
+    const analysis: JSONAnalysisScene = {
+      type: "analysis" as const,
+      id: "analysis_scene_1",
+      title: "分析",
+      summary: "整理證據。",
+      intro: [{ kind: "action" as const, text: "開始。" }],
+      boards: [
+        {
+          id: "classify_board",
+          label: "分類",
+          kind: "classify" as const,
+          prompt: "分類。",
+          unlock: null,
+          reveals: [],
+          feedback: {
+            incomplete: "未完成。",
+            incorrect: "錯誤。",
+            hint: null,
+          },
+          cards: [],
+          groups: [],
+          acceptedGroupByCard: {},
+          resultDialogue: [{ kind: "action" as const, text: "分類完成。" }],
+        },
+        {
+          id: "order_board",
+          label: "排序",
+          kind: "order" as const,
+          prompt: "排序。",
+          unlock: null,
+          reveals: [],
+          feedback: {
+            incomplete: "未完成。",
+            incorrect: "錯誤。",
+            hint: null,
+          },
+          cards: [],
+          acceptedOrder: [],
+          fixedAnchors: [],
+          resultDialogue: [{ kind: "action" as const, text: "排序完成。" }],
+        },
+      ],
+      outro: [{ kind: "action" as const, text: "結束。" }],
+    };
+    const segments = deriveDialogueSegments({
+      chapterId: "chapter_1",
+      json: analysis,
+    });
+
+    expect(segments.map(({ origin }) => origin)).toEqual([
+      {
+        type: "analysisIntro",
+        chapterId: "chapter_1",
+        sceneId: "analysis_scene_1",
+      },
+      {
+        type: "analysisResult",
+        chapterId: "chapter_1",
+        sceneId: "analysis_scene_1",
+        boardId: "classify_board",
+      },
+      {
+        type: "analysisResult",
+        chapterId: "chapter_1",
+        sceneId: "analysis_scene_1",
+        boardId: "order_board",
+      },
+      {
+        type: "analysisOutro",
+        chapterId: "chapter_1",
+        sceneId: "analysis_scene_1",
+      },
+    ]);
+  });
+
   it("enumerates every current emitted dialogue carrier with a stable semantic origin", () => {
     expect(
       deriveDialogueSegments({

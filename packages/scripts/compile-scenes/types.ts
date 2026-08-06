@@ -489,8 +489,9 @@ export type ASTAnalysisScene = Located<{
 }>;
 
 /**
- * A manifest-owned parsed analysis scene. It remains separate from SceneRecord
- * until Task 5 adds analysis-file dispatch and runtime JSON emission.
+ * A manifest-owned parsed analysis scene. Analysis keeps a dedicated parsed
+ * collection because it owns compiler-only semantic normalization rather than
+ * the historical SceneRecord runtime lifecycle.
  */
 export type AnalysisSceneRecord = {
   chapterId: string;
@@ -737,6 +738,66 @@ export type JSONTestimonyLine = {
   onWrongEvidence: JSONDialogueItem[];
   reveals: InterrogationRevealTarget[];
 };
+
+/**
+ * Compiler-owned static analysis-scene resources. These definitions include
+ * the normalized hidden answers required for deterministic runtime checking,
+ * but never writer-facing rule/provenance language.
+ */
+export type JSONAnalysisScene = {
+  type: "analysis";
+  id: string;
+  title: string;
+  summary: string;
+  intro: JSONDialogueItem[];
+  boards: JSONAnalysisBoard[];
+  outro: JSONDialogueItem[];
+};
+
+export type JSONAnalysisCard = {
+  id: string;
+  label: string;
+  source: InventoryTarget;
+  summary: string;
+};
+
+export type JSONAnalysisBoardCommon = {
+  id: string;
+  label: string;
+  prompt: string;
+  unlock: StoryUnlockExpr | null;
+  reveals: StoryRevealTarget[];
+  feedback: {
+    incomplete: string;
+    incorrect: string;
+    hint: string | null;
+  };
+  cards: JSONAnalysisCard[];
+  resultDialogue: JSONDialogueItem[];
+};
+
+export type JSONClassifyBoard = JSONAnalysisBoardCommon & {
+  kind: "classify";
+  groups: Array<{ id: string; label: string; description: string }>;
+  acceptedGroupByCard: Record<string, string>;
+};
+
+export type JSONOrderBoard = JSONAnalysisBoardCommon & {
+  kind: "order";
+  acceptedOrder: string[];
+  fixedAnchors: Array<{ cardId: string; position: number }>;
+};
+
+export type JSONThresholdBoard = JSONAnalysisBoardCommon & {
+  kind: "threshold";
+  minimumSelected: number;
+  acceptedSelections: string[][];
+};
+
+export type JSONAnalysisBoard =
+  | JSONClassifyBoard
+  | JSONOrderBoard
+  | JSONThresholdBoard;
 
 export type StoryCatalogJsonV2 = {
   schemaVersion: 2;
