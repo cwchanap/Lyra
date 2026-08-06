@@ -400,6 +400,12 @@ impl GameEngine {
                     SceneJson::Interrogation(scene) => {
                         (&scene.evidence_manifest, &scene.statement_manifest)
                     }
+                    // Defensive exhaustiveness fallback: evidence records can
+                    // only originate from investigation/interrogation scenes
+                    // (validate_scene_records_against_catalog rejects any
+                    // catalog evidence entry pointing to a Linear or Analysis
+                    // scene during loading), so this arm is unreachable in
+                    // practice. It exists to keep the match exhaustive.
                     SceneJson::Linear(_) | SceneJson::Analysis(_) => {
                         return Err(GameError::missing_acquisition_definition())
                     }
@@ -447,6 +453,11 @@ impl GameEngine {
                     SceneJson::Interrogation(scene) => {
                         (&scene.evidence_manifest, &scene.statement_manifest)
                     }
+                    // Defensive exhaustiveness fallback: see the evidence arm
+                    // above. Statement records likewise can only originate from
+                    // investigation/interrogation scenes, so this arm is
+                    // unreachable in practice and exists only to keep the match
+                    // exhaustive.
                     SceneJson::Linear(_) | SceneJson::Analysis(_) => {
                         return Err(GameError::missing_acquisition_definition())
                     }

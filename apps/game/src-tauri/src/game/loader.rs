@@ -1932,6 +1932,29 @@ mod tests {
                 ),
             ),
             (
+                "investigation_scene_1.json",
+                story_investigation_scene(
+                    json!({
+                        "predicate": "analysis_board_completed",
+                        "chapterId": "chapter_1",
+                        "sceneId": "analysis_scene_1",
+                        "boardId": "board_1"
+                    }),
+                    json!([]),
+                ),
+            ),
+            (
+                "interrogation_scene_1.json",
+                story_interrogation_scene(
+                    json!({
+                        "predicate": "analysis_scene_completed",
+                        "chapterId": "chapter_1",
+                        "sceneId": "analysis_scene_1"
+                    }),
+                    json!([]),
+                ),
+            ),
+            (
                 "interrogation_scene_1.json",
                 story_interrogation_scene(
                     json!({
