@@ -1310,6 +1310,28 @@ mod tests {
         assert_eq!(groups[4].len(), scene.outro.len());
     }
 
+    // Break caught: scene_dialogue_groups could miss the Analysis dispatch
+    // arm and fall back to an empty group list, silently breaking save
+    // cursor math even though analysis_dialogue_groups itself was correct.
+    #[test]
+    fn scene_dialogue_groups_dispatches_analysis_through_the_shared_entry_point() {
+        let parsed = serde_json::from_str::<SceneJson>(include_str!(
+            "test_fixtures/analysis_scene_8_5.json"
+        ))
+        .expect("analysis fixture must deserialize");
+
+        let groups = scene_dialogue_groups(&parsed);
+        let SceneJson::Analysis(scene) = &parsed else {
+            panic!("compiler fixture must deserialize as analysis");
+        };
+
+        // The shared entry point must delegate to analysis_dialogue_groups,
+        // producing the same compiler-origin order: intro + boards + outro.
+        assert_eq!(groups.len(), scene.boards.len() + 2);
+        assert_eq!(groups[0].len(), scene.intro.len());
+        assert_eq!(groups[groups.len() - 1].len(), scene.outro.len());
+    }
+
     #[test]
     fn deserializes_dialogue_line_with_portrait() {
         let json = r#"{

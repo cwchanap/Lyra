@@ -1712,6 +1712,89 @@ mod tests {
         let _ = fs::remove_dir_all(d);
     }
 
+    // Break caught: scene_type_label could miss the Analysis arm and panic
+    // when a manifest declares an analysis scene whose JSON is a different
+    // kind (or vice versa).
+    #[test]
+    fn validate_manifest_scene_type_labels_analysis_in_a_type_mismatch() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-analysis-mismatch-test-{}-{n}",
+            std::process::id()
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        // Manifest declares analysis, but the JSON is linear.
+        fs::write(
+            chapter_dir.join("analysis_scene_1.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Wrong Kind",
+                "summary": "Fixture scene summary.",
+                "queue": []
+            }"#,
+        )
+        .unwrap();
+
+        let err = load_scene_runtime(
+            &d,
+            &StoryCatalog::empty(),
+            "chapter_1",
+            &SceneRef {
+                scene_type: SceneType::Analysis,
+                file: "chapter_1/analysis_scene_1.json".into(),
+            },
+            1,
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert!(err.message.contains("declares analysis"));
+        assert!(err.message.contains("contains linear"));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    // Break caught: scene_json_summary could miss the Analysis arm and panic
+    // when capture/restore helpers project an analysis scene's summary.
+    #[test]
+    fn scene_json_summary_projects_the_analysis_scene_summary() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-analysis-summary-test-{}-{n}",
+            std::process::id()
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("analysis_scene_1.json"),
+            analysis_scene_json("analysis_scene_1"),
+        )
+        .unwrap();
+
+        let json = load_scene_json_for_ref(
+            &d,
+            &StoryCatalog::empty(),
+            "chapter_1",
+            &SceneRef {
+                scene_type: SceneType::Analysis,
+                file: "chapter_1/analysis_scene_1.json".into(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(scene_json_summary(&json), "Immutable analysis fixture.");
+        let _ = fs::remove_dir_all(d);
+    }
+
     #[test]
     fn scene_navigation_index_lists_compiled_chapters_and_scenes() {
         use std::fs;

@@ -406,6 +406,40 @@ mod persistence_adapter_tests {
         );
     }
 
+    // Break caught: a stale save could carry analysis dialogue origins that
+    // the engine cannot reconstruct before HPA-260 owns mutable analysis
+    // progress. The guard must fail closed before any packaged scene is read.
+    #[test]
+    fn restore_rejects_analysis_dialogue_origins_before_reading_packaged_scenes() {
+        let (resources, engine) = fixture();
+        // Remove the source scene so any attempt to read packaged scenes for
+        // the analysis origin would fail with a filesystem error instead of
+        // the typed guard. The guard must fire first.
+        std::fs::remove_file(
+            resources
+                .path()
+                .join(SOURCE_CHAPTER_ID)
+                .join(format!("{SOURCE_SCENE_ID}.json")),
+        )
+        .unwrap();
+        let saved = state(
+            vec![DialogueSegmentOriginV1::AnalysisIntro {
+                chapter_id: SOURCE_CHAPTER_ID.into(),
+                scene_id: "analysis_scene_1".into(),
+            }],
+            0,
+            0,
+            9,
+        );
+
+        assert_restore_error_preserves_live_dialogue(
+            &engine,
+            CONTENT_REVISION,
+            &saved,
+            "invalidSaveProgress",
+        );
+    }
+
     #[test]
     fn restore_rejects_unknown_mixed_empty_and_out_of_bounds_state_without_mutation() {
         let (_resources, mut engine) = fixture();
