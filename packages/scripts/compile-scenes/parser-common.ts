@@ -116,6 +116,12 @@ export function describeToken(tok: Token): string {
       return `**${tok.speaker}**：${tok.text}`;
     case "unknown":
       return `unknown(${tok.text})`;
+    default: {
+      // Exhaustiveness guard: adding a new Token kind is a compile error here
+      // instead of silently returning undefined at runtime.
+      const _exhaustive: never = tok;
+      return String((_exhaustive as Token).kind);
+    }
   }
 }
 

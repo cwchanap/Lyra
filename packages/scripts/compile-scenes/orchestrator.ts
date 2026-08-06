@@ -451,7 +451,10 @@ export function compile(opts: CompileOptions): CompileResult {
     errors.push(...caseRecordResult.errors);
   }
 
-  if (shouldAnalyzeReachability) {
+  if (
+    shouldAnalyzeReachability &&
+    !(analysisScenes.length > 0 && normalizedAnalysisScenes === null)
+  ) {
     const nodes = buildReachabilityNodes({
       chapters,
       scenes,
@@ -474,8 +477,15 @@ export function compile(opts: CompileOptions): CompileResult {
         }),
       );
       if (normalizedAnalysisScenes !== null) {
-        for (const [index, rec] of analysisScenes.entries()) {
-          const normalized = normalizedAnalysisScenes[index];
+        const normalizedBySceneKey = new Map(
+          normalizedAnalysisScenes.map(
+            (scene) => [`${scene.chapterId}/${scene.sceneId}`, scene] as const,
+          ),
+        );
+        for (const rec of analysisScenes) {
+          const normalized = normalizedBySceneKey.get(
+            `${rec.chapterId}/${rec.ast.id}`,
+          );
           if (!normalized) {
             throw new Error(
               `Missing normalized analysis scene for ${rec.chapterId}/${rec.file}.`,
@@ -534,9 +544,16 @@ export function compile(opts: CompileOptions): CompileResult {
   const sceneRecordsByManifestKey = new Map<string, SceneRecord>(
     scenes.map((rec) => [`${rec.chapterId}/${rec.file}`, rec] as const),
   );
+  const normalizedAnalysisBySceneKey = new Map(
+    (normalizedAnalysisScenes ?? []).map(
+      (scene) => [`${scene.chapterId}/${scene.sceneId}`, scene] as const,
+    ),
+  );
   const emittedAnalysisByManifestKey = new Map<string, EmittedSceneJsonV1>(
-    analysisScenes.map((rec, index) => {
-      const normalized = normalizedAnalysisScenes[index];
+    analysisScenes.map((rec) => {
+      const normalized = normalizedAnalysisBySceneKey.get(
+        `${rec.chapterId}/${rec.ast.id}`,
+      );
       if (!normalized) {
         throw new Error(
           `Missing normalized analysis scene for ${rec.chapterId}/${rec.file}.`,

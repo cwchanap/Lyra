@@ -1870,6 +1870,9 @@ function buildAnalysisNodes(input: {
           })),
         ),
         effects: [
+          // targetIndex -1 is a reserved slot for the board-completion atom,
+          // distinct from story reveal targetIndex values (>= 0) and the scene
+          // completion atom's slot (0).
           addAtomEffect(boardCompletionAtom, -1),
           ...effectsFromStoryReveals(board.reveals),
         ],

@@ -111,13 +111,16 @@ function deriveAnalysisSegments(
   scene: JSONAnalysisScene,
   sourceAst?: ASTAnalysisScene,
 ): DerivedDialogueSegment[] {
+  const authoredBoardsById = sourceAst
+    ? new Map(sourceAst.boards.map((board) => [board.id, board] as const))
+    : null;
   const segments: DerivedDialogueSegment[] = [
     {
       origin: { type: "analysisIntro", chapterId, sceneId: scene.id },
       items: scene.intro,
       ...sourceFields(sourceAst),
     },
-    ...scene.boards.map((board, index) => ({
+    ...scene.boards.map((board) => ({
       origin: {
         type: "analysisResult" as const,
         chapterId,
@@ -125,7 +128,7 @@ function deriveAnalysisSegments(
         boardId: board.id,
       },
       items: board.resultDialogue,
-      ...sourceFields(sourceAst?.boards[index]),
+      ...sourceFields(authoredBoardsById?.get(board.id)),
     })),
     {
       origin: { type: "analysisOutro", chapterId, sceneId: scene.id },

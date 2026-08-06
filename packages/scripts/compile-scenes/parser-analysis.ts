@@ -1123,7 +1123,11 @@ function parseStoryReveals(
         sourceFile,
         line,
         "analysisBoardNonStoryReveal",
-        `Analysis-board Reveals may contain only story reveal targets; got ${JSON.stringify(target)}.`,
+        `Analysis-board Reveals may contain only story reveal targets; got ${target.kind}${
+          "id" in target && typeof target.id === "string"
+            ? ` (${target.id})`
+            : ""
+        }.`,
       );
     }
     storyTargets.push(target);
