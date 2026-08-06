@@ -2,6 +2,7 @@
 use crate::game::provenance::CaseRecordProvenance;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 // ============================================================================
 // Shared atoms
@@ -515,6 +516,7 @@ pub enum SceneType {
     Linear,
     Investigation,
     Interrogation,
+    Analysis,
 }
 
 // ============================================================================
@@ -530,6 +532,8 @@ pub enum SceneJson {
     Investigation(InvestigationSceneJson),
     #[serde(rename = "interrogation")]
     Interrogation(InterrogationSceneJson),
+    #[serde(rename = "analysis")]
+    Analysis(AnalysisSceneJson),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -571,6 +575,104 @@ pub struct InterrogationSceneJson {
     pub evidence_manifest: Vec<EvidenceJson>,
     pub statement_manifest: Vec<StatementJson>,
     pub outro: InterrogationOutroJson,
+}
+
+/// Compiler-owned immutable analysis-scene definition. HPA-259 loads this
+/// static wire only; HPA-260 owns mutable board progress and answer checking.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalysisSceneJson {
+    pub id: String,
+    pub title: String,
+    pub summary: String,
+    pub intro: Vec<DialogueItem>,
+    pub boards: Vec<AnalysisBoardJson>,
+    pub outro: Vec<DialogueItem>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalysisBoardJsonCommon {
+    pub id: String,
+    pub label: String,
+    pub prompt: String,
+    pub unlock: Option<UnlockExpr>,
+    pub reveals: Vec<StoryRevealTarget>,
+    pub feedback: AnalysisFeedbackJson,
+    pub cards: Vec<AnalysisCardJson>,
+    pub result_dialogue: Vec<DialogueItem>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalysisFeedbackJson {
+    pub incomplete: String,
+    pub incorrect: String,
+    pub hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalysisCardJson {
+    pub id: String,
+    pub label: String,
+    pub source: InventoryTarget,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalysisGroupJson {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalysisFixedAnchorJson {
+    pub card_id: String,
+    pub position: usize,
+}
+
+/// Closed, compiler-emitted board variants. Hidden answer material remains in
+/// the Rust resource definition and is never projected into public view types.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum AnalysisBoardJson {
+    Classify {
+        #[serde(flatten)]
+        common: AnalysisBoardJsonCommon,
+        groups: Vec<AnalysisGroupJson>,
+        accepted_group_by_card: BTreeMap<String, String>,
+    },
+    Order {
+        #[serde(flatten)]
+        common: AnalysisBoardJsonCommon,
+        accepted_order: Vec<String>,
+        fixed_anchors: Vec<AnalysisFixedAnchorJson>,
+    },
+    Threshold {
+        #[serde(flatten)]
+        common: AnalysisBoardJsonCommon,
+        minimum_selected: usize,
+        accepted_selections: Vec<Vec<String>>,
+    },
+}
+
+impl AnalysisBoardJson {
+    pub fn common(&self) -> &AnalysisBoardJsonCommon {
+        match self {
+            Self::Classify { common, .. }
+            | Self::Order { common, .. }
+            | Self::Threshold { common, .. } => common,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -780,7 +882,23 @@ pub fn scene_dialogue_groups(scene: &SceneJson) -> Vec<&[DialogueItem]> {
         SceneJson::Linear(scene) => vec![&scene.queue],
         SceneJson::Investigation(scene) => investigation_dialogue_groups(scene),
         SceneJson::Interrogation(scene) => interrogation_dialogue_groups(scene),
+        SceneJson::Analysis(scene) => analysis_dialogue_groups(scene),
     }
+}
+
+/// Analysis-scene dialogue groups follow the compiler-origin order: intro,
+/// every board result in board order, then outro.
+pub fn analysis_dialogue_groups(scene: &AnalysisSceneJson) -> Vec<&[DialogueItem]> {
+    let mut groups = Vec::with_capacity(scene.boards.len() + 2);
+    groups.push(scene.intro.as_slice());
+    groups.extend(
+        scene
+            .boards
+            .iter()
+            .map(|board| board.common().result_dialogue.as_slice()),
+    );
+    groups.push(scene.outro.as_slice());
+    groups
 }
 
 /// Investigation-scene dialogue groups: intro, outro, every sublocation's
@@ -987,6 +1105,74 @@ mod tests {
             }
             _ => panic!("expected Linear variant"),
         }
+    }
+
+    // Break caught: compiler-emitted analysis scenes were rejected before the
+    // immutable Rust wire could preserve all three board definitions.
+    #[test]
+    fn deserializes_compiler_fixture_analysis_scene() {
+        let parsed = serde_json::from_str::<SceneJson>(include_str!(
+            "test_fixtures/analysis_scene_8_5.json"
+        ))
+        .expect("analysis fixture must deserialize");
+
+        let SceneJson::Analysis(scene) = parsed else {
+            panic!("compiler fixture must deserialize as analysis");
+        };
+        assert_eq!(scene.id, "analysis_scene_8_5");
+        assert_eq!(scene.intro.len(), 2);
+        assert_eq!(scene.outro.len(), 1);
+        assert_eq!(scene.boards.len(), 3);
+
+        let AnalysisBoardJson::Classify {
+            common,
+            groups,
+            accepted_group_by_card,
+        } = &scene.boards[0]
+        else {
+            panic!("first compiler fixture board must be classify");
+        };
+        assert_eq!(common.result_dialogue.len(), 2);
+        assert_eq!(groups[0].description, "只解釋生活壓力造成的隱瞞。");
+        assert_eq!(
+            accepted_group_by_card.get("miyake_call"),
+            Some(&"miyake_small_lies".to_owned())
+        );
+
+        let AnalysisBoardJson::Order {
+            common,
+            accepted_order,
+            fixed_anchors,
+        } = &scene.boards[1]
+        else {
+            panic!("second compiler fixture board must be order");
+        };
+        assert!(matches!(
+            common.unlock,
+            Some(UnlockExpr::AnalysisBoardCompleted { .. })
+        ));
+        assert_eq!(
+            accepted_order,
+            &["event_1841", "event_1842", "event_1843", "event_1844"]
+        );
+        assert_eq!(fixed_anchors[0].card_id, "event_1841");
+        assert_eq!(fixed_anchors[0].position, 1);
+
+        let AnalysisBoardJson::Threshold {
+            common,
+            minimum_selected,
+            accepted_selections,
+        } = &scene.boards[2]
+        else {
+            panic!("third compiler fixture board must be threshold");
+        };
+        assert_eq!(common.feedback.hint, None);
+        assert_eq!(*minimum_selected, 2);
+        assert_eq!(accepted_selections.len(), 3);
+        assert!(matches!(
+            common.cards[2].source,
+            InventoryTarget::Statement { ref id } if id == "manager_timing"
+        ));
     }
 
     #[test]

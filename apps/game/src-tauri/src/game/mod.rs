@@ -196,6 +196,7 @@ impl GameEngine {
                 SceneJson::Linear(_) => SceneType::Linear,
                 SceneJson::Investigation(_) => SceneType::Investigation,
                 SceneJson::Interrogation(_) => SceneType::Interrogation,
+                SceneJson::Analysis(_) => SceneType::Analysis,
             }
         };
         let origin = match source_scene_type {
@@ -215,6 +216,7 @@ impl GameEngine {
                     "Inventory item source {chapter_id}/{scene_id} is a linear scene."
                 )))
             }
+            SceneType::Analysis => return Err(GameError::unsupported_scene_type("analysis")),
         };
         DialogueSegment::new(origin, items).ok_or_else(|| {
             GameError::internal(format!(
@@ -398,7 +400,9 @@ impl GameEngine {
                     SceneJson::Interrogation(scene) => {
                         (&scene.evidence_manifest, &scene.statement_manifest)
                     }
-                    SceneJson::Linear(_) => return Err(GameError::missing_acquisition_definition()),
+                    SceneJson::Linear(_) | SceneJson::Analysis(_) => {
+                        return Err(GameError::missing_acquisition_definition())
+                    }
                 };
                 let definition = evidence
                     .iter()
@@ -443,7 +447,9 @@ impl GameEngine {
                     SceneJson::Interrogation(scene) => {
                         (&scene.evidence_manifest, &scene.statement_manifest)
                     }
-                    SceneJson::Linear(_) => return Err(GameError::missing_acquisition_definition()),
+                    SceneJson::Linear(_) | SceneJson::Analysis(_) => {
+                        return Err(GameError::missing_acquisition_definition())
+                    }
                 };
                 let definition = statements
                     .iter()

@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{hash_map::Entry, HashMap};
 
 use crate::game::schema::{
-    DialogueItem, InterrogationPhaseJson, InterrogationSceneJson, InvestigationSceneJson, SceneJson,
+    AnalysisSceneJson, DialogueItem, InterrogationPhaseJson, InterrogationSceneJson,
+    InvestigationSceneJson, SceneJson,
 };
 use crate::game::state::ChapterManifest;
 use crate::game::GameError;
@@ -45,6 +46,19 @@ pub(crate) enum DialogueSegmentOriginV1 {
         scene_id: String,
         phase_id: String,
         segment_id: String,
+    },
+    AnalysisIntro {
+        chapter_id: String,
+        scene_id: String,
+    },
+    AnalysisResult {
+        chapter_id: String,
+        scene_id: String,
+        board_id: String,
+    },
+    AnalysisOutro {
+        chapter_id: String,
+        scene_id: String,
     },
 }
 
@@ -613,6 +627,13 @@ mod persistence_adapter_tests {
 }
 
 impl DialogueSegmentOriginV1 {
+    pub(in crate::game) fn is_analysis(&self) -> bool {
+        matches!(
+            self,
+            Self::AnalysisIntro { .. } | Self::AnalysisResult { .. } | Self::AnalysisOutro { .. }
+        )
+    }
+
     pub(super) fn chapter_id(&self) -> &str {
         match self {
             Self::LinearScene { chapter_id, .. }
@@ -621,7 +642,10 @@ impl DialogueSegmentOriginV1 {
             | Self::InvestigationInteraction { chapter_id, .. }
             | Self::InterrogationIntro { chapter_id, .. }
             | Self::InterrogationOutro { chapter_id, .. }
-            | Self::InterrogationPhase { chapter_id, .. } => chapter_id,
+            | Self::InterrogationPhase { chapter_id, .. }
+            | Self::AnalysisIntro { chapter_id, .. }
+            | Self::AnalysisResult { chapter_id, .. }
+            | Self::AnalysisOutro { chapter_id, .. } => chapter_id,
         }
     }
 
@@ -633,7 +657,10 @@ impl DialogueSegmentOriginV1 {
             | Self::InvestigationInteraction { scene_id, .. }
             | Self::InterrogationIntro { scene_id, .. }
             | Self::InterrogationOutro { scene_id, .. }
-            | Self::InterrogationPhase { scene_id, .. } => scene_id,
+            | Self::InterrogationPhase { scene_id, .. }
+            | Self::AnalysisIntro { scene_id, .. }
+            | Self::AnalysisResult { scene_id, .. }
+            | Self::AnalysisOutro { scene_id, .. } => scene_id,
         }
     }
 }
@@ -892,6 +919,16 @@ impl crate::game::GameEngine {
                 packaged_revision,
             ));
         }
+        if saved
+            .segment_origins
+            .iter()
+            .any(DialogueSegmentOriginV1::is_analysis)
+        {
+            return Err(GameError::new(
+                "invalidSaveProgress",
+                "Analysis dialogue origins cannot be restored before HPA-260 provides analysis progress.",
+            ));
+        }
 
         let mut segments = Vec::with_capacity(saved.segment_origins.len());
         let mut loaded_chapters: HashMap<String, Vec<SceneJson>> = HashMap::new();
@@ -1034,6 +1071,7 @@ fn scene_id(scene: &SceneJson) -> &str {
         SceneJson::Linear(scene) => &scene.id,
         SceneJson::Investigation(scene) => &scene.id,
         SceneJson::Interrogation(scene) => &scene.id,
+        SceneJson::Analysis(scene) => &scene.id,
     }
 }
 
@@ -1068,10 +1106,39 @@ fn resolve_origin_items<'a>(
                 ..
             },
         ) => resolve_interrogation_phase(scene, phase_id, segment_id),
+        (SceneJson::Analysis(scene), DialogueSegmentOriginV1::AnalysisIntro { .. }) => {
+            Ok(&scene.intro)
+        }
+        (SceneJson::Analysis(scene), DialogueSegmentOriginV1::AnalysisResult { board_id, .. }) => {
+            resolve_analysis_result(scene, board_id)
+        }
+        (SceneJson::Analysis(scene), DialogueSegmentOriginV1::AnalysisOutro { .. }) => {
+            Ok(&scene.outro)
+        }
         _ => Err(resolution_error(format!(
             "Dialogue origin {origin:?} does not match packaged scene kind."
         ))),
     }
+}
+
+#[allow(dead_code)] // Used by Task 7's closed origin resolver.
+fn resolve_analysis_result<'a>(
+    scene: &'a AnalysisSceneJson,
+    board_id: &str,
+) -> Result<&'a [DialogueItem], GameError> {
+    let mut boards = scene
+        .boards
+        .iter()
+        .filter(|board| board.common().id == board_id);
+    let board = boards
+        .next()
+        .ok_or_else(|| unresolved_segment(&format!("analysis board:{board_id}")))?;
+    if boards.next().is_some() {
+        return Err(resolution_error(format!(
+            "Analysis result origin '{board_id}' ambiguously resolves to more than one packaged board."
+        )));
+    }
+    Ok(&board.common().result_dialogue)
 }
 
 #[allow(dead_code)] // Used by Task 7's closed origin resolver.
@@ -1605,6 +1672,19 @@ mod tests {
                 phase_id: "phase_1".into(),
                 segment_id: "question:q1:onLoop".into(),
             },
+            DialogueSegmentOriginV1::AnalysisIntro {
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+            },
+            DialogueSegmentOriginV1::AnalysisResult {
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+                board_id: "board_1".into(),
+            },
+            DialogueSegmentOriginV1::AnalysisOutro {
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+            },
         ];
 
         let actual: Vec<serde_json::Value> = origins
@@ -1621,6 +1701,9 @@ mod tests {
                 json!({"type":"interrogationIntro","chapterId":"chapter_1","sceneId":"scene_3"}),
                 json!({"type":"interrogationOutro","chapterId":"chapter_1","sceneId":"scene_3"}),
                 json!({"type":"interrogationPhase","chapterId":"chapter_1","sceneId":"scene_3","phaseId":"phase_1","segmentId":"question:q1:onLoop"}),
+                json!({"type":"analysisIntro","chapterId":"chapter_1","sceneId":"analysis_scene_1"}),
+                json!({"type":"analysisResult","chapterId":"chapter_1","sceneId":"analysis_scene_1","boardId":"board_1"}),
+                json!({"type":"analysisOutro","chapterId":"chapter_1","sceneId":"analysis_scene_1"}),
             ]
         );
         let decoded: Vec<DialogueSegmentOriginV1> = actual
@@ -1628,6 +1711,55 @@ mod tests {
             .map(|value| serde_json::from_value(value).expect("origin should deserialize"))
             .collect();
         assert_eq!(decoded, origins);
+    }
+
+    // Break caught: save-content identity enumeration could include analysis
+    // origins while Rust failed to resolve their immutable dialogue carriers.
+    #[test]
+    fn resolves_analysis_intro_result_and_outro_in_compiler_board_order() {
+        let scene = serde_json::from_str::<SceneJson>(include_str!(
+            "test_fixtures/analysis_scene_8_5.json"
+        ))
+        .expect("compiler analysis fixture must deserialize");
+        let origins = [
+            DialogueSegmentOriginV1::AnalysisIntro {
+                chapter_id: CHAPTER_ID.into(),
+                scene_id: "analysis_scene_8_5".into(),
+            },
+            DialogueSegmentOriginV1::AnalysisResult {
+                chapter_id: CHAPTER_ID.into(),
+                scene_id: "analysis_scene_8_5".into(),
+                board_id: "evidence_packages".into(),
+            },
+            DialogueSegmentOriginV1::AnalysisResult {
+                chapter_id: CHAPTER_ID.into(),
+                scene_id: "analysis_scene_8_5".into(),
+                board_id: "local_event_sequence".into(),
+            },
+            DialogueSegmentOriginV1::AnalysisResult {
+                chapter_id: CHAPTER_ID.into(),
+                scene_id: "analysis_scene_8_5".into(),
+                board_id: "narrow_request_basis".into(),
+            },
+            DialogueSegmentOriginV1::AnalysisOutro {
+                chapter_id: CHAPTER_ID.into(),
+                scene_id: "analysis_scene_8_5".into(),
+            },
+        ];
+
+        let segments = resolve_dialogue_segments(CHAPTER_ID, &scene, &origins)
+            .expect("analysis origins should resolve against compiler wire");
+
+        assert_eq!(segments.len(), 5);
+        assert_eq!(segments[0].items.len(), 2);
+        assert_eq!(segments[1].items.len(), 2);
+        assert_eq!(segments[2].items.len(), 1);
+        assert_eq!(segments[3].items.len(), 1);
+        assert_eq!(segments[4].items.len(), 1);
+        assert!(matches!(
+            &segments[2].items[0],
+            DialogueItem::Line { text, .. } if text == "本機只告訴我們先後，沒有告訴我們精確秒數。"
+        ));
     }
 
     #[test]

@@ -130,7 +130,7 @@ impl GameEngine {
                     SceneJson::Interrogation(intr) => {
                         (&intr.evidence_manifest, &intr.statement_manifest)
                     }
-                    SceneJson::Linear(_) => continue,
+                    SceneJson::Linear(_) | SceneJson::Analysis(_) => continue,
                 };
                 let mut acq = AcquisitionCtx {
                     catalog: &self.story_catalog,
@@ -404,10 +404,14 @@ fn find_scene_runtime_by_id(
     scene_id: &str,
     queue_gen: u64,
 ) -> Result<Option<(usize, SceneRuntime)>, GameError> {
-    Ok(
-        find_scene_json_by_id(resources_dir, catalog, chapter, scene_id)?
-            .map(|(idx, json)| (idx, scene_runtime_from_json(json, &chapter.id, queue_gen))),
-    )
+    let Some((idx, json)) = find_scene_json_by_id(resources_dir, catalog, chapter, scene_id)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some((
+        idx,
+        scene_runtime_from_json(json, &chapter.id, queue_gen)?,
+    )))
 }
 
 pub(super) fn find_scene_json_by_id(
@@ -471,7 +475,7 @@ pub(super) fn load_scene_runtime(
     queue_gen: u64,
 ) -> Result<SceneRuntime, GameError> {
     let json = load_scene_json_for_ref(resources_dir, catalog, chapter_id, scene_ref)?;
-    Ok(scene_runtime_from_json(json, chapter_id, queue_gen))
+    scene_runtime_from_json(json, chapter_id, queue_gen)
 }
 
 fn load_scene_json_for_ref(
@@ -487,17 +491,25 @@ fn load_scene_json_for_ref(
     Ok(json)
 }
 
-fn scene_runtime_from_json(json: SceneJson, chapter_id: &str, queue_gen: u64) -> SceneRuntime {
+fn scene_runtime_from_json(
+    json: SceneJson,
+    chapter_id: &str,
+    queue_gen: u64,
+) -> Result<SceneRuntime, GameError> {
     match json {
-        SceneJson::Linear(j) => {
-            SceneRuntime::Linear(LinearSceneState::from_json(j, chapter_id, queue_gen))
-        }
-        SceneJson::Investigation(j) => {
-            SceneRuntime::Investigation(Box::new(InvestigationSceneState::from_json(j, queue_gen)))
-        }
-        SceneJson::Interrogation(j) => {
-            SceneRuntime::Interrogation(Box::new(InterrogationSceneState::from_json(j, queue_gen)))
-        }
+        SceneJson::Linear(j) => Ok(SceneRuntime::Linear(LinearSceneState::from_json(
+            j, chapter_id, queue_gen,
+        ))),
+        SceneJson::Investigation(j) => Ok(SceneRuntime::Investigation(Box::new(
+            InvestigationSceneState::from_json(j, queue_gen),
+        ))),
+        SceneJson::Interrogation(j) => Ok(SceneRuntime::Interrogation(Box::new(
+            InterrogationSceneState::from_json(j, queue_gen),
+        ))),
+        // HPA-259 intentionally stops at the immutable resource boundary.
+        // Returning before a navigation transaction mutates the engine keeps
+        // an attempted entry transactional until HPA-260 owns runtime state.
+        SceneJson::Analysis(_) => Err(GameError::unsupported_scene_type("analysis")),
     }
 }
 
@@ -522,6 +534,7 @@ pub(super) fn scene_json_identity(json: &SceneJson) -> (&str, &str) {
         SceneJson::Linear(scene) => (&scene.id, &scene.title),
         SceneJson::Investigation(scene) => (&scene.id, &scene.title),
         SceneJson::Interrogation(scene) => (&scene.id, &scene.title),
+        SceneJson::Analysis(scene) => (&scene.id, &scene.title),
     }
 }
 
@@ -530,6 +543,7 @@ pub(super) fn scene_json_summary(json: &SceneJson) -> &str {
         SceneJson::Linear(scene) => &scene.summary,
         SceneJson::Investigation(scene) => &scene.summary,
         SceneJson::Interrogation(scene) => &scene.summary,
+        SceneJson::Analysis(scene) => &scene.summary,
     }
 }
 
@@ -538,6 +552,7 @@ fn scene_json_type(json: &SceneJson) -> SceneType {
         SceneJson::Linear(_) => SceneType::Linear,
         SceneJson::Investigation(_) => SceneType::Investigation,
         SceneJson::Interrogation(_) => SceneType::Interrogation,
+        SceneJson::Analysis(_) => SceneType::Analysis,
     }
 }
 
@@ -546,6 +561,7 @@ fn scene_type_label(scene_type: SceneType) -> &'static str {
         SceneType::Linear => "linear",
         SceneType::Investigation => "investigation",
         SceneType::Interrogation => "interrogation",
+        SceneType::Analysis => "analysis",
     }
 }
 
@@ -638,6 +654,32 @@ mod tests {
         )
         .unwrap();
         resources
+    }
+
+    fn analysis_scene_json(id: &str) -> String {
+        format!(
+            r#"{{
+                "type": "analysis",
+                "id": "{id}",
+                "title": "Analysis",
+                "summary": "Immutable analysis fixture.",
+                "intro": [],
+                "boards": [{{
+                    "id": "board_1",
+                    "label": "Board",
+                    "kind": "classify",
+                    "prompt": "Classify.",
+                    "unlock": null,
+                    "reveals": [],
+                    "feedback": {{"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null}},
+                    "cards": [],
+                    "groups": [],
+                    "acceptedGroupByCard": {{}},
+                    "resultDialogue": []
+                }}],
+                "outro": []
+            }}"#
+        )
     }
 
     fn linear_scene_json(id: &str, text: &str) -> String {
@@ -1530,6 +1572,100 @@ mod tests {
 
         assert!(matches!(runtime, SceneRuntime::Interrogation(_)));
         let _ = fs::remove_dir_all(d);
+    }
+
+    // Break caught: the immutable analysis definition could reach normal
+    // navigation and be silently treated as a playable runtime scene.
+    #[test]
+    fn load_scene_runtime_rejects_analysis_with_a_typed_unsupported_error() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let resources = std::env::temp_dir().join(format!(
+            "lyra-analysis-runtime-unsupported-test-{}-{n}",
+            std::process::id(),
+        ));
+        let chapter_dir = resources.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("analysis_scene_1.json"),
+            analysis_scene_json("analysis_scene_1"),
+        )
+        .unwrap();
+
+        let error = load_scene_runtime(
+            &resources,
+            &StoryCatalog::empty(),
+            "chapter_1",
+            &SceneRef {
+                scene_type: SceneType::Analysis,
+                file: "chapter_1/analysis_scene_1.json".into(),
+            },
+            1,
+        )
+        .expect_err("analysis has no mutable runtime before HPA-260");
+
+        assert_eq!(error.code, "unsupportedSceneType");
+        assert!(error.message.contains("analysis"));
+        let _ = fs::remove_dir_all(resources);
+    }
+
+    // Break caught: a failed analysis jump could partially replace the live
+    // scene before the unsupported runtime error is returned.
+    #[test]
+    fn jump_to_analysis_is_transactional_and_fail_closed() {
+        let resources = acquisition_navigation_resources(
+            "analysis-jump-transaction",
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "Fixture chapter.",
+                    "scenes": [
+                        {"type": "linear", "file": "chapter_1/scene_0.json"},
+                        {"type": "analysis", "file": "chapter_1/analysis_scene_1.json"}
+                    ]
+                }]
+            }"#,
+            &[
+                (
+                    "scene_0.json",
+                    r#"{
+                        "type": "linear",
+                        "id": "scene_0",
+                        "title": "Opening",
+                        "summary": "Opening fixture.",
+                        "queue": [{"kind": "line", "speaker": "A", "text": "Opening."}]
+                    }"#
+                    .to_string(),
+                ),
+                (
+                    "analysis_scene_1.json",
+                    analysis_scene_json("analysis_scene_1"),
+                ),
+            ],
+        );
+        let index = GameEngine::scene_navigation_index(resources.clone())
+            .expect("analysis metadata should remain discoverable");
+        assert_eq!(index.chapters[0].scenes[1].scene_type, SceneType::Analysis);
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        let before = engine.view().unwrap();
+        let before_revision = engine.durable_revision;
+
+        let error = engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect_err("analysis jump must be rejected before mutation");
+
+        assert_eq!(error.code, "unsupportedSceneType");
+        assert_eq!(engine.durable_revision, before_revision);
+        assert!(matches!(before.scene, SceneView::Linear { ref id, .. } if id == "scene_0"));
+        assert!(matches!(
+            engine.view().unwrap().scene,
+            SceneView::Linear { ref id, .. } if id == "scene_0"
+        ));
+        let _ = std::fs::remove_dir_all(resources);
     }
 
     #[test]
