@@ -488,6 +488,16 @@ export type ASTAnalysisScene = Located<{
   assetRefs: AssetRef[];
 }>;
 
+/**
+ * A manifest-owned parsed analysis scene. It remains separate from SceneRecord
+ * until Task 5 adds analysis-file dispatch and runtime JSON emission.
+ */
+export type AnalysisSceneRecord = {
+  chapterId: string;
+  file: string;
+  ast: ASTAnalysisScene;
+};
+
 export type ASTAnalysisBoard =
   | ASTClassifyBoard
   | ASTOrderBoard
@@ -737,6 +747,12 @@ export type StoryCatalogJsonV2 = {
   sourceGroups: SourceGroupDefinition[];
   evidenceIndex: CaseRecordDefinitionIndex[];
   statementsIndex: CaseRecordDefinitionIndex[];
+  analysisScenes: Array<{ chapterId: string; sceneId: string }>;
+  analysisBoards: Array<{
+    chapterId: string;
+    sceneId: string;
+    boardId: string;
+  }>;
 };
 
 export type FactDefinition = {

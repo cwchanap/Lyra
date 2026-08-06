@@ -10,6 +10,7 @@ import {
   buildStoryPredicateReferences,
   buildStoryRevealTargetBatches,
   type SceneRecord,
+  type StoryPredicateReference,
 } from "./validator";
 
 export type AnalysisBoardRef = {
@@ -164,6 +165,12 @@ export function validateStoryPredicateReferences(input: {
   catalog: ASTStoryCatalog;
   scenes: SceneRecord[];
   analysisRegistry: AnalysisDefinitionRegistry;
+  /**
+   * Story-only predicate carriers outside the historical SceneRecord union.
+   * Analysis scenes supply their board unlock references here until their
+   * manifest dispatch joins the production scene-emission lifecycle.
+   */
+  additionalReferences?: readonly StoryPredicateReference[];
 }): CompileError[] {
   const facts = new Set(input.catalog.facts.map((definition) => definition.id));
   const questions = new Set(
@@ -176,17 +183,19 @@ export function validateStoryPredicateReferences(input: {
     input.catalog.authorizations.map((definition) => definition.id),
   );
 
-  return buildStoryPredicateReferences(input.scenes).flatMap(
-    ({ predicate, location }) =>
-      validateStoryPredicateReference({
-        predicate,
-        location,
-        facts,
-        questions,
-        objectives,
-        authorizations,
-        analysisRegistry: input.analysisRegistry,
-      }),
+  return [
+    ...buildStoryPredicateReferences(input.scenes),
+    ...(input.additionalReferences ?? []),
+  ].flatMap(({ predicate, location }) =>
+    validateStoryPredicateReference({
+      predicate,
+      location,
+      facts,
+      questions,
+      objectives,
+      authorizations,
+      analysisRegistry: input.analysisRegistry,
+    }),
   );
 }
 

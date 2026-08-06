@@ -8,6 +8,7 @@ import {
   emitLinearScene,
   emitStoryCatalog,
 } from "./emitter";
+import { parseAnalysisScene } from "./parser-analysis";
 import { parseInterrogationScene } from "./parser-interrogation";
 import { emptyStoryCatalog } from "./parser-story-catalog";
 import type {
@@ -16,6 +17,7 @@ import type {
   ASTInvestigationScene,
   ASTLinearScene,
   ASTStoryCatalog,
+  AnalysisSceneRecord,
   CompiledCaseRecordCorpus,
   JSONChaptersIndex,
   JSONInterrogationScene,
@@ -164,7 +166,78 @@ describe("emitter", () => {
       sourceGroups: [],
       evidenceIndex: [],
       statementsIndex: [],
+      analysisScenes: [],
+      analysisBoards: [],
     });
+  });
+
+  it("emits deterministic analysis scene and board references", () => {
+    // Break caught: catalog consumers need a stable, compiler-derived index
+    // instead of depending on authored file traversal order.
+    const parse = (
+      chapterId: string,
+      sceneId: string,
+      boardIds: string[],
+    ): AnalysisSceneRecord => {
+      const result = parseAnalysisScene(
+        [
+          "# Scene 1: 分析",
+          "- **Summary:** 測試。",
+          "## Intro",
+          "**相馬律**：開始吧。",
+          ...boardIds.flatMap((boardId) => [
+            `## Board: ${boardId} {#${boardId}}`,
+            "- **Kind:** classify",
+            "- **Prompt:** 整理。",
+            "- **Reveals:** []",
+            "- **Incomplete Feedback:** 尚未完成。",
+            "- **Incorrect Feedback:** 不正確。",
+            "### Card: 卡片 {#card_a}",
+            "- **Source:** evidence:record_a",
+            "- **Summary:** 摘要。",
+            "### Group: 分類 {#group_a}",
+            "- **Description:** 說明。",
+            "- **Accepted Cards:** [card_a]",
+            "### Result Dialogue",
+            "**相馬律**：完成。",
+          ]),
+          "## Outro",
+          "**相馬律**：下一步。",
+        ].join("\n"),
+        `${chapterId}/${sceneId}.md`,
+        sceneId,
+      );
+      if (!result.ok)
+        throw new Error(`${result.error.code}: ${result.error.message}`);
+      return { chapterId, file: `${sceneId}.md`, ast: result.value };
+    };
+    const catalog = emptyStoryCatalog("story_catalog.md");
+    const emitted = emitStoryCatalog(catalog, compileCorpus(catalog, []), [
+      parse("chapter_2", "analysis_scene_2", ["board_z", "board_a"]),
+      parse("chapter_1", "analysis_scene_9", ["board_b"]),
+    ]);
+
+    expect(emitted.analysisScenes).toEqual([
+      { chapterId: "chapter_1", sceneId: "analysis_scene_9" },
+      { chapterId: "chapter_2", sceneId: "analysis_scene_2" },
+    ]);
+    expect(emitted.analysisBoards).toEqual([
+      {
+        chapterId: "chapter_1",
+        sceneId: "analysis_scene_9",
+        boardId: "board_b",
+      },
+      {
+        chapterId: "chapter_2",
+        sceneId: "analysis_scene_2",
+        boardId: "board_a",
+      },
+      {
+        chapterId: "chapter_2",
+        sceneId: "analysis_scene_2",
+        boardId: "board_z",
+      },
+    ]);
   });
 
   it("preserves authored definition order except objectives and derives sorted case-record origins", () => {
@@ -712,6 +785,8 @@ describe("emitter", () => {
           },
         },
       ],
+      analysisScenes: [],
+      analysisBoards: [],
     });
   });
 

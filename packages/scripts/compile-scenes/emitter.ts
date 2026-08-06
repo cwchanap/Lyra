@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type {
+  AnalysisSceneRecord,
   ASTChapter,
   ASTInterrogationScene,
   ASTInvestigationScene,
@@ -32,6 +33,7 @@ import type {
 export function emitStoryCatalog(
   catalog: ASTStoryCatalog,
   caseRecords: CompiledCaseRecordCorpus,
+  analysisScenes: readonly AnalysisSceneRecord[] = [],
 ): StoryCatalogJsonV2 {
   return {
     schemaVersion: 2,
@@ -89,7 +91,43 @@ export function emitStoryCatalog(
       ...record,
       provenance: copyCaseRecordProvenance(record.provenance),
     })),
+    analysisScenes: analysisScenes
+      .map(({ chapterId, ast }) => ({ chapterId, sceneId: ast.id }))
+      .sort(compareAnalysisSceneRefs),
+    analysisBoards: analysisScenes
+      .flatMap(({ chapterId, ast }) =>
+        ast.boards.map((board) => ({
+          chapterId,
+          sceneId: ast.id,
+          boardId: board.id,
+        })),
+      )
+      .sort(compareAnalysisBoardRefs),
   };
+}
+
+function compareAnalysisSceneRefs(
+  left: { chapterId: string; sceneId: string },
+  right: { chapterId: string; sceneId: string },
+): number {
+  return (
+    compareText(left.chapterId, right.chapterId) ||
+    compareText(left.sceneId, right.sceneId)
+  );
+}
+
+function compareAnalysisBoardRefs(
+  left: { chapterId: string; sceneId: string; boardId: string },
+  right: { chapterId: string; sceneId: string; boardId: string },
+): number {
+  return (
+    compareAnalysisSceneRefs(left, right) ||
+    compareText(left.boardId, right.boardId)
+  );
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 export function emitLinearScene(ast: ASTLinearScene): JSONLinearScene {

@@ -1,4 +1,5 @@
 import type { AnalysisBoardRef, AnalysisSceneRef } from "./story-catalog";
+import type { AnalysisSceneRecord } from "./types";
 
 export type AnalysisDefinitionRegistry = {
   hasScene(ref: AnalysisSceneRef): boolean;
@@ -31,6 +32,46 @@ export function createAnalysisDefinitionRegistry(input: {
     hasScene: (ref) => scenes.has(sceneKey(ref)),
     hasBoard: (ref) => boards.has(boardKey(ref)),
   };
+}
+
+/**
+ * The compiler owns analysis definition registration from parsed scene ASTs.
+ * Duplicate authored IDs are reported by semantic validation with source
+ * locations, so this factory deliberately collapses repeated qualified keys
+ * before constructing the small Set-backed registry.
+ */
+export function createAnalysisDefinitionRegistryFromScenes(
+  scenes: readonly AnalysisSceneRecord[],
+): AnalysisDefinitionRegistry {
+  const sceneRefs: AnalysisSceneRef[] = [];
+  const boardRefs: AnalysisBoardRef[] = [];
+  const seenScenes = new Set<string>();
+  const seenBoards = new Set<string>();
+
+  for (const scene of scenes) {
+    const sceneRef = {
+      chapterId: scene.chapterId,
+      sceneId: scene.ast.id,
+    };
+    const sceneRefKey = sceneKey(sceneRef);
+    if (!seenScenes.has(sceneRefKey)) {
+      seenScenes.add(sceneRefKey);
+      sceneRefs.push(sceneRef);
+    }
+
+    for (const board of scene.ast.boards) {
+      const boardRef = { ...sceneRef, boardId: board.id };
+      const boardRefKey = boardKey(boardRef);
+      if (seenBoards.has(boardRefKey)) continue;
+      seenBoards.add(boardRefKey);
+      boardRefs.push(boardRef);
+    }
+  }
+
+  return createAnalysisDefinitionRegistry({
+    scenes: sceneRefs,
+    boards: boardRefs,
+  });
 }
 
 function sceneKey(ref: AnalysisSceneRef): string {
