@@ -11,6 +11,7 @@
 
 import { tokenize } from "./tokenizer";
 import { parseSceneHeader } from "./parser-scene-header";
+import { parseFailure } from "./parser-common";
 import {
   parseVisualAssetCue,
   rejectUnknownAssetMetadata,
@@ -42,14 +43,14 @@ export function parseLinearScene(
 
     switch (tok.kind) {
       case "heading":
-        return fail(
+        return parseFailure(
           sourceFile,
           tok.line,
           "linearSceneHasHeadings",
           `Linear scenes allow only the top-level H1. Found level-${tok.level} heading: ${tok.text}`,
         );
       case "metadata":
-        return fail(
+        return parseFailure(
           sourceFile,
           tok.line,
           "linearSceneHasMetadata",
@@ -93,7 +94,7 @@ export function parseLinearScene(
         });
         break;
       case "unknown":
-        return fail(
+        return parseFailure(
           sourceFile,
           tok.line,
           "linearSceneUnknownLine",
@@ -103,7 +104,7 @@ export function parseLinearScene(
   }
 
   if (queue.length === 0) {
-    return fail(
+    return parseFailure(
       sourceFile,
       header.value.line,
       "linearSceneEmptyQueue",
@@ -125,13 +126,4 @@ export function parseLinearScene(
       line: header.value.line,
     },
   };
-}
-
-function fail(
-  sourceFile: string,
-  line: number,
-  code: string,
-  message: string,
-): LinearParseResult {
-  return { ok: false, error: { code, message, sourceFile, line } };
 }
