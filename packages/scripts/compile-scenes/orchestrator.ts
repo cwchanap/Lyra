@@ -415,7 +415,15 @@ export function compile(opts: CompileOptions): CompileResult {
   // The abstract-effect simulation relies on the normal validator/catalog
   // boundary having resolved every modeled target. Do not attempt it over a
   // partial or semantically invalid corpus.
-  if (errors.length === 0) {
+  const shouldAnalyzeReachability = errors.length === 0;
+  const caseRecordResult = compileCaseRecordCorpus(storyCatalog, scenes);
+  if (caseRecordResult.ok) {
+    warnings.push(...caseRecordResult.value.warnings);
+  } else {
+    errors.push(...caseRecordResult.errors);
+  }
+
+  if (shouldAnalyzeReachability) {
     const nodes = buildReachabilityNodes({
       chapters,
       scenes,
@@ -426,9 +434,7 @@ export function compile(opts: CompileOptions): CompileResult {
     errors.push(...sortReachabilityDiagnostics(progression.errors));
     warnings.push(...sortReachabilityDiagnostics(progression.warnings));
   }
-  const caseRecordResult = compileCaseRecordCorpus(storyCatalog, scenes);
   if (caseRecordResult.ok) {
-    warnings.push(...caseRecordResult.value.warnings);
     try {
       errors.push(
         ...validateDerivedDialogueOriginCollisions(
@@ -443,8 +449,6 @@ export function compile(opts: CompileOptions): CompileResult {
       if (!(error instanceof CaseRecordEmissionError)) throw error;
       errors.push(error);
     }
-  } else {
-    errors.push(...caseRecordResult.errors);
   }
 
   if (errors.length > 0) return { ok: false, errors };

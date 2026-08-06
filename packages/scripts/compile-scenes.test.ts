@@ -37,6 +37,17 @@ const SINGLETON_SOURCE_GROUP_CATALOG = `# Story Catalog
 - **Summary:** Records derived from the same program export.
 `;
 
+const DUPLICATE_SOURCE_GROUP_CATALOG = `# Story Catalog
+
+## Source Groups
+
+### Source Group: First program export {#program_export}
+- **Summary:** First definition of the source group.
+
+### Source Group: Second program export {#program_export}
+- **Summary:** Duplicate definition of the source group.
+`;
+
 const NEUTRAL_CASE_RECORD_PROVENANCE = {
   sourceKind: "unspecified",
   representationLayer: "none",
@@ -567,6 +578,86 @@ describe("HPA-257 compiler diagnostics", () => {
       rmSync(outRoot, { recursive: true, force: true });
     }
   });
+
+  it("reports case-record corpus failures before HPA-257 reachability diagnostics", () => {
+    const sourceRoot = resolve(
+      "packages/scripts/__fixtures__/invalid/hpa_259_case_record_before_reachability",
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-hpa-259-case-record-order-"),
+    );
+    try {
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+
+      const codes = result.errors.map((error) => error.code);
+      const caseRecordIndex = codes.indexOf("caseRecordSourceGroupUnused");
+      const reachabilityIndex = codes.findIndex((code) =>
+        HPA_257_DIAGNOSTIC_CODES.has(code),
+      );
+
+      expect(caseRecordIndex).toBeGreaterThanOrEqual(0);
+      expect(reachabilityIndex).toBeGreaterThanOrEqual(0);
+      expect(caseRecordIndex).toBeLessThan(reachabilityIndex);
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      label: "structural validation",
+      fixture: "unresolved_reveal_target",
+      expectedEarlierCode: "unresolvedRevealTarget",
+      storyCatalog: SINGLETON_SOURCE_GROUP_CATALOG,
+    },
+    {
+      label: "story-catalog validation",
+      fixture: "../valid",
+      expectedEarlierCode: "duplicateGlobalDefinitionId",
+      storyCatalog: DUPLICATE_SOURCE_GROUP_CATALOG,
+    },
+    {
+      label: "story predicate-reference validation",
+      fixture: "hpa_257_unknown_story_predicates",
+      expectedEarlierCode: "unresolvedStoryPredicate",
+      storyCatalog: SINGLETON_SOURCE_GROUP_CATALOG,
+    },
+  ])(
+    "keeps $label diagnostics ahead of case-record corpus failures",
+    ({ fixture, expectedEarlierCode, storyCatalog }) => {
+      const sourceRoot = mkdtempSync(
+        resolve(tmpdir(), "scene-compile-hpa-259-earlier-validation-"),
+      );
+      const outRoot = mkdtempSync(
+        resolve(tmpdir(), "scene-compile-hpa-259-earlier-validation-out-"),
+      );
+      try {
+        cpSync(
+          resolve("packages/scripts/__fixtures__/invalid", fixture),
+          sourceRoot,
+          { recursive: true },
+        );
+        writeFileSync(resolve(sourceRoot, "story_catalog.md"), storyCatalog);
+
+        const result = compile({ sourceRoot, outputRoot: outRoot });
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+
+        const codes = result.errors.map((error) => error.code);
+        const earlierIndex = codes.indexOf(expectedEarlierCode);
+        const caseRecordIndex = codes.indexOf("caseRecordSourceGroupUnused");
+
+        expect(earlierIndex).toBeGreaterThanOrEqual(0);
+        expect(caseRecordIndex).toBeGreaterThanOrEqual(0);
+        expect(earlierIndex).toBeLessThan(caseRecordIndex);
+      } finally {
+        rmSync(sourceRoot, { recursive: true, force: true });
+        rmSync(outRoot, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("skips abstract effect simulation after semantic reference validation fails", () => {
     const fixtureRoot = mkdtempSync(
