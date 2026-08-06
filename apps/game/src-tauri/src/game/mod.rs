@@ -6364,4 +6364,90 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         // Background was provided → overwritten
         assert_eq!(cue.background_asset_id.as_deref(), Some("bg_new"));
     }
+
+    // Break caught: inventory re-examination could look up an analysis scene
+    // as the source scene type and silently treat it as playable.
+    #[test]
+    fn inventory_reexamine_segment_rejects_analysis_source_scene() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let resources = std::env::temp_dir().join(format!(
+            "lyra-reexamine-analysis-test-{}-{n}",
+            std::process::id()
+        ));
+        let chapter_dir = resources.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        write_empty_story_catalog_and_content_manifest(&resources);
+        fs::write(
+            resources.join("chapters.json"),
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "Fixture chapter.",
+                    "scenes": [
+                        {"type": "linear", "file": "chapter_1/scene_0.json"},
+                        {"type": "analysis", "file": "chapter_1/analysis_scene_1.json"}
+                    ]
+                }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("scene_0.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_0",
+                "title": "Opening",
+                "summary": "Opening fixture.",
+                "queue": [{"kind": "line", "speaker": "A", "text": "Opening."}]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("analysis_scene_1.json"),
+            r#"{
+                "type": "analysis",
+                "id": "analysis_scene_1",
+                "title": "Analysis",
+                "summary": "Immutable analysis fixture.",
+                "intro": [],
+                "boards": [{
+                    "id": "board_1",
+                    "label": "Board",
+                    "kind": "classify",
+                    "prompt": "Classify.",
+                    "unlock": null,
+                    "reveals": [],
+                    "feedback": {"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null},
+                    "cards": [],
+                    "groups": [],
+                    "acceptedGroupByCard": {},
+                    "resultDialogue": []
+                }],
+                "outro": []
+            }"#,
+        )
+        .unwrap();
+
+        let engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        // The current scene is scene_0 (linear), so the lookup falls through
+        // to the packaged-scene branch and finds the analysis scene JSON.
+        let error = engine
+            .inventory_reexamine_segment(
+                "chapter_1",
+                "analysis_scene_1",
+                "test_segment".into(),
+                vec![],
+            )
+            .expect_err("analysis source scene must be rejected");
+
+        assert_eq!(error.code, "unsupportedSceneType");
+        assert!(error.message.contains("analysis"));
+        let _ = fs::remove_dir_all(resources);
+    }
 }

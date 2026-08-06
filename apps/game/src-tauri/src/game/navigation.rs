@@ -2132,4 +2132,85 @@ mod tests {
         assert_eq!(err.code, "duplicateChapterTarget");
         assert!(err.message.contains("chapter_1"));
     }
+
+    // Break caught: grant_all_evidence_for_testing could panic on an analysis
+    // scene instead of skipping it like a linear scene.
+    #[test]
+    fn grant_all_evidence_skips_analysis_scenes_without_panicking() {
+        let resources = acquisition_navigation_resources(
+            "analysis-grant-skip",
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "Fixture chapter.",
+                    "scenes": [
+                        {"type": "linear", "file": "chapter_1/scene_0.json"},
+                        {"type": "analysis", "file": "chapter_1/analysis_scene_1.json"},
+                        {"type": "interrogation", "file": "chapter_1/interrogation_scene_1.json"}
+                    ]
+                }]
+            }"#,
+            &[
+                (
+                    "scene_0.json",
+                    r#"{
+                        "type": "linear",
+                        "id": "scene_0",
+                        "title": "Opening",
+                        "summary": "Opening fixture.",
+                        "queue": [{"kind": "line", "speaker": "A", "text": "Opening."}]
+                    }"#
+                    .to_string(),
+                ),
+                (
+                    "analysis_scene_1.json",
+                    analysis_scene_json("analysis_scene_1"),
+                ),
+                (
+                    "interrogation_scene_1.json",
+                    r#"{
+                        "type": "interrogation",
+                        "id": "interrogation_scene_1",
+                        "title": "Interrogation",
+                        "summary": "Interrogation fixture.",
+                        "intro": [],
+                        "phases": [{
+                            "kind": "inquiry",
+                            "id": "inquiry",
+                            "label": "Inquiry",
+                            "subject": {"id": "suspect", "name": "Suspect", "role": "Suspect", "bio": "Bio"},
+                            "required": true,
+                            "status": "unlocked",
+                            "unlock": null,
+                            "reveals": [],
+                            "sceneTag": "room",
+                            "entryDialogue": [],
+                            "complete": "auto",
+                            "questions": []
+                        }],
+                        "evidenceManifest": [],
+                        "statementManifest": [],
+                        "outro": {"unlock": "auto", "dialogue": []}
+                    }"#
+                    .to_string(),
+                ),
+            ],
+        );
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        // Jumping to the interrogation scene triggers
+        // grant_all_evidence_for_testing in debug builds, which iterates over
+        // all scenes including the analysis scene. The analysis scene must be
+        // skipped (continue) without panicking.
+        let view = engine
+            .jump_to_scene("chapter_1", "interrogation_scene_1")
+            .expect("jump to interrogation should succeed with analysis scene in chapter");
+
+        assert!(matches!(
+            view.scene,
+            SceneView::Interrogation { ref id, .. } if id == "interrogation_scene_1"
+        ));
+        let _ = std::fs::remove_dir_all(resources);
+    }
 }
